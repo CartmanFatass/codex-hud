@@ -29,14 +29,10 @@ export interface ProjectItem {
 }
 export const SLICE_STATES = ['working', 'blocked', 'try', 'todo', 'accepted', 'dropped'] as const;
 export type SliceState = typeof SLICE_STATES[number];
-/** What a to-try slice's model brief says (spec §2.2): what changed in plain words, and how to try it. Display only. */
-export interface TryBrief { brief: string; steps: string[] }
 export interface LedgerSlice {
   id: string; state: SliceState; milestone: string; release?: string; text: string; commit?: string; at?: number;
-  /** Laid on by the panel from its stored briefs (`TryBriefs.apply`), never collected. */
-  brief?: TryBrief;
   diff?: DiffStatSummary;
-  /** Relative ticket path for ticket-derived slices (TryBriefs and HTML board). */
+  /** Relative ticket path for ticket-derived slices (HTML board). */
   ticketPath?: string;
   /** Absolute file path for ticket-derived slices (opened on `o`). */
   path?: string;
@@ -142,7 +138,6 @@ const stampOf = (st: fs.Stats) => `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:
 const statKey = (path: string) => { const st = lstat(path); return st && (st.isFile() || st.isDirectory()) ? stampOf(st) : ''; };
 const cloneTickets = (features: TicketFeature[]): TicketFeature[] =>
   features.map((f) => ({ ...f, tickets: f.tickets.map((t) => ({ ...t, blockers: [...t.blockers] })) }));
-export const HOME_TRY_DATES_LIMIT = 256;
 export const projectShown = (state: Pick<import('../render/monitor-state.js').MonitorState, 'activeTab' | 'subpage' | 'help'>, modal = false) =>
   state.activeTab === 'project' && !state.subpage && !state.help && !modal;
 export class ProjectCollector {
@@ -153,8 +148,6 @@ export class ProjectCollector {
   private last?: ProjectSnapshot['last'];
   private worktrees: WorktreeInfo[] = [];
   private commitAt = new Map<string, number>();
-  private homeTryDates = new Map<string, number>();
-  private homePendingHashes = '';
   private diffs = new DiffStatCollector();
   private tries: TryLog;
   private head = '';
@@ -165,7 +158,6 @@ export class ProjectCollector {
   private collectMemo = new Map<string, { key: string; claimFloor: number; claimExpiry: number; snapshot: ProjectSnapshot }>();
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) { this.tries = new TryLog(hudHome); }
   /** Test seam: cached Home to-try commit timestamps currently retained. */
-  get homeTryDatesSize(): number { return this.homeTryDates.size; }
   private cached<T>(path: string, load: (st: fs.Stats) => T, preStat?: fs.Stats | null): T | null {
     try {
       const st = preStat !== undefined ? preStat : fs.lstatSync(path, { throwIfNoEntry: false });
@@ -491,7 +483,7 @@ export class ProjectCollector {
     return { stamp: parts.join('\n'), jobs };
   }
 
-  async collect(shown: boolean | 'home' | 'home-tasks' | 'export' | 'control' | 'overview', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
+  async collect(shown: boolean | 'home' | 'export' | 'control' | 'overview', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
@@ -504,7 +496,7 @@ export class ProjectCollector {
       // This narrow read shares a collector with Project; keep its signature cache for the next Project visit.
       return out;
     }
-    const home = shown === 'home' || shown === 'home-tasks' || shown === 'overview';
+    const home = shown === 'home' || shown === 'overview';
     const ticketsScan = this.scanTickets();
     let memoKey: string | undefined;
     let gitRefs: ReturnType<ProjectCollector['probeGitRefs']> | undefined;
@@ -550,7 +542,6 @@ export class ProjectCollector {
     const marks = this.tries.marks(this.cwd, [...parsed, ...ticketTryRaw], true);
     for (const { state: raw, milestone, id, text } of parsed) {
       const status = raw === 'done' || marks.get(id) === 'accept' ? 'accepted' : raw;
-      if (marks.get(id) === 'flag') out.waiting.push({ label: id, value: `⚑ ${id} · ${text}`, path: statePath });
       ledger.set(id, { state: status, text });
       if (!SLICE_STATES.includes(status as SliceState)) continue;
       const state = status as SliceState;
@@ -591,9 +582,6 @@ export class ProjectCollector {
         old.state = row.state;
       } else {
         out.ledger.push(out.ladder.current ? { ...row, release: out.ladder.current } : { ...row });
-        if (row.state === 'try' && marks.get(row.id) === 'flag') {
-          out.waiting.push({ label: row.id, value: `⚑ ${row.id} · ${row.text}`, path: row.path ?? statePath });
-        }
         ledger.set(row.id, { state: row.state, text: row.text });
       }
       out.counts[row.state]++;
@@ -607,32 +595,6 @@ export class ProjectCollector {
     out.ticketTotals = ticketsScan.partial ? { ...totals, partial: true } : totals;
     out.waiting = out.waiting.filter((item) => !waitSettled(item.value, ledger, out.tickets));
     out.tickets = visible;
-    if (shown === 'home-tasks') {
-      const tries = out.ledger.filter((r) => r.state === 'try' && r.at === undefined);
-      const hashes = [...new Set(tries.flatMap((r) => r.commit ? [r.commit.toLowerCase()] : []))]
-        .filter((hash) => !this.homeTryDates.has(hash)).sort();
-      const key = hashes.join(' ');
-      if (key !== this.homePendingHashes) {
-        // Unknown commits stay undated; don't retry an unchanged set of misses on the clock.
-        for (const [hash, at] of await this.commitDates(hashes)) {
-          this.homeTryDates.delete(hash);
-          this.homeTryDates.set(hash, at);
-        }
-        while (this.homeTryDates.size > HOME_TRY_DATES_LIMIT) {
-          this.homeTryDates.delete(this.homeTryDates.keys().next().value!);
-        }
-        this.homePendingHashes = hashes.filter((hash) => !this.homeTryDates.has(hash)).join(' ');
-      }
-      for (const row of tries) {
-        const commit = row.commit?.toLowerCase();
-        const at = commit ? this.homeTryDates.get(commit) : undefined;
-        if (at !== undefined && commit) {
-          this.homeTryDates.delete(commit);
-          this.homeTryDates.set(commit, at);
-          row.at = at;
-        }
-      }
-    }
     if (home && memoKey !== undefined) {
       let claimFloor = -Infinity, claimExpiry = Infinity;
       for (const at of ticketsScan.claimTimes) {

@@ -42,45 +42,45 @@ test('Project uses Inbox for old saved layouts and no longer offers a layout set
   }
 });
 
-test('Inbox hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-word cut, ranked Needs you, Running, last accepted, Space/y/n', async (t) => {
-  const { busy } = await fixture(t);
-  const briefed = {
-    ...busy.control,
-    ledger: busy.control.ledger.map((r) => (r.id === 'DATA-ONE'
-      ? { ...r, brief: { brief: 'Inbox layout ranks what needs you first. Older slices fold cleanly.', steps: ['Open Project tab', 'Check Needs you'] } }
-      : r)),
-  };
-  const tries = tryCount(briefed, 'slice');
+test('Inbox hub at 40 cols EN and ZH (Split and Classic): width, ranked Needs you, Running, last accepted and one Accept all action', async (t) => {
+  const { busy } = await fixture(t), data = busy.control, tries = tryCount(data);
   for (const lang of ['en', 'zh']) {
     for (const layout of ['split', 'classic']) {
       const state = onPage(undefined, { project: { folded: new Set(['inbox:more']) }, prefs: { panelLayout: layout } });
-      const frame = busy.render(40, lang, 42, state, briefed);
+      const d = driver(busy, { data, state, height: 42, lang });
+      const frame = d.frame;
       assertWidth(frame, 40, `hub ${layout} ${lang}`);
       const lines = plain(frame), text = lines.join('\n');
-      const corpus = [
-        briefed.summary, ...briefed.waiting.map((w) => w.value), ...briefed.active.map((j) => j.title ?? ''),
-        ...briefed.ledger.map((r) => `${r.text} ${r.brief?.brief ?? ''}`), ...briefed.tickets.flatMap((f) => f.tickets.map((tk) => tk.title)),
-      ].join(' ');
+      const corpus = [data.summary, ...data.waiting.map((w) => w.value), ...data.active.map((j) => j.title ?? ''),
+        ...data.ledger.map((r) => r.text), ...data.tickets.flatMap((f) => f.tickets.map((tk) => tk.title))].join(' ');
       assertNoMidWordCut(lines, corpus, `hub ${layout} ${lang}`);
-      // The header counts STATE waiting and pending trials, not blocked slices, tickets or role alerts.
-      const figures = lang === 'zh' ? `${briefed.waiting.length} · ${tries} 待试用` : `${briefed.waiting.length} · ${tries} to try`;
-      assert.ok(text.includes(figures), `${layout} ${lang}: header shows ${figures}`);
-      // Ranked order in Needs you: waiting -> to-try newest first -> asking tickets -> blocked -> exhausted roles.
-      const order = ['Try the Project tab', 'DATA-ONE', 'WATCH-LINK', 'Vocabulary', 'PAGE-TWO', 'imp'].map((s) => text.indexOf(s));
+      assert.match(text, new RegExp(`^${lang === 'zh' ? '需要你处理' : 'Needs you'} ─+ ${data.waiting.length}$`, 'm'));
+      assert.match(text, new RegExp(`^${lang === 'zh' ? '全部验收' : 'Accept all'} +${tries} ${lang === 'zh' ? '待试用' : 'to try'}$`, 'm'));
+      const order = ['Try the Project tab', 'Vocabulary', 'PAGE-TWO', 'imp'].map((s) => text.indexOf(s));
       assert.ok(order.every((i) => i >= 0) && order.every((v, i) => i === 0 || order[i - 1] < v), `${layout} ${lang}: Needs you ranked order`);
-      // Brief's first sentence on DATA-ONE; Running and last accepted present; blocked slice not duplicated in Running.
-      assert.match(text, /Inbox layout ranks what needs you\s+first\./);
+      assert.doesNotMatch(text, /DATA-ONE|WATCH-LINK|How to try|Space mark/);
       assert.match(text, lang === 'zh' ? /运行中/ : /Running/);
       assert.match(text, lang === 'zh' ? /✓ 最近验收 REVIEW-ONE 8天/ : /✓ last accepted REVIEW-ONE 8d/);
       assert.match(text, lang === 'zh' ? /pi 已耗尽 42分/ : /pi out 42m/);
       if (lang === 'zh') assert.doesNotMatch(text, /\b(Needs you|Running|last accepted|to try|blocked|working|Control plane|Working tree|pi out)\b/);
+      const click = () => {
+        const pane = d.frame.panes.find(p => p.id === 'agents');
+        const y = pane.y + pane.rows.findIndex(r => r.item === 'project:accept-all') - pane.offset;
+        return d.run({ type: 'mouse', button: 'left', x: 4, y }).action;
+      };
+      assert.equal(click(), undefined, 'first click only selects');
+      assert.equal(d.state.project.nav.cursor, 'project:accept-all');
+      assert.deepEqual(click(), { type: 'accept-all' });
+      const partial = busy.render(40, lang, 42, state, { ...data, stateTruncated: true });
+      const action = partial.workboard.rows.find(r => r.item === 'project:accept-all');
+      assert.match(stripAnsi(action.text), lang === 'zh' ? /^全部验收 +不完整 · / : /^Accept all +Partial · /);
     }
   }
 
   // Asking jobs rank ahead of STATE's waiting items and are not duplicated in Running.
   const askingSnap = {
-    ...briefed,
-    active: [...briefed.active, { jobId: 'j00000000000000bb', role: 'reviewer', state: 'waiting_orchestrator', title: 'Approve synthetic migration', at: NOW - 3 * 60000, asking: true }],
+    ...data,
+    active: [...data.active, { jobId: 'j00000000000000bb', role: 'reviewer', state: 'waiting_orchestrator', title: 'Approve synthetic migration', at: NOW - 3 * 60000, asking: true }],
   };
   for (const lang of ['en', 'zh']) {
     const askFrame = busy.render(40, lang, 36, split({ activeTab: 'project' }), askingSnap);
@@ -93,32 +93,11 @@ test('Inbox hub at 40 cols EN and ZH (Split and Classic): exact width, no mid-wo
     assert.equal(listLines.split('Approve synthetic').length, 2, `${lang}: asking job not duplicated in Running`);
   }
 
-  // Default cap (7) shows `▸ N more` and Enter unfolds the remaining ranked items.
-  const capped = driver(busy, { data: briefed, height: 38, state: split({ activeTab: 'project', project: { nav: { cursor: 'project:fold:inbox:more' } } }) });
-  assert.match(capped.lines().join('\n'), /▸ 6 more/);
+  const capped = driver(busy, { data, height: 38, state: split({ activeTab: 'project', project: { nav: { cursor: 'project:fold:inbox:more' } } }) });
+  assert.match(capped.lines().join('\n'), /▸ 1 more/);
   capped.run('enter');
   assert.match(capped.lines().join('\n'), /PAGE-TWO\s+blocked/);
   assert.match(capped.lines().join('\n'), /imp\s+pi out 42m/);
-
-  // Split hub: Space/y/n act directly on Inbox Needs-you to-try rows; preview shows brief, steps and folded Ledger line.
-  const sp = driver(busy, { data: briefed, height: 42, state: split({ activeTab: 'project', project: { nav: { cursor: 'project:slice:DATA-ONE' } } }) });
-  const spText = sp.lines().join('\n');
-  assert.match(spText, /How to try/);
-  assert.match(spText, /1\. Open Project tab/);
-  assert.match(spText, /▸ Ledger line/);
-  sp.run('space');
-  assert.match(sp.lines().join('\n'), /▣ ◇ DATA-ONE/);
-  assert.deepEqual(sp.run('try-accept').action.target.slices.map((s) => s.id), ['DATA-ONE']);
-  assert.equal(sp.run({ type: 'key', key: 'try-flag', text: 'n' }).action.action, 'flag');
-
-  // Classic hub: Enter expands to-try row with brief + steps + folded Ledger line; Space/y/n act directly.
-  const cl = driver(busy, { data: briefed, height: 44, state: onPage(undefined, { project: { nav: { cursor: 'project:fold:hist:DATA-ONE' } } }) });
-  cl.run('enter');
-  assert.match(cl.lines().join('\n'), /How to try/);
-  assert.match(cl.lines().join('\n'), /▸ Ledger line/);
-  cl.run('space');
-  assert.deepEqual(cl.run('try-accept').action.target.slices.map((s) => s.id), ['DATA-ONE']);
-  assert.equal(cl.run({ type: 'key', key: 'try-flag', text: 'n' }).action.action, 'flag');
 });
 
 test('Inbox Running is one row per running job: an imp in a worktree with two sonic children is one row (role, ticket title, ⚡2, age), never a worktree, slice or sonic row', async () => {
@@ -155,66 +134,6 @@ test('Inbox Running is one row per running job: an imp in a worktree with two so
     }
     assert.match(plain(frames[1]).join('\n'), /^imp ─+\n  NATIVE-TREE: synthetic subagents$/m, `${lang}: Enter's preview is the job's`);
   }
-});
-
-test('Inbox Progress at 40 cols EN and ZH (Split and Classic): To try newest first across milestones, Blocked, Working, Next, Done folded to one row, Space/y/n', async (t) => {
-  const { busy } = await fixture(t);
-  const briefed = {
-    ...busy.rich,
-    ledger: busy.rich.ledger.map((r) => (r.id === 'DATA-ONE'
-      ? { ...r, brief: { brief: 'Inbox progress groups by owner priority. Accepted slices fold away.', steps: ['Open Progress', 'Try Space, y and n'] } }
-      : r)),
-  };
-  const tries = tryCount(briefed, 'slice');
-  for (const lang of ['en', 'zh']) {
-    for (const layout of ['split', 'classic']) {
-      const state = onPage('progress', { prefs: { panelLayout: layout } });
-      const frame = busy.render(40, lang, 44, state, briefed);
-      assertWidth(frame, 40, `progress ${layout} ${lang}`);
-      const lines = plain(frame), text = lines.join('\n');
-      const corpus = [briefed.summary, ...briefed.active.map((j) => j.title ?? ''), ...briefed.next.map((n) => n.value), ...briefed.ledger.map((r) => `${r.text} ${r.brief?.brief ?? ''}`)].join(' ');
-      assertNoMidWordCut(lines, corpus, `progress ${layout} ${lang}`);
-      // Section order: To try -> Blocked -> Working -> Next -> Done.
-      const heads = (lang === 'zh'
-        ? [/^待试用 ─/m, /^受阻 ─/m, /^工作中 ─/m, /^(?:→ )?下一步/m, /^(?:▸ )?已完成/m]
-        : [/^To try ─/m, /^Blocked ─/m, /^Working ─/m, /^(?:→ )?Next/m, /^(?:▸ )?Done/m]
-      ).map((re) => text.search(re));
-      assert.ok(heads.every((i) => i >= 0) && heads.every((v, i) => i === 0 || heads[i - 1] < v), `${layout} ${lang}: section order`);
-      // To try lists every milestone newest first (0.1.3 DATA-ONE, M4 WATCH-LINK, M4 SENTENCE-CUT, M3b NATIVE-ROWS, M4 NO-HASH) and header count equals tryCount.
-      const tryOrder = ['DATA-ONE', 'WATCH-LINK', 'SENTENCE-CUT', 'NATIVE-ROWS', 'NO-HASH'].map((id) => text.indexOf(id));
-      assert.ok(tryOrder.every((i) => i >= 0) && tryOrder.every((v, i) => i === 0 || tryOrder[i - 1] < v), `${layout} ${lang}: to-try newest first across milestones`);
-      assert.match(text, new RegExp(`${lang === 'zh' ? '待试用' : 'To try'} ─+ ${tries}`));
-      assert.match(text, /Inbox progress groups by owner\s+priority\./);
-      // Done is folded (older accepted slice BAR-LINES is hidden until opened/previewed).
-      assert.doesNotMatch(text, /BAR-LINES/);
-      assert.match(text, /REVIEW-ONE/);
-      // No state word repeated twice on any row.
-      for (const line of lines) for (const word of ['working', 'blocked', 'to try', '工作中', '受阻', '待试用']) {
-        assert.ok(line.split(word).length <= 2, `${layout} ${lang}: duplicate "${word}" in "${line}"`);
-      }
-      if (lang === 'zh') assert.doesNotMatch(text, /\b(To try|Blocked|Working|Next|Done|latest|accepted|to try|working|blocked)\b/);
-    }
-  }
-
-  // Split Progress: Space/y/n on to-try row, preview of Done shows accepted slices.
-  const sp = driver(busy, { data: briefed, height: 42, state: split({ activeTab: 'project', project: { nav: { cursor: 'project:slice:DATA-ONE' }, view: { kind: 'progress' } } }) });
-  assert.match(sp.lines().join('\n'), /How to try/);
-  sp.run('space');
-  assert.match(sp.lines().join('\n'), /▣ ◇ DATA-ONE/);
-  assert.deepEqual(sp.run('try-accept').action.target.slices.map((s) => s.id), ['DATA-ONE']);
-  assert.equal(sp.run({ type: 'key', key: 'try-flag', text: 'n' }).action.action, 'flag');
-  const spDone = driver(busy, { data: briefed, height: 42, state: split({ activeTab: 'project', project: { nav: { cursor: 'split:done' }, view: { kind: 'progress' } } }) });
-  assert.match(spDone.lines().join('\n'), /BAR-LINES/);
-
-  // Classic Progress: Space/y/n on to-try row; Enter on Done unfolds accepted slices.
-  const cl = driver(busy, { data: briefed, height: 46, state: onPage('progress', { project: { nav: { cursor: 'project:fold:hist:DATA-ONE' } } }) });
-  cl.run('enter');
-  assert.match(cl.lines().join('\n'), /▸ Ledger line/);
-  cl.run('space');
-  assert.deepEqual(cl.run('try-accept').action.target.slices.map((s) => s.id), ['DATA-ONE']);
-  const clDone = driver(busy, { data: briefed, height: 50, state: onPage('progress', { project: { nav: { cursor: 'project:fold:inbox:done' } } }) });
-  clDone.run('enter');
-  assert.match(clDone.lines().join('\n'), /BAR-LINES/);
 });
 
 test('Inbox Projects list at 40/80/120 cols EN and ZH: Needs you / Running / Quiet groups, quiet is one row, exact width', async (t) => {

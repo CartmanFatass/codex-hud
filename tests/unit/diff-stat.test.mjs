@@ -124,22 +124,22 @@ test('bounded safe numstat for working tree and newest 12 tries, with native pat
   setLanguage('en');
 
   const r = project.ledger.at(-2), item = 'diff:' + file;
-  r.brief = { brief: 'Synthetic brief', steps: ['Check the synthetic edit'] };
-  const render = (state) => renderMonitor({ tree: TREE, project, state: withState({ prefs: { acceptance: 'slice' } }, state), width: 40, height: 48, nowMs: NOW });
+  const task = `task:milestone:${r.milestone}`;
+  const render = (state) => renderMonitor({ tree: TREE, project, state, width: 40, height: 48, nowMs: NOW });
   for (const panelLayout of ['classic', 'split']) {
     for (const page of ['tree', 'progress']) {
       const state = onPage(page, withState({ prefs: { panelLayout } }, (panelLayout === 'split'
-          ? { project: { nav: { cursor: page === 'tree' ? 'project:row:0' : `project:slice:${r.id}` } } }
-          : { project: { nav: { cursor: item }, folded: new Set([`hist:${r.id}`]),
-            ...(page === 'progress' ? { view: { kind: 'progress', onlyTry: { scroll: 0 } } } : {}) } })));
+          ? { project: { nav: { cursor: page === 'tree' ? 'project:row:0' : `project:fold:${task}` } } }
+          : { project: { nav: { cursor: item }, folded: new Set([task]) } })));
       let frame = render(state);
       const rows = frame.workboard.rows;
       const shown = rows.findIndex((row) => row.item === item);
       assert.ok(shown > 0, `${panelLayout} ${page} shows the diff`);
-      assert.ok(rows.slice(0, shown).some((row) => row.text.includes(page === 'progress' ? 'synthetic edit' : 'changed')));
+      assert.ok(rows.slice(0, shown).some((row) => row.text.includes(page === 'progress' ? 'Synthetic slice' : 'changed')));
       if (panelLayout === 'split') frame = render(enter(frame).state);
-      // A briefed to-try slice's preview opens on its folded ledger line (the Enter that toggles it); the diff is the next row down.
-      if (frame.state.project.nav.cursor !== item) frame = render(action(frame, { type: 'key', key: 'down' }).state);
+      // The preview may show several slices in the milestone; move through their diff rows.
+      for (let i = 0; i < rows.length && frame.state.project.nav.cursor !== item; i++)
+        frame = render(action(frame, { type: 'key', key: 'down' }).state);
       assert.equal(frame.state.project.nav.cursor, item);
       assertOpens(frame, file);
     }

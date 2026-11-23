@@ -46,9 +46,9 @@ function classicSplitPlace(value: unknown) {
   return { ...rowPlace(value), split: splitPlace(fields(value).split) };
 }
 function projectView(value: unknown): ProjectView {
-  const { kind, onlyTry, index } = fields(value);
+  const { kind, index } = fields(value);
   switch (kind) {
-    case 'progress': return { kind, onlyTry: object(onlyTry) ? rowPlace(onlyTry) : undefined };
+    case 'progress': return { kind };
     case 'waiting': return { kind, index: offset(index) ?? -1 };
     case 'projects-list': case 'tickets': case 'tree': case 'docs': return { kind };
     default: return { kind: 'hub' };
@@ -84,7 +84,7 @@ function projectReloadState(value: unknown) {
     lastChangesScroll: offset(raw.lastChangesScroll) ?? 0, help: help && { scroll: offset(help.scroll) },
     home: { cursor: homePlace(home.cursor), scroll: offset(home.scroll) ?? 0, showAll: home.showAll === true,
       expanded: strings(home.expanded) ?? [], toggled: strings(home.toggled) ?? [], foldedLanes: strings(home.foldedLanes) ?? [],
-      expandedTasks: strings(home.expandedTasks) ?? [], split: splitPlace(home.split), filterQuery: text(home.filterQuery) || undefined },
+      split: splitPlace(home.split), filterQuery: text(home.filterQuery) || undefined },
     project: { view: projectView(project.view), fromProjectsList: project.fromProjectsList === true, nav: classicSplitPlace(project.nav),
       savedPages: savedPages(project.savedPages), folded: strings(project.folded) ?? [], filterQuery: text(project.filterQuery) || undefined },
     control: { subTab: control.subTab === 'harnesses' ? 'harnesses' as const : 'roles' as const,
@@ -119,7 +119,7 @@ function hydrate(raw: ReloadStateV2, basePrefs: ViewPrefs): MonitorState {
     subpage: subpage?.kind === 'inspector' ? { ...subpage, revealed: subpage.cursor } : subpage,
     lastChangesScroll: raw.lastChangesScroll, help: raw.help,
     home: { ...homePlace, expanded: new Set(home.expanded), toggled: new Set(home.toggled), foldedLanes: new Set(home.foldedLanes),
-      expandedTasks: new Set(home.expandedTasks), filter: kept(homeQuery), revealed: revealed(home.split, homeItem, viewPrefs) },
+      filter: kept(homeQuery), revealed: revealed(home.split, homeItem, viewPrefs) },
     project: { ...projectPlace, nav: nav(project.nav), folded: new Set(project.folded), filter: kept(projectQuery) },
     control: { subTab: control.subTab, modelPrevious: control.modelPrevious,
       roles: { nav: nav(control.roles.nav), folded: new Set(control.roles.folded) },
@@ -168,9 +168,8 @@ function migrateV1ToV2(old: Record<string, unknown>, basePrefs: ViewPrefs): Moni
     help: old.help === true ? { scroll: old.helpScroll } : undefined,
     home: { cursor: homeCursor(workTarget(old.homeTarget), text(old.boardAnchor)), scroll: old.homeScroll, showAll: tree.showAll,
       expanded: legacySet(old.boardExpanded), toggled: legacySet(old.boardToggled), foldedLanes: legacySet(old.boardFolded),
-      expandedTasks: activeTab === 'home' && !oldControlPage ? folds.filter(homeFold) : [],
       split: { ...(homeSplit ? nav.split : undefined), listCursor: old.splitCursor } },
-    project: { view: { kind: page ?? (old.projectList === true ? 'projects-list' : 'hub'), onlyTry: old.projectTry, index: old.projectWait },
+    project: { view: { kind: page ?? (old.projectList === true ? 'projects-list' : 'hub'), index: old.projectWait },
       fromProjectsList: !oldControlPage && old.projectBack, nav: homeSplit ? { ...nav, split: undefined } : nav, savedPages: old.projectSaved,
       folded: oldControlPage ? [] : activeTab === 'home' ? folds.filter((id) => !homeFold(id)) : folds },
     control: { roles, subTab: nestedControl ? control.subTab : old.controlHarnesses === true ? 'harnesses' : 'roles',

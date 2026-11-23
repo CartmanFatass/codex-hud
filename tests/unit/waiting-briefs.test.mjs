@@ -7,7 +7,7 @@ import { WaitingBriefs } from '../../dist/collectors/waiting-briefs.js';
 import { SmallModel } from '../../dist/collectors/small-model.js';
 import { requestLines, questionOriginalRows } from '../../dist/render/work-card.js';
 import { answerable } from '../../dist/render/job-actions.js';
-import { taskHeaderRows, ticketPreview, waitingRows, projectOriginal } from '../../dist/render/project-view.js';
+import { ticketPreview, waitingRows, projectOriginal } from '../../dist/render/project-view.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi } from '../../dist/render/colors.js';
@@ -77,11 +77,4 @@ test('panel translations: one capped batch, only open foreign prose, original fo
   reopened.configure(false, 'zh');
   assert.equal(reopened.project(project), project);
   assert.equal(reopened.board(board), board);
-});
-
-test('grouped task heading shows only its newest pending member’s first sentence', () => {
-  const slices = [1, 2].map(at => ({ id: `BAY-0${at}`, at, state: 'try', brief: { brief: at === 1 ? '较旧。' : '最新。更多。' } }));
-  const rows = taskHeaderRows({ key: 'milestone:BAY', milestone: 'BAY', slices }, {}, state, 40, 3);
-  assert.match(text(rows), /BAY[\s\S]*最新。/);
-  assert.doesNotMatch(text(rows), /更多|较旧/);
 });

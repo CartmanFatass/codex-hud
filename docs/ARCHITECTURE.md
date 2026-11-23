@@ -246,7 +246,7 @@ fetching must not execute just to draw status. Git failure is unknown, never cle
 Project opens files through the existing `$EDITOR` herdr-tab action.
 
 `hud board` and the panel's `w` write one static HTML review board (`render/html-board.ts`, pure: collected facts in,
-one escaped, script-free page out; `cli/board.ts` collects once with a fresh `ProjectCollector` and the stored `TryBriefs`,
+one escaped, script-free page out; `cli/board.ts` collects once with a fresh `ProjectCollector`,
 and writes with `writePrivateFile`). No model call, no server; its text and sections are in the reference.
 
 Control is a top-level tab. It follows Project's selected root, but has its own cursor, folds and scroll. Its narrow `ProjectCollector` mode reads only that root's Control facts (no STATE, tickets or Git worktree/status collection) and caches them separately from Project's snapshot. Unlike Project's hub, Control never paints the previous root's snapshot while a new root loads. Local model list discovery starts only on entering Control or refreshing (`r` in Control, Ctrl+R in the picker), not on Home or on a collection tick.
@@ -297,7 +297,6 @@ Deterministic HTTP 4xx errors pause that feature on that route for five minutes 
 |---|---|
 | `JobSentences`, thin jobs | A current worker summary (≤160 Unicode code points) needs no request in the panel's language; translation sends only that summary. Otherwise: brief title/goal (1500-byte head), state/phase, question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a safe 32 KiB working-session tail |
 | `JobSentences`, native agents | Name/role (80 chars each), task/charge (400), report (600), action (200), final result (8000 head/tail), error (2000); a settled Codex agent may use one safe 32 KiB tail |
-| `TryBriefs` | One call per to-try slice, while Home or Project is shown (newest 12 slices): its ledger line, up to 5 commits' messages (1200 chars each), up to 4 ticket files (3000 bytes each) under a `.scratch/<slug>/` the line names |
 | `WaitingBriefs` | Wrong-language prose only: first 8 STATE waiting items (≤2 KiB each), open QA question, context, options and default (≤4 KiB), open ticket titles (≤512 bytes each), the route reason a card shows (≤512 bytes) and the ledger text of the newest 6 landed slices (≤512 bytes each). Batch ≤25 strings / 4 KiB; `waiting-briefs.json` caches by language and text hash. Display copies carry translations; the answer action always uses original options. |
 | `DecisionTitles` | Only for an inspected job's answered question in Files: question and answer, 4096 bytes each; one response includes ≤8-word title and localized question/answer/instead/why |
 | `DecisionLabels`, outcome | Final state + the same settled report excerpt (4096 UTF-8 bytes); once per settlement |
@@ -326,13 +325,7 @@ request; failed final attempts retry no sooner than two minutes. Native finals k
 the two-minute floor. Finals freeze after one success per settlement. At most three
 pending sentence handles share the service. `DecisionTitles` uses the same queue;
 its revision/language-keyed cache survives reopen.
-`TryBriefs` (`collectors/try-brief.ts`) is the same shape for the slices still to try: one call writes a brief and acceptance
-steps from the ledger line, its commits and tickets; stored per slice and language under a hash of that input, laid on the
-ledger rows only while the ledger line is unchanged (`LedgerSlice.brief`), so an unchanged slice costs no call and a pending,
-failed or master-off state leaves the original text. The panel shows a briefed slice as its id and the brief's first sentence on one row, and
-in its preview (Split) or expanded row (Classic) the whole brief, the steps and the original ledger text folded below them
-(`project-view.ts` `tryDetailRows`, `landedInline`); `tryCount` reports pending milestone tasks or individual `try` slices, according to Detail.
-Waiting, the Progress row and the Projects list use the same unit. Keyword painting is shared by
+Pending slices use ledger text, not a generated try brief. Keyword painting is shared by
 cards, decisions and Inspector (`utils/keyword-marks.ts`), never lifecycle evidence.
 
 Decision labels use `selectDecisionProvider`, not the chat endpoint.
@@ -400,8 +393,10 @@ separate scroll/fold state. Cards show a title plus two sentence rows, expanding
 in place; raw workflow files open from the Inspector or `o`.
 
 Settings → Panel → Layout (`panelLayout`) defaults to Classic (`home-view.ts` and `project-view.ts`);
-Split is the other choice. Both layouts share the Space marks and `y`/`n` batch action for to-try rows.
-Marks belong to the open view. A batch appends one record under `$HUD_HOME`, never to project files.
+Split is the other choice. Both layouts offer one Accept all action on the Inbox hub. Off the paint path,
+`panel/actions.ts` uses the displayed project's unfiltered ledger and appends one `accept` record under `$HUD_HOME`,
+never to project files. The `TryLog` reader still understands old `flag` and `accept` records; the list of flagged
+items shown to the owner comes from STATE Waiting.
 
 All standalone panels decode their own keys and SGR mouse events through
 `WorkbenchInputDecoder('workboard')`. Mouse hit testing uses the same frame controls.

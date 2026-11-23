@@ -13,7 +13,7 @@ import { stemLines } from './work-card.js';
 
 type SettingValue = string | number | boolean;
 const CALL_FEATURES: Record<string, string> = {
-  'job-sentence': 'Job sentence', 'native-sentence': 'Native sentence', 'try-brief': 'Try brief', 'waiting-brief': 'Panel translation', title: 'Decision title',
+  'job-sentence': 'Job sentence', 'native-sentence': 'Native sentence', 'waiting-brief': 'Panel translation', title: 'Decision title',
   probe: 'Probe', outcome: 'outcome', looping: 'looping',
   'question-category': 'Question category', 'review-severity': 'Review severity',
   'quiet-job': 'Quiet job', 'sonic-thinking': 'Sonic thinking',
@@ -78,8 +78,6 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'panelLayout', group: 'Panel', label: 'Layout', values: ['classic', 'split'],
     help: 'Home, Project and Control: Classic is the default; Split puts a list over a preview of the selected row',
     format: (value) => t(({ classic: 'Classic', split: 'Split' } as Record<string, string>)[String(value)] ?? String(value)) },
-  { key: 'acceptance', group: 'Panel', label: 'Detail', values: ['task', 'slice'],
-    help: 'Show milestones and features as tasks, or show individual slices and tickets', format: (value) => t(String(value)) },
   {
     key: 'treeWidth',
     group: 'Panel',
@@ -247,7 +245,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['panelLayout', 'acceptance', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'experiments'],
+  Panel: ['panelLayout', 'treeWidth', 'cardStallMinutes', 'cardFoldMinutes', 'cardHideMinutes', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'experiments'],
   Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'impRouting', 'summaryIntervalMinutes'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],

@@ -260,7 +260,7 @@ test('ProjectCollector.collect memoizes Home and Overview on .scratch, ledger, t
   const collector = new ProjectCollector(cwd, hud, env, home);
   const board = { ...EMPTY_BOARD, workers: [{ id: 'thin-job:j0000000000000001', laneId: 'l1', task: 'Initial task', evidence: [{ sourceId: 'j0000000000000001' }] }] };
 
-  const first = await collector.collect('home-tasks', board, NOW);
+  const first = await collector.collect('home', board, NOW);
   assert.equal(first.tickets[0].tickets[0].state, 'ready');
   assert.equal(first.tickets[0].tickets[1].state, 'working');
   assert.equal(first.active[0].title, 'Initial task');
@@ -272,7 +272,7 @@ test('ProjectCollector.collect memoizes Home and Overview on .scratch, ledger, t
   fs.opendirSync = (...args) => { opendirs++; return origOpendir(...args); };
   syncBuiltinESMExports();
   try {
-    const second = await collector.collect('home-tasks', board, NOW + 1000);
+    const second = await collector.collect('home', board, NOW + 1000);
     assert.strictEqual(second, first, 'unchanged tick returns memoized snapshot');
   } finally {
     fs.openSync = origOpen;
@@ -289,34 +289,34 @@ test('ProjectCollector.collect memoizes Home and Overview on .scratch, ledger, t
 
   // In-place ticket edit invalidates memo.
   put(ticketFile, '# 01: First ticket\n**Status:** done\n**Blocked by:** none\n');
-  const afterTicket = await collector.collect('home-tasks', board, NOW + 2000);
+  const afterTicket = await collector.collect('home', board, NOW + 2000);
   assert.notStrictEqual(afterTicket, first);
   assert.equal(afterTicket.tickets[0].tickets[0].state, 'done');
 
   // In-place STATE.md edit invalidates memo.
   put(stateFile, `# State\nMilestone: M4\n## Waiting for the owner\n- Check new item\n## Slices\n- try · M4 · DEMO-S1 · landed (${sha})\n`);
-  const afterState = await collector.collect('home-tasks', board, NOW + 3000);
+  const afterState = await collector.collect('home', board, NOW + 3000);
   assert.equal(afterState.waiting.length, 1);
 
   // TryLog append invalidates memo.
   appendTry(hud, cwd, 'accept', { milestone: 'M4', slices: [{ id: 'DEMO-S1', text: `landed (${sha})` }] });
-  const afterTry = await collector.collect('home-tasks', board, NOW + 4000);
+  const afterTry = await collector.collect('home', board, NOW + 4000);
   assert.equal(afterTry.counts.accepted, 1);
 
   // In-place STATUS.json update invalidates memo.
   put(join(jobDir, 'STATUS.json'), { state: 'done', settled_at: new Date(NOW + 4500).toISOString() });
-  const afterJob = await collector.collect('home-tasks', board, NOW + 5000);
+  const afterJob = await collector.collect('home', board, NOW + 5000);
   assert.deepEqual(afterJob.active, []);
 
   // In-place board.workers mutation invalidates memo.
   put(join(jobDir, 'STATUS.json'), { state: 'working', started_at: new Date(NOW).toISOString() });
-  const beforeBoardMut = await collector.collect('home-tasks', board, NOW + 6000);
+  const beforeBoardMut = await collector.collect('home', board, NOW + 6000);
   assert.equal(beforeBoardMut.active[0].title, 'Initial task');
   board.workers[0].task = 'Mutated task';
-  const afterBoardMut = await collector.collect('home-tasks', board, NOW + 7000);
+  const afterBoardMut = await collector.collect('home', board, NOW + 7000);
   assert.equal(afterBoardMut.active[0].title, 'Mutated task');
 
   // Advancing `now` past claimed ticket's 2-hour expiry invalidates memo even with zero file changes.
-  const expired = await collector.collect('home-tasks', board, NOW + 7200000);
+  const expired = await collector.collect('home', board, NOW + 7200000);
   assert.equal(expired.tickets[0].tickets[1].state, 'blocked');
 });

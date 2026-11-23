@@ -222,7 +222,8 @@ test('Home and Project derive ledger, commit, job, and cross-feature dependency 
   }
   const original = fs.readFileSync(file, 'utf8');
   appendTry(f.hud, f.cwd, 'flag', { milestone: 'STREAM', slices: [{ id: 'BASE-01', text: 'delivered' }] });
-  assert.ok((await get('home')).waiting.some(w => w.value.includes('⚑ BASE-01')));
+  assert.deepEqual((await get('home')).waiting.map(w => w.value), ['Try it (waits on BASE-01, base/01)']);
+  assert.equal(new TryLog(f.hud).marks(f.cwd, [{ id: 'BASE-01', state: 'try', milestone: 'STREAM', text: 'delivered' }]).get('BASE-01'), 'flag');
   appendTry(f.hud, f.cwd, 'accept', { milestone: 'STREAM', slices: [{ id: 'BASE-01', text: 'delivered' }] });
   f.put(join(job, 'STATUS.json'), { state: 'waiting_orchestrator' });
   const accepted = await get('home');
@@ -344,34 +345,6 @@ test('Home shares the subject scan and project job facts; full working-tree prob
   assert.equal('at' in expired.ledger[0], false);
 });
 
-test('Home task ages query only uncached hashes, never an unchanged set of misses', async (t) => {
-  const f = makeTemp(t), dateA = '2026-11-12T10:00:00Z', dateB = '2026-11-13T10:00:00Z';
-  const [a, b] = initRepo(f.cwd, [
-    { file: 'a.txt', msg: 'first', date: dateA }, { file: 'b.txt', msg: 'second', date: dateB },
-  ]);
-  const calls = [], orig = childProcess.execFile;
-  childProcess.execFile = (file, args, ...rest) => { calls.push(args); return orig(file, args, ...rest); };
-  syncBuiltinESMExports();
-  t.after(() => { childProcess.execFile = orig; syncBuiltinESMExports(); });
-  const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
-  const write = (...hashes) => f.put(join(f.cwd, 'STATE.md'), '## Slices\n' + hashes.map((hash, i) =>
-    `- try · M4 · SLICE-${i} · landed (${hash})`).join('\n'));
-  const tick = (ms) => collector.collect('home-tasks', EMPTY_BOARD, NOW + ms);
-  write(a, '0000000');
-  assert.deepEqual((await tick(0)).ledger.map((r) => r.at), [Date.parse(dateA), undefined]);
-  await tick(5000);
-  write('0000000', a.toUpperCase());
-  assert.deepEqual((await tick(10000)).ledger.map((r) => r.at), [undefined, Date.parse(dateA)]);
-  assert.equal(calls.length, 1);
-  write(b, a);
-  assert.deepEqual((await tick(15000)).ledger.map((r) => r.at), [Date.parse(dateB), Date.parse(dateA)]);
-  write(); await tick(20000);
-  write(a, b); await tick(25000);
-  assert.deepEqual(calls.map((args) => args.slice(args.indexOf('--format=%h%x00%ct') + 1)), [
-    ['0000000', a, '--'], [b, '--'],
-  ]);
-});
-
 test('multiple ProjectCollectors, ProjectOverviews and Control share one JobIndexCache parse per job on the same HUD_HOME', async (t) => {
   const f = makeTemp(t);
   t.after(() => clearJobIndexCaches());
@@ -446,7 +419,7 @@ test('multiple ProjectCollectors, ProjectOverviews and Control share one JobInde
   assert.equal(updatedCtrl.radar.roleStats.imp.ok, 2);
 });
 
-test('Progress, To-try, Home, HTML board and TryLog read landed slices from .scratch tickets while keeping STATE rows as history', async (t) => {
+test('Progress, Home, HTML board and TryLog read landed slices from .scratch tickets while keeping STATE rows as history', async (t) => {
   const f = makeTemp(t);
   const git = (args, date) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
     cwd: f.cwd, stdio: 'pipe', encoding: 'utf8',
@@ -500,25 +473,24 @@ test('Progress, To-try, Home, HTML board and TryLog read landed slices from .scr
   assert.equal(full.counts.try, 2);
   assert.equal(full.slices.length, 0, 'landed ticket slices do not pollute in-flight Now slices');
 
-  // Home progress, Classic To-try and HTML review board only list ready-for-human (try) slices in To-try, not done (owner_try: no).
   const home = await collector.collect('home', EMPTY_BOARD, NOW);
-  const homeText = homeProgressRows(home, 80, 20, false, 'slice').map((r) => stripAnsi(r.text)).join('\n');
+  const homeText = homeProgressRows(home, 80, 20, false).map((r) => stripAnsi(r.text)).join('\n');
   assert.match(homeText, /1\/3/);
   assert.match(homeText, /✓ 1 accepted.*◇ 2 to try/);
-  const tryState = { ...initialMonitorState(), activeTab: 'project', prefs: { ...initialMonitorState().prefs, acceptance: 'slice' },
-    project: { ...initialMonitorState().project, view: { kind: 'progress', onlyTry: { scroll: 0 } } } };
-  const tryText = pageRows('progress', full, tryState, 80, NOW, EMPTY_BOARD).map((r) => stripAnsi(r.text)).join('\n');
-  assert.match(tryText, /ORCH-LEAN-2-02/);
-  assert.doesNotMatch(tryText, /ORCH-LEAN-2-01/);
-  const html = renderHtmlBoard({ projectName: 'Synthetic', root: f.cwd, project: full, workboard: EMPTY_BOARD, generatedAt: NOW, lang: 'en', acceptance: 'slice' });
+  const state = initialMonitorState();
+  state.project.folded = new Set(['task:milestone:ORCH-LEAN-2']);
+  const progress = pageRows('progress', full, state, 80, NOW, EMPTY_BOARD).map((r) => stripAnsi(r.text)).join('\n');
+  assert.match(progress, /ORCH-LEAN-2-02/);
+  assert.match(progress, /ORCH-LEAN-2-01/);
+  const html = renderHtmlBoard({ projectName: 'Synthetic', root: f.cwd, project: full, workboard: EMPTY_BOARD, generatedAt: NOW, lang: 'en' });
   assert.match(html, /ORCH-LEAN-2-02/);
   assert.match(html, /panel works/, 'HTML board links ticket checklist from ticketPath');
   assert.doesNotMatch(html, /<article class="card try"><header><span class="id">ORCH-LEAN-2-01</);
 
-  // Flagging and accepting a ticket-derived try slice works in panel, waiting settlement, and TryLog catch-up.
+  // An old flag still reaches TryLog readers, but no synthetic flag row is added to STATE Waiting.
   appendTry(f.hud, f.cwd, 'flag', { milestone: s2.milestone, slices: [{ id: s2.id, text: s2.text }] });
   const flagged = await collector.collect('home', EMPTY_BOARD, NOW + 1);
-  assert.ok(flagged.waiting.some((w) => w.value.includes('⚑ ORCH-LEAN-2-02')));
+  assert.deepEqual(flagged.waiting.map(w => w.value), ['Verify UI change (waits on ORCH-LEAN-2-02)']);
   assert.deepEqual(new TryLog(f.hud).changes(f.cwd), [`try flagged project ${s2.id}`]);
 
   appendTry(f.hud, f.cwd, 'accept', { milestone: s2.milestone, slices: [{ id: s2.id, text: s2.text }] });
@@ -534,5 +506,4 @@ test('Progress, To-try, Home, HTML board and TryLog read landed slices from .scr
   const overview = (await overviews.read([f.cwd], EMPTY_BOARD, NOW + 3)).get(f.cwd);
   assert.equal(overview.hasState, true);
   assert.equal(overview.counts.try, 2);
-  assert.equal(overview.tryTasks, 1);
 });

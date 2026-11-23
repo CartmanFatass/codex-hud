@@ -11,7 +11,6 @@ import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-
 import { initialHomeTab, initialProjectTab, initialControlTab, viewPrefs, reconcileMonitor, type MonitorState } from './monitor-state.js';
 export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
-import type { TryAction, TryTarget } from '../collectors/try-records.js';
 import type { MainTab } from './main-tabs.js';
 import type { ExpData, ExpEdit } from '../exp-config.js';
 export { monitorText, plainText, fit, pair, flowLines, squeeze, diffRows } from './monitor-text.js';
@@ -60,7 +59,6 @@ export interface MonitorRow {
   modelWindow?: { first: number; max: number; size: number; entries: { id: string; row: number }[]; wide?: boolean };
   harnessOff?: boolean;
   roleFact?: RoleFact;
-  tryTarget?: TryTarget;
 }
 export interface MonitorRect {
   id: MonitorPane | 'preview';
@@ -137,7 +135,6 @@ export interface MonitorData {
   project?: ProjectSnapshot;
   projectDisplayRoot?: string;
   projectWaiting?: number;
-  tryMarks?: ReadonlyMap<string, TryAction>;
   /** The shown project's own name, for the hub's top row. */
   projectName?: string;
   /** The projects `[` and `]` cycle through (the panel's own first); one or none means no switch. */
@@ -173,7 +170,7 @@ export interface MonitorOutcome {
     | { type: 'model-picked'; value: string }
     | { type: 'harness-switch'; id: string; off: boolean }
     | { type: 'role-switch'; role: string; enabled: boolean }
-    | { type: 'record-try'; action: TryAction | 'land'; target: TryTarget }
+    | { type: 'accept-all' }
     | { type: 'request-retry'; home: string; jobId: string }
     | { type: 'refresh-models' }
     | { type: 'brief-toggle' }

@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,21 +32,12 @@ import {
 } from '../../dist/mcp/task-bounds.js';
 import { Notifier, NOTIFIER_CACHE_LIMIT } from '../../dist/notify.js';
 import {
-  TRY_BRIEF_HASH_LIMIT,
-  TRY_BRIEF_LOOKED_LIMIT,
-  TryBriefs,
-} from '../../dist/collectors/try-brief.js';
-import {
   recordWarning,
   rememberClosedTab,
   WATCH_CLOSED_TABS_LIMIT,
   WATCH_WARNINGS_LIMIT,
 } from '../../dist/runtime/watch-runtime.js';
 import { ProjectOverviews } from '../../dist/collectors/project-visits.js';
-import {
-  HOME_TRY_DATES_LIMIT,
-  ProjectCollector,
-} from '../../dist/collectors/project-board.js';
 import {
   cacheGet,
   cachePut,
@@ -233,60 +223,6 @@ test('Notifier.lastFired drops settled jobs leaving the board and caps tracked k
   assert.equal(notifier.trackedCount, NOTIFIER_CACHE_LIMIT);
 });
 
-test('TryBriefs bounds both hashes and looked maps under root and slice churn', (t) => {
-  const root = fs.mkdtempSync(join(tmpdir(), 'hud-try-brief-cache-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  let now = 1_700_000_000_000;
-  const stubModel = {
-    submit() {
-      return { cancel() {}, result: Promise.resolve({ ok: false, error: 'stub' }) };
-    },
-  };
-  const briefs = new TryBriefs(stubModel, join(root, 'try-briefs.json'), () => {}, () => now);
-  briefs.configure(true, 'en');
-
-  // Churn roots past TRY_BRIEF_HASH_LIMIT.
-  for (let i = 0; i < TRY_BRIEF_HASH_LIMIT + 40; i++) {
-    const proj = `/synthetic/project-${i}`;
-    briefs.apply(proj, { ledger: [{ id: `S-${i}`, state: 'try', milestone: 'M1', text: `Slice ${i}` }] });
-  }
-  assert.equal(briefs.cacheSizes.hashes, TRY_BRIEF_HASH_LIMIT);
-
-  // Churn slices past TRY_BRIEF_LOOKED_LIMIT (with mayStart=true so looked entries stay populated).
-  for (let i = 0; i < TRY_BRIEF_LOOKED_LIMIT + 60; i++) {
-    now += 100;
-    const slice = { id: `S-${i}`, state: 'try', milestone: 'M1', text: `Slice ${i}` };
-    briefs.update('/synthetic/project-hot', [slice], () => true);
-    // Cancel active slot by toggling? No, let active stay under PENDING by checking looked growth:
-    // Actually when mayStart returns true, run() is async so active hits PENDING=3; test with resolved promises:
-  }
-  briefs.stop();
-  assert.equal(briefs.cacheSizes.looked, 0);
-});
-
-test('TryBriefs.looked stays bounded across >TRY_BRIEF_LOOKED_LIMIT completed/failed updates', async (t) => {
-  const root = fs.mkdtempSync(join(tmpdir(), 'hud-try-brief-looked-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  let now = 1_700_000_000_000;
-  const stubModel = {
-    submit() {
-      return { cancel() {}, result: Promise.resolve({ ok: false, error: 'stub' }) };
-    },
-  };
-  const briefs = new TryBriefs(stubModel, join(root, 'try-briefs.json'), () => {}, () => now);
-  briefs.configure(true, 'en');
-
-  for (let i = 0; i < TRY_BRIEF_LOOKED_LIMIT + 40; i++) {
-    now += 1000;
-    briefs.update('/synthetic/project-hot', [{ id: `S-${i}`, state: 'try', milestone: 'M1', text: `Slice ${i}` }]);
-    // Let the microtask/promise settle so `active` clears and `markLooked` runs.
-    await new Promise((r) => setImmediate(r));
-  }
-  assert.ok(briefs.cacheSizes.looked <= TRY_BRIEF_LOOKED_LIMIT, `expected <= ${TRY_BRIEF_LOOKED_LIMIT}, got ${briefs.cacheSizes.looked}`);
-});
-
 test('watch closedTabs and warnings stay bounded under churn', () => {
   const tabs = new Set();
   for (let i = 0; i < WATCH_CLOSED_TABS_LIMIT + 100; i++) {
@@ -360,49 +296,6 @@ test('ProjectOverviews.pool releases a project collector when its root leaves th
   await overviews.read(['/synthetic/a'], EMPTY_BOARD, 3000);
   await overviews.read(['/synthetic/a', '/synthetic/b'], EMPTY_BOARD, 4000);
   assert.deepEqual(created, ['/synthetic/lookup', '/synthetic/a', '/synthetic/b', '/synthetic/b']);
-});
-
-test('ProjectCollector.homeTryDates bounds cached commit dates with LRU eviction', async (t) => {
-  const root = fs.mkdtempSync(join(tmpdir(), 'hud-home-try-dates-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  const repo = join(root, 'repo');
-  const hudHome = join(root, 'hud');
-  fs.mkdirSync(repo, { recursive: true });
-  fs.mkdirSync(hudHome, { recursive: true });
-
-  execFileSync('git', ['init', '-q', repo]);
-  const totalCommits = HOME_TRY_DATES_LIMIT + 20;
-  const stream = [];
-  for (let i = 1; i <= totalCommits; i++) {
-    const ts = 1_700_000_000 + i * 60;
-    stream.push(
-      'commit refs/heads/main',
-      `committer Synthetic <synthetic@example.invalid> ${ts} +0000`,
-      'data 10',
-      `c-${String(i).padStart(8, '0')}`,
-      'M 100644 inline file.txt',
-      'data 8',
-      `v=${String(i).padStart(6, '0')}`
-    );
-  }
-  execFileSync('git', ['fast-import', '--quiet'], { cwd: repo, input: stream.join('\n') + '\n' });
-  execFileSync('git', ['checkout', '-q', 'main'], { cwd: repo });
-  const shas = execFileSync('git', ['rev-list', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim().split('\n');
-
-  const collector = new ProjectCollector(repo, hudHome, process.env, root);
-
-  // Churn more commits than HOME_TRY_DATES_LIMIT across ticks.
-  for (let offset = 0; offset < shas.length; offset += 64) {
-    const rows = shas
-      .slice(offset, offset + 64)
-      .map((sha, i) => `- try · M1 · SLICE-${offset + i} · synthetic (${sha.slice(0, 12)})`)
-      .join('\n');
-    fs.writeFileSync(join(repo, 'STATE.md'), `## Slices\n${rows}\n`);
-    const snap = await collector.collect('home-tasks', EMPTY_BOARD, 1_700_000_000_000 + offset * 1000);
-    assert.ok(snap.ledger.every((r) => typeof r.at === 'number'));
-  }
-  assert.equal(collector.homeTryDatesSize, HOME_TRY_DATES_LIMIT);
 });
 
 test('session-finder cachePut/cacheGet uses LRU eviction instead of FIFO', () => {

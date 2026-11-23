@@ -45,7 +45,7 @@ export function homeFrames(f) {
     tickets: [...f.data.tickets, ...['plan-a', 'plan-b'].map(slug => ({ slug, tickets: plan }))],
     ticketTotals: { doneFeatures: 31, totalFeatures: 34, doneTickets: 124, totalTickets: 138 } };
   for (const lang of ['en', 'zh']) {
-    const state = withState(sliceState(), { prefs: { panelLayout: 'split', acceptance: 'task' }, home: { split: { listCursor: 'home-progress:progress' } } });
+    const state = withState(sliceState(), { prefs: { panelLayout: 'split' }, home: { split: { listCursor: 'home-progress:progress' } } });
     frames[`rollup-40-${lang}`] = plain(f.render(40, lang, 36, state, data));
   }
   return frames;

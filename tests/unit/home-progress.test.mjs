@@ -41,9 +41,8 @@ test('Home frames at 52/80/120 EN/ZH: tickets shrink first, legend, bar, summary
     assert.match(text, /Synthetic milestone closing/);
     assert.match(text, /M3b/);
     assert.match(text, /native-tree.*2\/12/);
-    assert.match(text, /02 Home lanes[\s\S]*09 Vocabulary claimed[\s\S]*03 Inspector/, 'working before ready');
-    assert.match(text, lang === 'en' ? /\+2 queued/ : /\+2 待前序/, 'ordinary predecessors are counted, never dumped on Home');
-    assert.doesNotMatch(text, /Settings cleanup|Vocabulary ready-for-agent/);
+    assert.match(text, lang === 'en' ? /native-tree.*2\/12 · 2 working/ : /native-tree.*2\/12 · 2 工作中/);
+    assert.doesNotMatch(text, /02 Home lanes|Vocabulary|03 Inspector|Settings cleanup/, 'Home keeps only feature rollups');
     assert.match(text, lang === 'en' ? /◇ 1 to try/ : /◇ 1 待试用/, 'the legend is the current milestone\'s');
     assert.doesNotMatch(text, lang === 'en' ? /blocked 1/ : /受阻 1/);
     assert.doesNotMatch(compact(tall).map((r) => stripAnsi(r.text)).join('\n'), /NATIVE-TREE|ORPHAN|now:|Next|retired-tools|07 Vocabulary resolved|08 Vocabulary wontfix/);
@@ -90,16 +89,14 @@ test('Home milestone bar, single-line slice legend and project meter precede fea
     assert.doesNotMatch(legend[0], /◆|○/, 'no stalls or planned slices in this milestone');
     assert.match(lines[bar + 2], /^  (Tickets|工单) ━━─{6} 4\/14 +1\/2 /);
     assert.match(lines[bar + 4], /◐ native-tree ━─── +2\/12 · 2 /);
-    const task = plain(f.render(width, lang, base + 26, withState(sliceState(), { prefs: { acceptance: 'task' } }))).join('\n');
-    assert.match(task, /native-tree ━─── +2\/12/);
-    assert.doesNotMatch(task, /02 Home lanes|03 Inspector|05 Shortcuts/);
+    assert.doesNotMatch(lines.join('\n'), /02 Home lanes|03 Inspector|05 Shortcuts/);
   }
 });
-test('at task detail Split counts milestone trials by task, its bar by slice, and all tickets before folded plans', async (t) => {
+test('Split counts pending slices and all tickets before folded plans, without a pending-work list', async (t) => {
   const f = await fixture(t), frames = homeFrames(f);
   for (const lang of ['en', 'zh']) {
     const text = frames[`rollup-40-${lang}`].join('\n');
-    assert.match(text, lang === 'en' ? /0\.4\.0 · 2 (?:to )?try · 2 (live|working)/ : /0\.4\.0 · 2 待试用 · 2 工作中/);
+    assert.match(text, lang === 'en' ? /0\.4\.0 · 4 (?:to )?try · 2 (live|working)/ : /0\.4\.0 · 4 待试用 · 2 工作中/);
     assert.match(text, /█+▒+█+░+ 14\/26/);
     assert.match(text, /✓ 14.*◇ 4.*◐ 2.*○ 6/);
     assert.match(text, /124\/138 +31\/34 /);
@@ -195,7 +192,7 @@ test('Home joins cached STATE, spec, tickets, HEAD and jobs; no control or agent
   assert.deepEqual(spawned, ['git'], 'no git call without a HEAD change, even past the Project gate');
   assert.equal(await collector.collect(false, f.board, NOW + 60002), undefined);
 });
-test('live panel stays Home-only at slice detail: only the HEAD-keyed subject scan invokes git', async (t) => {
+test('live panel stays Home-only: only the HEAD-keyed subject scan invokes git', async (t) => {
   const f = await fixture(t), runner = join(f.root, 'home-only.mjs'), log = join(f.root, 'git-spawns');
   f.put(join(f.root, 'bin/git'), `#!${process.execPath}\nimport fs from 'node:fs'; fs.appendFileSync(${JSON.stringify(log)}, 'git\\n'); process.exit(1);\n`);
   fs.chmodSync(join(f.root, 'bin/git'), 0o700);
@@ -213,7 +210,7 @@ ProjectCollector.prototype.collect = async function(mode, ...args) {
 await runLivePage();
 `);
   const settings = join(f.root, 'settings.json');
-  f.put(settings, { modelEnabled: false, refreshMs: 100, acceptance: 'slice' });
+  f.put(settings, { modelEnabled: false, refreshMs: 100 });
   const child = childProcess.spawn(process.execPath, [runner], { env: { ...process.env, ...f.env,
     PATH: `${join(f.root, 'bin')}:${process.env.PATH}`, CODEX_HUD_CWD: f.cwd, HUD_SETTINGS_PATH: settings,
     CODEX_HUD_STANDALONE_PANEL: '1' }, stdio: ['pipe', 'pipe', 'pipe'] });

@@ -81,7 +81,9 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
   // Crumb click on row 0 returns to the Project hub
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: 0 }).state);
   assert.equal(projectPageOf(frame.state), undefined);
-  // First click on an unselected non-hub row (project:fold:...) selects it without folding; second click toggles fold (Enter)
+  // A task row on Progress selects on the first click, and only then toggles on a second click.
+  frame = draw(send(frame, { type: 'key', key: 'enter' }).state);
+  assert.equal(projectPageOf(frame.state), 'progress');
   const foldRow = pane().rows
     .map((r, i) => ({ item: r.item, y: pane().y + i - pane().offset }))
     .find((d) => d.item?.startsWith('project:fold:') && d.item !== frame.state.project.nav.cursor);
@@ -96,6 +98,7 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
   assert.equal(frame.state.project.folded?.has(foldId) ?? false, !foldedBefore, 'second click performs Enter action');
 
   // 4. Wheel scroll on Home scrolls viewport without moving selection
+  frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: 0 }).state);
   const homeTab = frame.controls.find((c) => c.kind === 'board-home');
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: homeTab.x, y: homeTab.y }).state);
   const shortFrame = draw(frame.state, 6);

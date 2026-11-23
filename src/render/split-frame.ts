@@ -27,8 +27,6 @@ export interface SplitScene {
   sub?: string;
   /** A picker in the preview can give its space to the picker without changing the saved list focus. */
   compact?: boolean;
-  /** Outside it: the preview row `y` and `n` act on (the next to-try slice), painted as the cursor is. */
-  act?: string;
   /** What the preview's scroll belongs to: another page or entry starts it at the top. */
   scope: string;
   hints: FooterHints;
@@ -99,7 +97,7 @@ export function paintSplit(
   }
   const ruleAt = listTop + listRoom + (gaps ? 1 : 0), previewTop = ruleAt + 1;
   if (ruleAt < height - 1) frame.lines[ruleAt] = section(scene.rule.label, width, scene.rule.right ?? '').text;
-  const band = scene.sub ?? scene.act, total = scene.preview.length, scrolls = total > previewRoom && width > 1;
+  const band = scene.sub, total = scene.preview.length, scrolls = total > previewRoom && width > 1;
   // The thumb is as long as the share of the preview in view, and sits where the window is.
   const thumb = Math.max(1, Math.round((previewRoom * previewRoom) / total)), thumbAt = Math.round((previewAt / (total - previewRoom || 1)) * (previewRoom - thumb));
   for (let i = 0; i < previewRoom; i++) {

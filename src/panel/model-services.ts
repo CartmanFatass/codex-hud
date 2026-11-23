@@ -5,7 +5,6 @@ import { JobSentences } from '../collectors/job-sentences.js';
 import { ModelProbe, apiSettings } from '../collectors/model-probe.js';
 import { SmallModel, modelHttpRequest } from '../collectors/small-model.js';
 import { WaitingBriefs } from '../collectors/waiting-briefs.js';
-import { TryBriefs } from '../collectors/try-brief.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { getHudDisplayHome } from '../hud-home.js';
 import { resolveLanguage } from '../render/i18n.js';
@@ -22,7 +21,6 @@ export function createPanelModelServices(home: string, render: () => void, isClo
   const model = new SmallModel({ dir, onChange: () => modelChanged() });
   const probe = new ModelProbe({ dir }, render);
   const jobSentences = new JobSentences(model, path.join(dir, 'job-sentences.json'), render);
-  const tryBriefs = new TryBriefs(model, path.join(dir, 'try-briefs.json'), render);
   const waitingBriefs = new WaitingBriefs(model, path.join(dir, 'waiting-briefs.json'), render);
   const decisionTitles = new DecisionTitles(model, path.join(dir, 'decision-titles.json'), render);
   const decisionLabels = new DecisionLabels(dir, render);
@@ -46,7 +44,7 @@ export function createPanelModelServices(home: string, render: () => void, isClo
   };
 
   return {
-    probe, tryBriefs, waitingBriefs, apply: (board: WorkboardSnapshot) => waitingBriefs.board(apply(board)), refreshModelLists,
+    probe, waitingBriefs, apply: (board: WorkboardSnapshot) => waitingBriefs.board(apply(board)), refreshModelLists,
     get enabled() { return modelOn; },
     onChange(callback: () => void) { modelChanged = callback; },
     configure(settings: HudSettings) {
@@ -61,7 +59,6 @@ export function createPanelModelServices(home: string, render: () => void, isClo
       decisionLabels.configure(settings.modelEnabled, settings.decisionCallsPerHour);
       jobSentences.configure(modelOn, resolveLanguage(settings.language), settings.summaryIntervalMinutes);
       waitingBriefs.configure(modelOn, resolveLanguage(settings.language));
-      tryBriefs.configure(modelOn, resolveLanguage(settings.language));
       decisionTitles.configure(modelOn, resolveLanguage(settings.language));
     },
     modelHealth: () => !modelOn ? undefined : model.diagnostics(),
@@ -77,7 +74,6 @@ export function createPanelModelServices(home: string, render: () => void, isClo
       decisionTitles.stop();
       decisionLabels.stop();
       jobSentences.stop();
-      tryBriefs.stop();
       waitingBriefs.stop();
     },
     syncDiscovery(shown: boolean) {
@@ -86,7 +82,6 @@ export function createPanelModelServices(home: string, render: () => void, isClo
     },
     dispose() {
       jobSentences.stop();
-      tryBriefs.stop();
       waitingBriefs.stop();
       decisionTitles.stop();
       decisionLabels.stop();

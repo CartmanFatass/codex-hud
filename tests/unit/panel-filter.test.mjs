@@ -99,10 +99,10 @@ test('Esc stops typing, then clears the filter, and only then leaves the page', 
   const f = await busy(t);
   const d = drive(f, page('progress'), { data: f.rich });
   d.press('/'); d.type('try');
-  assert.match(d.bar(), /^\/ try▌ +5 matches$/);
+  assert.match(d.bar(), /^\/ try▌ +3 matches$/);
   d.esc();
   assert.deepEqual([tabState(d.state)?.filter?.editing, tabState(d.state)?.filter?.query, projectPageOf(d.state)], [false, 'try', 'progress'], 'the first Esc stops typing and keeps the filter');
-  assert.match(d.bar(), /^\/ try +5 matches · esc clear$/);
+  assert.match(d.bar(), /^\/ try +3 matches · esc clear$/);
   d.esc();
   assert.deepEqual([tabState(d.state)?.filter?.editing, tabState(d.state)?.filter?.query, projectPageOf(d.state)], [undefined, undefined, 'progress'], 'the second clears it, on the same page');
   assert.doesNotMatch(d.bar(), /^\//);
@@ -152,27 +152,27 @@ test('Progress filters slices by id, milestone, text, role and state, Tickets by
   for (const layout of [{}, { prefs: { panelLayout: 'split' } }]) {
     const progress = (q) => count(page('progress', layout), f.rich, q), tickets = (q) => count(page('tickets', layout), f.data, q);
     assert.equal(progress('PAGE-TWO').n, 1, 'id');
-    assert.equal(progress('M4').n, 4, 'milestone');
+    assert.equal(progress('M4').n, 1, 'matching milestone task');
     assert.equal(progress('SENTENCE').n, 1);
     assert.equal(progress('watcher survives').n, 1, 'text');
     assert.equal(progress('blocked').n, 1, 'state');
-    assert.equal(progress('to try').n, 5, 'the state as the page says it');
+    assert.equal(progress('to try').n, 3, 'matching tasks with a pending slice');
     assert.equal(progress('imp').n, 1, 'a job no slice shows, by its role');
     assert.match(progress('imp').text, /Tidy the synthetic docs/);
     assert.doesNotMatch(progress('imp').text, /PAGE-ONE|Next|A short bullet/);
     assert.equal(progress('nothing like this').n, 0);
-    assert.equal(tickets('retired-tools').n, 2, 'feature');
+    assert.equal(tickets('retired-tools').n, 1, 'feature');
     assert.equal(tickets('04').n, 1, 'number');
-    assert.match(tickets('04').text, /04 Settings cleanup/);
+    assert.match(tickets('04').text, /native-tree/);
     assert.equal(tickets('shortcuts').n, 1, 'title');
     assert.equal(tickets('triaging').n, 1, 'status');
-    assert.equal(tickets('03').n, 3, 'number, and the two tickets it blocks');
-  assert.equal(tickets('Inspector').n, 1);
-    assert.doesNotMatch(tickets('03').text, /Home lanes/);
+    assert.equal(tickets('03').n, 1, 'number and blockers match the same feature');
+    assert.equal(tickets('Inspector').n, 1);
+    assert.doesNotMatch(tickets('03').text, /retired-tools/);
   }
 });
 
-test('a role match on a joined job keeps its selectable Split Progress slice and counts it once', async (t) => {
+test('a role match on a joined job keeps its task and counts it once', async (t) => {
   const f = await busy(t), base = f.rich, id = 'build-feature';
   const job = { jobId: 'j00000000000000bb', role: 'frontend-imp', state: 'working', asking: false };
   const project = { ...base,
@@ -183,7 +183,7 @@ test('a role match on a joined job keeps its selectable Split Progress slice and
   const d = drive(f, page('progress', { prefs: { panelLayout: 'split' } }), { data: project, width: 60 });
   d.press('/'); d.type('frontend-imp'); d.enter();
   assert.match(d.bar(), /^\/ frontend-imp +1 match · esc clear$/);
-  assert.equal(d.state.project.nav.cursor, `project:slice:${id}`);
+  assert.equal(d.state.project.nav.cursor, `project:fold:task:milestone:${project.ladder.current}`);
   assert.match(d.lines().join('\n'), /add the feature/);
 });
 

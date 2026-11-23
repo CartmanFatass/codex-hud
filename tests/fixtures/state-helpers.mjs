@@ -1,6 +1,6 @@
 import { initialMonitorState } from '../../dist/render/monitor.js';
 
-export const sliceState = () => withState(initialMonitorState(), { prefs: { acceptance: 'slice' } });
+export const sliceState = initialMonitorState;
 
 /** Compose nested panel fixture patches while retaining the base view's navigation and preferences. */
 export function withState(...parts) {

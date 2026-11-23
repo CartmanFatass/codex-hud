@@ -1,7 +1,6 @@
 /** The panel's Project collectors: one per visited root, the panel's own never dropped, at most `max` in all. */
 import { insideRoot, type ProjectCollector, type ProjectSnapshot } from './project-board.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
-import { acceptanceTasks } from './acceptance-tasks.js';
 
 export class ProjectVisits {
   private readonly seen = new Map<string, { collector: ProjectCollector; snapshot?: ProjectSnapshot; control?: ProjectSnapshot }>();
@@ -44,12 +43,10 @@ export class ProjectVisits {
 export interface ProjectOverview {
   hasState: boolean; milestone?: string; waiting: number; running: number;
   counts: ProjectSnapshot['counts']; open: number; at?: number;
-  tryTasks?: number;
 }
 const overviewOf = (data: ProjectSnapshot, running: number): ProjectOverview => {
   const newest = Math.max(data.updatedAt ?? 0, data.tickets[0]?.at ?? 0);
   return { hasState: !!data.statePath || data.ledger.length > 0, milestone: data.ladder.current, waiting: data.waiting.length, running, counts: data.counts,
-    tryTasks: acceptanceTasks(data.ledger).length,
     open: data.tickets.flatMap((f) => f.tickets).filter((r) => r.state !== 'done' && r.state !== 'dropped').length,
     ...(newest ? { at: newest } : {}) };
 };

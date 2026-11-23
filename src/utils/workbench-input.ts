@@ -108,8 +108,6 @@ export class WorkbenchInputDecoder {
                   f: 'changes',
                   '[': 'project-prev',
                   ']': 'project-next',
-                  y: 'try-accept',
-                  n: 'try-flag',
                   // Control: presets on role rows, structural edits in the focused chain.
                   c: 'role-preset',
                   C: 'role-preset-prev',

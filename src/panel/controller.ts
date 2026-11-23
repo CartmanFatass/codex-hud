@@ -10,7 +10,6 @@ import { RolloutParser, type RolloutParseResult } from '../collectors/rollout.js
 import { SessionFinder, findRolloutsInDaysYielding, findSessionByThreadId, treeLookbackDays } from '../collectors/session-finder.js';
 import { buildSubagentTreeYielding, useTreeScanStore, flushTreeScans } from '../collectors/subagent-tree.js';
 import { TreeScanStore } from '../collectors/tree-scan-store.js';
-import { TryLog } from '../collectors/try-records.js';
 import { worktreeSources, type WorktreesSnapshot } from '../collectors/worktrees.js';
 import { makeSourceId } from '../core/identity.js';
 import { getHudDisplayHome, getHudHome } from '../hud-home.js';
@@ -21,7 +20,7 @@ import { t, setLanguage, resolveLanguage } from '../render/i18n.js';
 import { controlShown, expShown } from '../render/main-tabs.js';
 import { renderMonitor, fit, initialMonitorState, handleMonitorInput, type MonitorFrame, type MonitorState } from '../render/monitor.js';
 import { acceptsMonitorInput, applyViewPrefs, blocksReload, filterBatchInputs, reconcileMonitor } from '../render/monitor-state.js';
-import { projectListOpen, projectPageOf } from '../render/project-view.js';
+import { projectListOpen } from '../render/project-view.js';
 import { projectList } from '../roles/projects.js';
 import { parseRosterRoot, formatRosterRoot } from '../roles/selection.js';
 import { defaultSettings, saveSettings } from '../settings.js';
@@ -94,7 +93,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const parser = new RolloutParser(40);
   // One collector per project the tab has shown (this one's always); Home reads only the panel's own.
   const visits = new ProjectVisits(HUD_CWD_REAL, (root) => new ProjectCollector(root, jobPipeline.home));
-  const tries = new TryLog(jobPipeline.home);
   let projects = projectList(jobPipeline.home, HUD_CWD_REAL);
   let projectsAt = Date.now();
   // The Projects list reads every listed project lightly, and only while it is open.
@@ -176,12 +174,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     const control = controlShown(painted, settingsFlow.open), chosen = shownRoot();
     const shown = control ? { root: chosen, snapshot: visits.control(chosen) }
       : painted.activeTab === 'project' ? visits.shown(chosen) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
-    const page = projectPageOf(painted);
-    const taskMode = painted.prefs.acceptance !== 'slice';
-    const showTries = !page || page === 'progress';
-    const homeTries = taskMode && painted.activeTab === 'home' && !painted.subpage && !painted.help && !settingsFlow.open;
-    const tryMarks = (homeTries || projectShown(painted, settingsFlow.open) && !listing(painted) && showTries) && shown.snapshot
-      ? tries.marks(shown.root, shown.snapshot.ledger) : undefined;
     const output = time('render', () => {
       const width = process.stdout.columns || 30, height = process.stdout.rows || 24;
       const settingsLines = settingsFlow.paint(width, height, () => ({
@@ -202,10 +194,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         state: painted,
         worktrees,
         expData: expShown(painted) ? expData : undefined,
-        project: control ? shown.snapshot : models.waitingBriefs.project(models.tryBriefs.apply(shown.root, shown.snapshot)),
+        project: control ? shown.snapshot : models.waitingBriefs.project(shown.snapshot),
         projectDisplayRoot: shown.root,
         projectWaiting: control ? visits.snapshot(chosen)?.waiting.length : undefined,
-        tryMarks,
         projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
         projects: listing(painted) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
         error,
@@ -331,9 +322,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const root = shown || control ? shownRoot() : HUD_CWD_REAL;
       const visit = visits.visit(root);
       const projectFacts = await visit.collector.collect(
-        control ? 'control' : shown ? full : !state.subpage && !state.help && !settingsFlow.open
-          ? state.prefs.acceptance === 'slice' ? 'home' : 'home-tasks'
-          : false,
+        control ? 'control' : shown ? full : !state.subpage && !state.help && !settingsFlow.open ? 'home' : false,
         jobPipeline.workboard(tree),
         Date.now()
       );
@@ -344,8 +333,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const stillShown = () => !isClosed() && !state.subpage && !state.help && !settingsFlow.open &&
         (state.activeTab === 'home' ? root === HUD_CWD_REAL : projectShown(state) && !listing(state) && shownRoot() === root);
       if (projectFacts && !control && stillShown()) {
-        models.tryBriefs.update(root, projectFacts.ledger, stillShown);
-        models.waitingBriefs.update(board, projectFacts, state.prefs.acceptance === 'slice' || projectShown(state));
+        models.waitingBriefs.update(board, projectFacts, projectShown(state));
       } else if (inspector() && !settingsFlow.open) models.waitingBriefs.update(board);
       error = settingsError || roleNotice || null;
     } catch (err) {
@@ -425,7 +413,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     notice(text) { roleNotice = text; error = text || settingsError || null; },
     boardNotice(text) { boardNotice = text; },
     error(text) { error = text; },
-    boardInput: () => ({ acceptance: settings.acceptance, workboard: displayBoard(), briefs: models.tryBriefs }),
+    boardInput: () => ({ workboard: displayBoard() }),
     refreshModels: () => models.refreshModelLists(true),
     toggleBriefs() {
       try {

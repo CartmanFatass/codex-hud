@@ -2,7 +2,7 @@
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
 import { closeSubpage, copyControlTab, controlRoleItem, controlRoleOf, harnessFold, homeAnchor, homeCursor, homeTarget,
-  onlyTry, openSubpage, switchProject, transitionProjectView, transitionTab, type OverlayState, type ProjectSubPage } from './monitor-state.js';
+  openSubpage, switchProject, transitionProjectView, transitionTab, type OverlayState, type ProjectSubPage } from './monitor-state.js';
 import { targetKey, type WorkTarget } from '../collectors/workboard-types.js';
 import { monitorRowAt } from './monitor-input.js';
 import { projectWorkCard } from '../collectors/work-card.js';
@@ -12,7 +12,7 @@ import type { RoleFact } from '../roles/role-control.js';
 import { openQuickModel, roleModelIndex } from './chain-input.js';
 import { splitHomeInput, splitProjectInput } from './split-input.js';
 import { join } from 'node:path';
-import { tryInput } from './try-input.js';
+import { ACCEPT_ALL } from './inbox-project.js';
 import { openJobAction } from './job-actions.js';
 import { controlShown, mainTabOf, mainTabs, type MainTab } from './main-tabs.js';
 import { expInput } from './exp-view.js';
@@ -66,21 +66,12 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const frame = ctx.frame,
     boardFrame = frame?.workboard;
   if (!boardFrame) return null;
-  const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.text === 'm' && next.activeTab !== 'control' ? 'request-land' : input.key : '';
+  const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.key : '';
   const main = !next.subpage, classic = next.prefs.panelLayout !== 'split';
   const inspector = next.subpage?.kind === 'inspector' ? next.subpage : undefined;
   const goTab = (tab: MainTab = 'home') => { next = transitionTab(next, tab); };
   const goProject = (page?: ProjectSubPage, cursor?: string) => {
     next = transitionProjectView(next, page ? { kind: page } : { kind: 'hub' }, { cursor });
-  };
-  // Progress's to-try filter keeps the full feed's place until it is turned off.
-  const tryOnly = () => {
-    const { view, nav } = next.project;
-    if (view.kind !== 'progress') return;
-    const full = view.onlyTry;
-    next.project = { ...next.project, trySelection: undefined,
-      view: { kind: 'progress', onlyTry: full ? undefined : { cursor: nav.cursor, scroll: nav.scroll } },
-      nav: { ...nav, cursor: full ? full.cursor : 'project:try', scroll: full?.scroll ?? 0, revealed: full?.cursor } };
   };
   const readWait = (index: number) => {
     next = transitionProjectView(next, { kind: 'waiting', index }, { cursor: `project:wait:${index}:0` });
@@ -180,7 +171,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return expInput(next, input, ctx) ?? result();
   }
   if (key === 'changes') {
-    if (next.activeTab === 'home' || next.activeTab === 'project') next[next.activeTab].trySelection = undefined;
     next = openSubpage(next, { kind: 'changes', scroll: next.subpage?.kind === 'changes' ? next.subpage.scroll : next.lastChangesScroll });
     return result();
   }
@@ -296,7 +286,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       } else if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectSubPage);
-      else if (classic && row?.item === 'project:try') tryOnly();
+      else if (row?.item === ACCEPT_ALL) return { type: 'accept-all' as const };
       else if (/^project:wait:\d+$/.test(row?.item ?? '')) readWait(Number(row!.item!.slice(13)));
       else if (row?.item?.startsWith('project:fold:')) toggleFold(row.item.slice(13));
       else if (row?.files) return { type: 'open-files' as const, files: row.files };
@@ -317,7 +307,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           const again = row.item === cursor;
           select(row.item);
           // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
-          return result(again || /^project:(page:|list:|switch$|try$|wait:\d+$)/.test(row.item) ? activate(row) : undefined);
+          return result(again || /^project:(page:|list:|switch$|wait:\d+$)/.test(row.item) ? activate(row) : undefined);
         }
       }
       return result();
@@ -332,25 +322,12 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       select(rows[key === 'home' ? 0 : key === 'end' ? rows.length - 1 : Math.max(0, Math.min(rows.length - 1, at + step))]?.item);
       return result();
     }
-    if (!control && classic && projectPageOf(next) === 'progress') {
-      if (input.type === 'key' && input.text === 't') {
-        tryOnly();
-        return result();
-      }
-      const tried = tryInput(next, key, rows[at]);
-      if (tried) return tried;
-    }
-    if (!control && classic && !projectPageOf(next) && !listed) {
-      const tried = tryInput(next, key, rows[at]);
-      if (tried) return tried;
-    }
     if (control) {
       if (key === 'reset') return result({ type: 'refresh-models' });
       return ['help', 'settings'].includes(key) ? null : result();
     }
     if (key === 'escape' && (projectPageOf(next) || listed || (next.project.fromProjectsList && frame?.projects))) {
       if (listed) showList(false);
-      else if (classic && onlyTry(next.project.view)) tryOnly();
       else if (projectPageOf(next)) goProject();
       else showList(true);
       return result();
@@ -362,12 +339,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const anchor = () => homeAnchor(next.home);
   const selected = () => homeTarget(next.home);
   const setAnchor = (item?: string) => { next.home.cursor = homeCursor(selected(), item); };
-  const homeTry = boardFrame.rows.find((r) => r.item === anchor() && r.tryTarget);
-  if (main && (homeTry || next.home.trySelection) && !(key === 'space' && !homeTry)) {
-    const tried = tryInput(next, key, homeTry);
-    if (tried) return tried;
-    if (key === 'open-session' && homeTry?.files) return result({ type: 'open-files', files: homeTry.files });
-  }
   const inspect = () => {
     const target = selected();
     if (!target || target.kind === 'decision' || anchor()) return;
@@ -432,17 +403,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // A ticket row opens the Tickets page where it was left: its lanes cross features, so no feature row is there to rest on.
     goProject('tickets');
   };
-  const taskStop = (item?: string) => item?.startsWith('project:fold:task:');
   // Cards expand in place; the compact progress block opens its Project destination.
   const activate = (target = selected()) => {
-    if (taskStop(anchor())) {
-      const item = anchor()!;
-      goTab('project');
-      useProject(undefined);
-      goProject('progress', item);
-      next.project.folded = new Set([...(next.project.folded ?? []), item.slice('project:fold:'.length)]);
-      return;
-    }
     if (anchor()?.startsWith('home-progress:')) return openProgress(anchor()!);
     if (anchor()) {
       toggle(anchor()!);
@@ -455,13 +417,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.home.foldedLanes = folded;
   };
   if (next.prefs.panelLayout === 'split' && main && frame?.panes.some((p) => p.id === 'preview')) {
-    const out = splitHomeInput(next, input, key, ctx, result, { toggle: (item) => {
-      if (/^project:fold:(task|ledger):/.test(item)) {
-        const id = item.slice('project:fold:'.length), expanded = new Set(next.home.expandedTasks);
-        if (!expanded.delete(id)) expanded.add(id);
-        next.home.expandedTasks = expanded;
-      } else toggle(item);
-    }, openProgress });
+    const out = splitHomeInput(next, input, key, ctx, result, { toggle, openProgress });
     if (out) return out;
   }
   if (input.type === 'mouse') {
@@ -498,12 +454,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     const row = monitorRowAt(pane, input.x, input.y),
       item = control?.kind === 'board-pick' ? control.item : row?.item;
-    if (item && taskStop(item)) {
-      const again = anchor() === item;
-      setAnchor(item);
-      if (again) activate();
-      return result();
-    }
     if (item?.startsWith('home-progress:')) {
       openProgress(item);
       return result();
@@ -565,7 +515,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const index =
       key === 'home' ? 0 : key === 'end' ? items.length - 1 : Math.max(0, Math.min(items.length - 1, at + step));
     const item = items[index];
-    if (item?.startsWith('home-progress:') || item?.startsWith('original:') || taskStop(item)) {
+    if (item?.startsWith('home-progress:') || item?.startsWith('original:')) {
       setAnchor(item);
       next.home.revealed = undefined;
       return result();

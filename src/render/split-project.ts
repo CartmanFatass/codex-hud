@@ -1,70 +1,35 @@
 /** Split Project and shared list/preview navigation for Project and Control. */
-import type { LedgerSlice, ProjectSnapshot } from '../collectors/project-board.js';
+import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import type { ClassicSplitNav } from './monitor-state.js';
-import { briefStack, clampClean, clampLines, cutTicketTitle, landedMark, landedNewest, ledgerText, ledgerFoldItem, newestTasks, roleInk, sinceText,
-  sliceInk, trySentence, ticketRows, unlisted, unsliced, ticketPreview, projectItem, trySelectionMark, taskDetailRows, taskItem, taskLabel,
+import { clampLines, roleInk, sliceInk, ticketRows, unlisted, unsliced, projectItem, taskItem, taskLabel,
   progressTasks, progressTaskHeader, progressTaskDetails, progressTasksHeading, sliceDetailRows, featureItem, featureRow,
   type ProjectPage } from './project-view.js';
 import { glyph, placeRows, placeTarget, radarFacts, roleToday } from './control-view.js';
-import { inboxHubPart, inboxProgressPart } from './inbox-project.js';
-import type { TryAction } from '../collectors/try-records.js';
+import { inboxHubPart } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { splitItems, type SplitScene } from './split-frame.js';
 import { boardRow, kvRows, mark, minuteAge, section } from './workboard-rows.js';
 import { fit, flowLines, monitorText, pair } from './monitor-text.js';
-import { theme, visualLength } from './colors.js';
+import { theme } from './colors.js';
 import { t } from './i18n.js';
 import { basename } from 'node:path';
 
-export type Shown = { label: string; right?: string; rows: MonitorRow[]; act?: string; /** The footer while the keys are in the list, where the row's own keys differ from the page's. */ hints?: readonly string[] };
+export type Shown = { label: string; right?: string; rows: MonitorRow[]; /** The footer while the keys are in the list, where the row's own keys differ from the page's. */ hints?: readonly string[] };
 export interface Part { list: MonitorRow[]; start?: string; preview: (cursor?: string) => Shown; hints: readonly string[]; focusHints?: readonly string[] }
-export const TRY_ACTIONS = ['Space mark', 'y accept', 'n flag', 'm request land'] as const;
 export const HUB_HINTS = ['⏎ open', '[ ] project'] as const;
-export const HUB_TRY_HINTS = [...TRY_ACTIONS, ...HUB_HINTS];
-export const PROJECT_FILE_HINTS = ['⏎ open file', 'Esc back'] as const;
-export const LEDGER_FOCUS_HINTS = ['⏎ fold / unfold the ledger line', 'Esc back'] as const;
+const PROJECT_FILE_HINTS = ['⏎ open file', 'Esc back'] as const;
 const muted = (text: string) => theme.board.muted(text);
 const plain = (text: string, width: number): MonitorRow => ({ text: fit(text, width) });
 const indent = (text: string, width: number, max: number) => clampLines(text, width - 2, max).lines.map((l) => plain('  ' + l, width));
-const tryTotals = (n: number) => (n ? t('{n} to try', { n }) : '');
 
-/** To-try slices for the hub's Progress preview: `Space`/`y`/`n` act on `act` or the focused row. */
-export function hubTryRows(data: ProjectSnapshot, state: MonitorState, width: number, now: number, marks?: ReadonlyMap<string, TryAction>) {
-  const queue = landedNewest(data).filter(({ r }) => r.state === 'try');
-  const todo = queue.filter(({ r }) => !marks?.get(r.id)), done = queue.filter(({ r }) => marks?.get(r.id));
-  const tryRows = ({ r }: { r: LedgerSlice }, act: boolean): MonitorRow[] => {
-    const item = `project:try:${r.id}`, sentence = trySentence(r);
-    const head = `  ${trySelectionMark(state, item)}${landedMark(r, marks?.get(r.id))} ${monitorText(r.id)}`, age = muted(sinceText(r.at, now)), body = monitorText(ledgerText(r));
-    const fits = visualLength(head) + 2 + visualLength(body) + visualLength(age) + 1 <= width;
-    const lines = sentence ? briefStack(head, sentence, age, width) : fits && body ? [pair(`${head}  ${muted(body)}`, age, width)]
-      : [pair(head, age, width), ...clampClean(body, width - 4, Infinity).lines.map((l) => fit('    ' + muted(l), width))];
-    const file = r.path ?? data.statePath;
-    return lines.map((text) => ({ item, ...(file ? { files: [file] } : {}), ...(act ? { tryTarget: { milestone: r.milestone, slices: [r] } } : {}), text }));
-  };
-  return {
-    rows: queue.length ? [boardRow(''), plain(muted(t('To try')), width), ...todo.flatMap((x) => tryRows(x, true)), ...done.flatMap((x) => tryRows(x, false))] : [],
-    act: todo.length ? `project:try:${todo[0].r.id}` : undefined,
-  };
-}
-
-const PROGRESS_FOLD_HINTS = [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file'];
-const TRY_HINTS = [...TRY_ACTIONS, ...PROJECT_FILE_HINTS];
 /** Preview for a slice, Next, or unsliced job on Split Project. */
-export function slicePreview(input: MonitorData, data: ProjectSnapshot, state: MonitorState, board: WorkboardSnapshot, width: number, now: number, cursor?: string): Shown {
-  if (cursor?.startsWith('project:fold:task:')) {
-    const task = newestTasks(data).find((group) => taskItem(group) === cursor);
-    if (task) {
-      const rows = taskDetailRows(task, state, width, now, input.tryMarks);
-      return { label: taskLabel(task), rows, hints: rows.some((r) => r.item) ? PROGRESS_FOLD_HINTS : [...TRY_ACTIONS, 'Esc back', 'o file'] };
-    }
-  }
+export function slicePreview(input: MonitorData, data: ProjectSnapshot, board: WorkboardSnapshot, width: number, now: number, cursor?: string): Shown {
   const id = /^project:slice:(.+)$/.exec(cursor ?? '')?.[1], r = data.ledger.find((x) => x.id === id);
   if (r) {
-    const rows = sliceDetailRows(r, data, state, width, now, board, input.modelEnabled);
-    return { label: monitorText(r.id), right: `${t(r.state === 'try' ? 'to try' : r.state)}${NO_MILESTONE.test(r.milestone) ? '' : ' · ' + monitorText(r.milestone)}`, rows,
-      ...(r.state !== 'try' ? {} : { hints: rows.some((x) => x.item === ledgerFoldItem(r)) ? PROGRESS_FOLD_HINTS : TRY_HINTS }) };
+    const rows = sliceDetailRows(r, data, width, now, board, input.modelEnabled);
+    return { label: monitorText(r.id), right: `${t(r.state === 'try' ? 'to try' : r.state)}${NO_MILESTONE.test(r.milestone) ? '' : ' · ' + monitorText(r.milestone)}`, rows };
   }
   if (cursor === 'split:next') return { label: t('Next'), right: String(data.next.length), rows: data.next.flatMap((n) => clampLines(n.value, width - 4, 2).lines.map((l, k) => plain(`${k ? '    ' : `  ${mark('→', '>')} `}${l}`, width))) };
   const job = data.active.find((j) => `project:job:${j.jobId}` === cursor);
@@ -77,23 +42,19 @@ const looseJobRows = (data: ProjectSnapshot, width: number, now: number): Monito
   text: pair(`${sliceInk('working')(mark('◉', '@'))} ${roleInk(job.role)(monitorText(job.role || job.jobId.slice(-6)))} ${muted(monitorText(job.title ?? job.package ?? ''))}`,
     job.asking ? theme.board.attention(`${t('asking')} ?`) : muted(minuteAge(job.at ?? null, now)), width),
 }));
-function progressTaskPart(input: MonitorData, data: ProjectSnapshot, state: MonitorState, board: WorkboardSnapshot, width: number, now: number): Part {
-  const tasks = progressTasks(data), marks = input.tryMarks;
-  const pending = tasks.filter((task) => task.slices.some((r) => r.state === 'try')).length;
-  const list: MonitorRow[] = tasks.length ? [progressTasksHeading(tasks.length, width, tryTotals(pending)), ...tasks.flatMap((task) => progressTaskHeader(task, data, state, width, now, marks))]
+function progressTaskPart(input: MonitorData, data: ProjectSnapshot, board: WorkboardSnapshot, width: number, now: number): Part {
+  const tasks = progressTasks(data);
+  const list: MonitorRow[] = tasks.length ? [progressTasksHeading(tasks.length, width), ...tasks.map((task) => progressTaskHeader(task, data, width, now))]
     : [plain('  ' + muted(t(data.statePath ? 'none' : 'no STATE.md')), width)];
   list.push(...looseJobRows(data, width, now));
   if (data.next.length) list.push({ item: 'split:next', ...(data.statePath ? { files: [data.statePath] } : {}),
     text: pair(`${muted(mark('→', '>'))} ${t('Next')}`, muted(String(data.next.length)), width) });
   const preview = (cursor?: string): Shown => {
     const task = tasks.find((g) => taskItem(g) === cursor);
-    if (!task) return slicePreview(input, data, state, board, width, now, cursor);
-    const rows = progressTaskDetails(task, data, state, width, now, board, input.modelEnabled, marks);
-    const tries = task.slices.some((r) => r.state === 'try');
-    return { label: taskLabel(task), rows, hints: [...(tries ? TRY_ACTIONS : []), ...(rows.some((r) => r.item) ? ['⏎ details'] : []), 'Esc back', 'o file'] };
+    if (!task) return slicePreview(input, data, board, width, now, cursor);
+    return { label: taskLabel(task), rows: progressTaskDetails(task, data, width, now, board, input.modelEnabled), hints: ['Esc back', 'o file'] };
   };
-  return { list, preview, start: list.find((r) => r.item)?.item, hints: PROJECT_FILE_HINTS,
-    focusHints: [...TRY_ACTIONS, ...LEDGER_FOCUS_HINTS] };
+  return { list, preview, start: list.find((r) => r.item)?.item, hints: PROJECT_FILE_HINTS };
 }
 
 /** Keep Inbox's role-alert preview as it was; Enter on the alert now goes to Control. */
@@ -115,30 +76,14 @@ export function inboxRolePreview(data: ProjectSnapshot, width: number, now: numb
   };
 }
 
-/** Tickets: a ticket a row under its lane (as Classic), the cursor ticket's checklist and latest comment below; Enter opens its file. */
+/** Tickets: select a feature to see its tickets by state; Enter moves into the preview. */
 function ticketsPart(data: ProjectSnapshot, state: MonitorState, width: number, now: number): Part {
-  const folded = state.project.folded, seen = new Set<string>(), prefix = 'project:fold:ticket:';
-  if (state.prefs.acceptance !== 'slice') {
-    const list = data.tickets.map((feature) => featureRow(feature, width));
-    const preview = (cursor?: string): Shown => {
-      const feature = data.tickets.find((f) => featureItem(f) === cursor);
-      return feature ? { label: monitorText(feature.slug), rows: ticketRows(data, folded, width, now, feature).slice(1) } : { label: '', rows: [] };
-    };
-    return { list, preview, start: list[0]?.item, hints: ['⏎ details', 'Esc back'], focusHints: ['⏎ details', 'Esc back', 'o file'] };
-  }
-  const filtering = !!state.project.filter?.query;
-  const list = [...ticketRows(data, folded, width, now, undefined, filtering).filter(r => !r.item?.startsWith('project:fold:original:')).filter((r) => !r.item || (!seen.has(r.item) && seen.add(r.item)))
-    .map((r) => (r.item?.startsWith(prefix) ? { ...r, item: `project:tk:${r.item.slice(prefix.length)}` } : r))];
+  const list = data.tickets.map((feature) => featureRow(feature, width));
   const preview = (cursor?: string): Shown => {
-    const key = /^project:tk:(.+)$/.exec(cursor ?? '')?.[1];
-    const ticket = data.tickets.flatMap((f) => f.tickets.map((x) => ({ x, key: `${f.slug}:${basename(x.path)}` }))).find((o) => o.key === key)?.x;
-    if (!key || !ticket) return { label: '', rows: [] };
-    const rows = ticketPreview(data, key, folded, width, now, filtering);
-    const number = monitorText(ticket.number), right = monitorText(ticket.status);
-    const room = width - visualLength(number) - 1 - (right ? visualLength(right) + 2 : 1);
-    return { label: `${number} ${cutTicketTitle(ticket.title, room)}`, right, rows };
+    const feature = data.tickets.find((f) => featureItem(f) === cursor);
+    return feature ? { label: monitorText(feature.slug), rows: ticketRows(data, state.project.folded, width, now, feature).slice(1) } : { label: '', rows: [] };
   };
-  return { list, preview, start: list.find((r) => r.item)?.item, hints: PROJECT_FILE_HINTS };
+  return { list, preview, start: list[0]?.item, hints: ['⏎ details', 'Esc back'], focusHints: ['⏎ details', 'Esc back', 'o file'] };
 }
 
 /** Working tree and Docs: each fact a row, its whole text, path and age underneath. */
@@ -163,7 +108,7 @@ export function projectScene(input: MonitorData, state: MonitorState, board: Wor
   const data = input.project;
   if (!data || page === 'waiting') return undefined;
   const part = !page ? inboxHubPart(input, data, state, board, width, now)
-    : page === 'progress' ? (state.prefs.acceptance !== 'slice' ? progressTaskPart(input, data, state, board, width, now) : inboxProgressPart(input, data, state, board, width, now))
+    : page === 'progress' ? progressTaskPart(input, data, board, width, now)
     : page === 'tickets' ? ticketsPart(data, state, width, now) : factsPart(page, data, width, now);
   const scene = projectSplitScene(state.project.nav, part, `project|${page ?? 'hub'}|${state.selectedProject ?? ''}`);
   return (input.projects?.length ?? 0) > 1 ? scene : { ...scene, hints: scene.hints.filter((hint) => hint !== '[ ] project') };
@@ -183,8 +128,8 @@ export function projectSplitScene(nav: ClassicSplitNav, part: Part, view: string
   }
   const scope = `${view}|${cursor}`;
   const sub = focus && shown.rows.some((row) => row.item === previewCursor) ? previewCursor : undefined;
-  const hints = !sub ? shown.hints ?? part.hints : shown.act ? [...TRY_ACTIONS, 'Esc back'] : part.focusHints ?? part.hints;
-  return { list: part.list, cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub, act: sub ? undefined : shown.act,
+  const hints = !sub ? shown.hints ?? part.hints : part.focusHints ?? part.hints;
+  return { list: part.list, cursor, rule: { label: shown.label, right: shown.right }, preview: shown.rows, sub,
     scope, hints, nav: { ...nav, cursor: sub ?? cursor, split: { ...split, focus: sub ? 'preview' : 'list', listCursor: cursor, previewCursor,
       previewFor: scope, previewScroll: split.previewFor === scope ? split.previewScroll : 0 } } };
 }

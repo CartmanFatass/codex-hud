@@ -82,7 +82,7 @@ test('v1 migrates the Project view, cursor, saved pages and nested Control nav',
   const { activeTab, selectedProject, project, control, prefs, home } = place.state;
   assert.equal(activeTab, 'project');
   assert.equal(selectedProject, state.projectRoot);
-  assert.deepEqual(project.view, { kind: 'progress', onlyTry: state.projectTry });
+  assert.deepEqual(project.view, { kind: 'progress' }, 'obsolete try-only mode is not restored');
   assert.equal(project.fromProjectsList, true);
   assert.equal(project.nav.cursor, state.projectCursor);
   assert.equal(project.nav.scroll, state.projectScroll);
@@ -117,7 +117,7 @@ test('v1 migrates Home Split, Inspector, Changes, Help and only the original kep
   assert.deepEqual(restored.home.expanded, state.boardExpanded);
   assert.deepEqual(restored.home.toggled, state.boardToggled);
   assert.deepEqual(restored.home.foldedLanes, state.boardFolded);
-  assert.deepEqual(restored.home.expandedTasks, new Set(['task:one', 'ledger:two']));
+  assert.equal(restored.home.expandedTasks, undefined);
   assert.deepEqual(restored.project.folded, new Set(['agents']));
   assert.deepEqual(restored.home.split, { focus: 'preview', listCursor: 'lane', previewCursor: 'worker',
     listScroll: 2, previewScroll: 5, previewFor: 'home|lane' });
@@ -168,7 +168,7 @@ test('v2 keeps independent Home and Project places and restores only whitelisted
     draft: { run: [{ raw: rawArgs }] }, mode: { kind: 'confirm-leave' } };
   const settings = { selected: 1, offset: 2, draft: rawArgs };
   const raw = encodePanelPlace({ state, settings, widthOverride: null, openedAt: 42, extra: rawArgs });
-  assert.doesNotMatch(raw, /overlay|confirm-leave|discarded-mark|trySelection|SYNTHETIC_|synthetic-secret-flag|revealed|draft|panelSet|notice|retired/);
+  assert.doesNotMatch(raw, /overlay|confirm-leave|discarded-mark|trySelection|expandedTasks|onlyTry|SYNTHETIC_|synthetic-secret-flag|revealed|draft|panelSet|notice|retired/);
   assert.doesNotMatch(encodePanelPlace({ state: { ...state, overlay: { kind: 'confirm-stop', dir: secret } }, settings: null }), /confirm-stop|SYNTHETIC_/);
   const place = readPlace(raw, { ...DEFAULT_PANEL_VIEW, panelLayout: 'split' });
   assert.equal(JSON.parse(raw).schemaVersion, 2);
@@ -186,7 +186,7 @@ test('v2 keeps independent Home and Project places and restores only whitelisted
   assert.deepEqual(project.nav.split, projectSplit);
   assert.deepEqual(home.filter, state.home.filter);
   assert.deepEqual(project.filter, state.project.filter);
-  for (const key of ['expanded', 'toggled', 'foldedLanes', 'expandedTasks']) assert.deepEqual(home[key], state.home[key]);
+  for (const key of ['expanded', 'toggled', 'foldedLanes']) assert.deepEqual(home[key], state.home[key]);
   assert.deepEqual(project.folded, state.project.folded);
   assert.deepEqual(project.savedPages, { docs: { cursor: 'doc', scroll: 1 } });
   assert.deepEqual(control.roles.folded, state.control.roles.folded);

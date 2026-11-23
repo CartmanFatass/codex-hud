@@ -164,11 +164,11 @@ export const MODEL_LISTS = {
 /** The projects a panel can switch between, for the hub's switch row. */
 export const PROJECTS = [{ root: '/synthetic/demo-project', name: 'demo-project' }, { root: '/synthetic/second-project', name: 'second-project' }, { root: '/synthetic/third', name: 'third' }];
 /** A Project tab state: the hub, or one page of it. */
-export const onPage = (projectPage, extra) => (withState(initialMonitorState(), { activeTab: 'project', prefs: { acceptance: 'slice' }, project: { folded: new Set(['agents', 'healthy', 'files']), view: viewFor(projectPage) } }, extra));
+export const onPage = (projectPage, extra) => (withState(initialMonitorState(), { activeTab: 'project', project: { folded: new Set(['agents', 'healthy', 'files']), view: viewFor(projectPage) } }, extra));
 export const onControl = ({ folded, ...nav } = {}, extra, controlPatch) => {
   const state = initialMonitorState(), { control } = state;
   const roles = { nav: { ...control.roles.nav, ...nav }, folded: folded ?? control.roles.folded };
-  return { ...withState(state, { activeTab: 'control', prefs: { acceptance: 'slice' } }, extra), control: { ...control, roles, ...controlPatch } };
+  return { ...withState(state, { activeTab: 'control' }, extra), control: { ...control, roles, ...controlPatch } };
 };
 export const chainOverlay = (role, at = 0) => ({ kind: 'control-chain', role, at, mode: { kind: 'places' } });
 export const withChainPicker = (state, patch) => ({ ...state, overlay: { ...state.overlay,

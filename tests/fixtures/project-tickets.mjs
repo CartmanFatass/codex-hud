@@ -47,7 +47,7 @@ export function ticketFrames(f) {
     frames[`tickets-${width}-${lang}`] = plain(f.render(width, lang, 'tickets'));
     if (width !== 80) frames[`hub-${width}-${lang}`] = plain(f.render(width, lang, undefined, f.data, 'none', 24));
     // A ticket opened: its checklist and latest comment under it.
-    if (width !== 80) frames[`ticket-open-${width}-${lang}`] = plain(f.render(width, lang, onPage('tickets', { project: { folded: new Set(['agents', OPEN_TICKET]) } })));
+    if (width !== 80) frames[`ticket-open-${width}-${lang}`] = plain(f.render(width, lang, onPage('tickets', { project: { folded: new Set(['agents', 'feature:native-tree', OPEN_TICKET]) } })));
   }
   return frames;
 }

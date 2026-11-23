@@ -107,13 +107,11 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
         /NEVER_RENDER|unrelated bullet|Tickets|工单|INVISIBLE|M5|NOT-A-MILESTONE/
       );
       assert.match(text(pages.tickets), lang === 'en' ? /Project › Tickets\n\n  none/ : /项目 › 工单\n\n  无/);
-      // The current milestone's bar and counts; accepted slices are folded under Done.
-      assert.match(text(pages.progress), lang === 'en' ? /^ {3}M3b {2}[█▒░]+ 0\/2 accepted$/m : /^ {3}M3b {2}[█▒░]+ 0\/2 已验收$/m);
-      assert.match(text(pages.progress), /^ {2}1 (working|工作中) {2}1 (to try|待试用)$/m);
-      assert.match(text(pages.progress), /^▸ (Done|已完成) ─+ 1$/m);
+      assert.match(text(pages.progress), /^ {2}◐ M3b +◐ 1 {2}◇ 1/m);
       assert.match(text(pages.progress), lang === 'en' ? /^Next ─+ 5$/m : /^下一步 ─+ 5$/m);
       if (width >= 80) {
-        assert.match(text(pages.progress), /Which synthetic option\?/);
+        const detail = f.render(width, lang, onPage('progress', { project: { folded: new Set(['task:milestone:M3b']) } }));
+        assert.match(text(detail), /Which synthetic option\?/);
         assert.match(text(pages.control), lang === 'en' ? /unparseable JSON/ : /JSON 无法解析/);
         assert.match(text(pages.control), /bad\.json/);
       }
@@ -141,7 +139,7 @@ test('the Project milestone ladder matches a numeric version from STATE', async 
   f.put(join(f.cwd, 'docs/handoff/STATE.md'), '# Synthetic state\n\nMilestone: 0.2.0 · sample release\n\n## Slices\n- accepted · 0.2.0 · SAMPLE · try the sample\n');
   const data = await f.collector.collect(true, f.board, NOW + 1);
   assert.deepEqual(data.ladder, { ids: ['M1', '0.2.0'], current: '0.2.0' });
-  assert.match(plain(f.render(80, 'en', 'progress', 56, data)).join('\n'), /^ {3}0\.2\.0 {2}█+ 1\/1 accepted$/m);
+  assert.match(plain(f.render(80, 'en', 'progress', 56, data)).join('\n'), /^ {2}✓ 0\.2\.0 +✓ 1$/m);
 });
 test('a registered project shows its roles, hides the rest and uses its convention', async (t) => {
   const f = await fixture(t);
@@ -440,7 +438,8 @@ test('Hub: project name, first attention row, one entry per page; Enter opens a 
   assert.deepEqual(hubEntries(frame), ['progress', 'tree', 'docs'].map((p) => `project:page:${p}`), 'no tickets: no Tickets entry');
   assert.equal(frame.state.project.nav.cursor, 'inbox:ask:j0000000000000002', 'the cursor starts on the first asking job');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
-  assert.match(plain(frame).join('\n'), /^Progress +M3b · 1 to try · 1 working$/m);
+  assert.match(plain(frame).join('\n'), /^Progress +\d+ tasks · M3b/m);
+  assert.match(plain(frame).join('\n'), /^Accept all +1 to try$/m);
   assert.doesNotMatch(plain(frame).join('\n'), /^Control plane /m);
   // Down visits each page entry once.
   frame.state.project.nav.cursor = 'project:page:progress';
@@ -449,7 +448,7 @@ test('Hub: project name, first attention row, one entry per page; Enter opens a 
     frame = f.render(80, 'en', press(frame, 'down').state);
     visited.push(frame.state.project.nav.cursor);
   }
-  assert.deepEqual(visited, ['tree', 'docs', 'docs', 'docs'].map((p) => `project:page:${p}`));
+  assert.deepEqual(visited, ['project:page:tree', 'project:page:docs', 'project:accept-all', 'project:accept-all']);
   for (const page of ['progress', 'tree', 'docs']) {
     frame.state.project.nav.cursor = `project:page:${page}`;
     frame = f.render(80, 'en', press(frame, 'enter').state);
@@ -509,7 +508,7 @@ test('Each Project page keeps its own cursor and scroll, leaving it and across a
   assert.equal(projectPageOf(frame.state), undefined);
   assert.equal(frame.state.project.savedPages.progress.cursor, cursor);
 });
-test('polish: Next text aligns without filename tails and slice states use the bar colours', async (t) => {
+test('Next text aligns without filename tails', async (t) => {
   const f = await fixture(t);
   for (const width of [80, 120])
     for (const lang of ['en', 'zh']) {
@@ -535,20 +534,8 @@ test('polish: Next text aligns without filename tails and slice states use the b
           assert.deepEqual(press(frame, key).action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
       }
     }
-  // The Progress bar counts the whole ledger when no milestone is current: working first, then blocked.
-  const whole = f.render(120, 'en', 'progress', 56, { ...f.data, ladder: { ...f.data.ladder, current: undefined } }, true, 'unicode', 'mocha');
-  const bar = whole.workboard.rows.find((r) => r.item?.endsWith(':bar')).text;
-  const inks = [...bar.matchAll(/(\x1b\[[0-9;]+m)[█▒░]+/g)].map((m) => m[1]);
-  const row = (frame, id) => frame.workboard.rows.find((r) => r.item?.endsWith(`:slice:${id}`)).text;
-  assert.ok(row(whole, 'NATIVE-TREE').includes(inks[0] + '◐'));
-  assert.ok(row(whole, 'BLOCKED').includes(inks[1] + '◆'));
-  assert.match(stripAnsi(row(whole, 'ORPHAN')), /^  ! /);
-  assert.doesNotMatch(plain(whole).join('\n'), /NO-JOB/, 'an unlisted worktree is not work in flight');
-  const ascii = f.render(80, 'en', 'progress', 56, f.data, true, 'text');
-  assert.match(stripAnsi(row(ascii, 'NATIVE-TREE')), /^  @ /);
-  assert.match(stripAnsi(row(ascii, 'BLOCKED')), /^  ! /);
 });
-test('bar proportions fill the allotted cells; the Progress page names only the states that have slices', async (t) => {
+test('bar proportions fill the allotted cells; the Progress task counts use only states present', async (t) => {
   const f = await fixture(t);
   for (const width of [32, 80, 120]) {
     const segments = progressSegments(f.data.counts, width);
@@ -559,13 +546,8 @@ test('bar proportions fill the allotted cells; the Progress page names only the 
     for (const s of segments) assert.ok(Math.abs(s.width - (width * f.data.counts[s.state]) / 7) <= 1);
   }
   const ascii = f.render(80, 'en', 'progress', 56, f.data, true, 'text');
-  // One working (#) and one landed to try (=): without colour the glyphs still tell them apart.
-  assert.match(plain(ascii).join('\n'), /#{12}={12} 0\/2 accepted/);
+  assert.match(plain(ascii).join('\n'), /^  @ M3b +@ 1 {2}o 1/m);
   assert.doesNotMatch(plain(ascii).join('\n'), /[█▒░●]/);
-  // The Progress page's counts name the states that have slices in the current milestone, none with a zero.
-  const text = plain(f.render(120, 'en', 'progress', 56)).join('\n');
-  assert.match(text, /^ {2}1 working {2}1 to try$/m);
-  assert.doesNotMatch(text, /blocked 0|accepted 0|dropped|\b0 (working|to try)/);
   assert.equal(progressSegments({ working: 2, blocked: 0, try: 0, todo: 1, accepted: 0, dropped: 0 }, 80).find((s) => s.state === 'blocked').width, 0);
 });
 test('drift distinguishes a missing worktree, an unlisted tree and a landed tree; blocked may have no tree', async (t) => {
@@ -577,11 +559,12 @@ test('drift distinguishes a missing worktree, an unlisted tree and a landed tree
   assert.equal(data.counts.try, 2);
   assert.equal(data.slices.find((s) => s.label === 'NO-JOB').drift, 'ledger');
   assert.equal(data.slices.find((s) => s.label === 'NO-JOB').ledgerState, 'try');
-  const text = plain(f.render(120, 'en', 'progress', 56, data)).join('\n');
+  const opened = onPage('progress', { project: { folded: new Set(['task:milestone:M4']) } });
+  const text = plain(f.render(120, 'en', opened, 56, data)).join('\n');
   assert.match(text, /updated 12:35 · ! 2/);
-  assert.match(text, /◇ NO-JOB/);
-  assert.match(text, /! ORPHAN.*no worktree/);
-  assert.doesNotMatch(text, /! BLOCKED/);
+  assert.match(text, /◇ NO-JOB.*ledger/);
+  assert.match(text, /ORPHAN.*no worktree/);
+  assert.doesNotMatch(text, /BLOCKED.*no worktree/);
   f.put(state, original.replace('Milestone: M3b', 'Milestone: UNMATCHED'));
   const noMatch = await f.collector.collect(true, f.board, NOW + 2);
   assert.doesNotMatch(plain(f.render(80, 'en', 'progress', 56, noMatch)).join('\n'), /\[M1\]|\(M3b\)/);
@@ -594,23 +577,21 @@ test('slice lines use the same Home worker fact/model and keep hidden jobs avail
     worker = f.board.workers.find((w) => w.evidence[0]?.sourceId === 'j0000000000000002');
   const home = renderWorkCard(projectWorkCard(worker, NOW), sliceState(), 120).map(stripAnsi).join('\n');
   assert.match(home, /Question: Which synthetic option\?/);
-  assert.match(plain(f.render(120, 'en', 'progress')).join('\n'), /Question: Which synthetic option\?/);
+  const opened = onPage('progress', { project: { folded: new Set(['task:milestone:M3b']) } });
+  assert.match(plain(f.render(120, 'en', opened)).join('\n'), /Which synthetic option\?/);
   worker.modelSentence = 'Building «synthetic agents» in the Home lane.';
-  assert.match(plain(f.render(120, 'en', 'progress')).join('\n'), /Building synthetic agents in the Home lane\./);
-  const coloured = f.render(120, 'en', 'progress', 56, f.data, true, 'unicode', 'mocha');
+  assert.match(plain(f.render(120, 'en', opened)).join('\n'), /Building synthetic agents in the Home lane\./);
+  const coloured = f.render(120, 'en', opened, 56, f.data, true, 'unicode', 'mocha');
   assert.match(
     coloured.workboard.rows.find((r) => stripAnsi(r.text).includes('Building synthetic agents')).text,
     /\x1b\[[0-9;]+msynthetic agents\x1b\[0m/
   );
-  assert.doesNotMatch(plain(f.render(120, 'en', 'progress', 56, f.data, false)).join('\n'), /Building synthetic agents/);
-  assert.match(
-    plain(f.render(120, 'en', 'progress', 56, f.data, false)).join('\n'),
-    /Question: Which synthetic option\?/
-  );
+  assert.doesNotMatch(plain(f.render(120, 'en', opened, 56, f.data, false)).join('\n'), /Building synthetic agents/);
+  assert.match(plain(f.render(120, 'en', opened, 56, f.data, false)).join('\n'), /Which synthetic option\?/);
   worker.state = 'done';
   worker.settledAt = NOW - 3600000;
   worker.homeNeedsHuman = false;
-  const hidden = f.render(120, 'en', 'progress');
+  const hidden = f.render(120, 'en', opened);
   assert.equal(
     hidden.workboard.snapshot.workers.some((w) => w.id === worker.id),
     false
@@ -622,10 +603,10 @@ test('slice lines use the same Home worker fact/model and keep hidden jobs avail
   fs.unlinkSync(join(f.sliceJob, 'brief.md'));
   data = await f.collector.collect(true, f.board, NOW + 2);
   assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE').path, join(f.cwd, 'docs/handoff/STATE.md'));
-  const frame = f.render(120, 'en', 'progress', 56, data);
-  for (const suffix of ['summary', 'bar', 'slice:NATIVE-TREE']) {
+  const frame = f.render(120, 'en', opened, 56, data);
+  for (const suffix of ['summary', 'task:milestone:M3b']) {
     frame.state.project.nav.cursor = frame.workboard.rows.find((r) => r.item?.endsWith(suffix)).item;
-    assert.deepEqual(press(frame, 'enter').action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
+    assert.deepEqual(press(frame, 'open-session').action.files, [join(f.cwd, 'docs/handoff/STATE.md')]);
   }
 });
 test('job lookup reads only job/STATUS in the newest 64 directories and resolves cwd aliases', async (t) => {

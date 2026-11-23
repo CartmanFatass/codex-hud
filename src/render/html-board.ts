@@ -5,7 +5,6 @@
  */
 import { SETTLED_JOB_STATES, SLICE_STATES, type LedgerSlice, type ProjectSnapshot, type ProjectTicket, type SliceState, type TicketFeature } from '../collectors/project-board.js';
 import { acceptanceTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
-import type { HudSettings } from '../settings.js';
 import type { DiffStatSummary } from '../collectors/diff-stat.js';
 import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { age } from './monitor-labels.js';
@@ -19,7 +18,6 @@ export interface BoardInput {
   reviewText?: string;
   generatedAt: number;
   lang?: Language;
-  acceptance?: HudSettings['acceptance'];
 }
 
 const ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -127,11 +125,7 @@ function tryCard(slice: LedgerSlice, project: ProjectSnapshot, now: number): str
     const f = project.tickets.find((x) => x.slug === slug);
     return f ? [feature(f, only, 8)] : [];
   }).join('');
-  const brief = slice.brief;
-  const steps = brief?.steps.length ? `<h3>${e(t('How to try'))}</h3><ol>${brief.steps.map((s) => `<li>${e(s)}</li>`).join('')}</ol>` : '';
-  const text = brief
-    ? `<p>${e(brief.brief)}</p>${steps}<details><summary>${e(t('Ledger line'))}</summary>${e(slice.text)}</details>`
-    : `<p>${e(slice.text)}</p>`;
+  const text = `<p>${e(slice.text)}</p>`;
   return `<article class="card try"><header><span class="id">${e(slice.id)}</span>${chip('try', slice.milestone)}<span class="meta">${slice.commit ? `<code>${e(slice.commit)}</code> · ` : ''}${e(ago(slice.at, now))}</span></header>${text}${diffBlock(slice.diff)}${tickets ? `<h3>${e(t('Tickets'))}</h3>${tickets}` : ''}</article>`;
 }
 
@@ -148,11 +142,11 @@ export function renderHtmlBoard(input: BoardInput): string {
   try { return page(input); } finally { setLanguage(previous); }
 }
 
-function page({ projectName, root, project, workboard, reviewText, acceptance, generatedAt: now }: BoardInput): string {
+function page({ projectName, root, project, workboard, reviewText, generatedAt: now }: BoardInput): string {
   const lang = language(), git = project.git;
   const tries = project.ledger.filter((r) => r.state === 'try').reverse().sort((a, b) => (b.at ?? -1) - (a.at ?? -1));
-  const tasks = acceptance === 'slice' ? undefined : acceptanceTasks(tries), pending = tasks?.length ?? tries.length;
-  const displayCount = (s: SliceState) => s === 'try' && tasks ? pending : project.counts[s];
+  const tasks = acceptanceTasks(tries), pending = tasks.length;
+  const displayCount = (s: SliceState) => s === 'try' ? pending : project.counts[s];
   const total = SLICE_STATES.filter((s) => s !== 'dropped').reduce((n, s) => n + project.counts[s], 0);
   const header = `<header><div class="top"><span class="eyebrow">${e(t('Review board'))}</span><div class="theme"><span>${e(t('Theme'))}</span><label for="t-auto">${e(t('Auto'))}</label><label for="t-dark">${e(t('Dark'))}</label><label for="t-light">${e(t('Light'))}</label></div></div>
 <h1>${e(projectName)}</h1><p class="root">${e(root)}</p>
@@ -202,7 +196,7 @@ ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
 <div class="page"><div class="wrap">${header}
 <nav class="badges" style="margin-top:18px">${nav.filter(([, , n]) => n).map(([id, label, n]) => `<a class="chip plain" href="#${id}">${e(t(label))} ${n}</a>`).join('')}</nav>
 ${needs.length ? section('needs', t('Needs you'), needs.length, `<div class="grid">${needs.join('')}</div>`) : ''}
-${pending ? section('try', t('To try'), pending, `<div class="grid">${(tasks ? tasks.map((task) => taskCard(task, project, now)) : tries.map((r) => tryCard(r, project, now))).join('')}</div>`) : ''}
+${pending ? section('try', t('To try'), pending, `<div class="grid">${tasks.map((task) => taskCard(task, project, now)).join('')}</div>`) : ''}
 ${flight.length ? section('flight', t('In flight'), flight.length, `<div class="grid s">${flight.join('')}</div>`) : ''}
 ${features.length ? section('tickets', t('Tickets'), features.length, `<div class="card">${features.map((f) => feature(f, undefined, 12)).join('')}</div>`) : ''}
 ${reviewText ? section('review', t('Latest milestone review'), undefined, `${review ? `<p class="root">${e(review.value)}</p>` : ''}<div class="review">${lines}</div>`) : ''}

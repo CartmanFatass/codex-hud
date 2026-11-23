@@ -34,16 +34,11 @@ const { visualLength } = await load('dist/render/colors.js');
 
 // ---- frames -------------------------------------------------------------------------------------------------------
 const home = fs.mkdtempSync(join(tmpdir(), 'preview-png-'));
-const BRIEF = lang === 'zh'
-  ? { brief: '台账历史、进行中的任务和工单详情现在都能在进度页直接看到。其余页面不变。', steps: ['打开项目页，进入进度。', '选中 DATA-ONE，确认摘要、步骤和台账原文都在。', '按 Enter 展开台账原文。'] }
-  : { brief: 'Ledger history, live jobs and ticket detail now show on the Progress page. Nothing else changes.', steps: ['Open the Project tab, then Progress.', 'Select DATA-ONE: the brief, steps and ledger line are there.', 'Press Enter to unfold the ledger line.'] };
 let frames;
 try {
   const busy = await splitFixture(join(home, 'busy'));
   const idle = await splitFixture(join(home, 'idle'), { idle: true });
-  const briefed = (d) => ({ ...d, ledger: d.ledger.map((r) => (r.id === 'DATA-ONE' ? { ...r, brief: BRIEF } : r)) });
-  const page = (p, nav, folded) => onPage(p, { prefs: { panelLayout: 'split', acceptance: 'task' },
-    project: { ...(nav && { nav }), ...(folded && { folded }) } });
+  const page = (p, cursor) => onPage(p, { prefs: { panelLayout: 'split' }, project: { nav: { cursor } } });
   const render = (f, height, state, snapshot = f.data, extras = {}) => {
     const display = setDisplayConfig({ theme: themeName, icons: 'unicode' }), previous = setLanguage(lang);
     try {
@@ -56,9 +51,9 @@ try {
   frames = [
     ['home-busy', 'Home, busy', render(busy, 40, split())],
     ['home-idle', 'Home, all done', render(idle, 40, split())],
-    ['hub', 'Project hub', render(busy, 40, page(undefined), briefed(busy.control))],
-    ['progress', 'Progress, a briefed slice selected', render(busy, 40, page('progress', { cursor: 'project:slice:DATA-ONE' }), briefed(busy.rich))],
-    ['progress-unfolded', 'Progress, ledger line unfolded', render(busy, 40, page('progress', { cursor: 'project:slice:DATA-ONE' }, new Set(['agents', 'healthy', 'files', 'ledger:DATA-ONE'])), briefed(busy.rich))],
+    ['hub', 'Project hub', render(busy, 40, page(undefined), busy.control)],
+    ['accept-all', 'Project hub, Accept all selected', render(busy, 40, page(undefined, 'project:accept-all'), busy.control)],
+    ['progress', 'Progress, milestone selected', render(busy, 40, page('progress', 'project:fold:task:milestone:0.1.3'), busy.rich)],
     ['control', 'Control plane', render(busy, 40, onControl({}, { prefs: { panelLayout: 'split' } }), { ...busy.control, radar: undefined })],
     ['tickets', 'Tickets', render(busy, 40, page('tickets'))],
     ['help', 'Help', render(busy, 56, split({ help: {} }))],

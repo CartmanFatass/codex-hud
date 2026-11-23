@@ -4,7 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { boardInspectorRows } from './work-inspector.js';
 import { homeRows, newestCard } from './home-view.js';
-import { activeFilter, homeAnchor, homeCursor, homeTarget, onlyTry, type ClassicSplitNav, type HomeCursor } from './monitor-state.js';
+import { activeFilter, homeAnchor, homeCursor, homeTarget, type ClassicSplitNav, type HomeCursor } from './monitor-state.js';
 import { roleIcon } from './model-glyphs.js';
 import { roleMark } from './work-jobs.js';
 import { projectRows, homeSpareRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
@@ -17,7 +17,8 @@ import { fit, pair, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
 import { ageText } from './work-card.js';
 import { homeScene } from './split-home.js';
-import { projectScene, TRY_ACTIONS } from './split-project.js';
+import { projectScene } from './split-project.js';
+import { ACCEPT_ALL } from './inbox-project.js';
 import { paintSplit, splitPreviewRoom, type SplitScene } from './split-frame.js';
 import { homeKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterProject, filterRow, filterScope, homeMatcher } from './filter.js';
@@ -63,10 +64,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   ];
   const project = [
     ['[ ]', 'previous / next project'],
-    ['Space', 'mark a to-try row'],
-    ['y n', 'accept / flag the marked rows, or the current one'],
-    ['m', 'to-try rows: request landing'],
-    ['t', 'Progress: only what is to try'],
+    ['⏎', 'Accept all: record all pending slices'],
   ];
   const control = [
     ['c C', 'role: next / previous preset'],
@@ -191,10 +189,9 @@ export function renderWorkboardFrame(
   const list = project && projectListOpen(state, input.projects);
   // The `/` filter: Home's board keeps the cards that match; Progress and Tickets read a snapshot of the slices or tickets that do.
   const filter = filterScope(state) ? activeFilter(state) : undefined, needle = filter?.query.toLowerCase() ?? '';
-  const progressOnly = onlyTry(state.project.view);
   let matches: number | undefined;
   if (needle && input.project && (page === 'progress' || page === 'tickets')) {
-    const found = filterProject(input.project, page, needle, state.prefs.acceptance, !!progressOnly);
+    const found = filterProject(input.project, page, needle);
     input = { ...input, project: found.data };
     matches = found.count;
   }
@@ -225,7 +222,7 @@ export function renderWorkboardFrame(
       : `${t('Home')} ${mark('›', '>')} ${monitorText(lane?.label ?? '')}${worker?.role ? ' · ' + monitorText(worker.role) : ''}`;
   if (sub || page || list) {
     // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
-    const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '', state.prefs.acceptance);
+    const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
     frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
@@ -302,8 +299,7 @@ export function renderWorkboardFrame(
       const cursor = home ? resolved.homeCursor : state.home.cursor;
       const nav = paintSplit(frame, scene, board, targets, homeTarget({ ...state.home, cursor }), width, height, notes);
       if (home) frame.state = { ...state, home: { ...state.home, cursor, split: nav.split, revealed: nav.revealed } };
-      else if (project) frame.state = { ...state, project: { ...state.project, nav,
-        ...(!page && state.project.nav.split.focus === 'preview' && !wide.sub ? { trySelection: undefined } : {}) } };
+      else if (project) frame.state = { ...state, project: { ...state.project, nav } };
       else if (control) frame.state = { ...state, control: withControlNav(nav),
         overlay: addingHarness ? { ...addingHarness, pick: resolved.sub } : overlay };
       return frame;
@@ -337,7 +333,7 @@ export function renderWorkboardFrame(
         ? boardInspectorRows(lane, inspector.target, state, width, now)
         : project
           ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
-              Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.tryMarks)
+              Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)))
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
             : sheetRows ?? controlRows(input.project, state.control.roles, width, now)
@@ -347,12 +343,12 @@ export function renderWorkboardFrame(
   // A stop waiting for its answer is the top row of Home and the Inspector, where the job under the cursor is.
   if (home || inspector) rows.unshift(...stopPromptRows(state, width));
   if (home) {
-    // The waiting items and the newest landed slices sit under the cards, progress at the bottom (owner): the work above keeps the room next to it.
+    // Waiting items and recently accepted slices sit under the cards, with progress at the bottom.
     const spare = height - 2 - top - rows.length;
-    if (!needle) rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim(), state, input.tryMarks));
+    if (!needle) rows.push(...homeSpareRows(input.project, width, spare, now, !!rows.at(-1) && !!stripAnsi(rows.at(-1)!.text).trim(), state));
   }
   let item = homeAnchor(state.home), selected = homeTarget(state.home);
-  if (home && item && /^(home-progress:|original:|project:fold:task:)/.test(item) && !rows.some((r) => r.item === item)) item = undefined;
+  if (home && item && /^(home-progress:|original:)/.test(item) && !rows.some((r) => r.item === item)) item = undefined;
   if (home && (!selected || !rows.some((r) => r.item === targetKey(selected!)))) {
     const order = source.lanes.flatMap((l) => [
       { kind: 'lane' as const, laneId: l.id },
@@ -414,7 +410,6 @@ export function renderWorkboardFrame(
   }
   const done = doneToday();
   const projectSwitch = frame.projects ? ['[ ] project'] : [];
-  const onTry = (project || home) && rows.some((r) => r.item === (project ? cursor : item) && r.tryTarget);
   const hints: FooterHints = help
     ? { modal: ['Esc back'] }
     : inspector ? ['⏎ open', 'Esc back']
@@ -422,15 +417,10 @@ export function renderWorkboardFrame(
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
-          : page === 'progress' ? (progressOnly ? [...TRY_ACTIONS, 't all', '⏎ open', 'Esc back']
-            : onTry ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file', 't to try']
-            : state.prefs.acceptance !== 'slice' && state.project.nav.cursor?.startsWith('project:fold:task:') ? ['⏎ details', 'Esc back', 'o file', 't to try']
-            : ['t to try', '⏎ open', 'Esc back'])
-          : page === 'tickets' && state.prefs.acceptance !== 'slice' ? ['⏎ details', 'Esc back', 'o file']
+          : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
-          : onTry ? [...TRY_ACTIONS, '⏎ details', 'o file', ...projectSwitch]
-          : ['⏎ open', ...projectSwitch])
-        : experiment ? expHints(experiment, expEdit) : onTry ? [...TRY_ACTIONS, '⏎ details', 'o file'] : homeKeys(state, source, 'expand');
+          : [cursor === ACCEPT_ALL ? '⏎ accept all' : '⏎ open', ...projectSwitch])
+        : experiment ? expHints(experiment, expEdit) : homeKeys(state, source, 'expand');
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
   if (control && !harnesses && height > 1) presetFooterControls(frame, hints, width, height - 1);
   if (height > 1)

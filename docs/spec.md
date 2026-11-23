@@ -234,7 +234,7 @@ Reference: `docs/design/panel-v8/` (option 2) and `docs/design/panel-v8/notes.md
   use flat `↳ parent`. External current-work summaries follow the master switch. No agent log, card label
   or card summary settings. (12.03)
 - Spare rows: compact board and the milestone and ticket rollup (started features, unstarted folded into one row); cards win. (22.14) Top line counts STATE waiting items with questions.
-  Idle Home lists waiting items and newest landed slices above progress. (12.04, 17.10)
+  Idle Home lists waiting items and, in Classic, recently accepted slices above progress. (12.04, 17.10, 22.27)
 
 #### 2.2.4 Project Inbox, progress and export
 
@@ -247,30 +247,23 @@ Reference: `docs/design/project-ux/` (direction C: Inbox).
   read time from linked jobs, STATE slices, commits naming the ticket and accepted tries, else the file's own
   status; a ticket waiting only on unfinished predecessors shows as queued, not blocked, alongside its blockers,
   package lane links, checklist and latest comment. (12.04, 14.04)
-- Inbox hub: ranked Needs you (asking jobs, STATE waiting items, pending trials, asking tickets, blocked
-  slices, exhausted roles), then Running (one row per running job, sonic children counted on their parent),
+- Inbox hub: ranked Needs you (asking jobs, items the main session flagged in STATE Waiting, asking tickets,
+  blocked slices, exhausted roles), then Running (one row per running job, sonic children counted on their parent),
   last accepted and the page rows. Enter on a role alert opens that role on Control. (20.06, 22.27)
-- Progress reads STATE's summary, milestone, slices and Next. At task detail, show milestone tasks with
-  pending trials first. At slice detail, show the current milestone's bar and sections for To try (newest
-  first across milestones), Blocked, Working, Next and folded Done. Include running project jobs. Tickets
-  keeps its feature rows at task detail and its state lanes at slice detail. (12.04, 14.04, 20.06, 22.27)
-- In Progress's to-try view, `y` accepts and `n` flags one slice or all still-to-try slices on a milestone
-  row. Multi-select
-  emits one record and one line. Write only under `$HUD_HOME`, never to project files. Mark at once.
-  Main hears via `hud watch` and MCP `changes`, updates STATE (`accepted` or Waiting for the owner) and
-  asks what's wrong for flags.
-  (17.11, 18.07)
+- Progress reads STATE's summary, milestone, slices and Next. Show tasks grouped by milestone and running
+  project jobs. Tickets groups its rows by feature. (12.04, 14.04, 22.27)
+- The Inbox hub offers Accept all when the project has pending acceptance. It records all observed pending
+  slices across milestones in one `accept` record under `$HUD_HOME/tries.jsonl` without editing project files.
+  The panel reflects acceptance from the log; `hud watch` and MCP `changes` still deliver it to the main
+  session. Old acceptance and flag records remain readable. There is no per-slice owner try action. (22.27)
 - A waiting item can end in `(waits on <slice ID>, <feature>/<NN>)`. When all named slices are accepted or
-  dropped and tickets done or dropped, hide it and stop counting it without editing STATE. No to-try slice
-  is also a waiting item. Wrap the whole item where rows permit. Never cut what the owner tries to a name.
-  (18.07, 20.05)
+  dropped and tickets done or dropped, hide it and stop counting it without editing STATE. Wrap the whole
+  item where rows permit. (18.07, 20.05)
 - The board model can translate waiting items, open worker questions and open ticket titles into the display
-  language when needed, with the original folded below (22.14). For to-try slices it writes a short brief
-  explaining what changed in plain words, and steps for trying it, from the ledger line, ticket and commits. List: ID and first sentence. Preview or expanded row:
-  full brief and steps, ledger text folded below. No model or no brief: wrap full original text. (18.07, 19.02)
+  language when needed, with the original folded below. It does not write try briefs. (22.14, 22.27)
 - Inbox is the only Project layout in Classic and Split; old saved Project layout values are ignored. (22.27)
-- `hud board [--html] [--open]` or panel `w` exports self-contained static HTML for the project and to-try
-  review, with no network fetches or resident server. (18.09)
+- `hud board [--html] [--open]` or panel `w` exports self-contained static HTML for the project, using
+  ledger text for pending work, with no network fetches or resident server. (18.09, 22.27)
 
 #### 2.2.5 Control and model picker
 
@@ -304,11 +297,11 @@ Reference: `docs/design/control-tab/design.md`, `docs/design/control-tab/index.h
 - No panel briefing or chaining. Owner actions equivalent to local commands: `g` focuses selected job's
   herdr tab; `1`–`4` or `d` on expanded question writes `qa/qN.answer.md` once, notifies main via `changes` /
   `hud watch`; confirmed `X` reaps a runaway via `pi-role-reap`. (18.09)
-- `r` on a failed job requests a retry and `m` on a to-try slice requests landing; the panel records the intent and the main session decides whether to act. In Claude Code with the HUD mod, the owner's explicit `/land <job>` on a settled worktree job starts the land flow directly; band buttons and `/retry` still record intent. (22.25)
+- `r` on a failed job requests a retry; the panel records the intent and the main session decides whether to act. In Claude Code with the HUD mod, the owner's explicit `/land <job>` on a settled worktree job starts the land flow directly; band buttons and `/retry` still record intent. (22.25, 22.27)
 - Split's unselected working rows show compact keyword and progress cues. Cards and Inspector show a 10-bucket
   activity sparkline (`▁`–`█`), `hud-progress` milestones and nested `sonic` trees under their parent jobs.
-  Inspector, Working tree and To-try previews show a bounded safe Git `--numstat` diff bar (top 12 files)
-  for the job's worktree or slice commits. (18.09)
+  Inspector, Working tree and Progress details for pending slices show a bounded safe Git `--numstat`
+  diff bar (top 12 files) for the job's worktree or slice commits. (18.09, 22.27)
 
 #### 2.2.7 Experimental EXP tab
 

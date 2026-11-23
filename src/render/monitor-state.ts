@@ -4,7 +4,6 @@ import type { DraftPlace, PlaceFact, RoleFact } from '../roles/role-control.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { filterScope } from './filter.js';
 import type { WorkTarget } from '../collectors/workboard-types.js';
-import type { TryTarget } from '../collectors/try-records.js';
 import type { HudSettings } from '../settings.js';
 import type { MainTab } from './main-tabs.js';
 import type { PresetInput } from './preset-input.js';
@@ -40,10 +39,8 @@ export interface HomeTabState {
   expanded: ReadonlySet<string>;
   toggled: ReadonlySet<string>;
   foldedLanes: ReadonlySet<string>;
-  expandedTasks: ReadonlySet<string>;
   newestCard?: string;
   split: SplitNav;
-  trySelection?: ReadonlyMap<string, TryTarget>;
   filter?: ViewFilter;
 }
 export const homeTarget = ({ cursor }: HomeTabState) => cursor?.kind === 'anchor' ? cursor.fallbackTarget : cursor?.target;
@@ -51,11 +48,11 @@ export const homeAnchor = ({ cursor }: HomeTabState) => cursor?.kind === 'anchor
 export const homeCursor = (target?: WorkTarget, anchor?: string): HomeCursor | undefined =>
   anchor ? { kind: 'anchor', item: anchor, fallbackTarget: target } : target ? { kind: 'work', target } : undefined;
 export const initialHomeTab = (): HomeTabState => ({ scroll: 0, showAll: false, expanded: new Set(), toggled: new Set(),
-  foldedLanes: new Set(), expandedTasks: new Set(), split: emptySplitNav() });
+  foldedLanes: new Set(), split: emptySplitNav() });
 
 export type ProjectSubPage = 'progress' | 'tickets' | 'tree' | 'docs';
 export type ProjectView = { kind: 'projects-list' } | { kind: 'hub' }
-  | { kind: 'progress'; onlyTry?: { cursor?: string; scroll: number } }
+  | { kind: 'progress' }
   | { kind: 'tickets' } | { kind: 'tree' } | { kind: 'docs' } | { kind: 'waiting'; index: number };
 export interface ProjectTabState {
   view: ProjectView;
@@ -63,12 +60,10 @@ export interface ProjectTabState {
   nav: ClassicSplitNav;
   savedPages: Readonly<Partial<Record<ProjectSubPage, { cursor?: string; scroll: number }>>>;
   folded: ReadonlySet<string>;
-  trySelection?: ReadonlyMap<string, TryTarget>;
   filter?: ViewFilter;
 }
 export const initialProjectTab = (): ProjectTabState => ({ view: { kind: 'hub' }, fromProjectsList: false,
   nav: emptyClassicSplitNav(), savedPages: {}, folded: new Set() });
-export const onlyTry = (view: ProjectView) => view.kind === 'progress' ? view.onlyTry : undefined;
 export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | undefined => {
   switch (view.kind) {
     case 'hub': case 'projects-list': return undefined;
@@ -80,7 +75,7 @@ export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | und
 export type SubpageState = { kind: 'inspector'; target: WorkTarget; cursor?: string; scroll: number; selectedNodeId?: string; revealed?: string }
   | { kind: 'changes'; scroll: number };
 export interface HelpOverlay { scroll?: number }
-export type ViewPrefs = Pick<HudSettings, 'experiments' | 'panelLayout' | 'acceptance' | 'cardStallMinutes' | 'cardFoldMinutes' | 'cardHideMinutes'> & { splitRatio?: number };
+export type ViewPrefs = Pick<HudSettings, 'experiments' | 'panelLayout' | 'cardStallMinutes' | 'cardFoldMinutes' | 'cardHideMinutes'> & { splitRatio?: number };
 export interface MonitorState {
   activeTab: MainTab;
   selectedProject?: string;
@@ -205,8 +200,8 @@ export function transitionTab(state: MonitorState, tab: MainTab): MonitorState {
   const resetList = state.activeTab !== 'control' && activeTab !== 'control';
   const project = state.project;
   return { ...base, activeTab, overlay: undefined, control: { ...state.control, notice: undefined },
-    home: state.activeTab === 'home' ? { ...state.home, filter: activeTab === 'home' ? state.home.filter : undefined, trySelection: undefined } : state.home,
-    project: { ...project, ...(state.activeTab === 'project' && activeTab !== 'project' ? { filter: undefined, trySelection: undefined } : {}),
+    home: state.activeTab === 'home' && activeTab !== 'home' ? { ...state.home, filter: undefined } : state.home,
+    project: { ...project, ...(state.activeTab === 'project' && activeTab !== 'project' ? { filter: undefined } : {}),
       ...(resetList ? { view: project.view.kind === 'projects-list' ? { kind: 'hub' } : project.view, fromProjectsList: false } : {}) } };
 }
 
@@ -214,7 +209,7 @@ export function switchProject(state: MonitorState, selectedProject?: string): Mo
   if (selectedProject === state.selectedProject) return state;
   const { view, nav } = state.project;
   return { ...state, selectedProject, overlay: state.overlay?.kind === 'control-harness-add' ? state.overlay : undefined,
-    project: { ...initialProjectTab(), view: view.kind === 'progress' ? { kind: 'progress' } : view,
+    project: { ...initialProjectTab(), view,
       nav: emptyClassicSplitNav(nav.cursor === 'project:switch' ? nav.cursor : undefined) },
     control: { ...state.control, roles: initialControlView('roles'), notice: undefined } };
 }
@@ -222,34 +217,26 @@ export function switchProject(state: MonitorState, selectedProject?: string): Mo
 /** Save a page's place and restore it on re-entry. Waiting goes back to the same item on the hub. */
 export function transitionProjectView(state: MonitorState, view: ProjectView, options: { cursor?: string; fromProjectsList?: boolean } = {}): MonitorState {
   const project = state.project, from = projectPage(project.view), saved = { ...project.savedPages };
-  if (from && from !== 'waiting') saved[from] = (state.prefs.panelLayout === 'classic' ? onlyTry(project.view) : undefined) ??
-    { cursor: project.nav.cursor, scroll: project.nav.scroll };
+  if (from && from !== 'waiting') saved[from] = { cursor: project.nav.cursor, scroll: project.nav.scroll };
   const page = projectPage(view), kept = page && page !== 'waiting' && !options.cursor ? saved[page] : undefined;
   const cursor = options.cursor ?? kept?.cursor ?? (view.kind === 'hub' && from
     ? project.view.kind === 'waiting' ? `project:wait:${project.view.index}` : `project:page:${from}` : undefined);
-  return { ...state, project: { ...project, view, savedPages: saved, trySelection: undefined,
+  return { ...state, project: { ...project, view, savedPages: saved,
     filter: project.view.kind === view.kind ? project.filter : undefined,
     fromProjectsList: options.fromProjectsList ?? project.fromProjectsList,
     nav: { ...project.nav, cursor, scroll: kept?.scroll ?? 0, revealed: kept?.cursor } } };
 }
 
 export function viewPrefs(settings: HudSettings): ViewPrefs {
-  const { experiments, panelLayout, acceptance, cardStallMinutes, cardFoldMinutes, cardHideMinutes } = settings;
-  return { experiments, panelLayout, acceptance, cardStallMinutes, cardFoldMinutes, cardHideMinutes };
+  const { experiments, panelLayout, cardStallMinutes, cardFoldMinutes, cardHideMinutes } = settings;
+  return { experiments, panelLayout, cardStallMinutes, cardFoldMinutes, cardHideMinutes };
 }
 export function applyViewPrefs(state: MonitorState, settings: HudSettings): MonitorState {
   const prefs = { ...viewPrefs(settings), splitRatio: state.prefs.splitRatio };
-  let next = reconcileMonitor({ ...state, prefs });
-  const layout = prefs.panelLayout !== state.prefs.panelLayout;
-  const acceptance = prefs.acceptance !== state.prefs.acceptance;
-  if (layout || acceptance) next = { ...next, home: { ...next.home, trySelection: undefined,
-    ...(layout ? { cursor: undefined, scroll: 0, revealed: undefined, split: emptySplitNav() } : {}) } };
-  if (layout || acceptance) {
-    const project = next.project;
-    next = { ...next, project: { ...project, view: project.view.kind === 'progress' ? { kind: 'progress' } : project.view,
-      nav: emptyClassicSplitNav(), trySelection: undefined } };
-  }
-  return next;
+  const next = reconcileMonitor({ ...state, prefs });
+  if (prefs.panelLayout === state.prefs.panelLayout) return next;
+  return { ...next, home: { ...next.home, cursor: undefined, scroll: 0, revealed: undefined, split: emptySplitNav() },
+    project: { ...next.project, nav: emptyClassicSplitNav() } };
 }
 
 export function reconcileMonitor(state: MonitorState): MonitorState {

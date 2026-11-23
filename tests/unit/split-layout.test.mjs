@@ -1,5 +1,5 @@
 import { splitOf, viewFor, withState, sliceState } from '../fixtures/state-helpers.mjs';
-import { homeAnchor, homeTarget, onlyTry } from '../../dist/render/monitor-state.js';
+import { homeAnchor, homeTarget } from '../../dist/render/monitor-state.js';
 import { projectPageOf } from '../../dist/render/project-view.js';
 /** The Split layout (spec §2.2 "Panel layouts"): a list above, the cursor row's preview below; frames at 40 columns and how the keys and the mouse move through it. */
 import test, { before, after } from 'node:test';
@@ -67,11 +67,11 @@ test('Home: the list has a top summary strip, one row per lane and block, a ques
   assert.match(plain(busy.render(40, 'zh')).join('\n'), /^◉ 本次会话 +子代理 +1 运行中$/m);
   assert.match(rule(d), /^NATIVE-TREE ─+ imp · 2 jobs$/);
   assert.equal(d.state.home.split.listCursor, d.frame.workboard.rows[1].item);
-  // Idle: nothing runs, the first row that needs the owner is Waiting for you, whose preview lists the items and the latest slices.
+  // Idle: Waiting for you previews STATE Waiting items, not a pending work list.
   const calm = driver(idle), quiet = calm.lines();
-  assert.ok(quiet.some((l) => /^\? Waiting for you +2 asks · 1 to try$/.test(l)), quiet.join('\n'));
-  assert.match(rule(calm), /^Waiting for you ─+ 2 asks · 1 to try$/);
-  assert.ok(quiet.some((l) => /^To try ─+ 1$/.test(l)) && quiet.some((l) => /◇ LANDING/.test(l)));
+  assert.ok(quiet.some((l) => /^\? Waiting for you +2 asks$/.test(l)), quiet.join('\n'));
+  assert.match(rule(calm), /^Waiting for you ─+ 2 asks$/);
+  assert.doesNotMatch(quiet.join('\n'), /To try ─|◇ LANDING/);
 });
 
 test('Home: the list keeps its height whatever the preview does, and gives way last (24 rows)', async (t) => {
@@ -168,34 +168,26 @@ test('Home: Waiting for you opens its items, Enter on one reads it whole, Progre
   assert.equal(lane.run('inspect').state.subpage?.kind, 'inspector');
 });
 
-test('Project hub: Enter opens a page; y and n in the Progress preview act on the next slice to try', async (t) => {
+test('Project hub: Enter opens a page and its preview does not offer acceptance', async (t) => {
   const { busy } = await fixtures(t);
   const progress = page(undefined, { project: { nav: { cursor: 'project:page:progress' } } });
   const d = driver(busy, { data: busy.control, height: 72 }).at(progress);
   assert.match(rule(d), /^Progress ─+$/);
   const preview = d.pane('preview').rows.map((r) => stripAnsi(r.text).trimEnd()).join('\n');
-  assert.match(preview, /^To try$/m);
-  assert.match(preview, /◇ DATA-ONE +1d/);
+  assert.doesNotMatch(preview, /To try|DATA-ONE/);
   assert.match(preview, /✓ last accepted REVIEW-ONE 8d/);
   d.run('down');
   assert.equal(d.state.project.nav.cursor, 'project:page:tickets');
   assert.match(rule(d), /^Tickets ─+$/);
   d.run('up');
-  const out = d.run('try-accept');
-  assert.deepEqual([out.action.type, out.action.action, out.action.target.slices[0].id], ['record-try', 'accept', 'DATA-ONE']);
-  assert.equal(d.run('try-flag').action.action, 'flag');
   d.run('enter');
   assert.equal(projectPageOf(d.state), 'progress');
-  // A slice already marked leaves the queue: the next one is the one y acts on.
-  const again = busy.render(40, 'en', 72, progress, busy.control, { tryMarks: new Map([['DATA-ONE', 'accept']]) });
-  const next = handleMonitorInput(again.state, { type: 'key', key: 'try-accept' }, { tree: TREE, frame: again, nowMs: NOW, standalone: true });
-  assert.equal(next.action.target.slices[0].id, 'WATCH-LINK');
 });
 
 test('Project hub: a waiting item has a preview; Enter reads it, Esc returns to the same row', async (t) => {
   const { busy } = await fixtures(t);
   const d = driver(busy, { data: busy.control }).at(page(undefined, { project: { nav: { cursor: 'project:wait:1' } } }));
-  assert.match(rule(d), /^Waiting for you ─+ 2 · 5 to try$/);
+  assert.match(rule(d), /^Waiting for you ─+ 2$/);
   d.run('enter');
   assert.equal(projectPageOf(d.state), 'waiting');
   assert.equal(d.state.project.view.index, 1);
@@ -223,85 +215,18 @@ test('Control list rows use the same Enter path for two clicks and the keyboard'
   assert.deepEqual(d.lines(), mouse);
 });
 
-test('Split Progress lets the owner select an older to-try slice and read its brief without changing layouts', async (t) => {
-  const { busy } = await fixtures(t);
-  const data = { ...busy.rich, ledger: busy.rich.ledger.map((r) => r.id === 'WATCH-LINK'
-    ? { ...r, brief: { brief: 'Job rows remain visible.', steps: ['Open the synthetic project.'] } } : r) };
-  const d = driver(busy, { data, height: 24 }).at(page(undefined, { project: { nav: { cursor: 'project:page:progress' } } }));
-  d.run('enter');
-  d.run('down');
-  assert.equal(d.state.project.nav.cursor, 'project:slice:WATCH-LINK');
-  assert.match(rule(d), /^WATCH-LINK ─+ to try · M4$/);
-  // The brief and steps; the original ledger text waits behind its fold, which Enter on the row goes into the preview to open.
-  assert.match(d.lines().join('\n'), /Job rows remain visible\.\n +How to try\n +1\. Open the synthetic project\.\n +▸ Ledger line/);
-  assert.doesNotMatch(d.lines().join('\n'), /the watcher survives a link loop/);
-  assert.deepEqual(d.run('try-accept').action.target.slices.map((r) => r.id), ['WATCH-LINK']);
-});
-
-test('Split hub reveals an off-screen first pending slice before y/n can record it', async (t) => {
-  const { busy } = await fixtures(t);
-  for (const [height, key, action] of [[24, 'try-accept', 'accept'], [12, 'try-flag', 'flag']]) {
-    const d = driver(busy, { data: busy.control, height }).at(page(undefined, { project: { nav: { cursor: 'project:page:progress' } } }));
-    if (height === 24) for (let n = 0; n < 3; n++) d.run('page-down');
-    const visiblePreview = () => { const { y, height } = d.pane('preview'); return d.lines().slice(y, y + height).join('\n'); };
-    assert.equal(d.state.project.nav.cursor, 'project:page:progress');
-    assert.doesNotMatch(visiblePreview(), /◇ DATA-ONE/);
-    assert.equal(d.run(key).action, undefined, 'the first press only reveals the target');
-    assert.equal(splitOf(d.state).focus, 'preview');
-    assert.match(visiblePreview(), /◇ DATA-ONE/);
-    const out = d.run(key).action;
-    assert.deepEqual([out.type, out.action, out.target.slices[0].id], ['record-try', action, 'DATA-ONE']);
-  }
-});
-
-test('Split Progress lists word-cut ledger text but keeps a stored brief and the whole preview', async (t) => {
-  const { busy } = await fixtures(t);
-  const projectCursor = 'project:slice:DATA-ONE';
-  const briefed = { ...busy.rich, ledger: busy.rich.ledger.map((r) => r.id === 'DATA-ONE'
-    ? { ...r, brief: { brief: 'Read the new rows. More details follow.', steps: ['Open the synthetic project.'] } } : r) };
+test('Split Progress previews whole ledger text and metadata but not stored try steps', async (t) => {
+  const { busy } = await fixtures(t), at = 'project:fold:task:milestone:0.1.3';
+  const data = { ...busy.rich, ledger: busy.rich.ledger.map((r) => r.id === 'DATA-ONE'
+    ? { ...r, brief: { brief: 'Retired model text.', steps: ['Retired step.'] } } : r) };
   for (const lang of ['en', 'zh']) {
-    const render = (data, modelEnabled) => busy.render(40, lang, 40, page('progress', { project: { nav: { cursor: projectCursor } } }), data, { modelEnabled });
-    const listRows = (frame) => frame.panes.find((p) => p.id === 'agents').rows.filter((r) => r.item === projectCursor).map((r) => stripAnsi(r.text).trim());
-    const preview = (frame) => frame.panes.find((p) => p.id === 'preview').rows.map((r) => stripAnsi(r.text).trim()).join(' ');
-    const off = render(busy.rich, false), on = render(briefed, true);
-    const row = listRows(off).join(' '), cut = /^◇ DATA-ONE +(.+?)… +(?:0\.1\.3 )?1(?:d|天)$/.exec(row);
-    assert.ok(cut && 'ledger history, live jobs and ticket detail'.startsWith(`${cut[1]} `), row);
-    assert.match(preview(off), /ledger history, live jobs and ticket detail/);
-    assert.match(preview(off), /0\.1\.3 · [0-9a-f]{7} · \d{2}-\d{2}/, 'keep commit and date metadata');
-    assert.match(listRows(on).join(' '), /Read the new rows\./);
-    assert.doesNotMatch(listRows(on).join(' '), /ledger history|More details follow/);
-    assert.match(preview(on), /Read the new rows\. More details follow\./);
-    assert.match(preview(on), /Open the synthetic project\./);
-    for (const frame of [off, on]) for (const line of frame.lines) assert.equal(visualLength(line), 40);
+    const frame = busy.render(40, lang, 48, page('progress', { project: { nav: { cursor: at } } }), data);
+    const preview = frame.panes.find((p) => p.id === 'preview').rows.map((r) => stripAnsi(r.text).trim()).join(' ');
+    assert.match(preview, /ledger history, live jobs and ticket detail/);
+    assert.match(preview, /0\.1\.3 · [0-9a-f]{7} · \d{2}-\d{2}/);
+    assert.doesNotMatch(preview, /Retired|How to try|试用步骤/);
+    for (const line of frame.lines) assert.equal(visualLength(line), 40);
   }
-});
-
-test('Split Progress ignores Classic’s t shortcut, leaving the marked batch and cursor in place', async (t) => {
-  const { busy } = await fixtures(t);
-  const d = driver(busy, { data: busy.rich, height: 24 }).at(page('progress', { project: { nav: { cursor: 'project:slice:DATA-ONE' } } }));
-  d.run('space');
-  d.run('down');
-  d.run('space');
-  const before = d.lines();
-  assert.match(before.join('\n'), /▣ ◇ DATA-ONE/);
-  assert.match(before.join('\n'), /▣ ◇ WATCH-LINK/);
-  d.run({ type: 'key', key: 'settings-test', text: 't' });
-  assert.equal(onlyTry(d.state.project.view), undefined);
-  assert.deepEqual(d.lines(), before);
-  assert.deepEqual(d.run('try-accept').action.target.slices.map((r) => r.id), ['DATA-ONE', 'WATCH-LINK']);
-  assert.equal(projectPageOf(d.run('escape').state), undefined);
-});
-
-test('Split Progress previews working and done rows without offering try actions', async (t) => {
-  const { busy } = await fixtures(t);
-  const d = driver(busy, { data: busy.rich }).at(page('progress', { project: { nav: { cursor: 'project:slice:PAGE-ONE' } } }));
-  assert.match(rule(d), /^PAGE-ONE ─+ working · 0\.1\.3$/);
-  assert.equal(d.run('try-accept').action, undefined);
-  assert.equal(d.run('open-session').action.type, 'open-files');
-  d.run('end');
-  assert.equal(d.state.project.nav.cursor, 'split:done');
-  assert.match(rule(d), /^Done ─+ 5 accepted$/);
-  assert.equal(projectPageOf(d.run('escape').state), undefined);
 });
 
 test('Control plane: roles on top, the cursor role’s places below; Enter takes the place keys into them; c and C apply a preset from the list', async (t) => {
@@ -330,11 +255,12 @@ test('Control plane: roles on top, the cursor role’s places below; Enter takes
   assert.equal(d.state.control.roles.nav.cursor, 'project:role:imp');
 });
 
-test('Tickets, Working tree and Docs: a row each, the whole text or the checklist underneath; Enter opens the file', async (t) => {
+test('Tickets previews a feature and Enter focuses its tickets; Working tree and Docs preview facts', async (t) => {
   const { busy } = await fixtures(t);
   const tickets = driver(busy).at(page('tickets'));
-  assert.match(rule(tickets), /^10 Vocabulary needs-triage +needs-triage$/);
-  assert.equal(tickets.run('enter').action.type, 'open-files');
+  assert.match(rule(tickets), /^native-tree ─+$/);
+  tickets.run('enter');
+  assert.equal(splitOf(tickets.state).focus, 'preview');
   const tree = driver(busy).at(page('tree')), docs = driver(busy).at(page('docs'));
   assert.match(rule(tree), /^branch ─+/);
   assert.equal(tree.pane('preview').rows.length > 0, true);
@@ -513,10 +439,10 @@ test('Preview scrollbar: a thumb over a dim track in the last cell of the scroll
   const tall = driver(busy);
   assert.ok(tall.pane('preview').contentLength <= tall.pane('preview').height);
   assert.ok(lastCells(tall).every((c) => c !== '┃' && c !== '│'));
-  const hub = driver(busy, { data: busy.control, height: 24 }).at(page(undefined, { project: { nav: { cursor: 'project:page:progress' } } }));
-  hub.run('page-down');
-  assert.ok(hub.lines().some((l) => /^  ◇ DATA-ONE +1d[┃│]$/.test(l)), 'a right-aligned age keeps its unit beside the bar');
-  assert.ok(hub.lines().some((l) => /^    ledger history, live jobs and +[┃│]$/.test(l)), hub.lines().join('\n'));
+  const progress = driver(busy, { data: busy.rich, height: 18 }).at(page('progress', { project: { nav: { cursor: 'project:fold:task:milestone:0.1.3' } } }));
+  const { rows } = progress.pane('preview');
+  const prose = rows.find(r => r.text.includes('ledger history'));
+  assert.ok(prose && visualLength(prose.text) === 39, 'the preview reserves one cell for the track');
   const zh = busy.render(40, 'zh', 40, page('progress'), busy.rich);
   for (const line of zh.lines) assert.equal(visualLength(line), 40);
 });

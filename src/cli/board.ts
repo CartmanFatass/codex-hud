@@ -4,16 +4,14 @@ import * as fs from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { ProjectCollector } from '../collectors/project-board.js';
 import { STATE_BYTES } from '../collectors/state-ledger.js';
-import { SmallModel } from '../collectors/small-model.js';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import { readThinJobs } from '../collectors/thin-jobs.js';
-import { TryBriefs } from '../collectors/try-brief.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { getHudDisplayHome, getHudHome } from '../hud-home.js';
 import { renderHtmlBoard } from '../render/html-board.js';
 import { resolveLanguage, type Language } from '../render/i18n.js';
 import { executable } from '../roles/roster.js';
-import { loadSettings, type HudSettings } from '../settings.js';
+import { loadSettings } from '../settings.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 
@@ -28,10 +26,7 @@ export interface BoardRun {
   env: NodeJS.ProcessEnv;
   now: number;
   lang: Language;
-  acceptance?: HudSettings['acceptance'];
   workboard: WorkboardSnapshot;
-  /** Stored briefs only: `TryBriefs.apply` reads its cache and starts no model call. */
-  briefs: Pick<TryBriefs, 'apply'>;
   out?: string;
 }
 
@@ -52,11 +47,10 @@ function readReview(path: string | undefined): string | undefined {
 /** One full collection of the project, rendered and written atomically (0600); returns the path. */
 export async function writeBoard(run: BoardRun): Promise<string> {
   const root = fs.realpathSync(run.cwd);
-  const collected = await new ProjectCollector(root, run.hudHome, run.env).collect('export', run.workboard, run.now);
-  const project = collected && run.briefs.apply(root, collected);
+  const project = await new ProjectCollector(root, run.hudHome, run.env).collect('export', run.workboard, run.now);
   if (!project) throw new Error('no project facts');
   const html = renderHtmlBoard({
-    projectName: basename(root), root, project, workboard: run.workboard, generatedAt: run.now, lang: run.lang, acceptance: run.acceptance,
+    projectName: basename(root), root, project, workboard: run.workboard, generatedAt: run.now, lang: run.lang,
     reviewText: readReview(project.docs.find((d) => d.label === 'review')?.path),
   });
   const file = run.out ? resolve(run.out) : join(getHudDisplayHome(run.env), `board-${slug(basename(root))}.html`);
@@ -113,10 +107,8 @@ export async function boardCommand(args: readonly string[], io: HudIO): Promise<
     revision: 'board', lanes, workers: lanes.flatMap((l) => l.workers), decisions: lanes.flatMap((l) => l.decisions),
     coverage: { incomplete: false, diagnostics: [], workspace: cwd },
   };
-  const briefs = new TryBriefs(new SmallModel(), join(getHudDisplayHome(io.env), 'model-cache', 'try-briefs.json'));
-  briefs.configure(settings?.modelEnabled ?? false, lang);
   let file: string;
-  try { file = await writeBoard({ cwd, hudHome, env: io.env, now, lang, acceptance: settings?.acceptance, workboard, briefs, out }); }
+  try { file = await writeBoard({ cwd, hudHome, env: io.env, now, lang, workboard, out }); }
   catch (error) { throw new CliError(`board_failed: ${(error as NodeJS.ErrnoException).code ?? 'could not write the board'}`, 1); }
   await io.stdout(`${file}\n`);
   if (open && !openBoard(file, io.env)) io.stderr('no opener found (wslview or xdg-open); open the file above in a browser\n');

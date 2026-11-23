@@ -64,9 +64,9 @@ test("frames: all seven kept pages in Home's kit", (t) => {
       assert.match(help, /Esc\s+back; clear a filter first;[^\n]*\n\s+does nothing at a tab root/);
       assert.match(help, /Esc\s+picker: clear filter, then\s+close/);
       assert.match(help, /\^R\s+picker: refresh model lists/);
-      assert.match(help, /Space\s+mark a to-try row/);
+      assert.match(help, /⏎\s+Accept all: record all pending/);
       assert.match(help, /Space\s+harness: on \/ off/);
-      assert.match(help, /y n\s+accept \/ flag the marked/);
+      assert.doesNotMatch(help, /mark a to-try row|accept \/ flag the marked|to-try rows: request landing/);
       assert.match(help, /i Del\s+place: add \/ remove; harness:\s+add back \/ off/);
       assert.match(help, /h\s+Roles \/ Harnesses/);
       assert.doesNotMatch(text, /\+ - K J|n N /);

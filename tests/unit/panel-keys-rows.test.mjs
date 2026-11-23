@@ -40,8 +40,7 @@ function driver(f, { width = 40, height = 40, data = f.data, state = split(), bo
 }
 
 test('a printable key is one decoder name, and Help covers the decoder with each key once per section', async (t) => {
-  // Lower case n flags, while the upper-case preset management keys act only on role rows.
-  assert.deepEqual([...'n<>'].map((c) => decode(c)[0].key), ['try-flag', 'previous-trouble', 'next-trouble']);
+  assert.deepEqual([...'yn<>'].map((c) => decode(c)[0].key), ['', '', 'previous-trouble', 'next-trouble']);
   assert.deepEqual([...'NIRDgpPeE'].map((c) => decode(c)[0].key), ['preset-copy', 'preset-empty', 'preset-rename', 'preset-delete', '', 'preset-list', '', '', '']);
   assert.deepEqual(['i', '\x1b[3~', '+', '-', '='].map((c) => decode(c)[0].key), ['place-add', 'place-remove', 'list-grow', 'list-shrink', 'list-grow']);
   // `+` and `=` are one physical key and one meaning; no key besides them names the same action.
@@ -50,7 +49,7 @@ test('a printable key is one decoder name, and Help covers the decoder with each
     const name = decode(String.fromCharCode(c))[0]?.key;
     if (name) named.set(name, [...(named.get(name) ?? []), String.fromCharCode(c)]);
   }
-  for (const name of ['try-flag', 'next-trouble', 'previous-trouble', 'place-add', 'list-shrink']) assert.equal(named.get(name)?.length, 1, `${name} is on one key`);
+  for (const name of ['next-trouble', 'previous-trouble', 'place-add', 'list-shrink']) assert.equal(named.get(name)?.length, 1, `${name} is on one key`);
   assert.deepEqual(named.get('list-grow'), ['+', '=']);
   // Walk the standalone decoder: ASCII (including control keys) and the terminal forms for navigation.
   const ascii = Array.from({ length: 128 }, (_, c) => String.fromCharCode(c));
@@ -236,23 +235,18 @@ test('Esc at every tab root leaves the cursor and tab unchanged; q closes the pa
   }
 });
 
-test('n flags a to-try row and does nothing on Home; > and < are Home’s next and previous card that needs the owner', () => {
-  // Home (Split): `n` moves nothing; `>` goes to the next card that asks or stalled, `<` back.
+test('> and < are Home’s next and previous card that needs the owner, not Project keys', () => {
   const home = driver(busy), start = home.state.home.split.listCursor;
-  const flag = home.run({ type: 'key', key: 'try-flag', text: 'n' });
-  assert.equal(flag.action, undefined);
-  assert.equal(home.state.home.split.listCursor, start, 'n does not jump on Home');
   home.run({ type: 'key', key: 'next-trouble', text: '>' });
   assert.notEqual(home.state.home.split.listCursor, start, '> moves to the next card that needs the owner');
   home.run({ type: 'key', key: 'previous-trouble', text: '<' });
   assert.equal(home.state.home.split.listCursor, start, '< comes back');
-  // The hub's to-try rows (Split): `n` flags, `>` and `<` do nothing.
-  const hub = driver(busy, { data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' }, project: { nav: { cursor: 'project:slice:DATA-ONE' } } }) });
+  const hub = driver(busy, { data: busy.control, state: onPage(undefined, { prefs: { panelLayout: 'split' }, project: { nav: { cursor: 'project:accept-all' } } }) });
   for (const input of [{ type: 'key', key: 'next-trouble', text: '>' }, { type: 'key', key: 'previous-trouble', text: '<' }]) {
     const out = hub.run(input);
     assert.equal(out.action, undefined);
   }
-  assert.equal(hub.run({ type: 'key', key: 'try-flag', text: 'n' }).action?.action, 'flag');
+  assert.equal(hub.state.project.nav.cursor, 'project:accept-all');
 });
 
 const STATE_WORDS = { en: ['asking', 'failed', 'done', 'stopped', 'stalled', 'report ready'], zh: ['提问中', '失败', '完成', '已停止', '停滞', '报告待阅'] };

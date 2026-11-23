@@ -36,23 +36,18 @@ for (const [bound, view] of [[false, 'project'], [false, 'help'], [false, 'inspe
   }
 });
 
-test('the 40-column Classic to-try view reloads with its cursor but without pending batch marks', async (t) => {
-  const f = live(t, (state) => ({ state: { ...state, activeTab: 'project', project: { ...state.project, view: { kind: 'progress', onlyTry: { scroll: 0 } } } }, settings: null }), { columns: 40 });
+test('the 40-column Project hub restores the selected Accept all row without running it', async (t) => {
+  const f = live(t, (state) => ({ state: { ...state, activeTab: 'project' }, settings: null }), { columns: 40 });
   writeFixtureFile(join(f.env.CODEX_HUD_CWD, 'STATE.md'), 'Milestone: M4\n\n## Slices\n- try · M4 · RELOAD-ONE · Synthetic reload slice\n');
-  await until(() => f.output().includes('1 slice'), 'the to-try view did not render');
-  f.child.stdin.write('gjj ');
-  await until(() => f.output().includes('▣'), 'the slice was not marked');
+  await until(() => f.output().includes('Accept all'), 'the Inbox did not render');
+  f.child.stdin.write('G');
+  await until(() => f.output().includes('⏎ accept all'), 'Accept all was not selected');
   const at = f.output().length;
-  f.appendBuild('\n// marked try view build');
-  await until(() => f.output().slice(at).includes('1 slice'), 'the marked page did not repaint after reload: ' + f.stderr());
+  f.appendBuild('\n// accept all row build');
+  await until(() => f.output().slice(at).includes('⏎ accept all'), 'the selected row did not repaint after reload: ' + f.stderr());
   assert.equal(f.events().filter((e) => e.start).length, 2);
-  const { project } = f.restarts()[0].restart.stateV2;
-  assert.equal(project.nav.cursor, 'project:fold:task:milestone:M4');
-  assert.ok(project.view.onlyTry);
-  assert.equal(project.trySelection, undefined, 'pending marks are not transported');
-  assert.doesNotMatch(f.output().slice(at), /▣/);
-  f.child.stdin.write(' ');
-  await until(() => f.output().slice(at).includes('▣'), 'could not mark the slice again after reload');
+  assert.equal(f.restarts()[0].restart.stateV2.project.nav.cursor, 'project:accept-all');
+  assert.match(f.output().slice(at), /1 to try/);
 });
 
 // Reload checks run on collection ticks; allow time for both detection and a later poll.

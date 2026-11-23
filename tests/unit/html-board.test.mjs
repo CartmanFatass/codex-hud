@@ -75,20 +75,20 @@ test('every dynamic string is escaped: only the page\'s own tags exist', () => {
   assert.equal(html.split('<script').length, 1);
   // Each field that carries the payload shows it as text.
   for (const where of ['<h1>proj ', 'class="root">/home/user/', 'class="chip plain">branch wt/', 'class="lede">Closing ', 'class="card ask"><header><span class="chip try">STATE</span></header><p class="pre">Try ',
-    '<p>Adds the board ', '<li>Open ', '<span class="p mono">src/', '<p>PLAIN ', 'Board ', '<p class="q">Which ', '<li>b) ', '<li class="">', '<b># Review ', '<p>working ']) {
+    '<span class="p mono">src/', '<p>PLAIN ', 'Board ', '<p class="q">Which ', '<li>b) ', '<li class="">', '<b># Review ', '<p>working ']) {
     const at = html.indexOf(where);
     assert.ok(at >= 0, where);
     assert.ok(html.slice(at, at + where.length + 80).includes('&lt;'), `${where} is escaped`);
   }
 });
 
-test('a to-try card carries its brief, numbered steps, linked tickets and diff bars', () => {
+test('a to-try card shows ledger text, links tickets and keeps its diff bars, ignoring old brief content', () => {
   const html = renderHtmlBoard(inputs());
   const card = html.slice(html.indexOf('<article class="card try"><header><span class="id">BRIEFED'), html.indexOf('<article class="card try"><header><span class="id">PLAIN'));
   assert.match(card, /<span class="chip try">M5<\/span>/);
   assert.match(card, /<code>a1b2c3d4<\/code> · 3h ago/);
-  assert.match(card, /<ol><li>Run it<\/li><li>Open /);
-  assert.match(card, /<details><summary>Ledger line<\/summary>BRIEFED \(a1b2c3d4\) see \.scratch\/panel-v2\/issues\/07-board\.md<\/details>/);
+  assert.doesNotMatch(card, /Run it|Adds the board|How to try|Ledger line/);
+  assert.match(card, /<p>BRIEFED \(a1b2c3d4\) see \.scratch\/panel-v2\/issues\/07-board\.md<\/p>/);
   assert.match(card, /\+150 -30 · 7 files/);
   // The biggest file fills the bar: its added part 100/125 of it, the deleted 25/125.
   assert.match(card, /<span class="nums"><b class="add">\+100<\/b> <b class="del">-25<\/b><\/span><span class="dbar"><i class="a" style="width:80\.0%"><\/i><i class="d" style="width:20\.0%"><\/i>/);

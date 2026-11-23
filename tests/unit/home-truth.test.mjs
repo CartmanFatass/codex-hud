@@ -44,7 +44,7 @@ test('Home top line counts STATE waiting items with job questions, ✓ only when
     assert.equal(projectPageOf(state), undefined);
     const hub = f.quiet(38, 'en', 46, state);
     assert.equal(hub.state.project.nav.cursor, 'project:wait:0', 'the hub starts on the first waiting item');
-    assert.ok(plain(hub).some((l) => /^Needs you ─+ 2 · 1 to try$/.test(l)));
+    assert.ok(plain(hub).some((l) => /^Needs you ─+ 2$/.test(l)));
   }
 });
 
@@ -72,12 +72,11 @@ test('Enter or a click on a waiting item on Home opens its whole text on the Pro
   }
 });
 
-test('Home counts the current milestone\'s slices as the hub does; without one the block is the whole ledger and says so', async (t) => {
+test('Home counts the current milestone\'s slices while Accept all counts the full ledger; without a milestone Home labels it accordingly', async (t) => {
   const f = await fixture(t);
   for (const width of [38, 80]) {
     const home = plain(f.quiet(width, 'en', 46)), hub = plain(f.quiet(width, 'en', 46, { ...sliceState(), activeTab: 'project' }));
-    const progress = hub.find((l) => /^Progress /.test(l));
-    assert.match(progress, width === 38 ? /^Progress +M3b · 1 to try$/ : /^Progress +M3b · 1 to try · 1 working$/);
+    assert.match(hub.find((l) => /^Accept all /.test(l)), /^Accept all +1 to try$/);
     assert.match(legend(home), /◐ 1 working/);
     assert.match(legend(home), /◇ 1 to try/);
     assert.doesNotMatch(legend(home), /blocked|todo|accepted|dropped/);
@@ -98,12 +97,11 @@ test('an idle Home at 38×46 shows waiting items and the newest landed slices ab
     const at = (re) => lines.findIndex((l) => re.test(l));
     const waiting = at(/^(Waiting for you|等你处理) ─/), latest = at(/^(Latest|最近完成) ─/), progress = at(/^(Progress|进度) ─/);
     assert.ok(2 < waiting && waiting < latest && latest < progress, `${waiting} < ${latest} < ${progress}`);
-    // One row an item: the two waiting items, then the two landed slices (the later ledger row first: Home's read has no commit dates).
+    // One row an item: the two waiting items, then only accepted work.
     assert.deepEqual(lines.slice(waiting + 1, waiting + 3).map((l) => l.slice(0, 2)), ['? ', '? ']);
     assert.match(lines[waiting + 1], /Try the Project tab/);
     assert.match(lines[latest + 1], /SHIPPED/);
-    assert.match(lines[latest + 2], /LANDING/);
-    assert.deepEqual(lines.slice(latest + 3, progress).filter(Boolean), [], 'only blank rows between');
+    assert.deepEqual(lines.slice(latest + 2, progress).filter(Boolean), [], 'no pending rows between');
     // The summary is cut after three rows, not one; the bar follows it.
     assert.match(lines[progress + 1], /^  Synthetic milestone closing/);
     assert.match(lines[progress + 2], /^  building in worktrees$/);

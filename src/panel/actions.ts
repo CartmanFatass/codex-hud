@@ -4,7 +4,7 @@ import { focusJobTab, openEditorPane, stopJob } from '../cli/panel-pane.js';
 import { readExpData, saveExpEdit } from '../collectors/exp-store.js';
 import { answerJobQuestion, appendPanelAction, recordPanelAnswer, type AnswerResult } from '../collectors/panel-actions.js';
 import type { ProjectVisits } from '../collectors/project-visits.js';
-import { appendTry } from '../collectors/try-records.js';
+import { appendTry, TryLog } from '../collectors/try-records.js';
 import { finishChain } from '../render/chain-input.js';
 import { effectiveModel } from '../render/control-view.js';
 import { harnessItem } from '../render/harness-page.js';
@@ -41,7 +41,7 @@ type ActionHost = {
   notice(text: string): void;
   boardNotice(text: string): void;
   error(text: string): void;
-  boardInput(): Pick<Parameters<typeof writeBoard>[0], 'acceptance' | 'workboard' | 'briefs'>;
+  boardInput(): Pick<Parameters<typeof writeBoard>[0], 'workboard'>;
   refreshModels(): void;
   toggleBriefs(): void;
   openSettings(): void;
@@ -50,6 +50,7 @@ type ActionHost = {
 /** Execute only the actions emitted by monitor input, off the paint path. */
 export function createPanelActions(home: string, cwd: string, visits: ProjectVisits, host: ActionHost) {
   let expSaving = false;
+  const tries = new TryLog(home);
   const exportBoard = () => {
     const state = host.state;
     const root = state.activeTab === 'project' || state.activeTab === 'control' ? host.shownRoot() : cwd;
@@ -73,20 +74,21 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
             host.repaint();
           });
           break;
-        case 'record-try': {
-          const root = state.activeTab === 'home' ? cwd : host.shownRoot();
-          if (visits.snapshot(root) && (state.prefs.acceptance === 'slice' || host.projectDisplayRoot() === root)) {
-            try {
-              if (action.action === 'land') {
-                appendPanelAction(home, { type: 'land', root, slices: action.target.slices.map(s => s.id) });
-                host.notice(t('Land requested'));
-              } else {
-                appendTry(home, root, action.action, action.target);
-                host.notice('');
-              }
-              host.collect();
-            } catch { host.notice(t(action.action === 'land' ? 'Could not record request' : 'Could not record try')); }
-          }
+        case 'accept-all': {
+          const root = host.shownRoot();
+          // On a project switch the panel can still show the previous project's hub.
+          if (host.projectDisplayRoot() !== root) break;
+          const ledger = visits.snapshot(root)?.ledger;
+          if (!ledger) break;
+          const marks = tries.marks(root, ledger);
+          const slices = ledger.filter((r) => r.state === 'try' && marks.get(r.id) !== 'accept');
+          if (!slices.length) break;
+          const milestones = slices.map((r) => r.milestone), mixed = milestones.some((m) => m !== milestones[0]);
+          try {
+            appendTry(home, root, 'accept', { slices, milestone: mixed ? '—' : milestones[0], ...(mixed ? { milestones } : {}) });
+            host.notice('');
+            host.collect();
+          } catch { host.notice(t('Could not accept all')); }
           break;
         }
         // The owner's micro-actions on a HUD job: what failed shows until the next key.

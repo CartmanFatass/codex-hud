@@ -12,7 +12,7 @@ import { setLanguage } from '../../dist/render/i18n.js';
 import { ticketFixture } from './project-tickets.mjs';
 import { NOW, TREE, plain, onControl, richProgress, richControl } from './project-page.mjs';
 
-export const split = (extra) => (withState(initialMonitorState(), { prefs: { panelLayout: 'split', acceptance: 'slice' } }, extra));
+export const split = (extra) => (withState(initialMonitorState(), { prefs: { panelLayout: 'split' } }, extra));
 
 export function layoutDriver(f, { width = 40, height = 36, lang = 'en', data = f.data, state = split() } = {}) {
   let frame = f.render(width, lang, height, state, data);

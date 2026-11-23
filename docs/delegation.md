@@ -47,7 +47,9 @@ agent proposes.
 
    One fresh implementer fixes the findings in one pass. Findings block only if a real user would hit them or the
    spec is violated.
-6. **Owner tries it.** The owner installs or runs the milestone. That is the acceptance.
+6. **Accept.** The orchestrator accepts work after verification. Ask the owner to try only behaviour they need to
+   judge themselves (for example, an interactive change). Record specific issues for the owner in STATE's
+   `## Waiting for the owner`. The Project Inbox has one Accept all action for pending work, not per-slice owner tries.
 
 Extra review outside milestones only for: editing the owner's real config files, deleting data, killing processes,
 and the installer.

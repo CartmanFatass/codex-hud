@@ -10,7 +10,6 @@ import type { MonitorContext, MonitorOutcome, MonitorRect, MonitorState } from '
 import { monitorRowAt } from './monitor-input.js';
 import { splitItems } from './split-frame.js';
 import type { ClassicSplitNav } from './monitor-state.js';
-import { tryInput } from './try-input.js';
 
 /** The list's share stays between a fifth and four fifths of the rows, so neither part can be sized away. */
 const RATIO = [0.2, 0.8];
@@ -89,7 +88,7 @@ export function splitProjectInput(next: MonitorState, controlNav: ClassicSplitNa
   const focus = split.focus === 'preview', at = focus ? split.previewCursor : nav.cursor;
   if (resize(next, focus, key, ctx)) return result();
   const { list, preview } = panes(ctx);
-  const subs = splitItems(preview?.rows), rows = [...(list?.rows ?? []), ...(preview?.rows ?? [])];
+  const subs = splitItems(preview?.rows);
   const move = (items: string[], k: string) => { const to = step(items, at, k); if (focus) split.previewCursor = to; nav.cursor = to; };
   const intoPreview = (item: string) => {
     if (!focus) split.listCursor = nav.cursor;
@@ -110,33 +109,15 @@ export function splitProjectInput(next: MonitorState, controlNav: ClassicSplitNa
       if (focus && at === got.click) return enter();
       intoPreview(got.click);
     } else if (got.click === at && !focus) return enter();
-    else { split.focus = 'list'; nav.cursor = got.click; if (focus && !controlNav) next.project.trySelection = undefined; }
+    else { split.focus = 'list'; nav.cursor = got.click; }
     return result();
   }
   if (got === 'done') return result();
   if (MOVE.includes(key)) { move(splitItems(focus ? preview?.rows : list?.rows), key); return result(); }
   if (key === 'escape' && focus) {
     split.focus = 'list'; nav.cursor = split.listCursor;
-    if (!controlNav) next.project.trySelection = undefined;
     return result();
   }
   if (key === 'enter' || key === 'activate') return enter();
-  if (key === 'space' || key === 'try-accept' || key === 'try-flag' || key === 'request-land') {
-    const cursorRow = rows.find((r) => r.item === at && r.tryTarget);
-    const parent = focus && split.listCursor?.startsWith('project:fold:task:') ? rows.find((r) => r.item === split.listCursor && r.tryTarget) : undefined;
-    const row = cursorRow ?? parent ?? (focus ? undefined : preview?.rows.find((r) => r.tryTarget));
-    if (preview && row?.item) {
-      const index = preview.rows.indexOf(row);
-      if (key === 'space' && !cursorRow && !parent) intoPreview(row.item);
-      // For an unmarked decision, show the target's header before accepting a second keypress.
-      if (key !== 'space' && !next.project.trySelection && index >= 0 && (index < preview.offset || index >= preview.offset + preview.height)) {
-        intoPreview(row.item);
-        nav.revealed = undefined;
-        return result();
-      }
-    }
-    const tried = tryInput(next, key, row);
-    if (tried) return tried;
-  }
   return undefined;
 }

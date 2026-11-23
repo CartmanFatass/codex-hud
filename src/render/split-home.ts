@@ -8,7 +8,6 @@ import { projectWorkCard } from '../collectors/work-card.js';
 import type { MonitorData, MonitorRow, MonitorState } from './monitor.js';
 import { askSlabRows, homeSummaryRow } from './home-view.js';
 import { homeCursor, homeTarget, type HomeCursor } from './monitor-state.js';
-import { TRY_ACTIONS } from './split-project.js';
 import { homeKeys } from './job-actions.js';
 import { laneRows, orderedLanes, workerPriority } from './work-lanes.js';
 import { foldText, roleMark } from './work-jobs.js';
@@ -18,8 +17,8 @@ import { isUnreadReport, laneSonicRunning, mainLaneWorkers, routeBadge, sonicBad
 import type { WorkCard } from '../collectors/work-card.js';
 import { keywordMarks } from '../utils/keyword-marks.js';
 import { ageText, failed, paintSentence, phaseChain, stemLines, workCardDetail, workPhaseText, workStateGlyph, workStateInk, workStateWord } from './work-card.js';
-import { acceptedText, briefStack, currentRows, homeProgressRows, landedAge, landedInline, landedMark, landedEntries, taskRows, tryCount, trySentence, waitingRows } from './project-view.js';
-import { boardRow, homeDoneCount, mark, minuteAge, originalRows, section } from './workboard-rows.js';
+import { acceptedText, currentRows, homeProgressRows, waitingRows } from './project-view.js';
+import { boardRow, homeDoneCount, mark, minuteAge, originalRows } from './workboard-rows.js';
 import { splitSubValid, type SplitScene } from './split-frame.js';
 import { cutWords, fit, monitorText, pair } from './monitor-text.js';
 import { stripAnsi, theme, truncateAnsi, visualLength } from './colors.js';
@@ -176,19 +175,9 @@ export function homeScene(
     };
   };
 
-  const waits = data?.waiting ?? [], n = data ? tryCount(data, state.prefs.acceptance) : 0;
-  const waitFacts = [waits.length && t(waits.length === 1 ? '{n} ask' : '{n} asks', { n: waits.length }), n && t('{n} to try', { n })].filter(Boolean).join(' · ');
-  const pendingRows = () => {
-    if (!data || !n) return [];
-    const latest = landedEntries(data, state.prefs.acceptance, true).filter((entry) => 'task' in entry || entry.r.state === 'try').slice(0, width < 56 ? 3 : 5).flatMap((entry): MonitorRow[] => {
-      if ('task' in entry) return taskRows(entry.task, data, state, width, now, input.tryMarks, true, state.home.expandedTasks);
-      const { r } = entry, head = `  ${landedMark(r)} ${monitorText(r.id)}`, age = landedAge(r, now);
-      return (trySentence(r) ? briefStack(head, trySentence(r), age, width) : [landedInline(r, head, age, width)])
-        .map((text) => ({ text, item: `home-progress:latest:${r.id}`, tryTarget: { milestone: r.milestone, slices: [r] } }));
-    });
-    return [boardRow(''), section(t('To try'), width, String(n)), ...latest];
-  };
-  const waiting: Entry[] = filtering || (!waits.length && !n) ? [] : [{
+  const waits = data?.waiting ?? [];
+  const waitFacts = t(waits.length === 1 ? '{n} ask' : '{n} asks', { n: waits.length });
+  const waiting: Entry[] = filtering || !waits.length ? [] : [{
     item: WAITING,
     needs: true,
     rows: [{ item: WAITING, text: pair(`${theme.board.attention('?')} ${t('Waiting for you')}`, theme.board.muted(waitFacts), width) }],
@@ -200,16 +189,15 @@ export function homeScene(
           ...waitingRows(r, i, width, now, Infinity).map((row) => ({ ...row, item: `home-progress:wait:${i}` })),
           ...originalRows(r.original, `original:wait:${i}`, state.home.expanded.has(`original:wait:${i}`), width),
         ]),
-        ...pendingRows(),
       ],
     }),
   }];
-  const block = data ? homeProgressRows(data, width, Infinity, false, state.prefs.acceptance, state.home.expanded) : [];
+  const block = data ? homeProgressRows(data, width, Infinity, false) : [];
   const progress: Entry[] = filtering || !block.length ? [] : (() => {
     const cur = data ? currentRows(data) : undefined, milestone = data?.ladder.current && cur && !(cur.whole && cur.rows.length) ? monitorText(data.ladder.current) : '';
     const lead = `${theme.board.active(mark('◐', '@'))} ${t('Progress')}`, facts = milestone ? [milestone] : [];
     if (cur?.rows.length) {
-      const tries = tryCount({ ledger: cur.rows }, state.prefs.acceptance), working = cur.counts.working;
+      const { try: tries, working } = cur.counts;
       if (tries || working) {
         const full = [t('{n} to try', { n: tries }), `${working} ${t('working')}`];
         facts.push(...(visualLength([lead, ...facts, ...full].join(' · ')) <= width ? full : [t('{n} try', { n: tries }), t('{n} live', { n: working })]));
@@ -220,7 +208,7 @@ export function homeScene(
       item: PROGRESS,
       needs: false,
       rows: [{ item: PROGRESS, text: pair(lead, theme.board.muted(facts.join(' · ')), width) }],
-      preview: () => ({ label: t('Progress'), right: milestone && `${t('Milestone')} ${milestone}`, rows: [...block.slice(1), ...pendingRows()] }),
+      preview: () => ({ label: t('Progress'), right: milestone && `${t('Milestone')} ${milestone}`, rows: block.slice(1) }),
     }];
   })();
 
@@ -252,7 +240,7 @@ export function homeScene(
   const entry = entries.find((e) => e.item === cursor), shown = entry?.preview() ?? { label: '', rows: [] };
   const scope = `home|${cursor}`, sub = splitSubValid(split, shown.rows);
   const lane = lanes.find((l) => targetKey({ kind: 'lane', laneId: l.id }) === cursor), at = sub ?? cursor;
-  const anchor = at && /^(home-progress:|split:|original:|fold:|project:fold:(task|ledger):)/.test(at) ? at : undefined;
+  const anchor = at && /^(home-progress:|split:|original:|fold:)/.test(at) ? at : undefined;
   const target = anchor ? homeTarget(state.home) : sub ? targets.get(sub)
     : lane ? { kind: 'worker' as const, laneId: lane.id, workerId: laneTop(lane, now).id } : homeTarget(state.home);
   const selected = homeCursor(target, anchor);
@@ -280,8 +268,6 @@ export function homeScene(
     sub,
     scope,
     left: homeDoneCount(done, width),
-    hints: shown.rows.some((r) => r.item === sub && r.tryTarget)
-      ? [...TRY_ACTIONS, '⏎ details', 'Esc back', 'o file']
-      : homeKeys({ ...state, home: { ...state.home, cursor: selected } }, board, sub ? 'expand' : 'open', !!sub),
+    hints: homeKeys({ ...state, home: { ...state.home, cursor: selected } }, board, sub ? 'expand' : 'open', !!sub),
   };
 }

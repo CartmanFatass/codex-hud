@@ -8,7 +8,7 @@ import { jobModalInput } from './job-actions.js';
 import { clearFilter, filterInput, filterScope } from './filter.js';
 import { expInput } from './exp-view.js';
 import { expShown } from './main-tabs.js';
-import { activeTabState, hasUnsavedDraft } from './monitor-state.js';
+import { hasUnsavedDraft } from './monitor-state.js';
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
   if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height) return undefined;
@@ -82,10 +82,6 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
   const modal = jobModalInput(state, input);
   if (modal) return modal;
   if (key === 'export-board' && !next.subpage && !expShown(next)) return result({ type: 'export-board' });
-  if (key === 'help' || key === 'settings') {
-    const tab = activeTabState(state);
-    if (tab?.trySelection) Object.assign(next, { [state.activeTab]: { ...tab, trySelection: undefined } });
-  }
   const board = workboardInput(next, input, ctx);
   if (board) return board;
   if (key === 'settings') return result({ type: 'settings' });

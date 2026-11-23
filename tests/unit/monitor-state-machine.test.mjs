@@ -31,10 +31,8 @@ test('painting twice gives the same frame without modifying the supplied state',
   const f = await fixture(t), initial = initialMonitorState();
   const worker = f.board.workers[0], target = { kind: 'worker', laneId: worker.laneId, workerId: worker.id };
   const role = f.control.roles.find((r) => r.role === 'imp');
-  const marked = new Map([['project:slice:DATA-ONE', { milestone: '0.1.3', slices: [f.rich.ledger[0]] }]]);
   const cases = [initial, withState(initial, { home: { filter: { query: 'imp', editing: true } } }),
-    split({ home: { split: { listCursor: 'home-progress:waiting', focus: 'preview', previewCursor: 'home-progress:wait:0', previewScroll: 5 },
-      expandedTasks: new Set(['task:milestone:M4']), trySelection: marked } }),
+    split({ home: { split: { listCursor: 'home-progress:waiting', focus: 'preview', previewCursor: 'home-progress:wait:0', previewScroll: 5 } } }),
     { ...initial, overlay: { kind: 'confirm-stop', jobId: worker.id, role: 'imp', dir: '/synthetic/job' } },
     onPage(undefined, { project: { view: { kind: 'projects-list' } } }), onControl(), onControl({}, {}, { subTab: 'harnesses' }),
     onControl({}, { overlay: { kind: 'control-harness-add', text: '' } }, { subTab: 'harnesses' }),
@@ -46,7 +44,7 @@ test('painting twice gives the same frame without modifying the supplied state',
     withState(initial, { activeTab: 'exp', prefs: { experiments: true }, exp: { detail: 'codex-help', scroll: 2 } }),
     withState(initial, { activeTab: 'exp', prefs: { experiments: true }, overlay: { kind: 'exp-edit', entryId: 'binding', draft: { text: '', pick: 0 } } }),
     withState(initial, { subpage: { kind: 'inspector', scroll: 0, target } }), withState(initial, { subpage: { kind: 'changes', scroll: 0 } }),
-    onPage('progress', { help: {} }), onPage('progress', { project: { trySelection: marked, filter: { query: 'try', editing: false } } }),
+    onPage('progress', { help: {} }), onPage('progress', { project: { filter: { query: 'try', editing: false } } }),
     ...[undefined, 'progress', 'tickets', 'tree', 'docs', 'waiting'].map((page) => onPage(page)),
   ];
   for (const panelLayout of ['classic', 'split']) for (const candidate of cases) {
@@ -63,7 +61,7 @@ test('painting twice gives the same frame without modifying the supplied state',
 test('Classic Home and Project keep their selected rows across tab changes', async (t) => {
   const f = await fixture(t), draw = (state) => f.render(40, 'en', 24, state, f.rich);
   const key = (frame, key) => draw(handleMonitorInput(frame.state, { type: 'key', key }, { tree: TREE, frame, nowMs: NOW }).state);
-  const initial = onPage('progress', { prefs: { acceptance: 'slice' } });
+  const initial = onPage('progress');
   const project = key(draw(initial), 'end');
   const home = key(key(project, 'shift-tab'), 'down');
   const returnedProject = key(home, 'tab');
@@ -73,7 +71,7 @@ test('Classic Home and Project keep their selected rows across tab changes', asy
   assert.deepEqual(returnedHome.workboard.selected, home.workboard.selected);
 });
 
-test('Home keeps its Split preview and task folds across a tab or project switch', async (t) => {
+test('Home keeps its Split waiting preview across a tab or project switch', async (t) => {
   const f = await fixture(t);
   const project = { ...f.rich, ledger: [
     { id: 'ONE', milestone: 'M-TEST', text: 'First synthetic slice', state: 'try', at: NOW - 2000 },
@@ -82,23 +80,19 @@ test('Home keeps its Split preview and task folds across a tab or project switch
   const draw = (state) => f.render(40, 'en', 14, state, project, { projects: PROJECTS });
   const press = (frame, key) => handleMonitorInput(frame.state, { type: 'key', key }, { tree: TREE, frame, nowMs: NOW }).state;
   const step = (frame, key) => draw(press(frame, key));
-  const initial = split({ selectedProject: PROJECTS[0].root, prefs: { acceptance: 'task' },
+  const initial = split({ selectedProject: PROJECTS[0].root,
     home: { split: { listCursor: 'home-progress:waiting' } } });
   let frame = step(draw(initial), 'enter');
   assert.equal(frame.state.home.split.focus, 'preview');
   frame = step(frame, 'end');
-  const fold = frame.state.home.split.previewCursor;
-  assert.match(fold, /^project:fold:task:/);
-  frame = step(frame, 'enter');
+  assert.equal(frame.state.home.split.previewCursor, 'home-progress:wait:11');
   assert.ok(frame.state.home.split.previewScroll > 0);
   const home = frame.state.home;
-  assert.ok(home.expandedTasks.has(fold.slice('project:fold:'.length)));
   assert.equal(frame.state.project.folded.size, 0);
 
   const other = step(step(frame, 'tab'), 'enter');
   assert.equal(other.state.activeTab, 'project');
   assert.deepEqual(other.state.home.split, home.split);
-  assert.deepEqual(other.state.home.expandedTasks, home.expandedTasks);
   const switched = press(other, 'project-next');
   assert.equal(switched.selectedProject, PROJECTS[1].root);
   assert.equal(switched.project.nav.split.focus, 'list');
@@ -107,7 +101,6 @@ test('Home keeps its Split preview and task folds across a tab or project switch
   const back = step(draw(switched), 'shift-tab');
   assert.equal(back.state.activeTab, 'home');
   assert.deepEqual(back.state.home.split, home.split);
-  assert.deepEqual(back.state.home.expandedTasks, home.expandedTasks);
 });
 
 test('overlay policy distinguishes a reload blocker from a draft and a raw-text consumer', () => {

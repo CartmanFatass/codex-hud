@@ -25,15 +25,19 @@ function fixture(t) {
   const body = `# Synthetic STATE
 Milestone: 0.1.4
 
+## Waiting for the owner
+- Choose the sample filename.
+- 确认示例的显示语言。
+
 ## Slices
 - try · 0.1.3 · OLDER · older work
 - try · 0.1.4 · ONE · first slice
 - try · 0.1.4 · TWO · second slice
 - accepted · 0.1.4 · DONE · already accepted
+- working · 0.1.4 · LIVE · ongoing work
 `;
   writeFixtureFile(state, body);
   const record = (action, ...slices) => appendTry(hud, cwd, action, { milestone: '0.1.4', slices });
-  // The real ledger is append-only; an empty file or a partial tail is not a record yet.
   const records = () => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').slice(0, -1).filter(Boolean).map(JSON.parse) : [];
   return { cwd, hud, file, state, body, env, record, records, stops };
 }
@@ -42,14 +46,21 @@ const until = async (condition, diagnostic) => {
   assert.fail(diagnostic());
 };
 
-function panel(f, { layout = 'classic', columns = 80, prelude = '', acceptance = 'slice' } = {}) {
-  fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ panelLayout: layout, acceptance, modelEnabled: false, refreshMs: 100, language: 'en', theme: 'none', icons: 'unicode' }));
-  const runner = `process.stdout.columns = ${columns}; process.stdout.rows = 24;
-    ${prelude}
+function panel(f, layout) {
+  const modelLog = join(f.hud, 'model-features');
+  fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ panelLayout: layout, acceptance: 'slice', modelEnabled: true,
+    briefingApiBase: 'https://api.mistral.ai/v1', model: 'synthetic', refreshMs: 100, language: 'en', theme: 'none', icons: 'unicode' }));
+  const runner = `import fs from 'node:fs';
+    import { SmallModel } from ${JSON.stringify(new URL('../../dist/collectors/small-model.js', import.meta.url).href)};
+    SmallModel.prototype.submit = function(request) {
+      fs.appendFileSync(${JSON.stringify(modelLog)}, request.feature + '\\n');
+      return { cancel() {}, result: Promise.resolve({ ok: false, error: 'synthetic refusal' }) };
+    };
+    process.stdout.columns = 56; process.stdout.rows = 35;
     const { runLivePage } = await import(${JSON.stringify(new URL('../../dist/tree-page.js', import.meta.url).href)});
     await runLivePage(); process.exit(0);`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', runner], {
-    cwd: f.cwd, env: { ...f.env, CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', CODEX_HUD_CWD: f.cwd },
+    cwd: f.cwd, env: { ...f.env, MISTRAL_API_KEY: 'synthetic-key', CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', CODEX_HUD_CWD: f.cwd },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const exited = once(child, 'exit');
@@ -64,186 +75,48 @@ function panel(f, { layout = 'classic', columns = 80, prelude = '', acceptance =
   const frame = () => screen.join('\n');
   const painted = (pattern) => until(() => pattern.test(frame()), () => `${pattern}\n${frame()}\n${err}`);
   const key = (input) => child.stdin.write(input);
-  const recorded = (n) => until(() => f.records().length === n, () => `${JSON.stringify(f.records())}\n${frame()}\n${err}`);
   const close = async () => { key('q'); child.stdin.end(); assert.deepEqual(await exited, [0, null]); };
-  return { key, frame, painted, recorded, close };
+  return { key, frame, painted, close, modelLog };
 }
 
-test('the live panel flags a milestone, accepts one slice and immediately removes it from Only to try', async (t) => {
-  const f = fixture(t);
-  const { key, frame, painted, recorded, close } = panel(f);
-
+for (const layout of ['classic', 'split']) test(`${layout} Accept all records every pending slice once, leaves STATE alone and keeps its waiting item`, async (t) => {
+  const f = fixture(t), { key, frame, painted, close, modelLog } = panel(f, layout);
+  await painted(/Choose the sample filename/);
   key('\x1b[C');
-  await painted(/^Progress +0\.1\.4 · 3 to try/m);
-  key('Gkk\r'); // Docs → Working tree → Progress.
-  await painted(/Progress.*updated/);
-  key('ynt'); // The bar row is not a try target.
-  await painted(/^Only to try ─+ 3$/m);
-  assert.match(frame(), /y accept  n flag/);
-  key('yn'); // The filter's header is not a milestone.
+  await painted(/^Accept all +3 to try/m);
+  key('G');
+  await painted(/⏎ accept all/);
+  key('yntm ');
   assert.deepEqual(f.records(), []);
-  key('jn');
-  await recorded(1);
-  await painted(/▾ 0\.1\.4 +⚑ 2 flagged/);
-  key('jm'); // TWO is the later ledger entry and therefore first in this group.
-  const intents = join(f.hud, 'panel-actions.jsonl');
-  await painted(/Land requested/);
-  const { at, ...intent } = JSON.parse(fs.readFileSync(intents, 'utf8'));
-  assert.deepEqual(intent, { type: 'land', root: f.cwd, slices: ['TWO'] });
-  assert.equal(f.records().length, 1, 'a request to land neither marks nor removes the slice');
-  key('y');
-  await recorded(2);
-  await painted(/^Only to try ─+ 2$/m);
-  assert.doesNotMatch(frame(), /TWO/);
-  assert.deepEqual(f.records().map(({ root, action, milestone, slices }) => ({ root, action, milestone, slices })), [
-    { root: f.cwd, action: 'flag', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
-    { root: f.cwd, action: 'accept', milestone: '0.1.4', slices: ['TWO'] },
-  ]);
-  assert.ok(f.records().every(({ at }) => Number.isFinite(Date.parse(at))));
+  key('\r\r');
+  await until(() => f.records().length > 0 && !/Accept all/.test(frame()), frame);
+  await close();
+  assert.doesNotMatch(frame(), /Only to try|How to try|Space mark|m request land/);
+  assert.match(frame(), /Choose the sample filename/);
+  assert.equal(fs.existsSync(join(f.hud, 'panel-actions.jsonl')), false);
+  assert.equal(f.records().length, 1);
+  const [{ at, ...record }] = f.records();
+  assert.ok(Number.isFinite(Date.parse(at)));
+  assert.deepEqual(record, { root: f.cwd, action: 'accept', milestone: '—', slices: ['OLDER', 'ONE', 'TWO'], milestones: ['0.1.3', '0.1.4', '0.1.4'] });
   assert.equal(fs.statSync(f.file).mode & 0o777, 0o600);
   assert.equal(fs.readFileSync(f.state, 'utf8'), f.body);
-
-  writeFixtureFile(f.state, f.body.replace('try · 0.1.4 · TWO', 'accepted · 0.1.4 · TWO'));
-  await painted(/^Only to try ─+ 2$/m);
-  assert.doesNotMatch(frame(), /TWO/);
-  assert.match(frame(), /⚑ ONE/, 'another ledger line changing does not clear a flag');
-  writeFixtureFile(f.state, fs.readFileSync(f.state, 'utf8').replace('first slice', 'updated first slice'));
-  await painted(/◇ ONE/);
-  await painted(/▾ 0\.1\.4 +◇ 1$/m);
-  await close();
+  const features = fs.readFileSync(modelLog, 'utf8');
+  assert.match(features, /waiting-brief/, 'the enabled model path still schedules the Waiting translation');
+  assert.doesNotMatch(features, /try-brief/);
+  const abort = new AbortController(), lines = [];
+  t.after(() => abort.abort());
+  const watching = watchCommand(['--all'], { env: f.env, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: abort.signal });
+  await until(() => lines.length > 0, () => JSON.stringify(f.records()));
+  abort.abort();
+  assert.equal(await watching, 0);
+  assert.deepEqual(lines, ['try accepted SampleHUD: OLDER, ONE, TWO']);
 });
 
-test('task acceptance writes each pending slice of the milestone in one record', async (t) => {
-  const f = fixture(t), { key, painted, recorded, close } = panel(f, { acceptance: 'task' });
-  key('\x1b[C');
-  await painted(/^Progress +2 to try/m);
-  key('Gkk\rtj');
-  await painted(/^Only to try ─+ 2$/m);
-  await painted(/◇ 0\.1\.4 +2 slices/);
-  key(' ');
-  await painted(/▣ ◇ 0\.1\.4/);
-  key('n');
-  await recorded(1);
-  await painted(/⚑ 0\.1\.4 +2 slices/);
-  key('y');
-  await recorded(2);
-  await painted(/^Only to try ─+ 1$/m);
-  assert.deepEqual(f.records().map(({ action, milestone, slices }) => ({ action, milestone, slices })), [
-    { action: 'flag', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
-    { action: 'accept', milestone: '0.1.4', slices: ['TWO', 'ONE'] },
-  ]);
-  assert.equal(fs.readFileSync(f.state, 'utf8'), f.body);
-  await close();
-});
-
-test('Space marks two rows, then y writes one try record and one watch line in Classic and both Split views', async (t) => {
-  for (const view of ['classic', 'split-hub', 'split-progress']) {
-    const f = fixture(t);
-    const { key, frame, painted, recorded, close } = panel(f, { layout: view === 'classic' ? 'classic' : 'split', columns: 40 });
-    key('\x1b[C');
-    await painted(/^Needs you ─+ 3 to try/m);
-    let slices = ['TWO', 'ONE'];
-    if (view === 'classic') {
-      key('Gkk\rt');
-      await painted(/^Only to try /m);
-      key('jj ');
-      await painted(/▣ ◇ TWO/);
-      key('t'); // Leaving and re-entering clears the selection.
-      await painted(/t to try/);
-      key('t');
-      await painted(/^Only to try /m);
-      assert.doesNotMatch(frame(), /▣/);
-      key('jj ');
-      await painted(/▣ ◇ TWO/);
-      key(' ');
-      await painted(/^ {4}◇ TWO/m); // Toggle the same row off.
-    } else if (view === 'split-progress') {
-      key('Gkk\r');
-      await painted(/^‹ .*Progress/m);
-    } else {
-      slices = ['TWO', 'OLDER']; // One record across milestones from the Inbox list.
-    }
-    assert.match(frame(), /Space mark/);
-    key(' ');
-    await painted(new RegExp(`▣ ◇ ${slices[0]}`));
-    key(view === 'split-hub' ? 'jj ' : 'j ');
-    await painted(new RegExp(`▣ ◇ ${slices[1]}`));
-    assert.match(frame(), new RegExp(`▣ ◇ ${slices[0]}`));
-    assert.deepEqual(f.records(), []);
-    key('y');
-    await recorded(1);
-    await until(() => !slices.some(s => frame().includes(`◇ ${s}`)) && !frame().includes('▣'), frame);
-    assert.doesNotMatch(frame(), /▣/);
-    assert.equal(f.records()[0].action, 'accept');
-    assert.deepEqual(f.records()[0].slices, slices);
-    const abort = new AbortController(), lines = [];
-    t.after(() => abort.abort());
-    const watching = watchCommand(['--all'], { env: f.env, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: abort.signal });
-    await until(() => lines.length > 0, () => `${view}: ${JSON.stringify(f.records())}`);
-    abort.abort();
-    assert.equal(await watching, 0);
-    const title = view === 'split-hub' ? 'SampleHUD' : 'SampleHUD 0.1.4';
-    assert.deepEqual(lines, [`try accepted ${title}: ${slices.join(', ')}`]);
-    await close();
-  }
-});
-
-test('at 40 columns the Projects list pauses brief scheduling, and a switched project only schedules its own inputs', async (t) => {
-  const f = fixture(t), other = join(f.cwd, 'other-project'), hold = join(f.hud, 'hold'), log = join(f.hud, 'brief-schedule.jsonl');
-  fs.mkdirSync(other);
-  fs.writeFileSync(join(other, 'STATE.md'), 'Milestone: M4\n\n## Slices\n- try · M4 · OTHER · synthetic other work\n');
-  fs.writeFileSync(join(f.hud, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: other }] }));
-  fs.writeFileSync(log, '');
-  const prelude = `
-    import fs from 'node:fs';
-    import { setTimeout as sleep } from 'node:timers/promises';
-    import { ProjectCollector } from ${JSON.stringify(new URL('../../dist/collectors/project-board.js', import.meta.url).href)};
-    import { TryBriefs } from ${JSON.stringify(new URL('../../dist/collectors/try-brief.js', import.meta.url).href)};
-    const log = (event) => fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(event) + '\\n');
-    const held = () => fs.existsSync(${JSON.stringify(hold)});
-    const collect = ProjectCollector.prototype.collect;
-    ProjectCollector.prototype.collect = async function (mode, ...args) {
-      if (mode === true && held()) { log({ held: true }); while (held()) await sleep(10); }
-      if (mode === false) log({ overview: true });
-      return collect.call(this, mode, ...args);
-    };
-    TryBriefs.prototype.update = (root, ledger) => log({ root, ids: ledger.map((r) => r.id) });`;
-  const { key, painted, close } = panel(f, { columns: 40, prelude });
-  const events = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
-  const waitFor = (condition) => until(() => condition(events()), () => JSON.stringify(events()));
-  await waitFor(xs => xs.some(x => x.root === f.cwd && x.ids.includes('ONE'))); // Home alone starts the briefs.
-  key('\x1b[C');
-  await painted(/project 1\/2/);
-  await waitFor((xs) => xs.some((x) => x.root === f.cwd && x.ids.includes('ONE')));
-  fs.writeFileSync(hold, '');
-  key('\x1b[H'); // Home selects the project name and hold the next full collection.
-  await waitFor((xs) => xs.some((x) => x.held));
-  key('\r');
-  await painted(/^‹ Projects/m);
-  fs.unlinkSync(hold);
-  await waitFor((xs) => xs.some((x) => x.overview));
-  key('j');
-  await waitFor((xs) => xs.filter((x) => x.overview).length >= 2);
-  const paused = events().slice(events().findIndex((e) => e.held));
-  assert.ok(!paused.some((e) => e.root), 'the previous snapshot did not schedule requests in the list');
-
-  fs.writeFileSync(hold, '');
-  key('\x1b');
-  await waitFor((xs) => xs.filter((x) => x.held).length >= 2);
-  key(']');
-  await painted(/project 2\/2/);
-  fs.unlinkSync(hold);
-  await waitFor((xs) => xs.some((x) => x.root === other && x.ids.includes('OTHER')));
-  await close();
-  const switched = events().slice(events().findLastIndex((e) => e.held)).filter((e) => e.root);
-  assert.ok(switched.length && switched.every((e) => e.root === other && e.ids.join() === 'OTHER'));
-});
-
-test('hud watch skips reflected tries on catch-up and emits each live record once without waiting for a rescan', async (t) => {
+test('hud watch skips reflected legacy tries on catch-up and emits each live record once', async (t) => {
   const f = fixture(t);
   f.record('accept', { id: 'DONE' });
   f.record('flag', { id: 'ONE', text: 'outdated first slice' });
-  f.record('accept', { id: 'TWO' }); // Superseded before catch-up.
+  f.record('accept', { id: 'TWO' });
   f.record('flag', { id: 'TWO', text: 'second slice' });
   const abort = new AbortController();
   t.after(() => abort.abort());
@@ -279,7 +152,6 @@ test('MCP changes carry unreflected try lines once, only for the session cwd', a
   let id = 0;
   let stderr = '';
   child.stderr.on('data', (d) => (stderr += d));
-  // A child that exits (no dist/mcp: run `npm run build`) fails the test instead of leaving it waiting for a line.
   const died = exited.then(([code]) => { throw new Error(`hud-mcp exited (${code}) before answering: ${stderr.trim() || 'no stderr'}`); });
   const call = async (name) => {
     const next = Promise.race([once(rpc, 'line'), died]);
