@@ -107,7 +107,11 @@ test('live input: a build waits for the Harnesses Add back draft to close', asyn
   await until(() => stripAnsi(f.output().slice(returned)).includes('Restored pi:xai'), 'Add back did not restore the switch');
   const restored = f.output().length;
   f.child.stdin.write('h');
-  await until(() => !stripAnsi(f.output().slice(restored)).includes('Restored pi:xai') && f.output().slice(restored).includes('Needs attention'), 'Roles did not render without the Harnesses notice');
+  await until(() => f.output().slice(restored).includes('Track native status line'), 'Resources did not render after Harnesses');
+  assert.doesNotMatch(stripAnsi(f.output().slice(restored)), /Restored pi:xai/, 'the notice clears on leaving Harnesses');
+  const resources = f.output().length;
+  f.child.stdin.write('h');
+  await until(() => f.output().slice(resources).includes('Needs attention'), 'Roles did not render after Resources');
   const roles = f.output().length;
   f.child.stdin.write('h');
   await until(() => f.output().slice(roles).includes('This machine'), 'Harnesses did not render again');
