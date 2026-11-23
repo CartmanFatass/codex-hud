@@ -99,7 +99,7 @@ function session(on: On, records: object[]) {
 const record = (extra: object) => ({ type: 'band', lang: 'en', waiting: 1, first: 'Pick a name', accept: 0, fresh: false, ...extra });
 const start = { cwd: '/demo', surface: 'terminal' as const, isInteractive: true };
 
-test('the watch records are kept in state, and a toast fires only for a new item, once for each record', async ($, on) => {
+test('the watch records are kept in state, and a toast shows only for a new item, once for each record', async ($, on) => {
   const f = session(on, [
     record({}), // Catch-up on the first read: shown, never announced.
     record({ waiting: 2, fresh: true }),
