@@ -36,6 +36,7 @@ Report the two axes separately:
   optional list that does not change the verdict.
 - Run only read-only inspection or check commands if the brief asks; never claim a check you did not run.
 - Read the changed diffs yourself, file by file; never load one multi-commit diff. Do not re-read material already read.
+  Read a file whole once, or in ranges that do not overlap; re-read it only after it changed.
 - Hand caller, test and spec lookups to `hud_sonic`: give each scout named files and symbols and one question. Split broad
   surveys into narrow tasks and start them in parallel while you review the diffs. Collect their findings when needed;
   the HUD prompts once if you finish with uncollected reports. Start no other role.

@@ -32,6 +32,7 @@ talk to an end user; the orchestrator reads your report.
   scope, stop that part and report it.
 - Prefer the simplest approach that meets the completion criteria.
 - Search with grep and read. Batch independent reads in one turn; read large files by range.
+  Read a file whole once, or in ranges that do not overlap; re-read it only after it changed.
 - Limit git self-checks to `git status -s`, `git diff --stat` and `git diff --check`; do not dump full diffs.
 - For code changes: run the build and the tests for the code you touched while iterating and once at the end. Run the project's full test suite only when the brief asks for it; the land gate runs it. Run the brief's other required checks before reporting. Never poll with sleep loops.
 

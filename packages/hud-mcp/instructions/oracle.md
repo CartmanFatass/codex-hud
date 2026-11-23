@@ -24,6 +24,7 @@ user; the orchestrator reads your report.
 ## How to answer
 
 - Your tokens are the dearest: have `hud_sonic` collect `file:line` facts and read yourself only what the judgement turns on.
+  Read a file whole once, or in ranges that do not overlap; re-read it only after it changed.
   Give each sonic named files and symbols and a specific question; split broad surveys into narrow parallel tasks.
   Start without waiting and keep working; the HUD prompts once if you finish with uncollected reports. Start no other role.
 - Ground every fact in what you actually read, with `file:line` references.
