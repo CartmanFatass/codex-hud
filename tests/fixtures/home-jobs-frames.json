@@ -363,5 +363,41 @@
     "\uf0ad \uf058 hud-doctor/01          ●●●●◐       1分",
     "\uf0ad   statusline-workers/03  ●◐○○○ 6分 静5分",
     "\uf013   docs-sweep/04          ◐○○○○ 6分 静4分"
+  ],
+  "en-80-same": [
+    "\uf058 Nothing needs you",
+    "",
+    "open-review",
+    "  \uf013   Open review: ho… sol-fast  ◐○○○○                                        4m",
+    "  \uf013   Open review: ho… neon      ●◐○○○                                        5m",
+    "  \uf013   Open review: ho… sonnet    ◐○○○○                                        6m",
+    "\uf013   flaky-timer                  ◐○○○○                                        2m"
+  ],
+  "zh-80-same": [
+    "\uf058 没有需要你处理的事",
+    "",
+    "open-review",
+    "  \uf013   开放评审：空状… sol-fast  ◐○○○○                                        4分",
+    "  \uf013   开放评审：空状… neon      ●◐○○○                                        5分",
+    "  \uf013   开放评审：空状… sonnet    ◐○○○○                                        6分",
+    "\uf013   flaky-timer                 ◐○○○○                                        2分"
+  ],
+  "en-42-same": [
+    "\uf058 Nothing needs you",
+    "",
+    "open-review",
+    "  \uf013   Open review: ho… sol-fast  ◐○○○○  4m",
+    "  \uf013   Open review: ho… neon      ●◐○○○  5m",
+    "  \uf013   Open review: ho… sonnet    ◐○○○○  6m",
+    "\uf013   flaky-timer                  ◐○○○○  2m"
+  ],
+  "zh-42-same": [
+    "\uf058 没有需要你处理的事",
+    "",
+    "open-review",
+    "  \uf013   开放评审：空状… sol-fast  ◐○○○○  4分",
+    "  \uf013   开放评审：空状… neon      ●◐○○○  5分",
+    "  \uf013   开放评审：空状… sonnet    ◐○○○○  6分",
+    "\uf013   flaky-timer                 ◐○○○○  2分"
   ]
 }

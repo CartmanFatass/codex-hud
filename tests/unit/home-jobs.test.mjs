@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { jobsBoard, jobFrame, jobFrames, narrowBoard, NOW } from '../fixtures/home-jobs.mjs';
+import { jobsBoard, jobFrame, jobFrames, narrowBoard, sameBriefBoard, NOW } from '../fixtures/home-jobs.mjs';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { withState } from '../fixtures/state-helpers.mjs';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -48,6 +48,19 @@ test('a job row is its role icon, the state mark of an exception, ticket id, sta
   assert.equal(new Set(column).size, 1, `one strip column: ${column}`);
   assert.doesNotMatch(lines.join('\n'), /gate\[|land ·|落地 ·|cherry-pick/, 'a land has no sub-row on Home');
   for (const id of ['stream-sync/05', 'stream-sync/06', 'auth-refresh/04']) assert.match(lines.find((l) => l.includes(`${id} `)), /●●●●◐/, `${id}: the land is the strip's 5th cell`);
+});
+
+test('jobs from one brief that share an id on Home get their model’s short name after it; a unique id, and rows told apart by role icon, get none (scan-fixes/09)', () => {
+  for (const lang of ['en', 'zh']) for (const width of [80, 42]) {
+    const lines = jobFrame(width, lang, sameBriefBoard(lang)), rows = lines.filter((l) => /[●◐○]{5}/.test(l));
+    assert.equal(rows.length, 4, `${lang} ${width}: three same-brief rows and one of its own`);
+    for (const [row, tag] of rows.slice(0, 3).map((r, i) => [r, ['sol-fast', 'neon', 'sonnet'][i]])) assert.match(row, new RegExp(`^ {2}\\uF013 {3}.+… ${tag} `), `${lang} ${width}: ${row}`);
+    assert.doesNotMatch(rows[3], /sol|neon|sonnet/, `${lang} ${width}: a unique id carries no tag`);
+    assert.equal(new Set(rows.map((r) => visualLength(r.slice(0, r.search(/[●◐○]{5}/))))).size, 1, `${lang} ${width}: one strip column`);
+  }
+  const busy = jobFrame(80).join('\n');
+  assert.match(busy, /perf-ts\/05 {5}●●◐○○/, 'an imp and a reviewer on one ticket differ by role icon: no tag');
+  assert.doesNotMatch(busy, /sol|neon|sonnet|opus/);
 });
 
 test('rows keep their order while progress changes: a job going quiet, waking or moving a stage does not swap places (panel-polish/04)', () => {

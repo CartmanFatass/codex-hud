@@ -100,10 +100,23 @@ export function narrowBoard(lang = 'en') {
   ];
   return { revision: 'r', lanes, workers: lanes.flatMap((l) => l.workers), decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
 }
+/** Three general jobs from one brief on different models (scan-fixes/09: same id, so a tag tells them apart), and one job with an id of its own. */
+export function sameBriefBoard(lang = 'en') {
+  n = 0;
+  const [read, edit] = fixtureStages();
+  const T = (en, zh) => (lang === 'zh' ? zh : en), L = (label) => `thin-job:package:${label}`;
+  const brief = T('Open review: how honest are the empty states', '开放评审：空状态是否如实');
+  const lanes = [
+    lane('open-review', [SOL, NEON, SONNET].map((model, i) => job(L('open-review'), model, { role: 'general', briefTitle: brief, at: 4 + i, stage: [read, edit, read][i], work: work({ activityAt: ago(i) }) }))),
+    lane('flaky-timer', [job(L('flaky-timer'), SOL, { role: 'general', briefTitle: T('Fix the flaky timer test', '修复不稳定的计时器测试'), at: 2, stage: read })]),
+  ];
+  return { revision: 'r', lanes, workers: lanes.flatMap((l) => l.workers), decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
+}
 /** Role counts since the panel opened, for the top line. */
 export const COUNTS = new Map([['imp', 5], ['frontend-imp', 2], ['sonic', 7]]);
 export const jobFrames = () => Object.fromEntries([
   ...[120, 80, 50, 42].flatMap((width) => ['en', 'zh'].map((lang) => [`${lang}-${width}`, jobFrame(width, lang, undefined, undefined, 'nerd', COUNTS)])),
   ...[80, 42].flatMap((width) => ['unicode', 'text'].flatMap((icons) => ['en', 'zh'].map((lang) => [`${lang}-${width}-${icons}`, jobFrame(width, lang, undefined, undefined, icons, COUNTS)]))),
   ...[48, 42].flatMap((width) => ['en', 'zh'].map((lang) => [`${lang}-${width}-routes`, jobFrame(width, lang, narrowBoard(lang))])),
+  ...[80, 42].flatMap((width) => ['en', 'zh'].map((lang) => [`${lang}-${width}-same`, jobFrame(width, lang, sameBriefBoard(lang))])),
 ]);
