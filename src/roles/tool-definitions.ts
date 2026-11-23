@@ -3,6 +3,9 @@ import { LEASE_TOOL } from './lease.js';
 import { MAX_CHECK_COMMAND, MAX_CHECKS } from './job-checks.js';
 
 const text = { type: 'string' };
+export const EXPERIMENT_TAG_MAX_LENGTH = 64;
+const experimentTag = { ...text, maxLength: EXPERIMENT_TAG_MAX_LENGTH };
+const experimentTags = { experiment: experimentTag, arm: experimentTag };
 const bool = { type: 'boolean' };
 const detail = { ...bool, description: 'Diagnostics.' };
 const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
@@ -24,7 +27,7 @@ export const ROLE_TOOLS = [
   }),
   tool(
     'hud_create',
-    'Single: role + task/brief_file; batch: jobs; retry: retry_of. Placement: role files/Control. Single general job only: preset/on/model/thinking. Fresh request_key for duplicates. Options: hud_roster(detail:true).',
+    'Single: role + task/brief_file; batch: jobs; retry: retry_of. Tags: experiment/arm. Placement: role files/Control. Single general job only: preset/on/model/thinking. Repeat: fresh request_key. Options: hud_roster(detail:true).',
     {
       role: text,
       request_key: { ...text, description: 'Permanent key; omit for 10-min caller/role/cwd/task dedupe.' },
@@ -33,7 +36,7 @@ export const ROLE_TOOLS = [
       jobs: {
         type: 'array',
         minItems: 1,
-        items: { type: 'object' },
+        items: { type: 'object', properties: experimentTags },
         description: 'Without MCP tasks; else parallel single creates.',
       },
       scout: { ...text, minLength: 1, description: 'Ask sonic first, attach report; non-sonic only.' },
@@ -41,6 +44,7 @@ export const ROLE_TOOLS = [
       cwd: { ...text, description: 'Job/project dir; default server cwd.' },
       package: { ...text, description: 'Display label.' },
       ticket: { ...text, description: 'feature/NN ticket link.' },
+      ...experimentTags,
       slice: { ...text, description: 'Legacy target label.' },
       context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths in cwd.' },
       checks: { type: 'array', maxItems: MAX_CHECKS, items: { ...text, minLength: 1, maxLength: MAX_CHECK_COMMAND },

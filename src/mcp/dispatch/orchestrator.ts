@@ -15,6 +15,7 @@ import { MAX_CHECKS, MAX_CHECK_COMMAND } from '../../roles/job-checks.js';
 import { withAbstractLock } from '../../utils/abstract-lock.js';
 import { watching, ensureQueueWatcher } from '../../roles/notify.js';
 import { sharedRoot } from '../../roles/projects.js';
+import { EXPERIMENT_TAG_MAX_LENGTH } from '../../roles/tool-definitions.js';
 import {
   currentPreset, harnessDefaults, readExhausted, isQuotaFailure, markExhausted, describePlace, recordFailureExhaustion,
   type Role, type RolePlace,
@@ -114,6 +115,7 @@ function countWorkingByRole(allJobs = jobs()): Map<string, number> {
 function jobOptions(job: Job): Args {
   return {
     role: job.role, cwd: job.worktree?.main_root ?? job.cwd, package: job.package, ticket: job.ticket, slice: job.slice, preset: job.preset,
+    experiment: job.experiment, arm: job.arm,
     context_files: job.context_files, from_jobs: job.from_jobs, checks: job.checks, instructions: job.instructions_from,
     ...(job.create_options ?? {
       isolation: job.worktree ? 'worktree' : undefined,
@@ -278,12 +280,21 @@ export function canOverflowImpJob(job: Job): boolean {
   return !!first && !('code' in first.prepared);
 }
 
+function validExperimentTag(tag: unknown): tag is string | undefined {
+  return tag === undefined || (typeof tag === 'string' && tag.length <= 2 * EXPERIMENT_TAG_MAX_LENGTH &&
+    [...tag].length <= EXPERIMENT_TAG_MAX_LENGTH); // JSON Schema counts Unicode code points.
+}
+
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parentJob?: string, repairOf?: string, retryInput?: Args,
   { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit }: {
     scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
     ticketQueue?: string; canAdmit?: () => boolean;
   } = {}) {
+  const { experiment, arm } = args;
+  if (!validExperimentTag(experiment) || !validExperimentTag(arm)) {
+    return { ok: false, code: 'invalid_arguments', error: `experiment and arm must each be a string of at most ${EXPERIMENT_TAG_MAX_LENGTH} characters` };
+  }
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
   const found = registry(cwd);
@@ -480,6 +491,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
         ...(scoutQuestion ? { scout_question: scoutQuestion } : {}),
         target_hint: taskTarget(task) || null,
+        experiment, arm,
         ...(args.package === undefined ? {} : { package: args.package as string }),
         ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
         ...(args.slice === undefined ? {} : { slice: args.slice as string }),
@@ -542,6 +554,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(first.route && { route: first.route }),
       ...(role === 'sonic' || first.route?.mode === 'headless' || args.mode === 'headless' ? { headless: true } : {}),
       ...(scoutContextCwd === undefined ? {} : { scout_only: true }),
+      experiment, arm,
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
       ...(args.slice === undefined ? {} : { slice: args.slice as string }),

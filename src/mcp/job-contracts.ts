@@ -45,6 +45,8 @@ export interface Job extends PiOptions {
   package?: string;
   title?: string;
   ticket?: string;
+  experiment?: string;
+  arm?: string;
   slice?: string;
   preset?: string;
   context_files?: string[];

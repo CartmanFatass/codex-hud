@@ -178,6 +178,7 @@ A report-ready notice leaves the report unread; collect it explicitly.
 
 `hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) to link progress.
 `slice` is a legacy target label.
+Optional `experiment` and `arm` tags (up to 64 characters each) are stored in job and archive records, inherited by retries and repairs, and never shown in the panel.
 In sessions without MCP tasks, pass `jobs: [...]` instead of single-create fields to dispatch several jobs in one call; each item accepts the same fields as a single create, returns its result in input order, and one item's error does not block the others (each created job keeps its own notice).
 The optional `request_key` defaults to a hash of the caller pane, role, cwd and task.
 By default it dispatches on the role's first available place (`runs_on`).

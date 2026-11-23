@@ -23,8 +23,11 @@ test('hud_create brief_file reads UTF-8 text inside cwd and rejects invalid path
   fs.mkdirSync(join(cwd, 'briefs'), { recursive: true });
   const briefPath = join(cwd, 'briefs', 'slice.md');
   writeFixtureFile(briefPath, '# Synthetic brief\n\nImplement the synthetic batch feature.\n');
-  const job = await f.call('hud_create', { role: 'imp', cwd, brief_file: 'briefs/slice.md', request_key: 'brief-ok' });
+  const job = await f.call('hud_create', { role: 'imp', cwd, brief_file: 'briefs/slice.md', request_key: 'brief-ok', experiment: 'synthetic-speed' });
   assert.match(job.job, /^j[0-9a-f]{16}$/);
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  assert.equal(receipt.experiment, 'synthetic-speed');
+  assert.equal(receipt.arm, undefined);
   assert.equal(
     fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
     '# Synthetic brief\n\nImplement the synthetic batch feature.\n\n\nFinish with `hud_report`.\n'
@@ -58,7 +61,10 @@ test('hud_create jobs creates multiple jobs in input order with per-item errors 
   const f = await fixture(t);
   const { result: listed } = await f.rpc('tools/list');
   const createTool = listed.tools.find(({ name }) => name === 'hud_create');
-  assert.deepEqual(createTool.inputSchema.properties.jobs.items, { type: 'object' });
+  const tag = { type: 'string', maxLength: 64 };
+  const { experiment, arm, jobs } = createTool.inputSchema.properties;
+  assert.deepEqual({ experiment, arm }, { experiment: tag, arm: tag });
+  assert.deepEqual(jobs.items, { type: 'object', properties: { experiment: tag, arm: tag } });
   assert.ok(Buffer.byteLength(JSON.stringify(createTool), 'utf8') < 3300, 'hud_create schema stays compact');
 
   const rejected = (role, fields) => ({ ok: false, code: 'invalid_arguments',
@@ -71,21 +77,30 @@ test('hud_create jobs creates multiple jobs in input order with per-item errors 
     if (role === 'imp') assert.ok(result.hint, 'first create supplies the delivery hint once');
     assert.deepEqual(withoutHint(result), rejected(role, refused));
   }
+  for (const fields of [{ experiment: 42 }, { arm: 'a'.repeat(65) }]) {
+    const result = await f.call('hud_create', { role: 'imp', task: 'Reject invalid tags.', ...fields });
+    assert.equal(result.code, 'invalid_arguments');
+  }
   assert.ok(!fs.existsSync(join(f.env.HUD_HOME, 'jobs')));
 
+  const label = '🧪'.repeat(64);
   writeFixtureFile(join(f.root, 'b2.md'), 'Synthetic brief two from file.');
   const batch = await f.call('hud_create', {
     jobs: [
-      { role: 'imp', task: 'Synthetic task one.', request_key: 'b-1' },
-      { role: 'imp', brief_file: 'b2.md', request_key: 'b-2' },
+      { role: 'imp', task: 'Synthetic task one.', request_key: 'b-1', experiment: label, arm: 'control' },
+      { role: 'imp', brief_file: 'b2.md', request_key: 'b-2', arm: '' },
+      { role: 'imp', task: 'Reject a long experiment.', experiment: label + 'a' },
+      { role: 'imp', task: 'Reject a non-string arm.', arm: null },
       { role: 'no-such-role', task: 'Should fail only this entry.', request_key: 'b-bad' },
       { role: 'imp', task: 'Reject a caller harness.', on: 'pi' },
       { role: 'reviewer', task: 'Reject a caller effort.', thinking: 'low' },
       { role: 'imp', task: 'Synthetic task three.', request_key: 'b-3' },
     ],
   });
-  assert.equal(batch.jobs.length, 6);
-  const [j1, j2, bad, badOn, badThinking, j3] = batch.jobs;
+  assert.equal(batch.jobs.length, 8);
+  const [j1, j2, badExperiment, badArm, bad, badOn, badThinking, j3] = batch.jobs;
+  assert.equal(badExperiment.code, 'invalid_arguments');
+  assert.equal(badArm.code, 'invalid_arguments');
   assert.deepEqual(badOn, rejected('imp', 'on'));
   assert.deepEqual(badThinking, rejected('reviewer', 'thinking'));
   assert.match(j1.job, /^j[0-9a-f]{16}$/);
@@ -95,6 +110,11 @@ test('hud_create jobs creates multiple jobs in input order with per-item errors 
   assert.match(j3.job, /^j[0-9a-f]{16}$/);
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).sort(), [j1.job, j2.job, j3.job].sort());
   assert.match(fs.readFileSync(join(j2.task_dir, 'brief.md'), 'utf8'), /^Synthetic brief two from file\./);
+  const receipt = job => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  assert.equal(receipt(j1).experiment, label);
+  assert.equal(receipt(j1).arm, 'control');
+  assert.equal(receipt(j2).experiment, undefined);
+  assert.equal(receipt(j2).arm, '');
   assert.equal(j1.hint, undefined, 'items do not duplicate hint');
 
   // Nested jobs or non-object item fail only that item; mixed top-level args fail the call.

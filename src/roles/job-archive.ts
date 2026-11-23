@@ -93,6 +93,8 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
       dispatch_code: text(job.dispatch_code), exit_reason: reason(status.exit_reason), read_at: text(job.read_at),
       checks: checks && { passed: checks.passed, total: checks.total, stale: checks.stale },
       repair_of: text(job.repair_of), retry_of: text(job.retry_of), sessions: sessions.length ? sessions : undefined,
+      experiment: typeof job.experiment === 'string' ? job.experiment : undefined,
+      arm: typeof job.arm === 'string' ? job.arm : undefined,
       land: archiveJobLand(home, id),
       outcome: cachedOutcome(home, id, epoch(status.settled_at) ?? ended),
     };

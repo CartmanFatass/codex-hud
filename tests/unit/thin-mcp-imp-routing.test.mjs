@@ -344,11 +344,13 @@ test('overflow, queued overflow and retry keep the routed imp chain', async t =>
 test('land repair of a light job in grace starts a standard replacement without a decision', async t => {
   const { f, api } = await setup(t, body => answer(body, 'light', 'tab'));
   role(f, routing);
-  const lightJob = await create(f, 'One-file synthetic repair source.');
+  const lightJob = await create(f, 'One-file synthetic repair source.', { experiment: 'synthetic-speed', arm: 'light' });
   write(join(lightJob.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   const job = landRepair(f, lightJob);
   assert.notEqual(job.job, lightJob.job);
   assert.equal(job.retry_of, lightJob.job);
+  assert.equal(job.experiment, 'synthetic-speed');
+  assert.equal(job.arm, 'light');
   assert.equal(job.route.tier, 'standard');
   assert.equal(job.route.mode, 'tab');
   assert.equal(job.model, 'synthetic/daily');

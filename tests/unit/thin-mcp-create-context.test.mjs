@@ -217,6 +217,7 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   fs.writeFileSync(join(cwd, 'notes.md'), 'Synthetic notes.');
   const original = await f.call('hud_create', {
     role: 'retry-check', cwd, task: 'Synthetic task: 重试.\n\n', context_files: ['notes.md'], tps: false, checks: ['true'],
+    experiment: 'synthetic-speed', arm: 'control',
   });
   const originalReceipt = join(original.task_dir, 'job.json');
   const legacy = JSON.parse(fs.readFileSync(originalReceipt));
@@ -241,6 +242,8 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   assert.ok(Date.parse(JSON.parse(fs.readFileSync(join(original.task_dir, 'job.json'))).observed_at));
   assert.equal(receipt.tps, false);
   assert.deepEqual(receipt.checks, ['true']);
+  assert.equal(receipt.experiment, 'synthetic-speed');
+  assert.equal(receipt.arm, 'control');
   assert.equal((await f.call('hud_create', retry)).job, next.job);
 });
 
@@ -1154,7 +1157,7 @@ test('hud_send to a read-closed CLI worktree job repairs in the same worktree wi
 
   const source = await f.call('hud_create', {
     role: 'wt-cli', cwd, isolation: 'worktree', package: 'Demo Slice',
-    request_key: 'wt-cli-source', task: 'Synthetic initial work.',
+    request_key: 'wt-cli-source', task: 'Synthetic initial work.', experiment: 'synthetic-speed', arm: 'control',
   });
   await until(() => cliState(source.task_dir)?.state === 'idle_grace', t.signal);
   const sourceReceipt = JSON.parse(fs.readFileSync(join(source.task_dir, 'job.json'), 'utf8'));
@@ -1179,6 +1182,8 @@ test('hud_send to a read-closed CLI worktree job repairs in the same worktree wi
   const repairReceipt = JSON.parse(fs.readFileSync(join(repair.task_dir, 'job.json'), 'utf8'));
   assert.equal(repairReceipt.dispatch_exit_code, 0, repairReceipt.stderr_tail);
   assert.equal(repairReceipt.repair_of, source.job);
+  assert.equal(repairReceipt.experiment, 'synthetic-speed');
+  assert.equal(repairReceipt.arm, 'control');
   assert.equal(repairReceipt.cwd, wt.root);
   assert.deepEqual(repairReceipt.worktree, { ...wt, owner: source.job });
   assert.equal(git(repairReceipt.cwd, 'rev-parse', 'HEAD'), sourceCommit);
