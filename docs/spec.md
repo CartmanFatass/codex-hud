@@ -150,7 +150,9 @@ Sonic is a headless, one-shot pi query outside the herdr worker rules: it opens 
   `changes` since its last call and `watcher_alive` if a pane watcher is registered. `hud_wait` gives one
   event watch for `any`/`all` settlements or open questions across named jobs or all open session jobs;
   `hud watch` prints one line per job event for command watchers (Claude Code Monitor). Clients that
-  declare MCP tasks get task completions instead. (14.03, 18.03, 20.09, 22.09)
+  declare MCP tasks get task completions instead. A Claude Code session whose HUD mod event watch is live gets
+  them from the mod and no MCP tasks; when the watch is absent or stopped, MCP tasks or `changes` apply again.
+  (14.03, 18.03, 20.09, 22.09, 22.25)
 - Codex queues silently; pi uses its HUD extension's native session message queue. No main-pane typing with
   native or watched delivery. The panel and MCP share a state reader. (14.03, 18.06)
 - A working Antigravity session gets job events through its `PreInvocation` hook. An idle session has them

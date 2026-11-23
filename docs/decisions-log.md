@@ -101,7 +101,10 @@ The owner approved the lean spec and resolved the draft questions:
 - **D-2026-11-22-25** (§2.1.6): The owner approved four further Claude mod slices: mod-owned event wake, a band
   and toasts above the prompt, slash commands for owner actions, and mechanical convention rules as hooks. No
   panel inside Claude Code: it would add little over the herdr panel, which stays the panel for every client.
-  Oracle designs the four slices before tickets are filed.
+  Oracle designs the four slices before tickets are filed. Oracle's design (job j173e9f379178e359): the mod runs
+  `hud watch --mod` on demand and, while it is live, owns wake for that session in place of MCP tasks (Claude
+  cannot drop an engine task-notification row, so running both would always duplicate); HUD jobs then leave
+  Claude's `/tasks` list and batch `hud_create({ jobs })` works again.
 
 ## 2026-11-21
 
