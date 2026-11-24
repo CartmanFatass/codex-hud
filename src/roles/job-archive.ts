@@ -7,7 +7,7 @@ import { objectiveLink } from '../collectors/objectives.js';
 import type { AnswerActor, Job, JobStatus, StopOrigin } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
-import { getJobIndexCache } from './job-index-cache.js';
+import { getJobIndexCache, type JobIndexCache } from './job-index-cache.js';
 import { jobChecks } from './job-checks.js';
 import { cliSession } from './job-sessions.js';
 import { archiveJobLand, type JobLand } from './job-land.js';
@@ -78,47 +78,47 @@ export function isWorkingState(state: unknown): state is string {
   return typeof state === 'string' && WORKING_STATES.has(state);
 }
 
-/** Record once why a working job was stopped or lost its pane. */
-export function recordStopOrigin(dir: string, actor: StopOrigin['actor'], priorState: unknown, at = new Date().toISOString()): boolean {
-  if (!isWorkingState(priorState)) return false;
+function readCachedJob(dir: string, cache?: JobIndexCache) {
   const file = join(dir, jobFiles.job);
+  const idx = cache ?? getJobIndexCache(dirname(dirname(dir)));
+  const res = idx.readJson<Job>(file);
+  const raw = res.status === 'ok' ? res.value : res.status === 'truncated' ? readJsonFile(file) : null;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  return { file, idx, job: raw as Job };
+}
+
+/** Record once why a working job was stopped or lost its pane. */
+export function recordStopOrigin(dir: string, actor: StopOrigin['actor'], priorState: unknown, at = new Date().toISOString(), cache?: JobIndexCache): boolean {
+  if (!isWorkingState(priorState)) return false;
   try {
-    const raw = readJsonFile(file);
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
-    const job = raw as Job;
-    if (job.stop_origin) return false;
-    const next: Job = { ...job, stop_origin: { actor, prior_state: priorState, at } };
-    getJobIndexCache(dirname(dirname(dir))).writeJsonAtomic(file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
+    const found = readCachedJob(dir, cache);
+    if (!found || found.job.stop_origin) return false;
+    const next: Job = { ...found.job, stop_origin: { actor, prior_state: priorState, at } };
+    found.idx.writeJsonAtomic(found.file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
     return true;
   } catch { return false; }
 }
 
 /** Record once whether the orchestrator or owner answered a question. */
-export function recordQuestionAnswer(dir: string, qid: string, actor: AnswerActor): boolean {
+export function recordQuestionAnswer(dir: string, qid: string, actor: AnswerActor, cache?: JobIndexCache): boolean {
   if (!/^q\d+$/.test(qid)) return false;
-  const file = join(dir, jobFiles.job);
   try {
-    const raw = readJsonFile(file);
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
-    const job = raw as Job;
-    if (job.answered_by?.[qid]) return false;
-    const next: Job = { ...job, answered_by: { ...job.answered_by, [qid]: actor } };
-    getJobIndexCache(dirname(dirname(dir))).writeJsonAtomic(file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
+    const found = readCachedJob(dir, cache);
+    if (!found || found.job.answered_by?.[qid]) return false;
+    const next: Job = { ...found.job, answered_by: { ...found.job.answered_by, [qid]: actor } };
+    found.idx.writeJsonAtomic(found.file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
     return true;
   } catch { return false; }
 }
 
 /** Record once that a question timed out and its default applied. */
-export function recordQuestionTimeout(dir: string, qid: string): boolean {
+export function recordQuestionTimeout(dir: string, qid: string, cache?: JobIndexCache): boolean {
   if (!/^q\d+$/.test(qid)) return false;
-  const file = join(dir, jobFiles.job);
   try {
-    const raw = readJsonFile(file);
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
-    const job = raw as Job;
-    if (job.timed_out_questions?.includes(qid)) return false;
-    const next: Job = { ...job, timed_out_questions: [...(job.timed_out_questions ?? []), qid] };
-    getJobIndexCache(dirname(dirname(dir))).writeJsonAtomic(file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
+    const found = readCachedJob(dir, cache);
+    if (!found || found.job.timed_out_questions?.includes(qid)) return false;
+    const next: Job = { ...found.job, timed_out_questions: [...(found.job.timed_out_questions ?? []), qid] };
+    found.idx.writeJsonAtomic(found.file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
     return true;
   } catch { return false; }
 }

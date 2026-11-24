@@ -1195,7 +1195,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
     writePrivateFile(answerFile, message, { exclusive: true, mkdir: false });
     jobCache.invalidateQa(id);
     if (jobCache.readQa(dir).openIds.length) {
-      if (recordQuestionAnswer(dir, answerRequest, answeredBy)) jobCache.invalidateFile(join(dir, jobFiles.job));
+      recordQuestionAnswer(dir, answerRequest, answeredBy, jobCache);
       if (carryTask) { carryTask.seenQuestions.add(`${answerRequest}.md`); extendTask(carryTask, current); }
       return { ok: true, written: true };
     }

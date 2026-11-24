@@ -826,7 +826,7 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   await until(() => messages.length === 3, 'timed out waiting for the settlement window', 6000);
   assert.deepEqual(messages[2], notice(`${id} imp: idle_grace | report | hud_read job=${id} (mode: "full" for the whole report)`),
     'idle wake contains only the report notice');
-  assert.deepEqual(JSON.parse(fs.readFileSync(jobFile, 'utf8')), receipt, 'notice does not mark the report read');
+  assert.deepEqual(JSON.parse(fs.readFileSync(jobFile, 'utf8')), { ...receipt, answered_by: { q1: 'orchestrator' } }, 'notice does not mark the report read');
   fs.writeFileSync(path.join(home, 'tries.jsonl'), [
     { root: '/synthetic/other-project', action: 'accept', milestone: 'M1', slices: ['other'] },
     { root: f.cwd, action: 'accept', milestone: 'M1', slices: ['demo'] },

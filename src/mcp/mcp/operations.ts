@@ -751,7 +751,7 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
   try {
     writePrivateFile(join(dir, jobFiles.qa, `${request}.answer.md`), answer, { exclusive: true, mkdir: false });
     jobCache.invalidateQa(job.job);
-    if (recordQuestionAnswer(dir, request, actor)) jobCache.invalidateFile(join(dir, jobFiles.job));
+    recordQuestionAnswer(dir, request, actor, jobCache);
     publishWorkSummary(loadedJobs);
     if (canCarry) {
       oldTask.seenQuestions.add(`${request}.md`);
@@ -776,7 +776,7 @@ export async function closeJob(job: Job, stop = false) {
   const dir = directory(job.job);
   const scouting = pendingScouts.get(job.job);
   if (scouting) {
-    if (recordStopOrigin(dir, 'mcp', readCachedStatus(job.job).status?.state)) jobCache.invalidateFile(join(dir, jobFiles.job));
+    recordStopOrigin(dir, 'mcp', readCachedStatus(job.job).status?.state, undefined, jobCache);
     scouting.abort();
     return { exit_code: 0, last_line: 'stopping scouted dispatch' };
   }
@@ -818,7 +818,7 @@ export async function closeJob(job: Job, stop = false) {
       if (row.state !== 'queued' || fs.existsSync(join(dir, jobFiles.session))) break;
     }
   }
-  if (recordStopOrigin(dir, 'mcp', status?.state)) jobCache.invalidateFile(join(dir, jobFiles.job));
+  recordStopOrigin(dir, 'mcp', status?.state, undefined, jobCache);
   if (job.headless) {
     const closed = await stopSonic(dir);
     publishWorkSummary();
