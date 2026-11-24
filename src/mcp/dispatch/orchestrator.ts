@@ -204,7 +204,10 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
       for (const key of [...placementOverrides, 'instructions']) delete inherited[key];
       if (hasPiPlacement(inherited.pi_args)) delete inherited.pi_args;
     }
-    delete inherited.on; // Retry through the role's chain instead of pinning the previous harness.
+    // Keep the original harness with its pinned model; an explicit on still wins below.
+    if (role !== 'general' || inherited.model === undefined || input.preset !== undefined || input.model !== undefined) {
+      delete inherited.on;
+    }
     if (input.on !== undefined) delete inherited.preset;
     args = { ...inherited, ...(input.task === undefined && input.brief_file === undefined ? { task: originalTask(source) } : {}), ...input, role };
     repairOf = input.from_jobs === undefined ? source.repair_of : undefined;

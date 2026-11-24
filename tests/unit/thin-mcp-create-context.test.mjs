@@ -289,6 +289,24 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   assert.equal(hasObjective(await f.call('hud_create', { retry_of: noLink.job })), false);
 });
 
+test('hud_create retry_of keeps a general harness pin only when paired with a model pin', async t => {
+  const f = await fixture(t);
+  fallbackRole(f, 'general', [fallbackPlaces[1]]);
+  const failStart = join(f.env.HOME, 'fail-start-claude');
+  for (const [model, expected] of [
+    ['synthetic/override', 'cli/claude (synthetic/override)'],
+    [undefined, 'pi (synthetic/second)'],
+  ]) {
+    fs.writeFileSync(failStart, 'synthetic start failed');
+    const original = await f.call('hud_create', { role: 'general', task: `Synthetic retry ${model ?? 'without model'}.`, on: 'claude', model });
+    assert.equal(original.state, 'failed');
+    fs.unlinkSync(failStart);
+
+    const next = await f.call('hud_create', { retry_of: original.job });
+    assert.equal(next.used_place, expected, JSON.stringify(next));
+  }
+});
+
 test('hud_create stamps the linked checkout ticket against its Objective record, falling back only for a missing file', async (t) => {
   const f = await fixture(t), main = initRepo(f.root), cwd = join(f.root, 'linked');
   git(main, 'worktree', 'add', '-qb', 'linked', cwd);

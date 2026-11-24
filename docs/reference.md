@@ -191,7 +191,8 @@ In sessions without MCP tasks, pass `jobs: [...]` instead of single-create field
 The optional `request_key` defaults to a hash of the caller pane, role, cwd and task.
 By default it dispatches on the role's first available place (`runs_on`).
 `hud_create({retry_of: job})` starts a new job using a failed or stopped job's brief and options; explicit fields can override them, subject to the same rules as a new create.
-Without new placement options, the retry keeps the original job’s placement options and selects an available place through the role or preset chain (rather than pinning the old harness).
+A `general` retry keeps the original `on` only if the job also pinned `model` and the retry does not pass `on`, `preset`, or `model`.
+Otherwise, unless the retry supplies `on`, it selects an available place through the role or preset chain.
 
 Pass `scout: "<question>"` to run sonic first in the target's working directory (including its managed worktree), with the same `context_files` and sonic's normal role settings.
 `hud_create` returns the target job ID or one MCP task immediately; HUD starts the target after the scout and adds the dossier to `from_jobs` (leave one of the 16 slots free).
