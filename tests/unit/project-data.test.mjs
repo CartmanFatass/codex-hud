@@ -451,6 +451,27 @@ test('scratch-only subjects do not land tickets; commit-only landings default to
   assert.deepEqual(JSON.parse(fs.readFileSync(join(f.hud, 'tries.jsonl'), 'utf8')).slices, ['DEMO-03']);
 });
 
+test('a code commit naming its changed ticket needs only the cheap history read', async (t) => {
+  const f = makeTemp(t);
+  initRepo(f.cwd, [{ file: 'app.js', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);
+  f.put(join(f.cwd, '.scratch/feature/issues/01-item.md'), '# 01: Item\n**Status:** ready-for-agent\n**Blocked by:** none\n');
+  f.put(join(f.cwd, 'app.js'), 'export const value = 1;\n');
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
+    cwd: f.cwd, stdio: 'pipe',
+  });
+  git('add', '.'); git('commit', '-m', 'deliver feature/01');
+
+  const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home), calls = [], orig = childProcess.execFile;
+  childProcess.execFile = (file, args, ...rest) => { calls.push(args); return orig(file, args, ...rest); }; syncBuiltinESMExports();
+  t.after(() => { childProcess.execFile = orig; syncBuiltinESMExports(); });
+  const tick = () => collector.collect('home', EMPTY_BOARD, NOW);
+  assert.equal((await tick()).ledger[0].landed, true);
+  await tick();
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].includes('--name-status'));
+  assert.ok(!calls[0].includes('--patch'));
+});
+
 test('docs and ticket mentions leave a live ticket working until Git records its landing', async (t) => {
   const f = makeTemp(t);
   initRepo(f.cwd, [{ file: 'code.txt', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);

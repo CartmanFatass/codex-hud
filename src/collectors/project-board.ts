@@ -27,6 +27,7 @@ const ticketPathId = (path: string) => {
   return match && targetKey(`${match[1]}/${match[2]}`);
 };
 const landingStatus = /^(ready-for-human|done)$/i;
+const landingLogBoundary = /\0\0(?=(?:[a-f0-9]{40}|[a-f0-9]{64})\0)/;
 
 export { SETTLED_JOB_STATES } from './ticket-rollup.js';
 export interface ProjectItem {
@@ -495,23 +496,21 @@ export class ProjectCollector {
       this.landed.clear();
       this.ticketCommits.clear();
       if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)) try {
-        // Raw entries retain every changed path. Limit the accompanying patches to ticket-sized
-        // files and ignore hunks without Markdown fields (double asterisks).
         const log = await worktreeGit(this.cwd, [
-          '-c', `core.bigFileThreshold=${STATE_BYTES}`, 'log', '-n', '64', '--no-show-signature', '--no-renames',
-          '--no-ext-diff', '--no-textconv', '--no-relative', '--no-color', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
-          '--raw', '-z', '--patch', '-U0', '--ignore-matching-lines=^([^*]|[*][^*])+[*]?$|^\n',
-          '--format=%x00%x00%H%x00%ct%x00%s', sha, '--',
+          'log', '-n', '64', '--no-show-signature', '--no-renames', '--no-ext-diff', '--no-textconv', '--no-relative', '--no-color',
+          '--name-status', '-z', '--format=%x00%x00%H%x00%ct%x00%s', sha, '--',
         ]);
-        for (const chunk of log.split(/\0\0(?=(?:[a-f0-9]{40}|[a-f0-9]{64})\0)/)) {
+        const commits = new Map<string, { at: number; ids: string[]; changed: Map<string, boolean> }>();
+        const candidates: string[] = [], credited = new Set<string>();
+        for (const chunk of log.split(landingLogBoundary)) {
           const [commitSha, ct, subject, ...fields] = chunk.split('\0');
           const at = Number(ct) * 1000;
           if (!commitSha || !Number.isFinite(at)) continue;
-          let code = false, i = 0;
+          let code = false;
           const changed = new Map<string, boolean>(); // Ticket ID -> newly added file.
-          for (; fields[i]?.trimStart().startsWith(':') && fields[i + 1]; i += 2) {
-            const [meta, path] = [fields[i], fields[i + 1]], id = ticketPathId(path);
-            if (id && !meta.endsWith(' D')) changed.set(id, meta.endsWith(' A'));
+          for (let i = 0; fields[i + 1]; i += 2) {
+            const status = fields[i].trim(), path = fields[i + 1], id = ticketPathId(path);
+            if (id && status !== 'D') changed.set(id, status === 'A');
             if (!path.startsWith('docs/') && !path.startsWith('.scratch/')) code = true;
           }
           if (/^Record landing\b/.test(subject)) {
@@ -520,20 +519,39 @@ export class ProjectCollector {
             continue;
           }
           const ids = code ? ticketIds(subject) : [];
-          // An empty NUL field separates the raw entries from the unified patch.
-          for (const patch of (fields[i + 1] ?? '').split(/^diff --git /m)) {
-            const path = /^\+\+\+ "?b\/(.+?)"?\t?$/m.exec(patch)?.[1];
-            const id = path && ticketPathId(path);
-            if (!id || !changed.has(id)) continue;
-            const statuses = [...patch.matchAll(/^([+-])(?:[ \t]*|[^\r\n]*?·[ \t]*)\*\*Status:\*\*[ \t]*([^·\r\n]+)/gim)];
-            const before = statuses.find(([, sign]) => sign === '-')?.[2].trim();
-            const after = statuses.find(([, sign]) => sign === '+')?.[2].trim();
-            if (after && landingStatus.test(after) && (changed.get(id) || (before && !landingStatus.test(before)))) ids.push(id);
+          // A direct landing in this or a newer commit already supplies this ticket's attribution.
+          for (const id of ids) credited.add(id);
+          for (const id of changed.keys()) if (credited.has(id)) changed.delete(id);
+          if (changed.size) candidates.push(commitSha);
+          if (ids.length || changed.size) commits.set(commitSha, { at, ids, changed });
+        }
+        if (candidates.length) {
+          // Only unresolved ticket edits need content. No history traversal or patches outside tickets.
+          const patches = await worktreeGit(this.cwd, [
+            '--no-literal-pathspecs', '-c', `core.bigFileThreshold=${STATE_BYTES}`, 'log', '--no-walk',
+            '--no-show-signature', '--no-renames', '--no-ext-diff', '--no-textconv', '--no-relative', '--no-color',
+            '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/', '--patch', '-U0',
+            '--ignore-matching-lines=^([^*]|[*][^*])+[*]?$|^\n', '--format=%x00%x00%H%x00',
+            ...candidates, '--', ':(top,glob).scratch/*/issues/*.md',
+          ]).catch(() => ''); // A failed patch read does not discard direct or legacy evidence.
+          for (const chunk of patches.split(landingLogBoundary)) {
+            const [commitSha, body] = chunk.split('\0', 2), commit = commits.get(commitSha);
+            if (!body || !commit) continue;
+            for (const patch of body.split(/^diff --git /m)) {
+              const path = /^\+\+\+ "?b\/(.+?)"?\t?$/m.exec(patch)?.[1];
+              const id = path && ticketPathId(path);
+              if (!id || !commit.changed.has(id)) continue;
+              const statuses = [...patch.matchAll(/^([+-])(?:[ \t]*|[^\r\n]*?·[ \t]*)\*\*Status:\*\*[ \t]*([^·\r\n]+)/gim)];
+              const before = statuses.find(([, sign]) => sign === '-')?.[2].trim();
+              const after = statuses.find(([, sign]) => sign === '+')?.[2].trim();
+              if (after && landingStatus.test(after) && (commit.changed.get(id) || (before && !landingStatus.test(before)))) commit.ids.push(id);
+            }
           }
-          for (const id of ids) {
-            this.landed.add(id);
-            if (!this.ticketCommits.has(id)) this.ticketCommits.set(id, { sha: commitSha, at });
-          }
+        }
+        // Apply both kinds of evidence in the original newest-first order, not the patch output order.
+        for (const [commitSha, { at, ids }] of commits) for (const id of ids) {
+          this.landed.add(id);
+          if (!this.ticketCommits.has(id)) this.ticketCommits.set(id, { sha: commitSha, at });
         }
       } catch { /* Git unavailable: rely on ticket files. */ }
     }
