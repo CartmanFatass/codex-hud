@@ -268,7 +268,8 @@ For pi and headless CLIs, sends queued during a turn go to the same worker's nat
 A `general` job with `instructions: "<role>"` supplies the borrowed role's instructions to its selected pi or CLI worker instead of general's instructions.
 
 Settings → Decision API persists `config.json.decisions.primary` (default OpenAI).
-Automatic fallback chooses another keyed provider in Gemini → OpenAI → TypeSafe order; one fallback covers missing credentials, quota/auth/5xx/timeout, not malformed answers or refusals. Gemini quota replies impose an in-memory cooldown.
+Automatic fallback chooses another keyed provider in Gemini → OpenAI → Anthropic → TypeSafe order; one fallback covers missing credentials, quota/auth/5xx/timeout, not malformed answers or refusals. Gemini quota replies impose an in-memory cooldown.
+Anthropic receives the same Decision API inputs through the Messages API, called with Node's built-in fetch.
 The execution Decision cap defaults to unlimited (`0`), with atomic reservations across processes on one local HUD home. Fallback HTTP attempts count separately; coordination failure refuses instead of bypassing accounting. Settings reads the hourly ledger outside paint.
 
 ## 6. Rendering and input

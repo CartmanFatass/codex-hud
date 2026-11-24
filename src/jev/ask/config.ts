@@ -17,6 +17,7 @@ export interface JevCredentials {
   geminiApiKey?: string;
   openaiApiKey?: string;
   openaiBaseUrl?: string;
+  anthropicApiKey?: string;
   typesafeApiKey?: string;
   typesafeModel?: string;
   mistralApiKey?: string;
@@ -40,8 +41,8 @@ export function resolveDecisions(root: Record<string, unknown>): DecisionConfig 
     ['primary', primary],
     ['fallback', fallback],
   ]) {
-    if (value !== undefined && value !== 'gemini' && value !== 'typesafe' && value !== 'openai')
-      throw new JevFailure('config', `decisions.${name} must be gemini, typesafe or openai`);
+    if (value !== undefined && value !== 'gemini' && value !== 'openai' && value !== 'anthropic' && value !== 'typesafe')
+      throw new JevFailure('config', `decisions.${name} must be gemini, openai, anthropic or typesafe`);
   }
   const openai = object(raw.openai ?? legacy.openai ?? {}, 'decisions.openai');
   const typesafe = object(raw.typesafe ?? legacy.typesafe ?? {}, 'decisions.typesafe');
@@ -93,6 +94,7 @@ const CREDENTIAL_FIELDS = {
   GEMINI_API_KEY: 'geminiApiKey',
   OPENAI_API_KEY: 'openaiApiKey',
   OPENAI_BASE_URL: 'openaiBaseUrl',
+  ANTHROPIC_API_KEY: 'anthropicApiKey',
   TYPESAFE_API_KEY: 'typesafeApiKey',
   TYPESAFE_MODEL: 'typesafeModel',
   MISTRAL_API_KEY: 'mistralApiKey',
@@ -112,19 +114,23 @@ export function readHudCredentials(
   hudHome = getHudHome(env)
 ): JevCredentials {
   const creds = readCredentialsEnv(path.join(hudHome, 'credentials.env'));
+  // The Anthropic Decision key comes only from the shared HUD file.
   for (const [name, field] of Object.entries(CREDENTIAL_FIELDS)) {
-    if (env[name] !== undefined) creds[field as (typeof CREDENTIAL_FIELDS)[keyof typeof CREDENTIAL_FIELDS]] = env[name];
+    if (name !== 'ANTHROPIC_API_KEY' && env[name] !== undefined) creds[field] = env[name];
   }
   for (const [name, value] of Object.entries(env))
     if (name.startsWith('TEXT_MODEL_') && value !== undefined) creds.textModel[name] = value;
   return creds;
 }
 export function decisionKeys(creds: JevCredentials): Record<DecisionProviderId, boolean> {
-  return { gemini: !!creds.geminiApiKey, openai: !!creds.openaiApiKey, typesafe: !!creds.typesafeApiKey };
+  return {
+    gemini: !!creds.geminiApiKey, openai: !!creds.openaiApiKey,
+    anthropic: !!creds.anthropicApiKey, typesafe: !!creds.typesafeApiKey,
+  };
 }
 export function decisionFallback(config: DecisionConfig, creds: JevCredentials, primary = config.primary): DecisionProviderId | undefined {
   return config.fallback && config.fallback !== primary ? config.fallback :
-    (['gemini', 'openai', 'typesafe'] as const).find((id) => id !== primary && decisionKeys(creds)[id]);
+    (['gemini', 'openai', 'anthropic', 'typesafe'] as const).find((id) => id !== primary && decisionKeys(creds)[id]);
 }
 function object(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))

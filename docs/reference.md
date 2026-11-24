@@ -1272,12 +1272,12 @@ They report native session failures and approvals through tmux, optionally deskt
 **Credentials.**
 `$HUD_HOME/credentials.env` must be a regular 0600 file (not a symlink/FIFO).
 `NAME=VALUE`, optional quotes/export, no interpolation; environment wins per name, no implicit client/jev key import.
-Known keys include `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `TYPESAFE_API_KEY`.
+Known keys include `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, and `TYPESAFE_API_KEY`. Anthropic is an exception to the environment override: HUD reads `ANTHROPIC_API_KEY` only from `$HUD_HOME/credentials.env`.
 
 **Decision API.**
-`$HUD_HOME/config.json` has `decisions.primary` (default openai) and optional `decisions.fallback`: gemini/openai/typesafe.
-Settings saves primary, not keys.
-Automatic fallback picks the first other keyed provider in Gemini → OpenAI → TypeSafe order; one fallback for missing credentials, quota/auth/5xx/timeout, not malformed/refused answers.
+`$HUD_HOME/config.json` has `decisions.primary` (default `openai`) and optional `decisions.fallback`: `gemini`, `openai`, `anthropic`, or `typesafe`.
+Settings → Models saves the primary provider, not keys. Anthropic uses Claude Haiku 5.5 (`claude-haiku-5-5`) via the Messages API at low effort, sending the same Decision API inputs as the other providers.
+Automatic fallback picks the first other keyed provider in Gemini → OpenAI → Anthropic → TypeSafe order; one fallback for missing credentials, quota/auth/5xx/timeout, not malformed/refused answers.
 Gemini quota replies cool down the process for the server delay or 60 seconds.
 Browser CLIs own their own configuration independently.
 

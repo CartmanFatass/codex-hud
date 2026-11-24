@@ -5,6 +5,7 @@
     "decisions": {
       "openai": "gpt-6-luna",
       "gemini": "gemini-decision-1",
+      "anthropic": "claude-haiku-5-5",
       "typesafe": "jev-latest"
     }
   },

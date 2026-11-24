@@ -163,10 +163,11 @@ test('Settings EN/ZH at 80 columns: cycle, no-key marker, save single source of 
     assert.match(frame.lines.join('\n'), lang === 'en' ? /Decision API/ : /决策 API/);
     assert.match(frame.lines.join('\n'), /OpenAI/);
   }
-  for (const expected of ['typesafe', 'gemini', 'openai'] as const) {
+  for (const expected of ['anthropic', 'typesafe', 'gemini', 'openai'] as const) {
     state = handleSettingsInput(state, { type: 'key', key: 'right' }, renderSettingsPage(state, 80, 40)).state as typeof state;
     assert.equal(state.draft.decisionApi, expected);
     const text = renderSettingsPage(state, 80, 40).lines.join('\n');
+    if (expected === 'anthropic') assert.match(text, /Anthropic \(无 key\)/);
     if (expected === 'typesafe') assert.match(text, /TypeSafe \(无 key\)/);
     const action = handleSettingsInput(state, { type: 'key', key: 'settings-save' }, renderSettingsPage(state, 80, 40)).action;
     assert.equal(action, 'save');
@@ -175,8 +176,12 @@ test('Settings EN/ZH at 80 columns: cycle, no-key marker, save single source of 
     assert.deepEqual(root, { unrelated: { keep: true }, decisions: { primary: expected, fallback: 'typesafe' } });
     assert.equal(JSON.parse(readFileSync(join(f.home, 'hud-settings.json'), 'utf8')).decisionApi, undefined);
     assert.equal(loadSettings().decisionApi, expected);
-    const result = await (await selectDecisionProvider(undefined, f.env, fetcher)).decide(request, options);
-    assert.equal(result.provider, expected === 'typesafe' ? 'gemini' : expected);
+    if (expected === 'anthropic') {
+      await assert.rejects(selectDecisionProvider(undefined, f.env, fetcher), /ANTHROPIC_API_KEY/);
+    } else {
+      const result = await (await selectDecisionProvider(undefined, f.env, fetcher)).decide(request, options);
+      assert.equal(result.provider, expected === 'typesafe' ? 'gemini' : expected);
+    }
   }
   setLanguage('en');
   state.draft.decisionApi = 'typesafe';

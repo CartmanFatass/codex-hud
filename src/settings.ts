@@ -93,7 +93,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
-  decisionApi: oneOf('gemini', 'openai', 'typesafe'),
+  decisionApi: oneOf('gemini', 'openai', 'anthropic', 'typesafe'),
   quietJobDecision: isBoolean,
   sonicAutoThinking: isBoolean,
   impPlacement: oneOf('fixed', 'even', 'auto'),

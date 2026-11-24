@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { getHudHome } from '../hud-home.js';
 import { readHudCredentials, readHudConfig, resolveDecisions, decisionFallback } from './ask/config.js';
 import { FailoverDecisionProvider } from './failover.js';
+import { AnthropicDecisionProvider } from './providers/anthropic.js';
 import { GeminiDecisionProvider } from './providers/gemini.js';
 import { OpenAIDecisionProvider } from './providers/openai.js';
 import { TypeSafeDecisionProvider } from './providers/typesafe.js';
@@ -34,7 +35,7 @@ export type Answer =
   | { name: string; kind: 'predicate'; probability: number }
   | { name: string; kind: 'refusal' };
 
-export type DecisionProviderId = 'gemini' | 'typesafe' | 'openai';
+export type DecisionProviderId = 'gemini' | 'openai' | 'anthropic' | 'typesafe';
 
 export interface DecisionResult {
   /** Actual responder, including per-call failover. */
@@ -51,7 +52,7 @@ export interface DecisionProvider {
   readonly model: string;
   decide(request: DecisionRequest, options: { signal?: AbortSignal; cacheKey: string }): Promise<DecisionResult>;
   /**
-   * Read-only page judgments. Both built-in providers implement this.
+   * Read-only page judgments. Built-in providers implement this.
    * A decide-only test double may omit it; judgment callers must not.
    */
   judge?(request: JudgmentRequest, options: { signal?: AbortSignal; cacheKey: string }): Promise<DecisionResult>;
@@ -62,10 +63,12 @@ export interface DecisionProvider {
  */
 export function decideProviderId(
   explicit: DecisionProviderId | undefined,
-  present: { gemini?: boolean; typesafe: boolean; openai: boolean }
+  present: { gemini?: boolean; openai: boolean; anthropic?: boolean; typesafe: boolean }
 ): { ok: true; provider: DecisionProviderId } | { ok: false; provider: DecisionProviderId; variable: string } {
   if (explicit === 'gemini') return present.gemini
     ? { ok: true, provider: 'gemini' } : { ok: false, provider: 'gemini', variable: 'GEMINI_API_KEY' };
+  if (explicit === 'anthropic') return present.anthropic
+    ? { ok: true, provider: 'anthropic' } : { ok: false, provider: 'anthropic', variable: 'ANTHROPIC_API_KEY' };
   if (explicit === 'typesafe') {
     return present.typesafe
       ? { ok: true, provider: 'typesafe' }
@@ -115,7 +118,7 @@ export class JevCredentialsMissing extends Error {
     readonly provider: DecisionProviderId,
     readonly variable: string
   ) {
-    super('jev_credentials_missing');
+    super(`jev_credentials_missing:${variable}`);
     this.name = 'JevCredentialsMissing';
   }
 }
@@ -214,6 +217,8 @@ export async function selectDecisionProvider(
             fetcher,
           })
         : undefined;
+    if (id === 'anthropic')
+      return creds.anthropicApiKey ? new AnthropicDecisionProvider({ apiKey: creds.anthropicApiKey, fetcher }) : undefined;
     return creds.typesafeApiKey
       ? new TypeSafeDecisionProvider({
           apiKey: creds.typesafeApiKey,

@@ -66,6 +66,7 @@ export interface ModelsCatalogDocument {
     decisions: {
       openai: string;
       gemini: string;
+      anthropic: string;
       typesafe: string;
     };
   };

@@ -90,9 +90,9 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'mouse', group: 'Panel', label: 'Mouse', values: [true, false], help: 'Click and scroll the panel', advanced: true },
   { key: 'openPreviews', group: 'Panel', label: 'Open previews', values: [true, false], help: 'Open report HTML previews in the default browser' },
   {
-    key: 'decisionApi', group: 'Models', label: 'Decision API', values: ['gemini', 'openai', 'typesafe'],
+    key: 'decisionApi', group: 'Models', label: 'Decision API', values: ['gemini', 'openai', 'anthropic', 'typesafe'],
     help: 'Primary for Jev and execution decisions; automatic fallback uses another keyed provider',
-    format: (value) => ({ gemini: 'Gemini', openai: 'OpenAI', typesafe: 'TypeSafe' })[String(value)] ?? String(value),
+    format: (value) => ({ gemini: 'Gemini', openai: 'OpenAI', anthropic: 'Anthropic', typesafe: 'TypeSafe' })[String(value)] ?? String(value),
   },
   { key: 'decisionCallsPerHour', group: 'Models', label: 'Decision cap', values: [600, 2000, 0],
     help: 'Decision-API calls per hour (quiet jobs, Sonic thinking, Imp routing)', advanced: true, format: callCap },
