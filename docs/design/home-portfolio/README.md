@@ -171,3 +171,6 @@ Everything below is in the data the panel already collects, except the two items
 - Decided without asking (reversible): the panel's own stacked-bar glyphs are reused instead of a new bar; the ticket denominator excludes dropped tickets; the age unit set is `m h d w` (`分 时 天 周`);
   the idle word shows only for an *active* project (a paused or maintenance project says so already).
 - Limits of the sample: Proposed frames are composed from helpers, not the product renderer; Unicode and text icon sets are described, not drawn; light themes were not drawn; no mouse or cursor states.
+
+**Settled by the owner 2026-11-24 (D-2026-11-24-01):** build this design; 1. drop the pane load line; 2. a result
+stays on Home for 3 days; 3. paused Objectives show grey bars.

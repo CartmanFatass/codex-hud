@@ -5,6 +5,15 @@ Dates are the owner dates in the source spec unless marked *recorded*: a spec re
 separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-NN`. Section refs point into
 `docs/spec.md`.
 
+## 2026-11-24
+
+- **D-2026-11-24-01** (§2.2 Home, §2.3 Project): The owner found Home without design (wrapped and cut rows, no
+  one-glance progress) and Project repeating it. Settled `docs/design/home-portfolio/` (74836d56) as the build
+  template: one block per registered project with a liveness mark, per-role load and age on its header and one
+  stacked ticket bar per Objective; Project carries the depth (full titles, next, per-feature bars, jobs, results,
+  evidence) and no Home summary; the README's ten text layout rules. Owner answers: drop Home's pane load line
+  (visible deletion approved); a result stays on Home for 3 days; paused Objectives show grey bars.
+
 ## 2026-11-23
 
 - **D-2026-11-23-05** (§5 M2): The owner found the M2 load text (`HUD (OS): N running, M queued`, `WSL: CPU … RAM …
