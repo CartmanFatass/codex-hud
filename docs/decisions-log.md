@@ -7,6 +7,14 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-24
 
+- **D-2026-11-24-03** (§4 attention, dispatch): The owner asked how to handle choices that are unimportant one by
+  one but reusable (here: toktrack web's dark-by-default look with colour on elements). Same root as 22.28 and the
+  panel cut of 2026-11-09/11 (task-level status, the important never cut, detail on demand): owner attention is the
+  scarce resource, so a settled taste is recorded once and not asked again. Store: a private
+  `$HUD_HOME/preferences/<instructions>.md` per worker instructions name (first: `frontend-implementer.md`), which
+  HUD attaches to every dispatch of that role (ticket owner-preferences/01); precedence task > project
+  `.hud/brief.md` > owner preferences. The main session appends each newly settled low-stakes choice; workers decide
+  uncovered low-stakes choices and list them in the report.
 - **D-2026-11-24-02** (§2.2 Home): The owner asked for a card area under the projects and for time management
   across projects. Settled `docs/design/home-cards/` (4ec4915b): a **Today** card (landings, finished and failed jobs
   by role, gate first-pass vs retried, today only) and a **Schedule** card (dated owner items in a private
