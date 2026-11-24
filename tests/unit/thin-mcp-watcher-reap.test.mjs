@@ -35,13 +35,26 @@ import {
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
-async function nextScan(t, f, change) {
+function readWatchSummary(f) {
   const summary = workSummaryPath(f.env.HUD_HOME);
-  const published = () => fs.existsSync(summary) && JSON.parse(fs.readFileSync(summary)).producer === 'hud-watch';
-  await until(published, t.signal);
+  try {
+    const snap = JSON.parse(fs.readFileSync(summary, 'utf8'));
+    return snap.producer === 'hud-watch' ? snap : null;
+  } catch {
+    return null;
+  }
+}
+
+async function nextScan(t, f, change, accept = () => true) {
+  const summary = workSummaryPath(f.env.HUD_HOME);
+  await until(() => fs.existsSync(summary), t.signal);
+  const before = readWatchSummary(f)?.generation ?? 0;
   fs.rmSync(summary, { force: true });
   change();
-  await until(published, t.signal);
+  await until(() => {
+    const snap = readWatchSummary(f);
+    return snap !== null && snap.generation > before && accept(snap);
+  }, t.signal);
 }
 
 test('TERM during the watcher startup dist-lock wait leaves no advertised PID', async (t) => {
@@ -596,26 +609,34 @@ test(
     await nextScan(t, f, () => {
       writeFixtureFile(join(first.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
       writeFixtureFile(join(second.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
-    });
+    }, (snap) => snap.global.running === 0);
     assert.equal(reaped(first.task_dir), 0);
     assert.equal(fs.existsSync(pidFile), true, 'grace jobs must keep the watcher alive');
+    await until(() => watchLog().includes('herdr events unavailable'), t.signal);
     assert.equal(watchLog().match(/herdr events unavailable/g)?.length, 1);
     writeFixtureFile(join(second.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
     writeFixtureFile(join(first.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
-    await until(() => reaped(first.task_dir) === 1, t.signal);
-    const ended = Date.now(), clock = join(f.env.HOME, 'watcher-clock');
-    // Witness a completed scan just before the failed-job deadline, even if this process is descheduled.
-    writeFixtureFile(clock, String(ended + failedRetentionMs - 1));
+    await until(
+      () => reaped(first.task_dir) === 1 &&
+        Boolean(readCloseReaped(first)) &&
+        readWatchSummary(f)?.global.running === 1,
+      t.signal
+    );
+    const ended = Date.now() - failedRetentionMs;
+    const deadline = ended + failedRetentionMs;
+    const clock = join(f.env.HOME, 'watcher-clock');
+    // Hold the watcher's clock 1 ms before the failed-job deadline so we witness a scan
+    // before expiry deterministically without a wall-clock sleep or timer spin.
+    writeFixtureFile(clock, String(deadline - 1));
     await nextScan(t, f, () => writeFixtureFile(
       join(second.task_dir, 'STATUS.json'),
       JSON.stringify({ state: 'failed', ended_at: new Date(ended).toISOString() })
-    ));
+    ), (snap) => snap.global.running === 0 && snap.observed_at === deadline - 1);
     assert.equal(reaped(second.task_dir), 0);
     assert.equal(fs.existsSync(pidFile), true);
-    await until(() => Date.now() >= ended + failedRetentionMs, t.signal);
     fs.unlinkSync(clock);
     await until(() => reaped(second.task_dir) === 1, t.signal);
-    assert.ok(Date.now() >= ended + failedRetentionMs);
+    assert.ok(Date.now() >= deadline);
     await until(() => !fs.existsSync(pidFile), t.signal);
     await until(() => {
       try {

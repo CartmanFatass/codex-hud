@@ -31,7 +31,14 @@ switch (process.argv[2]) {
   }
   case 'advise': {
     const { adviseCommand } = await withDistLock(() => import('../dist/cli/advise.js'));
-    await adviseCommand(['--stdin'], { env: process.env, stdout: () => {}, stderr: () => {} });
+    const args = process.argv.slice(3);
+    const wantsHelp = args.includes('--help') || args.includes('-h');
+    process.exitCode = await adviseCommand(
+      args.length ? args : ['--stdin'],
+      wantsHelp
+        ? { env: process.env, stdout: (text) => { process.stdout.write(text); }, stderr: (text) => { process.stderr.write(text); } }
+        : { env: process.env, stdout: () => {}, stderr: () => {} }
+    );
     break;
   }
   default:

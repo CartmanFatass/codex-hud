@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -570,4 +572,92 @@ test('no session transcript, hook output, or prompt receives advisor text (Claud
   const claudeHookSrc = fs.readFileSync('integrations/claude-mod/hooks/advisor.ts', 'utf8');
   assert.doesNotMatch(claudeHookSrc, /prompt\.submit|session\.append|ui\.toast/);
   assert.equal(scrubSecrets('Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijk123456'), 'Bearer [REDACTED]');
+});
+
+function runAdviseChild(t, argv, env, { stdinMode = 'open', payload, detached = false } = {}) {
+  const started = Date.now();
+  const child = spawn(process.execPath, argv, {
+    env,
+    detached,
+    stdio: [stdinMode === 'ignore' ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+  });
+  t.after(() => {
+    if (child.exitCode === null && child.signalCode === null) {
+      try { child.kill('SIGKILL'); } catch {}
+    }
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+  child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+  if (stdinMode === 'close') child.stdin.end();
+  else if (stdinMode === 'payload') child.stdin.end(Buffer.from(JSON.stringify(payload), 'utf8'));
+  const exited = once(child, 'exit').then(([code, signal]) => ({
+    code,
+    signal,
+    stdout,
+    stderr,
+    elapsedMs: Date.now() - started,
+  }));
+  return exited;
+}
+
+test('hud advise --help and no-stdin invocations exit within 1 s; detached statusline runs stay silent', async (t) => {
+  const f = setupEnv(t);
+  writeSkill(f.skillsDir, 'tdd', 'tdd', 'Test-driven development red-green loop.');
+  const api = await fakeDecisionServer(t, (body) => choiceResponse(body, 'tdd'));
+  configureStubDecision(f.env, f.hudHome, api.baseUrl);
+  fs.writeFileSync(
+    f.env.HUD_SETTINGS_PATH,
+    JSON.stringify({ advisorShadow: true, advisorSkillDirs: [f.skillsDir] })
+  );
+
+  const hudBin = path.resolve('bin/hud');
+  const distBin = path.resolve('bin/hud-dist.mjs');
+
+  for (const argv of [
+    [hudBin, 'advise', '--help'],
+    [distBin, 'advise', '--help'],
+  ]) {
+    const res = await runAdviseChild(t, argv, f.env, { stdinMode: 'open' });
+    assert.equal(res.code, 0, `${argv.join(' ')} stderr=${res.stderr}`);
+    assert.equal(res.signal, null);
+    assert.ok(res.elapsedMs < 1000, `${argv.join(' ')} took ${res.elapsedMs}ms`);
+    assert.match(res.stdout, /Usage: hud advise/);
+    assert.equal(res.stderr, '');
+  }
+
+  for (const [argv, stdinMode] of [
+    [[hudBin, 'advise'], 'open'],
+    [[hudBin, 'advise'], 'ignore'],
+    [[hudBin, 'advise', '--stdin'], 'open'],
+    [[hudBin, 'advise', '--stdin'], 'close'],
+    [[distBin, 'advise'], 'open'],
+    [[distBin, 'advise'], 'ignore'],
+    [[distBin, 'advise'], 'close'],
+  ]) {
+    const res = await runAdviseChild(t, argv, f.env, { stdinMode });
+    assert.equal(res.code, 0, `${argv.join(' ')} (${stdinMode}) stderr=${res.stderr}`);
+    assert.equal(res.signal, null);
+    assert.ok(res.elapsedMs < 1000, `${argv.join(' ')} (${stdinMode}) took ${res.elapsedMs}ms`);
+    assert.equal(res.stdout, '');
+    assert.equal(res.stderr, '');
+  }
+
+  const detached = await runAdviseChild(t, [distBin, 'advise'], f.env, {
+    stdinMode: 'payload',
+    detached: true,
+    payload: {
+      session: 'detached-statusline-1',
+      projectRoot: f.projectRoot,
+      message: 'Let us write tests first for the parser.',
+      messageId: 'turn-detached-1',
+    },
+  });
+  assert.equal(detached.code, 0, detached.stderr);
+  assert.equal(detached.signal, null);
+  assert.equal(detached.stdout, '');
+  assert.equal(detached.stderr, '');
+  assert.equal(api.requests.length, 1);
+  assert.equal(readAdvisorNotice(f.hudHome, { session: 'detached-statusline-1' }, Date.now(), f.env)?.skill, 'tdd');
 });
