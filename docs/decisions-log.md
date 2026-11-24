@@ -7,17 +7,16 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-24
 
-- **D-2026-11-24-03** (§4 attention, dispatch): The owner asked how to handle choices that are unimportant one by
-  one but reusable (here: toktrack web's dark-by-default look with colour on elements). Same root as 22.28 and the
-  panel cut of 2026-11-09/11 (task-level status, the important never cut, detail on demand): owner attention is the
-  scarce resource, so a settled taste is recorded once and not asked again. Store: a private
-  `$HUD_HOME/preferences/<instructions>.md` per worker instructions name (first: `frontend-implementer.md`), which
-  HUD attaches to every dispatch of that role (ticket owner-preferences/01); precedence task > project
-  `.hud/brief.md` > owner preferences. The main session appends each newly settled low-stakes choice; workers decide
-  uncovered low-stakes choices and list them in the report.
-  Owner clarification the same day: frontends come in two kinds. **Showcase** (shown to others) defaults to light,
-  in the style of toktrack web variant B light; **personal tools** (the owner's own) default to dark, either variant
-  A (dense instrument panel) or variant B dark with the owner's tweaks.
+- **D-2026-11-24-03** (§1 Personal Standards, §3, §5 approvals): The owner asked how to handle choices that are
+  unimportant one by one but reusable (here: toktrack web's look). Same root as 22.28 and the 2026-11-09/11 panel
+  cut: owner attention is scarce, so a settled taste should be codified once and reused (the owner's 2026-11-23
+  "preference engineering" discussion: explore, codify, exploit; approved and rejected examples; profiles by kind of
+  interface; candidates confirmed by the owner). Per §1 these live in an external Personal Standards repo and
+  skills, not in HUD. A same-day HUD store (`$HUD_HOME/preferences`, d0087cf6) contradicted §1 and was reverted.
+  Owner clarification: frontends come in two kinds. **Showcase** (shown to others) defaults to light, in the style of
+  toktrack web variant B light; **personal tools** (the owner's own) default to dark, either variant A (dense
+  instrument panel) or variant B dark with the owner's tweaks. These are candidates for the Personal Standards
+  frontend profile, pending the owner's confirmation (§5: the owner approves personal standards).
 - **D-2026-11-24-02** (§2.2 Home): The owner asked for a card area under the projects and for time management
   across projects. Settled `docs/design/home-cards/` (4ec4915b): a **Today** card (landings, finished and failed jobs
   by role, gate first-pass vs retried, today only) and a **Schedule** card (dated owner items in a private
