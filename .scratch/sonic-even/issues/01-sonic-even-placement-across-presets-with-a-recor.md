@@ -13,3 +13,5 @@
 - [ ] docs/reference.md and the hud-delegate skill updated
 
 ## Comments
+
+- 2026-11-24 owner change (main session): `even` is a plain round-robin rotator per role (state file under HUD_HOME with the last index; next available preset in pool order, wrapping; unavailable ones skipped and reported), shared by imp and sonic; it replaces imp's "fewest starts in the last 24 hours" counting, whose code and tests are deleted. The first acceptance item reads "consecutive sonic creates and scouts take the pool's presets in turn".
