@@ -15,6 +15,9 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   HUD attaches to every dispatch of that role (ticket owner-preferences/01); precedence task > project
   `.hud/brief.md` > owner preferences. The main session appends each newly settled low-stakes choice; workers decide
   uncovered low-stakes choices and list them in the report.
+  Owner clarification the same day: frontends come in two kinds. **Showcase** (shown to others) defaults to light,
+  in the style of toktrack web variant B light; **personal tools** (the owner's own) default to dark, either variant
+  A (dense instrument panel) or variant B dark with the owner's tweaks.
 - **D-2026-11-24-02** (§2.2 Home): The owner asked for a card area under the projects and for time management
   across projects. Settled `docs/design/home-cards/` (4ec4915b): a **Today** card (landings, finished and failed jobs
   by role, gate first-pass vs retried, today only) and a **Schedule** card (dated owner items in a private
