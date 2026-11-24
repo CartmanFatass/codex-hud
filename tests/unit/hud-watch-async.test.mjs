@@ -156,6 +156,7 @@ test('watcher settles an unreported Pi exit on its safety tick once the pane is 
   assert.ok(status(dir).ended_at);
   assert.deepEqual(await exited, [0, null]);
   assert.ok(reaped(dir));
+  assert.deepEqual(receipt(dir).stop_origin, { actor: 'pane_vanished', prior_state: 'working', at: status(dir).ended_at });
 });
 
 for (const outcome of ['closed tab', 'missing or renamed tab']) test(`watcher reaps an exited root without a snapshot once (${outcome}), idles, then archives it at retention`, { timeout: 60000 }, async (t) => {

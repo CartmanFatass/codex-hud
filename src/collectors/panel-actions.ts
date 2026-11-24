@@ -4,6 +4,7 @@
  */
 import * as fs from 'node:fs';
 import { jobFiles } from '../mcp/paths.js';
+import { recordQuestionAnswer } from '../roles/job-archive.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import { basename, join } from 'node:path';
@@ -42,6 +43,7 @@ export function answerJobQuestion(home: string, job: string, qid: string, answer
     return { ok: false, reason: code === 'ENOENT' ? 'no such question' : String(code ?? error) };
   }
   getJobIndexCache(home).invalidateQa(job);
+  recordQuestionAnswer(join(home, 'jobs', job), qid, 'owner');
   recordPanelAnswer(home, job, qid, text, role);
   return { ok: true, written: true };
 }

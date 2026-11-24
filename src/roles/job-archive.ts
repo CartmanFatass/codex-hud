@@ -2,10 +2,11 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { objectiveLink } from '../collectors/objectives.js';
-import type { Job, JobStatus } from '../mcp/job-contracts.js';
+import type { AnswerActor, Job, JobStatus, StopOrigin } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
+import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import { getJobIndexCache } from './job-index-cache.js';
 import { jobChecks } from './job-checks.js';
 import { cliSession } from './job-sessions.js';
@@ -72,23 +73,120 @@ function cachedOutcome(home: string, id: string, settlement?: number) {
   } catch { /* Optional panel cache. Never request a label. */ }
 }
 
+const WORKING_STATES = new Set(['working', 'waiting_helper', 'waiting_orchestrator', 'blocked']);
+export function isWorkingState(state: unknown): state is string {
+  return typeof state === 'string' && WORKING_STATES.has(state);
+}
+
+/** Record once why a working job was stopped or lost its pane. */
+export function recordStopOrigin(dir: string, actor: StopOrigin['actor'], priorState: unknown, at = new Date().toISOString()): boolean {
+  if (!isWorkingState(priorState)) return false;
+  const file = join(dir, jobFiles.job);
+  try {
+    const raw = readJsonFile(file);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+    const job = raw as Job;
+    if (job.stop_origin) return false;
+    const next: Job = { ...job, stop_origin: { actor, prior_state: priorState, at } };
+    getJobIndexCache(dirname(dirname(dir))).writeJsonAtomic(file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
+    return true;
+  } catch { return false; }
+}
+
+/** Record once whether the orchestrator or owner answered a question. */
+export function recordQuestionAnswer(dir: string, qid: string, actor: AnswerActor): boolean {
+  if (!/^q\d+$/.test(qid)) return false;
+  const file = join(dir, jobFiles.job);
+  try {
+    const raw = readJsonFile(file);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+    const job = raw as Job;
+    if (job.answered_by?.[qid]) return false;
+    const next: Job = { ...job, answered_by: { ...job.answered_by, [qid]: actor } };
+    getJobIndexCache(dirname(dirname(dir))).writeJsonAtomic(file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
+    return true;
+  } catch { return false; }
+}
+
+/** Record once that a question timed out and its default applied. */
+export function recordQuestionTimeout(dir: string, qid: string): boolean {
+  if (!/^q\d+$/.test(qid)) return false;
+  const file = join(dir, jobFiles.job);
+  try {
+    const raw = readJsonFile(file);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+    const job = raw as Job;
+    if (job.timed_out_questions?.includes(qid)) return false;
+    const next: Job = { ...job, timed_out_questions: [...(job.timed_out_questions ?? []), qid] };
+    getJobIndexCache(dirname(dirname(dir))).writeJsonAtomic(file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
+    return true;
+  } catch { return false; }
+}
+
 function archiveDispatcher(value: unknown) {
   const dispatcher = record(value);
   const harness = text(dispatcher.harness)?.trim(), id = text(dispatcher.id)?.trim() || text(dispatcher.session_id)?.trim();
   if (harness && id) return { harness, id };
 }
 
-function archiveQuestions(home: string, dir: string) {
+function archiveStopOrigin(value: unknown): StopOrigin | undefined {
+  const origin = record(value);
+  const actor = origin.actor, prior_state = text(origin.prior_state), at = text(origin.at);
+  if ((actor === 'mcp' || actor === 'panel' || actor === 'pane_vanished') && prior_state && at)
+    return { actor, prior_state, at };
+}
+
+const QA_READ_LIMIT = 65536;
+const QUESTION_TIMEOUT_MS = 1200_000;
+const normWs = (value: string) => value.trim().replace(/\s+/g, ' ');
+function readQaText(dir: string, name: string): string | undefined {
+  try {
+    const { bytes, truncated } = readFileBounded(join(dir, 'qa', name), QA_READ_LIMIT);
+    if (!truncated) return bytes.toString('utf8');
+  } catch { /* Missing or unreadable QA text. */ }
+}
+function questionDefault(content: string): string | undefined {
+  const match = content.replace(/\r\n/g, '\n').match(/^Default if unanswered:[ \t]*(.+?)(?=\n\n|\n(?:Context|Answer):|$)/ms);
+  const value = match ? normWs(match[1]!) : '';
+  return value || undefined;
+}
+
+function archiveQuestions(home: string, dir: string, job: Partial<Job>, status: Partial<JobStatus>) {
   const mtime = (name: string) => {
     try {
       const stat = fs.lstatSync(join(dir, 'qa', name), { throwIfNoEntry: false });
-      if (stat?.isFile()) return stat.mtime.toISOString();
+      if (stat?.isFile()) return { iso: stat.mtime.toISOString(), ms: stat.mtimeMs };
     } catch { /* Missing or unreadable timing evidence. */ }
   };
+  const actors = record(job.answered_by);
+  const timedOutIds = new Set(Array.isArray(job.timed_out_questions) ? job.timed_out_questions.filter((q): q is string => typeof q === 'string') : []);
+  const settledAt = epoch(status.settled_at) ?? epoch(status.ended_at);
+  const cleanSettle = ['done', 'closed', 'idle_grace'].includes(status.state ?? '');
   try {
     const questions = getJobIndexCache(home).readQa(dir).allQuestionFiles.flatMap(name => {
-      const id = name.slice(0, -3), asked_at = mtime(name);
-      return asked_at ? [{ id, asked_at, answered_at: mtime(`${id}.answer.md`) }] : [];
+      const id = name.slice(0, -3), asked = mtime(name);
+      if (!asked) return [];
+      const answerName = `${id}.answer.md`, answered = mtime(answerName);
+      const actor = answered ? actors[id] : undefined;
+      const answered_by = actor === 'orchestrator' || actor === 'owner' ? actor : undefined;
+      const timedOut = timedOutIds.has(id) ||
+        (!answered && cleanSettle && settledAt !== undefined && settledAt - asked.ms >= QUESTION_TIMEOUT_MS);
+      let used_default: boolean | undefined;
+      if (timedOut) {
+        used_default = true;
+      } else {
+        const qText = readQaText(dir, name);
+        const def = qText !== undefined ? questionDefault(qText) : undefined;
+        if (def !== undefined) {
+          if (answered) {
+            const aText = readQaText(dir, answerName);
+            if (aText !== undefined) used_default = normWs(aText) === def;
+          } else {
+            used_default = false;
+          }
+        }
+      }
+      return [{ id, asked_at: asked.iso, answered_at: answered?.iso, answered_by, used_default }];
     });
     if (questions.length) return questions;
   } catch { /* Unknown question history. */ }
@@ -102,6 +200,7 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
     try { fs.closeSync(fs.openSync(join(dir, jobFiles.archived), 'wx', 0o600)); }
     catch (err) { if ((err as NodeJS.ErrnoException).code === 'EEXIST') return; throw err; }
     const job: Partial<Job> = receipt ?? {};
+    const createOptions = record(job.create_options);
     const ended = epoch(status.ended_at), reaped = epoch(job.reaped_at);
     const checks = jobChecks(dir, job);
     const sessions = Array.isArray(job.sessions) ? job.sessions.flatMap(s => {
@@ -111,6 +210,13 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
     const row = {
       v: 1, ...projectJobFacts(home, dir, id, job, status, !!receipt), archived_at: new Date(now).toISOString(),
       thinking: text(job.thinking) ?? text(status.thinking), preset: text(job.preset) ?? text(job.route?.preset),
+      model_source: text(job.model_source), thinking_source: text(job.thinking_source),
+      imp_preset: text(job.imp_preset) ?? ((job.overflow_from ?? job.role) === 'imp' ? text(job.route?.preset) : undefined),
+      requested_on: text(createOptions.on), requested_model: text(createOptions.model),
+      had_worktree: receipt ? Boolean(job.worktree) : undefined,
+      worktree_removed_at: text(job.worktree_removed_at),
+      worktree_kept_reason: job.worktree_kept_reason ? reason(job.worktree_kept_reason) : undefined,
+      stop_origin: archiveStopOrigin(job.stop_origin),
       attempts: Array.isArray(job.attempts) ? job.attempts.filter(a => typeof a?.place === 'string').map(a => ({
         index: Number.isInteger(a.index) ? a.index : undefined, place: a.place, reason: reason(a.reason),
       })) : undefined,
@@ -119,7 +225,7 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
       repair_of: text(job.repair_of), retry_of: text(job.retry_of), sessions: sessions.length ? sessions : undefined,
       dispatcher: archiveDispatcher(job.dispatcher),
       output_written: typeof status.output_written === 'boolean' ? status.output_written : undefined,
-      questions: archiveQuestions(home, dir),
+      questions: archiveQuestions(home, dir, job, status),
       experiment: typeof job.experiment === 'string' ? job.experiment : undefined,
       arm: typeof job.arm === 'string' ? job.arm : undefined,
       citations: jobCitations(job.citations),

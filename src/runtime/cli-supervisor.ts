@@ -7,6 +7,7 @@ import { procStat } from '../utils/proc.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { reportWasRead } from '../collectors/thin-jobs.js';
 import { runHerdr } from '../roles/herdr-run.js';
+import { recordStopOrigin } from '../roles/job-archive.js';
 import { readJsonFile, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import type { Job, JobStatus, DoneReceipt } from '../mcp/job-contracts.js';
 import { jobFiles, BUNDLED_ROOT } from '../mcp/paths.js';
@@ -238,6 +239,8 @@ export async function main() {
     try {
       if (['closed', 'failed', 'stopped'].includes((readJsonFile(statusFile) as JobStatus).state)) { shutdown(); return; }
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    if (terminal && tabClosed && !stop && !result.outputWritten)
+      recordStopOrigin(dir, 'pane_vanished', current.state, row.ended_at ?? new Date().toISOString());
     writeJsonPrivate(statusFile, { ...row, updated_at: iso(Date.now()) }, { mkdir: false });
     current = row; rowStamp = changed;
   }

@@ -597,11 +597,12 @@ It reads pi session entries, CLI result streams, or native transcript usage reco
 Before deletion it appends job facts to `$HUD_HOME/archive/YYYY-MM.jsonl`, including ticket, route, question count, land outcome, available usage and the worker's bounded declared summary with home paths removed.
 The line includes `sessions`, `retry_of`, `dispatcher: {harness, id}` and the status flag `output_written` when recorded.
 Session paths are recorded as observed; the underlying files may later move or disappear.
-`questions: [{id, asked_at, answered_at?}]` records the modification times of question and answer files, without their text.
+`questions: [{id, asked_at, answered_at?, answered_by?, used_default?}]` records the modification times of question and answer files, who answered (`orchestrator` via `hud_respond`, or `owner` from the panel or `hud_respond` with `by: "owner"`), and whether the answer matched the question's default or the question timed out onto it, without their text.
 `land` keeps its attempt, repair and rerun counts. Its `created_at` comes from the published attempt, or the latest attempt if none published.
 `land.attempt_details` records each attempt's number, state, known timestamps, published SHA if any, and repair and rerun counts.
 `repair_details: [{attempt, step_kind, step, outcome}]` uses `conflict` for cherry-pick and `gate` otherwise.
 `rerun_details: [{attempt, step, passed_unchanged, tests?}]` records known rerun results and the recorded flaky command or test names for unchanged reruns that passed.
+When present, archive lines also record placement, worktree and stop facts: `model_source`, `thinking_source`, `imp_preset`, `requested_on`, `requested_model`, `had_worktree`, `worktree_removed_at`, `worktree_kept_reason`, and `stop_origin: {actor, prior_state, at}` (`mcp`, `panel`, or `pane_vanished`, recorded once when a working job is stopped or its pane vanishes).
 Older archive lines may omit the new fields.
 It stores neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the archive.
 In the same housekeeping pass, once a job directory is gone, the watcher prunes its settled land receipts and sidecars in `$HUD_HOME/flows/` after a day without changes.

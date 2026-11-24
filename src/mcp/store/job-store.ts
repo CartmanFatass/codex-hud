@@ -91,6 +91,11 @@ export function save(job: Job, newAttempt = false): void {
     if (at && (!job[key] || at > job[key])) job[key] = at;
   }
   if (existing?.reaped_at) job.reaped_at = existing.reaped_at;
+  if (existing?.stop_origin && !job.stop_origin) job.stop_origin = existing.stop_origin;
+  if (existing?.answered_by) job.answered_by = { ...existing.answered_by, ...job.answered_by };
+  if (existing?.timed_out_questions?.length) {
+    job.timed_out_questions = [...new Set([...existing.timed_out_questions, ...(job.timed_out_questions ?? [])])];
+  }
   if (existing) {
     // Watcher-owned: a later integration can clear a previously recorded keep decision.
     for (const key of ['worktree_removed_at', 'worktree_kept_reason', 'worktree_checked_head'] as const)

@@ -17,6 +17,8 @@ export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; sourc
 export type PoolPick = { entries: string[]; reason: string; source: 'decision' | 'brief' | 'default'; ms: number };
 export type LaunchAttempt = { index: number; place: string; reason?: string };
 export type JobSession = { harness: 'pi' | CliAgent; id: string; path?: string };
+export type StopOrigin = { actor: 'mcp' | 'panel' | 'pane_vanished'; prior_state: string; at: string };
+export type AnswerActor = 'orchestrator' | 'owner';
 export type SendOutcome = { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string; resumed?: true; client_prompt_blocked?: true };
 export interface ManagedWorktree {
   main_root: string;
@@ -37,6 +39,7 @@ export interface Job extends PiOptions {
   caller_pane?: string; // Headless workers have no pane of their own.
   created_at: string;
   queued_at?: string;
+  imp_preset?: string | null;
   overflow_from?: string;
   instructions_from?: string;
   borrowed_instructions?: { name: string; pi_role: string }; // Keep launch selectors across queueing and native resume.
@@ -80,6 +83,9 @@ export interface Job extends PiOptions {
   resume_s?: number;
   observed_at?: string;
   reaped_at?: string;
+  stop_origin?: StopOrigin;
+  answered_by?: Record<string, AnswerActor>;
+  timed_out_questions?: string[];
   worktree?: ManagedWorktree;
   worktree_removed_at?: string;
   worktree_kept_reason?: string;

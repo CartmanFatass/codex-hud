@@ -33,7 +33,7 @@ export const ROLE_TOOLS = [
     'Placement: role files/Control. Single general job only: preset/on/model/thinking. Options: hud_roster(detail:true).',
     {
       role: text,
-      request_key: { ...text, description: 'Fresh key to repeat; omit for 10-min caller/role/cwd/task dedupe.' },
+      request_key: { ...text, description: 'Key to repeat; omit for 10-min dedupe.' },
       task: text,
       brief_file: { ...text, description: 'UTF-8 task file within cwd.' },
       preview: { ...text, maxLength: 260, description: 'HTML path relative to cwd; opened on report.' },
@@ -101,7 +101,7 @@ export const ROLE_TOOLS = [
       view: {
         type: 'string',
         enum: ['compact', 'recent'],
-        description: 'List only: compact counts children, folds older unread reports; recent: newest 20 full rows incl. children.',
+        description: 'List: compact counts children, folds old unread; recent: newest 20 full rows.',
       },
     }
   ),
@@ -126,7 +126,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_send',
-    'Send via one: job, jobs (working jobs), messages (distinct text). Closed: resume native session or start repair (continued_as); continuation says which.',
+    'Via job, jobs (working) or messages. Closed: resumes session or repairs (continued_as).',
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1 },
@@ -147,17 +147,18 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_respond',
-    'Answer once or batch via answers.',
+    'Answer once or batch; by:"owner" relays owner.',
     {
       job: text,
       request_id: text,
       answer: text,
+      by: { ...text, enum: ['owner'] },
       answers: {
         type: 'array',
         minItems: 1,
         items: {
           type: 'object',
-          properties: { job: text, request_id: text, answer: text },
+          properties: { job: text, request_id: text, answer: text, by: { ...text, enum: ['owner'] } },
           required: ['job', 'request_id', 'answer'],
           additionalProperties: false,
         },

@@ -10,6 +10,7 @@ import { QUEUE_START_MARKER } from '../../roles/concurrency.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
 import { herdrId, runHerdr, runCommand } from '../../roles/herdr-run.js';
 import { CHECKS_FILE, jobChecks } from '../../roles/job-checks.js';
+import { recordQuestionAnswer, recordStopOrigin } from '../../roles/job-archive.js';
 import { JOB_ID_RE } from '../../roles/job-index-cache.js';
 import { projectJobFilter } from '../../roles/job-project.js';
 import { takeLease } from '../../roles/lease.js';
@@ -25,7 +26,7 @@ import { sendJob, dispatchJob, resumeJob, pendingScouts } from '../dispatch/orch
 import { registry, harnessSwitchFailure, compactAssignment } from '../dispatch/places.js';
 import { paneText, ensureWatcher } from '../dispatch/proc.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
-import type { Job } from '../job-contracts.js';
+import type { AnswerActor, Job } from '../job-contracts.js';
 import { landView, isFlowId, readLand, landEvents } from '../land-state.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, editTickets } from '../local-tickets.js';
@@ -564,7 +565,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     return sendJobs(args, dispatcher);
   }
   if (name === 'hud_respond' && args.answers !== undefined) {
-    if (args.job !== undefined || args.request_id !== undefined || args.answer !== undefined ||
+    if (args.job !== undefined || args.request_id !== undefined || args.answer !== undefined || args.by !== undefined ||
         !Array.isArray(args.answers) || !args.answers.length) throw new Error('invalid_arguments: answers');
     let changed = false;
     const items = args.answers;
@@ -707,12 +708,12 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
 
 export async function resumePanelAnswer(home: string, job: string, request_id: string, answer: string): Promise<AnswerResult> {
   if (resolve(home) !== hudHome) return { ok: false, reason: 'job belongs to another HUD home' };
-  const result = await keyLock(`job:${job}`, () => respondJob({ job, request_id, answer }, false));
+  const result = await keyLock(`job:${job}`, () => respondJob({ job, request_id, answer }, false, undefined, 'owner'));
   return 'code' in result && result.code ? { ok: false, reason: result.code } :
     { ok: true, written: 'written' in result ? result.written === true : true };
 }
 
-async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[]) {
+async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[], answeredBy: AnswerActor = 'orchestrator') {
   const id = required(args, 'job');
   const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };
@@ -720,6 +721,8 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
   const request = required(args, 'request_id');
   if (!/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
   const answer = required(args, 'answer');
+  if (args.by !== undefined && args.by !== 'owner') throw new Error('invalid_arguments: by');
+  const actor: AnswerActor = args.by === 'owner' ? 'owner' : answeredBy;
   ensureWatcher();
   fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
   if (job.headless && job.role !== 'sonic') {
@@ -732,7 +735,7 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
     } });
     if (status?.state !== 'waiting_orchestrator') return { ok: false, code: 'worker_not_waiting' };
     const key = `answer:${request}`;
-    return await resumeJob(job, status, readRow(job, false).row, answer, key, key, false, batch, request) ??
+    return await resumeJob(job, status, readRow(job, false).row, answer, key, key, false, batch, request, false, actor) ??
       { ok: false, code: 'resume_failed' };
   }
   const oldTask = activeTasks.get(id);
@@ -748,6 +751,7 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
   try {
     writePrivateFile(join(dir, jobFiles.qa, `${request}.answer.md`), answer, { exclusive: true, mkdir: false });
     jobCache.invalidateQa(job.job);
+    if (recordQuestionAnswer(dir, request, actor)) jobCache.invalidateFile(join(dir, jobFiles.job));
     publishWorkSummary(loadedJobs);
     if (canCarry) {
       oldTask.seenQuestions.add(`${request}.md`);
@@ -769,12 +773,13 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
 }
 
 export async function closeJob(job: Job, stop = false) {
+  const dir = directory(job.job);
   const scouting = pendingScouts.get(job.job);
   if (scouting) {
+    if (recordStopOrigin(dir, 'mcp', readCachedStatus(job.job).status?.state)) jobCache.invalidateFile(join(dir, jobFiles.job));
     scouting.abort();
     return { exit_code: 0, last_line: 'stopping scouted dispatch' };
   }
-  const dir = directory(job.job);
   let { row, status } = readRow(job);
   if (row.state === 'queued' && !fs.existsSync(join(dir, jobFiles.session))) {
     let claimed = false;
@@ -813,6 +818,7 @@ export async function closeJob(job: Job, stop = false) {
       if (row.state !== 'queued' || fs.existsSync(join(dir, jobFiles.session))) break;
     }
   }
+  if (recordStopOrigin(dir, 'mcp', status?.state)) jobCache.invalidateFile(join(dir, jobFiles.job));
   if (job.headless) {
     const closed = await stopSonic(dir);
     publishWorkSummary();

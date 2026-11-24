@@ -243,6 +243,7 @@ test('queued pi sends accompany the answer when the working turn ends with a que
   assert.equal(result.status, 'completed');
   assert.match(result.result.content[0].text, /Keep going/);
   assert.match(fs.readFileSync(join(job.task_dir, 'report.md'), 'utf8'), /Keep going\.\n\nAlso check the fixture\./);
+  assert.deepEqual(read(join(job.task_dir, 'job.json')).answered_by, { q1: 'orchestrator' });
 });
 
 test('the panel Answer action resumes the paused session and records who answered', async t => {
@@ -258,6 +259,7 @@ test('the panel Answer action resumes the paused session and records who answere
   assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), /Panel B\./);
   assert.deepEqual(answer(), { ok: true, written: false });
   assert.equal(read(join(f.env.HUD_HOME, 'panel-actions.jsonl')).answer, 'Panel B.');
+  assert.deepEqual(read(join(dir, 'job.json')).answered_by, { q1: 'owner' });
   assert.ok(noTab(f));
 });
 

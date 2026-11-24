@@ -8,7 +8,7 @@ import { piReportSettlement } from '../mcp/pi-read-settlement.js';
 import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { archivedClosedJobs, mainHead, reapWorktree, sweepArchivedWorktrees, type ArchivedClosedJob } from '../mcp/managed-worktree.js';
 import { runCommand } from '../roles/herdr-run.js';
-import { archiveJob } from '../roles/job-archive.js';
+import { archiveJob, recordStopOrigin } from '../roles/job-archive.js';
 import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sessions.js';
 import { recordJobUsage } from '../roles/job-usage.js';
 import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/sonic-citations.js';
@@ -715,9 +715,13 @@ function scan(retryWatch = false) {
               nearest = Math.min(nearest, retry.at);
             }
             const reason = alive === true ? 'supervisor exited; worker still running' : 'supervisor exited; worker liveness unknown';
-            if (end) update = { state: end.state, reason: null, blocked: false, output_written: end.outputWritten,
-              settled_at: status?.settled_at ?? now, ended_at: now, exit_reason: end.exitReason,
-              error: end.state === 'failed' ? end.exitReason : null, updated_at: now };
+            if (end) {
+              if (tabClosed && !fs.existsSync(`${statusFile}.stop-requested`) && !end.outputWritten)
+                recordStopOrigin(dir, 'pane_vanished', status?.state, now);
+              update = { state: end.state, reason: null, blocked: false, output_written: end.outputWritten,
+                settled_at: status?.settled_at ?? now, ended_at: now, exit_reason: end.exitReason,
+                error: end.state === 'failed' ? end.exitReason : null, updated_at: now };
+            }
             else if (status?.state !== 'waiting_orchestrator' || status.reason !== reason)
               update = { state: 'waiting_orchestrator', reason, blocked: false, ended_at: null, exit_reason: null, error: null };
           }
@@ -746,15 +750,22 @@ function scan(retryWatch = false) {
             void absent.then(gone => {
               if (!gone || stopped || pauseReady ||
                   reapOwner(jobCache.readSession(id, { throwOnError: true }), candidate) !== ownership) return;
-              if (settleStoppedPi(statusFile, candidate, true)) {
+              const priorState = readJson<JobStatus>(statusFile)?.state;
+              const terminal = settleStoppedPi(statusFile, candidate, true);
+              if (terminal) {
+                if (!fs.existsSync(`${statusFile}.stop-requested`))
+                  recordStopOrigin(dir, 'pane_vanished', priorState, terminal.ended_at ?? new Date().toISOString());
                 jobCache.invalidateFile(statusFile);
                 schedule();
               }
             }).catch(error => warn(`keep ${id} scan`, `keep ${id} scan: ${error.message}`))
               .finally(() => checkingPiExit.delete(id));
           }
-        } else if (tabClosed && !(job?.resume_s !== undefined && readCloseTurn(dir, job, status)))
+        } else if (tabClosed && !(job?.resume_s !== undefined && readCloseTurn(dir, job, status))) {
+          if (!fs.existsSync(`${statusFile}.stop-requested`))
+            recordStopOrigin(dir, 'pane_vanished', status?.state, now);
           update = { state: 'failed', exit_reason: 'tab closed', ended_at: now };
+        }
         if (update) {
           status = { ...status, ...update };
           writeJsonAtomic(statusFile, status);

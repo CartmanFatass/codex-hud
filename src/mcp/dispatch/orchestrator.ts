@@ -13,6 +13,7 @@ import { HarnessSwitchError } from '../../roles/harness-switches.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { MAX_CHECKS, MAX_CHECK_COMMAND } from '../../roles/job-checks.js';
+import { recordQuestionAnswer } from '../../roles/job-archive.js';
 import { withAbstractLock } from '../../utils/abstract-lock.js';
 import { watching, ensureQueueWatcher } from '../../roles/notify.js';
 import { sharedRoot } from '../../roles/projects.js';
@@ -31,7 +32,7 @@ import {
 import type { StandingBriefRef } from '../cli-worker-startup.js';
 import { defaultImpRoute, impPlacementSettings, repairImpRoute, pickImpRoute } from '../imp-routing.js';
 import { clearHeadlessSends, hasHeadlessSends, headlessFollowupReady, readHeadlessSends, writeHeadlessSends } from '../headless-sends.js';
-import type { Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus, SendOutcome } from '../job-contracts.js';
+import type { AnswerActor, Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus, SendOutcome } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
 import { routingTicketText, ticketObjective } from '../local-tickets.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
@@ -681,6 +682,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
+      if (imp) job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
       let briefContext = inline === browser ? context! : await contextFor(args, browser);
       let scoutFailure = scoutResult?.failure;
@@ -974,6 +976,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
+      if (launchRoleName === 'imp') job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
       let briefContext = inline === browser ? context : await contextFor(args, browser);
       let scoutFailure = scoutResult?.failure;
@@ -1139,7 +1142,8 @@ export async function resumeHeadlessQueue(id: string) {
 }
 
 export async function resumeJob(current: Job, status: JobStatus, row: JobRow, message: string,
-  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean, answerRequest?: string, automatic = false) {
+  matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean, answerRequest?: string, automatic = false,
+  answeredBy: AnswerActor = 'orchestrator') {
   const dir = directory(current.job);
   return withReopenLock(dir, async () => {
     const latest = findJob(current.job);
@@ -1151,7 +1155,7 @@ export async function resumeJob(current: Job, status: JobStatus, row: JobRow, me
     const pending = latest.headless ? readHeadlessSends(dir) : [];
     if (pending.length && !automatic && !answerRequest) return { ok: false, code: 'worker_reopening' };
     if (automatic && !pending.length) return;
-    const result = await reopenJob(latest, fresh, row, message, matchKey, explicitKey, land, batch, answerRequest, automatic, pending);
+    const result = await reopenJob(latest, fresh, row, message, matchKey, explicitKey, land, batch, answerRequest, automatic, pending, answeredBy);
     if (automatic && !result && !fs.existsSync(join(dir, jobFiles.stopRequested)))
       writeCreateStatus(dir, { ...fresh, state: 'failed', exit_reason: 'Could not resume queued headless sends' });
     return result;
@@ -1160,7 +1164,7 @@ export async function resumeJob(current: Job, status: JobStatus, row: JobRow, me
 
 async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: string,
   matchKey: string, explicitKey: string | undefined, land: boolean, batch: boolean, answerRequest: string | undefined,
-  automatic: boolean, pending: ReturnType<typeof readHeadlessSends>) {
+  automatic: boolean, pending: ReturnType<typeof readHeadlessSends>, answeredBy: AnswerActor = 'orchestrator') {
   const { job: id, place } = current, dir = directory(id);
   const until = answerRequest || automatic ? Infinity : resumeDeadline(current, status);
   if (!until || Date.now() >= until || !place || (place.harness !== 'cli' && place.harness !== 'pi') ||
@@ -1191,9 +1195,11 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
     writePrivateFile(answerFile, message, { exclusive: true, mkdir: false });
     jobCache.invalidateQa(id);
     if (jobCache.readQa(dir).openIds.length) {
+      if (recordQuestionAnswer(dir, answerRequest, answeredBy)) jobCache.invalidateFile(join(dir, jobFiles.job));
       if (carryTask) { carryTask.seenQuestions.add(`${answerRequest}.md`); extendTask(carryTask, current); }
       return { ok: true, written: true };
     }
+    if (!current.answered_by?.[answerRequest]) next.answered_by = { ...current.answered_by, [answerRequest]: answeredBy };
     if (jobCache.readQa(dir).allQuestionFiles.length > 1)
       message = `Answer to ${answerRequest}: ${message}\nOther decisions are in ${join(dir, jobFiles.qa)}.`;
   }

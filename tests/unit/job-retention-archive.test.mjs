@@ -86,6 +86,7 @@ syncBuiltinESMExports();`);
   assert.deepEqual(JSON.parse(line), {
     v: 1, job: id, archived_at: new Date(now).toISOString(), project: '/synthetic/project', role: 'imp',
     harness: 'claude', model: 'example', thinking: 'high', preset: 'default', used_place: 'claude example',
+    had_worktree: false,
     attempts: [{ index: 0, place: 'pi example', reason: 'é'.repeat(99) }], dispatch_exit_code: 0,
     state: 'closed', exit_reason: 'é'.repeat(99), created_at: ended, started_at: ended, settled_at: ended,
     ended_at: ended, read_at: ended, reaped_at: reaped, checks: { passed: 0, total: 1, stale: true },
@@ -126,9 +127,9 @@ test('retention appends successive jobs without adding absent facts or changing 
   assert.ok(!fs.existsSync(dir) && !fs.existsSync(other));
   const lines = fs.readFileSync(file, 'utf8').trimEnd().split('\n').map(JSON.parse);
   assert.deepEqual(lines, [
-    { job: basename(dir), v: 1, archived_at: new Date(now).toISOString(), harness: 'pi',
+    { job: basename(dir), v: 1, archived_at: new Date(now).toISOString(), harness: 'pi', had_worktree: false,
       dispatch_exit_code: 1, dispatch_code: 'invalid_arguments', reaped_at: reaped, state: 'failed', question_count: 0, output_written: false },
-    { job: basename(other), v: 1, archived_at: new Date(now).toISOString(), harness: 'bro', dispatch_exit_code: 0, state: 'stopped', question_count: 0 },
+    { job: basename(other), v: 1, archived_at: new Date(now).toISOString(), harness: 'bro', had_worktree: false, dispatch_exit_code: 0, state: 'stopped', question_count: 0 },
   ]);
 });
 

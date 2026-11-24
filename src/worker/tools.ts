@@ -16,6 +16,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
 import { dispatchJob } from '../mcp/dispatch/orchestrator.js';
 import { jobCallerPane } from '../roles/job-pane.js';
+import { recordQuestionTimeout } from '../roles/job-archive.js';
 import { notify, taskDelivery } from '../roles/notify.js';
 import { readJobProgress } from '../collectors/thin-jobs.js';
 import { worktreeGit as git } from '../collectors/worktrees.js';
@@ -486,6 +487,7 @@ export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: Ques
     });
   }
   const waited = Math.round((performance.now() - started) / 1000);
+  if (!answer && timeoutSec > 0) recordQuestionTimeout(dir, `q${published.n}`);
   const defaultLine = `Proposed default: ${input.default.trim()}. Proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report.`;
   return answer
     ? `ANSWER from the orchestrator (q${published.n}, after ${waited}s):\n\n${answer}`
