@@ -14,3 +14,9 @@
 **Next:** home-portfolio/04 sort order; bottom card area (Today, Schedule) design sample, then build.
 **Evidence:** 0cc01248, 10ac38cc, 26d184eb
 **Features:** home-portfolio
+
+## handoff: HUD takes over the mechanical handoff steps between jobs, while the main session keeps the judgement
+
+**State:** active
+**Next:** Build handoff/01 queues wait on other features, 02 design previews open themselves, 03 docs-only commits; measure handoff waits on toktrack's Workflow page before/after. Parallel proposal comparison deferred (owner 2026-11-24).
+**Features:** handoff
