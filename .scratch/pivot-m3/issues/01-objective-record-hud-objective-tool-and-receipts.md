@@ -1,0 +1,15 @@
+# 01: Objective record, hud_objective tool and receipts, shown on Project
+
+**Status:** ready-for-agent
+**Owner try:** no
+**Blocked by:** none
+
+**What to build:** Spec `docs/spec.md` §2.2 Project and §2.3, syntax D-2026-11-23-04 in `docs/decisions-log.md` (read both). Build the Objective record end to end. (a) Reader `src/collectors/objectives.ts`: parse a project's committed `.hud/objectives.md`: optional header line `**Stance:** active|paused|maintenance · **Priority:** high|normal|low` (absent priority = normal, absent stance = unknown), then `## <id>: <title>` sections with fields `**State:**` (required, `active|paused|done`), optional `**Features:**` (comma list of `.scratch` feature slugs), `**Next:**`, `**Result:**`, `**Evidence:**` (comma list of repo paths, URLs or commit hashes). IDs are lowercase slugs `[a-z0-9-]+`, unique per project. Unknown fields are kept and ignored; a malformed section is skipped with a diagnostic, never a crash. Bounded read like the STATE reader. (b) New MCP tool `hud_objective` (schema in `src/roles/tool-definitions.ts`, dispatch in `src/mcp/mcp/operations.ts`, template: `hud_tickets` op update / `src/mcp/local-tickets.ts editTickets`): `op: "set"` with `cwd`, `id`, and any of `title`, `state`, `next`, `result`, `evidence`, `features`; `op: "project"` with `stance`/`priority`. It creates or edits the file in place (atomic write, keeps other sections and unknown fields byte-for-byte), validates values, and does not commit. On a material change only (creation, state change, title change, a new `result` value) it appends one receipt line to `$HUD_HOME/events/<YYYY-MM>.jsonl` (0600, append): `{v:1, kind:"objective", project, id, title, change:"created"|"state"|"title"|"result", state, at}`. Next/evidence/features edits write no receipt. Not inside `$HUD_HOME/archive/` (toktrack reads every file there). (c) Project page (`src/render/project-view.ts`, `inbox-project.ts`): an Objectives section after `Needs you` listing each Objective's id, title and state (active first, then paused, done folded), with latest result and next step; when the file is absent, nothing new shows (STATE Now/Next stays as today). A fraction only when `Features` names a feature: its acceptance items checked/total. Strings in `src/render/i18n.ts` EN and ZH. Size budget about 600 lines incl. tests; stop and ask if the format cannot express something the spec requires. Non-goals: Home across projects (ticket 03), requests (02), job stamping (04), opening evidence (05).
+
+- [ ] Test: the reader parses a synthetic objectives.md with header, three Objectives (one per state), unknown fields and one malformed section
+- [ ] Test: hud_objective set creates the file, edits one field without changing other bytes, and writes a receipt for creation, state and result changes but not for a Next edit
+- [ ] Render test: Project shows the Objectives section at 120 columns in EN and ZH; no section without the file
+- [ ] Docs: `docs/reference.md` documents the file and the tool briefly
+- [ ] `npm test` passes
+
+## Comments
