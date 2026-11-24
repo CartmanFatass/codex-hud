@@ -17,6 +17,8 @@ import { targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.
 import { TryLog } from './try-records.js';
 import { SETTLED_JOB_STATES, TicketRollup, ticketIds, ticketJobState } from './ticket-rollup.js';
 import { readActiveLeases, stripJobPrefix, type LeaseRecord } from './thin-jobs.js';
+/** A placeholder bullet such as "- Nothing open." in an empty Waiting section is not a request. */
+const EMPTY_WAITING = /^(?:none|nothing(?: open| pending)?|n\/a|—|-|无|没有|暂无)[.。]?$/i;
 export { SETTLED_JOB_STATES } from './ticket-rollup.js';
 export interface ProjectItem {
   label: string;
@@ -530,7 +532,7 @@ export class ProjectCollector {
     const bullets = (heading: string, whole = false) => stateBullets(state, heading).map((text) => ({
       label: '', value: text.replace(/\s+/g, ' ').trim(), path: statePath, ...(whole ? { text: text.replace(/\r/g, '') } : {}),
     }));
-    out.waiting = bullets('Waiting for the owner', true).filter(item => !/^Owner 20\d\d-\d\d-\d\d\b/i.test(item.value));
+    out.waiting = bullets('Waiting for the owner', true).filter(item => !/^Owner 20\d\d-\d\d-\d\d\b/i.test(item.value) && !EMPTY_WAITING.test(item.value));
     out.next = bullets('Next');
     try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
     const nowHeading = /^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m.exec(state)?.[1];

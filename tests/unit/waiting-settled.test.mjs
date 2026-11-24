@@ -45,3 +45,16 @@ test('the collector drops settled waiting items from every count', async (t) => 
   const data = await new ProjectCollector(cwd, hud, { HOME: home }, home).collect('home', { lanes: [], workers: [] }, Date.now());
   assert.deepEqual(data.waiting.map((w) => w.value), ['Not settled by STATE (waits on DONE-ONE)', 'Still open (waits on OPEN)', 'A plain decision']);
 });
+
+test('a placeholder bullet in an empty Waiting section is not a request', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'waiting-empty-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const cwd = join(root, 'project'), hud = join(root, 'hud'), home = join(root, 'home');
+  fs.mkdirSync(join(cwd, 'docs/handoff'), { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+  for (const line of ['- Nothing open.', '- None', '- 无']) {
+    fs.writeFileSync(join(cwd, 'docs/handoff/STATE.md'), ['# State', '', '## Waiting for the owner', '', line, '', '## Next', ''].join('\n'));
+    const data = await new ProjectCollector(cwd, hud, { HOME: home }, home).collect('home', { lanes: [], workers: [] }, Date.now());
+    assert.deepEqual(data.waiting, [], line);
+  }
+});

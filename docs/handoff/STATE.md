@@ -17,7 +17,7 @@ Older handoffs: [2026-11-03 to 11-14](archive/STATE-2026-11-03-to-11-14.md), [20
 
 ## Waiting for the owner
 
-- Nothing open.
+Nothing open.
 
 ## Next
 
