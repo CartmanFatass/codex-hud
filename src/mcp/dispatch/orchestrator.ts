@@ -406,8 +406,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   // Missing attribution on an existing job stays missing even if the ticket now links an Objective.
   const objective = lineage ? objectiveLink(lineage.objective) : ticketObjective(cwd, args.ticket, projectRoot);
   const contextCwd = scoutContextCwd ?? cwd;
-  const instructions = borrowed.borrowed_instructions?.name ?? chain.instructions ?? chain.role;
-  const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, instructions, repairOf);
+  const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf);
   const imp = requestedRole === 'imp' || fromImp;
   const settings = imp && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
   let route: JobRoute | undefined;
@@ -861,8 +860,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     }
     const base: Job = { ...existing, role, ...(role === 'sonic' ? { headless: true } : {}), attempts: [], launcher: launcherId() };
     const project = found.project();
-    const instructions = existing.borrowed_instructions?.name ?? chain.instructions ?? chain.role;
-    const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, cwd, inline, project, instructions, existing.repair_of);
+    const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, cwd, inline, project, existing.repair_of);
     const inline = first.prepared.place.harness === 'bro';
     const context = await contextFor(args, inline);
     if ('code' in context) return failQueued(context.error ?? context.code ?? 'invalid_arguments', context.code === 'invalid_arguments' ? 'invalid_arguments' : undefined);

@@ -266,7 +266,6 @@ Headless Claude Code and Antigravity dispatch use the same model inputs as worke
 The native stream's session ID is read locally to bind the next turn; the stream is not sent to a separate model.
 For pi and headless CLIs, sends queued during a turn go to the same worker's native session in send order on its next turn, alongside the answer if it asked.
 A `general` job with `instructions: "<role>"` supplies the borrowed role's instructions to its selected pi or CLI worker instead of general's instructions.
-Owner preferences for the resolved instructions name are part of the worker brief: the file path for local workers to read, or bounded file contents sent to the selected browser service. They are not inputs to routing or thinking decisions.
 
 Settings → Decision API persists `config.json.decisions.primary` (default OpenAI).
 Automatic fallback chooses another keyed provider in Gemini → OpenAI → Anthropic → TypeSafe order; one fallback covers missing credentials, quota/auth/5xx/timeout, not malformed answers or refusals. Gemini quota replies impose an in-memory cooldown.

@@ -53,8 +53,6 @@ export interface Job extends PiOptions {
   preset?: string;
   context_files?: string[];
   from_jobs?: string[];
-  preferences_file?: string;
-  preferences_warning?: string;
   checks?: string[];
   preview?: string;
   repair_of?: string;

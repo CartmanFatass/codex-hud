@@ -16,10 +16,6 @@ export function readInlineText(path: string, limit = INLINE_PROMPT_LIMIT): strin
   }
 }
 
-export function ownerPreferencesReference(path: string): string {
-  return `Read the owner's preferences: ${JSON.stringify(path)}.`;
-}
-
 /** First worker message, using the complete assembled brief (including context references). */
 export function briefPrompt(path: string): string {
   const brief = readInlineText(path);
