@@ -366,7 +366,7 @@ test('sonic auto-thinking uses one capped judgment for each new job and falls ba
   sonicTask(f);
   const mode = (value) => fs.writeFileSync(join(f.env.HOME, 'decision-mode'), value);
   const settings = (on, cap = 0) => fs.writeFileSync(f.env.HUD_SETTINGS_PATH,
-    JSON.stringify({ sonicAutoThinking: on, modelEnabled: false, decisionCallsPerHour: cap }));
+    JSON.stringify({ autoPrewalk: false, sonicAutoThinking: on, modelEnabled: false, decisionCallsPerHour: cap }));
   const inputs = join(f.env.HOME, 'decision-inputs');
   const creds = join(f.env.HUD_HOME, 'credentials.env');
   let seq = 0;

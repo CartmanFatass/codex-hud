@@ -1,6 +1,6 @@
 # 01: HUD runs prewalk automatically before strong-model jobs
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Blocked by:** pool-pick/02
 
@@ -12,10 +12,12 @@ With prewalk on, unless the caller passes its own `scout` or skips prewalk for t
 - **web**: primary external sources (official docs, specs, source repositories, release notes) for the libraries, APIs and tools the brief depends on, each claim with its URL; search queries name only public technologies, never paths, names or other private content from the brief. Sonic uses the web search/fetch tools pi already provides (for example the owner's deepseek-search extension); if headless sonic launches do not load them, enable them for this kind only.
 All kinds: facts only, no design, diagnosis or judgement. Decision API off, failing or timing out: fall back to `code` only. Attach the reports via from_jobs as the scout flow does today; the target waits at most 5 minutes in total, then starts with whatever has arrived plus the existing note for the rest. The caller skip is a minimal schema addition (the declaration budget test must pass). Record `prewalk: [{kind: 'code'|'docs'|'web'|'pool', source: 'decision'|'brief'|'caller'|'default', job?, result, ms}]` on the job record, archive and hud_create receipt (fold pool-pick's `pool_pick` into it). Update the hud-delegate skill and hud-convention so the main session stops adding routine scouts by hand, and widen the sonic role description to include web fact gathering. Nothing chains after the target.
 
-- [ ] With prewalk on and a stubbed Decision API answering code+web, an imp dispatch starts two sonics in parallel, then imp with both reports attached; answering none starts imp directly; role off or switch off makes no call
-- [ ] Decision API failure falls back to one code scout; a caller scout, a caller skip and a prewalk over 5 minutes behave as specified (tests)
-- [ ] The web scout's brief forbids private content in queries and the sonic launch has web tools available (test or live check)
-- [ ] prewalk entries appear on job.json, the archive row and the receipt; reviewer and sonic never prewalk by default
-- [ ] docs/reference.md, the hud-delegate skill and the sonic role text describe prewalk briefly; the declaration budget test passes
+- [x] With prewalk on and a stubbed Decision API answering code+web, an imp dispatch starts two sonics in parallel, then imp with both reports attached; answering none starts imp directly; role off or switch off makes no call
+- [x] Decision API failure falls back to one code scout; a caller scout, a caller skip and a prewalk over 5 minutes behave as specified (tests)
+- [x] The web scout's brief forbids private content in queries and the sonic launch has web tools available (test or live check)
+- [x] prewalk entries appear on job.json, the archive row and the receipt; reviewer and sonic never prewalk by default
+- [x] docs/reference.md, the hud-delegate skill and the sonic role text describe prewalk briefly; the declaration budget test passes
 
 ## Comments
+
+- Landed in this commit (replay base 8037e22b253591977a3ef453fe0d3eefb47d4678); gate 5/5 passed.

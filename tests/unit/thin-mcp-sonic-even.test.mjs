@@ -14,7 +14,7 @@ import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 const pi = (provider, model) => ({ harness: 'pi', pi_role: 'sonic', model: `${provider}/${model}`, thinking: 'high', split: false });
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const receipt = dir => read(join(dir, 'job.json'));
-const settings = (f, patch) => write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ ...defaultSettings(), ...patch }));
+const settings = (f, patch) => write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ ...defaultSettings(), autoPrewalk: false, ...patch }));
 
 function writeSonicRole(f) {
   const dir = join(f.env.HUD_HOME, 'roles');
