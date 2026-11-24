@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import type { RolePlace } from '../roles/roster.js';
 import { jobFiles } from './paths.js';
-import { briefPrompt, readInlineText } from './brief-prompt.js';
+import { briefPrompt, ownerPreferencesReference, readInlineText } from './brief-prompt.js';
 import { codexWorkerMcp } from './codex-worker-mcp.js';
 
 export interface StandingBriefRef {
@@ -28,11 +28,13 @@ function stripLast(text: string, needle: string): string {
   return at < 0 ? text : text.slice(0, at) + text.slice(at + needle.length);
 }
 
-function firstPromptWithRole(briefPath: string, instructions: string, standingBrief?: StandingBriefRef): string {
+function firstPromptWithRole(briefPath: string, instructions: string, standingBrief?: StandingBriefRef, preferencesFile?: string): string {
   const role = readInlineText(instructions);
   const standing = standingBrief ? readInlineText(standingBrief.path) : null;
   const standingRef = standingBrief ? `Read the project standing brief: ${JSON.stringify(standingBrief.label)}.` : '';
-  const brief = readInlineText(briefPath);
+  const preferencesRef = preferencesFile ? ownerPreferencesReference(preferencesFile) : '';
+  let brief = readInlineText(briefPath);
+  if (brief !== null && preferencesRef) brief = stripLast(brief, `${preferencesRef}\n\n`);
   const briefSection = brief !== null
     ? `Carry out this brief:\n\n${standing !== null ? stripLast(brief, `${standingRef}\n\n`) : brief}`
     : `Read ${briefPath} and do exactly what it asks.`;
@@ -43,6 +45,7 @@ function firstPromptWithRole(briefPath: string, instructions: string, standingBr
   } else {
     parts.push(`Read ${instructions} for your role instructions.`);
   }
+  if (preferencesRef) parts.push(preferencesRef);
   if (standingBrief) {
     if (standing !== null) {
       if (standing.trim()) parts.push(`Project standing brief (${JSON.stringify(standingBrief.label)}):\n\n${standing.trimEnd()}`);
@@ -68,9 +71,9 @@ function claudeServers(names: Set<string>): [string, unknown][] {
 }
 
 export function cliWorkerStartup(place: RolePlace, cwd: string, dir: string, instructions: string,
-  entry: string, allowed: readonly string[], standingBrief?: StandingBriefRef): { args: string[]; prompt: string; warning?: string } {
+  entry: string, allowed: readonly string[], standingBrief?: StandingBriefRef, preferencesFile?: string): { args: string[]; prompt: string; warning?: string } {
   const briefPath = join(dir, jobFiles.brief);
-  if (place.agent === 'agy') return { args: [], prompt: firstPromptWithRole(briefPath, instructions, standingBrief) };
+  if (place.agent === 'agy') return { args: [], prompt: firstPromptWithRole(briefPath, instructions, standingBrief, preferencesFile) };
   if (place.agent === 'grok') {
     const role = readFileSync(instructions, 'utf8');
     return isHerdrAgentArg(role)

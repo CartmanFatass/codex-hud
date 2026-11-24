@@ -113,7 +113,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     if (!isCliDirTrusted(place.agent!, job.cwd, process.env)) {
       return reject({ ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' });
     }
-    const startup = cliWorkerStartup(place, job.cwd, dir, instructions, binScript('hud-mcp.mjs'), servers, standingBrief);
+    const startup = cliWorkerStartup(place, job.cwd, dir, instructions, binScript('hud-mcp.mjs'), servers, standingBrief, job.preferences_file);
     const nativeArgs = [
       ...(place.model ? kind.model(place.model) : []),
       ...(place.thinking ? kind.effort(place.thinking) : []),

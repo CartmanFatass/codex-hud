@@ -890,6 +890,63 @@ test('local dispatch uses standing briefs only in registered projects without ch
   assert.equal(tab[tab.indexOf('--label') + 1], `imp ${task}`);
 });
 
+test('local dispatch attaches preferences by resolved instructions name, before the standing brief', async (t) => {
+  const f = await fixture(t);
+  const roles = join(f.env.HUD_HOME, 'roles');
+  const preferences = join(f.env.HUD_HOME, 'preferences');
+  const frontend = join(preferences, 'frontend-implementer.md');
+  const implementer = join(preferences, 'implementer.md');
+  const standing = join(f.root, '.hud', 'brief.md');
+  for (const path of [roles, preferences, join(f.root, '.hud')]) fs.mkdirSync(path);
+  fs.writeFileSync(join(roles, 'frontend-imp.json'), JSON.stringify({
+    role: 'frontend-imp', instructions: 'frontend-implementer', can_continue: false,
+    run: [{ harness: 'pi', pi_role: 'implementer' }],
+  }));
+  fs.writeFileSync(frontend, 'Synthetic frontend preferences.');
+  fs.writeFileSync(implementer, 'Synthetic implementer preferences.');
+  fs.writeFileSync(standing, 'Synthetic project rules.');
+  const task = 'Synthetic task.';
+
+  const direct = await f.call('hud_create', { role: 'frontend-imp', task });
+  const readBrief = (job) => fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8');
+  const preferenceRef = (path) => `Read the owner's preferences: ${JSON.stringify(path)}.`;
+  assert.equal(readBrief(direct), `${task}\n\n${preferenceRef(frontend)}\n\nFinish with \`hud_report\`.\n`);
+  registerBriefProject(f);
+  for (const [args, path] of [[{ role: 'general', instructions: 'frontend-imp' }, frontend], [{ role: 'imp' }, implementer]]) {
+    const job = await f.call('hud_create', { ...args, task });
+    assert.equal(readBrief(job), `${task}\n\n${preferenceRef(path)}\n\nRead the project standing brief: ${JSON.stringify(standing)}.\n\nFinish with \`hud_report\`.\n`);
+    assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).preferences_file, path);
+  }
+
+  const agy = await f.call('hud_create', { role: 'general', instructions: 'frontend-imp', on: 'agy', task, request_key: 'preferences-agy' });
+  assert.match(agy.used_place, /^cli\/agy/);
+  const { args } = f.commands().find(({ args }) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === agy.agent);
+  assert.ok(args[3].includes(`${preferenceRef(frontend)}\n\nProject standing brief (${JSON.stringify(standing)}):\n\n` +
+    `Synthetic project rules.\n\nCarry out this brief:\n\n${task}`));
+  assert.equal(args[3].split(preferenceRef(frontend)).length, 2);
+});
+
+test('local dispatch ignores missing preferences and diagnoses unusable files without failing', async (t) => {
+  const f = await fixture(t);
+  const root = join(f.env.HUD_HOME, 'preferences');
+  const path = join(root, 'implementer.md');
+  fs.mkdirSync(root);
+  const task = 'Synthetic task.';
+  for (const [key, prepare] of [
+    ['missing', () => {}],
+    ['directory', () => fs.mkdirSync(path)],
+    ['invalid-utf8', () => { fs.rmdirSync(path); fs.writeFileSync(path, Buffer.from([0xc3])); }],
+  ]) {
+    prepare();
+    const job = await f.call('hud_create', { role: 'imp', task, request_key: key });
+    assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'), `${task}\n\nFinish with \`hud_report\`.\n`);
+    const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+    assert.equal(receipt.preferences_file, undefined);
+    if (key === 'missing') assert.equal(receipt.preferences_warning, undefined);
+    else assert.ok(receipt.preferences_warning.includes(JSON.stringify(path)));
+  }
+});
+
 function registerBriefProject(f) {
   fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({
     version: 1, projects: [{ root: fs.realpathSync(f.root), registered_at: new Date().toISOString() }],
@@ -913,6 +970,42 @@ test('browser dispatch inlines the registered standing brief once through the bo
   assert.equal(fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
     `${args.task}\n\n## Context\n\n### ${JSON.stringify(standing)}\n\n\`\`\`\n${body}\`\`\`\n`);
   assert.equal(workerFor(f, job.job).task, args.task);
+});
+
+test('browser preferences inline before the standing brief only when they fit the context budget', async (t) => {
+  const f = await fixture(t);
+  enableOptionalRoles(f, 'pro');
+  const preferences = join(f.env.HUD_HOME, 'preferences');
+  const path = join(preferences, 'pro.md');
+  const hud = join(f.root, '.hud');
+  const standing = join(hud, 'brief.md');
+  fs.mkdirSync(preferences);
+  fs.mkdirSync(hud);
+  registerBriefProject(f);
+  const args = { role: 'pro', task: 'Synthetic browser task.' };
+  const read = (job, name) => fs.readFileSync(join(job.task_dir, name), 'utf8');
+  fs.writeFileSync(path, 'Synthetic preferences.\n```\n');
+  fs.writeFileSync(standing, 'Synthetic standing brief.\n');
+
+  const attached = await f.call('hud_create', { ...args, request_key: 'attached' });
+  assert.equal(read(attached, 'brief.md'), `${args.task}\n\n## Context\n\n### ${JSON.stringify(path)}\n\n\`\`\`\`\nSynthetic preferences.\n\`\`\`\n\`\`\`\`\n\n### ${JSON.stringify(standing)}\n\n\`\`\`\nSynthetic standing brief.\n\`\`\`\n`);
+  assert.equal(JSON.parse(read(attached, 'job.json')).preferences_file, path);
+
+  const full = 'é'.repeat(32 * 1024);
+  fs.writeFileSync(path, full + 'x');
+  const oversized = await f.call('hud_create', { ...args, request_key: 'file-limit' });
+  assert.ok(!read(oversized, 'brief.md').includes(JSON.stringify(path)));
+  assert.match(JSON.parse(read(oversized, 'job.json')).preferences_warning, /browser context budget/);
+
+  fs.writeFileSync(path, 'x');
+  fs.writeFileSync(standing, full);
+  const names = ['a.md', 'b.md', 'c.md'];
+  for (const name of names) fs.writeFileSync(join(f.root, name), full);
+  const noSpace = await f.call('hud_create', { ...args, request_key: 'total-limit', context_files: names });
+  const brief = read(noSpace, 'brief.md');
+  assert.ok(brief.includes(JSON.stringify(standing)));
+  assert.ok(!brief.includes(JSON.stringify(path)));
+  assert.equal(JSON.parse(read(noSpace, 'job.json')).preferences_file, undefined);
 });
 
 test('hud_create inlines browser context with safe fences and caps both file and total bytes', { timeout: 60000 }, async (t) => {

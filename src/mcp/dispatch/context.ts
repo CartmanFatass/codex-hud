@@ -1,11 +1,12 @@
 /** Dispatch argument and brief/context file handling. */
 import * as fs from 'node:fs';
-import { resolve, relative, sep, isAbsolute, join } from 'node:path';
+import { basename, resolve, relative, sep, isAbsolute, join } from 'node:path';
 import { replyWords, needsTranslation } from '../../collectors/reply-language.js';
+import { ownerPreferencesReference } from '../brief-prompt.js';
 import type { StandingBriefRef } from '../cli-worker-startup.js';
 import type { Job } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
-import { jobsRoot, findJob } from '../store/job-store.js';
+import { hudHome, jobsRoot, findJob } from '../store/job-store.js';
 
 export function jobCwd(args: Args): string {
   if (args.cwd === undefined) return resolve(process.cwd());
@@ -80,8 +81,18 @@ function sonicFactsPrefix(task: unknown): string {
     : SONIC_FACTS_EN;
 }
 
-export async function assembleContext(args: Args, cwd: string, inline: boolean, project: { root: string; registered: boolean }, repairOf?: string) {
-  const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
+function inlineSection(label: string, content: string, prefix?: string): string {
+  let length = 3;
+  for (const run of content.matchAll(/`+/g)) length = Math.max(length, run[0].length + 1);
+  const fence = '`'.repeat(length);
+  return `${prefix ? `${prefix}\n\n` : ''}### ${label}\n\n${fence}\n${content}${content.endsWith('\n') ? '' : '\n'}${fence}`;
+}
+
+export async function assembleContext(args: Args, cwd: string, inline: boolean, project: { root: string; registered: boolean }, instructions: string, repairOf?: string) {
+  // Clear any earlier preference receipt when starting a queued job with a different attachment.
+  const metadata: Pick<Job, 'context_files' | 'from_jobs' | 'preferences_file' | 'preferences_warning'> = {
+    preferences_file: undefined, preferences_warning: undefined,
+  };
   const sections: string[] = [];
   const contextInputs: { name: string; bytes: number }[] = [];
   let remaining = 256 * 1024;
@@ -89,15 +100,13 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
     const rel = relative(base, path);
     if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('outside its root');
   };
+  const read = (path: string) => readContextFile(path, inline ? Math.min(64 * 1024, remaining) : undefined);
   const append = async (path: string, label: string, prefix?: string) => {
-    const file = await readContextFile(path, inline ? Math.min(64 * 1024, remaining) : undefined);
+    const file = await read(path);
     if (!file) return null;
     if (inline) {
       remaining -= file.bytes;
-      let length = 3;
-      for (const run of file.content.matchAll(/`+/g)) length = Math.max(length, run[0].length + 1);
-      const fence = '`'.repeat(length);
-      sections.push(`${prefix ? `${prefix}\n\n` : ''}### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
+      sections.push(inlineSection(label, file.content, prefix));
     } else sections.push(prefix ? `${prefix}\n- ${label}` : `- ${label}`);
     return file.bytes;
   };
@@ -162,6 +171,28 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
       }
     } catch {
       return { ok: false, code: 'invalid_arguments', error: `${source} must resolve to a readable UTF-8 text file inside ${root}` } as const;
+    }
+  }
+  // Fit the optional preferences after required context, but present them before the standing brief.
+  if (basename(instructions) === instructions && instructions !== '.' && instructions !== '..') {
+    const root = join(hudHome, 'preferences');
+    const name = `${instructions}.md`;
+    const label = join(root, name);
+    try {
+      const directory = await fs.promises.realpath(root);
+      inside(await fs.promises.realpath(hudHome), directory);
+      const file = await read(join(directory, name));
+      if (!file) {
+        metadata.preferences_warning = `Skipped owner preferences ${JSON.stringify(label)}: exceeds the browser context budget`;
+      } else {
+        metadata.preferences_file = label;
+        if (inline) sections.unshift(inlineSection(JSON.stringify(label), file.content));
+        else reference = `${ownerPreferencesReference(label)}\n\n${reference}`;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        metadata.preferences_warning = `Skipped owner preferences ${JSON.stringify(label)}: expected a readable UTF-8 text file inside HUD_HOME`;
+      }
     }
   }
   const block = !sections.length ? '' : inline

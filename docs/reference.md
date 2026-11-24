@@ -321,6 +321,11 @@ The optional project-root `.hud/brief.md` is included automatically only for reg
 Keep it safe to send to the selected browser service.
 Attaching an upstream report does not mark it read or close its worker.
 
+Put reusable owner preferences in `$HUD_HOME/preferences/<instructions>.md`, keyed by the resolved instructions name (e.g. `frontend-implementer.md` for `frontend-imp` or a `general` job borrowing `instructions: "frontend-imp"`).
+HUD references the file for local workers and sends its contents to the selected browser service only if they fit within the same context limits.
+Missing files are ignored; unusable files are skipped with a diagnostic in the job receipt.
+On conflict, the task wins over the project standing brief, which wins over owner preferences.
+
 `isolation: "worktree"` runs the job in its own linked Git checkout beside the repository (`<repo>-wt/<slug>-<id6>`, branch `wt/<slug>-<id6>` from HEAD, `node_modules` linked, the CLI's trust of the main checkout copied).
 It is refused for browser roles and outside Git.
 `hud_read` in full mode adds the `worktree` receipt (including the checkout path) and `git_summary`.
