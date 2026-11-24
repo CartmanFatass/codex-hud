@@ -8,11 +8,11 @@
 **Features:** pivot-m1, pivot-m2, pivot-m3
 
 ## glance: Home shows every project's progress at a glance; Project carries the depth without repeating it
-**Result:** Home shows one block per project with liveness, load, age and a ticket bar per Objective (fresh finished ones for 3 days); Project carries full titles, next steps, per-feature bars and named Details counts. Checked live at 40 columns zh: no wrapped or mid-word cut rows.
+**Result:** Home shows today's projects with per-Objective ticket bars, folds the rest behind one key, and ends with Today and Schedule cards.
 
-**State:** active
-**Next:** Build home-cards/01-03 (today's projects with a fold row, hud_schedule, Today and Schedule cards with the due badge); then add the first schedule item: 2026-12 sonic → openai gpt-6-luna (pi).
-**Evidence:** 0cc01248, 10ac38cc, 26d184eb
+**State:** done
+**Next:** Nothing. Verified live 2026-11-24 at 40x48, 40x24 and 80x40 (zh) on a HUD home copy: today's projects, fold row with a, Today and Schedule cards, short-height card folding.
+**Evidence:** 06386505, 1ddabcbb, 532f865e, docs/design/home-cards/README.md
 **Features:** home-portfolio, home-cards
 
 ## handoff: HUD takes over the mechanical handoff steps between jobs, while the main session keeps the judgement
