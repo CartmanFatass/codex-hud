@@ -29,7 +29,7 @@ export const ROLE_TOOLS = [
   }),
   tool(
     'hud_create',
-    'Create or retry jobs. Placement: role files/Control; overrides: single general only. Options: hud_roster(detail:true).',
+    'Placement: role files/Control. Single general job only: preset/on/model/thinking. Options: hud_roster(detail:true).',
     {
       role: text,
       request_key: { ...text, description: 'Fresh key to repeat; omit for 10-min caller/role/cwd/task dedupe.' },
