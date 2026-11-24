@@ -44,7 +44,7 @@ function settled() {
     reportTime: (now - 1000) / 1000,
   };
 }
-async function herdrSocket(t, f, answer) {
+async function herdrSocket(t, f, answer, paneReply) {
   const path = join(dirname(f.home), 'herdr.sock');
   const sockets = new Set();
   const subscribed = Promise.withResolvers(), queried = Promise.withResolvers();
@@ -53,8 +53,10 @@ async function herdrSocket(t, f, answer) {
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
     createInterface({ input: socket }).on('line', (line) => {
-      const { method, id } = JSON.parse(line);
+      const { method, id, params } = JSON.parse(line);
       if (method === 'events.subscribe') { subscriber = socket; subscribed.resolve(); }
+      if (method === 'pane.get' && paneReply)
+        socket.write(JSON.stringify({ id, ...paneReply(params.pane_id) }) + '\n');
       if (method === 'agent.get') {
         queried.resolve();
         queries++;
@@ -123,6 +125,37 @@ test('watcher settles other jobs, starts checks and handles failures during a pe
   assert.equal(attempts(f, slow), 1, 'one reap despite repeated disk events');
   assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
   assert.equal(child.exitCode, 0);
+});
+
+test('watcher settles an unreported Pi exit on its safety tick once the pane is also gone', { timeout: 30000 }, async (t) => {
+  const f = fixture(t), panes = [];
+  let paneGone = false;
+  const herdr = await herdrSocket(t, f, null, (id) => {
+    panes.push(id);
+    return paneGone ? { error: { code: 'not_found' } } : { result: { pane: { pane_id: id } } };
+  });
+  const worker = spawn(process.execPath, ['-e', 'process.stdin.resume()']);
+  const ended = once(worker, 'exit');
+  t.after(async () => { worker.kill(); await ended; });
+  const dir = f.job({ state: 'working', slot: 'primary', pid: worker.pid, pid_start_time: procStat(worker.pid).start });
+  fs.unlinkSync(join(dir, 'report.md'));
+  writeFixtureFile(join(dir, 'SESSION.txt'), 'TAB=synthetic-tab\nLEFT=synthetic-worker\n');
+  const { exited } = f.start(herdr.preload + "process.env.HUD_WATCH_CLI_CHECK_MS = '75';");
+  await until(herdr.ready, t.signal);
+  assert.equal(status(dir).state, 'working');
+  assert.deepEqual(panes, []);
+  worker.stdin.end();
+  await ended;
+  // No job file changes, tab-close event or stop request: only the liveness tick can notice.
+  await until(() => panes.length > 0, t.signal);
+  assert.equal(panes[0], 'synthetic-worker');
+  assert.equal(status(dir).state, 'working', 'a remaining pane is not evidence of closure');
+  paneGone = true;
+  await until(() => status(dir).state === 'stopped', t.signal);
+  assert.equal(status(dir).exit_reason, 'process exited without a report');
+  assert.ok(status(dir).ended_at);
+  assert.deepEqual(await exited, [0, null]);
+  assert.ok(reaped(dir));
 });
 
 for (const outcome of ['closed tab', 'missing or renamed tab']) test(`watcher reaps an exited root without a snapshot once (${outcome}), idles, then archives it at retention`, { timeout: 60000 }, async (t) => {

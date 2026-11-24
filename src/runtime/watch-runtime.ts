@@ -1,4 +1,4 @@
-/** On-demand file-event reaper. Native pi owns settlement; pi-role-reap owns tab safety. */
+/** On-demand file-event reaper. Native pi owns normal settlement; pi-role-reap owns tab safety. */
 import { isQuotaFailure, recordFailureExhaustion } from '../roles/roster.js';
 import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT, REPORT_SETTLED_EXIT } from '../mcp/cli-judge.js';
 import { piSessionIdentity, resumeDeadline } from '../mcp/worker-resume.js';
@@ -19,7 +19,7 @@ import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
 import { hasHeadlessSends, headlessFollowupReady } from '../mcp/headless-sends.js';
 import { missingRunnerEvidence, missingRunnerReceipt } from '../mcp/sonic-failure.js';
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
-import { settleStoppedPi } from '../mcp/pi-stop-settlement.js';
+import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, type SessionFields } from '../roles/job-index-cache.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
 import { createWorkSummaryPublisher } from '../collectors/work-summary-snapshot.js';
@@ -149,6 +149,8 @@ let worktreeSweepDone = false;
 let sweepStats = { removed: 0, kept: 0 };
 const runners = new RunnerWatches(schedule);
 const checkRetries = new Map<string, number>();
+const checkingPiExit = new Set<string>();
+let nextPiExitCheck = 0;
 const orphanRetries = new Map<string, { pid: number; at: number; delay: number }>();
 let pauseReady: ((state: Handoff | null) => void) | undefined;
 function drained() {
@@ -583,6 +585,8 @@ function scan(retryWatch = false) {
   let rechecks = 0;
   let open = false,
     nearest = Infinity;
+  const nowMs = Date.now(), checkPiExit = nowMs >= nextPiExitCheck;
+  if (checkPiExit) nextPiExitCheck = nowMs + cliCheck;
   const listedIds = jobCache.listJobIds({ onError: (error) => { throw error; } });
   const liveIds = new Set(listedIds);
   const orphans = new Set<string>();
@@ -719,6 +723,27 @@ function scan(retryWatch = false) {
             nearest = Math.min(nearest, Date.now() + cliCheck); // Native pi-roles has no HUD runner.
             if (isWorkingForCap(job, status)) countWorking(job!.role);
             continue;
+          }
+        } else if (job && !job.bro && !job.jev && !job.headless && !job.reaped_at &&
+            status?.pid && status.pid_start_time && piTurnUnfinished(status)) {
+          // Native pi owns no HUD runner socket. A close event alone is not worker-exit evidence.
+          nearest = Math.min(nearest, nextPiExitCheck);
+          if ((checkPiExit || tabClosed) && !retry?.readClose && !checkingPiExit.has(id) &&
+              workerTreeRootGone(status.pid, status.pid_start_time)) {
+            const candidate = status, pane = session?.fields.left;
+            checkingPiExit.add(id);
+            const absent = tabClosed || (!pane && !tab) ? Promise.resolve(true) :
+              (pane ? request('pane.get', { pane_id: pane }) : request('tab.get', { tab_id: tab }))
+                .then(reply => reply?.error?.code === 'not_found');
+            void absent.then(gone => {
+              if (!gone || stopped || pauseReady ||
+                  reapOwner(jobCache.readSession(id, { throwOnError: true }), candidate) !== ownership) return;
+              if (settleStoppedPi(statusFile, candidate, true)) {
+                jobCache.invalidateFile(statusFile);
+                schedule();
+              }
+            }).catch(error => warn(`keep ${id} scan`, `keep ${id} scan: ${error.message}`))
+              .finally(() => checkingPiExit.delete(id));
           }
         } else if (tabClosed && !(job?.resume_s !== undefined && readCloseTurn(dir, job, status)))
           update = { state: 'failed', exit_reason: 'tab closed', ended_at: now };

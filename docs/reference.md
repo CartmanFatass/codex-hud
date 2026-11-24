@@ -512,6 +512,7 @@ A blocked CLI marks the job as needing the owner; task clients can see it in `hu
 `hud_close` reaps early.
 A stopped Pi worker is recorded as `stopped` even if it exits during startup without publishing its final status.
 Normal cleanup belongs to the watcher, which also records `stopped` on its next scan if a stop was requested and the recorded Pi process is gone.
+If an unfinished tabbed Pi worker and its pane disappear without a shutdown status, the watcher records `stopped` with `process exited without a report`, even without a stop request.
 The owner can also answer an open question from the panel (`1`–`4` or `d` on its expanded question); the session hears it as one `changes` / `hud watch` line, `[role@job] ANSWERED qN from panel: <answer>`, read from `$HUD_HOME/panel-actions.jsonl` (answers made while the reader runs; a question answered earlier is simply gone).
 The main session chooses next steps outside fixed HUD flows it starts.
 See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool arguments.
@@ -567,7 +568,7 @@ The supervisor wakes on herdr pushes, file changes and its own deadlines, plus a
 The on-demand watcher starts on `hud_create`, `hud_read`, `hud_send`, `hud_respond` or `hud_land` if needed.
 It reaps finished jobs through `pi-role-reap`, keeps failed tabs for two hours, and exits with no open job or pending failed-job deadline.
 The watcher learns of a HUD runner's exit through a socket close, not a periodic scan.
-Native pi-roles workers have no such runner; pending stop/read-close checks still use `HUD_WATCH_CLI_CHECK_MS` (default 30000).
+Native pi-roles workers have no such runner; their liveness and pending stop/read-close checks use `HUD_WATCH_CLI_CHECK_MS` (default 30000).
 A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited; worker still running"); the watcher rechecks this unsupervised worker with exponential backoff.
 `hud_send` to it starts a new supervisor.
 Settled directories, including reports and `hud_read` access, normally expire **one day after closure** on a later watcher scan, not a dedicated expiry timer.
