@@ -726,6 +726,7 @@ test('the delegation-only package registers the tools but no footer, no /hud and
     'hud_create',
     'hud_land',
     'hud_lease',
+    'hud_objective',
     'hud_peek',
     'hud_read',
     'hud_respond',
