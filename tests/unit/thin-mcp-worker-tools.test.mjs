@@ -727,6 +727,56 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
   assert.equal(turnToken(JSON.parse(fs.readFileSync(file, 'utf8'))), second);
 });
 
+test('a blocked CLI send is not queued and the worker can still report with its original token', async (t) => {
+  const f = await fixture(t);
+  writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
+  writeCliRole(f, 'blocked-send', 20, true, 'claude');
+  const job = await f.call('hud_create', { role: 'blocked-send', task: 'Synthetic first turn.' });
+  const dir = job.task_dir, turn = cliToken(dir);
+  await until(() => cliState(dir)?.agent_session_id, t.signal);
+  f.push(job.job, 'blocked');
+  await until(() => cliState(dir)?.blocked, t.signal);
+  const marker = join(f.env.HOME, 'blocked-prompt');
+  writeFixtureFile(marker, '');
+  const refused = await f.call('hud_send', { job: job.job, text: 'Synthetic refused follow-up.' });
+  assert.equal(cliToken(dir), turn);
+  assert.equal(refused.sent, false);
+  assert.equal(refused.queued, false);
+  assert.match(refused.error, /blocked on a client prompt/);
+  fs.unlinkSync(marker);
+  f.push(job.job, 'working');
+  await until(() => cliState(dir)?.state === 'working', t.signal);
+  const call = workerClient(t, f, dir);
+  assert.deepEqual(resultValue(await call('hud_report', { text: 'Synthetic original report.', turn })),
+    { path: join(dir, 'report.md') });
+});
+
+test('a blocked pi send also preserves its turn timestamp and does not queue on replay', async (t) => {
+  const f = await fixture(t);
+  const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic first turn.' });
+  const dir = job.task_dir;
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  const sentAt = () => JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).pi_sent_at;
+  const original = sentAt();
+  assert.ok(original);
+  const marker = join(f.env.HOME, 'blocked-prompt');
+  writeFixtureFile(marker, '');
+  const args = { job: job.job, text: 'Synthetic refused follow-up.', message_key: 'blocked' };
+  const refused = await f.call('hud_send', args);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.sent, false);
+  assert.equal(refused.queued, false);
+  assert.equal(refused.code, 'worker_blocked');
+  assert.equal(sentAt(), original);
+  fs.unlinkSync(marker);
+  const replay = await f.call('hud_send', args);
+  assert.equal(replay.queued, false);
+  assert.equal(replay.code, refused.code);
+  assert.equal(replay.error, refused.error);
+  assert.equal(sentAt(), original);
+  assert.equal(f.commands().filter(({ args: argv }) => argv[1] === 'prompt' && argv[3] === args.text).length, 1);
+});
+
 for (const refused of [false, true]) {
   test(`hud_report during a pending CLI prompt belongs to the old turn (${refused ? 'refused' : 'delivered'})`, async (t) => {
     const f = await fixture(t);

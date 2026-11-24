@@ -46,7 +46,7 @@ function cliError(result: DispatchResult): { code: string; message?: string } | 
         } catch { /* Pretty-printed JSON, or a JSON line followed by CLI output. */ }
       }
     }
-    const match = /^(?:Error:\s*)?(agent_not_ready|agent_not_found|invalid_agent_argument|agent_pane_busy)(?=[:\s]|$)[:\s]*(.*)$/.exec(first);
+    const match = /^(?:Error:\s*)?(agent_not_ready|agent_not_found|invalid_agent_argument|agent_pane_busy|agent_blocked)(?=[:\s]|$)[:\s]*(.*)$/.exec(first);
     if (match) return { code: match[1], message: match[2] };
   }
 }

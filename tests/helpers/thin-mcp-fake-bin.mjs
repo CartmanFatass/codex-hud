@@ -514,6 +514,12 @@ if (command === 'pi-dispatch') {
   console.error('agent_not_ready before input');
   process.exit(1);
 } else if (
+  command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' &&
+  fs.existsSync(join(process.env.HOME, 'blocked-prompt'))
+) {
+  console.error(JSON.stringify({ id: null, error: { code: 'agent_blocked', message: 'Synthetic worker requires interactive input' } }));
+  process.exit(1);
+} else if (
   command === 'herdr' &&
   args[0] === 'agent' &&
   args[1] === 'prompt' &&

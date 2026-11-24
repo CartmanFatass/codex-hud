@@ -14,7 +14,7 @@ export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; sourc
   placement?: 'even'; preset?: string | null };
 export type LaunchAttempt = { index: number; place: string; reason?: string };
 export type JobSession = { harness: 'pi' | CliAgent; id: string; path?: string };
-export type SendOutcome = { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string; resumed?: true };
+export type SendOutcome = { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string; resumed?: true; client_prompt_blocked?: true };
 export interface ManagedWorktree {
   main_root: string;
   root: string;

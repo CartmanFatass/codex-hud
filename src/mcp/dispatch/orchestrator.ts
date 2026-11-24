@@ -30,7 +30,7 @@ import {
 import type { StandingBriefRef } from '../cli-worker-startup.js';
 import { defaultImpRoute, impPlacementSettings, pickEvenPreset, repairImpRoute, pickImpRoute } from '../imp-routing.js';
 import { clearHeadlessSends, hasHeadlessSends, headlessFollowupReady, readHeadlessSends, writeHeadlessSends } from '../headless-sends.js';
-import type { Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus } from '../job-contracts.js';
+import type { Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus, SendOutcome } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
 import { routingTicketText, ticketObjective } from '../local-tickets.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
@@ -1224,6 +1224,10 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   return { ok, sent: ok, ...(answerRequest && { written: true }), job: id, continuation, ...(ok ? {} : { code: 'send_failed', stderr_tail: recorded.stderr_tail }) };
 }
 
+const blockedSend = {
+  code: 'worker_blocked', queued: false, error: 'The worker was blocked on a client prompt; the message was not queued.',
+} as const;
+
 export async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean,
   { land = false, batch = false, dispatcher }: { land?: boolean; batch?: boolean; dispatcher?: Job['dispatcher'] } = {}) {
   const matchKey = explicitKey ?? derivedKey('send', id, message);
@@ -1240,7 +1244,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
     if (outcome?.exit_code === 0 && !session.taskClient) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
     return outcome?.exit_code === 0
       ? { ok: true, sent: false, ...(outcome.resumed ? { job: id, continuation: 'resumed' as const } : {}) }
-      : { ok: false, sent: false, code: 'send_failed',
+      : { ok: false, sent: false, ...(outcome?.client_prompt_blocked ? blockedSend : { code: 'send_failed' }),
           ...(outcome && { key: outcome.key, exit_code: outcome.exit_code, stderr_tail: outcome.stderr_tail }) };
   }
   let { row, status, statusAt } = readRow(current);
@@ -1328,13 +1332,12 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   // Record the attempt first. A fresh derived send needs its own key for CLI turn tracking.
   const key = explicitKey ?? `${matchKey}:${randomBytes(8).toString('hex')}`;
   const recorded_at = new Date().toISOString();
-  const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}), recorded_at,
-    exit_code: null as number | null, stderr_tail: '' };
+  const outcome: SendOutcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}), recorded_at,
+    exit_code: null, stderr_tail: '' };
   current.land_turn = land ? key : undefined;
   // A note queued into a working turn leaves that turn with its queue; only a new turn is taken over.
   if (!land && !queued) delete current.ticket_queue;
   (current.send_outcomes ??= []).push(outcome);
-  if (!current.cli) current.pi_sent_at = recorded_at;
   save(current);
   // Read the rollback baseline at mutation time, with no pane query between it and the write.
   const submission = current.cli ? await beginPrompt(dir, { send: { key, pid: process.pid, start: procStat(process.pid)?.start ?? null } }) : null;
@@ -1342,11 +1345,16 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   const taskEntry = session.taskClient && !workingOnly && !land && !carryTask
     ? beginTask(current, row.report_mtime, undefined, row, statusAt) : undefined;
   const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
-  if (submission) await endPrompt(dir, submission, refusedBeforeInput(result));
+  const blocked = result.exit_code !== 0 && launchFailure(result).code === 'agent_blocked';
+  const refused = blocked || refusedBeforeInput(result);
+  if (submission) await endPrompt(dir, submission, refused);
   const latest = findJobMutable(id) ?? current;
   const attempted = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
   attempted.exit_code = result.exit_code;
   attempted.stderr_tail = result.stderr;
+  if (blocked) attempted.client_prompt_blocked = true;
+  // Pi settlement also uses a send-time baseline. Keep it unchanged on confirmed refusals.
+  if (!current.cli && !refused) latest.pi_sent_at = recorded_at;
   save(latest);
   if (!session.taskClient && result.exit_code === 0) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
   if (result.exit_code === 0 && current.cli) {
@@ -1386,9 +1394,8 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   }
   if (!ok && oldTask && !carryTask && sampleTask(oldTask).status === 'working') claimTask(oldTask, latest);
   return {
-    ...(ok ? {} : { code: 'send_failed' }),
+    ...(ok ? (queued ? { queued: true } : {}) : blocked ? blockedSend : { code: 'send_failed' }),
     ok, sent: ok,
-    ...(queued ? { queued: true } : {}),
     exit_code: result.exit_code,
     stderr_tail: result.stderr,
   };

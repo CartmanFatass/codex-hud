@@ -483,7 +483,8 @@ That reason appears in the `hud_read` digest.
 These checks are separate from `hud_create` checks and the land gate.
 
 Workers use `hud_sonic` to start sonic sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting.
-`hud_send` queues a message for a working pi or CLI job.
+`hud_send` queues a message for a working pi or CLI job when the transport accepts it.
+If a tabbed worker is blocked on a client prompt, the send returns `worker_blocked` and `queued: false`. Resolve the prompt and send again with a new `message_key`.
 After a worker closes on its report, HUD checks the clock and native session.
 Within `resume_s`, it can open the same pi, Claude, Codex or Antigravity session in a new pane in the same checkout, as a new turn of the same job (`continuation: "resumed"`).
 After the window or if native resume is unavailable, it starts a repair with references to the original brief and report (`continuation: "repair"`, new job ID in `continued_as`).
@@ -533,7 +534,7 @@ Jobs are plain files in `$HUD_HOME/jobs/<job>/`.
 Tabbed pi history stays in `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to primary/helper files. Headless pi keeps its native session file in the job directory.
 `job.json` records known native sessions as `sessions: [{harness, id, path?}]`, including repair continuations; reopening the same session does not duplicate it.
 A CLI job's supervisor only observes; only facts end a job: the worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or `closed` when a new report is on disk).
-Each CLI dispatch and `hud_send` starts a turn (`turn.json`).
+Each CLI dispatch and `hud_send` starts a turn (`turn.json`). If Herdr refuses the send before input, HUD keeps the worker's previous turn.
 `hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
 An undeclared report follows the quiet rule, and live in-turn children defer that rule.
 A continuation invalidates an old receipt; rewriting a declared report requires a fresh receipt for that turn.
