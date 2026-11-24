@@ -29,6 +29,8 @@ const DEFAULT_RESCAN_MS = 30_000;
 const DEBOUNCE_MS = 50;
 const SETTLEMENT_WINDOW_MS = 3000;
 const MOD_REPORT_LOOKBACK_MS = 2 * 60 * 60_000;
+// Linux may stamp a new file with the previous kernel tick, behind Date.now().
+const NOTICE_MTIME_SLOP_MS = 10;
 
 // Test-only override for both the CLI and in-process notification paths.
 function settlementWindow(env: NodeJS.ProcessEnv): number {
@@ -72,7 +74,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
     if (row.land_turn) return questions;
     if (row.parent_job && settled(row) && row.display_state !== 'failed') return questions;
     // A newly visible row can be old work promoted into the bounded window by retention.
-    if (catchup === false && !old && settled(row) && row.notice_mtime < lastScanAt) return questions;
+    if (catchup === false && !old && settled(row) && row.notice_mtime + NOTICE_MTIME_SLOP_MS < lastScanAt) return questions;
     let attentionUnread = true;
     if (catchup && (row.blocked || row.display_state === 'failed')) {
       const idx = getJobIndexCache(home), job = idx.readJob(row.job);
