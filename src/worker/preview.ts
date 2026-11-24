@@ -12,8 +12,11 @@ export async function openPreview(file: string, wsl = /microsoft/i.test(release(
   windowsPath = (path: string) => execFileSync('wslpath', ['-w', path], { encoding: 'utf8', timeout: 2000 }).trimEnd()) {
   const path = wsl ? windowsPath(file) : file;
   if (!path) throw new Error('no browser path');
-  await launch(wsl ? 'explorer.exe' : 'xdg-open', [path]);
+  await launch(wsl ? windowsExplorer() : 'xdg-open', [path]);
 }
+
+/** WSL may run without Windows directories on PATH (appendWindowsPath=false), so prefer Explorer's fixed path. */
+const windowsExplorer = (fixed = '/mnt/c/Windows/explorer.exe') => fs.existsSync(fixed) ? fixed : 'explorer.exe';
 
 function launchPreview(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -26,7 +29,7 @@ function launchPreview(command: string, args: string[]): Promise<void> {
       clearTimeout(timer);
       receipt.destroy();
       // Explorer commonly exits with 1 after handing the document to Windows Shell.
-      if (code === '0' || (command === 'explorer.exe' && code === '1')) resolve();
+      if (code === '0' || (basename(command) === 'explorer.exe' && code === '1')) resolve();
       else reject(new Error('browser opener exited unsuccessfully'));
     };
     child.once('error', () => finish(''));

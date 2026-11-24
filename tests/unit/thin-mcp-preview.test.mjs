@@ -57,7 +57,8 @@ test('declared previews copy outside a worktree and open once per rewrite (WSL a
   };
   writeSample(contents);
   const commands = [], conversions = [];
-  const launch = async (...args) => { commands.push(args); };
+  // Explorer may be launched by its fixed WSL path; compare by command name.
+  const launch = async (command, args) => { commands.push([command.split('/').pop(), args]); };
   const windows = 'C:\\Synthetic Preview\\design sample.html';
   const convert = path => { conversions.push(path); return windows; };
   const wsl = path => openPreview(path, true, launch, convert);
