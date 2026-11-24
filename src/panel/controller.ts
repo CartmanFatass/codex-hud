@@ -5,6 +5,7 @@ import { readExpData } from '../collectors/exp-store.js';
 import type { HealthSource } from '../collectors/hud-health.js';
 import { HudStatus } from '../collectors/hud-status.js';
 import { ProjectCollector, projectShown } from '../collectors/project-board.js';
+import { HomePortfolioCollector, type HomePortfolio } from '../collectors/home-portfolio.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from '../collectors/project-visits.js';
 import { RolloutParser, type RolloutParseResult } from '../collectors/rollout.js';
 import { SessionFinder, findRolloutsInDaysYielding, findSessionByThreadId, treeLookbackDays } from '../collectors/session-finder.js';
@@ -92,9 +93,15 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   let scanStoreStarted = false;
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
   const parser = new RolloutParser(40);
-  // One collector per project the tab has shown (this one's always); Home reads only the panel's own.
+  // Project visit state is independent of the bounded Home collectors.
   const visits = new ProjectVisits(HUD_CWD_REAL, (root) => new ProjectCollector(root, jobPipeline.home));
-  let projects = projectList(jobPipeline.home, HUD_CWD_REAL);
+  const portfolioCollector = new HomePortfolioCollector(jobPipeline.home);
+  let portfolio: HomePortfolio | undefined;
+  let registered = projectList(jobPipeline.home, HUD_CWD_REAL);
+  const projectChoices = () => registered[0]?.root === HUD_CWD_REAL ? registered : [
+    { root: HUD_CWD_REAL, name: path.basename(HUD_CWD_REAL) || HUD_CWD_REAL }, ...registered,
+  ];
+  let projects = projectChoices();
   let projectsAt = Date.now();
   // The Projects list reads every listed project lightly, and only while it is open.
   const overviews = new ProjectOverviews((root) => new ProjectCollector(root, jobPipeline.home), HUD_CWD_REAL);
@@ -181,7 +188,10 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
     const control = projectControlShown(painted, settingsFlow.open), chosen = shownRoot();
     const shown = control ? { root: chosen, snapshot: visits.control(chosen) }
-      : painted.activeTab === 'project' ? visits.shown(chosen) : { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) };
+      : painted.activeTab !== 'project' ? { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) }
+        : painted.project.view.kind === 'waiting' ? { root: chosen, snapshot: visits.snapshot(chosen)
+          ?? portfolio?.projects.find((p) => p.root === chosen)?.snapshot }
+          : visits.shown(chosen);
     const output = time('render', () => {
       const width = process.stdout.columns || 30, height = process.stdout.rows || 24;
       const settingsLines = settingsFlow.paint(width, height, () => ({
@@ -198,6 +208,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         workboard: boardFacts(),
         paneLoad: jobPipeline.load(),
         homeWaiting: visits.snapshot(HUD_CWD_REAL)?.waiting,
+        homePortfolio: portfolio,
         mouse: settings.mouse,
         state: painted,
         worktrees: worktreesRoot === chosen && shown.root === chosen ? worktrees : undefined,
@@ -309,11 +320,13 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       state = framePlace(state);
       const board = boardFacts();
       if (settingsFlow.open) readDecisionCalls();
-      // Only the shown project is collected; the list of projects is read again at most every five seconds.
+      const now = Date.now();
       const shown = projectShown(state, settingsFlow.open), control = projectControlShown(state, settingsFlow.open);
-      if ((shown || control) && Date.now() - projectsAt >= 5000) {
-        projectsAt = Date.now();
-        projects = projectList(jobPipeline.home, HUD_CWD_REAL);
+      const home = state.activeTab === 'home' && !state.subpage && !state.help && !settingsFlow.open;
+      if (home || ((shown || control) && now - projectsAt >= 5000)) {
+        projectsAt = now;
+        registered = projectList(jobPipeline.home, HUD_CWD_REAL);
+        projects = projectChoices();
       }
       // The open list reads the light overviews instead of the shown project's full collection (Git included), at most once
       // per five seconds; opening it again reads at once.
@@ -324,16 +337,17 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
           overview = await overviews.read(projects.map((p) => p.root), board, Date.now());
         }
       } else overviewAt = -Infinity;
-      const root = shown || control ? shownRoot() : HUD_CWD_REAL;
-      const visit = visits.visit(root);
-      const projectFacts = await visit.collector.collect(
-        control ? 'control' : shown ? full : !state.subpage && !state.help && !settingsFlow.open ? 'home' : false,
-        board,
-        Date.now()
-      );
-      if (projectFacts) {
-        if (control) visit.control = projectFacts;
-        else visit.snapshot = projectFacts;
+      if (home) {
+        portfolio = await portfolioCollector.read(registered, board, now);
+        const own = visits.visit(HUD_CWD_REAL);
+        // The tab badge remains pane-project scoped, even if that project isn't registered.
+        own.snapshot = portfolio.projects.find((p) => p.root === HUD_CWD_REAL)?.snapshot
+          ?? await own.collector.collect('home', board, now);
+      } else if (full || control) {
+        const visit = visits.visit(shownRoot());
+        const facts = await visit.collector.collect(control ? 'control' : true, board, now);
+        if (control) visit.control = facts;
+        else visit.snapshot = facts;
       }
       error = settingsError || roleNotice || null;
     } catch (err) {

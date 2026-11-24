@@ -32,6 +32,7 @@ export interface ObjectiveRecord {
   diagnostics: string[];
 }
 export const objectivePath = (root: string) => join(root, '.hud', 'objectives.md');
+export const resultExcerpt = (text: string) => text.slice(0, 240);
 const featureSlug = new RegExp(FEATURE_SLUG);
 export const validFeature = (s: string) => featureSlug.test(s);
 export const validEvidence = (s: string) => /^[a-z][a-z0-9+.-]*:/i.test(s) ? URL.canParse(s) && !/^[a-z]:[/\\]/i.test(s)

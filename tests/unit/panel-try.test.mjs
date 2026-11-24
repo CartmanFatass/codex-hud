@@ -21,6 +21,7 @@ function fixture(t) {
   const state = join(cwd, 'docs/handoff/STATE.md');
   fs.mkdirSync(join(cwd, 'docs/handoff'), { recursive: true });
   fs.mkdirSync(join(hud, 'jobs'), { recursive: true });
+  fs.writeFileSync(join(hud, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: cwd }] }));
   const env = { ...process.env, HUD_HOME: hud };
   const body = `# Synthetic STATE
 Milestone: 0.1.4

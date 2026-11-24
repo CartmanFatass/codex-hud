@@ -205,11 +205,10 @@ await runLivePage();
   const reopen = collects().length;
   child.stdin.write('\r');
   await until(() => collects().slice(reopen).some((c) => c.cwd !== own && c.shown === 'overview'), 'the list again');
-  // Home: the overviews stop and Home reads only its own project.
+  // Home reads every registered project, and the pane project for its scoped badge.
   child.stdin.write('\x1b[D');
   await until(() => collects().slice(-1)[0].cwd === own && collects().slice(-1)[0].shown === 'home', 'Home');
   const home = collects().length;
-  await pause(400);
-  assert.ok(collects().length > home);
-  assert.ok(collects().slice(home).every((c) => c.cwd === own && c.shown === 'home'), 'Home reads its own project only');
+  await until(() => [own, ...others].every((root) => collects().slice(home).some((c) => c.cwd === root && c.shown === 'home')), 'next Home portfolio tick');
+  assert.ok(collects().slice(home).every((c) => c.shown === 'home'), 'Home does not read overviews or full projects');
 });

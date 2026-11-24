@@ -686,14 +686,15 @@ If a CLI place needs a trust grant for the project directory, run `hud trust <di
 
 ## Home
 
-Home shows the current project's handoff. **Waiting** lists explicit requests from `## Waiting for the owner` in `docs/handoff/STATE.md` (or root `STATE.md`).
-Main opens a request only when the owner needs to decide or act. Say what is needed, why now and where to look; answer in the responsible main session and have it record the resolution.
+Home is a portfolio. **Waiting** lists explicit owner requests across registered projects, with the project named on each entry. Requests come from `## Waiting for the owner` in `docs/handoff/STATE.md` (or root `STATE.md`). Main opens a request only when the owner needs to decide or act. Say what is needed, why now and where to look; answer in the responsible main session and have it record the resolution.
 
-A bullet may start with an ISO date (`2026-11-23`). Only `(work waits)` raises its rank: work is waiting for the owner's answer. `(waits on feature/NN, …)` marks a dependency, not a higher rank, and clears the request when all named tickets are done or dropped. After waited-on requests, order by project priority (equal within the current project), then oldest dated first. Undated requests come after dated requests at the same rank and keep their file order. Home, Project, the owner band and the export read the same scoped requests. Press Enter on a Waiting entry or click it to open its full text in Project.
+A bullet may start with an ISO date (`2026-11-23`). Only `(work waits)` raises its rank: work is waiting for the owner's answer. `(waits on feature/NN, …)` marks a dependency, not a higher rank, and clears the request when all named tickets are done or dropped. After waited-on requests, order by project priority (`high`, `normal`, `low`), then oldest dated first. Undated requests come after dated requests at the same rank and keep their file order. The owner band and tab badges stay project-scoped; Project and the export show that project's requests. Press Enter on a Waiting entry or click it to open its full text in that project's Project tab.
 
 Ordinary questions, failures, blockers and completions go to main, not to the owner as HUD alerts. An original worker question stays in Jobs → Inspector, and `hud_respond` still sends the answer and continues the worker.
 
-**Now** and **Next** are STATE notes, not inferred goals. When the calling pane's job counts are known, one load line shows its running and queued HUD jobs. Started jobs waiting for main are still running for this count; native transcript threads are not jobs. This is not a project or machine total.
+Below Waiting, Home lists every registered project within the 16-project limit, including paused, idle and unavailable roots. Each block shows its declared stance, non-normal priority, active Objective titles, recent result and update time where known. With no `objectives.md`, **Now** and **Next** show STATE handoff notes, not inferred goals. A result is dated only if its text matches a result excerpt in the bounded recent receipt history; undated results are shown without a date. Enter on a project opens its Project tab without granting worker access.
+
+When the calling pane's job counts are known, one load line shows its running and queued HUD jobs. Started jobs waiting for main are still running for this count; native transcript threads are not jobs. This is not a project or machine total.
 
 Press `v` or click **Jobs** for one plain row per retained HUD job of the calling pane, including queued, settled and Sonic child jobs. Press Enter or click a row for the [Inspector](#inspector), where reports and job actions live.
 
@@ -705,7 +706,7 @@ Project opens to an overview: **Needs you** shows only the selected project's ex
 
 In a registered project, main keeps `.hud/objectives.md` in Git. An optional header such as `**Stance:** active · **Priority:** high` declares stance (`active`, `paused`, `maintenance`; otherwise unknown) and priority (`high`, `normal`, `low`; otherwise `normal`). Each `## <id>: <title>` section has a unique lowercase slug (`[a-z0-9-]+`) and a `**State:** active|paused|done` line. Optional single-line fields are `**Next:**`, `**Result:**`, `**Features:**` (comma-separated `.scratch` feature slugs) and `**Evidence:**` (comma-separated repo paths, URLs or commit hashes). Project shows active objectives first, then paused, then done with details folded; a linked feature shows checked/total acceptance items when its checklist count is known.
 
-Use `hud_objective` with `op: "set"`, `cwd`, `id` and any changed fields (`title` and `state` required on creation; `features` and `evidence` are arrays). Omitted fields are untouched; an empty string or array clears an optional field. Use `op: "project"` with `stance` and/or `priority` for the header. The tool writes atomically but does not commit. It appends one receipt per material call (creation, state, title, then a new nonempty result, in that order if several apply) to private `$HUD_HOME/events/YYYY-MM.jsonl`, separate from the job archive. These small monthly append-only files are not automatically pruned. Hand edits are visible but do not create receipts.
+Use `hud_objective` with `op: "set"`, `cwd`, `id` and any changed fields (`title` and `state` required on creation; `features` and `evidence` are arrays). Omitted fields are untouched; an empty string or array clears an optional field. Use `op: "project"` with `stance` and/or `priority` for the header. The tool writes atomically but does not commit. It appends one receipt per material call (creation, state, title, then a new nonempty result, in that order if several apply) to private `$HUD_HOME/events/YYYY-MM.jsonl`, separate from the job archive. These small monthly append-only files are not automatically pruned. Result changes and creations with a result include a bounded excerpt for dating the result on Home. Hand edits are visible but do not create receipts.
 
 Use `hud_objective` with `op: "request"`, `cwd`, `text` (one line), optional `objective` (an existing ID), and `waits: true` if work is waiting. It appends a dated `[rN]` bullet under `## Waiting for the owner`, with optional `(objective <id>)` and `(work waits)` markers. The board shows the request ID and current Objective title. Use `op: "resolve"`, `cwd`, `request` (e.g. `r3`), and optional `resolution` (`resolved` by default, or `withdrawn`) and `note` to remove it. Both operations append a request receipt to the same events archive with project, request ID, Objective if linked, whether work waited, change, time and known caller identity. Resolving does not mark tickets. Unnumbered bullets and hand removals still work without receipts.
 
@@ -1033,7 +1034,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `g` | Inspector: focus a job's herdr tab; a headless job shows Output instead |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) in Inspector, where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | On an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then `pi-role-reap <dir>` runs and the panel reads again); any other key cancels |
-| Enter | Home Waiting: open the request in Project; Jobs: open Inspector; Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
+| Enter | Home: open the project or the request in its Project tab; Jobs: open Inspector; Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
 | `o` | Inspector or Project diagnostics: open the file |
 | `v` | Home: open Jobs |
 | `n` | Jobs or Inspector: show this session’s native subagents |
@@ -1043,7 +1044,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project or Control, Esc does nothing |
 | `q` | Close panel |
 
-Mouse clicks select a row/button, a second click on the selected item runs Enter's action (Home Waiting entries, Project hub links, job rows and Inspector file links open on one click), clicking the top crumb goes back, clicking a tab switches tabs, and wheel scrolling moves the viewport without moving the selection.
+Mouse clicks select a row/button, a second click on the selected item runs Enter's action (Home requests and projects, Project hub links, job rows and Inspector file links open on one click), clicking the top crumb goes back, clicking a tab switches tabs, and wheel scrolling moves the viewport without moving the selection.
 The model picker is an exception: one click sets a model and scrolling keeps the selection visible.
 
 ### Help

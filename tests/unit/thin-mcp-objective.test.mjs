@@ -60,7 +60,11 @@ test('hud_objective edits only supplied fields and appends one private receipt p
   assert.deepEqual(receipts(), [
     ['Measure sample', 'created', 'active'], ['Measure sample', 'state', 'paused'],
     ['Repeat sample', 'title', 'paused'], ['Repeat sample', 'result', 'paused'],
-  ].map(([title, change, state]) => ({ v: 1, kind: 'objective', project: cwd, id: 'measure', title, change, state })));
+  ].map(([title, change, state]) => ({ v: 1, kind: 'objective', project: cwd, id: 'measure', title, change, state,
+    ...(change === 'result' && { result: 'The reading held.' }) })));
+  const result = 'Seeded result. '.repeat(20).trim();
+  assert.equal((await set({ id: 'seed', title: 'Seed study', state: 'done', result })).change, 'created');
+  assert.equal(receipts().at(-1).result, result.slice(0, 240), 'creation records a bounded result excerpt');
   assert.equal(fs.existsSync(join(home, 'archive')), false);
 });
 

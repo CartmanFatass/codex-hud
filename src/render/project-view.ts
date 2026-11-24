@@ -1,5 +1,5 @@
 /** Pure Project rows, using the same kit as Home and the Inspector. */
-import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice } from '../collectors/project-board.js';
+import { SLICE_STATES, SETTLED_JOB_STATES, ownerRequestKey, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { OBJECTIVE_STATES } from '../collectors/objectives.js';
 import { ledgerTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
@@ -51,15 +51,15 @@ export const ticketWorking = (r: ProjectTicket) => r.state === 'working';
 export const ticketStateWord = (r: ProjectTicket) => t(r.state === 'try' ? 'to try' : r.state === 'queued' ? 'Queued' : r.state === 'blocked' ? 'Stalled' : r.state);
 const parts = (...p: (string | number | false | null | undefined)[]) =>
   p.filter((s): s is string => typeof s === 'string' && s !== '');
-function updatedText(data: ProjectSnapshot, now: number): string {
-  if (data.updatedAt === undefined) return '';
-  const at = new Date(data.updatedAt), today = new Date(now), two = (n: number) => String(n).padStart(2, '0');
+export function updatedText(atMs: number | undefined, now: number): string {
+  if (atMs === undefined) return '';
+  const at = new Date(atMs), today = new Date(now), two = (n: number) => String(n).padStart(2, '0');
   return t('updated {time}', { time: at.toDateString() === today.toDateString() ? `${two(at.getHours())}:${two(at.getMinutes())}`
     : `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}` });
 }
 /** What an open page says about itself on its crumb row, widest first; the first that fits is shown. */
 function pageMeta(page: ProjectPage, data: ProjectSnapshot, now: number): string[] {
-  if (page === 'progress') return [updatedText(data, now)];
+  if (page === 'progress') return [updatedText(data.updatedAt, now)];
   if (page === 'tickets' && data.tickets?.length) {
     const text = featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length);
     return [ticketTotalText(data, text), ...(data.ticketTotals?.partial ? [t('Partial')] : [])];
@@ -383,8 +383,11 @@ export function pageRows(
   } else if (page === 'waiting') {
     // One waiting item, in STATE's words and order: a line that continues a sentence flows on, a list line starts a paragraph of its own;
     // every wrapped row is a stop, so the movement keys scroll it, and `o` opens STATE.md.
-    const index = state.project.view.kind === 'waiting' ? state.project.view.index : -1;
-    const r = data.waiting[index], paragraphs: string[] = [];
+    const view = state.project.view;
+    const index = view.kind === 'waiting' ? view.index : -1;
+    const r = view.kind === 'waiting' && view.request !== undefined
+      ? data.waiting.find((item) => ownerRequestKey(item) === view.request) : data.waiting[index];
+    const paragraphs: string[] = [];
     for (const line of (r?.text ?? r?.value ?? '').split('\n').map((l) => l.trim()).filter(Boolean))
       if (!paragraphs.length || /^([-*]|\d+[.)])\s/.test(line)) paragraphs.push(line);
       else paragraphs[paragraphs.length - 1] += ' ' + line;
@@ -392,7 +395,7 @@ export function pageRows(
       const marker = k ? paragraph.match(/^([-*]|\d+[.)])\s+/)?.[0] ?? '' : '', hang = 2 + marker.length;
       flowLines(monitorText(paragraph.slice(marker.length)), width - hang).forEach((line, n) => rows.push({
         text: fit((n ? ' '.repeat(hang) : k ? '  ' + marker : theme.board.attention('?') + ' ') + line, width),
-        item: `project:wait:${index}:${rows.length - 1}`, ...(r.path ? { files: [r.path] } : {}) }));
+        item: `project:wait:${index}:${rows.length - 1}`, ...(r?.path ? { files: [r.path] } : {}) }));
     }
   } else if (page === 'tickets') {
     for (const feature of data.tickets) {

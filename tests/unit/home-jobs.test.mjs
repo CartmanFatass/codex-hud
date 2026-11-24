@@ -4,6 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
+import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
+import { projectList } from '../../dist/roles/projects.js';
 import { PanelJobPipeline } from '../../dist/panel/job-pipeline.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
@@ -51,7 +53,10 @@ async function fixture(t) {
   const workboard = pipeline.workboard(tree);
   const worker = workboard.workers.find(w => w.id.endsWith(working.id));
   const project = await new ProjectCollector(cwd, home).collect('home', workboard, nowMs);
-  const draw = (state, width = 80) => renderMonitor({ state, width, height: 27, nowMs, workboard: pipeline.workboard(tree), project, paneLoad: pipeline.load() });
+  put(join(home, 'projects.json'), { version: 1, projects: [{ root: cwd }] });
+  const projects = projectList(home, cwd), homePortfolio = await new HomePortfolioCollector(home).read(projects, workboard, nowMs);
+  const draw = (state, width = 80) => renderMonitor({ state, width, height: 27, nowMs, workboard: pipeline.workboard(tree),
+    project, projects, homePortfolio, paneLoad: pipeline.load() });
   return { draw, worker, dir: working.dir, pipeline, finished };
 }
 

@@ -260,15 +260,15 @@ test('subject cache follows the resolved SHA of a linked checkout (packed and lo
   git(tree, 'checkout', '--detach'); assert.equal(await tick(), 'done'); assert.equal(calls.length, 3);
 });
 
-test('projectList orders panel root first, deduplicates by realpath, drops missing dirs, caps at 16, tolerates bad files', async (t) => {
+test('projectList is registered-only, orders pane root first, deduplicates, retains unavailable roots and caps at 16', async (t) => {
   const f = makeTemp(t);
   const panelLink = join(f.root, 'panel-link');
   fs.symlinkSync(f.cwd, panelLink);
-  assert.deepEqual(projectList(f.hud, panelLink), [{ root: fs.realpathSync(f.cwd), name: 'project' }]);
+  assert.deepEqual(projectList(f.hud, panelLink), []);
   f.put(join(f.hud, 'projects.json'), '{not json');
-  assert.deepEqual(projectList(f.hud, f.cwd), [{ root: fs.realpathSync(f.cwd), name: 'project' }]);
+  assert.deepEqual(projectList(f.hud, f.cwd), []);
   f.put(join(f.hud, 'projects.json'), { version: 2, projects: [{ root: f.root }] });
-  assert.deepEqual(projectList(f.hud, f.cwd), [{ root: fs.realpathSync(f.cwd), name: 'project' }]);
+  assert.deepEqual(projectList(f.hud, f.cwd), []);
 
   const extra = [];
   for (let i = 0; i < 18; i++) {
@@ -282,9 +282,9 @@ test('projectList orders panel root first, deduplicates by realpath, drops missi
   f.put(join(f.hud, 'projects.json'), {
     version: 1,
     projects: [
-      { root: panelLink },
       { root: join(f.root, 'missing-dir') },
       { root: regularFile },
+      { root: panelLink },
       { root: extra[0] },
       { root: dupLink },
       ...extra.slice(1).map((root) => ({ root })),
@@ -293,10 +293,14 @@ test('projectList orders panel root first, deduplicates by realpath, drops missi
   const listed = projectList(f.hud, f.cwd);
   assert.equal(listed.length, 16);
   assert.deepEqual(listed[0], { root: fs.realpathSync(f.cwd), name: 'project' });
-  assert.deepEqual(listed[1], { root: fs.realpathSync(extra[0]), name: 'proj-00' });
-  assert.equal(listed.at(-1).name, 'proj-14');
+  assert.deepEqual(listed.slice(1, 3), [
+    { root: join(f.root, 'missing-dir'), name: 'missing-dir', unavailable: true },
+    { root: regularFile, name: 'not-a-dir', unavailable: true },
+  ]);
+  assert.deepEqual(listed[3], { root: fs.realpathSync(extra[0]), name: 'proj-00' });
+  assert.equal(listed.at(-1).name, 'proj-12');
   // Listed project without STATE.md still collects cleanly.
-  const listedSnap = await new ProjectCollector(listed[1].root, f.hud, f.env, f.home).collect(true, EMPTY_BOARD, NOW);
+  const listedSnap = await new ProjectCollector(listed[3].root, f.hud, f.env, f.home).collect(true, EMPTY_BOARD, NOW);
   assert.deepEqual(listedSnap.ledger, []);
   assert.deepEqual(listedSnap.active, []);
 });

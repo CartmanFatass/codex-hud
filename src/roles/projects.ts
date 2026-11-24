@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { basename, isAbsolute, join, resolve, sep } from 'node:path';
 import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
+import { fileSignature } from '../utils/file-signature.js';
 
 export interface ProjectGate {
   root: string;
@@ -13,6 +14,7 @@ export interface ProjectGate {
 export interface ListedProject {
   root: string;
   name: string;
+  unavailable?: true;
 }
 
 const MAX_LISTED_PROJECTS = 16;
@@ -113,22 +115,28 @@ function realDir(path: string): string | null {
   }
 }
 
-/** Panel root first, then existing `projects.json` roots, realpath-deduplicated, at most 16. Never throws. */
+let listCache: { file: string; stamp: string | null; roots: string[] } | undefined;
+
+/** Registered projects only, pane root first if registered, at most 16. Missing roots keep their stored identity. */
 export function projectList(hudHome: string, panelRoot: string): ListedProject[] {
-  const first = realDir(panelRoot) ?? resolve(panelRoot);
-  const out: ListedProject[] = [{ root: first, name: basename(first) || first }];
-  const seen = new Set<string>([first]);
-  try {
-    const roots = projectRegistryRoots(JSON.parse(fs.readFileSync(join(hudHome, 'projects.json'), 'utf8')));
-    for (const stored of roots) {
-      if (out.length >= MAX_LISTED_PROJECTS) break;
-      const real = realDir(stored);
-      if (!real || seen.has(real)) continue;
-      seen.add(real);
-      out.push({ root: real, name: basename(real) || real });
-    }
-  } catch {
-    /* Missing or unparseable `projects.json` leaves only the panel root. */
+  const file = join(hudHome, 'projects.json'), stamp = fileSignature(file);
+  if (listCache?.file !== file || listCache.stamp !== stamp) {
+    let roots: string[] = [];
+    if (stamp !== null) try { roots = projectRegistryRoots(JSON.parse(fs.readFileSync(file, 'utf8'))); }
+    catch { /* Missing or unparseable registry. */ }
+    listCache = { file, stamp, roots };
+  }
+  const first = realDir(panelRoot) ?? resolve(panelRoot), out: ListedProject[] = [], seen = new Set<string>();
+  // Setup stores canonical paths; prefer the pane's registration without probing past the cap.
+  const roots = listCache.roots.includes(first) ? [first, ...listCache.roots] : listCache.roots;
+  for (const stored of roots) {
+    if (out.length >= MAX_LISTED_PROJECTS) break;
+    const real = realDir(stored), root = real ?? resolve(stored);
+    if (seen.has(root)) continue;
+    seen.add(root);
+    const item: ListedProject = { root, name: basename(root) || root, ...(!real && { unavailable: true }) };
+    if (root === first) out.unshift(item);
+    else out.push(item);
   }
   return out;
 }

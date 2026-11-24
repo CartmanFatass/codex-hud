@@ -23,10 +23,10 @@ function rowPlace(value: unknown) {
   return { cursor: text(cursor), scroll: offset(scroll) ?? 0 };
 }
 function projectView(value: unknown): ProjectView {
-  const { kind, index } = fields(value);
+  const { kind, index, request } = fields(value);
   switch (kind) {
     case 'progress': return { kind };
-    case 'waiting': return { kind, index: offset(index) ?? -1 };
+    case 'waiting': return { kind, index: offset(index) ?? -1, ...(typeof request === 'string' && { request }) };
     case 'projects-list': case 'tickets': case 'tree': case 'docs': return { kind };
     default: return { kind: 'hub' };
   }

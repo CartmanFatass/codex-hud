@@ -6,6 +6,7 @@ import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectItem, ProjectSnapshot } from '../collectors/project-board.js';
 import type { PaneLoad } from './home-view.js';
+import type { HomePortfolio } from '../collectors/home-portfolio.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
 import { initialHomeTab, initialProjectTab, initialControlTab, type MonitorState } from './monitor-state.js';
@@ -59,6 +60,7 @@ export interface MonitorRow {
   modelWindow?: { first: number; max: number; size: number; entries: { id: string; row: number }[]; wide?: boolean };
   harnessOff?: boolean;
   roleFact?: RoleFact;
+  homeTarget?: { root: string; index?: number; request?: string };
 }
 export interface MonitorRect {
   id: MonitorPane;
@@ -131,6 +133,7 @@ export interface MonitorData {
   workboard?: WorkboardSnapshot;
   paneLoad?: PaneLoad;
   homeWaiting?: readonly ProjectItem[];
+  homePortfolio?: HomePortfolio;
   project?: ProjectSnapshot;
   projectDisplayRoot?: string;
   projectWaiting?: number;

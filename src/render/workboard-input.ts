@@ -65,8 +65,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const goProject = (page?: ProjectSubPage, cursor?: string) => {
     next = transitionProjectView(next, page ? { kind: page } : { kind: 'hub' }, { cursor });
   };
-  const readWait = (index: number) => {
-    next = transitionProjectView(next, { kind: 'waiting', index }, { cursor: `project:wait:${index}:0` });
+  const readWait = (index: number, request?: string) => {
+    next = transitionProjectView(next, { kind: 'waiting', index, ...(request !== undefined && { request }) }, { cursor: `project:wait:${index}:0` });
   };
   const useProject = (root?: string) => { next = switchProject(next, root); };
   const cycleProject = (step: number) => {
@@ -298,10 +298,12 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   };
   const act = (row: typeof actions[number] | undefined, fileOnly = false) => {
-    if (!sub && !fileOnly && /^project:wait:\d+$/.test(row?.item ?? '')) {
-      useProject(); // Home always shows the calling project, not the last project visited.
+    if (!sub && !fileOnly && row?.homeTarget) {
+      const { root, index, request } = row.homeTarget;
+      useProject(!frame.projects || root === frame.projects[0].root ? undefined : root);
       goTab('project');
-      readWait(Number(row!.item!.slice(13)));
+      if (index === undefined) goProject();
+      else readWait(index, request);
       return result();
     }
     if (row?.files?.length) return result({ type: 'open-files', files: row.files });

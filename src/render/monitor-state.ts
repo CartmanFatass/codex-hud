@@ -22,7 +22,7 @@ export const initialHomeTab = (): RowNav => ({ scroll: 0 });
 export type ProjectSubPage = 'progress' | 'tickets' | 'tree' | 'docs';
 export type ProjectView = { kind: 'projects-list' } | { kind: 'hub' }
   | { kind: 'progress' }
-  | { kind: 'tickets' } | { kind: 'tree' } | { kind: 'docs' } | { kind: 'waiting'; index: number };
+  | { kind: 'tickets' } | { kind: 'tree' } | { kind: 'docs' } | { kind: 'waiting'; index: number; request?: string };
 export interface ProjectTabState {
   view: ProjectView;
   fromProjectsList: boolean;

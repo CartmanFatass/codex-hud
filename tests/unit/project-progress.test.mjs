@@ -275,7 +275,7 @@ await runLivePage();
   await until(() => !hasAcceptAll(), 'the second project’s empty ticket diagnostics');
   assert.ok(!fs.existsSync(join(f.hud, 'tries.jsonl')), 'a row painted for the previous root cannot record acceptance');
 });
-test('the live panel collects only the project it shows; Home and the other tab stay on its own project', async (t) => {
+test('the live panel collects only the project shown on Project and switches back to portfolio reads on Home', async (t) => {
   const f = await fixture(t), other = fs.realpathSync(fs.mkdtempSync(join(f.root, 'other-')));
   f.put(join(f.hud, 'projects.json'), { version: 1, projects: [{ root: other, registered_at: '2026-11-13T00:00:00.000Z' }] });
   f.put(join(f.hud, 'hud-settings.json'), { modelEnabled: false, refreshMs: 100, language: 'en' });
@@ -296,8 +296,8 @@ await runLivePage();
     assert.fail(`${what}: ${log}`);
   };
   const own = fs.realpathSync(f.cwd), mark = () => collects().length;
-  await until(() => mark() > 0, 'the first collection');
-  assert.ok(collects().every((c) => c.cwd === own && c.shown !== true), 'Home collects only the cheap read of its own project');
+  await until(() => [own, other].every((root) => collects().some((c) => c.cwd === root && c.shown === 'home')), 'the first portfolio collection');
+  assert.ok(collects().every((c) => c.shown === 'home'), 'Home collects only light reads');
   child.stdin.write('\x1b[C'); // → opens the Project tab
   await until(() => collects().some((c) => c.shown === true), 'the Project tab');
   assert.ok(collects().filter((c) => c.shown === true).every((c) => c.cwd === own));
@@ -310,7 +310,6 @@ await runLivePage();
   child.stdin.write('\x1b[D'); // ← is Home again
   await until(() => collects().slice(leave).some((c) => c.cwd === own && c.shown === 'home'), 'Home again');
   const home = mark();
-  await new Promise((r) => setTimeout(r, 400));
-  assert.ok(mark() > home);
-  assert.ok(collects().slice(home).every((c) => c.cwd === own && c.shown === 'home'), 'Home reads its own project again, never the other');
+  await until(() => [own, other].every((root) => collects().slice(home).some((c) => c.cwd === root && c.shown === 'home')), 'another portfolio tick');
+  assert.ok(collects().slice(home).every((c) => c.shown === 'home'), 'Home does not read full projects');
 });

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import {
   OBJECTIVE_SLUG, OBJECTIVE_STATES, PROJECT_PRIORITIES, PROJECT_STANCES, inspectObjectives, objectiveFields,
-  objectivePath, readObjectiveFile, readObjectives, splitObjectiveList, validEvidence, validFeature,
+  objectivePath, readObjectiveFile, readObjectives, resultExcerpt, splitObjectiveList, validEvidence, validFeature,
 } from '../collectors/objectives.js';
 import { STATE_BYTES, WAITING_HEADING, requestFields, stateBulletSpans, statePaths, stateSection } from '../collectors/state-ledger.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
@@ -32,7 +32,7 @@ function edit(root: string, home: string, args: Record<string, unknown>) {
   const patches: { start: number; end: number; text: string }[] = [];
   const patch = ({ start, end }: { start: number; end: number }, text: string) => patches.push({ start, end, text });
   const insert = (start: number, text: string) => patch({ start, end: start }, text);
-  let receipt: { project: string; id: string; title: string; change: Change; state: string } | undefined;
+  let receipt: { project: string; id: string; title: string; change: Change; state: string; result?: string } | undefined;
 
   if (args.op === 'project') {
     if (Object.keys(args).some((key) => !['op', 'cwd', 'stance', 'priority'].includes(key))) invalid('project fields');
@@ -71,7 +71,8 @@ function edit(root: string, home: string, args: Record<string, unknown>) {
     const newState = state ?? old?.state ?? invalid('state required on creation');
     const change: Change | undefined = !old ? 'created' : newState !== old.state ? 'state'
       : newTitle !== old.title ? 'title' : fields.Result && fields.Result !== old.result ? 'result' : undefined;
-    if (change) receipt = { project: root, id, title: newTitle, change, state: newState };
+    if (change) receipt = { project: root, id, title: newTitle, change, state: newState,
+      ...((change === 'result' || change === 'created') && fields.Result && { result: resultExcerpt(fields.Result) }) };
     const missing: string[] = [];
     for (const key of objectiveFields) {
       const value = fields[key], existing = section?.fields[key];

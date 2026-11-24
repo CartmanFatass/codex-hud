@@ -6,6 +6,7 @@ import test from 'node:test';
 import { bandReader } from '../../dist/cli/watch-band.js';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { ProjectCollector, compareOwnerRequests } from '../../dist/collectors/project-board.js';
+import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { renderHtmlBoard } from '../../dist/render/html-board.js';
@@ -96,11 +97,12 @@ test('a numbered request displays its ID and current Objective title on all owne
   f.state('2026-01-01 [r7] Choose a layout (objective measure) (work waits)', legacy);
   title('Measure sample');
   const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
+  const portfolio = new HomePortfolioCollector(f.hud);
   const draw = async () => {
-    const home = await collector.collect('home', board, NOW);
+    const homePortfolio = await portfolio.read([{ root: f.cwd, name: 'project' }], board, NOW);
     const project = await collector.collect('export', board, NOW);
-    const render = (state, data) => plain(renderMonitor({ state, project: data, tree: TREE, workboard: board, width: 100, height: 30, nowMs: NOW })).join('\n');
-    return [render(initialMonitorState(), home), render(onPage(), project),
+    const render = (state) => plain(renderMonitor({ state, project, homePortfolio, tree: TREE, workboard: board, width: 100, height: 30, nowMs: NOW })).join('\n');
+    return [render(initialMonitorState()), render(onPage()),
       renderHtmlBoard({ project, workboard: board, projectName: 'Sample', root: f.cwd, generatedAt: NOW })];
   };
   const expected = '2026-01-01 r7 · Choose a layout · Measure sample (work waits)';
@@ -163,7 +165,8 @@ test('M1: a routine question wakes main, stays in Jobs → Inspector, and never 
     const workboard = { ...board, lanes, workers: lanes.flatMap((lane) => lane.workers) };
     const project = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect('export', workboard, NOW);
     assert.ok(project.active.some((j) => j.jobId === id && j.asking), 'export knows about the asking job');
-    const draw = (state) => renderMonitor({ state, tree: TREE, workboard, project, width: 80, height: 30, nowMs: NOW });
+    const homePortfolio = await new HomePortfolioCollector(f.hud).read([{ root: f.cwd, name: 'project' }], workboard, NOW);
+    const draw = (state) => renderMonitor({ state, tree: TREE, workboard, project, homePortfolio, width: 80, height: 30, nowMs: NOW });
     const hub = plain(draw(onPage())).join('\n');
     const home = draw(initialMonitorState());
     for (const text of [hub, plain(home).join('\n'), renderHtmlBoard({ project, workboard, projectName: 'Sample', root: f.cwd, generatedAt: NOW })]) {

@@ -255,7 +255,7 @@ export function renderWorkboardFrame(
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
             : sheetRows ?? controlRows(input.project, state.control.roles, width, now)
-          : homeRows(input.homeWaiting ?? input.project?.waiting ?? [], input.project, input.paneLoad, width);
+          : homeRows(input.homePortfolio, input.paneLoad, width, now);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   const actions = rows.filter((r) => r.item);

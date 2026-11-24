@@ -29,6 +29,7 @@ export interface ProjectItem {
   /** A waiting item's full display text; `value` is the same words on one line. */
   text?: string;
   request?: string;
+  waitedOn?: boolean;
 }
 export const SLICE_STATES = ['working', 'blocked', 'try', 'todo', 'accepted', 'dropped'] as const;
 export type SliceState = typeof SLICE_STATES[number];
@@ -90,6 +91,8 @@ export interface ProjectSnapshot {
   stateTruncated?: boolean;
   specTruncated?: boolean;
   updatedAt?: number;
+  objectivesAt?: number;
+  idle?: true;
   last?: { text: string; at: number };
   next: ProjectItem[];
   editing: ProjectItem[];
@@ -103,10 +106,11 @@ export function waitSettled(text: string, settled: ReadonlySet<string>): boolean
   return refs.length > 0 && refs.every((ref) => settled.has(targetKey(ref)));
 }
 
-type RequestOrder = { waitedOn: boolean; at?: number };
+export const ownerRequestKey = (item: ProjectItem) => item.request ?? item.value;
+type RequestOrder = Pick<ProjectItem, 'waitedOn' | 'at'>;
 /** Larger project priority comes first. Stable sorting preserves file order for equal age or undated requests. */
 export function compareOwnerRequests(a: RequestOrder, b: RequestOrder, priorityA = 0, priorityB = 0): number {
-  const rank = Number(b.waitedOn) - Number(a.waitedOn) || priorityB - priorityA;
+  const rank = Number(!!b.waitedOn) - Number(!!a.waitedOn) || priorityB - priorityA;
   if (rank) return rank;
   return a.at === b.at ? 0 : (a.at ?? Infinity) - (b.at ?? Infinity);
 }
@@ -153,6 +157,16 @@ const stampOf = (st: fs.Stats) => `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:
 const statKey = (path: string) => { const st = lstat(path); return st && (st.isFile() || st.isDirectory()) ? stampOf(st) : ''; };
 const cloneTickets = (features: TicketFeature[]): TicketFeature[] =>
   features.map((f) => ({ ...f, tickets: f.tickets.map((t) => ({ ...t, blockers: [...t.blockers] })) }));
+/** The same bounded job window as Project, shared by all roots on a Home tick. */
+export function projectJobWindow(hudHome: string) {
+  const cache = getJobIndexCache(hudHome);
+  let complete = true;
+  const incomplete = () => { complete = false; };
+  const { dirs } = cache.listJobDirsByMtime({ onDirError: incomplete, onStatError: incomplete });
+  const jobs = cache.recentJobFamilies(dirs, 64);
+  return { jobs, complete: complete && jobs.length === dirs.length };
+}
+
 export const projectShown = (state: Pick<import('../render/monitor-state.js').MonitorState, 'activeTab' | 'subpage' | 'help'>, modal = false) =>
   state.activeTab === 'project' && !state.subpage && !state.help && !modal;
 export class ProjectCollector {
@@ -476,26 +490,30 @@ export class ProjectCollector {
     return { ids: this.landed, commits: this.ticketCommits };
   }
 
-  private homeJobsProbe(board: WorkboardSnapshot, hasTickets: boolean) {
-    const jobCache = getJobIndexCache(this.hudHome), jobs = this.recentJobs(jobCache), canonCache = new Map<string, string>();
+  private homeJobsProbe(board: WorkboardSnapshot, hasTickets: boolean, window = projectJobWindow(this.hudHome)) {
+    const jobCache = getJobIndexCache(this.hudHome), canonCache = new Map<string, string>();
+    const { jobs } = window;
+    let { complete } = window;
     const canon = (p: string) => canonCache.get(p) ?? (canonCache.set(p, canonicalPath(p)), canonCache.get(p)!);
     const root = canon(this.cwd), inRoot = (p: string) => insideRoot(root, p), parts: string[] = [];
     for (const { id } of jobs) {
       const jobRes = jobCache.readJob<JobReceipt>(id);
-      if (jobRes.status !== 'ok' || typeof jobRes.value.cwd !== 'string') continue;
+      if (jobRes.status !== 'ok' || typeof jobRes.value.cwd !== 'string') { complete = false; continue; }
       const job = jobRes.value, cwd = canon(job.cwd as string), wt = job.worktree;
       const isolated = wt?.root === cwd && typeof wt.branch === 'string' && typeof wt.main_root === 'string';
       if (!inRoot(cwd) && !(isolated && inRoot(wt.main_root as string))) continue;
       const statusRes = jobCache.readStatus<JobStatus>(id);
+      if (statusRes.status !== 'ok' && statusRes.status !== 'missing') complete = false;
       const briefKey = hasTickets && !job.ticket && !job.slice && job.task == null && job.brief_path == null
         ? statKey(join(jobCache.jobsRoot, id, 'brief.md')) : '';
       parts.push(`${id}:${jobRes.stamp}:${statusRes.status === 'ok' ? statusRes.stamp : statusRes.status}:${briefKey}`);
     }
     parts.push(board.workers.map((w) => `${w.evidence[0]?.sourceId ?? ''}\0${w.task ?? ''}`).join('\x1f'));
-    return { stamp: parts.join('\n'), jobs };
+    return { stamp: JSON.stringify([complete, parts]), jobs, complete };
   }
 
-  async collect(shown: boolean | 'home' | 'export' | 'control' | 'overview', board: WorkboardSnapshot, now: number): Promise<ProjectSnapshot | undefined> {
+  async collect(shown: boolean | 'home' | 'export' | 'control' | 'overview', board: WorkboardSnapshot, now: number,
+    jobWindow?: ReturnType<typeof projectJobWindow>): Promise<ProjectSnapshot | undefined> {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
@@ -512,28 +530,35 @@ export class ProjectCollector {
     const ticketsScan = this.scanTickets();
     let memoKey: string | undefined;
     let gitRefs: ReturnType<ProjectCollector['probeGitRefs']> | undefined;
-    let prefetchedJobs: readonly { id: string }[] | undefined;
-    const objectiveFile = objectivePath(this.cwd);
+    let jobsProbe: ReturnType<ProjectCollector['homeJobsProbe']> | undefined;
+    const objectiveFile = objectivePath(this.cwd), objectiveStat = lstat(objectiveFile);
+    const objectiveDir = lstat(join(this.cwd, '.hud'));
     if (home) {
       const stateStamps = statePaths(this.cwd).map(statKey).join('|');
       const specStamp = shown === 'overview' ? '' : statKey(join(this.cwd, 'docs/spec.md'));
       const triesStamp = statKey(join(this.hudHome, 'tries.jsonl'));
       if (shown !== 'overview' && ticketsScan.features.length) gitRefs = this.probeGitRefs();
-      const jobsProbe = shown !== 'overview' ? this.homeJobsProbe(board, ticketsScan.features.length > 0) : undefined;
-      prefetchedJobs = jobsProbe?.jobs;
-      memoKey = [ticketsScan.stamp, stateStamps, statKey(objectiveFile), specStamp, triesStamp, gitRefs?.stamp ?? '', jobsProbe?.stamp ?? ''].join('\x1e');
+      if (shown !== 'overview') jobsProbe = this.homeJobsProbe(board, ticketsScan.features.length > 0, jobWindow);
+      memoKey = [ticketsScan.stamp, stateStamps, objectiveStat && stampOf(objectiveStat), objectiveDir && stampOf(objectiveDir),
+        specStamp, triesStamp, gitRefs?.stamp, jobsProbe?.stamp].join('\x1e');
       const hit = this.collectMemo.get(shown);
       if (hit && hit.key === memoKey && now >= hit.claimFloor && now < hit.claimExpiry) return hit.snapshot;
     }
     out.tickets = cloneTickets(ticketsScan.features);
-    const readObjectiveRecord = () => this.cached(objectiveFile, () => readObjectives(this.cwd));
-    const objectives = home ? undefined : readObjectiveRecord();
+    const readObjectiveRecord = (): { record?: ObjectiveRecord; at?: number } | null => {
+      if (objectiveStat && (!objectiveStat.isFile() || !objectiveDir?.isDirectory()))
+        return { record: { stance: 'unknown', priority: 'normal', objectives: [], diagnostics: ['Invalid Objective file or .hud directory'] } };
+      return this.cached(objectiveFile, (st) => ({ record: readObjectives(this.cwd), at: st.mtimeMs }), objectiveStat ?? null);
+    };
+    const objective = shown === 'overview' ? undefined : readObjectiveRecord();
+    const objectives = objective?.record;
     if (objectives) {
       const linked = new Set(objectives.objectives.flatMap((item) => item.features));
       // Use scanned checklists before the Tickets page folds away older finished features.
       const acceptance = Object.fromEntries((ticketsScan.partial ? [] : out.tickets).filter(({ slug }) => linked.has(slug))
         .map(({ slug, tickets }) => [slug, tickets.reduce((n, t) => ({ checked: n.checked + t.checked, total: n.total + t.total }), { checked: 0, total: 0 })]));
       out.objectives = { ...objectives, path: objectiveFile, acceptance };
+      out.objectivesAt = objective.at;
     }
     let stateFile;
     for (const path of statePaths(this.cwd)) {
@@ -559,7 +584,8 @@ export class ProjectCollector {
     out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M\d+[a-z]?|\d+\.\d+\.\d+),/gm)].map((m) => m[1]);
     const refreshedGit = !home ? await this.fullDetails(out, board, now, specPath, milestone) : false;
     const rollup = new TicketRollup(out.tickets);
-    if (shown !== 'overview') this.joinJobs(out, board, home, shown === 'export', rollup, prefetchedJobs);
+    if (shown !== 'overview') this.joinJobs(out, board, home, shown === 'export', rollup, jobsProbe?.jobs);
+    if (jobsProbe?.complete && !out.active.some(({ state }) => state !== 'queued')) out.idle = true;
     const landedInfo = shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup, gitRefs) : undefined;
     const { totals, visible, rows, marks } = rollup.derive(now, landedInfo?.ids, landedInfo?.commits, (rows) => this.tries.marks(this.cwd, rows, true));
     const active = new Map(out.active.map((job) => [job.jobId, job]));
@@ -586,14 +612,14 @@ export class ProjectCollector {
         return { item, fields, ...requestOrder(item.value, fields?.waits) };
       })
       .sort((a, b) => compareOwnerRequests(a, b))
-      .map(({ item, fields, at }) => {
-        if (!fields) return at === undefined ? item : { ...item, at };
+      .map(({ item, fields, at, waitedOn }) => {
+        const ordered = { ...item, ...(at !== undefined && { at }), ...(waitedOn && { waitedOn }) };
+        if (!fields) return ordered;
         if (fields.objective && !objectiveTitles) {
-          const record = home ? readObjectiveRecord() : objectives;
-          objectiveTitles = new Map(record?.objectives.map(({ id, title }) => [id, title]));
+          objectiveTitles = new Map((shown === 'overview' ? readObjectiveRecord()?.record : objectives)?.objectives.map(({ id, title }) => [id, title]));
         }
         const text = fields.display(fields.objective ? objectiveTitles?.get(fields.objective) : undefined);
-        return { ...item, at, request: fields.request, text, value: text.replace(/\s+/g, ' ').trim() };
+        return { ...ordered, request: fields.request, text, value: text.replace(/\s+/g, ' ').trim() };
       });
     out.tickets = visible;
     if (home && memoKey !== undefined) {
