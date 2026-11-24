@@ -133,19 +133,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const agentContext = createAgentContext(isClosed);
   const discovery = createPanelModelDiscovery(jobPipeline.home, isClosed);
   const boardFacts = () => jobPipeline.workboard(emptyTree);
-  // Retained jobs are browsable, but opening the panel does not announce old jobs.
-  const liveEvidence = (board: ReturnType<typeof boardFacts>): ReturnType<typeof boardFacts> => {
-    const workers = board.workers.filter((w) => w.settledAt === null || Math.max(w.settledAt, w.flow?.updatedAt ?? -Infinity) >= openedAt ||
-      (w.flow?.kind === 'land' && (w.flow.state === 'queued' || w.flow.state === 'running')));
-    const visible = new Set(workers.map((w) => w.id));
-    const evidence = new Set(workers.flatMap((w) => w.evidence.map((e) => e.sourceId)));
-    const decisions = board.decisions.filter((d) => d.evidence.some((e) => evidence.has(e.sourceId)));
-    const lanes = board.lanes.flatMap((lane) => {
-      const members = lane.workers.filter((w) => visible.has(w.id));
-      return members.length ? [{ ...lane, workers: members, decisions: lane.decisions.filter((d) => d.evidence.some((e) => evidence.has(e.sourceId))) }] : [];
-    });
-    return { ...board, workers, lanes, decisions };
-  };
   const claudeNative = new ClaudeNativeTree();
   // The bar's fields, for the foot of the panel: the panel replaces the bar
   // while it is open. Fed from this page's own parse of the rollout.
@@ -363,7 +350,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       hudStatus.health.fail('status', err); /* The foot keeps its last good rows. */
     }
     if (built && !stale) {
-      notifier.update(built, Date.now(), liveEvidence(boardFacts()));
+      notifier.update(built);
       try {
         snapshotWriter.write(buildSnapshot(built, { width: 0, segments: [] }));
       } catch {

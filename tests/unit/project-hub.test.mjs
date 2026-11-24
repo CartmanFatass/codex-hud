@@ -1,5 +1,5 @@
 import { projectPageOf } from '../../dist/render/project-view.js';
-/** Project Inbox, waiting-item navigation and unlisted worktree facts (synthetic data). */
+/** Project overview, waiting-item navigation and unlisted worktree facts (synthetic data). */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -25,17 +25,6 @@ const block = (lines, header) => {
   const end = lines.findIndex((l, i) => i > start && l === '');
   return lines.slice(start, end < 0 ? undefined : end);
 };
-
-test('Running omits asking jobs and unlisted worktrees, and says when there is nothing running', async (t) => {
-  const f = await fixture(t);
-  const busy = block(plain(f.render(38, 'en', undefined, 46)), /^Running /);
-  assert.match(busy.join('\n'), /◉ imp  Build the Project tab +20m/);
-  assert.doesNotMatch(busy.join('\n'), /NATIVE-TREE|EXTRA-ONE|NO-JOB/);
-  assert.doesNotMatch(plain(f.render(38, 'en', 'progress', 46)).join('\n'), /EXTRA-ONE|NO-JOB/);
-  const idle = await fixture(t, { idle: true });
-  assert.ok(block(plain(idle.render(38, 'en', undefined, 46)), /^Running /).includes('  Nothing in progress'));
-  assert.ok(block(plain(idle.render(38, 'zh', undefined, 46)), /^运行中 /).includes('  没有进行中的工作'));
-});
 
 test('the Working tree row counts unlinked worktrees and its page lists them', async (t) => {
   const f = await fixture(t);

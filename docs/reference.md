@@ -599,9 +599,9 @@ The panel remains the herdr panel.
   Rows that are not HUD lines are untouched.
 - **Owner band.**
   Above the prompt the mod shows one row for explicit owner waiting items, cut to the band's width in the panel's language, and nothing otherwise.
-  `? N waiting for you · <first item> [Open]` counts STATE's `Waiting for the owner` items (items whose `(waits on …)` tickets are done drop out, as in the Project Inbox); Open shows the panel beside the pane, where the Project hub lists them.
+  `? N waiting for you · <first item> [Open]` counts the same open STATE requests as the Project overview; Open shows the panel beside the pane.
   A press answers with a toast, never a model turn.
-  Running workers, failures and worker questions are not shown (the statusline and the main session carry those).
+  Running workers, failures and worker questions are not shown in the band; main still receives job events.
   The watch sends a `band` record after `ready` and again only when it changes; the band is drawn from the session's state with no I/O and stays empty while a survey holds it.
   One toast (`Needs you: …`) appears when a new waiting item arrives, once per record and never for what was already there when the watch started.
   The band refreshes while the watch runs; after the ten-minute idle exit it updates at the next restart (a HUD call or panel decision).
@@ -678,7 +678,12 @@ If a CLI place needs a trust grant for the project directory, run `hud trust <di
 
 ## Home
 
-Home shows the current project's handoff. **Waiting** lists explicit requests from `## Waiting for the owner` in `docs/handoff/STATE.md` (or root `STATE.md`), not routine worker questions to main. An item marked `(waits on …)` clears when all of its named tickets are done or dropped.
+Home shows the current project's handoff. **Waiting** lists explicit requests from `## Waiting for the owner` in `docs/handoff/STATE.md` (or root `STATE.md`).
+Main writes a bullet only when the owner needs to decide or act. Say what is needed, why now and where to look; answer in the responsible main session and have it remove the resolved bullet.
+
+A bullet may start with an ISO date (`2026-11-23`) and may include `(work waits)` to say that work is waiting for the answer. `(waits on feature/NN, …)` also ranks as waited-on and clears when all named tickets are done or dropped. Requests that work waits on come first, then project priority (equal within the current project), then oldest dated first. Undated requests come after dated requests at the same rank and keep their file order. Home, Project, the owner band and the export read the same scoped requests.
+
+Ordinary questions, failures, blockers and completions go to main, not to the owner as HUD alerts. An original worker question stays in Jobs → Inspector, and `hud_respond` still sends the answer and continues the worker.
 
 **Now** and **Next** are STATE notes, not inferred goals. When the calling pane's job counts are known, one load line shows its running and queued HUD jobs. Started jobs waiting for main are still running for this count; native transcript threads are not jobs. This is not a project or machine total.
 
@@ -688,23 +693,11 @@ Press `v` or click **Jobs** for one plain row per retained HUD job of the callin
 
 Project → **Working tree** includes the Git diagnostics formerly on the separate Changes page: branch and HEAD, ahead/behind, staged/unstaged/untracked counts, and each worktree's path, branch and observed dirty state. The worktree probe runs only on that page. Unknown, stale and incomplete readings are not treated as clean. The probe does not fetch or run repository filters.
 
-Project opens to the Inbox.
-Below the project name:
+Project opens to an overview: **Needs you** shows only the selected project's explicit owner requests, followed by links to **Progress**, **Tickets** (if present), **Working tree** and **Docs**. Job and ticket activity is diagnostic, not an owner request. Exhausted roles are still shown in Control.
 
-- **Needs you**, in order: asking jobs, items the main session flagged in STATE's `Waiting for the owner`, tickets asking for an answer, other blocked tickets and exhausted roles.
-  The heading counts STATE waiting items.
-  Enter on `N more` reveals the remaining items.
-  Enter on a role alert opens that role on Control; `o` opens its file.
-- **Running**: one row per running job with role, ticket or job title, `⚡N` for its running sonic children and elapsed time.
-  Slices, worktrees and those children do not get separate rows.
-  A `last accepted` line shows the newest accepted ticket.
-- One summary row per page: **Progress**, **Tickets** (absent if there are no tickets), **Working tree** (including the unlisted worktree count), and **Docs**.
-  A narrow row drops optional facts from the end.
 Enter or click a page row to open it; Esc or the crumb (`‹ Project › Page`) returns to that row.
 Each page keeps its own cursor and scroll, even across panel reloads.
-Enter on a waiting item opens its whole text on its own scrolling page, including continuation lines; Esc or the crumb returns to its row, and `o` opens STATE.md.
-An item ending in `(waits on feature/NN, …)` drops out once the named tickets are done or dropped.
-Old accept records can still settle legacy slice IDs.
+Enter on `N more` reveals the remaining requests. Enter on a request opens its whole text, including continuation lines; Esc or the crumb returns to its row, and `o` opens STATE.md. Old accept records can still settle legacy slice IDs.
 
 Facts come from `docs/handoff/STATE.md` (root `STATE.md` fallback), `docs/spec.md`, reviews, roles/convention/instructions and Git/worktrees.
 No milestone or completion is guessed.
@@ -943,7 +936,7 @@ Reads do not start a browser or MCP.
 ## Review board
 
 `hud board [--html] [--cwd DIR] [--out FILE] [--open]` writes the project's review board: one static HTML file for a browser, with no script, font, image, link or network request (its Content-Security-Policy allows inline style only) and every project string escaped.
-Sections: the header (project, branch with changed/ahead/behind, milestone, time written, and counts by ticket state); **Needs you** (STATE's waiting items and open job questions with their options and default, when there are any); **To try** (read-only ticket cards grouped by feature: feature, age, commit, ticket text and checklist, and per-file `--numstat` bars); **In flight** (working and blocked tickets, running jobs with role, model, elapsed time and current sentence); **Tickets** (per-feature meters, unfinished tickets with their checklists); and the **latest milestone review**.
+Sections: the header (project, branch with changed/ahead/behind, milestone, time written, and counts by ticket state); **Needs you** (only explicit STATE requests, in the same order as the panel); **To try** (read-only ticket cards grouped by feature: feature, age, commit, ticket text and checklist, and per-file `--numstat` bars); **In flight** (working and blocked tickets, running jobs with role, model and elapsed time); **Tickets** (per-feature meters, unfinished tickets with their checklists); and the **latest milestone review**. Worker questions are not exported.
 Sections with nothing in them are left out.
 The page follows the system light/dark setting, or the Auto / Dark / Light switch at its top (pure CSS), and reads from phone width up.
 
@@ -1226,7 +1219,7 @@ Old samples say last, not live.
 | `HUD_HEAP_CAPS` | V8 heap caps for panel (`128/4`) and `hud-watch`/`hud-mcp` (`96/2`); `off`/`default`/`0` restores Node defaults, or `<old>[/<semi>]` MB |
 
 Notifications default off.
-They report observed failures, approvals and completions through tmux, optionally desktop OSC/notify-send; they never auto-approve or retry.
+They report native session failures, approvals and completions through tmux, optionally desktop OSC/notify-send. They do not announce HUD worker questions or completions, auto-approve, or retry.
 
 **Credentials.**
 `$HUD_HOME/credentials.env` must be a regular 0600 file (not a symlink/FIFO).

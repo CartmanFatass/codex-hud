@@ -89,10 +89,30 @@ export interface ProjectSnapshot {
   next: ProjectItem[];
   editing: ProjectItem[];
 }
+const waitRefs = (text: string) => [...text.matchAll(/[（(]waits on ([^()（）]+)[）)]/gi)].at(-1)?.[1]
+  .split(/,|\s+and\s+/i).map((r) => r.trim()).filter(Boolean) ?? [];
+
 /** Waits can name tickets (either spelling) or a legacy acceptance ID. Unknown references keep the item open. */
 export function waitSettled(text: string, settled: ReadonlySet<string>): boolean {
-  const refs = [...text.matchAll(/[（(]waits on ([^()（）]+)[）)]/gi)].at(-1)?.[1].split(/,|\s+and\s+/i).map((r) => r.trim()).filter(Boolean) ?? [];
+  const refs = waitRefs(text);
   return refs.length > 0 && refs.every((ref) => settled.has(targetKey(ref)));
+}
+
+type RequestOrder = { waitedOn: boolean; at?: number };
+/** Larger project priority comes first. Stable sorting preserves file order for equal age or undated requests. */
+export function compareOwnerRequests(a: RequestOrder, b: RequestOrder, priorityA = 0, priorityB = 0): number {
+  const rank = Number(b.waitedOn) - Number(a.waitedOn) || priorityB - priorityA;
+  if (rank) return rank;
+  return a.at === b.at ? 0 : (a.at ?? Infinity) - (b.at ?? Infinity);
+}
+
+function requestOrder(value: string): RequestOrder {
+  const date = /^\d{4}-\d{2}-\d{2}(?=\s|$)/.exec(value)?.[0];
+  const at = date ? Date.parse(date) : NaN;
+  return {
+    waitedOn: /[（(]work waits[）)]/i.test(value) || waitRefs(value).length > 0,
+    at: date && Number.isFinite(at) && new Date(at).toISOString().startsWith(date) ? at : undefined,
+  };
 }
 const canonicalPath = (path: string) => { try { return fs.realpathSync(path); } catch { return resolve(path); } };
 export const insideRoot = (root: string, path: string) => {
@@ -544,7 +564,10 @@ export class ProjectCollector {
     }
     if (!home) await this.fullLedgerDetails(out, now, shown === 'export', refreshedGit);
     out.ticketTotals = ticketsScan.partial ? { ...totals, partial: true } : totals;
-    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, settled));
+    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, settled))
+      .map((item) => ({ item, ...requestOrder(item.value) }))
+      .sort((a, b) => compareOwnerRequests(a, b))
+      .map(({ item, at }) => at === undefined ? item : { ...item, at });
     out.tickets = visible;
     if (home && memoKey !== undefined) {
       let claimFloor = -Infinity, claimExpiry = Infinity;

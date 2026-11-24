@@ -86,22 +86,11 @@ test('Control shows active lease name, holder and age for the selected project',
   assert.deepEqual((await f.collector.collect('control', f.board, now)).leases, []);
 });
 
-test('Project hubs have no Control row; Inbox alert links to its role on the same root in both layouts', async (t) => {
+test('exhausted roles stay in Control and do not create Project alerts', async (t) => {
   const f = await fixture(t), data = { ...richControl(f.data), ledger: [], waiting: [], tickets: [], slices: [] };
-  const root = PROJECTS[1].root;
-  for (const panelLayout of ['classic']) {
-    const draw = (state, projectDisplayRoot = root) => f.render(40, 'en', state, 36, data, true, 'unicode', 'none', { projects: PROJECTS, projectDisplayRoot });
-    const state = onPage(undefined, { selectedProject: root, project: { nav: { cursor: 'inbox:role:pro' } }, prefs: { panelLayout } });
-    const frame = draw(state);
-    assert.ok(!frame.workboard.rows.some((r) => r.item === 'project:page:control'));
-    assert.deepEqual(send(frame, 'open-session').action, { type: 'open-files', files: ['/synthetic/default/roles/pro.json'] });
-    const next = send(frame, 'enter');
-    assert.equal(next.action, undefined);
-    assert.equal(next.state.activeTab, 'control');
-    assert.equal(next.state.selectedProject, root);
-    assert.equal(draw(next.state).state.control.roles.nav.cursor, 'project:role:pro');
-    assert.equal(send(draw(state, PROJECTS[0].root), 'enter').state.activeTab, 'project', 'no stale-root alert opens on the new root');
-  }
+  const frame = f.render(40, 'en', onPage(), 36, data);
+  assert.ok(!frame.workboard.rows.some((r) => r.item?.startsWith('inbox:role:') || r.item === 'project:page:control'));
+  assert.match(plain(frame).join('\n'), /Nothing needs you/);
 });
 
 test('legacy Project/control continuation returns to the selected role on Control, in Classic and Split', async (t) => {

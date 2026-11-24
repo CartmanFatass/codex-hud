@@ -71,7 +71,6 @@ a.chip{text-decoration:none}.chip.plain,.chip.todo,.chip.ready,.chip.dropped,.pl
 .meter{flex:1;min-width:80px;max-width:240px;height:6px;border-radius:3px;background:var(--rule);overflow:hidden}.meter i{display:block;height:100%;background:var(--accepted)}
 .t{font-size:13px;margin:4px 0}.t summary{cursor:pointer;color:var(--text)}.t .num{font-family:ui-monospace,monospace;color:var(--mute);margin-right:6px}
 .check{list-style:none;padding:0!important;margin:6px 0 4px 18px!important}.check li.d{color:var(--mute);text-decoration:line-through}.check li::before{content:"\\2610  "}.check li.d::before{content:"\\2611  "}
-.q{font-weight:600}.opts{color:var(--mute)}
 .review{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:70vh;overflow:auto;font:13px/1.6 ui-monospace,"DejaVu Sans Mono",monospace}.review b{color:var(--text);font-family:system-ui,sans-serif}
 footer{margin-top:48px;color:var(--mute);font-size:12px}
 @media (max-width:520px){.diff li{grid-template-columns:minmax(0,1fr) auto}.dbar{display:none}.card .meta{margin-left:0}}`;
@@ -161,14 +160,7 @@ ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
 
   const activeIds = new Set(project.active.map((job) => job.jobId));
   const workers = (workboard?.workers ?? []).filter((w) => live(w) && activeIds.has(w.evidence[0]?.sourceId));
-  const asks = workers.filter((w) => w.work?.requestInfo);
-  const needs = [
-    ...project.waiting.map((w) => `<article class="card ask"><header>${chip('try', 'STATE')}</header><p class="pre">${e((w.text ?? w.value).trim())}</p></article>`),
-    ...asks.map((w) => {
-      const q = w.work!.requestInfo!;
-      return `<article class="card ask"><header>${chip('try', w.role ?? 'job')}<span class="id">${e(w.briefTitle ?? w.task)}</span><span class="meta">${e(ago(q.evidence?.at ?? w.startedAt, now))}</span></header><p class="q">${e(q.question)}</p>${q.options.length ? `<h3>${e(t('Options'))}</h3><ul class="opts">${q.options.map((o) => `<li>${e(o)}</li>`).join('')}</ul>` : ''}${q.suggested ? `<p><span class="plain">${e(t('Default if unanswered'))}:</span> ${e(q.suggested)}</p>` : ''}</article>`;
-    }),
-  ];
+  const needs = project.waiting.map((w) => `<article class="card ask"><header>${chip('try', 'STATE')}</header><p class="pre">${e((w.text ?? w.value).trim())}</p></article>`);
 
   const slices = project.slices.filter((s) => s.ledgerState === 'working' || s.ledgerState === 'blocked');
   const flight = [
@@ -176,8 +168,12 @@ ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
       const state = s.ledgerState === 'blocked' ? 'blocked' : 'working';
       return `<article class="card ${state}"><header><span class="id">${e(s.label)}</span>${chip(state, t(state))}${s.role ? chip('plain', s.role) : ''}<span class="meta">${e(ago(s.at, now))}</span></header><p>${e(s.value)}</p>${s.drift ? `<p class="plain">${e(t(s.drift))}</p>` : ''}</article>`;
     }),
-    ...workers.map((w) => `<article class="card ${w.homeNeedsHuman ? 'ask' : 'working'}"><header><span class="id">${e(w.briefTitle ?? w.task)}</span>${chip('plain', [w.role, w.harness].filter(Boolean).join(' · ') || 'job')}<span class="meta">${e([w.model, w.effort, w.startedAt ? age(new Date(w.startedAt), now) : ''].filter(Boolean).join(' · '))}</span></header>${w.reportMeta?.summary || w.work?.reason ? `<p>${e(w.reportMeta?.summary || w.work?.reason)}</p>` : ''}</article>`),
-    ...(workboard ? [] : project.active.map((j) => `<article class="card ${j.asking ? 'ask' : 'working'}"><header><span class="id">${e(j.title ?? j.jobId)}</span>${chip('plain', j.role || 'job')}<span class="meta">${e(ago(j.at, now))}</span></header></article>`)),
+    ...workers.map((w) => {
+      // The reason can be the literal open question; that evidence belongs in Inspector.
+      const summary = w.reportMeta?.summary || (!w.homeNeedsHuman && w.work?.reason);
+      return `<article class="card working"><header><span class="id">${e(w.briefTitle ?? w.task)}</span>${chip('plain', [w.role, w.harness].filter(Boolean).join(' · ') || 'job')}<span class="meta">${e([w.model, w.effort, w.startedAt ? age(new Date(w.startedAt), now) : ''].filter(Boolean).join(' · '))}</span></header>${summary ? `<p>${e(summary)}</p>` : ''}</article>`;
+    }),
+    ...(workboard ? [] : project.active.map((j) => `<article class="card working"><header><span class="id">${e(j.title ?? j.jobId)}</span>${chip('plain', j.role || 'job')}<span class="meta">${e(ago(j.at, now))}</span></header></article>`)),
   ];
 
   const features = project.tickets.filter((f) => f.tickets.length);

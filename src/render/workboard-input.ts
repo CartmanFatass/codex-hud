@@ -216,17 +216,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if (harnesses) return;
       }
       if (harnesses && harnessId(row?.item)) return switchAction(row);
-      const role = /^inbox:role:(.+)$/.exec(row?.item ?? '')?.[1];
-      if (role) {
-        const selectedRoot = next.selectedProject ?? frame?.projects?.[0].root;
-        // Project can still be rendering the previous root while a switch is loading.
-        if (selectedRoot && frame?.projectDisplayRoot && frame.projectDisplayRoot !== selectedRoot) return;
-        goTab('control');
-        next.control.subTab = 'roles';
-        const roles = next.control.roles.nav;
-        next.control.roles = { ...next.control.roles, nav: { ...roles, cursor: controlRoleItem(role), scroll: 0,
-          revealed: undefined } };
-      } else if (row?.item === 'project:switch') showList(true);
+      if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectSubPage);
       else if (row?.item === ACCEPT_ALL) return { type: 'accept-all' as const };

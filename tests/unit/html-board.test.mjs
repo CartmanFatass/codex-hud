@@ -41,7 +41,7 @@ function inputs(x = XSS) {
   };
   const requestInfo = { id: 'q1', question: `Which ${x}?`, suggested: 'a', options: ['a) keep', `b) ${x}`] };
   const worker = { id: 'thin-job:j0000000000000001', laneId: 'l', role: 'imp', harness: 'pi', task: `Build ${x}`, model: 'synthetic/model', effort: 'high',
-    state: 'working', startedAt: NOW - 20 * 60e3, settledAt: null, homeNeedsHuman: true, work: { requestInfo, reason: `now ${x}` },
+    state: 'working', startedAt: NOW - 20 * 60e3, settledAt: null, homeNeedsHuman: true, work: { requestInfo, reason: requestInfo.question },
     evidence: [{ sourceId: 'j0000000000000001' }] };
   const settled = { ...worker, id: 'thin-job:j0000000000000002', task: 'Finished one', state: 'done', settledAt: NOW - 1, homeNeedsHuman: false, work: {}, evidence: [{ sourceId: 'j0000000000000002' }] };
   const workboard = { revision: 'x', lanes: [], workers: [worker, settled], decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: null } };
@@ -75,7 +75,7 @@ test('every dynamic string is escaped: only the page\'s own tags exist', () => {
   assert.equal(html.split('<script').length, 1);
   // Each field that carries the payload shows it as text.
   for (const where of ['<h1>proj ', 'class="root">/home/user/', 'class="chip plain">branch wt/', 'class="lede">Closing ', 'class="card ask"><header><span class="chip try">STATE</span></header><p class="pre">Try ',
-    '<span class="p mono">src/', '<p>PLAIN ', 'Board ', '<p class="q">Which ', '<li>b) ', '<li class="">', '<b># Review ', '<p>working ']) {
+    '<span class="p mono">src/', '<p>PLAIN ', 'Board ', '<li class="">', '<b># Review ', '<p>working ']) {
     const at = html.indexOf(where);
     assert.ok(at >= 0, where);
     assert.ok(html.slice(at, at + where.length + 80).includes('&lt;'), `${where} is escaped`);
@@ -109,9 +109,8 @@ test('a to-try card shows ledger text, links tickets and keeps its diff bars, ig
 
 test('Needs you, In flight, tickets and the review appear when there is something in them', () => {
   const html = renderHtmlBoard(inputs());
-  assert.match(html, /<section id="needs"><h2>Needs you <span class="n">2<\/span>/);
-  assert.match(html, /<h3>Options<\/h3><ul class="opts"><li>a\) keep<\/li>/);
-  assert.match(html, /Default if unanswered:<\/span> a<\/p>/);
+  assert.match(html, /<section id="needs"><h2>Needs you <span class="n">1<\/span>/);
+  assert.doesNotMatch(html, /Which |Options|Default if unanswered|a\) keep/);
   assert.match(html, /<section id="flight">/);
   assert.match(html, /<span class="id">PAGE-ONE<\/span><span class="chip working">working<\/span><span class="chip plain">imp<\/span>/);
   assert.match(html, /imp · pi<\/span>[^]*?synthetic\/model · high · 20m/);
@@ -220,7 +219,7 @@ test('hud board exports every To-try slice with diff bars, including the oldest 
   }
 });
 
-test('hud board scopes questions and In flight to one project within the caller pane', async (t) => {
+test('hud board scopes explicit requests and In flight to one project within the caller pane', async (t) => {
   const f = await cli(t), other = join(f.root, 'other-project');
   const receipt = join(f.sliceJob, 'job.json');
   f.put(receipt, { ...JSON.parse(fs.readFileSync(receipt, 'utf8')),
@@ -233,15 +232,15 @@ test('hud board scopes questions and In flight to one project within the caller 
     f.put(join(dir, 'brief.md'), `# ${title} job`);
     f.put(join(dir, 'qa', 'q1.md'), `Question: ${title} question?`);
   }
-  fs.mkdirSync(other);
-  for (const [cwd, ownQuestion, ownJob, excluded] of [
-    [f.cwd, /Which synthetic option\?/, /NATIVE-TREE: synthetic subagents/, /Other project|Other pane/],
-    [other, /Other project question\?/, /Other project job/, /Which synthetic option|Build the Project tab|Other pane/],
+  f.put(join(other, 'STATE.md'), '# State\n\n## Waiting for the owner\n- Decide on the other project export\n');
+  for (const [cwd, ownRequest, ownJob, excluded] of [
+    [f.cwd, /Try the Project tab/, /NATIVE-TREE: synthetic subagents/, /Which synthetic option|Other project|other project export|Other pane/],
+    [other, /Decide on the other project export/, /Other project job/, /Other project question|Try the Project tab|Build the Project tab|Other pane/],
   ]) {
     const result = await f.run(['board', '--cwd', cwd]);
     assert.equal(result.code, 0, result.err);
     const html = fs.readFileSync(result.out.trim(), 'utf8');
-    assert.match(/<section id="needs">(.*?)<\/section>/s.exec(html)?.[1] ?? '', ownQuestion);
+    assert.match(/<section id="needs">(.*?)<\/section>/s.exec(html)?.[1] ?? '', ownRequest);
     assert.match(/<section id="flight">(.*?)<\/section>/s.exec(html)?.[1] ?? '', ownJob);
     assert.doesNotMatch(html, excluded);
   }

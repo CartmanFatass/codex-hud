@@ -151,8 +151,6 @@ export function agentEvent(
   };
 }
 
-/** A job asking the owner, as the Codex footer's reminder says it: `imp asks`. */
-
 // ─── Painting ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** claude-hud's own inks, plain ANSI so they follow the terminal's colours; no colour at all with theme `none`. */

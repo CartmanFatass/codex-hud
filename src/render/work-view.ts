@@ -250,8 +250,7 @@ export function renderWorkboardFrame(
         : [boardRow(t('Job not available'))]
         : jobs ? jobsRows(source.workers, width, !!input.paneLoad)
         : project
-          ? projectRows(input.project, state, width, now, source, input.projectName, input.projects,
-              Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.worktrees)
+          ? projectRows(input.project, state, width, now, source, input.projectName, input.projects, input.worktrees)
           : resourcePage ? expRows(resourcePage, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.publicationNotice)))
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)

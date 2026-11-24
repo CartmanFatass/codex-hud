@@ -430,7 +430,7 @@ test('Hub: project name, first attention row, one entry per page; Enter opens a 
   let frame = f.render(80);
   assert.match(plain(frame).join('\n'), /^demo-project ─/m);
   assert.deepEqual(hubEntries(frame), ['progress', 'tickets', 'tree', 'docs'].map((p) => `project:page:${p}`));
-  assert.equal(frame.state.project.nav.cursor, 'inbox:ask:j0000000000000002', 'the cursor starts on the first asking job');
+  assert.equal(frame.state.project.nav.cursor, 'project:wait:0', 'the cursor starts on the first explicit request');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
   assert.match(plain(frame).join('\n'), /^Progress +\d+ tasks · M3b/m);
   assert.doesNotMatch(plain(frame).join('\n'), /Accept all|\d+ to try/);

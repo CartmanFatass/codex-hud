@@ -30,7 +30,6 @@ import {
   rememberCreatedJob,
   rememberLandTask,
 } from '../../dist/mcp/task-bounds.js';
-import { Notifier, NOTIFIER_CACHE_LIMIT } from '../../dist/notify.js';
 import {
   recordWarning,
   rememberClosedTab,
@@ -184,43 +183,6 @@ test('hud-mcp task-bounds caps createdJobs, landTasks and tasks while dropping s
   assert.equal(tasks.has('working-1'), true, 'working task is kept over settled tasks');
   assert.equal(evicted[0], 'expired-1');
   assert.equal(evicted.length, 27);
-});
-
-test('Notifier.lastFired drops settled jobs leaving the board and caps tracked keys', () => {
-  const notifier = new Notifier({ enabled: true, cooldownMs: 300_000, deliver() {} });
-  const hud = { session: { id: 's1', cwd: '/synthetic/repo' }, subagentTree: { rootId: 's1', nodes: [], totalCount: 0, updatedAt: new Date() } };
-  const base = 1_700_000_000_000;
-  notifier.update(hud, base, EMPTY_BOARD);
-
-  const makeWorker = (i, now) => ({
-    id: `thin-job:j${String(i).padStart(16, '0')}`,
-    role: 'imp',
-    task: `Synthetic task ${i}`,
-    state: 'closed',
-    homeNeedsHuman: false,
-    humanEndedAt: null,
-    settledAt: now,
-    ask: null,
-    work: null,
-    evidence: [],
-    laneId: 'lane-1',
-    startedAt: now - 1000,
-  });
-
-  // Churn 400 jobs through the board one at a time; departed jobs are pruned immediately.
-  for (let i = 0; i < NOTIFIER_CACHE_LIMIT + 144; i++) {
-    const now = base + (i + 1) * 1000;
-    notifier.update(hud, now, { lanes: [], workers: [makeWorker(i, now)], updatedAt: now });
-  }
-  assert.equal(notifier.trackedCount, 1);
-
-  notifier.update(hud, base + 999_000, EMPTY_BOARD);
-  assert.equal(notifier.trackedCount, 0);
-
-  // Even when >NOTIFIER_CACHE_LIMIT jobs stay on the board at once, lastFired stays bounded.
-  const many = Array.from({ length: NOTIFIER_CACHE_LIMIT + 50 }, (_, i) => makeWorker(i, base + 1_000_000));
-  notifier.update(hud, base + 1_000_000, { lanes: [], workers: many, updatedAt: base + 1_000_000 });
-  assert.equal(notifier.trackedCount, NOTIFIER_CACHE_LIMIT);
 });
 
 test('watch closedTabs and warnings stay bounded under churn', () => {

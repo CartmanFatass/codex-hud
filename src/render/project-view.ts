@@ -9,7 +9,7 @@ import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { projectPage } from './monitor-state.js';
 import { basename } from 'node:path';
 import { boardRow, itemRow, section, mark, minuteAge, pack } from './workboard-rows.js';
-import { inboxHubRows, inboxListRows } from './inbox-project.js';
+import { projectOverviewRows, projectListRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { worktreeRows } from './monitor-panes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
@@ -138,7 +138,6 @@ export const acceptedText = (counts: ProjectSnapshot['counts'], rows: number) =>
 export const unsliced = (data: ProjectSnapshot) => data.active.filter((a) => !data.slices.some((r) => r.jobId === a.jobId));
 /** Unmanaged worktrees that have no linked ticket. */
 export const unlisted = (data: ProjectSnapshot) => data.slices.filter((r) => r.drift);
-export const inFlight = (data: ProjectSnapshot) => data.slices.filter((r) => !r.drift);
 /** Landed slices (to try or accepted), the newest first by commit date; those with none last, the later ledger rows first. */
 export const landedNewest = (data: ProjectSnapshot) => data.ledger.flatMap((r, i) =>
   r.state === 'try' || (r.state === 'accepted' && (r.landed || r.commit || r.at !== undefined)) ? [{ r, i }] : [])
@@ -421,11 +420,11 @@ export function pageRows(
 /** The Project tab: a hub of one summary row per page, or the page the panel has open. */
 export function projectRows(
   data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, name = '', projects: ProjectChoice[] = [], room?: number, worktrees?: WorktreesSnapshot | null
+  board?: WorkboardSnapshot, name = '', projects: ProjectChoice[] = [], worktrees?: WorktreesSnapshot | null
 ): MonitorRow[] {
   const page = projectPageOf(state);
   // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
-  if (projectListOpen(state, projects)) return inboxListRows(projects, width, now);
+  if (projectListOpen(state, projects)) return projectListRows(projects, width, now);
   if (!data) return [];
-  return page ? pageRows(page, data, state, width, now, board, worktrees) : inboxHubRows(data, state, width, now, name, projects, board, room);
+  return page ? pageRows(page, data, state, width, now, board, worktrees) : projectOverviewRows(data, state, width, now, name, projects);
 }
