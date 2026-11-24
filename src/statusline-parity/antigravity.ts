@@ -23,7 +23,8 @@ export function renderAntigravity(
   work?: MachineWorkCounts,
   localLoad?: LocalLoad,
   now = Date.now(),
-  evenQuota?: EvenQuotaNotice[]
+  evenQuota?: EvenQuotaNotice[],
+  advisor?: { skill: string; at: number }
 ): string {
   const value = record(input), model = record(value.model), context = record(value.context_window);
   const id = label(model.id), displayName = label(model.display_name);
@@ -70,6 +71,7 @@ export function renderAntigravity(
     project: project ? { name: project, branch: null } : undefined,
     quota: windows.length ? { windows, trailing: true } : undefined,
     evenQuota,
+    advisor,
     work,
     localLoad,
   }, width, now).line;

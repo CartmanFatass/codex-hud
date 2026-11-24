@@ -44,7 +44,7 @@ test('Models keeps execution controls and ignores legacy display-model settings'
       assert.equal(key in stored, false);
     assert.deepEqual(
       SETTING_ROWS.filter((r) => r.group === 'Models').map((r) => r.key),
-      ['decisionApi', 'decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'poolPick', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool']
+      ['decisionApi', 'decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'poolPick', 'advisorShadow', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool']
     );
     const text = stripAnsi(
       renderSettingsPage(

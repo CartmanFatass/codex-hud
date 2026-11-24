@@ -19,6 +19,7 @@ import { editPlaces, editPreset } from '../roles/role-control.js';
 import { roleRegistry } from '../roles/roster.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { resumePanelAnswer } from '../mcp/thin-main.js';
+import { copyToClipboard } from '../utils/clipboard.js';
 
 /** A tab consumes the answer file itself. A paused headless session needs the same handoff as hud_respond. */
 export async function answerFromPanel(home: string, id: string, qid: string, answer: string, role: string | null): Promise<AnswerResult> {
@@ -45,6 +46,7 @@ type ActionHost = {
   boardInput(): Pick<Parameters<typeof writeBoard>[0], 'workboard'>;
   refreshModels(): void;
   openSettings(): void;
+  copyClipboard?: (text: string) => boolean;
 };
 
 /** Execute only the actions emitted by monitor input, off the paint path. */
@@ -98,6 +100,20 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
             host.notice(t('Retry requested'));
           } catch { host.notice(t('Could not record request')); }
           break;
+        case 'copy-advisor': {
+          const copied = (host.copyClipboard ?? copyToClipboard)(action.path);
+          try {
+            appendPanelAction(home, {
+              type: 'advice-copy',
+              session: action.session,
+              skill: action.skill,
+              path: action.path,
+              project: action.root,
+            });
+          } catch { /* Recording the copy action is best-effort. */ }
+          host.notice(copied ? t('Copied: {name}', { name: action.skill }) : t('Could not copy path'));
+          break;
+        }
         case 'focus-job-tab':
           void focusJobTab(action.dir, process.env).then((focused) => {
             if (focused.ok) return;

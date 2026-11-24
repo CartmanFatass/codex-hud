@@ -6,8 +6,14 @@ import type { JudgmentRequest } from '../jev/judge.js';
 import { OPENAI_NONE_CHOICE, renormalizeOpenAIChoice, validateChoice } from '../jev/model.js';
 import type { HudSettings } from '../settings.js';
 
-export async function dispatchDecision(hudHome: string, settings: HudSettings, key: string, request: JudgmentRequest) {
-  const signal = AbortSignal.timeout(5_000);
+export async function dispatchDecision(
+  hudHome: string,
+  settings: HudSettings,
+  key: string,
+  request: JudgmentRequest,
+  options: { env?: NodeJS.ProcessEnv; timeoutMs?: number } = {}
+) {
+  const signal = AbortSignal.timeout(options.timeoutMs ?? 5_000);
   try {
     const store = new ModelRuntimeStore(join(hudHome, 'display', 'model-cache', 'decision-api'));
     const cappedFetch: typeof fetch = async (url, init) => {
@@ -18,7 +24,7 @@ export async function dispatchDecision(hudHome: string, settings: HudSettings, k
       return fetch(url, init);
     };
     const judge = async () => {
-      const provider = await selectDecisionProvider(settings.decisionApi, { ...process.env, HUD_HOME: hudHome }, cappedFetch);
+      const provider = await selectDecisionProvider(settings.decisionApi, { ...(options.env ?? process.env), HUD_HOME: hudHome }, cappedFetch);
       return provider.judge!(request, { signal, cacheKey: key });
     };
     // Bound provider selection, budget coordination and response parsing as well as the HTTP request.

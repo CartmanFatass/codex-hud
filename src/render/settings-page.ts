@@ -14,6 +14,7 @@ const CALL_FEATURES: Record<string, string> = {
   probe: 'Probe', outcome: 'outcome', looping: 'looping',
   'question-category': 'Question category', 'review-severity': 'Review severity',
   'quiet-job': 'Quiet job', 'sonic-thinking': 'Sonic thinking', 'imp-routing': 'Imp routing', 'pool-pick': 'Pool pick',
+  'advisor-shadow': 'Advisor shadow',
 };
 export type SettingKey = keyof HudSettings;
 export type SettingGroup = 'Display' | 'Panel' | 'Models' | 'Workers' | 'Codex';
@@ -102,6 +103,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Send the Sonic task text to the Decision API to choose its thinking level' },
   { key: 'poolPick', group: 'Models', label: 'Pool pick', values: [true, false],
     help: 'Select design references before launch; off skips the pick and attaches nothing' },
+  { key: 'advisorShadow', group: 'Models', label: 'Advisor shadow', values: [false, true],
+    help: 'Send new main-session messages, previous reply and skill index to the Decision API; shown only, never injected' },
   { key: 'impPlacement', group: 'Models', label: 'Imp placement', values: ['fixed', 'even', 'auto'],
     help: 'Fixed: active preset. Even: spread starts across the pool. Auto: send the Imp brief, ticket and context file names and sizes to the Decision API' },
   { key: 'impEvenPool', group: 'Models', label: 'Even pool', values: [],
@@ -219,7 +222,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'openPreviews'],
-  Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'poolPick', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool'],
+  Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'poolPick', 'advisorShadow', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
 };

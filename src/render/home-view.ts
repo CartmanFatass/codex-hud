@@ -45,7 +45,7 @@ function loadFacts(jobs: ProjectSnapshot['active']) {
     roles.filter((r) => queued[r]).map((r) => ink.muted(queueMark) + roleInk(r)(roleIcon(r) + queued[r]))].flat().join(' ');
 }
 
-function projectView({ root, name, unavailable, snapshot, resultDates }: HomeProject, now: number) {
+function projectView({ root, name, unavailable, snapshot, resultDates, advisor }: HomeProject, now: number) {
   const ink = theme.board;
   const record = snapshot?.objectives, jobs = snapshot?.active ?? [], objectives = record?.objectives ?? [];
   const blocked = blockedObjectives(snapshot?.waiting ?? []), running = jobs.some(({ state }) => state !== 'queued');
@@ -67,7 +67,7 @@ function projectView({ root, name, unavailable, snapshot, resultDates }: HomePro
     mark: unavailable ? ink.danger(stateMark.failed()) : running ? liveMark() : idleMark(),
     nameInk: running && !unavailable ? ink.text : ink.muted,
     priority, idleWord, age: age && ink.muted(age), load: loadFacts(jobs),
-    note: !record && snapshot?.summary, noNotes, recentAge };
+    note: !record && snapshot?.summary, noNotes, recentAge, advisor };
 }
 type ProjectView = ReturnType<typeof projectView>;
 
@@ -143,7 +143,32 @@ function objectiveRows(v: ProjectView, objective: Objective, width: number) {
   return { row, result: { text: fit(pair(line, age, width), width), item: `home:result:${v.root}:${objective.id}`, objectiveTarget: target } };
 }
 
-function compactProjects(projects: ProjectView[], width: number): MonitorRow[] {
+function advisorRow(v: ProjectView, width: number): MonitorRow | undefined {
+  if (!v.advisor) return undefined;
+  const ink = theme.board;
+  const lead = `  ${ink.active(mark('✦', '*', '\uF0EB'))} `;
+  const name = monitorText(v.advisor.skill);
+  const skillPath = monitorText(v.advisor.path);
+  const room = Math.max(0, width - cells(lead));
+  const namePart = truncateAnsi(name, Math.min(cells(name), room));
+  const sep = ' — ';
+  const pathRoom = Math.max(0, room - cells(namePart) - cells(sep));
+  const text = pathRoom > 0
+    ? `${lead}${ink.text(namePart)}${ink.muted(sep + truncateAnsi(skillPath, pathRoom))}`
+    : `${lead}${ink.text(namePart)}`;
+  return {
+    text: fit(text, width),
+    item: `home:advisor:${v.root}`,
+    advisorCopy: {
+      root: v.root,
+      session: v.advisor.session,
+      skill: v.advisor.skill,
+      path: v.advisor.path,
+    },
+  };
+}
+
+function compactProjects(projects: ProjectView[], width: number): MonitorRow[][] {
   const nameCol = Math.min(11, nameCap(width), Math.max(1, width - 10));
   const rollups = projects.map((v) => !v.unavailable ? progress(v.features, v.open.flatMap((o) => o.features)) : undefined);
   const countCol = Math.max(5, ...rollups.map((r) => cells(countText(r, width))));
@@ -151,12 +176,14 @@ function compactProjects(projects: ProjectView[], width: number): MonitorRow[] {
   const rights = projects.map((v) => v.unavailable ? '' : headerFacts(v, rightRoom));
   const rightCol = Math.max(0, ...rights.map(cells)), barCol = Math.max(0, width - 2 - nameCol - 2 - countCol - (rightCol ? rightCol + 1 : 0));
   return projects.map((v, index) => {
-    if (v.unavailable) return projectHeader(v, width);
+    const adv = advisorRow(v, width);
+    if (v.unavailable) return adv ? [projectHeader(v, width), adv] : [projectHeader(v, width)];
     const data = rollups[index], count = countText(data, width), right = rights[index];
     const paused = v.paused || v.open.every((o) => o.state === 'paused');
     const graphic = v.open.length ? progressCells(data, barCol, paused) : pad(barCol);
     const left = `${v.mark} ${v.nameInk(tokenColumn(v.name, nameCol))} ${graphic} ${pad(countCol - cells(count))}${paused && count ? theme.board.muted(count) : count}`;
-    return { text: fit(pair(left, right, width), width), ...projectTarget(v) };
+    const row = { text: fit(pair(left, right, width), width), ...projectTarget(v) };
+    return adv ? [row, adv] : [row];
   });
 }
 
@@ -181,14 +208,15 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
     [...top, ...groups.slice(0, today.length).flat(), ...fold, ...groups.slice(today.length).flat()];
   const blocks = views.map((v) => {
     const header = projectHeader(v, width);
+    const advisor = advisorRow(v, width);
     const previews = v.unavailable ? [] : [...v.open, ...v.finished].slice(0, 2).map((o) => objectiveRows(v, o, width));
     const noteLines = v.unavailable ? [] : v.note ? sentenceRows(monitorText(v.note), width, 1, 2, mark('¶', '.', '\uF249'))
       : v.noNotes ? [`  ${t('no Objectives or handoff notes')}`] : [];
     const note = noteLines.map((line) => boardRow(fit(ink.muted(line), width)));
-    return { v, header, previews, note };
+    return { v, header, advisor, previews, note };
   });
-  const tier = (limit: number, results: boolean, gaps = false) => blocks.map(({ v, header, previews, note }, i) => {
-    const rows = [header, ...note, ...previews.slice(0, limit).flatMap(({ row, result }) => results && result ? [row, result] : [row])];
+  const tier = (limit: number, results: boolean, gaps = false) => blocks.map(({ v, header, advisor, previews, note }, i) => {
+    const rows = [header, ...(advisor ? [advisor] : []), ...note, ...previews.slice(0, limit).flatMap(({ row, result }) => results && result ? [row, result] : [row])];
     const more = v.open.length + v.finished.length - Math.min(limit, previews.length);
     if (!v.unavailable && more > 0) rows.push({ text: fit(`  ${ink.muted(t('{remaining} more', { remaining: more }))}`, width),
       item: `home:more:${v.root}`, homeTarget: { root: v.root } });
@@ -199,5 +227,5 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
     if (rows.length <= room) return gaps ? withCards(rows) : rows;
   }
   // When even this exceeds the viewport, the visible projects and requests remain scrollable.
-  return withFold(compactProjects(views, width).map((row) => [row]));
+  return withFold(compactProjects(views, width));
 }

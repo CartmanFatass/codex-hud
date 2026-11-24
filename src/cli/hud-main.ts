@@ -11,6 +11,7 @@ import { watchCommand } from './watch.js';
 import { boardCommand } from './board.js';
 import { doctorCommand, versionCommand } from './doctor.js';
 import { jobStatsCommand } from './job-stats.js';
+import { adviseCommand } from './advise.js';
 
 export async function main(args: readonly string[], io: HudIO): Promise<number> {
   try {
@@ -29,6 +30,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
     if (args[0] === 'watch') return await watchCommand(args.slice(1), io);
     if (args[0] === 'act') return await actCommand(args.slice(1), io);
     if (args[0] === 'board') return await boardCommand(args.slice(1), io);
+    if (args[0] === 'advise') return await adviseCommand(args.slice(1), io);
     if (args[0] === 'doctor') return await doctorCommand(args.slice(1), io);
     if (args.length === 1 && args[0] === '--version') return await versionCommand(io);
     if (args[0] === 'stats' || args[0] === 'day') return await jobStatsCommand(args[0], args.slice(1), io);

@@ -311,6 +311,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   if (!sub && key === 'home-other-projects' && actions.some((row) => row.item === OTHER_PROJECTS)) return toggleOtherProjects();
   const act = (row: MonitorRow | undefined, fileOnly = false) => {
     if (!sub && !fileOnly && row?.item === OTHER_PROJECTS) return toggleOtherProjects();
+    if (!sub && !fileOnly && row?.advisorCopy) {
+      select(row.item);
+      return result({ type: 'copy-advisor', ...row.advisorCopy });
+    }
     if (!sub && !fileOnly && row?.objectiveTarget) {
       select(row.item);
       openObjective(row.objectiveTarget);

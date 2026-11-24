@@ -5,11 +5,13 @@ import { ResultReceipts, resultDate } from './result-receipts.js';
 import { compareOwnerRequests, ProjectCollector, projectJobWindow, type ProjectItem, type ProjectSnapshot } from './project-board.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 import { archivedActivityProjects, localDayStart } from './job-stats.js';
+import { advisorForProject, readAdvisorRecommendations } from './advisor-shadow.js';
 
 export interface HomeProject extends ListedProject {
   snapshot?: ProjectSnapshot;
   resultDates?: ReadonlyMap<string, number>;
   activeToday?: true;
+  advisor?: { skill: string; path: string; session: string; at: number };
 }
 export interface HomeRequest { project: HomeProject; item: ProjectItem; index: number }
 export interface HomePortfolio { projects: HomeProject[]; requests: HomeRequest[] }
@@ -70,6 +72,7 @@ export class HomePortfolioCollector {
     const projects: HomeProject[] = [];
     const since = localDayStart(now), history = list.length ? this.jobHistory(since, now) : undefined;
     const today = (at?: number) => at !== undefined && at >= since && at <= now;
+    const advisorRecs = readAdvisorRecommendations(this.home, now);
     let jobs: ReturnType<typeof projectJobWindow> | undefined;
     for (const project of list) {
       const entry: HomeProject = { ...project };
@@ -78,8 +81,10 @@ export class HomePortfolioCollector {
         this.pool.set(project.root, collector);
         entry.snapshot = await collector.collect('home', board, now, jobs ??= projectJobWindow(this.home));
       }
+      const adv = advisorForProject(advisorRecs, project.root);
+      if (adv) entry.advisor = { skill: adv.skill, path: adv.path, session: adv.session, at: adv.at };
       const s = entry.snapshot;
-      if (s?.waiting.length || s?.active.length || today(s?.updatedAt) || today(s?.objectivesAt) ||
+      if (adv || s?.waiting.length || s?.active.length || today(s?.updatedAt) || today(s?.objectivesAt) ||
           today(s?.jobActivityAt) || history?.has(project.root)) entry.activeToday = true;
       projects.push(entry);
     }

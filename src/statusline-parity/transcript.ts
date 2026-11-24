@@ -59,6 +59,10 @@ interface State {
     prompt?: { id: string; at: number };
     response?: { id?: string; startedAt?: number; tps?: number };
   };
+  advisor?: {
+    lastAssistant?: { text: string; pos: number };
+    lastUser?: { id: string; text: string; pos: number; previousReply?: string };
+  };
 }
 export interface TranscriptView {
   tps?: number;
@@ -73,6 +77,8 @@ export interface TranscriptView {
   compactPostTokens?: number;
   /** When each skill was last loaded, for the bar's notice zone; none for a call the transcript did not date. */
   skillLoads?: { name: string; at: number }[];
+  /** Newly appended owner-typed message on this incremental read (never populated on cold-start backfill). */
+  newOwnerMessage?: { id: string; text: string; previousReply?: string };
 }
 const safe = (v: unknown, n = 512) => (typeof v === 'string' ? monitorText(v.slice(0, n)).trim() : '');
 function status(v: unknown): string | undefined {
@@ -111,6 +117,44 @@ function observeSpeed(s: State['speed'], e: Record<string, unknown>, message: Re
     };
   }
 }
+const ADVISOR_WAKE_RE = /^(?:HUD events \(status only;|<local-command-|<command-name>|<task-notification>|\/)/;
+
+function extractMessageText(content: unknown): string {
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((item): item is { type: string; text: string } => {
+      const b = record(item);
+      return b.type === 'text' && typeof b.text === 'string';
+    })
+    .map((b) => b.text)
+    .join('\n')
+    .trim();
+}
+
+function observeAdvisor(s: State, e: Record<string, unknown>, message: Record<string, unknown>, pos: number) {
+  if (e.isSidechain === true || e.isMeta === true) return;
+  const adv = (s.advisor ??= {});
+  if (e.type === 'assistant') {
+    const text = extractMessageText(message.content);
+    if (text && pos >= (adv.lastAssistant?.pos ?? -1)) {
+      adv.lastAssistant = { text: text.slice(0, 2000), pos };
+    }
+  } else if (e.type === 'user') {
+    const text = extractMessageText(message.content);
+    if (!text || ADVISOR_WAKE_RE.test(text)) return;
+    if (pos > (adv.lastUser?.pos ?? -1)) {
+      const id = typeof e.uuid === 'string' && e.uuid.length <= 128 ? e.uuid : `pos:${pos}`;
+      adv.lastUser = {
+        id,
+        text: text.slice(0, 2000),
+        pos,
+        previousReply: adv.lastAssistant && adv.lastAssistant.pos < pos ? adv.lastAssistant.text : undefined,
+      };
+    }
+  }
+}
+
 function reduce(s: State, raw: string, pos: number, latest = true): void {
   let e: Record<string, unknown>;
   try {
@@ -173,7 +217,10 @@ function reduce(s: State, raw: string, pos: number, latest = true): void {
   // Only conversation records carry tool calls: Claude Code's `api-request-blob` lines echo them without a timestamp
   // and would reset an agent's start to 0 or reopen a finished one.
   const conversation = e.type === 'assistant' || e.type === 'user';
-  if (latest && conversation) observeSpeed(s.speed, e, message, time);
+  if (latest && conversation) {
+    observeSpeed(s.speed, e, message, time);
+    observeAdvisor(s, e, message, pos);
+  }
   const blocks = conversation && Array.isArray(message.content) ? message.content : [];
   for (const item of blocks) {
     const b = record(item),
@@ -258,7 +305,7 @@ function reduce(s: State, raw: string, pos: number, latest = true): void {
     }
   }
 }
-function view(s: State, bytesRead: number): TranscriptView {
+function view(s: State, bytesRead: number, newOwnerMessage?: TranscriptView['newOwnerMessage']): TranscriptView {
   const todos = s.todos.map((t) => ({ ...t }));
   for (const t of [...s.tasks].sort((a, b) => (a.createPos ?? Infinity) - (b.createPos ?? Infinity))) {
     let i = todos.findIndex((v) => v.id === t.id);
@@ -287,6 +334,7 @@ function view(s: State, bytesRead: number): TranscriptView {
     compactAt: s.compactAt,
     compactPostTokens: s.compactPostTokens,
     skillLoads: s.skills.flatMap((x) => (x.at === undefined ? [] : [{ name: x.name, at: x.at }])),
+    ...(newOwnerMessage ? { newOwnerMessage } : {}),
   };
 }
 export function collectTranscript(file: string, env: NodeJS.ProcessEnv): TranscriptView {
@@ -327,6 +375,7 @@ export function collectTranscript(file: string, env: NodeJS.ProcessEnv): Transcr
       (stat.size === s.size && stat.mtimeMs !== s.mtime);
     if (reset) s = { ...empty, identity, speed: {} };
     if (!s) s = empty;
+    const prevUserPos = reset ? Infinity : (s.advisor?.lastUser?.pos ?? -1);
     let bytesRead = 0;
     const read = (start: number, end: number) => {
       const b = Buffer.alloc(Math.max(0, end - start));
@@ -406,7 +455,10 @@ export function collectTranscript(file: string, env: NodeJS.ProcessEnv): Transcr
         /* read-only/unavailable cache */
       }
     }
-    return view(s, bytesRead);
+    const nextUser = !reset && s.advisor?.lastUser && s.advisor.lastUser.pos > prevUserPos
+      ? { id: s.advisor.lastUser.id, text: s.advisor.lastUser.text, previousReply: s.advisor.lastUser.previousReply }
+      : undefined;
+    return view(s, bytesRead, nextUser);
   } catch {
     return view(empty, 0);
   } finally {

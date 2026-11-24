@@ -26,6 +26,10 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   quietJobDecision: boolean;
   sonicAutoThinking: boolean;
   poolPick: boolean;
+  /** Recommend a skill from owner libraries on new main-session messages (shown only, never injected). */
+  advisorShadow: boolean;
+  /** Absolute directories scanned for SKILL.md files when advisorShadow is on. */
+  advisorSkillDirs: string[];
   impPlacement: 'fixed' | 'even' | 'auto';
   impEvenPool: string[];
   sonicPlacement: 'fixed' | 'even';
@@ -65,6 +69,8 @@ export function defaultSettings(): HudSettings {
     quietJobDecision: true,
     sonicAutoThinking: false,
     poolPick: true,
+    advisorShadow: false,
+    advisorSkillDirs: [],
     impPlacement: 'fixed',
     impEvenPool: [],
     sonicPlacement: 'fixed',
@@ -106,6 +112,11 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   quietJobDecision: isBoolean,
   sonicAutoThinking: isBoolean,
   poolPick: isBoolean,
+  advisorShadow: isBoolean,
+  advisorSkillDirs: (value) =>
+    Array.isArray(value) &&
+    value.length <= 64 &&
+    value.every((dir) => typeof dir === 'string' && dir.length > 0 && dir.length <= 4096 && !dir.includes('\0') && path.isAbsolute(dir)),
   impPlacement: oneOf('fixed', 'even', 'auto'),
   impEvenPool: validEvenPool,
   sonicPlacement: oneOf('fixed', 'even'),
@@ -128,7 +139,11 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
 };
 
 function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
-  const result: HudSettings = { ...base, roleCaps: { ...base.roleCaps } };
+  const result: HudSettings = {
+    ...base,
+    advisorSkillDirs: [...base.advisorSkillDirs],
+    roleCaps: { ...base.roleCaps },
+  };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
   const values = raw as Record<string, unknown>;
   if (!validators.impPlacement(values.impPlacement) && typeof values.impRouting === 'boolean')
@@ -137,6 +152,8 @@ function mergeValidated(base: HudSettings, raw: unknown): HudSettings {
     if (Object.hasOwn(values, key) && validators[key](values[key])) {
       if (key === 'roleCaps') {
         result.roleCaps = { ...base.roleCaps, ...(values.roleCaps as Record<string, number>) };
+      } else if (key === 'advisorSkillDirs') {
+        result.advisorSkillDirs = [...(values.advisorSkillDirs as string[])];
       } else {
         Object.assign(result, { [key]: values[key] });
       }

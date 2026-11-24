@@ -65,6 +65,7 @@ export interface MonitorRow {
   waitingTarget?: { index: number; request: string };
   objectiveTarget?: ObjectiveTarget;
   objectiveEvidence?: { root: string; text: string };
+  advisorCopy?: { root: string; session: string; skill: string; path: string };
   commit?: { cwd: string; hash: string };
 }
 export interface MonitorRect {
@@ -182,6 +183,7 @@ export interface MonitorOutcome {
     | { type: 'role-switch'; role: string; enabled: boolean }
     | { type: 'accept-all' }
     | { type: 'request-retry'; home: string; jobId: string }
+    | { type: 'copy-advisor'; root: string; session: string; skill: string; path: string }
     | { type: 'refresh-models' }
     /** Owner micro-actions on a HUD job (spec §2.2): focus its herdr tab, answer its open question, stop it. */
     | { type: 'focus-job-tab'; dir: string }

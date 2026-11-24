@@ -1,10 +1,14 @@
 /** Shared default statusline I/O boundary. */
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
 import type { LocalLoad } from '../collectors/local-load.js';
 import { readEvenQuotaNotices } from '../collectors/even-quota.js';
+import { readAdvisorNotice } from '../collectors/advisor-shadow.js';
+import { installationRoot } from '../cli/compat.js';
 import { getHudHome } from '../hud-home.js';
+import { loadSettings } from '../settings.js';
 import { collectTranscript } from './transcript.js';
 import { collectConfigCounts } from './config-counts.js';
 import { collectParityGit } from './git.js';
@@ -33,6 +37,27 @@ export function compactWindow(env: NodeJS.ProcessEnv, modelId: string): number |
     return null;
   }
 }
+function triggerAdvisorDetached(
+  payload: { session: string; projectRoot: string; message: string; previousReply?: string; messageId?: string },
+  env: NodeJS.ProcessEnv
+): void {
+  try {
+    const child = spawn(process.execPath, [join(installationRoot(), 'bin/hud-dist.mjs'), 'advise'], {
+      env,
+      detached: true,
+      stdio: ['pipe', 'ignore', 'ignore'],
+      windowsHide: true,
+    });
+    child.on('error', () => {});
+    child.stdin!.on('error', () => {});
+    child.stdin!.end(Buffer.from(JSON.stringify(payload), 'utf8'));
+    (child.stdin as typeof child.stdin & { unref?: () => void })?.unref?.();
+    child.unref();
+  } catch {
+    /* Best-effort background advisor; never changes or blocks the statusline output. */
+  }
+}
+
 export async function collectAndRenderParity(
   input: unknown,
   width: number,
@@ -93,6 +118,34 @@ export async function collectAndRenderParity(
     env,
     typeof record(value.model).id === 'string' ? (record(value.model).id as string) : ''
   );
-  const evenQuota = readEvenQuotaNotices(getHudHome(env), cwd ?? record(value.workspace).current_dir, now, env);
-  return renderParity(native, width, settings, { transcript, counts, git, compact, evenQuota }, now, env, work, localLoad);
+  const hudHome = getHudHome(env);
+  const projectDir = cwd ?? (typeof record(value.workspace).current_dir === 'string' ? (record(value.workspace).current_dir as string) : undefined);
+  const sessionId =
+    typeof value.session_id === 'string' && value.session_id.trim()
+      ? value.session_id.trim()
+      : file
+        ? basename(file, '.jsonl')
+        : undefined;
+  const evenQuota = readEvenQuotaNotices(hudHome, projectDir, now, env);
+  const advisor = readAdvisorNotice(hudHome, { session: sessionId, projectRoot: projectDir }, now, env);
+  if (transcript.newOwnerMessage && env.HUD_JOB_DIR === undefined && sessionId) {
+    try {
+      const hudSettings = loadSettings({ ...env, HUD_HOME: hudHome });
+      if (hudSettings.advisorShadow && hudSettings.advisorSkillDirs.length > 0) {
+        triggerAdvisorDetached(
+          {
+            session: sessionId,
+            projectRoot: projectDir ?? process.cwd(),
+            message: transcript.newOwnerMessage.text,
+            previousReply: transcript.newOwnerMessage.previousReply,
+            messageId: transcript.newOwnerMessage.id,
+          },
+          { ...env, HUD_HOME: hudHome }
+        );
+      }
+    } catch {
+      /* Missing/invalid settings: skip advisor silently. */
+    }
+  }
+  return renderParity(native, width, settings, { transcript, counts, git, compact, evenQuota, advisor }, now, env, work, localLoad);
 }

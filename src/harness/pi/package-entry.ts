@@ -10,6 +10,7 @@ import { collectResumeRefusal } from '../../collectors/job-snapshot.js';
 import { openPiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
 import { piExpUsage } from './exp-usage.js';
+import { adviseOnMessage, resolveAdvisorProjectRoot } from '../../collectors/advisor-shadow.js';
 import type { FooterAPI, FooterHost } from './footer-host.js';
 /** Structural host projection. SDK compatibility is checked against the installed declarations. */
 export interface PiPackageAPI extends FooterAPI {
@@ -301,6 +302,57 @@ export function installPiPackage(
   on('context', expUsage.requestStart);
   on('message_end', expUsage.messageEnd);
   on('turn_end', expUsage.turnEnd);
+  // Advisor shadow: observe new owner-typed messages in main sessions; show only, never inject.
+  let lastAssistant: { session: string; text: string } | undefined;
+  const extractAssistantText = (message: unknown): string => {
+    const m = message as { role?: unknown; content?: unknown } | undefined;
+    if (m?.role !== 'assistant') return '';
+    if (typeof m.content === 'string') return m.content.trim();
+    if (!Array.isArray(m.content)) return '';
+    return m.content
+      .filter((b): b is { type: string; text: string } => !!b && typeof b === 'object' && (b as { type?: unknown }).type === 'text' && typeof (b as { text?: unknown }).text === 'string')
+      .map((b) => b.text)
+      .join('\n')
+      .trim();
+  };
+  on('message_end', (event, ctx) => {
+    const text = extractAssistantText((event as { message?: unknown } | undefined)?.message);
+    if (text) lastAssistant = { session: ctx.sessionManager.getSessionId(), text: text.slice(0, 2000) };
+  });
+  on('input', (event, ctx) => {
+    if (env.HUD_JOB_DIR !== undefined || resumeRefusal) return;
+    const ev = event as { text?: unknown; source?: unknown } | undefined;
+    if (typeof ev?.text !== 'string') return;
+    if (ev.source !== undefined && ev.source !== 'interactive') return;
+    const trimmed = ev.text.trim();
+    if (!trimmed || trimmed.startsWith('/')) return;
+    const session = ctx.sessionManager.getSessionId();
+    let previousReply = lastAssistant?.session === session ? lastAssistant.text : '';
+    if (!previousReply) {
+      try {
+        const branch = ctx.sessionManager.getBranch?.() ?? [];
+        for (let i = branch.length - 1; i >= 0; i--) {
+          const text = extractAssistantText(branch[i]?.message);
+          if (text) {
+            previousReply = text.slice(0, 2000);
+            break;
+          }
+        }
+      } catch {
+        /* Best-effort previous reply lookup. */
+      }
+    }
+    void adviseOnMessage(
+      binding.hudHome,
+      {
+        session,
+        projectRoot: resolveAdvisorProjectRoot(ctx.cwd),
+        message: trimmed,
+        previousReply: previousReply || undefined,
+      },
+      { env }
+    ).catch(() => {});
+  });
   for (const tool of PI_ROLE_TOOLS)
     pi.registerTool({
       name: tool.name,

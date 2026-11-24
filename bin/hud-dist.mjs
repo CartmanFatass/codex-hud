@@ -29,6 +29,11 @@ switch (process.argv[2]) {
     await runForwardWorker(process.argv[3]);
     break;
   }
+  case 'advise': {
+    const { adviseCommand } = await withDistLock(() => import('../dist/cli/advise.js'));
+    await adviseCommand(['--stdin'], { env: process.env, stdout: () => {}, stderr: () => {} });
+    break;
+  }
   default:
     throw new Error('Unknown HUD dist entry');
 }

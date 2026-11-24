@@ -600,6 +600,7 @@ export interface HudData {
   /** What just happened, newest first, as the bar process saw it change (`collectors/bar-notices.ts`). */
   notices?: BarNotice[];
   evenQuota?: import('./collectors/even-quota.js').EvenQuotaNotice[];
+  advisor?: { skill: string; at: number };
   /** What this pane's HUD jobs ask of the person and what they just did (`render/work-summary.ts`). */
   work?: import('./collectors/work-summary-snapshot.js').MachineWorkCounts;
   localLoad?: import('./collectors/local-load.js').LocalLoad;

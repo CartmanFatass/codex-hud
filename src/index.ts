@@ -31,6 +31,7 @@ import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
 import { BarNoticeTracker } from './collectors/bar-notices.js';
 import { readEvenQuotaNotices } from './collectors/even-quota.js';
+import { readAdvisorNotice } from './collectors/advisor-shadow.js';
 import { readMachineWork } from './collectors/work-summary-snapshot.js';
 import { collectLocalLoad } from './collectors/local-load.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
@@ -220,6 +221,7 @@ async function mainLoop(): Promise<void> {
     if (!adaptivePollDue(adaptive, scopeKey, now)) {
       if (cachedHudData) {
         cachedHudData.evenQuota = readEvenQuotaNotices(hudHome, HUD_CWD_REAL, now);
+        cachedHudData.advisor = readAdvisorNotice(hudHome, { session: scopeKey || undefined, projectRoot: HUD_CWD_REAL }, now);
         cachedHudData.work = readMachineWork(hudHome, now);
         cachedHudData.localLoad = collectLocalLoad(hudHome, now);
       }
@@ -232,6 +234,7 @@ async function mainLoop(): Promise<void> {
       data.notices = notices.observe(data, Date.now());
       const sampledAt = Date.now();
       data.evenQuota = readEvenQuotaNotices(hudHome, HUD_CWD_REAL, sampledAt);
+      data.advisor = readAdvisorNotice(hudHome, { session: data.session?.id, projectRoot: HUD_CWD_REAL }, sampledAt);
       data.work = readMachineWork(hudHome, sampledAt);
       data.localLoad = collectLocalLoad(hudHome, sampledAt);
       renderToStdout(data, HUD_PANE_HEIGHT);

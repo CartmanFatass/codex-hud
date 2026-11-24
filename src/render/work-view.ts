@@ -340,6 +340,7 @@ export function renderWorkboardFrame(
           : [selected?.objectiveTarget ? '⏎ details' : '⏎ open', ...projectSwitch])
         : [...(listCursor ? selected?.item === OTHER_PROJECTS
           ? [otherProjectsHint(state.home.othersExpanded), state.home.othersExpanded ? '⏎ fold' : '⏎ expand']
+          : selected?.advisorCopy ? ['⏎ copy']
           : selected?.objectiveTarget ? ['⏎ details'] : selected?.homeTarget ? ['⏎ open'] : [] : []), 'v Jobs'];
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
   if (roles && height > 1) presetFooterControls(frame, hints, width, height - 1);

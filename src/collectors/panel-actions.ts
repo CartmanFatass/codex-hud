@@ -14,9 +14,10 @@ export const JOB = /^j[0-9a-f]{16}$/;
 const QID = /^q\d+$/;
 const MAX_READ = 256 * 1024;
 interface AnswerRecord { at: string; type: 'answer'; job: string; qid: string; role: string | null; answer: string }
+interface AdviceCopyRecord { at: string; type: 'advice-copy'; session: string; skill: string; path: string; project: string }
 type Intent = { type: 'retry'; job: string } | { type: 'land'; root: string; slices: string[] };
 
-export function appendPanelAction(home: string, action: Intent | Omit<AnswerRecord, 'at'>): void {
+export function appendPanelAction(home: string, action: Intent | Omit<AnswerRecord, 'at'> | Omit<AdviceCopyRecord, 'at'>): void {
   fs.mkdirSync(home, { mode: 0o700, recursive: true });
   const fd = fs.openSync(join(home, PANEL_ACTIONS_FILE), fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT |
     fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK, 0o600);
@@ -57,7 +58,8 @@ const oneLine = (s: string) => s.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').replace(
 /** Format only decisions for the reader's project or jobs; an intent is never a command. */
 export function panelActionLine(line: string, owns: (id: string) => boolean, root?: string): string | undefined {
   try {
-    const r: Intent | AnswerRecord = JSON.parse(line);
+    const r: Intent | AnswerRecord | AdviceCopyRecord = JSON.parse(line);
+    if (r.type === 'advice-copy') return undefined;
     if (r.type === 'land') {
       if ((root === undefined || root === r.root) && Array.isArray(r.slices) && r.slices.every(id => typeof id === 'string'))
         return oneLine(`Land requested from panel: ${basename(r.root)}: ${r.slices.join(', ')}`);

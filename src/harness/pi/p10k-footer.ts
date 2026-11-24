@@ -21,6 +21,7 @@ import { formatTokenCount } from '../../render/lines/activity-line.js';
 import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
 import type { LocalLoad } from '../../collectors/local-load.js';
 import { readEvenQuotaNotices } from '../../collectors/even-quota.js';
+import { onAdvisorUpdate, readAdvisorNotice } from '../../collectors/advisor-shadow.js';
 import { applyBarSettings } from '../../bar-settings.js';
 import { readExpFooterGrant } from '../../collectors/exp-store.js';
 import { expApproxUsd, type ExpAccount } from '../../exp-config.js';
@@ -487,6 +488,7 @@ export function createP10kFooter(
       },
       quota,
       evenQuota,
+      advisor,
       work,
       localLoad,
       loaded: {
@@ -533,10 +535,28 @@ export function createP10kFooter(
   let work: MachineWorkCounts | undefined;
   let localLoad: LocalLoad | undefined;
   let evenQuota: bar.BarFacts['evenQuota'];
+  let advisor: bar.BarFacts['advisor'];
   let repaint: (() => void) | null = null;
   let mounted = false;
   let live = true;
   const removers: (() => void)[] = [];
+  const refreshAdvisor = (ctx: FooterContext | null) => {
+    advisor = ctx
+      ? readAdvisorNotice(
+          getHudHome(env),
+          { session: ctx.sessionManager.getSessionId(), projectRoot: ctx.sessionManager.getCwd() },
+          Date.now(),
+          env
+        )
+      : undefined;
+  };
+  removers.push(
+    onAdvisorUpdate(getHudHome(env), () => {
+      if (!live || !mounted || !current) return;
+      refreshAdvisor(current);
+      repaint?.();
+    })
+  );
   const subscription = createPiSubscription(env, () => repaint?.(), deps.subscription);
   // Measurements belong in the ribbon, not in the chat.
   pi.registerEntryRenderer?.('tps', () => undefined);
@@ -570,6 +590,7 @@ export function createP10kFooter(
     capturedViz = readVizMode(ctx);
     capturedLoaded = loadedCounts(pi);
     apiQuota = readApiQuota(ctx);
+    refreshAdvisor(ctx);
     const cwd = ctx.sessionManager.getCwd(),
       name = ctx.sessionManager.getSessionName?.(),
       usage = ctx.getContextUsage();
@@ -745,6 +766,7 @@ export function createP10kFooter(
       work = counts;
       localLoad = load;
       evenQuota = current ? readEvenQuotaNotices(getHudHome(env), current.sessionManager.getCwd(), Date.now(), env) : undefined;
+      refreshAdvisor(current);
       apiQuota = readApiQuota(current);
       repaint?.();
     },

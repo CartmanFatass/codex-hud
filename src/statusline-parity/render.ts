@@ -67,6 +67,7 @@ export interface ParityEvidence {
   /** Where Claude compacts on its own, in tokens, from its settings; null when it does not say. */
   compact?: number | null;
   evenQuota?: bar.BarFacts['evenQuota'];
+  advisor?: bar.BarFacts['advisor'];
 }
 export function renderParity(
   input: unknown,
@@ -119,6 +120,7 @@ export function renderParity(
     tps: t.tps,
     events: events(t, d.showAgents, d.showSkills),
     evenQuota: evidence.evenQuota,
+    advisor: evidence.advisor,
     work,
     localLoad,
     loaded: {

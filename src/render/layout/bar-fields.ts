@@ -23,6 +23,7 @@ import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.j
 import { providerMark } from '../providers.js';
 import { monitorText } from '../monitor-text.js';
 import type { EvenQuotaNotice } from '../../collectors/even-quota.js';
+import { ADVISOR_NOTICE_MS } from '../../collectors/advisor-shadow.js';
 
 /**
  * How long an event stays in the notice zone. Nothing rotates and nothing ticks (owner, 2026-11-11: a bar that keeps
@@ -112,6 +113,8 @@ export interface BarFacts {
   /** What needs the owner now (an approval): pinned while it is open. */
   needs?: string[];
   evenQuota?: EvenQuotaNotice[];
+  /** Active advisor shadow skill recommendation (shown for 10 minutes after quota notices). */
+  advisor?: { skill: string; at: number };
   events?: BarEvent[];
   /** Fresh machine-wide HUD load. */
   work?: MachineWorkCounts;
@@ -342,6 +345,7 @@ const TITLE_COLS = 36;
 const TITLE_SHORT = 14;
 
 const QUOTA_MARK = { unicode: '⚠', emoji: '⚠', text: '!', nerd: '\uf071' };
+const ADVISOR_MARK = { unicode: '✦ ', emoji: '✦ ', text: '', nerd: '\uf0eb ' };
 const MARKS = {
   started: ['◐', 'info'],
   done: [icons.check, 'ok'],
@@ -549,6 +553,18 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     forms: [[[`${QUOTA_MARK[iconSet()]} `, 'warn'], [`${firstQuota.role} ${monitorText(firstQuota.preset)}: quota`, 'value'],
       [moreQuota.length ? ` +${moreQuota.length}` : '', 'dim']]],
   } : null;
+  const activeAdvisor = on.has('notice') && facts.advisor &&
+    now - facts.advisor.at >= 0 && now - facts.advisor.at < ADVISOR_NOTICE_MS
+    ? monitorText(facts.advisor.skill).trim()
+    : '';
+  const advisorPrefix = ADVISOR_MARK[iconSet()];
+  const advisorSeg: Seg | null = activeAdvisor ? { id: 'notice', ink: P10K.skill, at: 0,
+    forms: [[
+      ...(advisorPrefix ? ([[advisorPrefix, 'skill']] as Form) : []),
+      ['skill: ', 'skill'],
+      [activeAdvisor, 'value'],
+    ]],
+  } : null;
   const loadForms = on.has('notice') && facts.work ? machineWorkForms(facts.work, now) : [];
   const load: Seg | null = loadForms.length
     ? { id: 'notice', forms: loadForms.map((text) => [[text, 'value']]), ink: P10K.info, at: 0 }
@@ -565,6 +581,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     on.has('tps') ? tpsSeg(facts.tps) : null,
     alertSeg,
     evenQuota,
+    advisorSeg,
     load,
     localLoad,
   ].filter((seg): seg is Seg => seg !== null);
@@ -619,11 +636,12 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     if (id === 'notice') {
       if (alertSeg && alertSeg.forms.length > 1) alertSeg.at = 1;
       if (evenQuota && room(0) < 0) evenQuota.at = evenQuota.forms.length;
+      if (advisorSeg && room(0) < 0) advisorSeg.at = advisorSeg.forms.length;
       if (wide() || (lone && noticeSeg(lone, room(1), pad))) break;
       continue;
     }
     const seg = all.find((candidate) => candidate.id === id);
-    if (seg && seg.at < seg.forms.length) seg.at = (zone || load) && id === 'loaded' ? seg.forms.length : seg.at + 1;
+    if (seg && seg.at < seg.forms.length) seg.at = (zone || load || advisorSeg) && id === 'loaded' ? seg.forms.length : seg.at + 1;
   }
   if (load && room(0) < 0) load.at = loadForms.length - 1;
   if (load && room(0) < 0) load.at = load.forms.length;
