@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { markExhausted } from '../../dist/roles/roster.js';
 import { defaultSettings, loadSettings } from '../../dist/settings.js';
-import { pickEvenPreset } from '../../dist/mcp/imp-routing.js';
 import { SETTING_ROWS, resetSettingsGroup } from '../../dist/render/settings-page.js';
 import { cardText, configureFakeDecision, fakeDecisionServer, fixture, until, waitFixtureJob, workerFor } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
@@ -66,49 +65,39 @@ test('Imp placement defaults and resets to fixed; legacy switches migrate withou
   }
 });
 
-test('Even counts only imp starts from the last 24 hours and breaks ties in role order', () => {
-  const now = Date.parse('2026-11-23T12:00:00Z');
-  const start = (hours, name, opts = {}) => ({ role: 'imp', imp_preset: name,
-    started_at: new Date(now - hours * 3600_000).toISOString(), ...opts });
-  const pick = jobs => pickEvenPreset(['small', 'deep', 'daily'], ['deep', 'missing', 'small', 'daily'], name => name !== 'daily', jobs, now);
-  const outside = [start(24, 'small'), start(25, 'small'), start(-1, 'small'), start(1, 'small', { role: 'general' }),
-    { role: 'imp', imp_preset: 'small' }];
-  assert.deepEqual(pick(outside), { preset: 'small', skipped: ['missing', 'daily'] });
-  assert.equal(pick([...outside, start(23, 'small', { role: 'general', overflow_from: 'imp' })]).preset, 'deep');
-});
-
-test('Even reports placement, rotates after real starts, skips unavailable presets and pins overflow, retry and repair', async t => {
+test('Even rotates in pool order, skips unavailable presets, wraps around and pins overflow, retry and repair', async t => {
   const { f, api } = await setup(t, body => answer(body, 'hard', 'tab'));
   role(f, undefined);
   const pool = { impPlacement: 'even', impEvenPool: ['deep', 'missing', 'small'] };
   settings(f, pool);
   const first = await create(f, 'First even placement.');
   assert.equal(first.route.placement, 'even');
-  assert.equal(first.route.preset, 'small');
-  assert.match(first.route.fallback, /Skipped unavailable presets: missing/);
-  assert.equal(receipt(first).model, 'synthetic/small');
+  assert.equal(first.route.preset, 'deep');
+  assert.equal(first.route.fallback, undefined);
+  assert.equal(receipt(first).model, 'synthetic/deep');
   assert.deepEqual(receipt(first).route, first.route);
-  assert.match(cardText(workerFor(f, first.job)), /Placement: even · small/);
+  assert.match(cardText(workerFor(f, first.job)), /Placement: even · deep/);
 
   waitFixtureJob(f, 1);
   settings(f, { ...pool, impOverflow: false, roleCaps: { imp: 1, general: 0 } });
   const second = await create(f, 'Queue the second even placement.');
   assert.equal(second.state, 'queued');
-  assert.equal(second.route.preset, 'deep');
-  settings(f, { ...pool, impEvenPool: ['small'], impOverflow: true, roleCaps: { imp: 1, general: 0 } });
+  assert.equal(second.route.preset, 'small');
+  assert.match(second.route.fallback, /Skipped unavailable presets: missing/);
+  settings(f, { ...pool, impEvenPool: ['deep'], impOverflow: true, roleCaps: { imp: 1, general: 0 } });
   await until(() => receipt(second).dispatch_exit_code === 0, t.signal);
   assert.equal(receipt(second).overflow_from, 'imp');
-  assert.equal(receipt(second).model, 'synthetic/deep');
+  assert.equal(receipt(second).model, 'synthetic/small');
 
   write(join(second.task_dir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'Synthetic exit' }));
   const retry = await f.call('hud_create', { retry_of: second.job });
-  assert.equal(retry.route.preset, 'deep');
-  assert.equal(receipt(retry).model, 'synthetic/deep');
+  assert.equal(retry.route.preset, 'small');
+  assert.equal(receipt(retry).model, 'synthetic/small');
   write(join(retry.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
   const repair = landRepair(f, retry);
   assert.equal(repair.retry_of, retry.job);
-  assert.equal(repair.route.preset, 'deep');
-  assert.equal(repair.model, 'synthetic/deep');
+  assert.equal(repair.route.preset, 'small');
+  assert.equal(repair.model, 'synthetic/small');
 
   for (const [impEvenPool, reason] of [[[], /Even pool empty/], [['missing'], /Even pool unavailable/]]) {
     settings(f, { ...pool, impEvenPool });

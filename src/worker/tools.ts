@@ -205,6 +205,7 @@ export async function startSonic({ dir, job: parent }: Pick<Worker, 'dir' | 'job
   // A launch failure with a job receipt is also collectable via wait.
   return { job: result.job, thinking: result.thinking ?? null, thinking_source: result.thinking_source,
     attempts: result.attempts, used_place: result.used_place,
+    ...(result.route ? { route: result.route } : {}),
     ...('ok' in result && result.ok === false ? { error: result.reason } : {}) };
 }
 
@@ -343,7 +344,8 @@ export async function callWorkerTool(name: string, args: Record<string, unknown>
     case 'hud_ask': return ask(context, { question: string('question'), default: string('default'), options: strings('options'),
       context: args.context === undefined ? undefined : string('context') }, undefined, signal);
     case 'hud_sonic':
-      if (args.thinking !== undefined) throw new Error('invalid_arguments: unexpected thinking');
+      for (const key of ['preset', 'on', 'model', 'thinking'])
+        if (args[key] !== undefined) throw new Error(`invalid_arguments: unexpected ${key}`);
       if (args.task !== undefined) {
         if (args.wait !== undefined) throw new Error('start or wait for sonic, not both (wait cannot be passed with task)');
         return startSonic(context, string('task'), args.cwd);

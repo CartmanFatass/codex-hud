@@ -174,7 +174,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     applyWidth: lifecycle.applyWidth,
     repaint: () => render(),
     repaintAll: () => repaintAll(),
-  }, () => roleRegistry(jobPipeline.home, shownRoot()).roles().get('imp')?.presets?.map(p => p.name) ?? []);
+  }, (role) => roleRegistry(jobPipeline.home, shownRoot()).roles().get(role)?.presets?.map(p => p.name) ?? []);
   const projectControlShown = (state: MonitorState, modal = false) => controlShown(state, modal) && state.control.subTab !== 'resources';
   const syncModelListDiscovery = () => discovery.sync(projectControlShown(state, settingsFlow.open));
   const decisions = new ModelRuntimeStore(path.join(getHudDisplayHome(), 'model-cache', 'decision-api'));

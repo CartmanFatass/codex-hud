@@ -27,6 +27,8 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   sonicAutoThinking: boolean;
   impPlacement: 'fixed' | 'even' | 'auto';
   impEvenPool: string[];
+  sonicPlacement: 'fixed' | 'even';
+  sonicEvenPool: string[];
   /** Panel UI language; auto follows the locale. */
   language: 'auto' | 'en' | 'zh';
   decisionCallsPerHour: number;
@@ -63,6 +65,8 @@ export function defaultSettings(): HudSettings {
     sonicAutoThinking: false,
     impPlacement: 'fixed',
     impEvenPool: [],
+    sonicPlacement: 'fixed',
+    sonicEvenPool: [],
     decisionCallsPerHour: 0,
     notify: false,
     notifyDesktop: false,
@@ -82,6 +86,9 @@ const oneOf =
   (value: unknown): boolean =>
     typeof value === 'string' && allowed.includes(value);
 
+const validEvenPool = (value: unknown): boolean =>
+  Array.isArray(value) && value.every((name) => typeof name === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(name));
+
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusline: isBoolean,
   theme: oneOf(...THEMES),
@@ -97,7 +104,9 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   quietJobDecision: isBoolean,
   sonicAutoThinking: isBoolean,
   impPlacement: oneOf('fixed', 'even', 'auto'),
-  impEvenPool: (value) => Array.isArray(value) && value.every(name => typeof name === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(name)),
+  impEvenPool: validEvenPool,
+  sonicPlacement: oneOf('fixed', 'even'),
+  sonicEvenPool: validEvenPool,
   language: oneOf('auto', 'en', 'zh'),
   notify: isBoolean,
   notifyDesktop: isBoolean,

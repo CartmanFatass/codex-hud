@@ -104,6 +104,10 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     help: 'Fixed: active preset. Even: spread starts across the pool. Auto: send the Imp brief, ticket and context file names and sizes to the Decision API' },
   { key: 'impEvenPool', group: 'Models', label: 'Even pool', values: [],
     help: 'Choose an Imp preset with ←→; Enter includes or excludes it', get: settings => settings.impEvenPool.join(', ') },
+  { key: 'sonicPlacement', group: 'Models', label: 'Sonic placement', values: ['fixed', 'even'],
+    help: 'Fixed: active preset. Even: spread starts across the pool' },
+  { key: 'sonicEvenPool', group: 'Models', label: 'Sonic even pool', values: [],
+    help: 'Choose a Sonic preset with ←→; Enter includes or excludes it', get: settings => settings.sonicEvenPool.join(', ') },
   {
     key: 'roleCaps',
     role: 'imp',
@@ -154,8 +158,23 @@ function isAdvancedOpen(state: Pick<SettingsPageState, 'selected' | 'advanced'>)
   const selected = clampSelected(state.selected);
   return Boolean(state.advanced || (selected < SETTING_ROWS.length && SETTING_ROWS[selected].advanced));
 }
+type PoolKey = 'impEvenPool' | 'sonicEvenPool';
+const POOL_ROWS: Record<PoolKey, {
+  placement: 'impPlacement' | 'sonicPlacement';
+  presets: 'impPresets' | 'sonicPresets';
+  index: 'poolIndex' | 'sonicPoolIndex';
+  none: string;
+}> = {
+  impEvenPool: { placement: 'impPlacement', presets: 'impPresets', index: 'poolIndex', none: 'No Imp presets' },
+  sonicEvenPool: { placement: 'sonicPlacement', presets: 'sonicPresets', index: 'sonicPoolIndex', none: 'No Sonic presets' },
+};
+const isPoolKey = (key: SettingKey | undefined): key is PoolKey => !!key && Object.hasOwn(POOL_ROWS, key);
+
 function mainIndices(draft: HudSettings): readonly number[] {
-  return MAIN_INDICES.filter(i => draft.impPlacement === 'even' || SETTING_ROWS[i].key !== 'impEvenPool');
+  return MAIN_INDICES.filter(i => {
+    const key = SETTING_ROWS[i].key;
+    return !isPoolKey(key) || draft[POOL_ROWS[key].placement] === 'even';
+  });
 }
 function visualGroup(index: number): SettingGroup | 'Advanced' {
   return index === ADVANCED || SETTING_ROWS[index]?.advanced ? 'Advanced' : SETTING_ROWS[index].group;
@@ -169,7 +188,9 @@ export function withRowValue(settings: HudSettings, row: SettingRow, value: Sett
 export interface SettingsPageState {
   draft: HudSettings;
   impPresets?: readonly string[];
+  sonicPresets?: readonly string[];
   poolIndex?: number;
+  sonicPoolIndex?: number;
   selected: number;
   offset: number;
   message: string;
@@ -196,7 +217,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'openPreviews'],
-  Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'impPlacement', 'impEvenPool'],
+  Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
 };
@@ -230,8 +251,8 @@ export function renderSettingsPage(
 ): SettingsFrame {
   width = Math.max(0, Math.floor(width));
   height = Math.max(0, Math.floor(height));
-  const pool = SETTING_ROWS.findIndex(row => row.key === 'impEvenPool');
-  const selected = state.selected === pool && state.draft.impPlacement !== 'even' ? pool - 1 : clampSelected(state.selected),
+  const clamped = clampSelected(state.selected), clampedKey = SETTING_ROWS[clamped]?.key;
+  const selected = isPoolKey(clampedKey) && state.draft[POOL_ROWS[clampedKey].placement] !== 'even' ? clamped - 1 : clamped,
     advanced = isAdvancedOpen({ selected, advanced: state.advanced }),
     original = state.original ?? { ...state.draft, roleCaps: { ...state.draft.roleCaps } },
     defaults = defaultSettings();
@@ -246,9 +267,10 @@ export function renderSettingsPage(
     const displayLabel = row.advanced
       ? `${i === selected ? `${t(row.group)} ·` : theme.board.muted(`${t(row.group)} ·`)} ${t(row.label)}`
       : t(row.label);
-    const preset = state.impPresets?.[state.poolIndex ?? 0];
-    const displayValue = i !== pool ? valueText(row, value) : i !== selected ? String(value || t('empty'))
-      : preset ? `${monitorText(preset)} · ${t(state.draft.impEvenPool.includes(preset) ? 'included' : 'excluded')}` : t('No Imp presets');
+    const pool = isPoolKey(row.key) ? POOL_ROWS[row.key] : undefined;
+    const preset = pool ? state[pool.presets]?.[state[pool.index] ?? 0] : undefined;
+    const displayValue = !pool ? valueText(row, value) : i !== selected ? String(value || t('empty'))
+      : preset ? `${monitorText(preset)} · ${t(state.draft[row.key as PoolKey].includes(preset) ? 'included' : 'excluded')}` : t(pool.none);
     const shown = truncateAnsi(
         displayValue + (row.key === 'decisionApi' && !state.decisionKeys?.[value as HudSettings['decisionApi']] ? ` ${t('(no key)')}` : ''),
         Math.max(1, width - visualLength(rawLabel) - (i === selected ? 7 : 3))
@@ -336,7 +358,7 @@ export function renderSettingsPage(
   while (lines.length < height - 1) lines.push('');
   const hints = selected === ADVANCED
     ? [advanced ? '⏎ collapse' : '⏎ expand', 's save', 'Esc back']
-    : [...(selected === pool ? ['←→ choose', '⏎ toggle'] : ['←→ change']), 's save', 'Esc back', 'r reset'];
+    : [...(isPoolKey(SETTING_ROWS[selected]?.key) ? ['←→ choose', '⏎ toggle'] : ['←→ change']), 's save', 'Esc back', 'r reset'];
   if (height > 1) lines.push(footRow('', hints, width));
   const back = body.findIndex((r) => r.back !== undefined);
   return {
@@ -387,7 +409,7 @@ export function handleSettingsInput(
         frame.back?.y === input.y &&
         input.x >= frame.back.x &&
         input.x <= frame.back.x + 1;
-      key = SETTING_ROWS[index].key === 'impEvenPool' && input.x < (frame.back?.x ?? 0) ? 'enter' : onBack ? 'left' : 'right';
+      key = isPoolKey(SETTING_ROWS[index].key) && input.x < (frame.back?.x ?? 0) ? 'enter' : onBack ? 'left' : 'right';
     } else {
       const delta = input.button === 'wheel-down' ? 3 : -3;
       next.offset = Math.max(0, Math.min(frame.maxOffset ?? Infinity, next.offset + delta));
@@ -433,12 +455,13 @@ export function handleSettingsInput(
       return { state: next };
     }
     const row = SETTING_ROWS[next.selected];
-    if (row.key === 'impEvenPool') {
-      const presets = next.impPresets ?? [], index = next.poolIndex ?? 0, preset = presets[index];
+    if (isPoolKey(row.key)) {
+      const cfg = POOL_ROWS[row.key];
+      const presets = next[cfg.presets] ?? [], index = next[cfg.index] ?? 0, preset = presets[index];
       if (key === 'enter' && preset) {
-        const pool = next.draft.impEvenPool;
-        next.draft = { ...next.draft, impEvenPool: pool.includes(preset) ? pool.filter(name => name !== preset) : [...pool, preset] };
-      } else if (presets.length && key !== 'enter') next.poolIndex = (index + presets.length + (key === 'left' ? -1 : 1)) % presets.length;
+        const pool = next.draft[row.key];
+        next.draft = { ...next.draft, [row.key]: pool.includes(preset) ? pool.filter(name => name !== preset) : [...pool, preset] };
+      } else if (presets.length && key !== 'enter') next[cfg.index] = (index + presets.length + (key === 'left' ? -1 : 1)) % presets.length;
       next.message = '';
       return { state: next };
     }

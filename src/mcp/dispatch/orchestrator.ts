@@ -343,8 +343,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       pi_role: from.run.find(p => p.harness === 'pi')?.pi_role ?? name } };
   }
   const now = Date.now();
-  const receipts = jobs();
-  const existing = receipts.find((job) =>
+  const existing = jobs().find((job) =>
     job.request_key === request_key && (!windowedKey || withinRetryWindow(job.created_at, now)));
   if (existing) {
     ensureWatcher();
@@ -411,17 +410,20 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const contextCwd = scoutContextCwd ?? cwd;
   const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf);
   const imp = requestedRole === 'imp' || fromImp;
-  const settings = imp && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
+  const sonic = requestedRole === 'sonic';
+  const settings = (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
   let route: JobRoute | undefined;
   let localContext: Awaited<ReturnType<typeof contextFor>> | undefined;
   if (imp && (retryInput || fromImp)) {
     route = landCwd ? repairImpRoute(chain, sourceJob?.route) : sourceJob?.route;
-  } else if (settings?.impPlacement === 'even') {
-    const history = receipts.filter(j => (j.overflow_from ?? j.role) === 'imp' && (j.imp_preset ?? j.preset))
-      .map(j => ({ ...j, started_at: j.started_at ?? readCachedStatus(j.job).status?.started_at ?? (!j.queued_at && j.used_place ? j.created_at : undefined) }));
-    const seed = defaultImpRoute('Fewest imp starts in the last 24 hours', mode);
-    const { preset, skipped } = pickEvenPreset(chain.presets?.map(p => p.name) ?? [], settings.impEvenPool, name =>
-      launchPlan(found, chain, now, args, routing, onEntry, retryInput, { ...seed, preset: name }).candidates.length > 0, history, now);
+  } else if (sonic && retryInput) {
+    route = sourceJob?.route;
+  } else if ((imp && settings?.impPlacement === 'even') || (sonic && settings?.sonicPlacement === 'even')) {
+    const targetRole = sonic ? 'sonic' : 'imp';
+    const seed = defaultImpRoute('Next preset in even pool', sonic ? 'headless' : mode);
+    const known = new Set(chain.presets?.map(p => p.name) ?? []);
+    const { preset, skipped } = await pickEvenPreset(hudHome, targetRole, known, sonic ? settings!.sonicEvenPool : settings!.impEvenPool,
+      name => launchPlan(found, chain, now, args, routing, onEntry, retryInput, { ...seed, preset: name }).candidates.length > 0);
     route = { ...seed, placement: 'even', preset: preset ?? currentPreset(chain),
       ...(!preset || skipped.length ? { fallback: [!preset && `Even pool ${skipped.length ? 'unavailable' : 'empty'}; using active preset`,
         skipped.length && `Skipped unavailable presets: ${skipped.join(', ')}`].filter(Boolean).join('; ') } : {}) };
@@ -646,7 +648,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
-        ...(route && { route, headless: route.mode === 'headless' ? true : undefined }),
+        ...(route && { route, headless: route.mode === 'headless' || role === 'sonic' ? true : undefined }),
         ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: chain.resume_s ?? DEFAULT_RESUME_S }),
         create_options: {
           cwd: landCwd ?? cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
@@ -663,7 +665,6 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
-      if (imp) job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
       let briefContext = inline === browser ? context! : await contextFor(args, browser);
       let scoutFailure = scoutResult?.failure;
@@ -932,7 +933,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
       job = {
         ...base, ...options, place, place_key: candidate.key,
-        ...(route && { route, headless: route.mode === 'headless' ? true : undefined }),
+        ...(route && { route, headless: route.mode === 'headless' || role === 'sonic' ? true : undefined }),
         ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: chain.resume_s ?? DEFAULT_RESUME_S }),
         create_options: {
           cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
@@ -949,7 +950,6 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
           state_trust: candidate.state_trust ?? 'advisory',
         } } : {}),
       };
-      if (launchRoleName === 'imp') job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
       let briefContext = inline === browser ? context : await contextFor(args, browser);
       let scoutFailure = scoutResult?.failure;
@@ -1065,7 +1065,6 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
 
 function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: string, advanceCursor = true): JobRow | undefined {
   job.dispatch_exit_code = result.exit_code;
-  if (job.used_place && job.imp_preset !== undefined) job.started_at = readCachedStatus(job.job).status?.started_at ?? new Date().toISOString();
   if (result.code) job.dispatch_code = result.code;
   if (result.path) job.dispatch_path = result.path;
   const failure = result.exit_code === 0 ? null : launchFailure(result);

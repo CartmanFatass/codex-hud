@@ -53,9 +53,10 @@ type SettingsEffects = {
 type SettingsFacts = NonNullable<Parameters<typeof renderSettingsPage>[3]>;
 
 /** Own the Settings draft, dirty-navigation prompt and overlaid Help. */
-export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settings'] | undefined, effects: SettingsEffects, impPresets: () => readonly string[]) {
+export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settings'] | undefined, effects: SettingsEffects, rolePresets: (role: 'imp' | 'sonic') => readonly string[]) {
+  const presets = () => ({ impPresets: rolePresets('imp'), sonicPresets: rolePresets('sonic') });
   let page: SettingsPageState | null = place
-    ? { ...place, draft: { ...saved, roleCaps: { ...saved.roleCaps } }, original: { ...saved, roleCaps: { ...saved.roleCaps } }, decisionKeys: availableDecisionKeys(), impPresets: impPresets(), message: '' } : null;
+    ? { ...place, draft: { ...saved, roleCaps: { ...saved.roleCaps } }, original: { ...saved, roleCaps: { ...saved.roleCaps } }, decisionKeys: availableDecisionKeys(), ...presets(), message: '' } : null;
   let settingsFrame: SettingsFrame | undefined;
   let help: MonitorState | undefined;
   let leave: (SettingsConfirmationState & { destination?: string }) | null = null;
@@ -99,7 +100,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
     show(settings: HudSettings) {
       let decisionApi = settings.decisionApi;
       try { decisionApi = loadSettings().decisionApi; } catch { /* Keep the loaded draft. */ }
-      page = { draft: { ...settings, roleCaps: { ...settings.roleCaps }, decisionApi }, decisionKeys: availableDecisionKeys(), impPresets: impPresets(), selected: 0, offset: 0, message: '' };
+      page = { draft: { ...settings, roleCaps: { ...settings.roleCaps }, decisionApi }, decisionKeys: availableDecisionKeys(), ...presets(), selected: 0, offset: 0, message: '' };
     },
     paint(width: number, height: number, facts: () => SettingsFacts, paintHelp: (help: MonitorState, mouse: boolean) => string[]): string[] | undefined {
       if (!page) return;

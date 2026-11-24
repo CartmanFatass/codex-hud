@@ -123,7 +123,7 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
       (land && candidate.place.harness === 'bro')) return [];
     let applied = route;
     let launchArgs = argsForPlace(args, candidate.place, retryInput);
-    if (route) {
+    if (route && chain.role !== 'sonic') {
       // A prior capability downgrade still represents a headless choice on retries and queued starts.
       const wantsHeadless = route.mode === 'headless' || !!route.mode_reason;
       const autoHeadless = !explicit && wantsHeadless && chain.can_continue && supportsHeadless(candidate.place);
@@ -138,7 +138,7 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
   });
   if (missingPin) return { candidates: [], effective: { ...standard, reason: `Preset ${pin} is no longer configured` }, route, fallback: undefined, error: undefined };
   const preferred = tier ? entries(tier, route) : [];
-  const modeFallback = route?.tier === 'standard' && !explicit && preferred.some(entry => entry.route?.mode === 'headless');
+  const modeFallback = chain.role !== 'sonic' && route?.tier === 'standard' && !explicit && preferred.some(entry => entry.route?.mode === 'headless');
   const fallback: JobRoute | undefined = route && (route.tier !== 'standard' || modeFallback) ? {
     ...route, tier: 'standard', mode: args.mode === 'headless' ? 'headless' : 'tab', mode_reason: undefined,
     fallback: modeFallback ? 'Cannot launch headless; using standard in a tab' : `${route.tier} tier has no usable place; using standard`,

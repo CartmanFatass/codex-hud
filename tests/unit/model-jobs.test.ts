@@ -44,7 +44,7 @@ test('Models keeps execution controls and ignores legacy display-model settings'
       assert.equal(key in stored, false);
     assert.deepEqual(
       SETTING_ROWS.filter((r) => r.group === 'Models').map((r) => r.key),
-      ['decisionApi', 'decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'impPlacement', 'impEvenPool']
+      ['decisionApi', 'decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool']
     );
     const text = stripAnsi(
       renderSettingsPage(
@@ -60,16 +60,23 @@ test('Models keeps execution controls and ignores legacy display-model settings'
     assert.match(text, /Quiet job\s+on/);
     assert.match(text, /Sonic auto-thinking\s+off/);
     assert.match(text, /Imp placement\s+fixed/);
-    assert.doesNotMatch(text, /consent|Backend|AGY|Even pool/);
+    assert.match(text, /Sonic placement\s+fixed/);
+    assert.doesNotMatch(text, /consent|Backend|AGY|Even pool|Sonic even pool/);
     const frame = renderSettingsPage({ draft, selected: SETTING_ROWS.findIndex(r => r.key === 'impPlacement'),
-      impPresets: ['small', 'deep'], offset: 0, message: '' }, 80, 40);
+      impPresets: ['small', 'deep'], sonicPresets: ['deepseek', 'haiku', 'luna'], offset: 0, message: '' }, 80, 40);
     let next = frame.state;
     for (const key of ['right', 'down', 'enter', 'right', 'enter', 'left', 'enter'])
       next = handleSettingsInput(next, { type: 'key', key }, renderSettingsPage(next, 80, 40)).state;
     assert.equal(next.draft.impPlacement, 'even');
     assert.deepEqual(next.draft.impEvenPool, ['deep']);
+    for (const key of ['down', 'right', 'down', 'enter', 'right', 'enter'])
+      next = handleSettingsInput(next, { type: 'key', key }, renderSettingsPage(next, 80, 40)).state;
+    assert.equal(next.draft.sonicPlacement, 'even');
+    assert.deepEqual(next.draft.sonicEvenPool, ['deepseek', 'haiku']);
     assert.deepEqual(saveSettings(next.draft).impEvenPool, ['deep']);
     assert.deepEqual(loadSettings().impEvenPool, ['deep']);
+    assert.equal(loadSettings().sonicPlacement, 'even');
+    assert.deepEqual(loadSettings().sonicEvenPool, ['deepseek', 'haiku']);
   } finally {
     process.env = saved;
     fs.rmSync(home, { recursive: true, force: true });

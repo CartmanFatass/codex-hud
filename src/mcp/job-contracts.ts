@@ -34,8 +34,6 @@ export interface Job extends PiOptions {
   caller_pane?: string; // Headless workers have no pane of their own.
   created_at: string;
   queued_at?: string;
-  started_at?: string;
-  imp_preset?: string | null;
   overflow_from?: string;
   instructions_from?: string;
   borrowed_instructions?: { name: string; pi_role: string }; // Keep launch selectors across queueing and native resume.

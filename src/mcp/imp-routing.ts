@@ -1,7 +1,10 @@
+import { join } from 'node:path';
 import { routeModes, routeTiers, type Role, type RoleRouting } from '../roles/roster.js';
 import { loadSettings, type HudSettings } from '../settings.js';
+import { withAbstractLock } from '../utils/abstract-lock.js';
+import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { dispatchChoice, dispatchDecision } from './dispatch-decision.js';
-import type { Job, JobRoute } from './job-contracts.js';
+import type { JobRoute } from './job-contracts.js';
 
 export const defaultImpRoute = (reason: string, mode: JobRoute['mode'] = 'tab'): JobRoute => ({ tier: 'standard', mode, source: 'default', reason });
 
@@ -10,24 +13,31 @@ export function impPlacementSettings(hudHome: string) {
   catch { return undefined; }
 }
 
-/** Presets and ties follow role-file order; selected names absent from the role are unavailable. */
-export function pickEvenPreset(order: readonly string[], pool: readonly string[], available: (preset: string) => boolean,
-  jobs: readonly Pick<Job, 'role' | 'overflow_from' | 'imp_preset' | 'preset' | 'started_at'>[], now: number) {
-  const counts = new Map<string, number>();
-  for (const job of jobs) {
-    const name = job.imp_preset === undefined ? job.preset : job.imp_preset;
-    const age = now - Date.parse(job.started_at ?? '');
-    if ((job.overflow_from ?? job.role) === 'imp' && name && age >= 0 && age < 86_400_000)
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-  }
-  let preset: string | undefined;
-  const skipped = new Set(pool);
-  for (const name of order) {
-    if (!skipped.has(name) || !available(name)) continue;
-    skipped.delete(name);
-    if (preset === undefined || (counts.get(name) ?? 0) < (counts.get(preset) ?? 0)) preset = name;
-  }
-  return { preset, skipped: [...skipped] };
+/** Round-robin rotator in pool order; persists the last used index in a private per-role file under HUD_HOME. */
+export async function pickEvenPreset(hudHome: string, role: 'imp' | 'sonic', known: ReadonlySet<string>,
+  pool: readonly string[], available: (preset: string) => boolean) {
+  const unique = [...new Set(pool)];
+  if (!unique.length) return { preset: undefined, skipped: [] as string[] };
+  return withAbstractLock(`even-${role}`, hudHome, () => {
+    const file = join(hudHome, `even-${role}.json`);
+    let last = -1;
+    try {
+      const raw = readJsonBounded(file, 4096) as { index?: unknown } | null;
+      if (typeof raw?.index === 'number' && Number.isInteger(raw.index)) last = raw.index;
+    } catch { /* Missing or unreadable state starts at index 0. */ }
+    const start = last >= 0 && last < unique.length ? (last + 1) % unique.length : 0;
+    const skipped: string[] = [];
+    for (let offset = 0; offset < unique.length; offset++) {
+      const index = (start + offset) % unique.length;
+      const name = unique[index]!;
+      if (known.has(name) && available(name)) {
+        writePrivateFile(file, JSON.stringify({ index }) + '\n');
+        return { preset: name, skipped };
+      }
+      skipped.push(name);
+    }
+    return { preset: undefined, skipped };
+  });
 }
 
 export async function pickImpRoute(hudHome: string, settings: HudSettings, routing: RoleRouting, task: string, explicitMode: JobRoute['mode'] | undefined,

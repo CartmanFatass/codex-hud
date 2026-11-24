@@ -270,10 +270,16 @@ If no key is available, the call cap is reached, the decision times out (about f
 Neither `hud_create` for `sonic` nor `hud_sonic` accepts a thinking override.
 Dispatch records and returns the effective level after nearest-supported mapping and its `thinking_source` (`default`, `decision` or `explicit`).
 
+**Sonic placement** (`sonicPlacement` in Settings → Models) defaults to `fixed`, which uses the active preset.
+For `even`, use the **Sonic even pool** row (`sonicEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it.
+Across `hud_create` for `sonic`, `scout`, and worker `hud_sonic`, HUD rotates round-robin through the pool in pool order, keeping the last used index in a private state file under `$HUD_HOME` (`even-sonic.json`).
+It skips unavailable or exhausted presets, reports them, wraps around, and uses the active preset if the pool is empty or unavailable.
+The job record includes `route.placement: "even"` and `route.preset`; retries keep the chosen preset.
+Sonic still accepts no placement fields from callers.
+
 **Imp placement** (`impPlacement` in Settings → Models) defaults to `fixed`, which uses the active preset.
 For `even`, use the **Even pool** row (`impEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it.
-HUD chooses the available preset with the fewest imp starts in the last 24 hours, breaking ties in role-file order.
-It reports skipped presets and uses the active preset if the pool is empty or unavailable.
+HUD rotates round-robin through the pool in pool order, keeping the last used index in a private state file under `$HUD_HOME` (`even-imp.json`), skipping and reporting unavailable or exhausted presets, wrapping around, and falling back to the active preset if the pool is empty or unavailable.
 The create result and job record include `route.placement: "even"` and `route.preset`; the Inspector shows `Placement: even` and the preset.
 Queueing, overflow, retry and land repair keep the preset selected at create in fixed and even modes.
 Legacy `impRouting: true` loads as `auto`; `false` loads as `fixed`.
