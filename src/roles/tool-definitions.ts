@@ -17,6 +17,7 @@ const tool = (name: string, description: string, properties: Record<string, unkn
 
 export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'wontfix', 'claimed', 'done'] as const;
 const ticketStatus = { ...text, enum: TICKET_STATUSES };
+const ticketObjective = { ...text, pattern: OBJECTIVE_SLUG };
 const ticketNumber = { type: 'integer', minimum: 1 };
 const blockers = { type: 'array', items: { anyOf: [ticketNumber, { type: 'string', pattern: '^[a-z0-9-]+/[0-9]+$' }] } };
 
@@ -180,7 +181,7 @@ export const ROLE_TOOLS = [
   }, ['op']),
   tool(
     'hud_tickets',
-    'Tickets: guide, queue, local edits, GitHub sync.',
+    'Tickets: guide, queue, local edits, GitHub sync. Add/update objective: ID in .hud/objectives.md.',
     {
       op: { ...text, enum: ['guide', 'ready', 'run', 'add', 'update', 'sync'], default: 'guide' },
       cwd: text,
@@ -200,6 +201,7 @@ export const ROLE_TOOLS = [
             acceptance: { type: 'array', items: text },
             status: { ...ticketStatus, default: 'ready-for-agent' },
             owner_try: { type: 'boolean', description: 'Owner try post-land (default no).' },
+            objective: ticketObjective,
           },
           required: ['title', 'blocked_by', 'what', 'acceptance'],
           additionalProperties: false,
@@ -208,6 +210,7 @@ export const ROLE_TOOLS = [
       ticket: ticketNumber,
       status: ticketStatus,
       owner_try: bool,
+      objective: ticketObjective,
       blocked_by: { ...blockers, description: 'Update: replace blockers.' },
       tick: { type: 'array', items: ticketNumber, description: 'Update: 1-based acceptance items.' },
       updates: {
@@ -221,6 +224,7 @@ export const ROLE_TOOLS = [
             ticket: ticketNumber,
             status: ticketStatus,
             owner_try: { type: 'boolean' },
+            objective: ticketObjective,
             blocked_by: blockers,
             tick: { type: 'array', items: ticketNumber },
           },

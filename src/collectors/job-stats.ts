@@ -5,6 +5,7 @@ import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
 import { jobLand, landedIn, readJobFlow, type JobFlow, type JobLand } from '../roles/job-land.js';
 import { count, epoch, jobUsage, record, text, type JobUsage } from '../roles/job-usage.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
+import { objectiveLink } from './objectives.js';
 
 export const groupings = ['role', 'model', 'route', 'feature'] as const;
 export type GroupBy = (typeof groupings)[number] | 'place';
@@ -28,7 +29,7 @@ function archiveFacts(value: unknown): JobFacts | undefined {
     (state === 'queued' || state === 'running' || state === 'completed' || state === 'failed' || state === 'cancelled')
     ? { attempts, reruns, repairs, state, sha: text(raw.sha), landed_at: text(raw.landed_at), updated_at: text(raw.updated_at) } : undefined;
   return { job: id, project: text(r.project), role: text(r.role), harness: text(r.harness), model: text(r.model),
-    used_place: text(r.used_place), ticket: text(r.ticket), package: text(r.package), route: { tier: text(route.tier), mode: text(route.mode) },
+    used_place: text(r.used_place), ticket: text(r.ticket), objective: objectiveLink(r.objective), package: text(r.package), route: { tier: text(route.tier), mode: text(route.mode) },
     mode: text(r.mode), question_count: count(r.question_count), parent_job: text(r.parent_job), summary: text(r.summary),
     usage: jobUsage(r.usage), land, state: text(r.state), created_at: text(r.created_at), started_at: text(r.started_at),
     settled_at: text(r.settled_at), ended_at: text(r.ended_at), reaped_at: text(r.reaped_at), dispatch_exit_code: count(r.dispatch_exit_code) };

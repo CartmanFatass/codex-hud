@@ -232,7 +232,16 @@ test('queued imp starts automatically when a working imp settles, picking the fi
   }
 
   // Fourth and fifth imp queue (overflow is off).
-  const q1 = await f.call('hud_create', { role: 'imp', task: 'Oldest queued imp.', request_key: 'q-oldest' });
+  const objectives = join(f.root, '.hud/objectives.md'), issues = join(f.root, '.scratch/sample/issues');
+  fs.mkdirSync(join(f.root, '.hud'));
+  fs.mkdirSync(issues, { recursive: true });
+  fs.writeFileSync(objectives, '## delivery: Original title\n**State:** active\n');
+  fs.writeFileSync(join(issues, '01-sample.md'), '# 01: Sample\n\n**Status:** ready-for-agent · **Objective:** delivery\n');
+  const q1 = await f.call('hud_create', { role: 'imp', task: 'Oldest queued imp.', request_key: 'q-oldest', ticket: 'sample/01' });
+  const readQ1Receipt = () => JSON.parse(fs.readFileSync(join(q1.task_dir, 'job.json'), 'utf8'));
+  const objective = { id: 'delivery', title: 'Original title' };
+  assert.deepEqual(readQ1Receipt().objective, objective);
+  fs.writeFileSync(objectives, '## delivery: Renamed title\n**State:** active\n');
   const q2 = await f.call('hud_create', { role: 'imp', task: 'Second queued imp.', request_key: 'q-second' });
   assert.equal(q1.state, 'queued');
   assert.equal(q1.queue_position, 1);
@@ -257,10 +266,10 @@ test('queued imp starts automatically when a working imp settles, picking the fi
 
   // Settle working[0] to idle_grace (not a working state). Watcher must start q1 automatically on place 1!
   await publishPiGrace(t, working[0], null);
-  const readQ1Receipt = () => JSON.parse(fs.readFileSync(join(q1.task_dir, 'job.json'), 'utf8'));
   await until(() => cliState(q1.task_dir)?.state === 'working' && readQ1Receipt().dispatch_exit_code === 0, 30000);
 
   const startedReceipt = readQ1Receipt();
+  assert.deepEqual(startedReceipt.objective, objective);
   assert.equal(startedReceipt.model, 'synthetic/second', 'started on first available place at start time');
   assert.equal(startedReceipt.resume_s, 900, 'queued workers inherit the selected role’s resume window');
   assert.equal((await f.call('hud_read', { job: q2.job })).state, 'queued');

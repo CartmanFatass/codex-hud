@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { objectiveLink } from '../collectors/objectives.js';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { getJobIndexCache } from './job-index-cache.js';
@@ -27,7 +28,7 @@ export function publicJobLine(value: string): string {
 
 export type JobFacts = {
   job: string; project?: string; role?: string; harness?: string; model?: string; used_place?: string;
-  ticket?: string; package?: string; route?: { tier?: string; mode?: string }; mode?: string;
+  ticket?: string; objective?: Job['objective']; package?: string; route?: { tier?: string; mode?: string }; mode?: string;
   question_count?: number; parent_job?: string; summary?: string; usage?: JobUsage; land?: JobLand;
   state?: string; created_at?: string; started_at?: string; settled_at?: string; ended_at?: string;
   archived_at?: string; reaped_at?: string; dispatch_exit_code?: number;
@@ -44,7 +45,7 @@ export function projectJobFacts(home: string, dir: string, id: string, job: Part
   return {
     job: id, project: text(job.project_root) ?? text(job.worktree?.main_root) ?? text(job.cwd), role: text(job.role) ?? text(status.role),
     harness, model: text(job.model) ?? text(status.model), used_place: text(job.used_place),
-    ticket: text(job.ticket), package: text(job.package), parent_job: text(job.parent_job),
+    ticket: text(job.ticket), objective: objectiveLink(job.objective), package: text(job.package), parent_job: text(job.parent_job),
     route: tier || mode ? { tier: text(tier), mode: text(mode) } : undefined,
     mode: job.headless || ['headless', 'sonic'].includes(status.slot ?? '') ? 'headless'
       : job.headless === false || status.slot === 'primary' ? 'tab' : undefined,

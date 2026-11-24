@@ -215,12 +215,24 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   const cwd = join(f.root, 'retry-project');
   fs.mkdirSync(cwd);
   fs.writeFileSync(join(cwd, 'notes.md'), 'Synthetic notes.');
+  fs.mkdirSync(join(cwd, '.hud'));
+  const objectives = join(cwd, '.hud/objectives.md');
+  fs.writeFileSync(objectives, '## delivery: Original title\n**State:** active\n**Features:** sample\n');
+  const { tickets: [linked, unlinked] } = await f.call('hud_tickets', { op: 'add', cwd, feature: 'sample', tickets: [
+    { title: 'Linked', blocked_by: [], what: 'Change.', acceptance: [], objective: 'delivery' },
+    { title: 'Original title', blocked_by: [], what: 'Change.', acceptance: [] },
+  ] });
   const original = await f.call('hud_create', {
     role: 'retry-check', cwd, task: 'Synthetic task: 重试.\n\n', context_files: ['notes.md'], tps: false, checks: ['true'],
-    experiment: 'synthetic-speed', arm: 'control',
+    experiment: 'synthetic-speed', arm: 'control', ticket: 'sample/01',
   });
   const originalReceipt = join(original.task_dir, 'job.json');
   const legacy = JSON.parse(fs.readFileSync(originalReceipt));
+  const snapshot = { id: 'delivery', title: 'Original title' };
+  assert.deepEqual(legacy.objective, snapshot);
+  assert.match(cardText(workerFor(f, original.job)), /Objective\s+delivery · Original title/);
+  fs.writeFileSync(objectives, fs.readFileSync(objectives, 'utf8').replace('Original title', 'Renamed'));
+  fs.writeFileSync(linked.path, fs.readFileSync(linked.path, 'utf8').replace('**Objective:** delivery\n', ''));
   writeFixtureFile(originalReceipt, JSON.stringify({ ...legacy, preset: 'two', create_options: { ...legacy.create_options, thinking: 'high' } }));
   const statusFile = join(original.task_dir, 'STATUS.json');
   writeFixtureFile(statusFile, JSON.stringify({ state: 'failed', exit_reason: 'rate limit reached; retry after 5m' }));
@@ -239,12 +251,27 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   assert.equal(receipt.cwd, cwd);
   assert.equal(receipt.preset, 'two');
   assert.equal(receipt.retry_of, original.job);
+  assert.deepEqual(receipt.objective, snapshot);
   assert.ok(Date.parse(JSON.parse(fs.readFileSync(join(original.task_dir, 'job.json'))).observed_at));
   assert.equal(receipt.tps, false);
   assert.deepEqual(receipt.checks, ['true']);
   assert.equal(receipt.experiment, 'synthetic-speed');
   assert.equal(receipt.arm, 'control');
   assert.equal((await f.call('hud_create', retry)).job, next.job);
+
+  // A body mention or matching title/feature is not a link.
+  fs.appendFileSync(unlinked.path, '\n**Objective:** delivery\n');
+  const noLink = await f.call('hud_create', { role: 'general', cwd, task: 'Original title', package: 'sample', ticket: 'sample/02' });
+  const hasObjective = job => Object.hasOwn(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))), 'objective');
+  assert.equal(hasObjective(noLink), false);
+  const { updates } = await f.call('hud_tickets', { op: 'update', cwd, feature: 'sample', updates: [
+    { ticket: 1, objective: 'unknown' }, { ticket: 2, objective: 'delivery' },
+  ] });
+  assert.equal(updates[0].ok, false);
+  assert.equal(updates[1].ok, true);
+  assert.match(fs.readFileSync(unlinked.path, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Objective:\*\* delivery\n/);
+  writeFixtureFile(join(noLink.task_dir, 'STATUS.json'), JSON.stringify({ state: 'failed' }));
+  assert.equal(hasObjective(await f.call('hud_create', { retry_of: noLink.job })), false);
 });
 
 test('hud_create retains every pre-input cause on one failed job and stays within the requested preset', async (t) => {
@@ -457,6 +484,8 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   ]);
   fs.appendFileSync(first, '\n- [ ] Synthetic comment, not acceptance.\n');
   const original = fs.readFileSync(first, 'utf8');
+  await refusedTicketCall({ op: 'update', ticket: 1, status: 'wontfix', objective: 'unknown' }, /unknown objective: unknown/);
+  assert.equal(fs.readFileSync(first, 'utf8'), original);
   for (const n of [3, 0]) {
     await refusedTicketCall({ op: 'update', ticket: 1, status: 'wontfix', tick: [1, n] },
       new RegExp(`unknown acceptance item: ${n} \\(valid range: 1-2\\)`));

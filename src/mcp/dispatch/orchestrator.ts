@@ -6,6 +6,7 @@ import { join, isAbsolute, resolve, relative, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isCliDirTrusted, propagateCliTrust } from '../../cli/trust.js';
 import { taskTarget } from '../../collectors/job-supersession.js';
+import { objectiveLink } from '../../collectors/objectives.js';
 import type { JobRow } from '../../collectors/thin-jobs.js';
 import { isWorkingForCap, loadConcurrencySettings, capForRole, QUEUE_START_MARKER } from '../../roles/concurrency.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
@@ -31,7 +32,7 @@ import { defaultImpRoute, impPlacementSettings, pickEvenPreset, repairImpRoute, 
 import { clearHeadlessSends, hasHeadlessSends, headlessFollowupReady, readHeadlessSends, writeHeadlessSends } from '../headless-sends.js';
 import type { Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
-import { routingTicketText } from '../local-tickets.js';
+import { routingTicketText, ticketObjective } from '../local-tickets.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
 import { callerPane, session, trackCreatedJob } from '../mcp/session-state.js';
 import {
@@ -132,7 +133,7 @@ function originalTask(job: Job): string {
   return brief.split(/\n## Context References\n\nRead these files for task context:\n|\n## Context\n\n### |\nFinish with `hud_report`\.\n$|\nThis harness uses the commands below instead of the worker tools named in your role\./, 1)[0].trimEnd();
 }
 
-type SonicParent = Pick<Job, 'job' | 'cwd' | 'project_root' | 'worktree'>;
+type SonicParent = Pick<Job, 'job' | 'cwd' | 'project_root' | 'worktree' | 'objective'>;
 function sonicCwd(parent: SonicParent, args: Args): string {
   // Use the actual launch cwd from the receipt, not the worktree's main checkout or process.cwd().
   if (typeof parent.cwd !== 'string' || !isAbsolute(parent.cwd)) throw new Error('missing parent cwd');
@@ -219,7 +220,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
-    dispatchWithKey(args, pane, requestKey, windowedKey, parent?.job, repairOf, retryOf ? input : undefined, { worktreeSource, batch, slotGate, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: queue?.canAdmit }));
+    dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, { worktreeSource, batch, slotGate, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: queue?.canAdmit }));
 }
 
 export const pendingScouts = new Map<string, AbortController>();
@@ -230,7 +231,7 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
   let discard = false;
   try {
     const result = await dispatchWithKey({ role: 'sonic', task: question, cwd: target.cwd, context_files: contextFiles },
-      jobCallerPane(target), `scout:${target.job}`, false, target.job, undefined, undefined, { scoutContextCwd: contextCwd });
+      jobCallerPane(target), `scout:${target.job}`, false, target, undefined, undefined, { scoutContextCwd: contextCwd });
     if (!('job' in result)) {
       return { failure: ('reason' in result && result.reason) || ('error' in result && result.error) || ('code' in result && result.code) || 'could not launch' };
     }
@@ -286,7 +287,7 @@ function validExperimentTag(tag: unknown): tag is string | undefined {
 }
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
-  parentJob?: string, repairOf?: string, retryInput?: Args,
+  parent?: Pick<Job, 'job' | 'objective'>, repairOf?: string, retryInput?: Args,
   { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit }: {
     scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
     ticketQueue?: string; canAdmit?: () => boolean;
@@ -389,6 +390,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const id = 'j' + randomBytes(8).toString('hex');
   const dir = directory(id);
   const project = found.project();
+  const projectRoot = sharedRoot(cwd), parentJob = parent?.job;
+  const lineage = parent ?? sourceJob;
+  // Missing attribution on an existing job stays missing even if the ticket now links an Objective.
+  const objective = lineage ? objectiveLink(lineage.objective) : ticketObjective(projectRoot, args.ticket);
   const contextCwd = scoutContextCwd ?? cwd;
   const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf);
   const imp = requestedRole === 'imp' || fromImp;
@@ -475,7 +480,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         ...borrowed,
         request_key,
         cwd: reusedWorktree?.root ?? cwd,
-        project_root: sharedRoot(cwd),
+        project_root: projectRoot,
         ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
         caller_pane: pane,
         created_at: nowIso,
@@ -494,6 +499,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         experiment, arm,
         ...(args.package === undefined ? {} : { package: args.package as string }),
         ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
+        ...(objective && { objective }),
         ...(args.slice === undefined ? {} : { slice: args.slice as string }),
         ...(presetName === undefined ? {} : { preset: presetName }),
         create_options: {
@@ -539,7 +545,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(overflowFrom ? { overflow_from: overflowFrom } : {}),
       request_key,
       cwd: landCwd ?? reusedWorktree?.root ?? cwd,
-      project_root: sharedRoot(cwd),
+      project_root: projectRoot,
       ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
       caller_pane: pane,
       created_at: new Date().toISOString(),
@@ -557,6 +563,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       experiment, arm,
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
+      ...(objective && { objective }),
       ...(args.slice === undefined ? {} : { slice: args.slice as string }),
       ...(presetName === undefined ? {} : { preset: presetName }),
       attempts: [],

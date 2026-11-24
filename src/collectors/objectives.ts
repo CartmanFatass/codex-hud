@@ -16,6 +16,15 @@ export interface Objective {
   next?: string; result?: string; evidence: string[]; features: string[];
   unknownFields: string[];
 }
+export type ObjectiveLink = Pick<Objective, 'id' | 'title'>;
+
+/** Project only the two snapshot fields from a stored receipt. */
+export function objectiveLink(value: unknown): ObjectiveLink | undefined {
+  if (!value || typeof value !== 'object') return;
+  const { id, title } = value as Partial<ObjectiveLink>;
+  if (typeof id === 'string' && id && typeof title === 'string' && title) return { id, title };
+}
+
 export interface ObjectiveRecord {
   stance: typeof PROJECT_STANCES[number] | 'unknown';
   priority: typeof PROJECT_PRIORITIES[number];

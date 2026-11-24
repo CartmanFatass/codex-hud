@@ -15,6 +15,7 @@ const state = { state: 'closed', ended_at: ended };
 test('retention appends one private facts-only line before removal, even if removal has to retry', async (t) => {
   const f = fixture(t), archive = join(f.home, 'archive'), file = join(archive, '2026-10.jsonl');
   const secret = 'Synthetic private body marker.';
+  const objective = { id: 'deliver', title: 'Synthetic outcome' };
   const longReason = 'é'.repeat(99) + '合'; // Crosses the byte limit inside a character.
   const dir = f.job({ ...state, exit_reason: longReason, started_at: ended, settled_at: ended, output_written: true }, {
     role: 'imp', cli: { agent: 'claude' }, model: 'example', thinking: 'high', project_root: '/synthetic/project',
@@ -24,7 +25,7 @@ test('retention appends one private facts-only line before removal, even if remo
     sessions: [{ harness: 'claude', id: 'synthetic-claude', extra: secret }, { harness: 'pi', id: 'synthetic-pi', path: '/synthetic/history.jsonl' }],
     dispatcher: { harness: 'pi', session_id: 'synthetic-dispatcher', extra: secret },
     create_options: { task: secret }, request_key: secret,
-    headless: true, ticket: 'sample/03', route: { tier: 'standard', mode: 'headless', reason: secret }, resume_s: 0,
+    headless: true, ticket: 'sample/03', objective: { ...objective, extra: secret }, route: { tier: 'standard', mode: 'headless', reason: secret }, resume_s: 0,
   });
   const id = basename(dir);
   fs.mkdirSync(join(dir, 'qa'));
@@ -90,7 +91,7 @@ syncBuiltinESMExports();`);
     ended_at: ended, read_at: ended, reaped_at: reaped, checks: { passed: 0, total: 1, stale: true },
     repair_of: 'j000000000000000b', retry_of: 'j000000000000000c', parent_job: 'j000000000000000a', package: 'archive', outcome: 'partial',
     sessions: [{ harness: 'claude', id: 'synthetic-claude' }, { harness: 'pi', id: 'synthetic-pi', path: '/synthetic/history.jsonl' }],
-    mode: 'headless', route: { tier: 'standard', mode: 'headless' }, ticket: 'sample/03', question_count: 1,
+    mode: 'headless', route: { tier: 'standard', mode: 'headless' }, ticket: 'sample/03', objective, question_count: 1,
     dispatcher: { harness: 'pi', id: 'synthetic-dispatcher' }, output_written: true,
     questions: [{ id: 'q1', asked_at: asked, answered_at: answered }],
     experiment: 'synthetic-speed', arm: 'control',

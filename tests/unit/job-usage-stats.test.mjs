@@ -95,7 +95,7 @@ test('stats and day merge v1 archives, live jobs and flows; keep missing telemet
   const created_at = '2026-11-23T10:00:00Z', sha = 'a'.repeat(40);
   const base = { v: 1, archived_at: '2026-11-23T11:00:00Z', project, created_at, ...status };
   put('archive/2026-11.jsonl', [
-    { ...base, job: id(1), role: 'imp', model: 'pi-model', ticket: 'sample/03', summary: 'Synthetic improvement.', question_count: 2,
+    { ...base, job: id(1), role: 'imp', model: 'pi-model', ticket: 'sample/03', objective: { id: 'deliver', title: 'Synthetic outcome' }, summary: 'Synthetic improvement.', question_count: 2,
       route: { tier: 'standard', mode: 'tab' }, usage: { input: 12, cache_read: 0, cost_usd: 0.125 },
       land: { attempts: 1, reruns: 0, repairs: 0, state: 'failed' } },
     { ...base, job: id(2), role: 'old', state: 'failed' }, { ...base, job: id(3), role: 'stale' },
@@ -119,6 +119,7 @@ test('stats and day merge v1 archives, live jobs and flows; keep missing telemet
   assert.deepEqual(role.land, { observed: 1, landed: 1, repaired: 1 });
   assert.deepEqual(s.flaky, [['synthetic.test.mjs > recovers', 1]]);
   assert.equal(s.landed[0].job.ticket, 'sample/03');
+  assert.deepEqual(s.landed[0].job.objective, { id: 'deliver', title: 'Synthetic outcome' });
   const output = [], errors = [];
   t.mock.method(Date, 'now', () => now);
   const io = { env: { HUD_HOME: home }, stdout: s => output.push(s), stderr: s => errors.push(s) };

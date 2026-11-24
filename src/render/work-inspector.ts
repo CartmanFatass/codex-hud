@@ -113,6 +113,7 @@ export function workInspectorRows(
             : worker.laneId.replace(/^thin-job:package:/, ''),
         ],
         ['state', [t(worker.state), worker.queuePosition !== undefined ? `#${worker.queuePosition}` : '', worker.phase && worker.phase !== worker.state ? workPhaseText(worker.phase) : ''].filter(Boolean).join(' · ')],
+        ['Objective', worker.objective ? `${worker.objective.id} · ${worker.objective.title}` : ''],
         ['flow', worker.flow ? flowSummary(worker.flow) : ''],
         [
           'resources',

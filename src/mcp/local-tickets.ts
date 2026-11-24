@@ -1,12 +1,14 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { scanScratch, slugify, ticketsCommand, writeFileAtomic } from '../cli/tickets.js';
+import { OBJECTIVE_SLUG, objectiveLink, readObjectives } from '../collectors/objectives.js';
 import type { ProjectTicket } from '../collectors/project-board.js';
 import { STATE_BYTES } from '../collectors/state-ledger.js';
 import { ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
 import { SETTLED_JOB_STATES, TicketRollup, ticketJobState } from '../collectors/ticket-rollup.js';
 import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
+import { sharedRoot } from '../roles/projects.js';
 import { TICKET_STATUSES } from '../roles/tool-definitions.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
@@ -38,17 +40,38 @@ const list = (dir: string) =>
       })
     : [];
 
-/** Outbound routing input: only the named local ticket, never the rest of the board. */
-export function routingTicketText(root: string, ticket: unknown): string | undefined {
+function namedTicketPath(root: string, ticket: unknown): string | undefined {
   if (typeof ticket !== 'string') return;
   const match = /^([a-z0-9][a-z0-9_-]*)\/(\d+)$/.exec(ticket);
   if (!match) return;
+  const scratch = join(root, '.scratch');
+  if (!directoryExists(scratch)) return;
+  const matches = list(join(scratch, match[1])).filter(item => item.number === Number(match[2]));
+  if (matches.length === 1) return matches[0].path;
+}
+
+/** Outbound routing input: only the named local ticket, never the rest of the board. */
+export function routingTicketText(root: string, ticket: unknown): string | undefined {
   try {
-    const scratch = join(root, '.scratch');
-    if (!directoryExists(scratch)) return;
-    const matches = list(join(scratch, match[1])).filter(item => item.number === Number(match[2]));
-    if (matches.length === 1) return readFileBounded(matches[0].path, 4096).bytes.toString('utf8').slice(0, 4000);
+    const path = namedTicketPath(root, ticket);
+    if (path) return readFileBounded(path, 4096).bytes.toString('utf8').slice(0, 4000);
   } catch { /* Missing or unreadable ticket contributes no text. */ }
+}
+
+// Shared metadata lines may use ·, but the ticket title and prose aren't fields.
+const objectiveField = /^([ \t]*(?:\*\*[^:\r\n]+:\*\*[^·\r\n]*·[ \t]*)*?\*\*Objective:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
+const ticketHeader = (text: string) => text.split(/^(?:[ \t]*\*\*What to build:\*\*|##(?:[ \t]|\r?$))/im, 1)[0];
+
+/** An unreadable, missing or unresolvable header is not evidence of attribution. */
+export function ticketObjective(root: string, ticket: unknown) {
+  try {
+    const path = namedTicketPath(root, ticket);
+    if (!path) return;
+    const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
+    if (truncated) return;
+    const id = objectiveField.exec(ticketHeader(bytes.toString('utf8')))?.[2];
+    if (id) return objectiveLink(readObjectives(root)?.objectives.find(item => item.id === id));
+  } catch { /* No attribution. */ }
 }
 
 export function readyTickets(cwd: string, jobs: JobIndexCache, feature?: string) {
@@ -96,12 +119,20 @@ function withStatus(body: string, label: string, ticket: number): string {
   if (!field.test(body)) throw new Error(`missing Status field in ticket: ${ticket}`);
   return body.replace(field, (_, prefix, _old, suffix) => `${prefix}${label}${suffix}`);
 }
-function withOwnerTry(body: string, value: 'yes' | 'no', ticket: number): string {
-  const field = /((?:^|·)[ \t]*\*\*Owner try:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
+function headerField(body: string, field: RegExp, label: string, value: string, ticket: number): string {
   if (field.test(body)) return body.replace(field, (_, prefix, _old, suffix) => `${prefix}${value}${suffix}`);
   const statusLine = /^[^\r\n]*\*\*Status:\*\*[^\r\n]*$/im;
   if (!statusLine.test(body)) throw new Error(`missing Status field in ticket: ${ticket}`);
-  return body.replace(statusLine, (line) => `${line}\n**Owner try:** ${value}`);
+  const eol = body.includes('\r\n') ? '\r\n' : '\n';
+  return body.replace(statusLine, (line) => `${line}${eol}**${label}:** ${value}`);
+}
+function withOwnerTry(body: string, value: 'yes' | 'no', ticket: number): string {
+  const field = /((?:^|·)[ \t]*\*\*Owner try:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
+  return headerField(body, field, 'Owner try', value, ticket);
+}
+function withObjective(body: string, id: string, ticket: number): string {
+  const header = ticketHeader(body);
+  return headerField(header, objectiveField, 'Objective', id, ticket) + body.slice(header.length);
 }
 
 /** Acceptance is the checklist before Comments; checkboxes in discussion aren't acceptance. */
@@ -127,6 +158,13 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
   if (op !== 'add' && op !== 'update') return invalid('op');
   const scratch = join(cwd, '.scratch');
   scanScratch(scratch, true);
+  let objectiveIds: Set<string> | undefined;
+  const objectiveId = (value: unknown) => {
+    if (typeof value !== 'string' || !new RegExp(OBJECTIVE_SLUG).test(value)) return invalid('objective');
+    objectiveIds ??= new Set(readObjectives(sharedRoot(cwd))?.objectives.map(({ id }) => id));
+    if (!objectiveIds.has(value)) throw new Error(`unknown objective: ${value}`);
+    return value;
+  };
   const resolveBlockers = (value: unknown, feat: string, known: Set<number>) => {
     if (!Array.isArray(value)) return invalid('blocked_by');
     const refs = value.map(ref => {
@@ -165,6 +203,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
         `**Status:** ${label}`,
         ...tryLine,
         `**Blocked by:** ${blocked}`,
+        ...(ticket.objective === undefined ? [] : [`**Objective:** ${objectiveId(ticket.objective)}`]),
         '',
         `**What to build:** ${what}`,
         '',
@@ -187,8 +226,8 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
   const updateOne = (feat: unknown, item: Record<string, unknown>) => {
     if (typeof feat !== 'string' || !/^[a-z0-9-]+$/.test(feat)) return invalid('feature');
     if (!number(item.ticket)) return invalid('ticket');
-    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined && item.owner_try === undefined)
-      return invalid('status, tick, blocked_by or owner_try');
+    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined && item.owner_try === undefined && item.objective === undefined)
+      return invalid('status, tick, blocked_by, owner_try or objective');
     const existing = list(join(scratch, feat));
     const known = new Set(existing.map(t => t.number));
     const matches = existing.filter(({ number }) => number === item.ticket);
@@ -218,13 +257,14 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
       const refs = resolveBlockers(item.blocked_by, feat, known);
       body = body.replace(field, (_, prefix, _old, suffix) => `${prefix}${refs}${suffix}`);
     }
+    if (item.objective !== undefined) body = withObjective(body, objectiveId(item.objective), item.ticket);
     const updated = body + (comments < 0 ? '' : original.slice(comments));
     if (updated !== original) writeFileAtomic(ticket.path, updated, fs.statSync(ticket.path).mode & 0o777);
     return { ok: true, ...ticket };
   };
 
   if (args.updates !== undefined) {
-    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined || args.owner_try !== undefined)
+    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined || args.owner_try !== undefined || args.objective !== undefined)
       return invalid('updates');
     if (!Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
     if (feature !== undefined && (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature))) return invalid('feature');

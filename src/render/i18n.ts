@@ -671,6 +671,7 @@ const ZH: Record<string, string> = {
   'Review board': '审阅看板',
   'Needs you': '需要你处理',
   Objectives: '目标',
+  Objective: '目标',
   active: '进行中',
   Result: '结果',
   'Some objectives could not be read': '部分目标无法读取',

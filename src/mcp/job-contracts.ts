@@ -4,6 +4,7 @@ import type { CliAgent } from '../roles/cli-kinds.js';
 import type { Role, RolePlace, RouteMode, RouteTier, piSwitches } from '../roles/roster.js';
 import type { QuietDecision } from './quiet-decision.js';
 import type { SonicLimits } from './sonic-policy.js';
+import type { ObjectiveLink } from '../collectors/objectives.js';
 
 export type { ProgressEntry } from '../collectors/workboard-types.js';
 export type { ReportMeta } from '../roles/report-meta.js';
@@ -45,6 +46,7 @@ export interface Job extends PiOptions {
   package?: string;
   title?: string;
   ticket?: string;
+  objective?: ObjectiveLink; // Ticket attribution at creation, not refreshed on continuation.
   experiment?: string;
   arm?: string;
   slice?: string;

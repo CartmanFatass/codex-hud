@@ -513,17 +513,19 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
 - **`run`**: pass `feature` and optional `max_parallel` (default for new queues: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main. `**Role:** frontend-imp` selects that role, and `**Main review:** yes` stops auto-land. A worker question stops the batch; `hud_respond` to that question resumes it (`queue_resumed`).
   After addressing a failure, call `run` again with the same project and `feature`. A new queue attempt keeps existing jobs and completed lands, and retries eligible lands that failed before fast-forward without dispatching their tickets again. It keeps the previous `max_parallel` unless you override it.
   `run` with the same `feature` and `cancel: true` stops new dispatches and lands; it leaves existing jobs and lands alone.
-- **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?}]`.
+- **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?, objective?}]`.
   `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
   An unknown blocker rejects the entire batch without writing.
   `acceptance` is a list of checklist item strings.
   Optional `owner_try` writes `**Owner try:** yes` or `no` under Status (`yes` opts into an owner try; `no` or omitted lands as `done`).
   The result lists the assigned numbers and paths as `tickets: [{number, path}]`.
-- **`update`**: pass `feature`, `ticket` (number), and any of `status`, `owner_try`, `tick` (1-based checklist item numbers) or `blocked_by` (replacement blockers); or pass `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?}]` (item `feature` overrides top-level `feature`) to apply several updates in input order and return `updates` with per-item errors.
+- **`update`**: pass `feature`, `ticket` (number), and any of `status`, `owner_try`, `tick` (1-based checklist item numbers), `blocked_by` (replacement blockers) or `objective`; or pass `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?, objective?}]` (item `feature` overrides top-level `feature`) to apply several updates in input order and return `updates` with per-item errors.
   An invalid acceptance item reports the valid range and leaves that ticket unchanged, even if other ticks in the same update are valid.
 - **`sync`**: runs `hud tickets sync` for the given project and returns its output lines in `output`.
 
 The default status is `ready-for-agent`; other allowed labels are `needs-triage`, `needs-info`, `ready-for-human`, `claimed`, `done`, and `wontfix`.
+For `add` and `update`, `objective` sets the `**Objective:** <id>` header field. The ID must exist in the project's `.hud/objectives.md`; an unknown ID leaves the ticket unchanged.
+A new `hud_create` with an explicit ticket snapshots its Objective ID and current title. The Inspector and job archive show this snapshot; retries, repairs and Sonic children keep it, even after a rename. Jobs with no recorded link stay unattributed.
 This is a main-session tool.
 For GitHub-mirrored `.scratch/`, `add` and `update` refuse: edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
 

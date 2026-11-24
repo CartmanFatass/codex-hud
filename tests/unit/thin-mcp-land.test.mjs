@@ -695,7 +695,8 @@ test('a persistently red gate creates same-role repairs and hands back once afte
     instructions: 'implementer', run: [{ harness: 'pi', pi_role: 'implementer' }] }));
   const source = join(jobDir(f), 'job.json');
   const original = JSON.parse(fs.readFileSync(source));
-  fs.writeFileSync(source, JSON.stringify({ ...original, role: 'builder', context_files: [join(f.main, 'tracked')],
+  const objective = { id: 'delivery', title: 'Synthetic delivery' };
+  fs.writeFileSync(source, JSON.stringify({ ...original, objective, role: 'builder', context_files: [join(f.main, 'tracked')],
     create_options: { ...original.create_options, thinking: 'high' } }));
   const rpc = taskRpc(f.rpc); await rpc('server/discover');
   const { taskId: flow } = await taskCall(rpc, 'hud_land', { job });
@@ -705,6 +706,7 @@ test('a persistently red gate creates same-role repairs and hands back once afte
     const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
     assert.equal(receipt.role, 'builder'); assert.equal(receipt.retry_of, prior); assert.equal(receipt.cwd, f.worktree);
     assert.deepEqual(receipt.context_files, [join(f.main, 'tracked')]);
+    assert.deepEqual(receipt.objective, objective);
     assert.equal(receipt.thinking, 'high', 'land repair retains internal placement options');
     assert.match(fs.readFileSync(join(dir, 'brief.md'), 'utf8'), /Log tail:\n11\n[\s\S]*50/);
     settle(f, id, `Attempt ${i}.`); prior = id;

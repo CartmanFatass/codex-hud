@@ -34,6 +34,8 @@ async function cliFixture(t, agent = 'claude', resume_s) {
 test('Claude closes without a read, resumes the exact session in a new pane, and repairs after expiry', async (t) => {
   const { f, job, worker, report } = await cliFixture(t);
   const dir = job.task_dir;
+  const objective = { id: 'delivery', title: 'Synthetic delivery' };
+  write(join(dir, 'job.json'), JSON.stringify({ ...json(dir, 'job.json'), objective }));
   const first = cliToken(dir), id = cliState(dir).agent_session_id;
   assert.equal(json(dir, 'job.json').resume_s, 1620);
   assert.equal(resultValue(await report('Synthetic first report.')).path, join(dir, 'report.md'));
@@ -65,6 +67,7 @@ test('Claude closes without a read, resumes the exact session in a new pane, and
   assert.equal(repair.continuation, 'repair');
   assert.notEqual(repair.continued_as, job.job);
   assert.equal(repair.job, repair.continued_as);
+  assert.deepEqual(json(repair.task_dir, 'job.json').objective, objective);
   assert.match(fs.readFileSync(join(repair.task_dir, 'brief.md'), 'utf8'), /Synthetic expired continuation/);
   assert.equal(starts(f).at(-1).args.includes('--resume'), false);
 });

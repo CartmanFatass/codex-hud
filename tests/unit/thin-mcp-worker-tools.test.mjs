@@ -114,6 +114,9 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
   const f = await fixture(t, { watcherTickMs: 200 });
   const task = sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', request_key: 'sonic-parent', task: 'Synthetic parent.' });
+  const objective = { id: 'delivery', title: 'Synthetic delivery' };
+  const receipt = join(parent.task_dir, 'job.json');
+  writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), objective }));
   const call = workerClient(t, f, parent.task_dir);
   const start = async () => resultValue(await call('hud_sonic', { task: fs.readFileSync(task, 'utf8') })).job;
   const [first, second] = await Promise.all([start(), start()]);
@@ -123,6 +126,7 @@ test('hud_sonic starts two independent child jobs; wait follows STATUS, scope an
     assert.match(id, /^j[0-9a-f]{16}$/);
     const job = JSON.parse(fs.readFileSync(join(dir(id), 'job.json')));
     assert.equal(job.parent_job, parent.job);
+    assert.deepEqual(job.objective, objective);
     assert.equal(job.caller_pane, 'w4E:p1');
     assert.equal(Object.hasOwn(job, 'herdr_pane'), false);
     assert.equal(job.cwd, f.root);
