@@ -11,9 +11,9 @@
 **Result:** Home shows one block per project with liveness, load, age and a ticket bar per Objective (fresh finished ones for 3 days); Project carries full titles, next steps, per-feature bars and named Details counts. Checked live at 40 columns zh: no wrapped or mid-word cut rows.
 
 **State:** active
-**Next:** home-portfolio/04 sort order; bottom card area (Today, Schedule) design sample, then build.
+**Next:** Build home-cards/01-03 (today's projects with a fold row, hud_schedule, Today and Schedule cards with the due badge); then add the first schedule item: 2026-12 sonic → openai gpt-6-luna (pi).
 **Evidence:** 0cc01248, 10ac38cc, 26d184eb
-**Features:** home-portfolio
+**Features:** home-portfolio, home-cards
 
 ## handoff: HUD takes over the mechanical handoff steps between jobs, while the main session keeps the judgement
 
