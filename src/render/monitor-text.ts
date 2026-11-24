@@ -216,8 +216,10 @@ export function cutWords(text: string, room: number): string {
   if (visualLength(text) <= room) return text;
   const head = truncateAnsi(text, room).replace(/…$/, ''), wide = /[\u2e80-\u9fff\uff00-\uffef]/;
   if (text[head.length] === ' ' || wide.test(text[head.length] ?? '') || wide.test(head.at(-1) ?? '')) return head.trimEnd() + '…';
-  const space = head.lastIndexOf(' ');
-  return space > 0 ? head.slice(0, space) + '…' : '';
+  // Break at the last space or Chinese character boundary, so a Latin word inside Chinese text drops only itself.
+  for (let i = head.length - 1; i > 0; i--)
+    if (head[i] === ' ' || wide.test(head[i]) || wide.test(head[i - 1])) return head.slice(0, i).trimEnd() + '…';
+  return '';
 }
 
 /** A fixed column for a sanitized token: cut by cell with an ellipsis, never wrap. */

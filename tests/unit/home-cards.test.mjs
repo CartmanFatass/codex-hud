@@ -45,7 +45,7 @@ for (const lang of ['en', 'zh']) test(`Home cards: busy, quiet and short frames 
       const today = all.findIndex(text => text.startsWith(zh ? '今天 ' : 'Today '));
       const schedule = all.findIndex(text => text.startsWith(zh ? '日程 ' : 'Schedule '));
       assert.equal(rows(frame)[today - 2].item, 'home:other-projects');
-      assert.ok(all[today].endsWith(zh ? '7 个落地' : '7 landed'));
+      assert.ok(all[today].endsWith(zh ? "7 个落地" : "7 landed"), all[today]);
       assert.ok(all[schedule].endsWith(zh ? '6 项' : '6 items'));
       assert.ok(all.includes(zh ? '  另 4 个' : '  4 more'));
       assert.ok(all.includes(zh ? '  另 2 项' : '  2 more'));
@@ -178,4 +178,13 @@ test('Today counts local settlement, ignores stops and omits unreadable work his
   assert.deepEqual([...homeToday.failed], [['imp', 1]]);
   fs.appendFileSync(path, '\n{bad json');
   assert.equal((await f.tick(NOW + 30_001)).homeToday, undefined);
+});
+
+test('a Latin word inside Chinese text is cut at the Chinese boundary, not the last space', async () => {
+  const { cutSentence } = await import('../../dist/render/monitor-text.js');
+  const text = '删除 toktrack 旧缓存备份（cache-pre-overhaul-backup）和旧程序';
+  const cut = cutSentence(text, 30);
+  assert.ok(cut.startsWith('删除 toktrack 旧缓存备份'), cut);
+  assert.ok(visualLength(cut) <= 30, cut);
+  assert.equal(cutSentence('alpha beta gammadelta', 15), 'alpha beta…');
 });
