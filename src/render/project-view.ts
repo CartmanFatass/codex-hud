@@ -1,6 +1,7 @@
 /** Pure Project rows, using the same kit as Home and the Inspector. */
 import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
+import { OBJECTIVE_STATES } from '../collectors/objectives.js';
 import { ledgerTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
 import { projectWorkJob } from '../collectors/work-job.js';
 import { stemLines, workJobDetail } from './work-job-detail.js';
@@ -417,6 +418,33 @@ export function pageRows(
   if (rows.length === 1) rows.push(boardRow('  ' + theme.board.muted(t('none'))));
   return rows;
 }
+export function objectiveRows(data: ProjectSnapshot, folded: ReadonlySet<string>, width: number): MonitorRow[] {
+  const record = data.objectives;
+  if (!record) return [];
+  const rows = [boardRow(''), section(t('Objectives'), width, String(record.objectives.length))];
+  for (const state of OBJECTIVE_STATES) for (const objective of record.objectives.filter((item) => item.state === state)) {
+    const { id, title, result, next, features } = objective;
+    const key = `objective:${id}`, fold = state === 'done', open = !fold || folded.has(key);
+    const at = { item: fold ? `project:fold:${key}` : `project:file:${record.path}:${key}`, files: [record.path] };
+    const glyph = fold ? mark(open ? '▾' : '▸', open ? 'v' : '>') + ' ' : '';
+    const ink = state === 'active' ? theme.board.active : state === 'done' ? theme.board.success : theme.board.muted;
+    rows.push({ ...at, text: pair(`  ${glyph}${monitorText(id)}: ${monitorText(title)}`, ink(t(state)), width) });
+    if (!open) continue;
+    for (const [label, value] of [['Result', result], ['Next', next]] as const) {
+      if (!value) continue;
+      const text = t('{label}: {value}', { label: t(label), value: monitorText(value) });
+      rows.push(...clampClean(text, width - 4, 2).lines.map((line) => ({ ...at, text: fit(`    ${line}`, width) })));
+    }
+    const checks = [...new Set(features)].flatMap((slug) => {
+      const n = record.acceptance[slug];
+      return n?.total ? [`${monitorText(slug)} ${n.checked}/${n.total}`] : [];
+    }).filter((text) => visualLength(text) <= width - 4);
+    for (const line of pack(checks, Math.max(1, width - 2))) rows.push({ ...at, text: fit(`  ${theme.board.muted(line)}`, width) });
+  }
+  if (record.diagnostics.length) rows.push(boardRow(fit(`  ${theme.board.attention(t('Some objectives could not be read'))}`, width)));
+  return rows;
+}
+
 /** The Project tab: a hub of one summary row per page, or the page the panel has open. */
 export function projectRows(
   data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,

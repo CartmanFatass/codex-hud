@@ -118,8 +118,10 @@ test('pi role tools match the real MCP tools/list', async (t) => {
   const f = await fixture(t);
   const tools = (await f.rpc('tools/list')).result.tools.filter(({ name }) => name !== 'hud_statusline');
   assert.deepEqual(PI_ROLE_TOOLS, tools);
-  // Experiment tags may add at most 200 bytes to the pre-tag declarations.
-  assert.ok(Buffer.byteLength(JSON.stringify(tools)) <= 9708 + 200, 'role declarations stay within the schema byte budget');
+  // Preserve the pre-Objective budget (including 200 bytes for experiment tags) and bound the new tool separately.
+  const bytes = (value) => Buffer.byteLength(JSON.stringify(value));
+  assert.ok(bytes(tools.filter(({ name }) => name !== 'hud_objective')) <= 9708 + 200, 'existing role declarations stay within budget');
+  assert.ok(bytes(tools.find(({ name }) => name === 'hud_objective')) <= 1000, 'Objective declaration fits its 1000-byte budget');
   assert.match(tools.find(({ name }) => name === 'hud_read').description, /close at turn end with a declared report, read or not/);
   assert.match(tools.find(({ name }) => name === 'hud_create').inputSchema.properties.mode.description, /Imp routing may select it/);
 });

@@ -1,6 +1,7 @@
 /** Shared MCP and native pi declarations; importing them never starts a server. */
 import { LEASE_TOOL } from './lease.js';
 import { MAX_CHECK_COMMAND, MAX_CHECKS } from './job-checks.js';
+import { FEATURE_SLUG, OBJECTIVE_SLUG, OBJECTIVE_STATES, PROJECT_PRIORITIES, PROJECT_STANCES } from '../collectors/objectives.js';
 
 const text = { type: 'string' };
 export const EXPERIMENT_TAG_MAX_LENGTH = 64;
@@ -164,6 +165,19 @@ export const ROLE_TOOLS = [
   tool('hud_close', 'Reap early; repeat-safe.', { job: text }, ['job']),
   tool('hud_land', 'Land settled managed worktree job via project gate; hud_read returned flow ID.', { job: text }, ['job']),
   LEASE_TOOL,
+  tool('hud_objective', 'Edit a registered project’s .hud/objectives.md without committing. set: id and fields (new: title and state). project: stance and/or priority.', {
+    op: { ...text, enum: ['set', 'project'] },
+    cwd: { ...text, description: 'Project dir; default server cwd.' },
+    id: { ...text, pattern: OBJECTIVE_SLUG },
+    title: text,
+    state: { ...text, enum: OBJECTIVE_STATES },
+    next: text,
+    result: text,
+    evidence: { type: 'array', items: text, description: 'Repo paths, URLs or commit hashes.' },
+    features: { type: 'array', items: { ...text, pattern: FEATURE_SLUG }, description: '.scratch feature slugs.' },
+    stance: { ...text, enum: PROJECT_STANCES },
+    priority: { ...text, enum: PROJECT_PRIORITIES },
+  }, ['op']),
   tool(
     'hud_tickets',
     'Tickets: guide, queue, local edits, GitHub sync.',

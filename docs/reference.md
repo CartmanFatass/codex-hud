@@ -115,7 +115,7 @@ It shows median dispatch-to-settlement time, question and sonic counts, land rep
 The commands merge retained jobs, monthly archives and land receipts, without double-counting a job; known/observed counts and scan limits are shown.
 Missing cost is unknown, not free: sums include only jobs with reported totals, and harness-reported USD is not necessarily a bill.
 
-The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**, **hud_send**, **hud_respond**, **hud_close**, **hud_land**, **hud_lease**, and **hud_tickets**.
+The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**, **hud_send**, **hud_respond**, **hud_close**, **hud_land**, **hud_lease**, **hud_objective**, and **hud_tickets**.
 Call `hud_roster` when project dispatch context is missing or stale.
 It returns role availability, continuation, effective `runs_on` and the convention.
 For presets, fallbacks, model/thinking sources and accepted options, pass `detail: true`.
@@ -699,7 +699,11 @@ Press `v` or click **Jobs** for one plain row per retained HUD job of the callin
 
 Project → **Working tree** includes the Git diagnostics formerly on the separate Changes page: branch and HEAD, ahead/behind, staged/unstaged/untracked counts, and each worktree's path, branch and observed dirty state. The worktree probe runs only on that page. Unknown, stale and incomplete readings are not treated as clean. The probe does not fetch or run repository filters.
 
-Project opens to an overview: **Needs you** shows only the selected project's explicit owner requests, followed by links to **Progress**, **Tickets** (if present), **Working tree** and **Docs**. Job and ticket activity is diagnostic, not an owner request. Exhausted roles are still shown in Control.
+Project opens to an overview: **Needs you** shows only the selected project's explicit owner requests, followed by **Objectives** (if recorded) and links to **Progress**, **Tickets** (if present), **Working tree** and **Docs**. Job and ticket activity is diagnostic, not an owner request. Exhausted roles are still shown in Control.
+
+In a registered project, main keeps `.hud/objectives.md` in Git. An optional header such as `**Stance:** active · **Priority:** high` declares stance (`active`, `paused`, `maintenance`; otherwise unknown) and priority (`high`, `normal`, `low`; otherwise `normal`). Each `## <id>: <title>` section has a unique lowercase slug (`[a-z0-9-]+`) and a `**State:** active|paused|done` line. Optional single-line fields are `**Next:**`, `**Result:**`, `**Features:**` (comma-separated `.scratch` feature slugs) and `**Evidence:**` (comma-separated repo paths, URLs or commit hashes). Project shows active objectives first, then paused, then done with details folded; a linked feature shows checked/total acceptance items when its checklist count is known.
+
+Use `hud_objective` with `op: "set"`, `cwd`, `id` and any changed fields (`title` and `state` required on creation; `features` and `evidence` are arrays). Omitted fields are untouched; an empty string or array clears an optional field. Use `op: "project"` with `stance` and/or `priority` for the header. The tool writes atomically but does not commit. It appends one receipt per material call (creation, state, title, then a new nonempty result, in that order if several apply) to private `$HUD_HOME/events/YYYY-MM.jsonl`, separate from the job archive. These small monthly append-only files are not automatically pruned. Hand edits are visible but do not create receipts.
 
 Enter or click a page row to open it; Esc or the crumb (`‹ Project › Page`) returns to that row.
 Each page keeps its own cursor and scroll, even across panel reloads.

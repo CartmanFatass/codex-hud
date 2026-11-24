@@ -1,7 +1,7 @@
 /** Pure Project overview and project switcher. Only explicit requests belong under Needs you. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
-import { PAGE_WORD, PROJECT_PAGES, clampClean, pageSummary, projectOrder, sinceText } from './project-view.js';
+import { PAGE_WORD, PROJECT_PAGES, clampClean, objectiveRows, pageSummary, projectOrder, sinceText } from './project-view.js';
 import { boardRow, mark, minuteAge, section } from './workboard-rows.js';
 import { cutWords, fit, monitorText, pair } from './monitor-text.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
@@ -42,14 +42,14 @@ function hubPageRows(data: ProjectSnapshot, width: number, now: number): Monitor
   });
 }
 
-/** Project landing: explicit requests followed by links to evidence and diagnostics. */
+/** Project landing: explicit requests, declared objectives, then links to diagnostics. */
 export function projectOverviewRows(
   data: ProjectSnapshot, state: MonitorState, width: number, now: number, name: string, projects: ProjectChoice[],
 ): MonitorRow[] {
   const many = projects.length > 1, at = Math.max(0, projects.findIndex((p) => p.root === state.selectedProject));
   return [boardRow(''),
     { ...section(theme.board.title(monitorText(name) || t('Project')), width, many ? `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}` : ''), ...(many ? { item: 'project:switch' } : {}) },
-    ...requestRows(data, state, width), boardRow(''), ...hubPageRows(data, width, now)];
+    ...requestRows(data, state, width), ...objectiveRows(data, state.project.folded, width), boardRow(''), ...hubPageRows(data, width, now)];
 }
 
 /** Projects list: grouped into Needs you, Running and Quiet (a quiet project is one row). */

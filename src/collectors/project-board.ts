@@ -10,6 +10,7 @@ import { HarnessSwitchError } from '../roles/harness-switches.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 import { STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
+import { objectivePath, readObjectives, type ObjectiveRecord } from './objectives.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
 import { collectControlJobStats, type ControlJobStats } from './job-stats.js';
@@ -54,6 +55,7 @@ export interface ProjectTicket {
 }
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[] }
 export interface ProjectSnapshot {
+  objectives?: ObjectiveRecord & { path: string; acceptance: Record<string, { checked: number; total: number }> };
   tickets: TicketFeature[];
   ticketTotals?: { doneTickets: number; totalTickets: number; doneFeatures: number; totalFeatures: number; partial?: true };
   waiting: ProjectItem[];
@@ -522,6 +524,15 @@ export class ProjectCollector {
       if (hit && hit.key === memoKey && now >= hit.claimFloor && now < hit.claimExpiry) return hit.snapshot;
     }
     out.tickets = cloneTickets(ticketsScan.features);
+    const objectiveFile = objectivePath(this.cwd);
+    const objectives = !home && this.cached(objectiveFile, () => readObjectives(this.cwd));
+    if (objectives) {
+      const linked = new Set(objectives.objectives.flatMap((item) => item.features));
+      // Use scanned checklists before the Tickets page folds away older finished features.
+      const acceptance = Object.fromEntries((ticketsScan.partial ? [] : out.tickets).filter(({ slug }) => linked.has(slug))
+        .map(({ slug, tickets }) => [slug, tickets.reduce((n, t) => ({ checked: n.checked + t.checked, total: n.total + t.total }), { checked: 0, total: 0 })]));
+      out.objectives = { ...objectives, path: objectiveFile, acceptance };
+    }
     let stateFile;
     for (const path of statePaths(this.cwd)) {
       stateFile = this.read(path);

@@ -670,6 +670,10 @@ const ZH: Record<string, string> = {
   // The review board (`hud board`, the panel's `w`).
   'Review board': '审阅看板',
   'Needs you': '需要你处理',
+  Objectives: '目标',
+  active: '进行中',
+  Result: '结果',
+  'Some objectives could not be read': '部分目标无法读取',
   'In flight': '进行中',
   Review: '评审',
   'Latest milestone review': '最新里程碑评审',

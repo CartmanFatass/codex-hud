@@ -277,7 +277,7 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
   assert.equal(replies.find(reply => reply.id === 1).result.serverInfo.name, 'hud-mcp-thin');
   assert.deepEqual(replies.find(reply => reply.id === 2).result.tools.map(tool => tool.name),
     ['hud_roster', 'hud_create', 'hud_read', 'hud_wait', 'hud_peek', 'hud_send', 'hud_respond', 'hud_close',
-      'hud_land', 'hud_lease', 'hud_tickets', 'hud_statusline']);
+      'hud_land', 'hud_lease', 'hud_objective', 'hud_tickets', 'hud_statusline']);
   const roster = JSON.parse(replies.find(reply => reply.id === 3).result.content[0].text);
   const rolesDir = path.join(tree, 'packages/hud-mcp/roles');
   const shipped = fs.readdirSync(rolesDir).map(name => json(path.join(rolesDir, name)));
