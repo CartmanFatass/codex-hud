@@ -8,8 +8,9 @@
 **Features:** pivot-m1, pivot-m2, pivot-m3
 
 ## glance: Home shows every project's progress at a glance; Project carries the depth without repeating it
+**Result:** Home shows one block per project with liveness, load, age and a ticket bar per Objective (fresh finished ones for 3 days); Project carries full titles, next steps, per-feature bars and named Details counts. Checked live at 40 columns zh: no wrapped or mid-word cut rows.
 
-**State:** active
-**Next:** Build home-portfolio/01 (Home) then 02 (Project) from docs/design/home-portfolio/ (D-2026-11-24-01); main session tries the real panel at 40 columns zh.
-**Evidence:** docs/design/home-portfolio/README.md
+**State:** done
+**Next:** Nothing.
+**Evidence:** 0cc01248, 10ac38cc, 26d184eb
 **Features:** home-portfolio
