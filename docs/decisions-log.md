@@ -7,6 +7,13 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-24
 
+- **D-2026-11-24-06** (§2.2): The owner asked for an advisor like oh-my-pi's (a model that keeps rules and watches the
+  main session's context, recommending skills or giving hints). omp's advisor injects `<advisory>` notes into the
+  main session every turn; the owner found that too intrusive and chose a **shadow mode** first: recommendations are
+  shown to the owner only, never injected. First use: skill libraries the owner keeps out of the context (for example
+  the mattpocock skills); the owner copies a recommended skill's path into the session when wanted. Context is the
+  owner's latest message and the previous reply only (as omp's auto-prewalk judge). Rule checks and an LLM tier are
+  later options. Narrows "no display-side model calls" by this opt-in switch.
 - **D-2026-11-24-05** (§2.1 dispatch, §2.2 Decision API): The owner generalised the pool pick into **prewalk**, a step
   before a worker starts, of two kinds: a Sonic scout gathers the relevant files and facts, and the Decision API
   makes fixed-set choices. Goal: take cost pressure off the strong models (imp, oracle, frontend-imp) and let HUD

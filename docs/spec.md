@@ -124,12 +124,17 @@ as a linked feature's acceptance items. File syntax: D-2026-11-23-04. (new)
   discovery/picker and configuration files. Disabling a place must not rewrite the role file. (14.04, 17.04, 20.01, 20.02)
 - Move EXP's optional native-line tracking, subscription proxy and calibrated API grants into resource settings.
   Experiments default off: no collection/refresh, no lost balances. No vendor billing sync or request blocking. (new)
-- No display-side model calls. Panel, bars, notices and exports show observed facts and worker-declared summaries;
+- No display-side model calls, except the opt-in advisor shadow below. Panel, bars, notices and exports show
+  observed facts and worker-declared summaries;
   the orchestrator writes Objectives and owner requests in the owner's panel language. The Decision API stays only
   on the execution side, each with its own switch: the quiet-job choice, Sonic thinking, imp `auto` routing and
   the pool pick (a role file names an owner pool directory; when a brief names none of its entries, the Decision
   API picks entries for the task and HUD attaches them as references; HUD reads the pool, owns none of it).
   (14.02, 21.05, 22.22, 24.04, new)
+- Advisor shadow (off by default, own switch): on a new owner message in a main session, the Decision API may
+  recommend one skill from owner-configured skill libraries, judged from that message and the previous reply only.
+  It is shown to the owner (bar notice, panel line that copies the skill path) and never injected into any session.
+  (24.06)
 
 ### 2.3 Evidence beyond the current run
 
