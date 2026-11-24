@@ -32,7 +32,8 @@ function archiveFacts(value: unknown): JobFacts | undefined {
     used_place: text(r.used_place), ticket: text(r.ticket), objective: objectiveLink(r.objective), package: text(r.package), route: { tier: text(route.tier), mode: text(route.mode) },
     mode: text(r.mode), question_count: count(r.question_count), parent_job: text(r.parent_job), summary: text(r.summary),
     usage: jobUsage(r.usage), land, state: text(r.state), created_at: text(r.created_at), started_at: text(r.started_at),
-    settled_at: text(r.settled_at), ended_at: text(r.ended_at), reaped_at: text(r.reaped_at), dispatch_exit_code: count(r.dispatch_exit_code) };
+    settled_at: text(r.settled_at), ended_at: text(r.ended_at), reaped_at: text(r.reaped_at),
+    dispatch_exit_code: typeof r.dispatch_exit_code === 'number' && Number.isSafeInteger(r.dispatch_exit_code) ? r.dispatch_exit_code : undefined };
 }
 export const jobSettledAt = (j: { settled_at?: unknown; ended_at?: unknown }) => epoch(j.settled_at) ?? epoch(j.ended_at);
 const enteredAt = (j: JobFacts) => epoch(j.created_at) ?? epoch(j.started_at) ?? jobSettledAt(j) ?? epoch(j.reaped_at);
@@ -138,8 +139,16 @@ export function collectJobStats(home: string, since: number, now: number, projec
 
   const landed = new Map<string, { job: JobFacts; sha?: string; at?: string }>();
   for (const j of available) if (j.land && landedIn(j.land, since, now)) landed.set(j.job, { job: j, sha: j.land.sha, at: j.land.landed_at });
-  for (const f of flows) if (landedIn(f, since, now) && !landed.has(f.job))
-    landed.set(f.job, { job: jobs.get(f.job) ?? { job: f.job, project: f.project }, sha: f.sha, at: f.landed_at });
+  for (const f of flows) if (landedIn(f, since, now)) {
+    const ticket = landed.get(f.job);
+    if (ticket) {
+      if (f.project && f.project !== ticket.job.project) ticket.job = { ...ticket.job, project: f.project };
+    } else {
+      const job = jobs.get(f.job) ?? { job: f.job };
+      landed.set(f.job, { job: { ...job, project: f.project ?? job.project,
+        land: jobLand(byJob.get(f.job) ?? []) }, sha: f.sha, at: f.landed_at });
+    }
+  }
   const failures = available.filter(j => (j.state === 'failed' || j.state === 'stopped' || (j.dispatch_exit_code ?? 0) > 0) &&
     inWindow(jobSettledAt(j) ?? enteredAt(j)));
   const failedLand = (state: JobLand['state']) => state === 'failed' || state === 'cancelled';
@@ -153,7 +162,8 @@ export function collectJobStats(home: string, since: number, now: number, projec
     for (const name of f.flaky) flaky.set(name, (flaky.get(name) ?? 0) + 1);
   const children = new Map<string, number>();
   for (const j of available) if (j.parent_job) children.set(j.parent_job, (children.get(j.parent_job) ?? 0) + 1);
-  return { cohort, coverage, landed: [...landed.values()].sort((a, b) => (a.at ?? '').localeCompare(b.at ?? '')),
+  const settled = available.filter(j => inWindow(jobSettledAt(j)));
+  return { cohort, settled, coverage, landed: [...landed.values()].sort((a, b) => (a.at ?? '').localeCompare(b.at ?? '')),
     failures, landFailures, flaky: [...flaky].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])), children };
 }
 export type JobStats = ReturnType<typeof collectJobStats>;

@@ -2,7 +2,9 @@
 import { blockedObjectives, ownerRequestKey, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { Objective } from '../collectors/objectives.js';
 import { homeActivityAt, type HomePortfolio, type HomeProject, type HomeRequest } from '../collectors/home-portfolio.js';
+import type { TodayFacts } from '../collectors/home-cards.js';
 import type { MonitorRow } from './monitor.js';
+import { homeCardRows, type ScheduleView } from './home-cards.js';
 import { theme, truncateAnsi, visualLength as cells } from './colors.js';
 import { cutSentence, fit, monitorText, pair, sentenceRows, tokenColumn } from './monitor-text.js';
 import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
@@ -158,13 +160,15 @@ function compactProjects(projects: ProjectView[], width: number): MonitorRow[] {
   });
 }
 
-export function homeRows(portfolio: HomePortfolio | undefined, width: number, now: number, room: number, expanded?: boolean): MonitorRow[] {
+export function homeRows(portfolio: HomePortfolio | undefined, width: number, now: number, room: number, expanded: boolean | undefined,
+  todayFacts: TodayFacts | undefined, schedule: ScheduleView): MonitorRow[] {
   const ink = theme.board;
   if (!portfolio) return [boardRow(fit(t('Loading…'), width))];
   const { requests, projects } = portfolio;
   const top = requests.length ? [section(t('Waiting'), width, String(requests.length)), ...requests.flatMap((r) => requestRows(r, width, now))] : [];
   top.push(section(t('Projects'), width, width < 56 ? t('done/tickets') : ''));
-  if (!projects.length) return [...top, boardRow(fit(ink.muted(t('No registered projects')), width))];
+  const withCards = (rows: MonitorRow[]) => [...rows, ...homeCardRows(todayFacts, schedule, projects, width, now, room - rows.length)];
+  if (!projects.length) return withCards([...top, boardRow(fit(ink.muted(t('No registered projects')), width))]);
   const today = projects.filter((p) => p.activeToday), count = projects.length - today.length;
   const fold = count ? [{
     item: OTHER_PROJECTS,
@@ -192,7 +196,7 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
   });
   for (const [limit, results, gaps] of [[2, true, true], [2, true], [2, false], [1, false]] as const) {
     const rows = withFold(tier(limit, results, gaps));
-    if (rows.length <= room) return rows;
+    if (rows.length <= room) return gaps ? withCards(rows) : rows;
   }
   // When even this exceeds the viewport, the visible projects and requests remain scrollable.
   return withFold(compactProjects(views, width).map((row) => [row]));

@@ -716,7 +716,11 @@ A project shows up to two Objectives, then `N more`, with blocked and active Obj
 
 Without `objectives.md`, Home shows one dim STATE **Now** line when available instead of inferring an Objective. If both records are absent, it shows `no Objectives or handoff notes` and uses the latest observed HUD job activity for the header age. There is no age when no dated job is observed in the bounded job window.
 
-Short panels drop blank separators, then results, then extra Objective rows, then use one row per project with a roll-up bar of open Objectives where known. Requests, visible projects and the fold row stay in the list even when it needs to scroll. Enter or click a project or `N more` to open its Project tab without granting worker access; an Objective or result opens the Objective details.
+Below the project list, **Today** shows the three newest landings across registered projects since local midnight, with the ticket title (or the worker's summary or ticket ID when the title isn't available), age and a count of additional landings. It also shows jobs that finished or failed today by role, and how many landed tickets passed the gate first try or after a rerun or repair. A stopped job is not a failure. These are bounded observations, not ticket acceptances or a history of previous days.
+
+**Schedule** lists open `hud_schedule` items by due date, with calendar-day countdowns. Today is highlighted and overdue is amber. A linked due item shows the project and, on narrow panels, its Objective when recorded. The dim quiet line lists available projects with no running job and a Home activity age over 14 days; paused and maintenance projects are skipped. The Home tab's calendar badge counts overdue and due-today items, even if the card is folded. It is separate from `?N` and never adds to Waiting or the bar's owner count. Home only reads the schedule: main uses `hud_schedule` to add, move or mark an item done. Enter or click a linked item or landing to open its project; an unlinked item can only be selected.
+
+Short panels fold the cards before taking space from the projects. The last card row to go is the Schedule summary when something is due. Only then does Home drop blank separators, then results, then extra Objective rows, then use one row per project with a roll-up bar of open Objectives where known. Requests, visible projects and the fold row stay in the list even when it needs to scroll. Enter or click a project or `N more` to open its Project tab without granting worker access; an Objective or result opens the Objective details.
 
 Press `v` or click **Jobs** for one plain row per retained HUD job of the calling pane, including queued, settled and Sonic child jobs. Press Enter or click a row for the [Inspector](#inspector), where reports and job actions live.
 
@@ -1048,7 +1052,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 
 | Key | Action |
 |---|---|
-| Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Control. Digits switch no tab. The tab's count is `?` and a number (`Project ?4`: what waits for you) |
+| Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Control. Digits switch no tab. `?N` names what waits for you; Home's separate calendar badge counts due and overdue schedule items |
 | `[`, `]` | Project or Control: previous/next project (not on the Projects list) |
 | Enter, `i` `Del` `K` `J`, `s`, `x`, `r` | Control: focus the chain / edit the place; add / remove / move up / move down; save the draft; clear the saved place's quota mark; refresh model lists |
 | `c` / `C`, `p` | Control role row: next / previous named preset, or filter presets and choose a name or Custom |

@@ -7,6 +7,8 @@ import { HudStatus } from '../collectors/hud-status.js';
 import { ProjectCollector, projectShown } from '../collectors/project-board.js';
 import { collectObjectiveEvidence } from '../collectors/objectives.js';
 import { HomePortfolioCollector, type HomePortfolio } from '../collectors/home-portfolio.js';
+import { HomeCardsCollector, type TodayFacts } from '../collectors/home-cards.js';
+import type { ScheduleItem } from '../collectors/schedule.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from '../collectors/project-visits.js';
 import { RolloutParser, type RolloutParseResult } from '../collectors/rollout.js';
 import { SessionFinder, findRolloutsInDaysYielding, findSessionByThreadId, treeLookbackDays } from '../collectors/session-finder.js';
@@ -97,7 +99,8 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   // Project visit state is independent of Home's collectors.
   const visits = new ProjectVisits(HUD_CWD_REAL, (root) => new ProjectCollector(root, jobPipeline.home));
   const portfolioCollector = new HomePortfolioCollector(jobPipeline.home);
-  let portfolio: HomePortfolio | undefined;
+  const homeCards = new HomeCardsCollector(jobPipeline.home);
+  let portfolio: HomePortfolio | undefined, homeToday: TodayFacts | undefined, openSchedule: readonly ScheduleItem[] | undefined;
   let registered = projectList(jobPipeline.home, HUD_CWD_REAL);
   const projectChoices = () => registered[0]?.root === HUD_CWD_REAL ? registered : [
     { root: HUD_CWD_REAL, name: path.basename(HUD_CWD_REAL) || HUD_CWD_REAL }, ...registered,
@@ -210,6 +213,8 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         jobsObserved: jobPipeline.jobsObserved,
         homeWaiting: visits.snapshot(HUD_CWD_REAL)?.waiting,
         homePortfolio: portfolio,
+        homeToday,
+        openSchedule,
         mouse: settings.mouse,
         state: painted,
         worktrees: worktreesRoot === chosen && shown.root === chosen ? worktrees : undefined,
@@ -326,6 +331,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const board = boardFacts();
       if (settingsFlow.open) readDecisionCalls();
       const now = Date.now();
+      openSchedule = homeCards.readOpenSchedule();
       const shown = projectShown(state, settingsFlow.open), control = projectControlShown(state, settingsFlow.open);
       const home = state.activeTab === 'home' && !state.subpage && !state.help && !settingsFlow.open;
       if (home || ((shown || control) && now - projectsAt >= 5000)) {
@@ -344,6 +350,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       } else overviewAt = -Infinity;
       if (home) {
         portfolio = await portfolioCollector.read(registered, board, now);
+        homeToday = homeCards.readToday(portfolio.projects, now);
         const own = visits.visit(HUD_CWD_REAL);
         // The tab badge remains pane-project scoped, even if that project isn't registered.
         own.snapshot = portfolio.projects.find((p) => p.root === HUD_CWD_REAL)?.snapshot

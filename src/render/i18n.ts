@@ -702,6 +702,33 @@ const ZH: Record<string, string> = {
   'requires authorization': '需要授权',
   '{label}: {value}': '{label}：{value}',
   'Truncated: {files}': '已截断：{files}',
+  // Home cards.
+  Today: '今天',
+  Schedule: '日程',
+  '{n} landed': '{n} 个落地',
+  'none landed': '暂无落地',
+  'nothing yet': '暂无',
+  'bounded scan': '扫描有上限',
+  'done {n}': '完成 {n}',
+  'failed {n}': '失败 {n}',
+  gates: '闸门',
+  'first try {n}': '一次过 {n}',
+  'retried {n}': '重试 {n}',
+  '{n} item': '{n} 项',
+  '{n} items': '{n} 项',
+  '{n} more items': '另 {n} 项',
+  'overdue {n}': '逾期 {n}',
+  'today {n}': '今天 {n}',
+  'next {when}': '下一项 {when}',
+  'quiet {projects}': '静默 {projects}',
+  'quiet projects: {n}': '静默 {n} 个',
+  '{age} late': '逾期 {age}',
+  tomorrow: '明天',
+  'this mo': '本月',
+  'next mo': '下月',
+  'in {n}d': '{n}天后',
+  'in {n}w': '{n}周后',
+  'in {n}mo': '{n}月后',
   // The review board (`hud board`, the panel's `w`).
   'Review board': '审阅看板',
   'Needs you': '需要你处理',
@@ -732,6 +759,8 @@ const EN_OVERRIDES: Record<string, string> = {
   // Setting values whose stored form is not a word in either language.
   en: 'English',
   zh: '中文',
+  // Schedule names the unit in its heading; Chinese uses a classifier on the fold row.
+  '{n} more items': '{n} more',
 };
 
 export function t(text: string, vars?: Record<string, string | number>): string {

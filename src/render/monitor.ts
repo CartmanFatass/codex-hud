@@ -6,6 +6,8 @@ import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectItem, ProjectSnapshot } from '../collectors/project-board.js';
 import type { HomePortfolio } from '../collectors/home-portfolio.js';
+import type { TodayFacts } from '../collectors/home-cards.js';
+import type { ScheduleItem } from '../collectors/schedule.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
 import { initialHomeTab, initialProjectTab, initialControlTab, type MonitorState, type ObjectiveTarget } from './monitor-state.js';
@@ -138,6 +140,8 @@ export interface MonitorData {
   jobsObserved?: boolean;
   homeWaiting?: readonly ProjectItem[];
   homePortfolio?: HomePortfolio;
+  homeToday?: TodayFacts;
+  openSchedule?: readonly ScheduleItem[];
   project?: ProjectSnapshot;
   projectDisplayRoot?: string;
   projectWaiting?: number;

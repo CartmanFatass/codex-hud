@@ -336,6 +336,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   if (input.type === 'mouse') {
     if (input.button !== 'left') return moveScroll(nav.scroll + (input.button === 'wheel-down' ? 3 : -3));
     const row = monitorRowAt(pane, input.x, input.y);
+    if (row?.item && !sub && row.item.startsWith('home:card:schedule:') && !row.homeTarget) return select(row.item);
     return row?.item ? objective && row.item !== cursor ? select(row.item) : act(row) : result();
   }
   if (enter || key === 'open-session') {

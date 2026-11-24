@@ -96,7 +96,7 @@ export async function buildCardsFixture(base, { day = 'busy', lang = 'zh', now =
     return { id: 's' + (i + 1), date: it.date, text: it.text, ...(it.project && { project: roots[it.project] }), ...(it.objective && { objective: it.objective }), created_at: iso(now - (30 - i) * D) };
   });
   const schedulePath = join(home, 'schedule.json');
-  put(schedulePath, { version: 1, items }, now - 2 * D);
+  put(schedulePath, { version: 1, seq: items.length, items }, now - 2 * D);
   fs.chmodSync(schedulePath, 0o600);
   return { ...fx, schedulePath, day, now };
 }

@@ -4,6 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { nativeInspectorRows, workInspectorRows } from './work-inspector.js';
 import { homeRows, OTHER_PROJECTS, otherProjectsHint } from './home-view.js';
+import { scheduleBadge, scheduleView } from './home-cards.js';
 import { objectiveDetailRows } from './objective-detail.js';
 import { activeFilter, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
@@ -190,6 +191,7 @@ export function renderWorkboardFrame(
   const worker = target && lane?.workers.find((w) => w.id === target.workerId);
   const crumb = help ? t('Help') : objective ? t('Objective') : native ? t('Native subagents') : jobs ? t('Jobs')
     : t('Inspector') + (worker ? ` · ${monitorText(worker.displayId || worker.id.replace(/^thin-job:/, ''))}` : '');
+  const schedule = scheduleView(input.openSchedule, now);
   if (sub || page || list) {
     // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
     const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
@@ -200,10 +202,13 @@ export function renderWorkboardFrame(
     // A count is a `?` and its number, the mark of what waits for the owner everywhere else: a bare number beside a tab reads as its key.
     const badge = (n: number) => (n ? ' ' + theme.board.attention(`?${n}`) : '');
     const counts = { home: count, project: input.projectWaiting ?? input.project?.waiting.length ?? 0, control: 0 };
-    const tabs = MAIN_TABS;
-    const labels = (badges: boolean) => tabs.map((tab) => ` ${t(tab.label)}${badges ? badge(counts[tab.id]) : ''} `);
-    let titles = labels(true);
-    if (visualLength(titles.join('')) > width) titles = labels(false);
+    const tabs = MAIN_TABS, calendar = scheduleBadge(schedule);
+    const labels = (requests: boolean, due: boolean) => tabs.map((tab) =>
+      ` ${t(tab.label)}${requests ? badge(counts[tab.id]) : ''}${due && tab.id === 'home' ? calendar : ''} `);
+    let titles = labels(true, true);
+    if (visualLength(titles.join('')) > width) titles = labels(true, false);
+    if (visualLength(titles.join('')) > width) titles = labels(false, true);
+    if (visualLength(titles.join('')) > width) titles = labels(false, false);
     frame.lines[0] = fit(titles.map((label, i) => (state.activeTab === tabs[i].id ? theme.board.title : theme.board.muted)(label)).join(''), width);
     let x = 0;
     for (const [i, label] of titles.entries()) {
@@ -260,7 +265,8 @@ export function renderWorkboardFrame(
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
             : sheetRows ?? controlRows(input.project, state.control.roles, width, now)
-          : homeRows(input.homePortfolio, width, now, room - Number(!!input.error) - Number(!!input.publicationNotice), state.home.othersExpanded);
+          : homeRows(input.homePortfolio, width, now, room - Number(!!input.error) - Number(!!input.publicationNotice),
+              state.home.othersExpanded, input.homeToday, schedule);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   const actions = rows.filter((r) => r.item);
@@ -334,7 +340,7 @@ export function renderWorkboardFrame(
           : [selected?.objectiveTarget ? '⏎ details' : '⏎ open', ...projectSwitch])
         : [...(listCursor ? selected?.item === OTHER_PROJECTS
           ? [otherProjectsHint(state.home.othersExpanded), state.home.othersExpanded ? '⏎ fold' : '⏎ expand']
-          : [selected?.objectiveTarget ? '⏎ details' : '⏎ open'] : []), 'v Jobs'];
+          : selected?.objectiveTarget ? ['⏎ details'] : selected?.homeTarget ? ['⏎ open'] : [] : []), 'v Jobs'];
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
   if (roles && height > 1) presetFooterControls(frame, hints, width, height - 1);
   if (height > 1) {
