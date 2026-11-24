@@ -81,6 +81,7 @@ export class TicketRollup {
       if (ticket.state === 'try' && (marks.get(row.id) === 'accept' || (alias && marks.get(alias) === 'accept'))) ticket.state = 'done';
     }
     const dependencies = new Map<ProjectTicket, (ProjectTicket | undefined)[]>();
+    const crossBlockers = new Map<ProjectTicket, string[]>(), missingCrossBlockers = new Map<ProjectTicket, string>();
     for (const { slug, tickets } of this.features) for (const t of tickets) {
       const raw = t.blockers[0] ?? '', title = (ref: string) => tickets.find(x => x.title.toLowerCase() === ref.trim().toLowerCase());
       const refs = title(raw) ? [raw] : raw.replace(/\([^()]*\)/g, '').split(/[,;]|\s+and\s+/i);
@@ -89,11 +90,20 @@ export class TicketRollup {
       for (const ref of refs.map(s => s.trim()).filter(Boolean)) {
         const m = /^(?:([\w.-]+)\/|#?)(\d+)\b/.exec(ref);
         const target = m ? this.index.get(key(m[1] ?? slug, m[2])) : title(ref);
-        if (target && ['done', 'dropped', 'try'].includes(target.state)) continue;
-        deps.push(target);
+        const cross = m?.[1] && m[1].toLowerCase() !== slug.toLowerCase() ? `${m[1]}/${m[2]}` : undefined;
+        if (target && (target.state === 'done' || target.state === 'dropped' || (!cross && target.state === 'try'))) continue;
+        if (cross && target) {
+          // A known external dependency is a queue wait, not a local stall.
+          const waiting = crossBlockers.get(t) ?? [];
+          waiting.push(cross);
+          crossBlockers.set(t, waiting);
+        } else {
+          deps.push(target);
+          if (cross) missingCrossBlockers.set(t, cross);
+        }
         t.blockers.push(m?.[1] ? ref : target?.number ?? ref);
       }
-      if (t.state === 'ready' && deps.length) dependencies.set(t, deps);
+      if (t.state === 'ready' && (deps.length || crossBlockers.has(t))) dependencies.set(t, deps);
     }
     // Resolve after every feature has been indexed. A missing predecessor or dependency cycle cannot start by itself.
     const visit = (t: ProjectTicket): ProjectTicket['state'] => {
@@ -112,6 +122,6 @@ export class TicketRollup {
       doneFeatures, totalFeatures: this.features.length };
     let room = 16 - (totals.totalFeatures - doneFeatures);
     const rows = entries.map(({ ticket, row }) => ({ ...row, state: sliceState(ticket) }));
-    return { totals, rows, marks, visible: this.features.filter(f => open(f) || room-- > 0) };
+    return { totals, rows, marks, crossBlockers, missingCrossBlockers, visible: this.features.filter(f => open(f) || room-- > 0) };
   }
 }

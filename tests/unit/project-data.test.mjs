@@ -207,7 +207,8 @@ test('Home and Project derive ticket, commit, job, and cross-feature dependency 
   for (const mode of ['home', true]) {
     const d = await get(mode);
     assert.deepEqual(states(d, 'base'), ['try', 'try', 'working']);
-    assert.deepEqual(states(d, 'next'), ['ready', 'queued', 'queued', 'blocked']);
+    assert.deepEqual(states(d, 'next'), ['queued', 'queued', 'queued', 'blocked']);
+    assert.deepEqual(d.tickets.find(f => f.slug === 'next').tickets[0].blockers, ['base/01', 'base/02']);
     assert.deepEqual(d.ladder.ids, ['M1', 'M2']);
     assert.deepEqual(currentRows(d).counts, { accepted: 0, try: 2, working: 1, blocked: 1, todo: 3, dropped: 0 });
     assert.ok(d.ledger.some(r => r.id === 'BASE-03' && r.state === 'working'));
@@ -220,7 +221,9 @@ test('Home and Project derive ticket, commit, job, and cross-feature dependency 
   const accepted = await get('home');
   assert.equal(accepted.waiting.length, 0); assert.equal(accepted.counts.try, 1); assert.equal(accepted.counts.accepted, 1);
   assert.deepEqual(states(accepted, 'base'), ['done', 'try', 'blocked']);
-  assert.deepEqual(states(accepted, 'next'), ['ready', 'blocked', 'blocked', 'blocked']);
+  assert.deepEqual(states(accepted, 'next'), ['queued', 'queued', 'queued', 'blocked']);
+  assert.deepEqual(accepted.tickets.find(f => f.slug === 'next').tickets.map(t => t.blockers),
+    [['base/02'], ['base/03'], ['02'], ['absent/01']]);
   assert.equal(fs.readFileSync(file, 'utf8'), original);
 });
 

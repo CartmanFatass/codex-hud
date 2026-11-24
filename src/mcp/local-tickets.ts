@@ -77,9 +77,13 @@ export function ticketObjective(cwd: string, ticket: unknown, shared: string) {
   } catch { /* No attribution. */ }
 }
 
-export function readyTickets(cwd: string, jobs: JobIndexCache, feature?: string) {
+export function readyTickets(cwd: string, jobs: JobIndexCache) {
+  return { ok: true, tickets: ticketReadiness(cwd, jobs).tickets };
+}
+
+export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: string) {
   const scratch = join(cwd, '.scratch');
-  if (!directoryExists(scratch)) return { ok: true, tickets: [] };
+  if (!directoryExists(scratch)) return { tickets: [], queued: [] };
   const features = fs.readdirSync(scratch, { withFileTypes: true }).filter(entry => entry.isDirectory())
     .sort((a, b) => a.name.localeCompare(b.name)).map(({ name: slug }) => ({ slug, at: 0,
       tickets: list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number, path }) => {
@@ -107,10 +111,20 @@ export function readyTickets(cwd: string, jobs: JobIndexCache, feature?: string)
     if (!SETTLED_JOB_STATES.has(state)) rollup.link({ ticket: job.ticket, package: job.package }, '',
       { role: job.role, state, created: Date.parse(job.created_at) || 0 });
   }
-  rollup.derive(Date.now());
-  return { ok: true, tickets: features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) => tickets.flatMap(t =>
-    t.state === 'ready' && /^ready-for-agent$/i.test(t.status)
-      ? [{ ticket: `${slug}/${nn(Number(t.number))}`, path: t.path, title: t.title, what: t.what }] : [])) };
+  const { crossBlockers, missingCrossBlockers } = rollup.derive(Date.now());
+  const candidates = features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) => tickets.flatMap(t =>
+    /^ready-for-agent$/i.test(t.status) ? [{ t, ticket: `${slug}/${nn(Number(t.number))}` }] : []));
+  if (feature !== undefined) for (const { t, ticket } of candidates) {
+    const missing = missingCrossBlockers.get(t);
+    if (missing) throw Error(`${ticket}: unknown blocked_by ticket: ${missing}`);
+  }
+  return {
+    tickets: candidates.flatMap(({ t, ticket }) => t.state === 'ready' ? [{ ticket, path: t.path, title: t.title, what: t.what }] : []),
+    queued: candidates.flatMap(({ t, ticket }) => {
+      const blockers = crossBlockers.get(t);
+      return t.state === 'queued' && blockers ? [{ ticket, blockers }] : [];
+    }),
+  };
 }
 
 function ownerTry(value: unknown): 'yes' | 'no' {

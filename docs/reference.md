@@ -512,6 +512,7 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
   Pass `ticket` (`feature/NN`) and `path` (as `brief_file`) to `hud_create`.
   The live job claims the ticket in Project diagnostics without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` by default; `ready-for-human` with `**Owner try:** yes`) without touching `STATE.md`.
 - **`run`**: pass `feature` and optional `max_parallel` (default for new queues: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main. `**Role:** frontend-imp` selects that role, and `**Main review:** yes` stops auto-land. A worker question stops the batch; `hud_respond` to that question resumes it (`queue_resumed`).
+  Start the queue even if another feature's tickets have not landed. `run` rejects an unknown cross-feature blocker; known blockers appear under `queued` with the tickets waiting on them. A queue with only these waits stays `working`. It rechecks on land events and blocker edits, and starts each ticket once all blockers have cleared. A cross-feature blocker marked `wontfix` clears the wait just as `done` does; a blocker awaiting an owner try does not.
   After addressing a failure, call `run` again with the same project and `feature`. A new queue attempt keeps existing jobs and completed lands, and retries eligible lands that failed before fast-forward without dispatching their tickets again. It keeps the previous `max_parallel` unless you override it.
   `run` with the same `feature` and `cancel: true` stops new dispatches and lands; it leaves existing jobs and lands alone.
 - **`add`**: pass `feature` (lowercase letters, digits and hyphens) and `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?, objective?}]`.
@@ -748,7 +749,7 @@ A recorded acceptance or done/closed/complete/resolved status completes a ticket
 Dropped tickets count as resolved on the Tickets page.
 A ticket ID in the latest 64 commit subjects can show a ticket as landed and release its dependents; it shows **to try** only with `**Owner try:** yes`. Legacy pending records remain readable.
 Local numbers/titles and `feature/NN` blockers resolve across the scanned project.
-Waiting only for ordinary predecessors is **Queued**; unknown or stalled predecessors are **Stalled**.
+Waiting only for ordinary predecessors or known cross-feature blockers is **Queued**. An unknown blocker or a stalled predecessor in the same feature is **Stalled**.
 Working jobs and managed worktrees are linked at read time, never written back to the tracker.
 The lookup of the newest 64 top-level jobs and up to 64 of their children is shared with Progress.
 **Tickets page**: one row per `.scratch` feature, with resolved/total (including dropped tickets as resolved) and the oldest open ticket's status.
@@ -756,7 +757,7 @@ The lookup of the newest 64 top-level jobs and up to 64 of their children is sha
 Open a feature to see its tickets in lanes by state, one row each (`◐ hp 06 Projects list  imp 12m  1/3`: state mark, the feature's code, number and title; on the right what matters for the lane, then checked/total).
 **For you** comes first: tickets waiting on a person (`needs-triage`, `needs-info`, `ready-for-human`) with their latest comment under the row, whatever else holds them.
 **Working** holds tickets with active work or a fresh claim; pending owner tries have a **to try** lane.
-**Ready** holds work that can start; **Queued** starts folded and holds tickets waiting on ordinary predecessors.
+**Ready** holds work that can start; **Queued** starts folded and holds tickets waiting on ordinary predecessors or known cross-feature blockers.
 **Stalled** is for genuine blockers.
 Dependency rows name their blockers (`← 03 ●`, the mark that of the blocker); **Done** also starts folded.
 Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under `## Comments`) under it, a second Enter folds it; `o` opens the ticket file.

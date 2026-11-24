@@ -141,16 +141,21 @@ test('open features list tickets by state and keep queued tickets folded', async
   frame = f.render(120, 'en', press(frame, 'open-session').state);
   assert.doesNotMatch(plain(frame).join('\n'), /05 Shortcuts/);
 });
-test('stalled evidence stays visible while ordinary predecessors stay folded', async (t) => {
+test('unknown blockers stay Stalled while known cross-feature waits use the folded Queued lane', async (t) => {
   const f = await fixture(t);
   f.issue('native-tree', '14', 'needs-upstream', 'Missing upstream', 'ready-for-agent', 'unknown/01');
+  f.issue('native-tree', '15', 'wait-upstream', 'Known upstream', 'ready-for-agent', 'upstream/01');
+  f.issue('upstream', '01', 'waiting', 'Upstream needs input', 'needs-info');
   const data = await f.collector.collect(true, f.board, NOW + 2);
   for (const lang of ['en', 'zh']) {
-    const lines = plain(f.render(80, lang, featurePage(), data)).join('\n');
-    assert.match(lines, lang === 'en' ? /^▸ Queued ─+ 2$/m : /^▸ 待前序 ─+ 2$/m);
+    const frame = f.render(80, lang, featurePage(), data), lines = plain(frame).join('\n');
+    assert.match(lines, lang === 'en' ? /^▸ Queued ─+ 3$/m : /^▸ 待前序 ─+ 3$/m);
     assert.match(lines, lang === 'en' ? /^Stalled ─+ 1$/m : /^受阻 ─+ 1$/m);
     assert.match(lines, /◆ nt 14 Missing upstream +← unknown\/01/);
-    assert.doesNotMatch(lines, /05 Shortcuts/);
+    assert.doesNotMatch(lines, /05 Shortcuts|15 Known upstream/);
+    frame.state.project.nav.cursor = 'project:fold:lane:queued:native-tree';
+    const expanded = f.render(80, lang, press(frame, 'enter').state, data);
+    assert.match(plain(expanded).join('\n'), /· nt 15 Known upstream +← upstream\/01/);
   }
 });
 test('Enter on a ticket shows its checklist and latest comment in the panel, a second Enter folds it; raw o opens the file in a fake herdr tab', async (t) => {

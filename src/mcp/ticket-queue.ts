@@ -10,9 +10,11 @@ import { ticketFileEvidence } from '../collectors/ticket-evidence.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { validLandConfig } from './land.js';
+import { ticketReadiness } from './local-tickets.js';
 import { binScript } from './paths.js';
+import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
-import { cancelTicketQueue, queueIds, readTicketQueue, ticketQueueNotice, writeTicketQueue, type TicketQueue } from './ticket-queue-state.js';
+import { cancelTicketQueue, queueIds, readTicketQueue, ticketQueueNotice, ticketQueueView, writeTicketQueue, type TicketQueue } from './ticket-queue-state.js';
 
 const starting = new Map<string, ChildProcess>();
 export function wakeTicketQueue(home: string, q: TicketQueue) {
@@ -70,6 +72,8 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       dispatcher: resumed ? resumed.dispatcher : dispatcher,
       state: 'working', tickets: resumed?.tickets.filter(item => item.landed || (!launchFailed(home, item.job) && !ticketClosed(item.path)))
         .map(item => ({ ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow })) ?? [] };
+    const { queued } = ticketReadiness(root, jobCache, feature);
+    if (queued.length) q.queued = queued;
     writeTicketQueue(home, q, true);
     wakeTicketQueue(home, q);
     return q;
@@ -90,8 +94,9 @@ export function ticketQueueTask(home: string, q: TicketQueue, cancel = false) {
     wakeTicketQueue(home, q);
     ensureJobWatcher(home);
   }
-  const text = ticketQueueNotice(q);
-  return { taskId: q.flow, status: q.state, statusMessage: q.state === 'working' ? `${q.flow} (ticket queue ${q.feature}) — working` : text,
+  const text = q.state === 'working'
+    ? `${q.flow} (ticket queue ${q.feature}) — ${ticketQueueView(q).reason ?? 'working'}` : ticketQueueNotice(q);
+  return { taskId: q.flow, status: q.state, statusMessage: text,
     createdAt: q.created_at, lastUpdatedAt: q.updated_at, ttlMs: 3 * 60 * 60_000, pollIntervalMs: 5000,
     ...(q.state !== 'working' && { result: { content: [{ type: 'text', text }] } }) };
 }

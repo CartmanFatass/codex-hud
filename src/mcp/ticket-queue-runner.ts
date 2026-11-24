@@ -13,7 +13,7 @@ import { dispatchJob } from './dispatch/orchestrator.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import { activeLand, landAttempt, landOutcome, readLand, retryableLand } from './land-state.js';
 import { startLand } from './land.js';
-import { readyTickets } from './local-tickets.js';
+import { ticketReadiness } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { piReportSettlement } from './pi-read-settlement.js';
 import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/job-store.js';
@@ -70,7 +70,7 @@ async function drive(q: TicketQueue) {
   let dispatching: TicketQueueItem | undefined, pending: Promise<void> | undefined, dispatchError: string | undefined;
   const canAdmit = () => q.state === 'working' && !queueCancelled(hudHome, q);
   const finish = (state: TicketQueue['state'], reason?: string) => {
-    q.state = state; q.reason = reason;
+    q.state = state; q.reason = reason; q.queued = undefined;
     q.remaining = q.tickets.flatMap(item => {
       if (item === dispatching) item.job ??= receiptFor(item)?.job;
       if (!item.job || item.landed) return [];
@@ -82,11 +82,12 @@ async function drive(q: TicketQueue) {
     save();
     return { done: true as const, value: undefined };
   };
-  const ready = () => readyTickets(q.root, jobCache, q.feature).tickets;
   try {
     await waitUntilFs({
       timeoutMs: Infinity,
+      // Land receipts already wake this runner across features. Watch blocker edits too (e.g. wontfix).
       targets: () => [{ dir: join(hudHome, 'flows'), filter: (file) => !file || file === `${q.flow}.json.cancel` || /^f[a-f0-9]{16}(?:-\d+)?\.json$/.test(file) || file === `${q.flow}.json` },
+        ...(q.queued ?? []).flatMap(item => item.blockers.map(ref => ({ dir: join(q.root, '.scratch', ref.split('/')[0].toLowerCase(), 'issues') }))),
         ...q.tickets.flatMap(item => item.job && !item.landed ? [{ dir: directory(item.job), recursive: true,
           filter: (file: string | null) => !file || /^(?:qa(?:\/q\d+\.md)?|STATUS\.json(?:\.stop-requested)?|report\.md|checks\.json|job\.json|done\.json|turn\.json)$/.test(file) }] : [])],
       check: async () => {
@@ -153,9 +154,15 @@ async function drive(q: TicketQueue) {
           return later();
         }
         const active = q.tickets.filter(item => !item.landed).length;
-        if (dispatching || (q.max_parallel && active >= q.max_parallel && q.tickets.every(item => item.job))) return later();
+        const atCapacity = q.max_parallel && active >= q.max_parallel && q.tickets.every(item => item.job);
+        if (dispatching || (atCapacity && !q.queued?.length)) return later();
+        const { tickets: eligible, queued } = ticketReadiness(q.root, jobCache, q.feature);
+        if (JSON.stringify(queued) !== JSON.stringify(q.queued ?? [])) {
+          q.queued = queued.length ? queued : undefined;
+          save();
+        }
+        if (atCapacity) return later();
         let item = q.tickets.find(item => !item.job);
-        const eligible = ready();
         if (item && !eligible.some(t => t.ticket === item!.ticket && t.path === item!.path))
           return finish('failed', `${item.ticket}: no longer ready after recovery`);
         const next = item ? [] : eligible.filter(t => !q.tickets.some(own => own.ticket === t.ticket));
@@ -167,7 +174,7 @@ async function drive(q: TicketQueue) {
           q.tickets.push(item);
           save(); // Record intent before dispatch so the request key is recoverable.
         }
-        if (!item) return active ? later() : finish('completed');
+        if (!item) return active || queued.length ? later() : finish('completed');
         // Observe the other workers while launch is in flight. Admission rechecks the stop before writing a job.
         const launching = dispatching = item;
         pending = (async () => {

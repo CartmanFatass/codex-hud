@@ -486,6 +486,8 @@ test('ready tickets are dispatchable briefs and live jobs claim them in MCP, Hom
   writeFixtureFile(join(live, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
   assert.deepEqual((await ready()).tickets.map(row => row.ticket), ['alpha/01']);
   await f.call('hud_tickets', { op: 'update', feature: 'alpha', ticket: 1, status: 'ready-for-human' });
+  assert.deepEqual((await ready()).tickets, []);
+  await f.call('hud_tickets', { op: 'update', feature: 'alpha', ticket: 1, status: 'done' });
   assert.deepEqual((await ready()).tickets, [{ ticket: 'beta/01', path: second.path, title: 'Second slice', what: draft.what }]);
 });
 

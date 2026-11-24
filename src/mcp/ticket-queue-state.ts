@@ -16,7 +16,7 @@ export interface TicketQueue {
   flow: string; root: string; feature: string; pane: string; task: boolean; max_parallel: number;
   created_at: string; updated_at: string; pid?: number; start?: string;
   state: 'working' | 'completed' | 'failed' | 'cancelled'; tickets: TicketQueueItem[];
-  reason?: string; remaining?: string[];
+  reason?: string; remaining?: string[]; queued?: { ticket: string; blockers: string[] }[];
   dispatcher?: Job['dispatcher'];
 }
 export function readTicketQueue(home: string, id: string): TicketQueue | null {
@@ -33,15 +33,16 @@ export function cancelTicketQueue(home: string, q: TicketQueue) {
 }
 export const queueCancelled = (home: string, q: TicketQueue) => fs.existsSync(`${queueFile(home, q.flow)}.cancel`);
 export function ticketQueueView(q: TicketQueue) {
-  const { flow, feature, state, reason, remaining, max_parallel } = q;
+  const { flow, feature, state, remaining, queued, max_parallel } = q;
+  const reason = q.reason ?? (queued?.length ? `Queued: ${queued.map(({ ticket, blockers }) => `${ticket} waiting on ${blockers.join(', ')}`).join('; ')}` : undefined);
   const base_moves = q.tickets.reduce((total, item) => total + (item.base_moves ?? 0), 0);
-  return { flow, feature, state, reason, remaining, ...(max_parallel && { max_parallel }), ...(base_moves && { base_moves }),
+  return { flow, feature, state, reason, remaining, ...(queued?.length && { queued }), ...(max_parallel && { max_parallel }), ...(base_moves && { base_moves }),
     landed: q.tickets.filter(item => item.landed).map(item => item.ticket),
     jobs: q.tickets.map(({ ticket, job, land }) => ({ ticket, job, land })) };
 }
 export function ticketQueueNotice(q: TicketQueue) {
-  const { landed, base_moves } = ticketQueueView(q);
-  return `${q.flow} (ticket queue ${q.feature}) — ${q.reason ?? q.state}. Landed: ${landed.join(', ') || 'none'}.` +
+  const { landed, base_moves, reason } = ticketQueueView(q);
+  return `${q.flow} (ticket queue ${q.feature}) — ${reason ?? q.state}. Landed: ${landed.join(', ') || 'none'}.` +
     (base_moves ? ` Base moves absorbed: ${base_moves}.` : '') +
     (q.state === 'completed' ? '' : ` Still running: ${q.remaining?.join(', ') || 'none'}.`);
 }

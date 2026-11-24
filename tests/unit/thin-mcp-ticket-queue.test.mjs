@@ -8,7 +8,7 @@ import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
-async function project(t, { thirdBlocker = 'none', frontend = false, crossProject = false } = {}) {
+async function project(t, { thirdBlocker = 'none', frontend = false, crossProject = false, done = [], upstream = [] } = {}) {
   const caller = await fixture(t, { failedRetentionMs: 30_000 });
   const f = crossProject ? { ...caller, root: join(caller.root, 'project') } : caller;
   if (crossProject) fs.mkdirSync(f.root);
@@ -26,9 +26,15 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
   fs.mkdirSync(join(f.root, issues), { recursive: true });
   const ticketPath = n => join(issues, `0${n}-synthetic.md`);
   for (const n of [1, 2, 3]) fs.writeFileSync(join(f.root, ticketPath(n)),
-    `# 0${n}: Synthetic ${n}\n\n**Status:** ready-for-agent\n**Owner try:** no\n**Blocked by:** ${n === 3 ? thirdBlocker : 'none'}\n` +
+    `# 0${n}: Synthetic ${n}\n\n**Status:** ${done.includes(n) ? 'done' : 'ready-for-agent'}\n**Owner try:** no\n**Blocked by:** ${n === 3 ? thirdBlocker : 'none'}\n` +
     (n === 2 && frontend ? '**Role:** frontend-imp\n' : '') +
     `\n**What to build:** Synthetic change ${n}\n\n- [ ] Checked\n\n## Comments\n`);
+  if (upstream.length) {
+    const dir = join(f.root, '.scratch', 'upstream', 'issues');
+    fs.mkdirSync(dir, { recursive: true });
+    upstream.forEach((status, i) => fs.writeFileSync(join(dir, `0${i + 1}-synthetic.md`),
+      `# 0${i + 1}: Upstream ${i + 1}\n\n**Status:** ${status}\n**Blocked by:** none\n\n**What to build:** Synthetic upstream change.\n`));
+  }
   git(f.root, 'add', '.scratch', '.hud');
   git(f.root, 'commit', '-qm', 'synthetic tickets');
   const home = f.env.HUD_HOME;
@@ -36,7 +42,7 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
   const dir = id => join(home, 'jobs', id);
   const job = id => read(join(dir(id), 'job.json'));
   const status = id => read(join(dir(id), 'STATUS.json'));
-  const start = max_parallel => f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel, cwd: f.root });
+  const start = (max_parallel, feature = 'sample') => f.call('hud_tickets', { op: 'run', feature, max_parallel, cwd: f.root });
   const jobs = async (id, count) => {
     await until(() => {
       const q = flow(id);
@@ -92,6 +98,64 @@ test('ticket queue lands two ready tickets, resumes after a runner crash, and re
   assert.deepEqual(result.landed, ['sample/01', 'sample/02', 'sample/03']);
   assert.deepEqual(result.changes, [`${flow} (ticket queue sample) — completed. Landed: sample/01, sample/02, sample/03.`]);
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
+});
+
+test('ticket queue runs ready work and releases a queued ticket when another feature lands', { timeout: 45_000 }, async t => {
+  const f = await project(t, { thirdBlocker: 'upstream/01', done: [2], upstream: ['ready-for-agent'] });
+  const { flow, queued } = await f.start(1);
+  assert.deepEqual(queued, [{ ticket: 'sample/03', blockers: ['upstream/01'] }]);
+  const [first] = await f.jobs(flow, 1);
+  assert.equal(f.job(first).ticket, 'sample/01');
+  await f.settle(first);
+  await until(() => f.flow(flow).tickets[0].landed === true, 15_000);
+  const waiting = await f.call('hud_read', { job: flow });
+  assert.equal(waiting.state, 'working');
+  assert.deepEqual(waiting.queued, queued);
+  assert.match(waiting.reason, /sample\/03 waiting on upstream\/01/);
+  assert.deepEqual(waiting.landed, ['sample/01']);
+  assert.equal(waiting.jobs.length, 1);
+
+  const upstream = await f.start(1, 'upstream');
+  const [blocker] = await f.jobs(upstream.flow, 1);
+  await f.settle(blocker);
+  const [, dependent] = await f.jobs(flow, 2);
+  assert.equal(f.job(dependent).ticket, 'sample/03');
+  assert.equal((await f.end(upstream.flow)).state, 'completed');
+  await f.settle(dependent);
+  const completed = await f.end(flow);
+  assert.equal(completed.state, 'completed');
+  assert.equal(completed.queued, undefined);
+});
+
+test('a queue with only cross-feature waits stays working and wontfix releases its last blocker', { timeout: 30_000 }, async t => {
+  const f = await project(t, { thirdBlocker: 'upstream/01, upstream/02', done: [1, 2], upstream: ['needs-triage', 'ready-for-human'] });
+  const { flow } = await f.start(1);
+  const read = () => f.call('hud_read', { job: flow });
+  const update = (ticket, status) => f.call('hud_tickets', { op: 'update', feature: 'upstream', ticket, status });
+  await until(() => f.flow(flow).pid, 15_000);
+  const waiting = await read();
+  assert.equal(waiting.state, 'working');
+  assert.deepEqual(waiting.queued, [{ ticket: 'sample/03', blockers: ['upstream/01', 'upstream/02'] }]);
+  assert.deepEqual(waiting.jobs, []);
+  await update(1, 'done');
+  await until(() => f.flow(flow).queued?.[0]?.blockers.length === 1, 10_000);
+  const stillWaiting = await read();
+  assert.equal(stillWaiting.state, 'working');
+  assert.deepEqual(stillWaiting.queued, [{ ticket: 'sample/03', blockers: ['upstream/02'] }]);
+  assert.deepEqual(stillWaiting.jobs, []);
+  await update(2, 'wontfix');
+  const [dependent] = await f.jobs(flow, 1);
+  assert.equal(f.job(dependent).ticket, 'sample/03');
+});
+
+test('run rejects a missing cross-feature blocker before creating a queue', { timeout: 30_000 }, async t => {
+  const f = await project(t, { thirdBlocker: 'upstream/99', upstream: ['ready-for-agent'] });
+  const { result } = await f.rpc('tools/call', {
+    name: 'hud_tickets', arguments: { op: 'run', feature: 'sample', max_parallel: 1 },
+  });
+  assert.equal(result.isError, true);
+  assert.match(JSON.parse(result.content[0].text).error, /sample\/03: unknown blocked_by ticket: upstream\/99/);
+  assert.ok(fs.readdirSync(join(f.env.HUD_HOME, 'flows')).every(file => !/^q[a-f0-9]{16}\.json$/.test(file)));
 });
 
 test('running a failed queue in another project retries only the land, keeping the settled worker and original receipts', { timeout: 45_000 }, async t => {
