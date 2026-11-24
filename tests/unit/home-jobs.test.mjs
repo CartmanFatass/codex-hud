@@ -48,7 +48,7 @@ async function fixture(t) {
   put(join(cwd, 'STATE.md'), '# State\n\n## Waiting for the owner\n- Approve the sample fixture\n- Pick the source for the synthetic run from the examples in the project\n  - Use the synthetic index\n\n## Now\n- Validating the example set\n\n## Next\n- Publish the sample run\n');
   const pipeline = new PanelJobPipeline(home, { pane: 'w4E:p1', project: cwd });
   t.after(() => { pipeline.dispose(); rmSync(root, { recursive: true, force: true }); });
-  assert.equal(pipeline.load(), undefined, 'before collection a zero is not known');
+  assert.equal(pipeline.jobsObserved, false, 'before collection a zero is not known');
   await pipeline.refresh();
   const workboard = pipeline.workboard(tree);
   const worker = workboard.workers.find(w => w.id.endsWith(working.id));
@@ -56,17 +56,17 @@ async function fixture(t) {
   put(join(home, 'projects.json'), { version: 1, projects: [{ root: cwd }] });
   const projects = projectList(home, cwd), homePortfolio = await new HomePortfolioCollector(home).read(projects, workboard, nowMs);
   const draw = (state, width = 80) => renderMonitor({ state, width, height: 27, nowMs, workboard: pipeline.workboard(tree),
-    project, projects, homePortfolio, paneLoad: pipeline.load() });
+    project, projects, homePortfolio, jobsObserved: pipeline.jobsObserved });
   return { draw, worker, dir: working.dir, pipeline, finished };
 }
 
-test('Home shows explicit STATE requests, Now, Next and the calling pane load, without workers', async (t) => {
+test('Home shows explicit STATE requests, a Now note and project-wide job counts without workers', async (t) => {
   const { draw } = await fixture(t);
   const previous = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   t.after(() => setDisplayConfig(previous));
   const frame = draw(initialMonitorState());
-  assert.match(plain(frame), /Waiting[\s\S]*Approve the sample fixture[\s\S]*Now[\s\S]*Validating the example set[\s\S]*Next[\s\S]*Publish the sample run[\s\S]*This pane · 2 running · 1 queued/);
-  assert.doesNotMatch(plain(frame), /Synthetic worker|Keep the original parser|done today|Latest|Stalled/);
+  assert.match(plain(frame), /Waiting[\s\S]*Approve the sample fixture[\s\S]*⚒2 ⚡1 ◷⚒1[\s\S]*¶ Validating the example set/);
+  assert.doesNotMatch(plain(frame), /Publish the sample run|This pane|Synthetic worker|Keep the original parser|done today|Latest|Stalled/);
   assert.equal(frame.workboard.targets.size, 0);
   assert.equal(acceptsMonitorInput(frame.state, { type: 'key', text: '/', key: '' }), false);
   assert.equal(press(frame, 'X').state.overlay, undefined);
@@ -77,7 +77,7 @@ test('Home Waiting opens the calling project request by keyboard and click', asy
   const home = draw({ ...initialMonitorState(), selectedProject: '/another/sample-project' }, 40);
   const selected = draw(key(home, 'down').state, 40);
   const pane = selected.panes[0];
-  const continuation = pane.rows.findIndex((r, i) => r.item && r.item === pane.rows[i - 1]?.item);
+  const continuation = pane.rows.findLastIndex((r) => r.item && r.item === selected.state.home.cursor);
   assert.ok(continuation > 0, 'the request wraps');
   const clicked = handleMonitorInput(selected.state, { type: 'mouse', button: 'left', x: 3,
     y: pane.y + continuation - pane.offset }, { frame: selected });

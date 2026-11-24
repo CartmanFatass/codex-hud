@@ -1,72 +1,197 @@
 /** Portfolio handoff. A job waiting for main is not an owner request. */
-import { blockedObjectives, ownerRequestKey } from '../collectors/project-board.js';
+import { blockedObjectives, ownerRequestKey, type ProjectSnapshot, type SliceState, type TicketFeature } from '../collectors/project-board.js';
 import type { Objective } from '../collectors/objectives.js';
-import type { HomePortfolio } from '../collectors/home-portfolio.js';
+import type { HomePortfolio, HomeProject, HomeRequest } from '../collectors/home-portfolio.js';
 import type { MonitorRow } from './monitor.js';
-import { theme, visualLength } from './colors.js';
-import { fit, monitorText, squeeze } from './monitor-text.js';
-import { boardRow, section } from './workboard-rows.js';
-import { clampClean, updatedText } from './project-view.js';
+import { theme, truncateAnsi, visualLength as cells } from './colors.js';
+import { cutSentence, fit, monitorText, pair, sentenceRows, tokenColumn } from './monitor-text.js';
+import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
+import { ROLE_GLYPHS, roleIcon } from './model-glyphs.js';
+import { roleInk } from './work-job-row.js';
+import { barText } from './progress-bar.js';
 import { t } from './i18n.js';
 
-export interface PaneLoad { running: number; queued: number }
+const pad = (n: number) => ' '.repeat(Math.max(0, n));
+const nameCap = (width: number) => width < 50 ? 14 : width < 80 ? 18 : 24;
+const dots = (width: number) => theme.board.frame(mark('╌', '.').repeat(width));
+const liveMark = () => theme.board.active(mark('●', '*', '\uF111'));
+const idleMark = () => theme.board.muted(mark('○', 'o', '\uF10C'));
+const pauseMark = () => theme.board.muted(mark('‖', '=', '\uF28B'));
+const askMark = () => theme.board.attention(stateMark.asking());
+const barOrder = ['accepted', 'try', 'working', 'blocked', 'todo'] as const satisfies readonly SliceState[];
 
-export function homeRows(portfolio: HomePortfolio | undefined, load: PaneLoad | undefined, width: number, now: number): MonitorRow[] {
-  const prose = (prefix: string, body: string, max: number) => clampClean(monitorText(body), width - visualLength(prefix), max).lines
-    .map((line, i) => boardRow(fit((i ? ' '.repeat(visualLength(prefix)) : prefix) + line, width)));
-  const detail = (label: string, body: string, max = 1) => {
-    const prefix = `  ${t('{label}: {value}', { label, value: '' })}`.trimEnd() + ' ';
-    return prose(prefix, body, max);
-  };
-  const rows = [section(t('Waiting'), width)];
-  if (portfolio?.requests.length) for (const { project, index, item } of portfolio.requests) {
-    const name = squeeze(monitorText(project.name), Math.floor(width / 2));
-    rows.push(...prose(`${theme.board.attention('?')} ${name} · `, item.value, 2).map((row) => ({
-      ...row, item: `home:wait:${project.root}:${item.request ?? index}`, homeTarget: { root: project.root, index, request: ownerRequestKey(item) },
-    })));
-  } else rows.push(boardRow(portfolio ? theme.board.muted(t('Nothing needs you')) : t('Loading…')));
-  if (portfolio) {
-    rows.push(section(t('Projects'), width));
-    if (!portfolio.projects.length) rows.push(boardRow(theme.board.muted(t('No registered projects'))));
-    for (const { root, name, unavailable, snapshot, result } of portfolio.projects) {
-      const objectives = snapshot?.objectives, priority = objectives?.priority;
-      const status = unavailable ? [t('Unavailable')] : [t(objectives?.stance ?? 'unknown'), ...(snapshot?.idle ? [t('Idle')] : [])];
-      const statusText = status.join(' · '), cleanName = monitorText(name);
-      const inline = visualLength(cleanName) + visualLength(statusText) + 3 <= width;
-      const title = inline ? `${cleanName} · ${statusText}` : cleanName;
-      const priorityText = priority && priority !== 'normal' ? t('{priority} priority', { priority: t(priority) }) : '';
-      const updated = updatedText(snapshot?.objectivesAt === undefined ? snapshot?.updatedAt
-        : Math.max(snapshot.objectivesAt, snapshot.updatedAt ?? -Infinity), now);
-      const meta = [!inline && statusText, priorityText, updated].filter(Boolean).join(' · ');
-      const metaFits = inline && visualLength(title) + visualLength(meta) + 2 <= width;
-      rows.push({ ...section(title, width, metaFits ? meta : ''), item: `home:project:${root}`, homeTarget: { root } });
-      if (meta && !metaFits) rows.push(...clampClean(meta, width - 2, 3).lines.map((line) => boardRow('  ' + line)));
-      const blocked = blockedObjectives(snapshot?.waiting ?? []);
-      const objectiveRows = (label: string, text: string, objective?: Objective, kind = 'objective') =>
-        detail(label, text, 2).map((row) => objective ? { ...row,
-          item: `home:${kind}:${root}:${objective.id}`, objectiveTarget: { root, objective, blocked: blocked.has(objective.id) } } : row);
-      if (objectives) {
-        const goals = objectives.objectives.filter((goal) => goal.state === 'active' || blocked.has(goal.id));
-        let unblocked = 0, more = 0;
-        for (const goal of goals) {
-          const waits = blocked.has(goal.id);
-          if (!waits && unblocked++ >= 2) { more++; continue; }
-          rows.push(...objectiveRows(waits ? `${t('Objective')} · ${t('blocked')}` : t('Objective'), goal.title, goal));
-        }
-        if (more) rows.push({ ...boardRow(fit('  ' + theme.board.muted(t('{n} more', { n: more })), width)),
-          item: `home:more:${root}`, homeTarget: { root } });
-      } else if (snapshot) {
-        if (snapshot.summary) rows.push(...detail(t('Now'), snapshot.summary, 2));
-        if (snapshot.next.length) rows.push(...detail(t('Next'), snapshot.next.map(({ value }) => value).join(' · ')));
-      }
-      if (result) {
-        const label = result.at === undefined ? t('Result') : t('Result ({date})', { date: new Date(result.at).toISOString().slice(0, 10) });
-        // With several Objectives, name the one the latest result belongs to.
-        const owner = (objectives?.objectives.length ?? 0) > 1 ? ` · ${result.id}` : '';
-        rows.push(...objectiveRows(label + owner, result.text, objectives?.objectives.find((o) => o.id === result.id), 'result'));
-      }
+/** Linked features form a set. A missing or incomplete feature makes the denominator unknown. */
+function progress(features: Map<string, TicketFeature>, links: readonly string[]) {
+  const counts: ProjectSnapshot['counts'] = { accepted: 0, try: 0, working: 0, blocked: 0, todo: 0, dropped: 0 };
+  let total = 0;
+  for (const slug of new Set(links)) {
+    const feature = features.get(slug);
+    if (!feature || feature.partial) return;
+    for (const { state } of feature.tickets) {
+      if (state === 'dropped') continue;
+      counts[state === 'done' ? 'accepted' : state === 'queued' || state === 'ready' ? 'todo' : state]++;
+      total++;
     }
   }
-  if (load) rows.push(boardRow(theme.board.muted(t('This pane · {running} running · {queued} queued', { ...load }))));
-  return rows;
+  return { counts, total };
+}
+function progressCells(data: ReturnType<typeof progress>, width: number, paused: boolean) {
+  return !data ? pad(width) : data.total ? barText(data, width, barOrder, paused) : dots(width);
+}
+const countText = (data: ReturnType<typeof progress>, width: number) => {
+  if (!data?.total) return '';
+  const count = `${data.counts.accepted}/${data.total}`;
+  return width < 56 ? count : t('{count} tickets', { count });
+};
+
+function loadFacts(jobs: ProjectSnapshot['active']) {
+  const ink = theme.board;
+  const running: Record<string, number> = {}, queued: Record<string, number> = {};
+  for (const { role, state } of jobs) {
+    const key = Object.hasOwn(ROLE_GLYPHS, role) ? role : 'other';
+    const group = state === 'queued' ? queued : running;
+    group[key] = (group[key] ?? 0) + 1;
+  }
+  const roles = Object.keys(ROLE_GLYPHS), queueMark = mark('◷', '~', '\uF017');
+  return [roles.filter((r) => running[r]).map((r) => roleInk(r)(roleIcon(r) + running[r])),
+    roles.filter((r) => queued[r]).map((r) => ink.muted(queueMark) + roleInk(r)(roleIcon(r) + queued[r]))].flat().join(' ');
+}
+
+function projectView({ root, name, unavailable, snapshot, result }: HomeProject, now: number) {
+  const ink = theme.board;
+  const record = snapshot?.objectives, jobs = snapshot?.active ?? [];
+  const blocked = blockedObjectives(snapshot?.waiting ?? []), running = jobs.some(({ state }) => state !== 'queued');
+  const open = (record?.objectives ?? []).filter(({ state }) => state !== 'done').sort((a, b) =>
+    Number(blocked.has(b.id)) - Number(blocked.has(a.id)) || Number(a.state === 'paused') - Number(b.state === 'paused'));
+  const stance = record?.stance === 'paused' || record?.stance === 'maintenance' ? ink.muted(` · ${t(record.stance)}`) : '';
+  const priority = record?.priority === 'high' ? ink.attention(mark('↑', '^', '\uF062'))
+    : record?.priority === 'low' ? ink.muted(mark('↓', 'v', '\uF063')) : '';
+  const idle = snapshot?.idle && !running, idleWord = idle && !stance ? ink.muted(t('idle')) : '';
+  const age = compactAge(Math.max(snapshot?.updatedAt ?? -Infinity, snapshot?.objectivesAt ?? -Infinity), now);
+  return { root, name: monitorText(name), unavailable, stance, paused: record?.stance === 'paused', open, blocked,
+    features: new Map(snapshot?.tickets.map((f) => [f.slug, f])),
+    mark: unavailable ? ink.danger(stateMark.failed()) : running ? liveMark() : idle ? idleMark() : ' ',
+    nameInk: running && !unavailable ? ink.text : ink.muted,
+    priority, idleWord, age: age && ink.muted(age), load: loadFacts(jobs),
+    note: !record && snapshot?.summary,
+    recent: result?.at !== undefined && now - result.at <= 3 * 86_400_000 ? { ...result, age: compactAge(result.at, now) } : undefined };
+}
+type ProjectView = ReturnType<typeof projectView>;
+
+/** Drop whole facts from least to most important; callers reserve the minimum token space first. */
+function keepFacts(room: number, ...facts: string[]) {
+  const kept = facts.filter(Boolean);
+  while (kept.length && cells(kept.join(' ')) > room) kept.shift();
+  return kept;
+}
+function headerFacts(v: ProjectView, room: number) {
+  const kept = keepFacts(room, v.priority, v.idleWord, v.age, v.load);
+  // Display load before the age even though age is dropped first.
+  if (v.load && v.age && kept.includes(v.age)) kept.splice(kept.length - 2, 2, v.load, v.age);
+  return kept.join(' ');
+}
+const projectTarget = ({ root }: ProjectView) => ({ item: `home:project:${root}`, homeTarget: { root } });
+
+function projectHeader(v: ProjectView, width: number): MonitorRow {
+  const ink = theme.board;
+  const stance = !v.unavailable && width >= 2 + Math.min(8, cells(v.name)) + cells(v.stance) ? v.stance : '';
+  const room = width - 2 - cells(stance) - 1 - Math.min(8, cells(v.name));
+  const right = v.unavailable ? keepFacts(room, ink.danger(t('unavailable'))).join(' ') : headerFacts(v, room);
+  const nameWidth = Math.max(0, Math.min(nameCap(width), width - 2 - cells(stance) - (right ? cells(right) + 1 : 0)));
+  const left = `${v.mark} ${v.nameInk(truncateAnsi(v.name, nameWidth))}${stance}`;
+  const rule = width - cells(left) - (right ? cells(right) + 2 : 1);
+  const body = rule > 0 ? `${left} ${ink.frame(mark('─', '-').repeat(rule))}` : left;
+  return { ...boardRow(fit(pair(body, right, width), width)), ...projectTarget(v) };
+}
+
+function requestRows({ project, index, item }: HomeRequest, width: number, now: number): MonitorRow[] {
+  const ink = theme.board;
+  const name = monitorText(project.name), id = monitorText(item.objective ?? ''), lead = `${askMark()} `;
+  const divider = id ? ` ${ink.muted(mark('›', '>'))} ` : '';
+  const fixed = cells(lead + divider), minName = Math.min(cells(name), 8), minId = Math.min(cells(id), 8);
+  const age = compactAge(item.at, now), flag = item.waitedOn ? ink.attention(t('work waits')) : '';
+  const right = keepFacts(width - fixed - minName - minId - 1, age && ink.muted(age), flag).reverse().join(' ');
+  const room = Math.max(0, width - fixed - (right ? cells(right) + 1 : 0));
+  let nameWidth = Math.min(cells(name), nameCap(width)), idWidth = Math.min(cells(id), width < 50 ? 11 : 14);
+  while (nameWidth + idWidth > room && (nameWidth > minName || idWidth > minId)) {
+    if (nameWidth > minName && (nameWidth >= idWidth || idWidth <= minId)) nameWidth--;
+    else idWidth--;
+  }
+  const head = `${lead}${ink.text(truncateAnsi(name, nameWidth))}${divider}${ink.text(truncateAnsi(id, idWidth))}`;
+  const prose = monitorText((item.sentence ?? item.value).replace(/\s+/g, ' ').trim());
+  const itemId = `home:wait:${project.root}:${item.request ?? index}`;
+  const homeTarget = { root: project.root, index, request: ownerRequestKey(item) };
+  return [pair(head, right, width), ...sentenceRows(prose, width, 2, 2).map(ink.text)]
+    .map((text) => ({ text: fit(text, width), item: itemId, homeTarget }));
+}
+
+function objectiveRows(v: ProjectView, objective: Objective, width: number) {
+  const ink = theme.board;
+  const blocked = v.blocked.has(objective.id), paused = objective.state === 'paused';
+  const state = blocked ? askMark() : paused ? pauseMark() : liveMark();
+  const textInk = blocked ? ink.attention : paused ? ink.muted : ink.text;
+  const data = progress(v.features, objective.features), count = countText(data, width);
+  const lead = `  ${state} `, flagCol = width < 50 ? 0 : Math.max(cells(t('blocked')), cells(t('paused')));
+  const flag = flagCol ? ' ' + fit(blocked ? ink.attention(t('blocked')) : paused ? ink.muted(t('paused')) : '', flagCol) : '';
+  const countCol = Math.max(cells(count), width < 56 ? 5 : cells(t('{count} tickets', { count: '00/00' })));
+  const idCol = Math.min(width < 50 ? 11 : 14, Math.max(1, width - cells(lead) - cells(flag) - countCol - 3));
+  const graphicRoom = Math.max(0, width - cells(lead) - idCol - 2 - countCol - cells(flag));
+  const titleCol = width >= 80 ? graphicRoom - 17 : 0;
+  const title = titleCol > 0 ? ink.muted(fit(cutSentence(monitorText(objective.title), titleCol), titleCol)) + ' ' : '';
+  const graphic = progressCells(data, graphicRoom - cells(title), paused);
+  const target = { root: v.root, objective, blocked };
+  const row = { text: fit(`${lead}${textInk(tokenColumn(monitorText(objective.id), idCol))} ${title}${graphic} ${pad(countCol - cells(count))}${(paused ? ink.muted : ink.text)(count)}${flag}`, width),
+    item: `home:objective:${v.root}:${objective.id}`, objectiveTarget: target };
+  const recent = v.recent?.id === objective.id ? v.recent : undefined;
+  if (!recent) return { row };
+  const age = recent.age ? ink.muted(recent.age) : '';
+  const line = sentenceRows(monitorText(recent.text), width - (age ? cells(age) + 1 : 0), 1, 4, ink.success(stateMark.done()))[0] ?? '';
+  return { row, result: { text: fit(pair(line, age, width), width), item: `home:result:${v.root}:${objective.id}`, objectiveTarget: target } };
+}
+
+function compactProjects(projects: ProjectView[], width: number): MonitorRow[] {
+  const nameCol = Math.min(11, nameCap(width), Math.max(1, width - 10));
+  const rollups = projects.map((v) => !v.unavailable ? progress(v.features, v.open.flatMap((o) => o.features)) : undefined);
+  const countCol = Math.max(5, ...rollups.map((r) => cells(countText(r, width))));
+  const rightRoom = width - 2 - nameCol - 3 - countCol - 4;
+  const rights = projects.map((v) => v.unavailable ? '' : headerFacts(v, rightRoom));
+  const rightCol = Math.max(0, ...rights.map(cells)), barCol = Math.max(0, width - 2 - nameCol - 2 - countCol - (rightCol ? rightCol + 1 : 0));
+  return projects.map((v, index) => {
+    if (v.unavailable) return projectHeader(v, width);
+    const data = rollups[index], count = countText(data, width), right = rights[index];
+    const paused = v.paused || v.open.every((o) => o.state === 'paused');
+    const graphic = v.open.length ? progressCells(data, barCol, paused) : pad(barCol);
+    const left = `${v.mark} ${v.nameInk(tokenColumn(v.name, nameCol))} ${graphic} ${pad(countCol - cells(count))}${paused && count ? theme.board.muted(count) : count}`;
+    return { text: fit(pair(left, right, width), width), ...projectTarget(v) };
+  });
+}
+
+export function homeRows(portfolio: HomePortfolio | undefined, width: number, now: number, room: number): MonitorRow[] {
+  const ink = theme.board;
+  if (!portfolio) return [boardRow(fit(t('Loading…'), width))];
+  const { requests, projects } = portfolio;
+  const top = requests.length ? [section(t('Waiting'), width, String(requests.length)), ...requests.flatMap((r) => requestRows(r, width, now))] : [];
+  top.push(section(t('Projects'), width, width < 56 ? t('done/tickets') : ''));
+  if (!projects.length) return [...top, boardRow(fit(ink.muted(t('No registered projects')), width))];
+  const views = projects.map((p) => projectView(p, now));
+  const blocks = views.map((v) => {
+    const header = projectHeader(v, width);
+    const previews = v.unavailable ? [] : v.open.slice(0, 2).map((o) => objectiveRows(v, o, width));
+    const note = !v.unavailable && v.note ? sentenceRows(monitorText(v.note), width, 1, 2, mark('¶', '.', '\uF249'))
+      .map((line) => boardRow(fit(ink.muted(line), width))) : [];
+    return { v, header, previews, note };
+  });
+  const tier = (limit: number, results: boolean, gaps = false) => blocks.flatMap(({ v, header, previews, note }, i) => {
+    const rows = [header, ...note, ...previews.slice(0, limit).flatMap(({ row, result }) => results && result ? [row, result] : [row])];
+    const more = v.open.length - Math.min(limit, previews.length);
+    if (!v.unavailable && more > 0) rows.push({ text: fit(`  ${ink.muted(t('{remaining} more', { remaining: more }))}`, width),
+      item: `home:more:${v.root}`, homeTarget: { root: v.root } });
+    return gaps && i ? [boardRow(fit('', width)), ...rows] : rows;
+  });
+  for (const [limit, results, gaps] of [[2, true, true], [2, true], [2, false], [1, false]] as const) {
+    const rows = tier(limit, results, gaps);
+    if (top.length + rows.length <= room) return [...top, ...rows];
+  }
+  // When even this exceeds the viewport, all membership and requests remain scrollable.
+  return [...top, ...compactProjects(views, width)];
 }

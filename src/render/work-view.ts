@@ -180,6 +180,7 @@ export function renderWorkboardFrame(
     ...(truncatedFiles ? [fit(theme.board.attention(t('Truncated: {files}', { files: truncatedFiles })), width)] : []),
     ...(control && input.error ? [theme.error(monitorText(input.error))] : [])];
   const top = Math.min(headers.length, Math.max(0, height - 2));
+  const room = Math.max(0, height - 2 - top);
   controlTop.slice(0, top).forEach((row, i) => {
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: 1 + i });
   });
@@ -251,14 +252,14 @@ export function renderWorkboardFrame(
     : native ? nativeInspectorRows(input.tree, width, now)
       : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id))
         : [boardRow(t('Job not available'))]
-        : jobs ? jobsRows(source.workers, width, !!input.paneLoad)
+        : jobs ? jobsRows(source.workers, width, !!input.jobsObserved)
         : project
           ? projectRows(input.project, state, width, now, source, input.projectName, input.projects, input.worktrees)
           : resourcePage ? expRows(resourcePage, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.publicationNotice)))
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
             : sheetRows ?? controlRows(input.project, state.control.roles, width, now)
-          : homeRows(input.homePortfolio, input.paneLoad, width, now);
+          : homeRows(input.homePortfolio, width, now, room - Number(!!input.error) - Number(!!input.publicationNotice));
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   const actions = rows.filter((r) => r.item);
@@ -277,7 +278,6 @@ export function renderWorkboardFrame(
   const expCursor = resourcePage && !expEdit && !hasCursor(resourcePage.cursor) ? rows.find((r) => r.item)?.item : resourcePage?.cursor;
   const key = addingHarness ? harnessAdd?.pick : sheet ? sheet.cursor : nav ? cursor : inspect ? inspectCursor
     : resourcePage ? expEdit ? undefined : expCursor : listCursor;
-  const room = Math.max(0, height - 2 - top);
   const helpStart = helpContent?.anchor ? rows.indexOf(helpContent.anchor) : 0;
   const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(helpStart, rows.length - room);
   const scroll = help

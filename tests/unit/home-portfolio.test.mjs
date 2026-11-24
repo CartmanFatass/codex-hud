@@ -9,7 +9,9 @@ import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js'
 import { projectList } from '../../dist/roles/projects.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { setLanguage } from '../../dist/render/i18n.js';
-import { stripAnsi, visualLength } from '../../dist/render/colors.js';
+import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { buildFixture, NOW } from '../../docs/design/home-portfolio/gen/fixture.mjs';
 
 const nowMs = Date.parse('2026-11-24T12:00:00Z'), updated = new Date('2026-11-24T09:30:00Z');
 const board = { lanes: [], workers: [] };
@@ -47,44 +49,151 @@ function fixture(t, count = 3) {
 }
 const plain = (frame) => frame.lines.map(stripAnsi).join('\n');
 
-test('Home renders all three registered projects and scoped badges in EN/ZH at 120×40 and 200×55', async (t) => {
-  const f = fixture(t), homePortfolio = await f.tick();
-  const homeWaiting = homePortfolio.projects.find((p) => p.root === f.own).snapshot.waiting;
-  for (const [width, height] of [[120, 40], [200, 55]]) for (const lang of ['en', 'zh']) {
-    const previous = setLanguage(lang);
+async function design(t) {
+  const f = await buildFixture();
+  t.after(f.cleanup);
+  const collector = new HomePortfolioCollector(f.home);
+  const tick = () => collector.read(projectList(f.home, f.roots.harbor), board, NOW);
+  const homePortfolio = await tick();
+  const draw = (width, height, portfolio = homePortfolio, state = initialMonitorState()) => renderMonitor({
+    state, width, height, nowMs: NOW, homePortfolio: portfolio, projects: portfolio.projects,
+    homeWaiting: portfolio.projects[0].snapshot.waiting,
+  });
+  return { ...f, homePortfolio, draw, tick };
+}
+
+test('design Home at 40, 50 and 80 columns: cell-exact in EN/ZH across icon sets and themes', async (t) => {
+  const f = await design(t);
+  const { item } = f.homePortfolio.requests[0];
+  assert.match(item.value, /^2026-11-23 r1 .* · Per-key rate limits.*\(work waits\)$/);
+  assert.equal(item.sentence, 'Pick the default burst size: 20 or 60 requests per second? Main cannot ship the quota headers until it is chosen.');
+  for (const [icons, blocked, paused, gone, note, bars, dots] of [
+    ['unicode', '?', '‖', '✗', '¶', '█', '╌'], ['nerd', '\uF059', '\uF28B', '\uF057', '\uF249', '█', '╌'],
+    ['text', '?', '=', 'x', '.', '#', '.'],
+  ]) for (const width of [40, 50, 80]) for (const lang of ['en', 'zh']) {
+    const prev = setDisplayConfig({ theme: 'mocha', icons }), prevLang = setLanguage(lang);
     try {
-      const frame = renderMonitor({ state: initialMonitorState(), width, height, nowMs, homePortfolio, homeWaiting,
-        paneLoad: { running: 2, queued: 1 } });
-      const text = plain(frame);
-      assert.equal(frame.lines.length, height);
-      assert.ok(frame.lines.every((line) => visualLength(line) === width));
-      assert.match(text, lang === 'en' ? /Home \?2/ : /首页 \?2/);
-      assert.match(text, /\? paused-study · 2026-11-23 r1 · Choose alpha · Measure the sample \(work waits\)/);
-      assert.match(text, /\? state-notes · 2026-11-20 r1 · Choose beta/);
-      assert.match(text, lang === 'en' ? /paused-study · paused · Idle .*high priority · updated 09:30/i : /paused-study · 已暂停 · 空闲 .*高优先级 · 更新于 09:30/);
-      assert.match(text, /Measure the sample\s*\n.*Repeat the test/);
-      assert.match(text, lang === 'en' ? /Result \(2026-11-23\) · repeat: The replay agreed\./ : /结果（2026-11-23） · repeat： The replay agreed\./);
-      assert.match(text, lang === 'en' ? /state-notes · unknown · Idle.*\n  Now: Read the handoff\s*\n  Next: Share the example/ : /state-notes · 未知 · 空闲.*\n  现在： Read the handoff\s*\n  下一步： Share the example/);
-      assert.match(text, lang === 'en' ? /offline-root · Unavailable/ : /offline-root · 不可用/);
-      assert.match(text, lang === 'en' ? /This pane · 2 running · 1 queued/ : /当前窗格 · 2 个运行中 · 1 个排队/);
-      assert.doesNotMatch(text, /Retired title|Not a substitute/);
-    } finally { setLanguage(previous); }
+      const frame = f.draw(width, 40), rows = frame.workboard.rows;
+      const text = plain(frame), goal = (id) => rows.find((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.objective.id === id).text;
+      assert.ok([...frame.lines, ...rows.map((r) => r.text)].every((line) => visualLength(line) === width));
+      assert.match(text, lang === 'en' ? /Home \?1/ : /首页 \?1/);
+      const [head, ...body] = rows.filter((r) => r.item?.startsWith('home:wait:')).map((r) => stripAnsi(r.text).trimEnd());
+      assert.match(head, lang === 'en' ? /harbor-api . rate-limits +work waits 1d$/ : /harbor-api . rate-limits +在等你 1天$/);
+      assert.equal(body.length, 2);
+      assert.match(body[0], /^  Pick the default burst size:/);
+      assert.ok(body.every((line) => line.search(/\S/) === 2), 'sentence rows use a two-cell hang');
+      assert.equal(body[1].endsWith('…'), width < 80);
+      const rate = goal('rate-limits'), quill = goal('docs-site');
+      assert.ok(stripAnsi(rate).startsWith(`  ${blocked} rate-limits`));
+      assert.ok(rate.includes(theme.board.attention(blocked)));
+      assert.match(stripAnsi(rate), /\b4\/8\b/);
+      assert.ok(rate.includes(bars));
+      assert.equal(stripAnsi(rate).includes(lang === 'en' ? 'blocked' : '受阻'), width >= 50);
+      assert.equal(stripAnsi(rate).includes('Per-key rate limits'), width >= 80);
+      assert.equal(stripAnsi(rate).includes(lang === 'en' ? '4/8 tickets' : '4/8 工单'), width >= 56);
+      assert.ok(stripAnsi(quill).startsWith(`  ${paused} docs-site`));
+      const [filled] = stripAnsi(quill).match(/[█#]+/);
+      assert.ok(quill.includes(theme.board.muted(filled)), 'paused progress is grey');
+      assert.ok(!quill.includes(theme.board.success(filled)));
+      assert.match(stripAnsi(quill), /\b2\/3\b/);
+      assert.ok(stripAnsi(goal('tokenizers')).includes(dots.repeat(4)));
+      assert.ok(text.includes(`  ${note} Prototype the capture overlay`));
+      assert.ok(text.includes(`${gone} old-mill`));
+      assert.match(text, lang === 'en' ? /old-mill .+ unavailable/ : /old-mill .+ 不可用/);
+      assert.match(text, lang === 'en' ? /Token-bucket core shipped;.*4h/ : /Token-bucket core shipped;.*4时/);
+      assert.doesNotMatch(text, /Two of three tokenizers measured|All clients on v2|v1 removed|Pick the colour palette|This pane|当前窗格/);
+      setDisplayConfig({ theme: 'none' });
+      const noColour = f.draw(width, 40);
+      assert.deepEqual(noColour.lines, frame.lines.map(stripAnsi));
+      assert.ok(noColour.workboard.rows.every((r) => !r.text.includes('\x1b')));
+    } finally { setLanguage(prevLang); setDisplayConfig(prev); }
   }
 });
 
-test('Home keeps all 17 registrations and their requests while bounding routine goal previews', async (t) => {
-  const f = fixture(t, 17), last = f.roots.at(-1);
-  f.put(join(last, 'STATE.md'), '## Waiting for the owner\n- [r1] Decide for the last project (objective goal-3) (work waits)\n');
-  f.objectives(last, f.header, Array.from({ length: 5 }, (_, i) => `## goal-${i}: Goal ${i}\n**State:** active`).join('\n\n'));
-  const homePortfolio = await f.tick();
-  assert.deepEqual(new Set(homePortfolio.projects.map(({ root }) => root)), new Set(f.roots));
-  assert.equal(homePortfolio.requests.length, 20);
-  const { workboard } = renderMonitor({ state: initialMonitorState(), width: 100, height: 30, nowMs, homePortfolio });
-  assert.equal(workboard.rows.filter(({ item }) => item?.startsWith('home:project:')).length, 17);
-  assert.ok(workboard.rows.some(({ text, homeTarget }) => homeTarget?.root === last && text.includes('Decide for the last project')));
-  assert.deepEqual(workboard.rows.filter(({ objectiveTarget, item }) => objectiveTarget?.root === last && item.startsWith('home:objective:'))
-    .map(({ objectiveTarget }) => objectiveTarget.objective.id), ['goal-0', 'goal-1', 'goal-3']);
-  assert.ok(workboard.rows.some(({ text, homeTarget }) => homeTarget?.root === last && text.includes('2 more')));
+test('a 27-row panel keeps request prose and one row for each of 17 registrations', async (t) => {
+  const f = await design(t);
+  const extra = Array.from({ length: 11 }, (_, i) => join(f.dir, `study-${i}`));
+  for (const root of extra) fs.mkdirSync(root);
+  const roots = [...Object.values(f.roots), ...extra];
+  fs.writeFileSync(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: roots.map((root) => ({ root })) }));
+  const portfolio = await f.tick();
+  const rows = f.draw(40, 27, portfolio).workboard.rows;
+  const projects = rows.filter((r) => r.item?.startsWith('home:project:'));
+  assert.deepEqual(new Set(projects.map((r) => r.homeTarget.root)), new Set(roots));
+  assert.equal(projects.length, 17);
+  assert.equal(rows.length, 22, 'two headings, three request rows and seventeen project rows');
+  assert.match(stripAnsi(projects[0].text), /8\/14/);
+  const tiny = f.draw(40, 6, portfolio);
+  assert.deepEqual(tiny.workboard.rows, rows, 'below the minimum the same rows stay scrollable');
+});
+
+test('density drops separators, then results, then the second Objective with an updated more count', async (t) => {
+  const f = await design(t);
+  fs.appendFileSync(join(f.roots.harbor, '.hud/objectives.md'), '\n## follow-up: Follow up\n**State:** paused\n');
+  const portfolio = await f.tick();
+  for (const [height, blanks, result, objectives, more] of [[25, 5, true, 2, 1], [20, 0, true, 2, 1],
+    [19, 0, false, 2, 1], [18, 0, false, 1, 2], [17, 0, false, 0, 0]]) {
+    const rows = f.draw(40, height, portfolio).workboard.rows;
+    assert.equal(rows.filter((r) => !r.text.trim()).length, blanks);
+    assert.equal(rows.some((r) => r.item?.startsWith('home:result:')), result);
+    assert.equal(rows.filter((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.root === f.roots.harbor).length, objectives);
+    assert.equal(rows.find((r) => r.item === `home:more:${f.roots.harbor}`)?.text.includes(`${more} more`) ?? false, more > 0);
+  }
+});
+
+test('Home bars exclude dropped tickets and omit figures for unread linked features', async (t) => {
+  const f = await design(t), root = f.roots.harbor;
+  fs.writeFileSync(join(root, '.scratch/rate-limit-core/issues/06-drop.md'), '# 06: Dropped\n**Status:** dropped\n**Blocked by:** none\n');
+  const job = join(f.home, 'jobs/j0000000000000003');
+  fs.mkdirSync(job, { recursive: true });
+  fs.writeFileSync(join(job, 'job.json'), JSON.stringify({ role: 'reviewer', cwd: root }));
+  fs.writeFileSync(join(job, 'STATUS.json'), JSON.stringify({ state: 'queued' }));
+  const prev = setDisplayConfig({ theme: 'none', icons: 'unicode' });
+  try {
+    const rows = async () => f.draw(40, 40, await f.tick()).workboard.rows;
+    const rate = (rows) => rows.find((r) => r.item === `home:objective:${root}:rate-limits`).text;
+    const known = await rows();
+    assert.match(rate(known), /4\/8/);
+    assert.match(known.find((r) => r.item === `home:project:${root}`).text, /⚒1 ⚖1 ◷⚖1/);
+    const path = join(root, '.hud/objectives.md'), original = fs.readFileSync(path, 'utf8');
+    fs.writeFileSync(path, original.replace('quota-headers', 'unread-feature'));
+    assert.doesNotMatch(rate(await rows()), /[█▒░╌]|\d\/\d/);
+    fs.writeFileSync(path, original);
+    const truncated = join(root, '.scratch/rate-limit-core/issues/07-partial.md');
+    fs.writeFileSync(truncated, 'x'.repeat(66_000));
+    assert.doesNotMatch(rate(await rows()), /[█▒░╌]|\d\/\d/);
+    fs.rmSync(truncated);
+    // A finished feature outside the Tickets page preview still belongs to its Objective.
+    for (const slug of ['archived-work', ...Array.from({ length: 16 }, (_, i) => `other-${i}`)]) {
+      const issue = join(root, '.scratch', slug, 'issues/01-done.md');
+      fs.mkdirSync(join(issue, '..'), { recursive: true });
+      fs.writeFileSync(issue, '# 01: Finished\n**Status:** done\n**Blocked by:** none\n');
+      if (slug === 'archived-work') fs.utimesSync(issue, new Date(NOW - 30 * 86_400_000), new Date(NOW - 30 * 86_400_000));
+    }
+    fs.writeFileSync(path, original.replace('quota-headers', 'quota-headers, archived-work'));
+    assert.match(rate(await rows()), /5\/9/);
+  } finally { setDisplayConfig(prev); }
+});
+
+test('only recent dated receipts appear on Home; Objective and result rows open the same Objective', async (t) => {
+  const f = await design(t), root = f.roots.harbor;
+  for (const [suffix, prefix] of [['rate-limits', 'objective'], ['rate-limits', 'result']]) {
+    const frame = f.draw(40, 40, f.homePortfolio, { ...initialMonitorState(), home: { cursor: `home:${prefix}:${root}:${suffix}` } });
+    const { state, action } = handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { frame });
+    assert.equal(action, undefined);
+    assert.equal(state.subpage.kind, 'objective');
+    assert.equal(state.subpage.target.root, root);
+    assert.equal(state.subpage.target.objective.id, suffix);
+    assert.equal(state.subpage.target.blocked, true);
+  }
+  const receipt = join(f.home, 'events/2026-11.jsonl');
+  const harbor = f.homePortfolio.projects.find((p) => p.root === root);
+  const event = { v: 1, kind: 'objective', project: root, id: 'rate-limits', change: 'result', result: harbor.result.text };
+  for (const [offset, expected] of [[3 * 86_400_000, true], [3 * 86_400_000 + 1, false], [undefined, false]]) {
+    fs.writeFileSync(receipt, JSON.stringify({ ...event, at: offset === undefined ? undefined : new Date(NOW - offset).toISOString() }) + '\n');
+    const rows = f.draw(40, 40, await f.tick()).workboard.rows;
+    assert.equal(rows.some((r) => r.item?.startsWith('home:result:')), expected);
+  }
 });
 
 test('requests sort by waits, project priority, then age; Enter navigates to the exact request and project without an action', async (t) => {

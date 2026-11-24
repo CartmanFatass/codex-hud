@@ -112,8 +112,7 @@ test('Home and Project open an Objective detail and route only its openable evid
     assert.match(entry.text, /blocked/);
     assert.ok(!list.workboard.rows.some((r) => r.objectiveTarget?.objective.id === 'hold' && r.objectiveTarget.blocked));
     if (activeTab === 'home') {
-      list.state.home.cursor = list.workboard.rows.find((r) => r.item?.startsWith('home:result:')).item;
-      assert.equal(key(list, 'enter').state.subpage.target.objective.id, 'finish');
+      assert.ok(!list.workboard.rows.some((r) => r.item?.startsWith('home:result:')), 'undated results stay off Home');
       list.state.home.cursor = entry.item;
     } else list.state.project.nav.cursor = entry.item;
     const { state, action } = key(list, 'enter');

@@ -285,7 +285,7 @@ ClaudeNativeTree.prototype.refresh=function(...args){appendFileSync(${JSON.strin
   child.stderr.on('data', b => errors += b);
   const exited = new Promise(r => child.once('exit', r));
   t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
-  await t.waitFor(() => assert.match(stripAnsi(output), /Nothing needs you/), { timeout: 10_000 });
+  await t.waitFor(() => assert.match(stripAnsi(output), /No registered projects/), { timeout: 10_000 });
   assert.equal(fs.existsSync(scanFile), false, 'Home must not scan Claude native transcripts');
   child.stdin.write('v');
   await t.waitFor(() => assert.match(stripAnsi(output), /n subagents/), { timeout: 10_000 });

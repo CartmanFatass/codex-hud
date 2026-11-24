@@ -9,7 +9,6 @@ import type { WorkboardSnapshot, WorkLane } from '../collectors/workboard-types.
 import { buildWorkboard } from '../collectors/workboard.js';
 import type { SubagentTree } from '../types.js';
 import { jobPanelObservation } from '../utils/collection-observation.js';
-import type { PaneLoad } from '../render/home-view.js';
 
 /** Collect the retained jobs of the calling pane, with extra evidence only for the inspected job. */
 export class PanelJobPipeline {
@@ -36,15 +35,7 @@ export class PanelJobPipeline {
     this.boardCache = { tree, board };
     return board;
   }
-  load(): PaneLoad | undefined {
-    if (!this.thinObservation.complete) return;
-    let running = 0, queued = 0;
-    for (const lane of this.thinJobs) for (const worker of lane.workers) {
-      if (worker.state === 'queued') queued++;
-      else if (worker.settledAt === null) running++;
-    }
-    return { running, queued };
-  }
+  get jobsObserved(): boolean { return this.thinObservation.complete; }
   observation(tree: SubagentTree, nativeQuiet: boolean) {
     return jobPanelObservation(this.workboard(tree), this.thinObservation.complete, nativeQuiet);
   }

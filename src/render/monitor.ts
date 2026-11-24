@@ -5,7 +5,6 @@ import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-type
 import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectItem, ProjectSnapshot } from '../collectors/project-board.js';
-import type { PaneLoad } from './home-view.js';
 import type { HomePortfolio } from '../collectors/home-portfolio.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
@@ -134,7 +133,8 @@ export interface MonitorData {
   /** Only available while the native Inspector is open. */
   tree?: SubagentTree;
   workboard?: WorkboardSnapshot;
-  paneLoad?: PaneLoad;
+  /** Whether the calling pane's HUD job collection is complete. */
+  jobsObserved?: boolean;
   homeWaiting?: readonly ProjectItem[];
   homePortfolio?: HomePortfolio;
   project?: ProjectSnapshot;

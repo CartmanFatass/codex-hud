@@ -28,6 +28,8 @@ export interface ProjectItem {
   at?: number;
   /** A waiting item's full display text; `value` is the same words on one line. */
   text?: string;
+  /** The owner's request prose, without the date, ID, Objective link or work-waits marker. */
+  sentence?: string;
   request?: string;
   objective?: string;
   waitedOn?: boolean;
@@ -56,7 +58,7 @@ export interface ProjectTicket {
   state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
   job?: { id?: string; role: string; state: string; at?: number; created: number };
 }
-export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[] }
+export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[]; partial?: true }
 export interface ProjectSnapshot {
   objectives?: ObjectiveRecord & { path: string; acceptance: Record<string, { checked: number; total: number }> };
   tickets: TicketFeature[];
@@ -257,7 +259,7 @@ export class ProjectCollector {
     let partial = !slugs || slugs.length > 256 || ranked.slice(64).some(({ st }) => st?.isDirectory());
     let budget = 512;
     const stamps: string[] = [stampOf(rootSt)], paths: string[] = [root];
-    const groups: { slug: string; entries: { name: string; path: string; st: fs.Stats | undefined }[] }[] = [];
+    const groups: { slug: string; partial: boolean; entries: { name: string; path: string; st: fs.Stats | undefined }[] }[] = [];
     for (const { slug, issues, st } of ranked.slice(0, 64)) {
       if (!st || !st.isDirectory()) { this.cache.delete(issues); continue; }
       if (budget <= 0) { partial = true; break; }
@@ -265,7 +267,8 @@ export class ProjectCollector {
       stamps.push(`${slug}:${stampOf(st)}`);
       const limit = Math.min(64, budget);
       const names = this.orderedNames(issues, 65, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name), false, st);
-      if (!names || names.length > limit) partial = true;
+      const incomplete = !names || names.length > limit;
+      if (incomplete) partial = true;
       const selected = (names ?? []).slice(0, limit);
       budget -= selected.length;
       const entries = selected.map((name) => {
@@ -274,7 +277,7 @@ export class ProjectCollector {
         stamps.push(`${name}:${fst?.isFile() ? stampOf(fst) : ''}`);
         return { name, path, st: fst };
       });
-      groups.push({ slug, entries });
+      groups.push({ slug, entries, partial: incomplete });
     }
     stamps.push(String(partial));
     const stamp = stamps.join('|');
@@ -283,8 +286,9 @@ export class ProjectCollector {
       return this.ticketsMemo;
     }
     const features: TicketFeature[] = [], claimTimes: number[] = [];
-    for (const { slug, entries } of groups) {
+    for (const { slug, entries, partial: capped } of groups) {
       const tickets: ProjectTicket[] = [];
+      let incomplete = capped;
       for (const { name, path, st } of entries) {
         const ticket = this.body(path, (buffer, truncated, stat): ProjectTicket | null | undefined => {
           if (truncated) return null;
@@ -303,10 +307,11 @@ export class ProjectCollector {
         if (ticket) {
           tickets.push(ticket);
           if (/^claimed\b/i.test(ticket.status)) claimTimes.push(ticket.at);
-        } else if (ticket === null) partial = true; // Unreadable or truncated, not a known invalid ticket.
+        } else if (ticket === null) incomplete = true; // Unreadable or truncated, not a known invalid ticket.
       }
+      if (incomplete) partial = true;
       tickets.sort((a, b) => Number(a.number) - Number(b.number) || a.path.localeCompare(b.path));
-      if (tickets.length) features.push({ slug, at: Math.max(...tickets.map((t) => t.at)), tickets });
+      if (tickets.length) features.push({ slug, at: Math.max(...tickets.map((t) => t.at)), tickets, ...(incomplete && { partial: true }) });
     }
     features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
     return (this.ticketsMemo = { stamp, features, paths, claimTimes, partial });
@@ -617,15 +622,21 @@ export class ProjectCollector {
       .sort((a, b) => compareOwnerRequests(a, b))
       .map(({ item, fields, at, waitedOn }) => {
         const ordered = { ...item, ...(at !== undefined && { at }), ...(waitedOn && { waitedOn }) };
-        if (!fields) return ordered;
+        if (!fields) {
+          const body = item.text ?? item.value;
+          const sentence = (at === undefined ? body : body.replace(/^\d{4}-\d{2}-\d{2}(?=\s|$)[ \t]*/, ''))
+            .replace(/[ \t]*[（(]work waits[）)](?=[ \t]*(?:\n|$))/i, '');
+          return { ...ordered, sentence };
+        }
         if (fields.objective && !objectiveTitles) {
           objectiveTitles = new Map((shown === 'overview' ? readObjectiveRecord()?.record : objectives)?.objectives.map(({ id, title }) => [id, title]));
         }
         const text = fields.display(fields.objective ? objectiveTitles?.get(fields.objective) : undefined);
         return { ...ordered, request: fields.request, ...(fields.objective && { objective: fields.objective }),
-          text, value: text.replace(/\s+/g, ' ').trim() };
+          sentence: fields.sentence, text, value: text.replace(/\s+/g, ' ').trim() };
       });
-    out.tickets = visible;
+    // Home summarizes linked features, not the Tickets page's preview of finished features.
+    if (shown !== 'home') out.tickets = visible;
     if (home && memoKey !== undefined) {
       let claimFloor = -Infinity, claimExpiry = Infinity;
       for (const at of ticketsScan.claimTimes) {

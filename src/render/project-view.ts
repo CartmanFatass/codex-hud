@@ -14,28 +14,12 @@ import { projectOverviewRows, projectListRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { worktreeRows } from './monitor-panes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
-import { monitorText, fit, pair, flowLines, cutWords } from './monitor-text.js';
+import { monitorText, fit, pair, flowLines, cutWords, clampClean } from './monitor-text.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { t } from './i18n.js';
-export const sliceInk = (state: SliceState) => ({ working: theme.board.active, blocked: theme.board.attention,
-  try: theme.board.identifier, accepted: theme.board.success, todo: theme.board.muted, dropped: theme.board.frame })[state];
-/** Cumulative rounding keeps the stacked bar cell-exact, including small nonzero segments. */
-export function progressSegments(counts: ProjectSnapshot['counts'], width: number, order: readonly SliceState[] = SLICE_STATES) {
-  const total = order.reduce((n, state) => n + counts[state], 0);
-  let count = 0, edge = 0;
-  return order.map((state) => {
-    count += counts[state];
-    const end = total ? Math.round(count / total * width) : 0;
-    const segment = { state, width: end - edge };
-    edge = end;
-    return segment;
-  });
-}
-// To try is a medium shade (▒), a step from both the full block of what is accepted and the light one of what is still to do; the
-// ascii glyphs differ too, so a bar with no colour (the `none` theme) still reads.
-const BAR_GLYPH: Record<SliceState, [string, string]> = { working: ['█', '#'], blocked: ['█', '#'], try: ['▒', '='], accepted: ['█', '#'], todo: ['░', '.'], dropped: ['░', '.'] };
-export const barText = (data: Pick<ProjectSnapshot, 'counts'>, width: number, order?: readonly SliceState[]) => progressSegments(data.counts, width, order).map(({ state, width: cells }) =>
-  sliceInk(state)(mark(...BAR_GLYPH[state]).repeat(cells))).join('');
+import { sliceInk } from './progress-bar.js';
+export { barText, progressSegments, sliceInk } from './progress-bar.js';
+export { clampClean } from './monitor-text.js';
 const ticketTotalText = (data: ProjectSnapshot, text: string) =>
   data.ticketTotals?.partial ? `${t('Partial')} · ${text}` : text;
 export const PROJECT_PAGES = ['progress', 'tickets', 'tree', 'docs'] as const;
@@ -169,13 +153,6 @@ export const cutTicketTitle = (title: string, room: number) => {
   const clean = monitorText(title);
   return room > 0 ? cutWords(clean, room) || clean : clean;
 };
-/** `clampLines` for text already through `monitorText`. */
-export function clampClean(body: string, room: number, max: number) {
-  const lines = flowLines(body, Math.max(1, room)), more = lines.length > max;
-  // The last row is cut at a word end (Chinese at a character), never inside a word; a single word longer than the row is cut by cell.
-  const rest = lines.slice(max - 1).join(' '), last = cutWords(rest, Math.max(1, room)) || fit(rest, Math.max(1, room));
-  return { more, lines: more ? [...lines.slice(0, max - 1), last] : lines };
-}
 /** `head` and `text` on one row when they fit beside `right` (and `one`); else `head` with `right`, and the text wrapped under it at `indent`. */
 export function stacked(head: string, text: string, right: string, width: number, indent: number, max = 2, one = true): string[] {
   const body = monitorText(text);

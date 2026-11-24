@@ -38,8 +38,8 @@ test("frames: Home, Jobs, Inspector, Settings and Help", (t) => {
       assert.doesNotMatch(text, /older shown|done today/);
     }
     if (page === 'home') {
-      assert.match(text, /Waiting/);
-      assert.doesNotMatch(text, /Decided for you|Backoff with jitter, cap 30s/);
+      assert.match(text, /Loading…/);
+      assert.doesNotMatch(text, /Waiting|Decided for you|Backoff with jitter, cap 30s/);
       assert.doesNotMatch(text, /Add the retry h/);
     }
     if (page === 'job') {
@@ -322,8 +322,8 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
     renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 58, nowMs: NOW, ...options });
   const home = draw(f.states.home),
     text = plainFrame(home).join('\n');
-  assert.match(text, /Waiting/);
-  assert.doesNotMatch(text, /@ {2}Retry/);
+  assert.match(text, /Loading…/);
+  assert.doesNotMatch(text, /Waiting|@ {2}Retry/);
   assert.doesNotMatch(text, /◉|●/);
   const asking = draw(f.states.asking),
     cursor = asking.state.subpage?.cursor;

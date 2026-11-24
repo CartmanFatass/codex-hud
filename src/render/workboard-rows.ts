@@ -32,6 +32,15 @@ export function ageText(minutes: number, padMinutes = false): string {
 export function minuteAge(at: number | null, now: number): string {
   return at === null ? '' : ageText(Math.max(0, Math.floor((now - at) / 60000)));
 }
+/** A one-unit activity age for portfolio rows: minutes, hours, days, then weeks. */
+export function compactAge(at: number | undefined, now: number): string {
+  if (at === undefined || !Number.isFinite(at)) return '';
+  const minutes = Math.max(1, Math.floor((now - at) / 60_000));
+  if (minutes < 60) return t('{n}m', { n: minutes });
+  if (minutes < 1440) return t('{hours}h', { hours: Math.floor(minutes / 60) });
+  if (minutes < 14 * 1440) return t('{n}d', { n: Math.floor(minutes / 1440) });
+  return t('{n}w', { n: Math.floor(minutes / 10080) });
+}
 export function boardRow(text: string, target?: WorkTarget): MonitorRow {
   const key = target ? targetKey(target) : undefined;
   return { text, ...(key ? { item: key, key } : {}) };

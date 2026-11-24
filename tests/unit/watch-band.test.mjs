@@ -90,7 +90,7 @@ test('request order is waited-on, then project priority, then oldest dated first
   assert.equal((await f.read(NOW)).first, items[2]);
 });
 
-test('a numbered request displays its ID and current Objective title on all owner surfaces', async (t) => {
+test('a numbered request keeps its identity across owner surfaces; Home shows the bare request', async (t) => {
   const f = fixture(t), legacy = 'Legacy question (objective measure)';
   const objective = join(f.cwd, '.hud/objectives.md');
   const title = (value) => f.put(objective, `## measure: ${value}\n**State:** active\n`);
@@ -106,7 +106,11 @@ test('a numbered request displays its ID and current Objective title on all owne
       renderHtmlBoard({ project, workboard: board, projectName: 'Sample', root: f.cwd, generatedAt: NOW })];
   };
   const expected = '2026-01-01 r7 · Choose a layout · Measure sample (work waits)';
-  for (const text of await draw()) {
+  const [home, ...otherSurfaces] = await draw();
+  assert.match(home, /^. project [›>] measure +work waits[^\n]*\n  Choose a layout$/m);
+  assert.ok(home.includes(legacy));
+  assert.doesNotMatch(home, /r7|\(work waits\)/);
+  for (const text of otherSurfaces) {
     assert.ok(text.includes(expected));
     assert.ok(text.includes(legacy));
     assert.ok(!text.includes('[r7]'));
@@ -119,7 +123,7 @@ test('a numbered request displays its ID and current Objective title on all owne
   f.state(legacy); // No log is needed to clear a hand-removed line.
   assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: legacy, waiting: 1, fresh: false });
   for (const text of await draw()) {
-    assert.ok(!text.includes('r7 · Choose a layout'));
+    assert.ok(!text.includes('Choose a layout'));
     assert.ok(text.includes(legacy));
   }
 });
@@ -168,8 +172,10 @@ test('M1: a routine question wakes main, stays in Jobs → Inspector, and never 
     const homePortfolio = await new HomePortfolioCollector(f.hud).read([{ root: f.cwd, name: 'project' }], workboard, NOW);
     const draw = (state) => renderMonitor({ state, tree: TREE, workboard, project, homePortfolio, width: 80, height: 30, nowMs: NOW });
     const hub = plain(draw(onPage())).join('\n');
-    const home = draw(initialMonitorState());
-    for (const text of [hub, plain(home).join('\n'), renderHtmlBoard({ project, workboard, projectName: 'Sample', root: f.cwd, generatedAt: NOW })]) {
+    const home = draw(initialMonitorState()), portfolioText = plain(home).join('\n');
+    assert.match(portfolioText, /^. project +work waits\n  Decide the public export format$/m);
+    assert.ok(!portfolioText.includes(question));
+    for (const text of [hub, renderHtmlBoard({ project, workboard, projectName: 'Sample', root: f.cwd, generatedAt: NOW })]) {
       assert.ok(text.includes(explicit));
       assert.ok(!text.includes(question));
     }

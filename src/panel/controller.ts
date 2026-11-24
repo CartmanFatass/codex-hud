@@ -207,7 +207,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       frame = renderMonitor({
         tree,
         workboard: boardFacts(),
-        paneLoad: jobPipeline.load(),
+        jobsObserved: jobPipeline.jobsObserved,
         homeWaiting: visits.snapshot(HUD_CWD_REAL)?.waiting,
         homePortfolio: portfolio,
         mouse: settings.mouse,

@@ -34,8 +34,9 @@ export function requestFields(text: string) {
   const waitMark = /[ \t]*\(work waits\)[ \t]*$/i.exec(body)?.[0] ?? '';
   const main = body.slice(0, body.length - waitMark.length);
   const link = /[ \t]*\(objective ([a-z0-9-]+)\)[ \t]*$/.exec(main);
-  return { request, objective: link?.[1], waits: !!waitMark,
-    display: (title?: string) => `${date}${request} · ${link ? main.slice(0, link.index) : main}${title ? ` · ${title}` : ''}${waitMark}${text.slice(head[0].length)}` };
+  const firstLine = link ? main.slice(0, link.index) : main, rest = text.slice(head[0].length);
+  return { request, objective: link?.[1], waits: !!waitMark, sentence: `${firstLine}${rest}`,
+    display: (title?: string) => `${date}${request} · ${firstLine}${title ? ` · ${title}` : ''}${waitMark}${rest}` };
 }
 
 /** Legacy reader for old try notifications and job supersession; not a Project progress source. */

@@ -220,6 +220,25 @@ export function cutWords(text: string, room: number): string {
   return space > 0 ? head.slice(0, space) + '…' : '';
 }
 
+/** A fixed column for a sanitized token: cut by cell with an ellipsis, never wrap. */
+export const tokenColumn = (text: string, width: number) => fit(text, width);
+
+/** Fit sanitized prose at a word end, or by cell when its first word will not fit. */
+export const cutSentence = (text: string, width: number) =>
+  width > 0 ? cutWords(text, width) || truncateAnsi(text, width) : '';
+
+/** Wrap sanitized prose to at most `max` rows and mark omitted text with an ellipsis. */
+export function clampClean(body: string, room: number, max: number) {
+  const width = Math.max(1, room), lines = flowLines(body, width), more = lines.length > max;
+  return { more, lines: more ? [...lines.slice(0, max - 1), cutSentence(lines.slice(max - 1).join(' '), width)] : lines };
+}
+
+/** A sentence starts on its own row; continuation text aligns after the mark, never after a label. */
+export function sentenceRows(body: string, width: number, max: number, indent: number, mark = ''): string[] {
+  const pad = ' '.repeat(indent), lead = mark ? mark + ' ' : '', hang = visualLength(lead);
+  return clampClean(body, width - indent - hang, max).lines.map((line, i) => pad + (i ? ' '.repeat(hang) : lead) + line);
+}
+
 /**
  * One line of a diff, or of a file's text, in rows `width` wide. Tabs are
  * spaces to the next fourth column past the marker. Each row after the
