@@ -1,6 +1,6 @@
 # 01: Attach the owner's role preference file to every dispatch of that role
 
-**Status:** ready-for-agent
+**Status:** wontfix
 **Owner try:** no
 **Blocked by:** none
 
