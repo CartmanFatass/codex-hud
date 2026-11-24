@@ -133,6 +133,10 @@ impl Display {
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("hud-settings.json"));
         if let Some(v) = state::read(&file, 65_536, false, false)? {
+            // TypeScript owns advisor notices; don't bypass them on the native fast path.
+            if v.get("advisorShadow").bool() == Some(true) {
+                return None;
+            }
             style = v.get("barStyle").str().unwrap_or_default().into();
             if let Some(set) = v
                 .get("icons")

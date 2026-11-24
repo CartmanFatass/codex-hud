@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -9,14 +9,17 @@ import {
   ADVISOR_DEDUPE_MS,
   ADVISOR_NOTICE_MS,
   adviseOnMessage,
+  adviseOnReply,
   advisorIndexPath,
   advisorStatePath,
   clearAdvisorIndexMemory,
   getSkillIndex,
   messageNamesSkillPath,
+  onAdvisorUpdate,
   parseSkillFrontmatter,
   readAdvisorNotice,
   readAdvisorRecommendations,
+  readAdvisorRuleNotice,
   scrubSecrets,
 } from '../../dist/collectors/advisor-shadow.js';
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
@@ -264,6 +267,124 @@ test('recommendation renders in bar notice zone (Text + Nerd, after quota, 10m) 
   assert.equal(fs.readFileSync(eventsFile, 'utf8').trim().split('\n').length, 1);
 });
 
+function ruleResponse(body, yes = []) {
+  return { answers: body.questions.map(({ name, type }) => ({ name, type, probability: yes.includes(name) ? 0.98 : 0.02 })) };
+}
+
+test('batches rules with secret-scrubbed excerpts, shows hits beside skills, and counts no-hit batches once', async (t) => {
+  const f = setupEnv(t);
+  const rulesFile = path.join(f.home, 'rules.md');
+  fs.writeFileSync(rulesFile, '# Rules\nIgnore this line\n- R2: Name the tests run.\n- R3: Never echo API_KEY=fake-secret-value.\n- R5: State what is unverified.\n');
+  let yes = ['R2', 'R5'];
+  const api = await fakeDecisionServer(t, (body) => ruleResponse(body, yes));
+  configureStubDecision(f.env, f.hudHome, api.baseUrl);
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ advisorShadow: true, advisorRulesFile: rulesFile }));
+  const now = Date.parse('2026-11-24T20:00:00.000Z');
+  const input = {
+    session: 'hit-session', projectRoot: f.projectRoot, replyId: 'r1',
+    message: `API_KEY=synthetic-owner-key ${'m'.repeat(2500)} owner tail`,
+    reply: `reply head ${'r'.repeat(4500)} API_KEY=synthetic-reply-key reply tail`,
+  };
+  const options = { env: f.env, now };
+  await Promise.all([adviseOnReply(f.hudHome, input, options), adviseOnReply(f.hudHome, input, options)]);
+  assert.equal(api.requests.length, 1);
+  const [body] = api.requests;
+  assert.deepEqual(body.questions.map(({ name, type }) => [name, type]), [['R2', 'predicate'], ['R3', 'predicate'], ['R5', 'predicate']]);
+  for (const { instructions } of body.questions) {
+    assert.match(instructions, /No is the default unless the reply plainly breaks it/);
+    assert.match(instructions, /untrusted quoted data/);
+  }
+  const [page, facts] = body.input[0].content.filter((item) => item.type === 'input_json').map((item) => item.data);
+  assert.equal(page.page.text.length, 2000);
+  assert.equal(facts.facts.assistant_reply.length, 4000);
+  assert.match(facts.facts.assistant_reply, /reply tail$/);
+  assert.doesNotMatch(JSON.stringify(body), /owner tail|reply head|synthetic-(owner|reply)-key|fake-secret-value|Ignore this line|rules\.md|hit-session/);
+
+  const notice = readAdvisorRuleNotice(f.hudHome, input, now, f.env);
+  assert.deepEqual(notice, { ids: ['R2', 'R5'], at: now });
+  const barFacts = { advisor: { skill: 'tdd', at: now }, advisorRules: notice };
+  const previousDisplay = setDisplayConfig({ theme: 'none', barStyle: 'line', icons: 'text' });
+  try {
+    for (const icons of ['text', 'nerd', 'unicode']) {
+      setDisplayConfig({ theme: 'none', barStyle: 'line', icons });
+      const line = stripAnsi(renderBar(barFacts, 120, now).line);
+      assert.match(line, /skill: tdd.*rules: R2 R5/);
+      if (icons === 'text') assert.doesNotMatch(line, /\uf0eb|✦/);
+      if (icons === 'nerd') assert.match(line, /\uf0eb rules: R2 R5/);
+      if (icons === 'unicode') assert.match(line, /✦ rules: R2 R5/);
+      assert.doesNotMatch(renderBar(barFacts, 120, now + ADVISOR_NOTICE_MS).line, /rules:/);
+    }
+    const previousSettings = process.env.HUD_SETTINGS_PATH;
+    process.env.HUD_SETTINGS_PATH = f.env.HUD_SETTINGS_PATH;
+    let portfolio;
+    try {
+      portfolio = await new HomePortfolioCollector(f.hudHome).read(
+        [{ root: f.projectRoot, name: 'project', unavailable: false, registrationIndex: 0 }],
+        { workers: [], activeCount: 0, waitingCount: 0, failedCount: 0 }, now
+      );
+    } finally {
+      if (previousSettings === undefined) delete process.env.HUD_SETTINGS_PATH;
+      else process.env.HUD_SETTINGS_PATH = previousSettings;
+    }
+    assert.equal(portfolio.projects[0].activeToday, true);
+    const rows = homeRows(portfolio, 40, now, 20, false, undefined, { sorted: [], overdue: 0, today: 0 });
+    assert.ok(rows.some(({ text }) => /Rule R2: Name the tests run\./.test(text)));
+    assert.ok(rows.some(({ text }) => /Rule R5: State what is unverified\./.test(text)));
+    assert.ok(rows.every(({ text }) => visualLength(text) === 40));
+  } finally {
+    setDisplayConfig(previousDisplay);
+  }
+
+  yes = [];
+  const noHit = { ...input, session: 'different-session', replyId: 'r2' };
+  await adviseOnReply(f.hudHome, noHit, options);
+  await adviseOnReply(f.hudHome, noHit, options);
+  await adviseOnReply(f.hudHome, { ...noHit, replyId: 'r3' }, options);
+  assert.equal(api.requests.length, 3);
+  assert.equal(readAdvisorRuleNotice(f.hudHome, noHit, now, f.env), undefined);
+  const eventsFile = path.join(f.hudHome, 'events', '2026-11.jsonl');
+  assert.equal(fs.statSync(eventsFile).mode & 0o777, 0o600);
+  const event = JSON.parse(fs.readFileSync(eventsFile, 'utf8'));
+  const { ms, ...rest } = event;
+  assert.ok(Number.isInteger(ms) && ms >= 0);
+  assert.deepEqual(rest, { v: 1, kind: 'rule_hits', session: input.session, rules: ['R2', 'R5'], at: new Date(now).toISOString() });
+  const counters = path.join(f.hudHome, 'events', 'advisor-counters.json');
+  assert.equal(fs.statSync(counters).mode & 0o777, 0o600);
+  assert.deepEqual(JSON.parse(fs.readFileSync(counters, 'utf8')), { '2026-11': { rule_no_hits: 2 } });
+});
+
+test('rule checks require an absolute, enabled, readable and bounded file; changed mtime reloads', async (t) => {
+  const f = setupEnv(t);
+  const rulesFile = path.join(f.home, 'rules.md');
+  const api = await fakeDecisionServer(t, (body) => ruleResponse(body));
+  configureStubDecision(f.env, f.hudHome, api.baseUrl);
+  const configure = (advisorShadow, advisorRulesFile) =>
+    fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ advisorShadow, advisorRulesFile }));
+  const check = (replyId) => adviseOnReply(f.hudHome, {
+    session: 'main', projectRoot: f.projectRoot, message: 'Please run the checks.', reply: 'I did.', replyId,
+  }, { env: f.env });
+  assert.equal(loadSettings(f.env).advisorRulesFile, '');
+  configure(true, './rules.md');
+  assert.equal(loadSettings(f.env).advisorRulesFile, '');
+  configure(true, rulesFile);
+  await check('missing');
+  fs.writeFileSync(rulesFile, '- R1: Say what was tested.\n' + 'é'.repeat(4096));
+  await check('oversize');
+  fs.writeFileSync(rulesFile, Array.from({ length: 31 }, (_, n) => `- R${n + 1}: A synthetic rule.`).join('\n'));
+  await check('too-many');
+  fs.writeFileSync(rulesFile, '- R1: Say what was tested.\n');
+  configure(false, rulesFile);
+  await check('off');
+  assert.equal(api.requests.length, 0);
+  configure(true, rulesFile);
+  await check('first');
+  const mtime = fs.statSync(rulesFile).mtime;
+  fs.writeFileSync(rulesFile, '- R2: Say what was tested.\n');
+  fs.utimesSync(rulesFile, mtime, new Date(mtime.getTime() + 1000));
+  await check('reloaded');
+  assert.deepEqual(api.requests.map(({ questions }) => questions.map(({ name }) => name)), [['R1'], ['R2']]);
+});
+
 test('panel Enter and click emit copy-advisor, write OSC 52 (+ WSL clip.exe), and log panel action', (t) => {
   const f = setupEnv(t);
   const tddPath = writeSkill(f.skillsDir, 'tdd', 'tdd', 'TDD skill.');
@@ -443,11 +564,14 @@ test('skip and dedupe rules hold (skill path skip, 1 per message, 30-min same-se
 test('no session transcript, hook output, or prompt receives advisor text (Claude hook + pi extension + CLI)', async (t) => {
   const f = setupEnv(t);
   writeSkill(f.skillsDir, 'tdd', 'tdd', 'Test-driven development red-green loop.');
-  const api = await fakeDecisionServer(t, (body) => choiceResponse(body, 'tdd'));
+  const advisorRulesFile = path.join(f.home, 'rules.md');
+  fs.writeFileSync(advisorRulesFile, '- R2: Name the tests run.\n- R5: State what is unverified.\n');
+  const api = await fakeDecisionServer(t, (body) => body.questions[0].type === 'predicate'
+    ? ruleResponse(body, ['R2', 'R5']) : choiceResponse(body, 'tdd'));
   configureStubDecision(f.env, f.hudHome, api.baseUrl);
   fs.writeFileSync(
     f.env.HUD_SETTINGS_PATH,
-    JSON.stringify({ advisorShadow: true, advisorSkillDirs: [f.skillsDir] })
+    JSON.stringify({ advisorShadow: true, advisorSkillDirs: [f.skillsDir], advisorRulesFile })
   );
 
   // 1) Pi extension: firing input produces recommendation without returning transform/handled or calling sendMessage/notify.
@@ -504,7 +628,22 @@ test('no session transcript, hook output, or prompt receives advisor text (Claud
   const piNotice = readAdvisorNotice(f.hudHome, { session: 'pi-main-1' }, Date.now(), f.env);
   assert.equal(piNotice?.skill, 'tdd');
 
-  // 2) Claude mod hook: turn.start returns next(e) unchanged, never appends or submits prompt, spawns hud advise silently.
+  const updated = Promise.withResolvers();
+  const unlisten = onAdvisorUpdate(f.hudHome, updated.resolve);
+  t.after(unlisten);
+  const agentEnd = { messages: [{ role: 'assistant', stopReason: 'stop', content: [{ type: 'text', text: 'It is done.' }] }] };
+  for (const h of handlers.get('agent_end') ?? []) {
+    assert.equal(await h(agentEnd, ctx), undefined);
+    assert.equal(await h(agentEnd, ctx), undefined);
+  }
+  await updated.promise;
+  assert.equal(api.requests.length, 2);
+  assert.deepEqual(readAdvisorRuleNotice(f.hudHome, { session: 'pi-main-1' }, Date.now(), f.env)?.ids, ['R2', 'R5']);
+  assert.deepEqual(sentMessages, []);
+  assert.deepEqual(notifications, []);
+  assert.equal(fs.readFileSync(sessionFile, 'utf8'), initialTranscript);
+
+  // 2) Claude mod hooks pass events through, never append or submit, and spawn hud advise silently.
   const claudeHandlers = new Map();
   registerAdvisor((event, handler) => {
     claudeHandlers.set(event, handler);
@@ -512,6 +651,8 @@ test('no session transcript, hook output, or prompt receives advisor text (Claud
   const spawned = [];
   const appended = [];
   const submitted = [];
+  const ruleSpawned = Promise.withResolvers();
+  f.env.CLAUDE_CODE_SESSION_ID = 'claude-cli-1';
   const fakeEngine = {
     env: { get: async (k) => f.env[k] },
     fs: { read: async (p) => fs.readFileSync(p, 'utf8') },
@@ -524,7 +665,8 @@ test('no session transcript, hook output, or prompt receives advisor text (Claud
     process: {
       run: async (argv, opts) => {
         spawned.push({ argv, opts });
-        return { exitCode: 0, stdout: '', stderr: '' };
+        if (argv.includes('--reply')) ruleSpawned.resolve(argv);
+        return { exitCode: 0, stdout: 'synthetic child output', stderr: '' };
       },
     },
   };
@@ -541,7 +683,16 @@ test('no session transcript, hook output, or prompt receives advisor text (Claud
   assert.equal(spawned[0].argv[1], 'advise');
   assert.doesNotMatch(JSON.stringify(hookReturn), /tdd|skill:|SKILL\.md|advisor/i);
 
-  // 3) `hud advise` CLI emits zero bytes to stdout/stderr.
+  const completed = { turnId: 't1', answer: '--help', reason: 'answer' }; // A reply is data, not a CLI option.
+  const complete = claudeHandlers.get('turn.complete');
+  assert.deepEqual(await complete(fakeEngine, completed, async (e) => ({ passedThrough: e })), { passedThrough: completed });
+  assert.equal(await complete(fakeEngine, completed, async () => undefined), undefined);
+  const ruleArgs = (await ruleSpawned.promise).slice(2);
+  assert.equal(spawned.length, 2);
+  assert.deepEqual(appended, []);
+  assert.deepEqual(submitted, []);
+
+  // 3) Both `hud advise` modes emit zero bytes to stdout/stderr.
   const cliOut = [];
   const cliErr = [];
   const exitCode = await adviseCommand(
@@ -549,23 +700,25 @@ test('no session transcript, hook output, or prompt receives advisor text (Claud
     { env: f.env, stdout: (s) => cliOut.push(s), stderr: (s) => cliErr.push(s) }
   );
   assert.equal(exitCode, 0);
+  assert.equal(await adviseCommand(ruleArgs, { env: f.env, stdout: (s) => cliOut.push(s), stderr: (s) => cliErr.push(s) }), 0);
+  assert.equal(api.requests.length, 4);
   assert.equal(cliOut.join(''), '');
   assert.equal(cliErr.join(''), '');
 
-  // 4) Claude statusline shows `skill: tdd` and never mutates the transcript.
+  // 4) Claude statusline shows both notices and never mutates the transcript.
   const transcriptFile = path.join(f.home, 'claude-cli-1.jsonl');
   const transcriptBody = JSON.stringify({ type: 'user', uuid: 'u1', message: { content: 'Write tests first' } }) + '\n';
   fs.writeFileSync(transcriptFile, transcriptBody);
   setDisplayConfig({ theme: 'none', barStyle: 'line', icons: 'text' });
-  const bar = stripAnsi(
-    await collectAndRenderParity(
-      { session_id: 'claude-cli-1', transcript_path: transcriptFile, cwd: f.projectRoot, model: { id: 'claude-opus-4-6' } },
-      120,
-      paritySettings({}),
-      f.env
-    )
-  );
-  assert.match(bar, /skill: tdd/);
+  const payload = { session_id: 'claude-cli-1', transcript_path: transcriptFile, cwd: f.projectRoot, model: { id: 'claude-opus-4-6' } };
+  const bar = stripAnsi(await collectAndRenderParity(payload, 120, paritySettings({}), f.env));
+  assert.match(bar, /skill: tdd.*rules: R2 R5/);
+  const launched = spawnSync('./bin/hud-statusline', ['--width', '120'], {
+    env: { ...f.env, NO_COLOR: '1' }, input: JSON.stringify(payload), encoding: 'utf8', timeout: 7000,
+  });
+  assert.equal(launched.status, 0, launched.error?.message);
+  assert.equal(launched.stderr, '');
+  assert.match(launched.stdout, /skill: tdd.*rules: R2 R5/);
   assert.equal(fs.readFileSync(transcriptFile, 'utf8'), transcriptBody);
 
   // Static check: Claude hook and pi extension outputs contain no advisor injection paths.

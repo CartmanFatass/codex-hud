@@ -106,7 +106,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'poolPick', group: 'Models', label: 'Pool pick', values: [true, false],
     help: 'Select design references before launch; off skips the pick and attaches nothing' },
   { key: 'advisorShadow', group: 'Models', label: 'Advisor shadow', values: [false, true],
-    help: 'Send new main-session messages, previous reply and skill index to the Decision API; shown only, never injected' },
+    help: 'Send main-session excerpts and configured skills or rules to the Decision API; shown only, never injected' },
   { key: 'impPlacement', group: 'Models', label: 'Imp placement', values: ['fixed', 'even', 'auto'],
     help: 'Fixed: active preset. Even: spread starts across the pool. Auto: send the Imp brief, ticket and context file names and sizes to the Decision API' },
   { key: 'impEvenPool', group: 'Models', label: 'Even pool', values: [],

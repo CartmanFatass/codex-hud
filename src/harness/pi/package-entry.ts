@@ -10,7 +10,7 @@ import { collectResumeRefusal } from '../../collectors/job-snapshot.js';
 import { openPiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
 import { piExpUsage } from './exp-usage.js';
-import { adviseOnMessage, resolveAdvisorProjectRoot } from '../../collectors/advisor-shadow.js';
+import { adviseOnMessage, adviseOnReply, resolveAdvisorProjectRoot, scrubSecrets } from '../../collectors/advisor-shadow.js';
 import type { FooterAPI, FooterHost } from './footer-host.js';
 /** Structural host projection. SDK compatibility is checked against the installed declarations. */
 export interface PiPackageAPI extends FooterAPI {
@@ -302,8 +302,9 @@ export function installPiPackage(
   on('context', expUsage.requestStart);
   on('message_end', expUsage.messageEnd);
   on('turn_end', expUsage.turnEnd);
-  // Advisor shadow: observe new owner-typed messages in main sessions; show only, never inject.
+  // Advisor shadow: main-session input and reply boundaries, never prompt injection.
   let lastAssistant: { session: string; text: string } | undefined;
+  let lastOwner: { session: string; text: string } | undefined;
   const extractAssistantText = (message: unknown): string => {
     const m = message as { role?: unknown; content?: unknown } | undefined;
     if (m?.role !== 'assistant') return '';
@@ -327,6 +328,7 @@ export function installPiPackage(
     const trimmed = ev.text.trim();
     if (!trimmed || trimmed.startsWith('/')) return;
     const session = ctx.sessionManager.getSessionId();
+    lastOwner = { session, text: scrubSecrets(trimmed).slice(0, 2000) };
     let previousReply = lastAssistant?.session === session ? lastAssistant.text : '';
     if (!previousReply) {
       try {
@@ -352,6 +354,18 @@ export function installPiPackage(
       },
       { env }
     ).catch(() => {});
+  });
+  on('agent_end', (event, ctx) => {
+    if (env.HUD_JOB_DIR !== undefined || resumeRefusal || !lastOwner) return;
+    const session = ctx.sessionManager.getSessionId();
+    if (lastOwner.session !== session) return;
+    const { messages } = (event ?? {}) as { messages?: Array<{ role?: string; stopReason?: string }> };
+    const last = messages?.filter((message) => message.role === 'assistant').at(-1);
+    if (last?.stopReason && last.stopReason !== 'stop' && last.stopReason !== 'length') return;
+    const reply = extractAssistantText(last);
+    const replyId = ctx.sessionManager.getLeafId();
+    if (!reply || !replyId) return;
+    void adviseOnReply(binding.hudHome, { session, projectRoot: ctx.cwd, message: lastOwner.text, reply, replyId }, { env });
   });
   for (const tool of PI_ROLE_TOOLS)
     pi.registerTool({

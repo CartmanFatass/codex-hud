@@ -1,9 +1,9 @@
 /**
  * Silent out-of-band CLI trigger for the advisor shadow (spec §2.2).
- * Reads a main-session owner message from stdin JSON or CLI flags, evaluates at most one skill
- * recommendation via the Decision API, records display state + event, and writes nothing to stdout.
+ * Reads a main-session message or completed reply, records advisor display state and events,
+ * and writes nothing to stdout or stderr.
  */
-import { adviseOnMessage, resolveAdvisorProjectRoot } from '../collectors/advisor-shadow.js';
+import { adviseOnMessage, adviseOnReply, resolveAdvisorProjectRoot } from '../collectors/advisor-shadow.js';
 import { callerSession } from '../collectors/claude-caller-session.js';
 import { getHudHome } from '../hud-home.js';
 import type { HudIO } from './hud.js';
@@ -15,6 +15,7 @@ const STDIN_MAX_DURATION_MS = 500;
 export const ADVISE_HELP =
   'Usage: hud advise --stdin\n' +
   '       hud advise --message TEXT [--session ID] [--project DIR] [--turn ID] [--prev-reply TEXT]\n' +
+  '       hud advise --message TEXT --reply TEXT --turn ID [--session ID] [--project DIR]\n' +
   '\n' +
   'Silent out-of-band advisor shadow trigger.\n' +
   'Reads a JSON payload from stdin or flags, writes nothing to stdout/stderr, and exits promptly with no input.\n';
@@ -68,25 +69,27 @@ function readStdinBounded(): Promise<string> {
 }
 
 export async function adviseCommand(args: readonly string[], io: HudIO): Promise<number> {
-  if (args.includes('--help') || args.includes('-h')) {
-    await io.stdout(ADVISE_HELP);
-    return 0;
-  }
   let session = '';
   let projectRoot = '';
   let message = '';
   let previousReply = '';
+  let reply: string | undefined;
   let messageId: string | undefined;
   let useStdin = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (arg === '--help' || arg === '-h') {
+      await io.stdout(ADVISE_HELP);
+      return 0;
+    }
     if (arg === '--stdin') useStdin = true;
     else if (arg === '--session' && i + 1 < args.length) session = args[++i]!;
     else if (arg === '--project' && i + 1 < args.length) projectRoot = args[++i]!;
     else if (arg === '--turn' && i + 1 < args.length) messageId = args[++i]!;
     else if (arg === '--message' && i + 1 < args.length) message = args[++i]!;
     else if (arg === '--prev-reply' && i + 1 < args.length) previousReply = args[++i]!;
+    else if (arg === '--reply' && i + 1 < args.length) reply = args[++i]!;
   }
 
   if (useStdin) {
@@ -102,14 +105,20 @@ export async function adviseCommand(args: readonly string[], io: HudIO): Promise
     }
   }
 
-  if (!message.trim()) return 0;
+  if (io.env.HUD_JOB_DIR !== undefined || !message.trim()) return 0;
   const resolvedProject = resolveAdvisorProjectRoot(projectRoot || process.cwd());
   if (!session) {
-    const caller = await callerSession(io.env).catch(() => undefined);
-    session = caller?.session || (io.env.HERDR_PANE_ID ? `pane:${io.env.HERDR_PANE_ID}` : `project:${resolvedProject}`);
+    session = io.env.CLAUDE_CODE_SESSION_ID || (await callerSession(io.env).catch(() => undefined))?.session || '';
   }
 
   try {
+    if (reply !== undefined) {
+      if (session && messageId) {
+        await adviseOnReply(getHudHome(io.env), { session, projectRoot: resolvedProject, message, reply, replyId: messageId }, { env: io.env });
+      }
+      return 0;
+    }
+    session ||= io.env.HERDR_PANE_ID ? `pane:${io.env.HERDR_PANE_ID}` : `project:${resolvedProject}`;
     await adviseOnMessage(
       getHudHome(io.env),
       {

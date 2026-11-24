@@ -21,7 +21,7 @@ import { formatTokenCount } from '../../render/lines/activity-line.js';
 import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
 import type { LocalLoad } from '../../collectors/local-load.js';
 import { readEvenQuotaNotices } from '../../collectors/even-quota.js';
-import { onAdvisorUpdate, readAdvisorNotice } from '../../collectors/advisor-shadow.js';
+import { onAdvisorUpdate, readAdvisorNotice, readAdvisorRuleNotice } from '../../collectors/advisor-shadow.js';
 import { applyBarSettings } from '../../bar-settings.js';
 import { readExpFooterGrant } from '../../collectors/exp-store.js';
 import { expApproxUsd, type ExpAccount } from '../../exp-config.js';
@@ -489,6 +489,7 @@ export function createP10kFooter(
       quota,
       evenQuota,
       advisor,
+      advisorRules,
       work,
       localLoad,
       loaded: {
@@ -536,19 +537,16 @@ export function createP10kFooter(
   let localLoad: LocalLoad | undefined;
   let evenQuota: bar.BarFacts['evenQuota'];
   let advisor: bar.BarFacts['advisor'];
+  let advisorRules: bar.BarFacts['advisorRules'];
   let repaint: (() => void) | null = null;
   let mounted = false;
   let live = true;
   const removers: (() => void)[] = [];
   const refreshAdvisor = (ctx: FooterContext | null) => {
-    advisor = ctx
-      ? readAdvisorNotice(
-          getHudHome(env),
-          { session: ctx.sessionManager.getSessionId(), projectRoot: ctx.sessionManager.getCwd() },
-          Date.now(),
-          env
-        )
-      : undefined;
+    const scope = ctx && { session: ctx.sessionManager.getSessionId(), projectRoot: ctx.sessionManager.getCwd() };
+    const home = getHudHome(env), now = Date.now();
+    advisor = scope ? readAdvisorNotice(home, scope, now, env) : undefined;
+    advisorRules = scope ? readAdvisorRuleNotice(home, scope, now, env) : undefined;
   };
   removers.push(
     onAdvisorUpdate(getHudHome(env), () => {

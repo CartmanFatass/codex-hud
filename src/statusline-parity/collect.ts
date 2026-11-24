@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
 import type { LocalLoad } from '../collectors/local-load.js';
 import { readEvenQuotaNotices } from '../collectors/even-quota.js';
-import { readAdvisorNotice } from '../collectors/advisor-shadow.js';
+import { readAdvisorNotice, readAdvisorRuleNotice } from '../collectors/advisor-shadow.js';
 import { installationRoot } from '../cli/compat.js';
 import { getHudHome } from '../hud-home.js';
 import { loadSettings } from '../settings.js';
@@ -127,7 +127,9 @@ export async function collectAndRenderParity(
         ? basename(file, '.jsonl')
         : undefined;
   const evenQuota = readEvenQuotaNotices(hudHome, projectDir, now, env);
-  const advisor = readAdvisorNotice(hudHome, { session: sessionId, projectRoot: projectDir }, now, env);
+  const scope = { session: sessionId, projectRoot: projectDir };
+  const advisor = readAdvisorNotice(hudHome, scope, now, env);
+  const advisorRules = readAdvisorRuleNotice(hudHome, scope, now, env);
   if (transcript.newOwnerMessage && env.HUD_JOB_DIR === undefined && sessionId) {
     try {
       const hudSettings = loadSettings({ ...env, HUD_HOME: hudHome });
@@ -147,5 +149,5 @@ export async function collectAndRenderParity(
       /* Missing/invalid settings: skip advisor silently. */
     }
   }
-  return renderParity(native, width, settings, { transcript, counts, git, compact, evenQuota, advisor }, now, env, work, localLoad);
+  return renderParity(native, width, settings, { transcript, counts, git, compact, evenQuota, advisor, advisorRules }, now, env, work, localLoad);
 }

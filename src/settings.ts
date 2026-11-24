@@ -27,10 +27,12 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   sonicAutoThinking: boolean;
   autoPrewalk: boolean;
   poolPick: boolean;
-  /** Recommend a skill from owner libraries on new main-session messages (shown only, never injected). */
+  /** Recommend skills and check owner rules in main sessions (shown only, never injected). */
   advisorShadow: boolean;
   /** Absolute directories scanned for SKILL.md files when advisorShadow is on. */
   advisorSkillDirs: string[];
+  /** Absolute Markdown rules file, or empty to disable rule checks. */
+  advisorRulesFile: string;
   impPlacement: 'fixed' | 'even' | 'auto';
   impEvenPool: string[];
   sonicPlacement: 'fixed' | 'even';
@@ -73,6 +75,7 @@ export function defaultSettings(): HudSettings {
     poolPick: true,
     advisorShadow: false,
     advisorSkillDirs: [],
+    advisorRulesFile: '',
     impPlacement: 'fixed',
     impEvenPool: [],
     sonicPlacement: 'fixed',
@@ -120,6 +123,8 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
     Array.isArray(value) &&
     value.length <= 64 &&
     value.every((dir) => typeof dir === 'string' && dir.length > 0 && dir.length <= 4096 && !dir.includes('\0') && path.isAbsolute(dir)),
+  advisorRulesFile: (value) =>
+    typeof value === 'string' && value.length <= 4096 && !value.includes('\0') && (value === '' || path.isAbsolute(value)),
   impPlacement: oneOf('fixed', 'even', 'auto'),
   impEvenPool: validEvenPool,
   sonicPlacement: oneOf('fixed', 'even'),

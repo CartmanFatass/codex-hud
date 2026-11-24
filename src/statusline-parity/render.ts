@@ -68,6 +68,7 @@ export interface ParityEvidence {
   compact?: number | null;
   evenQuota?: bar.BarFacts['evenQuota'];
   advisor?: bar.BarFacts['advisor'];
+  advisorRules?: bar.BarFacts['advisorRules'];
 }
 export function renderParity(
   input: unknown,
@@ -121,6 +122,7 @@ export function renderParity(
     events: events(t, d.showAgents, d.showSkills),
     evenQuota: evidence.evenQuota,
     advisor: evidence.advisor,
+    advisorRules: evidence.advisorRules,
     work,
     localLoad,
     loaded: {

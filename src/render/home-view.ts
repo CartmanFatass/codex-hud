@@ -12,6 +12,7 @@ import { ROLE_GLYPHS, roleIcon } from './model-glyphs.js';
 import { roleInk } from './work-job-row.js';
 import { barText, linkedTicketProgress as progress, TICKET_BAR_ORDER } from './progress-bar.js';
 import { t } from './i18n.js';
+import { ADVISOR_NOTICE_MS } from '../collectors/advisor-shadow.js';
 
 export const OTHER_PROJECTS = 'home:other-projects';
 export const otherProjectsHint = (expanded?: boolean) => expanded ? 'a fold' : 'a expand';
@@ -45,7 +46,7 @@ function loadFacts(jobs: ProjectSnapshot['active']) {
     roles.filter((r) => queued[r]).map((r) => ink.muted(queueMark) + roleInk(r)(roleIcon(r) + queued[r]))].flat().join(' ');
 }
 
-function projectView({ root, name, unavailable, snapshot, resultDates, advisor }: HomeProject, now: number) {
+function projectView({ root, name, unavailable, snapshot, resultDates, advisor, advisorRules }: HomeProject, now: number) {
   const ink = theme.board;
   const record = snapshot?.objectives, jobs = snapshot?.active ?? [], objectives = record?.objectives ?? [];
   const blocked = blockedObjectives(snapshot?.waiting ?? []), running = jobs.some(({ state }) => state !== 'queued');
@@ -67,7 +68,8 @@ function projectView({ root, name, unavailable, snapshot, resultDates, advisor }
     mark: unavailable ? ink.danger(stateMark.failed()) : running ? liveMark() : idleMark(),
     nameInk: running && !unavailable ? ink.text : ink.muted,
     priority, idleWord, age: age && ink.muted(age), load: loadFacts(jobs),
-    note: !record && snapshot?.summary, noNotes, recentAge, advisor };
+    note: !record && snapshot?.summary, noNotes, recentAge, advisor,
+    rules: advisorRules && now >= advisorRules.at && now - advisorRules.at < ADVISOR_NOTICE_MS ? advisorRules.rules : [] };
 }
 type ProjectView = ReturnType<typeof projectView>;
 
@@ -168,6 +170,18 @@ function advisorRow(v: ProjectView, width: number): MonitorRow | undefined {
   };
 }
 
+function advisorRows(v: ProjectView, width: number): MonitorRow[] {
+  const skill = advisorRow(v, width);
+  const ink = theme.board;
+  return [
+    ...(skill ? [skill] : []),
+    ...v.rules.map(({ id, sentence }) => {
+      const rule = t('Rule {id}: {sentence}', { id: monitorText(id), sentence: monitorText(sentence) });
+      return boardRow(fit(`  ${ink.active(mark('✦', '*', '\uF0EB'))} ${ink.text(rule)}`, width));
+    }),
+  ];
+}
+
 function compactProjects(projects: ProjectView[], width: number): MonitorRow[][] {
   const nameCol = Math.min(11, nameCap(width), Math.max(1, width - 10));
   const rollups = projects.map((v) => !v.unavailable ? progress(v.features, v.open.flatMap((o) => o.features)) : undefined);
@@ -176,14 +190,14 @@ function compactProjects(projects: ProjectView[], width: number): MonitorRow[][]
   const rights = projects.map((v) => v.unavailable ? '' : headerFacts(v, rightRoom));
   const rightCol = Math.max(0, ...rights.map(cells)), barCol = Math.max(0, width - 2 - nameCol - 2 - countCol - (rightCol ? rightCol + 1 : 0));
   return projects.map((v, index) => {
-    const adv = advisorRow(v, width);
-    if (v.unavailable) return adv ? [projectHeader(v, width), adv] : [projectHeader(v, width)];
+    const adv = advisorRows(v, width);
+    if (v.unavailable) return [projectHeader(v, width), ...adv];
     const data = rollups[index], count = countText(data, width), right = rights[index];
     const paused = v.paused || v.open.every((o) => o.state === 'paused');
     const graphic = v.open.length ? progressCells(data, barCol, paused) : pad(barCol);
     const left = `${v.mark} ${v.nameInk(tokenColumn(v.name, nameCol))} ${graphic} ${pad(countCol - cells(count))}${paused && count ? theme.board.muted(count) : count}`;
     const row = { text: fit(pair(left, right, width), width), ...projectTarget(v) };
-    return adv ? [row, adv] : [row];
+    return [row, ...adv];
   });
 }
 
@@ -208,7 +222,7 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
     [...top, ...groups.slice(0, today.length).flat(), ...fold, ...groups.slice(today.length).flat()];
   const blocks = views.map((v) => {
     const header = projectHeader(v, width);
-    const advisor = advisorRow(v, width);
+    const advisor = advisorRows(v, width);
     const previews = v.unavailable ? [] : [...v.open, ...v.finished].slice(0, 2).map((o) => objectiveRows(v, o, width));
     const noteLines = v.unavailable ? [] : v.note ? sentenceRows(monitorText(v.note), width, 1, 2, mark('¶', '.', '\uF249'))
       : v.noNotes ? [`  ${t('no Objectives or handoff notes')}`] : [];
@@ -216,7 +230,7 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
     return { v, header, advisor, previews, note };
   });
   const tier = (limit: number, results: boolean, gaps = false) => blocks.map(({ v, header, advisor, previews, note }, i) => {
-    const rows = [header, ...(advisor ? [advisor] : []), ...note, ...previews.slice(0, limit).flatMap(({ row, result }) => results && result ? [row, result] : [row])];
+    const rows = [header, ...advisor, ...note, ...previews.slice(0, limit).flatMap(({ row, result }) => results && result ? [row, result] : [row])];
     const more = v.open.length + v.finished.length - Math.min(limit, previews.length);
     if (!v.unavailable && more > 0) rows.push({ text: fit(`  ${ink.muted(t('{remaining} more', { remaining: more }))}`, width),
       item: `home:more:${v.root}`, homeTarget: { root: v.root } });
