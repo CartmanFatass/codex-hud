@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
+import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
 import { renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 import { renderSettingsPage, handleSettingsInput, SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { defaultSettings } from '../../dist/settings.js';
@@ -48,7 +49,8 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
   const pf = await projectFixture(projRoot);
   const tree = f.combined();
   const board = f.board(tree);
-  const draw = (state, height = 36) => renderMonitor({ tree, workboard: board, project: pf.data, state, width: 90, height, nowMs: NOW, mouse: true });
+  const homePortfolio = await new HomePortfolioCollector(pf.hud).read([{ root: pf.cwd, name: 'demo-project' }], board, NOW);
+  const draw = (state, height = 36) => renderMonitor({ tree, workboard: board, project: pf.data, homePortfolio, state, width: 90, height, nowMs: NOW, mouse: true });
   const send = (frame, input) => handleMonitorInput(frame.state, input, { tree, frame, nowMs: NOW });
 
   // 1. Tab click switches main tabs
@@ -104,6 +106,8 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
   const beforeScroll = shortFrame.state.home.scroll ?? 0;
   const scrolled = send(shortFrame, { type: 'mouse', button: 'wheel-down', x: 4, y: 3 });
   assert.ok((scrolled.state.home.scroll ?? 0) > beforeScroll);
+  assert.ok(shortFrame.state.home.cursor, 'a request is selected before scrolling');
+  assert.equal(scrolled.state.home.cursor, shortFrame.state.home.cursor);
 });
 
 test('Settings mouse: first click selects row without changing value, second click cycles value, wheel scrolls without moving selection, crumb goes back', () => {
