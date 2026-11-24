@@ -18,7 +18,8 @@ export interface ViewFilter { query: string; editing: boolean }
 export type JobTarget = Extract<WorkTarget, { kind: 'worker' }>;
 export interface InspectorState extends RowNav { kind: 'inspector'; target: JobTarget }
 export interface JobsState extends RowNav { kind: 'jobs' }
-export const initialHomeTab = (): RowNav => ({ scroll: 0 });
+interface HomeTabState extends RowNav { othersExpanded?: boolean }
+export const initialHomeTab = (): HomeTabState => ({ scroll: 0 });
 
 export type ProjectSubPage = 'progress' | 'tickets' | 'tree' | 'docs';
 export type ProjectView = { kind: 'projects-list' } | { kind: 'hub' }
@@ -49,7 +50,7 @@ export interface HelpOverlay { scroll?: number }
 export interface MonitorState {
   activeTab: MainTab;
   selectedProject?: string;
-  home: RowNav;
+  home: HomeTabState;
   jobs: RowNav;
   project: ProjectTabState;
   control: ControlTabState;

@@ -3,7 +3,7 @@ import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-type
 import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { nativeInspectorRows, workInspectorRows } from './work-inspector.js';
-import { homeRows } from './home-view.js';
+import { homeRows, OTHER_PROJECTS, otherProjectsHint } from './home-view.js';
 import { objectiveDetailRows } from './objective-detail.js';
 import { activeFilter, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
@@ -46,6 +46,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['s r', 'Settings: save / reset'],
   ];
   const home = [
+    ['a', 'expand / fold other projects'],
     ['v', 'open Jobs; Enter opens Inspector for the selected job'],
     ['n', 'Jobs or Inspector: show this session’s native subagents'],
     ['g', 'Inspector: focus the job tab; headless output is shown here'],
@@ -259,7 +260,7 @@ export function renderWorkboardFrame(
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
             : sheetRows ?? controlRows(input.project, state.control.roles, width, now)
-          : homeRows(input.homePortfolio, width, now, room - Number(!!input.error) - Number(!!input.publicationNotice));
+          : homeRows(input.homePortfolio, width, now, room - Number(!!input.error) - Number(!!input.publicationNotice), state.home.othersExpanded);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   const actions = rows.filter((r) => r.item);
@@ -304,7 +305,7 @@ export function renderWorkboardFrame(
   else if (nav && project) state = { ...state, project: { ...state.project, nav: { ...nav, cursor, scroll: offset, revealed } } };
   else if (nav && !addingHarness && !sheet && input.project) state = { ...state, control: withControlNav({ ...nav, cursor, scroll: offset, revealed }) };
   else if (resourcePage) state = { ...state, exp: { ...resourcePage, cursor: expCursor, scroll: offset, revealed: expEdit ? undefined : revealed } };
-  else if (home) state = { ...state, home: { cursor: listCursor, scroll: offset, revealed } };
+  else if (home) state = { ...state, home: { ...state.home, cursor: listCursor, scroll: offset, revealed } };
   frame.state = state;
   headers.slice(0, top).forEach((text, i) => { frame.lines[1 + i] = text; });
   for (let i = 0; i < room; i++) {
@@ -331,7 +332,9 @@ export function renderWorkboardFrame(
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
           : [selected?.objectiveTarget ? '⏎ details' : '⏎ open', ...projectSwitch])
-        : [...(listCursor ? [selected?.objectiveTarget ? '⏎ details' : '⏎ open'] : []), 'v Jobs'];
+        : [...(listCursor ? selected?.item === OTHER_PROJECTS
+          ? [otherProjectsHint(state.home.othersExpanded), state.home.othersExpanded ? '⏎ fold' : '⏎ expand']
+          : [selected?.objectiveTarget ? '⏎ details' : '⏎ open'] : []), 'v Jobs'];
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
   if (roles && height > 1) presetFooterControls(frame, hints, width, height - 1);
   if (height > 1) {

@@ -4,8 +4,13 @@ import type { ObjectiveRecord } from './objectives.js';
 import { ResultReceipts, resultDate } from './result-receipts.js';
 import { compareOwnerRequests, ProjectCollector, projectJobWindow, type ProjectItem, type ProjectSnapshot } from './project-board.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
+import { archivedActivityProjects, localDayStart } from './job-stats.js';
 
-export interface HomeProject extends ListedProject { snapshot?: ProjectSnapshot; resultDates?: ReadonlyMap<string, number> }
+export interface HomeProject extends ListedProject {
+  snapshot?: ProjectSnapshot;
+  resultDates?: ReadonlyMap<string, number>;
+  activeToday?: true;
+}
 export interface HomeRequest { project: HomeProject; item: ProjectItem; index: number }
 export interface HomePortfolio { projects: HomeProject[]; requests: HomeRequest[] }
 
@@ -47,18 +52,36 @@ function compareProjects(a: HomeProject, b: HomeProject): number {
 export class HomePortfolioCollector {
   private pool = new Map<string, ProjectCollector>();
   private receipts: ResultReceipts;
+  private history?: { since: number; at: number; projects: ReadonlySet<string> };
   constructor(private home: string) { this.receipts = new ResultReceipts(join(home, 'events')); }
+
+  private jobHistory(since: number, now: number) {
+    const hit = this.history;
+    // History can be heavier than the live window. Refresh on the same cadence as Control's daily stats.
+    if (hit?.since === since && now >= hit.at && now - hit.at < 30_000) return hit.projects;
+    const projects = archivedActivityProjects(this.home, since, now);
+    this.history = { since, at: now, projects };
+    return projects;
+  }
 
   async read(list: readonly ListedProject[], board: WorkboardSnapshot, now: number): Promise<HomePortfolio> {
     const available = new Set(list.filter((p) => !p.unavailable).map((p) => p.root));
     for (const root of this.pool.keys()) if (!available.has(root)) this.pool.delete(root);
     const projects: HomeProject[] = [];
+    const since = localDayStart(now), history = list.length ? this.jobHistory(since, now) : undefined;
+    const today = (at?: number) => at !== undefined && at >= since && at <= now;
     let jobs: ReturnType<typeof projectJobWindow> | undefined;
     for (const project of list) {
-      if (project.unavailable) { projects.push(project); continue; }
-      const collector = this.pool.get(project.root) ?? new ProjectCollector(project.root, this.home);
-      this.pool.set(project.root, collector);
-      projects.push({ ...project, snapshot: await collector.collect('home', board, now, jobs ??= projectJobWindow(this.home)) });
+      const entry: HomeProject = { ...project };
+      if (!project.unavailable) {
+        const collector = this.pool.get(project.root) ?? new ProjectCollector(project.root, this.home);
+        this.pool.set(project.root, collector);
+        entry.snapshot = await collector.collect('home', board, now, jobs ??= projectJobWindow(this.home));
+      }
+      const s = entry.snapshot;
+      if (s?.waiting.length || s?.active.length || today(s?.updatedAt) || today(s?.objectivesAt) ||
+          today(s?.jobActivityAt) || history?.has(project.root)) entry.activeToday = true;
+      projects.push(entry);
     }
     if (projects.some((p) => p.snapshot?.objectives?.objectives.some((o) => o.result))) {
       const receipts = this.receipts.read();

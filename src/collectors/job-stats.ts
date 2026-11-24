@@ -34,23 +34,26 @@ function archiveFacts(value: unknown): JobFacts | undefined {
     usage: jobUsage(r.usage), land, state: text(r.state), created_at: text(r.created_at), started_at: text(r.started_at),
     settled_at: text(r.settled_at), ended_at: text(r.ended_at), reaped_at: text(r.reaped_at), dispatch_exit_code: count(r.dispatch_exit_code) };
 }
-const leftAt = (j: JobFacts) => epoch(j.settled_at) ?? epoch(j.ended_at);
-const enteredAt = (j: JobFacts) => epoch(j.created_at) ?? epoch(j.started_at) ?? leftAt(j) ?? epoch(j.reaped_at);
+export const jobSettledAt = (j: { settled_at?: unknown; ended_at?: unknown }) => epoch(j.settled_at) ?? epoch(j.ended_at);
+const enteredAt = (j: JobFacts) => epoch(j.created_at) ?? epoch(j.started_at) ?? jobSettledAt(j) ?? epoch(j.reaped_at);
 
-/** Read-only merge; live receipts replace the same archived job, never add to it. */
-export function collectJobStats(home: string, since: number, now: number, project?: string) {
-  const jobs = new Map<string, JobFacts>(), liveIds = new Set<string>();
-  const coverage = { live: 0, archive: 0, flows: 0, skipped: 0, limited: false };
-  const unreadable = (e: unknown) => { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') coverage.skipped++; };
-  const list = (dir: string) => {
-    try { return fs.readdirSync(join(home, dir), { withFileTypes: true }); } catch (e) { unreadable(e); return []; }
-  };
+function historyCoverage() {
+  return { live: 0, archive: 0, flows: 0, skipped: 0, limited: false };
+}
+type HistoryCoverage = ReturnType<typeof historyCoverage>;
+const unreadable = (c: HistoryCoverage, e: unknown) => { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') c.skipped++; };
+function listHistory(home: string, dir: string, coverage: HistoryCoverage) {
+  try { return fs.readdirSync(join(home, dir), { withFileTypes: true }); } catch (e) { unreadable(coverage, e); return []; }
+}
+
+function readArchive(home: string, since: number, now: number, coverage: HistoryCoverage) {
+  const jobs = new Map<string, JobFacts>();
   // Include the prior UTC month for joins to land receipts and sonic parents
   // that straddle the reporting window. The archive buckets on end/reap, not creation.
   const from = new Date(since);
   from.setUTCDate(1); from.setUTCMonth(from.getUTCMonth() - 1);
   const monthMin = from.toISOString().slice(0, 7), monthMax = new Date(now).toISOString().slice(0, 7);
-  for (const entry of list('archive').sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const entry of listHistory(home, 'archive', coverage).sort((a, b) => a.name.localeCompare(b.name))) {
     if (!/^\d{4}-\d{2}\.jsonl$/.test(entry.name) || entry.name.slice(0, 7) < monthMin || entry.name.slice(0, 7) > monthMax) continue;
     try {
       const path = join(home, 'archive', entry.name), offset = Math.max(0, fs.lstatSync(path).size - ARCHIVE_LIMIT);
@@ -67,10 +70,45 @@ export function collectJobStats(home: string, since: number, now: number, projec
           jobs.set(row.job, row);
         } catch { coverage.skipped++; }
       }
-    } catch (e) { unreadable(e); }
+    } catch (e) { unreadable(coverage, e); }
   }
+  return jobs;
+}
+
+function readFlows(home: string, coverage: HistoryCoverage, details = false) {
+  const files = listHistory(home, 'flows', coverage).filter(e => /^f[0-9a-f]{16}(?:-[1-9]\d*)?\.json$/.test(e.name));
+  if (files.length > FLOW_LIMIT) {
+    coverage.limited = true;
+    const mtime = (name: string) => {
+      try { return fs.lstatSync(join(home, 'flows', name)).mtimeMs; } catch (e) { unreadable(coverage, e); return -Infinity; }
+    };
+    const dates = new Map(files.map(e => [e.name, mtime(e.name)]));
+    files.sort((a, b) => dates.get(b.name)! - dates.get(a.name)! || a.name.localeCompare(b.name));
+  }
+  return files.slice(0, FLOW_LIMIT).flatMap(file => {
+    try { return [readJobFlow(home, file.name, details)]; } catch (e) { unreadable(coverage, e); return []; }
+  });
+}
+
+/** Dated evidence from the bounded history, independent of which live jobs are still retained. */
+export function archivedActivityProjects(home: string, since: number, now: number): ReadonlySet<string> {
+  const coverage = historyCoverage(), archive = readArchive(home, since, now, coverage), projects = new Set<string>();
+  const today = (at?: number) => at !== undefined && at >= since && at <= now;
+  for (const j of archive.values()) if (j.project && (today(epoch(j.started_at)) || today(jobSettledAt(j)) ||
+    (j.land && landedIn(j.land, since, now)))) projects.add(j.project);
+  // Detailed flow receipts keep the exact landing time, with no updated_at fallback.
+  for (const f of readFlows(home, coverage, true)) {
+    const project = f.project ?? archive.get(f.job)?.project;
+    if (project && landedIn(f, since, now)) projects.add(project);
+  }
+  return projects;
+}
+
+/** Read-only merge; live receipts replace the same archived job, never add to it. */
+export function collectJobStats(home: string, since: number, now: number, project?: string) {
+  const coverage = historyCoverage(), jobs = readArchive(home, since, now, coverage), liveIds = new Set<string>();
   const cache = getJobIndexCache(home);
-  const { dirs, totalValid } = cache.listJobDirsByMtime({ limit: LIVE_LIMIT, onDirError: unreadable, onStatError: (_id, e) => unreadable(e) });
+  const { dirs, totalValid } = cache.listJobDirsByMtime({ limit: LIVE_LIMIT, onDirError: (e) => unreadable(coverage, e), onStatError: (_id, e) => unreadable(coverage, e) });
   if (totalValid > LIVE_LIMIT) coverage.limited = true;
   for (const { id, dir } of dirs) {
     const job = cache.readJob(id), status = cache.readStatus(id);
@@ -81,24 +119,11 @@ export function collectJobStats(home: string, since: number, now: number, projec
     liveIds.add(id);
   }
 
-  const files = list('flows').filter(e => /^f[0-9a-f]{16}(?:-[1-9]\d*)?\.json$/.test(e.name));
-  if (files.length > FLOW_LIMIT) {
-    coverage.limited = true;
-    const mtime = (name: string) => {
-      try { return fs.lstatSync(join(home, 'flows', name)).mtimeMs; } catch (e) { unreadable(e); return -Infinity; }
-    };
-    const dates = new Map(files.map(e => [e.name, mtime(e.name)]));
-    files.sort((a, b) => dates.get(b.name)! - dates.get(a.name)! || a.name.localeCompare(b.name));
-  }
-  const flows: JobFlow[] = [], byJob = new Map<string, JobFlow[]>();
-  for (const file of files.slice(0, FLOW_LIMIT)) {
-    try {
-      const flow = readJobFlow(home, file.name);
-      if (project && (flow.project ?? jobs.get(flow.job)?.project) !== project) continue;
-      flows.push(flow);
-      const prior = byJob.get(flow.job) ?? [];
-      prior.push(flow); byJob.set(flow.job, prior);
-    } catch (e) { unreadable(e); }
+  const flows = readFlows(home, coverage).filter(f => !project || (f.project ?? jobs.get(f.job)?.project) === project);
+  const byJob = new Map<string, JobFlow[]>();
+  for (const flow of flows) {
+    const prior = byJob.get(flow.job) ?? [];
+    prior.push(flow); byJob.set(flow.job, prior);
   }
   const available = [...jobs.values()].filter(j => !project || j.project === project);
   for (const j of available) {
@@ -116,7 +141,7 @@ export function collectJobStats(home: string, since: number, now: number, projec
   for (const f of flows) if (landedIn(f, since, now) && !landed.has(f.job))
     landed.set(f.job, { job: jobs.get(f.job) ?? { job: f.job, project: f.project }, sha: f.sha, at: f.landed_at });
   const failures = available.filter(j => (j.state === 'failed' || j.state === 'stopped' || (j.dispatch_exit_code ?? 0) > 0) &&
-    inWindow(leftAt(j) ?? enteredAt(j)));
+    inWindow(jobSettledAt(j) ?? enteredAt(j)));
   const failedLand = (state: JobLand['state']) => state === 'failed' || state === 'cancelled';
   const landFailures = flows.filter(f => failedLand(f.state) && inWindow(epoch(f.updated_at)))
     .map(f => ({ job: jobs.get(f.job) ?? { job: f.job }, attempt: f.attempt, state: f.state }));
@@ -140,7 +165,7 @@ const metric = (counts: (number | undefined)[]): Metric => ({
 export const usageMetrics = ['input', 'cache_read', 'cache_write', 'output', 'cost_usd'] as const;
 export function summarizeJobs(jobs: readonly JobFacts[], children: JobStats['children']) {
   const times = jobs.flatMap(j => {
-    const start = epoch(j.created_at) ?? epoch(j.started_at), end = leftAt(j);
+    const start = epoch(j.created_at) ?? epoch(j.started_at), end = jobSettledAt(j);
     return start !== undefined && end !== undefined && end >= start ? [(end - start) / 60_000] : [];
   }).sort((a, b) => a - b);
   const middle = Math.floor(times.length / 2);

@@ -290,7 +290,11 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       if (isClosed()) return;
       const rootId = main?.session?.id ?? session?.sessionId ?? selectedRoot ?? '';
       if (rootId !== sessionRoot) {
-        if (sessionRoot !== undefined) state = initialMonitorState();
+        if (sessionRoot !== undefined) {
+          const { othersExpanded } = state.home;
+          state = initialMonitorState();
+          state.home.othersExpanded = othersExpanded;
+        }
         sessionRoot = rootId;
         worktrees = null;
         agentContext.clear();

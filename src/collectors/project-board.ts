@@ -14,7 +14,8 @@ import { objectivePath, readObjectives, type ObjectiveRecord } from './objective
 import { ResultReceipts, resultDate } from './result-receipts.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
-import { collectControlJobStats, type ControlJobStats } from './job-stats.js';
+import { collectControlJobStats, jobSettledAt, type ControlJobStats } from './job-stats.js';
+import { epoch } from '../roles/job-usage.js';
 import { targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
 import { TryLog } from './try-records.js';
 import { SETTLED_JOB_STATES, TicketRollup, ticketIds, ticketJobState } from './ticket-rollup.js';
@@ -100,6 +101,8 @@ export interface ProjectSnapshot {
   objectivesAt?: number;
   /** Latest observed job activity in the bounded Home window, when neither record exists. */
   lastJobAt?: number;
+  /** Latest observed start or settlement in the bounded Home window, even with records. */
+  jobActivityAt?: number;
   idle?: true;
   last?: { text: string; at: number };
   next: ProjectItem[];
@@ -142,6 +145,7 @@ interface JobReceipt {
   cwd?: unknown;
   worktree?: { root?: unknown; branch?: unknown; main_root?: unknown };
   created_at?: unknown;
+  started_at?: unknown;
   dispatch_exit_code?: unknown;
   reaped_at?: unknown;
   title?: unknown;
@@ -797,6 +801,10 @@ export class ProjectCollector {
             asking: state === 'waiting_orchestrator',
           },
         });
+      }
+      if (home) {
+        const at = Math.max(epoch(s.started_at) ?? epoch(job.started_at) ?? -Infinity, jobSettledAt(s) ?? -Infinity);
+        if (at > (out.jobActivityAt ?? -Infinity)) out.jobActivityAt = at;
       }
       const linked = out.tickets.length > 0 && !job.parent_job;
       if (!linked && !needsJobAge) continue;

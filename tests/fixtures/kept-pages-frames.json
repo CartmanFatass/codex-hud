@@ -363,6 +363,7 @@
     "s r     Settings: save / reset",
     "",
     "Home ─────────────────────────────────",
+    "a       expand / fold other projects",
     "v       open Jobs; Enter opens",
     "        Inspector for the selected job",
     "n       Jobs or Inspector: show this",
@@ -384,7 +385,6 @@
     "N I     role: new draft, copied or",
     "        empty",
     "R D     role: rename / delete the",
-    "        preset",
     "                                                                        Esc back"
   ],
   "home-120-en": [
@@ -747,6 +747,7 @@
     "s r     Settings: save / reset",
     "",
     "Home ─────────────────────────────────────────────────────",
+    "a       expand / fold other projects",
     "v       open Jobs; Enter opens Inspector for the selected",
     "        job",
     "n       Jobs or Inspector: show this session’s native",
@@ -772,7 +773,6 @@
     "        Enter sets. In a draft, fill only; else save.",
     "Esc     picker: clear filter, then close",
     "^R      picker: refresh model lists",
-    "x       place: clear its exhausted mark",
     "                                                                                                                Esc back"
   ],
   "settings-40-en": [

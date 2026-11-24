@@ -11,6 +11,9 @@ import { roleInk } from './work-job-row.js';
 import { barText, linkedTicketProgress as progress, TICKET_BAR_ORDER } from './progress-bar.js';
 import { t } from './i18n.js';
 
+export const OTHER_PROJECTS = 'home:other-projects';
+export const otherProjectsHint = (expanded?: boolean) => expanded ? 'a fold' : 'a expand';
+
 const pad = (n: number) => ' '.repeat(Math.max(0, n));
 const nameCap = (width: number) => width < 50 ? 14 : width < 80 ? 18 : 24;
 const dots = (width: number) => theme.board.frame(mark('╌', '.').repeat(width));
@@ -155,14 +158,23 @@ function compactProjects(projects: ProjectView[], width: number): MonitorRow[] {
   });
 }
 
-export function homeRows(portfolio: HomePortfolio | undefined, width: number, now: number, room: number): MonitorRow[] {
+export function homeRows(portfolio: HomePortfolio | undefined, width: number, now: number, room: number, expanded?: boolean): MonitorRow[] {
   const ink = theme.board;
   if (!portfolio) return [boardRow(fit(t('Loading…'), width))];
   const { requests, projects } = portfolio;
   const top = requests.length ? [section(t('Waiting'), width, String(requests.length)), ...requests.flatMap((r) => requestRows(r, width, now))] : [];
   top.push(section(t('Projects'), width, width < 56 ? t('done/tickets') : ''));
   if (!projects.length) return [...top, boardRow(fit(ink.muted(t('No registered projects')), width))];
-  const views = projects.map((p) => projectView(p, now));
+  const today = projects.filter((p) => p.activeToday), count = projects.length - today.length;
+  const fold = count ? [{
+    item: OTHER_PROJECTS,
+    text: fit(pair(ink.text(t(count === 1 ? '{count} other project' : '{count} other projects', { count })),
+      ink.muted(t(otherProjectsHint(expanded))), width), width),
+  }] : [];
+  const visible = expanded ? [...today, ...projects.filter((p) => !p.activeToday)] : today;
+  const views = visible.map((p) => projectView(p, now));
+  const withFold = (groups: MonitorRow[][]) =>
+    [...top, ...groups.slice(0, today.length).flat(), ...fold, ...groups.slice(today.length).flat()];
   const blocks = views.map((v) => {
     const header = projectHeader(v, width);
     const previews = v.unavailable ? [] : [...v.open, ...v.finished].slice(0, 2).map((o) => objectiveRows(v, o, width));
@@ -171,17 +183,17 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
     const note = noteLines.map((line) => boardRow(fit(ink.muted(line), width)));
     return { v, header, previews, note };
   });
-  const tier = (limit: number, results: boolean, gaps = false) => blocks.flatMap(({ v, header, previews, note }, i) => {
+  const tier = (limit: number, results: boolean, gaps = false) => blocks.map(({ v, header, previews, note }, i) => {
     const rows = [header, ...note, ...previews.slice(0, limit).flatMap(({ row, result }) => results && result ? [row, result] : [row])];
     const more = v.open.length + v.finished.length - Math.min(limit, previews.length);
     if (!v.unavailable && more > 0) rows.push({ text: fit(`  ${ink.muted(t('{remaining} more', { remaining: more }))}`, width),
       item: `home:more:${v.root}`, homeTarget: { root: v.root } });
-    return gaps && i ? [boardRow(fit('', width)), ...rows] : rows;
+    return gaps && i && i !== today.length ? [boardRow(fit('', width)), ...rows] : rows;
   });
   for (const [limit, results, gaps] of [[2, true, true], [2, true], [2, false], [1, false]] as const) {
-    const rows = tier(limit, results, gaps);
-    if (top.length + rows.length <= room) return [...top, ...rows];
+    const rows = withFold(tier(limit, results, gaps));
+    if (rows.length <= room) return rows;
   }
-  // When even this exceeds the viewport, all membership and requests remain scrollable.
-  return [...top, ...compactProjects(views, width)];
+  // When even this exceeds the viewport, the visible projects and requests remain scrollable.
+  return withFold(compactProjects(views, width).map((row) => [row]));
 }

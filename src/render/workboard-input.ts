@@ -11,6 +11,7 @@ import { openJobAction } from './job-actions.js';
 import { controlShown, resourcesShown, MAIN_TABS, type MainTab } from './main-tabs.js';
 import { expInput } from './exp-view.js';
 import { harnessId, restoreId } from './harness-page.js';
+import { OTHER_PROJECTS } from './home-view.js';
 
 const clickKind = (input: WorkbenchInput, ctx: MonitorContext) => input.type === 'mouse' && input.button === 'left'
   ? ctx.frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : undefined;
@@ -303,7 +304,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     else next.home = { ...nav, cursor: item, revealed: undefined };
     return result();
   };
+  const toggleOtherProjects = () => {
+    next.home = { ...frame.state.home, cursor: OTHER_PROJECTS, revealed: undefined, othersExpanded: !frame.state.home.othersExpanded };
+    return result();
+  };
+  if (!sub && key === 'home-other-projects' && actions.some((row) => row.item === OTHER_PROJECTS)) return toggleOtherProjects();
   const act = (row: MonitorRow | undefined, fileOnly = false) => {
+    if (!sub && !fileOnly && row?.item === OTHER_PROJECTS) return toggleOtherProjects();
     if (!sub && !fileOnly && row?.objectiveTarget) {
       select(row.item);
       openObjective(row.objectiveTarget);

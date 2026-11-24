@@ -8,6 +8,8 @@ import test from 'node:test';
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
 import { projectList } from '../../dist/roles/projects.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
+import { deserializePanelPlace, serializePanelPlace } from '../../dist/render/monitor-reload-codec.js';
+import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -48,6 +50,9 @@ function fixture(t, count = 3) {
   return { home, roots, paused, own, tick, objectives, tracked, retired, header, put, receipt, receiptPath };
 }
 const plain = (frame) => frame.lines.map(stripAnsi).join('\n');
+const expanded = () => ({ ...initialMonitorState(), home: { scroll: 0, othersExpanded: true } });
+const projectRows = (frame) => frame.workboard.rows.filter((row) => row.item?.startsWith('home:project:'));
+const foldRow = (frame) => frame.workboard.rows.find((row) => row.item === 'home:other-projects');
 
 async function design(t) {
   const f = await buildFixture();
@@ -55,7 +60,7 @@ async function design(t) {
   const collector = new HomePortfolioCollector(f.home);
   const tick = () => collector.read(projectList(f.home, f.roots.harbor), board, NOW);
   const homePortfolio = await tick();
-  const draw = (width, height, portfolio = homePortfolio, state = initialMonitorState()) => renderMonitor({
+  const draw = (width, height, portfolio = homePortfolio, state = expanded()) => renderMonitor({
     state, width, height, nowMs: NOW, homePortfolio: portfolio, projects: portfolio.projects,
     homeWaiting: portfolio.projects[0].snapshot.waiting,
   });
@@ -110,6 +115,103 @@ test('design Home at 40, 50 and 80 columns: cell-exact in EN/ZH across icon sets
   }
 });
 
+test('Home folds three quiet registrations behind one row after two active projects', async (t) => {
+  const f = await design(t), { harbor, lab, sketch, mill, quill } = f.roots;
+  const register = (roots) => fs.writeFileSync(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: roots.map((root) => ({ root })) }));
+  register([mill, quill, lab, sketch, harbor]);
+  const portfolio = await f.tick(), otherRoots = [sketch, quill, mill];
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const press = (frame, ch) => handleMonitorInput(frame.state, decoder.push(Buffer.from(ch))[0], { frame }).state;
+  for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
+    const prev = setLanguage(lang);
+    try {
+      const draw = (state = initialMonitorState()) => f.draw(width, 40, portfolio, state);
+      const check = (frame, open) => {
+        const { rows } = frame.workboard, toggle = foldRow(frame), projects = projectRows(frame);
+        assert.deepEqual(projects.map((r) => r.homeTarget.root), open ? [harbor, lab, ...otherRoots] : [harbor, lab]);
+        assert.ok(rows.indexOf(toggle) > rows.indexOf(projects[1]));
+        assert.ok(open ? rows.indexOf(toggle) < rows.indexOf(projects[2]) : rows.at(-1) === toggle);
+        assert.equal(rows.filter((r) => r.item === toggle.item).length, 1);
+        const label = lang === 'en' ? '3 other projects' : '其他 3 个项目';
+        assert.ok(stripAnsi(toggle.text).startsWith(label));
+        const hint = lang === 'en' ? open ? 'a fold' : 'a expand' : open ? 'a 折叠' : 'a 展开';
+        assert.ok(stripAnsi(toggle.text).endsWith(hint));
+        if (frame.state.home.cursor === toggle.item) assert.ok(stripAnsi(frame.lines.at(-1)).includes(hint));
+        assert.ok([...frame.lines, ...rows.map((r) => r.text)].every((line) => visualLength(line) === width));
+        assert.equal(rows.filter((r) => r.item?.startsWith('home:wait:')).length, 3);
+      };
+      const collapsed = draw();
+      check(collapsed, false);
+      const open = draw(press(collapsed, 'a'));
+      check(open, true);
+      const project = draw(press(open, '\t'));
+      assert.equal(project.state.activeTab, 'project');
+      const back = handleMonitorInput(project.state, { type: 'key', key: 'shift-tab' }, { frame: project }).state;
+      check(draw(back), true);
+      const restarted = deserializePanelPlace(serializePanelPlace({ state: open.state, settings: null }));
+      check(draw(restarted.state), false);
+      const folded = draw(press(open, 'a'));
+      check(folded, false);
+      check(draw(press(folded, '\r')), true);
+      const help = draw(press(folded, '?'));
+      assert.match(plain(help), lang === 'en' ? /a\s+expand \/ fold other projects/ : /a\s+展开／折叠其他项目/);
+      const pane = folded.panes[0];
+      const click = { type: 'mouse', button: 'left', x: 0, y: pane.y + folded.workboard.rows.indexOf(foldRow(folded)) - pane.offset };
+      check(draw(handleMonitorInput(folded.state, click, { frame: folded }).state), true);
+    } finally { setLanguage(prev); }
+  }
+  register(otherRoots);
+  const quiet = f.draw(40, 20, await f.tick(), initialMonitorState());
+  assert.deepEqual(quiet.workboard.rows.slice(1), [foldRow(quiet)]);
+});
+
+test('Home membership follows local-day activity, old live jobs and open requests', async (t) => {
+  const f = fixture(t);
+  const roots = Object.fromEntries(['request', 'running', 'queued', 'objective', 'state', 'started', 'settled',
+    'archived', 'landed', 'archived-land', 'yesterday', 'created-only'].map((name) => [name, join(f.home, '..', name)]));
+  for (const root of Object.values(roots)) fs.mkdirSync(root);
+  f.put(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: Object.values(roots).map((root) => ({ root })) }));
+  const midnight = new Date(nowMs); midnight.setHours(0, 0, 0, 0);
+  const today = midnight.toISOString(), past = new Date(+midnight - 1000), yesterday = past.toISOString();
+  const stamp = (file, at) => fs.utimesSync(file, at, at);
+  const state = (name) => join(roots[name], 'STATE.md');
+  f.put(state('request'), '## Waiting for the owner\n- Choose the test input\n');
+  stamp(state('request'), past);
+  f.objectives(roots.objective, '**Stance:** paused', f.tracked);
+  stamp(join(roots.objective, '.hud/objectives.md'), midnight);
+  for (const [name, at] of [['state', midnight], ['yesterday', past]]) {
+    f.put(state(name), '## Now\n- Write the sample\n');
+    stamp(state(name), at);
+  }
+  const job = (name, n, status, created_at = yesterday) => {
+    const dir = join(f.home, 'jobs', `j${String(n).padStart(16, '0')}`);
+    f.put(join(dir, 'job.json'), JSON.stringify({ role: 'imp', cwd: roots[name], created_at }));
+    f.put(join(dir, 'STATUS.json'), JSON.stringify(status));
+  };
+  job('running', 1, { state: 'working', started_at: yesterday });
+  job('queued', 2, { state: 'queued' });
+  job('started', 3, { state: 'done', started_at: today });
+  job('settled', 4, { state: 'done', started_at: yesterday, settled_at: today });
+  job('created-only', 5, { state: 'closed' }, today);
+  const archive = [
+    { v: 1, job: 'j0000000000000006', project: roots.archived, started_at: yesterday, ended_at: today },
+    { v: 1, job: 'j0000000000000007', project: roots['archived-land'], settled_at: yesterday,
+      land: { state: 'completed', attempts: 1, reruns: 0, repairs: 0, sha: '123abcd', landed_at: today } },
+  ];
+  f.put(join(f.home, 'archive/2026-11.jsonl'), archive.map(JSON.stringify).join('\n') + '\n');
+  f.put(join(f.home, 'flows/f0000000000000008.json'), JSON.stringify({
+    job: 'j0000000000000008', wt: { main_root: roots.landed }, state: 'completed', landed_at: today, landed_sha: '123abcd',
+  }));
+  const list = (homePortfolio, now) => {
+    const frame = renderMonitor({ state: initialMonitorState(), width: 80, height: 40, nowMs: now, homePortfolio });
+    assert.deepEqual(homePortfolio.requests.map((r) => r.project.root), [roots.request]);
+    return new Set(projectRows(frame).map((r) => r.homeTarget.root));
+  };
+  assert.deepEqual(list(await f.tick(), nowMs), new Set(Object.values(roots).slice(0, -2)));
+  const tomorrow = new Date(midnight); tomorrow.setDate(tomorrow.getDate() + 1);
+  assert.deepEqual(list(await f.tick(+tomorrow), +tomorrow), new Set([roots.request, roots.running, roots.queued]));
+});
+
 test('Home orders project blocks by requests, stance, priority and activity, with registration-order ties', async (t) => {
   const f = fixture(t), offline = f.roots[2];
   const [bare, paused, maintenance, older, newer, high, low, legacy] = [
@@ -125,7 +227,7 @@ test('Home orders project blocks by requests, stance, priority and activity, wit
   for (const [root, stance, priority, hours] of [
     [paused, 'paused', 'high', 1], [maintenance, 'maintenance', 'low', 30],
     [older, 'active', 'normal', 4], [newer, 'active', 'normal', 8],
-    [high, 'active', 'high', 24], [low, 'active', 'low', 1],
+    [high, 'active', 'high', 10], [low, 'active', 'low', 1],
   ]) {
     f.objectives(root, `**Stance:** ${stance} · **Priority:** ${priority}`, f.tracked);
     stamp(join(root, '.hud/objectives.md'), hours);
@@ -134,11 +236,11 @@ test('Home orders project blocks by requests, stance, priority and activity, wit
   handoff(newer, 2); // STATE is newer than the Objective record and ties the legacy project.
   const registered = [offline, older, bare, paused, f.paused, legacy, low, f.own, newer, maintenance, high];
   f.put(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: registered.map((root) => ({ root })) }));
-  const order = (homePortfolio, paintNow = nowMs) => renderMonitor({
-    state: initialMonitorState(), width: 80, height: 80, nowMs: paintNow, homePortfolio,
-  }).workboard.rows.filter((row) => row.item?.startsWith('home:project:')).map((row) => row.homeTarget.root);
-  // The pane root f.own is listed first by projectList, but is second in the request group by registration.
-  const expected = (...normal) => [f.paused, f.own, high, ...normal, low, maintenance, paused, bare, offline];
+  const order = (homePortfolio, paintNow = nowMs) => projectRows(renderMonitor({
+    state: expanded(), width: 80, height: 80, nowMs: paintNow, homePortfolio,
+  })).map((row) => row.homeTarget.root);
+  // Today's projects first; within each group the original sort still applies.
+  const expected = (...normal) => [f.paused, f.own, high, ...normal, low, paused, maintenance, bare, offline];
   const portfolio = await f.tick();
   assert.deepEqual(order(portfolio), expected(legacy, newer, older));
   handoff(older, 1);
@@ -163,7 +265,7 @@ test('Home shows a no-notes line and newest observed job age even when idle is u
   for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
     const prev = setDisplayConfig({ theme: 'mocha', icons: 'unicode' }), prevLang = setLanguage(lang);
     try {
-      const frame = renderMonitor({ state: initialMonitorState(), width, height: 40, nowMs, homePortfolio });
+      const frame = renderMonitor({ state: expanded(), width, height: 40, nowMs, homePortfolio });
       const { rows } = frame.workboard;
       assert.ok([...frame.lines, ...rows.map((r) => r.text)].every((line) => visualLength(line) === width));
       for (const [root, age] of [[bare, lang === 'en' ? ' 4h' : ' 4时'], [empty, '']]) {
@@ -222,7 +324,7 @@ test('a 27-row panel keeps request prose and one row for each of 17 registration
   const projects = rows.filter((r) => r.item?.startsWith('home:project:'));
   assert.deepEqual(new Set(projects.map((r) => r.homeTarget.root)), new Set(roots));
   assert.equal(projects.length, 17);
-  assert.equal(rows.length, 22, 'two headings, three request rows and seventeen project rows');
+  assert.equal(rows.length, 23, 'two headings, three request rows, seventeen project rows and the fold row');
   assert.match(stripAnsi(projects[0].text), /8\/14/);
   const tiny = f.draw(40, 6, portfolio);
   assert.deepEqual(tiny.workboard.rows, rows, 'below the minimum the same rows stay scrollable');
@@ -232,8 +334,8 @@ test('density drops separators, then results, then the second Objective with an 
   const f = await design(t);
   fs.appendFileSync(join(f.roots.harbor, '.hud/objectives.md'), '\n## follow-up: Follow up\n**State:** paused\n');
   const portfolio = await f.tick();
-  for (const [height, blanks, result, objectives, more] of [[25, 5, true, 2, 1], [20, 0, true, 2, 1],
-    [19, 0, false, 2, 1], [18, 0, false, 1, 2], [17, 0, false, 0, 0]]) {
+  for (const [height, blanks, result, objectives, more] of [[25, 4, true, 2, 1], [21, 0, true, 2, 1],
+    [20, 0, false, 2, 1], [19, 0, false, 1, 2], [18, 0, false, 0, 0]]) {
     const rows = f.draw(40, height, portfolio).workboard.rows;
     assert.equal(rows.filter((r) => !r.text.trim()).length, blanks);
     assert.equal(rows.some((r) => r.item?.startsWith('home:result:')), result);

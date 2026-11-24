@@ -119,6 +119,7 @@ export class WorkbenchInputDecoder {
                   '\x7f': 'backspace',
                   '\b': 'backspace',
                   '\x12': 'model-refresh',
+                  a: 'home-other-projects',
                   v: 'jobs',
                   n: 'native-inspector',
                   ' ': 'space',
