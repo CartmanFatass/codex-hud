@@ -483,6 +483,8 @@ const ZH: Record<string, string> = {
   'Bar on launch': '启动时显示状态栏',
   'Next launch: one-line bar': '下次启动时显示单行状态栏',
   Notifications: '通知',
+  'Open previews': '打开预览',
+  'Open report HTML previews in the default browser': '在默认浏览器中打开报告的 HTML 预览',
   Hide: '收起',
   Backend: '后端',
   Language: '语言',

@@ -34,6 +34,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   notify: boolean;
   /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
   notifyDesktop: boolean;
+  openPreviews: boolean;
   /** Nerd Font glyphs (the default), Unicode marks or their ASCII/text equivalents. An old or unknown value loads as the default. */
   icons: IconMode;
   /** Per-role soft caps on concurrently working jobs; 0 or omitted means uncapped. */
@@ -65,6 +66,7 @@ export function defaultSettings(): HudSettings {
     decisionCallsPerHour: 0,
     notify: false,
     notifyDesktop: false,
+    openPreviews: true,
     icons: 'nerd',
     roleCaps: { ...DEFAULT_ROLE_CAPS },
     impOverflow: true,
@@ -99,6 +101,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   language: oneOf('auto', 'en', 'zh'),
   notify: isBoolean,
   notifyDesktop: isBoolean,
+  openPreviews: isBoolean,
   decisionCallsPerHour: (value) => isIntegerBetween(value, 0, 2000),
   icons: oneOf('nerd', 'unicode', 'text'),
   roleCaps: (value) =>

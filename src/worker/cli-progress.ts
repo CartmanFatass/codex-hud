@@ -7,7 +7,7 @@ export async function main() {
     const { values, positionals } = parseArgs({
       options: {
         dir: { type: 'string' }, done: { type: 'boolean' }, turn: { type: 'string' },
-        summary: { type: 'string' }, file: { type: 'string', multiple: true }, 'skip-checks-reason': { type: 'string' },
+        summary: { type: 'string' }, file: { type: 'string', multiple: true }, 'skip-checks-reason': { type: 'string' }, preview: { type: 'string' },
       },
       allowPositionals: true,
     });
@@ -15,10 +15,10 @@ export async function main() {
     if (values.done) {
       if (positionals.length || context.job.bro || context.job.jev) throw new Error('--done is for local worker reports, not milestones');
       await finishReport(context, values.turn, undefined, {
-        summary: values.summary, files: values.file, skip_checks_reason: values['skip-checks-reason'],
+        summary: values.summary, files: values.file, skip_checks_reason: values['skip-checks-reason'], preview: values.preview,
       });
     } else {
-      for (const key of ['turn', 'summary', 'file', 'skip-checks-reason'] as const) {
+      for (const key of ['turn', 'summary', 'file', 'skip-checks-reason', 'preview'] as const) {
         if (values[key] !== undefined) throw new Error(`--${key} requires --done`);
       }
       await progress(context, positionals.join(' '));

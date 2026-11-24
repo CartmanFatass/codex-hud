@@ -178,6 +178,7 @@ A report-ready notice leaves the report unread; collect it explicitly.
 
 `hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) to link progress.
 `slice` is a legacy target label.
+Pass `preview` to name an HTML file (`.html` or `.htm`, up to 16 MiB) the job will write at a path relative to its working directory.
 Optional `experiment` and `arm` tags (up to 64 characters each) are stored in job and archive records, inherited by retries and repairs, and never shown in the panel.
 In sessions without MCP tasks, pass `jobs: [...]` instead of single-create fields to dispatch several jobs in one call; each item accepts the same fields as a single create, returns its result in input order, and one item's error does not block the others (each created job keeps its own notice).
 The optional `request_key` defaults to a hash of the caller pane, role, cwd and task.
@@ -443,6 +444,7 @@ Milestones do not emit watch events.
 Its `result` is the signature-bound worker summary when current and settled.
 Otherwise it uses the same fallback as the task notice: the first prose line in the first 2 KiB, skipping headings and blank lines, or `Report ready` if there is none.
 The digest gives the `hud_read` hint, byte size, Git changed-file count for a managed worktree, and explicit `Verdict:` and `Blockers:` lines when present in the first 64 KiB.
+The report-ready notice and digest name the copied `preview_path` and note any missing file or failure to copy or open (`preview_error` in the digest).
 The response keeps open questions, one line per completed check and the latest milestone.
 For worktrees it lists up to 20 changed paths, then `+N more`, and warns about overlaps.
 Already-read reports return `report_unchanged: true` without reopening the body.
@@ -465,6 +467,9 @@ Jobs launched before this change keep their original idle grace.
 Reading a failure/block separately marks that attention as seen.
 Workers finish with `hud_report`, which publishes the report without repeating it in chat.
 They may supply a one-line `summary` (up to 160 Unicode code points) and a `files` list of up to 50 relative paths.
+If `hud_create` did not set `preview`, the worker can supply it in `hud_report` (or `hud-progress --done --preview <path>`).
+On declaration HUD copies the self-contained HTML to `<project root>/tmp/preview/<job>/<basename>` so it survives landing.
+A rewritten preview is copied and opened again on report; another report for the same job with an unchanged preview does not reopen it.
 Claude and Codex use their HUD MCP and pass the token from the prompt they are answering; pi has native tools and needs no token.
 Antigravity and Grok Build use the fallback commands in their briefs.
 Both `hud_report` and `hud-progress --done` refuse to declare a report while the managed worktree has uncommitted changes.
@@ -1084,7 +1089,7 @@ Press `n` or click **subagents** from Jobs or a job Inspector to inspect the cal
 | Group | Rows |
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
-| Panel | Width, Notifications; in **Advanced**: Refresh, Mouse |
+| Panel | Width, Notifications, Open previews; in **Advanced**: Refresh, Mouse |
 | Models | Decision API, Quiet job, Sonic auto-thinking, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter) |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
@@ -1099,6 +1104,9 @@ No Reset all or picture.
 Width presets: 40/48/56(default)/64/80/100; saved 16–200 load, 0 means default.
 Saving a changed width resizes every client's panel, preserving 41 columns for the agent where possible.
 Window resizing reapplies it; border drags and unrelated saves do not.
+
+**Open previews** (`openPreviews`, on by default) opens copied report previews in the default browser with `explorer.exe` and `wslpath -w` on WSL, or `xdg-open` elsewhere.
+Off still copies the file and gives its path in the notice.
 
 Themes: `terminal` (default), `titanium`, `mocha`, `arctic`, `ember`, `contrast`, `latte`, `paper`, `none`.
 Each has its own Home/Project/Inspector inks; latte/paper are light, none/`NO_COLOR` emits no colour.

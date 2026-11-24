@@ -88,6 +88,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format: seconds,
   },
   { key: 'mouse', group: 'Panel', label: 'Mouse', values: [true, false], help: 'Click and scroll the panel', advanced: true },
+  { key: 'openPreviews', group: 'Panel', label: 'Open previews', values: [true, false], help: 'Open report HTML previews in the default browser' },
   {
     key: 'decisionApi', group: 'Models', label: 'Decision API', values: ['gemini', 'openai', 'typesafe'],
     help: 'Primary for Jev and execution decisions; automatic fallback uses another keyed provider',
@@ -194,7 +195,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
+  Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'openPreviews'],
   Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'impPlacement', 'impEvenPool'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],

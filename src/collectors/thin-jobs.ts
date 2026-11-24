@@ -8,7 +8,7 @@ import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { fileStampOf, getJobIndexCache, statsMtimeMs, type JobDirMeta, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
-import { readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
+import { previewNotice, readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
 import { reportReadHint } from '../utils/report-summary.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
@@ -428,7 +428,7 @@ export function jobRowReportMeta(row: JobRow, dir: string): ReportMetaFields | u
   const { v, at, report_sig, summary: declared, ...fields } = meta;
   // Keep legacy guillemet markup out of watch/MCP digests. The Inspector reads the declaration as written.
   const summary = declared?.replace(/«[+!-](?![+!-])|[«»]/gu, '').trim();
-  return summary ? { ...fields, summary } : fields.files || fields.skip_checks_reason ? fields : undefined;
+  return summary ? { ...fields, summary } : fields.files || fields.skip_checks_reason || fields.preview ? fields : undefined;
 }
 
 const rowState = (row: JobRow) => row.state ?? row.display_state;
@@ -447,7 +447,7 @@ export function formatJobChange(row: JobRow): string {
     ...(row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
     ...(readyChecks(row) ? [`checks ${row.checks!.passed}/${row.checks!.total}`] : []),
     ...(summary ? [[...summary].slice(0, 140).join('')] : []),
-    ...(unread ? [reportReadHint(row.job)] : []),
+    ...(unread ? [previewNotice(row.report_meta?.preview), reportReadHint(row.job)].filter(Boolean) : []),
   ];
   return `${head}: ${parts.join(' | ')}`;
 }

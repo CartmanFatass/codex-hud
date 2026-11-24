@@ -22,7 +22,13 @@ export function cachedReportSignature(dir: string): string | null {
 }
 
 /** Display metadata only. The caller supplies normalized fields and the signature of its report. */
-export type ReportMetaFields = { summary?: string; files?: readonly string[]; skip_checks_reason?: string };
+export type PreviewReceipt = { source: string; path?: string; stamp?: string; error?: string };
+export type ReportMetaFields = { summary?: string; files?: readonly string[]; skip_checks_reason?: string; preview?: PreviewReceipt };
+export const validPreviewPath = (value: unknown): value is string => typeof value === 'string' &&
+  value.length <= 260 && !/^\//u.test(value) && !/[\\:\p{Cc}\p{Bidi_Control}\u2028\u2029]/u.test(value) &&
+  !value.split('/').includes('..') && /\.html?$/iu.test(value);
+export const previewNotice = (preview?: PreviewReceipt): string => preview?.path
+  ? `Preview: ${preview.path}${preview.error ? ` (${preview.error})` : ''}` : preview?.error ?? '';
 export type ReportMeta = ReportMetaFields & { v: 1; report_sig: string; at: string };
 
 // Terminal control strings (including OSC), CSI, and other ESC sequences.
@@ -84,7 +90,7 @@ export function writeReportMeta(
     if (remaining < 0) break;
     paths.push(path);
   }
-  if (!fields.summary && !fields.skip_checks_reason && !paths.length) {
+  if (!fields.summary && !fields.skip_checks_reason && !fields.preview && !paths.length) {
     fs.rmSync(file, { force: true });
     return;
   }
@@ -93,8 +99,8 @@ export function writeReportMeta(
   writePrivateFile(file, body, { mkdir: false });
 }
 
-/** If supplied, expectedSig is a signature the caller has already read for the current report. */
-export function readReportMeta(dir: string, expectedSig?: string | null): ReportMeta | null {
+/** Pass false only to recover the previous preview declaration while publishing a new report. */
+export function readReportMeta(dir: string, expectedSig?: string | null | false): ReportMeta | null {
   const file = join(dir, jobFiles.reportMeta);
   try {
     const before = fs.lstatSync(file, { throwIfNoEntry: false });
@@ -122,10 +128,11 @@ export function readReportMeta(dir: string, expectedSig?: string | null): Report
         (!Array.isArray(meta.files) || !meta.files.every((p: unknown) => typeof p === 'string')))
     )
       return null;
-    if (meta.report_sig !== (expectedSig === undefined ? cachedReportSignature(dir) : expectedSig)) return null;
-    const { at, report_sig } = meta;
+    if (expectedSig !== false && meta.report_sig !== (expectedSig === undefined ? cachedReportSignature(dir) : expectedSig)) return null;
+    const { at, report_sig, preview } = meta;
     const fields = normalizeReportMeta(meta);
-    return fields.summary || fields.files || fields.skip_checks_reason ? { v: 1, at, report_sig, ...fields } : null;
+    if (validPreviewPath(preview?.source) && [preview.path, preview.stamp, preview.error].every(v => v === undefined || typeof v === 'string')) fields.preview = preview;
+    return fields.summary || fields.files || fields.skip_checks_reason || fields.preview ? { v: 1, at, report_sig, ...fields } : null;
   } catch {
     return null;
   }

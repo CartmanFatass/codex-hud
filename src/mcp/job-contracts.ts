@@ -54,6 +54,7 @@ export interface Job extends PiOptions {
   context_files?: string[];
   from_jobs?: string[];
   checks?: string[];
+  preview?: string;
   repair_of?: string;
   retry_of?: string;
   sessions?: JobSession[];

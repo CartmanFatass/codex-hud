@@ -9,6 +9,7 @@ import { taskDelivery, notify } from '../../roles/notify.js';
 import { writeJsonPrivate, readJsonBounded, readDirSafe, writePrivateFile } from '../../utils/atomic-fs.js';
 import { procStat } from '../../utils/proc.js';
 import { reportReadHint } from '../../utils/report-summary.js';
+import { previewNotice } from '../../roles/report-meta.js';
 import { readTurn, turnToken } from '../cli-judge.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import type { BatchNotice, Job, McpTaskMarker } from '../job-contracts.js';
@@ -406,7 +407,8 @@ export function sampleTask(task: HudTask): TaskView {
     if (outcome === null) return updateTask(task, 'working', `${label} — awaiting checks`);
     const meta = jobRowReportMeta(row, dir);
     const summary = meta?.summary ?? fallbackResultLine(slice(report, RESULT_HEAD_BYTES)?.text ?? '');
-    return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${reportReadHint(task.job)}\nSummary: ${summary}${outcome}`);
+    const preview = previewNotice(meta?.preview);
+    return updateTask(task, 'completed', `${label} — report ready`, `${label}\nReport: ${reportReadHint(task.job)}\nSummary: ${summary}${preview ? `\n${preview}` : ''}${outcome}`);
   }
   if (state === 'closed' || state === 'done') {
     const message = `${label} — no report for this turn`;

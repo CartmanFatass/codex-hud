@@ -7,6 +7,7 @@ const text = { type: 'string' };
 export const EXPERIMENT_TAG_MAX_LENGTH = 64;
 const experimentTag = { ...text, maxLength: EXPERIMENT_TAG_MAX_LENGTH };
 const experimentTags = { experiment: experimentTag, arm: experimentTag };
+const preview = { ...text, maxLength: 260, description: 'HTML preview path relative to job cwd; copied and optionally opened on report.' };
 const bool = { type: 'boolean' };
 const detail = { ...bool, description: 'Diagnostics.' };
 const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
@@ -35,10 +36,11 @@ export const ROLE_TOOLS = [
       request_key: { ...text, description: 'Permanent key; omit for 10-min caller/role/cwd/task dedupe.' },
       task: text,
       brief_file: { ...text, description: 'UTF-8 task file within cwd.' },
+      preview,
       jobs: {
         type: 'array',
         minItems: 1,
-        items: { type: 'object', properties: experimentTags },
+        items: { type: 'object', properties: { ...experimentTags, preview } },
         description: 'Without MCP tasks; else parallel single creates.',
       },
       scout: { ...text, minLength: 1, description: 'Ask sonic first, attach report; non-sonic only.' },

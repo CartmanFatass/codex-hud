@@ -16,6 +16,7 @@ import { MAX_CHECKS, MAX_CHECK_COMMAND } from '../../roles/job-checks.js';
 import { withAbstractLock } from '../../utils/abstract-lock.js';
 import { watching, ensureQueueWatcher } from '../../roles/notify.js';
 import { sharedRoot } from '../../roles/projects.js';
+import { readReportMeta, validPreviewPath } from '../../roles/report-meta.js';
 import { EXPERIMENT_TAG_MAX_LENGTH } from '../../roles/tool-definitions.js';
 import {
   currentPreset, harnessDefaults, readExhausted, isQuotaFailure, markExhausted, describePlace, recordFailureExhaustion,
@@ -117,7 +118,7 @@ function countWorkingByRole(allJobs = jobs()): Map<string, number> {
 function jobOptions(job: Job): Args {
   return {
     role: job.role, cwd: job.worktree?.main_root ?? job.cwd, package: job.package, ticket: job.ticket, slice: job.slice, preset: job.preset,
-    experiment: job.experiment, arm: job.arm,
+    experiment: job.experiment, arm: job.arm, preview: job.preview ?? readReportMeta(directory(job.job), false)?.preview?.source,
     context_files: job.context_files, from_jobs: job.from_jobs, checks: job.checks, instructions: job.instructions_from,
     ...(job.create_options ?? {
       isolation: job.worktree ? 'worktree' : undefined,
@@ -299,7 +300,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
     ticketQueue?: string; canAdmit?: () => boolean; dispatcher?: Job['dispatcher'];
   } = {}) {
-  const { experiment, arm } = args;
+  const { experiment, arm, preview } = args;
+  if (preview !== undefined && !validPreviewPath(preview)) {
+    return { ok: false, code: 'invalid_arguments', error: 'preview must be a relative HTML path inside cwd' };
+  }
   if (!validExperimentTag(experiment) || !validExperimentTag(arm)) {
     return { ok: false, code: 'invalid_arguments', error: `experiment and arm must each be a string of at most ${EXPERIMENT_TAG_MAX_LENGTH} characters` };
   }
@@ -488,6 +492,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         request_key,
         cwd: reusedWorktree?.root ?? cwd,
         project_root: projectRoot,
+        ...(preview && { preview }),
         ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
         caller_pane: pane,
         created_at: nowIso,
@@ -554,6 +559,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       request_key,
       cwd: landCwd ?? reusedWorktree?.root ?? cwd,
       project_root: projectRoot,
+      ...(preview && { preview }),
       ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
       caller_pane: pane,
       created_at: new Date().toISOString(),
@@ -989,6 +995,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
 function writeBrief(job: Job, dir: string, task: string, block: string, first: boolean) {
   const place = job.place!;
   let brief = `${task}${place.harness === 'bro' ? '\n' : '\n\n'}${block}`;
+  if (job.preview) brief += `Write the HTML preview to ${JSON.stringify(job.preview)} relative to your cwd before reporting.\n`;
   if (place.harness === 'pi') brief += 'Finish with `hud_report`.\n';
   else if (place.harness === 'cli' && !cliWorkerTools(place.agent!)) {
     const command = (bin: string) => `node ${JSON.stringify(join(bundled, 'bin', `${bin}.mjs`))}`;

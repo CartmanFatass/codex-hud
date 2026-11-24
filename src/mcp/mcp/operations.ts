@@ -288,7 +288,9 @@ function reportDigest(report: NonNullable<ReturnType<typeof slice>>, job: string
     ...(git ? { changed_files: git.changed_files } : {}),
     ...(verdict ? { verdict: digestLine(verdict, 100) } : {}),
     ...(blockers ? { blockers: digestLine(blockers, 160) } : {}),
-    ...(meta?.skip_checks_reason ? { skip_checks_reason: digestLine(meta.skip_checks_reason, 160) } : {}) };
+    ...(meta?.skip_checks_reason ? { skip_checks_reason: digestLine(meta.skip_checks_reason, 160) } : {}),
+    ...(meta?.preview?.path && { preview_path: meta.preview.path }),
+    ...(meta?.preview?.error && { preview_error: meta.preview.error }) };
   const budget = 1000 - Buffer.byteLength(JSON.stringify({ ...facts, result: '…' }));
   return { ...facts, result: digestLine(meta?.summary ?? fallbackResultLine(report.text), budget) };
 }

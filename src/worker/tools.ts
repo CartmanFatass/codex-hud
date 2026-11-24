@@ -1,5 +1,6 @@
 /** Worker protocol shared by MCP, the native pi extension and the CLI fallbacks. */
-import { normalizeReportMeta, REPORT_LINE_LIMIT, writeReportMeta } from '../roles/report-meta.js';
+import { normalizeReportMeta, readReportMeta, REPORT_LINE_LIMIT, validPreviewPath, writeReportMeta } from '../roles/report-meta.js';
+import { openPreview, publishPreview } from './preview.js';
 import { DONE_FILE, readTurn, saveTurn, turnToken, reportSignature, withTurnLock, workerAlive } from '../mcp/cli-judge.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { readJsonBounded, readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
@@ -101,10 +102,19 @@ async function reportConflict({ root, main_root, branch, base_head }: ManagedWor
 }
 
 // Omit text for the fallback command, which declares a report the worker wrote itself.
-export async function finishReport({ dir, job }: Worker, turn: unknown, text?: string, metadata: Parameters<typeof normalizeReportMeta>[0] = {}) {
+export async function finishReport({ dir, job }: Worker, turn: unknown, text?: string,
+  metadata: Parameters<typeof normalizeReportMeta>[0] & { preview?: unknown } = {}, opener = openPreview) {
   if (job.bro || job.jev) throw new Error('only local workers can declare a report');
   if (text !== undefined && (typeof text !== 'string' || !text.trim())) throw new Error('write a nonempty report');
   const fields = normalizeReportMeta(metadata);
+  const requestedPreview = metadata.preview;
+  if (requestedPreview !== undefined && !validPreviewPath(requestedPreview)) throw new Error('invalid_arguments: preview');
+  async function publishMetadata(sig: string) {
+    const previous = readReportMeta(dir, false)?.preview;
+    const source = job.preview ?? requestedPreview ?? previous?.source;
+    if (validPreviewPath(source)) fields.preview = await publishPreview(dir, job, source, previous, opener);
+    writeReportMeta(dir, sig, fields);
+  }
   if (job.worktree) {
     const { root, branch } = job.worktree;
     let status: string;
@@ -135,7 +145,7 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
   }
   const path = join(dir, jobFiles.report);
   if (job.cli) {
-    await withTurnLock(dir, () => {
+    await withTurnLock(dir, async () => {
       const current = readTurn(dir);
       const prior = current?.pending_from;
       const answering = current && turn === turnToken(current) ? current :
@@ -146,8 +156,8 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
       if (!sig || sig === answering.report_sig) throw new Error('write a fresh report for this turn first');
       const latest = readTurn(dir);
       if (!latest || turnToken(latest) !== turnToken(current)) throw new Error('the turn changed; no receipt recorded');
-      writeReportMeta(dir, sig, fields);
       if (job.headless) capturePiTree(dir);
+      await publishMetadata(sig);
       if (prior) {
         if (answering === prior) current.report_sig = sig; // The next turn needs its own fresh report.
         else delete current.pending_from; // Its token proves the prompt already arrived.
@@ -165,8 +175,8 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
     if (text !== undefined) writePrivateFile(path, text, { mkdir: false });
     const sig = reportSignature(dir);
     if (!sig) throw new Error('write the pi report first');
-    writeReportMeta(dir, sig, fields);
     capturePiTree(dir);
+    await publishMetadata(sig);
     if (job.headless) writeJsonPrivate(join(dir, DONE_FILE), { report_sig: sig }, { mkdir: false });
   }
   return { path };
@@ -369,6 +379,7 @@ export async function workerTools(cli = false) {
         summary: { ...string, maxLength: REPORT_LINE_LIMIT, description: `One-line result summary (up to ${REPORT_LINE_LIMIT} code points, no Markdown heading).` },
         files: { type: 'array', items: { ...string, maxLength: 260 }, maxItems: 50, description: 'Optional list of relative paths to files changed by code roles (up to 50).' },
         skip_checks_reason: { ...string, minLength: 1, maxLength: REPORT_LINE_LIMIT, description: 'If blocked, skip the project’s worker checks and include this reason in the report digest.' },
+        preview: { ...string, maxLength: 260, description: 'HTML preview path relative to cwd, if the brief did not specify one.' },
       },
       cli ? ['text', 'turn'] : ['text']),
     tool('hud_ask', headless ? 'Ask the orchestrator and end the turn. The answer resumes this session.'
