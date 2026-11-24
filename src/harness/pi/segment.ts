@@ -1,6 +1,7 @@
 /** Passive machine-wide status. Never owns a footer or starts a summary producer. */
 import { readMachineWork, type MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
 import { getHudHome } from '../../hud-home.js';
+import { readBarSettings } from '../../bar-settings.js';
 import { formatMachineWork } from '../../render/work-summary.js';
 import { collectLocalLoad, type LocalLoad } from '../../collectors/local-load.js';
 import { formatLocalLoad } from '../../render/local-load.js';
@@ -41,9 +42,12 @@ export function createPiSegment(options: {
     const now = (options.now ?? Date.now)();
     const counts = readMachineWork(state.home, now), localLoad = collectLocalLoad(state.home, now, options.env);
     options.onSignals?.(counts, localLoad);
-    const next = options.statusVisible?.() !== false
-      ? [counts && formatMachineWork(counts), localLoad && formatLocalLoad(localLoad)].filter(Boolean).join(' │ ') || undefined
-      : undefined;
+    let next: string | undefined;
+    if (options.statusVisible?.() !== false && (counts || localLoad)) {
+      const settings = readBarSettings(options.env);
+      next = [counts && formatMachineWork(counts, settings?.icons), localLoad && formatLocalLoad(localLoad, settings?.theme)]
+        .filter(Boolean).join(' │ ') || undefined;
+    }
     if (current === state && (!published || next !== text)) {
       published = true;
       text = next;

@@ -16,7 +16,7 @@
 import { colors, icons, METER_DANGER, METER_WARN, theme, truncateAnsi, visualLength } from '../colors.js';
 import { formatTokenCount } from '../lines/activity-line.js';
 import { activeBarStyle, displayConfig, iconSet, type BarField } from '../hud-config.js';
-import { formatMachineWork } from '../work-summary.js';
+import { machineWorkForms } from '../work-summary.js';
 import { localLoadForms } from '../local-load.js';
 import type { LocalLoad } from '../../collectors/local-load.js';
 import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
@@ -501,7 +501,7 @@ function fitItems(items: Notice[], room: number, pad: string): Seg[] | null {
  * words, then altogether); the output rate; swap, then the local CPU/RAM segment; the older of two subagent items
  * (`notice`, which also cuts the newest at a word, and shortens a pinned need to `N needs`); the effort; the context's
  * window; the branch; the quota; the project; the context. The model alone
- * is never dropped. The load is omitted whole if it still cannot fit.
+ * is never dropped. Machine load tightens its spaces first; it gives up the queue just before being dropped whole.
  */
 const LADDER: Array<Seg['id'] | 'meters' | 'title'> = [
   'loaded',
@@ -540,11 +540,13 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const alertSeg = zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null;
   // Several needs: `first +2`, then `N needs` when the notice has to give way.
   if (alertSeg && zone?.alert?.short) alertSeg.forms.push(noticeSeg(zone.alert, Infinity, pad, 1)!.forms[0]!);
-  const load: Seg | null = on.has('notice') && facts.work
-    ? { id: 'notice', forms: [[[formatMachineWork(facts.work), 'value']]], ink: P10K.info, at: 0 }
+  const loadForms = on.has('notice') && facts.work ? machineWorkForms(facts.work) : [];
+  const load: Seg | null = loadForms.length
+    ? { id: 'notice', forms: loadForms.map((text) => [[text, 'value']]), ink: P10K.info, at: 0 }
     : null;
-  const localLoad: Seg | null = on.has('notice') && facts.localLoad
-    ? { id: 'localLoad', forms: localLoadForms(facts.localLoad).map((text) => [[text, 'value']]), ink: P10K.info, at: 0 }
+  const localForms = on.has('notice') && facts.localLoad ? localLoadForms(facts.localLoad) : [];
+  const localLoad: Seg | null = localForms.length
+    ? { id: 'localLoad', forms: localForms, ink: [themeName === 'paper' || themeName === 'latte' ? 255 : 235, 235], at: 0 }
     : null;
   const left = [
     on.has('model') && facts.model ? modelSeg(facts.model, ascii) : null,
@@ -587,6 +589,10 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     ...(second ? [textWidth(noticeSeg(second, Infinity, pad, 2))] : []),
   ];
   const total = () => leftWidth([...fields().map(size), ...wanted()]) + gap() + rightWidth();
+  if (total() > width) {
+    if (load && loadForms[0] !== loadForms[1]) load.at = 1;
+    if (localLoad && total() > width) localLoad.at = 1;
+  }
   for (const id of LADDER) {
     if (total() <= width) break;
     if (id === 'title') {
@@ -607,6 +613,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     const seg = all.find((candidate) => candidate.id === id);
     if (seg && seg.at < seg.forms.length) seg.at = (zone || load) && id === 'loaded' ? seg.forms.length : seg.at + 1;
   }
+  if (load && room(0) < 0) load.at = 2;
   if (load && room(0) < 0) load.at = load.forms.length;
   const shown = fields();
   if (zone) {
@@ -624,11 +631,12 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   }
   const tail = right && alive(right) ? right : null;
 
-  const paint = (seg: Seg): string =>
+  const paint = (seg: Seg, backing = ''): string =>
     form(seg)
       .map(([part, role, , own]) => {
         const lead = own ?? seg.lead;
         if (p10k) {
+          if (seg === localLoad && role) return INK[role](part).replaceAll(RESET, RESET + backing);
           if (role === 'quiet') return `\x1b[2m${part}\x1b[22m`;
           return role === 'lead' && lead !== undefined ? `${fg(lead)}${part}${fg(seg.ink[1])}` : part;
         }
@@ -654,7 +662,8 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
       // The previous capsule's arrow points into this one: its colour on this background.
       if (arrow && i) line += `${bg(back)}${fg(before)}\ue0b0`;
       before = back;
-      line += `${bg(back)}${fg(seg.ink[1])} ${paint(seg)} ${RESET}`;
+      const backing = bg(back) + fg(seg.ink[1]);
+      line += `${backing} ${paint(seg, backing)} ${RESET}`;
       mark(seg, x + 1);
       x += size(seg) + 2 + arrow;
     } else {
@@ -678,7 +687,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     line += p10k ? `${arrow ? `${fg(bgc)}\ue0b2` : ''}${bg(bgc)}${fg(fgc)} ${paint(tail)} ${RESET}` : paint(tail);
   }
   return {
-    line: visualLength(line) > width ? truncateAnsi(line, width) + RESET : line,
+    line: visualLength(line) > width ? truncateAnsi(line, width) + (themeName === 'none' ? '' : RESET) : line,
     kept: segments.map((segment) => segment.id),
     levels: Object.fromEntries(segments.map((segment) => [segment.id, segment.level])),
     segments,

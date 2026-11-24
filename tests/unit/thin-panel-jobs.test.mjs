@@ -168,10 +168,10 @@ test('Claude compact and detail lines omit HUD job counts without a fresh census
   });
   const result = run();
   assert.equal(result.status, 0, result.stderr);
-  assert.doesNotMatch(stripAnsi(result.stdout), /HUD \(OS\)|!1|thin job cards|asks/);
+  assert.doesNotMatch(stripAnsi(result.stdout), /⚒\d|\uF0AD\d|!1|thin job cards|asks/);
   const details = run(['--details']);
   assert.equal(details.status, 0, details.stderr);
-  assert.doesNotMatch(details.stdout, /HUD \(OS\)|Work:|needs you/);
+  assert.doesNotMatch(details.stdout, /⚒\d|\uF0AD\d|Work:|needs you/);
 });
 
 test('a queued land names the job it waits on: its ticket id, else the holder’s flow id (panel-polish/04)', async (t) => {

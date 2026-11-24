@@ -706,7 +706,7 @@ export function createP10kFooter(
     config = fromSettings();
     work = undefined;
     localLoad = undefined;
-    applyBarSettings();
+    applyBarSettings({ ...process.env, ...env });
     lensFiles.clear();
     lensAnalyzed = false;
     update();
@@ -750,7 +750,7 @@ export function createP10kFooter(
     /** A run is over: the bar's two display keys may have changed since the footer mounted. */
     settled() {
       turnStartedAt = null;
-      applyBarSettings();
+      applyBarSettings({ ...process.env, ...env });
       update();
     },
     async command(args: string, ctx: FooterContext) {

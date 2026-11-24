@@ -206,7 +206,8 @@ test('Codex native footer discovers MyHUD and serves ordered, request-local fact
   };
   const { write } = syntheticProc(f.env.HOME, '6.6.0-microsoft-standard-WSL2');
   write('meminfo', 'MemTotal: 8388608 kB\nMemAvailable: 2097152 kB\n');
-  const load = ['HUD (OS): 2 running, 0 queued', ...(process.platform === 'linux' ? ['WSL: RAM 6.0/8.0 GiB'] : [])];
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ icons: 'text' }));
+  const load = ['I1  .1', ...(process.platform === 'linux' ? ['M75%'] : [])];
   const ordered = ['6.2-sol high', 'ctx 38%', '5h 72% left', '7d 56% left', ...load];
   assert.deepEqual(footerText(await readFooter(f, a)), ordered);
   assert.deepEqual(footerText(await readFooter(f, b)), ['Example B', 'ctx 12%', '5h 0% left', ...load]);

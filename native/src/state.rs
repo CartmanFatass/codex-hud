@@ -259,10 +259,10 @@ pub fn transcript(home: &Path, path: Option<&str>) -> Option<Transcript> {
 }
 
 pub struct MachineWork {
-    pub running: u64,
+    pub roles: Vec<(String, u64)>,
     pub queued: u64,
 }
-fn running_count(v: &Value) -> Option<u64> {
+fn scope_counts(v: &Value, mut record: impl FnMut(&str, u64)) -> Option<()> {
     let running = v.get("running").count()?;
     let asking = v.get("asking").count()?;
     if asking > running {
@@ -284,8 +284,9 @@ fn running_count(v: &Value) -> Option<u64> {
         }
         total += n;
         waiting_total += waiting;
+        record(role, n);
     }
-    (running == total && asking == waiting_total).then_some(running)
+    (running == total && asking == waiting_total).then_some(())
 }
 fn pane_id(pane: &str) -> bool {
     !pane.is_empty()
@@ -346,10 +347,12 @@ pub fn work(home: &Path, now: f64) -> Option<MachineWork> {
         if !pane_id(id) {
             return None;
         }
-        running_count(scope)?;
+        scope_counts(scope, |_, _| {})?;
     }
+    let mut roles = Vec::new();
+    scope_counts(global, |role, n| roles.push((role.to_owned(), n)))?;
     Some(MachineWork {
-        running: running_count(global)?,
+        roles,
         queued: global.get("queued").count()?,
     })
 }

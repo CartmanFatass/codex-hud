@@ -46,7 +46,7 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
     bytesRead: 0,
     pendingHistory: false,
   };
-  const work = { running: 1, queued: 0 };
+  const work = { running: 1, queued: 0, roles: { imp: { running: 1, asking: 0 } } };
   const input = {
     model: { display_name: 'Opus 5.5' },
     effort: 'high',
@@ -62,7 +62,7 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
     {},
     work
   );
-  const f = parityFixture({ name: 'main', width: 120, settings: { band: { cost: false } } });
+  const f = parityFixture({ name: 'main', width: 120, env: { HUD_ICONS: 'unicode' }, settings: { band: { cost: false } } });
   t.after(() => f.dispose());
   f.statuses.clear();
   f.controller.setWork(work);
@@ -77,7 +77,7 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
   ).line;
   // Client facts, then machine-wide load, then what was loaded. pi's session cost is off.
   const shape =
-    /^[^│]+ │ (?:[█░]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ (?:\d+[hd] (?:[█░]+ )?\d+%[^│]* │ )?HUD \(OS\): 1 running, 0 queued(?: +MCP \d+  skills \d+)?$/;
+    /^[^│]+ │ (?:[█░]+ +)?\d+%\/[\d.]+[KM] │ [^│]+ │ (?:\d+[hd] (?:[█░]+ )?\d+%[^│]* │ )?⚒1(?: +MCP \d+  skills \d+)?$/;
   for (const row of [claude, f.render()[0], codex]) {
     assert.match(stripAnsi(row), shape);
     assert.ok(visualWidth(row) <= 120 && !row.includes('\n'), 'one row that fits');
@@ -285,19 +285,29 @@ test('Claude subagents read type + the call description; a finished one carries 
   assert.match(claudeBar([agents[0]!], 62), /│ ◐ frontend-implementer$/);
 });
 
-test('machine load is absent when unknown, displays known zeros and never cuts one count off', (t) => {
+test('machine load omits zeros and fits whole icon/count groups', (t) => {
   noColour(t);
   const bar = (work?: MachineWorkCounts, width = 80) => renderBar({ model: { name: 'M' }, work }, width, NOW).line;
   assert.equal(bar(), 'M');
-  assert.equal(bar({ running: 0, queued: 0 }), 'M │ HUD (OS): 0 running, 0 queued');
-  assert.equal(bar({ running: 0, queued: 2 }), 'M │ HUD (OS): 0 running, 2 queued');
-  assert.equal(bar({ running: 8, queued: 1 }, 25), 'M');
+  assert.equal(bar({ running: 0, queued: 0, roles: {} }), 'M');
+  assert.equal(bar({ running: 0, queued: 2, roles: {} }), 'M │ ◷2');
+  const count = (running: number) => ({ running, asking: 0 });
+  const work = { running: 19, queued: 2, roles: { sonic: count(4), unknown: count(1), other: count(2),
+    reviewer: count(1), oracle: count(1), general: count(2), imp: count(3), 'frontend-imp': count(5) } };
+  const roles = '⚒3  ✎5  ✦2  ◈1  ⚖1  •3  ⚡4';
+  assert.equal(bar(work), `M │ ${roles}  ◷2`);
+  const tight = `M │ ${roles.replaceAll('  ', ' ')}`;
+  assert.equal(bar(work, visualWidth(`${tight} ◷2`)), `${tight} ◷2`);
+  assert.equal(bar(work, visualWidth(tight)), tight);
+  assert.equal(bar(work, visualWidth(tight) - 1), 'M');
 });
+
+const twoWorkers = { running: 2, queued: 1, roles: { imp: { running: 2, asking: 0 } } };
 
 test('native approvals stay pinned before machine load; `N needs` when several do not fit', (t) => {
   noColour(t);
   const loaded = { counts: [['MCP', 4]] as const };
-  const work = { running: 2, queued: 1 };
+  const work = twoWorkers;
   const bar = (needs: string[], width: number) =>
     stripAnsi(
       renderBar(
@@ -307,16 +317,16 @@ test('native approvals stay pinned before machine load; `N needs` when several d
       ).line
     );
   const needs = ['Approve: Bash', 'Approve: Edit', 'Approve: Write'];
-  assert.match(bar(needs, 120), /│ ! Approve: Bash \+2 │ HUD \(OS\): 2 running, 1 queued +MCP 4$/);
-  assert.match(bar(needs.slice(0, 1), 120), /│ ! Approve: Bash │ HUD \(OS\): 2 running, 1 queued/);
-  assert.match(bar(needs, 45), /! 3 needs │ HUD \(OS\): 2 running, 1 queued$/);
+  assert.match(bar(needs, 120), /│ ! Approve: Bash \+2 │ ⚒2  ◷1 +MCP 4$/);
+  assert.match(bar(needs.slice(0, 1), 120), /│ ! Approve: Bash │ ⚒2  ◷1/);
+  assert.match(bar(needs, 25), /! 3 needs │ ⚒2 ◷1$/);
   assert.doesNotMatch(bar([], 120), /\bneeds\b|asks|!1/);
   setDisplayConfig({ theme: 'terminal' });
   const capsule = (width: number) =>
     stripAnsi(renderBar({ model: { name: 'M' }, needs, work }, width, NOW, 'p10k').line).replace(/[\ue0b0\ue0b2]/g, '');
-  assert.match(capsule(120), /! Approve: Bash \+2.*HUD \(OS\): 2 running, 1 queued/);
-  assert.match(capsule(24), /! 3 needs/);
-  assert.doesNotMatch(capsule(24), /HUD|running|queued/);
+  assert.match(capsule(120), /! Approve: Bash \+2.*⚒2  ◷1/);
+  assert.match(capsule(17), /! 3 needs/);
+  assert.doesNotMatch(capsule(17), /⚒|◷/);
 });
 
 /** The Claude subagent's events, as the statusline makes them. */
@@ -326,9 +336,9 @@ const claudeEvents = (a: { id: string; type: string; description: string; start:
 
 test('machine load and a Claude subagent appear side by side in both looks', (t) => {
   noColour(t);
-  const work = { running: 2, queued: 1 };
+  const work = twoWorkers;
   const sub = { id: 'a', type: 'Explore', description: 'Find where notices are made', start: NOW - 20_000 };
-  assert.match(claudeBar([sub], 200, NOW, work), /│ HUD \(OS\): 2 running, 1 queued │ ◐ Explore Find where notices are made/);
+  assert.match(claudeBar([sub], 200, NOW, work), /│ ⚒2  ◷1 │ ◐ Explore Find where notices are made/);
   for (const icons of ['unicode', 'text'] as const) {
     const previous = setDisplayConfig({ theme: 'terminal', icons, barFields: ['model', 'notice'] });
     t.after(() => setDisplayConfig(previous));
@@ -336,7 +346,7 @@ test('machine load and a Claude subagent appear side by side in both looks', (t)
       const row = stripAnsi(
         renderBar({ model: { name: 'M' }, work, events: claudeEvents(sub) }, 120, NOW, style).line
       );
-      assert.match(row, /HUD \(OS\): 2 running, 1 queued/, `${style}/${icons}`);
+      assert.ok(row.includes(icons === 'text' ? 'I2  Q1' : '⚒2  ◷1'), `${style}/${icons}`);
       assert.match(row, /◐ Explore/, `${style}/${icons}`);
     }
   }

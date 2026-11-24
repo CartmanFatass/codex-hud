@@ -279,13 +279,14 @@ test('pi footer prices provider-prefixed gateway model ids from the built-in cat
 });
 
 test('pi footer keeps the machine counts together and omits an unavailable census', (t) => {
-  const f = parityFixture({ name: 'machine-load', width: 120, work: { running: 5, queued: 2 } });
+  const work = { running: 5, queued: 2, roles: { imp: { running: 3, asking: 0 }, sonic: { running: 2, asking: 0 } } };
+  const f = parityFixture({ name: 'machine-load', width: 120, env: { HUD_ICONS: 'text' }, work });
   t.after(() => f.dispose());
-  assert.match(stripAnsi(f.render(160)[0]!), /│ HUD \(OS\): 5 running, 2 queued +MCP 2 +skills 3$/);
-  assert.match(stripAnsi(f.render(60)[0]!), /│ HUD \(OS\): 5 running, 2 queued *$/);
-  assert.doesNotMatch(stripAnsi(f.render(32)[0]!), /HUD|running|queued/);
+  assert.match(stripAnsi(f.render(160)[0]!), /│ I3  \*2  Q2 +MCP 2 +skills 3$/);
+  assert.match(stripAnsi(f.render(60)[0]!), /│ I3 +\*2 +Q2 *$/);
+  assert.doesNotMatch(stripAnsi(f.render(23)[0]!), /I3|\*2|Q2/);
   f.controller.setWork(undefined);
-  assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /HUD \(OS\)/);
+  assert.doesNotMatch(stripAnsi(f.render(120)[0]!), /I3|\*2|Q2/);
 });
 
 test('120 paced paints without proxy config read it once, and enabling or updating the proxy is picked up without restart', async (t) => {

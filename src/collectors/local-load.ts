@@ -3,14 +3,12 @@ import { readFileBounded, readJsonBounded, writeJsonPrivate } from '../utils/ato
 
 const SAMPLE = 'display/cpu-sample.v1.json';
 const MAX_AGE_MS = 30_000;
-const LOW_RAM_FRACTION = 0.10;
 
 export interface MemoryUse {
   usedKiB: number;
   totalKiB: number;
 }
 export interface LocalLoad {
-  scope: 'Linux' | 'WSL';
   cpu?: number;
   ram?: MemoryUse;
   swap?: MemoryUse;
@@ -61,7 +59,6 @@ export function collectLocalLoad(home: string, now: number, env = process.env): 
   if (process.platform !== 'linux' || !isAbsolute(root)) return;
   const release = procText(root, 'sys/kernel/osrelease', 256).trim();
   if (!release) return;
-  const scope = /microsoft|wsl/i.test(release) || env.WSL_INTEROP ? 'WSL' : 'Linux';
   const boot = procText(root, 'sys/kernel/random/boot_id', 64).trim();
   const current = boot && counters(procText(root, 'stat', 512, true));
   const cpu = current ? sampleCpu(join(home, SAMPLE), boot, current, now) : undefined;
@@ -72,13 +69,10 @@ export function collectLocalLoad(home: string, now: number, env = process.env): 
     return count(value) ? value : undefined;
   };
   const total = kib('MemTotal'), available = kib('MemAvailable');
-  let ram: MemoryUse | undefined, swap: MemoryUse | undefined;
-  if (total && available !== undefined && available <= total) {
-    ram = { usedKiB: total - available, totalKiB: total };
-    if (available / total < LOW_RAM_FRACTION) {
-      const swapTotal = kib('SwapTotal'), free = kib('SwapFree');
-      if (swapTotal && free !== undefined && free < swapTotal) swap = { usedKiB: swapTotal - free, totalKiB: swapTotal };
-    }
-  }
-  return cpu === undefined && !ram ? undefined : { scope, cpu, ram, swap };
+  const ram = total && available !== undefined && available <= total
+    ? { usedKiB: total - available, totalKiB: total } : undefined;
+  const swapTotal = kib('SwapTotal'), free = kib('SwapFree');
+  const swap = swapTotal && free !== undefined && free <= swapTotal
+    ? { usedKiB: swapTotal - free, totalKiB: swapTotal } : undefined;
+  return cpu === undefined && !ram && !swap ? undefined : { cpu, ram, swap };
 }

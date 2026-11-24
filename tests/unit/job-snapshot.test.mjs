@@ -75,8 +75,8 @@ test('passive pi status shows available machine readings and clears on stop', (t
   let timer, text;
   const { root, write } = syntheticProc(home);
   write('meminfo', 'MemTotal: 8388608 kB\nMemAvailable: 4194304 kB\n');
-  const ram = process.platform === 'linux' ? 'Linux: RAM 4.0/8.0 GiB' : undefined;
-  const segment = createPiSegment({ env: { HUD_HOME: home, HUD_STATUSLINE_PROC_ROOT: root },
+  const ram = process.platform === 'linux' ? 'M50%' : undefined;
+  const segment = createPiSegment({ env: { HUD_HOME: home, HUD_STATUSLINE_PROC_ROOT: root, HUD_ICONS: 'unicode', NO_COLOR: '1' },
     schedule(fn) { timer = fn; return () => {}; } });
   t.after(() => segment.stop());
   const ctx = { mode: 'tui', hasUI: true, ui: { setStatus(_key, value) { text = value; } } };
@@ -84,7 +84,7 @@ test('passive pi status shows available machine readings and clears on stop', (t
   assert.equal(text, ram);
   createWorkSummaryPublisher(home, 'hud-mcp').publish();
   timer();
-  assert.equal(text, ['HUD (OS): 0 running, 1 queued', ram].filter(Boolean).join(' │ '));
+  assert.equal(text, ['◷1', ram].filter(Boolean).join(' │ '));
   segment.stop();
   timer();
   assert.equal(text, undefined);

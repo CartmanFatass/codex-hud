@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { expNativePath, readExpNativeSeen } from '../collectors/exp-native.js';
 import { writePrivateFile, readFileBounded } from '../utils/atomic-fs.js';
 import { readMachineWork } from '../collectors/work-summary-snapshot.js';
+import { readBarSettings } from '../bar-settings.js';
 import { collectLocalLoad } from '../collectors/local-load.js';
-import { formatLocalLoad } from '../render/local-load.js';
+import { localLoadForms } from '../render/local-load.js';
 import { truncateAnsi } from '../render/colors.js';
 import { formatMachineWork } from '../render/work-summary.js';
 import { monitorText } from '../render/monitor-text.js';
@@ -72,7 +73,7 @@ function recordLastSeen(home: string, now: number): void {
   }
 }
 
-const text = (color: string, value: string) => ({ type: 'text', props: { color }, children: [value] });
+const text = (color: string | undefined, value: string) => ({ type: 'text', props: { color }, children: [value] });
 
 export function readCodexStatusline(meta: unknown, home: string, now = Date.now()) {
   const state = obj(obj(meta)?.['com.openai/codex-statusline-state']);
@@ -107,10 +108,17 @@ export function readCodexStatusline(meta: unknown, home: string, now = Date.now(
     children.push(text('status-limit', `${formatWindowLabel(minutes)} ${left}% left`));
   }
 
-  const work = readMachineWork(home, now);
-  if (work) children.push(text('status-state', formatMachineWork(work)));
-  const localLoad = collectLocalLoad(home, now);
-  if (localLoad) children.push(text('status-state', formatLocalLoad(localLoad)));
+  const work = readMachineWork(home, now), localLoad = collectLocalLoad(home, now);
+  if (work || localLoad) {
+    const settings = readBarSettings({ ...process.env, HUD_HOME: home });
+    const load = work && formatMachineWork(work, settings?.icons);
+    if (load) children.push(text('status-state', load));
+    // Codex paints UI tree text itself; use its named inks, not terminal escapes.
+    const colors = { info: 'status-usage', ok: 'status-limit', branch: 'status-model' };
+    for (const [value, role] of (localLoad && localLoadForms(localLoad)[0]) ?? []) {
+      if (role) children.push(text(settings?.theme === 'none' ? undefined : colors[role], value));
+    }
+  }
   const tree = { type: 'row', props: { gap: 2, wrap: 'nowrap' }, children };
   if (state) recordLastSeen(home, now);
   return { contents: [{ uri: URI, mimeType: MIME, text: JSON.stringify(tree) }] };

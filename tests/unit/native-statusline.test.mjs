@@ -96,16 +96,26 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
     fs.writeFileSync(file, JSON.stringify({ barStyle: style }));
     assert.deepEqual(rust(capsuleEnv, base), line, `retired ${style} renders as native line`);
   }
-  // The Icons setting may change presentation, but never the machine-load text.
-  const bar = (extra, icons) => {
+  // Saved and inherited icon sets are byte-identical, including the Nerd Font queue clock.
+  const bar = (icons) => {
     if (icons) fs.writeFileSync(file, JSON.stringify({ icons }), { mode: 0o600 });
     else fs.rmSync(file, { force: true });
-    const childEnv = { ...env, ...extra, NO_COLOR: '1', COLUMNS: '86' };
-    assert.deepEqual(rust(childEnv, base), ts(childEnv, base), `icons ${icons}`);
-    return ts(childEnv, base).toString();
+    const childEnv = { ...env, HUD_ICONS: icons ?? 'nerd', NO_COLOR: '1', COLUMNS: '160' };
+    const out = ts(childEnv, base);
+    assert.deepEqual(rust(childEnv, base), out, `icons ${icons}`);
+    assert.doesNotMatch(out.toString(), /\x1b/);
+    return out.toString();
   };
-  for (const icons of [undefined, 'unicode', 'text', 'emoji']) {
-    assert.match(bar({}, icons), /│ HUD \(OS\): 3 running, 1 queued/);
+  for (const [icons, expected] of [[undefined, '\uF0AD1  \uF0E72  \uF0171'], ['unicode', '⚒1  ⚡2  ◷1'],
+    ['text', 'I1  *2  Q1'], ['emoji', '⚒1  ⚡2  ◷1']]) {
+    const out = bar(icons);
+    assert.ok(out.includes(`│ ${expected}`), out);
+  }
+  fs.writeFileSync(file, JSON.stringify({ icons: 'unicode', theme: 'none', barFields: ['notice'] }));
+  for (const [width, expected] of [[12, '⚒1  ⚡2  ◷1'], [9, '⚒1 ⚡2 ◷1'], [6, '⚒1 ⚡2'], [5, '']]) {
+    const args = ['--width', String(width)];
+    assert.equal(rust(env, base, args).toString().trimEnd(), expected);
+    assert.deepEqual(rust(env, base, args), ts(env, base, args));
   }
   fs.rmSync(join(env.HUD_HOME, 'hud-settings.json'), { force: true });
   const exact = Buffer.from(JSON.stringify(base).padEnd(65536, ' '));
@@ -114,51 +124,49 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
 });
 
 test('Claude processes share a private CPU sample and show RAM and swap only as observed', { skip: process.platform !== 'linux' }, (t) => {
-  const home = receipt(t), env = { ...environment(home), NO_COLOR: '1' };
-  setup(env.HUD_HOME);
+  const home = receipt(t), env = { ...environment(home), NO_COLOR: '1', HUD_BAR_FIELDS: 'notice' };
+  setup(env.HUD_HOME).write({ global: { running: 0, asking: 0, queued: 0, roles: {} } });
   const { write } = syntheticProc(home, '6.6.0-microsoft-standard-WSL2');
   const sample = join(env.HUD_HOME, 'display/cpu-sample.v1.json');
   const input = { model: { display_name: 'Synthetic' } };
   const render = (renderer = ts, width = 160) => renderer(env, input, ['--width', String(width)]).toString();
-  const mem = (available, free = 0) => write('meminfo',
-    `MemTotal: 8388608 kB\nMemAvailable: ${available} kB\nSwapTotal: 1048576 kB\nSwapFree: ${free} kB\n`);
+  const mem = (free) => write('meminfo',
+    `MemTotal: 8388608 kB\nMemAvailable: 2097152 kB\nSwapTotal: 4194304 kB\nSwapFree: ${free} kB\n`);
 
   mem(4194304);
   write('stat', `cpu  100 20 40 800 10 5 5 20 30 4\n${'cpu0 0 0 0 0\n'.repeat(80)}`);
   const first = render();
-  assert.match(first, /WSL: RAM 4\.0\/8\.0 GiB/);
-  assert.doesNotMatch(first, /CPU|swap/);
+  assert.equal(first.trimEnd(), 'M75%');
   assert.equal(fs.statSync(sample).mode & 0o777, 0o600);
 
-  // +30 busy ticks, +70 idle (including iowait); the guest time is already in user/nice.
-  write('stat', 'cpu  115 25 47 860 20 6 6 21 40 6\n');
-  mem(419430);
+  // +12 busy ticks, +88 idle (including iowait); guest time is already in user/nice.
+  write('stat', 'cpu  112 20 40 878 20 5 5 20 40 6\n');
+  mem(3355443); // 0.8/4 GiB; shown even though 25% of RAM is available.
   const second = render(hasNative ? rust : ts);
-  assert.match(second, /WSL: CPU 30% RAM 7\.6\/8\.0 GiB swap 1\.0\/1\.0 GiB/);
-  write('stat', 'cpu  145 25 47 930 20 6 6 21 40 6\n');
+  assert.equal(second.trimEnd(), 'C12%  M75%  S20%');
+  write('stat', 'cpu  124 20 40 966 20 5 5 20 40 6\n');
   const third = render();
   assert.equal(third, second, 'TypeScript and native use the same sample format and text');
-  const narrow = render(hasNative ? rust : ts, 85);
-  assert.match(narrow, /WSL: RAM 7\.6\/8\.0 GiB/);
-  assert.doesNotMatch(narrow, /swap/);
+  assert.equal(render(hasNative ? rust : ts, 9).trimEnd(), 'M75% S20%');
+  assert.equal(render(hasNative ? rust : ts, 8).trimEnd(), 'M75%');
 
   const prior = JSON.parse(fs.readFileSync(sample, 'utf8'));
   fs.writeFileSync(sample, JSON.stringify({ ...prior, at: Date.now() - 31_000 }));
-  write('stat', 'cpu  175 25 47 1000 20 6 6 21 40 6\n');
-  mem(419430, 1048576);
   const afterGap = render(hasNative ? rust : ts);
-  assert.match(afterGap, /WSL: RAM 7\.6\/8\.0 GiB/);
-  assert.doesNotMatch(afterGap, /CPU|swap/, 'stale CPU and unused swap are omitted');
+  assert.equal(afterGap.trimEnd(), 'M75%  S20%', 'stale CPU is omitted');
 
-  fs.rmSync(sample);
-  write('meminfo', 'MemTotal: 10485760 kB\nMemAvailable: 1048576 kB\nSwapTotal: 1048576 kB\nSwapFree: 0 kB\n');
-  const atThreshold = render(hasNative ? rust : ts);
-  assert.match(atThreshold, /WSL: RAM 9\.0\/10\.0 GiB/);
-  assert.doesNotMatch(atThreshold, /CPU|swap/, 'no prior sample, and exactly 10% RAM available is not pressure');
+  mem(3984589); // 0.2/4 GiB; below the 10% display threshold.
+  env.HUD_ICONS = 'text';
+  write('stat', 'cpu  136 20 40 1054 20 5 5 20 40 6\n');
+  assert.equal(render(hasNative ? rust : ts).trimEnd(), 'C12%  M75%');
   if (hasNative) {
     delete env.NO_COLOR;
     env.HUD_BAR_STYLE = 'p10k';
-    assert.equal(render(rust), render(ts), 'local load also matches in capsules');
+    mem(3355443);
+    const capsule = render(rust);
+    assert.equal(capsule, render(ts), 'local load also matches in capsules');
+    assert.match(capsule, /\x1b\[32mM75%/);
+    assert.match(capsule, /\x1b\[35mS20%/);
   }
 });
 
@@ -178,7 +186,7 @@ test('Claude shows the same machine counts inside herdr, outside herdr and in an
       return stdout;
     };
     const outside = await render();
-    assert.match(outside.toString(), /HUD \(OS\): 3 running, 1 queued/);
+    assert.match(outside.toString(), /\uF0AD1  \uF0E72  \uF0171/);
     assert.deepEqual(outside, await render('synthetic-pane'));
     assert.deepEqual(outside, await render('empty-pane'));
   }

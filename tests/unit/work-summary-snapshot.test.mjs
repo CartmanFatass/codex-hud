@@ -18,7 +18,7 @@ import {
 import { createPiSegment } from '../../dist/harness/pi/segment.js';
 import { readCodexStatusline } from '../../dist/mcp/codex-statusline.js';
 import { fitStatusBar } from '../../dist/render/header.js';
-import { stripAnsi } from '../../dist/render/colors.js';
+import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { DEFAULT_LAYOUT } from '../../dist/types.js';
 import { makeHudData } from '../../dist-test/fixtures/hud-data.js';
 import { parityFixture } from '../../dist-test/fixtures/pi-footer.js';
@@ -250,7 +250,7 @@ test('pi reads a fresh machine census without scanning jobs and omits it when th
   const ctx = { mode: 'tui', hasUI: true, ui: { setStatus(_k, v) { lastStatus = v; } } };
   segment.start(ctx, () => true);
   assert.equal(lastStatus, undefined, 'the owned footer already shows the load');
-  assert.deepEqual(signalsLog.at(-1), { running: 1, queued: 0 });
+  assert.deepEqual(signalsLog.at(-1), { running: 1, queued: 0, roles: { imp: { running: 1, asking: 0 } } });
   assert.equal(jobsScans, 0, 'fresh snapshot path must not enumerate jobs/');
 
   // Update job -> watcher updates snapshot -> segment picks it up without scanning jobs/.
@@ -258,7 +258,7 @@ test('pi reads a fresh machine census without scanning jobs and omits it when th
   await waitFor(() => readFreshWorkSummary(home, PANE_A)?.scope.asking === 1);
   timer();
   assert.equal(lastStatus, undefined);
-  assert.deepEqual(signalsLog.at(-1), { running: 1, queued: 0 }, 'asking keeps the worker live but is not an owner count');
+  assert.deepEqual(signalsLog.at(-1), { running: 1, queued: 0, roles: { imp: { running: 1, asking: 1 } } });
   assert.equal(jobsScans, 0);
 
   child.kill('SIGTERM');
@@ -268,15 +268,24 @@ test('pi reads a fresh machine census without scanning jobs and omits it when th
   assert.equal(jobsScans, 0, 'do not substitute a pane scan for stale machine data');
 });
 
-test('Claude, pi and Codex show the same machine counts in both projects and an idle pane', (t) => {
+test('Claude, Antigravity, pi and Codex show identical per-role load in every pane', (t) => {
   const { home, addJob } = makeFixture(t);
-  const asking = addJob();
-  writePrivateFile(join(asking.dir, 'qa', 'q1.md'), '# Synthetic question for main');
-  addJob({ pane: PANE_B, project: '/synthetic/second' });
-  const queued = addJob({ pane: PANE_B, project: '/synthetic/second', status: { state: 'queued' } });
+  const previous = setDisplayConfig({});
+  t.after(() => setDisplayConfig(previous));
+  const workers = Object.entries({ imp: 3, general: 2, oracle: 1, sonic: 4 }).flatMap(([role, n]) =>
+    Array.from({ length: n }, (_, i) => addJob(i ? { role, pane: PANE_B, project: '/synthetic/second' } : { role })));
+  writePrivateFile(join(workers[0].dir, 'qa', 'q1.md'), '# Synthetic question for main');
+  const queued = [addJob({ status: { state: 'queued' } }), addJob({ status: { state: 'queued' } })];
   const publisher = createWorkSummaryPublisher(home, 'hud-watch');
   writePrivateFile(join(home, 'watch.pid'), `${process.pid}\n`);
   const panes = [PANE_A, PANE_B, 'idle-pane'];
+  const procRoot = join(home, 'missing-proc');
+  const oldProcRoot = process.env.HUD_STATUSLINE_PROC_ROOT;
+  process.env.HUD_STATUSLINE_PROC_ROOT = procRoot;
+  t.after(() => {
+    if (oldProcRoot === undefined) delete process.env.HUD_STATUSLINE_PROC_ROOT;
+    else process.env.HUD_STATUSLINE_PROC_ROOT = oldProcRoot;
+  });
   const clients = panes.map((pane, i) => {
     const env = { ...process.env, HOME: home, HUD_HOME: home, HERDR_PANE_ID: pane, NO_COLOR: '1' };
     const footer = parityFixture({ name: `machine-work-${i}`, width: 160, env: { HUD_HOME: home, HERDR_PANE_ID: pane, NO_COLOR: '1' } });
@@ -285,27 +294,46 @@ test('Claude, pi and Codex show the same machine counts in both projects and an 
     segment.start(footer.ctx, () => true);
     t.after(() => { segment.stop(); footer.dispose(); });
     return () => {
+      footer.controller.settled();
       segment.refresh();
-      const claude = spawnSync(process.execPath, [resolve('bin/hud-statusline'), '--width', '160'], {
-        env, encoding: 'utf8', input: JSON.stringify({ model: { display_name: 'Synthetic Claude' } }), timeout: 5000,
-      });
-      assert.equal(claude.status, 0, claude.stderr);
+      const render = (cmd, args, input) => {
+        const result = spawnSync(cmd, [...args, '--width', '160'], {
+          env, encoding: 'utf8', input: JSON.stringify(input), timeout: 5000,
+        });
+        assert.equal(result.status, 0, result.stderr);
+        return result.stdout;
+      };
+      const input = { model: { display_name: 'Synthetic' } };
+      const cli = [resolve('bin/hud-statusline')];
+      const claude = render(process.execPath, cli, input);
+      const agy = render(process.execPath, cli, { ...input, product: 'antigravity' });
+      const native = resolve('dist/native/hud-statusline');
+      if (fs.existsSync(native)) assert.equal(render(native, [], input), claude);
       const codexNative = JSON.parse(readCodexStatusline({}, home).contents[0].text).children.map((node) => node.children.join('')).join(' ');
       const codexBar = fitStatusBar(makeHudData({ work: readMachineWork(home, Date.now()) }), DEFAULT_LAYOUT, 160).line;
-      return [claude.stdout, footer.render()[0], codexNative, codexBar];
+      return [claude, agy, footer.render()[0], codexNative, codexBar];
     };
   });
-  const assertCounts = (running, waiting) => {
-    assert.equal(publisher.publish({ watching: true }), true);
+  const assertCounts = (icons, expected) => {
+    writePrivateFile(join(home, 'hud-settings.json'), JSON.stringify({ icons, theme: 'none' }));
     assert.equal(readFreshWorkSummary(home, panes[2]).scope.running, 0);
     for (const render of clients) for (const line of render()) {
-      assert.ok(stripAnsi(line).includes(`HUD (OS): ${running} running, ${waiting} queued`), line);
-      assert.doesNotMatch(stripAnsi(line), /!1|needs you|asks/);
+      if (expected) assert.ok(line.includes(expected), line);
+      else assert.doesNotMatch(line, /⚒|✦|◈|⚡|◷/);
+      assert.doesNotMatch(line, /\x1b|!1|needs you|asks/);
     }
   };
-  assertCounts(2, 1);
-  queued.setStatus({ state: 'working' });
-  assertCounts(3, 0);
+  assert.equal(publisher.publish({ watching: true }), true);
+  assertCounts('unicode', '⚒3  ✦2  ◈1  ⚡4  ◷2');
+  assertCounts('text', 'I3  G2  O1  *4  Q2');
+  const close = (jobs) => {
+    for (const job of jobs) job.setStatus({ state: 'closed' });
+    assert.equal(publisher.publish({ watching: true }), true);
+  };
+  close(queued);
+  assertCounts('unicode', '⚒3  ✦2  ◈1  ⚡4');
+  close(workers);
+  assertCounts('unicode', '');
 });
 
 test('hud-mcp updates work-summary.v1.json on hud_respond without overriding a fresh matching hud-watch snapshot', { timeout: 15_000 }, async (t) => {

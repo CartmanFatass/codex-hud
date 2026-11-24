@@ -1,10 +1,10 @@
 import { getHudHome } from '../hud-home.js';
-import { formatMachineWork } from '../render/work-summary.js';
+import { fitMachineWork } from '../render/work-summary.js';
 import { readMachineWork } from '../collectors/work-summary-snapshot.js';
 import { collectLocalLoad } from '../collectors/local-load.js';
 import { fitLocalLoad } from '../render/local-load.js';
 import { fileURLToPath } from 'node:url';
-import { truncateAnsi, visualLength } from '../render/colors.js';
+import { truncateAnsi } from '../render/colors.js';
 import { statuslinePreview } from '../statusline-preview.js';
 import { applyBarSettings } from '../bar-settings.js';
 import { renderStatuslineSession, type StatuslineSessionOptions } from '../render/statusline-session.js';
@@ -155,7 +155,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, agyM
           width = Math.max(1, Math.min(500, terminal - (parity?.widthMargin ?? 0)));
         const home = getHudHome(io.env), now = Date.now();
         const work = readMachineWork(home, now), localLoad = collectLocalLoad(home, now, io.env);
-        if (!options.details) applyBarSettings();
+        applyBarSettings(io.env);
         const frame = renderAntigravity(input, width, options, work, localLoad);
         return agyMode === 'cache' ? `hud-statusline-v1:${frame}` : frame;
       }
@@ -164,13 +164,10 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, agyM
       recordClaudeQuota(value, io.env, now);
       const home = getHudHome(io.env);
       const work = readMachineWork(home, now), localLoad = collectLocalLoad(home, now, io.env);
-      if (!options.details) {
-        applyBarSettings();
-        return collectAndRenderParity(value, width, parity, io.env, now, work, localLoad);
-      }
+      applyBarSettings(io.env);
+      if (!options.details) return collectAndRenderParity(value, width, parity, io.env, now, work, localLoad);
       const first = renderStatuslineSession(value, width, options);
-      const load = work ? formatMachineWork(work) : '';
-      return [first, load && visualLength(load) <= width ? load : undefined, fitLocalLoad(localLoad, width)]
+      return [first, fitMachineWork(work, width), fitLocalLoad(localLoad, width)]
         .filter(Boolean).join('\n');
     },
   });

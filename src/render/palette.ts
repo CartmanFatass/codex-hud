@@ -460,8 +460,8 @@ const PALETTES: Record<ThemeName, Palette> = {
   none: NONE,
 };
 
-export function palette(): Palette {
-  return PALETTES[displayConfig().theme] ?? TERMINAL;
+export function palette(name = displayConfig().theme): Palette {
+  return PALETTES[name] ?? TERMINAL;
 }
 
 /**

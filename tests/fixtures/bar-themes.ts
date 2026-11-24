@@ -10,7 +10,7 @@ import { setDisplayConfig, BAR_FIELDS, type BarStyle } from '../../dist/render/h
 
 export const THEME_NOW = FOOTER_NOW;
 
-const WORK = { running: 3, queued: 1 };
+const WORK = { running: 3, queued: 1, roles: { imp: { running: 2, asking: 1 }, sonic: { running: 1, asking: 0 } } };
 export function barThemeScene() {
   const footer = parityFixture({ name: 'bar-themes', width: 120, env: { NO_COLOR: '' } });
   footer.ctx.model!.id = 'deepseek-v4-1-flash-1017';

@@ -70,12 +70,15 @@ const vitals: BarFacts = {
     ],
   },
 };
-const BUSY_WORK = { running: 8, queued: 2 };
+const BUSY_WORK = { running: 8, queued: 2, roles: {
+  imp: { running: 3, asking: 1 }, general: { running: 2, asking: 0 },
+  oracle: { running: 1, asking: 0 }, sonic: { running: 2, asking: 0 },
+} };
 const sub = agentEvent('started', { id: 'a', name: 'Explore', title: 'Audit bar fitting ladder' }, THEME_NOW - 10_000);
 /** Idle; one worker running; the sample's eight workers; those and a subagent that just started. */
 const WIDTH_SCENES: Record<string, BarFacts> = {
   quiet: vitals,
-  one: { ...vitals, work: { running: 1, queued: 0 } },
+  one: { ...vitals, work: { running: 1, queued: 0, roles: { imp: { running: 1, asking: 0 } } } },
   busy: { ...vitals, work: BUSY_WORK },
   mixed: { ...vitals, work: BUSY_WORK, events: [sub] },
 };

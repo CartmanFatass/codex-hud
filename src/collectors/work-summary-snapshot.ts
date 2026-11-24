@@ -22,7 +22,7 @@ export type WorkSummaryProducer = 'hud-watch' | 'hud-mcp';
 /** Live workers of one role: `asking` is the subset of `running` waiting on main. */
 export interface WorkSummaryRoleCounts { running: number; asking: number; }
 export interface WorkSummaryScope { running: number; asking: number; roles: Record<string, WorkSummaryRoleCounts>; }
-export interface MachineWorkCounts { running: number; queued: number; }
+export interface MachineWorkCounts extends Pick<WorkSummaryScope, 'running' | 'roles'> { queued: number; }
 export interface WorkSummarySnapshot {
   version: 1;
   producer: WorkSummaryProducer;
@@ -152,7 +152,7 @@ export function readFreshWorkSummary(home: string, pane: string | null, now = Da
 /** Display only a complete, fresh machine census, never a pane-local substitute. */
 export function readMachineWork(home: string, now: number): MachineWorkCounts | undefined {
   const global = readFreshWorkSummary(home, null, now)?.snapshot.global;
-  return global && { running: global.running, queued: global.queued };
+  return global && { running: global.running, queued: global.queued, roles: global.roles };
 }
 
 export function createWorkSummaryPublisher(home: string, producer: WorkSummaryProducer, cache: JobIndexCache = getJobIndexCache(home)) {

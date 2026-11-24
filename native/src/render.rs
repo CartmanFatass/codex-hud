@@ -19,6 +19,7 @@ enum Role {
     Ok,
     Warn,
     Bad,
+    Info,
     Usage,
     High,
     Lead,
@@ -269,6 +270,7 @@ fn paint(role: Role, s: &str, theme: &str, mark: Option<u8>) -> String {
                     Ok => "32",
                     Warn => "33",
                     Bad => "31",
+                    Info => "36",
                     _ => unreachable!(),
                 },
                 s,
@@ -634,15 +636,43 @@ fn quota(input: &Value, now: f64) -> Option<Segment> {
         vec![form(true, true), form(false, true), form(false, false)],
     ))
 }
-fn machine_load(work: MachineWork) -> Segment {
-    Segment::new(
-        Field::Notice,
-        (110, 235),
-        vec![vec![piece(
-            format!("HUD (OS): {} running, {} queued", work.running, work.queued),
-            ValueRole,
-        )]],
-    )
+// Keep in sync with ROLE_GLYPHS in src/render/model-glyphs.ts.
+const ROLE_GLYPHS: [(&str, [&str; 3]); 7] = [
+    ("imp", ["⚒", "I", "\u{F0AD}"]),
+    ("frontend-imp", ["✎", "F", "\u{F1FC}"]),
+    ("general", ["✦", "G", "\u{F013}"]),
+    ("oracle", ["◈", "O", "\u{F0EB}"]),
+    ("reviewer", ["⚖", "R", "\u{F002}"]),
+    ("other", ["•", ".", "•"]),
+    ("sonic", ["⚡", "*", "\u{F0E7}"]),
+];
+fn machine_load(work: MachineWork, display: &Display) -> Option<Segment> {
+    let set = display.icon_index();
+    let mut counts = [0; ROLE_GLYPHS.len()];
+    for (role, count) in work.roles {
+        let index = ROLE_GLYPHS.iter().position(|(name, _)| *name == role);
+        counts[index.unwrap_or(5)] += count; // Unknown roles use `other`.
+    }
+    let mut groups: Vec<_> = ROLE_GLYPHS
+        .iter()
+        .zip(counts)
+        .filter(|(_, count)| *count > 0)
+        .map(|((_, glyphs), count)| format!("{}{count}", glyphs[set]))
+        .collect();
+    let roles = groups.join(" ");
+    if work.queued > 0 {
+        groups.push(format!("{}{}", ["◷", "Q", "\u{F017}"][set], work.queued));
+    }
+    (!groups.is_empty()).then(|| {
+        Segment::new(
+            Field::Notice,
+            (110, 235),
+            [groups.join("  "), groups.join(" "), roles]
+                .into_iter()
+                .map(|text| vec![piece(text, ValueRole)])
+                .collect(),
+        )
+    })
 }
 
 // JS's `toPrecision(1)` is used only for tiny, positive transcript rates.
@@ -669,7 +699,13 @@ pub struct Evidence<'a> {
     pub local_load: Option<&'a LocalLoad>,
     pub mcp: u64,
 }
-pub fn supports_bar(input: &Value, t: &Value, policy: &Policy, display: &Display, now: f64) -> bool {
+pub fn supports_bar(
+    input: &Value,
+    t: &Value,
+    policy: &Policy,
+    display: &Display,
+    now: f64,
+) -> bool {
     let visible_notice = display.fields[5];
     // Recent detailed events use the reference renderer (locale sorting and word wrapping). Silent/expired events
     // do not prevent the compact snapshot, vitals, transcript TPS and loaded counts from taking the fast path.
@@ -725,7 +761,7 @@ pub fn bar(
                 vec![vec![piece(format!("~{} t/s", tps_number(n)), ValueRole)]],
             )
         }),
-        Some(machine_load(e.work)),
+        machine_load(e.work, display),
         None,
     ]
     .into_iter()
@@ -733,12 +769,35 @@ pub fn bar(
     .filter_map(|(seg, on)| if on { seg } else { None })
     .collect();
     if let Some(load) = e.local_load.filter(|_| display.fields[5]) {
-        let forms = load
-            .forms()
-            .into_iter()
-            .map(|text| vec![piece(text, ValueRole)])
-            .collect();
-        list.push(Segment::new(Field::LocalLoad, (110, 235), forms));
+        let readings = load.readings();
+        let form = |gap, limit| {
+            let mut pieces = Vec::new();
+            for ((letter, role), value) in [('C', Info), ('M', Ok), ('S', Branch)]
+                .into_iter()
+                .zip(readings)
+                .take(limit)
+            {
+                if let Some(value) = value {
+                    if !pieces.is_empty() {
+                        pieces.push(piece(gap, Plain));
+                    }
+                    pieces.push(piece(format!("{letter}{value}%"), role));
+                }
+            }
+            pieces
+        };
+        if readings.iter().any(Option::is_some) {
+            let back = if matches!(display.theme.as_str(), "latte" | "paper") {
+                255
+            } else {
+                235
+            };
+            list.push(Segment::new(
+                Field::LocalLoad,
+                (back, 235),
+                vec![form("  ", 3), form(" ", 3), form(" ", 2)],
+            ));
+        }
     }
     if display.fields[6] {
         let skills = if policy.skills {
@@ -806,9 +865,17 @@ fn fit(mut list: Vec<Segment>, display: &Display, width: usize) -> String {
         Some(Project),
         Some(Context),
         Some(Notice),
+        Some(Notice),
     ]
     .into_iter();
     let load = list.iter().any(|s| s.field == Notice);
+    for field in [Notice, LocalLoad] {
+        if total(&list) > width {
+            if let Some(seg) = list.iter_mut().find(|s| s.field == field) {
+                seg.at = 1;
+            }
+        }
+    }
     while total(&list) > width {
         match ladder.next() {
             Some(Some(id)) => {
@@ -833,11 +900,14 @@ fn fit(mut list: Vec<Segment>, display: &Display, width: usize) -> String {
             None => break,
         }
     }
-    let draw = |seg: &Segment| {
+    let draw = |seg: &Segment, backing: &str| {
         seg.parts(cap)
             .map(|p| {
                 if !cap {
                     paint(p.role, &p.text, &display.theme, seg.mark)
+                } else if seg.field == LocalLoad {
+                    paint(p.role, &p.text, &display.theme, None)
+                        .replace(RESET, &format!("{RESET}{backing}"))
                 } else if p.role == Lead && seg.mark.is_some() {
                     format!("{}{}{}", fg(seg.mark.unwrap()), p.text, fg(seg.ink.1))
                 } else {
@@ -855,17 +925,13 @@ fn fit(mut list: Vec<Segment>, display: &Display, width: usize) -> String {
                 out.push_str(&format!("{}{}\u{e0b0}", bg(back), fg(old)));
             }
             before = Some(back);
-            out.push_str(&format!(
-                "{}{} {} {RESET}",
-                bg(back),
-                fg(seg.ink.1),
-                draw(seg)
-            ));
+            let backing = format!("{}{}", bg(back), fg(seg.ink.1));
+            out.push_str(&format!("{backing} {} {RESET}", draw(seg, &backing)));
         } else {
             if !out.is_empty() {
                 out.push_str(&paint(Dim, " │ ", &display.theme, None));
             }
-            out.push_str(&draw(seg));
+            out.push_str(&draw(seg, ""));
         }
     }
     if let Some(old) = before.filter(|_| arrow != 0) {
@@ -884,14 +950,15 @@ fn fit(mut list: Vec<Segment>, display: &Display, width: usize) -> String {
                 "{}{} {} {RESET}",
                 bg(tail.ink.0),
                 fg(tail.ink.1),
-                draw(tail)
+                draw(tail, "")
             ));
         } else {
-            out.push_str(&draw(tail));
+            out.push_str(&draw(tail, ""));
         }
     }
+    let reset = if display.theme == "none" { "" } else { RESET };
     if visual_width(&out) > width {
-        out = truncate(&out, width) + RESET;
+        out = truncate(&out, width) + reset;
     }
-    format!("{RESET}{out}")
+    format!("{reset}{out}")
 }

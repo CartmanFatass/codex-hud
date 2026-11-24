@@ -4,7 +4,6 @@ use std::{io::Read, path::Path};
 
 const SAMPLE: &str = "display/cpu-sample.v1.json";
 const MAX_AGE_MS: u64 = 30_000;
-const LOW_RAM_FRACTION: f64 = 0.10;
 
 struct Counters {
     busy: u64,
@@ -75,38 +74,26 @@ struct Memory {
     total: u64,
 }
 impl Memory {
-    fn text(&self) -> String {
-        let gib = |kib: u64| (kib as f64 / 1048576. * 10.).round() / 10.;
-        format!("{:.1}/{:.1} GiB", gib(self.used), gib(self.total))
+    fn percent(&self) -> f64 {
+        self.used as f64 / self.total as f64 * 100.
     }
 }
 pub struct LocalLoad {
-    scope: &'static str,
     cpu: Option<u64>,
     ram: Option<Memory>,
     swap: Option<Memory>,
 }
 impl LocalLoad {
-    pub fn forms(&self) -> Vec<String> {
-        let short = self.text(false);
-        if self.swap.is_some() {
-            vec![self.text(true), short]
-        } else {
-            vec![short]
-        }
-    }
-    fn text(&self, show_swap: bool) -> String {
-        let mut values = vec![];
-        if let Some(cpu) = self.cpu {
-            values.push(format!("CPU {cpu}%"));
-        }
-        if let Some(ram) = &self.ram {
-            values.push(format!("RAM {}", ram.text()));
-        }
-        if let Some(swap) = self.swap.as_ref().filter(|_| show_swap) {
-            values.push(format!("swap {}", swap.text()));
-        }
-        format!("{}: {}", self.scope, values.join(" "))
+    pub fn readings(&self) -> [Option<u64>; 3] {
+        let rounded = |n: &Memory| n.percent().round() as u64;
+        [
+            self.cpu,
+            self.ram.as_ref().map(rounded),
+            self.swap
+                .as_ref()
+                .filter(|swap| swap.percent() >= 10.)
+                .map(rounded),
+        ]
     }
 }
 pub fn collect(home: &Path, now: f64) -> Option<LocalLoad> {
@@ -115,20 +102,12 @@ pub fn collect(home: &Path, now: f64) -> Option<LocalLoad> {
     if !root.is_absolute() || !cfg!(target_os = "linux") {
         return None;
     }
-    let release = proc_text(root, "sys/kernel/osrelease", 256, false)?
+    if proc_text(root, "sys/kernel/osrelease", 256, false)?
         .trim()
-        .to_ascii_lowercase();
-    if release.is_empty() {
+        .is_empty()
+    {
         return None;
     }
-    let scope = if release.contains("microsoft")
-        || release.contains("wsl")
-        || state::env("WSL_INTEROP").is_some_and(|s| !s.is_empty())
-    {
-        "WSL"
-    } else {
-        "Linux"
-    };
     let cpu = (|| {
         let boot = proc_text(root, "sys/kernel/random/boot_id", 64, false)?;
         let boot = boot.trim();
@@ -156,18 +135,9 @@ pub fn collect(home: &Path, now: f64) -> Option<LocalLoad> {
         })
     })();
     let swap = (|| {
-        let ram = ram.as_ref()?;
-        if (ram.total - ram.used) as f64 / ram.total as f64 >= LOW_RAM_FRACTION {
-            return None;
-        }
-        let total = kib("SwapTotal:")?;
+        let total = kib("SwapTotal:").filter(|&x| x > 0)?;
         let used = total.checked_sub(kib("SwapFree:")?)?;
-        (used > 0).then_some(Memory { used, total })
+        Some(Memory { used, total })
     })();
-    (cpu.is_some() || ram.is_some()).then_some(LocalLoad {
-        scope,
-        cpu,
-        ram,
-        swap,
-    })
+    (cpu.is_some() || ram.is_some() || swap.is_some()).then_some(LocalLoad { cpu, ram, swap })
 }

@@ -1,6 +1,7 @@
 /** Claude's statusline: the facts the owner has read in claude-hud 0.8.0 (MIT; see NOTICE), now one line from the shared
  * bar builder (`render/layout/bar-fields.ts`). Pure: all disk/process evidence and clocks are supplied. */
 import { monitorText } from '../render/monitor-text.js';
+import { displayConfig } from '../render/hud-config.js';
 import * as bar from '../render/layout/bar-fields.js';
 import { shortModel } from '../render/providers.js';
 import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
@@ -125,5 +126,6 @@ export function renderParity(
       ],
     },
   };
-  return RESET + bar.renderBar(facts, width, now).line;
+  const reset = displayConfig().theme === 'none' ? '' : RESET;
+  return reset + bar.renderBar(facts, width, now).line;
 }

@@ -107,12 +107,13 @@ test('Antigravity shows local readings in its bar and details', { skip: process.
   delete env.WSL_INTEROP;
   const { write } = syntheticProc(home);
   write('meminfo', 'MemTotal: 8388608 kB\nMemAvailable: 2097152 kB\n');
-  assert.equal(await run(payload), `${wide} │ Linux: RAM 6.0/8.0 GiB`);
-  assert.match(await run(payload, ['--details']), /\nLinux: RAM 6\.0\/8\.0 GiB$/);
+  assert.equal(await run(payload), `${wide} │ M75%`);
+  assert.match(await run(payload, ['--details']), /\nM75%$/);
 });
 
 test('Antigravity draws machine-wide counts, including long-running jobs outside the caller pane', async (t) => {
-  const { hud, run } = fixture(t);
+  const { hud, run, env } = fixture(t);
+  env.HUD_ICONS = 'unicode';
   const publisher = createWorkSummaryPublisher(hud, 'hud-watch');
   fs.writeFileSync(join(hud, 'watch.pid'), `${process.pid}\n`);
   const pane = 'w4E:p1', id = 'j0000000000000001';
@@ -126,8 +127,8 @@ test('Antigravity draws machine-wide counts, including long-running jobs outside
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', started_at: ago(1800) }));
   fs.writeFileSync(join(dir, 'brief.md'), '# Secret heading');
   assert.equal(publisher.publish({ watching: true }), true);
-  assert.equal(await run(payload), `${wide} │ HUD (OS): 1 running, 0 queued`);
-  assert.match(await run(payload, ['--details']), /\nHUD \(OS\): 1 running, 0 queued$/);
+  assert.equal(await run(payload), `${wide} │ ⚒1`);
+  assert.match(await run(payload, ['--details']), /\n⚒1$/);
   // A job settled seconds ago, report unread, is not counted: only the running one is.
   const done = 'j0000000000000002', doneDir = join(hud, 'jobs', done);
   fs.mkdirSync(doneDir, { recursive: true });
@@ -138,10 +139,10 @@ test('Antigravity draws machine-wide counts, including long-running jobs outside
   fs.writeFileSync(join(doneDir, 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: ago(10) }));
   fs.writeFileSync(join(doneDir, 'report.md'), 'Done.');
   assert.equal(publisher.publish({ watching: true }), false);
-  assert.equal(await run(payload), `${wide} │ HUD (OS): 1 running, 0 queued`);
+  assert.equal(await run(payload), `${wide} │ ⚒1`);
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: ago(5) }));
   assert.equal(publisher.publish({ watching: true }), true);
-  assert.equal(await run(payload), `${wide} │ HUD (OS): 0 running, 0 queued`);
+  assert.equal(await run(payload), wide);
 });
 
 test('Antigravity quota follows the model id or display name without falling back to another family', async (t) => {

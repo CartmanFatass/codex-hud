@@ -96,7 +96,7 @@ test('bar settings readers keep line and p10k, and load retired or unknown style
   );
 });
 
-test('the saved Icons setting does not change the machine counts text', (t) => {
+test('the saved Icons setting changes the machine counts glyphs', (t) => {
   const previous = setDisplayConfig({});
   t.after(() => setDisplayConfig(previous));
   const home = mkdtempSync(join(tmpdir(), 'bar-icons-'));
@@ -108,12 +108,28 @@ test('the saved Icons setting does not change the machine counts text', (t) => {
     if (old === undefined) delete process.env.HUD_SETTINGS_PATH;
     else process.env.HUD_SETTINGS_PATH = old;
   });
-  for (const icons of ['nerd', 'unicode', 'text']) {
+  const work = { running: 3, queued: 1, roles: { imp: { running: 3, asking: 0 } } };
+  for (const [icons, expected] of [['nerd', '\uF0AD3  \uF0171'], ['unicode', '⚒3  ◷1'], ['text', 'I3  Q1']]) {
     writeFileSync(file, JSON.stringify({ icons }));
     applyBarSettings();
-    const row = renderBar({ model: { name: 'M' }, work: { running: 3, queued: 1 } }, 80, THEME_NOW).line;
-    assert.equal(stripAnsi(row), 'M │ HUD (OS): 3 running, 1 queued', icons);
+    const row = renderBar({ model: { name: 'M' }, work }, 80, THEME_NOW).line;
+    assert.equal(stripAnsi(row), `M │ ${expected}`, icons);
   }
+});
+
+test('local load uses separate theme roles and keeps C/M/S in all icon sets', (t) => {
+  const previous = setDisplayConfig({ theme: 'mocha', barFields: ['notice'] });
+  t.after(() => setDisplayConfig(previous));
+  const localLoad = { cpu: 12, ram: { usedKiB: 6, totalKiB: 8 }, swap: { usedKiB: 1, totalKiB: 10 } };
+  const line = (width: number) => renderBar({ localLoad }, width, THEME_NOW, 'line').line;
+  for (const icons of ['unicode', 'text', 'nerd', 'emoji'] as const) {
+    setDisplayConfig({ icons });
+    assert.equal(line(16), `${theme.info('C12%')}  ${theme.success('M75%')}  ${theme.gitBranch('S10%')}`);
+  }
+  setDisplayConfig({ theme: 'none' });
+  assert.equal(line(14), 'C12% M75% S10%');
+  assert.equal(line(9), 'C12% M75%');
+  assert.equal(line(8), '');
 });
 
 test('pi quota uses Claude level inks; dim and pending states stay legible without color', (t) => {

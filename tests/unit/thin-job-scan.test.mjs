@@ -320,7 +320,7 @@ test('readThinJobRows caches unchanged files by signature without reading bodies
 
 test('a settled job is not on the worker zone, unread, read or failed; a running one is counted', (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'thin-unread-'));
-  const config = setDisplayConfig({ theme: 'none', barFields: ['model', 'notice'] });
+  const config = setDisplayConfig({ theme: 'none', icons: 'unicode', barFields: ['model', 'notice'] });
   t.after(() => {
     setDisplayConfig(config);
     fs.rmSync(home, { recursive: true, force: true });
@@ -354,7 +354,7 @@ test('a settled job is not on the worker zone, unread, read or failed; a running
     };
   };
   // The card keeps the report's unread dot; the zone counts nothing that has settled.
-  const zero = 'M │ HUD (OS): 0 running, 0 queued';
+  const zero = 'M';
   assert.deepEqual(bar(), { unread: true, line: zero });
   receipt({ read_at: new Date(Date.now() + 1000).toISOString() });
   assert.deepEqual(bar(), { unread: undefined, line: zero });
@@ -364,7 +364,7 @@ test('a settled job is not on the worker zone, unread, read or failed; a running
   assert.equal(bar().line, zero);
   // A job still running is counted however long it has run.
   write('STATUS.json', JSON.stringify({ state: 'working', started_at: new Date(Date.now() - 30 * 60_000).toISOString() }));
-  assert.equal(bar().line, 'M │ HUD (OS): 1 running, 0 queued');
+  assert.equal(bar().line, 'M │ ⚒1');
 });
 
 test('readThinJobs and readThinJobRows share JobIndexCache cleanly, jobRow stats report.md once, and panel answers invalidate qa', (t) => {

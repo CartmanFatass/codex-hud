@@ -99,9 +99,13 @@ pub struct Display {
     pub theme: String,
     pub capsules: bool,
     pub ascii: bool,
+    pub nerd: bool,
     pub fields: [bool; 7],
 }
 impl Display {
+    pub fn icon_index(&self) -> usize {
+        usize::from(self.ascii) + 2 * usize::from(self.nerd)
+    }
     pub fn load(home: &Path) -> Option<Self> {
         let word = |key| {
             state::hud_env(key)
@@ -156,6 +160,7 @@ impl Display {
             capsules: theme != "none" && style == "p10k",
             theme,
             ascii: icons == "text",
+            nerd: !matches!(icons.as_str(), "text" | "unicode" | "emoji"),
             fields,
         })
     }

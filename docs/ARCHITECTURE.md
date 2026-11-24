@@ -275,7 +275,7 @@ The execution Decision cap defaults to unlimited (`0`), with atomic reservations
 
 All three bars collect `BarFacts`; `render/layout/bar-fields.ts` fits and paints model/effort, context, repo/branch, client quota (pi cost in its ribbon), output rate (Claude and Codex; pi keeps its ribbon reading), the notice zone and loaded counts.
 Missing facts disappear.
-The notice zone pins native approvals, shows `HUD (OS)` running and queued counts from the fresh global `work-summary-snapshot.ts` census, and retains native subagent events and Claude skill loads for three minutes.
+The notice zone pins native approvals, shows running counts by role and an optional queued count from the fresh global `work-summary-snapshot.ts` census, and retains native subagent events and Claude skill loads for three minutes.
 Workers waiting on main count as running but do not appear as owner requests. Readers never fall back to a pane-local job scan.
 The machine counts fit as one segment or are omitted whole; the `title` rungs of `LADDER` cut subagent titles only.
 No tool-at-work line or clock appears in the bar.
