@@ -88,7 +88,9 @@ export function vm(project, now, lang) {
   const at = Math.max(snap?.updatedAt ?? -Infinity, snap?.objectivesAt ?? -Infinity);
   const live = Object.values(running).reduce((a, b) => a + b, 0) + queued > 0;
   const objectives = (obj?.objectives ?? []).map((o) => ({ ...o, blocked: blockedIds.has(o.id), counts: ticketCounts(snap, o.features) }));
-  const recent = project.result?.at !== undefined && now - project.result.at <= 3 * 864e5 ? project.result : undefined;
+  const [latest] = [...(project.resultDates ?? [])].sort((a, b) => b[1] - a[1]);
+  const recent = latest && now - latest[1] <= 3 * 864e5
+    ? { id: latest[0], at: latest[1], text: objectives.find((o) => o.id === latest[0]).result } : undefined;
   return { name: project.name, root: project.root, unavailable: !!project.unavailable, snap, stance: obj?.stance ?? 'unknown', priority: obj?.priority ?? 'normal',
     running, queued, live, idle: !project.unavailable && !live, ageMs: Number.isFinite(at) ? now - at : undefined, objectives, hasRecord: !!obj, recent, note: snap?.summary };
 }

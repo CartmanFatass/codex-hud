@@ -40,24 +40,30 @@ function loadFacts(jobs: ProjectSnapshot['active']) {
     roles.filter((r) => queued[r]).map((r) => ink.muted(queueMark) + roleInk(r)(roleIcon(r) + queued[r]))].flat().join(' ');
 }
 
-function projectView({ root, name, unavailable, snapshot, result }: HomeProject, now: number) {
+function projectView({ root, name, unavailable, snapshot, resultDates }: HomeProject, now: number) {
   const ink = theme.board;
-  const record = snapshot?.objectives, jobs = snapshot?.active ?? [];
+  const record = snapshot?.objectives, jobs = snapshot?.active ?? [], objectives = record?.objectives ?? [];
   const blocked = blockedObjectives(snapshot?.waiting ?? []), running = jobs.some(({ state }) => state !== 'queued');
-  const open = (record?.objectives ?? []).filter(({ state }) => state !== 'done').sort((a, b) =>
+  const open = objectives.filter(({ state }) => state !== 'done').sort((a, b) =>
     Number(blocked.has(b.id)) - Number(blocked.has(a.id)) || Number(a.state === 'paused') - Number(b.state === 'paused'));
+  const recentAge = (id: string) => {
+    const at = resultDates?.get(id);
+    return at !== undefined && now - at <= 3 * 86_400_000 ? compactAge(at, now) : '';
+  };
+  const finished = objectives.filter(({ id, state }) => state === 'done' && recentAge(id));
   const stance = record?.stance === 'paused' || record?.stance === 'maintenance' ? ink.muted(` · ${t(record.stance)}`) : '';
   const priority = record?.priority === 'high' ? ink.attention(mark('↑', '^', '\uF062'))
     : record?.priority === 'low' ? ink.muted(mark('↓', 'v', '\uF063')) : '';
   const idle = snapshot?.idle && !running, idleWord = idle && !stance ? ink.muted(t('idle')) : '';
-  const age = compactAge(Math.max(snapshot?.updatedAt ?? -Infinity, snapshot?.objectivesAt ?? -Infinity), now);
-  return { root, name: monitorText(name), unavailable, stance, paused: record?.stance === 'paused', open, blocked,
+  const noNotes = snapshot && !record && !snapshot.statePath;
+  const age = compactAge(noNotes ? snapshot.lastJobAt
+    : Math.max(snapshot?.updatedAt ?? -Infinity, snapshot?.objectivesAt ?? -Infinity), now);
+  return { root, name: monitorText(name), unavailable, stance, paused: record?.stance === 'paused', open, finished, blocked,
     features: new Map(snapshot?.tickets.map((f) => [f.slug, f])),
-    mark: unavailable ? ink.danger(stateMark.failed()) : running ? liveMark() : idle ? idleMark() : ' ',
+    mark: unavailable ? ink.danger(stateMark.failed()) : running ? liveMark() : idleMark(),
     nameInk: running && !unavailable ? ink.text : ink.muted,
     priority, idleWord, age: age && ink.muted(age), load: loadFacts(jobs),
-    note: !record && snapshot?.summary,
-    recent: result?.at !== undefined && now - result.at <= 3 * 86_400_000 ? { ...result, age: compactAge(result.at, now) } : undefined };
+    note: !record && snapshot?.summary, noNotes, recentAge };
 }
 type ProjectView = ReturnType<typeof projectView>;
 
@@ -110,8 +116,8 @@ function requestRows({ project, index, item }: HomeRequest, width: number, now: 
 
 function objectiveRows(v: ProjectView, objective: Objective, width: number) {
   const ink = theme.board;
-  const blocked = v.blocked.has(objective.id), paused = objective.state === 'paused';
-  const state = blocked ? askMark() : paused ? pauseMark() : liveMark();
+  const done = objective.state === 'done', blocked = !done && v.blocked.has(objective.id), paused = objective.state === 'paused';
+  const state = done ? ink.success(stateMark.done()) : blocked ? askMark() : paused ? pauseMark() : liveMark();
   const textInk = blocked ? ink.attention : paused ? ink.muted : ink.text;
   const data = progress(v.features, objective.features), count = countText(data, width);
   const lead = `  ${state} `, flagCol = width < 50 ? 0 : Math.max(cells(t('blocked')), cells(t('paused')));
@@ -121,14 +127,15 @@ function objectiveRows(v: ProjectView, objective: Objective, width: number) {
   const graphicRoom = Math.max(0, width - cells(lead) - idCol - 2 - countCol - cells(flag));
   const titleCol = width >= 80 ? graphicRoom - 17 : 0;
   const title = titleCol > 0 ? ink.muted(fit(cutSentence(monitorText(objective.title), titleCol), titleCol)) + ' ' : '';
-  const graphic = progressCells(data, graphicRoom - cells(title), paused);
+  const barWidth = graphicRoom - cells(title);
+  const graphic = done ? ink.success(mark('█', '#').repeat(barWidth)) : progressCells(data, barWidth, paused);
   const target = { root: v.root, objective, blocked };
   const row = { text: fit(`${lead}${textInk(tokenColumn(monitorText(objective.id), idCol))} ${title}${graphic} ${pad(countCol - cells(count))}${(paused ? ink.muted : ink.text)(count)}${flag}`, width),
     item: `home:objective:${v.root}:${objective.id}`, objectiveTarget: target };
-  const recent = v.recent?.id === objective.id ? v.recent : undefined;
-  if (!recent) return { row };
-  const age = recent.age ? ink.muted(recent.age) : '';
-  const line = sentenceRows(monitorText(recent.text), width - (age ? cells(age) + 1 : 0), 1, 4, ink.success(stateMark.done()))[0] ?? '';
+  const recentAge = v.recentAge(objective.id);
+  if (!recentAge || !objective.result) return { row };
+  const age = ink.muted(recentAge);
+  const line = sentenceRows(monitorText(objective.result), width - cells(age) - 1, 1, 4, ink.success(stateMark.done()))[0] ?? '';
   return { row, result: { text: fit(pair(line, age, width), width), item: `home:result:${v.root}:${objective.id}`, objectiveTarget: target } };
 }
 
@@ -159,14 +166,15 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
   const views = projects.map((p) => projectView(p, now));
   const blocks = views.map((v) => {
     const header = projectHeader(v, width);
-    const previews = v.unavailable ? [] : v.open.slice(0, 2).map((o) => objectiveRows(v, o, width));
-    const note = !v.unavailable && v.note ? sentenceRows(monitorText(v.note), width, 1, 2, mark('¶', '.', '\uF249'))
-      .map((line) => boardRow(fit(ink.muted(line), width))) : [];
+    const previews = v.unavailable ? [] : [...v.open, ...v.finished].slice(0, 2).map((o) => objectiveRows(v, o, width));
+    const noteLines = v.unavailable ? [] : v.note ? sentenceRows(monitorText(v.note), width, 1, 2, mark('¶', '.', '\uF249'))
+      : v.noNotes ? [`  ${t('no Objectives or handoff notes')}`] : [];
+    const note = noteLines.map((line) => boardRow(fit(ink.muted(line), width)));
     return { v, header, previews, note };
   });
   const tier = (limit: number, results: boolean, gaps = false) => blocks.flatMap(({ v, header, previews, note }, i) => {
     const rows = [header, ...note, ...previews.slice(0, limit).flatMap(({ row, result }) => results && result ? [row, result] : [row])];
-    const more = v.open.length - Math.min(limit, previews.length);
+    const more = v.open.length + v.finished.length - Math.min(limit, previews.length);
     if (!v.unavailable && more > 0) rows.push({ text: fit(`  ${ink.muted(t('{remaining} more', { remaining: more }))}`, width),
       item: `home:more:${v.root}`, homeTarget: { root: v.root } });
     return gaps && i ? [boardRow(fit('', width)), ...rows] : rows;

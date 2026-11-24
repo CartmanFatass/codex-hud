@@ -98,6 +98,8 @@ export interface ProjectSnapshot {
   specTruncated?: boolean;
   updatedAt?: number;
   objectivesAt?: number;
+  /** Latest observed job activity in the bounded Home window, when neither record exists. */
+  lastJobAt?: number;
   idle?: true;
   last?: { text: string; at: number };
   next: ProjectItem[];
@@ -760,6 +762,7 @@ export class ProjectCollector {
     const jobs = exporting ? [...workersByJob.keys()].filter((id): id is string => !!id && JOB_ID_RE.test(id)).map((id) => ({ id })) : (prefetchedJobs ?? this.recentJobs(jobCache));
     const managed = new Map<string, string>();
     const active: { created: number; entry: ActiveJob }[] = [];
+    const needsJobAge = home && !out.objectives && !out.statePath;
     for (const { id } of jobs) {
       const dir = join(jobsRoot, id);
       const jobRes = jobCache.readJob<JobReceipt>(id);
@@ -795,10 +798,13 @@ export class ProjectCollector {
           },
         });
       }
-      if (out.tickets.length && !job.parent_job) {
+      const linked = out.tickets.length > 0 && !job.parent_job;
+      if (!linked && !needsJobAge) continue;
+      const at = Date.parse(String(s.settled_at ?? s.ended_at ?? s.started_at ?? job.created_at ?? ''));
+      if (needsJobAge && Number.isFinite(at) && at > (out.lastJobAt ?? -Infinity)) out.lastJobAt = at;
+      if (linked) {
         const brief = join(dir, 'brief.md');
         const material = job.ticket || job.slice ? '' : job.task ?? job.brief_path ?? this.read(brief, 4096)?.text.slice(0, typeof job.task_length === 'number' ? job.task_length : 4096) ?? worker?.task ?? '';
-        const at = Date.parse(String(s.settled_at ?? s.ended_at ?? s.started_at ?? job.created_at ?? ''));
         rollup.link(job, String(material), { id, role: typeof job.role === 'string' ? job.role : '',
           state: job.reaped_at && !SETTLED_JOB_STATES.has(state) ? 'closed' : state,
           created, ...(Number.isFinite(at) ? { at } : {}) });

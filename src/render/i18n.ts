@@ -75,6 +75,7 @@ const ZH: Record<string, string> = {
   '{hours}h': '{hours}时',
   '{n}w': '{n}周',
   'No registered projects': '没有已登记的项目',
+  'no Objectives or handoff notes': '无目标或交接记录',
   Unavailable: '不可用',
   maintenance: '维护中',
   '{priority} priority': '{priority}优先级',

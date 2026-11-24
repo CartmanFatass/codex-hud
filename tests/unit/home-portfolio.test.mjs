@@ -110,6 +110,70 @@ test('design Home at 40, 50 and 80 columns: cell-exact in EN/ZH across icon sets
   }
 });
 
+test('Home shows a no-notes line and newest observed job age even when idle is unknown', async (t) => {
+  const f = fixture(t), bare = join(f.home, '..', 'bare-study'), empty = join(f.home, '..', 'empty-study');
+  for (const root of [bare, empty]) fs.mkdirSync(root);
+  f.put(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: [...f.roots, bare, empty].map((root) => ({ root })) }));
+  for (const [id, hours] of [['j0000000000000001', 30], ['j0000000000000002', 4]]) {
+    const dir = join(f.home, 'jobs', id);
+    f.put(join(dir, 'job.json'), JSON.stringify({ role: 'imp', cwd: bare, created_at: new Date(nowMs - (hours + 2) * 3600e3).toISOString() }));
+    f.put(join(dir, 'STATUS.json'), JSON.stringify({ state: 'done', settled_at: new Date(nowMs - hours * 3600e3).toISOString() }));
+  }
+  // An unattributed receipt makes the job scan incomplete: ○ does not imply the idle word.
+  f.put(join(f.home, 'jobs/j0000000000000003/job.json'), '{}');
+  const homePortfolio = await f.tick();
+  assert.equal(homePortfolio.projects.find((p) => p.root === bare).snapshot.idle, undefined);
+  for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
+    const prev = setDisplayConfig({ theme: 'mocha', icons: 'unicode' }), prevLang = setLanguage(lang);
+    try {
+      const frame = renderMonitor({ state: initialMonitorState(), width, height: 40, nowMs, homePortfolio });
+      const { rows } = frame.workboard;
+      assert.ok([...frame.lines, ...rows.map((r) => r.text)].every((line) => visualLength(line) === width));
+      for (const [root, age] of [[bare, lang === 'en' ? ' 4h' : ' 4时'], [empty, '']]) {
+        const i = rows.findIndex((r) => r.item === `home:project:${root}`);
+        const name = root === bare ? 'bare-study' : 'empty-study';
+        assert.match(stripAnsi(rows[i].text).trimEnd(), new RegExp(`^○ ${name} ─+${age}$`));
+        const note = lang === 'en' ? 'no Objectives or handoff notes' : '无目标或交接记录';
+        assert.ok(rows[i + 1].text.startsWith(theme.board.muted(`  ${note}`)));
+      }
+    } finally { setLanguage(prevLang); setDisplayConfig(prev); }
+  }
+});
+
+test('Home shows both fresh done Objectives with full green bars, but no expired or undated ones', async (t) => {
+  const f = await design(t), root = f.roots.lantern;
+  const path = join(root, '.hud/objectives.md'), events = join(f.home, 'events/2026-11.jsonl');
+  const done = [['shipped', 'Migration shipped.', 4], ['verified', 'Clients verified.', 2],
+    ['retired', 'Old services retired.', 4 * 24], ['undated', 'Undated result.']];
+  fs.writeFileSync(path, done.map(([id, result]) => `## ${id}: ${result}\n**State:** done\n**Result:** ${result}\n`).join('\n'));
+  fs.appendFileSync(events, done.filter(([, , hours]) => hours !== undefined).map(([id, result, hours]) => JSON.stringify({
+    v: 1, kind: 'objective', project: root, id, change: 'result', at: new Date(NOW - hours * 3600e3).toISOString(), result,
+  })).join('\n') + '\n');
+  const portfolio = await f.tick();
+  const projectRows = (frame, kind) => frame.workboard.rows.filter((r) => r.item?.startsWith(`home:${kind}:${root}:`));
+  for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
+    const prev = setDisplayConfig({ theme: 'mocha', icons: 'unicode' }), prevLang = setLanguage(lang);
+    try {
+      const frame = f.draw(width, 40, portfolio), goals = projectRows(frame, 'objective'), results = projectRows(frame, 'result');
+      assert.ok([...frame.lines, ...frame.workboard.rows.map((r) => r.text)].every((line) => visualLength(line) === width));
+      assert.deepEqual(goals.map((r) => r.objectiveTarget.objective.id), ['shipped', 'verified']);
+      assert.deepEqual(results.map((r) => r.objectiveTarget.objective.id), ['shipped', 'verified']);
+      for (const [i, goal] of goals.entries()) {
+        const [id, result, hours] = done[i];
+        assert.match(stripAnsi(goal.text), new RegExp(`^  ✓ ${id} `));
+        const full = '█'.repeat(width === 40 ? 18 : 16);
+        assert.ok(goal.text.includes(theme.board.success(full)), 'the entire track uses the success ink');
+        assert.equal(stripAnsi(results[i].text).trim().replace(/ +/g, ' '), `✓ ${result} ${hours}${lang === 'en' ? 'h' : '时'}`);
+      }
+      assert.ok(!frame.workboard.rows.some((r) => r.item === `home:more:${root}`));
+    } finally { setLanguage(prevLang); setDisplayConfig(prev); }
+  }
+  fs.appendFileSync(path, '\n## follow-up: Follow up\n**State:** active\n');
+  const capped = f.draw(40, 40, await f.tick());
+  assert.deepEqual(projectRows(capped, 'objective').map((r) => r.objectiveTarget.objective.id), ['follow-up', 'shipped']);
+  assert.ok(capped.workboard.rows.some((r) => r.item === `home:more:${root}` && /1 more|另 1 个/.test(r.text)));
+});
+
 test('a 27-row panel keeps request prose and one row for each of 17 registrations', async (t) => {
   const f = await design(t);
   const extra = Array.from({ length: 11 }, (_, i) => join(f.dir, `study-${i}`));
@@ -188,7 +252,8 @@ test('only recent dated receipts appear on Home; Objective and result rows open 
   }
   const receipt = join(f.home, 'events/2026-11.jsonl');
   const harbor = f.homePortfolio.projects.find((p) => p.root === root);
-  const event = { v: 1, kind: 'objective', project: root, id: 'rate-limits', change: 'result', result: harbor.result.text };
+  const result = harbor.snapshot.objectives.objectives.find((o) => o.id === 'rate-limits').result;
+  const event = { v: 1, kind: 'objective', project: root, id: 'rate-limits', change: 'result', result };
   for (const [offset, expected] of [[3 * 86_400_000, true], [3 * 86_400_000 + 1, false], [undefined, false]]) {
     fs.writeFileSync(receipt, JSON.stringify({ ...event, at: offset === undefined ? undefined : new Date(NOW - offset).toISOString() }) + '\n');
     const rows = f.draw(40, 40, await f.tick()).workboard.rows;
@@ -222,32 +287,32 @@ test('requests sort by waits, project priority, then age; Enter navigates to the
 });
 
 test('Objective results without a matching latest receipt are shown without a date (hand edit and legacy)', async (t) => {
-  const f = fixture(t), result = async () => (await f.tick()).projects.find((p) => p.root === f.paused).result;
-  assert.deepEqual(await result(), { id: 'repeat', text: 'The replay agreed.', at: Date.parse('2026-11-23T11:00:00Z') });
+  const f = fixture(t), dates = async () => (await f.tick()).projects.find((p) => p.root === f.paused).resultDates;
+  assert.deepEqual(await dates(), new Map([['measure', Date.parse(f.receipt.at)], ['repeat', Date.parse('2026-11-23T11:00:00Z')]]));
   f.objectives(f.paused, f.header, f.tracked.replace('The reading held.', 'Hand-edited reading.'));
-  assert.deepEqual(await result(), { id: 'measure', text: 'Hand-edited reading.', at: undefined });
+  assert.equal(await dates(), undefined);
   f.objectives(f.paused, f.header, f.tracked);
-  assert.equal((await result()).at, Date.parse(f.receipt.at));
+  assert.equal((await dates()).get('measure'), Date.parse(f.receipt.at));
   // Latest receipt has no result text: don't borrow the date from the older matching receipt.
   f.put(f.receiptPath, [f.receipt, { ...f.receipt, result: undefined, at: '2026-11-24T10:00:00.000Z' }].map(JSON.stringify).join('\n') + '\n');
-  assert.deepEqual(await result(), { id: 'measure', text: 'The reading held.', at: undefined });
+  assert.equal(await dates(), undefined);
 });
 
 test('Home verifies the whole long result and leaves ambiguous legacy excerpts undated', async (t) => {
-  const f = fixture(t), result = async () => (await f.tick()).projects.find((p) => p.root === f.paused).result;
+  const f = fixture(t), date = async () => (await f.tick()).projects.find((p) => p.root === f.paused).resultDates?.get('measure');
   const prefix = 'x'.repeat(240), original = `${prefix} recorded`, edited = `${prefix} edited`;
   const write = (text) => f.objectives(f.paused, f.header, f.tracked.replace('The reading held.', text));
   const receipt = { ...f.receipt, result: prefix };
   f.put(f.receiptPath, JSON.stringify({ ...receipt, resultDigest: createHash('sha256').update(original).digest('hex') }) + '\n');
   write(original);
-  assert.equal((await result()).at, Date.parse(receipt.at));
+  assert.equal(await date(), Date.parse(receipt.at));
   write(edited);
-  assert.deepEqual(await result(), { id: 'measure', text: edited, at: undefined });
+  assert.equal(await date(), undefined);
   f.put(f.receiptPath, JSON.stringify(receipt) + '\n');
   write(original);
-  assert.equal((await result()).at, undefined);
+  assert.equal(await date(), undefined);
   write(prefix);
-  assert.equal((await result()).at, Date.parse(receipt.at));
+  assert.equal(await date(), Date.parse(receipt.at));
 });
 
 test('unchanged Home tick with eight registered projects only stats files', async (t) => {

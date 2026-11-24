@@ -5,8 +5,7 @@ import { ResultReceipts, resultDate } from './result-receipts.js';
 import { compareOwnerRequests, ProjectCollector, projectJobWindow, type ProjectItem, type ProjectSnapshot } from './project-board.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 
-interface Result { id: string; text: string; at?: number }
-export interface HomeProject extends ListedProject { snapshot?: ProjectSnapshot; result?: Result }
+export interface HomeProject extends ListedProject { snapshot?: ProjectSnapshot; resultDates?: ReadonlyMap<string, number> }
 export interface HomeRequest { project: HomeProject; item: ProjectItem; index: number }
 export interface HomePortfolio { projects: HomeProject[]; requests: HomeRequest[] }
 
@@ -31,10 +30,14 @@ export class HomePortfolioCollector {
     }
     if (projects.some((p) => p.snapshot?.objectives?.objectives.some((o) => o.result))) {
       const receipts = this.receipts.read();
-      for (const project of projects) for (const { id, result } of project.snapshot?.objectives?.objectives ?? []) {
-        if (!result) continue;
-        const at = resultDate(receipts, project.root, id, result);
-        if (!project.result || (at ?? -Infinity) > (project.result.at ?? -Infinity)) project.result = { id, text: result, at };
+      for (const project of projects) {
+        let dates: Map<string, number> | undefined;
+        for (const { id, result } of project.snapshot?.objectives?.objectives ?? []) {
+          if (!result) continue;
+          const at = resultDate(receipts, project.root, id, result);
+          if (at !== undefined) (dates ??= new Map()).set(id, at);
+        }
+        if (dates) project.resultDates = dates;
       }
     }
     const priority = (p: HomeProject) => priorities[p.snapshot?.objectives?.priority ?? 'normal'];

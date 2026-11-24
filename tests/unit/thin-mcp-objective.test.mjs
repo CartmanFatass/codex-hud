@@ -72,7 +72,7 @@ test('hud_objective edits only supplied fields and appends one private receipt p
   assert.equal(fs.existsSync(join(home, 'archive')), false);
 });
 
-test('hud_objective records result evidence once for a compound state and result change; Home selects it', async (t) => {
+test('hud_objective records result evidence once for a compound state and result change; Home dates it', async (t) => {
   const f = await fixture(t, false), cwd = fs.realpathSync(f.root), home = f.env.HUD_HOME;
   fs.writeFileSync(join(home, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: cwd }] }));
   const set = (id, fields) => f.call('hud_objective', { op: 'set', cwd, id, ...fields });
@@ -89,7 +89,7 @@ test('hud_objective records result evidence once for a compound state and result
   assert.equal(event.result, result);
   assert.equal(event.resultDigest, createHash('sha256').update(result).digest('hex'));
   const portfolio = await new HomePortfolioCollector(home).read([{ root: cwd, name: 'Study' }], { workers: [] }, Date.now());
-  assert.deepEqual(portfolio.projects[0].result, { id: 'current', text: result, at: Date.parse(event.at) });
+  assert.equal(portfolio.projects[0].resultDates?.get('current'), Date.parse(event.at));
 });
 
 test('hud_objective edits the first heading after a BOM using original offsets', async (t) => {
