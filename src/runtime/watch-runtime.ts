@@ -11,6 +11,7 @@ import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
 import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sessions.js';
 import { recordJobUsage } from '../roles/job-usage.js';
+import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/sonic-citations.js';
 import { landAttempt, activeLand, isFlowId } from '../mcp/land-state.js';
 import { queueIds, readTicketQueue } from '../mcp/ticket-queue-state.js';
 import { wakeTicketQueue } from '../mcp/ticket-queue.js';
@@ -456,7 +457,14 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
       stdout_bytes: size(jobFiles.sonicStdout), stderr_bytes: size(jobFiles.sonicStderr) };
     recordJobUsage(dir, job, settled);
     const latest = readJson<Job>(jobFile);
-    const recorded = latest && recordSessions(dir, latest, settled, []);
+    let recorded = latest && recordSessions(dir, latest, settled, []);
+    if (recorded && !waiting && shouldCheckSonicCitations(recorded, settled)) {
+      const citations = checkSonicReportCitations(dir, recorded);
+      if (citations) {
+        recorded = { ...recorded, citations };
+        writeJsonAtomic(jobFile, recorded, 2);
+      }
+    }
     writeJsonAtomic(statusFile, settled);
     if (recorded && !waiting) writeJsonAtomic(jobFile, { ...recorded, reaped_at: now }, 2);
     const issue = snapshotIssueForLog(id, dir, cleanup.unrecoverable);
@@ -776,6 +784,14 @@ function scan(retryWatch = false) {
       const resumeReadReap = retry?.readClose && ((!!tab && closedTabs.has(tab)) || workerTreeRootGone(status.pid, status.pid_start_time));
       if (job && ['idle_grace', 'done', 'closed', 'failed', 'stopped'].includes(status.state ?? ''))
         recordJobUsage(dir, job, status);
+      if (job && shouldCheckSonicCitations(job, status)) {
+        const citations = checkSonicReportCitations(dir, job);
+        if (citations) {
+          job = { ...job, citations };
+          try { writeJsonAtomic(jobFile, job, 2); }
+          catch (error) { warn(`citations ${id}`, `record citations ${id}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
+        }
+      }
       let readInGrace = null;
       if (!resumeReadReap && status.state === 'idle_grace') {
         open = true;

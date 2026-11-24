@@ -97,6 +97,7 @@ export function save(job: Job, newAttempt = false): void {
       job[key] = existing[key];
   }
   if (existing?.exhaustion_marked) job.exhaustion_marked = true;
+  if (existing?.citations) job.citations = existing.citations;
   jobCache.writeJsonAtomic(file, job as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
   writeScan.getStore()?.record(job);
 }

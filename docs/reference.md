@@ -277,6 +277,11 @@ It skips unavailable or exhausted presets, reports them, wraps around, and uses 
 The job record includes `route.placement: "even"` and `route.preset`; retries keep the chosen preset.
 Sonic still accepts no placement fields from callers.
 
+When a sonic job settles with a report, HUD checks its `path:line` and `path:line-line` citations once mechanically (no model call or network) and records `citations: {total, verified, failed: [{ref, reason}]}` on `job.json` and the monthly archive (with at most 20 failures).
+Each citation resolves relative to the job `cwd` or as an absolute path and is verified when the file exists inside the job's `cwd` or worktree, the line range exists, and any text quoted in backticks on the same row appears (whitespace-normalised) within ±3 lines.
+Checking stops after 200 citations and reads at most the first 256 KiB of the report; reports with no citations record `total: 0`.
+HUD does no analysis on these counts and the panel does not show them.
+
 **Imp placement** (`impPlacement` in Settings → Models) defaults to `fixed`, which uses the active preset.
 For `even`, use the **Even pool** row (`impEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it.
 HUD rotates round-robin through the pool in pool order, keeping the last used index in a private state file under `$HUD_HOME` (`even-imp.json`), skipping and reporting unavailable or exhausted presets, wrapping around, and falling back to the active preset if the pool is empty or unavailable.

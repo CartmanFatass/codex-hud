@@ -8,6 +8,8 @@ import type { ObjectiveLink } from '../collectors/objectives.js';
 
 export type { ProgressEntry } from '../collectors/workboard-types.js';
 export type { ReportMeta } from '../roles/report-meta.js';
+export type { CitationFailure, JobCitations } from '../roles/sonic-citations.js';
+import type { JobCitations } from '../roles/sonic-citations.js';
 
 export type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
 export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; source: 'decision' | 'default'; fallback?: string; mode_reason?: string;
@@ -98,6 +100,7 @@ export interface Job extends PiOptions {
   role_skills?: { name: string; path: string }[];
   skipped_skills?: { name: string; reason: string }[];
   worker_prompt?: string | null;
+  citations?: JobCitations;
 }
 
 /** STATUS.json ranges from minimal dispatch/scout updates to full harness receipts. */
