@@ -65,21 +65,24 @@ test('Project hub renders Objective details and a linked checklist at 120 column
   f.put(objectivePath(f.cwd), sample);
   const withObjectives = await f.collector.collect(true, f.board, NOW);
   const words = {
-    en: ['Needs you', 'Objectives', 'active', 'paused', 'done', 'Result: Recorded a baseline.', 'Next: Repeat the sample.'],
-    zh: ['需要你处理', '目标', '进行中', '已暂停', '完成', '结果：Recorded a baseline.', '下一步：Repeat the sample.'],
+    en: ['Needs you', 'Objectives', 'active', 'paused', 'checks'],
+    zh: ['需要你处理', '目标', '进行中', '已暂停', '检查项'],
   };
-  for (const [lang, [needs, heading, active, paused, done, result, next]] of Object.entries(words)) {
+  for (const [lang, [needs, heading, active, paused, checks]] of Object.entries(words)) {
     const baseline = plain(f.render(120, lang));
     assert.ok(!baseline.some((line) => line.startsWith(heading)));
     const frame = f.render(120, lang, undefined, 56, withObjectives), lines = plain(frame);
     for (const line of frame.lines) assert.equal(visualLength(line), 120);
-    const order = [needs, heading, 'measure: Measure the sample', 'hold: Compare an alternative', 'finish: Publish the guide']
+    const order = [needs, heading, '● measure', 'Measure the sample', 'Repeat the sample.', 'Recorded a baseline.', '‖ hold', '✓ finish Publish the guide']
       .map((word) => lines.findIndex((line) => line.includes(word)));
     assert.ok(order.every((n, i) => n > (order[i - 1] ?? -1)), lines.join('\n'));
-    for (const [i, state] of [active, paused, done].entries()) assert.ok(lines[order[i + 2]].endsWith(state));
+    assert.ok(lines[order[2]].endsWith(active));
+    assert.ok(lines[order[6]].endsWith(paused));
     const text = lines.join('\n');
-    assert.ok(text.includes(result) && text.includes(next));
-    assert.deepEqual(text.match(/\S+ \d+\/\d+/g), ['native-tree 1/2']);
+    assert.match(text, new RegExp(`native-tree +[█▒░]+ +0/2 (tickets|工单) · 1/2 ${checks}`));
+    assert.match(text, /^    missing +—$/m);
+    assert.ok(!plain(f.render(55, lang, undefined, 56, withObjectives)).join('\n').includes(checks));
+    assert.ok(plain(f.render(56, lang, undefined, 56, withObjectives)).join('\n').includes(checks));
     assert.doesNotMatch(text, /Published a synthetic guide/);
     const row = frame.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'finish');
     frame.state.project.nav.cursor = row.item;
@@ -114,7 +117,11 @@ test('Home and Project open an Objective detail and route only its openable evid
     if (activeTab === 'home') {
       assert.ok(!list.workboard.rows.some((r) => r.item?.startsWith('home:result:')), 'undated results stay off Home');
       list.state.home.cursor = entry.item;
-    } else list.state.project.nav.cursor = entry.item;
+    } else {
+      assert.equal(list.workboard.rows.filter((r) => r.objectiveEvidence).length, 3);
+      assert.match(plain(list).join('\n'), /^ {6}3 more$/m);
+      list.state.project.nav.cursor = entry.item;
+    }
     const { state, action } = key(list, 'enter');
     assert.equal(action, undefined);
     assert.equal(state.subpage.kind, 'objective');

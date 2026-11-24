@@ -57,18 +57,19 @@ function objectiveEvidence(text: string, root: string, home: string): ObjectiveE
   return { text, file: resolve(root, text) };
 }
 
-/** Probe just the opened Objective's entries, never the whole portfolio or during paint. */
+/** Probe the selected entry, never during paint. */
+export function collectEvidenceEntry(text: string, root: string, home: string): ObjectiveEvidence {
+  const entry = objectiveEvidence(text, root, home);
+  if (!entry.file) return entry;
+  try {
+    if (statSync(entry.file).isFile()) return entry;
+  } catch (err) {
+    if (['ENOENT', 'ENOTDIR'].includes((err as NodeJS.ErrnoException).code ?? '')) return { text, status: 'missing' };
+  }
+  return { text, status: 'Unavailable' };
+}
 export function collectObjectiveEvidence(objective: Objective, root: string, home: string): ObjectiveEvidence[] {
-  return objective.evidence.map((text) => {
-    const entry = objectiveEvidence(text, root, home);
-    if (!entry.file) return entry;
-    try {
-      if (statSync(entry.file).isFile()) return entry;
-    } catch (err) {
-      if (['ENOENT', 'ENOTDIR'].includes((err as NodeJS.ErrnoException).code ?? '')) return { text, status: 'missing' };
-    }
-    return { text, status: 'Unavailable' };
-  });
+  return objective.evidence.map((text) => collectEvidenceEntry(text, root, home));
 }
 export const splitObjectiveList = (s = '') => s === '' ? [] : s.split(',').map((value) => value.trim());
 

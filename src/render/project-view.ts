@@ -1,7 +1,7 @@
 /** Pure Project rows, using the same kit as Home and the Inspector. */
-import { SLICE_STATES, SETTLED_JOB_STATES, blockedObjectives, ownerRequestKey, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice } from '../collectors/project-board.js';
+import { SLICE_STATES, SETTLED_JOB_STATES, blockedObjectives, ownerRequestKey, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice, type ActiveJob } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
-import { OBJECTIVE_STATES } from '../collectors/objectives.js';
+import { OBJECTIVE_HASH } from '../collectors/objectives.js';
 import { ledgerTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
 import { projectWorkJob } from '../collectors/work-job.js';
 import { stemLines, workJobDetail } from './work-job-detail.js';
@@ -9,15 +9,16 @@ import { roleInk } from './work-job-row.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { projectPage } from './monitor-state.js';
 import { basename, dirname } from 'node:path';
-import { boardRow, itemRow, section, mark, minuteAge, pack } from './workboard-rows.js';
+import { boardRow, compactAge, itemRow, section, mark, minuteAge, pack, stateMark } from './workboard-rows.js';
+import { roleIcon } from './model-glyphs.js';
 import { projectOverviewRows, projectListRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { worktreeRows } from './monitor-panes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
-import { monitorText, fit, pair, flowLines, cutWords, clampClean } from './monitor-text.js';
+import { monitorText, fit, pair, flowLines, cutWords, clampClean, cutSentence, sentenceRows, tokenColumn } from './monitor-text.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { t } from './i18n.js';
-import { sliceInk } from './progress-bar.js';
+import { barText, linkedTicketProgress, sliceInk, TICKET_BAR_ORDER } from './progress-bar.js';
 export { barText, progressSegments, sliceInk } from './progress-bar.js';
 export { clampClean } from './monitor-text.js';
 const ticketTotalText = (data: ProjectSnapshot, text: string) =>
@@ -55,26 +56,29 @@ export function projectCrumb(page: ProjectPage, data: ProjectSnapshot | undefine
   const crumb = `${name ? truncateAnsi(monitorText(name), 16) : t('Project')} ${mark('›', '>')} ${t(PAGE_WORD[page])}`;
   return { crumb, right: (data && pageMeta(page, data, now).find((r) => r && visualLength(crumb) + 4 + visualLength(r) <= width)) || '' };
 }
-/** One line per page, most important fact first: a row too short for all of them drops the last, not part of one. */
-export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: number, showMilestone = true): string[] {
-  const g = data.git;
-  if (page === 'progress') {
-    const tasks = ledgerTasks(data.ledger);
-    const blocked = tasks.filter((task) => task.slices.some((r) => r.state === 'blocked')).length;
-    const working = tasks.filter((task) => task.slices.some((r) => r.state === 'working')).length;
-    const milestone = showMilestone && data.ladder.current && monitorText(data.ladder.current);
-    return parts(data.ticketTotals?.partial && t('Partial'), tasks.length ? taskCountText(tasks.length) : !data.ticketTotals?.partial && t('No tickets'),
-      milestone, blocked && `${blocked} ${t('blocked')}`, working && `${working} ${t('working')}`);
+/** Details facts, most important first: callers drop whole facts that do not fit. */
+export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: number): string[] {
+  if (page === 'tickets') {
+    const { accepted: done, dropped } = data.counts, total = data.ledger.length - dropped;
+    return parts(total && t('{done}/{total} done', { done, total }),
+      featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length));
   }
-  if (page === 'tickets') return data.tickets.length ? [ticketTotalText(data, featureCountText(data.ticketTotals?.totalFeatures ?? data.tickets.length))] : [];
-  // Unlisted worktrees first: a short row keeps them and drops the facts after.
-  if (page === 'tree') return parts(unlisted(data).length && t(unlisted(data).length === 1 ? '{n} unlisted worktree' : '{n} unlisted worktrees', { n: unlisted(data).length }),
-    g?.branch && monitorText(g.branch), g && t('{n} changed', { n: g.changed }),
-    data.worktreeCount && t(data.worktreeCount === 1 ? '{n} worktree' : '{n} worktrees', { n: data.worktreeCount }), g?.ahead && `${g.ahead} ${t('ahead')}`, g?.behind && `${g.behind} ${t('behind')}`,
-    data.editing.length && `${data.editing.length} ${t('editing')}`);
+  if (page === 'progress') {
+    const { working, todo, blocked } = data.counts;
+    return parts(!data.ledger.length && !data.ticketTotals?.partial && t('No tickets'), data.ladder.current && monitorText(data.ladder.current),
+      working && t('{n} working', { n: working }), todo && t('{n} to do', { n: todo }),
+      blocked && t('{n} blocked', { n: blocked }));
+  }
+  const g = data.git;
+  if (page === 'tree' && g) {
+    const n = unlisted(data).length;
+    return parts(g.branch && monitorText(g.branch), t('{n} changed', { n: g.changed }),
+      n && t(n === 1 ? '{n} unlisted worktree' : '{n} unlisted worktrees', { n }),
+      data.worktreeCount && t(data.worktreeCount === 1 ? '{n} worktree' : '{n} worktrees', { n: data.worktreeCount }));
+  }
   if (page === 'docs') {
-    const spec = data.docs.find((r) => r.label === 'spec'), review = data.docs.find((r) => r.label === 'review');
-    return parts(spec && monitorText(spec.value), review && `${t('review')} ${minuteAge(review.at ?? null, now)}`);
+    const spec = data.docs.find((r) => r.label === 'spec'), review = compactAge(data.docs.find((r) => r.label === 'review')?.at, now);
+    return parts(spec && t('spec {milestone}', { milestone: monitorText(spec.value) }), review && t('review {age} ago', { age: review }));
   }
   return [];
 }
@@ -162,7 +166,6 @@ export function stacked(head: string, text: string, right: string, width: number
 }
 export const taskItem = (task: AcceptanceTask) => `project:fold:task:${task.key}`;
 export const taskLabel = (task: AcceptanceTask) => monitorText(task.key.startsWith('slice:') ? `— ${task.slices[0].id}` : task.milestone);
-const taskCountText = (n: number) => t(n === 1 ? '{n} task' : '{n} tasks', { n });
 const featureCountText = (n: number) => t(n === 1 ? '{n} feature' : '{n} features', { n });
 const PROGRESS_ORDER = ['blocked', 'working', 'try', 'todo', 'accepted', 'dropped'] as const;
 const PROGRESS_MARK: Record<SliceState, [string, string]> = { blocked: ['◆', '!'], working: ['◐', '@'],
@@ -397,35 +400,97 @@ export function pageRows(
   if (rows.length === 1) rows.push(boardRow('  ' + theme.board.muted(t('none'))));
   return rows;
 }
-export function objectiveRows(data: ProjectSnapshot, width: number): MonitorRow[] {
-  const record = data.objectives;
-  if (!record) return [];
-  const rows = [boardRow(''), section(t('Objectives'), width, String(record.objectives.length))];
-  const root = dirname(dirname(record.path)), blockedIds = blockedObjectives(data.waiting);
-  for (const state of OBJECTIVE_STATES) for (const objective of record.objectives.filter((item) => item.state === state)) {
-    const { id, title, result, next, features } = objective;
-    const blocked = blockedIds.has(id);
-    const at = { item: `project:objective:${root}:${id}`, files: [record.path], objectiveTarget: { root, objective, blocked } };
-    const ink = state === 'active' ? theme.board.active : state === 'done' ? theme.board.success : theme.board.muted;
-    let status = ink(t(state));
-    if (blocked) {
-      const reason = theme.board.attention(t('blocked'));
-      status = visualLength(status) + visualLength(reason) + 6 <= width ? `${status} · ${reason}` : reason;
+function hubJobRow(job: ActiveJob, width: number, now: number, ticket?: ProjectTicket): MonitorRow {
+  const ink = theme.board, age = compactAge(job.at, now);
+  const lead = `${ticket ? '      ' : '  '}${roleInk(job.role)(roleIcon(job.role))} ${ticket ? monitorText(ticket.number) + ' ' : ''}`;
+  const right = [job.state === 'queued' && ink.muted(t('queued')), age && ink.muted(age)].filter(Boolean).join(' ');
+  const body = monitorText(ticket?.title ?? job.title ?? job.package ?? (job.role || job.jobId));
+  const room = width - visualLength(lead) - (right ? visualLength(right) + 1 : 0);
+  return { text: fit(pair(lead + cutSentence(body, room), right, width), width), item: `project:job:${job.jobId}`,
+    ...(job.path ? { files: [job.path] } : {}) };
+}
+
+function evidenceLabel(text: string, width: number): string {
+  if (visualLength(text) <= width || OBJECTIVE_HASH.test(text) || !text.includes('/')) return truncateAnsi(text, width);
+  const parts = text.split('/');
+  let tail = parts.pop()!;
+  while (parts.length && visualLength(`…/${parts.at(-1)}/${tail}`) <= width) tail = parts.pop() + '/' + tail;
+  return truncateAnsi(`…/${tail}`, width);
+}
+
+/** Objective blocks and the jobs that have no displayed feature/ticket association. */
+export function objectiveRows(data: ProjectSnapshot, width: number, now: number): MonitorRow[] {
+  const ink = theme.board, record = data.objectives, rows: MonitorRow[] = [];
+  const jobs = new Map(data.active.map((job) => [job.jobId, job]));
+  const add = (text: string, target?: Partial<MonitorRow>) => rows.push({ ...target, text: fit(text, width) });
+  if (record) {
+    rows.push(section(t('Objectives'), width, String(record.objectives.length)));
+    const root = dirname(dirname(record.path)), blockedIds = blockedObjectives(data.waiting);
+    const stateRank = { active: 0, paused: 1, done: 2 };
+    const objectives = [...record.objectives].sort((a, b) => Number(a.state === 'done') - Number(b.state === 'done')
+      || Number(blockedIds.has(b.id)) - Number(blockedIds.has(a.id)) || stateRank[a.state] - stateRank[b.state]);
+    const scanned = new Map((data.objectiveTickets ?? data.tickets).map((f) => [f.slug, f]));
+    const featureCol = Math.max(8, ...objectives.filter((o) => o.state !== 'done')
+      .flatMap((o) => o.features.map((slug) => Math.min(16, visualLength(slug)))));
+    const idCol = width < 50 ? 11 : 14;
+    for (const [index, objective] of objectives.entries()) {
+      const { id, state, title, result, next, features, evidence } = objective;
+      const blocked = blockedIds.has(id), done = state === 'done', paused = state === 'paused';
+      if (index && !done) add('');
+      const at = { item: `project:objective:${root}:${id}`, files: [record.path], objectiveTarget: { root, objective, blocked } };
+      const colour = done || paused ? ink.muted : blocked ? ink.attention : ink.text;
+      const glyph = done ? ink.success(stateMark.done()) : blocked ? ink.attention(stateMark.asking())
+        : paused ? ink.muted(mark('‖', '=', '\uF28B')) : ink.active(mark('●', '*', '\uF111'));
+      const head = `  ${glyph} ${colour(truncateAnsi(monitorText(id), idCol))}`;
+      if (done) {
+        add(`${head} ${ink.muted(cutSentence(monitorText(title), width - visualLength(head) - 1))}`, at);
+        continue;
+      }
+      const c = linkedTicketProgress(scanned, features);
+      const count = c?.total ? t('{count} tickets', { count: `${c.counts.accepted}/${c.total}` }) : '';
+      const flag = colour(t(blocked ? 'blocked' : state));
+      const right = count && visualLength(head + count + flag) + 2 <= width ? `${count} ${flag}` : flag;
+      add(pair(head, right, width), at);
+      for (const line of sentenceRows(monitorText(title), width, 3, 4)) add(line, at);
+      if (next) for (const line of sentenceRows(monitorText(next), width, 3, 4, ink.active(mark('›', '>', '\uF054')))) add(line, at);
+      for (const slug of new Set(features)) {
+        const fc = linkedTicketProgress(scanned, [slug]);
+        const label = `    ${tokenColumn(monitorText(slug), featureCol)}`;
+        const ratio = fc?.total ? `${fc.counts.accepted}/${fc.total}` : '';
+        const checks = record.acceptance[slug];
+        const unitCount = width >= 56 && ratio ? t('{count} tickets', { count: ratio }) : ratio;
+        const checkText = width >= 56 && checks?.total && ratio ? t('{count} checks', { count: `${checks.checked}/${checks.total}` }) : '';
+        const countText = checkText && visualLength(label + unitCount + checkText) + 9 <= width
+          ? `${unitCount} · ${ink.muted(checkText)}` : unitCount;
+        const countWidth = Math.max(5, visualLength(countText));
+        const cells = Math.max(0, Math.min(24, width - visualLength(label) - countWidth - 2));
+        const bar = !fc ? ink.muted(mark('—', '-')) : fc.total ? barText(fc, cells, TICKET_BAR_ORDER, paused)
+          : ink.frame(mark('╌', '.').repeat(cells));
+        add(`${label} ${bar} ${' '.repeat(countWidth - visualLength(countText))}${countText}`, at);
+        for (const ticket of scanned.get(slug)?.tickets ?? []) {
+          const job = ticket.job?.id && jobs.get(ticket.job.id);
+          if (job) { rows.push(hubJobRow(job, width, now, ticket)); jobs.delete(job.jobId); }
+        }
+      }
+      if (result) {
+        const age = compactAge(record.resultDates?.[id], now), body = monitorText(result).replace(/\s+/g, ' ').trim();
+        const resultGlyph = ink.success(stateMark.done());
+        if (!age) for (const line of sentenceRows(body, width, 2, 4, resultGlyph)) add(line, at);
+        else {
+          const first = flowLines(body, width - visualLength(age) - 7)[0] ?? '';
+          add(pair(`    ${resultGlyph} ${first}`, ink.muted(age), width), at);
+          for (const line of sentenceRows(body.slice(first.length).trimStart(), width, 1, 6)) add(line, at);
+        }
+      }
+      for (const [i, text] of evidence.slice(0, 3).entries()) {
+        add(`    ${ink.muted(mark('↗', '@', '\uF0C1'))} ${ink.muted(evidenceLabel(monitorText(text), width - 6))}`,
+          { item: `${at.item}:evidence:${i}`, objectiveEvidence: { root, text } });
+      }
+      if (evidence.length > 3) add(`      ${ink.muted(t('{remaining} more', { remaining: evidence.length - 3 }))}`, at);
     }
-    rows.push({ ...at, text: pair(`  ${monitorText(id)}: ${monitorText(title)}`, status, width) });
-    if (state === 'done') continue;
-    for (const [label, value] of [['Result', result], ['Next', next]] as const) {
-      if (!value) continue;
-      const text = t('{label}: {value}', { label: t(label), value: monitorText(value) });
-      rows.push(...clampClean(text, width - 4, 2).lines.map((line) => ({ ...at, text: fit(`    ${line}`, width) })));
-    }
-    const checks = [...new Set(features)].flatMap((slug) => {
-      const n = record.acceptance[slug];
-      return n?.total ? [`${monitorText(slug)} ${n.checked}/${n.total}`] : [];
-    }).filter((text) => visualLength(text) <= width - 4);
-    for (const line of pack(checks, Math.max(1, width - 2))) rows.push({ ...at, text: fit(`  ${theme.board.muted(line)}`, width) });
+    if (record.diagnostics.length) add(`  ${ink.attention(t('Some objectives could not be read'))}`);
   }
-  if (record.diagnostics.length) rows.push(boardRow(fit(`  ${theme.board.attention(t('Some objectives could not be read'))}`, width)));
+  if (jobs.size) rows.push(section(t('Jobs in Project'), width, String(jobs.size)), ...[...jobs.values()].map((job) => hubJobRow(job, width, now)));
   return rows;
 }
 

@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import { openBoard, writeBoard } from '../cli/board.js';
 import { focusJobTab, openEditorPane, openGitShowPane, stopJob } from '../cli/panel-pane.js';
 import { readExpData, saveExpEdit } from '../collectors/exp-store.js';
+import { collectEvidenceEntry } from '../collectors/objectives.js';
 import { answerJobQuestion, appendPanelAction, recordPanelAnswer, type AnswerResult } from '../collectors/panel-actions.js';
 import type { ProjectVisits } from '../collectors/project-visits.js';
 import { acceptAll, TryLog } from '../collectors/try-records.js';
@@ -64,6 +65,10 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
   return {
     get expSaving() { return expSaving; },
     execute(action: MonitorOutcome['action'], previous: MonitorState) {
+      if (action?.type === 'open-objective-evidence') {
+        const { file, commit } = collectEvidenceEntry(action.text, action.root, home);
+        action = file ? { type: 'open-files', files: [file] } : commit ? { type: 'git-show', cwd: action.root, hash: commit } : undefined;
+      }
       if (!action) return;
       const state = host.state;
       switch (action.type) {

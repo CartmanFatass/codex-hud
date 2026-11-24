@@ -90,7 +90,7 @@ test('request order is waited-on, then project priority, then oldest dated first
   assert.equal((await f.read(NOW)).first, items[2]);
 });
 
-test('a numbered request keeps its identity across owner surfaces; Home shows the bare request', async (t) => {
+test('a numbered request keeps its identity across owner surfaces; Home and Project show the bare request', async (t) => {
   const f = fixture(t), legacy = 'Legacy question (objective measure)';
   const objective = join(f.cwd, '.hud/objectives.md');
   const title = (value) => f.put(objective, `## measure: ${value}\n**State:** active\n`);
@@ -106,15 +106,16 @@ test('a numbered request keeps its identity across owner surfaces; Home shows th
       renderHtmlBoard({ project, workboard: board, projectName: 'Sample', root: f.cwd, generatedAt: NOW })];
   };
   const expected = '2026-01-01 r7 · Choose a layout · Measure sample (work waits)';
-  const [home, ...otherSurfaces] = await draw();
+  const [home, project, html] = await draw();
   assert.match(home, /^. project [›>] measure +work waits[^\n]*\n  Choose a layout$/m);
-  assert.ok(home.includes(legacy));
-  assert.doesNotMatch(home, /r7|\(work waits\)/);
-  for (const text of otherSurfaces) {
-    assert.ok(text.includes(expected));
+  assert.match(project, /^. measure +work waits[^\n]*\n  Choose a layout$/m);
+  for (const text of [home, project]) {
     assert.ok(text.includes(legacy));
-    assert.ok(!text.includes('[r7]'));
+    assert.doesNotMatch(text, /r7|\(work waits\)/);
   }
+  assert.ok(html.includes(expected));
+  assert.ok(html.includes(legacy));
+  assert.ok(!html.includes('[r7]'));
   assert.equal((await f.read(NOW)).first, expected);
   title('Measure another sample');
   const renamed = await f.read(NOW);
@@ -174,11 +175,11 @@ test('M1: a routine question wakes main, stays in Jobs → Inspector, and never 
     const hub = plain(draw(onPage())).join('\n');
     const home = draw(initialMonitorState()), portfolioText = plain(home).join('\n');
     assert.match(portfolioText, /^. project +work waits\n  Decide the public export format$/m);
-    assert.ok(!portfolioText.includes(question));
-    for (const text of [hub, renderHtmlBoard({ project, workboard, projectName: 'Sample', root: f.cwd, generatedAt: NOW })]) {
-      assert.ok(text.includes(explicit));
-      assert.ok(!text.includes(question));
-    }
+    assert.match(hub, /^. +work waits\n  Decide the public export format$/m);
+    assert.doesNotMatch(hub, /\(work waits\)/);
+    const html = renderHtmlBoard({ project, workboard, projectName: 'Sample', root: f.cwd, generatedAt: NOW });
+    assert.ok(html.includes(explicit));
+    for (const text of [portfolioText, hub, html]) assert.ok(!text.includes(question));
     assert.match(hub, /^Needs you ─+ 1$/m);
     const press = (frame, key) => draw(handleMonitorInput(frame.state, { type: 'key', key }, { frame }).state);
     const jobs = press(home, 'jobs');

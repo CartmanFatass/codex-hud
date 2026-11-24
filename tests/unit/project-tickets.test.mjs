@@ -95,7 +95,7 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
   for (const width of [32, 56, 80, 120]) for (const lang of ['en', 'zh']) {
     const frame = f.render(width, lang, featurePage()), hub = f.render(width, lang), text = plain(frame).join('\n');
     for (const line of [...frame.lines, ...hub.lines]) assert.equal(visualLength(line), width, stripAnsi(line));
-    assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +2 features/ : /工单 +2 个功能/);
+    assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +3\/13 done/ : /工单 +3\/13 完成/);
     if (width >= 80) {
       assert.match(text, lang === 'en' ? /2 features/ : /2 个功能/);
       assert.match(text, lang === 'en' ? /imp 12m/ : /imp 12分/);
@@ -106,8 +106,8 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
       assert.match(text, /retired-tools +2\/2/);
       assert.doesNotMatch(text, /Claude collector|Legacy cleanup|Not a ticket/);
       const entries = plain(hub).join('\n'), at = (word) => entries.indexOf(word);
-      const [progress, tickets, tree, docs] = (lang === 'en' ? ['Progress', 'Tickets', 'Working tree', 'Docs'] : ['进度', '工单', '工作区', '文档']).map(at);
-      assert.ok(progress >= 0 && progress < tickets && tickets < tree && tree < docs, 'the hub lists Progress, Tickets, Working tree, Docs');
+      const [tickets, progress, tree, docs] = (lang === 'en' ? ['Tickets', 'Progress', 'Worktree', 'Docs'] : ['工单', '进度', '工作区', '文档']).map(at);
+      assert.ok(tickets >= 0 && tickets < progress && progress < tree && tree < docs, 'Details lists Tickets, Progress, Worktree, Docs');
       assert.equal(at(lang === 'en' ? 'Control plane' : '控制面'), -1);
     }
   }
@@ -279,8 +279,12 @@ test('the 64-feature scan marks partial meters without opening omitted tickets',
   for (const [lang, word] of [['en', 'Partial'], ['zh', '不完整']]) {
     for (const panelLayout of ['classic']) for (const page of [undefined, 'tickets']) {
       const frame = f.render(40, lang, onPage(page, { prefs: { panelLayout } }), data);
-      assert.match(plain(frame).join('\n'), new RegExp(word));
-      if (!page) assert.match(plain(frame).join('\n'), new RegExp(`${word} · 64`));
+      const text = plain(frame).join('\n');
+      if (page) assert.match(text, new RegExp(word));
+      else {
+        assert.doesNotMatch(text, /Partial|不完整/);
+        assert.match(text, lang === 'en' ? /^Details ─+ 64 features sampled$/m : /^详情 ─+ 从 64 个功能抽样$/m);
+      }
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
     }
   }

@@ -29,8 +29,9 @@ const block = (lines, header) => {
 test('the Working tree row counts unlinked worktrees and its page lists them', async (t) => {
   const f = await fixture(t);
   const rows = (lang, state) => plain(f.render(38, lang, state, 46));
-  assert.ok(rows('en').some((line) => /^Working tree +3 unlisted worktrees$/.test(line)));
-  assert.ok(rows('zh').includes('工作区 3 个未登记工作树'));
+  assert.ok(rows('en').some((line) => /^Worktree +synthetic-proje… · \d+ changed$/.test(line)));
+  assert.ok(plain(f.render(80, 'en', undefined, 46)).some((line) => /^Worktree +.* · 3 unlisted worktrees/.test(line)));
+  assert.ok(plain(f.render(80, 'zh', undefined, 46)).some((line) => /^工作区 +.* · 3 个未登记工作树/.test(line)));
   const listed = block(rows('en', 'tree'), /^Unlisted worktrees/);
   assert.match(listed[0], /^Unlisted worktrees ─+ 3$/);
   assert.deepEqual(listed.slice(1).map(l => l.trim().replace(/ +/g, ' ')),
@@ -64,7 +65,7 @@ test('the name row identifies the project switch; try and accepted keep distinct
 
 test('Enter or a click on a waiting item opens its whole STATE text on a page, in STATE\'s words; `o` opens STATE.md', async (t) => {
   const f = await fixture(t, { waiting: [WAITING[2], TRY_LONG, WAITING[3]] });
-  // The parse keeps the continuation lines as written; the hub shows the item whole under the cursor.
+  // The hub has a four-line preview; the waiting page preserves continuation paragraphs.
   assert.equal(f.data.waiting[1].text, TRY_LONG);
   const hubAt = (lang, state) => f.render(38, lang, state ?? onPage(undefined, { project: { nav: { cursor: 'project:wait:1' } } }), 24);
   const hub = hubAt('en'), y = plain(hub).findIndex((row) => /^  \? Try 0\.3 PANEL-NEXT/.test(row));

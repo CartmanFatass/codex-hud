@@ -11,6 +11,7 @@ import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit,
 import type { WorkboardSnapshot } from './workboard-types.js';
 import { STATE_BYTES, WAITING_HEADING, requestFields, stateBullets, statePaths } from './state-ledger.js';
 import { objectivePath, readObjectives, type ObjectiveRecord } from './objectives.js';
+import { ResultReceipts, resultDate } from './result-receipts.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
 import { collectControlJobStats, type ControlJobStats } from './job-stats.js';
@@ -60,7 +61,9 @@ export interface ProjectTicket {
 }
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[]; partial?: true }
 export interface ProjectSnapshot {
-  objectives?: ObjectiveRecord & { path: string; acceptance: Record<string, { checked: number; total: number }> };
+  objectives?: ObjectiveRecord & { path: string; acceptance: Record<string, { checked: number; total: number }>; resultDates?: Record<string, number> };
+  /** Scanned Objective features, including ones outside the Tickets page's finished-feature preview. */
+  objectiveTickets?: TicketFeature[];
   tickets: TicketFeature[];
   ticketTotals?: { doneTickets: number; totalTickets: number; doneFeatures: number; totalFeatures: number; partial?: true };
   waiting: ProjectItem[];
@@ -190,7 +193,11 @@ export class ProjectCollector {
   private ticketCommits = new Map<string, { sha: string; at: number }>();
   private ticketsMemo?: { stamp: string; features: TicketFeature[]; paths: string[]; claimTimes: number[]; partial: boolean };
   private collectMemo = new Map<string, { key: string; claimFloor: number; claimExpiry: number; snapshot: ProjectSnapshot }>();
-  constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) { this.tries = new TryLog(hudHome); }
+  private resultReceipts: ResultReceipts;
+  constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) {
+    this.tries = new TryLog(hudHome);
+    this.resultReceipts = new ResultReceipts(join(hudHome, 'events'));
+  }
   /** Test seam: cached Home to-try commit timestamps currently retained. */
   private cached<T>(path: string, load: (st: fs.Stats) => T, preStat?: fs.Stats | null): T | null {
     try {
@@ -562,10 +569,18 @@ export class ProjectCollector {
     const objectives = objective?.record;
     if (objectives) {
       const linked = new Set(objectives.objectives.flatMap((item) => item.features));
-      // Use scanned checklists before the Tickets page folds away older finished features.
-      const acceptance = Object.fromEntries((ticketsScan.partial ? [] : out.tickets).filter(({ slug }) => linked.has(slug))
+      // Keep the linked features before the Tickets page folds away older finished ones.
+      const objectiveTickets = out.tickets.filter(({ slug }) => linked.has(slug));
+      if (!home) out.objectiveTickets = objectiveTickets;
+      const acceptance = Object.fromEntries(objectiveTickets.filter((f) => !f.partial)
         .map(({ slug, tickets }) => [slug, tickets.reduce((n, t) => ({ checked: n.checked + t.checked, total: n.total + t.total }), { checked: 0, total: 0 })]));
-      out.objectives = { ...objectives, path: objectiveFile, acceptance };
+      const results = shown === true ? objectives.objectives.filter((o) => o.state !== 'done' && o.result) : [];
+      const receipts = results.length ? this.resultReceipts.read() : undefined;
+      const resultDates = receipts && Object.fromEntries(results.flatMap(({ id, result }) => {
+        const at = resultDate(receipts, this.cwd, id, result!);
+        return at === undefined ? [] : [[id, at]];
+      }));
+      out.objectives = { ...objectives, path: objectiveFile, acceptance, ...(resultDates && { resultDates }) };
       out.objectivesAt = objective.at;
     }
     let stateFile;

@@ -1,4 +1,4 @@
-import { SLICE_STATES, type SliceState, type ProjectSnapshot } from '../collectors/project-board.js';
+import { SLICE_STATES, type SliceState, type ProjectSnapshot, type TicketFeature } from '../collectors/project-board.js';
 import { theme } from './colors.js';
 import { mark } from './workboard-rows.js';
 
@@ -16,6 +16,24 @@ export function progressSegments(counts: ProjectSnapshot['counts'], width: numbe
     edge = end;
     return segment;
   });
+}
+
+export const TICKET_BAR_ORDER = ['accepted', 'try', 'working', 'blocked', 'todo'] as const satisfies readonly SliceState[];
+
+/** A linked feature set has no denominator if any member was not completely read. */
+export function linkedTicketProgress(features: ReadonlyMap<string, TicketFeature>, links: readonly string[]) {
+  const counts: ProjectSnapshot['counts'] = { accepted: 0, try: 0, working: 0, blocked: 0, todo: 0, dropped: 0 };
+  let total = 0;
+  for (const slug of new Set(links)) {
+    const feature = features.get(slug);
+    if (!feature || feature.partial) return;
+    for (const { state } of feature.tickets) {
+      if (state === 'dropped') continue;
+      counts[state === 'done' ? 'accepted' : state === 'queued' || state === 'ready' ? 'todo' : state]++;
+      total++;
+    }
+  }
+  return { counts, total };
 }
 
 // The shades (and their text equivalents) distinguish try from accepted and todo even without colour.

@@ -62,6 +62,7 @@ export interface MonitorRow {
   homeTarget?: { root: string; index?: number; request?: string };
   waitingTarget?: { index: number; request: string };
   objectiveTarget?: ObjectiveTarget;
+  objectiveEvidence?: { root: string; text: string };
   commit?: { cwd: string; hash: string };
 }
 export interface MonitorRect {
@@ -168,6 +169,7 @@ export interface MonitorOutcome {
     | { type: 'exp-save'; edit: ExpEdit }
     | { type: 'open-files'; files: string[] }
     | { type: 'git-show'; cwd: string; hash: string }
+    | ({ type: 'open-objective-evidence' } & NonNullable<MonitorRow['objectiveEvidence']>)
     /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
     | ({ type: 'role-edit' } & PlaceEdit)
     | ({ type: 'preset-edit'; modelIndex?: number } & PresetEdit)

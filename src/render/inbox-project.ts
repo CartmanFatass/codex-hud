@@ -1,9 +1,9 @@
 /** Pure Project overview and project switcher. Only explicit requests belong under Needs you. */
 import { ownerRequestKey, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
-import { PAGE_WORD, PROJECT_PAGES, clampClean, objectiveRows, pageSummary, projectOrder, sinceText } from './project-view.js';
-import { boardRow, mark, minuteAge, section } from './workboard-rows.js';
-import { cutWords, fit, monitorText, pair } from './monitor-text.js';
+import { PAGE_WORD, objectiveRows, pageSummary, projectOrder, sinceText } from './project-view.js';
+import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
+import { cutWords, fit, monitorText, pair, sentenceRows } from './monitor-text.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 
@@ -16,41 +16,70 @@ const cutId = (text: string, room: number) => {
   return cutText(body, room) || truncateAnsi(body, room);
 };
 
-function requestRows(data: ProjectSnapshot, state: MonitorState, width: number): MonitorRow[] {
+function requestRows(data: ProjectSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
   const expanded = state.project.folded.has('waiting:more');
   const shown = expanded ? data.waiting : data.waiting.slice(0, NEEDS_CAP);
   const rows = [section(t('Needs you'), width, String(data.waiting.length))];
   if (!shown.length) rows.push(plain('  ' + muted(t('Nothing needs you')), width));
   for (const [i, r] of shown.entries()) {
     const item = `project:wait:${i}`, path = r.path ?? data.statePath;
-    const lines = clampClean(monitorText(r.value), width - 4, state.project.nav.cursor === item ? Infinity : 1).lines;
-    const waitingTarget = { index: i, request: ownerRequestKey(r) };
-    rows.push(...lines.map((line, k) => ({ item, waitingTarget, ...(path ? { files: [path] } : {}),
-      text: fit(`${k ? '    ' : `  ${theme.board.attention('?')} `}${line}`, width) })));
+    const target = { item, waitingTarget: { index: i, request: ownerRequestKey(r) }, ...(path ? { files: [path] } : {}) };
+    const glyph = theme.board.attention(stateMark.asking()), age = compactAge(r.at, now);
+    const id = truncateAnsi(monitorText(r.objective ?? ''), width < 50 ? 11 : 14);
+    const flag = r.waitedOn ? theme.board.attention(t('work waits')) : '';
+    const head = `${glyph} ${id}`, facts = [flag, age && muted(age)].filter(Boolean).join(' ');
+    const right = visualLength(head + facts) + 1 <= width ? facts : flag;
+    if (id || right) rows.push({ ...plain(pair(head, right, width), width), ...target });
+    const sentence = monitorText((r.sentence ?? r.value).replace(/\s+/g, ' ').trim());
+    const lines = id || right ? sentenceRows(sentence, width, 4, 2) : sentenceRows(sentence, width, 4, 2, glyph);
+    rows.push(...lines.map((line) => ({ ...plain(line, width), ...target })));
   }
   const more = data.waiting.length - NEEDS_CAP;
   if (more > 0) rows.push({ item: 'project:fold:waiting:more', text: fit(`  ${muted(expanded
     ? `${mark('▾', 'v')} ${t('fewer')}` : `${mark('▸', '>')} ${t('{n} more', { n: more })}`)}`, width) });
   return rows;
 }
-function hubPageRows(data: ProjectSnapshot, width: number, now: number): MonitorRow[] {
-  const shown = PROJECT_PAGES.filter((p) => p !== 'tickets' || data.tickets?.length);
-  const col = Math.max(...shown.map((p) => visualLength(t(PAGE_WORD[p])))) + 1;
-  return shown.map((page) => {
-    const facts = pageSummary(page, data, now);
-    while (facts.length > 1 && visualLength(facts.join(' · ')) > Math.max(1, width - col)) facts.pop();
-    return { item: `project:page:${page}`, text: fit(`${theme.board.title(fit(t(PAGE_WORD[page]), col))}${facts.join(' · ') || mark('–', '-')}`, width) };
-  });
+function detailRows(data: ProjectSnapshot, width: number, now: number): MonitorRow[] {
+  const totals = data.ticketTotals, col = width < 56 ? 9 : 10;
+  const coverage = totals?.partial ? t(totals.totalFeatures === 1 ? '{n} feature sampled' : '{n} features sampled', { n: totals.totalFeatures }) : '';
+  const rows = [plain('', width), section(t('Details'), width, coverage)];
+  for (const page of ['tickets', 'progress', 'tree', 'docs'] as const) {
+    if ((page === 'tickets' && !(totals?.totalFeatures || totals?.partial || data.tickets.length)) || (page === 'tree' && !data.git)) continue;
+    const label = page === 'tree' ? 'Worktree' : PAGE_WORD[page], room = width - col - 1;
+    const summary = pageSummary(page, data, now);
+    // The Git branch is a token; let it give way to the whole change count.
+    if (page === 'tree' && data.git?.branch) summary[0] = truncateAnsi(summary[0], Math.max(0, room - visualLength(summary[1]) - 3));
+    const facts = summary.filter((fact) => fact && visualLength(fact) <= room);
+    while (facts.length > 1 && visualLength(facts.join(' · ')) > room) facts.pop();
+    rows.push({ ...plain(`${muted(fit(t(label), col))} ${facts.join(' · ') || muted(mark('—', '-'))}`, width), item: `project:page:${page}` });
+  }
+  return rows;
 }
 
-/** Project landing: explicit requests, declared objectives, then links to diagnostics. */
+function stateNotes(data: ProjectSnapshot, width: number): MonitorRow[] {
+  const next = data.next.map((r) => r.value).join(' · '), path = data.statePath;
+  return ([['Now', data.summary], ['Next', next]] as const).flatMap(([label, body]) => body ? [section(t(label), width),
+    ...sentenceRows(monitorText(body), width, 2, 2).map((line) => ({ ...plain(muted(line), width),
+      ...(path && { item: `project:file:${path}:${label.toLowerCase()}`, files: [path] }) }))] : []);
+}
+
+/** Project landing: explicit requests, declared Objectives or STATE notes, then diagnostic links. */
 export function projectOverviewRows(
   data: ProjectSnapshot, state: MonitorState, width: number, now: number, name: string, projects: ProjectChoice[],
 ): MonitorRow[] {
   const many = projects.length > 1, at = Math.max(0, projects.findIndex((p) => p.root === state.selectedProject));
-  return [boardRow(''),
-    { ...section(theme.board.title(monitorText(name) || t('Project')), width, many ? `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}` : ''), ...(many ? { item: 'project:switch' } : {}) },
-    ...requestRows(data, state, width), ...objectiveRows(data, width), boardRow(''), ...hubPageRows(data, width, now)];
+  const record = data.objectives, stance = record && record.stance !== 'unknown' ? t(record.stance) : '';
+  const priority = record && record.priority !== 'normal' ? t('{priority} priority', { priority: t(record.priority) }) : '';
+  const age = compactAge(Math.max(data.updatedAt ?? -Infinity, data.objectivesAt ?? -Infinity), now);
+  const ageText = age && t(width < 50 ? '{age} ago' : 'updated {age} ago', { age });
+  const identity = [priority, ageText, stance].filter(Boolean);
+  while (visualLength(identity.join(' · ')) + 2 > width && identity.length) identity.shift();
+  if (stance && identity.includes(stance)) identity.unshift(identity.pop()!);
+  const title = truncateAnsi(monitorText(name), width < 50 ? 14 : width < 80 ? 18 : 24) || t('Project');
+  return [plain('', width),
+    { ...section(theme.board.title(title), width, many ? `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}` : ''), ...(many ? { item: 'project:switch' } : {}) },
+    ...(identity.length ? [plain(`  ${muted(identity.join(' · '))}`, width)] : []),
+    ...requestRows(data, state, width, now), ...(!record ? stateNotes(data, width) : []), ...objectiveRows(data, width, now), ...detailRows(data, width, now)];
 }
 
 /** Projects list: grouped into Needs you, Running and Quiet (a quiet project is one row). */

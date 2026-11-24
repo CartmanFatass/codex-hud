@@ -87,9 +87,9 @@ for (const layout of ['classic', 'split']) test(`${layout} Accept all records ev
   const { key, frame, painted, close, modelLog } = panel(f, layout);
   await painted(/Choose the sample filename/);
   key('\x1b[C');
-  await painted(/Tickets +1 feature/m);
+  await painted(/Tickets +0\/3 done · 1 feature/m);
   assert.doesNotMatch(frame(), /Accept all|3 to try/);
-  key('Gkk\r'); // Docs → Working tree → Tickets, then open its diagnostics.
+  key('Gkk\r'); // Docs → Progress → Tickets, then open its diagnostics.
   await painted(/^Accept all +3 to try/m);
   key('G');
   await painted(/⏎ accept all/);

@@ -32,7 +32,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.deepEqual(projectFrames(f), expected);
   assert.equal(f.data.git.branch, 'synthetic-project');
   assert.equal(f.data.worktreeCount, 2);
-  assert.match(plain(f.render(120)).join('\n'), /Working tree +1 unlisted worktree · synthetic-project · \d+ changed · 2 worktrees/);
+  assert.match(plain(f.render(120)).join('\n'), /Worktree +synthetic-project · \d+ changed · 1 unlisted worktree · 2 worktrees/);
   assert.match(f.data.last.text, /Synthetic Project baseline/);
   assert.equal(f.data.waiting.length, 2);
   assert.match(f.data.waiting[1].value, /after trying the synthetic setup/);
@@ -441,20 +441,20 @@ test('Hub: project name, first attention row, one entry per page; Enter opens a 
   const f = await fixture(t);
   let frame = f.render(80);
   assert.match(plain(frame).join('\n'), /^demo-project ─/m);
-  assert.deepEqual(hubEntries(frame), ['progress', 'tickets', 'tree', 'docs'].map((p) => `project:page:${p}`));
+  assert.deepEqual(hubEntries(frame), ['tickets', 'progress', 'tree', 'docs'].map((p) => `project:page:${p}`));
   assert.equal(frame.state.project.nav.cursor, 'project:wait:0', 'the cursor starts on the first explicit request');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
-  assert.match(plain(frame).join('\n'), /^Progress +\d+ tasks · M3b/m);
+  assert.match(plain(frame).join('\n'), /^Progress +M3b · \d+ working · \d+ to do/m);
   assert.doesNotMatch(plain(frame).join('\n'), /Accept all|\d+ to try/);
   assert.doesNotMatch(plain(frame).join('\n'), /^Control plane /m);
   // Down visits each page entry once.
-  frame.state.project.nav.cursor = 'project:page:progress';
+  frame.state.project.nav.cursor = 'project:page:tickets';
   const visited = [];
   for (let i = 0; i < 3; i++) {
     frame = f.render(80, 'en', press(frame, 'down').state);
     visited.push(frame.state.project.nav.cursor);
   }
-  assert.deepEqual(visited, ['project:page:tickets', 'project:page:tree', 'project:page:docs']);
+  assert.deepEqual(visited, ['project:page:progress', 'project:page:tree', 'project:page:docs']);
   for (const page of ['progress', 'tickets', 'tree', 'docs']) {
     frame.state.project.nav.cursor = `project:page:${page}`;
     frame = f.render(80, 'en', press(frame, 'enter').state);

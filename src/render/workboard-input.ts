@@ -219,6 +219,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if (harnesses) return;
       }
       if (harnesses && harnessId(row?.item)) return switchAction(row);
+      if (row?.objectiveEvidence) return { type: 'open-objective-evidence' as const, ...row.objectiveEvidence };
       if (row?.objectiveTarget) openObjective(row.objectiveTarget);
       else if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));

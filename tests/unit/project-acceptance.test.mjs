@@ -100,7 +100,7 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     assert.match(text(filteredDetail), /Download CSV/);
     const hub = render(undefined);
     assert.doesNotMatch(text(hub), /Accept all|全部验收/);
-    assert.match(text(hub), lang === 'en' ? /Tickets\s+2 features/ : /工单\s+2 个功能/);
+    assert.match(text(hub), lang === 'en' ? /Tickets\s+2\/4 done · 2 features/ : /工单\s+2\/4 完成 · 2 个功能/);
     const accept = render('tickets', 'project:accept-all');
     assert.match(text(accept), lang === 'en' ? /Accept all\s+1 to try/ : /全部验收\s+1 待试用/);
     assert.deepEqual(press(accept, 'enter').action, { type: 'accept-all' });

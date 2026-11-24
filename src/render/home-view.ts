@@ -1,5 +1,5 @@
 /** Portfolio handoff. A job waiting for main is not an owner request. */
-import { blockedObjectives, ownerRequestKey, type ProjectSnapshot, type SliceState, type TicketFeature } from '../collectors/project-board.js';
+import { blockedObjectives, ownerRequestKey, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { Objective } from '../collectors/objectives.js';
 import type { HomePortfolio, HomeProject, HomeRequest } from '../collectors/home-portfolio.js';
 import type { MonitorRow } from './monitor.js';
@@ -8,7 +8,7 @@ import { cutSentence, fit, monitorText, pair, sentenceRows, tokenColumn } from '
 import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
 import { ROLE_GLYPHS, roleIcon } from './model-glyphs.js';
 import { roleInk } from './work-job-row.js';
-import { barText } from './progress-bar.js';
+import { barText, linkedTicketProgress as progress, TICKET_BAR_ORDER } from './progress-bar.js';
 import { t } from './i18n.js';
 
 const pad = (n: number) => ' '.repeat(Math.max(0, n));
@@ -18,25 +18,8 @@ const liveMark = () => theme.board.active(mark('●', '*', '\uF111'));
 const idleMark = () => theme.board.muted(mark('○', 'o', '\uF10C'));
 const pauseMark = () => theme.board.muted(mark('‖', '=', '\uF28B'));
 const askMark = () => theme.board.attention(stateMark.asking());
-const barOrder = ['accepted', 'try', 'working', 'blocked', 'todo'] as const satisfies readonly SliceState[];
-
-/** Linked features form a set. A missing or incomplete feature makes the denominator unknown. */
-function progress(features: Map<string, TicketFeature>, links: readonly string[]) {
-  const counts: ProjectSnapshot['counts'] = { accepted: 0, try: 0, working: 0, blocked: 0, todo: 0, dropped: 0 };
-  let total = 0;
-  for (const slug of new Set(links)) {
-    const feature = features.get(slug);
-    if (!feature || feature.partial) return;
-    for (const { state } of feature.tickets) {
-      if (state === 'dropped') continue;
-      counts[state === 'done' ? 'accepted' : state === 'queued' || state === 'ready' ? 'todo' : state]++;
-      total++;
-    }
-  }
-  return { counts, total };
-}
 function progressCells(data: ReturnType<typeof progress>, width: number, paused: boolean) {
-  return !data ? pad(width) : data.total ? barText(data, width, barOrder, paused) : dots(width);
+  return !data ? pad(width) : data.total ? barText(data, width, TICKET_BAR_ORDER, paused) : dots(width);
 }
 const countText = (data: ReturnType<typeof progress>, width: number) => {
   if (!data?.total) return '';
