@@ -61,7 +61,9 @@ export function homeRows(portfolio: HomePortfolio | undefined, load: PaneLoad | 
       }
       if (result) {
         const label = result.at === undefined ? t('Result') : t('Result ({date})', { date: new Date(result.at).toISOString().slice(0, 10) });
-        rows.push(...objectiveRows(label, result.text, objectives?.objectives.find((o) => o.id === result.id), 'result'));
+        // With several Objectives, name the one the latest result belongs to.
+        const owner = (objectives?.objectives.length ?? 0) > 1 ? ` · ${result.id}` : '';
+        rows.push(...objectiveRows(label + owner, result.text, objectives?.objectives.find((o) => o.id === result.id), 'result'));
       }
     }
   }

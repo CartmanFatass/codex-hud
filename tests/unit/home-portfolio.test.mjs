@@ -63,7 +63,7 @@ test('Home renders all three registered projects and scoped badges in EN/ZH at 1
       assert.match(text, /\? state-notes · 2026-11-20 r1 · Choose beta/);
       assert.match(text, lang === 'en' ? /paused-study · paused · Idle .*high priority · updated 09:30/i : /paused-study · 已暂停 · 空闲 .*高优先级 · 更新于 09:30/);
       assert.match(text, /Measure the sample\s*\n.*Repeat the test/);
-      assert.match(text, lang === 'en' ? /Result \(2026-11-23\): The replay agreed\./ : /结果（2026-11-23）： The replay agreed\./);
+      assert.match(text, lang === 'en' ? /Result \(2026-11-23\) · repeat: The replay agreed\./ : /结果（2026-11-23） · repeat： The replay agreed\./);
       assert.match(text, lang === 'en' ? /state-notes · unknown · Idle.*\n  Now: Read the handoff\s*\n  Next: Share the example/ : /state-notes · 未知 · 空闲.*\n  现在： Read the handoff\s*\n  下一步： Share the example/);
       assert.match(text, lang === 'en' ? /offline-root · Unavailable/ : /offline-root · 不可用/);
       assert.match(text, lang === 'en' ? /This pane · 2 running · 1 queued/ : /当前窗格 · 2 个运行中 · 1 个排队/);
