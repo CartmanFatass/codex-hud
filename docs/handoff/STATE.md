@@ -25,5 +25,3 @@ Older handoffs: [2026-11-03 to 11-14](archive/STATE-2026-11-03-to-11-14.md), [20
   live check passed (same machine-wide counts and WSL load in every bar; explicit STATE requests ordered on the
   board). Optional left: duplicate Classic/Split frames in `tests/fixtures/project-page.mjs`.
 - M3 waits on the Objective syntax grill (above).
-- Older follow-ups (`panel-polish/01–04`, `native-statusline/04`, `land-log/02`) are re-checked against the new spec
-  before they run.
