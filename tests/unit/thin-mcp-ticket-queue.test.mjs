@@ -209,6 +209,22 @@ test('a resumed queue dispatches again a ticket whose launch failed before input
   assert.equal(f.job(again).ticket, 'sample/01');
 });
 
+test('a resumed queue drops a ticket that was closed since the queue failed', { timeout: 30_000 }, async t => {
+  const f = await project(t);
+  const { flow } = await f.start(1);
+  const [first] = await f.jobs(flow, 1);
+  writeFixtureFile(join(f.dir(first), 'STATUS.json'), JSON.stringify({ state: 'stopped', ended_at: new Date().toISOString() }));
+  assert.equal((await f.end(flow)).state, 'failed');
+  // The ticket landed through another job while the queue was stopped.
+  const ticket = join(f.root, f.ticketPath(1));
+  fs.writeFileSync(ticket, fs.readFileSync(ticket, 'utf8').replace('ready-for-agent', 'done'));
+  const { flow: resumed } = await f.start(1);
+  const [next] = await f.jobs(resumed, 1);
+  assert.notEqual(next, first);
+  assert.equal(f.job(next).ticket, 'sample/02');
+  assert.ok(f.flow(resumed).tickets.every(item => item.job !== first));
+});
+
 test('ticket queue keeps going past an answered worker question', { timeout: 30_000 }, async t => {
   const f = await project(t);
   const { flow } = await f.start();
