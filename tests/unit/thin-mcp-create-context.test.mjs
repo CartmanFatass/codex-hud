@@ -26,6 +26,21 @@ import {
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
+test('hud_create records the calling Claude session from the environment', async t => {
+  const id = '00000000-0000-4000-8000-000000000042';
+  const f = await fixture(t, { probe: `process.env.CLAUDE_CODE_SESSION_ID = ${JSON.stringify(id)};` });
+  const job = await f.call('hud_create', { role: 'general', on: 'pi', task: 'Synthetic Claude dispatch.' });
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  assert.deepEqual(receipt.dispatcher, { harness: 'claude', id });
+});
+
+test('hud_create omits dispatcher without a stated session identity', async t => {
+  const f = await fixture(t);
+  const job = await f.call('hud_create', { role: 'general', on: 'pi', task: 'Synthetic anonymous dispatch.' });
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  assert.equal(Object.hasOwn(receipt, 'dispatcher'), false);
+});
+
 test('launch thinking facts map CLI efforts before opening the worker; unknown models pass through', async (t) => {
   const f = await fixture(t);
   // The probes leave their workers running; this test is about launch arguments, not admission.

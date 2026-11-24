@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { readDirSafe, writeJsonPrivate } from '../utils/atomic-fs.js';
+import type { Job } from './job-contracts.js';
 
 export const isTicketQueueId = (id: unknown): id is string => typeof id === 'string' && /^q[0-9a-f]{16}$/.test(id);
 export const queueFile = (home: string, id: string) => join(home, 'flows', `${id}.json`);
@@ -16,6 +17,7 @@ export interface TicketQueue {
   created_at: string; updated_at: string; pid?: number; start?: string;
   state: 'working' | 'completed' | 'failed' | 'cancelled'; tickets: TicketQueueItem[];
   reason?: string; remaining?: string[];
+  dispatcher?: Job['dispatcher'];
 }
 export function readTicketQueue(home: string, id: string): TicketQueue | null {
   if (!isTicketQueueId(id)) return null;

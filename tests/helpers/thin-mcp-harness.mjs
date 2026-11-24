@@ -113,8 +113,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${clock}`;
     env.HUD_TEST_CLOCK_SCALE = String(clockScale);
   }
-  // The caller's own client session must not reach the resume guard.
-  delete env.CLAUDE_CODE_SESSION_ID;
+  // Never pass the outer test runner's session into the synthetic MCP caller.
+  for (const key of ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'HUD_MCP_PI_SESSION_ID']) delete env[key];
   for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'MISTRAL_API_KEY']) {
     delete env[key];
   }

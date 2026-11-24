@@ -173,7 +173,8 @@ async function drive(q: TicketQueue) {
         pending = (async () => {
           try {
             const result = await dispatchJob({ role: launching.role, cwd: q.root, isolation: 'worktree', ticket: launching.ticket,
-              brief_file: launching.path, request_key: key(launching) }, q.pane, undefined, undefined, false, undefined, { id: owner(launching), canAdmit });
+              brief_file: launching.path, request_key: key(launching) }, q.pane,
+              { queue: { id: owner(launching), canAdmit }, dispatcher: q.dispatcher });
             if (q.state !== 'working') return;
             if ('job' in result && typeof result.job === 'string') launching.job = result.job;
             if (!launching.job || ('ok' in result && result.ok === false)) {

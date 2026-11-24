@@ -50,6 +50,7 @@ import {
   writeCreateStatus, queuePositionsForJobs, jobCache, digestLine, publishWorkSummary, findJobMutable, slice,
 } from '../store/job-store.js';
 import { keyLock } from '../store/key-lock.js';
+import { readTicketQueue } from '../ticket-queue-state.js';
 import { DEFAULT_RESUME_S, resumeDeadline, resumeIdentity, closedReport, type NativeResume } from '../worker-resume.js';
 import { jobCwd, required, readBriefFile, assembleContext, type Args } from './context.js';
 import { dispatchBro } from './harness-bro.js';
@@ -162,7 +163,10 @@ function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): 
 
 type SlotGate = { wait: Promise<void>; release: () => void };
 
-export async function dispatchJob(input: Args, pane: string | undefined, parent?: SonicParent, repair?: { source: Job; derived: boolean }, batch = false, slotGate?: SlotGate, queue?: { id: string; canAdmit: () => boolean }) {
+export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, dispatcher }: {
+  parent?: SonicParent; repair?: { source: Job; derived: boolean }; batch?: boolean; slotGate?: SlotGate;
+  queue?: { id: string; canAdmit: () => boolean }; dispatcher?: Job['dispatcher'];
+} = {}) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
     catch { return { ok: false, code: 'invalid_arguments', error: 'sonic cwd must be an existing directory inside the parent project' }; }
@@ -220,7 +224,9 @@ export async function dispatchJob(input: Args, pane: string | undefined, parent?
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
-    dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, { worktreeSource, batch, slotGate, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: queue?.canAdmit }));
+    dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, {
+      worktreeSource, batch, slotGate, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: queue?.canAdmit, dispatcher,
+    }));
 }
 
 export const pendingScouts = new Map<string, AbortController>();
@@ -231,7 +237,8 @@ async function runCreateScout(target: Job, question: string, contextCwd: string,
   let discard = false;
   try {
     const result = await dispatchWithKey({ role: 'sonic', task: question, cwd: target.cwd, context_files: contextFiles },
-      jobCallerPane(target), `scout:${target.job}`, false, target, undefined, undefined, { scoutContextCwd: contextCwd });
+      jobCallerPane(target), `scout:${target.job}`, false, target, undefined, undefined,
+      { scoutContextCwd: contextCwd, dispatcher: target.dispatcher });
     if (!('job' in result)) {
       return { failure: ('reason' in result && result.reason) || ('error' in result && result.error) || ('code' in result && result.code) || 'could not launch' };
     }
@@ -288,9 +295,9 @@ function validExperimentTag(tag: unknown): tag is string | undefined {
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<Job, 'job' | 'objective'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit }: {
+  { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit, dispatcher }: {
     scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
-    ticketQueue?: string; canAdmit?: () => boolean;
+    ticketQueue?: string; canAdmit?: () => boolean; dispatcher?: Job['dispatcher'];
   } = {}) {
   const { experiment, arm } = args;
   if (!validExperimentTag(experiment) || !validExperimentTag(arm)) {
@@ -485,6 +492,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         caller_pane: pane,
         created_at: nowIso,
         queued_at: nowIso,
+        dispatcher,
         ...(ticketQueue && { ticket_queue: ticketQueue }),
         ...(queuedRoute && { route: queuedRoute }),
         ...((first.route?.mode === 'headless' || args.mode === 'headless') && { headless: true }),
@@ -549,6 +557,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
       caller_pane: pane,
       created_at: new Date().toISOString(),
+      dispatcher,
       task_length: task.length,
       ...(checks?.length ? { checks } : {}),
       ...(repairOf ? { repair_of: repairOf } : {}),
@@ -1215,7 +1224,8 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   return { ok, sent: ok, ...(answerRequest && { written: true }), job: id, continuation, ...(ok ? {} : { code: 'send_failed', stderr_tail: recorded.stderr_tail }) };
 }
 
-export async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean, land = false, batch = false) {
+export async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean,
+  { land = false, batch = false, dispatcher }: { land?: boolean; batch?: boolean; dispatcher?: Job['dispatcher'] } = {}) {
   const matchKey = explicitKey ?? derivedKey('send', id, message);
   let current = findJobMutable(id);
   if (!current) return { ok: false, code: 'job_not_found' };
@@ -1294,7 +1304,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
       (current.resume_s === undefined && (state === 'idle_grace' || (state === 'closed' && status?.exit_reason === 'settled')) &&
         piReportSettlement(dir, current, status)))) {
     const repair = await dispatchJob({ ...jobOptions(current), task: message, request_key: repairKey },
-      process.env.HERDR_PANE_ID, undefined, { source: current, derived: explicitKey === undefined }, batch);
+      process.env.HERDR_PANE_ID, { repair: { source: current, derived: explicitKey === undefined }, batch, dispatcher });
     const continued_as = 'job' in repair ? repair.job : isTaskReply(repair) ? tasks.get(repair.taskId)?.job : undefined;
     if (continued_as) supersedeTask(id, `continued as repair job ${continued_as}`);
     return { ...repair, continuation: 'repair' as const, ...(continued_as ? { continued_as } : {}) };
@@ -1394,7 +1404,7 @@ export async function dispatchLandRepair(id: string, cwd: string, task: string, 
     throw Error(`Repair source needs attention: ${id}`);
   const deadline = typeof status?.idle_deadline_at === 'string' ? Date.parse(status.idle_deadline_at) : Infinity;
   if (source.route?.tier !== 'light' && (closedReport(source, status) || (row.state === 'idle_grace' && Date.now() < deadline))) {
-    const sent = await keyLock(`job:${id}`, () => sendJob(id, task, key, false, true));
+    const sent = await keyLock(`job:${id}`, () => sendJob(id, task, key, false, { land: true }));
     if ('sent' in sent && sent.sent) return id;
     if (!('code' in sent) || sent.code !== 'not_continuable') { releaseLandTurn(id, key); throw Error(`Repair send failed: ${id}`); }
   }
@@ -1402,8 +1412,9 @@ export async function dispatchLandRepair(id: string, cwd: string, task: string, 
     ...(source.route?.tier === 'light' && { mode: undefined }) };
   // A closed but successfully settled job isn't a public retry target. Use the same keyed create path,
   // retaining retry provenance and the original checkout rather than starting at a clean main tip.
+  const dispatcher = ticketQueue ? readTicketQueue(hudHome, ticketQueue)?.dispatcher : undefined;
   const result = await keyLock(`request:${key}`, () => dispatchWithKey(args, pane ?? jobCallerPane(source), key, false,
-    undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source, ticketQueue }));
+    undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source, ticketQueue, dispatcher }));
   if ('job' in result && result.job && !('ok' in result && result.ok === false)) return result.job;
   throw Error(`Could not dispatch landing repair: ${'code' in result ? result.code : 'no job'}`);
 }

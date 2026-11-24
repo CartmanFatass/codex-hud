@@ -402,7 +402,7 @@ function itemError(error: unknown) {
   return { ok: false, code: message.startsWith('invalid_arguments') ? 'invalid_arguments' : 'tool_error', error: message };
 }
 
-async function sendJobs(args: Args) {
+async function sendJobs(args: Args, dispatcher: Job['dispatcher']) {
   if (args.messages !== undefined) {
     if (args.job !== undefined || args.jobs !== undefined || args.text !== undefined || args.message_key !== undefined ||
         !Array.isArray(args.messages) || !args.messages.length) throw new Error('invalid_arguments: messages');
@@ -415,7 +415,7 @@ async function sendJobs(args: Args) {
         const id = required(item, 'job');
         const message = required(item, 'text');
         const key = item.message_key === undefined ? undefined : required(item, 'message_key');
-        return { job: id, ...await keyLock(`job:${id}`, () => sendJob(id, message, key, false, false, true)) };
+        return { job: id, ...await keyLock(`job:${id}`, () => sendJob(id, message, key, false, { batch: true, dispatcher })) };
       } catch (error) {
         return { ...(jobId ? { job: jobId } : {}), ...itemError(error) };
       }
@@ -424,7 +424,7 @@ async function sendJobs(args: Args) {
   }
   const text = required(args, 'text');
   const key = args.message_key === undefined ? undefined : required(args, 'message_key');
-  const send = (id: string, workingOnly: boolean) => keyLock(`job:${id}`, () => sendJob(id, text, key, workingOnly));
+  const send = (id: string, workingOnly: boolean) => keyLock(`job:${id}`, () => sendJob(id, text, key, workingOnly, { dispatcher }));
   if (args.jobs === undefined) return send(required(args, 'job'), false);
   if (args.job !== undefined || !Array.isArray(args.jobs) || !args.jobs.length ||
       args.jobs.some((id) => typeof id !== 'string' || !id)) throw new Error('invalid_arguments: jobs');
@@ -440,7 +440,7 @@ async function sendJobs(args: Args) {
   return { sent, skipped, ...(queued.length && { queued }) };
 }
 
-export async function call(name: string, args: Args, scan: JobScan, by?: RequestCaller): Promise<unknown> {
+export async function call(name: string, args: Args, scan: JobScan, by?: RequestCaller, dispatcher?: Job['dispatcher']): Promise<unknown> {
   if (name === 'hud_land') {
     const id = required(args, 'job'), job = findJob(id);
     const task = session.taskClient;
@@ -460,7 +460,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     if (ticketGuide(args)) return fs.readFileSync(join(bundled, '../../integrations/tickets/method.md'), 'utf8');
     const cwd = jobCwd(args);
     if (args.op === 'run') {
-      const q = await startTicketQueue(hudHome, cwd, callerPane, session.taskClient, args);
+      const q = await startTicketQueue(hudHome, cwd, callerPane, session.taskClient, args, dispatcher);
       if (!q) return { ok: false, code: 'queue_not_running' };
       ensureWatcher();
       if (q.task && session.taskCapable && args.cancel !== true) {
@@ -535,7 +535,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
           return { ok: false, code: 'invalid_arguments', error: 'invalid_arguments: jobs' };
         }
         try {
-          return await dispatchJob(raw as Args, process.env.HERDR_PANE_ID, undefined, undefined, true, { wait, release });
+          return await dispatchJob(raw as Args, process.env.HERDR_PANE_ID, { batch: true, slotGate: { wait, release }, dispatcher });
         } catch (error) {
           return itemError(error);
         } finally {
@@ -547,7 +547,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
       const watcherAlive = !session.taskClient && !!callerPane && watching(callerPane, hudHome);
       return { jobs: results, hint: deliveryHint(watcherAlive) };
     }
-    const result = await dispatchJob(args, process.env.HERDR_PANE_ID);
+    const result = await dispatchJob(args, process.env.HERDR_PANE_ID, { dispatcher });
     if (session.sentCreateHint) return result;
     session.sentCreateHint = true;
     if (isTaskReply(result)) return { ...result, statusMessage: `${result.statusMessage} — ${deliveryHint(false)}` };
@@ -557,7 +557,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
   }
   if (name === 'hud_send') {
     ensureWatcher();
-    return sendJobs(args);
+    return sendJobs(args, dispatcher);
   }
   if (name === 'hud_respond' && args.answers !== undefined) {
     if (args.job !== undefined || args.request_id !== undefined || args.answer !== undefined ||

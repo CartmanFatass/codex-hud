@@ -197,16 +197,22 @@ test('a queue fails a launch whose launching process is gone', { timeout: 30_000
   assert.match(ended.reason, /dispatch interrupted before worker status was recorded/);
 });
 
-test('a resumed queue dispatches again a ticket whose launch failed before input', { timeout: 30_000 }, async t => {
+test('a resumed queue redispatches a launch failure with the original dispatcher', { timeout: 30_000 }, async t => {
   const f = await project(t);
-  const { flow } = await f.start(1);
+  const start = async threadId => resultValue((await f.rpc('tools/call', {
+    name: 'hud_tickets', arguments: { op: 'run', feature: 'sample', max_parallel: 1 }, _meta: { threadId },
+  })).result);
+  const dispatcher = { harness: 'codex', id: '00000000-0000-4000-8000-000000000042' };
+  const { flow } = await start(dispatcher.id);
   const [first] = await f.jobs(flow, 1);
+  assert.deepEqual(f.job(first).dispatcher, dispatcher);
   writeFixtureFile(join(f.dir(first), 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'dispatch_failed', error: 'synthetic checkout timeout', ended_at: new Date().toISOString() }));
   assert.equal((await f.end(flow)).state, 'failed');
-  const { flow: resumed } = await f.start(1);
+  const { flow: resumed } = await start('00000000-0000-4000-8000-000000000043');
   const [again] = await f.jobs(resumed, 1);
   assert.notEqual(again, first);
   assert.equal(f.job(again).ticket, 'sample/01');
+  assert.deepEqual(f.job(again).dispatcher, dispatcher);
 });
 
 test('a resumed queue drops a ticket that was closed since the queue failed', { timeout: 30_000 }, async t => {

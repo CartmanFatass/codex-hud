@@ -39,7 +39,8 @@ function ticketClosed(path: string) {
     return /^(?:done|wontfix|ready-for-human)$/i.test(status);
   } catch { return false; }
 }
-export async function startTicketQueue(home: string, cwd: string, pane: string | null, task: boolean, args: Record<string, unknown>) {
+export async function startTicketQueue(home: string, cwd: string, pane: string | null, task: boolean,
+  args: Record<string, unknown>, dispatcher?: TicketQueue['dispatcher']) {
   const { feature, max_parallel, cancel } = args;
   if (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature)) throw Error('invalid_arguments: feature');
   if (max_parallel !== undefined && (typeof max_parallel !== 'number' || !Number.isSafeInteger(max_parallel) || max_parallel < 1))
@@ -66,6 +67,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     const now = new Date().toISOString();
     const q: TicketQueue = { flow: `q${randomBytes(8).toString('hex')}`, root, feature, pane, task,
       max_parallel: max_parallel ?? resumed?.max_parallel ?? capForRole(loadConcurrencySettings(), 'imp'), created_at: now, updated_at: now,
+      dispatcher: resumed ? resumed.dispatcher : dispatcher,
       state: 'working', tickets: resumed?.tickets.filter(item => item.landed || (!launchFailed(home, item.job) && !ticketClosed(item.path)))
         .map(item => ({ ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow })) ?? [] };
     writeTicketQueue(home, q, true);

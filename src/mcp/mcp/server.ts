@@ -1,6 +1,7 @@
 /** MCP request handling and generation handoff. */
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import { paneInfo } from '../../roles/notify.js';
+import type { Job } from '../job-contracts.js';
 import type { RequestCaller } from '../local-objectives.js';
 import * as workerTools from '../../worker/tools.js';
 import { statuslineTool, statuslineResource, readCodexStatusline } from '../codex-statusline.js';
@@ -33,6 +34,14 @@ async function toolsListResult() {
         session.taskClient && ['hud_create', 'hud_send', 'hud_respond', 'hud_land', 'hud_tickets'].includes(tool.name)
           ? { ...tool, execution: { taskSupport: 'optional' } } : tool),
   };
+}
+function dispatchIdentity(thread: unknown): Job['dispatcher'] {
+  if (session.agyClient) return;
+  const { HUD_MCP_PI_SESSION_ID: pi, CLAUDE_CODE_SESSION_ID: claude } = process.env;
+  // No pane lookup or Codex root sessionId: a native child reports its own threadId.
+  if (typeof thread === 'string' && thread) return { harness: 'codex', id: thread };
+  if (pi !== undefined) return pi ? { harness: 'pi', id: pi } : undefined;
+  if (claude) return { harness: 'claude', id: claude };
 }
 async function requestCaller(agy: unknown, codex: unknown): Promise<RequestCaller> {
   let harness = session.callerHarness;
@@ -135,10 +144,11 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       result = readCodexStatusline(request.params._meta, hudHome);
       break;
     case 'tools/call': {
-      // Antigravity and Codex expose session identity only in tools/call metadata.
+      // Antigravity and Codex can expose session identity in tools/call metadata.
       const meta = request.params?._meta, turn = meta?.['x-codex-turn-metadata'];
       const agy = meta?.['antigravity.google/conversation_id'];
-      const codex = meta?.threadId ?? turn?.thread_id ?? meta?.sessionId ?? turn?.session_id;
+      const thread = meta?.threadId ?? turn?.thread_id;
+      const codex = thread ?? meta?.sessionId ?? turn?.session_id;
       if (session.agyClient) checkResume('agy', agy);
       else checkResume('codex', codex);
       if (session.resumeRefusal) {
@@ -176,7 +186,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       const scan = scanForCall();
       const invoke = async () => {
         const by = name === 'hud_objective' && (args.op === 'request' || args.op === 'resolve') ? await requestCaller(agy, codex) : undefined;
-        return writeScan.run(scan, () => call(name, args, scan, by));
+        return writeScan.run(scan, () => call(name, args, scan, by, dispatchIdentity(thread)));
       };
       try {
         if (session.taskClient && name === 'hud_wait') throw new Error('unknown_tool');

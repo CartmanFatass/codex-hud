@@ -5,8 +5,9 @@ import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { readJsonBounded, readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { takeLease, LEASE_TOOL } from '../roles/lease.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
-import type { Job, DoneReceipt, ManagedWorktree } from '../mcp/job-contracts.js';
+import type { Job, JobStatus, DoneReceipt, ManagedWorktree } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
+import { piSessionIdentity } from '../mcp/worker-resume.js';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -171,12 +172,18 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
   return { path };
 }
 
-export async function startSonic({ job: parent }: Pick<Worker, 'job'>, task: string, cwd?: unknown) {
+export async function startSonic({ dir, job: parent }: Pick<Worker, 'dir' | 'job'>, task: string, cwd?: unknown) {
   if (parent.role === 'sonic') throw new Error('a sonic worker cannot start sonic');
   if (!task.trim()) throw new Error('the sub-task is empty');
+  let status: Partial<JobStatus> | undefined;
+  try { status = readJsonBounded(join(dir, jobFiles.status), 64 * 1024) as JobStatus; }
+  catch { /* No known worker session yet. */ }
+  const harness = parent.cli?.agent ?? 'pi';
+  const id = parent.cli ? status?.agent_session_id : status?.session_id ?? piSessionIdentity(parent, status?.session_file)?.id;
+  const dispatcher = ['pi', 'claude', 'codex'].includes(harness) && typeof id === 'string' && id ? { harness, id } : undefined;
   const result = await dispatchJob({
     role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd, task,
-  }, jobCallerPane(parent), parent);
+  }, jobCallerPane(parent), { parent, dispatcher });
   if (!('job' in result) || !result.job) {
     const code = 'code' in result ? result.code : undefined;
     const message = ('error' in result ? result.error : undefined) ?? code;
