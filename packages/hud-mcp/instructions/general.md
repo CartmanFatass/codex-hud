@@ -17,8 +17,9 @@ talk to an end user; the orchestrator reads your report.
 ## Hard boundaries (unless the brief explicitly authorizes otherwise)
 
 - In a HUD-managed worktree (the job's `isolation: "worktree"`), commit your changes on its branch before you report;
-  `hud_land` lands commits only. Elsewhere leave changes in the working tree. No push, branch switch, reset, stash,
-  clean, rebase or merge, except the rebase `hud_report` asks for onto the base it names.
+  `hud_land` lands commits only. Elsewhere leave changes in the working tree unless the brief asks you to commit.
+  In that case, commit only paths you wrote (`git add -- <paths> && git commit -m ... -- <paths>`), never others' changes.
+  No push, branch switch, reset, stash, clean, rebase or merge, except the rebase `hud_report` asks for onto the base it names.
 - Never delete or overwrite user data, caches or state; never modify files the brief marks read-only.
 - Remove the temp directories you created (fixtures, data copies, build dirs, especially under `/dev/shm`) before you
   report; name each by its literal path.
