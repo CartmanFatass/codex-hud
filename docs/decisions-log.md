@@ -7,6 +7,11 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-23
 
+- **D-2026-11-23-05** (§5 M2): The owner found the M2 load text (`HUD (OS): N running, M queued`, `WSL: CPU … RAM …
+  GiB`) too wide and lacking the per-role view. The machine-wide load shows one icon and count per role again
+  (statusline-workers/03 icons, sonic last), a queued clock only when jobs are queued, and no segment when idle; local
+  load shows `C`, `M` and `S` percentages in three theme colours (owner's choice over icons, for legibility), swap only
+  at 10% or more. No scope prefix. Landed in cfab9054.
 - **D-2026-11-23-04** (§2.2, §2.3, §5): Objective syntax for M3, from the owner's grill. Each registered project
   keeps one committed `.hud/objectives.md`: a header line `**Stance:** active|paused|maintenance ·
   **Priority:** high|normal|low` (absent priority is `normal`), then one `## <id>: <title>` section per Objective

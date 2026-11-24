@@ -203,9 +203,10 @@ job facts. Settle Objective and event semantics before building M3. No implied M
   line where known. Keep Project details for now, but apply the request rule to its Inbox, notices, band and export.
   **Try:** a routine worker question reaches main but not “Needs you”; a separately flagged decision is visible and
   the worker's original question/report is still findable in Jobs → Inspector. (new)
-- **M2, see load without the panel.** Local CPU/RAM and machine-wide running/queued counts. Don't claim a global
-  owner count before the request source covers it. **Try:** with jobs in two projects and another queued, close the
-  panel: both bars show the same HUD load, labelled OS scope and their respective quotas where known; starting the
+- **M2, see load without the panel.** Local CPU/RAM and machine-wide running/queued counts, compact: one icon and
+  count per role, queued only when non-zero, CPU/RAM/swap as coloured `C`/`M`/`S` percentages (D-2026-11-23-05).
+  Don't claim a global owner count before the request source covers it. **Try:** with jobs in two projects and another
+  queued, close the panel: both bars show the same HUD load and their respective quotas where known; starting the
   queued job changes the counts. (new)
 - **M3, manage outcomes across projects.** Portfolio Home, Objective Project and request receipts, independent of
   tickets and toktrack. **Try:** from one session find a paused project and a ticketless research result in another;
