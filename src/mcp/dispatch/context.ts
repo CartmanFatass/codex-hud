@@ -165,15 +165,15 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
       return { ok: false, code: 'invalid_arguments', error: `${source} must resolve to a readable UTF-8 text file inside ${root}` } as const;
     }
   }
-  // These paths come only from the owner role's pool, never from caller context_files.
+  // Separate from caller context_files: owner pool entries or the registered project's design reference.
   for (const path of poolFiles) {
     if (path === standing || metadata.context_files?.includes(path)) continue;
     const label = JSON.stringify(path);
     try {
       if (await append(path, label) === null)
-        return { ok: false, code: 'context_too_large', error: `pool: ${label}` } as const;
+        return { ok: false, code: 'context_too_large', error: `pick: ${label}` } as const;
     } catch {
-      return { ok: false, code: 'invalid_arguments', error: `pool: ${label} must be a readable UTF-8 text file` } as const;
+      return { ok: false, code: 'invalid_arguments', error: `pick: ${label} must be a readable UTF-8 text file` } as const;
     }
   }
   const block = !sections.length ? '' : inline

@@ -264,7 +264,7 @@ test('plan change removes owned links, role files and agents, and copy-default i
   const projectJson = join(f.project, '.hud/project.json');
   assert.equal(read(projectJson).convention, true);
   const local = { land: { base: 'main', gate: ['npm test'], after: [], push: false },
-    worktree: { disposable: ['dist/**'] }, scratch: { paths: ['tmp/tasks'], keep_days: 7 } };
+    worktree: { disposable: ['dist/**'] }, scratch: { paths: ['tmp/tasks'], keep_days: 7 }, design: 'docs/design.md' };
   fs.writeFileSync(projectJson, JSON.stringify({ ...read(projectJson), ...local }));
   f.reset();
   const second = writePlan(f.root, {

@@ -55,7 +55,7 @@ export type RoleRouting = Partial<Record<RouteTier, { preset?: string; use: stri
 export const routeTiers = ['light', 'standard', 'hard'] as const;
 export const routeModes = ['headless', 'tab'] as const;
 
-export type RolePool = { dir: string; max: number; default: string[] };
+export type RolePool = { dir: string; max: number };
 export const POOL_ENTRY_LIMIT = 64;
 export const poolEntryName = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 3 && value.endsWith('.md') && value !== 'README.md' &&
@@ -80,6 +80,7 @@ export interface Role extends Partial<SonicLimits> {
   thinking?: string;
   thinking_choices?: Record<string, string>;
   pool?: RolePool;
+  prewalk?: 'on' | 'off';
   routing?: RoleRouting;
   tool?: 'jev-ask' | 'jev-aistudio' | 'jev-flow';
   provider?: 'chatgpt' | 'gemini';
@@ -212,10 +213,9 @@ function validRouting(value: unknown): boolean {
 }
 function validPool(value: unknown): value is RolePool {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const { dir, max, default: defaults } = value as Partial<RolePool>;
+  const { dir, max } = value as Partial<RolePool>;
   return typeof dir === 'string' && isAbsolute(dir) && !dir.includes('\0') &&
-    typeof max === 'number' && Number.isInteger(max) && max >= 1 && max <= POOL_ENTRY_LIMIT &&
-    Array.isArray(defaults) && defaults.length <= max && defaults.every(poolEntryName);
+    typeof max === 'number' && Number.isInteger(max) && max >= 1 && max <= POOL_ENTRY_LIMIT;
 }
 function roleReason(value: unknown): string | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unparseable JSON';
@@ -245,6 +245,7 @@ function roleReason(value: unknown): string | null {
     return 'bad thinking_choices';
   if (raw.routing !== undefined && !validRouting(raw.routing)) return 'bad routing';
   if (raw.pool !== undefined && !validPool(raw.pool)) return 'bad pool';
+  if (raw.prewalk !== undefined && raw.prewalk !== 'on' && raw.prewalk !== 'off') return 'bad prewalk';
   if (raw.active_preset !== undefined && raw.active_preset !== null && !validPresetName(raw.active_preset))
     return 'bad active_preset';
   const hidden = raw.hidden_presets;
@@ -274,6 +275,7 @@ export function projectReason(value: unknown): string | null {
   const raw = value as Record<string, unknown>;
   if (typeof raw.role !== 'string' || !raw.role.trim()) return 'missing role';
   if (raw.pool !== undefined) return 'pool is only allowed in owner role files';
+  if (raw.prewalk !== undefined) return 'prewalk is only allowed in owner role files';
   if (raw.run === undefined && normalizeHarness(raw.harness) !== 'pi')
     return 'project roles are pi only in single-place format';
   const reason = roleReason(value);
@@ -336,7 +338,8 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     ...(parsed.mcp_servers === undefined ? {} : { mcp_servers: parsed.mcp_servers as string[] }),
     ...(parsed.thinking_choices === undefined ? {} : { thinking_choices: parsed.thinking_choices as Record<string, string> }),
     ...(parsed.routing === undefined ? {} : { routing: parsed.routing as RoleRouting }),
-    ...(validPool(parsed.pool) ? { pool: parsed.pool } : {}),
+    ...(validPool(parsed.pool) ? { pool: { dir: parsed.pool.dir, max: parsed.pool.max } } : {}),
+    ...(parsed.prewalk === 'on' || parsed.prewalk === 'off' ? { prewalk: parsed.prewalk } : {}),
     presets: ((parsed.presets ?? []) as RolePreset[]).map((p) => ({
       name: p.name, run: p.run.map((item) => normalizePlace(item, rawInstructions)),
     })),
@@ -641,9 +644,11 @@ export function roleRegistry(
       }
       const choices = stack.reduce<Role['thinking_choices']>((inherited, layer) => layer.file.thinking_choices ?? inherited, undefined);
       if (choices) role.thinking_choices = choices;
-      const ownerPool = stack.filter(layer => dirname(layer.file.source_file) === ownerRoot).at(-1)?.file.pool;
-      if (ownerPool) role.pool = ownerPool;
+      const owner = stack.filter(layer => dirname(layer.file.source_file) === ownerRoot).at(-1)?.file;
+      if (owner?.pool) role.pool = owner.pool;
       else delete role.pool;
+      if (owner?.prewalk) role.prewalk = owner.prewalk;
+      else delete role.prewalk;
       role.preset = raw.active_preset === undefined ? currentPreset(role) : selected?.name ?? null;
       if (raw.active_preset && !selected) role.preset_missing = raw.active_preset;
       if (optional.has(name)) role.optionalEnabled = Object.hasOwn(switches, name) ? switches[name] : optedIn.has(name);

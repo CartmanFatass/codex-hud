@@ -101,7 +101,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   { key: 'sonicAutoThinking', group: 'Models', label: 'Sonic auto-thinking', values: [false, true],
     help: 'Send the Sonic task text to the Decision API to choose its thinking level' },
   { key: 'poolPick', group: 'Models', label: 'Pool pick', values: [true, false],
-    help: 'Send the brief and owner pool index to the Decision API; off uses the configured defaults' },
+    help: 'Select design references before launch; off skips the pick and attaches nothing' },
   { key: 'impPlacement', group: 'Models', label: 'Imp placement', values: ['fixed', 'even', 'auto'],
     help: 'Fixed: active preset. Even: spread starts across the pool. Auto: send the Imp brief, ticket and context file names and sizes to the Decision API' },
   { key: 'impEvenPool', group: 'Models', label: 'Even pool', values: [],

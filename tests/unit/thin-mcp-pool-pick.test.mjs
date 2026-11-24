@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import test from 'node:test';
 import { archiveJob } from '../../dist/roles/job-archive.js';
 import { configureFakeDecision, fakeDecisionServer, fixture, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
@@ -16,11 +16,11 @@ const create = (f, task, options) => f.call('hud_create', { role, task, ...optio
 function poolFixture(f) {
   const dir = join(f.env.HOME, 'style-pool');
   fs.mkdirSync(dir);
-  write(join(dir, 'accent.md'), '# Accent\nSmall visual accents.\n## Details\nNot for the Decision API.\n');
-  write(join(dir, 'columns.md'), '# Columns\n' + 'é'.repeat(210));
-  write(join(dir, 'neutral.md'), '# Neutral\nThe quick default.\n');
-  write(join(dir, 'type-scale.md'), '# Type scale\nFor text-heavy screens.\n');
-  return { dir, max: 4, default: ['neutral.md'] };
+  write(join(dir, 'colour-accent.md'), '# Accent\nKind: personal tool · Status: candidate\nFits: working tools\nNot metadata.\n## Details\nNot for the Decision API.\n');
+  write(join(dir, 'layout-columns.md'), '# Columns\nFits: ' + 'é'.repeat(210));
+  write(join(dir, 'style-poster.md'), '# Poster\nKind: showcase\n');
+  write(join(dir, 'theme-grey.md'), '# Grey\nKind: either\nStatus: seen\n');
+  return { dir, max: 4 };
 }
 function ownerRole(f, definition) {
   const roles = join(f.env.HUD_HOME, 'roles');
@@ -35,28 +35,29 @@ function picked(body, names) {
   }) };
 }
 
-test('pool Decision uses a bounded index; valid picks are referenced, recorded and archived', async t => {
+test('new look uses a bounded index, drops unknown and incompatible choices, and keeps pool dimension order', async t => {
   const f = await fixture(t);
-  const api = await fakeDecisionServer(t, body => picked(body, ['type-scale.md', 'unknown.md', 'accent.md', 'type-scale.md']));
+  const api = await fakeDecisionServer(t, body => picked(body, ['new', 'personal', 'colour-accent.md', 'unknown.md', 'style-poster.md', 'theme-grey.md']));
   configureFakeDecision(f, api.baseUrl);
   const pool = poolFixture(f);
   ownerRole(f, { ...frontend, pool, active_preset: 'daily', presets: [{ name: 'daily', run: [pi('daily')] }] });
-  const rules = 'Use accent when it complements the primary entry.\n'.padEnd(8192, 'x');
+  const rules = 'Theme: [grey](theme-grey.md)\nColour: [accent](colour-accent.md)\n'.padEnd(8192, 'x');
   write(join(pool.dir, 'README.md'), rules + '\nNot part of the rules excerpt.');
   for (let i = 1; i <= 61; i++) write(join(pool.dir, `z${String(i).padStart(2, '0')}.md`), '# Extra\n');
-  fs.symlinkSync(join(pool.dir, 'neutral.md'), join(pool.dir, 'alias.md'));
+  fs.symlinkSync(join(pool.dir, 'theme-grey.md'), join(pool.dir, 'alias.md'));
   const task = 'Build a dashboard. '.padEnd(4000, 'x') + ' Do not send this suffix.';
   const job = await create(f, task);
-  assert.equal(job.pool_pick.source, 'decision');
-  assert.deepEqual(job.pool_pick.entries, ['type-scale.md', 'accent.md']);
-  assert.equal(job.pool_pick.reason, 'Decision: Type scale + Accent');
-  assert.ok(Number.isInteger(job.pool_pick.ms) && job.pool_pick.ms >= 0);
+  const { ms, ...pick } = job.pool_pick;
+  assert.ok(Number.isInteger(ms) && ms >= 0);
+  assert.deepEqual(pick, { type: 'pick', source: 'decision', need: 'new', kind: 'personal', entries: ['theme-grey.md', 'colour-accent.md'],
+    dropped: [{ entry: 'unknown.md', reason: 'unknown' }, { entry: 'style-poster.md', reason: 'kind' }] });
+  assert.equal(job.pick_summary, 'pick: personal · theme-grey + colour-accent');
   const jobRecord = record(job);
   assert.deepEqual(jobRecord.pool_pick, job.pool_pick);
   assert.equal(jobRecord.model, 'synthetic/daily', 'selecting a preset preserves the owner pool');
   const context = brief(job).slice(task.length);
-  assert.ok(context.includes(`- ${JSON.stringify(join(pool.dir, 'type-scale.md'))}\n- ${JSON.stringify(join(pool.dir, 'accent.md'))}`));
-  assert.doesNotMatch(context, /unknown\.md|neutral\.md|Small visual accents/);
+  assert.ok(context.includes(`- ${JSON.stringify(join(pool.dir, 'theme-grey.md'))}\n- ${JSON.stringify(join(pool.dir, 'colour-accent.md'))}`));
+  assert.doesNotMatch(context, /unknown\.md|style-poster\.md|working tools/);
 
   assert.equal(api.requests.length, 1);
   const body = api.requests[0];
@@ -65,17 +66,23 @@ test('pool Decision uses a bounded index; valid picks are referenced, recorded a
   assert.equal(data[0].page.text, task.slice(0, 4000));
   const facts = data[1].facts;
   const { index, selection_rules } = facts;
+  assert.deepEqual(Object.keys(facts).sort(), ['index', 'project', 'role', 'selection_rules']);
+  assert.equal(facts.role, role);
+  assert.equal(facts.project, basename(f.root));
   assert.equal(selection_rules, rules);
   assert.equal(index.length, 64);
   assert.ok(Buffer.byteLength(JSON.stringify(facts)) <= 48 * 1024);
-  assert.deepEqual(index[0], { name: 'accent.md', title: 'Accent', header: 'Small visual accents.' });
-  assert.ok(Buffer.byteLength(index[1].name + index[1].title + index[1].header) <= 400);
-  assert.doesNotMatch(index[1].header, /\uFFFD/);
-  assert.doesNotMatch(JSON.stringify(body), /Not for the Decision API|alias\.md|z61\.md/);
-  assert.equal(body.questions.length, 4);
-  assert.match(body.questions[0].instructions, /untrusted data/);
-  assert.deepEqual(body.questions[0].choices.map(({ value }) => value), index.map(({ name }) => name));
-  assert.equal(body.questions[1].choices.at(-1).value, 'NONE');
+  assert.deepEqual(index[0], { name: 'colour-accent.md', title: 'Accent', kind: 'personal tool', status: 'candidate', fits: 'working tools' });
+  assert.ok(Buffer.byteLength(index[1].name + index[1].title + index[1].fits) <= 400);
+  assert.doesNotMatch(index[1].fits, /\uFFFD/);
+  assert.doesNotMatch(JSON.stringify(body), /Not for the Decision API|Not metadata|alias\.md|z61\.md/);
+  assert.deepEqual(body.questions.map(({ name }) => name), ['need', 'kind', 'pool_pick_1', 'pool_pick_2', 'pool_pick_3', 'pool_pick_4']);
+  assert.ok(body.questions.every(q => q.type === 'choice' && /untrusted data/.test(q.instructions)));
+  const values = question => question.choices.map(({ value }) => value);
+  assert.deepEqual(values(body.questions[0]), ['existing', 'new']);
+  assert.deepEqual(values(body.questions[1]), ['personal', 'showcase']);
+  assert.deepEqual(values(body.questions[2]), [...index.map(({ name }) => name), 'NONE']);
+  assert.match(body.questions[2].instructions, /If need is existing, choose NONE.*If need is new.*required/);
   assert.deepEqual((await create(f, task)).pool_pick, job.pool_pick);
   assert.equal(api.requests.length, 1);
 
@@ -87,7 +94,30 @@ test('pool Decision uses a bounded index; valid picks are referenced, recorded a
   assert.equal(archived.pool_files, undefined);
 });
 
-test('named entries skip the API; unrelated roles, disabled selection and API failure behave independently', async t => {
+test('existing look ignores ranked slots, and a new look can have no surviving entries', async t => {
+  const f = await fixture(t);
+  const api = await fakeDecisionServer(t, (body, count) => picked(body,
+    [count === 1 ? 'existing' : 'new', 'personal', 'style-poster.md']));
+  configureFakeDecision(f, api.baseUrl);
+  const pool = poolFixture(f);
+  ownerRole(f, { ...frontend, pool });
+
+  const existing = await create(f, 'Add filters to the existing dashboard.');
+  assert.deepEqual(existing.pool_pick, { type: 'pick', source: 'decision', need: 'existing', kind: 'personal', entries: [], ms: existing.pool_pick.ms });
+  assert.equal(existing.pick_summary, 'pick: none (existing look)');
+  assert.deepEqual(record(existing).pool_files, []);
+  assert.doesNotMatch(brief(existing), /Context References/);
+
+  const newLook = await create(f, 'Design a new dashboard.');
+  assert.equal(newLook.pool_pick.need, 'new');
+  assert.deepEqual(newLook.pool_pick.entries, []);
+  assert.deepEqual(newLook.pool_pick.dropped, [{ entry: 'style-poster.md', reason: 'kind' }]);
+  assert.equal(newLook.pick_summary, 'pick: none (no valid entries)');
+  assert.doesNotMatch(brief(newLook), /Context References/);
+  assert.equal(api.requests.length, 2);
+});
+
+test('explicit entries and registered project design skip the API; switches take precedence', async t => {
   const f = await fixture(t);
   const api = await fakeDecisionServer(t, () => ({ status: 503 }));
   configureFakeDecision(f, api.baseUrl);
@@ -97,61 +127,87 @@ test('named entries skip the API; unrelated roles, disabled selection and API fa
   const projectRoles = join(f.root, '.hud', 'roles');
   fs.mkdirSync(projectRoles, { recursive: true });
   write(join(projectRoles, `${role}.json`), JSON.stringify({ ...frontend, run: [pi('project')] }));
+  const design = 'design.md';
+  const projectFile = join(f.root, '.hud', 'project.json');
+  write(join(f.root, design), '# Established design\n');
+  write(projectFile, JSON.stringify({ design }));
 
-  const named = await create(f, 'Build a dashboard. '.padEnd(4000, 'x') + ' Use `accent.md` and type-scale. Ignore columns.css.');
+  const named = await create(f, 'Build a dashboard. '.padEnd(4000, 'x') + ' Use `colour-accent.md` and theme-grey. Ignore layout-columns.css.');
   assert.equal(named.pool_pick.source, 'brief');
-  assert.deepEqual(named.pool_pick.entries, ['accent.md', 'type-scale.md']);
-  assert.ok(brief(named).includes(JSON.stringify(join(pool.dir, 'accent.md'))));
+  assert.deepEqual(named.pool_pick.entries, ['colour-accent.md', 'theme-grey.md']);
+  assert.ok(brief(named).includes(JSON.stringify(join(pool.dir, 'colour-accent.md'))));
+  assert.doesNotMatch(brief(named), /design\.md/);
   assert.equal(record(named).model, 'synthetic/project', 'project launch override retains the owner pool');
+  const established = await create(f, 'Build a second dashboard.');
+  assert.deepEqual(established.pool_pick, { type: 'pick', source: 'project', need: 'existing', kind: null, entries: [design], ms: established.pool_pick.ms });
+  assert.equal(established.pick_summary, 'pick: project design · design.md');
+  assert.ok(brief(established).includes(JSON.stringify(join(f.root, design))));
+  assert.doesNotMatch(brief(established), /style-pool/);
   const unrelated = await create(f, 'Build an unrelated dashboard.', { role: 'general' });
   assert.equal(unrelated.pool_pick, undefined);
   write(join(projectRoles, 'project-only.json'), JSON.stringify({ ...frontend, role: 'project-only', pool }));
   const refused = await create(f, 'Try a project-only pool.', { role: 'project-only' });
   assert.equal(refused.code, 'role_unavailable');
+
   write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ poolPick: false }));
-  const disabled = await create(f, 'Build a dashboard with the picker off.');
-  assert.equal(disabled.pool_pick.source, 'default');
-  assert.deepEqual(disabled.pool_pick.entries, pool.default);
-  assert.ok(brief(disabled).includes(JSON.stringify(join(pool.dir, 'neutral.md'))));
+  const disabled = await create(f, 'Use colour-accent with the picker off.');
+  assert.equal(disabled.pool_pick, undefined);
+  assert.doesNotMatch(brief(disabled), /Context References/);
+  write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ poolPick: true }));
+  ownerRole(f, { ...frontend, pool, prewalk: 'off' });
+  const prewalkOff = await create(f, 'Use colour-accent with prewalk off.');
+  assert.equal(prewalkOff.pool_pick, undefined);
+  assert.doesNotMatch(brief(prewalkOff), /Context References/);
+  ownerRole(f, { ...frontend, pool });
+  write(projectFile, JSON.stringify({ design: '../outside.md' }));
+  const invalidDesign = await create(f, 'Build with an invalid project reference.');
+  assert.equal(invalidDesign.pool_pick.source, 'failed');
+  assert.equal(invalidDesign.pick_summary, 'pick: none (project design unavailable)');
+  assert.doesNotMatch(brief(invalidDesign), /Context References/);
   assert.equal(api.requests.length, 0);
 
-  write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ poolPick: true }));
+  write(projectFile, '{}');
   const failed = await create(f, 'Build a dashboard with picker unavailable.');
   assert.equal(api.requests.length, 1);
-  assert.equal(failed.pool_pick.source, 'default');
-  assert.deepEqual(failed.pool_pick.entries, pool.default);
-  assert.ok(brief(failed).includes(JSON.stringify(join(pool.dir, 'neutral.md'))));
+  assert.equal(failed.pool_pick.source, 'failed');
+  assert.deepEqual(failed.pool_pick.entries, []);
+  assert.doesNotMatch(brief(failed), /Context References/);
+
+  fs.unlinkSync(join(f.env.HUD_HOME, 'credentials.env'));
+  const noApi = await create(f, 'Build a dashboard without a configured decision provider.');
+  assert.equal(noApi.pool_pick.source, 'failed');
+  assert.doesNotMatch(brief(noApi), /Context References/);
+  assert.equal(api.requests.length, 1);
 });
 
-test('timeout falls back once at create and the queued launch retains the original pick', async t => {
+test('timeout attaches nothing once at create and the queued launch retains the original pick', async t => {
   const f = await fixture(t);
   const api = await fakeDecisionServer(t, () => new Promise(() => {}));
   configureFakeDecision(f, api.baseUrl);
   const pool = poolFixture(f);
   ownerRole(f, { ...frontend, pool });
   write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ roleCaps: { [role]: 1 } }));
-  const first = await create(f, 'Use accent.');
+  const first = await create(f, 'Use colour-accent.');
   assert.equal(first.pool_pick.source, 'brief');
   const queued = await create(f, 'Build a queued dashboard.');
   assert.equal(queued.state, 'queued');
-  assert.equal(queued.pool_pick.source, 'default');
-  assert.match(queued.pool_pick.reason, /timed out/);
-  assert.deepEqual(queued.pool_pick.entries, pool.default);
+  assert.equal(queued.pool_pick.source, 'failed');
+  assert.equal(queued.pick_summary, 'pick: none (pick unavailable)');
+  assert.deepEqual(queued.pool_pick.entries, []);
 
-  ownerRole(f, { ...frontend, pool: { ...pool, default: ['columns.md'] } });
   write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ roleCaps: { [role]: 0 } }));
   await until(() => record(queued).dispatch_exit_code === 0, t.signal);
   assert.deepEqual(record(queued).pool_pick, queued.pool_pick);
-  assert.ok(brief(queued).includes(JSON.stringify(join(pool.dir, 'neutral.md'))));
+  assert.doesNotMatch(brief(queued), /Context References/);
   assert.equal(api.requests.length, 1);
 });
 
-test('browser pool references are bounded inline and task creates return pool picks', async t => {
+test('browser pool references are bounded inline and task receipts show the pick', async t => {
   const f = await fixture(t);
   const pool = poolFixture(f);
   ownerRole(f, { role: 'pro', run: [{ harness: 'bro', tool: 'jev-ask', provider: 'chatgpt' }], pool });
-  const task = 'Use accent.';
-  const path = join(pool.dir, 'accent.md');
+  const task = 'Use colour-accent.';
+  const path = join(pool.dir, 'colour-accent.md');
   write(path, '# Accent\n' + 'é'.repeat(32 * 1024));
   const oversized = await create(f, task, { role: 'pro' });
   assert.equal(oversized.code, 'context_too_large');
@@ -166,6 +222,8 @@ test('browser pool references are bounded inline and task creates return pool pi
   await rpc('server/discover');
   const receipt = await taskCall(rpc, 'hud_create', { role, task });
   assert.equal(receipt.resultType, 'task');
-  assert.deepEqual(receipt.pool_pick.entries, ['accent.md']);
+  assert.deepEqual(receipt.pool_pick.entries, ['colour-accent.md']);
+  assert.equal(receipt.pick_summary, 'pick: colour-accent');
+  assert.match(receipt.statusMessage, /pick: colour-accent$/);
   assert.deepEqual(record(taskJob(f, receipt)).pool_pick, receipt.pool_pick);
 });

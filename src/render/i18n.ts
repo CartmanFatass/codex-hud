@@ -209,7 +209,7 @@ const ZH: Record<string, string> = {
   'Sonic thinking': 'Sonic 思考级别',
   'Sonic auto-thinking': 'Sonic 自动选档',
   'Pool pick': '条目池选择',
-  'Send the brief and owner pool index to the Decision API; off uses the configured defaults': '将简报和所有者的条目池索引发送给决策 API；关闭时使用配置的默认项',
+  'Select design references before launch; off skips the pick and attaches nothing': '启动前选择设计参考；关闭时跳过选择，不附加参考',
   'Imp placement': 'Imp 运行位置',
   'Sonic placement': 'Sonic 运行位置',
   fixed: '固定', even: '均衡',

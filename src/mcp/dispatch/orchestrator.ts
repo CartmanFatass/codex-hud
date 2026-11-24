@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
-import { join, isAbsolute, resolve, relative, sep } from 'node:path';
+import { basename, join, isAbsolute, resolve, relative, sep } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { isCliDirTrusted, propagateCliTrust } from '../../cli/trust.js';
 import { taskTarget } from '../../collectors/job-supersession.js';
@@ -38,7 +38,7 @@ import { routingTicketText, ticketObjective } from '../local-tickets.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
 import { callerPane, session, trackCreatedJob } from '../mcp/session-state.js';
 import {
-  beginTask, taskLabel, registerBatchTask, finishTask, activeTasks, taskFence, extendTask, launchSummary,
+  beginTask, taskLabel, registerBatchTask, finishTask, activeTasks, taskFence, extendTask, launchSummary, poolPickSummary,
   persistTask, sampleTask, releaseTask, batchTasks, supersedeTask, isTaskReply, tasks, needsAttention,
   claimTask, type TaskReply, type HudTask,
 } from '../mcp/tasks.js';
@@ -83,7 +83,7 @@ function created(job: Job, initialRow?: JobRow) {
     ...(job.thinking_source ? { thinking_source: job.thinking_source } : {}),
   };
   const launch = { attempts: job.attempts, used_place: job.used_place ?? null, ...(job.headless && { mode: 'headless' }),
-    ...(job.route && { route: job.route }), ...(job.pool_pick && { pool_pick: job.pool_pick }) };
+    ...(job.route && { route: job.route }), ...(job.pool_pick && { pool_pick: job.pool_pick, pick_summary: poolPickSummary(job.pool_pick) }) };
   const queued = row.state === 'queued'
     ? { queued: true as const, ...(row.queue_position !== undefined ? { queue_position: row.queue_position } : {}) }
     : {};
@@ -452,15 +452,15 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
   }
 
-  const poolConfig = !landCwd && (!repairOf || retryInput) ? chain.pool : undefined;
+  const poolConfig = chain.prewalk !== 'off' && !landCwd && (!repairOf || retryInput) ? chain.pool : undefined;
   const poolPlace = plan.candidates[0]?.prepared;
   if (poolConfig && poolPlace && !('code' in poolPlace)) {
     // Validate caller context before a model call, and don't hold the concurrency lock over the API wait.
     const browser = poolPlace.place.harness === 'bro';
     const validated = (!browser && localContext) || await contextFor(args, browser);
     if ('code' in validated) return validated;
-    pool = await pickRolePool(hudHome, poolConfig, task);
-    if (pool.pool_files.length) localContext = undefined;
+    pool = await pickRolePool(hudHome, poolConfig, task, role, project, basename(projectRoot));
+    if (pool?.pool_files.length) localContext = undefined;
     else if (!browser) localContext = validated;
   }
 
@@ -562,7 +562,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         registerBatchTask(taskEntry, queuedJob, true);
         queuedReply = created(queuedJob, queuedRow);
       } else {
-        queuedReply = finishTask(taskEntry, queuedJob, true) ?? created(queuedJob, queuedRow);
+        queuedReply = finishTask(taskEntry, queuedJob, true, taskEntry && launchSummary(queuedJob)) ?? created(queuedJob, queuedRow);
       }
       return undefined;
     }
@@ -769,7 +769,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     scoutTask.view.statusMessage = taskLabel(scoutTask, 'scouting');
   } else void ensureQueueWatcher(pane, hudHome);
   if (batch) registerBatchTask(scoutTask, base, true);
-  const reply = batch ? created(base, scoutRow) : (finishTask(scoutTask, base, true) ?? created(base, scoutRow));
+  const reply = batch ? created(base, scoutRow)
+    : (finishTask(scoutTask, base, true, scoutTask && launchSummary(base)) ?? created(base, scoutRow));
   const controller = new AbortController();
   pendingScouts.set(id, controller);
   const creating = (async () => {
