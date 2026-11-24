@@ -6,9 +6,36 @@ import { targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.
 export const STATE_BYTES = 65536;
 export const statePaths = (root: string) => [join(root, 'docs/handoff/STATE.md'), join(root, 'STATE.md')];
 
+export const WAITING_HEADING = 'Waiting for the owner';
+
+export function stateSection(state: string, heading: string) {
+  const head = new RegExp(`^## ${heading}[ \\t]*(?:\\r?\\n|$)`, 'm').exec(state);
+  if (!head) return;
+  const start = head.index + head[0].length;
+  const next = /^## /m.exec(state.slice(start));
+  return { start, end: next ? start + next.index : state.length };
+}
+
+export function stateBulletSpans(state: string, { start, end }: { start: number; end: number }) {
+  return [...state.slice(start, end).matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)]
+    .map((m) => ({ text: m[1], start: start + m.index, end: start + m.index + m[0].length }));
+}
+
 export function stateBullets(state: string, heading: string): string[] {
-  const section = state.split(new RegExp(`^## ${heading}[ \\t]*\\r?$`, 'm'))[1]?.split(/^## /m)[0] ?? '';
-  return [...section.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].map((m) => m[1]);
+  const section = stateSection(state, heading);
+  return section ? stateBulletSpans(state, section).map(({ text }) => text) : [];
+}
+
+/** IDs and Objective links occupy the first line; continuation text is ordinary prose. */
+export function requestFields(text: string) {
+  const head = /^(\d{4}-\d{2}-\d{2}[ \t]+)?\[(r\d+)\](?:[ \t]+|(?=[\r\n]|$))([^\r\n]*)/.exec(text);
+  if (!head) return;
+  const [, date = '', request, body] = head;
+  const waitMark = /[ \t]*\(work waits\)[ \t]*$/i.exec(body)?.[0] ?? '';
+  const main = body.slice(0, body.length - waitMark.length);
+  const link = /[ \t]*\(objective ([a-z0-9-]+)\)[ \t]*$/.exec(main);
+  return { request, objective: link?.[1], waits: !!waitMark,
+    display: (title?: string) => `${date}${request} · ${link ? main.slice(0, link.index) : main}${title ? ` · ${title}` : ''}${waitMark}${text.slice(head[0].length)}` };
 }
 
 /** Legacy reader for old try notifications and job supersession; not a Project progress source. */

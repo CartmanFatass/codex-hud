@@ -1,5 +1,7 @@
 /** MCP request handling and generation handoff. */
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
+import { paneInfo } from '../../roles/notify.js';
+import type { RequestCaller } from '../local-objectives.js';
 import * as workerTools from '../../worker/tools.js';
 import { statuslineTool, statuslineResource, readCodexStatusline } from '../codex-statusline.js';
 import { scoutedCreates, pendingScouts } from '../dispatch/orchestrator.js';
@@ -9,7 +11,7 @@ import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js'
 import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
 import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
 import { compactResult } from './result-text.js';
-import { session, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
+import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
 import {
   resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, flowReceipt, tasks,
   evictTask, activeTasks, loadTaskReceipt, TASK_TTL, saveTaskReceipt, stopBatchDelivery, beginHandoff,
@@ -32,6 +34,22 @@ async function toolsListResult() {
           ? { ...tool, execution: { taskSupport: 'optional' } } : tool),
   };
 }
+async function requestCaller(agy: unknown, codex: unknown): Promise<RequestCaller> {
+  let harness = session.callerHarness;
+  const env = process.env;
+  if (!harness) {
+    if (env.CLAUDE_CODE_SESSION_ID) harness = 'claude';
+    else if (codex || env.CODEX_THREAD_ID) harness = 'codex';
+  }
+  const id = harness === 'pi' ? env.HUD_MCP_PI_SESSION_ID : harness === 'agy' ? agy
+    : harness === 'claude' ? env.CLAUDE_CODE_SESSION_ID : codex ?? env.CODEX_THREAD_ID;
+  if (typeof id === 'string' && id) return { harness, session: id };
+  const pane = callerPane ? await paneInfo(callerPane) : null;
+  const agent = pane?.agent, reported = pane?.agent_session?.kind === 'id' ? pane.agent_session.value : undefined;
+  if (!harness && (agent === 'pi' || agent === 'claude' || agent === 'codex' || agent === 'agy')) harness = agent;
+  return { harness, session: harness && agent === harness && typeof reported === 'string' ? reported : undefined };
+}
+
 async function receive(line: string, write: (value: unknown) => void): Promise<void> {
   const rpcError = (id: unknown, code: number, message: string) => write({ jsonrpc: '2.0', id, error: { code, message } });
   let request;
@@ -119,8 +137,10 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
     case 'tools/call': {
       // Antigravity and Codex expose session identity only in tools/call metadata.
       const meta = request.params?._meta, turn = meta?.['x-codex-turn-metadata'];
-      if (session.agyClient) checkResume('agy', meta?.['antigravity.google/conversation_id']);
-      else checkResume('codex', meta?.threadId ?? turn?.thread_id ?? meta?.sessionId ?? turn?.session_id);
+      const agy = meta?.['antigravity.google/conversation_id'];
+      const codex = meta?.threadId ?? turn?.thread_id ?? meta?.sessionId ?? turn?.session_id;
+      if (session.agyClient) checkResume('agy', agy);
+      else checkResume('codex', codex);
       if (session.resumeRefusal) {
         await syncPanelDelivery();
         result = { ...taskContent(JSON.stringify({ ok: false, code: 'resume_refused', error: session.resumeRefusal })), isError: true };
@@ -154,7 +174,10 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       }
       await checkModTakeover();
       const scan = scanForCall();
-      const invoke = () => writeScan.run(scan, () => call(name, args, scan));
+      const invoke = async () => {
+        const by = name === 'hud_objective' && (args.op === 'request' || args.op === 'resolve') ? await requestCaller(agy, codex) : undefined;
+        return writeScan.run(scan, () => call(name, args, scan, by));
+      };
       try {
         if (session.taskClient && name === 'hud_wait') throw new Error('unknown_tool');
         if (name !== 'hud_wait') await adoptSessionJobs(scan);
@@ -173,14 +196,15 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
           result = taskContent(resultText(await withChanges(value, markExhaustion, scan)));
         }
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         result = {
           content: [
             {
               type: 'text',
               text: JSON.stringify({
                 ok: false,
-                code: 'tool_error',
-                error: error instanceof Error ? error.message : String(error),
+                code: name === 'hud_objective' && message.startsWith('invalid_arguments:') ? 'invalid_arguments' : 'tool_error',
+                error: message,
               }),
             },
           ],

@@ -9,7 +9,7 @@ import { controlFacts, type HarnessFact, type HarnessSwitchFact, type ModelLists
 import { HarnessSwitchError } from '../roles/harness-switches.js';
 import { neutralizeFilters, parseWorktreeList, parseWorktreeStatus, worktreeGit, type WorktreeInfo, type WorktreeStatus } from './worktrees.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
-import { STATE_BYTES, stateBullets, statePaths } from './state-ledger.js';
+import { STATE_BYTES, WAITING_HEADING, requestFields, stateBullets, statePaths } from './state-ledger.js';
 import { objectivePath, readObjectives, type ObjectiveRecord } from './objectives.js';
 import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
@@ -26,8 +26,9 @@ export interface ProjectItem {
   value: string;
   path?: string;
   at?: number;
-  /** A waiting item's whole bullet as STATE writes it (continuation lines kept, one per line); `value` is the same words on one line. */
+  /** A waiting item's full display text; `value` is the same words on one line. */
   text?: string;
+  request?: string;
 }
 export const SLICE_STATES = ['working', 'blocked', 'try', 'todo', 'accepted', 'dropped'] as const;
 export type SliceState = typeof SLICE_STATES[number];
@@ -110,11 +111,11 @@ export function compareOwnerRequests(a: RequestOrder, b: RequestOrder, priorityA
   return a.at === b.at ? 0 : (a.at ?? Infinity) - (b.at ?? Infinity);
 }
 
-function requestOrder(value: string): RequestOrder {
+function requestOrder(value: string, waits?: boolean): RequestOrder {
   const date = /^\d{4}-\d{2}-\d{2}(?=\s|$)/.exec(value)?.[0];
   const at = date ? Date.parse(date) : NaN;
   return {
-    waitedOn: /[（(]work waits[）)]/i.test(value),
+    waitedOn: waits ?? /[（(]work waits[）)]/i.test(value),
     at: date && Number.isFinite(at) && new Date(at).toISOString().startsWith(date) ? at : undefined,
   };
 }
@@ -512,6 +513,7 @@ export class ProjectCollector {
     let memoKey: string | undefined;
     let gitRefs: ReturnType<ProjectCollector['probeGitRefs']> | undefined;
     let prefetchedJobs: readonly { id: string }[] | undefined;
+    const objectiveFile = objectivePath(this.cwd);
     if (home) {
       const stateStamps = statePaths(this.cwd).map(statKey).join('|');
       const specStamp = shown === 'overview' ? '' : statKey(join(this.cwd, 'docs/spec.md'));
@@ -519,13 +521,13 @@ export class ProjectCollector {
       if (shown !== 'overview' && ticketsScan.features.length) gitRefs = this.probeGitRefs();
       const jobsProbe = shown !== 'overview' ? this.homeJobsProbe(board, ticketsScan.features.length > 0) : undefined;
       prefetchedJobs = jobsProbe?.jobs;
-      memoKey = [ticketsScan.stamp, stateStamps, specStamp, triesStamp, gitRefs?.stamp ?? '', jobsProbe?.stamp ?? ''].join('\x1e');
+      memoKey = [ticketsScan.stamp, stateStamps, statKey(objectiveFile), specStamp, triesStamp, gitRefs?.stamp ?? '', jobsProbe?.stamp ?? ''].join('\x1e');
       const hit = this.collectMemo.get(shown);
       if (hit && hit.key === memoKey && now >= hit.claimFloor && now < hit.claimExpiry) return hit.snapshot;
     }
     out.tickets = cloneTickets(ticketsScan.features);
-    const objectiveFile = objectivePath(this.cwd);
-    const objectives = !home && this.cached(objectiveFile, () => readObjectives(this.cwd));
+    const readObjectiveRecord = () => this.cached(objectiveFile, () => readObjectives(this.cwd));
+    const objectives = home ? undefined : readObjectiveRecord();
     if (objectives) {
       const linked = new Set(objectives.objectives.flatMap((item) => item.features));
       // Use scanned checklists before the Tickets page folds away older finished features.
@@ -543,7 +545,7 @@ export class ProjectCollector {
     const bullets = (heading: string, whole = false) => stateBullets(state, heading).map((text) => ({
       label: '', value: text.replace(/\s+/g, ' ').trim(), path: statePath, ...(whole ? { text: text.replace(/\r/g, '') } : {}),
     }));
-    out.waiting = bullets('Waiting for the owner', true).filter(item => !/^Owner 20\d\d-\d\d-\d\d\b/i.test(item.value) && !EMPTY_WAITING.test(item.value));
+    out.waiting = bullets(WAITING_HEADING, true).filter(item => !/^Owner 20\d\d-\d\d-\d\d\b/i.test(item.value) && !EMPTY_WAITING.test(item.value));
     out.next = bullets('Next');
     try { if (statePath) out.updatedAt = fs.lstatSync(statePath).mtimeMs; } catch { /* source disappeared */ }
     const nowHeading = /^## Now[^\r\n:]*:[ \t]*([^\r\n]*)/m.exec(state)?.[1];
@@ -577,10 +579,22 @@ export class ProjectCollector {
     }
     if (!home) await this.fullLedgerDetails(out, now, shown === 'export', refreshedGit);
     out.ticketTotals = ticketsScan.partial ? { ...totals, partial: true } : totals;
+    let objectiveTitles: Map<string, string> | undefined;
     out.waiting = out.waiting.filter((item) => !waitSettled(item.value, settled))
-      .map((item) => ({ item, ...requestOrder(item.value) }))
+      .map((item) => {
+        const fields = requestFields(item.text ?? item.value);
+        return { item, fields, ...requestOrder(item.value, fields?.waits) };
+      })
       .sort((a, b) => compareOwnerRequests(a, b))
-      .map(({ item, at }) => at === undefined ? item : { ...item, at });
+      .map(({ item, fields, at }) => {
+        if (!fields) return at === undefined ? item : { ...item, at };
+        if (fields.objective && !objectiveTitles) {
+          const record = home ? readObjectiveRecord() : objectives;
+          objectiveTitles = new Map(record?.objectives.map(({ id, title }) => [id, title]));
+        }
+        const text = fields.display(fields.objective ? objectiveTitles?.get(fields.objective) : undefined);
+        return { ...item, at, request: fields.request, text, value: text.replace(/\s+/g, ' ').trim() };
+      });
     out.tickets = visible;
     if (home && memoKey !== undefined) {
       let claimFloor = -Infinity, claimExpiry = Infinity;

@@ -89,6 +89,39 @@ test('request order is waited-on, then project priority, then oldest dated first
   assert.equal((await f.read(NOW)).first, items[2]);
 });
 
+test('a numbered request displays its ID and current Objective title on all owner surfaces', async (t) => {
+  const f = fixture(t), legacy = 'Legacy question (objective measure)';
+  const objective = join(f.cwd, '.hud/objectives.md');
+  const title = (value) => f.put(objective, `## measure: ${value}\n**State:** active\n`);
+  f.state('2026-01-01 [r7] Choose a layout (objective measure) (work waits)', legacy);
+  title('Measure sample');
+  const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
+  const draw = async () => {
+    const home = await collector.collect('home', board, NOW);
+    const project = await collector.collect('export', board, NOW);
+    const render = (state, data) => plain(renderMonitor({ state, project: data, tree: TREE, workboard: board, width: 100, height: 30, nowMs: NOW })).join('\n');
+    return [render(initialMonitorState(), home), render(onPage(), project),
+      renderHtmlBoard({ project, workboard: board, projectName: 'Sample', root: f.cwd, generatedAt: NOW })];
+  };
+  const expected = '2026-01-01 r7 · Choose a layout · Measure sample (work waits)';
+  for (const text of await draw()) {
+    assert.ok(text.includes(expected));
+    assert.ok(text.includes(legacy));
+    assert.ok(!text.includes('[r7]'));
+  }
+  assert.equal((await f.read(NOW)).first, expected);
+  title('Measure another sample');
+  const renamed = await f.read(NOW);
+  assert.equal(renamed.fresh, false, 'a title edit does not open a request');
+  assert.match(renamed.first, /Measure another sample/);
+  f.state(legacy); // No log is needed to clear a hand-removed line.
+  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: legacy, waiting: 1, fresh: false });
+  for (const text of await draw()) {
+    assert.ok(!text.includes('r7 · Choose a layout'));
+    assert.ok(text.includes(legacy));
+  }
+});
+
 test('M1: a routine question wakes main, stays in Jobs → Inspector, and never becomes an owner request', async (t) => {
   const f = fixture(t), run = (env) => {
     const records = [], ac = new AbortController();

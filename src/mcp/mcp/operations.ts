@@ -29,7 +29,7 @@ import type { Job } from '../job-contracts.js';
 import { landView, isFlowId, readLand, landEvents } from '../land-state.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, editTickets } from '../local-tickets.js';
-import { editObjectives } from '../local-objectives.js';
+import { editObjectives, type RequestCaller } from '../local-objectives.js';
 import { resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask, wakeTicketQueue } from '../ticket-queue.js';
 import { isTicketQueueId, readTicketQueue, ticketQueueView } from '../ticket-queue-state.js';
 import { gitSummary } from '../managed-worktree.js';
@@ -440,7 +440,7 @@ async function sendJobs(args: Args) {
   return { sent, skipped, ...(queued.length && { queued }) };
 }
 
-export async function call(name: string, args: Args, scan: JobScan): Promise<unknown> {
+export async function call(name: string, args: Args, scan: JobScan, by?: RequestCaller): Promise<unknown> {
   if (name === 'hud_land') {
     const id = required(args, 'job'), job = findJob(id);
     const task = session.taskClient;
@@ -455,7 +455,7 @@ export async function call(name: string, args: Args, scan: JobScan): Promise<unk
     return landView(flow);
   }
   if (name === 'hud_lease') return takeLease(args, { home: hudHome, cwd: process.cwd(), holder: callerPane });
-  if (name === 'hud_objective') return editObjectives(jobCwd(args), hudHome, args);
+  if (name === 'hud_objective') return editObjectives(jobCwd(args), hudHome, args, by);
   if (name === 'hud_tickets') {
     if (ticketGuide(args)) return fs.readFileSync(join(bundled, '../../integrations/tickets/method.md'), 'utf8');
     const cwd = jobCwd(args);

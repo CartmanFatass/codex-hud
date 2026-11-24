@@ -14,7 +14,7 @@ import { pushAgyEvents, type Delivery } from '../../packages/hud-mcp/bin/agy-eve
 export { hasAgyEvents } from '../../packages/hud-mcp/bin/agy-events.mjs';
 
 type NotifyResult = Delivery & { stdout?: string; stderr?: string; skipped?: boolean };
-type Pane = { agent?: string; agent_status?: string; agent_session?: { value?: string } };
+type Pane = { agent?: string; agent_status?: string; agent_session?: { kind?: string; value?: string } };
 type Options = { signal?: AbortSignal };
 
 export function registerPiWatcher(pane: string, home: string) {

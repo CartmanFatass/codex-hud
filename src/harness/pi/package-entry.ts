@@ -147,7 +147,7 @@ export function installPiPackage(
       ctx,
       id,
       source,
-      client: new PiRoleClient(binding, env, ctx.cwd),
+      client: new PiRoleClient(binding, env, ctx.cwd, id),
       panelWork: Promise.resolve(),
       diagnostic: 'panel_not_open',
       footerOn: footerChoice.on,

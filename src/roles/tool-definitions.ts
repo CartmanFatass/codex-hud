@@ -166,8 +166,8 @@ export const ROLE_TOOLS = [
   tool('hud_close', 'Reap early; repeat-safe.', { job: text }, ['job']),
   tool('hud_land', 'Land settled managed worktree job via project gate; hud_read returned flow ID.', { job: text }, ['job']),
   LEASE_TOOL,
-  tool('hud_objective', 'Edit a registered project’s .hud/objectives.md without committing. set: id and fields (new: title and state). project: stance and/or priority.', {
-    op: { ...text, enum: ['set', 'project'] },
+  tool('hud_objective', 'Edit registered projects without committing. set: Objective id and fields (new: title and state). project: stance/priority. request: text and optional Objective/waits. resolve: request ID and optional resolution/note.', {
+    op: { ...text, enum: ['set', 'project', 'request', 'resolve'] },
     cwd: { ...text, description: 'Project dir; default server cwd.' },
     id: { ...text, pattern: OBJECTIVE_SLUG },
     title: text,
@@ -178,6 +178,12 @@ export const ROLE_TOOLS = [
     features: { type: 'array', items: { ...text, pattern: FEATURE_SLUG }, description: '.scratch feature slugs.' },
     stance: { ...text, enum: PROJECT_STANCES },
     priority: { ...text, enum: PROJECT_PRIORITIES },
+    text,
+    objective: { ...text, pattern: OBJECTIVE_SLUG },
+    waits: { type: 'boolean' },
+    request: { ...text, pattern: '^r\\d+$' },
+    resolution: { ...text, enum: ['resolved', 'withdrawn'], default: 'resolved' },
+    note: text,
   }, ['op']),
   tool(
     'hud_tickets',

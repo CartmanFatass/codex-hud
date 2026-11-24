@@ -26,9 +26,10 @@ export function bandReader(cwd: string, home: string, env: NodeJS.ProcessEnv) {
     const waiting = data.waiting.map((item) => monitorText(item.value));
     const key = [lang, ...waiting].join('\0');
     if (key === shown) return undefined;
-    const fresh = !!seen && waiting.some((item) => !seen!.has(item));
+    const identities = data.waiting.map((item, i) => item.request ? `[${item.request}]` : waiting[i]);
+    const fresh = !!seen && identities.some((id) => !seen!.has(id));
     shown = key;
-    seen = new Set(waiting);
+    seen = new Set(identities);
     return { type: 'band', lang, waiting: waiting.length, first: waiting[0]?.slice(0, 240) ?? '', fresh };
   };
 }

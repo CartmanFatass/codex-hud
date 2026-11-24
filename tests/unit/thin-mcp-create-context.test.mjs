@@ -390,7 +390,7 @@ test('pi dispatch falls back to the role name for HUD instructions and passes th
   }));
   const env = { ...f.env };
   delete env.HUD_HOME;
-  const client = new PiRoleClient({ release: resolve('.'), node: process.execPath, hudHome: f.env.HUD_HOME }, env, f.root);
+  const client = new PiRoleClient({ release: resolve('.'), node: process.execPath, hudHome: f.env.HUD_HOME }, env, f.root, 'synthetic-pi');
   try {
     const result = await client.call('hud_create', { role: 'general', request_key: 'bound-home', task: 'Synthetic task.' });
     const job = JSON.parse(result.content[0].text);

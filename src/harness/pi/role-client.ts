@@ -17,10 +17,11 @@ export class PiRoleClient {
   constructor(
     private binding: PiPackageBinding,
     private env: NodeJS.ProcessEnv,
-    private cwd: string
+    private cwd: string,
+    private sessionId: string,
   ) {}
   private connect(): Connection {
-    const env = { ...this.env, HUD_HOME: this.binding.hudHome, HUD_MCP_SURFACE: 'roles' };
+    const env = { ...this.env, HUD_HOME: this.binding.hudHome, HUD_MCP_SURFACE: 'roles', HUD_MCP_PI_SESSION_ID: this.sessionId };
     const child = spawn(this.binding.node, [...v8HeapArgs('mcp', env), join(this.binding.release, 'packages/hud-mcp/bin/hud-mcp.mjs')], {
       cwd: this.cwd,
       env,

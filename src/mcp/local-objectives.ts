@@ -2,11 +2,11 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import {
   OBJECTIVE_SLUG, OBJECTIVE_STATES, PROJECT_PRIORITIES, PROJECT_STANCES, inspectObjectives, objectiveFields,
-  objectivePath, readObjectiveFile, splitObjectiveList, validEvidence, validFeature,
+  objectivePath, readObjectiveFile, readObjectives, splitObjectiveList, validEvidence, validFeature,
 } from '../collectors/objectives.js';
-import { STATE_BYTES } from '../collectors/state-ledger.js';
+import { STATE_BYTES, WAITING_HEADING, requestFields, stateBulletSpans, statePaths, stateSection } from '../collectors/state-ledger.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
-import { writeFileAtomic } from '../utils/atomic-fs.js';
+import { readDirSafe, readFileBounded, writeFileAtomic } from '../utils/atomic-fs.js';
 import { registeredProject } from '../roles/projects.js';
 
 function invalid(field: string): never { throw new Error(`invalid_arguments: ${field}`); }
@@ -97,26 +97,135 @@ function edit(root: string, home: string, args: Record<string, unknown>) {
   if (Buffer.byteLength(updated) > STATE_BYTES) throw new Error('Objective record exceeds 64 KiB');
   if (updated === original) return { ok: true, path, changed: false };
   const save = () => writeFileAtomic(path, updated, { mode: file?.mode });
-  if (receipt) {
-    // Like the job archive, retain one monthly append-only file with one small line per material change; no automatic pruning.
-    const at = new Date().toISOString(), events = join(home, 'events');
-    fs.mkdirSync(events, { recursive: true, mode: 0o700 });
-    if (!fs.lstatSync(events).isDirectory()) throw new Error('Invalid events directory');
-    const flags = fs.constants;
-    const fd = fs.openSync(join(events, `${at.slice(0, 7)}.jsonl`), flags.O_WRONLY | flags.O_APPEND | flags.O_CREAT | flags.O_NOFOLLOW | flags.O_NONBLOCK, 0o600);
-    try {
-      if (!fs.fstatSync(fd).isFile()) throw new Error('Invalid events file');
-      fs.fchmodSync(fd, 0o600);
-      save();
-      try { fs.appendFileSync(fd, JSON.stringify({ v: 1, kind: 'objective', ...receipt, at }) + '\n'); }
-      catch (error) { throw new Error('Objective file edited, but its receipt could not be appended', { cause: error }); }
-    } finally { fs.closeSync(fd); }
-  } else save();
+  if (receipt) saveWithReceipt(home, { kind: 'objective', ...receipt, at: new Date().toISOString() }, save);
+  else save();
   return { ok: true, path, changed: true, ...(receipt && { change: receipt.change }) };
 }
 
-export function editObjectives(cwd: string, home: string, args: Record<string, unknown>) {
+function checkedDirectory(path: string) {
+  const stat = fs.lstatSync(path, { throwIfNoEntry: false });
+  if (stat && !stat.isDirectory()) throw new Error(`Not a directory: ${path}`);
+}
+
+function saveWithReceipt(home: string, event: { kind: string; at: string }, save: () => void) {
+  // One small append-only line per material change, in the existing monthly archive.
+  const events = join(home, 'events');
+  fs.mkdirSync(events, { recursive: true, mode: 0o700 });
+  checkedDirectory(events);
+  const { O_WRONLY, O_APPEND, O_CREAT, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
+  const fd = fs.openSync(join(events, `${event.at.slice(0, 7)}.jsonl`), O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0o600);
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw new Error('Invalid events file');
+    fs.fchmodSync(fd, 0o600);
+    save();
+    try { fs.appendFileSync(fd, JSON.stringify({ v: 1, ...event }) + '\n'); }
+    catch (error) { throw new Error(`${event.kind} file edited, but its receipt could not be appended`, { cause: error }); }
+  } finally { fs.closeSync(fd); }
+}
+
+function readState(root: string) {
+  const paths = statePaths(root);
+  checkedDirectory(join(root, 'docs'));
+  checkedDirectory(join(root, 'docs/handoff'));
+  for (const path of paths) {
+    try {
+      const { bytes, stat, truncated } = readFileBounded(path, STATE_BYTES);
+      if (truncated) throw new Error('STATE exceeds 64 KiB');
+      return { path, text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), mode: stat.mode & 0o777 };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  return { path: paths[0], text: '' };
+}
+
+const REQUEST_ID = /^r\d+$/;
+function higherId(max: bigint, id: unknown) {
+  const n = typeof id === 'string' && REQUEST_ID.test(id) ? BigInt(id.slice(1)) : 0n;
+  return n > max ? n : max;
+}
+async function lastRecordedRequest(root: string, home: string) {
+  let max = 0n;
+  const events = join(home, 'events');
+  checkedDirectory(events);
+  const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
+  for (const name of readDirSafe(events).filter((name) => /^\d{4}-\d{2}\.jsonl$/.test(name))) {
+    const file = await fs.promises.open(join(events, name), O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    try {
+      if (!(await file.stat()).isFile()) throw new Error('Invalid events file');
+      for await (const row of file.readLines({ autoClose: false })) {
+        let event;
+        try { event = JSON.parse(row); } catch { continue; }
+        if (event?.v === 1 && event.kind === 'request' && event.project === root) max = higherId(max, event.request);
+      }
+    } finally { await file.close(); }
+  }
+  return max;
+}
+
+function opening(root: string, args: Record<string, unknown>) {
+  if (Object.keys(args).some((key) => !['op', 'cwd', 'text', 'objective', 'waits'].includes(key))) invalid('request fields');
+  const body = line(args.text, 'text') || invalid('text');
+  const fields = requestFields(`[r1] ${body}`)!;
+  if (fields.objective || fields.waits) invalid('use objective or waits fields instead of markers in text');
+  const objective = args.objective === undefined ? undefined
+    : readObjectives(root)?.objectives.find(({ id }) => id === args.objective)?.id ?? invalid('unknown objective');
+  if (args.waits !== undefined && typeof args.waits !== 'boolean') invalid('waits');
+  return { body, objective, waits: args.waits === true };
+}
+
+export interface RequestCaller { harness?: 'agy' | 'claude' | 'codex' | 'pi'; session?: string }
+async function editRequest(root: string, home: string, args: Record<string, unknown>, by: RequestCaller) {
+  const open = args.op === 'request' ? opening(root, args) : undefined;
+  let max = open ? await lastRecordedRequest(root, home) : 0n;
+  const { path, text, mode } = readState(root), section = stateSection(text, WAITING_HEADING);
+  const at = new Date().toISOString();
+  let updated: string, request: string, objective: string | undefined, waits: boolean, note: string | undefined;
+  let change: 'opened' | 'resolved' | 'withdrawn';
+  if (open) {
+    const { body } = open;
+    ({ objective, waits } = open);
+    for (const match of text.matchAll(/\[(r\d+)\]/g)) max = higherId(max, match[1]);
+    request = `r${max + 1n}`;
+    change = 'opened';
+    const eol = /\r?\n/.exec(text)?.[0] ?? '\n';
+    const bullet = `- ${at.slice(0, 10)} [${request}] ${body}${objective ? ` (objective ${objective})` : ''}${waits ? ' (work waits)' : ''}`;
+    if (!section) updated = text + (text ? (text.endsWith('\n') ? eol : eol + eol) : '') + `## ${WAITING_HEADING}${eol}${eol}${bullet}${eol}`;
+    else {
+      // Insert before trailing blank lines; don't change an existing line ending, even at EOF.
+      let pos = section.end;
+      while (pos > section.start) {
+        const start = Math.max(section.start, text.lastIndexOf('\n', pos - 2) + 1);
+        if (!/^[ \t]*\r?\n?$/.test(text.slice(start, pos))) break;
+        pos = start;
+      }
+      const insertion = text[pos - 1] === '\n' ? bullet + eol : eol + bullet;
+      updated = text.slice(0, pos) + insertion + text.slice(pos);
+    }
+  } else {
+    if (Object.keys(args).some((key) => !['op', 'cwd', 'request', 'resolution', 'note'].includes(key))) invalid('resolve fields');
+    request = typeof args.request === 'string' && REQUEST_ID.test(args.request) ? args.request : invalid('request');
+    change = choice(args, 'resolution', ['resolved', 'withdrawn']) ?? 'resolved';
+    note = args.note === undefined ? undefined : line(args.note, 'note');
+    const matches = (section ? stateBulletSpans(text, section) : [])
+      .map((span) => ({ ...span, fields: requestFields(span.text) })).filter(({ fields }) => fields?.request === request);
+    if (matches.length !== 1) invalid('unknown or duplicate request');
+    const { start, end, fields } = matches[0];
+    ({ objective, waits } = fields!);
+    const last = end - (/(?:\r?\n[ \t]+)+$/.exec(text.slice(start, end))?.[0].length ?? 0);
+    const after = /^(?:\r?\n)/.exec(text.slice(last))?.[0].length ?? 0;
+    const before = last === text.length ? /\r?\n$/.exec(text.slice(0, start))?.[0].length ?? 0 : 0;
+    updated = text.slice(0, start - before) + text.slice(last + after);
+  }
+  if (Buffer.byteLength(updated) > STATE_BYTES) throw new Error('STATE exceeds 64 KiB');
+  const event = { kind: 'request', project: root, request, objective, waits, change, at, by, note };
+  saveWithReceipt(home, event, () => writeFileAtomic(path, updated, { mode }));
+  return { ok: true, path, changed: true, request, change };
+}
+
+export function editObjectives(cwd: string, home: string, args: Record<string, unknown>, by: RequestCaller = {}) {
   const { root, registered } = registeredProject(home, cwd);
   if (!registered) throw new Error('hud_objective requires a registered project');
-  return withAbstractLock('objective', root, () => edit(root, home, args));
+  return withAbstractLock('objective', root, async () => args.op === 'request' || args.op === 'resolve'
+    ? editRequest(root, home, args, by) : edit(root, home, args));
 }
