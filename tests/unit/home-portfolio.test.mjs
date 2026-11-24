@@ -110,6 +110,43 @@ test('design Home at 40, 50 and 80 columns: cell-exact in EN/ZH across icon sets
   }
 });
 
+test('Home orders project blocks by requests, stance, priority and activity, with registration-order ties', async (t) => {
+  const f = fixture(t), offline = f.roots[2];
+  const [bare, paused, maintenance, older, newer, high, low, legacy] = [
+    'bare', 'paused', 'maintenance', 'older', 'newer', 'high', 'low', 'legacy',
+  ].map((name) => join(f.home, '..', name));
+  const stamp = (path, hours) => fs.utimesSync(path, new Date(nowMs - hours * 3600e3), new Date(nowMs - hours * 3600e3));
+  const handoff = (root, hours) => {
+    const path = join(root, 'STATE.md');
+    f.put(path, '## Now\n- Compare the examples\n');
+    stamp(path, hours);
+  };
+  fs.mkdirSync(bare);
+  for (const [root, stance, priority, hours] of [
+    [paused, 'paused', 'high', 1], [maintenance, 'maintenance', 'low', 30],
+    [older, 'active', 'normal', 4], [newer, 'active', 'normal', 8],
+    [high, 'active', 'high', 24], [low, 'active', 'low', 1],
+  ]) {
+    f.objectives(root, `**Stance:** ${stance} · **Priority:** ${priority}`, f.tracked);
+    stamp(join(root, '.hud/objectives.md'), hours);
+  }
+  handoff(legacy, 2);
+  handoff(newer, 2); // STATE is newer than the Objective record and ties the legacy project.
+  const registered = [offline, older, bare, paused, f.paused, legacy, low, f.own, newer, maintenance, high];
+  f.put(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: registered.map((root) => ({ root })) }));
+  const order = (homePortfolio, paintNow = nowMs) => renderMonitor({
+    state: initialMonitorState(), width: 80, height: 80, nowMs: paintNow, homePortfolio,
+  }).workboard.rows.filter((row) => row.item?.startsWith('home:project:')).map((row) => row.homeTarget.root);
+  // The pane root f.own is listed first by projectList, but is second in the request group by registration.
+  const expected = (...normal) => [f.paused, f.own, high, ...normal, low, maintenance, paused, bare, offline];
+  const portfolio = await f.tick();
+  assert.deepEqual(order(portfolio), expected(legacy, newer, older));
+  handoff(older, 1);
+  const later = nowMs + 3600e3;
+  assert.deepEqual(order(portfolio, later), expected(legacy, newer, older), 'repainting uses the collected order');
+  assert.deepEqual(order(await f.tick(later), later), expected(older, legacy, newer), 'collection sees the new STATE timestamp');
+});
+
 test('Home shows a no-notes line and newest observed job age even when idle is unknown', async (t) => {
   const f = fixture(t), bare = join(f.home, '..', 'bare-study'), empty = join(f.home, '..', 'empty-study');
   for (const root of [bare, empty]) fs.mkdirSync(root);
@@ -266,7 +303,7 @@ test('requests sort by waits, project priority, then age; Enter navigates to the
   assert.deepEqual(homePortfolio.requests.map(({ project, item }) => [project.name, item.request]), [
     ['paused-study', 'r1'], ['state-notes', 'r1'], ['paused-study', 'r3'], ['paused-study', 'r2'], ['state-notes', 'r2'],
   ]);
-  const data = { width: 120, height: 40, nowMs, homePortfolio, projects: homePortfolio.projects };
+  const data = { width: 120, height: 40, nowMs, homePortfolio, projects: projectList(f.home, f.own) };
   const press = (frame, key) => handleMonitorInput(frame.state, { type: 'key', key }, { frame });
   const home = renderMonitor({ ...data, state: initialMonitorState() });
   const request = press(home, 'enter');

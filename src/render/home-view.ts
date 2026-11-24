@@ -1,7 +1,7 @@
 /** Portfolio handoff. A job waiting for main is not an owner request. */
 import { blockedObjectives, ownerRequestKey, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { Objective } from '../collectors/objectives.js';
-import type { HomePortfolio, HomeProject, HomeRequest } from '../collectors/home-portfolio.js';
+import { homeActivityAt, type HomePortfolio, type HomeProject, type HomeRequest } from '../collectors/home-portfolio.js';
 import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength as cells } from './colors.js';
 import { cutSentence, fit, monitorText, pair, sentenceRows, tokenColumn } from './monitor-text.js';
@@ -56,8 +56,7 @@ function projectView({ root, name, unavailable, snapshot, resultDates }: HomePro
     : record?.priority === 'low' ? ink.muted(mark('↓', 'v', '\uF063')) : '';
   const idle = snapshot?.idle && !running, idleWord = idle && !stance ? ink.muted(t('idle')) : '';
   const noNotes = snapshot && !record && !snapshot.statePath;
-  const age = compactAge(noNotes ? snapshot.lastJobAt
-    : Math.max(snapshot?.updatedAt ?? -Infinity, snapshot?.objectivesAt ?? -Infinity), now);
+  const age = compactAge(homeActivityAt(snapshot), now);
   return { root, name: monitorText(name), unavailable, stance, paused: record?.stance === 'paused', open, finished, blocked,
     features: new Map(snapshot?.tickets.map((f) => [f.slug, f])),
     mark: unavailable ? ink.danger(stateMark.failed()) : running ? liveMark() : idleMark(),

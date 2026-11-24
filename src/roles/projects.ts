@@ -14,6 +14,8 @@ export interface ProjectGate {
 export interface ListedProject {
   root: string;
   name: string;
+  /** Order in projects.json, independent of the pane-first project switcher. */
+  registrationIndex: number;
   unavailable?: true;
 }
 
@@ -126,11 +128,11 @@ export function projectList(hudHome: string, panelRoot: string): ListedProject[]
     listCache = { file, stamp, roots };
   }
   const first = realDir(panelRoot) ?? resolve(panelRoot), out: ListedProject[] = [], seen = new Set<string>();
-  for (const stored of listCache.roots) {
+  for (const [registrationIndex, stored] of listCache.roots.entries()) {
     const real = realDir(stored), root = real ?? resolve(stored);
     if (seen.has(root)) continue;
     seen.add(root);
-    const item: ListedProject = { root, name: basename(root) || root, ...(!real && { unavailable: true }) };
+    const item: ListedProject = { root, name: basename(root) || root, registrationIndex, ...(!real && { unavailable: true }) };
     if (root === first) out.unshift(item);
     else out.push(item);
   }
