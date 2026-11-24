@@ -7,6 +7,13 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-24
 
+- **D-2026-11-24-04** (§2.2 Decision API, §1 Personal Standards): Inspired by the even rotation over preset pools,
+  the owner asked that the Decision API pick styles and elements from the Personal Standards frontend style pool by
+  task, shielding owner and orchestrator from that choice. Chosen over the frontend worker picking for itself: a
+  separate, recorded, switchable decision. A fourth execution-side Decision API use, generic: a role file points at
+  an owner pool directory (contents stay in the Personal Standards repo); a brief that already names pool entries
+  makes no call; failure falls back to the pool's quick default. The personal-frontend skill then tells the owner
+  the pick in one line instead of asking first.
 - **D-2026-11-24-03** (§1 Personal Standards, §3, §5 approvals): The owner asked how to handle choices that are
   unimportant one by one but reusable (here: toktrack web's look). Same root as 22.28 and the 2026-11-09/11 panel
   cut: owner attention is scarce, so a settled taste should be codified once and reused (the owner's 2026-11-23
