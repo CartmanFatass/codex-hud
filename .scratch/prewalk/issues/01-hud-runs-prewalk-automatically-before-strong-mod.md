@@ -2,7 +2,7 @@
 
 **Status:** ready-for-agent
 **Owner try:** no
-**Blocked by:** pool-pick/01
+**Blocked by:** pool-pick/02
 
 **What to build:** Spec §2.1 (D-2026-11-24-05). Generalise the existing `scout` flow and pool-pick into one prewalk step HUD runs on its own before a job starts. Prewalk has two types (owner 2026-11-24): **scout**, 0–3 `sonic` jobs gathering facts (no new role), and **pick**, the Decision API choosing entries from an owner pool (pool-pick/01; for frontend-imp: the art direction from the style pool). A role may have either or both; the role's prewalk switch governs both. Owner role files only (`$HUD_HOME/roles`): `"prewalk": "on"|"off"` next to the existing `pool` field; shipped defaults: imp, oracle and frontend-imp `on`, reviewer and sonic `off`. Settings switch `autoPrewalk` (default on) turns all automatic prewalks off at once. The owner decides whether a role prewalks; the Decision API decides how much (owner 2026-11-24: 0–3 sonics by the size of the task).
 
