@@ -22,6 +22,12 @@ import { SETTLED_JOB_STATES, TicketRollup, ticketIds, ticketJobState } from './t
 import { readActiveLeases, stripJobPrefix, type LeaseRecord } from './thin-jobs.js';
 /** A placeholder bullet such as "- Nothing open." in an empty Waiting section is not a request. */
 const EMPTY_WAITING = /^(?:none|nothing(?: open| pending)?|n\/a|—|-|无|没有|暂无)[.。]?$/i;
+const ticketPathId = (path: string) => {
+  const match = /^\.scratch\/([^/]+)\/issues\/(\d+)-[^/]+\.md$/.exec(path);
+  return match && targetKey(`${match[1]}/${match[2]}`);
+};
+const landingStatus = /^(ready-for-human|done)$/i;
+
 export { SETTLED_JOB_STATES } from './ticket-rollup.js';
 export interface ProjectItem {
   label: string;
@@ -489,22 +495,45 @@ export class ProjectCollector {
       this.landed.clear();
       this.ticketCommits.clear();
       if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)) try {
-        const log = await worktreeGit(this.cwd, ['log', '-n', '64', '--no-show-signature', '--no-renames', '--name-only', '--format=%x1e%H%x00%ct%x00%s', sha, '--']);
-        for (const chunk of log.split('\x1e')) {
-          if (!chunk) continue;
-          const [header, ...rest] = chunk.split(/\r?\n/);
-          const [commitSha, ct, subject = ''] = header.split('\0');
-          const at = Number(ct) * 1000, files = rest.filter(Boolean);
-          // Git may quote a path; a quoted ticket path is still scratch metadata.
-          if (!commitSha || !Number.isFinite(at) || !files.some((p) => !/^"?\.scratch\//.test(p))) continue;
-          const ids = ticketIds(subject);
-          for (const id of ids) this.landed.add(id);
-          if (/^Record landing\b/.test(subject)) continue;
-          for (const file of files) {
-            const m = /^\.scratch\/([^/]+)\/issues\/(\d+)-[^/]+\.md$/.exec(file);
-            if (m) ids.push(targetKey(`${m[1]}/${m[2]}`));
+        // Raw entries retain every changed path. Limit the accompanying patches to ticket-sized
+        // files and ignore hunks without Markdown fields (double asterisks).
+        const log = await worktreeGit(this.cwd, [
+          '-c', `core.bigFileThreshold=${STATE_BYTES}`, 'log', '-n', '64', '--no-show-signature', '--no-renames',
+          '--no-ext-diff', '--no-textconv', '--no-relative', '--no-color', '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/',
+          '--raw', '-z', '--patch', '-U0', '--ignore-matching-lines=^([^*]|[*][^*])+[*]?$|^\n',
+          '--format=%x00%x00%H%x00%ct%x00%s', sha, '--',
+        ]);
+        for (const chunk of log.split(/\0\0(?=(?:[a-f0-9]{40}|[a-f0-9]{64})\0)/)) {
+          const [commitSha, ct, subject, ...fields] = chunk.split('\0');
+          const at = Number(ct) * 1000;
+          if (!commitSha || !Number.isFinite(at)) continue;
+          let code = false, i = 0;
+          const changed = new Map<string, boolean>(); // Ticket ID -> newly added file.
+          for (; fields[i]?.trimStart().startsWith(':') && fields[i + 1]; i += 2) {
+            const [meta, path] = [fields[i], fields[i + 1]], id = ticketPathId(path);
+            if (id && !meta.endsWith(' D')) changed.set(id, meta.endsWith(' A'));
+            if (!path.startsWith('docs/') && !path.startsWith('.scratch/')) code = true;
           }
-          for (const id of ids) if (!this.ticketCommits.has(id)) this.ticketCommits.set(id, { sha: commitSha, at });
+          if (/^Record landing\b/.test(subject)) {
+            // Legacy records name the actual change in the ticket's Landed comment, not by this commit's SHA.
+            for (const id of changed.keys()) this.landed.add(id);
+            continue;
+          }
+          const ids = code ? ticketIds(subject) : [];
+          // An empty NUL field separates the raw entries from the unified patch.
+          for (const patch of (fields[i + 1] ?? '').split(/^diff --git /m)) {
+            const path = /^\+\+\+ "?b\/(.+?)"?\t?$/m.exec(patch)?.[1];
+            const id = path && ticketPathId(path);
+            if (!id || !changed.has(id)) continue;
+            const statuses = [...patch.matchAll(/^([+-])(?:[ \t]*|[^\r\n]*?·[ \t]*)\*\*Status:\*\*[ \t]*([^·\r\n]+)/gim)];
+            const before = statuses.find(([, sign]) => sign === '-')?.[2].trim();
+            const after = statuses.find(([, sign]) => sign === '+')?.[2].trim();
+            if (after && landingStatus.test(after) && (changed.get(id) || (before && !landingStatus.test(before)))) ids.push(id);
+          }
+          for (const id of ids) {
+            this.landed.add(id);
+            if (!this.ticketCommits.has(id)) this.ticketCommits.set(id, { sha: commitSha, at });
+          }
         }
       } catch { /* Git unavailable: rely on ticket files. */ }
     }

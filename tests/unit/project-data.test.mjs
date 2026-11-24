@@ -451,6 +451,49 @@ test('scratch-only subjects do not land tickets; commit-only landings default to
   assert.deepEqual(JSON.parse(fs.readFileSync(join(f.hud, 'tries.jsonl'), 'utf8')).slices, ['DEMO-03']);
 });
 
+test('docs and ticket mentions leave a live ticket working until Git records its landing', async (t) => {
+  const f = makeTemp(t);
+  initRepo(f.cwd, [{ file: 'code.txt', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);
+  const git = (...args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
+    cwd: f.cwd, stdio: 'pipe', encoding: 'utf8',
+  }).trim();
+  const issue = (n, status, comments = '') => f.put(join(f.cwd, `.scratch/feature/issues/${n}-工单.md`),
+    `# ${n}: Sample ${n}\n**Status:** ${status} · **Owner try:** yes\n**Blocked by:** none\n\n## Comments\n${comments}`);
+  issue('01', 'ready-for-agent');
+  issue('02', 'ready-for-agent');
+  f.put(join(f.cwd, 'docs/spec.md'), '# Synthetic spec\n');
+  git('add', '.'); git('commit', '-m', 'spec: design notes for feature/01');
+  f.put(join(f.hud, 'jobs/j0000000000000001/job.json'), { cwd: f.cwd, role: 'imp', ticket: 'feature/01' });
+  const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
+  const tick = () => collector.collect('home', EMPTY_BOARD, NOW);
+  const planned = await tick();
+  assert.deepEqual(planned.ledger.map(({ state, landed, commit }) => [state, landed, commit]), [
+    ['working', undefined, undefined], ['todo', undefined, undefined],
+  ]);
+  assert.equal(acceptAll(f.hud, f.cwd, planned.ledger), 0);
+
+  const base = git('rev-parse', 'HEAD');
+  f.put(join(f.cwd, 'code.txt'), 'tested implementation\n');
+  issue('01', 'ready-for-human', `- Landed in this commit (replay base ${base}); gate 1/1 passed.\n`);
+  // Another ticket was edited in the same commit, without landing it.
+  issue('02', 'ready-for-agent', '- Unrelated tracker note.\n');
+  git('commit', '-am', 'implement the feature');
+  const landed = git('rev-parse', 'HEAD');
+  f.put(join(f.cwd, 'docs/spec.md'), '# Follow-up spec\n');
+  issue('01', 'ready-for-human', '- Follow-up tracker note.\n');
+  git('commit', '-am', 'docs: update feature/01 notes');
+  assert.deepEqual((await tick()).ledger.map(({ state, landed, commit }) => [state, landed, commit]), [
+    ['try', true, landed], ['todo', undefined, undefined],
+  ]);
+
+  issue('02', 'ready-for-agent', `- Landed ${landed}; gate 1/1 passed.\n`);
+  git('commit', '-am', `Record landing ${landed.slice(0, 12)}`);
+  issue('02', 'ready-for-agent'); // With no file evidence, the legacy commit still witnesses the landing.
+  assert.deepEqual((await tick()).ledger.map(({ state, landed, commit }) => [state, landed, commit]), [
+    ['try', true, landed], ['try', true, undefined],
+  ]);
+});
+
 test('Progress, Home, HTML board and TryLog use ticket landings, not legacy STATE rows', async (t) => {
   const f = makeTemp(t);
   const git = (args, date) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
