@@ -709,7 +709,6 @@ const ZH: Record<string, string> = {
   'none landed': '暂无落地',
   'nothing yet': '暂无',
   'bounded scan': '扫描有上限',
-  'done {n}': '完成 {n}',
   'failed {n}': '失败 {n}',
   gates: '闸门',
   'first try {n}': '一次过 {n}',
