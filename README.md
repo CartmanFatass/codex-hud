@@ -104,7 +104,7 @@ The panel has **Home** and **Project** tabs:
   Claude/Codex subagent lanes, and decisions. Enter expands in place, `o` opens a
   file, `v` inspects, `a` reveals older items. Settled cards fold after five minutes
   and hide after fifteen by default; a newly opened panel excludes already-settled
-  HUD jobs. Model text is optional and display-only.
+  HUD jobs.
 - **Project:** STATE/spec progress, local tickets managed with `hud_tickets`, working trees, docs and
   the effective roles/convention/key availability. It reads project files, not a
   project-management service, and never changes their state.
@@ -149,15 +149,14 @@ and `--json` are available. `--kill` closes this directory's HUD sessions;
 ## Configuration
 
 Settings saves to `$HUD_HOME/hud-settings.json` (default `~/.hud`, override
-`HUD_SETTINGS_PATH`). Theme, bar style, language, width, card lifetimes, one model
-master, model/call caps and Decision API are current controls. Saved display settings
+`HUD_SETTINGS_PATH`). Theme, bar style, language, width, Decision API provider and
+execution decision cap are current controls. Saved display settings
 override environment defaults; `NO_COLOR` still wins. `s` saves; dirty navigation
 asks save/discard/continue. `r` resets only the selected group, not all settings.
 
-Optional model text reads public job/native material and writes display overlays,
-never instructions for workers. Keys come from the environment or private
-`$HUD_HOME/credentials.env`; the chat endpoint receives only its matching provider
-key. The separate Decision API defaults to OpenAI. Models off sends no requests.
+The display does not call a text model or the Decision API. It shows observed facts
+and worker-declared summaries. The execution-side Decision API defaults to OpenAI;
+keys come from the environment or private `$HUD_HOME/credentials.env`.
 
 See **[the reference](./docs/reference.md)** for current keys, input bounds, settings,
 bar styles, snapshots and environment variables; **[architecture](./docs/ARCHITECTURE.md)**
@@ -194,7 +193,7 @@ After `npm run build` and `npm run build:test`, use these subsets for focused ch
 | --- | --- |
 | `npm run test:mcp` | `thin-mcp-*`, `hud-watch`, `cli-judge`, `job-retention*` |
 | `npm run test:panel` | `panel-*`, `split-*`, `project-*`, `home-*`, `control-*`, `role-*`, `kept-pages`, `card-*` |
-| `npm run test:fast` | `test:unit` plus `card-*`, `cleanup-views`, `cli-judge`, `decision-labels`, `home-*`, `html-board`, `job-sentences`, `kept-pages`, `model-picker*`, `panel-filter`, `panel-footers`, `panel-keys-rows`, `project-hub`, `project-layout-*`, `role-presets`, `roster-invalid`, `skills-tab`, `split-layout`, `themes`, `waiting-settled` |
+| `npm run test:fast` | `test:unit` plus `card-*`, `cleanup-views`, `cli-judge`, `home-*`, `html-board`, `kept-pages`, `model-picker*`, `panel-filter`, `panel-footers`, `panel-keys-rows`, `project-hub`, `project-layout-*`, `role-presets`, `roster-invalid`, `skills-tab`, `split-layout`, `themes`, `waiting-settled` |
 
 Tests use synthetic data and temporary homes. Frame tests compare terminal cells,
 not font pixels. Normal tests verify, never rewrite snapshots. `CODEX_HUD_PROFILE=1`

@@ -35,8 +35,7 @@ test('main tabs cycle Home → Project → Control; 5 does not switch and old Sk
   assert.equal(readPanelPlace().state.activeTab, 'home');
   const before = setLanguage('en');
   try {
-    const narrow = render(initialMonitorState(), { width: 36, modelEnabled: false }), brief = narrow.controls.find((c) => c.kind === 'brief');
-    assert.ok(narrow.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).every((c) => c.x + c.width < brief.x));
-    assert.deepEqual(send(narrow, { type: 'mouse', button: 'left', x: brief.x, y: 0 }).action, { type: 'brief-toggle' });
+    const narrow = render(initialMonitorState(), { width: 24 });
+    assert.deepEqual(narrow.controls.filter((c) => c.y === 0).map((c) => c.kind), ['board-home', 'board-project', 'board-control']);
   } finally { setLanguage(before); }
 });

@@ -4,12 +4,9 @@ import type { WorkFlow, WorkFlowStep } from '../collectors/workboard-types.js';
 import { theme, visualLength, truncateAnsi } from './colors.js';
 import { fit, monitorText, flowLines } from './monitor-text.js';
 import { t } from './i18n.js';
-import { displayConfig } from './hud-config.js';
 import { mark } from './workboard-rows.js';
-import { keywordMarks } from '../utils/keyword-marks.js';
 import { failed, workStateInk } from './work-job-row.js';
 
-export const cardSentence = (text: string): string => monitorText(text.split(/\r?\n/).find((l) => l.trim()) ?? '');
 /** Paths, filenames, code and flags share the deterministic identifier ink. */
 const identifierPattern = /`[^`]+`|(?:\.?\.?\/|~\/)[^\s,;，。；]+|\b[\w.-]+\/[\w/.-]+|\b[\w.-]+\.[a-zA-Z][\w-]*\b|--[\w-]+/g;
 export const identifiers = (text: string): string => paintIdentifiers(monitorText(text));
@@ -27,57 +24,9 @@ export function stemLines(text: string, width: number, ink = theme.board.muted, 
   if (lines.length > max) lines = [...lines.slice(0, max - 1), truncateAnsi(lines.slice(max - 1).join(' '), room)];
   return lines.map((line) => fit(`${ink(mark('┃', '|'))} ${paintIdentifiers(line)}`, width));
 }
-/** Model marks are presentation only; malformed marks leave a plain single line. */
-export function jobSentenceLine(raw: string, width: number, ink = theme.board.muted): string {
-  return jobSentenceRows(raw, width, ink, false)[0];
-}
-export function jobSentenceRows(raw: string, width: number, ink: (s: string) => string, full: boolean): string[] {
-  const safe = monitorText(raw).replace(/\s+/g, ' ').trim(),
-    room = Math.max(1, width - 3);
-  const { plain, valid } = keywordMarks(safe);
-  let text = truncateAnsi(plain, room);
-  if (text !== plain) {
-    const head = text.slice(0, -1),
-      space = head.lastIndexOf(' ');
-    text = (space > 0 ? head.slice(0, space) : head) + '…';
-  }
-  let offset = 0;
-  return (full && valid ? flowLines(plain, room) : [text]).map((line) => {
-    const start = full && valid ? plain.indexOf(line, offset) : 0;
-    const painted = paintSentence(safe, line, start);
-    offset = start + line.length;
-    return fit(`${ink(mark('┃', '|'))} ${painted}`, width);
-  });
-}
-/** Paint visible text after cutting/wrapping; file spans override model categories. */
-export function paintSentence(raw: string, line?: string, start = 0): string {
-  const { plain, spans } = keywordMarks(monitorText(raw));
-  line ??= plain;
-  const unpainted = (s: string) => s;
-  const inks = Array.from({ length: line.length }, () => unpainted);
-  for (const span of spans) {
-    const ink =
-      span.type === '+' ? theme.board.success :
-      span.type === '-' ? theme.board.danger :
-      span.type === '!' ? (displayConfig().icons === 'text' ? unpainted : theme.board.opinion) :
-      theme.board.identifier;
-    for (let i = Math.max(0, span.start - start); i < Math.min(line.length, span.end - start); i++) inks[i] = ink;
-  }
-  for (const m of plain.matchAll(identifierPattern))
-    for (let i = Math.max(0, m.index! - start); i < Math.min(line.length, m.index! + m[0].length - start); i++)
-      inks[i] = theme.board.identifier;
-  let painted = '';
-  for (let i = 0; i < line.length; ) {
-    let end = i + 1;
-    while (end < line.length && inks[end] === inks[i]) end++;
-    painted += inks[i](line.slice(i, end));
-    i = end;
-  }
-  return painted;
-}
 /** An open question as its paragraphs; the context and every option only when `full`, the first four numbered `[1]`… when `numbered` (the owner can answer it here). */
-export function requestLines(card: WorkJob, full = false, numbered = false, original = false): string[] {
-  const source = card.worker.work?.requestInfo, r = !original && source?.display || source;
+export function requestLines(card: WorkJob, full = false, numbered = false): string[] {
+  const r = card.worker.work?.requestInfo;
   return r
     ? [
         r.question,
@@ -102,13 +51,12 @@ export function quietDecisionSummary(q: WorkJob['worker']['quietDecision']): str
   const detail = q.reason ? t(QUIET_REASONS[q.reason] ?? q.reason) : '';
   return detail ? `${action} (${detail})` : action;
 }
-export function workJobDetail(card: WorkJob, sentence = ''): string {
+export function workJobDetail(card: WorkJob): string {
   const showQuiet =
     card.worker.settledAt === null || (failed(card) && card.worker.quietDecision?.action === 'fail');
   const quiet = showQuiet ? quietDecisionSummary(card.worker.quietDecision) : '';
   const detail =
     card.worker.reportMeta?.summary ||
-    sentence ||
     card.worker.ask ||
     (card.worker.work?.reason ? t(card.worker.work.reason) : card.reason ? t(card.reason) : '');
   return [quiet, detail].filter(Boolean).join(' · ');
@@ -199,10 +147,6 @@ export function flowLine(flow: WorkFlow, width: number, ink: (s: string) => stri
   if (room < 4) return fit(truncateAnsi(head, width), width);
   return fit(`${head}${theme.board.muted(' · ')}${tailInk(truncateAnsi(tail, room))}`, width);
 }
-export function labelSummary(labels: WorkJob['worker']['labels']): string {
-  return [labels?.outcome ? `[${t(labels.outcome.value)}]` : '',
-    ...(labels?.severity ?? []).map((n, i) => n ? `${n} ${t(['must fix', 'should fix', 'optional'][i])}` : '')].filter(Boolean).join(' · ');
-}
 /** Body only; callers choose the row budget and supply their own heading. */
 export function jobDetailRows(card: WorkJob, width: number, includeDescription = true): string[] {
   const ink = workStateInk(card), rows: string[] = [];
@@ -219,10 +163,8 @@ export function jobDetailRows(card: WorkJob, width: number, includeDescription =
   if (card.worker.flow) rows.push(flowLine(card.worker.flow, width, ink));
   if (includeDescription) {
     const step = card.worker.transcriptStep;
-    const excerpt = step ? cardSentence(step.text) : '';
-    const generated = step?.replaying && excerpt ? undefined : card.worker.modelSentence;
-    if (generated) rows.push(...jobSentenceRows(generated, width, ink, true));
-    const detail = (!generated && excerpt) || workJobDetail(card);
+    const excerpt = step?.text.split(/\r?\n/).find((line) => line.trim());
+    const detail = excerpt || workJobDetail(card);
     if (detail) rows.push(...stemLines(detail, width, ink));
   }
   return rows.map(failed(card) ? theme.board.failedBody : theme.board.body);

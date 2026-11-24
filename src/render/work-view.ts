@@ -10,7 +10,7 @@ import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen }
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, footerLayout, mark, type FooterHints } from './workboard-rows.js';
 import { modelInput, pickOf } from './model-input.js';
 import { theme, visualLength } from './colors.js';
-import { fit, pair, monitorText, flowLines } from './monitor-text.js';
+import { fit, monitorText } from './monitor-text.js';
 import { t } from './i18n.js';
 import { inspectorKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterProject, filterRow, filterScope } from './filter.js';
@@ -39,11 +39,10 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['Esc', 'back; clear a filter first; does nothing at a tab root'],
     [',', 'Settings'],
     ['?', 'this page'],
-    ['b', 'model text on / off'],
     ['w', 'write the review board (HTML)'],
     ['q', 'close panel (also Q, ^C, ^D)'],
     ...(mouse ? [['click', 'select; links open directly; wheel scrolls']] : []),
-    ['s r t', 'Settings: save / reset / test'],
+    ['s r', 'Settings: save / reset'],
   ];
   const home = [
     ['v', 'open Jobs; Enter opens Inspector for the selected job'],
@@ -100,7 +99,6 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ...legend('Answers', [entry(attention(mark('◆', '*')), 'differs from the default')], [entry(muted(mark('◇', 'o')), 'as proposed')]),
     ...legend('Places', [entry(glyph('active'), 'next'), entry(glyph('standby'), 'standby'), entry(glyph('exhausted'), 'exhausted')],
       [entry(glyph('off'), 'Off'), entry(glyph('missing'), 'not installed')]),
-    ...flowLines(t('lavender words are marked by the model'), half).map((s) => boardRow(theme.board.identifier(s))),
   ];
   const rows = width < 80 ? [...keys, boardRow(''), ...marks]
     : Array.from({ length: Math.max(keys.length, marks.length) }, (_, i) =>
@@ -185,11 +183,7 @@ export function renderWorkboardFrame(
   });
   const target = inspector?.target;
   const lane = target && source.lanes.find((l) => l.id === target.laneId);
-  const facts = target && lane?.workers.find((w) => w.id === target.workerId);
-  const worker = facts && { ...facts, files: facts.files?.map((file) => ({ ...file,
-    title: file.state === 'open' ? file.title : lane?.decisions.find((d) => d.evidence.some((e) =>
-      e.sourceId === facts.evidence[0]?.sourceId && e.relativePath === file.rel))?.modelTitle ?? file.title,
-  })) };
+  const worker = target && lane?.workers.find((w) => w.id === target.workerId);
   const crumb = help ? t('Help') : native ? t('Native subagents') : jobs ? t('Jobs')
     : t('Inspector') + (worker ? ` · ${monitorText(worker.displayId || worker.id.replace(/^thin-job:/, ''))}` : '');
   if (sub || page || list) {
@@ -205,22 +199,15 @@ export function renderWorkboardFrame(
     const tabs = MAIN_TABS;
     const labels = (badges: boolean) => tabs.map((tab) => ` ${t(tab.label)}${badges ? badge(counts[tab.id]) : ''} `);
     let titles = labels(true);
-    let models = input.modelEnabled === false ? t('models off') : '';
-    // Drop the model hint before tab badges; keep whole tab labels and hit targets.
-    if (visualLength(titles.join('')) + (models ? visualLength(models) + 1 : 0) > width) models = '';
     if (visualLength(titles.join('')) > width) titles = labels(false);
-    const modelsWidth = visualLength(models);
-    const leftRoom = Math.max(0, width - (modelsWidth ? modelsWidth + 1 : 0));
-    frame.lines[0] = pair(titles.map((label, i) => (state.activeTab === tabs[i].id ? theme.board.title : theme.board.muted)(label)).join(''),
-      models && theme.board.attention(models), width);
+    frame.lines[0] = fit(titles.map((label, i) => (state.activeTab === tabs[i].id ? theme.board.title : theme.board.muted)(label)).join(''), width);
     let x = 0;
     for (const [i, label] of titles.entries()) {
       const span = visualLength(label);
-      const clipped = Math.max(0, Math.min(leftRoom, x + span) - x);
+      const clipped = Math.max(0, Math.min(width, x + span) - x);
       if (clipped > 0) frame.controls.push({ kind: `board-${tabs[i].id}`, x, y: 0, width: clipped });
       x += span;
     }
-    if (models) frame.controls.push({ kind: 'brief', x: Math.max(0, width - modelsWidth), y: 0, width: Math.min(width, modelsWidth) });
   }
   if (pick) return paintModelPicker(frame, input.project!, picker!, pick, width, height, now);
   if (roles && overlay?.kind === 'control-preset') {
@@ -263,7 +250,7 @@ export function renderWorkboardFrame(
         : [boardRow(t('Job not available'))]
         : jobs ? jobsRows(source.workers, width, !!input.paneLoad)
         : project
-          ? projectRows(input.project, state, width, now, source, input.modelEnabled, input.projectName, input.projects,
+          ? projectRows(input.project, state, width, now, source, input.projectName, input.projects,
               Math.max(0, height - 2 - top - (input.error ? 1 : 0) - (input.publicationNotice ? 1 : 0)), input.worktrees)
           : resourcePage ? expRows(resourcePage, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.publicationNotice)))
           : control ? harnesses && input.project ? harnessAdd

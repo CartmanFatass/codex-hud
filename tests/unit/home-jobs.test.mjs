@@ -12,6 +12,7 @@ import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
 
 const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(0) };
 const plain = (frame) => frame.lines.map(stripAnsi).join('\n');
@@ -35,7 +36,11 @@ async function fixture(t) {
     return { dir, id };
   };
   const working = job(1, 'working');
-  job(2, 'queued'); job(3, 'done'); job(4, 'working', 'w4E:p2'); job(5, 'working', 'w4E:p1', working.id);
+  const finished = job(3, 'done');
+  job(2, 'queued'); job(4, 'working', 'w4E:p2'); job(5, 'working', 'w4E:p1', working.id);
+  put(join(finished.dir, 'report.md'), '# Findings\n\nThe synthetic parser kept its old rules.');
+  writeReportMeta(finished.dir, cachedReportSignature(finished.dir), { summary: 'Kept «original rules».' });
+  put(join(finished.dir, 'review-1.md'), 'Verdict: accept');
   put(join(working.dir, 'qa/q1.md'), '# Question\n\nKeep the original parser?\n\nOptions:\n- Keep it\n- Replace it\n\nDefault if unanswered: Keep it\n');
   put(join(working.dir, 'report.md'), '# Report\n\nSynthetic preliminary report.');
   put(join(cwd, 'STATE.md'), '# State\n\n## Waiting for the owner\n- Approve the sample fixture\n\n## Now\n- Validating the example set\n\n## Next\n- Publish the sample run\n');
@@ -44,12 +49,10 @@ async function fixture(t) {
   assert.equal(pipeline.load(), undefined, 'before collection a zero is not known');
   await pipeline.refresh();
   const workboard = pipeline.workboard(tree);
-  // An available display translation must never hide the original question.
   const worker = workboard.workers.find(w => w.id.endsWith(working.id));
-  worker.work.requestInfo.display = { question: 'Synthetic translation', options: [], suggested: '' };
   const project = await new ProjectCollector(cwd, home).collect('home', workboard, nowMs);
-  const draw = (state, width = 80) => renderMonitor({ state, width, height: 27, nowMs, workboard, project, paneLoad: pipeline.load() });
-  return { draw, worker, dir: working.dir, workboard, project };
+  const draw = (state, width = 80) => renderMonitor({ state, width, height: 27, nowMs, workboard: pipeline.workboard(tree), project, paneLoad: pipeline.load() });
+  return { draw, worker, dir: working.dir, pipeline, finished };
 }
 
 test('Home shows explicit STATE requests, Now, Next and the calling pane load, without workers', async (t) => {
@@ -84,7 +87,6 @@ test('Jobs has exactly one row per retained job; Enter and mouse open Inspector 
   assert.equal(inspector.state.subpage.kind, 'inspector');
   assert.match(plain(inspector), /Keep the original parser\?/);
   assert.match(plain(inspector), /Sonic children/);
-  assert.doesNotMatch(plain(inspector), /Synthetic translation/);
   assert.deepEqual(key(inspector, 'enter').action, { type: 'open-files', files: [join(dir, 'report.md')] });
   assert.equal(press(inspector, '1').action?.answer, 'Keep it');
   const asked = draw(press(inspector, 'X').state);
@@ -98,4 +100,23 @@ test('Jobs has exactly one row per retained job; Enter and mouse open Inspector 
         assert.ok(draw(state, width).lines.every(line => visualLength(line) === width));
     } finally { setLanguage(previous); }
   }
+});
+
+test('Chinese Inspector shows the original English question and report with the signed worker summary and declared verdict', async (t) => {
+  const { draw, worker, pipeline, finished } = await fixture(t);
+  const previous = setLanguage('zh');
+  t.after(() => setLanguage(previous));
+  const inspect = (w) => draw({ ...initialMonitorState(), subpage: { kind: 'inspector', scroll: 0,
+    target: { kind: 'worker', laneId: w.laneId, workerId: w.id } } });
+  await pipeline.refresh(worker.id);
+  const asking = plain(inspect(worker));
+  assert.match(asking, /Keep the original parser\?/);
+  assert.match(asking, /\[1\] Keep it/);
+  assert.match(asking, /Synthetic preliminary report\./);
+  const done = pipeline.workboard(tree).workers.find(w => w.id.endsWith(finished.id));
+  await pipeline.refresh(done.id);
+  const reported = plain(inspect(done));
+  assert.match(reported, /Kept «original rules»\./);
+  assert.match(reported, /The synthetic parser kept its old rules\./);
+  assert.match(reported, /review-1\.md\s+accept/);
 });

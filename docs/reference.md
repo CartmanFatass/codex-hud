@@ -10,7 +10,7 @@ Current controls for Claude Code, Codex and pi.
 - [Home](#home)
 - [Project](#project)
 - [The panel](#the-panel): [Keys](#keys), [Inspector](#inspector), [Settings](#settings)
-- [LLM](#llm)
+- [Execution decisions](#execution-decisions)
 - [The bottom bars](#the-bottom-bars)
 - [Machine-readable state](#machine-readable-state)
 - [Configuration](#configuration)
@@ -269,7 +269,7 @@ The create result and job record include `route.placement: "even"` and `route.pr
 Queueing, overflow, retry and land repair keep the preset selected at create in fixed and even modes.
 Legacy `impRouting: true` loads as `auto`; `false` loads as `fixed`.
 
-**Auto** uses one Decision API judgment, independent of Model text.
+**Auto** uses one Decision API judgment at dispatch.
 The winning `imp` role file must define `routing`; the block is not inherited from a lower-priority role file.
 For example:
 
@@ -1030,7 +1030,6 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `o` | Inspector or Project diagnostics: open the file |
 | `v` | Home: open Jobs |
 | `n` | Jobs or Inspector: show this session’s native subagents |
-| `b` | Toggle model text (also in Settings → Models). The top row shows `models off` when model text is off and the label fits; click it to turn model text back on |
 | `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
 | `/` | Filter Project Progress and Tickets by a case-insensitive substring. Backspace edits, Enter keeps the query, Esc stops editing then clears it. Leaving the view clears it; reload retains a kept query |
 | `,`, `?` | Settings, Help. From Settings, Help returns to the same draft and selection |
@@ -1054,7 +1053,7 @@ Ask the main session to read one when needed.
 
 ### Inspector
 
-A job's Inspector shows the original open question, report evidence, role/harness, model/effort, package, state, checks, flow, local timestamps and recorded progress. **Files** includes the brief, questions and answers, reviews and report. Tab selects a file or a Sonic child job; Enter opens it. With no file selected, `o` opens the report or another collected job file. With no Git diff, **Reported files** shows up to 12 worker-listed paths, not verified changes. A headless job's **Output** follows the newest displayable lines of `stdout.jsonl`.
+A job's Inspector shows the original open question and report text (up to 4 KiB; open the report file for the rest), the worker's signature-checked declared summary, role/harness, model/effort, package, state, checks, flow, local timestamps and recorded progress. **Files** includes the brief, questions and answers, reviews and report. Tab selects a file or a Sonic child job; Enter opens it. With no file selected, `o` opens the report or another collected job file. With no Git diff, **Reported files** shows up to 12 worker-listed paths, not verified changes. A headless job's **Output** follows the newest displayable lines of `stdout.jsonl`.
 
 Press `n` or click **subagents** from Jobs or a job Inspector to inspect the calling session's native Claude or Codex tree. It is scanned only while that view is open; incomplete coverage is marked. Tab selects a native transcript; Enter or `o` opens it. Esc returns to Jobs or the job Inspector.
 
@@ -1064,13 +1063,13 @@ Press `n` or click **subagents** from Jobs or a job Inspector to inspect the cal
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
 | Panel | Width, Notifications; in **Advanced**: Refresh, Mouse |
-| Models | Model text, Model, Decision API, Call cap (with hourly counter and Test API), Sonic auto-thinking, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter), Summary interval |
+| Models | Decision API, Sonic auto-thinking, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter) |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
 
-Common rows are open; the 10 rarely changed rows above fold under one **Advanced** row at the bottom (collapsed on each open; Enter, Left/Right or click expands or collapses it, and `*`/highlight mark folded unsaved or non-default values).
+Common rows are open; the 8 rarely changed rows above fold under one **Advanced** row at the bottom (collapsed on each open; Enter, Left/Right or click expands or collapses it, and `*`/highlight mark folded unsaved or non-default values).
 Expanded rows show their source group prefix so `r` still resets that row's group (pressing `r` on the Advanced row shows a hint).
-Up/Down selects; Left/Right or Enter changes; `s` saves, `r` resets only this group, `t` runs/cancels Test API.
+Up/Down selects; Left/Right or Enter changes; `s` saves, `r` resets only this group.
 Dirty leave asks Save and leave / Discard changes / Continue editing (default); failed saves retain the draft.
 Theme and Icons preview in the draft itself.
 No Reset all or picture.
@@ -1082,81 +1081,23 @@ Window resizing reapplies it; border drags and unrelated saves do not.
 Themes: `terminal` (default), `titanium`, `mocha`, `arctic`, `ember`, `contrast`, `latte`, `paper`, `none`.
 Each has its own Home/Project/Inspector inks; latte/paper are light, none/`NO_COLOR` emits no colour.
 Preferences save privately to `$HUD_HOME/hud-settings.json` or `HUD_SETTINGS_PATH`; saved display values override environment defaults.
-Retired keys `panelLayout` (including `split`), `tasks`, `cardStallMinutes`, `cardFoldMinutes` and `cardHideMinutes` are ignored on load and omitted on save. Existing job records, caches and assets are not deleted.
+Retired keys `panelLayout` (including `split`), `tasks`, `cardStallMinutes`, `cardFoldMinutes`, `cardHideMinutes` and the old display-model keys (`modelEnabled`, `model`, `modelCallsPerHour`, `summaryIntervalMinutes`, `briefingApiBase`) are ignored on load and omitted on save. Existing job records, caches and assets are not deleted.
 
-## LLM
+## Execution decisions
 
-One master controls job/native names and sentences, Inspector decision titles, and Decision labels.
-Nothing writes workflow facts or steers a worker.
-Off hides overlays and sends no requests; without a saved preference, a Mistral/OpenAI/Gemini key defaults it on.
-Text requires a matching chat-endpoint key; decisions require Gemini/OpenAI/TypeSafe separately.
-Sonic auto-thinking and Imp placement’s auto mode are separate dispatch opt-ins, independent of Model text.
+No display surface calls a text model or the Decision API. Interface labels are localized, but worker questions, reports and declared summaries, ticket titles, routing reasons, landed rows and waiting items keep their source text. Control's model picker still discovers available model IDs.
 
-| Setting | Key / default |
+The CLI supervisor uses the Decision API for quiet jobs past their idle grace. Two dispatch features opt in separately: Sonic auto-thinking (`sonicAutoThinking`, off by default) and Imp placement in `auto` mode. Settings → Models selects the primary Decision API provider. **Decision cap** (`decisionCallsPerHour`) offers 600, 2000 or unlimited (0, the default).
+
+The hourly counter reads `display/model-cache/decision-api/calls.json` across processes on one HUD home. Fallback HTTP attempts count separately; unlimited still counts (`n/∞`). Recent historical calls still count until they age out.
+
+**Outbound material** (never private reasoning, ciphertext or referenced file bodies):
+
+| Decision | Input |
 |---|---|
-| Model text | `modelEnabled`, key-aware |
-| Model | `model`, `deepseek-v4-1-flash-1017` |
-| LLM cap | `modelCallsPerHour`, 60; 30/60/120/240/unlimited |
-| Decision cap | `decisionCallsPerHour`, 0; 600/2000/unlimited |
-| Summary interval | `summaryIntervalMinutes`, 5; 2/5/10/15/30 minutes (validated 1–120) |
-
-Both caps use 0 for unlimited and still count calls (`n/∞`).
-Counts aggregate panels on one HUD home.
-Text uses `display/model-cache/calls.json`; Decision API usage uses `display/model-cache/decision-api/calls.json`, including fallback attempts.
-One line per counter lists this hour's active features, largest first.
-Recent calls from retired features still count toward the total and cap until they age out.
-Changed running text follows Summary interval.
-A newly settled HUD job clears its running text.
-A current worker summary is shown immediately, even with Model text off.
-It needs no sentence request in the panel's language; otherwise, when enabled, the model translates the summary.
-A missing or stale summary falls back to a model result from the report.
-The first final request does not wait for the running interval; failed final requests and native finals keep two-minute floors.
-Outcome labels are independent Decision-API judgements.
-
-**Outbound material** (public channels only; never reasoning, ciphertext or referenced files):
-
-| Feature | Input |
-|---|---|
-| Thin-job sentence/name | Only the worker's one-line summary (≤160 Unicode code points) when translating it; otherwise brief title/goal (1500-byte head), STATUS, open question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a 32 KiB working-session tail |
-| Panel translation | Waiting items from STATE (first 8, ≤2 KiB each), open worker questions (question, options, context and default, ≤4 KiB), open ticket titles (≤512 bytes each), the route reason shown in Inspector (≤512 bytes) and the ticket text of the newest 6 landed rows (≤512 bytes each). Only wrong-language prose is sent, up to 25 strings / 4 KiB per call on the shared text budget. Translations are cached by text and language; expand Original below the translation to compare. Answer keys still select the worker's original options. |
-| Native sentence/name/result/cause | Name/role (80 chars each), public task/charge (400), report (600), action (200), result (8000 head/tail), error (2000); settled Codex may use a safe 32 KiB tail, Claude reuses collected text |
-| Decision title | Only for the inspected job's answered questions in Files: question and answer, 4096 bytes each; ≤8-word title plus localized fields |
-| Outcome label | Final state + the same settled report excerpt, independently judged once per settlement |
-| Looping label | Last 12 public tool/result pairs (600 chars each part) from the same safe tail; after 3 quiet minutes, at most once per 5 minutes, unchanged input never repeats |
-| Question category | 4096-byte head of the job's current open question |
-| Review severity | ≤24 list items (400 chars each) from newest 32 KiB review head or settled reviewer report |
-| Sonic thinking | First 4000 characters of the task as data; sonic role scope and thinking purposes. No referenced context, standing brief or reports are loaded for the decision. |
-| Quiet-job decision | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag, whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
-| Test API | Fixed synthetic messages only |
-
-Settled report excerpts include a short head and sections on unfinished work, blockers, failures, tests/checks or open questions; if none are found, they include the tail instead.
-
-Outcome/looping/category/severity labels are display-only enums; language changes translate locally.
-Failure shows no provider HTTP text.
-Private revision caches survive reopen, as do sentence/title caches (200 records); unchanged inputs make no new request.
-Sentences have at most three pending handles on the shared single-flight text queue; Decision labels have a separate single-flight path.
-Titles use effort none and sentences low; no model-tier/effort selector.
-Wrong-language text is rejected.
-Keyword marks `«keyword»`, `«+approve»`, `«-reject»`, `«!opinion»` (and short Chinese `「…」`) are painted in the Inspector and Project details; files/paths retain identifier ink.
-No recap, session-title or change-summary generator runs.
-
-Configure text through the settings file, not a connection editor:
-
-```json
-{
-  "modelEnabled": true,
-  "model": "deepseek-v4-1-flash-1017",
-  "modelCallsPerHour": 60,
-  "briefingApiBase": "https://api.mistral.ai/v1"
-}
-```
-
-Empty base uses Mistral.
-`POST <base>/chat/completions` receives only its exact origin's matching `MISTRAL_API_KEY` or `OPENAI_API_KEY`; environment wins over HUD credentials.
-Custom/HTTP/lookalike/nondefault-port origins get neither; userinfo and redirects refuse.
-No matching key means no request.
-`CODEX_HUD_BRIEF_MODEL` overrides the model id.
-Test API uses three fixed synthetic requests, the same model/cap, 256-token answers plus reasoning allowance and 15-second timeouts; master off/no key sends nothing, leaving Settings cancels.
+| Quiet-job choice | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag and whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
+| Sonic auto-thinking | First 4000 characters of the task as data, plus the Sonic role scope and thinking purposes. No standing brief, referenced context or reports |
+| Imp auto routing | First 4000 characters of the dispatch brief, up to 4 KiB/4000 characters of the named local ticket, and up to 32 context-file relative names (512 characters each) and byte sizes; configured tier and mode purposes. No context bodies, standing brief, prior reports or preset/model IDs |
 
 ## The bottom bars
 

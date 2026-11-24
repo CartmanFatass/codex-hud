@@ -15,7 +15,7 @@ for (const [bound, view] of [[false, 'project'], [false, 'help'], [false, 'inspe
     mainTab: view === 'project' ? 'project' : 'home', help: view === 'help',
     focus: view === 'inspector' ? 'details' : 'agents', boardInspect: view === 'inspector' ? target : undefined,
   }, settings: null }), { bound });
-  await until(() => f.output().includes('models off') || f.output().includes('Inspector') || f.output().includes('Help'), 'first collected view did not render');
+  await until(() => f.output().includes('Control') || f.output().includes('Inspector') || f.output().includes('Help'), 'first collected view did not render');
   for (let generation = 1; generation <= 2; generation++) {
     f.appendBuild(`\n// ${view} build ${generation}`);
     // The start event precedes PanelReload construction. Wait for the replacement

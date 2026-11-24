@@ -118,11 +118,9 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   if (resourcesShown(next)) {
-    if (['help', 'settings', 'brief-toggle'].includes(key)) return null;
-    if (tab === 'brief') return result({ type: 'brief-toggle' });
+    if (['help', 'settings'].includes(key)) return null;
     return expInput(next, input, ctx) ?? result();
   }
-  if (key === 'brief-toggle' || tab === 'brief') return result({ type: 'brief-toggle' });
   if (control && (key === 'project-prev' || key === 'project-next')) {
     cycleProject(key === 'project-next' ? 1 : -1);
     return result();

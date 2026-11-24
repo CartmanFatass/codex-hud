@@ -79,7 +79,6 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
   const board = workboardInput(next, input, ctx);
   if (board) return board;
   if (key === 'settings') return result({ type: 'settings' });
-  if (key === 'brief-toggle') return result({ type: 'brief-toggle' });
   if (key === 'help') next.help = {};
   return result();
 }

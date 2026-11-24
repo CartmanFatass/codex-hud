@@ -9,7 +9,6 @@ import { herdrId } from '../roles/herdr-run.js';
 import { fileStampOf, getJobIndexCache, statsMtimeMs, type JobDirMeta, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
 import { readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
-import { keywordMarks } from '../utils/keyword-marks.js';
 import { reportReadHint } from '../utils/report-summary.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
@@ -424,12 +423,7 @@ export function readActiveLeases(home: string, project: string): LeaseRecord[] {
 }
 
 function settledReportMeta(dir: string, hasReport: boolean, settled: boolean): ReportMeta | undefined {
-  const meta = hasReport && settled ? readReportMeta(dir) : null;
-  // Worker summaries are plain text; do not expose accidental panel markup in notices or reads.
-  if (!meta?.summary || !/[«»]/u.test(meta.summary)) return meta ?? undefined;
-  const { summary: marked, ...rest } = meta;
-  const summary = keywordMarks(marked).plain.trim();
-  return summary ? { ...rest, summary } : rest.files || rest.skip_checks_reason ? rest : undefined;
+  return hasReport && settled ? readReportMeta(dir) ?? undefined : undefined;
 }
 
 export function jobRowReportMeta(row: JobRow, dir: string): ReportMetaFields | undefined {
@@ -900,7 +894,7 @@ export function readThinJobs(
         verdict === 'accept'
           ? 'accept'
           : [major ? `${major} major` : '', minor ? `${minor} minor` : ''].filter(Boolean).join(' ') || (verdict ?? '');
-      addFile(name, 'review', review, result);
+      addFile(name, 'review', review, verdict ?? undefined);
       phases.push(`review r${number(name)}${result ? ' ' + result : ''}`);
       phaseAt = review.at;
       lastResult = first(review.text);

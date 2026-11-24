@@ -51,16 +51,15 @@ function panel(f, layout) {
   fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ panelLayout: layout, acceptance: 'slice', modelEnabled: true,
     briefingApiBase: 'https://api.mistral.ai/v1', model: 'synthetic', refreshMs: 100, language: 'en', theme: 'none', icons: 'unicode' }));
   const runner = `import fs from 'node:fs';
-    import { SmallModel } from ${JSON.stringify(new URL('../../dist/collectors/small-model.js', import.meta.url).href)};
-    SmallModel.prototype.submit = function(request) {
-      fs.appendFileSync(${JSON.stringify(modelLog)}, request.feature + '\\n');
-      return { cancel() {}, result: Promise.resolve({ ok: false, error: 'synthetic refusal' }) };
+    globalThis.fetch = async (url) => {
+      fs.appendFileSync(${JSON.stringify(modelLog)}, String(url) + '\\n');
+      throw new Error('Unexpected outbound panel request');
     };
     process.stdout.columns = 56; process.stdout.rows = 35;
     const { runLivePage } = await import(${JSON.stringify(new URL('../../dist/tree-page.js', import.meta.url).href)});
     await runLivePage(); process.exit(0);`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', runner], {
-    cwd: f.cwd, env: { ...f.env, MISTRAL_API_KEY: 'synthetic-key', CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', CODEX_HUD_CWD: f.cwd },
+    cwd: f.cwd, env: { ...f.env, MISTRAL_API_KEY: 'synthetic-key', OPENAI_API_KEY: 'synthetic-key', CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', CODEX_HUD_CWD: f.cwd },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const exited = once(child, 'exit');
@@ -109,9 +108,8 @@ for (const layout of ['classic', 'split']) test(`${layout} Accept all records ev
   assert.deepEqual(record, { root: f.cwd, action: 'accept', milestone: 'demo', slices: ['DEMO-01', 'DEMO-02', 'DEMO-03'] });
   assert.equal(fs.statSync(f.file).mode & 0o777, 0o600);
   assert.equal(fs.readFileSync(f.state, 'utf8'), f.body);
-  const features = fs.readFileSync(modelLog, 'utf8');
-  assert.match(features, /waiting-brief/, 'the enabled model path still schedules the Waiting translation');
-  assert.doesNotMatch(features, /try-brief/);
+  assert.equal(fs.existsSync(modelLog), false, 'legacy display settings never request translations');
+  assert.match(frame(), /确认示例的显示语言/);
   const abort = new AbortController(), lines = [];
   t.after(() => abort.abort());
   const watching = watchCommand(['--all'], { env: f.env, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: abort.signal });

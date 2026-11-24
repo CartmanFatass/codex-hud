@@ -185,32 +185,27 @@ test('Help scrolls over a Control draft and closes back to the same place withou
   }
 });
 
-test('top row names each tab once and shows a model-text switch only when off and it fits', () => {
-  for (const [lang, tabs, off] of [['en', 'Home Project Control', 'models off'], ['zh', '首页 项目 控制', '模型 关']]) {
+test('top row names each tab once without a model-text switch', () => {
+  for (const [lang, tabs] of [['en', 'Home Project Control'], ['zh', '首页 项目 控制']]) {
     const previous = setLanguage(lang);
     try {
-      for (const panelLayout of ['classic', 'split']) for (const width of [40, 80, 120]) {
-        const state = withState(initialMonitorState(), { prefs: { panelLayout } });
-        for (const modelEnabled of [true, false]) {
-          const frame = renderMonitor({ tree: TREE, state, modelEnabled, width, height: 16, nowMs: NOW });
-          assert.equal(visualLength(frame.lines[0]), width);
-          assert.equal(stripAnsi(frame.lines[0]).trim().replace(/ +/g, ' '),
-            tabs + (modelEnabled ? '' : ` ${off}`));
-          const ctx = { tree: TREE, frame, nowMs: NOW };
-          const press = (raw) => handleMonitorInput(frame.state, decode(raw)[0], ctx);
-          assert.equal(press('b').action?.type, 'brief-toggle');
-          assert.equal(press(',').action?.type, 'settings');
-          assert.deepEqual(press('S').state, frame.state);
-          const hint = frame.controls.find((c) => c.kind === 'brief');
-          assert.equal(hint?.x, modelEnabled ? undefined : width - visualLength(off));
-          const click = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: width - 1, y: 0 }, ctx);
-          assert.equal(click.action?.type, modelEnabled ? undefined : 'brief-toggle');
-        }
+      for (const width of [40, 80, 120]) {
+        const state = initialMonitorState();
+        const frame = renderMonitor({ tree: TREE, state, width, height: 16, nowMs: NOW });
+        assert.equal(visualLength(frame.lines[0]), width);
+        assert.equal(stripAnsi(frame.lines[0]).trim().replace(/ +/g, ' '), tabs);
+        const ctx = { tree: TREE, frame, nowMs: NOW };
+        const press = (raw) => handleMonitorInput(frame.state, decode(raw)[0], ctx);
+        assert.equal(press('b').action, undefined);
+        assert.equal(press(',').action?.type, 'settings');
+        assert.deepEqual(press('S').state, frame.state);
+        const click = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: width - 1, y: 0 }, ctx);
+        assert.equal(click.action, undefined);
       }
     } finally { setLanguage(previous); }
   }
   const narrow = renderMonitor({ tree: TREE, state: initialMonitorState(),
-    modelEnabled: false, projectWaiting: 2, width: 34, height: 16, nowMs: NOW });
+    projectWaiting: 2, width: 34, height: 16, nowMs: NOW });
   assert.equal(stripAnsi(narrow.lines[0]).trim(), 'Home  Project ?2  Control');
   assert.equal(narrow.controls.some((c) => c.kind === 'brief'), false);
 });

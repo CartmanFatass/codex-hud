@@ -2,16 +2,6 @@
   "version": 1,
   "thinkingOrder": ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
   "defaults": {
-    "summary": {
-      "apiBase": "https://api.mistral.ai/v1",
-      "model": "deepseek-v4-1-flash-1017",
-      "tiers": {
-        "lite": "deepseek-v4-1-flash-1017",
-        "low": "deepseek-v4-1-flash-1017",
-        "medium": "deepseek-v4-1-flash-1017"
-      },
-      "settingsChoices": ["deepseek-v4-1-flash-1017"]
-    },
     "decisions": {
       "openai": "gpt-6-luna",
       "gemini": "gemini-decision-1",

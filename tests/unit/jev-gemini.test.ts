@@ -14,7 +14,6 @@ import { SETTING_ROWS, renderSettingsPage, handleSettingsInput } from '../../dis
 import { setLanguage } from '../../dist/render/i18n.js';
 import { visualLength } from '../../dist/render/colors.js';
 import { decisionKeys, readHudCredentials } from '../../dist/jev/ask/config.js';
-import { modelHttpRequest } from '../../dist/collectors/small-model.js';
 
 const page = { url: 'https://example.invalid/', title: 'Synthetic', text: 'A blue mug.' };
 const request: DecisionRequest = {
@@ -182,13 +181,6 @@ test('Settings EN/ZH at 80 columns: cycle, no-key marker, save single source of 
   setLanguage('en');
   state.draft.decisionApi = 'typesafe';
   assert.match(renderSettingsPage(state, 80, 40).lines.join('\n'), /TypeSafe.*\(no key\)/);
-});
-
-test('Gemini key is never used for display-text chat completions', (t) => {
-  const f = fixture(t, 'GEMINI_API_KEY=synthetic-google-only\n');
-  const result = modelHttpRequest({ base: 'https://api.openai.com/v1', model: 'synthetic' }, { feature: 'label', system: 'synthetic', prompt: 'synthetic' }, f.env);
-  assert.ok('error' in result);
-  assert.ok(!JSON.stringify(result).includes('synthetic-google-only'));
 });
 
 test('quota cooldown is process-wide: fallback, skip Gemini, and retry after default/Retry-After/retryDelay', async (t) => {

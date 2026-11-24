@@ -602,13 +602,6 @@ export interface HudData {
   /** What this pane's HUD jobs ask of the person and what they just did (`render/work-summary.ts`). */
   work?: import('./collectors/work-summary-snapshot.js').MachineWorkCounts;
   localLoad?: import('./collectors/local-load.js').LocalLoad;
-  /** Safe model lifecycle facts; never includes credentials, endpoints or prompts. */
-  modelHealth?: {
-    queued: number;
-    running?: { feature: string; startedAt: number };
-    lastSuccessAt?: number;
-    lastFailure?: { classification?: string; reason?: string; at: number; feature: string };
-  };
   bridgeHealth?: {
     state: 'connected' | 'pending' | 'disconnected' | 'unresponsive' | 'unavailable';
     mode?: 'native' | 'report';

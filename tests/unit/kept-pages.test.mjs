@@ -48,10 +48,10 @@ test("frames: Home, Jobs, Inspector, Settings and Help", (t) => {
       assert.doesNotMatch(text, /Time basis|Source details|Evidence time/);
     }
     if (page === 'settings') {
-      assert.match(text, /Advanced \(9\)/);
-      assert.doesNotMatch(text, /Bar style|imp cap|Home mode/);
-      assert.match(text, /Calls this hour\s+██▍░░░░░░░ 14\/60/);
-      assert.match(text, /\* Call cap\s+‹ 120\/h ›/);
+      assert.match(text, /Advanced \(8\)/);
+      assert.match(text, /Decision calls this hour.*140\/600/);
+      assert.match(text, /\* Models · Decision cap\s+‹ 600\/h ›/);
+      assert.doesNotMatch(text, /Model text|Call cap|Summary interval|Test API/);
       assert.doesNotMatch(text, /Preview|Reset all|HUD read the session/);
     }
     if (page === 'help') {
@@ -237,19 +237,18 @@ test('Settings Bar style cycles the exported styles, saves barStyle, and ignores
   state = handleSettingsInput(state, { type: 'key', key: 'right' }, renderSettingsPage(state, 80, 40)).state;
   saveSettings(state.draft);
   assert.equal(loadSettings().sonicAutoThinking, true);
-  const reset = resetSettingsGroup({ ...state.draft, modelEnabled: true }, 'Models');
-  assert.equal(reset.modelEnabled, false);
+  const reset = resetSettingsGroup({ ...state.draft, decisionApi: 'gemini', decisionCallsPerHour: 600 }, 'Models');
   assert.equal(reset.sonicAutoThinking, false);
-  assert.equal(reset.model, state.draft.model);
-  assert.equal(reset.modelCallsPerHour, state.draft.modelCallsPerHour);
+  assert.equal(reset.decisionApi, 'gemini');
+  assert.equal(reset.decisionCallsPerHour, 0);
 });
-test('Settings s saves and t tests through the standalone decoder', (t) => {
+test('Settings s saves through the standalone decoder', (t) => {
   const f = fixture(t), saved = { ...process.env };
   process.env.HUD_SETTINGS_PATH = join(f.api, 'keyboard-settings.json');
   t.after(() => { process.env = saved; });
   const decoder = new WorkbenchInputDecoder('workboard');
   const input = (raw) => decoder.push(Buffer.from(raw))[0];
-  const draft = { ...defaultSettings(), modelEnabled: false };
+  const draft = defaultSettings();
   let state = { draft, original: draft, selected: SETTING_ROWS.findIndex((r) => r.key === 'barStyle'), offset: 0, message: '' };
   const press = (raw) => handleSettingsInput(state, input(raw), renderSettingsPage(state, 80, 40));
   state = press('\x1b[C').state;
@@ -258,35 +257,27 @@ test('Settings s saves and t tests through the standalone decoder', (t) => {
   assert.equal(save.action, 'save');
   saveSettings(save.state.draft);
   assert.equal(loadSettings().barStyle, 'p10k');
-  assert.equal(press('t').action, undefined, 'test is Models-only');
   state = { ...state, selected: SETTING_ROWS.findIndex((r) => r.group === 'Models') };
-  assert.equal(press('t').action, 'test-api');
+  assert.equal(press('t').action, undefined);
   const dialog = renderSettingsConfirmation([], { choice: 'cancel' }, 80, 16, 0, state);
   assert.equal(handleSettingsConfirmation({ choice: 'cancel' }, input('s'), dialog).action, 'save');
   assert.equal(handleSettingsConfirmation({ choice: 'cancel' }, input('d'), dialog).action, 'discard');
   assert.equal(handleSettingsConfirmation({ choice: 'cancel' }, input('c'), dialog).action, 'cancel');
 });
 
-test('Settings keeps draft confirmation, selected help, and a one-row synthetic API result', (t) => {
-  const draft = { ...defaultSettings(), modelCallsPerHour: 120, modelEnabled: true },
-    original = { ...draft, modelCallsPerHour: 60 };
-  const selected = SETTING_ROWS.findIndex((r) => r.key === 'modelCallsPerHour'),
+test('Settings keeps draft confirmation, selected help, and the execution decision counter', () => {
+  const draft = { ...defaultSettings(), decisionCallsPerHour: 600 },
+    original = { ...draft, decisionCallsPerHour: 2000 };
+  const selected = SETTING_ROWS.findIndex((r) => r.key === 'decisionCallsPerHour'),
     state = { draft, original, selected, offset: 0, message: '' };
-  const frame = renderSettingsPage(state, 80, 40, {
-    state: undefined,
-    modelCalls: { today: 60, lastHour: 60, cap: 60 },
-    probe: { running: false, rows: [{ tier: 'lite', model: 'synthetic', status: 'ok', elapsedMs: 412 }] },
-  });
-  const text = plainFrame(frame).join('\n');
-  assert.match(text, /at the cap: sentences wait/);
-  assert.match(text, /Test API\s+✓ 412 ms/);
-  assert.doesNotMatch(text, /lite:|medium:/);
+  const frame = renderSettingsPage(state, 80, 40, { decisionCalls: { lastHour: 600, byFeature: {} } });
+  assert.match(plainFrame(frame).join('\n'), /Decision calls this hour.*600\/600/);
   assert.equal(
     handleSettingsInput(state, { type: 'mouse', button: 'left', y: 0, x: frame.saveX }, frame).action,
     'save'
   );
   const dialog = renderSettingsConfirmation(frame.lines, { choice: 'cancel' }, 80, 16, 1, state);
-  assert.match(plainFrame(dialog).join('\n'), /┃ Call cap 60\/h → 120\/h/);
+  assert.match(plainFrame(dialog).join('\n'), /┃ Decision cap 2000\/h → 600\/h/);
   assert.equal(
     handleSettingsConfirmation({ choice: 'cancel' }, { type: 'key', key: 'escape' }, dialog).action,
     'cancel'
@@ -304,14 +295,13 @@ test('Settings keeps draft confirmation, selected help, and a one-row synthetic 
     const previous = setLanguage(lang);
     try {
       const short = renderSettingsPage(state, 40, 10, {
-        state: undefined,
-        modelCalls: { today: 14, lastHour: 14, cap: 60 },
+        decisionCalls: { lastHour: 14, byFeature: {} },
       });
       const body = plainFrame(short).join('\n');
-      assert.match(body, lang === 'en' ? /Call cap/ : /调用上限/);
-      assert.match(body, /14\/60/);
+      assert.match(body, lang === 'en' ? /Decision cap/ : /决策调用上限/);
+      assert.match(body, /14\/600/);
       const footer = stripAnsi(short.lines.at(-1));
-      assert.match(footer, lang === 'en' ? /Esc back  \? help$/ : /Esc 返回(?:  t 测试)?  \? 帮助$/);
+      assert.match(footer, lang === 'en' ? /Esc back.*\? help$/ : /Esc 返回.*\? 帮助$/);
       assert.doesNotMatch(footer, /t test|r reset|r 重置/);
       assert.ok(short.state.offset > 0);
     } finally {

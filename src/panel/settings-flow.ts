@@ -1,7 +1,5 @@
-import { homedir } from 'node:os';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { ModelProbe } from '../collectors/model-probe.js';
 import { decisionKeys, readHudCredentials } from '../jev/ask/config.js';
 import { getHudHome } from '../hud-home.js';
 import { jobFiles } from '../mcp/paths.js';
@@ -16,15 +14,9 @@ import {
   handleSettingsConfirmation, renderSettingsConfirmation, type SettingsConfirmationFrame, type SettingsConfirmationState,
 } from '../render/settings-confirmation.js';
 import { withDisplaySettings } from '../settings-runtime.js';
-import { loadSettings, saveSettings, settingsPath, type HudSettings } from '../settings.js';
+import { loadSettings, saveSettings, type HudSettings } from '../settings.js';
 import type { PanelPlace } from '../render/monitor-reload-codec.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-
-/** A path as people write it: the home directory as `~`. */
-function shortPath(file: string): string {
-  const home = homedir();
-  return home && (file === home || file.startsWith(home + '/')) ? '~' + file.slice(home.length) : file;
-}
 
 function availableDecisionKeys() {
   try { return decisionKeys(readHudCredentials()); } catch { return undefined; }
@@ -58,10 +50,10 @@ type SettingsEffects = {
   repaintAll(): void;
 };
 
-type SettingsFacts = Omit<NonNullable<Parameters<typeof renderSettingsPage>[3]>, 'probe' | 'settingsFile'>;
+type SettingsFacts = NonNullable<Parameters<typeof renderSettingsPage>[3]>;
 
-/** Own the Settings draft, dirty-navigation prompt, overlaid Help and connection test. */
-export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settings'] | undefined, probe: ModelProbe, effects: SettingsEffects, impPresets: () => readonly string[]) {
+/** Own the Settings draft, dirty-navigation prompt and overlaid Help. */
+export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settings'] | undefined, effects: SettingsEffects, impPresets: () => readonly string[]) {
   let page: SettingsPageState | null = place
     ? { ...place, draft: { ...saved, roleCaps: { ...saved.roleCaps } }, original: { ...saved, roleCaps: { ...saved.roleCaps } }, decisionKeys: availableDecisionKeys(), impPresets: impPresets(), message: '' } : null;
   let settingsFrame: SettingsFrame | undefined;
@@ -115,9 +107,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
         // Help is drawn over Settings without changing Settings or the underlying tab.
         return withDisplaySettings(page.draft, () => paintHelp(help!, page!.draft.mouse));
       }
-      settingsFrame = withDisplaySettings(page.draft, () => renderSettingsPage(page!, width, height, {
-        ...facts(), probe: probe.current(), settingsFile: shortPath(settingsPath()),
-      }));
+      settingsFrame = withDisplaySettings(page.draft, () => renderSettingsPage(page!, width, height, facts()));
       page = settingsFrame.state;
       if (!leave) return settingsFrame.lines;
       confirmationFrame = renderSettingsConfirmation(settingsFrame.lines, leave, width, height, 1, page);
@@ -161,32 +151,18 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
       } else {
         const result = handleSettingsInput(page, input, settingsFrame);
         page = result.state;
-        probe.invalidate(page.draft);
         if (result.action === 'back') requestLeave();
         else if (result.action === 'reset') {
           const group = SETTING_ROWS[page.selected].group;
           page = {
             ...page,
             draft: resetSettingsGroup(page.draft, group),
-            message: t(
-              group === 'Models'
-                ? 'Model generation disabled; connection preserved; Save to apply'
-                : 'Group defaults ready; Save to apply'
-            ),
+            message: t('Group defaults ready; Save to apply'),
           };
         } else if (result.action === 'save') applyDraft();
-        else if (result.action === 'test-api') {
-          if (probe.current().running) probe.cancel();
-          else void probe.run({ ...page.draft }).catch(() => {
-            probe.cancel();
-            if (page) page.message = t('Connection test failed');
-            effects.repaint();
-          });
-        }
       }
       effects.repaint();
       return;
     },
-    afterInput() { if (!page) probe.cancel(); },
   };
 }

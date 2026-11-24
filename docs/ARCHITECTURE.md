@@ -179,7 +179,7 @@ It excludes jobs settled before the panel's original `openedAt` before reading t
 Active/unknown jobs remain eligible.
 It reads job/STATUS, brief heading, report, newest review and QA.
 Only settled jobs expose worker metadata whose report signature still matches.
-The summary is their result line and matches the Home filter; the Inspector shows up to 12 reported paths as text only when no Git changes are shown.
+The Inspector shows the summary in the worker's own words and up to 12 reported paths as text only when no Git changes are shown.
 Single-job reads reuse the summary and file list.
 Task notices use the summary and wait for HUD-run checks, reporting only the outcome; watch and `changes` lines and list reads carry only a clipped summary.
 Metadata writes do not wake `hud watch` on their own.
@@ -258,73 +258,29 @@ The next `hud_create` reads the same files.
 Keys are reduced to name/presence booleans, never retained as values.
 Browser availability is only a PATH check for Chrome and `jev-ask`, not a login/health claim.
 
-## 5. Optional model features
+## 5. Model inputs in execution
 
-Collection builds bounded public input; rendering reads stored overlays only.
-There is one Model text master switch.
-Without a saved preference it defaults on when a Mistral, OpenAI or Gemini key exists; text still requires a matching endpoint key, and decisions separately require a keyed decision provider.
-Master off sends nothing and hides overlays without deleting caches.
-Reasoning/private channels and sealed tasks never become model input.
-Referenced transcript paths are not followed.
-
-`SmallModel.submit` owns a single-flight chat queue, cancellation, cache and shared LLM reservations under `display/model-cache/`.
-Endpoint identity includes the actual model but never a key.
-Exact Mistral/OpenAI HTTPS origins receive only the matching key from the environment or private HUD credential file; custom origins get neither.
-Userinfo and redirects refuse.
-Wrong-language text is rejected rather than cached.
-Deterministic HTTP 4xx errors pause that feature on that route for five minutes in the current panel; the last failed request records only time, feature, error class and available HTTP status in private `last-failure.json`.
-The job sentence cache publishes usable replies, not retry timestamps or refusals.
+Display surfaces do not call text models or the Decision API. The Inspector draws observed facts, original questions and bounded report text, and the worker's signature-checked summary. It does not use retired display-model caches. Control model discovery reads model identifiers and capabilities, not completions.
 
 | Feature / collector | Public input that can leave the machine |
 |---|---|
-| `JobSentences`, thin jobs | A current worker summary (≤160 Unicode code points) needs no request in the panel's language; translation sends only that summary. Otherwise: brief title/goal (1500-byte head), state/phase, question (2 KiB), review verdict, settled report excerpt (4096 UTF-8 bytes), four public text/tool blocks from a safe 32 KiB working-session tail |
-| `JobSentences`, native agents | Name/role (80 chars each), task/charge (400), report (600), action (200), final result (8000 head/tail), error (2000); a settled Codex agent may use one safe 32 KiB tail |
-| `WaitingBriefs` | Wrong-language prose only: first 8 STATE waiting items (≤2 KiB each), open QA question, context, options and default (≤4 KiB), open ticket titles (≤512 bytes each), the route reason a card shows (≤512 bytes) and the ticket text of the newest 6 landed slices (≤512 bytes each). Batch ≤25 strings / 4 KiB; `waiting-briefs.json` caches by language and text hash. Display copies carry translations; the answer action always uses original options. |
-| `DecisionTitles` | Only for an inspected job's answered question in Files: question and answer, 4096 bytes each; one response includes ≤8-word title and localized question/answer/instead/why |
-| `DecisionLabels`, outcome | Final state + the same settled report excerpt (4096 UTF-8 bytes); once per settlement |
-| `DecisionLabels`, looping | Latest 12 public tool/result pairs, 600 chars each part, from the same safe session tail |
-| `DecisionLabels`, question/review | Current open question head (4096 bytes), or ≤24 list items of 400 chars from a 32 KiB review head |
-| Sonic auto-thinking | First 4000 characters of the dispatched task (the scout question for scouted dispatch), plus sonic role scope and thinking purposes; no standing brief or referenced files |
-| Claude mod event wake | Existing pane-scoped `hud watch` lines (job status and report summary/read hint, questions, sonic checkpoints, land and owner panel decisions), submitted or appended as status text to the main Claude conversation; no separate model call or report-body read |
+| Quiet-job choice | Last 60 pane lines (≤12,000 chars) of a CLI worker, state, role, agent, minutes quiet, background-child flag and whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
+| Sonic auto-thinking | First 4000 characters of the dispatched task (the scout question for scouted dispatch), plus Sonic role scope and thinking purposes; no standing brief or referenced files |
+| Claude mod event wake | Existing pane-scoped `hud watch` lines (job status and report summary/read hint, questions, Sonic checkpoints, land and owner panel decisions), submitted or appended as status text to the main Claude conversation; no separate model call or report-body read |
 | Stopped Sonic retry | The new pi job receives its saved native session context and a short continuation naming the stop reason. Fresh fallback uses the brief plus the last 8 KiB of partial report or stdout. |
-| Imp routing (opt-in) | First 4000 characters of the dispatch brief and up to 4 KiB/4000 characters of the named local ticket; up to 32 context-file relative names (512 characters each) and byte sizes; configured tier and mode purposes. No context bodies, standing brief, prior reports, or preset/model IDs. |
-| Scouted dispatch | The scout question and target `context_files` go to sonic under the normal brief rules; the scout report is a `from_jobs` input to the target, inline within the usual byte limits for browser targets |
+| Imp auto routing | First 4000 characters of the dispatch brief and up to 4 KiB/4000 characters of the named local ticket; up to 32 context-file relative names (512 characters each) and byte sizes; configured tier and mode purposes. No context bodies, standing brief, prior reports or preset/model IDs. |
+| Scouted dispatch | The scout question and target `context_files` go to Sonic under the normal brief rules; the scout report is a `from_jobs` input to the target, inline within the usual byte limits for browser targets |
 | Land repair | Failing cherry-pick or gate step and error, plus up to 40 output lines (8 KiB) to the source worker or same-role replacement. Blank and HUD frame lines are removed; recognized test names and assertions from the failing command take priority over a plain log tail. |
 | Pre-report worker checks | Failing project command (label up to 200 characters) and up to 2 KiB of its trailing stdout/stderr to the same worker in the `hud_report` error. An explicit skip reason is returned to the calling session in the report digest. |
-| Settings Test API | Fixed synthetic messages only |
 
 Headless Claude Code and Antigravity dispatch use the same model inputs as worker tabs: the assembled brief, role instructions, and subsequent answers, sends or repair messages.
 The native stream's session ID is read locally to bind the next turn; the stream is not sent to a separate model.
 For pi and headless CLIs, sends queued during a turn go to the same worker's native session in send order on its next turn, alongside the answer if it asked.
 A `general` job with `instructions: "<role>"` supplies the borrowed role's instructions to its selected pi or CLI worker instead of general's instructions.
 
-`JobSentences` replaces separate native labels/digests/causes/progress schedulers; there is no agent-log writer.
-Names and keyword-marked sentences share a request.
-Both settled-report consumers take a short report head plus sections on incomplete work, blockers, failures, tests/checks or open questions, or the tail if there are no such sections.
-The excerpt uses a safe scan of at most the first 32 KiB and, if needed, the last 16 KiB.
-Outcome is the Decision API's independent display judgement.
-Running changed inputs follow Summary interval (default five minutes).
-A thin job clears its running sentence on settlement and is immediately eligible for a final request; failed final attempts retry no sooner than two minutes.
-Native finals keep the two-minute floor.
-Finals freeze after one success per settlement.
-At most three pending sentence handles share the service.
-`DecisionTitles` uses the same queue; its revision/language-keyed cache survives reopen.
-Pending slices use ledger text, not a generated try brief.
-Keyword painting is shared by cards, decisions and Inspector (`utils/keyword-marks.ts`), never lifecycle evidence.
-
-Decision labels use `selectDecisionProvider`, not the chat endpoint.
 Settings → Decision API persists `config.json.decisions.primary` (default OpenAI).
-Automatic fallback chooses another keyed provider in Gemini → OpenAI → TypeSafe order; one fallback covers missing credentials, quota/auth/5xx/timeout, not malformed answers or refusals.
-Gemini quota replies impose an in-memory cooldown.
-Labels store revision-keyed enums and translate locally; provider failures show no raw HTTP text.
-
-LLM cap defaults to 60/hour; Decision cap defaults to unlimited (`0`).
-Both reserve atomically across panels on one local HUD home and still count unlimited calls.
-Decision fallback HTTP attempts count separately.
-Settings derives per-feature counts from those logs.
-Coordination failure refuses, not bypasses accounting.
-Connection probes use the ordinary cap.
-No old recap, session-title, approval-description or change-summary generator runs.
+Automatic fallback chooses another keyed provider in Gemini → OpenAI → TypeSafe order; one fallback covers missing credentials, quota/auth/5xx/timeout, not malformed answers or refusals. Gemini quota replies impose an in-memory cooldown.
+The execution Decision cap defaults to unlimited (`0`), with atomic reservations across processes on one local HUD home. Fallback HTTP attempts count separately; coordination failure refuses instead of bypassing accounting. Settings reads the hourly ledger outside paint.
 
 ## 6. Rendering and input
 
@@ -383,7 +339,7 @@ Display settings override environment defaults once saved; `NO_COLOR` always win
 Unknown retired keys are ignored and dropped on save, not migrated into new permissions.
 
 Settings has five open groups: Display, Panel, Models, Workers, Codex.
-It edits a draft; `s` saves, `r` resets that group, `t` probes the API.
+It edits a draft; `s` saves and `r` resets that group.
 Dirty navigation asks save, discard or continue; failed saves retain the draft.
 Width applies to tmux/herdr panels on Save and containing-window resize, not unrelated saves or border drags.
 
@@ -401,8 +357,8 @@ Width applies to tmux/herdr panels on Save and containing-window resize, not unr
 | `exp/codex-native-<profile hash>.json` | Last native MyHUD bar observed for that canonical local Codex profile (opt-in) |
 | `exp/ledger-<account>.jsonl` | Append-only private API grant events; a per-ledger writer lock excludes duplicate IDs, and reads deduplicate legacy entries |
 | `display/scan/`, `display/thin-jobs.json` | Rebuildable observation caches |
-| `display/model-cache/` | Shared text replies/reservations and revision-keyed overlays; Decision reservations have their own subdirectory |
-| `display/model-cache/decision-labels/`, `display/statusline/` | Rebuildable caches; the watcher evicts by filesystem recency (most recent read or write where available) at 30 days, 512 files or 8 MiB per directory |
+| `display/model-cache/decision-api/` | Shared execution Decision API reservations |
+| `display/model-cache/decision-labels/`, `display/statusline/` | Legacy display labels and rebuildable statusline caches; existing watcher retention applies (30 days, 512 files or 8 MiB per directory) |
 | `display/profile.log` | Optional stage timings |
 | `panel-actions.jsonl` | Append-only 0600 log of answers the owner gave from the panel; read by `hud watch` and the MCP `changes` |
 | `watch.pid`, `watch.log` | On-demand watcher PID and diagnostics |
@@ -445,7 +401,7 @@ No HUD collection writes into Codex's transcripts/configuration; explicit instal
 - Controls use words or icons, not shortcut letters as their labels; glyphs have meaningful accompanying text.
   Footer shortcut hints remain whole when fitted.
 - Drop optional fields before cutting; missing evidence stays absent/unknown.
-  Cards use observations plus optional stored model text, never an inferred verdict.
+  Rows use observations and worker declarations, never an inferred verdict.
 - Rendering is pure: pass `nowMs`; do not perform I/O, request a model or advance lifecycle during paint.
   Click geometry uses the same frame clock.
 
@@ -460,8 +416,8 @@ No HUD collection writes into Codex's transcripts/configuration; explicit instal
 
 **Privacy and repository**
 
-- The Model text master switch controls display requests; chat also requires a matching endpoint key.
-  Sonic auto-thinking and Imp routing each have an explicit Decision API switch, independent of Model text, like the quiet-job dispatch path.
+- Display surfaces do not call text models or the Decision API.
+  Sonic auto-thinking and Imp auto routing have separate execution-side opt-ins; quiet-job handling runs in the CLI supervisor.
 - List every new outbound model input here and in both reference languages.
   A land repair sends only the failing cherry-pick or gate step and its bounded output evidence (§5) to the project's source worker or its same-role replacement.
 - State is private: `writePrivateFile` or equivalent temp-file/0600/rename.
@@ -499,14 +455,14 @@ Performance evidence names host and workload; it is not automatically WSL qualif
   Keep 4.5:1 card text, 4:1 failed/question text and 3:1 selected-row floors.
 - **Bar field:** add facts and a builder in `layout/bar-fields.ts`, its field list and fitting-ladder position, then each client's available facts.
   Test widths.
-- **Card/Inspector:** external prose is sanitized and wrapped; stored model text may decorate a card, never decide its state.
+- **Job/Inspector:** external prose is sanitized and wrapped; show declared or observed evidence, never generate display summaries or verdicts.
   Test narrow widths and both languages.
 
 ## 11. Gotchas
 
 - Panels reload after a valid build; bars still need restarting for new code.
 - Saved display settings override environment defaults; `NO_COLOR` still wins.
-- A report's existence is not proof of success; model text is not a workflow verdict.
+- A report's existence or summary is not proof of success.
 - Codex encrypted tasks have no public text to summarize.
   Do not send ciphertext or invent a task from a nickname; public pre-create charge is usable when present.
 - LLM/Decision caps are shared local-filesystem coordination, not provider billing.

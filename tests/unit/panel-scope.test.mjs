@@ -4,20 +4,13 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { withState } from '../fixtures/state-helpers.mjs';
 import { PanelJobPipeline } from '../../dist/tree-page.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
-import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
-import { targetKey } from '../../dist/collectors/workboard-types.js';
-import { SmallModel } from '../../dist/collectors/small-model.js';
-import { JobSentences } from '../../dist/collectors/job-sentences.js';
-import { DecisionTitles } from '../../dist/collectors/decision-titles.js';
-import { DecisionLabels } from '../../dist/collectors/decision-labels.js';
+import { workState } from '../../dist/collectors/work-job.js';
 
 const OPEN = Date.parse('2030-01-15T12:00:00Z'), MIN = 60000;
 const scope = { project: null, pane: 'w4E:p1' };
 const tree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(OPEN) };
-const pause = () => new Promise((r) => setTimeout(r, 5));
 function fixture(t) {
   const home = fs.mkdtempSync(join(tmpdir(), 'panel-scope-'));
   const put = (dir, file, value) => {
@@ -41,9 +34,7 @@ function fixture(t) {
   const pipeline = new PanelJobPipeline(home, scope, OPEN);
   t.after(() => { pipeline.dispose(); fs.rmSync(home, { recursive: true, force: true }); });
   const collect = async () => { await pipeline.refresh(); return pipeline.workboard(tree); };
-  const draw = (board, nowMs = OPEN + MIN, state = initialMonitorState()) =>
-    renderMonitor({ tree, workboard: board, state, width: 100, height: 100, nowMs });
-  return { home, put, job, collect, draw };
+  return { home, put, job, collect };
 }
 
 test('retained settlements include legacy and receipt-only dispatch failures', async (t) => {
@@ -75,4 +66,41 @@ test('panel filtering leaves the bars existing process-end cutoff unchanged', (t
   const f = fixture(t); f.job(1, 'closed');
   assert.equal(readThinJobs(f.home, scope, JSON.parse, { settledBefore: OPEN }).flatMap((l) => l.workers).length, 1);
   assert.equal(readThinJobs(f.home, scope, JSON.parse, { openedAt: OPEN }).flatMap((l) => l.workers).length, 0);
+});
+
+test('closing an idle job keeps its observed settlement time', (t) => {
+  const f = fixture(t), settled = OPEN - 30 * MIN, { dir } = f.job(1, 'idle_grace', settled);
+  const read = () => readThinJobs(f.home, scope)[0].workers[0].settledAt;
+  assert.equal(read(), settled);
+  f.put(dir, 'STATUS.json', { state: 'closed', settled_at: new Date(settled).toISOString(), ended_at: new Date(OPEN).toISOString() });
+  assert.equal(read(), settled);
+});
+
+test('linked sessions use target mtime without reading bodies and survive job deletion', (t) => {
+  const f = fixture(t), { id, dir } = f.job(1, 'working');
+  const sessions = join(dir, 'sessions'), storage = join(f.home, 'native-history');
+  const now = Date.now(), old = now - 22 * MIN, fresh = now - 14_000;
+  f.put(dir, 'job.json', { job: id, role: 'imp', herdr_pane: scope.pane, created_at: new Date(old).toISOString() });
+  for (const path of ['STATUS.json', 'report.md', 'review-1.md']) fs.utimesSync(join(dir, path), old / 1000, old / 1000);
+  fs.unlinkSync(join(sessions, 'session.jsonl'));
+  f.put(storage, 'old.jsonl', 'Older synthetic history');
+  f.put(storage, 'fresh.jsonl', 'Newer synthetic history');
+  const target = join(storage, 'fresh.jsonl');
+  fs.utimesSync(join(storage, 'old.jsonl'), old / 1000, old / 1000);
+  fs.utimesSync(target, fresh / 1000, fresh / 1000);
+  fs.symlinkSync(target, join(sessions, 'fresh.jsonl'));
+  fs.symlinkSync(join(storage, 'old.jsonl'), join(sessions, 'old.jsonl'));
+  fs.symlinkSync(join(storage, 'missing.jsonl'), join(sessions, 'dangling.jsonl'));
+  fs.symlinkSync(storage, join(sessions, 'directory.jsonl'));
+  const read = () => readThinJobs(f.home, scope)[0].workers[0];
+  const working = read();
+  assert.deepEqual(working.sessionFile, { path: target, at: fresh });
+  assert.equal(workState(working, now), 'in-progress');
+  const open = t.mock.method(fs, 'openSync'); syncBuiltinESMExports();
+  t.after(() => { open.mock.restore(); syncBuiltinESMExports(); });
+  fs.utimesSync(target, old / 1000, old / 1000);
+  assert.equal(workState(read(), now), 'stalled');
+  assert.ok(!open.mock.calls.some(({ arguments: [path] }) => String(path).endsWith('.jsonl')), 'stall age reads no transcript body');
+  fs.rmSync(dir, { recursive: true });
+  assert.equal(fs.readFileSync(target, 'utf8'), 'Newer synthetic history');
 });

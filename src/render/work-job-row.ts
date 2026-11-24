@@ -54,19 +54,13 @@ function checkChip(checks: WorkJob['worker']['checks']): string {
 }
 export const roleInk = (role: string) =>
   (theme.board.roleInk as Record<string, (s: string) => string>)[role] ?? ((s: string) => s);
-/** What a job's title row says between its model mark and its age: the checks chip, `badge`, `⚠ looping`, the `[outcome]` label and the state `word`. */
+/** Checks, launch badge and observed state shown alongside a job's title. */
 export function cardMarks(card: WorkJob, badge = '', word = workStateWord(card)): string[] {
-  const labels = card.worker.labels, outcomeVal = labels?.outcome?.value, ink = workStateInk(card);
-  const outcome =
-    outcomeVal && t(outcomeVal) !== word && !(outcomeVal === 'done' && !failed(card) && card.worker.settledAt !== null)
-      ? `[${t(outcomeVal)}]`
-      : '';
+  const ink = workStateInk(card);
   const wordInk = card.worker.flow && activeFlow(card.worker) && word === t('land') ? theme.board.active : ink;
   return [
     checkChip(card.worker.checks),
     badge,
-    labels?.looping !== undefined ? ink(`${mark('⚠', '!')} ${t('looping')}`) : '',
-    outcome ? ink(outcome) : '',
     word ? wordInk(word) : '',
   ].filter(Boolean);
 }

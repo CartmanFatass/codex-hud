@@ -15,13 +15,6 @@ export interface EvidenceRef {
   readonly timeBasis: 'producer' | 'file-mtime' | 'unknown';
 }
 export interface DecisionRecord {
-  readonly category?: string;
-  readonly modelTitle?: string;
-  /** Display-only language adaptation; original decision/evidence remains authoritative. */
-  readonly modelQuestion?: string;
-  readonly modelAnswer?: string;
-  readonly modelInstead?: string;
-  readonly modelWhy?: string;
   readonly id: string;
   readonly laneId: string;
   readonly kind: 'answer' | 'review' | 'recommendation';
@@ -67,7 +60,6 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly reportMeta?: import('../roles/report-meta.js').ReportMeta;
   readonly superseded?: boolean;
   readonly failureObserved?: boolean;
-  readonly labels?: import('./decision-labels.js').DisplayLabels;
   readonly quietDecision?: {
     readonly choice: string | null;
     readonly probability: number | null;
@@ -84,7 +76,7 @@ export interface OwnerWorker extends Partial<JobProgress> {
   /** The latest classified tool call of a running, non-stalled thin job. Absent when the read/edit/test cells are unknown. */
   readonly stage?: 'read' | 'edit' | 'test';
   readonly nativeDepth?: number;
-  /** Raw local excerpt for the card, separate from fact and model-sentence inputs. */
+  /** Raw local excerpt from the observed native transcript. */
   readonly transcriptStep?: { text: string; replaying: boolean };
   readonly parentJobId?: string;
   readonly parentName?: string;
@@ -98,8 +90,8 @@ export interface OwnerWorker extends Partial<JobProgress> {
     verdict?: string;
     state?: 'open' | 'answered' | 'departure';
   }[];
-  /** Display-only model sentence; never state or execution evidence. */
-  readonly modelSentence?: string;
+  /** Bounded original report excerpt, attached only for the inspected job. */
+  readonly report?: { readonly text: string; readonly truncated: boolean };
   /** Newest working session, selected/stat'ed once by the thin-job collector. */
   readonly sessionFile?: { readonly path: string; readonly at: number };
   readonly work?: import('./work-job.js').WorkFacts;
@@ -110,9 +102,9 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly harness: string | null;
   readonly role: string | null;
   readonly task: string;
-  /** Stable slice/ticket identifier to retain beside a translated short name. */
+  /** Stable slice/ticket identifier to retain beside the title. */
   readonly displayId?: string;
-  /** Thin job's first brief heading, preferred when already in the display language. */
+  /** Thin job's original brief heading. */
   readonly briefTitle?: string;
   /** Heading of the ticket file the job works on (`NN:` prefix off); Home's job row title, else `briefTitle`. */
   readonly ticketTitle?: string;

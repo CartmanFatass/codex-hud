@@ -98,8 +98,7 @@ export interface MonitorControl {
     | `preset-${'list' | 'copy' | 'empty' | 'rename' | 'delete' | 'next' | 'prev' | 'accept' | 'cancel'}`
     | `chain-${'add' | 'edit' | 'remove' | 'up' | 'down' | 'save' | 'back' | 'accept'}`
     | 'settings'
-    | 'help'
-    | 'brief';
+    | 'help';
   item?: string;
   x: number;
   y: number;
@@ -147,7 +146,6 @@ export interface MonitorData {
   nowMs?: number;
   error?: string | null;
   publicationNotice?: string | null;
-  modelEnabled?: boolean;
   linkNames?: boolean;
   mouse?: boolean;
 }
@@ -172,7 +170,6 @@ export interface MonitorOutcome {
     | { type: 'accept-all' }
     | { type: 'request-retry'; home: string; jobId: string }
     | { type: 'refresh-models' }
-    | { type: 'brief-toggle' }
     /** Owner micro-actions on a HUD job (spec §2.2): focus its herdr tab, answer its open question, stop it. */
     | { type: 'focus-job-tab'; dir: string }
     | { type: 'answer-job'; home: string; jobId: string; qid: string; answer: string; role: string | null }

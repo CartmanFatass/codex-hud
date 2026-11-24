@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { defaultSettings } from '../../dist/settings.js';
-import { SmallModel } from '../../dist/collectors/small-model.js';
+import { ModelRuntimeStore, callsByFeature } from '../../dist/collectors/model-runtime-store.js';
 import { WorktreeCollector } from '../../dist/collectors/worktrees.js';
 import { renderSettingsPage, SETTING_ROWS } from '../../dist/render/settings-page.js';
 import { renderMonitor, initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
@@ -15,7 +15,7 @@ import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 
 const tree = { rootId: 'synthetic', nodes: [], totalCount: 0, updatedAt: new Date(0) };
-test('Settings → Models shows real hourly usage/cap, including zero and with model text off, in EN/ZH', (t) => {
+test('Settings shows hourly execution decision usage and cap, including zero, in EN/ZH', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'hud-settings-calls-'));
   const previous = setLanguage('en');
   t.after(() => {
@@ -23,27 +23,27 @@ test('Settings → Models shows real hourly usage/cap, including zero and with m
     rmSync(dir, { recursive: true, force: true });
   });
   const now = 1_700_000_000_000;
-  const model = new SmallModel({ dir, clock: () => now });
-  model.configure({ backend: 'off', hourlyCap: 7 });
-  const draft = { ...defaultSettings(), modelEnabled: false, modelCallsPerHour: 7 };
+  const store = new ModelRuntimeStore(dir);
+  const draft = { ...defaultSettings(), decisionCallsPerHour: 7 };
   for (const calls of [[], [now - 3_600_001, now - 1000, now]]) {
     writeFileSync(join(dir, 'calls.json'), JSON.stringify(calls));
+    const byFeature = callsByFeature(store.calls(), now);
+    const health = { decisionCalls: { byFeature, lastHour: Object.values(byFeature).reduce((sum, n) => sum + n, 0) } };
     for (const language of ['en', 'zh']) {
       setLanguage(language);
       for (const width of [32, 40, 56]) {
-        const state = { draft, selected: SETTING_ROWS.findIndex((r) => r.key === 'modelCallsPerHour'), offset: 0 };
-        const health = { state: undefined, modelCalls: model.usage() };
+        const state = { draft, selected: SETTING_ROWS.findIndex((r) => r.key === 'decisionCallsPerHour'), offset: 0 };
         const height = 12;
         const frame = renderSettingsPage(state, width, height, health);
         assert.ok(frame.lines.every((line) => visualLength(line) === width));
         const text = frame.lines.map(stripAnsi).join('\n');
         assert.match(text, calls.length ? /2\/7/ : /0\/7/);
-        assert.match(text, language === 'en' ? /Calls this hour/ : /本小时调用/);
+        assert.match(text, language === 'en' ? /Decision calls this hour/ : /本小时决策调用/);
         const themeRow = SETTING_ROWS.findIndex((r) => r.key === 'theme');
         const display = renderSettingsPage({ ...frame.state, selected: themeRow }, width, height, health);
         assert.ok(display.state.offset < frame.state.offset, 'selecting Theme scrolls back to Display');
         assert.ok(display.rows.includes(themeRow));
-        assert.doesNotMatch(display.lines.map(stripAnsi).join('\n'), /Calls this hour|本小时调用/);
+        assert.doesNotMatch(display.lines.map(stripAnsi).join('\n'), /Decision calls this hour|本小时决策调用/);
       }
     }
   }

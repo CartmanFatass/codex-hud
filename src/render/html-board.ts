@@ -176,7 +176,7 @@ ${project.summary ? `<p class="lede">${e(project.summary)}</p>` : ''}
       const state = s.ledgerState === 'blocked' ? 'blocked' : 'working';
       return `<article class="card ${state}"><header><span class="id">${e(s.label)}</span>${chip(state, t(state))}${s.role ? chip('plain', s.role) : ''}<span class="meta">${e(ago(s.at, now))}</span></header><p>${e(s.value)}</p>${s.drift ? `<p class="plain">${e(t(s.drift))}</p>` : ''}</article>`;
     }),
-    ...workers.map((w) => `<article class="card ${w.homeNeedsHuman ? 'ask' : 'working'}"><header><span class="id">${e(w.briefTitle ?? w.task)}</span>${chip('plain', [w.role, w.harness].filter(Boolean).join(' · ') || 'job')}<span class="meta">${e([w.model, w.effort, w.startedAt ? age(new Date(w.startedAt), now) : ''].filter(Boolean).join(' · '))}</span></header>${w.modelSentence || w.work?.reason ? `<p>${e(w.modelSentence || w.work?.reason)}</p>` : ''}</article>`),
+    ...workers.map((w) => `<article class="card ${w.homeNeedsHuman ? 'ask' : 'working'}"><header><span class="id">${e(w.briefTitle ?? w.task)}</span>${chip('plain', [w.role, w.harness].filter(Boolean).join(' · ') || 'job')}<span class="meta">${e([w.model, w.effort, w.startedAt ? age(new Date(w.startedAt), now) : ''].filter(Boolean).join(' · '))}</span></header>${w.reportMeta?.summary || w.work?.reason ? `<p>${e(w.reportMeta?.summary || w.work?.reason)}</p>` : ''}</article>`),
     ...(workboard ? [] : project.active.map((j) => `<article class="card ${j.asking ? 'ask' : 'working'}"><header><span class="id">${e(j.title ?? j.jobId)}</span>${chip('plain', j.role || 'job')}<span class="meta">${e(ago(j.at, now))}</span></header></article>`)),
   ];
 

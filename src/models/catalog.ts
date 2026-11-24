@@ -61,14 +61,8 @@ export interface ModelsCatalogDocument {
   version: 1;
   /** Ordered thinking ladder shared by `nearestThinking` and validation. */
   thinkingOrder: readonly ThinkingLevel[];
-  /** Built-in defaults for internal display text and Decision API helpers. */
+  /** Built-in defaults for Decision API helpers. */
   defaults: {
-    summary: {
-      apiBase: string;
-      model: string;
-      tiers: Readonly<Record<'lite' | 'low' | 'medium', string>>;
-      settingsChoices: readonly string[];
-    };
     decisions: {
       openai: string;
       gemini: string;

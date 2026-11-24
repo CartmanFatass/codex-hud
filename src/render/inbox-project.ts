@@ -10,7 +10,7 @@ import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import {
   PAGE_WORD, PROJECT_PAGES, asksYou, clampClean,
   featureCodes, inFlight, landedNewest, pageSummary, projectOrder,
-  sinceText, sliceInk, projectOriginal, unsliced,
+  sinceText, sliceInk, unsliced,
 } from './project-view.js';
 import { glyph, roleName } from './control-view.js';
 import { jobTitle, roleInk } from './work-job-row.js';
@@ -60,16 +60,14 @@ function buildNeeds(
   }
   for (const [i, r] of data.waiting.entries()) {
     const item = `project:wait:${i}`, lines = clampClean(monitorText(r.value), width - 4, state.project.nav.cursor === item ? Infinity : 1).lines;
-    out.push({ rows: [...lines.map((l, k) => ({ item, ...(r.path ? { files: [r.path] } : files), text: fit(`${k ? '    ' : `  ${theme.board.attention('?')} `}${l}`, width) })),
-      ...projectOriginal(r.original, `wait:${i}`, state.project.folded, width)] });
+    out.push({ rows: lines.map((l, k) => ({ item, ...(r.path ? { files: [r.path] } : files), text: fit(`${k ? '    ' : `  ${theme.board.attention('?')} `}${l}`, width) })) });
   }
   const features = data.tickets ?? [], codes = featureCodes(features), shownTickets = new Set<string>();
   for (const f of features) for (const tk of f.tickets.filter(asksYou)) {
     shownTickets.add(tk.path);
     const right = theme.board.attention(monitorText(t(tk.status))), prefix = `  ${theme.board.attention('?')} ${muted(codes.get(f.slug)!)} ${monitorText(tk.number)} `;
     const key = `${f.slug}:${basename(tk.path)}`;
-    out.push({ rows: [{ item: `inbox:tk:${key}`, files: [tk.path], text: pair(prefix + cutProse(tk.title, width - visualLength(prefix) - visualLength(right) - 1), right, width) },
-      ...projectOriginal(tk.originalTitle, `ticket:${key}`, state.project.folded, width)] });
+    out.push({ rows: [{ item: `inbox:tk:${key}`, files: [tk.path], text: pair(prefix + cutProse(tk.title, width - visualLength(prefix) - visualLength(right) - 1), right, width) }] });
   }
   for (const r of data.ledger.filter((s) => s.state === 'blocked' && !asking.has(s.id) && !(s.path && shownTickets.has(s.path)))) {
     const item = r.path ? `project:file:${r.path}:slice:${r.id}` : undefined;

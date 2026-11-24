@@ -24,7 +24,7 @@ import { projectListOpen } from '../render/project-view.js';
 import { projectList } from '../roles/projects.js';
 import { roleRegistry } from '../roles/roster.js';
 import { parseRosterRoot, formatRosterRoot } from '../roles/selection.js';
-import { defaultSettings, saveSettings } from '../settings.js';
+import { defaultSettings } from '../settings.js';
 import { runtimeSettings, applyDisplaySettings } from '../settings-runtime.js';
 import { buildSnapshot, SnapshotWriter } from '../snapshot.js';
 import type { SubagentTree } from '../types.js';
@@ -39,7 +39,8 @@ import { createPanelActions } from './actions.js';
 import { createAgentContext, treePaths } from './agent-context.js';
 import { PanelJobPipeline } from './job-pipeline.js';
 import { createPanelLifecycle, type InstallCleanup } from './lifecycle.js';
-import { createPanelModelServices } from './model-services.js';
+import { createPanelModelDiscovery } from './model-discovery.js';
+import { callsByFeature, ModelRuntimeStore } from '../collectors/model-runtime-store.js';
 import { computeRepaintDelay, createCollectionScheduler } from './scheduler.js';
 import { createSettingsFlow } from './settings-flow.js';
 
@@ -130,10 +131,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const lifecycle = createPanelLifecycle(reload, place?.widthOverride, () => settings.treeWidth);
   const isClosed = () => lifecycle.closed;
   const agentContext = createAgentContext(isClosed);
-  const models = createPanelModelServices(jobPipeline.home, () => render(), isClosed);
+  const discovery = createPanelModelDiscovery(jobPipeline.home, isClosed);
   const boardFacts = () => jobPipeline.workboard(emptyTree);
-  const displayBoard = () => models.apply(boardFacts());
-  // Retained jobs are browsable, but opening the panel does not add old jobs to model requests or notices.
+  // Retained jobs are browsable, but opening the panel does not announce old jobs.
   const liveEvidence = (board: ReturnType<typeof boardFacts>): ReturnType<typeof boardFacts> => {
     const workers = board.workers.filter((w) => w.settledAt === null || Math.max(w.settledAt, w.flow?.updatedAt ?? -Infinity) >= openedAt ||
       (w.flow?.kind === 'land' && (w.flow.state === 'queued' || w.flow.state === 'running')));
@@ -147,19 +147,17 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     return { ...board, workers, lanes, decisions };
   };
   const claudeNative = new ClaudeNativeTree();
-  models.configure(settings);
   // The bar's fields, for the foot of the panel: the panel replaces the bar
   // while it is open. Fed from this page's own parse of the rollout.
   const hudStatus = new HudStatus(HUD_CWD, () => render(), 30_000);
   const currentHud = () => {
     if (selectedRoot && selectedRoot !== boundJobRoot) return undefined;
-    const data = hudStatus.current();
-    return data ? { ...data, modelHealth: models.modelHealth() } : undefined;
+    return hudStatus.current() ?? undefined;
   };
   // The panel replaces the bar, so it publishes the same notifications and snapshot.
   const notifier = new Notifier(resolveNotifierOptions(process.env, settings));
   const snapshotWriter = new SnapshotWriter();
-  const settingsFlow = createSettingsFlow(settings, place?.settings, models.probe, {
+  const settingsFlow = createSettingsFlow(settings, place?.settings, {
     current: () => settings,
     apply(saved, widthChanged) {
       settings = saved;
@@ -168,7 +166,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       error = null;
       applyDisplaySettings(settings);
       setLanguage(resolveLanguage(settings.language));
-      models.configure(settings);
       scheduler.armCollect(settings.refreshMs);
       state = framePlace(state);
       worktrees = null;
@@ -181,7 +178,15 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     repaintAll: () => repaintAll(),
   }, () => roleRegistry(jobPipeline.home, shownRoot()).roles().get('imp')?.presets?.map(p => p.name) ?? []);
   const projectControlShown = (state: MonitorState, modal = false) => controlShown(state, modal) && state.control.subTab !== 'resources';
-  const syncModelListDiscovery = () => models.syncDiscovery(projectControlShown(state, settingsFlow.open));
+  const syncModelListDiscovery = () => discovery.sync(projectControlShown(state, settingsFlow.open));
+  const decisions = new ModelRuntimeStore(path.join(getHudDisplayHome(), 'model-cache', 'decision-api'));
+  let decisionCalls: { lastHour: number; byFeature: Record<string, number> } | undefined;
+  const readDecisionCalls = () => {
+    try {
+      const byFeature = callsByFeature(decisions.calls(), Date.now());
+      decisionCalls = { lastHour: Object.values(byFeature).reduce((sum, n) => sum + n, 0), byFeature };
+    } catch { decisionCalls = undefined; }
+  };
 
   const render = () => {
     if (isClosed() || (place && !collected)) return;
@@ -193,7 +198,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     const output = time('render', () => {
       const width = process.stdout.columns || 30, height = process.stdout.rows || 24;
       const settingsLines = settingsFlow.paint(width, height, () => ({
-        state: hudStatus.health.current(), modelCalls: models.modelCalls(), decisionCalls: models.decisionCalls(),
+        decisionCalls,
       }), (help, mouse) => {
         frame = renderMonitor({ state: framePlace(help), mouse, width, height });
         frameSource = help;
@@ -203,15 +208,14 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const nowMs = Date.now();
       frame = renderMonitor({
         tree,
-        workboard: displayBoard(),
+        workboard: boardFacts(),
         paneLoad: jobPipeline.load(),
         homeWaiting: visits.snapshot(HUD_CWD_REAL)?.waiting,
-        modelEnabled: settings.modelEnabled,
         mouse: settings.mouse,
         state: painted,
         worktrees: worktreesRoot === chosen && shown.root === chosen ? worktrees : undefined,
         expData: resourcesShown(painted) ? expData : undefined,
-        project: control ? shown.snapshot : models.waitingBriefs.project(shown.snapshot),
+        project: shown.snapshot,
         projectDisplayRoot: shown.root,
         projectWaiting: control ? visits.snapshot(chosen)?.waiting.length : undefined,
         projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
@@ -290,7 +294,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         if (sessionRoot !== undefined) state = initialMonitorState();
         sessionRoot = rootId;
         worktrees = null;
-        models.leaveRoot();
         agentContext.clear();
         tree = undefined;
       }
@@ -318,8 +321,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       stage = 'status';
       state = framePlace(state);
       const board = boardFacts();
-      const live = liveEvidence(board);
-      models.update(live, emptyTree, inspector());
+      if (settingsFlow.open) readDecisionCalls();
       // Only the shown project is collected; the list of projects is read again at most every five seconds.
       const shown = projectShown(state, settingsFlow.open), control = projectControlShown(state, settingsFlow.open);
       if ((shown || control) && Date.now() - projectsAt >= 5000) {
@@ -346,11 +348,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         if (control) visit.control = projectFacts;
         else visit.snapshot = projectFacts;
       }
-      const stillShown = () => !isClosed() && !state.subpage && !state.help && !settingsFlow.open &&
-        (state.activeTab === 'home' ? root === HUD_CWD_REAL : projectShown(state) && !listing(state) && shownRoot() === root);
-      if (projectFacts && !control && stillShown()) {
-        models.waitingBriefs.update(live, projectFacts, projectShown(state));
-      } else if (inspector() && !settingsFlow.open) models.waitingBriefs.update(live);
       error = settingsError || roleNotice || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });
@@ -417,11 +414,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     onWorktrees(snapshot) { worktrees = snapshot; worktreesRoot = shownRoot(); render(); },
     onWorktreeError: (err) => hudStatus.health.fail('worktrees', err),
   });
-  models.onChange(() => {
-    scheduler.invalidate();
-    render();
-    void scheduler.collect(true);
-  });
   const actions = createPanelActions(jobPipeline.home, HUD_CWD_REAL, visits, {
     get state() { return state; },
     set state(value) { state = value; },
@@ -432,19 +424,12 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     notice(text) { roleNotice = text; error = text || settingsError || null; },
     boardNotice(text) { boardNotice = text; },
     error(text) { error = text; },
-    boardInput: () => ({ workboard: displayBoard() }),
-    refreshModels: () => models.refreshModelLists(true),
-    toggleBriefs() {
-      try {
-        settings = saveSettings({ modelEnabled: !settings.modelEnabled });
-        models.configure(settings);
-        if (models.enabled) void scheduler.collect();
-      } catch (err) {
-        settingsError = t('Panel preferences could not be saved: {reason}', { reason: String(err) });
-        error = settingsError;
-      }
+    boardInput: () => ({ workboard: boardFacts() }),
+    refreshModels: () => discovery.refresh(true),
+    openSettings() {
+      readDecisionCalls();
+      settingsFlow.show(settings);
     },
-    openSettings: () => settingsFlow.show(settings),
   });
   const processInput = (inputs: WorkbenchInput[]) => {
     if (boardNotice && inputs.length) boardNotice = '';
@@ -482,7 +467,6 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       render();
     }
     syncModelListDiscovery();
-    settingsFlow.afterInput();
   };
   const dispatch = (all: WorkbenchInput[]) => {
     const inputs = filterBatchInputs(settingsFlow.open ? undefined : framePlace(state), all);
@@ -505,7 +489,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     dispose() {
       jobPipeline.dispose();
       finder.stop();
-      models.dispose();
+      discovery.dispose();
       if (scanStoreStarted) flushTreeScans();
       scheduler.stop();
       stopProfiling();

@@ -2,9 +2,9 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
-import { readJobFile } from './job-sentences.js';
+import { readJobFile } from './read-job-file.js';
 import { makeSourceId } from '../core/identity.js';
-import { headTail } from './model-jobs.js';
+import { headTail } from './agent-stages.js';
 const CHUNK = 1024 * 1024;
 const MAX_LINE = 4 * CHUNK;
 const TAIL = 64 * 1024;

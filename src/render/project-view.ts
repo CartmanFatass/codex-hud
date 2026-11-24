@@ -3,12 +3,12 @@ import { SLICE_STATES, SETTLED_JOB_STATES, type SliceState, type ProjectSnapshot
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { ledgerTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
 import { projectWorkJob } from '../collectors/work-job.js';
-import { jobSentenceRows, stemLines, workJobDetail, labelSummary } from './work-job-detail.js';
+import { stemLines, workJobDetail } from './work-job-detail.js';
 import { roleInk } from './work-job-row.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { projectPage } from './monitor-state.js';
 import { basename } from 'node:path';
-import { boardRow, itemRow, originalRows, section, mark, minuteAge, pack } from './workboard-rows.js';
+import { boardRow, itemRow, section, mark, minuteAge, pack } from './workboard-rows.js';
 import { inboxHubRows, inboxListRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { worktreeRows } from './monitor-panes.js';
@@ -105,10 +105,6 @@ export function waitingRows(r: ProjectItem, i: number, width: number, now: numbe
   const room = width - 2 - (right ? visualLength(right) + 1 : 0), body = monitorText(r.value);
   return rows < 2 || visualLength(body) <= room ? [row]
     : clampClean(body, room, rows).lines.map((line, k) => ({ ...row, text: k ? fit('  ' + line, width) : pair(`${glyph} ${line}`, theme.board.muted(right), width) }));
-}
-export function projectOriginal(source: string | undefined, id: string, folded: ReadonlySet<string>, width: number) {
-  const key = `original:${id}`;
-  return originalRows(source, `project:fold:${key}`, folded.has(key), width);
 }
 export { roleInk }; // Also used by the Project list and previews.
 /** STATE's current milestone's ledger rows with their counts; a ledger that has none of them (or no current milestone) is counted whole. */
@@ -216,26 +212,23 @@ export function progressTaskHeader(task: AcceptanceTask, data: ProjectSnapshot, 
 
 /** Slice details in the Project task drill-down. */
 export function sliceDetailRows(r: LedgerSlice, data: ProjectSnapshot, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false): MonitorRow[] {
+  board?: WorkboardSnapshot): MonitorRow[] {
   const plain = (text: string) => boardRow(fit(text, width)), muted = theme.board.muted;
   const s = data.slices.find((x) => x.label === r.id), worker = s?.jobId ? board?.workers.find((w) => w.evidence[0]?.sourceId === s.jobId) : undefined;
   const rows = [...clampLines(ledgerText(r) || r.text, width - 2, Infinity).lines.map((l) => plain('  ' + l)),
     ...diffStatRows(r.state === 'try' ? r.diff : undefined, width)];
   if (worker && s) {
     rows.push(plain(`  ${muted(t('now:'))} ${roleInk(worker.role ?? '')(monitorText(worker.role ?? ''))} ${muted(worker.homeNeedsHuman ? `${t('asking')} ?` : minuteAge(s.at ?? null, now))}`));
-    rows.push(...(modelEnabled && worker.modelSentence ? jobSentenceRows(worker.modelSentence, width, muted, true).map(plain)
-      : stemLines(workJobDetail(projectWorkJob(worker, now)), width, muted, 3).map(plain)));
-    const labels = labelSummary(worker.labels);
-    if (labels) rows.push(plain('  ' + labels));
+    rows.push(...stemLines(workJobDetail(projectWorkJob(worker, now)), width, muted, 3).map(plain));
   } else if (r.commit || r.at !== undefined) rows.push(plain('  ' + muted([NO_MILESTONE.test(r.milestone) ? '' : monitorText(r.milestone), r.commit?.slice(0, 7), r.at !== undefined ? new Date(r.at).toISOString().slice(5, 10) : ''].filter(Boolean).join(' · '))));
   return rows;
 }
 export function progressTaskDetails(task: AcceptanceTask, data: ProjectSnapshot, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false): MonitorRow[] {
+  board?: WorkboardSnapshot): MonitorRow[] {
   return [...task.slices].sort((a, b) => PROGRESS_ORDER.indexOf(a.state) - PROGRESS_ORDER.indexOf(b.state)).flatMap((r) => {
     const glyph = progressMark(r.state);
     const right = theme.board.muted(t(r.state === 'try' ? 'to try' : r.state));
-    return [boardRow(pair(`  ${glyph} ${monitorText(r.id)}`, right, width)), ...sliceDetailRows(r, data, width, now, board, modelEnabled)];
+    return [boardRow(pair(`  ${glyph} ${monitorText(r.id)}`, right, width)), ...sliceDetailRows(r, data, width, now, board)];
   });
 }
 /** A done/total meter `cells` wide, as thin as the panel's other meters; a started one shows at least a cell, an unfinished one never looks full. */
@@ -304,7 +297,6 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
     rows.push({ text: pair(`${lead}${dropped ? theme.board.muted(title) : title}`, right, width), ...at });
     // For you: the latest comment is why, under the row. Enter shows what is checked and the whole comment here; o opens the file.
     const sub = (text: string) => rows.push({ text: fit(text, width), ...at });
-    rows.push(...projectOriginal(ticket.originalTitle, tid, folded, width));
     if (!folded.has(tid)) return lane === 'you' && ticket.comment ? sub(`      ${theme.board.muted(`${mark('“', '"')}${clampLines(ticket.comment, width - 9, 1).lines[0]}${mark('”', '"')}`)}`) : undefined;
     for (const item of ticket.items) clampLines(item.text, width - 8, 2).lines.forEach((line, k) => sub(
       `      ${k ? '  ' : (item.done ? theme.board.success(mark('✓', '+')) : theme.board.muted(mark('○', 'o'))) + ' '}${line}`));
@@ -328,8 +320,8 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
 export function ticketPreview(data: ProjectSnapshot, key: string, folded: ReadonlySet<string>, width: number, now: number, filtering = false): MonitorRow[] {
   const id = `ticket:${key}`;
   return ticketRows(data, new Set([...folded, id]), width, now, undefined, filtering)
-    .filter(r => r.item === `project:fold:${id}` || r.item === `project:fold:original:${id}`).slice(1)
-    .map(r => r.item === `project:fold:${id}` ? { text: r.text } : r);
+    .filter(r => r.item === `project:fold:${id}`).slice(1)
+    .map(r => ({ text: r.text }));
 }
 export const featureItem = (feature: TicketFeature) => `project:fold:feature:${feature.slug}`;
 export function featureRow(feature: TicketFeature, width: number, open = false): MonitorRow {
@@ -345,7 +337,7 @@ export function featureRow(feature: TicketFeature, width: number, open = false):
 /** One page: today's section content, without the section header (the crumb names the page). */
 export function pageRows(
   page: ProjectPage, data: ProjectSnapshot, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false, worktrees?: WorktreesSnapshot | null
+  board?: WorkboardSnapshot, worktrees?: WorktreesSnapshot | null
 ): MonitorRow[] {
   const rows: MonitorRow[] = [boardRow('')], folded = state.project.folded;
   const item = (r: ProjectItem, i: number, glyph = '') => rows.push(projectItem(r, i, glyph, width, now));
@@ -361,7 +353,7 @@ export function pageRows(
     for (const task of tasks) {
       const row = progressTaskHeader(task, data, width, now);
       rows.push(row);
-      if (folded.has(row.item!.slice('project:fold:'.length))) rows.push(...progressTaskDetails(task, data, width, now, board, modelEnabled)
+      if (folded.has(row.item!.slice('project:fold:'.length))) rows.push(...progressTaskDetails(task, data, width, now, board)
         .map((detail) => ({ ...row, ...detail, item: detail.item ?? row.item })));
     }
     const jobs = unsliced(data);
@@ -402,7 +394,6 @@ export function pageRows(
         text: fit((n ? ' '.repeat(hang) : k ? '  ' + marker : theme.board.attention('?') + ' ') + line, width),
         item: `project:wait:${index}:${rows.length - 1}`, ...(r.path ? { files: [r.path] } : {}) }));
     }
-    rows.push(...projectOriginal(r?.original, `wait:${index}`, folded, width));
   } else if (page === 'tickets') {
     for (const feature of data.tickets) {
       const open = folded.has(featureItem(feature).slice('project:fold:'.length));
@@ -430,11 +421,11 @@ export function pageRows(
 /** The Project tab: a hub of one summary row per page, or the page the panel has open. */
 export function projectRows(
   data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, modelEnabled = false, name = '', projects: ProjectChoice[] = [], room?: number, worktrees?: WorktreesSnapshot | null
+  board?: WorkboardSnapshot, name = '', projects: ProjectChoice[] = [], room?: number, worktrees?: WorktreesSnapshot | null
 ): MonitorRow[] {
   const page = projectPageOf(state);
   // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
   if (projectListOpen(state, projects)) return inboxListRows(projects, width, now);
   if (!data) return [];
-  return page ? pageRows(page, data, state, width, now, board, modelEnabled, worktrees) : inboxHubRows(data, state, width, now, name, projects, board, room);
+  return page ? pageRows(page, data, state, width, now, board, worktrees) : inboxHubRows(data, state, width, now, name, projects, board, room);
 }

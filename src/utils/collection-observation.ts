@@ -35,7 +35,6 @@ export function collectionObservation(data: HudData | undefined | null, tree: Su
     (data?.pendingApproval || bridge?.stateMismatch || bridge?.probeFailed || (bridge && bridge.state !== 'connected'))
   )
     activity = 'uncertain';
-  if (data?.modelHealth?.queued || data?.modelHealth?.running) activity = 'active';
   return {
     activity,
     fingerprint: JSON.stringify([
@@ -49,8 +48,6 @@ export function collectionObservation(data: HudData | undefined | null, tree: Su
       bridge?.state,
       bridge?.nativeState,
       bridge?.stateMismatch,
-      data?.modelHealth?.lastSuccessAt,
-      data?.modelHealth?.lastFailure?.at,
       agents,
     ]),
   };

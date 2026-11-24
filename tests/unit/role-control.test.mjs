@@ -838,7 +838,7 @@ test('Control plane keys: decoded names, scoped to Control, Settings letters unc
   const names = (raw) => decoder.push(Buffer.from(raw)).map((i) => i.key);
   assert.deepEqual([...'pPmMeEIiKJx', DEL].map((c) => names(c)[0]), ['preset-list', '', 'place-model', '', '', '', 'preset-empty',
     'place-add', 'place-up', 'place-down', 'place-clear', 'place-remove']);
-  assert.deepEqual([...'srtjkq'].map((c) => names(c)[0]), ['settings-save', 'reset', 'settings-test', 'down', 'up', 'close']);
+  assert.deepEqual([...'srtjkq'].map((c) => names(c)[0]), ['settings-save', 'reset', '', 'down', 'up', 'close']);
   // The panel's own keyboard also types: a printable key carries its character (named or not), and a control key has none.
   const decoded = (raw, profile = 'workboard') => new WorkbenchInputDecoder(profile).push(Buffer.from(raw));
   assert.deepEqual(decoded('m'), [{ type: 'key', key: 'place-model', text: 'm' }]);

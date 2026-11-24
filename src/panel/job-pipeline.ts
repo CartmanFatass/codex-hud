@@ -1,6 +1,8 @@
 import * as path from 'node:path';
 import { DiffStatCollector } from '../collectors/diff-stat.js';
 import { readHeadlessOutput } from '../collectors/headless-output.js';
+import { readJobFile } from '../collectors/read-job-file.js';
+import { jobFiles } from '../mcp/paths.js';
 import type { ThinJobScope } from '../collectors/thin-jobs.js';
 import { jobLaneSnapshot } from '../collectors/job-snapshot.js';
 import type { WorkboardSnapshot, WorkLane } from '../collectors/workboard-types.js';
@@ -61,8 +63,12 @@ export class PanelJobPipeline {
       if (this.closed || generation !== this.generation) return false;
       // A headless job has no tab to look at: the job open in the Inspector also carries its newest output lines.
       const output = worker.headless ? readHeadlessOutput(directory) : undefined;
-      if (diffStat || output) lanes = lanes.map((l) => l !== lane ? l : {
-        ...l, workers: l.workers.map((w) => w === worker ? { ...w, ...(diffStat && { diffStat }), ...(output && { output }) } : w),
+      const limit = 4096;
+      const excerpt = worker.files?.some((file) => file.kind === 'report')
+        ? readJobFile(path.join(directory, jobFiles.report), limit) : undefined;
+      const report = excerpt?.text.trim() ? { text: excerpt.text, truncated: (excerpt.size ?? 0) > limit } : undefined;
+      if (diffStat || output || report) lanes = lanes.map((l) => l !== lane ? l : {
+        ...l, workers: l.workers.map((w) => w === worker ? { ...w, ...(diffStat && { diffStat }), ...(output && { output }), ...(report && { report }) } : w),
       });
     }
     if (this.thinJobs !== lanes) this.boardCache = undefined;

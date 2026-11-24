@@ -554,31 +554,23 @@ test('Progress dates STATE notes but does not flag working tickets that have no 
   assert.match(text, /◐ QUEUE-04 +working/);
   assert.doesNotMatch(text, /no worktree|not in ledger|NO-JOB/);
 });
-test('ticket lines use the same Home worker fact/model and keep older jobs available; files open tickets', async (t) => {
+test('ticket lines use worker facts and declared summaries, retain older jobs and open ticket files', async (t) => {
   const f = await fixture(t),
     worker = f.board.workers.find((w) => w.evidence[0]?.sourceId === 'j0000000000000002');
   const home = workInspectorRows(worker, 120, NOW).map(r => stripAnsi(r.text)).join('\n');
   assert.match(home, /Question: Which synthetic option\?/);
   const opened = onPage('progress', { project: { folded: new Set(['task:milestone:native-tree']) } });
   assert.match(plain(f.render(120, 'en', opened)).join('\n'), /Which synthetic option\?/);
-  worker.modelSentence = 'Building «synthetic agents» in the Home lane.';
-  assert.match(plain(f.render(120, 'en', opened)).join('\n'), /Building synthetic agents in the Home lane\./);
-  const coloured = f.render(120, 'en', opened, 56, f.data, true, 'unicode', 'mocha');
-  assert.match(
-    coloured.workboard.rows.find((r) => stripAnsi(r.text).includes('Building synthetic agents')).text,
-    /\x1b\[[0-9;]+msynthetic agents\x1b\[0m/
-  );
-  assert.doesNotMatch(plain(f.render(120, 'en', opened, 56, f.data, false)).join('\n'), /Building synthetic agents/);
-  assert.match(plain(f.render(120, 'en', opened, 56, f.data, false)).join('\n'), /Which synthetic option\?/);
   worker.state = 'done';
   worker.settledAt = NOW - 3600000;
   worker.homeNeedsHuman = false;
+  worker.reportMeta = { summary: 'Built «synthetic agents».' };
   const hidden = f.render(120, 'en', opened);
   assert.equal(
     hidden.workboard.snapshot.workers.some((w) => w.id === worker.id),
     true
   );
-  assert.match(plain(hidden).join('\n'), /Building synthetic agents/);
+  assert.match(plain(hidden).join('\n'), /Built «synthetic agents»\./);
   fs.unlinkSync(join(f.sliceJob, 'report.md'));
   let data = await f.collector.collect(true, f.board, NOW + 1);
   assert.equal(data.slices.find((s) => s.label === 'NATIVE-TREE-01').path, join(f.sliceJob, 'brief.md'));

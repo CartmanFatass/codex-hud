@@ -2,17 +2,14 @@ import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import fsMutable from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { nativeFixture, nativeFrames, NOW } from '../fixtures/native-tree.mjs';
-import { JobSentences } from '../../dist/collectors/job-sentences.js';
-import { SmallModel, modelHttpRequest } from '../../dist/collectors/small-model.js';
 import { renderMonitor, initialMonitorState, handleMonitorInput } from '../../dist/render/monitor.js';
-import { stripAnsi, visualLength, theme } from '../../dist/render/colors.js';
+import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { targetKey } from '../../dist/collectors/workboard-types.js';
 import { collectionObservation, jobPanelObservation } from '../../dist/utils/collection-observation.js';
@@ -20,9 +17,6 @@ import { recordAdaptivePoll, createAdaptivePollState } from '../../dist/collecto
 import { callerSession, claudeCallerSession } from '../../dist/collectors/claude-caller-session.js';
 import { panelCommand, panelSelection } from '../../dist/cli/panel.js';
 const nativePage = () => ({ ...initialMonitorState(), subpage: { kind: 'native-inspector', scroll: 0 } });
-const tick = async () => {
-  for (let i = 0; i < 15; i++) await new Promise(setImmediate);
-};
 function fixture(t) {
   const home = fs.mkdtempSync(join(tmpdir(), 'native-tree-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -93,105 +87,6 @@ test('matched nested Claude parents are complete; unmatched parents remain incom
   }
 });
 
-for (const mode of ['off', 'no-key', 'on'])
-  for (const language of ['en', 'zh'])
-    test(`native sentences use the job queue, master/key gate and two-minute floor: ${mode} ${language}`, async (t) => {
-      const f = fixture(t),
-        tree = f.claude();
-      tree.nodes[0].children = [];
-      tree.totalCount = 1;
-      let now = NOW,
-        calls = [];
-      const env = { HOME: f.home, HUD_HOME: f.home, MISTRAL_API_KEY: mode === 'no-key' ? '' : 'synthetic-key' };
-      const model = new SmallModel({
-        env,
-        clock: () => now,
-        fetch: async (_url, init) => {
-          const body = JSON.parse(init.body);
-          calls.push(body);
-          return new Response(
-            JSON.stringify({
-              choices: [
-                {
-                  message: {
-                    content: JSON.stringify(
-                      language === 'zh'
-                        ? { name: '解析器修复', sentence: '检查「解析器」和report.md，「+批准」或「-拒绝」，「!认为更简单」。' }
-                        : { name: 'Parser repair', sentence: 'Checking «parser» and report.md, «+accept» or «-reject» with «!simpler design».' }
-                    ),
-                  },
-                },
-              ],
-            })
-          );
-        },
-      });
-      const enabled =
-        mode !== 'off' &&
-        !(
-          'error' in modelHttpRequest({ base: '', model: '' }, { feature: 'job-sentence', system: '', prompt: '' }, env)
-        );
-      model.configure({ backend: enabled ? 'api' : 'off' });
-      const file = join(f.home, 'sentences.json');
-      const service = new JobSentences(
-        model,
-        file,
-        () => {},
-        () => now
-      );
-      service.configure(enabled, language);
-      t.after(() => {
-        service.stop();
-        model.cancelAll();
-      });
-      const update = async () => {
-        service.update(f.board(tree), f.home, tree);
-        await tick();
-        return service.apply(f.board(tree));
-      };
-      let board = await update();
-      assert.equal(calls.length, enabled ? 1 : 0);
-      assert.doesNotMatch(JSON.stringify(calls), /PRIVATE-CLAUDE|PRIVATE-CHANNEL/);
-      if (!enabled) {
-        assert.equal(board.workers[0].modelSentence, undefined);
-        assert.equal(board.workers[0].task, 'Repair parser');
-        return;
-      }
-      assert.equal(board.workers[0].task, language === 'en' ? 'Parser repair' : '解析器修复');
-      assert.match(calls[0].messages[0].content, /up to 4 keywords/);
-      assert.match(calls[0].messages[0].content, /Use «…» keyword delimiters in every language, including Simplified Chinese/);
-      now += 119999;
-      tree.nodes[0].status = 'completed';
-      tree.nodes[0].statusAt = new Date(now);
-      await update();
-      assert.equal(calls.length, 1);
-      now += 2;
-      board = await update();
-      assert.equal(calls.length, 2);
-      assert.match(calls[1].messages[1].content, /"state":"done"/);
-      now += 300000;
-      await update();
-      assert.equal(calls.length, 2, 'successful final freezes only that settlement');
-      const reopened = new JobSentences(
-        model,
-        file,
-        () => {},
-        () => now
-      );
-      reopened.configure(true, language);
-      reopened.update(f.board(tree), f.home, tree);
-      await tick();
-      assert.equal(calls.length, 2, 'reopened native text is cached');
-      reopened.stop();
-      tree.nodes[0].status = 'error';
-      tree.nodes[0].statusAt = new Date(now);
-      board = await update();
-      assert.equal(calls.length, 3);
-      assert.match(calls[2].messages[1].content, /"state":"failed"/);
-      service.configure(false, language);
-      assert.equal(service.apply(f.board(tree)).workers[0].modelSentence, undefined);
-      assert.equal(service.apply(f.board(tree)).workers[0].task, 'Repair parser');
-    });
 function resumedFixture(t) {
   const f = fixture(t), meta = join(f.dir, 'agent-lead.meta.json'), file = join(f.dir, 'agent-lead.jsonl');
   fs.unlinkSync(join(f.dir, 'agent-child.meta.json'));
@@ -208,75 +103,6 @@ function resumedFixture(t) {
   f.put(file, record([{ type: 'text', text: 'Waiting 40 seconds in the background.' }], NOW - 1000, 'end_turn'));
   return { ...f, meta, file, metadata, append, record };
 }
-test('Claude resumes after background wait: running card, fresh last-reply final under floor/cap, unchanged reopen is free', async (t) => {
-  const f = resumedFixture(t);
-  let now = NOW, calls = [];
-  const model = new SmallModel({
-    env: { HOME: f.home, HUD_HOME: f.home, MISTRAL_API_KEY: 'synthetic-key' },
-    clock: () => now,
-    fetch: async (_url, init) => {
-      const body = JSON.parse(init.body);
-      calls.push(body);
-      const input = JSON.parse(body.messages[1].content.slice('<job>\n'.length, -'\n</job>'.length));
-      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
-        name: 'Background check', sentence: input.result.includes('FINAL-RESULT') ? 'Background check passed.' : 'Waiting in the background.',
-      }) } }] }));
-    },
-  });
-  model.configure({ backend: 'api', hourlyCap: 2 });
-  const cache = join(f.home, 'sentences.json');
-  let service = new JobSentences(model, cache, () => {}, () => now);
-  service.configure(true, 'en');
-  t.after(() => { service.stop(); model.cancelAll(); });
-  const update = async () => {
-    const tree = f.claude(), board = f.board(tree);
-    service.update(board, f.home, tree);
-    await tick();
-    return { tree, board: service.apply(board) };
-  };
-  let current = await update();
-  assert.equal(current.board.workers[0].state, 'done');
-  assert.equal(calls.length, 1);
-  assert.match(current.board.workers[0].modelSentence, /Waiting/);
-  now += 20_000;
-  f.append([{ type: 'tool_use', id: 'background-read', name: 'Read', input: {} }], now);
-  current = await update();
-  assert.equal(current.tree.nodes[0].status, 'running');
-  assert.equal(current.tree.nodes[0].statusAt, undefined);
-  assert.equal(current.board.workers[0].state, 'working');
-  assert.equal(calls.length, 1, 'resumption cannot bypass the two-minute floor');
-  f.append([{ type: 'tool_result', tool_use_id: 'background-read', content: 'Finished' }], now + 1000, undefined, 'user');
-  now += 20_000;
-  f.append([{ type: 'text', text: 'Background completed. ' + 'checked '.repeat(1500) + 'FINAL-RESULT: all passed.' }], now, 'end_turn');
-  current = await update();
-  const settlement = current.board.workers[0].settledAt;
-  assert.equal(current.board.workers[0].state, 'done');
-  assert.equal(settlement, now);
-  assert.equal(calls.length, 1, 'new settlement also respects the floor');
-  now = NOW + 120_001;
-  current = await update();
-  assert.equal(calls.length, 2);
-  assert.match(calls[1].messages[1].content, /FINAL-RESULT: all passed/);
-  assert.doesNotMatch(calls[1].messages[1].content, /Waiting 40 seconds/);
-  const input = JSON.parse(calls[1].messages[1].content.slice('<job>\n'.length, -'\n</job>'.length));
-  assert.ok(input.result.length <= 8000);
-  assert.ok(input.report.length <= 600);
-  assert.equal(current.board.workers[0].modelSentence, 'Background check passed.');
-  service = new JobSentences(model, cache, () => {}, () => now);
-  service.configure(true, 'en');
-  now += 300_000;
-  const reads = t.mock.method(fsMutable, 'readSync');
-  current = await update();
-  assert.equal(f.collector.bytes, 0);
-  assert.equal(reads.mock.callCount(), 0, 'finished unchanged transcript and sentence are stat/cache-only');
-  assert.equal(calls.length, 2);
-  assert.equal(current.board.workers[0].settledAt, settlement);
-  assert.equal(current.board.workers[0].modelSentence, 'Background check passed.');
-  f.append([{ type: 'text', text: 'Another completed result.' }], now, 'end_turn');
-  await update();
-  assert.equal(calls.length, 2, 'a further settlement cannot bypass the shared hourly cap');
-  assert.deepEqual(model.usage().byFeature, { 'native-sentence': 2 });
-});
 test('Claude resumed settlement needs the last public end_turn and no open tools; fresh metadata also settles', (t) => {
   const f = resumedFixture(t);
   assert.equal(f.claude().nodes[0].status, 'completed');
@@ -311,7 +137,7 @@ test('Claude resumed settlement needs the last public end_turn and no open tools
   f.append([{ type: 'text', text: 'Settled without another metadata write.' }], NOW + 9000, 'end_turn');
   assert.equal(f.claude().nodes[0].status, 'completed');
 });
-test('finished Claude metadata survives multi-pass replay and makes no premature model call', async (t) => {
+test('finished Claude metadata survives multi-pass replay and retains the original final reply', (t) => {
   const f = resumedFixture(t), settledAt = NOW - 9 * 60 * 60_000;
   f.metadata(true, settledAt);
   f.put(f.file, [0, 1, 2].map((i) => f.record(
@@ -319,18 +145,6 @@ test('finished Claude metadata survives multi-pass replay and makes no premature
     settledAt - (2 - i) * 1000, 'end_turn'
   )).join(''));
   fs.utimesSync(f.file, new Date(settledAt), new Date(settledAt));
-  const calls = [];
-  const model = new SmallModel({
-    env: { HOME: f.home, HUD_HOME: f.home, MISTRAL_API_KEY: 'synthetic-key' }, clock: () => NOW,
-    fetch: async (_url, init) => {
-      calls.push(JSON.parse(init.body));
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'Replay completed.' } }] }));
-    },
-  });
-  model.configure({ backend: 'api' });
-  const service = new JobSentences(model, join(f.home, 'sentences.json'), () => {}, () => NOW);
-  service.configure(true, 'en');
-  t.after(() => { service.stop(); model.cancelAll(); });
   let passes = 0, tree;
   do {
     tree = f.claude();
@@ -339,18 +153,12 @@ test('finished Claude metadata survives multi-pass replay and makes no premature
     assert.equal(node.statusAt.getTime(), settledAt);
     assert.equal(board.workers[0].state, 'done');
     assert.equal(board.workers[0].settledAt, settledAt);
-    service.update(board, f.home, tree);
-    await tick();
     passes++;
-    if (tree.incomplete) {
-      assert.equal(node.replaying, true);
-      assert.equal(calls.length, 0);
-    }
+    if (tree.incomplete) assert.equal(node.replaying, true);
     assert.ok(passes <= 4);
   } while (tree.incomplete);
   assert.equal(passes, 4, 'one tail preview followed by three forward chunks');
-  assert.equal(calls.length, 1, 'caught-up material can use the existing final-sentence path');
-  assert.match(calls[0].messages[1].content, /FINAL-REPLAY-RESULT/);
+  assert.match(tree.nodes[0].lastReport.text, /FINAL-REPLAY-RESULT$/);
   assert.equal(tree.nodes[0].replaying, false);
   assert.equal(f.claude().nodes[0].status, 'completed');
   assert.equal(f.collector.bytes, 0);

@@ -89,25 +89,6 @@ export function pageFixture(home) {
     at: ago(3).toISOString(), text: 'Retry cap verified · 回退上限已验证 · Checked both error paths',
   }) + '\n', 3);
   const lanes = readThinJobs(home, { project: '/synthetic/repo', pane: 'w4E:p1' });
-  // The overlay is the stored model result, not a model fake on a render path.
-  for (const lane of lanes) {
-    lane.workers = lane.workers.map((w) =>
-      w.id.endsWith('1')
-        ? {
-            ...w,
-            modelSentence:
-              'Fixing the retry cap finding: «jitter» is now bounded at 30 s; the tests cover 429 and 503.',
-          }
-        : w
-    );
-    lane.decisions = lane.decisions.map((d) => ({
-      ...d,
-      modelTitle:
-        d.evidence[0].sourceId.endsWith('1') && d.evidence[0].relativePath === 'qa/q2.md'
-          ? 'Backoff with jitter, cap 30s'
-          : d.option?.replace(/^[ab]:\s*/, ''),
-    }));
-  }
   const board = {
     revision: 'synthetic',
     lanes,
@@ -152,21 +133,21 @@ export function pageFixture(home) {
     try {
       if (page === 'settings' || page === 'settings-even') {
         const even = page === 'settings-even';
-        const original = { ...defaultSettings(), modelEnabled: true, theme: 'none', barStyle: 'line' };
-        const draft = { ...original, modelCallsPerHour: 120, ...(even ? { impPlacement: 'even', impEvenPool: ['small'] } : {}) };
+        const original = { ...defaultSettings(), theme: 'none', barStyle: 'line' };
+        const draft = { ...original, decisionCallsPerHour: 600, ...(even ? { impPlacement: 'even', impEvenPool: ['small'] } : {}) };
         return withDisplaySettings(draft, () =>
           renderSettingsPage(
             {
               draft,
               original,
-              selected: SETTING_ROWS.findIndex((r) => r.key === (even ? 'impEvenPool' : 'modelCallsPerHour')),
+              selected: SETTING_ROWS.findIndex((r) => r.key === (even ? 'impEvenPool' : 'decisionCallsPerHour')),
               impPresets: ['small', 'deep', 'daily'],
               offset: 0,
               message: '',
             },
             width,
             height,
-            { state: undefined, modelCalls: { today: 14, lastHour: 14, cap: 60 }, decisionCalls: { lastHour: 140, cap: 0 } }
+            { decisionCalls: { lastHour: 140, byFeature: { 'sonic-thinking': 140 } } }
           )
         );
       }
@@ -177,7 +158,6 @@ export function pageFixture(home) {
         state: page === 'help-end' ? { ...states.help, help: { scroll: Infinity } } : states[page],
         width,
         height,
-        modelEnabled: true,
         mouse: true,
         nowMs: NOW,
       });

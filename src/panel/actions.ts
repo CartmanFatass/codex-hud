@@ -43,7 +43,6 @@ type ActionHost = {
   error(text: string): void;
   boardInput(): Pick<Parameters<typeof writeBoard>[0], 'workboard'>;
   refreshModels(): void;
-  toggleBriefs(): void;
   openSettings(): void;
 };
 
@@ -202,7 +201,6 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
           }
           break;
         }
-        case 'brief-toggle': host.toggleBriefs(); break;
         case 'settings': host.openSettings(); break;
       }
     },

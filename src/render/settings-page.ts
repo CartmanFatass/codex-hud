@@ -1,13 +1,10 @@
-import { SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import { defaultSettings, type HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-import type { HudHealthState } from '../types.js';
 import { truncateAnsi, theme, visualLength, coloredBar } from './colors.js';
 import { t } from './i18n.js';
 import { fit, monitorText } from './monitor-text.js';
 import { PANEL_WIDTHS } from '../utils/pane-width.js';
 import { BAR_STYLES, THEMES } from './hud-config.js';
-import type { ModelProbeState } from '../collectors/model-probe.js';
 import { section, subTopRow, footRow, mark } from './workboard-rows.js';
 import { stemLines } from './work-job-detail.js';
 
@@ -16,23 +13,11 @@ const CALL_FEATURES: Record<string, string> = {
   'job-sentence': 'Job sentence', 'native-sentence': 'Native sentence', 'waiting-brief': 'Panel translation', title: 'Decision title',
   probe: 'Probe', outcome: 'outcome', looping: 'looping',
   'question-category': 'Question category', 'review-severity': 'Review severity',
-  'quiet-job': 'Quiet job', 'sonic-thinking': 'Sonic thinking',
-};
-const PROBE_FAILURES: Record<string, string> = {
-  auth: 'Authentication failed',
-  'model-not-found': 'Model not found',
-  'rate-limit': 'Rate limited',
-  timeout: 'Request timed out',
-  network: 'Connection failed',
-  server: 'Service unavailable',
-  'invalid-response': 'Invalid response',
-  'output-limit': 'Output limit reached',
-  'hourly-cap': 'Call cap reached',
-  'runtime-unavailable': 'Budget store unavailable',
+  'quiet-job': 'Quiet job', 'sonic-thinking': 'Sonic thinking', 'imp-routing': 'Imp routing',
 };
 export type SettingKey = keyof HudSettings;
 export type SettingGroup = 'Display' | 'Panel' | 'Models' | 'Workers' | 'Codex';
-export type SettingsAction = 'back' | 'save' | 'reset' | 'test-api';
+export type SettingsAction = 'back' | 'save' | 'reset';
 export interface SettingRow {
   key: SettingKey;
   role?: string;
@@ -73,7 +58,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     group: 'Display',
     label: 'Language',
     values: ['auto', 'en', 'zh'],
-    help: 'Panel and everything a model writes',
+    help: 'Panel interface language; source text stays unchanged',
   },
   {
     key: 'treeWidth',
@@ -104,43 +89,18 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   },
   { key: 'mouse', group: 'Panel', label: 'Mouse', values: [true, false], help: 'Click and scroll the panel', advanced: true },
   {
-    key: 'modelEnabled',
-    group: 'Models',
-    label: 'Model text',
-    values: [true, false],
-    help: 'Sends public agent material for display text; off sends nothing',
-  },
-  {
-    key: 'model',
-    group: 'Models',
-    label: 'Model',
-    values: SHIPPED_MODELS_CATALOG.defaults.summary.settingsChoices,
-    help: 'Chat-completions model; edit model in hud-settings.json for another ID',
-    literal: true,
-  },
-  {
     key: 'decisionApi', group: 'Models', label: 'Decision API', values: ['gemini', 'openai', 'typesafe'],
-    help: 'Primary for Jev and display labels; automatic fallback uses another keyed provider',
+    help: 'Primary for Jev and execution decisions; automatic fallback uses another keyed provider',
     format: (value) => ({ gemini: 'Gemini', openai: 'OpenAI', typesafe: 'TypeSafe' })[String(value)] ?? String(value),
   },
-  {
-    key: 'modelCallsPerHour',
-    group: 'Models',
-    label: 'Call cap',
-    values: [30, 60, 120, 240, 0],
-    help: 'LLM calls per hour (sentences, titles, brief)',
-    format: callCap,
-  },
   { key: 'decisionCallsPerHour', group: 'Models', label: 'Decision cap', values: [600, 2000, 0],
-    help: 'Decision-API calls per hour (labels, Sonic thinking, Imp routing)', advanced: true, format: callCap },
+    help: 'Decision-API calls per hour (quiet jobs, Sonic thinking, Imp routing)', advanced: true, format: callCap },
   { key: 'sonicAutoThinking', group: 'Models', label: 'Sonic auto-thinking', values: [false, true],
     help: 'Send the Sonic task text to the Decision API to choose its thinking level' },
   { key: 'impPlacement', group: 'Models', label: 'Imp placement', values: ['fixed', 'even', 'auto'],
     help: 'Fixed: active preset. Even: spread starts across the pool. Auto: send the Imp brief, ticket and context file names and sizes to the Decision API' },
   { key: 'impEvenPool', group: 'Models', label: 'Even pool', values: [],
     help: 'Choose an Imp preset with ←→; Enter includes or excludes it', get: settings => settings.impEvenPool.join(', ') },
-  { key: 'summaryIntervalMinutes', group: 'Models', label: 'Summary interval', values: [2, 5, 10, 15, 30],
-    help: "How often a running job's sentence may refresh", advanced: true, format: (value) => t('{n}m', { n: Number(value) }) },
   {
     key: 'roleCaps',
     role: 'imp',
@@ -233,7 +193,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
-  Models: ['modelEnabled', 'decisionCallsPerHour', 'sonicAutoThinking', 'impPlacement', 'impEvenPool', 'summaryIntervalMinutes'],
+  Models: ['decisionCallsPerHour', 'sonicAutoThinking', 'impPlacement', 'impEvenPool'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
 };
@@ -242,7 +202,6 @@ export function resetSettingsGroup(draft: HudSettings, group: string): HudSettin
   const defaults = defaultSettings(),
     patch: Partial<HudSettings> = {};
   for (const key of RESET_FIELDS[group as SettingGroup]) Object.assign(patch, { [key]: defaults[key] });
-  if (group === 'Models') patch.modelEnabled = false;
   return { ...draft, ...patch };
 }
 export interface SettingsFrame {
@@ -252,7 +211,6 @@ export interface SettingsFrame {
   back?: { y: number; x: number };
   footerY: number;
   saveX?: number;
-  probeAction?: { y: number; width: number };
   maxOffset?: number;
 }
 export function valueText(row: SettingRow, value: SettingValue): string {
@@ -264,12 +222,7 @@ export function renderSettingsPage(
   width: number,
   height: number,
   health?: {
-    state: HudHealthState | undefined;
-    nowMs?: number;
-    modelCalls?: { today: number; lastHour: number; cap: number; byFeature?: Record<string, number> };
-    decisionCalls?: { lastHour: number; cap: number; byFeature?: Record<string, number> };
-    probe?: ModelProbeState;
-    settingsFile?: string;
+    decisionCalls?: { lastHour: number; byFeature: Record<string, number> };
   }
 ): SettingsFrame {
   width = Math.max(0, Math.floor(width));
@@ -280,7 +233,7 @@ export function renderSettingsPage(
     original = state.original ?? { ...state.draft, roleCaps: { ...state.draft.roleCaps } },
     defaults = defaultSettings();
   const dirty = settingsDirty({ ...state, original }),
-    content: { text: string; index?: number; back?: number; probe?: boolean }[] = [];
+    content: { text: string; index?: number; back?: number; counter?: boolean }[] = [];
   const pushRow = (i: number) => {
     const row = SETTING_ROWS[i],
       value = rowValue(row, state.draft),
@@ -308,23 +261,20 @@ export function renderSettingsPage(
       back: i === selected ? Math.max(0, width - visualLength(tail)) : undefined,
     });
     if (i === selected)
-      for (const text of stemLines(
-        t(state.message || row.help) + (row.key === 'model' ? ' · ' + t('Keys: $HUD_HOME/credentials.env') : ''),
-        width
-      ))
-        content.push({ text });
-    if (row.key === 'modelCallsPerHour' || row.key === 'decisionCallsPerHour') {
-      const decision = row.key === 'decisionCallsPerHour';
-      const usage = decision ? health?.decisionCalls : health?.modelCalls,
-        cap = usage?.cap ?? state.draft[row.key],
+      for (const text of stemLines(t(state.message || row.help), width)) content.push({ text });
+    if (row.key === 'decisionCallsPerHour') {
+      const usage = health?.decisionCalls,
+        cap = state.draft.decisionCallsPerHour,
         n = usage?.lastHour;
       if (n !== undefined) {
-        const atCap = cap > 0 && n >= cap,
-          value = cap === 0 ? `${n}/∞` : `${coloredBar(Math.min(100, (n * 100) / cap), 10)} ${n}/${cap}`;
+        const atCap = cap > 0 && n >= cap, label = '  ' + t('Decision calls this hour');
+        const count = `${n}/${cap || '∞'}`;
+        const value = cap > 0 && visualLength(label + count) + 12 <= width
+          ? `${coloredBar(Math.min(100, (n * 100) / cap), 10)} ${count}` : count;
         content.push({
-          text:
-            fit('  ' + t(decision ? 'Decision calls this hour' : 'Calls this hour'), Math.max(0, width - visualLength(value))) +
+          text: fit(label, Math.max(0, width - visualLength(value))) +
             (atCap ? theme.board.danger(value) : theme.board.muted(value)),
+          counter: true,
         });
         if (n > 0 && usage?.byFeature) {
           // Retired features still count toward the cap until their existing reservations age out.
@@ -333,26 +283,7 @@ export function renderSettingsPage(
             .sort((a, b) => b[1] - a[1]).map(([feature, count]) => `${t(CALL_FEATURES[feature] ?? 'Earlier format')} ${count}`);
           if (parts.length) content.push({ text: theme.board.muted(truncateAnsi('  ' + parts.join(' · '), width)) });
         }
-        if (atCap) content.push(...stemLines(t(decision ? 'at the cap: labels wait' : 'at the cap: sentences wait'), width).map((text) => ({ text })));
       }
-      if (decision) return;
-      const probe = health?.probe,
-        failed = probe?.rows.find((r) => r.status === 'failed');
-      const label = probe?.running
-        ? t('testing…')
-        : failed
-          ? `${mark('✗', 'x')} ${t(PROBE_FAILURES[failed.failure ?? ''] ?? 'Model request failed')}`
-          : probe?.rows.length && probe.rows.every((r) => r.status === 'ok')
-            ? `${mark('✓', '+')} ${Math.max(...probe.rows.map((r) => r.elapsedMs ?? 0))} ms`
-            : t('press t');
-      content.push({
-        text:
-          fit('  ' + t('Test API'), Math.max(0, width - visualLength(label))) +
-          (failed ? theme.board.danger : label.startsWith(mark('✓', '+')) ? theme.board.success : theme.board.muted)(
-            label
-          ),
-        probe: true,
-      });
     }
   };
   let lastGroup: SettingGroup | undefined;
@@ -389,11 +320,9 @@ export function renderSettingsPage(
   let offset = Math.max(0, Math.min(state.offset, maxOffset));
   if (state.revealed !== selected) {
     if (at < offset) offset = Math.max(0, at - 1);
-    const helpEnd = content.findIndex((r, i) => i > at && (r.index !== undefined || r.probe));
-    const reveal =
-      SETTING_ROWS[selected]?.key === 'modelCallsPerHour'
-        ? content.findIndex((r) => r.probe)
-        : Math.min(at + 3, helpEnd < 0 ? content.length - 1 : helpEnd - 1);
+    const helpEnd = content.findIndex((r, i) => i > at && r.index !== undefined);
+    const counter = SETTING_ROWS[selected]?.key === 'decisionCallsPerHour' ? content.findIndex((row) => row.counter) : -1;
+    const reveal = counter >= 0 ? counter : Math.min(at + 3, helpEnd < 0 ? content.length - 1 : helpEnd - 1);
     if (room && reveal >= offset + room) offset = Math.min(at, reveal - room + 1);
   }
   const body = content.slice(offset, offset + room),
@@ -402,13 +331,11 @@ export function renderSettingsPage(
       ...body.map((r) => r.text),
     ];
   while (lines.length < height - 1) lines.push('');
-  const models = selected < SETTING_ROWS.length && settingGroup({ selected }) === 'Models';
   const hints = selected === ADVANCED
     ? [advanced ? '⏎ collapse' : '⏎ expand', 's save', 'Esc back']
-    : [...(selected === pool ? ['←→ choose', '⏎ toggle'] : ['←→ change']), 's save', 'Esc back', ...(models ? ['t test'] : []), 'r reset'];
+    : [...(selected === pool ? ['←→ choose', '⏎ toggle'] : ['←→ change']), 's save', 'Esc back', 'r reset'];
   if (height > 1) lines.push(footRow('', hints, width));
-  const back = body.findIndex((r) => r.back !== undefined),
-    probe = body.findIndex((r) => r.probe);
+  const back = body.findIndex((r) => r.back !== undefined);
   return {
     lines: lines.slice(0, height).map((s) => fit(s, width)),
     rows: [null, ...body.map((r) => r.index ?? null)],
@@ -416,7 +343,6 @@ export function renderSettingsPage(
     back: back < 0 ? undefined : { y: back + 1, x: body[back].back! },
     footerY: height - 1,
     saveX: dirty ? width - visualLength(t('unsaved')) : undefined,
-    probeAction: probe < 0 ? undefined : { y: probe + 1, width },
     maxOffset,
   };
 }
@@ -439,7 +365,6 @@ export function handleSettingsInput(
         state: next,
         action: frame.saveX !== undefined && input.x >= frame.saveX ? 'save' : 'back',
       };
-    if (input.button === 'left' && input.y === frame.probeAction?.y) return { state: next, action: 'test-api' };
     if (input.button === 'left') {
       const index = frame.rows[input.y];
       if (index === null || index === undefined) return { state: next };
@@ -476,8 +401,6 @@ export function handleSettingsInput(
     }
     return { state: next, action: 'reset' };
   }
-  if (key === 'settings-test' && next.selected < SETTING_ROWS.length && settingGroup(next) === 'Models')
-    return { state: next, action: 'test-api' };
   const visible = [...mainIndices(next.draft), ADVANCED, ...(next.advanced ? ADVANCED_INDICES : [])];
   const pos = Math.max(0, visible.indexOf(next.selected));
   const moved = next.selected;

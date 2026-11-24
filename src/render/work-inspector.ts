@@ -4,7 +4,7 @@ import type { OwnerWorker } from '../collectors/workboard-types.js';
 import { projectWorkJob } from '../collectors/work-job.js';
 import type { SubagentTree } from '../types.js';
 import type { MonitorRow } from './monitor.js';
-import { flowSummary, jobDetailRows, requestLines, stemLines, workPhaseText, labelSummary, quietDecisionSummary } from './work-job-detail.js';
+import { flowSummary, jobDetailRows, requestLines, stemLines, workPhaseText, quietDecisionSummary } from './work-job-detail.js';
 import { failed, renderJobRow } from './work-job-row.js';
 import { jobRows } from './work-jobs.js';
 import {
@@ -68,16 +68,24 @@ export function workInspectorRows(
   const rows = [boardRow(theme.board.title(renderJobRow(job, width)))];
   if (worker.homeNeedsHuman) {
     rows.push(section(t('Question for main'), width));
-    const question = requestLines(job, true, answerable(worker) !== undefined, true);
+    const question = requestLines(job, true, answerable(worker) !== undefined);
     for (const line of question.length ? question : [worker.ask ?? job.reason ?? ''])
       rows.push(...stemLines(line, width, theme.board.attention).map((text) => boardRow(text)));
     const keys = answerKeys(worker);
     if (keys.length) rows.push(...stemLines(keys.join('  '), width, theme.board.muted, 1).map((text) => boardRow(text)));
   }
-  if (worker.reportMeta?.summary) {
-    rows.push(section(t('Report'), width), ...stemLines(worker.reportMeta.summary, width).map((text) => boardRow(text)));
+  const summary = worker.reportMeta?.summary, report = worker.report;
+  rows.push(...jobDetailRows(job, width, !worker.homeNeedsHuman && !summary && (!report || failed(job))).map((text) => boardRow(text)));
+  if (summary || report) {
+    rows.push(section(t('Report'), width));
+    if (summary) rows.push(...stemLines(summary, width).map((text) => boardRow(text)));
+    if (report) {
+      if (summary) rows.push(boardRow(''));
+      for (const line of report.text.trimEnd().split(/\r?\n/))
+        rows.push(...stemLines(line, width).map((text) => boardRow(text)));
+      if (report.truncated) rows.push(boardRow(fit(theme.board.muted(t('Truncated: {files}', { files: 'report.md' })), width)));
+    }
   }
-  rows.push(...jobDetailRows(job, width, !worker.homeNeedsHuman && !worker.reportMeta?.summary).map((text) => boardRow(text)));
   const progress = worker.progress?.length ? worker.progress : worker.latest_progress ? [worker.latest_progress] : [];
   if (progress.length) {
     rows.push(boardRow(''), section(t('Progress'), width));
@@ -118,10 +126,6 @@ export function workInspectorRows(
             .filter(Boolean)
             .join(' · '),
         ],
-        ['outcome', worker.labels?.outcome ? `${t(worker.labels.outcome.value)} ${Math.round(worker.labels.outcome.confidence * 100)}%` : ''],
-        ['looping', worker.labels?.looping !== undefined ? `${Math.round(worker.labels.looping * 100)}%` : ''],
-        ['category', t(worker.labels?.category ?? '')],
-        ['findings', labelSummary({ severity: worker.labels?.severity })],
         // A settled job's old decision is history, unless it is why the job failed.
         ['quiet', worker.settledAt === null || (failed(job) && worker.quietDecision?.action === 'fail') ? quietDecisionSummary(worker.quietDecision) : ''],
         ['started', stamp(worker.startedAt)],

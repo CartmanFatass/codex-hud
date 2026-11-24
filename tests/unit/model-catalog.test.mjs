@@ -19,9 +19,6 @@ import { shortModel as controlShortModel } from '../../dist/render/control-view.
 import { renderBar } from '../../dist/render/layout/bar-fields.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
-import { SETTING_ROWS } from '../../dist/render/settings-page.js';
-import { defaultSettings } from '../../dist/settings.js';
-import { DEFAULT_API_MODELS } from '../../dist/collectors/small-model.js';
 import { getModelDisplayName } from '../../dist/collectors/codex-config.js';
 import { OPENAI_DECISION_MODEL } from '../../dist/jev/providers/openai.js';
 import { GeminiDecisionProvider } from '../../dist/jev/providers/gemini.js';
@@ -190,15 +187,6 @@ test('Control picker facts stay price-free and read browser thinking from the ca
 });
 
 test('defaults, glyphs, abbreviations and codex display helper match the catalog', () => {
-  const settings = defaultSettings();
-  assert.equal(settings.briefingApiBase, SHIPPED_MODELS_CATALOG.defaults.summary.apiBase);
-  assert.equal(settings.model, SHIPPED_MODELS_CATALOG.defaults.summary.model);
-  assert.deepEqual(DEFAULT_API_MODELS, SHIPPED_MODELS_CATALOG.defaults.summary.tiers);
-  assert.deepEqual(
-    SETTING_ROWS.find((r) => r.key === 'model')?.values,
-    SHIPPED_MODELS_CATALOG.defaults.summary.settingsChoices
-  );
-
   assert.equal(OPENAI_DECISION_MODEL, SHIPPED_MODELS_CATALOG.defaults.decisions.openai);
   assert.equal(new GeminiDecisionProvider({ apiKey: 'synthetic' }).model, SHIPPED_MODELS_CATALOG.defaults.decisions.gemini);
   assert.equal(

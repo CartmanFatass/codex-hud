@@ -42,7 +42,7 @@ try {
   const render = (f, height, state, snapshot = f.data, extras = {}) => {
     const display = setDisplayConfig({ theme: themeName, icons: 'unicode' }), previous = setLanguage(lang);
     try {
-      return renderMonitor({ tree: TREE, workboard: f.board, project: snapshot, projectName: 'demo-project', state, width, height, nowMs: NOW, modelEnabled: true, ...extras }).lines;
+      return renderMonitor({ tree: TREE, workboard: f.board, project: snapshot, projectName: 'demo-project', state, width, height, nowMs: NOW, ...extras }).lines;
     } finally {
       setDisplayConfig(display);
       setLanguage(previous);

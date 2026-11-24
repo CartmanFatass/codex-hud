@@ -21,7 +21,6 @@ export { SETTLED_JOB_STATES } from './ticket-rollup.js';
 export interface ProjectItem {
   label: string;
   value: string;
-  original?: string;
   path?: string;
   at?: number;
   /** A waiting item's whole bullet as STATE writes it (continuation lines kept, one per line); `value` is the same words on one line. */
@@ -45,7 +44,7 @@ export interface ActiveJob {
 }
 export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
-  number: string; title: string; originalTitle?: string; path: string; at: number; status: string;
+  number: string; title: string; path: string; at: number; status: string;
   checked: number; total: number; items: TicketItem[]; comment?: string; commit?: string; recordedLanding?: boolean;
   blockers: string[]; ownerTry?: boolean;
   state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';

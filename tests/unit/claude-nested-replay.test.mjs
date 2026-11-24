@@ -5,7 +5,6 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { longClaudeTranscript, nativeFixture, NOW } from '../fixtures/native-tree.mjs';
-import { JobSentences } from '../../dist/collectors/job-sentences.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 
@@ -50,11 +49,6 @@ test('5 MB Claude parent shows its latest step in the first native Inspector fra
   assert.equal(first.nodes[0].lastReport.text, 'SYNTH-LATEST');
   assert.equal(first.nodes[0].model, 'claude-sonnet-4-5');
   assert.equal(first.nodes[0].status, 'running', 'a preview end_turn is not a settlement');
-  const mockModel = { submit: t.mock.fn() };
-  const sentences = new JobSentences(mockModel, join(f.home, 'sentences.json'), () => {}, () => NOW);
-  sentences.configure(true, 'en');
-  sentences.update(f.board(first), f.home, first);
-  assert.equal(mockModel.submit.mock.callCount(), 0, 'preview text is not model material');
 
   fs.appendFileSync(f.file, message([{ type: 'text', text: 'SYNTH-NEWER' }], NOW + 1000));
   let tree = first, attachedDuringReplay = false;

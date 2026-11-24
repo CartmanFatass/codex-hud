@@ -2,7 +2,7 @@
 import { isAbsolute, join, resolve } from 'node:path';
 import { neutralizeFilters } from '../utils/git-safety.js';
 import { worktreeGit } from './worktrees.js';
-import { readJobFile } from './job-sentences.js';
+import { readJobFile } from './read-job-file.js';
 
 export const DIFF_FILE_LIMIT = 12;
 const GATE_MS = 5000;

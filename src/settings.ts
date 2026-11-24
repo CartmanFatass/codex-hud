@@ -1,5 +1,5 @@
 import type { DecisionProviderId } from './jev/decide.js';
-import { readHudConfig, resolveDecisions, readHudCredentials } from './jev/ask/config.js';
+import { readHudConfig, resolveDecisions } from './jev/ask/config.js';
 import { resolveHudEnv } from './utils/hud-env.js';
 import * as path from 'node:path';
 import { readFileBounded, writePrivateFile } from './utils/atomic-fs.js';
@@ -12,7 +12,6 @@ import {
   type IconMode,
 } from './render/hud-config.js';
 import { getHudHome } from './hud-home.js';
-import { SHIPPED_MODELS_CATALOG } from './models/catalog.js';
 import { DEFAULT_WIDTH } from './utils/pane-width.js';
 
 export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'> {
@@ -22,21 +21,14 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   refreshMs: number;
   treeWidth: number;
   worktreeRoot: string;
-  modelEnabled: boolean;
   /** Draft-only; persisted solely as config.json decisions.primary. */
   decisionApi: DecisionProviderId;
   sonicAutoThinking: boolean;
   impPlacement: 'fixed' | 'even' | 'auto';
   impEvenPool: string[];
-  /** The tree panel's and the brief's language; auto follows the locale. */
+  /** Panel UI language; auto follows the locale. */
   language: 'auto' | 'en' | 'zh';
-  /** `api` brief: the endpoint's base URL, up to `/v1`; empty is Mistral's. */
-  briefingApiBase: string;
-  model: string;
-  /** Model calls allowed per hour, over every feature; past it requests are refused with a reason. */
-  modelCallsPerHour: number;
   decisionCallsPerHour: number;
-  summaryIntervalMinutes: number;
   /** Notifications in tmux on approvals, failures and finished agents. CODEX_HUD_NOTIFY, when set, wins. */
   notify: boolean;
   /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
@@ -63,24 +55,12 @@ export function defaultSettings(): HudSettings {
     refreshMs: 1000,
     treeWidth: DEFAULT_WIDTH,
     worktreeRoot: '',
-    modelEnabled: (() => {
-      try {
-        const c = readHudCredentials();
-        return !!(c.mistralApiKey?.trim() || c.openaiApiKey?.trim() || c.geminiApiKey?.trim());
-      } catch {
-        return false;
-      }
-    })(),
     language: 'auto',
-    briefingApiBase: SHIPPED_MODELS_CATALOG.defaults.summary.apiBase,
-    model: SHIPPED_MODELS_CATALOG.defaults.summary.model,
     decisionApi: 'openai',
     sonicAutoThinking: false,
     impPlacement: 'fixed',
     impEvenPool: [],
-    modelCallsPerHour: 60,
     decisionCallsPerHour: 0,
-    summaryIntervalMinutes: 5,
     notify: false,
     notifyDesktop: false,
     icons: 'nerd',
@@ -98,11 +78,6 @@ const oneOf =
   (value: unknown): boolean =>
     typeof value === 'string' && allowed.includes(value);
 
-const isText =
-  (max: number) =>
-  (value: unknown): boolean =>
-    typeof value === 'string' && value.length <= max && !/[\0\r\n]/.test(value);
-
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusline: isBoolean,
   theme: oneOf(...THEMES),
@@ -114,19 +89,14 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
-  modelEnabled: isBoolean,
   decisionApi: oneOf('gemini', 'openai', 'typesafe'),
   sonicAutoThinking: isBoolean,
   impPlacement: oneOf('fixed', 'even', 'auto'),
   impEvenPool: (value) => Array.isArray(value) && value.every(name => typeof name === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(name)),
   language: oneOf('auto', 'en', 'zh'),
-  briefingApiBase: (value) => isText(2048)(value) && (value === '' || /^https?:\/\/\S+$/.test(value as string)),
-  model: isText(200),
   notify: isBoolean,
   notifyDesktop: isBoolean,
-  modelCallsPerHour: (value) => isIntegerBetween(value, 0, 1000),
   decisionCallsPerHour: (value) => isIntegerBetween(value, 0, 2000),
-  summaryIntervalMinutes: (value) => isIntegerBetween(value, 1, 120),
   icons: oneOf('nerd', 'unicode', 'text'),
   roleCaps: (value) =>
     !!value &&

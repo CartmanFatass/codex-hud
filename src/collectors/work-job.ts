@@ -10,8 +10,6 @@ export interface WorkFacts {
   readonly request: boolean;
   readonly requestId?: string;
   readonly requestInfo?: {
-    /** Display overlay only; answer keys always select from the original options below. */
-    readonly display?: import('./work-artifacts.js').QuestionFields;
     readonly id: string;
     readonly question: string;
     readonly suggested: string;
