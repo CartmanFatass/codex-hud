@@ -3,6 +3,7 @@ import { displayConfig } from '../render/hud-config.js';
 import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
 import { fitMachineWork } from '../render/work-summary.js';
 import type { LocalLoad } from '../collectors/local-load.js';
+import type { EvenQuotaNotice } from '../collectors/even-quota.js';
 import { fitLocalLoad } from '../render/local-load.js';
 import { monitorText } from '../render/monitor-text.js';
 import { formatWindowLabel } from '../render/quota.js';
@@ -21,7 +22,8 @@ export function renderAntigravity(
   options: StatuslineSessionOptions,
   work?: MachineWorkCounts,
   localLoad?: LocalLoad,
-  now = Date.now()
+  now = Date.now(),
+  evenQuota?: EvenQuotaNotice[]
 ): string {
   const value = record(input), model = record(value.model), context = record(value.context_window);
   const id = label(model.id), displayName = label(model.display_name);
@@ -67,6 +69,7 @@ export function renderAntigravity(
     context: used === undefined ? undefined : { percent: used, shown: `${used}%`, window },
     project: project ? { name: project, branch: null } : undefined,
     quota: windows.length ? { windows, trailing: true } : undefined,
+    evenQuota,
     work,
     localLoad,
   }, width, now).line;

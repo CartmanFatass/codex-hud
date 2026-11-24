@@ -497,7 +497,7 @@ export function evaluatePlaces<P extends { place: RolePlace; switch_ids: string[
   });
 }
 
-function routingContext(hudHome: string, env: NodeJS.ProcessEnv, now: number) {
+function routingContext(hudHome: string, env: NodeJS.ProcessEnv, now: number, exhausted = readExhausted(hudHome, now)) {
   const disabled = readHarnessSwitches(hudHome);
   const modelLists = readModelListCache(hudHome, now, undefined, true);
   const models = modelLists?.pi ?? [];
@@ -516,7 +516,7 @@ function routingContext(hudHome: string, env: NodeJS.ProcessEnv, now: number) {
     return commands.get(cmd)!;
   };
   let settings: { value: PiSettings | undefined } | undefined;
-  return { disabled, modelLists, providers, byId, has, exhausted: readExhausted(hudHome, now),
+  return { disabled, modelLists, providers, byId, has, exhausted,
     settings: () => (settings ??= { value: piSettings(env) }).value };
 }
 
@@ -677,7 +677,7 @@ export function roleRegistry(
         : undefined;
     return { pi_role_file: piInfo.pi_role_file, model, thinking, state_trust };
   }
-  const routing = (now = Date.now()) => routingContext(hudHome, env, now);
+  const routing = (now = Date.now(), exhausted?: ReturnType<typeof readExhausted>) => routingContext(hudHome, env, now, exhausted);
   function assignment(role: Role, nowMs = Date.now(), overrideModel?: string, context = routing(nowMs), choice?: ChainChoice, inheritedModel = false) {
     const stored = sources.get(role);
     const layer = stored?.layers.at(-1);

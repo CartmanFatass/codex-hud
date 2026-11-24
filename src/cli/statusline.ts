@@ -1,6 +1,7 @@
 import { getHudHome } from '../hud-home.js';
 import { fitMachineWork } from '../render/work-summary.js';
 import { readMachineWork } from '../collectors/work-summary-snapshot.js';
+import { readEvenQuotaNotices } from '../collectors/even-quota.js';
 import { collectLocalLoad } from '../collectors/local-load.js';
 import { fitLocalLoad } from '../render/local-load.js';
 import { fileURLToPath } from 'node:url';
@@ -156,7 +157,9 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, agyM
         const home = getHudHome(io.env), now = Date.now();
         const work = readMachineWork(home, now), localLoad = collectLocalLoad(home, now, io.env);
         applyBarSettings(io.env);
-        const frame = renderAntigravity(input, width, options, work, localLoad, now);
+        const workspace = record(input.workspace);
+        const evenQuota = !options.details ? readEvenQuotaNotices(home, workspace.current_dir ?? input.cwd ?? workspace.project_dir, now, io.env) : undefined;
+        const frame = renderAntigravity(input, width, options, work, localLoad, now, evenQuota);
         return agyMode === 'cache' ? `hud-statusline-v1:${frame}` : frame;
       }
       if (agyMode || !isClaude(input)) throw new Error('unrecognized_statusline_payload');

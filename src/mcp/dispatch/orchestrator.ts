@@ -29,7 +29,7 @@ import {
   beginPrompt, cliWorkerTools, endPrompt, readTurn, saveTurn, REPORT_READ_EXIT, withDonePrompt, workerAlive, turnToken,
 } from '../cli-judge.js';
 import type { StandingBriefRef } from '../cli-worker-startup.js';
-import { defaultImpRoute, impPlacementSettings, pickEvenPreset, repairImpRoute, pickImpRoute } from '../imp-routing.js';
+import { defaultImpRoute, impPlacementSettings, repairImpRoute, pickImpRoute } from '../imp-routing.js';
 import { clearHeadlessSends, hasHeadlessSends, headlessFollowupReady, readHeadlessSends, writeHeadlessSends } from '../headless-sends.js';
 import type { Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus, SendOutcome } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
@@ -58,7 +58,7 @@ import { dispatchBro } from './harness-bro.js';
 import { failCli, dispatchCli, supervisorPid, supervisorAlive, spawnCliSupervisor } from './harness-cli.js';
 import { plainSkillName, dispatchPi } from './harness-pi.js';
 import {
-  piOptionKeys, placementOverrides, hasPiPlacement, roleCwd, registry, launchPlan, harnessSwitchFailure,
+  piOptionKeys, placementOverrides, hasPiPlacement, roleCwd, registry, launchPlan, evenPlanner, harnessSwitchFailure,
   replayOptions, harnessesSourceFor, argsForPlace,
 } from './places.js';
 import { ensureWatcher, launchError, launchFailure, canTryNext, rejectLaunch, run, refusedBeforeInput, type DispatchResult } from './proc.js';
@@ -297,6 +297,13 @@ function validExperimentTag(tag: unknown): tag is string | undefined {
     [...tag].length <= EXPERIMENT_TAG_MAX_LENGTH); // JSON Schema counts Unicode code points.
 }
 
+async function nextEvenLaunch(even: ReturnType<typeof evenPlanner>, job: Job, result: DispatchResult, reason: string) {
+  // Only replay startup refusals: a worker that could have taken the brief is never relaunched here.
+  if (!job.route || !job.place_key || !result.preInput || result.cleanupFailed || !isQuotaFailure(reason)) return;
+  if (!readExhausted(hudHome).has(job.place_key)) markExhausted(hudHome, job.place_key, reason);
+  return even(job.route, reason);
+}
+
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<Job, 'job' | 'objective'>, repairOf?: string, retryInput?: Args,
   { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit, dispatcher }: {
@@ -412,24 +419,17 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const imp = requestedRole === 'imp' || fromImp;
   const sonic = requestedRole === 'sonic';
   const settings = (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
+  const even = imp && settings?.impPlacement === 'even' ? evenPlanner(found, chain, args, routing, 'imp', settings.impEvenPool)
+    : sonic && settings?.sonicPlacement === 'even' ? evenPlanner(found, chain, args, routing, 'sonic', settings.sonicEvenPool) : undefined;
   let route: JobRoute | undefined;
   let localContext: Awaited<ReturnType<typeof contextFor>> | undefined;
   if (imp && (retryInput || fromImp)) {
     route = landCwd ? repairImpRoute(chain, sourceJob?.route) : sourceJob?.route;
   } else if (sonic && retryInput) {
     route = sourceJob?.route;
-  } else if ((imp && settings?.impPlacement === 'even') || (sonic && settings?.sonicPlacement === 'even')) {
-    const targetRole = sonic ? 'sonic' : 'imp';
-    const seed = defaultImpRoute('Next preset in even pool', sonic ? 'headless' : mode);
-    const known = new Set(chain.presets?.map(p => p.name) ?? []);
-    const { preset, skipped } = await pickEvenPreset(hudHome, targetRole, known, sonic ? settings!.sonicEvenPool : settings!.impEvenPool,
-      name => launchPlan(found, chain, now, args, routing, onEntry, retryInput, { ...seed, preset: name }).candidates.length > 0);
-    route = { ...seed, placement: 'even', preset: preset ?? currentPreset(chain),
-      ...(!preset || skipped.length ? { fallback: [!preset && `Even pool ${skipped.length ? 'unavailable' : 'empty'}; using active preset`,
-        skipped.length && `Skipped unavailable presets: ${skipped.join(', ')}`].filter(Boolean).join('; ') } : {}) };
-  } else if (imp && settings?.impPlacement !== 'auto') {
+  } else if (!even && imp && settings?.impPlacement !== 'auto') {
     route = { ...defaultImpRoute(settings ? 'Imp routing is off' : 'Imp routing settings unavailable', mode), preset: currentPreset(chain) };
-  } else if (imp && chain.routing && settings) {
+  } else if (!even && imp && chain.routing && settings) {
     localContext = await contextFor(args, false);
     if ('code' in localContext) return localContext;
     const context_files = localContext.contextInputs;
@@ -437,7 +437,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ticket: routingTicketText(project.root, args.ticket), context_files,
     }));
   }
-  const plan = launchPlan(found, chain, now, args, routing, onEntry, retryInput, route, !!landCwd);
+  const plan = await even?.() ?? launchPlan(found, chain, now, args, routing, onEntry, retryInput, route, !!landCwd);
   let worktree: ManagedWorktree | undefined;
   let reusedWorktree: ManagedWorktree | undefined;
   if (isolation === 'worktree') {
@@ -622,7 +622,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     let reason = '';
     let taskEntry: HudTask | undefined;
     let sonicPick: Promise<string | undefined> | undefined;
-    for (const { candidate, prepared, effective, route } of candidates) {
+    for (const [index, { candidate, prepared, effective, route }] of candidates.entries()) {
       const launchArgs = argsForPlace(args, candidate.place, retryInput);
       if ('code' in prepared) continue; // Explicit harness-only options still constrain this dispatch.
       if (attempts.length) {
@@ -716,7 +716,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
-      if (!canTryNext(job, result)) break;
+      const next = even && reason ? await nextEvenLaunch(even, job, result, reason) : undefined;
+      if (next) candidates.splice(index + 1, candidates.length, ...next.candidates);
+      else if (!canTryNext(job, result)) break;
       save(job);
     }
     if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
@@ -841,7 +843,13 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     if (!existing.route && presetName !== undefined && !chain.presets?.some(p => p.name === presetName))
       return failQueued(`unknown preset: ${presetName}`, 'invalid_arguments');
     const modelOverride = typeof args.model === 'string' ? args.model : undefined;
-    const plan = launchPlan(found, chain, now, args, routing, onEntry, retryInput, existing.route);
+    const settings = existing.route?.placement === 'even' && !retryInput ? impPlacementSettings(hudHome) : undefined;
+    const even = settings && launchRoleName === 'imp' ? evenPlanner(found, chain, args, routing, 'imp', settings.impEvenPool) : undefined;
+    let plan = launchPlan(found, chain, now, args, routing, onEntry, retryInput, existing.route);
+    if (even && !plan.candidates.length) {
+      const exhausted = plan.effective.places.find(place => place.state === 'exhausted');
+      if (exhausted) plan = await even(existing.route, exhausted.quota_reason) ?? plan;
+    }
     const first = plan.candidates[0];
     if (plan.route) {
       existing.route = plan.route;
@@ -909,7 +917,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     let result: DispatchResult = launchError('no launch attempted');
     let reason = '';
     let sonicPick: Promise<string | undefined> | undefined;
-    for (const { candidate, prepared, effective, route } of candidates) {
+    for (const [index, { candidate, prepared, effective, route }] of candidates.entries()) {
       const launchArgs = argsForPlace(args, candidate.place, retryInput);
       if ('code' in prepared) continue;
       if (attempts.length) {
@@ -985,7 +993,9 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
       if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
-      if (!canTryNext(job, result)) break;
+      const next = even && reason ? await nextEvenLaunch(even, job, result, reason) : undefined;
+      if (next) candidates.splice(index + 1, candidates.length, ...next.candidates);
+      else if (!canTryNext(job, result)) break;
       save(job);
     }
     if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')

@@ -4,7 +4,7 @@
  *
  *   model effort │ context %/window │ repo branch │ quota │ ~N t/s │ notice zone ········ MCP n  skills n
  *
- * The notice zone includes native approvals, machine-wide HUD load, and the client's recent events.
+ * The notice zone includes native approvals, even-pool quota exclusions, machine-wide HUD load, and recent client events.
  *
  * Fields a client cannot supply are left out, never shown as zero. The fields shown are `barFields`; the style is
  * `barStyle`: `│` separators (`line`), or powerline capsules (`p10k`: each segment padded by a space on its own
@@ -21,6 +21,8 @@ import { localLoadForms } from '../local-load.js';
 import type { LocalLoad } from '../../collectors/local-load.js';
 import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
 import { providerMark } from '../providers.js';
+import { monitorText } from '../monitor-text.js';
+import type { EvenQuotaNotice } from '../../collectors/even-quota.js';
 
 /**
  * How long an event stays in the notice zone. Nothing rotates and nothing ticks (owner, 2026-11-11: a bar that keeps
@@ -109,6 +111,7 @@ export interface BarFacts {
   tps?: number;
   /** What needs the owner now (an approval): pinned while it is open. */
   needs?: string[];
+  evenQuota?: EvenQuotaNotice[];
   events?: BarEvent[];
   /** Fresh machine-wide HUD load. */
   work?: MachineWorkCounts;
@@ -338,6 +341,7 @@ const TITLE_COLS = 36;
 /** What the vitals leave a title before it goes altogether: a few words, enough to tell two subagents of one type apart. */
 const TITLE_SHORT = 14;
 
+const QUOTA_MARK = { unicode: '⚠', emoji: '⚠', text: '!', nerd: '\uf071' };
 const MARKS = {
   started: ['◐', 'info'],
   done: [icons.check, 'ok'],
@@ -540,6 +544,11 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const alertSeg = zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null;
   // Several needs: `first +2`, then `N needs` when the notice has to give way.
   if (alertSeg && zone?.alert?.short) alertSeg.forms.push(noticeSeg(zone.alert, Infinity, pad, 1)!.forms[0]!);
+  const [firstQuota, ...moreQuota] = on.has('notice') ? (facts.evenQuota ?? []).filter(({ until }) => until > now) : [];
+  const evenQuota: Seg | null = firstQuota ? { id: 'notice', ink: P10K.warn, at: 0,
+    forms: [[[`${QUOTA_MARK[iconSet()]} `, 'warn'], [`${firstQuota.role} ${monitorText(firstQuota.preset)}: quota`, 'value'],
+      [moreQuota.length ? ` +${moreQuota.length}` : '', 'dim']]],
+  } : null;
   const loadForms = on.has('notice') && facts.work ? machineWorkForms(facts.work, now) : [];
   const load: Seg | null = loadForms.length
     ? { id: 'notice', forms: loadForms.map((text) => [[text, 'value']]), ink: P10K.info, at: 0 }
@@ -555,6 +564,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     on.has('quota') && facts.quota ? quotaSeg(facts.quota) : null,
     on.has('tps') ? tpsSeg(facts.tps) : null,
     alertSeg,
+    evenQuota,
     load,
     localLoad,
   ].filter((seg): seg is Seg => seg !== null);
@@ -608,6 +618,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     // left, if its name fits.
     if (id === 'notice') {
       if (alertSeg && alertSeg.forms.length > 1) alertSeg.at = 1;
+      if (evenQuota && room(0) < 0) evenQuota.at = evenQuota.forms.length;
       if (wide() || (lone && noticeSeg(lone, room(1), pad))) break;
       continue;
     }

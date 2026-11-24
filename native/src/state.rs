@@ -99,6 +99,23 @@ pub fn read(path: &Path, limit: usize, private: bool, no_follow: bool) -> Option
         Err(_) => None,
     }
 }
+pub fn has_live_exhaustion(home: &Path, now: f64) -> Option<bool> {
+    let Some(marks) = read(&home.join("exhausted.json"), 65_536, false, true)? else {
+        return Some(false);
+    };
+    Some(
+        marks.get("version").num() == Some(1.)
+            && marks.get("places").obj().is_some_and(|places| {
+                places.values().any(|mark| {
+                    mark.get("reason").str().is_some()
+                        && mark.get("until").str().is_some_and(|until| {
+                            // The writer uses canonical UTC ISO; let TS handle any other timestamp format.
+                            crate::quota::parse_timestamp(until).is_none_or(|at| at > now)
+                        })
+                })
+            }),
+    )
+}
 pub fn cache_path(home: &Path, kind: &str, key: &str) -> PathBuf {
     home.join("display/statusline")
         .join(format!("{kind}-{}.json", sha256::hex(key.as_bytes())))

@@ -117,6 +117,43 @@ test('Sonic even skips unavailable or exhausted presets, reports them, and falls
   }
 });
 
+test('Sonic even keeps the same job after a startup quota refusal and reuses the preset at expiry', async t => {
+  const f = await fixture(t);
+  writeSonicRole(f);
+  settings(f, { sonicPlacement: 'even', sonicEvenPool: ['luna', 'haiku', 'deepseek'] });
+  const refused = join(f.env.HOME, 'quota-pi-model');
+  write(refused, 'synth-luna/luna');
+  const create = task => f.call('hud_create', { role: 'sonic', task });
+  const first = await create('Startup quota refusal.');
+  assert.equal(first.route.preset, 'haiku');
+  assert.match(first.route.fallback, /Skipped preset luna: HTTP 429: quota exceeded, retry in 10m/);
+  assert.equal(first.attempts.length, 2);
+  assert.match(first.attempts[0].reason, /HTTP 429/);
+  assert.equal(first.attempts[1].reason, undefined);
+  assert.equal(receipt(first.task_dir).model, 'synth-haiku/haiku');
+  assert.deepEqual(receipt(first.task_dir).route, first.route);
+  assert.deepEqual(sonicJobs(f).map(job => job.job), [first.job]);
+  const file = join(f.env.HUD_HOME, 'exhausted.json');
+  const marks = read(file);
+  assert.match(marks.places['pi:synth-luna/luna'].reason, /HTTP 429/);
+
+  fs.rmSync(refused); // The provider is ready again, but HUD still honors the cooldown.
+  assert.equal((await create('Advance past the replacement.')).route.preset, 'deepseek');
+  const skipped = await create('Wrap past the quota mark.');
+  assert.equal(skipped.route.preset, 'haiku');
+  assert.match(skipped.route.fallback, /Skipped unavailable presets: luna/);
+  assert.equal(skipped.attempts.length, 1);
+
+  marks.places['pi:synth-luna/luna'].until = new Date(Date.now() - 1).toISOString();
+  write(file, JSON.stringify(marks));
+  assert.equal((await create('Continue after expiry.')).route.preset, 'deepseek');
+  const rejoined = await create('Wrap to the restored preset.');
+  assert.equal(rejoined.route.preset, 'luna');
+  assert.equal(rejoined.route.fallback, undefined);
+  assert.equal(receipt(rejoined.task_dir).model, 'synth-luna/luna');
+  assert.deepEqual(read(file), marks, 'rejoining requires no change to the expired mark');
+});
+
 test('Job archive keeps sonic even preset and route placement', async t => {
   const f = await fixture(t);
   writeSonicRole(f);

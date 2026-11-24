@@ -116,7 +116,7 @@ fn iso(ms: f64) -> Option<String> {
         "{year}-{month:02}-{day:02}T{h:02}:{m:02}:{s:02}.{rem:03}Z"
     ))
 }
-fn parse_timestamp(date: &str) -> Option<f64> {
+pub(crate) fn parse_timestamp(date: &str) -> Option<f64> {
     // Both cache writers produce this ISO form; other timestamp formats are not part of the cache protocol.
     if date.len() != 24 || !date.is_ascii() {
         return None;

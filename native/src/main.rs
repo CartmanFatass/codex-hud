@@ -131,6 +131,10 @@ fn execute(args: &[String], bytes: &[u8]) -> Option<String> {
     let policy = Policy::load(&home)?;
     let width = policy.width(args)?;
     let now = state::now_ms();
+    // TypeScript resolves which of the live quota marks take presets out of this project's even pools.
+    if state::has_live_exhaustion(&home, now)? {
+        return None;
+    }
     let work = state::work(&home, now)?;
     if bytes.len() > LIMIT {
         return Some(render::unavailable(width));

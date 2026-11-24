@@ -72,6 +72,7 @@ export function barFacts(data: HudData, nowMs: number): BarFacts {
       nowMs
     ),
     events: (data.notices ?? []).map(eventOf),
+    evenQuota: data.evenQuota,
     work: data.work,
     localLoad: data.localLoad,
     loaded: {

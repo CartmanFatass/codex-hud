@@ -20,6 +20,9 @@ import { renderParity } from '../../dist/statusline-parity/render.js';
 import { compactWindow } from '../../dist/statusline-parity/collect.js';
 import type { MachineWorkCounts } from '../../dist/collectors/work-summary-snapshot.js';
 import { BarNoticeTracker } from '../../dist/collectors/bar-notices.js';
+import { readEvenQuotaNotices } from '../../dist/collectors/even-quota.js';
+import { markExhausted } from '../../dist/roles/roster.js';
+import { formatMachineWork } from '../../dist/render/work-summary.js';
 import { shortModel } from '../../dist/render/providers.js';
 import { paritySettings } from '../../dist/statusline-parity/settings.js';
 import { DEFAULT_LAYOUT } from '../../dist/types.js';
@@ -87,6 +90,61 @@ test('Claude, pi and Codex bars: the same segments in the same order, one row th
   assert.match(stripAnsi(f.render()[0]), /^[^│]+ {3,}MCP \d+  skills \d+$/);
   setDisplayConfig({ barFields: ['model', 'context', 'project', 'notice', 'loaded'] });
   assert.ok(visualWidth(f.render(60)[0]) <= 60);
+});
+
+test('even quota goes between approval and HUD load in all bar looks until the preset rejoins', (t) => {
+  noColour(t);
+  const home = fs.mkdtempSync(join(tmpdir(), 'hud-even-quota-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const bin = join(home, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(join(bin, 'pi-role'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  fs.mkdirSync(join(home, 'roles'));
+  const pi = (model: string) => ({ harness: 'pi', model: `synthetic/${model}` });
+  const fast = pi('fast'), small = pi('small'), backup = pi('backup');
+  fs.writeFileSync(join(home, 'roles', 'imp.json'), JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true,
+    run: [backup], presets: [{ name: 'multi', run: [fast, backup] }, { name: 'fast', run: [fast] }] }));
+  fs.writeFileSync(join(home, 'roles', 'sonic.json'), JSON.stringify({ role: 'sonic', instructions: 'sonic', can_continue: false,
+    run: [small], presets: [{ name: 'small', run: [small] }] }));
+  const env = { HOME: home, HUD_HOME: home, PATH: bin };
+  fs.writeFileSync(join(home, 'hud-settings.json'), JSON.stringify({ impPlacement: 'even', impEvenPool: ['multi', 'fast'],
+    sonicPlacement: 'even', sonicEvenPool: ['small'] }));
+  const now = 1_800_000_000_000;
+  markExhausted(home, 'pi:synthetic/fast', 'quota; retry in 10m', now);
+  markExhausted(home, 'pi:synthetic/small', 'quota; retry in 20m', now);
+  const evenQuota = readEvenQuotaNotices(home, home, now, env);
+  assert.deepEqual(evenQuota?.map(({ role, preset }) => [role, preset]), [['imp', 'fast'], ['sonic', 'small']],
+    'a preset with a usable standby stays in the pool');
+  const work = { running: 1, queued: 0, roles: { imp: { running: 1, asking: 0 } } };
+  const facts = { model: { name: 'M' }, needs: ['Approve: Bash'], evenQuota, work };
+  for (const theme of ['mocha', 'none'] as const) {
+    for (const [icons, mark] of [['unicode', '⚠'], ['emoji', '⚠'], ['text', '!'], ['nerd', '\uf071']] as const) {
+      setDisplayConfig({ theme, icons });
+      for (const style of BAR_STYLES) {
+        const render = (at: number, width = 120) => stripAnsi(renderBar(facts, width, at, style).line);
+        const line = render(now);
+        const note = line.indexOf(`${mark} imp fast: quota +1`);
+        const approval = line.indexOf('Approve: Bash');
+        assert.ok(approval >= 0 && note > approval && line.indexOf(formatMachineWork(work, now)) > note, line);
+        assert.ok(!line.includes('sonic small'), line);
+        assert.ok(render(now + 600_000).includes(`${mark} sonic small: quota`));
+        assert.doesNotMatch(render(now + 1_200_000), /: quota/);
+        for (const width of [1, 8, 22, 40]) assert.ok(visualWidth(render(now, width)) <= width);
+      }
+    }
+  }
+  assert.equal(readEvenQuotaNotices(home, home, now + 1_200_000, env), undefined);
+  setDisplayConfig({ barFields: ['model'] });
+  assert.doesNotMatch(stripAnsi(renderBar(facts, 120, now).line), /: quota/);
+
+  const clock = t.mock.method(Date, 'now', () => now);
+  const piFooter = parityFixture({ name: 'even quota', width: 120, env: { ...env, HUD_ICONS: 'unicode' } });
+  t.after(() => piFooter.dispose());
+  piFooter.controller.setWork(work);
+  assert.match(stripAnsi(piFooter.render()[0]), /⚠ imp fast: quota \+1/);
+  clock.mock.mockImplementation(() => now + 1_200_000);
+  piFooter.controller.setWork(work);
+  assert.doesNotMatch(stripAnsi(piFooter.render()[0]), /: quota/);
 });
 
 test('notice zone: the newest two, steady over time, one per subject, needs-you pinned, three minutes, loaded gives way', (t) => {

@@ -2,7 +2,8 @@
 import { join } from 'node:path';
 import { cliKinds } from '../../roles/cli-kinds.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
-import { roleRegistry, piSwitches, type RolePlace, type Role } from '../../roles/roster.js';
+import { currentPreset, readExhausted, roleRegistry, piSwitches, type RolePlace, type Role } from '../../roles/roster.js';
+import { defaultImpRoute, pickEvenPreset } from '../imp-routing.js';
 import type { PiOptions, Job, JobRoute } from '../job-contracts.js';
 import { hudHome, bundled, json } from '../store/job-store.js';
 import { required, type Args } from './context.js';
@@ -141,13 +142,36 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
   const modeFallback = chain.role !== 'sonic' && route?.tier === 'standard' && !explicit && preferred.some(entry => entry.route?.mode === 'headless');
   const fallback: JobRoute | undefined = route && (route.tier !== 'standard' || modeFallback) ? {
     ...route, tier: 'standard', mode: args.mode === 'headless' ? 'headless' : 'tab', mode_reason: undefined,
-    fallback: modeFallback ? 'Cannot launch headless; using standard in a tab' : `${route.tier} tier has no usable place; using standard`,
+    fallback: [route.placement === 'even' && route.fallback, modeFallback ? 'Cannot launch headless; using standard in a tab'
+      : `${route.tier} tier has no usable place; using standard`].filter(Boolean).join('; '),
   } : undefined;
   // On the same chain, tab-only candidates already had their tab attempt.
   const all = fallback ? [...preferred, ...entries(standard, fallback).filter(({ candidate }) => !modeFallback || supportsHeadless(candidate.place))] : preferred;
   const candidates = route || args.mode === 'headless' ? all.filter(entry => !('code' in entry.prepared)) : all;
   return { candidates, error: all.find(entry => 'code' in entry.prepared)?.prepared,
     effective: candidates[0]?.effective ?? standard, route: candidates[0]?.route ?? fallback ?? route, fallback };
+}
+
+/** Keep a job's failover in pool order, without trying a preset twice if its places share quota or the pool wraps. */
+export function evenPlanner(found: Registry, chain: Role, args: Args, routing: ReturnType<Registry['routing']>,
+  role: 'imp' | 'sonic', pool: readonly string[]) {
+  const known = new Set(chain.presets?.map(p => p.name));
+  const tried = new Set<string>();
+  const mode = role === 'sonic' ? 'headless' : args.mode === 'headless' ? 'headless' : 'tab';
+  const seed = { ...defaultImpRoute('Next preset in even pool', mode), placement: 'even' as const };
+  return async (previous?: JobRoute, reason?: string) => {
+    if (previous?.preset) tried.add(previous.preset);
+    const now = Date.now();
+    const current = { ...routing, exhausted: readExhausted(hudHome, now) };
+    const planFor = (route: JobRoute) => launchPlan(found, chain, now, args, current, undefined, undefined, route);
+    const { preset, skipped } = await pickEvenPreset(hudHome, role, known, pool,
+      name => planFor({ ...seed, preset: name }).candidates.length > 0, previous?.preset ?? undefined, tried);
+    if (!preset && previous) return undefined;
+    const fallback = [previous?.fallback, previous?.preset && reason && `Skipped preset ${previous.preset}: ${reason}`,
+      !preset && `Even pool ${skipped.length ? 'unavailable' : 'empty'}; using active preset`,
+      skipped.length && `Skipped unavailable presets: ${skipped.join(', ')}`].filter(Boolean).join('; ');
+    return planFor({ ...seed, preset: preset ?? currentPreset(chain), ...(fallback && { fallback }) });
+  };
 }
 
 export function harnessSwitchFailure(error: HarnessSwitchError) {

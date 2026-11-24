@@ -20,6 +20,7 @@ import { monitorText } from '../../render/monitor-text.js';
 import { formatTokenCount } from '../../render/lines/activity-line.js';
 import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
 import type { LocalLoad } from '../../collectors/local-load.js';
+import { readEvenQuotaNotices } from '../../collectors/even-quota.js';
 import { applyBarSettings } from '../../bar-settings.js';
 import { readExpFooterGrant } from '../../collectors/exp-store.js';
 import { expApproxUsd, type ExpAccount } from '../../exp-config.js';
@@ -485,6 +486,7 @@ export function createP10kFooter(
         dirty: marks.length > 0,
       },
       quota,
+      evenQuota,
       work,
       localLoad,
       loaded: {
@@ -530,6 +532,7 @@ export function createP10kFooter(
   /** Machine-wide readings, pushed by the Work segment's timer. */
   let work: MachineWorkCounts | undefined;
   let localLoad: LocalLoad | undefined;
+  let evenQuota: bar.BarFacts['evenQuota'];
   let repaint: (() => void) | null = null;
   let mounted = false;
   let live = true;
@@ -706,6 +709,7 @@ export function createP10kFooter(
     config = fromSettings();
     work = undefined;
     localLoad = undefined;
+    evenQuota = undefined;
     applyBarSettings({ ...process.env, ...env });
     lensFiles.clear();
     lensAnalyzed = false;
@@ -740,6 +744,7 @@ export function createP10kFooter(
     setWork(counts: MachineWorkCounts | undefined, load?: LocalLoad) {
       work = counts;
       localLoad = load;
+      evenQuota = current ? readEvenQuotaNotices(getHudHome(env), current.sessionManager.getCwd(), Date.now(), env) : undefined;
       apiQuota = readApiQuota(current);
       repaint?.();
     },

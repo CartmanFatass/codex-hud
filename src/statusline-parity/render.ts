@@ -66,6 +66,7 @@ export interface ParityEvidence {
   git: GitView | null;
   /** Where Claude compacts on its own, in tokens, from its settings; null when it does not say. */
   compact?: number | null;
+  evenQuota?: bar.BarFacts['evenQuota'];
 }
 export function renderParity(
   input: unknown,
@@ -117,6 +118,7 @@ export function renderParity(
     quota: windows.length ? { windows } : undefined,
     tps: t.tps,
     events: events(t, d.showAgents, d.showSkills),
+    evenQuota: evidence.evenQuota,
     work,
     localLoad,
     loaded: {

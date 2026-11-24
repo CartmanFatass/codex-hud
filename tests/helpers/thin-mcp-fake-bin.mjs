@@ -44,6 +44,12 @@ function waitToReply() {
 if (command === 'pi-dispatch') {
   process.exit(99); // The MCP must never use this legacy launcher.
 } else if (command === 'pi-role') {
+  const quotaModel = join(process.env.HOME, 'quota-pi-model');
+  if (args.includes('--model') && fs.existsSync(quotaModel) &&
+      args[args.indexOf('--model') + 1] === fs.readFileSync(quotaModel, 'utf8').trim()) {
+    console.error('HTTP 429: quota exceeded, retry in 10m');
+    process.exit(1);
+  }
   console.log(JSON.stringify(args.slice(2)));
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
   const pane = args[args.indexOf('--pane') + 1];

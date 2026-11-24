@@ -15,7 +15,7 @@ export function impPlacementSettings(hudHome: string) {
 
 /** Round-robin rotator in pool order; persists the last used index in a private per-role file under HUD_HOME. */
 export async function pickEvenPreset(hudHome: string, role: 'imp' | 'sonic', known: ReadonlySet<string>,
-  pool: readonly string[], available: (preset: string) => boolean) {
+  pool: readonly string[], available: (preset: string) => boolean, after?: string, tried?: ReadonlySet<string>) {
   const unique = [...new Set(pool)];
   if (!unique.length) return { preset: undefined, skipped: [] as string[] };
   return withAbstractLock(`even-${role}`, hudHome, () => {
@@ -25,11 +25,13 @@ export async function pickEvenPreset(hudHome: string, role: 'imp' | 'sonic', kno
       const raw = readJsonBounded(file, 4096) as { index?: unknown } | null;
       if (typeof raw?.index === 'number' && Number.isInteger(raw.index)) last = raw.index;
     } catch { /* Missing or unreadable state starts at index 0. */ }
-    const start = last >= 0 && last < unique.length ? (last + 1) % unique.length : 0;
+    const previous = after === undefined ? -1 : unique.indexOf(after);
+    const start = ((previous >= 0 ? previous : last >= 0 && last < unique.length ? last : -1) + 1) % unique.length;
     const skipped: string[] = [];
     for (let offset = 0; offset < unique.length; offset++) {
       const index = (start + offset) % unique.length;
       const name = unique[index]!;
+      if (tried?.has(name)) continue;
       if (known.has(name) && available(name)) {
         writePrivateFile(file, JSON.stringify({ index }) + '\n');
         return { preset: name, skipped };

@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
 import type { LocalLoad } from '../collectors/local-load.js';
+import { readEvenQuotaNotices } from '../collectors/even-quota.js';
+import { getHudHome } from '../hud-home.js';
 import { collectTranscript } from './transcript.js';
 import { collectConfigCounts } from './config-counts.js';
 import { collectParityGit } from './git.js';
@@ -91,5 +93,6 @@ export async function collectAndRenderParity(
     env,
     typeof record(value.model).id === 'string' ? (record(value.model).id as string) : ''
   );
-  return renderParity(native, width, settings, { transcript, counts, git, compact }, now, env, work, localLoad);
+  const evenQuota = readEvenQuotaNotices(getHudHome(env), cwd ?? record(value.workspace).current_dir, now, env);
+  return renderParity(native, width, settings, { transcript, counts, git, compact, evenQuota }, now, env, work, localLoad);
 }

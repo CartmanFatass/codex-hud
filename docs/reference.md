@@ -274,7 +274,8 @@ Dispatch records and returns the effective level after nearest-supported mapping
 For `even`, use the **Sonic even pool** row (`sonicEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it.
 Across `hud_create` for `sonic`, `scout`, and worker `hud_sonic`, HUD rotates round-robin through the pool in pool order, keeping the last used index in a private state file under `$HUD_HOME` (`even-sonic.json`).
 It skips unavailable or exhausted presets, reports them, wraps around, and uses the active preset if the pool is empty or unavailable.
-The job record includes `route.placement: "even"` and `route.preset`; retries keep the chosen preset.
+If a startup attempt is refused for quota before the brief is taken, HUD marks that place exhausted and tries the next available pool preset on the same job. Exhausted presets rejoin automatically when their marks expire.
+The job record includes `route.placement: "even"`, `route.preset` for the preset that ran, and the skipped startup preset and reason if there was a fallback. Explicit retries keep the chosen preset.
 Sonic still accepts no placement fields from callers.
 
 When a sonic job settles with a report, HUD checks its `path:line` and `path:line-line` citations once mechanically (no model call or network) and records `citations: {total, verified, failed: [{ref, reason}]}` on `job.json` and the monthly archive (with at most 20 failures).
@@ -285,8 +286,9 @@ HUD does no analysis on these counts and the panel does not show them.
 **Imp placement** (`impPlacement` in Settings → Models) defaults to `fixed`, which uses the active preset.
 For `even`, use the **Even pool** row (`impEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it.
 HUD rotates round-robin through the pool in pool order, keeping the last used index in a private state file under `$HUD_HOME` (`even-imp.json`), skipping and reporting unavailable or exhausted presets, wrapping around, and falling back to the active preset if the pool is empty or unavailable.
-The create result and job record include `route.placement: "even"` and `route.preset`; the Inspector shows `Placement: even` and the preset.
-Queueing, overflow, retry and land repair keep the preset selected at create in fixed and even modes.
+As for Sonic, a startup quota refusal marks the place exhausted and moves the same job to the next available preset. An exhausted preset rejoins automatically when its mark expires.
+The create result and job record include `route.placement: "even"` and `route.preset` for the preset that ran, with the skipped startup preset and reason on a fallback. The Inspector shows `Placement: even` and the preset.
+Queueing and overflow keep the initial selection, but a queued even job can move on if quota rules that preset out at launch. Explicit retries and land repair keep the preset from the source job.
 Legacy `impRouting: true` loads as `auto`; `false` loads as `fixed`.
 
 **Auto** uses one Decision API judgment at dispatch.
@@ -1164,7 +1166,8 @@ model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s �
 Context is ten cells, green below 70%, yellow from 70%, red from 85%, measured against the client's compaction window when known.
 Claude/Codex show only their own tightest quota window, blue then magenta from 75%, red from 90%; pi has session cost instead (in its top-right editor ribbon, not duplicated below).
 Missing facts are absent.
-The notice zone is, in order: native approvals, machine-wide HUD load, local CPU/RAM, then recent client events (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
+The notice zone is, in order: native approvals, even-pool quota exclusions, machine-wide HUD load, local CPU/RAM, then recent client events (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
+A preset in the project's Imp or Sonic even pool that cannot launch because of quota appears as `⚠ imp fast: quota` (text: `!`; Nerd Font: U+F071). The bar shows the first and adds `+N` for the others. The notice disappears as the presets rejoin.
 
 `⚒3  ✦2  ◈1  ⚡4  ◷2` counts HUD jobs across all projects under the same `$HUD_HOME`: one icon and running count per role, followed by the queue clock only when jobs are waiting to start. The Icons setting selects Unicode, text (`I3  G2  O1  *4  Q2`) or Nerd Font glyphs.
 Panes show the same counts, even if a pane has no jobs of its own. Model, context, project and quotas are still session-local.
@@ -1183,7 +1186,7 @@ No clock, task count, hooks count, tool-at-work or idle fallback.
 - Claude statusline: `~N t/s` estimates the latest response from transcript output tokens and elapsed time since its prompt or tool result.
   On Linux x64/WSL, the installed `hud-statusline` launcher can render the compact `line` and `p10k` looks with a native binary.
   It reads fresh stdin every time.
-  Missing or stale work/cache evidence, an unavailable binary, live transcript notices, forwarding, admin commands and `--details`/`--source` use the TypeScript renderer, which also omits unavailable machine counts.
+  Missing or stale work/cache evidence, an unavailable binary, live transcript notices or quota exhaustion marks, forwarding, admin commands and `--details`/`--source` use the TypeScript renderer, which also omits unavailable machine counts.
   Claude quota facts are still published locally; stdin is not stored for replay.
   A source install can build the binary with Cargo; a Linux x64 release built with Cargo carries it, so Cargo is not needed on the receiving machine.
 - Antigravity statusline: the same `hud-statusline` command shows its model, context, recognized quota readings (`5h 80% left`) and the same machine-wide job counts, without reading its transcript or forwarding its payload.

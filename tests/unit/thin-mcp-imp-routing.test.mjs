@@ -109,6 +109,28 @@ test('Even rotates in pool order, skips unavailable presets, wraps around and pi
   assert.equal(api.requests.length, 0);
 });
 
+test('Queued Imp even launch rotates from its pinned preset on quota refusal', async t => {
+  const f = await fixture(t);
+  role(f, undefined);
+  waitFixtureJob(f, 1);
+  const pool = { impPlacement: 'even', impEvenPool: ['deep', 'small', 'daily'], roleCaps: { imp: 1, general: 0 } };
+  settings(f, { ...pool, impOverflow: false });
+  write(join(f.env.HOME, 'quota-pi-model'), 'synthetic/deep');
+  const queued = await create(f, 'Queued even quota refusal.');
+  assert.equal(queued.state, 'queued');
+  assert.equal(queued.route.preset, 'deep');
+  settings(f, { ...pool, impOverflow: true });
+  await until(() => receipt(queued).dispatch_exit_code !== null, 8000);
+  const ran = receipt(queued);
+  assert.equal(ran.dispatch_exit_code, 0, JSON.stringify(ran.attempts));
+  assert.equal(ran.job, queued.job);
+  assert.equal(ran.overflow_from, 'imp');
+  assert.equal(ran.route.preset, 'small');
+  assert.match(ran.route.fallback, /Skipped preset deep: HTTP 429/);
+  assert.equal(ran.model, 'synthetic/small');
+  assert.equal(ran.attempts.length, 2);
+});
+
 test('detailed imp roster labels routing presets as auto-route only', async t => {
   const f = await fixture(t);
   const imp = roster => roster.roles.find(({ role }) => role === 'imp');

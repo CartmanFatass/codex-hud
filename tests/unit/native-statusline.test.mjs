@@ -56,6 +56,34 @@ test('native build is present when Cargo and the Linux x64 target are available'
   assert.ok(hasNative, 'run npm run build before the differential gate');
 });
 
+test('Claude launcher uses TypeScript for a live even quota notice and native can render again after expiry', { skip: !hasNative }, (t) => {
+  const env = { ...environment(receipt(t)), HUD_ICONS: 'unicode', NO_COLOR: '1' };
+  setup(env.HUD_HOME);
+  const bin = join(env.HOME, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(join(bin, 'pi-role'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  env.PATH = `${bin}:${env.PATH}`;
+  const fast = { harness: 'pi', model: 'synthetic/fast' };
+  fs.mkdirSync(join(env.HUD_HOME, 'roles'));
+  fs.writeFileSync(join(env.HUD_HOME, 'roles', 'imp.json'), JSON.stringify({ role: 'imp', instructions: 'implementer',
+    can_continue: true, run: [fast], presets: [{ name: 'fast', run: [fast] }] }));
+  fs.writeFileSync(join(env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ impPlacement: 'even', impEvenPool: ['fast'] }));
+  const writeMark = (at) => fs.writeFileSync(join(env.HUD_HOME, 'exhausted.json'), JSON.stringify({ version: 1,
+    places: { 'pi:synthetic/fast': { reason: 'quota', until: new Date(at).toISOString() } } }), { mode: 0o600 });
+  const agy = { ...base, product: 'antigravity' };
+  writeMark(Date.now() + 60_000);
+  assert.equal(rust(env, base, [], 75).length, 0);
+  const reference = ts(env, base);
+  assert.match(reference.toString(), /⚠ imp fast: quota │ ⚒1/);
+  assert.deepEqual(run(launcher, [], env, base), reference);
+  assert.match(run(launcher, [], env, agy).toString(), /⚠ imp fast: quota │ ⚒1/);
+  writeMark(Date.now() - 1);
+  const restored = rust(env, base);
+  assert.doesNotMatch(restored.toString(), /imp fast: quota/);
+  assert.deepEqual(restored, ts(env, base));
+  assert.doesNotMatch(run(launcher, [], env, agy).toString(), /imp fast: quota/);
+});
+
 test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasNative }, (t) => {
   const env = { ...environment(receipt(t)), HERDR_PANE_ID: 'synthetic-pane' };
   setup(env.HUD_HOME);
