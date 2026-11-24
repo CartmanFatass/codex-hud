@@ -429,8 +429,10 @@ function settledReportMeta(dir: string, hasReport: boolean, settled: boolean): R
 export function jobRowReportMeta(row: JobRow, dir: string): ReportMetaFields | undefined {
   const meta = settledReportMeta(dir, row.report_present, row.display_state !== 'working' && row.display_state !== 'queued');
   if (!meta) return undefined;
-  const { v, at, report_sig, ...fields } = meta;
-  return fields;
+  const { v, at, report_sig, summary: declared, ...fields } = meta;
+  // Keep legacy guillemet markup out of watch/MCP digests. The Inspector reads the declaration as written.
+  const summary = declared?.replace(/«[+!-](?![+!-])|[«»]/gu, '').trim();
+  return summary ? { ...fields, summary } : fields.files || fields.skip_checks_reason ? fields : undefined;
 }
 
 const rowState = (row: JobRow) => row.state ?? row.display_state;
