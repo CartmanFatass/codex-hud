@@ -94,7 +94,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   let scanStoreStarted = false;
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
   const parser = new RolloutParser(40);
-  // Project visit state is independent of the bounded Home collectors.
+  // Project visit state is independent of Home's collectors.
   const visits = new ProjectVisits(HUD_CWD_REAL, (root) => new ProjectCollector(root, jobPipeline.home));
   const portfolioCollector = new HomePortfolioCollector(jobPipeline.home);
   let portfolio: HomePortfolio | undefined;

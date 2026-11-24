@@ -393,7 +393,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const projectRoot = sharedRoot(cwd), parentJob = parent?.job;
   const lineage = parent ?? sourceJob;
   // Missing attribution on an existing job stays missing even if the ticket now links an Objective.
-  const objective = lineage ? objectiveLink(lineage.objective) : ticketObjective(projectRoot, args.ticket);
+  const objective = lineage ? objectiveLink(lineage.objective) : ticketObjective(cwd, args.ticket, projectRoot);
   const contextCwd = scoutContextCwd ?? cwd;
   const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf);
   const imp = requestedRole === 'imp' || fromImp;

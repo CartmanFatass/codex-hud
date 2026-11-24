@@ -8,7 +8,7 @@ import { ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence
 import { SETTLED_JOB_STATES, TicketRollup, ticketJobState } from '../collectors/ticket-rollup.js';
 import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
-import { sharedRoot } from '../roles/projects.js';
+import { projectRoot, sharedRoot } from '../roles/projects.js';
 import { TICKET_STATUSES } from '../roles/tool-definitions.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
@@ -63,14 +63,17 @@ const objectiveField = /^([ \t]*(?:\*\*[^:\r\n]+:\*\*[^·\r\n]*·[ \t]*)*?\*\*Ob
 const ticketHeader = (text: string) => text.split(/^(?:[ \t]*\*\*What to build:\*\*|##(?:[ \t]|\r?$))/im, 1)[0];
 
 /** An unreadable, missing or unresolvable header is not evidence of attribution. */
-export function ticketObjective(root: string, ticket: unknown) {
+export function ticketObjective(cwd: string, ticket: unknown, shared: string) {
   try {
-    const path = namedTicketPath(root, ticket);
+    const path = namedTicketPath(cwd, ticket);
     if (!path) return;
     const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
     if (truncated) return;
     const id = objectiveField.exec(ticketHeader(bytes.toString('utf8')))?.[2];
-    if (id) return objectiveLink(readObjectives(root)?.objectives.find(item => item.id === id));
+    if (!id) return;
+    const checkout = projectRoot(cwd);
+    const record = readObjectives(checkout) ?? (checkout !== shared ? readObjectives(shared) : undefined);
+    return objectiveLink(record?.objectives.find(item => item.id === id));
   } catch { /* No attribution. */ }
 }
 

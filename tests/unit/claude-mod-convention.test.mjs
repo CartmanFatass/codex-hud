@@ -13,9 +13,17 @@ test('review the short default and its hook coverage whenever the shipped conven
   // (create isolation, close approval, report reads, explicit owner_try and wait) or HUD itself
   // (placement, scout checks, batching, land ids, and the tool-specific argument descriptions).
   assert.equal(createHash('sha256').update(shipped).digest('hex'),
-    '631a13e7ab45d4b17839599b92b801f730e63e3196c293abfe0d2479ebab1976',
+    '5e8925d0844aa04bed20a9b604e58701cb0bdf9aa7115923a9bd6f6c133ca56b',
     'Default convention changed: review MOD_CONVENTION and the convention hooks/tests before updating this digest');
   assert.ok(Buffer.byteLength(MOD_CONVENTION) <= 0.45 * Buffer.byteLength(shipped));
+});
+
+test('both shipped convention sizes teach recording owner requests with hud_objective', () => {
+  for (const text of [shipped, MOD_CONVENTION]) {
+    assert.match(text, /hud_objective[^\n]*op: "request"/);
+    assert.match(text, /hud_objective[^\n]*op: "resolve"[^\n]*request/);
+    assert.doesNotMatch(text, /Waiting for the owner|Remove the request/);
+  }
 });
 
 test('only the bundled path is shortened in actual MCP compact text and JSON', () => {

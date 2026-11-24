@@ -23,7 +23,7 @@ export const initialHomeTab = (): RowNav => ({ scroll: 0 });
 export type ProjectSubPage = 'progress' | 'tickets' | 'tree' | 'docs';
 export type ProjectView = { kind: 'projects-list' } | { kind: 'hub' }
   | { kind: 'progress' }
-  | { kind: 'tickets' } | { kind: 'tree' } | { kind: 'docs' } | { kind: 'waiting'; index: number; request?: string };
+  | { kind: 'tickets' } | { kind: 'tree' } | { kind: 'docs' } | { kind: 'waiting'; index: number; request: string };
 export interface ProjectTabState {
   view: ProjectView;
   fromProjectsList: boolean;
@@ -42,7 +42,7 @@ export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | und
   }
 };
 
-export interface ObjectiveTarget { root: string; objective: Objective }
+export interface ObjectiveTarget { root: string; objective: Objective; blocked: boolean }
 export interface ObjectiveDetail extends RowNav { kind: 'objective'; target: ObjectiveTarget; evidence?: ObjectiveEvidence[] }
 export type SubpageState = JobsState | InspectorState | ObjectiveDetail | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
 export interface HelpOverlay { scroll?: number }

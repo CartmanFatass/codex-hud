@@ -17,7 +17,6 @@ export interface ListedProject {
   unavailable?: true;
 }
 
-const MAX_LISTED_PROJECTS = 16;
 const ROOT_TTL_MS = 2_000;
 const MAX_ROOTS = 256;
 
@@ -117,7 +116,7 @@ function realDir(path: string): string | null {
 
 let listCache: { file: string; stamp: string | null; roots: string[] } | undefined;
 
-/** Registered projects only, pane root first if registered, at most 16. Missing roots keep their stored identity. */
+/** Registered projects only, pane root first if registered. Missing roots keep their stored identity. */
 export function projectList(hudHome: string, panelRoot: string): ListedProject[] {
   const file = join(hudHome, 'projects.json'), stamp = fileSignature(file);
   if (listCache?.file !== file || listCache.stamp !== stamp) {
@@ -127,10 +126,7 @@ export function projectList(hudHome: string, panelRoot: string): ListedProject[]
     listCache = { file, stamp, roots };
   }
   const first = realDir(panelRoot) ?? resolve(panelRoot), out: ListedProject[] = [], seen = new Set<string>();
-  // Setup stores canonical paths; prefer the pane's registration without probing past the cap.
-  const roots = listCache.roots.includes(first) ? [first, ...listCache.roots] : listCache.roots;
-  for (const stored of roots) {
-    if (out.length >= MAX_LISTED_PROJECTS) break;
+  for (const stored of listCache.roots) {
     const real = realDir(stored), root = real ?? resolve(stored);
     if (seen.has(root)) continue;
     seen.add(root);

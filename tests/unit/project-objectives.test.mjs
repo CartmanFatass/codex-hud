@@ -34,7 +34,7 @@ const sample = `# Objectives
 **Next:** Not an Objective.
 `;
 
-test('bounded Objective reader keeps unknown fields and skips malformed sections', (t) => {
+test('bounded Objective reader skips malformed sections and ignores unknown fields', (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'project-objective-reader-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const path = objectivePath(root);
@@ -47,7 +47,6 @@ test('bounded Objective reader keeps unknown fields and skips malformed sections
   assert.deepEqual(objectives[2], {
     id: 'measure', title: 'Measure the sample', state: 'active', features: ['native-tree', 'missing'],
     next: 'Repeat the sample.', result: 'Recorded a baseline.', evidence: ['docs/notes.md', 'https://example.org/notes', '123abcd'],
-    unknownFields: ['**Future field:**  keep  these spaces  '],
   });
   assert.deepEqual(diagnostics, ['Malformed Objective section 4']);
   fs.writeFileSync(path, '## same: One\n**State:** active\n## same: Two\n**State:** done\n');
@@ -97,7 +96,12 @@ test('Home and Project open an Objective detail and route only its openable evid
   f.put(path, '# Synthetic notes');
   f.put(objectivePath(f.cwd), sample.replace('123abcd',
     `123abcd, docs/missing.md, $HUD_HOME/jobs/j0000000000000002/report.md, ${report}`));
+  const statePath = join(f.cwd, 'docs/handoff/STATE.md');
+  const remaining = '## Waiting for the owner\n- [r2] Review alternative (objective hold)\n- [r3] Choose a chart (work waits)\n';
+  f.put(statePath, remaining + '- [r1] Pick a method (objective measure) (work waits)\n');
   const data = await f.collector.collect(true, f.board, NOW);
+  assert.equal(data.waiting.find(({ request }) => request === 'r1').objective, 'measure');
+  assert.equal(data.objectives.objectives.find(({ id }) => id === 'measure').state, 'active');
   const homePortfolio = await new HomePortfolioCollector(f.hud).read([{ root: f.cwd, name: 'Study' }], f.board, NOW);
   const [openKey] = new WorkbenchInputDecoder('workboard').push(Buffer.from('o'));
   const key = (frame, input) => handleMonitorInput(frame.state, { type: 'key', key: input }, { frame });
@@ -105,6 +109,8 @@ test('Home and Project open an Objective detail and route only its openable evid
     const draw = (state, lang = 'en') => f.render(120, lang, state, 24, data, true, 'unicode', 'none', { homePortfolio });
     const list = draw({ ...draw().state, activeTab });
     const entry = list.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'measure');
+    assert.match(entry.text, /blocked/);
+    assert.ok(!list.workboard.rows.some((r) => r.objectiveTarget?.objective.id === 'hold' && r.objectiveTarget.blocked));
     if (activeTab === 'home') {
       list.state.home.cursor = list.workboard.rows.find((r) => r.item?.startsWith('home:result:')).item;
       assert.equal(key(list, 'enter').state.subpage.target.objective.id, 'finish');
@@ -121,6 +127,7 @@ test('Home and Project open an Objective detail and route only its openable evid
       assert.ok(frame.lines.every((line) => visualLength(line) === 120));
       const text = plain(frame).join('\n');
       assert.match(text, lang === 'en' ? /Evidence[\s\S]*missing · docs\/missing\.md/ : /依据[\s\S]*缺 · docs\/missing\.md/);
+      assert.match(text, lang === 'en' ? /State\s+active · blocked/ : /状态\s+进行中 · 受阻/);
       assert.match(text, /https:\/\/example\.org\/notes\n\s+123abcd/);
     }
     for (const expected of [{ type: 'open-files', files: [path] }, undefined,
@@ -134,4 +141,8 @@ test('Home and Project open an Objective detail and route only its openable evid
     assert.equal(back.activeTab, activeTab);
     assert.equal((activeTab === 'home' ? back.home : back.project.nav).cursor, entry.item);
   }
+  f.put(statePath, remaining);
+  const refreshed = await f.collector.collect(true, f.board, NOW);
+  const fresh = f.render(120, 'en', undefined, 24, refreshed);
+  assert.doesNotMatch(fresh.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'measure').text, /blocked/);
 });

@@ -1,5 +1,5 @@
 /** Pure Project overview and project switcher. Only explicit requests belong under Needs you. */
-import type { ProjectSnapshot } from '../collectors/project-board.js';
+import { ownerRequestKey, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { PAGE_WORD, PROJECT_PAGES, clampClean, objectiveRows, pageSummary, projectOrder, sinceText } from './project-view.js';
 import { boardRow, mark, minuteAge, section } from './workboard-rows.js';
@@ -24,7 +24,8 @@ function requestRows(data: ProjectSnapshot, state: MonitorState, width: number):
   for (const [i, r] of shown.entries()) {
     const item = `project:wait:${i}`, path = r.path ?? data.statePath;
     const lines = clampClean(monitorText(r.value), width - 4, state.project.nav.cursor === item ? Infinity : 1).lines;
-    rows.push(...lines.map((line, k) => ({ item, ...(path ? { files: [path] } : {}),
+    const waitingTarget = { index: i, request: ownerRequestKey(r) };
+    rows.push(...lines.map((line, k) => ({ item, waitingTarget, ...(path ? { files: [path] } : {}),
       text: fit(`${k ? '    ' : `  ${theme.board.attention('?')} `}${line}`, width) })));
   }
   const more = data.waiting.length - NEEDS_CAP;

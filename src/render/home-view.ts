@@ -1,5 +1,5 @@
 /** Portfolio handoff. A job waiting for main is not an owner request. */
-import { ownerRequestKey } from '../collectors/project-board.js';
+import { blockedObjectives, ownerRequestKey } from '../collectors/project-board.js';
 import type { Objective } from '../collectors/objectives.js';
 import type { HomePortfolio } from '../collectors/home-portfolio.js';
 import type { MonitorRow } from './monitor.js';
@@ -41,12 +41,20 @@ export function homeRows(portfolio: HomePortfolio | undefined, load: PaneLoad | 
       const metaFits = inline && visualLength(title) + visualLength(meta) + 2 <= width;
       rows.push({ ...section(title, width, metaFits ? meta : ''), item: `home:project:${root}`, homeTarget: { root } });
       if (meta && !metaFits) rows.push(...clampClean(meta, width - 2, 3).lines.map((line) => boardRow('  ' + line)));
+      const blocked = blockedObjectives(snapshot?.waiting ?? []);
       const objectiveRows = (label: string, text: string, objective?: Objective, kind = 'objective') =>
         detail(label, text, 2).map((row) => objective ? { ...row,
-          item: `home:${kind}:${root}:${objective.id}`, objectiveTarget: { root, objective } } : row);
+          item: `home:${kind}:${root}:${objective.id}`, objectiveTarget: { root, objective, blocked: blocked.has(objective.id) } } : row);
       if (objectives) {
-        for (const goal of objectives.objectives) if (goal.state === 'active')
-          rows.push(...objectiveRows(t('Objective'), goal.title, goal));
+        const goals = objectives.objectives.filter((goal) => goal.state === 'active' || blocked.has(goal.id));
+        let unblocked = 0, more = 0;
+        for (const goal of goals) {
+          const waits = blocked.has(goal.id);
+          if (!waits && unblocked++ >= 2) { more++; continue; }
+          rows.push(...objectiveRows(waits ? `${t('Objective')} · ${t('blocked')}` : t('Objective'), goal.title, goal));
+        }
+        if (more) rows.push({ ...boardRow(fit('  ' + theme.board.muted(t('{n} more', { n: more })), width)),
+          item: `home:more:${root}`, homeTarget: { root } });
       } else if (snapshot) {
         if (snapshot.summary) rows.push(...detail(t('Now'), snapshot.summary, 2));
         if (snapshot.next.length) rows.push(...detail(t('Next'), snapshot.next.map(({ value }) => value).join(' · ')));

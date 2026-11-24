@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
 import { readObjectives } from '../../dist/collectors/objectives.js';
 import { PiRoleClient } from '../../dist/harness/pi/role-client.js';
 import { fixture, resultValue } from '../helpers/thin-mcp-harness.mjs';
@@ -17,7 +19,7 @@ test('hud_objective edits only supplied fields and appends one private receipt p
   assert.equal(fs.existsSync(path), false);
   assert.equal((await set({ title: 'Measure sample', state: 'active', next: 'Observe' })).change, 'created');
   const read = () => fs.readFileSync(path, 'utf8');
-  assert.equal(read(), '## measure: Measure sample\n**State:** active\n**Next:** Observe\n');
+  assert.equal(read(), '## measure: Measure sample\n\n**State:** active\n**Next:** Observe\n');
   const original = '\uFEFF# Objectives\r\n**Stance:** active  ·  **Priority:** high \r\n\r\n'
     + '## measure: Measure sample\r\n**State:** active\r\n**Next:**  Observe  \r\n**Note:**  样本  \r\n\r\n'
     + '## other: Separate goal\r\n**State:** done\r\n**Next:** Observe';
@@ -59,13 +61,48 @@ test('hud_objective edits only supplied fields and appends one private receipt p
   assert.deepEqual(record.objectives[0].features, ['sample']);
   assert.deepEqual(receipts(), [
     ['Measure sample', 'created', 'active'], ['Measure sample', 'state', 'paused'],
-    ['Repeat sample', 'title', 'paused'], ['Repeat sample', 'result', 'paused'],
-  ].map(([title, change, state]) => ({ v: 1, kind: 'objective', project: cwd, id: 'measure', title, change, state,
-    ...(change === 'result' && { result: 'The reading held.' }) })));
+    ['Repeat sample', 'title', 'paused'], ['Repeat sample', 'result', 'paused', 'The reading held.'],
+    ['Repeat sample', 'result', 'paused', ''],
+  ].map(([title, change, state, result]) => ({ v: 1, kind: 'objective', project: cwd, id: 'measure', title, change, state,
+    ...(result !== undefined && { result, resultDigest: createHash('sha256').update(result).digest('hex') }) })));
   const result = 'Seeded result. '.repeat(20).trim();
   assert.equal((await set({ id: 'seed', title: 'Seed study', state: 'done', result })).change, 'created');
   assert.equal(receipts().at(-1).result, result.slice(0, 240), 'creation records a bounded result excerpt');
+  assert.match(read(), /\r\n\r\n## seed: Seed study\r\n\r\n\*\*State:\*\* done/);
   assert.equal(fs.existsSync(join(home, 'archive')), false);
+});
+
+test('hud_objective records result evidence once for a compound state and result change; Home selects it', async (t) => {
+  const f = await fixture(t, false), cwd = fs.realpathSync(f.root), home = f.env.HUD_HOME;
+  fs.writeFileSync(join(home, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: cwd }] }));
+  const set = (id, fields) => f.call('hud_objective', { op: 'set', cwd, id, ...fields });
+  await set('older', { title: 'Earlier study', state: 'done', result: 'Earlier reading' });
+  await set('current', { title: 'Current study', state: 'active' });
+  const events = join(home, 'events');
+  const receipts = () => fs.readdirSync(events).sort().flatMap((name) =>
+    fs.readFileSync(join(events, name), 'utf8').trimEnd().split('\n').map(JSON.parse));
+  const result = 'The latest reading.';
+  assert.equal((await set('current', { state: 'done', result })).change, 'state');
+  const [, , event] = receipts();
+  assert.equal(receipts().length, 3);
+  assert.equal(event.change, 'state');
+  assert.equal(event.result, result);
+  assert.equal(event.resultDigest, createHash('sha256').update(result).digest('hex'));
+  const portfolio = await new HomePortfolioCollector(home).read([{ root: cwd, name: 'Study' }], { workers: [] }, Date.now());
+  assert.deepEqual(portfolio.projects[0].result, { id: 'current', text: result, at: Date.parse(event.at) });
+});
+
+test('hud_objective edits the first heading after a BOM using original offsets', async (t) => {
+  const f = await fixture(t, false), cwd = fs.realpathSync(f.root), home = f.env.HUD_HOME;
+  fs.writeFileSync(join(home, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: cwd }] }));
+  const path = join(cwd, '.hud/objectives.md');
+  fs.mkdirSync(join(cwd, '.hud'), { recursive: true });
+  const original = '\uFEFF## outcome: Measure samples\r\n\r\n**State:** active\r\n**Extra:** Keep 中文  \r\n';
+  fs.writeFileSync(path, original);
+  assert.equal(readObjectives(cwd).objectives[0]?.id, 'outcome');
+  const result = await f.call('hud_objective', { op: 'set', cwd, id: 'outcome', title: 'Measure again', state: 'done' });
+  assert.equal(result.change, 'state');
+  assert.equal(fs.readFileSync(path, 'utf8'), original.replace('Measure samples', 'Measure again').replace('active', 'done'));
 });
 
 test('hud_objective project can start the header with either field', async (t) => {

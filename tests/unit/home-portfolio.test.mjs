@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -15,7 +16,7 @@ const board = { lanes: [], workers: [] };
 function fixture(t, count = 3) {
   const dir = fs.mkdtempSync(join(tmpdir(), 'hud-portfolio-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const home = join(dir, 'hud'), roots = ['paused-study', 'state-notes', 'offline-root', ...Array.from({ length: 5 }, (_, i) => `project-${i}`)]
+  const home = join(dir, 'hud'), roots = ['paused-study', 'state-notes', 'offline-root', ...Array.from({ length: Math.max(0, count - 3) }, (_, i) => `project-${i}`)]
     .slice(0, count).map((name) => join(dir, name));
   const [paused, own] = roots;
   const put = (file, text) => {
@@ -71,6 +72,21 @@ test('Home renders all three registered projects and scoped badges in EN/ZH at 1
   }
 });
 
+test('Home keeps all 17 registrations and their requests while bounding routine goal previews', async (t) => {
+  const f = fixture(t, 17), last = f.roots.at(-1);
+  f.put(join(last, 'STATE.md'), '## Waiting for the owner\n- [r1] Decide for the last project (objective goal-3) (work waits)\n');
+  f.objectives(last, f.header, Array.from({ length: 5 }, (_, i) => `## goal-${i}: Goal ${i}\n**State:** active`).join('\n\n'));
+  const homePortfolio = await f.tick();
+  assert.deepEqual(new Set(homePortfolio.projects.map(({ root }) => root)), new Set(f.roots));
+  assert.equal(homePortfolio.requests.length, 20);
+  const { workboard } = renderMonitor({ state: initialMonitorState(), width: 100, height: 30, nowMs, homePortfolio });
+  assert.equal(workboard.rows.filter(({ item }) => item?.startsWith('home:project:')).length, 17);
+  assert.ok(workboard.rows.some(({ text, homeTarget }) => homeTarget?.root === last && text.includes('Decide for the last project')));
+  assert.deepEqual(workboard.rows.filter(({ objectiveTarget, item }) => objectiveTarget?.root === last && item.startsWith('home:objective:'))
+    .map(({ objectiveTarget }) => objectiveTarget.objective.id), ['goal-0', 'goal-1', 'goal-3']);
+  assert.ok(workboard.rows.some(({ text, homeTarget }) => homeTarget?.root === last && text.includes('2 more')));
+});
+
 test('requests sort by waits, project priority, then age; Enter navigates to the exact request and project without an action', async (t) => {
   const f = fixture(t), homePortfolio = await f.tick();
   assert.deepEqual(homePortfolio.requests.map(({ project, item }) => [project.name, item.request]), [
@@ -106,6 +122,23 @@ test('Objective results without a matching latest receipt are shown without a da
   // Latest receipt has no result text: don't borrow the date from the older matching receipt.
   f.put(f.receiptPath, [f.receipt, { ...f.receipt, result: undefined, at: '2026-11-24T10:00:00.000Z' }].map(JSON.stringify).join('\n') + '\n');
   assert.deepEqual(await result(), { id: 'measure', text: 'The reading held.', at: undefined });
+});
+
+test('Home verifies the whole long result and leaves ambiguous legacy excerpts undated', async (t) => {
+  const f = fixture(t), result = async () => (await f.tick()).projects.find((p) => p.root === f.paused).result;
+  const prefix = 'x'.repeat(240), original = `${prefix} recorded`, edited = `${prefix} edited`;
+  const write = (text) => f.objectives(f.paused, f.header, f.tracked.replace('The reading held.', text));
+  const receipt = { ...f.receipt, result: prefix };
+  f.put(f.receiptPath, JSON.stringify({ ...receipt, resultDigest: createHash('sha256').update(original).digest('hex') }) + '\n');
+  write(original);
+  assert.equal((await result()).at, Date.parse(receipt.at));
+  write(edited);
+  assert.deepEqual(await result(), { id: 'measure', text: edited, at: undefined });
+  f.put(f.receiptPath, JSON.stringify(receipt) + '\n');
+  write(original);
+  assert.equal((await result()).at, undefined);
+  write(prefix);
+  assert.equal((await result()).at, Date.parse(receipt.at));
 });
 
 test('unchanged Home tick with eight registered projects only stats files', async (t) => {

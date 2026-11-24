@@ -7,11 +7,11 @@ import { boardRow, kvRows, section } from './workboard-rows.js';
 import { t } from './i18n.js';
 
 export function objectiveDetailRows(detail: ObjectiveDetail, width: number): MonitorRow[] {
-  const { root, objective } = detail.target;
+  const { root, objective, blocked } = detail.target;
   const rows = [
     ...kvRows('ID', objective.id, width),
     ...kvRows('Title', objective.title, width),
-    ...kvRows('State', t(objective.state), width),
+    ...kvRows('State', blocked ? `${t(objective.state)} · ${t('blocked')}` : t(objective.state), width),
     ...(objective.next ? kvRows('Next', objective.next, width) : []),
     ...(objective.result ? kvRows('Result', objective.result, width) : []),
     section(t('Evidence'), width),

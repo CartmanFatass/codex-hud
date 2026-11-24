@@ -2,12 +2,12 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { ListedProject } from '../roles/projects.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
-import { resultExcerpt, type ObjectiveRecord } from './objectives.js';
+import { resultDigest, resultExcerpt, type ObjectiveRecord } from './objectives.js';
 import { compareOwnerRequests, ProjectCollector, projectJobWindow, type ProjectItem, type ProjectSnapshot } from './project-board.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 
 interface Result { id: string; text: string; at?: number }
-interface ResultReceipt { project: string; id: string; at: number; result?: string }
+interface ResultReceipt { project: string; id: string; at: number; result?: string; resultDigest?: string }
 export interface HomeProject extends ListedProject { snapshot?: ProjectSnapshot; result?: Result }
 export interface HomeRequest { project: HomeProject; item: ProjectItem; index: number }
 export interface HomePortfolio { projects: HomeProject[]; requests: HomeRequest[] }
@@ -46,11 +46,15 @@ class ResultReceipts {
           if (offset) lines.shift();
           for (const line of lines) try {
             const e = JSON.parse(line);
-            if (e?.v !== 1 || e.kind !== 'objective' || !['created', 'result'].includes(e.change) ||
+            if (e?.v !== 1 || e.kind !== 'objective' ||
                 typeof e.project !== 'string' || typeof e.id !== 'string' || typeof e.at !== 'string') continue;
+            const result = typeof e.result === 'string' ? e.result : undefined;
+            // Creation/reset and old result receipts can supersede earlier dates even without evidence.
+            if (result === undefined && e.change !== 'created' && e.change !== 'result') continue;
             const at = Date.parse(e.at);
             if (Number.isFinite(at) && new Date(at).toISOString() === e.at)
-              receipts.push({ project: e.project, id: e.id, at, result: typeof e.result === 'string' ? e.result : undefined });
+              receipts.push({ project: e.project, id: e.id, at, result,
+                resultDigest: e.resultDigest === undefined ? undefined : typeof e.resultDigest === 'string' ? e.resultDigest : '' });
           } catch { /* A malformed line does not hide the rest of the file. */ }
         } catch { /* Unavailable month: no result dates from it. */ }
         this.cache.set(name, entry = { stamp, receipts });
@@ -66,14 +70,15 @@ class ResultReceipts {
 
 const priorities: Record<ObjectiveRecord['priority'], number> = { high: 1, normal: 0, low: -1 };
 
-/** A separate bounded pool: Project visits don't evict Home's file/rollup memos, and Home does not mark a visit. */
+/** One collector per available registration: Home keeps its own bounded file/rollup memos and does not mark visits. */
 export class HomePortfolioCollector {
   private pool = new Map<string, ProjectCollector>();
   private receipts: ResultReceipts;
   constructor(private home: string) { this.receipts = new ResultReceipts(join(home, 'events')); }
 
   async read(list: readonly ListedProject[], board: WorkboardSnapshot, now: number): Promise<HomePortfolio> {
-    for (const root of this.pool.keys()) if (!list.some((p) => p.root === root && !p.unavailable)) this.pool.delete(root);
+    const available = new Set(list.filter((p) => !p.unavailable).map((p) => p.root));
+    for (const root of this.pool.keys()) if (!available.has(root)) this.pool.delete(root);
     const projects: HomeProject[] = [];
     let jobs: ReturnType<typeof projectJobWindow> | undefined;
     for (const project of list) {
@@ -87,7 +92,9 @@ export class HomePortfolioCollector {
       for (const project of projects) for (const { id, result } of project.snapshot?.objectives?.objectives ?? []) {
         if (!result) continue;
         const receipt = receipts.get(JSON.stringify([project.root, id]));
-        const at = receipt?.result === resultExcerpt(result) ? receipt.at : undefined;
+        const matches = receipt?.resultDigest !== undefined ? receipt.resultDigest === resultDigest(result)
+          : receipt?.result === result && resultExcerpt(result) === result;
+        const at = matches ? receipt?.at : undefined;
         if (!project.result || (at ?? -Infinity) > (project.result.at ?? -Infinity)) project.result = { id, text: result, at };
       }
     }

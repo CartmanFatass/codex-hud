@@ -274,6 +274,32 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   assert.equal(hasObjective(await f.call('hud_create', { retry_of: noLink.job })), false);
 });
 
+test('hud_create stamps the linked checkout ticket against its Objective record, falling back only for a missing file', async (t) => {
+  const f = await fixture(t), main = initRepo(f.root), cwd = join(f.root, 'linked');
+  git(main, 'worktree', 'add', '-qb', 'linked', cwd);
+  const goal = (id, title) => `## ${id}: ${title}\n**State:** active\n`;
+  const ticket = (id) => `# 01: Synthetic sample\n**Status:** ready-for-agent\n**Objective:** ${id}\n`;
+  const put = (path, text) => {
+    fs.mkdirSync(join(path, '..'), { recursive: true });
+    fs.writeFileSync(path, text);
+  };
+  const path = join(cwd, '.hud/objectives.md');
+  put(join(main, '.hud/objectives.md'), goal('main-goal', 'Main goal') + goal('branch-goal', 'Fallback goal'));
+  for (const root of [main, cwd]) put(join(root, '.scratch/sample/issues/01-demo.md'), ticket('main-goal'));
+  put(path, goal('branch-goal', 'Checkout goal'));
+  const { updates } = await f.call('hud_tickets', { op: 'update', cwd, feature: 'sample', updates: [{ ticket: 1, objective: 'branch-goal' }] });
+  assert.equal(updates[0].ok, true);
+  const stamp = async (task) => {
+    const job = await f.call('hud_create', { role: 'general', cwd, ticket: 'sample/01', task });
+    return JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).objective;
+  };
+  assert.deepEqual(await stamp('Use checkout Objective.'), { id: 'branch-goal', title: 'Checkout goal' });
+  fs.writeFileSync(path, goal('other-goal', 'Other goal'));
+  assert.equal(await stamp('Do not fall back for an unmatched ID.'), undefined);
+  fs.unlinkSync(path);
+  assert.deepEqual(await stamp('Use shared fallback Objective.'), { id: 'branch-goal', title: 'Fallback goal' });
+});
+
 test('hud_create retains every pre-input cause on one failed job and stays within the requested preset', async (t) => {
   const f = await fixture(t);
   fallbackRole(f, 'general', [{ harness: 'cli', agent: 'codex' }], [{ name: 'two', run: fallbackPlaces }]);

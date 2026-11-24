@@ -68,8 +68,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   const goProject = (page?: ProjectSubPage, cursor?: string) => {
     next = transitionProjectView(next, page ? { kind: page } : { kind: 'hub' }, { cursor });
   };
-  const readWait = (index: number, request?: string) => {
-    next = transitionProjectView(next, { kind: 'waiting', index, ...(request !== undefined && { request }) }, { cursor: `project:wait:${index}:0` });
+  const readWait = (index: number, request: string) => {
+    next = transitionProjectView(next, { kind: 'waiting', index, request }, { cursor: `project:wait:${index}:0` });
   };
   const useProject = (root?: string) => { next = switchProject(next, root); };
   const cycleProject = (step: number) => {
@@ -224,7 +224,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectSubPage);
       else if (row?.item === ACCEPT_ALL) return { type: 'accept-all' as const };
-      else if (/^project:wait:\d+$/.test(row?.item ?? '')) readWait(Number(row!.item!.slice(13)));
+      else if (row?.waitingTarget) readWait(row.waitingTarget.index, row.waitingTarget.request);
       else if (row?.item?.startsWith('project:fold:')) toggleFold(row.item.slice(13));
       else if (row?.files) return { type: 'open-files' as const, files: row.files };
     };
@@ -239,7 +239,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           const again = row.item === cursor;
           select(row.item);
           // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
-          return result(again || /^project:(page:|list:|switch$|wait:\d+$)/.test(row.item) ? activate(row) : undefined);
+          return result(again || row.waitingTarget || /^project:(page:|list:|switch$)/.test(row.item) ? activate(row) : undefined);
         }
       }
       return result();
@@ -313,7 +313,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       useProject(!frame.projects || root === frame.projects[0].root ? undefined : root);
       goTab('project');
       if (index === undefined) goProject();
-      else readWait(index, request);
+      else if (request !== undefined) readWait(index, request);
       return result();
     }
     if (row?.files?.length) return result({ type: 'open-files', files: row.files });

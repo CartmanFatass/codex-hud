@@ -73,6 +73,7 @@ test('Enter or a click on a waiting item opens its whole STATE text on a page, i
   for (const opened of [key, click]) {
     assert.equal(projectPageOf(opened.state), 'waiting');
     assert.equal(opened.state.project.view.index, 1);
+    assert.equal(opened.state.project.view.request, TRY_LONG, 'legacy requests use the original line text');
     assert.equal(opened.action, undefined, 'it reads here; it does not open the editor');
   }
   assert.deepEqual(press(hubAt('en'), 'open-session').action, { type: 'open-files', files: [f.data.statePath] });
@@ -100,6 +101,17 @@ test('Enter or a click on a waiting item opens its whole STATE text on a page, i
     assert.equal(all, TRY_LONG.replace(/\s+/g, ' '));
   }
   assert.deepEqual(press(f.render(38, 'en', key.state, 30), 'open-session').action, { type: 'open-files', files: [f.data.statePath] }, '`o` in the page opens STATE.md');
+});
+
+test('an open Project inbox request keeps its ID through reordering and clears on resolution', async (t) => {
+  const f = await fixture(t, { waiting: ['[r1] Choose alpha', '[r2] Choose beta'] });
+  const opened = press(f.render(60, 'en', undefined, 24), 'enter');
+  assert.equal(opened.state.project.view.request, 'r1');
+  const draw = (waiting) => plain(f.render(60, 'en', opened.state, 24, { project: { ...f.data, waiting } })).join('\n');
+  assert.match(draw([...f.data.waiting].reverse()), /Choose alpha/);
+  const resolved = draw(f.data.waiting.filter(({ request }) => request !== 'r1'));
+  assert.match(resolved, /none/);
+  assert.doesNotMatch(resolved, /Choose (alpha|beta)/);
 });
 
 test('the page scrolls with the movement keys and the wheel; Esc or a click on the crumb returns with the cursor on the same item', async (t) => {

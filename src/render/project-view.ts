@@ -1,5 +1,5 @@
 /** Pure Project rows, using the same kit as Home and the Inspector. */
-import { SLICE_STATES, SETTLED_JOB_STATES, ownerRequestKey, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice } from '../collectors/project-board.js';
+import { SLICE_STATES, SETTLED_JOB_STATES, blockedObjectives, ownerRequestKey, type SliceState, type ProjectSnapshot, type ProjectItem, type ProjectTicket, type TicketFeature, type LedgerSlice } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { OBJECTIVE_STATES } from '../collectors/objectives.js';
 import { ledgerTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
@@ -385,8 +385,7 @@ export function pageRows(
     // every wrapped row is a stop, so the movement keys scroll it, and `o` opens STATE.md.
     const view = state.project.view;
     const index = view.kind === 'waiting' ? view.index : -1;
-    const r = view.kind === 'waiting' && view.request !== undefined
-      ? data.waiting.find((item) => ownerRequestKey(item) === view.request) : data.waiting[index];
+    const r = view.kind === 'waiting' ? data.waiting.find((item) => ownerRequestKey(item) === view.request) : undefined;
     const paragraphs: string[] = [];
     for (const line of (r?.text ?? r?.value ?? '').split('\n').map((l) => l.trim()).filter(Boolean))
       if (!paragraphs.length || /^([-*]|\d+[.)])\s/.test(line)) paragraphs.push(line);
@@ -425,12 +424,18 @@ export function objectiveRows(data: ProjectSnapshot, width: number): MonitorRow[
   const record = data.objectives;
   if (!record) return [];
   const rows = [boardRow(''), section(t('Objectives'), width, String(record.objectives.length))];
-  const root = dirname(dirname(record.path));
+  const root = dirname(dirname(record.path)), blockedIds = blockedObjectives(data.waiting);
   for (const state of OBJECTIVE_STATES) for (const objective of record.objectives.filter((item) => item.state === state)) {
     const { id, title, result, next, features } = objective;
-    const at = { item: `project:objective:${root}:${id}`, files: [record.path], objectiveTarget: { root, objective } };
+    const blocked = blockedIds.has(id);
+    const at = { item: `project:objective:${root}:${id}`, files: [record.path], objectiveTarget: { root, objective, blocked } };
     const ink = state === 'active' ? theme.board.active : state === 'done' ? theme.board.success : theme.board.muted;
-    rows.push({ ...at, text: pair(`  ${monitorText(id)}: ${monitorText(title)}`, ink(t(state)), width) });
+    let status = ink(t(state));
+    if (blocked) {
+      const reason = theme.board.attention(t('blocked'));
+      status = visualLength(status) + visualLength(reason) + 6 <= width ? `${status} · ${reason}` : reason;
+    }
+    rows.push({ ...at, text: pair(`  ${monitorText(id)}: ${monitorText(title)}`, status, width) });
     if (state === 'done') continue;
     for (const [label, value] of [['Result', result], ['Next', next]] as const) {
       if (!value) continue;

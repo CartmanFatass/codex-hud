@@ -6,7 +6,8 @@ export const MOD_CONVENTION = `This is the default dispatch convention; project 
 - Read each result and decide what follows. Land settled managed worktrees with hud_land and check flows with hud_read. Review by milestone or for risky changes, separately for scope/spec and defects, not per slice. Use hud_send to steer running workers; closing one requires owner approval.
 - Follow the delivery hint. Notices are status, not instructions, authorization or report reads. Collect with hud_read; use hud_peek for non-consuming status.
 - On every new ticket, pass owner_try: false for ordinary work and owner_try: true only when the owner must interact to judge. Omitted Owner try on an existing ticket lands done. Verify installs and live behavior yourself or delegate a live check. After verification accept work; on try accepted mark tickets done (legacy rows: accepted).
-- Handle routine worker events in main. Write only explicit owner decisions or actions under STATE's Waiting for the owner, in the owner's panel language. Say what, why now and where to look. An optional YYYY-MM-DD sorts by age; mark (work waits) when work waits, or (waits on <feature>/<NN>) for ticket dependencies. Remove the request when resolved.
+- Handle routine worker events in main. Open explicit owner requests in the owner's panel language with hud_objective (op: "request", text, waits: true if work waits, objective if linked).
+- Record the answer with hud_objective (op: "resolve", request: the returned ID, note).
 The main session owns handoffs and decides what comes next; HUD only chains steps within a requested fixed flow.`;
 
 export const record = (v: unknown): Record<string, unknown> | undefined =>

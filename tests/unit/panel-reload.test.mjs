@@ -193,7 +193,7 @@ test('broken and unknown handoffs fall back safely, retaining a valid opening ti
     project: { view: { kind: 'waiting', index: 'bad' }, nav: { scroll: -3 } }, home: { expanded: [2, 'ok', {}] },
     subpage: { kind: 'inspector', target: { kind: 'worker', laneId: 'missing-worker' } } } }));
   assert.equal(state.activeTab, 'home');
-  assert.deepEqual(state.project.view, { kind: 'waiting', index: -1 });
+  assert.deepEqual(state.project.view, { kind: 'hub' }, 'an index without a request key cannot restore the detail');
   assert.equal(state.project.nav.scroll, 0);
   assert.equal(state.subpage, undefined);
 });

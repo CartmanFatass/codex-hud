@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import {
   OBJECTIVE_SLUG, OBJECTIVE_STATES, PROJECT_PRIORITIES, PROJECT_STANCES, inspectObjectives, objectiveFields,
-  objectivePath, readObjectiveFile, readObjectives, resultExcerpt, splitObjectiveList, validEvidence, validFeature,
+  objectivePath, readObjectiveFile, readObjectives, resultDigest, resultExcerpt, splitObjectiveList, validEvidence, validFeature,
 } from '../collectors/objectives.js';
 import { STATE_BYTES, WAITING_HEADING, requestFields, stateBulletSpans, statePaths, stateSection } from '../collectors/state-ledger.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
@@ -32,7 +32,7 @@ function edit(root: string, home: string, args: Record<string, unknown>) {
   const patches: { start: number; end: number; text: string }[] = [];
   const patch = ({ start, end }: { start: number; end: number }, text: string) => patches.push({ start, end, text });
   const insert = (start: number, text: string) => patch({ start, end: start }, text);
-  let receipt: { project: string; id: string; title: string; change: Change; state: string; result?: string } | undefined;
+  let receipt: { project: string; id: string; title: string; change: Change; state: string; result?: string; resultDigest?: string } | undefined;
 
   if (args.op === 'project') {
     if (Object.keys(args).some((key) => !['op', 'cwd', 'stance', 'priority'].includes(key))) invalid('project fields');
@@ -69,10 +69,11 @@ function edit(root: string, home: string, args: Record<string, unknown>) {
     if (title === undefined && Object.values(fields).every((value) => value === undefined)) invalid('set requires a field');
     const newTitle = title ?? old?.title ?? invalid('title required on creation');
     const newState = state ?? old?.state ?? invalid('state required on creation');
+    const result = fields.Result, resultChanged = result !== undefined && result !== (old?.result ?? '');
     const change: Change | undefined = !old ? 'created' : newState !== old.state ? 'state'
-      : newTitle !== old.title ? 'title' : fields.Result && fields.Result !== old.result ? 'result' : undefined;
+      : newTitle !== old.title ? 'title' : resultChanged ? 'result' : undefined;
     if (change) receipt = { project: root, id, title: newTitle, change, state: newState,
-      ...((change === 'result' || change === 'created') && fields.Result && { result: resultExcerpt(fields.Result) }) };
+      ...(resultChanged && { result: resultExcerpt(result), resultDigest: resultDigest(result) }) };
     const missing: string[] = [];
     for (const key of objectiveFields) {
       const value = fields[key], existing = section?.fields[key];
@@ -88,8 +89,8 @@ function edit(root: string, home: string, args: Record<string, unknown>) {
       }
       if (missing.length) insert(section.afterHeading, eol + missing.join(eol) + (original.length === section.afterHeading ? eol : ''));
     } else {
-      const prefix = !original || original.endsWith(eol + eol) ? '' : original.endsWith(eol) ? eol : eol + eol;
-      insert(original.length, prefix + [`## ${id}: ${newTitle}`, ...missing, ''].join(eol));
+      const prefix = !original || original === '\uFEFF' || original.endsWith(eol + eol) ? '' : original.endsWith(eol) ? eol : eol + eol;
+      insert(original.length, prefix + [`## ${id}: ${newTitle}`, '', ...missing, ''].join(eol));
     }
   } else invalid('op');
 

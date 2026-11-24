@@ -29,6 +29,7 @@ export interface ProjectItem {
   /** A waiting item's full display text; `value` is the same words on one line. */
   text?: string;
   request?: string;
+  objective?: string;
   waitedOn?: boolean;
 }
 export const SLICE_STATES = ['working', 'blocked', 'try', 'todo', 'accepted', 'dropped'] as const;
@@ -106,7 +107,9 @@ export function waitSettled(text: string, settled: ReadonlySet<string>): boolean
   return refs.length > 0 && refs.every((ref) => settled.has(targetKey(ref)));
 }
 
-export const ownerRequestKey = (item: ProjectItem) => item.request ?? item.value;
+export const ownerRequestKey = (item: ProjectItem) => item.request ?? item.text ?? item.value;
+export const blockedObjectives = (waiting: readonly ProjectItem[]) =>
+  new Set(waiting.flatMap(({ objective, waitedOn }) => objective && waitedOn ? [objective] : []));
 type RequestOrder = Pick<ProjectItem, 'waitedOn' | 'at'>;
 /** Larger project priority comes first. Stable sorting preserves file order for equal age or undated requests. */
 export function compareOwnerRequests(a: RequestOrder, b: RequestOrder, priorityA = 0, priorityB = 0): number {
@@ -619,7 +622,8 @@ export class ProjectCollector {
           objectiveTitles = new Map((shown === 'overview' ? readObjectiveRecord()?.record : objectives)?.objectives.map(({ id, title }) => [id, title]));
         }
         const text = fields.display(fields.objective ? objectiveTitles?.get(fields.objective) : undefined);
-        return { ...ordered, request: fields.request, text, value: text.replace(/\s+/g, ' ').trim() };
+        return { ...ordered, request: fields.request, ...(fields.objective && { objective: fields.objective }),
+          text, value: text.replace(/\s+/g, ' ').trim() };
       });
     out.tickets = visible;
     if (home && memoKey !== undefined) {

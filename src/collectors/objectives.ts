@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { lstatSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { readFileBounded } from '../utils/atomic-fs.js';
@@ -14,7 +15,6 @@ export type ObjectiveState = typeof OBJECTIVE_STATES[number];
 export interface Objective {
   id: string; title: string; state: ObjectiveState;
   next?: string; result?: string; evidence: string[]; features: string[];
-  unknownFields: string[];
 }
 export type ObjectiveLink = Pick<Objective, 'id' | 'title'>;
 
@@ -33,6 +33,7 @@ export interface ObjectiveRecord {
 }
 export const objectivePath = (root: string) => join(root, '.hud', 'objectives.md');
 export const resultExcerpt = (text: string) => text.slice(0, 240);
+export const resultDigest = (text: string) => createHash('sha256').update(text).digest('hex');
 const featureSlug = new RegExp(FEATURE_SLUG);
 export const validFeature = (s: string) => featureSlug.test(s);
 export const OBJECTIVE_HASH = /^[a-f0-9]{7,64}$/i;
@@ -87,7 +88,7 @@ const member = <T extends string>(values: readonly T[], value: string | undefine
 /** Inspect once for both display and editing; ranges are UTF-16 offsets into the original text. */
 export function inspectObjectives(text: string) {
   const record: ObjectiveRecord = { stance: 'unknown', priority: 'normal', objectives: [], diagnostics: [] };
-  const headings = [...text.matchAll(/^##(?=[ \t]|\r?$)[^\r\n]*/gm)];
+  const headings = [...text.matchAll(/^\uFEFF?(##(?=[ \t]|\r?$)[^\r\n]*)/dgm)];
   const preamble = text.slice(0, headings[0]?.index ?? text.length);
   const headers = [...preamble.matchAll(/^\uFEFF?(\*\*(?:Stance|Priority):\*\*[^\r\n]*)/dgm)];
   const header = headers[0] && slot(text, headers[0].indices![1]!);
@@ -99,25 +100,25 @@ export function inspectObjectives(text: string) {
 
   const ids = new Set<string>(), duplicates = new Set<string>();
   const sections = headings.map((heading, i): Section => {
-    const end = heading.index! + heading[0].length;
-    const match = /^##[ \t]+([a-z0-9-]+):[ \t]*([^\r\n]*)$/d.exec(heading[0]);
+    const [start, end] = heading.indices![1]!;
+    const match = /^##[ \t]+([a-z0-9-]+):[ \t]*([^\r\n]*)$/d.exec(heading[1]);
     const section: Section = { id: match?.[1], afterHeading: end, fields: {} };
     if (!match) return section;
-    const id = match[1], title = section.title = valueSlot(text, match.indices![2]!, heading.index);
+    const id = match[1], title = section.title = valueSlot(text, match.indices![2]!, start);
     if (ids.has(id)) duplicates.add(id);
     ids.add(id);
-    const body = text.slice(end, headings[i + 1]?.index ?? text.length), unknownFields: string[] = [];
+    const body = text.slice(end, headings[i + 1]?.index ?? text.length);
     let duplicatedField = false;
     for (const field of body.matchAll(/^\*\*([^:\r\n]+):\*\*[ \t]*([^\r\n]*)/dgm)) {
       const key = member(objectiveFields, field[1]);
-      if (!key) unknownFields.push(field[0]);
-      else if (section.fields[key]) duplicatedField = true;
+      if (!key) continue;
+      if (section.fields[key]) duplicatedField = true;
       else section.fields[key] = valueSlot(text, field.indices![2]!, end);
     }
     const { State, Next, Result, Features, Evidence } = section.fields;
     const state = member(OBJECTIVE_STATES, State?.value), features = splitObjectiveList(Features?.value), evidence = splitObjectiveList(Evidence?.value);
     if (title.value && state && !duplicatedField && features.every(validFeature) && evidence.every(validEvidence))
-      section.objective = { id, title: title.value, state, next: Next?.value || undefined, result: Result?.value || undefined, features, evidence, unknownFields };
+      section.objective = { id, title: title.value, state, next: Next?.value || undefined, result: Result?.value || undefined, features, evidence };
     return section;
   });
   for (const [i, section] of sections.entries()) {

@@ -61,6 +61,7 @@ export interface MonitorRow {
   harnessOff?: boolean;
   roleFact?: RoleFact;
   homeTarget?: { root: string; index?: number; request?: string };
+  waitingTarget?: { index: number; request: string };
   objectiveTarget?: ObjectiveTarget;
   commit?: { cwd: string; hash: string };
 }
