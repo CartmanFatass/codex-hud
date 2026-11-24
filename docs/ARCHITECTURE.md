@@ -258,6 +258,7 @@ Display surfaces do not call text models or the Decision API. The Inspector draw
 | Claude mod event wake | Existing pane-scoped `hud watch` lines (job status and report summary/read hint, questions, Sonic checkpoints, land and owner panel decisions), submitted or appended as status text to the main Claude conversation; no separate model call or report-body read |
 | Stopped Sonic retry | The new pi job receives its saved native session context and a short continuation naming the stop reason. Fresh fallback uses the brief plus the last 8 KiB of partial report or stdout. |
 | Imp auto routing | First 4000 characters of the dispatch brief and up to 4 KiB/4000 characters of the named local ticket; up to 32 context-file relative names (512 characters each) and byte sizes; configured tier and mode purposes. No context bodies, standing brief, prior reports or preset/model IDs. |
+| Role pool pick | First 4000 characters of the dispatch brief as data, the owner pool index (up to 64 filenames, titles and pre-`## ` headers, ≤400 bytes per entry), and the first 8 KiB of the pool README as selection criteria (index and criteria ≤48 KiB together). No pool directory path, entry bodies, standing brief or other references. |
 | Scouted dispatch | The scout question and target `context_files` go to Sonic under the normal brief rules; the scout report is a `from_jobs` input to the target, inline within the usual byte limits for browser targets |
 | Land repair | Failing cherry-pick or gate step and error, plus up to 40 output lines (8 KiB) to the source worker or same-role replacement. Blank and HUD frame lines are removed; recognized test names and assertions from the failing command take priority over a plain log tail. |
 | Pre-report worker checks | Failing project command (label up to 200 characters) and up to 2 KiB of its trailing stdout/stderr to the same worker in the `hud_report` error. An explicit skip reason is returned to the calling session in the report digest. |
@@ -396,7 +397,7 @@ No HUD collection writes into Codex's transcripts/configuration; explicit instal
 **Privacy and repository**
 
 - Display surfaces do not call text models or the Decision API.
-  Quiet-job decisions in the CLI supervisor, Sonic auto-thinking and Imp auto routing have independent execution-side switches.
+  Quiet-job decisions in the CLI supervisor, Sonic auto-thinking, Imp auto routing and role pool picks have independent execution-side switches.
 - List every new outbound model input here and in both reference languages.
   A land repair sends only the failing cherry-pick or gate step and its bounded output evidence (§5) to the project's source worker or its same-role replacement.
 - State is private: `writePrivateFile` or equivalent temp-file/0600/rename.

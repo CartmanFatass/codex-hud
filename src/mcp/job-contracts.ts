@@ -14,6 +14,7 @@ import type { JobCitations } from '../roles/sonic-citations.js';
 export type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
 export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; source: 'decision' | 'default'; fallback?: string; mode_reason?: string;
   placement?: 'even'; preset?: string | null };
+export type PoolPick = { entries: string[]; reason: string; source: 'decision' | 'brief' | 'default'; ms: number };
 export type LaunchAttempt = { index: number; place: string; reason?: string };
 export type JobSession = { harness: 'pi' | CliAgent; id: string; path?: string };
 export type SendOutcome = { key: string; derived_key?: string; recorded_at?: string; exit_code: number | null; stderr_tail: string; resumed?: true; client_prompt_blocked?: true };
@@ -52,6 +53,8 @@ export interface Job extends PiOptions {
   slice?: string;
   preset?: string;
   context_files?: string[];
+  pool_pick?: PoolPick;
+  pool_files?: string[]; // Resolved owner references retained for queued launch, not caller context_files.
   from_jobs?: string[];
   checks?: string[];
   preview?: string;

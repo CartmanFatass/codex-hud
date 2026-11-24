@@ -123,6 +123,7 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
       experiment: typeof job.experiment === 'string' ? job.experiment : undefined,
       arm: typeof job.arm === 'string' ? job.arm : undefined,
       citations: jobCitations(job.citations),
+      pool_pick: job.pool_pick && { entries: job.pool_pick.entries, reason: job.pool_pick.reason, source: job.pool_pick.source, ms: job.pool_pick.ms },
       land: archiveJobLand(home, id),
       outcome: cachedOutcome(home, id, epoch(status.settled_at) ?? ended),
     };

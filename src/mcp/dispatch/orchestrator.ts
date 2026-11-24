@@ -46,6 +46,7 @@ import { sendHistory, piReportSettlement } from '../pi-read-settlement.js';
 import { stopSonic } from '../sonic-process.js';
 import { headlessSonicChildren } from '../../worker/sonic-jobs.js';
 import { pickSonicThinking } from '../sonic-thinking.js';
+import { pickRolePool } from '../pool-pick.js';
 import {
   directory, readRow, hudHome, primary, jobs, readCachedStatus, findJob, settled, save, bundled,
   writeCreateStatus, queuePositionsForJobs, jobCache, digestLine, publishWorkSummary, findJobMutable, slice,
@@ -81,7 +82,7 @@ function created(job: Job, initialRow?: JobRow) {
     ...(job.thinking_source ? { thinking_source: job.thinking_source } : {}),
   };
   const launch = { attempts: job.attempts, used_place: job.used_place ?? null, ...(job.headless && { mode: 'headless' }),
-    ...(job.route && { route: job.route }) };
+    ...(job.route && { route: job.route }), ...(job.pool_pick && { pool_pick: job.pool_pick }) };
   const queued = row.state === 'queued'
     ? { queued: true as const, ...(row.queue_position !== undefined ? { queue_position: row.queue_position } : {}) }
     : {};
@@ -415,7 +416,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   // Missing attribution on an existing job stays missing even if the ticket now links an Objective.
   const objective = lineage ? objectiveLink(lineage.objective) : ticketObjective(cwd, args.ticket, projectRoot);
   const contextCwd = scoutContextCwd ?? cwd;
-  const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf);
+  let pool: Awaited<ReturnType<typeof pickRolePool>> | undefined;
+  const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf, pool?.pool_files);
   const imp = requestedRole === 'imp' || fromImp;
   const sonic = requestedRole === 'sonic';
   const settings = (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
@@ -447,6 +449,18 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       try { worktree = await planWorktree(cwd, id, (args.package as string | undefined) || role); }
       catch { return { ok: false, code: 'invalid_arguments', error: 'worktree isolation requires a Git checkout with a HEAD commit' }; }
     }
+  }
+
+  const poolConfig = !landCwd && (!repairOf || retryInput) ? chain.pool : undefined;
+  const poolPlace = plan.candidates[0]?.prepared;
+  if (poolConfig && poolPlace && !('code' in poolPlace)) {
+    // Validate caller context before a model call, and don't hold the concurrency lock over the API wait.
+    const browser = poolPlace.place.harness === 'bro';
+    const validated = (!browser && localContext) || await contextFor(args, browser);
+    if ('code' in validated) return validated;
+    pool = await pickRolePool(hudHome, poolConfig, task);
+    if (pool.pool_files.length) localContext = undefined;
+    else if (!browser) localContext = validated;
   }
 
   const enforceCap = role !== 'sonic' && !parentJob && !scoutContextCwd && !landCwd;
@@ -509,6 +523,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         ...(overflowFrom && { overflow_from: overflowFrom }),
         task_length: task.length,
         ...queuedContext.metadata,
+        ...pool,
         ...(checks?.length ? { checks } : {}),
         ...(repairOf ? { repair_of: repairOf } : {}),
         ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
@@ -560,6 +575,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       job: id,
       role,
       ...borrowed,
+      ...pool,
       ...(overflowFrom ? { overflow_from: overflowFrom } : {}),
       request_key,
       cwd: landCwd ?? reusedWorktree?.root ?? cwd,
@@ -872,7 +888,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     }
     const base: Job = { ...existing, role, ...(role === 'sonic' ? { headless: true } : {}), attempts: [], launcher: launcherId() };
     const project = found.project();
-    const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, cwd, inline, project, existing.repair_of);
+    const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, cwd, inline, project, existing.repair_of, existing.pool_files);
     const inline = first.prepared.place.harness === 'bro';
     const context = await contextFor(args, inline);
     if ('code' in context) return failQueued(context.error ?? context.code ?? 'invalid_arguments', context.code === 'invalid_arguments' ? 'invalid_arguments' : undefined);

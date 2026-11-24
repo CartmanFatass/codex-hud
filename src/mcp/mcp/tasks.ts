@@ -208,7 +208,7 @@ export function taskFence(job: Job) {
 function wireTask(task: HudTask) {
   return { taskId: task.id, createdAt: task.createdAt, ttlMs: task.ttlMs ?? TASK_TTL, pollIntervalMs: TASK_POLL_MS, ...task.view };
 }
-export type TaskReply = ReturnType<typeof wireTask> & { resultType: 'task' };
+export type TaskReply = ReturnType<typeof wireTask> & { resultType: 'task'; pool_pick?: Job['pool_pick'] };
 export const isTaskReply = (value: unknown): value is TaskReply =>
   !!value && typeof value === 'object' && 'resultType' in value && value.resultType === 'task';
 export function launchSummary(job: Job) {
@@ -231,7 +231,8 @@ export function finishTask(task: HudTask | undefined, job: Job, ok: boolean, lau
   armExpiry(task);
   pruneTasks(tasks, Date.now(), evictTask);
   persistTask(task);
-  return { resultType: 'task', ...wireTask(task), ...(job.route && { route: job.route }) };
+  return { resultType: 'task', ...wireTask(task), ...(job.route && { route: job.route }),
+    ...(job.pool_pick && { pool_pick: job.pool_pick }) };
 }
 export function registerBatchTask(task: HudTask | undefined, job: Job, ok: boolean): void {
   if (!task) return;

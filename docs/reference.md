@@ -1116,7 +1116,7 @@ Press `n` or click **subagents** from Jobs or a job Inspector to inspect the cal
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
 | Panel | Width, Notifications, Open previews; in **Advanced**: Refresh, Mouse |
-| Models | Decision API, Quiet job, Sonic auto-thinking, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter) |
+| Models | Decision API, Quiet job, Sonic auto-thinking, Pool pick, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter) |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
 
@@ -1145,6 +1145,8 @@ No display surface calls a text model or the Decision API. Interface labels are 
 
 **Quiet job** (`quietJobDecision`, on by default) controls whether the CLI supervisor sends a quiet worker's pane tail to the Decision API after idle grace; off hands the job to main without sending the tail. This switch is independent of Sonic auto-thinking (`sonicAutoThinking`, off by default) and Imp placement in `auto` mode. Settings → Models selects the primary Decision API provider. **Decision cap** (`decisionCallsPerHour`) offers 600, 2000 or unlimited (0, the default).
 
+An owner role file under `$HUD_HOME/roles` can declare `"pool": {"dir": "/path/to/styles", "max": 4, "default": ["classic.md"]}`. HUD reads the Markdown pool without modifying it; a project may override the role’s launch chain but not its pool. If the brief names pool entries by filename or stem, HUD attaches them without calling the Decision API. Otherwise **Settings → Models → Pool pick** (`poolPick`, on by default) lets the Decision API pick up to `max` entries. Turning it off or an unavailable decision (including timeout) uses the listed defaults instead. Local workers get read references and browser workers get bounded inline context. The `hud_create` receipt, `job.json` and the job archive record the filenames, a one-line reason, the source and the elapsed milliseconds in `pool_pick`.
+
 The hourly counter reads `display/model-cache/decision-api/calls.json` across processes on one HUD home. Fallback HTTP attempts count separately; unlimited still counts (`n/∞`). Recent historical calls still count until they age out.
 
 **Outbound material** (never private reasoning, ciphertext or referenced file bodies):
@@ -1154,6 +1156,7 @@ The hourly counter reads `display/model-cache/decision-api/calls.json` across pr
 | Quiet-job choice | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag and whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
 | Sonic auto-thinking | First 4000 characters of the task as data, plus the Sonic role scope and thinking purposes. No standing brief, referenced context or reports |
 | Imp auto routing | First 4000 characters of the dispatch brief, up to 4 KiB/4000 characters of the named local ticket, and up to 32 context-file relative names (512 characters each) and byte sizes; configured tier and mode purposes. No context bodies, standing brief, prior reports or preset/model IDs |
+| Role pool pick | First 4000 characters of the dispatch brief as data, plus up to 64 pool filenames, titles and pre-`## ` headers (≤400 bytes per entry) and the first 8 KiB of `README.md` as selection criteria. Index and criteria are capped at 48 KiB together. No pool directory path, entry bodies or other references |
 
 ## The bottom bars
 

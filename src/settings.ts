@@ -25,6 +25,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   decisionApi: DecisionProviderId;
   quietJobDecision: boolean;
   sonicAutoThinking: boolean;
+  poolPick: boolean;
   impPlacement: 'fixed' | 'even' | 'auto';
   impEvenPool: string[];
   sonicPlacement: 'fixed' | 'even';
@@ -63,6 +64,7 @@ export function defaultSettings(): HudSettings {
     decisionApi: 'openai',
     quietJobDecision: true,
     sonicAutoThinking: false,
+    poolPick: true,
     impPlacement: 'fixed',
     impEvenPool: [],
     sonicPlacement: 'fixed',
@@ -103,6 +105,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   decisionApi: oneOf('gemini', 'openai', 'anthropic', 'typesafe'),
   quietJobDecision: isBoolean,
   sonicAutoThinking: isBoolean,
+  poolPick: isBoolean,
   impPlacement: oneOf('fixed', 'even', 'auto'),
   impEvenPool: validEvenPool,
   sonicPlacement: oneOf('fixed', 'even'),

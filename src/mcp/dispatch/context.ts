@@ -80,7 +80,8 @@ function sonicFactsPrefix(task: unknown): string {
     : SONIC_FACTS_EN;
 }
 
-export async function assembleContext(args: Args, cwd: string, inline: boolean, project: { root: string; registered: boolean }, repairOf?: string) {
+export async function assembleContext(args: Args, cwd: string, inline: boolean, project: { root: string; registered: boolean },
+  repairOf?: string, poolFiles: readonly string[] = []) {
   const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
   const sections: string[] = [];
   const contextInputs: { name: string; bytes: number }[] = [];
@@ -162,6 +163,17 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
       }
     } catch {
       return { ok: false, code: 'invalid_arguments', error: `${source} must resolve to a readable UTF-8 text file inside ${root}` } as const;
+    }
+  }
+  // These paths come only from the owner role's pool, never from caller context_files.
+  for (const path of poolFiles) {
+    if (path === standing || metadata.context_files?.includes(path)) continue;
+    const label = JSON.stringify(path);
+    try {
+      if (await append(path, label) === null)
+        return { ok: false, code: 'context_too_large', error: `pool: ${label}` } as const;
+    } catch {
+      return { ok: false, code: 'invalid_arguments', error: `pool: ${label} must be a readable UTF-8 text file` } as const;
     }
   }
   const block = !sections.length ? '' : inline
