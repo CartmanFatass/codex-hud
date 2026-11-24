@@ -5,6 +5,7 @@ import { readExpData } from '../collectors/exp-store.js';
 import type { HealthSource } from '../collectors/hud-health.js';
 import { HudStatus } from '../collectors/hud-status.js';
 import { ProjectCollector, projectShown } from '../collectors/project-board.js';
+import { collectObjectiveEvidence } from '../collectors/objectives.js';
 import { HomePortfolioCollector, type HomePortfolio } from '../collectors/home-portfolio.js';
 import { ProjectVisits, ProjectOverviews, type ProjectOverview } from '../collectors/project-visits.js';
 import { RolloutParser, type RolloutParseResult } from '../collectors/rollout.js';
@@ -451,6 +452,11 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const wasWorkingTree = workingTree(), priorRoot = shownRoot(), wasNative = nativeInspector();
       const result = handleMonitorInput(state, input, { frame, navigationOverlay: fromSettings });
       state = result.state;
+      const detail = state.subpage;
+      if (detail?.kind === 'objective' && !detail.evidence) {
+        const { root, objective } = detail.target;
+        state = { ...state, subpage: { ...detail, evidence: collectObjectiveEvidence(objective, root, jobPipeline.home) } };
+      }
       if (resourcesShown(state) && !resourcesShown(previous)) reloadExp();
       if (workingTree() && (!wasWorkingTree || priorRoot !== shownRoot())) void scheduler.refreshGit();
       if (!nativeInspector()) tree = undefined;

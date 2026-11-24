@@ -1,5 +1,6 @@
 /** Portfolio handoff. A job waiting for main is not an owner request. */
 import { ownerRequestKey } from '../collectors/project-board.js';
+import type { Objective } from '../collectors/objectives.js';
 import type { HomePortfolio } from '../collectors/home-portfolio.js';
 import type { MonitorRow } from './monitor.js';
 import { theme, visualLength } from './colors.js';
@@ -40,16 +41,19 @@ export function homeRows(portfolio: HomePortfolio | undefined, load: PaneLoad | 
       const metaFits = inline && visualLength(title) + visualLength(meta) + 2 <= width;
       rows.push({ ...section(title, width, metaFits ? meta : ''), item: `home:project:${root}`, homeTarget: { root } });
       if (meta && !metaFits) rows.push(...clampClean(meta, width - 2, 3).lines.map((line) => boardRow('  ' + line)));
+      const objectiveRows = (label: string, text: string, objective?: Objective, kind = 'objective') =>
+        detail(label, text, 2).map((row) => objective ? { ...row,
+          item: `home:${kind}:${root}:${objective.id}`, objectiveTarget: { root, objective } } : row);
       if (objectives) {
-        const goals = objectives.objectives.filter(({ state }) => state === 'active').map(({ title }) => title);
-        if (goals.length) rows.push(...detail(t('Objectives'), goals.join(' · '), 2));
+        for (const goal of objectives.objectives) if (goal.state === 'active')
+          rows.push(...objectiveRows(t('Objective'), goal.title, goal));
       } else if (snapshot) {
         if (snapshot.summary) rows.push(...detail(t('Now'), snapshot.summary, 2));
         if (snapshot.next.length) rows.push(...detail(t('Next'), snapshot.next.map(({ value }) => value).join(' · ')));
       }
       if (result) {
         const label = result.at === undefined ? t('Result') : t('Result ({date})', { date: new Date(result.at).toISOString().slice(0, 10) });
-        rows.push(...detail(label, result.text, 2));
+        rows.push(...objectiveRows(label, result.text, objectives?.objectives.find((o) => o.id === result.id), 'result'));
       }
     }
   }

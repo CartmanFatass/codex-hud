@@ -49,7 +49,7 @@ export function projectOverviewRows(
   const many = projects.length > 1, at = Math.max(0, projects.findIndex((p) => p.root === state.selectedProject));
   return [boardRow(''),
     { ...section(theme.board.title(monitorText(name) || t('Project')), width, many ? `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}` : ''), ...(many ? { item: 'project:switch' } : {}) },
-    ...requestRows(data, state, width), ...objectiveRows(data, state.project.folded, width), boardRow(''), ...hubPageRows(data, width, now)];
+    ...requestRows(data, state, width), ...objectiveRows(data, width), boardRow(''), ...hubPageRows(data, width, now)];
 }
 
 /** Projects list: grouped into Needs you, Running and Quiet (a quiet project is one row). */

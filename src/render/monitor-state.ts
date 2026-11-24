@@ -4,6 +4,7 @@ import type { DraftPlace, PlaceFact, RoleFact } from '../roles/role-control.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { filterScope } from './filter.js';
 import type { WorkTarget } from '../collectors/workboard-types.js';
+import type { Objective, ObjectiveEvidence } from '../collectors/objectives.js';
 import type { MainTab } from './main-tabs.js';
 import type { PresetInput } from './preset-input.js';
 
@@ -41,7 +42,9 @@ export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | und
   }
 };
 
-export type SubpageState = JobsState | InspectorState | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
+export interface ObjectiveTarget { root: string; objective: Objective }
+export interface ObjectiveDetail extends RowNav { kind: 'objective'; target: ObjectiveTarget; evidence?: ObjectiveEvidence[] }
+export type SubpageState = JobsState | InspectorState | ObjectiveDetail | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
 export interface HelpOverlay { scroll?: number }
 export interface MonitorState {
   activeTab: MainTab;

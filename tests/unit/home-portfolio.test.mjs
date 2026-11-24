@@ -61,7 +61,7 @@ test('Home renders all three registered projects and scoped badges in EN/ZH at 1
       assert.match(text, /\? paused-study · 2026-11-23 r1 · Choose alpha · Measure the sample \(work waits\)/);
       assert.match(text, /\? state-notes · 2026-11-20 r1 · Choose beta/);
       assert.match(text, lang === 'en' ? /paused-study · paused · Idle .*high priority · updated 09:30/i : /paused-study · 已暂停 · 空闲 .*高优先级 · 更新于 09:30/);
-      assert.match(text, /Measure the sample · Repeat the test/);
+      assert.match(text, /Measure the sample\s*\n.*Repeat the test/);
       assert.match(text, lang === 'en' ? /Result \(2026-11-23\): The replay agreed\./ : /结果（2026-11-23）： The replay agreed\./);
       assert.match(text, lang === 'en' ? /state-notes · unknown · Idle.*\n  Now: Read the handoff\s*\n  Next: Share the example/ : /state-notes · 未知 · 空闲.*\n  现在： Read the handoff\s*\n  下一步： Share the example/);
       assert.match(text, lang === 'en' ? /offline-root · Unavailable/ : /offline-root · 不可用/);
@@ -98,14 +98,14 @@ test('requests sort by waits, project priority, then age; Enter navigates to the
 
 test('Objective results without a matching latest receipt are shown without a date (hand edit and legacy)', async (t) => {
   const f = fixture(t), result = async () => (await f.tick()).projects.find((p) => p.root === f.paused).result;
-  assert.deepEqual(await result(), { text: 'The replay agreed.', at: Date.parse('2026-11-23T11:00:00Z') });
+  assert.deepEqual(await result(), { id: 'repeat', text: 'The replay agreed.', at: Date.parse('2026-11-23T11:00:00Z') });
   f.objectives(f.paused, f.header, f.tracked.replace('The reading held.', 'Hand-edited reading.'));
-  assert.deepEqual(await result(), { text: 'Hand-edited reading.', at: undefined });
+  assert.deepEqual(await result(), { id: 'measure', text: 'Hand-edited reading.', at: undefined });
   f.objectives(f.paused, f.header, f.tracked);
   assert.equal((await result()).at, Date.parse(f.receipt.at));
   // Latest receipt has no result text: don't borrow the date from the older matching receipt.
   f.put(f.receiptPath, [f.receipt, { ...f.receipt, result: undefined, at: '2026-11-24T10:00:00.000Z' }].map(JSON.stringify).join('\n') + '\n');
-  assert.deepEqual(await result(), { text: 'The reading held.', at: undefined });
+  assert.deepEqual(await result(), { id: 'measure', text: 'The reading held.', at: undefined });
 });
 
 test('unchanged Home tick with eight registered projects only stats files', async (t) => {

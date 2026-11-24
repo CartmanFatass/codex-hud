@@ -4,6 +4,7 @@ import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { nativeInspectorRows, workInspectorRows } from './work-inspector.js';
 import { homeRows } from './home-view.js';
+import { objectiveDetailRows } from './objective-detail.js';
 import { activeFilter, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
 import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
@@ -127,6 +128,7 @@ export function renderWorkboardFrame(
   const inspector = subpage?.kind === 'inspector' ? subpage : undefined;
   const jobs = subpage?.kind === 'jobs' ? subpage : undefined;
   const native = subpage?.kind === 'native-inspector' ? subpage : undefined;
+  const objective = subpage?.kind === 'objective' ? subpage : undefined;
   const sub = subpage || help;
   const project = !sub && state.activeTab === 'project';
   const control = controlShown(state), resources = resourcesShown(state);
@@ -184,7 +186,7 @@ export function renderWorkboardFrame(
   const target = inspector?.target;
   const lane = target && source.lanes.find((l) => l.id === target.laneId);
   const worker = target && lane?.workers.find((w) => w.id === target.workerId);
-  const crumb = help ? t('Help') : native ? t('Native subagents') : jobs ? t('Jobs')
+  const crumb = help ? t('Help') : objective ? t('Objective') : native ? t('Native subagents') : jobs ? t('Jobs')
     : t('Inspector') + (worker ? ` · ${monitorText(worker.displayId || worker.id.replace(/^thin-job:/, ''))}` : '');
   if (sub || page || list) {
     // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
@@ -245,6 +247,7 @@ export function renderWorkboardFrame(
   if (harnessAdd && addingHarness) state = { ...state, overlay: { ...addingHarness, pick: harnessAdd.pick } };
   const rows: MonitorRow[] = helpContent
     ? helpContent.rows
+    : objective ? objectiveDetailRows(objective, width)
     : native ? nativeInspectorRows(input.tree, width, now)
       : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id))
         : [boardRow(t('Job not available'))]
@@ -263,7 +266,7 @@ export function renderWorkboardFrame(
   // the details can still be scrolled without selecting a file first.
   const inspect = inspector ?? native;
   const inspectCursor = inspect?.cursor && actions.some((r) => r.item === inspect.cursor) ? inspect.cursor : undefined;
-  const listNav = jobs ?? (home ? state.home : undefined);
+  const listNav = jobs ?? objective ?? (home ? state.home : undefined);
   const listCursor = listNav && (actions.some((r) => r.item === listNav.cursor) ? listNav.cursor : actions[0]?.item);
   const nav = controlView?.nav ?? (project ? state.project.nav : undefined);
   const hasCursor = (cursor?: string) => rows.some((r) => r.item && r.item === cursor);
@@ -293,6 +296,7 @@ export function renderWorkboardFrame(
     state = { ...state, help: { scroll: offset } };
     frame.helpPage = { count: room, maxOffset: max };
   } else if (inspect) state = { ...state, subpage: { ...inspect, cursor: inspectCursor, scroll: offset, revealed } };
+  else if (objective) state = { ...state, subpage: { ...objective, cursor: listCursor, scroll: offset, revealed } };
   else if (jobs) {
     const place = { cursor: listCursor, scroll: offset, revealed };
     state = { ...state, jobs: place, subpage: { kind: 'jobs', ...place } };
@@ -313,8 +317,10 @@ export function renderWorkboardFrame(
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 + top });
   }
   const projectSwitch = frame.projects ? ['[ ] project'] : [];
+  const selected = actions.find((r) => r.item === key);
   const hints: FooterHints = help
     ? { modal: ['Esc back'] }
+    : objective ? [...(selected?.files ? ['o file'] : selected?.commit ? ['o commit'] : []), 'Esc back']
     : inspector ? inspectorKeys(worker)
       : native ? ['Esc back'] : jobs ? [...(listCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
         : resourcePage ? expHints(resourcePage, expEdit)
@@ -324,8 +330,8 @@ export function renderWorkboardFrame(
           : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
-          : ['⏎ open', ...projectSwitch])
-        : [...(listCursor ? ['⏎ open'] : []), 'v Jobs'];
+          : [selected?.objectiveTarget ? '⏎ details' : '⏎ open', ...projectSwitch])
+        : [...(listCursor ? [selected?.objectiveTarget ? '⏎ details' : '⏎ open'] : []), 'v Jobs'];
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
   if (roles && height > 1) presetFooterControls(frame, hints, width, height - 1);
   if (height > 1) {
@@ -339,7 +345,7 @@ export function renderWorkboardFrame(
   // The theme's own text colour under every row, so a row with no ink of its own is not the terminal's.
   frame.lines = frame.lines.map((line) => theme.board.text(fit(line, width)));
   frame.panes.push({
-    id: inspector || native ? 'details' : 'agents',
+    id: inspector || native || objective ? 'details' : 'agents',
     x: 0,
     y: 1 + top,
     width,

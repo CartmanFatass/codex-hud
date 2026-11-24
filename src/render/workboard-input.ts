@@ -1,6 +1,6 @@
 /** Main-tab routing. It mutates nothing: the owner's micro-actions on a job leave as actions (`job-actions.ts`) for the panel to run. */
 import type { WorkbenchInput } from '../utils/workbench-input.js';
-import type { MonitorContext, MonitorOutcome, MonitorState } from './monitor.js';
+import type { MonitorContext, MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 import { backFromSubpage, CONTROL_VIEWS, copyControlTab, controlRoleItem, controlRoleOf, harnessFold, jobsPage,
   switchProject, transitionProjectView, transitionTab, type OverlayState, type ProjectSubPage } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
@@ -61,6 +61,9 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   if (!boardFrame) return null;
   const key = input.type === 'key' ? input.text === ' ' ? 'space' : input.key : '';
   const main = !next.subpage;
+  const openObjective = (target: NonNullable<MonitorRow['objectiveTarget']>) => {
+    next.subpage = { kind: 'objective', target, scroll: 0 };
+  };
   const goTab = (tab: MainTab = 'home') => { next = transitionTab(next, tab); };
   const goProject = (page?: ProjectSubPage, cursor?: string) => {
     next = transitionProjectView(next, page ? { kind: page } : { kind: 'hub' }, { cursor });
@@ -216,7 +219,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if (harnesses) return;
       }
       if (harnesses && harnessId(row?.item)) return switchAction(row);
-      if (row?.item === 'project:switch') showList(true);
+      if (row?.objectiveTarget) openObjective(row.objectiveTarget);
+      else if (row?.item === 'project:switch') showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectSubPage);
       else if (row?.item === ACCEPT_ALL) return { type: 'accept-all' as const };
@@ -290,14 +294,20 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     } else next.home = { ...nav, scroll: offset };
     return result();
   };
-  const actions = boardFrame.rows.filter((r, i, all) => r.item && (sub || r.item !== all[i - 1]?.item));
+  const objective = sub?.kind === 'objective';
+  const actions = boardFrame.rows.filter((r, i, all) => r.item && ((sub && !objective) || r.item !== all[i - 1]?.item));
   const cursor = nav.cursor;
   const select = (item?: string) => {
     if (sub) next.subpage = { ...sub, cursor: item, revealed: undefined };
     else next.home = { ...nav, cursor: item, revealed: undefined };
     return result();
   };
-  const act = (row: typeof actions[number] | undefined, fileOnly = false) => {
+  const act = (row: MonitorRow | undefined, fileOnly = false) => {
+    if (!sub && !fileOnly && row?.objectiveTarget) {
+      select(row.item);
+      openObjective(row.objectiveTarget);
+      return result();
+    }
     if (!sub && !fileOnly && row?.homeTarget) {
       const { root, index, request } = row.homeTarget;
       useProject(!frame.projects || root === frame.projects[0].root ? undefined : root);
@@ -307,6 +317,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       return result();
     }
     if (row?.files?.length) return result({ type: 'open-files', files: row.files });
+    if (row?.commit) return result({ type: 'git-show', ...row.commit });
     const target = row?.item && boardFrame.targets.get(row.item);
     if (!fileOnly && target && target.kind === 'worker') {
       if (sub?.kind === 'jobs') next.jobs = { cursor: row.item, scroll: sub.scroll, revealed: sub.revealed };
@@ -317,7 +328,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   if (input.type === 'mouse') {
     if (input.button !== 'left') return moveScroll(nav.scroll + (input.button === 'wheel-down' ? 3 : -3));
     const row = monitorRowAt(pane, input.x, input.y);
-    return row?.item ? act(row) : result();
+    return row?.item ? objective && row.item !== cursor ? select(row.item) : act(row) : result();
   }
   if (enter || key === 'open-session') {
     const request = sub?.kind === 'inspector' ? boardFrame.snapshot.workers.find((w) => w.id === sub.target.workerId)?.work?.requestInfo : undefined;
@@ -328,14 +339,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   const step = key === 'up' ? -1 : key === 'down' ? 1 : key === 'page-up' ? -Math.max(1, pane.height) : key === 'page-down' ? Math.max(1, pane.height) : 0;
   if (step || key === 'home' || key === 'end') {
-    if ((sub?.kind === 'jobs' || (!sub && (key === 'up' || key === 'down'))) && actions.length) {
+    if ((sub?.kind === 'jobs' || ((!sub || objective) && (key === 'up' || key === 'down')) ||
+      (objective && (key === 'home' || key === 'end'))) && actions.length) {
       const at = actions.findIndex((r) => r.item === cursor);
       return select(actions[key === 'home' ? 0 : key === 'end' ? actions.length - 1 : Math.max(0, Math.min(actions.length - 1, at + step))]?.item);
     }
     // Home can page past Waiting into the handoff; Inspector scrolls its evidence.
     return moveScroll(key === 'home' ? 0 : key === 'end' ? pane.contentLength : nav.scroll + step);
   }
-  if ((sub?.kind === 'inspector' || sub?.kind === 'native-inspector') && actions.length && (key === 'tab' || key === 'shift-tab')) {
+  if ((objective || sub?.kind === 'inspector' || sub?.kind === 'native-inspector') && actions.length && (key === 'tab' || key === 'shift-tab')) {
     const at = actions.findIndex((r) => r.item === cursor);
     return select(actions[(at < 0 ? key === 'tab' ? 0 : actions.length - 1 : (at + (key === 'tab' ? 1 : -1) + actions.length) % actions.length)]?.item);
   }

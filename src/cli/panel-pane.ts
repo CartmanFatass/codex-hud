@@ -10,6 +10,7 @@ import { runHerdr, runCommand, herdrResult, isRecord, herdrId } from '../roles/h
 import { stopSonic } from '../mcp/sonic-process.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
 import { QUEUE_START_MARKER } from '../roles/concurrency.js';
+import { OBJECTIVE_HASH } from '../collectors/objectives.js';
 
 async function command(argv: string[], env: NodeJS.ProcessEnv) {
   const result = await runHerdr(argv, env);
@@ -17,8 +18,7 @@ async function command(argv: string[], env: NodeJS.ProcessEnv) {
   return herdrResult(result.stdout);
 }
 
-export async function openEditorPane(files: string[], env: NodeJS.ProcessEnv): Promise<void> {
-  if (!files.length) return;
+async function openCommandPane(cwd: string, label: string, shell: string, env: NodeJS.ProcessEnv): Promise<void> {
   if (!herdrId(env.HERDR_PANE_ID)) throw Error('panel_requires_herdr');
   const panel = await command(['pane', 'get', env.HERDR_PANE_ID], env).catch(() => null);
   const workspace = isRecord(panel?.pane) ? panel.pane.workspace_id : undefined;
@@ -26,17 +26,30 @@ export async function openEditorPane(files: string[], env: NodeJS.ProcessEnv): P
   const result = await command(
     inTab
       ? [
-          'tab', 'create', '--workspace', workspace, '--cwd', process.cwd(),
-          '--label', truncateAnsi(basename(files[0]), 24), '--focus',
+          'tab', 'create', '--workspace', workspace, '--cwd', cwd,
+          '--label', truncateAnsi(label, 24), '--focus',
         ]
-      : ['pane', 'split', env.HERDR_PANE_ID, '--direction', 'right', '--focus', '--cwd', process.cwd()],
+      : ['pane', 'split', env.HERDR_PANE_ID, '--direction', 'right', '--focus', '--cwd', cwd],
     env
   );
   const root = inTab ? result?.root_pane : result?.pane;
   const pane = isRecord(root) ? root.pane_id : undefined;
   if (!herdrId(pane)) throw Error(inTab ? 'panel_tab_unknown' : 'panel_split_unknown');
+  await command(['pane', 'run', pane, shell], env);
+}
+
+export async function openEditorPane(files: string[], env: NodeJS.ProcessEnv): Promise<void> {
+  if (!files.length) return;
   const paths = files.map((file) => `'${file.replaceAll("'", "'\\''")}'`).join(' ');
-  await command(['pane', 'run', pane, `${env.EDITOR || 'vim'} ${paths}; exit`], env);
+  await openCommandPane(process.cwd(), basename(files[0]), `${env.EDITOR || 'vim'} ${paths}; exit`, env);
+}
+
+export async function openGitShowPane(cwd: string, hash: string, env: NodeJS.ProcessEnv): Promise<void> {
+  if (!OBJECTIVE_HASH.test(hash)) throw Error('invalid_commit_hash');
+  // The pager is chosen here, not by repository configuration. Don't run external diffs or fetch missing objects.
+  // Leave the tab open so errors or unpaged output are still readable.
+  await openCommandPane(cwd, hash,
+    `env GIT_PAGER=less GIT_NO_LAZY_FETCH=1 git -c protocol.allow=never -c pager.show=true show --no-ext-diff --no-textconv ${hash} --`, env);
 }
 
 /** Focus the herdr tab a HUD job runs in (`TAB=` in its SESSION.txt); `ok: false` when it has none or the tab is gone. */

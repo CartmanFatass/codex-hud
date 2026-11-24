@@ -17,7 +17,7 @@ import { STATE_BYTES } from '../../dist/collectors/state-ledger.js';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
-import { openEditorPane } from '../../dist/cli/panel-pane.js';
+import { openEditorPane, openGitShowPane } from '../../dist/cli/panel-pane.js';
 import { encodePanelPlace, readPanelPlace } from '../../dist/utils/panel-reload.js';
 const expected = JSON.parse(fs.readFileSync(new URL('../fixtures/project-frames.json', import.meta.url), 'utf8'));
 async function fixture(t) {
@@ -352,6 +352,18 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
     ],
   ]);
 });
+test('Commit evidence opens git show in the Objective project’s focused tab', async (t) => {
+  const f = await fixture(t), { env, calls } = editorHerdr(f);
+  await assert.rejects(openGitShowPane(f.cwd, '123abcd; exit', env), /invalid_commit_hash/);
+  await openGitShowPane(f.cwd, '123abcd', env);
+  assert.deepEqual(calls().slice(0, 2), [
+    ['pane', 'get', 'w4E:p2'],
+    ['tab', 'create', '--workspace', 'w4E', '--cwd', f.cwd, '--label', '123abcd', '--focus'],
+  ]);
+  assert.deepEqual(calls()[2].slice(0, 3), ['pane', 'run', 'w4E:p3']);
+  assert.match(calls()[2][3], /git .* show --no-ext-diff --no-textconv 123abcd --$/);
+});
+
 test('empty editor file lists are inert even without a herdr pane', async () => {
   await openEditorPane([], {});
 });

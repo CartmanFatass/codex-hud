@@ -6,7 +6,7 @@ import { resultExcerpt, type ObjectiveRecord } from './objectives.js';
 import { compareOwnerRequests, ProjectCollector, projectJobWindow, type ProjectItem, type ProjectSnapshot } from './project-board.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 
-interface Result { text: string; at?: number }
+interface Result { id: string; text: string; at?: number }
 interface ResultReceipt { project: string; id: string; at: number; result?: string }
 export interface HomeProject extends ListedProject { snapshot?: ProjectSnapshot; result?: Result }
 export interface HomeRequest { project: HomeProject; item: ProjectItem; index: number }
@@ -88,7 +88,7 @@ export class HomePortfolioCollector {
         if (!result) continue;
         const receipt = receipts.get(JSON.stringify([project.root, id]));
         const at = receipt?.result === resultExcerpt(result) ? receipt.at : undefined;
-        if (!project.result || (at ?? -Infinity) > (project.result.at ?? -Infinity)) project.result = { text: result, at };
+        if (!project.result || (at ?? -Infinity) > (project.result.at ?? -Infinity)) project.result = { id, text: result, at };
       }
     }
     const priority = (p: HomeProject) => priorities[p.snapshot?.objectives?.priority ?? 'normal'];

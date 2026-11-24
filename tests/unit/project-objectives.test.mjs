@@ -3,10 +3,13 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { objectivePath, readObjectives } from '../../dist/collectors/objectives.js';
+import { collectObjectiveEvidence, objectivePath, readObjectives } from '../../dist/collectors/objectives.js';
 import { STATE_BYTES } from '../../dist/collectors/state-ledger.js';
 import { visualLength } from '../../dist/render/colors.js';
-import { NOW, onPage, plain, projectFixture } from '../fixtures/project-page.mjs';
+import { handleMonitorInput } from '../../dist/render/monitor.js';
+import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
+import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
+import { NOW, plain, projectFixture } from '../fixtures/project-page.mjs';
 
 const sample = `# Objectives
 **Stance:** active · **Priority:** high
@@ -79,7 +82,56 @@ test('Project hub renders Objective details and a linked checklist at 120 column
     assert.ok(text.includes(result) && text.includes(next));
     assert.deepEqual(text.match(/\S+ \d+\/\d+/g), ['native-tree 1/2']);
     assert.doesNotMatch(text, /Published a synthetic guide/);
-    const unfolded = onPage(undefined, { project: { folded: new Set(['objective:finish']) } });
-    assert.match(plain(f.render(120, lang, unfolded, 56, withObjectives)).join('\n'), /Published a synthetic guide/);
+    const row = frame.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'finish');
+    frame.state.project.nav.cursor = row.item;
+    const { state } = handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { frame });
+    assert.match(plain(f.render(120, lang, state, 56, withObjectives)).join('\n'), /Published a synthetic guide/);
+  }
+});
+
+test('Home and Project open an Objective detail and route only its openable evidence', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'project-objective-evidence-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const path = join(f.cwd, 'docs/notes.md'), report = join(f.sliceJob, 'report.md');
+  f.put(path, '# Synthetic notes');
+  f.put(objectivePath(f.cwd), sample.replace('123abcd',
+    `123abcd, docs/missing.md, $HUD_HOME/jobs/j0000000000000002/report.md, ${report}`));
+  const data = await f.collector.collect(true, f.board, NOW);
+  const homePortfolio = await new HomePortfolioCollector(f.hud).read([{ root: f.cwd, name: 'Study' }], f.board, NOW);
+  const [openKey] = new WorkbenchInputDecoder('workboard').push(Buffer.from('o'));
+  const key = (frame, input) => handleMonitorInput(frame.state, { type: 'key', key: input }, { frame });
+  for (const activeTab of ['project', 'home']) {
+    const draw = (state, lang = 'en') => f.render(120, lang, state, 24, data, true, 'unicode', 'none', { homePortfolio });
+    const list = draw({ ...draw().state, activeTab });
+    const entry = list.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'measure');
+    if (activeTab === 'home') {
+      list.state.home.cursor = list.workboard.rows.find((r) => r.item?.startsWith('home:result:')).item;
+      assert.equal(key(list, 'enter').state.subpage.target.objective.id, 'finish');
+      list.state.home.cursor = entry.item;
+    } else list.state.project.nav.cursor = entry.item;
+    const { state, action } = key(list, 'enter');
+    assert.equal(action, undefined);
+    assert.equal(state.subpage.kind, 'objective');
+    const { objective } = state.subpage.target;
+    state.subpage.evidence = collectObjectiveEvidence(objective, state.subpage.target.root, f.hud);
+    let detail = draw(state);
+    for (const lang of ['en', 'zh']) {
+      const frame = draw(state, lang);
+      assert.ok(frame.lines.every((line) => visualLength(line) === 120));
+      const text = plain(frame).join('\n');
+      assert.match(text, lang === 'en' ? /Evidence[\s\S]*missing · docs\/missing\.md/ : /依据[\s\S]*缺失 · docs\/missing\.md/);
+      assert.match(text, /https:\/\/example\.org\/notes\n\s+123abcd/);
+    }
+    for (const expected of [{ type: 'open-files', files: [path] }, undefined,
+      { type: 'git-show', cwd: f.cwd, hash: '123abcd' }, undefined,
+      { type: 'open-files', files: [report] }, { type: 'open-files', files: [report] }]) {
+      assert.deepEqual(handleMonitorInput(detail.state, openKey, { frame: detail }).action, expected);
+      detail = draw(key(detail, 'down').state);
+    }
+    const back = key(detail, 'escape').state;
+    assert.equal(back.subpage, undefined);
+    assert.equal(back.activeTab, activeTab);
+    assert.equal((activeTab === 'home' ? back.home : back.project.nav).cursor, entry.item);
   }
 });

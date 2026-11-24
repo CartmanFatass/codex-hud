@@ -8,7 +8,7 @@ import { stemLines, workJobDetail } from './work-job-detail.js';
 import { roleInk } from './work-job-row.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { projectPage } from './monitor-state.js';
-import { basename } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { boardRow, itemRow, section, mark, minuteAge, pack } from './workboard-rows.js';
 import { projectOverviewRows, projectListRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
@@ -421,18 +421,17 @@ export function pageRows(
   if (rows.length === 1) rows.push(boardRow('  ' + theme.board.muted(t('none'))));
   return rows;
 }
-export function objectiveRows(data: ProjectSnapshot, folded: ReadonlySet<string>, width: number): MonitorRow[] {
+export function objectiveRows(data: ProjectSnapshot, width: number): MonitorRow[] {
   const record = data.objectives;
   if (!record) return [];
   const rows = [boardRow(''), section(t('Objectives'), width, String(record.objectives.length))];
+  const root = dirname(dirname(record.path));
   for (const state of OBJECTIVE_STATES) for (const objective of record.objectives.filter((item) => item.state === state)) {
     const { id, title, result, next, features } = objective;
-    const key = `objective:${id}`, fold = state === 'done', open = !fold || folded.has(key);
-    const at = { item: fold ? `project:fold:${key}` : `project:file:${record.path}:${key}`, files: [record.path] };
-    const glyph = fold ? mark(open ? '▾' : '▸', open ? 'v' : '>') + ' ' : '';
+    const at = { item: `project:objective:${root}:${id}`, files: [record.path], objectiveTarget: { root, objective } };
     const ink = state === 'active' ? theme.board.active : state === 'done' ? theme.board.success : theme.board.muted;
-    rows.push({ ...at, text: pair(`  ${glyph}${monitorText(id)}: ${monitorText(title)}`, ink(t(state)), width) });
-    if (!open) continue;
+    rows.push({ ...at, text: pair(`  ${monitorText(id)}: ${monitorText(title)}`, ink(t(state)), width) });
+    if (state === 'done') continue;
     for (const [label, value] of [['Result', result], ['Next', next]] as const) {
       if (!value) continue;
       const text = t('{label}: {value}', { label: t(label), value: monitorText(value) });

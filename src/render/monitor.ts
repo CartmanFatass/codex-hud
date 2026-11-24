@@ -9,7 +9,7 @@ import type { PaneLoad } from './home-view.js';
 import type { HomePortfolio } from '../collectors/home-portfolio.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
-import { initialHomeTab, initialProjectTab, initialControlTab, type MonitorState } from './monitor-state.js';
+import { initialHomeTab, initialProjectTab, initialControlTab, type MonitorState, type ObjectiveTarget } from './monitor-state.js';
 export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
 import type { MainTab } from './main-tabs.js';
@@ -61,6 +61,8 @@ export interface MonitorRow {
   harnessOff?: boolean;
   roleFact?: RoleFact;
   homeTarget?: { root: string; index?: number; request?: string };
+  objectiveTarget?: ObjectiveTarget;
+  commit?: { cwd: string; hash: string };
 }
 export interface MonitorRect {
   id: MonitorPane;
@@ -164,6 +166,7 @@ export interface MonitorOutcome {
     | { type: 'settings' }
     | { type: 'exp-save'; edit: ExpEdit }
     | { type: 'open-files'; files: string[] }
+    | { type: 'git-show'; cwd: string; hash: string }
     /** A key on a Control plane place; the panel applies it to the role files and reads them again. */
     | ({ type: 'role-edit' } & PlaceEdit)
     | ({ type: 'preset-edit'; modelIndex?: number } & PresetEdit)

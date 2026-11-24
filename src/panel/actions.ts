@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { openBoard, writeBoard } from '../cli/board.js';
-import { focusJobTab, openEditorPane, stopJob } from '../cli/panel-pane.js';
+import { focusJobTab, openEditorPane, openGitShowPane, stopJob } from '../cli/panel-pane.js';
 import { readExpData, saveExpEdit } from '../collectors/exp-store.js';
 import { answerJobQuestion, appendPanelAction, recordPanelAnswer, type AnswerResult } from '../collectors/panel-actions.js';
 import type { ProjectVisits } from '../collectors/project-visits.js';
@@ -68,7 +68,9 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
       const state = host.state;
       switch (action.type) {
         case 'open-files':
-          void openEditorPane(action.files, process.env).catch((err) => {
+        case 'git-show':
+          void (action.type === 'open-files' ? openEditorPane(action.files, process.env)
+            : openGitShowPane(action.cwd, action.hash, process.env)).catch((err) => {
             host.error(String(err));
             host.repaint();
           });

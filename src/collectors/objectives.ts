@@ -1,5 +1,5 @@
-import { lstatSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { lstatSync, statSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { STATE_BYTES } from './state-ledger.js';
 
@@ -35,8 +35,40 @@ export const objectivePath = (root: string) => join(root, '.hud', 'objectives.md
 export const resultExcerpt = (text: string) => text.slice(0, 240);
 const featureSlug = new RegExp(FEATURE_SLUG);
 export const validFeature = (s: string) => featureSlug.test(s);
-export const validEvidence = (s: string) => /^[a-z][a-z0-9+.-]*:/i.test(s) ? URL.canParse(s) && !/^[a-z]:[/\\]/i.test(s)
-  : !!s && !/^[/\\]/.test(s) && !s.split(/[/\\]/).includes('..');
+export const OBJECTIVE_HASH = /^[a-f0-9]{7,64}$/i;
+const urlScheme = /^[a-z][a-z0-9+.-]*:/i;
+const jobReport = /\/jobs\/j[0-9a-f]{16}\/report\.md$/;
+const hudPrefix = '$HUD_HOME';
+export const validEvidence = (s: string) => !!s && !/[\x00-\x1f\x7f-\x9f]/.test(s) && (
+  urlScheme.test(s) ? URL.canParse(s) && !/^[a-z]:[/\\]/i.test(s)
+    : !s.split(/[/\\]/).includes('..') && (!/^[/\\]/.test(s) || (isAbsolute(s) && jobReport.test(s)))
+);
+
+export interface ObjectiveEvidence { text: string; file?: string; commit?: string; status?: 'missing' | 'Unavailable' }
+function objectiveEvidence(text: string, root: string, home: string): ObjectiveEvidence {
+  if (!validEvidence(text) || urlScheme.test(text)) return { text };
+  if (OBJECTIVE_HASH.test(text)) return { text, commit: text };
+  const report = jobReport.exec(text)?.[0], hudRelative = report && text === hudPrefix + report;
+  if (isAbsolute(text) || hudRelative) {
+    const file = report && resolve(home, '.' + report);
+    return file && (hudRelative || resolve(text) === file) ? { text, file } : { text, status: 'Unavailable' };
+  }
+  return { text, file: resolve(root, text) };
+}
+
+/** Probe just the opened Objective's entries, never the whole portfolio or during paint. */
+export function collectObjectiveEvidence(objective: Objective, root: string, home: string): ObjectiveEvidence[] {
+  return objective.evidence.map((text) => {
+    const entry = objectiveEvidence(text, root, home);
+    if (!entry.file) return entry;
+    try {
+      if (statSync(entry.file).isFile()) return entry;
+    } catch (err) {
+      if (['ENOENT', 'ENOTDIR'].includes((err as NodeJS.ErrnoException).code ?? '')) return { text, status: 'missing' };
+    }
+    return { text, status: 'Unavailable' };
+  });
+}
 export const splitObjectiveList = (s = '') => s === '' ? [] : s.split(',').map((value) => value.trim());
 
 interface Slot { start: number; end: number; value: string }
