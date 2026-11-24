@@ -6,7 +6,7 @@ import { jobFiles } from './paths.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
 import { jobRow } from '../collectors/thin-jobs.js';
 import { cachedReportSignature } from '../roles/report-meta.js';
-import { writeLand, type LandFlow } from './land-state.js';
+import { setLandStep, writeLand, type LandFlow } from './land-state.js';
 import { dispatchLandRepair, releaseLandTurn } from './thin-main.js';
 
 function questions(dir: string) {
@@ -21,7 +21,7 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
   repairs.push(attempt);
   const key = `land:${f.flow}:${repairs.length}`;
   const task = `Repair this landing in ${f.wt.root} on branch ${f.wt.branch}. Rebase onto the current ${f.config.base} base, fix the failure and commit. Do not push or change the main checkout.\nFailing step: ${f.step}: ${f.error}\nLog tail:\n${f.tail?.join('\n')}`;
-  f.step = `repair ${repairs.length}`; writeLand(home, f);
+  setLandStep(f, `repair ${repairs.length}`); writeLand(home, f);
   try {
     checkCancel();
     const started = Date.now();

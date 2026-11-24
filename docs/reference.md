@@ -1120,12 +1120,13 @@ model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s �
 Context is ten cells, green below 70%, yellow from 70%, red from 85%, measured against the client's compaction window when known.
 Claude/Codex show only their own tightest quota window, blue then magenta from 75%, red from 90%; pi has session cost instead (in its top-right editor ribbon, not duplicated below).
 Missing facts are absent.
-The notice zone is, in order: native approvals, machine-wide HUD job counts, local CPU/RAM, then recent client events (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
+The notice zone is, in order: native approvals, machine-wide HUD load, local CPU/RAM, then recent client events (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
 
 `⚒3  ✦2  ◈1  ⚡4  ◷2` counts HUD jobs across all projects under the same `$HUD_HOME`: one icon and running count per role, followed by the queue clock only when jobs are waiting to start. The Icons setting selects Unicode, text (`I3  G2  O1  *4  Q2`) or Nerd Font glyphs.
 Panes show the same counts, even if a pane has no jobs of its own. Model, context, project and quotas are still session-local.
 Workers waiting for main still count as running; their questions are not owner requests and do not add a badge. Settled jobs and native subagents are not counted.
-If no jobs are running or queued, or the census is missing, stale or incomplete, the segment is absent.
+Active `hud_land` flows appear after the running roles and before the queue clock, or on their own if there are no jobs. For example, `⇡ gate 2/3 1m` shows the second of three gate steps and its elapsed time in whole minutes (`<1m` under a minute); `wait` means waiting for the main-checkout lease and `land` covers the other steps. `⇡3` means three active lands and the details are for the oldest. Text uses `L` and Nerd Font uses U+F126. Finished lands and ticket queues are not counted.
+If no jobs are running or queued and no lands are active, or the census is missing, stale or incomplete, the segment is absent.
 
 `C12%  M75%  S20%` reports local CPU, RAM and swap use. These letters stay the same in every icon set and use distinct colours unless the theme is `none`. In WSL these are Linux guest readings, never Windows host readings.
 CPU is the change in aggregate `/proc/stat` ticks since the previous sample. A single private sample lives at `$HUD_HOME/display/cpu-sample.v1.json`.
@@ -1154,7 +1155,7 @@ With colour disabled, the bar uses `line`.
 If you use a field allowlist, include `tps` to show the rate.
 Narrow bars (a main pane beside the open panel is 144 columns on a 184-column terminal) give up, cheapest first: the loaded counts; both gauges' cells together; the quota's reset and the branch's `↑n`; a subagent's title (a few words, then none); the rate; swap, then local CPU/RAM; the older of two subagent items; the effort; the context's window (`41%`); the branch; the quota; the project; the context.
 The model is never dropped.
-The machine and local load segments first tighten their spaces to one. When more room is needed, local load drops swap before dropping the whole segment; machine load drops the queue before dropping the whole segment. Icons and their numbers stay together.
+Machine load drops land elapsed time, then the land step, keeping its icon and count. The machine and local load segments then tighten their spaces to one as needed. When more room is needed, local load drops swap before dropping the whole segment; machine load drops the queue before dropping the whole segment. Icons and their numbers stay together.
 pi keeps the same editor ribbon in both styles, and other extensions' statuses remain visible.
 The bars stay English-only apart from a subagent's own description.
 

@@ -1,7 +1,8 @@
 /** Private, atomic, bounded work-summary snapshot published by hud-watch and hud-mcp. */
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
+import { activeLand, isFlowId, isLandWait, readLand, type LandFlow } from '../mcp/land-state.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
@@ -22,7 +23,11 @@ export type WorkSummaryProducer = 'hud-watch' | 'hud-mcp';
 /** Live workers of one role: `asking` is the subset of `running` waiting on main. */
 export interface WorkSummaryRoleCounts { running: number; asking: number; }
 export interface WorkSummaryScope { running: number; asking: number; roles: Record<string, WorkSummaryRoleCounts>; }
-export interface MachineWorkCounts extends Pick<WorkSummaryScope, 'running' | 'roles'> { queued: number; }
+export interface MachineLandWork {
+  count: number;
+  oldest: { project: string; step: string; step_started_at: number; gate?: [number, number] };
+}
+export interface MachineWorkCounts extends Pick<WorkSummaryScope, 'running' | 'roles'> { queued: number; land?: MachineLandWork; }
 export interface WorkSummarySnapshot {
   version: 1;
   producer: WorkSummaryProducer;
@@ -53,6 +58,35 @@ const sortScope = (scope: WorkSummaryScope): WorkSummaryScope => ({
   asking: scope.asking,
   roles: Object.fromEntries(Object.keys(scope.roles).sort().map((k) => [k, scope.roles[k]!])),
 });
+
+function collectLandWork(home: string): MachineLandWork | undefined {
+  let count = 0, oldest: LandFlow | undefined, oldestAt = Infinity;
+  try {
+    for (const file of fs.readdirSync(join(home, 'flows'), { withFileTypes: true })) {
+      if (!file.isFile() || !file.name.endsWith('.json')) continue;
+      const id = file.name.slice(0, -5);
+      if (!isFlowId(id)) continue;
+      const flow = readLand(home, id);
+      if (!flow || !activeLand(flow)) continue;
+      const created = Date.parse(flow.created_at);
+      if (!Number.isFinite(created)) return undefined;
+      count++;
+      if (!oldest || created < oldestAt || (created === oldestAt && flow.flow < oldest.flow)) {
+        oldest = flow; oldestAt = created;
+      }
+    }
+    if (!oldest) return undefined;
+    const at = Date.parse(oldest.step_started_at ?? oldest.updated_at);
+    if (!isCount(at)) return undefined;
+    const index = Number(/^gate\[([1-9]\d*)\]:/.exec(oldest.step)?.[1]);
+    const total = Array.isArray(oldest.config?.gate) ? oldest.config.gate.length : 0;
+    const gate: [number, number] | undefined = index <= total ? [index, total] : undefined;
+    // Keep step names, never the gate/after commands or the full checkout path.
+    const step = isLandWait(oldest.step) ? 'wait' : oldest.step.split(':', 1)[0]!.slice(0, 64);
+    const project = basename(oldest.wt.main_root).slice(0, 255).replace(/[\ud800-\udfff]/gu, '�');
+    return { count, oldest: { project, step, step_started_at: at, ...(gate && { gate }) } };
+  } catch { return undefined; } // No reliable land census; still show job counts.
+}
 
 export function collectWorkSummary(
   home: string,
@@ -99,11 +133,20 @@ export function collectWorkSummary(
     }
   }
   const panes = Object.fromEntries(Object.keys(rawPanes).sort().map((p) => [p, sortScope(rawPanes[p]!)]));
-  return { global: { ...sortScope(global), queued }, panes, complete };
+  const land = collectLandWork(home);
+  return { global: { ...sortScope(global), queued, ...(land && { land }) }, panes, complete };
 }
 
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 const isPlain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+function isValidLand(v: unknown): boolean {
+  if (!isPlain(v) || !isCount(v.count) || v.count === 0 || !isPlain(v.oldest)) return false;
+  const { project, step, step_started_at, gate } = v.oldest;
+  if (typeof project !== 'string' || typeof step !== 'string' || !isCount(step_started_at)) return false;
+  return gate === undefined || (step !== 'wait' && Array.isArray(gate) && gate.length === 2 &&
+    isCount(gate[0]) && isCount(gate[1]) && gate[0] > 0 && gate[0] <= gate[1]);
+}
 
 function isValidScope(v: unknown): v is WorkSummaryScope {
   if (!isPlain(v) || !isCount(v.running) || !isCount(v.asking) || v.asking > v.running || !isPlain(v.roles)) return false;
@@ -124,6 +167,7 @@ export function parseWorkSummarySnapshot(raw: unknown): WorkSummarySnapshot | nu
   if (raw.pid_start !== null && (typeof raw.pid_start !== 'string' || !/^\d+$/.test(raw.pid_start))) return null;
   if (!isCount(raw.generation) || raw.generation < 1 || typeof raw.observed_at !== 'number' || !Number.isFinite(raw.observed_at) || raw.observed_at <= 0) return null;
   if (typeof raw.watching !== 'boolean' || typeof raw.complete !== 'boolean' || !isPlain(raw.global) || !isCount(raw.global.queued) || !isValidScope(raw.global) || !isPlain(raw.panes)) return null;
+  if (raw.global.land !== undefined && !isValidLand(raw.global.land)) return null;
   const paneEntries = Object.entries(raw.panes);
   if (paneEntries.length > WORK_SUMMARY_MAX_PANES || paneEntries.some(([p, s]) => !herdrId(p) || !isValidScope(s))) return null;
   return raw as unknown as WorkSummarySnapshot;
@@ -152,7 +196,7 @@ export function readFreshWorkSummary(home: string, pane: string | null, now = Da
 /** Display only a complete, fresh machine census, never a pane-local substitute. */
 export function readMachineWork(home: string, now: number): MachineWorkCounts | undefined {
   const global = readFreshWorkSummary(home, null, now)?.snapshot.global;
-  return global && { running: global.running, queued: global.queued, roles: global.roles };
+  return global && { running: global.running, queued: global.queued, roles: global.roles, ...(global.land && { land: global.land }) };
 }
 
 export function createWorkSummaryPublisher(home: string, producer: WorkSummaryProducer, cache: JobIndexCache = getJobIndexCache(home)) {
@@ -187,7 +231,8 @@ export function createWorkSummaryPublisher(home: string, producer: WorkSummaryPr
       generation: nextGen, observed_at: now, watching, complete: collected.complete,
       global: collected.global, panes: collected.panes,
     } satisfies WorkSummarySnapshot) + '\n';
-    if (Buffer.byteLength(text, 'utf8') > WORK_SUMMARY_MAX_BYTES || (!jobsExist && !fs.existsSync(join(home, 'jobs')))) return false;
+    if (Buffer.byteLength(text, 'utf8') > WORK_SUMMARY_MAX_BYTES ||
+        (!jobsExist && !collected.global.land && !lastStat && !fs.existsSync(join(home, 'jobs')))) return false;
     try {
       try { fs.mkdirSync(join(home, 'display'), { mode: 0o700 }); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return false; }
@@ -197,6 +242,7 @@ export function createWorkSummaryPublisher(home: string, producer: WorkSummaryPr
   };
   return {
     get generation() { return generation; },
+    get hasActiveLand() { return Boolean(lastCollected?.global.land); },
     setGeneration(value: number) { if (Number.isSafeInteger(value) && value > generation) generation = value; },
     publish(options?: {
       watching?: boolean;

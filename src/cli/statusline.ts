@@ -156,7 +156,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, agyM
         const home = getHudHome(io.env), now = Date.now();
         const work = readMachineWork(home, now), localLoad = collectLocalLoad(home, now, io.env);
         applyBarSettings(io.env);
-        const frame = renderAntigravity(input, width, options, work, localLoad);
+        const frame = renderAntigravity(input, width, options, work, localLoad, now);
         return agyMode === 'cache' ? `hud-statusline-v1:${frame}` : frame;
       }
       if (agyMode || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
@@ -167,7 +167,7 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, agyM
       applyBarSettings(io.env);
       if (!options.details) return collectAndRenderParity(value, width, parity, io.env, now, work, localLoad);
       const first = renderStatuslineSession(value, width, options);
-      return [first, fitMachineWork(work, width), fitLocalLoad(localLoad, width)]
+      return [first, fitMachineWork(work, width, now), fitLocalLoad(localLoad, width)]
         .filter(Boolean).join('\n');
     },
   });

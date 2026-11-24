@@ -540,7 +540,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   const alertSeg = zone?.alert ? noticeSeg(zone.alert, Infinity, pad) : null;
   // Several needs: `first +2`, then `N needs` when the notice has to give way.
   if (alertSeg && zone?.alert?.short) alertSeg.forms.push(noticeSeg(zone.alert, Infinity, pad, 1)!.forms[0]!);
-  const loadForms = on.has('notice') && facts.work ? machineWorkForms(facts.work) : [];
+  const loadForms = on.has('notice') && facts.work ? machineWorkForms(facts.work, now) : [];
   const load: Seg | null = loadForms.length
     ? { id: 'notice', forms: loadForms.map((text) => [[text, 'value']]), ink: P10K.info, at: 0 }
     : null;
@@ -590,7 +590,8 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
   ];
   const total = () => leftWidth([...fields().map(size), ...wanted()]) + gap() + rightWidth();
   if (total() > width) {
-    if (load && loadForms[0] !== loadForms[1]) load.at = 1;
+    // Shorten land progress before tightening the gaps between groups.
+    while (load && load.at < loadForms.length - 2 && total() > width && loadForms[load.at] !== loadForms[load.at + 1]) load.at++;
     if (localLoad && total() > width) localLoad.at = 1;
   }
   for (const id of LADDER) {
@@ -613,7 +614,7 @@ export function renderBar(facts: BarFacts, width: number, now = Date.now(), styl
     const seg = all.find((candidate) => candidate.id === id);
     if (seg && seg.at < seg.forms.length) seg.at = (zone || load) && id === 'loaded' ? seg.forms.length : seg.at + 1;
   }
-  if (load && room(0) < 0) load.at = 2;
+  if (load && room(0) < 0) load.at = loadForms.length - 1;
   if (load && room(0) < 0) load.at = load.forms.length;
   const shown = fields();
   if (zone) {

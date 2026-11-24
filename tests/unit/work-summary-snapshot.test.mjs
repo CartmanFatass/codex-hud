@@ -17,12 +17,14 @@ import {
 } from '../../dist/collectors/work-summary-snapshot.js';
 import { createPiSegment } from '../../dist/harness/pi/segment.js';
 import { readCodexStatusline } from '../../dist/mcp/codex-statusline.js';
+import { readLand, setLandStep, writeLand } from '../../dist/mcp/land-state.js';
 import { fitStatusBar } from '../../dist/render/header.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { DEFAULT_LAYOUT } from '../../dist/types.js';
 import { makeHudData } from '../../dist-test/fixtures/hud-data.js';
 import { parityFixture } from '../../dist-test/fixtures/pi-footer.js';
 import { writePrivateFile } from '../../dist/utils/atomic-fs.js';
+import { procStat } from '../../dist/utils/proc.js';
 import { until } from '../helpers/until.mjs';
 
 const PANE_A = 'w4E:p1';
@@ -50,7 +52,20 @@ function makeFixture(t) {
     if (opts.status !== null) setStatus(opts.status ?? { state: 'working' });
     return { id, dir, setStatus };
   }
-  return { home, addJob };
+  function addFlow(opts = {}) {
+    const flow = 'f' + (++seq).toString(16).padStart(16, '0');
+    const row = { flow, job: `j${flow.slice(1)}`, state: 'running', step: 'gate[2]: synthetic gate command',
+      wt: { main_root: '/synthetic/first' }, pid: process.pid, start: procStat(process.pid)?.start,
+      created_at: new Date(Date.now() - 120_000).toISOString(), updated_at: new Date(Date.now() - 90_000).toISOString(),
+      config: { gate: ['build', 'test', 'fixtures'] }, ...opts };
+    const write = (changes = {}) => {
+      Object.assign(row, changes);
+      writePrivateFile(join(home, 'flows', `${flow}.json`), JSON.stringify(row));
+    };
+    write();
+    return { row, write };
+  }
+  return { home, addJob, addFlow };
 }
 
 async function waitFor(predicate, timeoutMs = 5_000, stepMs = 10) {
@@ -98,6 +113,33 @@ test('collectWorkSummary separates queued and settled jobs and counts asking wor
   assert.equal(summary.global.running, 6);
   assert.equal(summary.global.asking, 3);
   assert.equal(summary.global.queued, 1);
+});
+
+test('land census records one oldest detail, ignores terminal/queue receipts, and keeps the actual step start', (t) => {
+  const { home, addFlow } = makeFixture(t);
+  const now = Date.now(), start = now - 90_000;
+  const { row } = addFlow({ updated_at: new Date(start).toISOString() });
+  const land = readLand(home, row.flow);
+  writeLand(home, land); // A timing/metadata write is not a transition.
+  const second = addFlow({ state: 'queued', step: 'main-checkout lease', wt: { main_root: '/elsewhere/second' }, created_at: new Date(now - 60_000).toISOString() });
+  addFlow({ state: 'completed', created_at: new Date(now - 180_000).toISOString() });
+  addFlow({ state: 'failed', created_at: new Date(now - 180_000).toISOString() });
+  writePrivateFile(join(home, 'flows', 'q1111111111111111.json'), JSON.stringify({ ...row, state: 'queued' }));
+  const publisher = createWorkSummaryPublisher(home, 'hud-mcp');
+  assert.equal(publisher.publish(), true); // No jobs directory needed.
+  assert.deepEqual(readMachineWork(home, Date.now())?.land, {
+    count: 2, oldest: { project: 'first', step: 'gate[2]', step_started_at: start, gate: [2, 3] },
+  });
+  land.state = 'queued';
+  setLandStep(land, 'main-checkout lease', new Date(now).toISOString());
+  writeLand(home, land);
+  setLandStep(land, 'waiting for f1111111111111111 (gate step 1, 2 min)');
+  writeLand(home, land);
+  assert.deepEqual(collectWorkSummary(home).global.land?.oldest, { project: 'first', step: 'wait', step_started_at: now });
+  writeLand(home, { ...land, state: 'completed' });
+  second.write({ state: 'failed' });
+  assert.equal(publisher.publish(), true);
+  assert.equal(readMachineWork(home, Date.now())?.land, undefined);
 });
 
 test('publisher writes private bounded snapshots only on meaningful changes and reader rejects corrupt, oversize or stale data', (t) => {
@@ -208,6 +250,29 @@ test('hud-watch updates work-summary.v1.json within 200 ms of job changes and st
   assert.equal(readFreshWorkSummary(home, null), null);
 });
 
+test('hud-watch republishes on a flow-only step rewrite and exits when the last land finishes', { timeout: 15_000 }, async (t) => {
+  const { home, addFlow } = makeFixture(t);
+  const flow = addFlow({ state: 'queued', step: 'main-checkout lease' });
+  const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
+    env: { ...process.env, HUD_HOME: home }, stdio: 'ignore',
+  });
+  const exited = once(child, 'exit');
+  t.after(async () => { if (child.exitCode === null) { child.kill('SIGKILL'); await exited; } });
+  const snapshot = () => readFreshWorkSummary(home, null)?.snapshot;
+  const detail = (step) => {
+    const s = snapshot();
+    return s?.global.land?.oldest.step === step && s;
+  };
+  const first = await waitFor(() => detail('wait'));
+  flow.write({ state: 'running', step: 'gate[2]: synthetic test', updated_at: new Date().toISOString() });
+  const gate = await waitFor(() => detail('gate[2]'));
+  assert.ok(gate.generation > first.generation);
+  assert.deepEqual(gate.global.land.oldest.gate, [2, 3]);
+  flow.write({ state: 'completed' });
+  assert.deepEqual(await exited, [0, null]);
+  assert.equal(readMachineWork(home, Date.now()), undefined);
+});
+
 test('pi reads a fresh machine census without scanning jobs and omits it when the watcher exits', { timeout: 15_000 }, async (t) => {
   const { home, addJob } = makeFixture(t);
   const j1 = addJob({ role: 'imp', pane: PANE_A, status: { state: 'working' } });
@@ -268,8 +333,8 @@ test('pi reads a fresh machine census without scanning jobs and omits it when th
   assert.equal(jobsScans, 0, 'do not substitute a pane scan for stale machine data');
 });
 
-test('Claude, Antigravity, pi and Codex show identical per-role load in every pane', (t) => {
-  const { home, addJob } = makeFixture(t);
+test('Claude, Antigravity, pi and Codex show identical machine load in every pane', (t) => {
+  const { home, addJob, addFlow } = makeFixture(t);
   const previous = setDisplayConfig({});
   t.after(() => setDisplayConfig(previous));
   const workers = Object.entries({ imp: 3, general: 2, oracle: 1, sonic: 4 }).flatMap(([role, n]) =>
@@ -319,20 +384,25 @@ test('Claude, Antigravity, pi and Codex show identical per-role load in every pa
     assert.equal(readFreshWorkSummary(home, panes[2]).scope.running, 0);
     for (const render of clients) for (const line of render()) {
       if (expected) assert.ok(line.includes(expected), line);
-      else assert.doesNotMatch(line, /⚒|✦|◈|⚡|◷/);
+      else assert.doesNotMatch(line, /⚒|✦|◈|⚡|⇡|◷/);
       assert.doesNotMatch(line, /\x1b|!1|needs you|asks/);
     }
   };
+  const flow = addFlow();
   assert.equal(publisher.publish({ watching: true }), true);
-  assertCounts('unicode', '⚒3  ✦2  ◈1  ⚡4  ◷2');
-  assertCounts('text', 'I3  G2  O1  *4  Q2');
+  assertCounts('unicode', '⚒3  ✦2  ◈1  ⚡4  ⇡ gate 2/3 1m  ◷2');
+  assertCounts('text', 'I3  G2  O1  *4  L gate 2/3 1m  Q2');
+  assertCounts('nerd', '\uf0ad3  \uf0132  \uf0eb1  \uf0e74  \uf126 gate 2/3 1m  \uf0172');
   const close = (jobs) => {
     for (const job of jobs) job.setStatus({ state: 'closed' });
     assert.equal(publisher.publish({ watching: true }), true);
   };
   close(queued);
-  assertCounts('unicode', '⚒3  ✦2  ◈1  ⚡4');
+  assertCounts('unicode', '⚒3  ✦2  ◈1  ⚡4  ⇡ gate 2/3 1m');
   close(workers);
+  assertCounts('unicode', '⇡ gate 2/3 1m');
+  flow.write({ state: 'failed' });
+  assert.equal(publisher.publish({ watching: true }), true);
   assertCounts('unicode', '');
 });
 

@@ -261,6 +261,37 @@ pub fn transcript(home: &Path, path: Option<&str>) -> Option<Transcript> {
 pub struct MachineWork {
     pub roles: Vec<(String, u64)>,
     pub queued: u64,
+    pub land: Option<LandWork>,
+}
+pub struct LandWork {
+    pub count: u64,
+    pub waiting: bool,
+    pub gate: Option<(u64, u64)>,
+    pub step_started_at: f64,
+}
+fn land_work(v: &Value) -> Option<LandWork> {
+    let count = v.get("count").count().filter(|n| *n > 0)?;
+    let oldest = v.get("oldest");
+    oldest.get("project").str()?;
+    let step = oldest.get("step").str()?;
+    let gate = match oldest.field("gate") {
+        Some(v) if step != "wait" => {
+            let [i, n] = v.list()? else { return None };
+            let (i, n) = (i.count()?, n.count()?);
+            if i == 0 || i > n {
+                return None;
+            }
+            Some((i, n))
+        }
+        None => None,
+        _ => return None,
+    };
+    Some(LandWork {
+        count,
+        waiting: step == "wait",
+        gate,
+        step_started_at: oldest.get("step_started_at").count()? as f64,
+    })
 }
 fn scope_counts(v: &Value, mut record: impl FnMut(&str, u64)) -> Option<()> {
     let running = v.get("running").count()?;
@@ -354,5 +385,9 @@ pub fn work(home: &Path, now: f64) -> Option<MachineWork> {
     Some(MachineWork {
         roles,
         queued: global.get("queued").count()?,
+        land: match global.field("land") {
+            Some(v) => Some(land_work(v)?),
+            None => None,
+        },
     })
 }

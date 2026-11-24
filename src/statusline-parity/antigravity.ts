@@ -20,7 +20,8 @@ export function renderAntigravity(
   width: number,
   options: StatuslineSessionOptions,
   work?: MachineWorkCounts,
-  localLoad?: LocalLoad
+  localLoad?: LocalLoad,
+  now = Date.now()
 ): string {
   const value = record(input), model = record(value.model), context = record(value.context_window);
   const id = label(model.id), displayName = label(model.display_name);
@@ -31,7 +32,7 @@ export function renderAntigravity(
   const size = context.context_window_size;
   const window = typeof size === 'number' && Number.isSafeInteger(size) && size > 0 ? size : 0;
   const family = /^gemini/i.test(id) || /^gemini/i.test(displayName) ? 'gemini' : '3p';
-  const quota = record(value.quota), now = Date.now();
+  const quota = record(value.quota);
   const windows: BarQuotaWindow[] = [];
   for (const [suffix, minutes] of [['5h', 300], ['weekly', 10080]] as const) {
     const { remaining_fraction, reset_time } = record(quota[`${family}-${suffix}`]);
@@ -55,7 +56,7 @@ export function renderAntigravity(
         total_output_tokens: context.total_output_tokens,
       },
     }, width, language, windows.map((w) => `${w.label} ${w.shown}`));
-    return [native, fitMachineWork(work, width), fitLocalLoad(localLoad, width)]
+    return [native, fitMachineWork(work, width, now), fitLocalLoad(localLoad, width)]
       .filter(Boolean).join('\n');
   }
   const cwd = label(workspace.project_dir) || label(value.cwd);
@@ -68,5 +69,5 @@ export function renderAntigravity(
     quota: windows.length ? { windows, trailing: true } : undefined,
     work,
     localLoad,
-  }, width).line;
+  }, width, now).line;
 }

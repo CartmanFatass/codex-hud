@@ -4,7 +4,7 @@ import { iconSet, type IconMode } from './hud-config.js';
 import { ROLE_GLYPHS, roleIcon } from './model-glyphs.js';
 
 /** The machine-wide HUD load, not a count of owner requests or native subagents. */
-export function machineWorkForms(work: MachineWorkCounts, icons = iconSet()): string[] {
+export function machineWorkForms(work: MachineWorkCounts, now: number, icons = iconSet()): string[] {
   const counts = new Map<string, number>();
   for (const [role, { running }] of Object.entries(work.roles)) {
     const key = Object.hasOwn(ROLE_GLYPHS, role) ? role : 'other';
@@ -15,14 +15,26 @@ export function machineWorkForms(work: MachineWorkCounts, icons = iconSet()): st
     return count ? [`${roleIcon(role, icons)}${count}`] : [];
   });
   const queueIcon = icons === 'text' ? 'Q' : icons === 'nerd' ? '' : '◷';
-  const groups = work.queued > 0 ? [...roles, `${queueIcon}${work.queued}`] : roles;
-  return groups.length ? [groups.join('  '), groups.join(' '), roles.join(' ')] : [];
+  const queue = work.queued > 0 ? [`${queueIcon}${work.queued}`] : [];
+  const detail: string[] = [];
+  if (work.land) {
+    const { count, oldest } = work.land;
+    const badge = (icons === 'text' ? 'L' : icons === 'nerd' ? '\uf126' : '⇡') + (count > 1 ? count : '');
+    const step = oldest.gate ? `gate ${oldest.gate.join('/')}` : oldest.step === 'wait' ? 'wait' : 'land';
+    const minutes = Math.floor((now - oldest.step_started_at) / 60_000);
+    const progress = `${badge} ${step}`;
+    const full = (part: string) => [...roles, part, ...queue].join('  ');
+    detail.push(full(`${progress} ${minutes < 1 ? '<1m' : `${minutes}m`}`), full(progress));
+    roles.push(badge);
+  }
+  const groups = [...roles, ...queue];
+  return groups.length ? [...detail, groups.join('  '), groups.join(' '), roles.join(' ')] : [];
 }
 
-export function formatMachineWork(work: MachineWorkCounts, icons?: IconMode): string {
-  return machineWorkForms(work, icons)[0] ?? '';
+export function formatMachineWork(work: MachineWorkCounts, now: number, icons?: IconMode): string {
+  return machineWorkForms(work, now, icons)[0] ?? '';
 }
 
-export function fitMachineWork(work: MachineWorkCounts | undefined, width: number): string | undefined {
-  return work && machineWorkForms(work).find((form) => form && visualLength(form) <= width);
+export function fitMachineWork(work: MachineWorkCounts | undefined, width: number, now: number): string | undefined {
+  return work && machineWorkForms(work, now).find((form) => form && visualLength(form) <= width);
 }

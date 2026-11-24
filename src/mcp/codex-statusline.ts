@@ -111,7 +111,7 @@ export function readCodexStatusline(meta: unknown, home: string, now = Date.now(
   const work = readMachineWork(home, now), localLoad = collectLocalLoad(home, now);
   if (work || localLoad) {
     const settings = readBarSettings({ ...process.env, HUD_HOME: home });
-    const load = work && formatMachineWork(work, settings?.icons);
+    const load = work && formatMachineWork(work, now, settings?.icons);
     if (load) children.push(text('status-state', load));
     // Codex paints UI tree text itself; use its named inks, not terminal escapes.
     const colors = { info: 'status-usage', ok: 'status-limit', branch: 'status-model' };

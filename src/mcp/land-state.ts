@@ -17,7 +17,7 @@ export interface LandFlow {
   flow: string; job: string; pane: string | null; task: boolean; wt: ManagedWorktree; config: LandConfig;
   ticket_queue?: string;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
-  pid: number; start: string; created_at: string; updated_at: string;
+  pid: number; start: string; created_at: string; updated_at: string; step_started_at?: string;
   base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; replayed_onto?: string; cleanup_note?: string; error?: string; tail?: string[];
   tested_tree?: string; published_tree?: string; base_moves?: number;
   train?: string; published_sha?: string; single?: true;
@@ -32,7 +32,14 @@ export const isFlowId = (id: unknown): id is string => typeof id === 'string' &&
 export const retryableLand = (f: LandFlow) => !f.landed_sha && (f.state === 'failed' || f.state === 'cancelled');
 export const activeLand = (f: LandFlow) => f.state === 'queued' || f.state === 'running';
 export const landFile = (home: string, id: string) => join(home, 'flows', `${id}.json`);
+export const isLandWait = (step: string) => step === 'main-checkout lease' || step.startsWith('waiting for ');
+export function setLandStep(f: LandFlow, step: string, at = new Date().toISOString()) {
+  // Changes to the blocking flow's progress are still the same lease wait.
+  if (!isLandWait(f.step) || !isLandWait(step)) f.step_started_at = at;
+  f.step = step;
+}
 export function writeLand(home: string, f: LandFlow, create = false) {
+  f.step_started_at ??= f.updated_at;
   f.updated_at = new Date().toISOString();
   writeJsonPrivate(landFile(home, f.flow), f, { mkdir: false, exclusive: create });
 }

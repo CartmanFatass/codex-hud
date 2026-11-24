@@ -11,7 +11,7 @@ import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob } from '../roles/job-archive.js';
 import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sessions.js';
 import { recordJobUsage } from '../roles/job-usage.js';
-import { landAttempt, activeLand } from '../mcp/land-state.js';
+import { landAttempt, activeLand, isFlowId } from '../mcp/land-state.js';
 import { queueIds, readTicketQueue } from '../mcp/ticket-queue-state.js';
 import { wakeTicketQueue } from '../mcp/ticket-queue.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
@@ -559,7 +559,7 @@ function trackStart(id: string, targetRole: string, launch: () => Promise<void>)
 function scan(retryWatch = false) {
   if (stopped || pauseReady) return;
   clearTimeout(timer);
-  if (retryWatch && !watcher) startWatch(); // Install before catch-up, only on the timer path.
+  if (retryWatch && (!watcher || !flowsWatcher)) startWatch(); // Install before catch-up, only on the timer path.
   // Piggyback on the on-demand retention scan; never keep the watcher alive for housekeeping.
   const scanAt = performance.now(), housekeep = scanAt >= nextHomeRetention;
   if (housekeep) {
@@ -921,17 +921,18 @@ function scan(retryWatch = false) {
   }
   if (watcher) jobChanges.start();
   if (open) subscribe();
+  const watching = Boolean(watcher && flowsWatcher);
+  workSummary.publish({ watching, ids: listedIds, jobsExist: true });
+  open ||= workSummary.hasActiveLand;
   runners.finishScan();
   for (const id of orphanRetries.keys()) if (!orphans.has(id)) orphanRetries.delete(id);
   const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0;
-  if ((open || hasInFlight || nearest !== Infinity) && !watcher) nearest = Math.min(nearest, Date.now() + degradedMs);
+  if ((open || hasInFlight || nearest !== Infinity) && !watching) nearest = Math.min(nearest, Date.now() + degradedMs);
   if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
   if (!queued && !open && !hasInFlight && nearest === Infinity) {
     stopScheduling();
     notify('idle');
-    return;
   }
-  workSummary.publish({ watching: Boolean(watcher), ids: listedIds, jobsExist: true });
 }
 function schedule() {
   if (queued || stopped) return;
@@ -961,10 +962,17 @@ function startWatch() {
   if (!flowsWatcher) try {
     const flows = join(home, 'flows');
     fs.mkdirSync(flows, { mode: 0o700, recursive: true });
-    flowsWatcher = fs.watch(flows, { persistent: false }, (_event, file) => {
-      if (!file || /^q[a-f0-9]{16}\.json$/.test(file)) schedule();
-    }).once('error', () => { flowsWatcher?.close(); flowsWatcher = undefined; });
-  } catch { /* The initial scan and active-queue recovery timer still run. */ }
+    flowsWatcher = fs.watch(flows, { persistent: false }, (_event, name) => {
+      const file = name?.toString();
+      // Ticket queues still wake their existing recovery scan; they are not counted as lands.
+      if (!file || (file.endsWith('.json') && isFlowId(file.slice(0, -5))) || /^q[a-f0-9]{16}\.json$/.test(file)) schedule();
+    }).once('error', () => {
+      flowsWatcher?.close(); flowsWatcher = undefined;
+      workSummary.markDegraded();
+      schedule();
+    });
+  } catch { /* The existing degraded retry handles an unavailable directory. */ }
+  if (watcher) return;
   try {
     watcher = fs.watch(jobs, { recursive: true }, (event, filename) => {
       const path = filename?.toString();

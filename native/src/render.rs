@@ -646,7 +646,7 @@ const ROLE_GLYPHS: [(&str, [&str; 3]); 7] = [
     ("other", ["•", ".", "•"]),
     ("sonic", ["⚡", "*", "\u{F0E7}"]),
 ];
-fn machine_load(work: MachineWork, display: &Display) -> Option<Segment> {
+fn machine_load(work: MachineWork, display: &Display, now: f64) -> Option<Segment> {
     let set = display.icon_index();
     let mut counts = [0; ROLE_GLYPHS.len()];
     for (role, count) in work.roles {
@@ -659,15 +659,46 @@ fn machine_load(work: MachineWork, display: &Display) -> Option<Segment> {
         .filter(|(_, count)| *count > 0)
         .map(|((_, glyphs), count)| format!("{}{count}", glyphs[set]))
         .collect();
-    let roles = groups.join(" ");
-    if work.queued > 0 {
-        groups.push(format!("{}{}", ["◷", "Q", "\u{F017}"][set], work.queued));
+    let queue =
+        (work.queued > 0).then(|| format!("{}{}", ["◷", "Q", "\u{F017}"][set], work.queued));
+    let mut forms = Vec::new();
+    if let Some(land) = work.land {
+        let mut badge = ["⇡", "L", "\u{F126}"][set].to_owned();
+        if land.count > 1 {
+            badge.push_str(&land.count.to_string());
+        }
+        let step = match land.gate {
+            Some((i, n)) => format!("gate {i}/{n}"),
+            None => if land.waiting { "wait" } else { "land" }.to_owned(),
+        };
+        let progress = format!("{badge} {step}");
+        let minutes = ((now - land.step_started_at) / 60_000.).floor() as u64;
+        let elapsed = if minutes < 1 {
+            "<1m".to_owned()
+        } else {
+            format!("{minutes}m")
+        };
+        for part in [format!("{progress} {elapsed}"), progress] {
+            forms.push(
+                groups
+                    .iter()
+                    .map(String::as_str)
+                    .chain([part.as_str()])
+                    .chain(queue.as_deref())
+                    .collect::<Vec<_>>()
+                    .join("  "),
+            );
+        }
+        groups.push(badge);
     }
+    let roles = groups.join(" ");
+    groups.extend(queue);
     (!groups.is_empty()).then(|| {
+        forms.extend([groups.join("  "), groups.join(" "), roles]);
         Segment::new(
             Field::Notice,
             (110, 235),
-            [groups.join("  "), groups.join(" "), roles]
+            forms
                 .into_iter()
                 .map(|text| vec![piece(text, ValueRole)])
                 .collect(),
@@ -761,7 +792,7 @@ pub fn bar(
                 vec![vec![piece(format!("~{} t/s", tps_number(n)), ValueRole)]],
             )
         }),
-        machine_load(e.work, display),
+        machine_load(e.work, display, now),
         None,
     ]
     .into_iter()
@@ -870,9 +901,14 @@ fn fit(mut list: Vec<Segment>, display: &Display, width: usize) -> String {
     .into_iter();
     let load = list.iter().any(|s| s.field == Notice);
     for field in [Notice, LocalLoad] {
-        if total(&list) > width {
-            if let Some(seg) = list.iter_mut().find(|s| s.field == field) {
-                seg.at = 1;
+        if let Some(i) = list.iter().position(|s| s.field == field) {
+            let limit = if field == Notice {
+                list[i].forms.len() - 2
+            } else {
+                1
+            };
+            while list[i].at < limit && total(&list) > width {
+                list[i].at += 1;
             }
         }
     }

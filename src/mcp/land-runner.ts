@@ -12,7 +12,7 @@ import { withAbstractLock } from '../utils/abstract-lock.js';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { takeLease } from '../roles/lease.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
-import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, readLand, writeLand, type LandFlow, type LandRerun } from './land-state.js';
+import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, readLand, setLandStep, writeLand, type LandFlow, type LandRerun } from './land-state.js';
 import { reapWorktree } from './managed-worktree.js';
 import { recordLanding } from './land-records.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
@@ -81,7 +81,10 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
   // A queued helper can update its receipt without the checkout lease; serialize that with boarding.
   const queueLock = <T>(run: () => T) => withAbstractLock('land-queue', `${home}\0${main}`, run);
   const cancelled = (row: LandFlow) => fs.existsSync(`${landFile(home, row.flow)}.cancel`);
-  const step = (name: string) => { for (const row of members) { row.step = name; writeLand(home, row); } };
+  const step = (name: string) => {
+    const at = new Date().toISOString();
+    for (const row of members) { setLandStep(row, name, at); writeLand(home, row); }
+  };
   const recordTiming = (name: string, t0: number, ok: boolean, extra?: { rerun?: true; skipped?: true }) => {
     // Shared work is timed only on the lead receipt, not counted once per passenger.
     (f.timings ??= []).push({ step: name, ms: Math.max(0, Math.round(performance.now() - t0)), ok, ...extra, train: f.train });
@@ -212,7 +215,7 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
         const { holder } = r.held_by;
         const blocker = isFlowId(holder) ? readLand(home, holder) : null;
         const gate = blocker && /^gate\[(\d+)\]:/.exec(blocker.step);
-        const since = blocker ? Date.parse(blocker.updated_at) : NaN;
+        const since = blocker ? Date.parse(blocker.step_started_at ?? blocker.updated_at) : NaN;
         const waiting = !blocker ? 'main-checkout lease' : gate && Number.isFinite(since)
           ? `waiting for ${holder} (gate step ${gate[1]}, ${Math.max(0, Math.floor((Date.now() - since) / 60000))} min)`
           : `waiting for ${holder}`;
@@ -416,8 +419,8 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
       if (queue.length < 2) return [];
       return queue.map(row => {
         // Point at the checkout owner while boarded, so a crash cannot silently replay a train.
-        const boarded: LandFlow = { ...row, boarded: { flow: own.flow, pid: own.pid, start: own.start }, base_sha: base, state: 'running', step: 'prepare' };
-        writeLand(home, boarded);
+        const boarded: LandFlow = { ...row, boarded: { flow: own.flow, pid: own.pid, start: own.start }, base_sha: base, state: 'running' };
+        setLandStep(boarded, 'prepare'); writeLand(home, boarded);
         return { row, boarded };
       });
     });

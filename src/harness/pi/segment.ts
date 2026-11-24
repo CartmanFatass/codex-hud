@@ -45,7 +45,7 @@ export function createPiSegment(options: {
     let next: string | undefined;
     if (options.statusVisible?.() !== false && (counts || localLoad)) {
       const settings = readBarSettings(options.env);
-      next = [counts && formatMachineWork(counts, settings?.icons), localLoad && formatLocalLoad(localLoad, settings?.theme)]
+      next = [counts && formatMachineWork(counts, now, settings?.icons), localLoad && formatLocalLoad(localLoad, settings?.theme)]
         .filter(Boolean).join(' │ ') || undefined;
     }
     if (current === state && (!published || next !== text)) {

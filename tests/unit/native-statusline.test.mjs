@@ -123,6 +123,33 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
   assert.deepEqual(run(launcher, [], env, Buffer.concat([exact, Buffer.from([0])])), ts(env, Buffer.alloc(65537, 32)));
 });
 
+test('native and TypeScript agree on land progress and width fitting', { skip: !hasNative }, (t) => {
+  const env = { ...environment(receipt(t)), NO_COLOR: '1', HUD_ICONS: 'unicode', HUD_BAR_FIELDS: 'notice' };
+  const { write } = setup(env.HUD_HOME);
+  const global = { running: 2, queued: 0, asking: 0, roles: { imp: { running: 2, asking: 0 } } };
+  const scope = (count, oldest, queued = 0) => write({ global: { ...global, queued, land: { count, oldest } } });
+  const expect = (text, width = 160) => {
+    const args = ['--width', String(width)];
+    const line = ts(env, base, args);
+    assert.equal(line.toString().trimEnd(), text);
+    assert.deepEqual(rust(env, base, args), line);
+  };
+  const gate = { project: 'first', step: 'gate[2]', step_started_at: Date.now() - 90_000, gate: [2, 3] };
+  scope(1, gate);
+  expect('⚒2  ⇡ gate 2/3 1m');
+  expect('⚒2  ⇡ gate 2/3', 16);
+  expect('⚒2  ⇡', 12);
+  scope(2, gate, 1);
+  expect('⚒2  ⇡2 gate 2/3 1m  ◷1');
+  expect('⚒2  ⇡2  ◷1', 11);
+  expect('⚒2 ⇡2 ◷1', 8);
+  expect('⚒2 ⇡2', 5);
+  scope(1, { project: 'first', step: 'wait', step_started_at: Date.now() });
+  expect('⚒2  ⇡ wait <1m');
+  scope(1, { project: 'first', step: 'fast-forward', step_started_at: Date.now() });
+  expect('⚒2  ⇡ land <1m');
+});
+
 test('Claude processes share a private CPU sample and show RAM and swap only as observed', { skip: process.platform !== 'linux' }, (t) => {
   const home = receipt(t), env = { ...environment(home), NO_COLOR: '1', HUD_BAR_FIELDS: 'notice' };
   setup(env.HUD_HOME).write({ global: { running: 0, asking: 0, queued: 0, roles: {} } });
