@@ -7,6 +7,10 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-24
 
+- **D-2026-11-24-07** (§2.2): Owner: fixed answers plus automatic triggering is exactly where the low-cost, fast
+  Decision API belongs. Rules work the same way: with an owner rule list, the shadow names which rules a reply broke
+  (several at once). Injecting advice into the session context (mod, pi extension) is also wanted, but only after a
+  shadow trial.
 - **D-2026-11-24-06** (§2.2): The owner asked for an advisor like oh-my-pi's (a model that keeps rules and watches the
   main session's context, recommending skills or giving hints). omp's advisor injects `<advisory>` notes into the
   main session every turn; the owner found that too intrusive and chose a **shadow mode** first: recommendations are

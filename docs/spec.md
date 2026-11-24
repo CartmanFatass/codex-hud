@@ -131,10 +131,12 @@ as a linked feature's acceptance items. File syntax: D-2026-11-23-04. (new)
   the pool pick (a role file names an owner pool directory; when a brief names none of its entries, the Decision
   API picks entries for the task and HUD attaches them as references; HUD reads the pool, owns none of it).
   (14.02, 21.05, 22.22, 24.04, new)
-- Advisor shadow (off by default, own switch): on a new owner message in a main session, the Decision API may
-  recommend one skill from owner-configured skill libraries, judged from that message and the previous reply only.
-  It is shown to the owner (bar notice, panel line that copies the skill path) and never injected into any session.
-  (24.06)
+- Advisor shadow (off by default, own switch): fixed choices only, so the fast, cheap Decision API fits. On a new
+  owner message in a main session it may recommend one skill from owner-configured skill libraries; when a main
+  session's reply ends it may name which of the owner's rules (an owner-written list in Personal Standards) that
+  reply broke. Judged from the owner's latest message and the reply only. Shown to the owner (bar notice, panel line;
+  a skill line copies its path), never injected into any session. Injection through the mod or pi extension is a
+  later, separate switch, built only after the owner has tried the shadow. (24.06, 24.07)
 
 ### 2.3 Evidence beyond the current run
 
