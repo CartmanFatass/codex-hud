@@ -47,7 +47,7 @@ This is an overridable default, not a worker obligation. A project's own docs ov
   `hud_read({job, mode: "full"})` for the whole report, even if already read. A report read in idle grace marks it read too.
 - With live events, keep working until notified; the report notice points to `hud_read` and is not a read. Use `hud_peek` for non-consuming
   status and milestones; pass `lines` only for pane output and `detail: true` for launch diagnostics.
-- Handle routine worker questions, failures, blockers and completions in main. Open an owner request with `hud_objective({ op: "request", text })` in the owner's panel language; pass `waits: true` if work waits and `objective` when linked.
+- Handle routine worker questions, failures, blockers and completions in main. Open an owner request with `hud_objective({ op: "request", text })` in the owner's panel language; pass `waits: true` if work waits and `objective` when linked. Text ending in `(waits on <feature>/<NN>)` clears itself once those tickets are done or dropped.
 - Record the answer with `hud_objective({ op: "resolve", request, note })`, using the returned request ID.
 - File tickets with `owner_try: false` when tests fully cover the behaviour; `true` only when the owner must interact with it to judge it (UI they drive, look and feel); verify installs and live behaviour yourself or by a worker live check. The main session accepts work after verification. On a `try accepted` line from Accept all, mark those tickets `done` (legacy STATE `try` rows: `accepted`). A legacy `try flagged` line can still surface an earlier owner decision.
 The main session owns handoffs and decides the next step; HUD only chains the steps within a requested fixed flow.
