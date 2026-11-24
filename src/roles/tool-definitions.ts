@@ -7,7 +7,6 @@ const text = { type: 'string' };
 export const EXPERIMENT_TAG_MAX_LENGTH = 64;
 const experimentTag = { ...text, maxLength: EXPERIMENT_TAG_MAX_LENGTH };
 const experimentTags = { experiment: experimentTag, arm: experimentTag };
-const preview = { ...text, maxLength: 260, description: 'HTML preview path relative to job cwd; copied and optionally opened on report.' };
 const bool = { type: 'boolean' };
 const detail = { ...bool, description: 'Diagnostics.' };
 const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
@@ -30,17 +29,17 @@ export const ROLE_TOOLS = [
   }),
   tool(
     'hud_create',
-    'Single: role + task/brief_file; batch: jobs; retry: retry_of. Tags: experiment/arm. Placement: role files/Control. Single general job only: preset/on/model/thinking. Repeat: fresh request_key. Options: hud_roster(detail:true).',
+    'Create or retry jobs. Placement: role files/Control; overrides: single general only. Options: hud_roster(detail:true).',
     {
       role: text,
-      request_key: { ...text, description: 'Permanent key; omit for 10-min caller/role/cwd/task dedupe.' },
+      request_key: { ...text, description: 'Fresh key to repeat; omit for 10-min caller/role/cwd/task dedupe.' },
       task: text,
       brief_file: { ...text, description: 'UTF-8 task file within cwd.' },
-      preview,
+      preview: { ...text, maxLength: 260, description: 'HTML path relative to cwd; opened on report.' },
       jobs: {
         type: 'array',
         minItems: 1,
-        items: { type: 'object', properties: { ...experimentTags, preview } },
+        items: { type: 'object', properties: experimentTags },
         description: 'Without MCP tasks; else parallel single creates.',
       },
       scout: { ...text, minLength: 1, description: 'Ask sonic first, attach report; non-sonic only.' },

@@ -88,7 +88,7 @@ test('hud_create jobs creates multiple jobs in input order with per-item errors 
   const batch = await f.call('hud_create', {
     jobs: [
       { role: 'imp', task: 'Synthetic task one.', request_key: 'b-1', experiment: label, arm: 'control' },
-      { role: 'imp', brief_file: 'b2.md', request_key: 'b-2', arm: '' },
+      { role: 'imp', brief_file: 'b2.md', request_key: 'b-2', arm: '', preview: 'sample.html' },
       { role: 'imp', task: 'Reject a long experiment.', experiment: label + 'a' },
       { role: 'imp', task: 'Reject a non-string arm.', arm: null },
       { role: 'no-such-role', task: 'Should fail only this entry.', request_key: 'b-bad' },
@@ -115,6 +115,7 @@ test('hud_create jobs creates multiple jobs in input order with per-item errors 
   assert.equal(receipt(j1).arm, 'control');
   assert.equal(receipt(j2).experiment, undefined);
   assert.equal(receipt(j2).arm, '');
+  assert.equal(receipt(j2).preview, 'sample.html');
   assert.equal(j1.hint, undefined, 'items do not duplicate hint');
 
   // Nested jobs or non-object item fail only that item; mixed top-level args fail the call.
