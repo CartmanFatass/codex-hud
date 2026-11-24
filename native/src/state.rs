@@ -70,13 +70,16 @@ fn bytes(path: &Path, limit: usize, private: bool, no_follow: bool) -> io::Resul
         no_links(path)?;
     }
     let (file, m) = regular(path, no_follow)?;
-    if m.len() > limit as u64 {
-        return Err(bad());
-    }
     if private && (m.mode() & 0o077 != 0 || m.nlink() != 1 || Some(m.uid()) != own_uid()) {
         return Err(bad());
     }
-    let mut out = Vec::with_capacity(m.len() as usize);
+    bounded_bytes(file, m.len(), limit)
+}
+fn bounded_bytes(file: File, len: u64, limit: usize) -> io::Result<Vec<u8>> {
+    if len > limit as u64 {
+        return Err(bad());
+    }
+    let mut out = Vec::with_capacity(len as usize);
     file.take(limit as u64 + 1).read_to_end(&mut out)?;
     if out.len() > limit {
         return Err(bad());
@@ -116,6 +119,67 @@ pub fn has_live_exhaustion(home: &Path, now: f64) -> Option<bool> {
             }),
     )
 }
+// Keep the notice window and file bounds in sync with collectors/advisor-shadow.ts.
+const ADVISOR_NOTICE_MS: f64 = 600_000.;
+
+fn fresh_advisor_state(file: &Path, now: f64, limit: usize) -> Option<Value> {
+    let (file, meta) = regular(file, true).ok()?;
+    // HUD atomically publishes each file after stamping the notices it contains.
+    // On an old inode even the newest possible notice is expired; do not read it.
+    if now - mtime(&meta) >= ADVISOR_NOTICE_MS {
+        return None;
+    }
+    json::parse(&bounded_bytes(file, meta.len(), limit).ok()?).ok()
+}
+
+pub fn has_live_advisor_notice(home: &Path, now: f64, rules_enabled: bool) -> bool {
+    let display = home.join("display");
+    let live = |notice: &Value| {
+        notice
+            .get("at")
+            .num()
+            .is_some_and(|at| (0.0..ADVISOR_NOTICE_MS).contains(&(now - at)))
+            && notice.get("session").str().is_some()
+            && notice.get("projectRoot").str().is_some()
+    };
+    let any = |state: &Value, key: &str, keep: fn(&Value) -> bool| {
+        state
+            .get(key)
+            .list()
+            .is_some_and(|list| list.iter().any(|item| live(item) && keep(item)))
+    };
+    if let Some(skills) = fresh_advisor_state(&display.join("advisor-state.json"), now, 128 * 1024) {
+        if skills.get("version").num() == Some(1.)
+            && any(&skills, "recommendations", |item| {
+                item.get("skill").str().is_some_and(|skill| !skill.is_empty())
+                    && item.get("path").str().is_some()
+                    && item.get("ms").num().is_some()
+            })
+        {
+            return true;
+        }
+    }
+    if !rules_enabled {
+        return false;
+    }
+    let Some(rules) = fresh_advisor_state(&display.join("advisor-rules.json"), now, 1024 * 1024) else {
+        return false;
+    };
+    any(&rules, "hits", |item| {
+        item.get("rules").list().is_some_and(|rules| {
+            (1..=30).contains(&rules.len())
+                && rules.iter().all(|rule| {
+                    rule.get("sentence").str().is_some()
+                        && rule
+                            .get("id")
+                            .str()
+                            .and_then(|id| id.strip_prefix('R'))
+                            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                })
+        })
+    })
+}
+
 pub fn cache_path(home: &Path, kind: &str, key: &str) -> PathBuf {
     home.join("display/statusline")
         .join(format!("{kind}-{}.json", sha256::hex(key.as_bytes())))

@@ -154,7 +154,7 @@ fn execute(args: &[String], bytes: &[u8]) -> Option<String> {
     if let Value::Obj(ref mut input) = value {
         input.remove("email");
     }
-    let display = Display::load(&home)?;
+    let display = Display::load(&home, now)?;
     let file = supported_path(value.get("transcript_path"));
     let cwd = supported_path(value.get("cwd"));
     let transcript = state::transcript(&home, file)?;

@@ -84,6 +84,56 @@ test('Claude launcher uses TypeScript for a live even quota notice and native ca
   assert.doesNotMatch(run(launcher, [], env, agy).toString(), /imp fast: quota/);
 });
 
+test('Claude keeps native rendering with advisor shadow on unless a notice is live', { skip: !hasNative }, (t) => {
+  const env = { ...environment(receipt(t)), NO_COLOR: '1' };
+  setup(env.HUD_HOME);
+  const settings = join(env.HUD_HOME, 'hud-settings.json');
+  const advisorRulesFile = join(env.HOME, 'rules.md');
+  fs.writeFileSync(settings, JSON.stringify({ advisorShadow: true, advisorRulesFile, icons: 'text' }));
+  const input = { ...base, session_id: 'synthetic-session' };
+  const nativeBar = () => {
+    const line = rust(env, input);
+    assert.ok(line.length > 0);
+    assert.doesNotMatch(line.toString(), /skill:|rules:/);
+    assert.deepEqual(line, ts(env, input));
+  };
+  nativeBar(); // Enabled, no display state yet.
+
+  const notice = { session: input.session_id, projectRoot: env.HOME };
+  const skill = { ...notice, skill: 'tdd', path: join(env.HOME, 'SKILL.md'), ms: 20 };
+  const rule = { ...notice, rules: [{ id: 'R2', sentence: 'Name the tests run.' }] };
+  const skillFile = join(env.HUD_HOME, 'display', 'advisor-state.json');
+  const ruleFile = join(env.HUD_HOME, 'display', 'advisor-rules.json');
+  const writeSkill = (recommendations) => fs.writeFileSync(skillFile, JSON.stringify({ version: 1, recommendations, messages: [] }), { mode: 0o600 });
+  const writeRules = (hits) => fs.writeFileSync(ruleFile, JSON.stringify({ replies: ['synthetic-reply'], hits }), { mode: 0o600 });
+  writeSkill([]);
+  writeRules([]);
+  nativeBar(); // Fresh state (e.g. a no-hit reply) is not itself a notice.
+
+  const expired = Date.now() - 10 * 60_000 - 1000;
+  writeSkill([{ ...skill, at: expired }]);
+  writeRules([{ ...rule, at: expired }]);
+  nativeBar(); // A fresh mtime cannot renew an expired notice.
+  const old = new Date(expired);
+  fs.utimesSync(skillFile, old, old);
+  fs.utimesSync(ruleFile, old, old);
+  nativeBar(); // An old inode does not need to be parsed.
+
+  const expectFallback = (text) => {
+    assert.equal(rust(env, input, [], 75).length, 0);
+    const reference = ts(env, input);
+    assert.ok(reference.toString().includes(text));
+    assert.deepEqual(run(launcher, [], env, input), reference);
+  };
+  writeSkill([{ ...skill, at: Date.now() }]);
+  expectFallback('skill: tdd');
+  writeSkill([{ ...skill, at: expired }]);
+  writeRules([{ ...rule, at: Date.now() }]);
+  expectFallback('rules: R2');
+  writeRules([{ ...rule, at: expired }]);
+  nativeBar();
+});
+
 test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasNative }, (t) => {
   const env = { ...environment(receipt(t)), HERDR_PANE_ID: 'synthetic-pane' };
   setup(env.HUD_HOME);

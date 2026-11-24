@@ -106,7 +106,7 @@ impl Display {
     pub fn icon_index(&self) -> usize {
         usize::from(self.ascii) + 2 * usize::from(self.nerd)
     }
-    pub fn load(home: &Path) -> Option<Self> {
+    pub fn load(home: &Path, now: f64) -> Option<Self> {
         let word = |key| {
             state::hud_env(key)
                 .unwrap_or_default()
@@ -133,9 +133,14 @@ impl Display {
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("hud-settings.json"));
         if let Some(v) = state::read(&file, 65_536, false, false)? {
-            // TypeScript owns advisor notices; don't bypass them on the native fast path.
             if v.get("advisorShadow").bool() == Some(true) {
-                return None;
+                let rules_enabled = v.get("advisorRulesFile").str().is_some_and(|p| {
+                    Path::new(p).is_absolute() && !p.contains('\0') && p.encode_utf16().count() <= 4096
+                });
+                // TypeScript owns the advisor notice presentation, but only a live notice needs it.
+                if state::has_live_advisor_notice(home, now, rules_enabled) {
+                    return None;
+                }
             }
             style = v.get("barStyle").str().unwrap_or_default().into();
             if let Some(set) = v
