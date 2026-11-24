@@ -78,7 +78,7 @@ test('dispatched, settled and archived jobs carry placement and worktree facts',
   const f = await fixture(t);
   initRepo(f.root);
   writeRoles(f);
-  write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ ...defaultSettings(), impPlacement: 'even', impEvenPool: ['beta', 'alpha'] }));
+  write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ ...defaultSettings(), autoPrewalk: false, impPlacement: 'even', impEvenPool: ['beta', 'alpha'] }));
   const ended = '2026-11-24T10:00:00.000Z';
 
   // 1. General job with explicit requested_on and requested_model.

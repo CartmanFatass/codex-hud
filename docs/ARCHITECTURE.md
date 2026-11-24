@@ -260,7 +260,8 @@ Display surfaces do not call text models or the Decision API. The Inspector draw
 | Imp auto routing | First 4000 characters of the dispatch brief and up to 4 KiB/4000 characters of the named local ticket; up to 32 context-file relative names (512 characters each) and byte sizes; configured tier and mode purposes. No context bodies, standing brief, prior reports or preset/model IDs. |
 | Role pool pick | First 4000 characters of the dispatch brief as untrusted data; role and project name (checkout basename); the owner pool index (up to 64 filenames, titles, `Kind`, `Status` and `Fits`, ≤400 bytes read per entry); and the first 8 KiB of the README as selection criteria (all facts ≤48 KiB together). No pool directory path, entry bodies, standing brief, project design file or other references. |
 | Advisor shadow | Opt-in (`advisorShadow`, off by default): secret-scrubbed latest owner message and previous assistant reply (≤2000 characters each) from a tracked main session, plus up to 200 skill `name` and `description` entries (≤300 bytes each, ≤64 KiB total) from `advisorSkillDirs`. No skill file paths, bodies or full transcripts; never injected into any session. |
-| Scouted dispatch | The scout question and target `context_files` go to Sonic under the normal brief rules; the scout report is a `from_jobs` input to the target, inline within the usual byte limits for browser targets |
+| Prewalk scout selection | First 4000 characters of the dispatch brief as untrusted data, target role and project name (checkout basename), and three fixed yes/no choices (`code`, `docs`, `web`). No standing brief, file paths, context bodies or prior reports. |
+| Prewalk scouts / scouted dispatch | The fixed kind prompt plus bounded target brief (or caller `scout` question) and target `context_files` (`code`/`docs`/caller only; not `web`) go to headless Sonic under normal brief rules. Web scouts query only public technologies, never private brief content. Settled reports attach via `from_jobs` within a 5-minute total cap, inline within the usual byte limits for browser targets. |
 | Land repair | Failing cherry-pick or gate step and error, plus up to 40 output lines (8 KiB) to the source worker or same-role replacement. Blank and HUD frame lines are removed; recognized test names and assertions from the failing command take priority over a plain log tail. |
 | Pre-report worker checks | Failing project command (label up to 200 characters) and up to 2 KiB of its trailing stdout/stderr to the same worker in the `hud_report` error. An explicit skip reason is returned to the calling session in the report digest. |
 
@@ -398,7 +399,7 @@ No HUD collection writes into Codex's transcripts/configuration; explicit instal
 **Privacy and repository**
 
 - Display surfaces do not call text models or the Decision API.
-  Quiet-job decisions in the CLI supervisor, Sonic auto-thinking, Imp auto routing and role pool picks have independent execution-side switches.
+  Quiet-job decisions in the CLI supervisor, Sonic auto-thinking, Imp auto routing, automatic prewalk (`autoPrewalk`) and role pool picks have independent execution-side switches.
 - List every new outbound model input here and in both reference languages.
   A land repair sends only the failing cherry-pick or gate step and its bounded output evidence (§5) to the project's source worker or its same-role replacement.
 - State is private: `writePrivateFile` or equivalent temp-file/0600/rename.

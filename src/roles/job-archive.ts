@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { objectiveLink } from '../collectors/objectives.js';
-import type { AnswerActor, Job, JobStatus, StopOrigin } from '../mcp/job-contracts.js';
+import type { AnswerActor, Job, JobStatus, PoolPick, PrewalkEntry, StopOrigin } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import { getJobIndexCache, type JobIndexCache } from './job-index-cache.js';
@@ -192,6 +192,36 @@ function archiveQuestions(home: string, dir: string, job: Partial<Job>, status: 
   } catch { /* Unknown question history. */ }
 }
 
+function archivePrewalk(entries: unknown, legacyPool?: PoolPick): PrewalkEntry[] | undefined {
+  if (Array.isArray(entries)) {
+    return entries.flatMap((raw) => {
+      const entry = record(raw);
+      const kind = entry.kind, source = entry.source, result = text(entry.result);
+      if ((kind !== 'code' && kind !== 'docs' && kind !== 'web' && kind !== 'pool') ||
+          (source !== 'decision' && source !== 'brief' && source !== 'caller' && source !== 'default' && source !== 'project') ||
+          !result) return [];
+      const ms = typeof entry.ms === 'number' && Number.isFinite(entry.ms) ? entry.ms : 0;
+      const item: PrewalkEntry = {
+        kind, source, ...(text(entry.job) ? { job: text(entry.job) } : {}), result, ms,
+        ...(entry.need === 'existing' || entry.need === 'new' || entry.need === null ? { need: entry.need } : {}),
+        ...(entry.pool_kind === 'personal' || entry.pool_kind === 'showcase' || entry.pool_kind === null ? { pool_kind: entry.pool_kind } : {}),
+        ...(Array.isArray(entry.entries) ? { entries: entry.entries.filter((v): v is string => typeof v === 'string') } : {}),
+        ...(Array.isArray(entry.dropped) && entry.dropped.length ? { dropped: entry.dropped as PrewalkEntry['dropped'] } : {}),
+      };
+      return [item];
+    });
+  }
+  if (legacyPool && typeof legacyPool === 'object') {
+    const source: PrewalkEntry['source'] = legacyPool.source === 'failed' ? 'default' : legacyPool.source;
+    const result = legacyPool.source === 'failed' ? 'failed' : legacyPool.entries.length ? 'attached' : 'none';
+    return [{
+      kind: 'pool', source, result, ms: Number.isFinite(legacyPool.ms) ? legacyPool.ms : 0,
+      need: legacyPool.need, pool_kind: legacyPool.kind, entries: legacyPool.entries,
+      ...(legacyPool.dropped?.length ? { dropped: legacyPool.dropped } : {}),
+    }];
+  }
+}
+
 const logged = new Set<string>();
 export function archiveJob(home: string, dir: string, id: string, receipt: Job | null,
   status: Partial<JobStatus>, now: number, log: (message: string) => void): void {
@@ -229,10 +259,7 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
       experiment: typeof job.experiment === 'string' ? job.experiment : undefined,
       arm: typeof job.arm === 'string' ? job.arm : undefined,
       citations: jobCitations(job.citations),
-      pool_pick: job.pool_pick && {
-        type: job.pool_pick.type, need: job.pool_pick.need, kind: job.pool_pick.kind, entries: job.pool_pick.entries,
-        source: job.pool_pick.source, ms: job.pool_pick.ms, dropped: job.pool_pick.dropped, reason: text(record(job.pool_pick).reason),
-      },
+      prewalk: archivePrewalk(job.prewalk, job.pool_pick),
       land: archiveJobLand(home, id),
       outcome: cachedOutcome(home, id, epoch(status.settled_at) ?? ended),
     };

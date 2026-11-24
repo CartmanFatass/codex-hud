@@ -1,6 +1,7 @@
 {
   "role": "sonic",
   "instructions": "sonic",
+  "prewalk": "off",
   "can_continue": false,
   "thinking_choices": {
     "none": "run an exact supplied command and report its output, copy exact text, or list files; no interpretation",

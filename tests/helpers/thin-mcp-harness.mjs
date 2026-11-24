@@ -63,7 +63,7 @@ export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
 }
 
-async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true }) {
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const cleanups = [];
   cleanupFixture(t, { root, hudHome: join(root, 'hud_home') }, async () => {
@@ -123,6 +123,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     fs.mkdirSync(env[name]);
   }
   env.HUD_SETTINGS_PATH = join(env.HUD_HOME, 'hud-settings.json');
+  if (!autoPrewalk) writeFixtureFile(env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: false }));
   // The fake CLI can still show a trust prompt even when these local grants exist.
   const trusted = fs.realpathSync(root);
   const grokDir = join(env.HOME, '.grok');

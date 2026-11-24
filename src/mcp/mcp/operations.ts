@@ -266,6 +266,7 @@ function jobDiagnostics(job: Job) {
       : {}),
     dispatch_exit_code: job.dispatch_exit_code,
     stderr_tail: job.stderr_tail,
+    ...(job.prewalk && { prewalk: job.prewalk }),
     ...(job.launch_agent_args && { launch_agent_args: job.launch_agent_args }),
   };
 }

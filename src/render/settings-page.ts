@@ -13,7 +13,7 @@ const CALL_FEATURES: Record<string, string> = {
   'job-sentence': 'Job sentence', 'native-sentence': 'Native sentence', 'waiting-brief': 'Panel translation', title: 'Decision title',
   probe: 'Probe', outcome: 'outcome', looping: 'looping',
   'question-category': 'Question category', 'review-severity': 'Review severity',
-  'quiet-job': 'Quiet job', 'sonic-thinking': 'Sonic thinking', 'imp-routing': 'Imp routing', 'pool-pick': 'Pool pick',
+  'quiet-job': 'Quiet job', 'sonic-thinking': 'Sonic thinking', 'imp-routing': 'Imp routing', prewalk: 'Prewalk', 'pool-pick': 'Pool pick',
   'advisor-shadow': 'Advisor shadow',
 };
 export type SettingKey = keyof HudSettings;
@@ -96,11 +96,13 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     format: (value) => ({ gemini: 'Gemini', openai: 'OpenAI', anthropic: 'Anthropic', typesafe: 'TypeSafe' })[String(value)] ?? String(value),
   },
   { key: 'decisionCallsPerHour', group: 'Models', label: 'Decision cap', values: [600, 2000, 0],
-    help: 'Decision-API calls per hour (quiet jobs, Sonic thinking, Imp routing, pool picks)', advanced: true, format: callCap },
+    help: 'Decision-API calls per hour (quiet jobs, Sonic thinking, Imp routing, prewalk)', advanced: true, format: callCap },
   { key: 'quietJobDecision', group: 'Models', label: 'Quiet job', values: [true, false],
     help: 'Send the quiet worker’s pane tail to the Decision API; off hands the job back to main' },
   { key: 'sonicAutoThinking', group: 'Models', label: 'Sonic auto-thinking', values: [false, true],
     help: 'Send the Sonic task text to the Decision API to choose its thinking level' },
+  { key: 'autoPrewalk', group: 'Models', label: 'Auto prewalk', values: [true, false],
+    help: 'Run automatic prewalk scouts and pool picks before enabled roles; off disables all automatic prewalks' },
   { key: 'poolPick', group: 'Models', label: 'Pool pick', values: [true, false],
     help: 'Select design references before launch; off skips the pick and attaches nothing' },
   { key: 'advisorShadow', group: 'Models', label: 'Advisor shadow', values: [false, true],
@@ -222,7 +224,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'openPreviews'],
-  Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'poolPick', 'advisorShadow', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool'],
+  Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'autoPrewalk', 'poolPick', 'advisorShadow', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
 };

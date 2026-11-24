@@ -1,6 +1,7 @@
 {
   "role": "oracle",
   "instructions": "oracle",
+  "prewalk": "on",
   "can_continue": false,
   "run": [
     {

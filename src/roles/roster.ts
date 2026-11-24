@@ -647,7 +647,9 @@ export function roleRegistry(
       const owner = stack.filter(layer => dirname(layer.file.source_file) === ownerRoot).at(-1)?.file;
       if (owner?.pool) role.pool = owner.pool;
       else delete role.pool;
-      if (owner?.prewalk) role.prewalk = owner.prewalk;
+      const bundledRole = stack.find(layer => dirname(layer.file.source_file) === join(bundled, 'roles'))?.file;
+      const prewalk = owner?.prewalk ?? bundledRole?.prewalk ?? (name === 'frontend-imp' ? 'on' : undefined);
+      if (prewalk) role.prewalk = prewalk;
       else delete role.prewalk;
       role.preset = raw.active_preset === undefined ? currentPreset(role) : selected?.name ?? null;
       if (raw.active_preset && !selected) role.preset_missing = raw.active_preset;

@@ -12,7 +12,7 @@ import { reportReadHint } from '../../utils/report-summary.js';
 import { previewNotice } from '../../roles/report-meta.js';
 import { readTurn, turnToken } from '../cli-judge.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
-import type { BatchNotice, Job, McpTaskMarker, PoolPick } from '../job-contracts.js';
+import type { BatchNotice, Job, McpTaskMarker, PrewalkEntry } from '../job-contracts.js';
 import { monitorText } from '../../render/monitor-text.js';
 import { hasHeadlessSends, headlessFollowupReady } from '../headless-sends.js';
 import { readLand, activeLand, isFlowId } from '../land-state.js';
@@ -209,14 +209,14 @@ export function taskFence(job: Job) {
 function wireTask(task: HudTask) {
   return { taskId: task.id, createdAt: task.createdAt, ttlMs: task.ttlMs ?? TASK_TTL, pollIntervalMs: TASK_POLL_MS, ...task.view };
 }
-export type TaskReply = ReturnType<typeof wireTask> & { resultType: 'task'; pool_pick?: PoolPick; pick_summary?: string };
+export type TaskReply = ReturnType<typeof wireTask> & { resultType: 'task'; prewalk?: PrewalkEntry[]; pick_summary?: string };
 export const isTaskReply = (value: unknown): value is TaskReply =>
   !!value && typeof value === 'object' && 'resultType' in value && value.resultType === 'task';
-export function poolPickSummary(pick: PoolPick): string {
-  if (pick.source === 'failed') return pick.need === 'existing' ? 'pick: none (project design unavailable)' : 'pick: none (pick unavailable)';
+export function poolPickSummary(pick: PrewalkEntry): string {
+  if (pick.result === 'failed') return pick.need === 'existing' ? 'pick: none (project design unavailable)' : 'pick: none (pick unavailable)';
   if (!Array.isArray(pick.entries) || !pick.entries.length) return pick.need === 'existing'
     ? 'pick: none (existing look)' : 'pick: none (no valid entries)';
-  const label = pick.source === 'project' ? 'project design · ' : pick.kind ? `${pick.kind} · ` : '';
+  const label = pick.source === 'project' ? 'project design · ' : pick.pool_kind ? `${pick.pool_kind} · ` : '';
   const entries = pick.entries.map(entry => pick.source === 'project' ? entry : entry.replace(/\.md$/, '')).join(' + ');
   const line = `pick: ${label}${monitorText(entries).replace(/[\u2028\u2029]/g, ' ')}`;
   return line.length > 240 ? `${line.slice(0, 239)}…` : line;
@@ -227,7 +227,8 @@ export function launchSummary(job: Job) {
     job.repair_of && `continued_as: ${job.job}`];
   if (job.attempts && job.attempts.length > 1) facts.push(`attempts: ${job.attempts.map(({ place, reason }) =>
     reason ? `${place} (${reason.replace(/\s+/g, ' ').slice(0, 160)})` : place).join(' → ')}`);
-  if (job.pool_pick) facts.push(poolPickSummary(job.pool_pick));
+  const pool = job.prewalk?.find(entry => entry.kind === 'pool');
+  if (pool) facts.push(poolPickSummary(pool));
   return facts.filter(Boolean).join('; ');
 }
 export function finishTask(task: HudTask | undefined, job: Job, ok: boolean, launch?: string): TaskReply | undefined {
@@ -242,8 +243,9 @@ export function finishTask(task: HudTask | undefined, job: Job, ok: boolean, lau
   armExpiry(task);
   pruneTasks(tasks, Date.now(), evictTask);
   persistTask(task);
+  const pool = job.prewalk?.find(entry => entry.kind === 'pool');
   return { resultType: 'task', ...wireTask(task), ...(job.route && { route: job.route }),
-    ...(job.pool_pick && { pool_pick: job.pool_pick, pick_summary: poolPickSummary(job.pool_pick) }) };
+    ...(job.prewalk && { prewalk: job.prewalk }), ...(pool && { pick_summary: poolPickSummary(pool) }) };
 }
 export function registerBatchTask(task: HudTask | undefined, job: Job, ok: boolean): void {
   if (!task) return;

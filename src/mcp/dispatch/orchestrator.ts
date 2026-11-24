@@ -23,6 +23,7 @@ import {
   currentPreset, harnessDefaults, readExhausted, isQuotaFailure, markExhausted, describePlace, recordFailureExhaustion,
   type Role, type RolePlace,
 } from '../../roles/roster.js';
+import { loadSettings } from '../../settings.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { waitUntilFs } from '../../utils/fs-wait.js';
 import { procStat } from '../../utils/proc.js';
@@ -32,7 +33,9 @@ import {
 import type { StandingBriefRef } from '../cli-worker-startup.js';
 import { defaultImpRoute, impPlacementSettings, repairImpRoute, pickImpRoute } from '../imp-routing.js';
 import { clearHeadlessSends, hasHeadlessSends, headlessFollowupReady, readHeadlessSends, writeHeadlessSends } from '../headless-sends.js';
-import type { AnswerActor, Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus, SendOutcome } from '../job-contracts.js';
+import type {
+  AnswerActor, Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus, PrewalkEntry, PrewalkScoutKind, SendOutcome,
+} from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
 import { routingTicketText, ticketObjective } from '../local-tickets.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
@@ -48,6 +51,7 @@ import { stopSonic } from '../sonic-process.js';
 import { headlessSonicChildren } from '../../worker/sonic-jobs.js';
 import { pickSonicThinking } from '../sonic-thinking.js';
 import { pickRolePool } from '../pool-pick.js';
+import { decidePrewalkScouts, prewalkScoutTask, prewalkTimeoutMs } from '../prewalk.js';
 import {
   directory, readRow, hudHome, primary, jobs, readCachedStatus, findJob, settled, save, bundled,
   writeCreateStatus, queuePositionsForJobs, jobCache, digestLine, publishWorkSummary, findJobMutable, slice,
@@ -82,8 +86,10 @@ function created(job: Job, initialRow?: JobRow) {
     ...(job.thinking == null ? {} : { thinking: job.thinking }),
     ...(job.thinking_source ? { thinking_source: job.thinking_source } : {}),
   };
+  const poolEntry = job.prewalk?.find(entry => entry.kind === 'pool');
   const launch = { attempts: job.attempts, used_place: job.used_place ?? null, ...(job.headless && { mode: 'headless' }),
-    ...(job.route && { route: job.route }), ...(job.pool_pick && { pool_pick: job.pool_pick, pick_summary: poolPickSummary(job.pool_pick) }) };
+    ...(job.route && { route: job.route }), ...(job.prewalk && { prewalk: job.prewalk }),
+    ...(poolEntry && { pick_summary: poolPickSummary(poolEntry) }) };
   const queued = row.state === 'queued'
     ? { queued: true as const, ...(row.queue_position !== undefined ? { queue_position: row.queue_position } : {}) }
     : {};
@@ -238,39 +244,115 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
 export const pendingScouts = new Map<string, AbortController>();
 export const scoutedCreates = new Set<Promise<void>>();
 
-async function runCreateScout(target: Job, question: string, contextCwd: string, contextFiles: unknown, signal: AbortSignal): Promise<{ id?: string; failure?: string }> {
+type ScoutSpec = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; question: string; includeContext: boolean };
+type ScoutOutcome = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; id?: string; failure?: string; timedOut?: boolean; ms: number };
+
+async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, contextFiles: unknown,
+  signal: AbortSignal, requestKey: string): Promise<ScoutOutcome> {
+  const started = performance.now();
+  const elapsed = () => Math.round(performance.now() - started);
   let scout: Job | null = null;
   let discard = false;
   try {
-    const result = await dispatchWithKey({ role: 'sonic', task: question, cwd: target.cwd, context_files: contextFiles },
-      jobCallerPane(target), `scout:${target.job}`, false, target, undefined, undefined,
-      { scoutContextCwd: contextCwd, dispatcher: target.dispatcher });
+    const result = await dispatchWithKey(
+      { role: 'sonic', task: spec.question, cwd: target.cwd, ...(spec.includeContext ? { context_files: contextFiles } : {}) },
+      jobCallerPane(target), requestKey, false, target, undefined, undefined,
+      { scoutContextCwd: contextCwd, prewalkKind: spec.kind, dispatcher: target.dispatcher },
+    );
     if (!('job' in result)) {
-      return { failure: ('reason' in result && result.reason) || ('error' in result && result.error) || ('code' in result && result.code) || 'could not launch' };
+      return {
+        kind: spec.kind, source: spec.source, ms: elapsed(),
+        failure: ('reason' in result && result.reason) || ('error' in result && result.error) || ('code' in result && result.code) || 'could not launch',
+      };
     }
     const id = result.job;
     while ((scout = findJob(id))) {
       const { row } = readRow(scout);
-      if (signal.aborted) { discard = !settled(row.state); return {}; }
+      if (signal.aborted) {
+        discard = !settled(row.state);
+        return { kind: spec.kind, source: spec.source, id, timedOut: true, failure: 'timeout', ms: elapsed() };
+      }
       if (settled(row.state)) {
-        if (row.state === 'failed' || row.state === 'stopped') return { failure: row.reason ?? row.state };
-        if (!row.report_present) return { failure: 'settled without a report' };
+        if (row.state === 'failed' || row.state === 'stopped') return { kind: spec.kind, source: spec.source, id, failure: row.reason ?? row.state, ms: elapsed() };
+        if (!row.report_present) return { kind: spec.kind, source: spec.source, id, failure: 'settled without a report', ms: elapsed() };
         save({ ...scout, read_at: new Date().toISOString() });
-        return { id };
+        return { kind: spec.kind, source: spec.source, id, ms: elapsed() };
       }
       if (row.open_questions || row.blocked || row.state === 'waiting_orchestrator') {
         discard = true;
-        return { failure: row.open_questions ? 'asked a question' : row.reason ?? 'needed attention' };
+        return { kind: spec.kind, source: spec.source, id, failure: row.open_questions ? 'asked a question' : row.reason ?? 'needed attention', ms: elapsed() };
       }
       await sleep(500, undefined, { signal });
     }
-    return { failure: 'scout receipt disappeared' };
+    return { kind: spec.kind, source: spec.source, id, failure: 'scout receipt disappeared', ms: elapsed() };
   } catch (error) {
+    if (signal.aborted) {
+      discard = !!scout && !settled(readRow(scout).row.state);
+      return { kind: spec.kind, source: spec.source, ...(scout && { id: scout.job }), timedOut: true, failure: 'timeout', ms: elapsed() };
+    }
     discard = !!scout;
-    return { failure: error instanceof Error ? error.message : String(error) };
+    return { kind: spec.kind, source: spec.source, ...(scout && { id: scout.job }), failure: error instanceof Error ? error.message : String(error), ms: elapsed() };
   } finally {
     if (discard && scout) await stopSonic(directory(scout.job)).catch(() => ensureWatcher());
   }
+}
+
+async function runPrewalkScouts(target: Job, specs: readonly ScoutSpec[], contextCwd: string, contextFiles: unknown,
+  callerSignal: AbortSignal): Promise<ScoutOutcome[]> {
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), prewalkTimeoutMs());
+  const signal = AbortSignal.any([callerSignal, timeout.signal]);
+  try {
+    return await Promise.all(specs.map((spec) => {
+      const key = spec.source === 'caller' ? `scout:${target.job}` : `prewalk:${target.job}:${spec.kind}`;
+      return runOneScout(target, spec, contextCwd, contextFiles, signal, key);
+    }));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function formatScoutNote(outcome: ScoutOutcome, reason: string): string {
+  const clean = digestLine(reason.replace(/\s+/g, ' '), 300);
+  return outcome.source === 'caller' ? `Scout failed: ${clean}` : `Scout failed (${outcome.kind}): ${clean}`;
+}
+
+async function applyScoutOutcomes(
+  args: Args,
+  browser: boolean,
+  initialContext: Awaited<ReturnType<typeof assembleContext>>,
+  outcomes: readonly ScoutOutcome[],
+  poolEntry: PrewalkEntry | undefined,
+  contextFor: (targetArgs: Args, inline: boolean) => ReturnType<typeof assembleContext>,
+) {
+  let briefContext = initialContext;
+  const entries: PrewalkEntry[] = poolEntry ? [poolEntry] : [];
+  const notes: string[] = [];
+  let attached = 0;
+  for (const outcome of outcomes) {
+    let attachFailure = outcome.failure;
+    if (outcome.id && !attachFailure && !('code' in briefContext)) {
+      const current = briefContext.metadata.from_jobs ?? [];
+      if (current.length >= 16) attachFailure = 'from_jobs limit reached';
+      else {
+        const withScout = await contextFor({ ...args, from_jobs: [...current, outcome.id] }, browser);
+        if ('code' in withScout) attachFailure = withScout.code === 'context_too_large' ? 'report exceeds the context limit' : 'report is unreadable';
+        else { briefContext = withScout; attached++; }
+      }
+    }
+    if (outcome.id && !attachFailure && !('code' in briefContext)) {
+      entries.push({ kind: outcome.kind, source: outcome.source, job: outcome.id, result: 'attached', ms: outcome.ms });
+    } else {
+      const result = outcome.timedOut ? 'timeout' : 'failed';
+      entries.push({ kind: outcome.kind, source: outcome.source, ...(outcome.id && { job: outcome.id }), result, ms: outcome.ms });
+      notes.push(formatScoutNote(outcome, attachFailure ?? result));
+    }
+  }
+  const scoutState: Job['scout_state'] = attached > 0 ? 'done' : 'failed';
+  const scoutError = scoutState === 'failed'
+    ? digestLine(notes.join('; ').replace(/^Scout failed(?: \([^)]+\))?: /, ''), 120)
+    : undefined;
+  return { briefContext, entries, note: notes.length ? `${notes.join('\n')}\n\n` : '', scoutState, scoutError };
 }
 
 export function canOverflowImpJob(job: Job): boolean {
@@ -308,8 +390,8 @@ async function nextEvenLaunch(even: ReturnType<typeof evenPlanner>, job: Job, re
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<Job, 'job' | 'objective'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit, dispatcher }: {
-    scoutContextCwd?: string; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit, dispatcher }: {
+    scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
     ticketQueue?: string; canAdmit?: () => boolean; dispatcher?: Job['dispatcher'];
   } = {}) {
   const { experiment, arm, preview } = args;
@@ -318,6 +400,12 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   if (!validExperimentTag(experiment) || !validExperimentTag(arm)) {
     return { ok: false, code: 'invalid_arguments', error: `experiment and arm must each be a string of at most ${EXPERIMENT_TAG_MAX_LENGTH} characters` };
+  }
+  if (args.prewalk !== undefined && typeof args.prewalk !== 'boolean') {
+    return { ok: false, code: 'invalid_arguments', error: 'prewalk must be a boolean' };
+  }
+  if (args.prewalk === false && args.scout !== undefined) {
+    return { ok: false, code: 'invalid_arguments', error: 'prewalk: false and scout are mutually exclusive' };
   }
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
@@ -452,17 +540,39 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
   }
 
-  const poolConfig = chain.prewalk !== 'off' && !landCwd && (!repairOf || retryInput) ? chain.pool : undefined;
+  let prewalkSettings;
+  try { prewalkSettings = loadSettings({ ...process.env, HUD_HOME: hudHome }); } catch { /* Missing handled by loadSettings; malformed skips auto prewalk. */ }
+  const autoPrewalkAllowed = prewalkSettings?.autoPrewalk !== false && args.prewalk !== false && !landCwd && (!repairOf || !!retryInput);
+  const poolConfig = autoPrewalkAllowed && chain.prewalk !== 'off' ? chain.pool : undefined;
+  const autoScout = autoPrewalkAllowed && !!prewalkSettings && !scoutQuestion && chain.prewalk === 'on' && role !== 'sonic'
+    && !(retryInput && sourceJob?.prewalk?.some(entry => entry.kind !== 'pool'));
+  let scoutDecision: Awaited<ReturnType<typeof decidePrewalkScouts>> | undefined;
   const poolPlace = plan.candidates[0]?.prepared;
-  if (poolConfig && poolPlace && !('code' in poolPlace)) {
-    // Validate caller context before a model call, and don't hold the concurrency lock over the API wait.
+  if ((poolConfig || autoScout) && poolPlace && !('code' in poolPlace)) {
+    // Validate caller context before model calls, and don't hold the concurrency lock over API waits.
     const browser = poolPlace.place.harness === 'bro';
     const validated = (!browser && localContext) || await contextFor(args, browser);
     if ('code' in validated) return validated;
-    pool = await pickRolePool(hudHome, poolConfig, task, role, project, basename(projectRoot));
+    const projectName = basename(projectRoot);
+    const [pickedPool, decidedScouts] = await Promise.all([
+      poolConfig ? pickRolePool(hudHome, poolConfig, task, role, project, projectName) : Promise.resolve(undefined),
+      autoScout ? decidePrewalkScouts(hudHome, prewalkSettings!, task, role, projectName) : Promise.resolve(undefined),
+    ]);
+    pool = pickedPool;
+    scoutDecision = decidedScouts;
     if (pool?.pool_files.length) localContext = undefined;
     else if (!browser) localContext = validated;
   }
+  const scoutSpecs: ScoutSpec[] = scoutQuestion
+    ? [{ kind: 'code', source: 'caller', question: scoutQuestion, includeContext: true }]
+    : scoutDecision
+      ? scoutDecision.scouts.map(({ kind, source }) => ({ kind, source, question: prewalkScoutTask(kind, task), includeContext: kind !== 'web' }))
+      : [];
+  const hasScouts = scoutSpecs.length > 0;
+  const hasPrewalk = Boolean(pool || scoutQuestion || scoutDecision);
+  const initialPrewalk = (state: 'running' | 'queued'): PrewalkEntry[] | undefined => hasPrewalk
+    ? [...(pool ? [pool.entry] : []), ...scoutSpecs.map(({ kind, source }) => ({ kind, source, result: state, ms: scoutDecision?.ms ?? 0 }))]
+    : undefined;
 
   const enforceCap = role !== 'sonic' && !parentJob && !scoutContextCwd && !landCwd;
   let overflowFrom = fromImp ? 'imp' : undefined;
@@ -524,7 +634,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         ...(overflowFrom && { overflow_from: overflowFrom }),
         task_length: task.length,
         ...queuedContext.metadata,
-        ...pool,
+        ...(pool && { pool_files: pool.pool_files }),
+        ...(initialPrewalk('queued') && { prewalk: initialPrewalk('queued') }),
         ...(checks?.length ? { checks } : {}),
         ...(repairOf ? { repair_of: repairOf } : {}),
         ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
@@ -576,7 +687,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       job: id,
       role,
       ...borrowed,
-      ...pool,
+      ...(pool && { pool_files: pool.pool_files }),
+      ...(initialPrewalk('running') && { prewalk: initialPrewalk('running') }),
+      ...(prewalkKind && { prewalk_kind: prewalkKind }),
       ...(overflowFrom ? { overflow_from: overflowFrom } : {}),
       request_key,
       cwd: landCwd ?? reusedWorktree?.root ?? cwd,
@@ -631,7 +744,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const attempts = base.attempts!;
   const candidates = plan.candidates;
   let scoutTask: HudTask | undefined;
-  let scoutResult: Awaited<ReturnType<typeof runCreateScout>> | undefined;
+  let scoutOutcomes: ScoutOutcome[] | undefined;
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
   const launch = () => keyLock(`job:${id}`, async () => {
     let job = base;
@@ -685,25 +798,19 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (imp) job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
       let briefContext = inline === browser ? context! : await contextFor(args, browser);
-      let scoutFailure = scoutResult?.failure;
-      if (scoutResult?.id && !('code' in briefContext)) {
-        const withScout = await contextFor({ ...args, from_jobs: [...(briefContext.metadata.from_jobs ?? []), scoutResult.id] }, browser);
-        if ('code' in withScout) scoutFailure = withScout.code === 'context_too_large' ? 'report exceeds the context limit' : 'report is unreadable';
-        else briefContext = withScout;
-      }
-      if (scoutQuestion) {
-        if (scoutFailure) {
-          job.scout_state = 'failed';
-          job.scout_error = digestLine(scoutFailure.replace(/\s+/g, ' '), 120);
-        } else if (scoutResult?.id) {
-          job.scout_state = 'done';
-          delete job.scout_error;
-        }
+      let scoutNote = '';
+      if (hasScouts && scoutOutcomes) {
+        const applied = await applyScoutOutcomes(args, browser, briefContext, scoutOutcomes, pool?.entry, contextFor);
+        briefContext = applied.briefContext;
+        scoutNote = applied.note;
+        job.prewalk = applied.entries;
+        job.scout_state = applied.scoutState;
+        if (applied.scoutError) job.scout_error = applied.scoutError;
+        else delete job.scout_error;
       }
       if (!('code' in briefContext)) {
         Object.assign(job, briefContext.metadata);
-        const note = scoutFailure ? `Scout failed: ${digestLine(scoutFailure.replace(/\s+/g, ' '), 300)}\n\n` : '';
-        writeBrief(job, dir, task, note + briefContext.block, !scoutQuestion && attempts.length === 0);
+        writeBrief(job, dir, task, scoutNote + briefContext.block, !hasScouts && attempts.length === 0);
       }
       // Persist before dispatch: an interrupted launch must not dispatch again on retry.
       save(job, attempts.length > 0);
@@ -723,7 +830,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         else if (!scoutTask && !job.scout_only) void ensureQueueWatcher(pane, hudHome);
       }
       const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
-      if (scoutQuestion && attempts.length === 0) {
+      if (hasScouts && attempts.length === 0) {
         fs.rmSync(join(dir, jobFiles.status), { force: true });
         jobCache.invalidateFile(join(dir, jobFiles.status));
       }
@@ -741,7 +848,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
     if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
       job.route = plan.fallback;
-    const launchRow = finishLaunch(job, dir, result, reason, !scoutQuestion);
+    const launchRow = finishLaunch(job, dir, result, reason, !hasScouts);
     if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && jobCallerPane(job) === scoutTask.pane) {
       scoutTask.fence = taskFence(job);
       extendTask(scoutTask, job);
@@ -752,7 +859,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
     return finishTask(taskEntry, job, result.exit_code === 0, taskEntry && launchSummary(job)) ?? created(job, launchRow);
   });
-  if (!scoutQuestion) return launch();
+  if (!hasScouts) return launch();
 
   // The target ID (and task, if negotiated) is stable across both stages.
   base.scout_state = 'scouting';
@@ -781,9 +888,12 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         await prepareWorktree(base, worktree);
       }
       if (!controller.signal.aborted && (!worktree || base.worktree)) {
-        scoutResult = await runCreateScout(base, scoutQuestion, cwd, context!.metadata.context_files, controller.signal);
+        scoutOutcomes = await runPrewalkScouts(base, scoutSpecs, cwd, context!.metadata.context_files, controller.signal);
       }
       if (controller.signal.aborted) {
+        if (base.prewalk) {
+          base.prewalk = base.prewalk.map(entry => entry.kind === 'pool' ? entry : { ...entry, result: 'stopped' });
+        }
         save({ ...base, dispatch_exit_code: 1 });
         writeCreateStatus(dir, { state: 'stopped', exit_reason: 'scouted dispatch stopped', ended_at: new Date().toISOString() });
         return;
@@ -897,6 +1007,18 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     if ('code' in context) return failQueued(context.error ?? context.code ?? 'invalid_arguments', context.code === 'invalid_arguments' ? 'invalid_arguments' : undefined);
 
     const scoutQuestion = existing.scout_question;
+    const queuedPoolEntry = existing.prewalk?.find(entry => entry.kind === 'pool');
+    const scoutSpecs: ScoutSpec[] = scoutQuestion
+      ? [{ kind: 'code', source: 'caller', question: scoutQuestion, includeContext: true }]
+      : (existing.prewalk ?? [])
+          .filter((entry): entry is PrewalkEntry & { kind: PrewalkScoutKind } => entry.kind !== 'pool' && entry.result === 'queued')
+          .map(entry => ({
+            kind: entry.kind,
+            source: entry.source === 'default' ? 'default' : 'decision',
+            question: prewalkScoutTask(entry.kind, task),
+            includeContext: entry.kind !== 'web',
+          }));
+    const hasScouts = scoutSpecs.length > 0;
     const leaveQueue = () => {
       fs.rmSync(join(dir, jobFiles.status), { force: true });
       jobCache.invalidateFile(join(dir, jobFiles.status));
@@ -907,7 +1029,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       if (readCachedStatus(id).status?.state !== 'queued') return false;
       const cap = capForRole(loadConcurrencySettings(), role);
       if (cap && (countWorkingByRole().get(role) ?? 0) >= cap) return false;
-      if (scoutQuestion) {
+      if (hasScouts) {
         base.scout_state = 'scouting';
         save(base);
         writeCreateStatus(dir, { state: 'working', role, reason: 'scouting' });
@@ -915,19 +1037,19 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       return true;
     }, { timeoutMs: 10_000 });
     if (!reserved) return { started: false };
-    let scoutResult: Awaited<ReturnType<typeof runCreateScout>> | undefined;
-    if (scoutQuestion) {
+    let scoutOutcomes: ScoutOutcome[] | undefined;
+    if (hasScouts) {
       const controller = new AbortController();
       if (worktree && !base.worktree && plan.candidates.some(({ candidate: { place }, prepared }) => !('code' in prepared) &&
         (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree!.main_root))))) {
         await prepareWorktree(base, worktree);
       }
       if (!worktree || base.worktree) {
-        scoutResult = await runCreateScout(base, scoutQuestion, cwd, context.metadata.context_files, controller.signal);
+        scoutOutcomes = await runPrewalkScouts(base, scoutSpecs, cwd, context.metadata.context_files, controller.signal);
       }
     }
 
-    if (scoutQuestion) leaveQueue();
+    if (hasScouts) leaveQueue();
 
     const harnessesSource = harnessesSourceFor(onName);
     const attempts = base.attempts!;
@@ -980,25 +1102,19 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       if (launchRoleName === 'imp') job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
       let briefContext = inline === browser ? context : await contextFor(args, browser);
-      let scoutFailure = scoutResult?.failure;
-      if (scoutResult?.id && !('code' in briefContext)) {
-        const withScout = await contextFor({ ...args, from_jobs: [...(briefContext.metadata.from_jobs ?? []), scoutResult.id] }, browser);
-        if ('code' in withScout) scoutFailure = withScout.code === 'context_too_large' ? 'report exceeds the context limit' : 'report is unreadable';
-        else briefContext = withScout;
-      }
-      if (scoutQuestion) {
-        if (scoutFailure) {
-          job.scout_state = 'failed';
-          job.scout_error = digestLine(scoutFailure.replace(/\s+/g, ' '), 120);
-        } else if (scoutResult?.id) {
-          job.scout_state = 'done';
-          delete job.scout_error;
-        }
+      let scoutNote = '';
+      if (hasScouts && scoutOutcomes) {
+        const applied = await applyScoutOutcomes(args, browser, briefContext, scoutOutcomes, queuedPoolEntry, contextFor);
+        briefContext = applied.briefContext;
+        scoutNote = applied.note;
+        job.prewalk = applied.entries;
+        job.scout_state = applied.scoutState;
+        if (applied.scoutError) job.scout_error = applied.scoutError;
+        else delete job.scout_error;
       }
       if (!('code' in briefContext)) {
         Object.assign(job, briefContext.metadata);
-        const note = scoutFailure ? `Scout failed: ${digestLine(scoutFailure.replace(/\s+/g, ' '), 300)}\n\n` : '';
-        writeBrief(job, dir, task, note + briefContext.block, false);
+        writeBrief(job, dir, task, scoutNote + briefContext.block, false);
       }
       save(job, attempts.length > 0);
       if (attempts.length === 0 && job.retry_of) {

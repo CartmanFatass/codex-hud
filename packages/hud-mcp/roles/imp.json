@@ -1,6 +1,7 @@
 {
   "role": "imp",
   "instructions": "implementer",
+  "prewalk": "on",
   "can_continue": true,
   "idle_grace_s": 600,
   "routing": {

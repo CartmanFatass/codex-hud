@@ -6,7 +6,7 @@ import { loadSettings } from '../settings.js';
 import { readFileBounded, readJsonBounded } from '../utils/atomic-fs.js';
 import { OPENAI_NONE_CHOICE } from '../jev/model.js';
 import { dispatchChoice, dispatchDecision } from './dispatch-decision.js';
-import type { Job, PoolPick } from './job-contracts.js';
+import type { PoolDroppedEntry, PrewalkEntry } from './job-contracts.js';
 
 const ENTRY_BYTES = 400;
 const INDEX_BYTES = 48 * 1024;
@@ -58,18 +58,19 @@ function indexedEntry(dir: string, name: string) {
 }
 
 export async function pickRolePool(hudHome: string, pool: RolePool, task: string,
-  role: string, project: ProjectGate, projectName: string): Promise<Required<Pick<Job, 'pool_pick' | 'pool_files'>> | undefined> {
+  role: string, project: ProjectGate, projectName: string): Promise<{ entry: PrewalkEntry; pool_files: string[] } | undefined> {
   const started = performance.now();
-  const receipt = (source: PoolPick['source'], need: PoolPick['need'] = null, kind: PoolPick['kind'] = null,
-    entries: string[] = [], files: string[] = [], dropped?: PoolPick['dropped']) => ({
-    pool_pick: { type: 'pick' as const, need, kind, entries, source, ms: Math.round(performance.now() - started),
-      ...(dropped?.length && { dropped }) },
+  const receipt = (source: PrewalkEntry['source'], result: 'attached' | 'none' | 'failed',
+    need: PrewalkEntry['need'] = null, pool_kind: PrewalkEntry['pool_kind'] = null,
+    entries: string[] = [], files: string[] = [], dropped?: PoolDroppedEntry[]) => ({
+    entry: { kind: 'pool' as const, source, result, ms: Math.round(performance.now() - started),
+      need, pool_kind, entries, ...(dropped?.length && { dropped }) },
     pool_files: files,
   });
   let settings;
   try { settings = loadSettings({ ...process.env, HUD_HOME: hudHome }); }
-  catch { return receipt('failed'); }
-  if (!settings.poolPick) return;
+  catch { return receipt('default', 'failed'); }
+  if (!settings.autoPrewalk || !settings.poolPick) return;
 
   let dir = pool.dir;
   let names: string[] = [];
@@ -79,11 +80,11 @@ export async function pickRolePool(hudHome: string, pool: RolePool, task: string
       .map(entry => entry.name).sort();
   } catch { /* The project can still declare a design when the pool is unavailable. */ }
   const explicit = names.filter(name => namedIn(task, name)).slice(0, POOL_ENTRY_LIMIT);
-  if (explicit.length) return receipt('brief', null, null, explicit, explicit.map(name => join(dir, name)));
+  if (explicit.length) return receipt('brief', 'attached', null, null, explicit, explicit.map(name => join(dir, name)));
 
   const design = designPath(project);
-  if (design === null) return receipt('failed', 'existing');
-  if (design) return receipt('project', 'existing', null, [relative(project.root, design)], [design]);
+  if (design === null) return receipt('project', 'failed', 'existing');
+  if (design) return receipt('project', 'attached', 'existing', null, [relative(project.root, design)], [design]);
 
   const selection_rules = prefix(join(dir, 'README.md'), 8 * 1024) ?? '';
   const facts = { selection_rules, index: [] as NonNullable<ReturnType<typeof indexedEntry>>[], role, project: projectName };
@@ -95,7 +96,7 @@ export async function pickRolePool(hudHome: string, pool: RolePool, task: string
     if (bytes > INDEX_BYTES) break;
     facts.index.push(entry);
   }
-  if (!facts.index.length) return receipt('failed');
+  if (!facts.index.length) return receipt('default', 'failed');
 
   const choices = facts.index.map(({ name }) => ({ value: name, description: name }));
   choices.push({ value: OPENAI_NONE_CHOICE, description: 'No entry for this slot.' });
@@ -121,14 +122,14 @@ export async function pickRolePool(hudHome: string, pool: RolePool, task: string
       ...slots,
     ],
   });
-  if (!result) return receipt('failed');
+  if (!result) return receipt('decision', 'failed');
   const need = dispatchChoice(result, 'need', NEEDS), kind = dispatchChoice(result, 'kind', KINDS);
-  if (need === 'existing') return receipt('decision', need, kind);
-  if (!need || !kind) return receipt('failed');
+  if (need === 'existing') return receipt('decision', 'none', need, kind);
+  if (!need || !kind) return receipt('decision', 'failed');
 
   const index = new Map(facts.index.map(entry => [entry.name, entry]));
   const picked = new Set<string>();
-  const dropped: NonNullable<PoolPick['dropped']> = [];
+  const dropped: PoolDroppedEntry[] = [];
   for (const [i, slot] of slots.entries()) {
     const raw = result.answers.find(answer => answer.name === slot.name);
     const name = raw?.kind === 'choice' ? raw.choice : undefined;
@@ -151,5 +152,5 @@ export async function pickRolePool(hudHome: string, pool: RolePool, task: string
     return offset < 0 ? Infinity : offset;
   };
   const entries = [...picked].sort((a, b) => position(a) - position(b));
-  return receipt('decision', need, kind, entries, entries.map(name => join(dir, name)), dropped);
+  return receipt('decision', entries.length ? 'attached' : 'none', need, kind, entries, entries.map(name => join(dir, name)), dropped);
 }

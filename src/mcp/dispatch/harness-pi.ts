@@ -1,5 +1,6 @@
 /** Pi launch and native session setup. */
 import * as fs from 'node:fs';
+import { homedir } from 'node:os';
 import { isAbsolute, join, dirname } from 'node:path';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { herdrId } from '../../roles/herdr-run.js';
@@ -82,6 +83,13 @@ function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
   job.worker_prompt = worker_prompt;
   return args;
 }
+function sonicWebExtension(launcher: string): string | undefined {
+  // pi-roles bundles deepseek-search.ts when installed with it; avoid loading a duplicate copy.
+  if (fs.existsSync(join(dirname(dirname(launcher)), 'extensions', 'deepseek-search.ts'))) return undefined;
+  const piDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent');
+  const personal = join(piDir, 'extensions', 'deepseek-search.ts');
+  return fs.existsSync(personal) ? personal : undefined;
+}
 export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, resume?: NativeResume): Promise<DispatchResult> {
   let openedTab: string | undefined;
   let mayHaveInput = false;
@@ -126,8 +134,9 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     if (job.mcp === undefined && piMcpConfigEmpty(job.cwd, job.pi_args)) argv.push('--no-mcp');
     if (job.headless || job.ui_ext === false) argv.push('--no-ui-ext');
     if (job.skills === true) argv.push('--skills');
+    const webExt = job.role === 'sonic' && job.prewalk_kind === 'web' ? sonicWebExtension(launcher) : undefined;
     argv.push('--', ...(job.headless ? [] : ['--tui-mode', 'regular']), '--hud-worker-tools', '-e',
-      join(bundled, '../../integrations/pi/package/extensions/hud.mjs'));
+      join(bundled, '../../integrations/pi/package/extensions/hud.mjs'), ...(webExt ? ['-e', webExt] : []));
     for (const key of ['model', 'thinking'] as const) {
       const value = place[key] ?? (borrowed ? job[key] : undefined);
       if (value != null) argv.push(`--${key}`, value);

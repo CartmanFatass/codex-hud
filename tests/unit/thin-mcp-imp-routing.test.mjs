@@ -18,7 +18,7 @@ const routing = { light, standard, hard, modes };
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const receipt = job => read(join(job.task_dir, 'job.json'));
 const create = (f, task, options = {}) => f.call('hud_create', { role: 'imp', task, ...options });
-const settings = (f, patch) => write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ impPlacement: 'auto', roleCaps: { imp: 0 }, ...patch }));
+const settings = (f, patch) => write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: false, impPlacement: 'auto', roleCaps: { imp: 0 }, ...patch }));
 const landRepair = (f, source) => {
   const module = new URL('../../dist/mcp/thin-main.js', import.meta.url).href;
   const script = `import { dispatchLandRepair } from ${JSON.stringify(module)};

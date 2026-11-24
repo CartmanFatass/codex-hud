@@ -1,6 +1,7 @@
 {
   "role": "reviewer",
   "instructions": "reviewer",
+  "prewalk": "off",
   "can_continue": false,
   "run": [
     {

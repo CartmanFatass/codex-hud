@@ -68,7 +68,7 @@ export const roleCwd = (job: Job) => job.worktree?.main_root ?? (job.land_turn ?
 export const piOptionKeys = [...piSwitches, 'pi_args'] as const;
 export const placementOverrides = ['preset', 'on', 'model', 'thinking'] as const;
 export const hasPiPlacement = (args: unknown) => Array.isArray(args) && args.some(arg => typeof arg === 'string' && /^--(?:models?|provider|thinking)(?:=|$)/.test(arg));
-export const replayOptions = ['mode', 'on', 'model', 'thinking', 'isolation', 'idle_grace_s', 'kind', 'context_files', ...piOptionKeys] as const;
+export const replayOptions = ['mode', 'on', 'model', 'thinking', 'isolation', 'idle_grace_s', 'kind', 'context_files', 'prewalk', ...piOptionKeys] as const;
 
 const matchPlace = (p: RolePlace, target: RolePlace) =>
   p.harness === target.harness &&

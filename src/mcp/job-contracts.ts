@@ -14,6 +14,21 @@ import type { JobCitations } from '../roles/sonic-citations.js';
 export type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
 export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; source: 'decision' | 'default'; fallback?: string; mode_reason?: string;
   placement?: 'even'; preset?: string | null };
+export type PrewalkScoutKind = 'code' | 'docs' | 'web';
+export type PrewalkKind = PrewalkScoutKind | 'pool';
+export type PrewalkSource = 'decision' | 'brief' | 'caller' | 'default' | 'project';
+export type PoolDroppedEntry = { entry?: string; reason: 'unknown' | 'kind' | 'invalid' };
+export type PrewalkEntry = {
+  kind: PrewalkKind;
+  source: PrewalkSource;
+  job?: string;
+  result: string;
+  ms: number;
+  need?: 'existing' | 'new' | null;
+  pool_kind?: 'personal' | 'showcase' | null;
+  entries?: string[];
+  dropped?: PoolDroppedEntry[];
+};
 export type PoolPick = {
   type: 'pick';
   need: 'existing' | 'new' | null;
@@ -21,7 +36,7 @@ export type PoolPick = {
   entries: string[];
   source: 'decision' | 'brief' | 'project' | 'failed';
   ms: number;
-  dropped?: { entry?: string; reason: 'unknown' | 'kind' | 'invalid' }[];
+  dropped?: PoolDroppedEntry[];
 };
 export type LaunchAttempt = { index: number; place: string; reason?: string };
 export type JobSession = { harness: 'pi' | CliAgent; id: string; path?: string };
@@ -64,7 +79,9 @@ export interface Job extends PiOptions {
   slice?: string;
   preset?: string;
   context_files?: string[];
-  pool_pick?: PoolPick;
+  prewalk?: PrewalkEntry[];
+  prewalk_kind?: PrewalkScoutKind;
+  pool_pick?: PoolPick; // Legacy receipts only; new jobs fold pool picks into prewalk.
   pool_files?: string[]; // Resolved pick references retained for queued launch, not caller context_files.
   from_jobs?: string[];
   checks?: string[];

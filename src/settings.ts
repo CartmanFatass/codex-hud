@@ -25,6 +25,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   decisionApi: DecisionProviderId;
   quietJobDecision: boolean;
   sonicAutoThinking: boolean;
+  autoPrewalk: boolean;
   poolPick: boolean;
   /** Recommend a skill from owner libraries on new main-session messages (shown only, never injected). */
   advisorShadow: boolean;
@@ -68,6 +69,7 @@ export function defaultSettings(): HudSettings {
     decisionApi: 'openai',
     quietJobDecision: true,
     sonicAutoThinking: false,
+    autoPrewalk: true,
     poolPick: true,
     advisorShadow: false,
     advisorSkillDirs: [],
@@ -111,6 +113,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   decisionApi: oneOf('gemini', 'openai', 'anthropic', 'typesafe'),
   quietJobDecision: isBoolean,
   sonicAutoThinking: isBoolean,
+  autoPrewalk: isBoolean,
   poolPick: isBoolean,
   advisorShadow: isBoolean,
   advisorSkillDirs: (value) =>
