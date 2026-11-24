@@ -56,8 +56,10 @@ execution detail; when space runs out, execution detail is not shown. (new)
   conflicts land separately, a red train falls back to individual lands. Preserve dirty or unintegrated work.
   Checks are evidence, not owner acceptance. (18.03, 21.08, 22.19, 22.26)
 - Keep `hud_tickets`, dependencies, acceptance criteria and ready work. Main may authorize a fixed scouted dispatch,
-  ticket batch or land flow; hand back at the first judgement point or after two failed repairs. No other automatic
-  role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
+  ticket batch or land flow; hand back at the first judgement point or after two failed repairs. Prewalk is the one
+  automatic step before a job: per role file, the Decision API decides whether a Sonic scout runs first and picks
+  pool entries; their results are attached as references and recorded, nothing chains after the target (24.05).
+  No other automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
 Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)
 for tool contracts, role defaults, launches, wake, checks, trains, repairs and cleanup; ARCHITECTURE §4.5 for job collection.
