@@ -24,7 +24,6 @@ Older handoffs: [2026-11-03 to 11-14](archive/STATE-2026-11-03-to-11-14.md), [20
 - M1 (six slices) and M2 (two slices) have landed. The milestone review (reviewer, astra) is running; one implementer
   fixes its blocking findings, then the orchestrator accepts M1/M2 (live check so far: both bars show the same
   machine-wide counts and WSL load; explicit STATE requests reach the board ordered work-waits first).
-- `toktrack-facts/03` (archive keeps flow and question facts) still has to land; its gate failed on machine load.
 - Grill the Objective file syntax before M3.
 - Older follow-ups (`panel-polish/01–04`, `native-statusline/04`, `land-log/02`) are re-checked against the new spec
   before they run.
