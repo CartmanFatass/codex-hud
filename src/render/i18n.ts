@@ -667,7 +667,6 @@ const ZH: Record<string, string> = {
   Evidence: '依据',
   ID: '编号',
   Title: '标题',
-  missing: '缺失',
   'o commit': 'o 提交',
   'Live window': '存活窗口',
   'ends in {age}': '{age}后结束',

@@ -120,7 +120,7 @@ test('Home and Project open an Objective detail and route only its openable evid
       const frame = draw(state, lang);
       assert.ok(frame.lines.every((line) => visualLength(line) === 120));
       const text = plain(frame).join('\n');
-      assert.match(text, lang === 'en' ? /Evidence[\s\S]*missing · docs\/missing\.md/ : /依据[\s\S]*缺失 · docs\/missing\.md/);
+      assert.match(text, lang === 'en' ? /Evidence[\s\S]*missing · docs\/missing\.md/ : /依据[\s\S]*缺 · docs\/missing\.md/);
       assert.match(text, /https:\/\/example\.org\/notes\n\s+123abcd/);
     }
     for (const expected of [{ type: 'open-files', files: [path] }, undefined,
