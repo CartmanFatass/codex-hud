@@ -97,7 +97,7 @@ with no jobs or results yet is valid. The orchestrator maintains one short proje
 `.hud/`. Required per Objective: ID, title (what and why) and state `active`, `paused` or `done`. Optional:
 latest result, evidence links, next step, linked ticket features. Blocked is derived from an open request work
 waits on, not stored. No compulsory phase sequence. Use a fraction only with a named, meaningful denominator, such
-as a linked feature's acceptance items. Exact file syntax is settled before M3. (new)
+as a linked feature's acceptance items. File syntax: D-2026-11-23-04. (new)
 
 - Record each fact once. Link the spec for scope; tickets and landings for execution; reports, artifacts, commits or
   tests for results. Don't copy job state into an Objective. Keep explicitly flagged `STATE` waiting items without

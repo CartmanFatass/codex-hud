@@ -17,11 +17,11 @@ Older handoffs: [2026-11-03 to 11-14](archive/STATE-2026-11-03-to-11-14.md), [20
 
 ## Waiting for the owner
 
-- 2026-11-23 M3 needs the Objective file syntax settled with you first (a short grill: fields, file place, how toktrack reads it) (work waits)
+- Nothing open.
 
 ## Next
 
 - M1 and M2 are accepted: both landed, the milestone review's blocking findings were fixed in 47d29bbc, and the
   live check passed (same machine-wide counts and WSL load in every bar; explicit STATE requests ordered on the
   board). Optional left: duplicate Classic/Split frames in `tests/fixtures/project-page.mjs`.
-- M3 waits on the Objective syntax grill (above).
+- M3: the Objective syntax is settled (D-2026-11-23-04); slice M3 into tickets and run them.

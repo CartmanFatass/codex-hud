@@ -7,6 +7,17 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-23
 
+- **D-2026-11-23-04** (§2.2, §2.3, §5): Objective syntax for M3, from the owner's grill. Each registered project
+  keeps one committed `.hud/objectives.md`: a header line `**Stance:** active|paused|maintenance ·
+  **Priority:** high|normal|low` (absent priority is `normal`), then one `## <id>: <title>` section per Objective
+  with ticket-style fields `**State:**` (required: `active|paused|done`) and optional `**Features:**`, `**Next:**`,
+  `**Result:**`, `**Evidence:**`. IDs are short project-scoped slugs; a ticket links with `**Objective:** <id>`.
+  The main session writes through one MCP operation that edits the file and records a receipt; hand edits still
+  display but have no history. Receipts go to the monthly JSONL archive in HUD home beside the job archive, only for
+  creation, state change, title (goal) revision and a new result. Owner requests stay `STATE` Waiting lines,
+  opened and resolved through the same MCP operation, which adds a request ID and an optional Objective and
+  records opened/resolved receipts. toktrack reads `.hud/objectives.md` and the receipts read-only. The request ID
+  form on the Waiting line is the main session's choice when slicing M3.
 - **D-2026-11-23-01** (§2.1.6): toktrack (the owner's usage tracker) becomes the place for model and project
   insight on HUD work. It reads HUD job facts read-only from the job archive and live job records and joins them
   to native sessions by session id; tokens and cost stay toktrack's. HUD therefore records each job's native
