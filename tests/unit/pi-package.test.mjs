@@ -731,6 +731,7 @@ test('the delegation-only package registers the tools but no footer, no /hud and
     'hud_read',
     'hud_respond',
     'hud_roster',
+    'hud_schedule',
     'hud_send',
     'hud_tickets',
     'hud_wait',

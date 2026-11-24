@@ -2,6 +2,7 @@
 import { LEASE_TOOL } from './lease.js';
 import { MAX_CHECK_COMMAND, MAX_CHECKS } from './job-checks.js';
 import { FEATURE_SLUG, OBJECTIVE_SLUG, OBJECTIVE_STATES, PROJECT_PRIORITIES, PROJECT_STANCES } from '../collectors/objectives.js';
+import { SCHEDULE_DATE, SCHEDULE_ID, SCHEDULE_TEXT_MAX } from '../collectors/schedule.js';
 
 const text = { type: 'string' };
 export const EXPERIMENT_TAG_MAX_LENGTH = 64;
@@ -185,6 +186,16 @@ export const ROLE_TOOLS = [
     request: { ...text, pattern: '^r\\d+$' },
     resolution: { ...text, enum: ['resolved', 'withdrawn'], default: 'resolved' },
     note: text,
+  }, ['op']),
+  tool('hud_schedule', 'Owner dates across projects. A schedule item says when; a hud_objective request says someone waits. Dates never turn into requests. add: date and one-line text in the panel language, optional registered project and its Objective. move: id and date. Resolve with done: id. list: open items by date with stage (far, soon, today, overdue); due:true filters to today or overdue.', {
+    op: { ...text, enum: ['add', 'done', 'move', 'list'] },
+    date: { ...text, pattern: SCHEDULE_DATE, description: 'Local YYYY-MM-DD or YYYY-MM (due on its last day).' },
+    text: { ...text, minLength: 1, maxLength: SCHEDULE_TEXT_MAX },
+    project: { ...text, description: 'Registered project directory.' },
+    objective: { ...text, pattern: OBJECTIVE_SLUG },
+    id: { ...text, pattern: SCHEDULE_ID },
+    note: { ...text, description: 'Optional context for done; not saved.' },
+    due: bool,
   }, ['op']),
   tool(
     'hud_tickets',

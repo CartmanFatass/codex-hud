@@ -213,7 +213,8 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
               type: 'text',
               text: JSON.stringify({
                 ok: false,
-                code: name === 'hud_objective' && message.startsWith('invalid_arguments:') ? 'invalid_arguments' : 'tool_error',
+                code: (name === 'hud_objective' || name === 'hud_schedule') && message.startsWith('invalid_arguments:')
+                  ? 'invalid_arguments' : 'tool_error',
                 error: message,
               }),
             },

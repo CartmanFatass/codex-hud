@@ -115,7 +115,7 @@ It shows median dispatch-to-settlement time, question and sonic counts, land rep
 The commands merge retained jobs, monthly archives and land receipts, without double-counting a job; known/observed counts and scan limits are shown.
 Missing cost is unknown, not free: sums include only jobs with reported totals, and harness-reported USD is not necessarily a bill.
 
-The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**, **hud_send**, **hud_respond**, **hud_close**, **hud_land**, **hud_lease**, **hud_objective**, and **hud_tickets**.
+The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**, **hud_send**, **hud_respond**, **hud_close**, **hud_land**, **hud_lease**, **hud_objective**, **hud_schedule**, and **hud_tickets**.
 Call `hud_roster` when project dispatch context is missing or stale.
 It returns role availability, continuation, effective `runs_on` and the convention.
 For presets, fallbacks, model/thinking sources and accepted options, pass `detail: true`.
@@ -123,6 +123,13 @@ The MCP omits an unchanged convention on subsequent roster calls in the same ses
 Bundled role JSON is overridden by `$HUD_HOME/roles/*.json` by role name, then by a registered project's `.hud/roles`.
 The first `hud-convention.md` in a registered project's `.hud/`, the cwd, HUD home, then the package wins whole.
 See [Project workers](#project-workers).
+
+Use `hud_schedule` in a main session for private owner dates across projects. An item records **when** something happens; a `hud_objective` request records that someone is **waiting** for the owner. Passing a date never creates a request or closes the item.
+- `add`: `date` (`YYYY-MM-DD` or `YYYY-MM`) and one line of `text` (at most 160 characters, in the panel language). Optionally link a registered `project` directory and an existing `objective` in it. If the project is later unregistered, the item stays on the schedule without its link. The response includes the item ID.
+- `move`: `id` and a new `date`. `done`: `id` to close the item; an optional `note` is not saved.
+- `list`: open items sorted by due date, with `stage`, a `due` flag, and a signed `days_until_due` countdown. Stages use the local calendar: `overdue` after the due date, `today` on it, `soon` in the preceding seven days, and `far` earlier. A month item is due on the month's last day and is `soon` during that month before then. `due: true` lists only `today` and `overdue` items.
+
+The MCP writes `$HUD_HOME/schedule.json` atomically at mode `0600`, without project receipts or commits. It allows at most 200 open items, subject to the 64 KiB file limit. A write prunes items that have been done for at least 30 days.
 
 Main-session tool results use compact `key: value` text in every client.
 Nested rows stay JSON, and status events appear in a trailing `changes:` list.
