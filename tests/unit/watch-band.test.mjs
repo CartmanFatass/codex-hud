@@ -30,10 +30,10 @@ const board = { revision: 'synthetic', workers: [], lanes: [], decisions: [], co
 
 test('the band and Project hub show explicit waiting items, not a prompt to try pending tickets', async (t) => {
   const f = fixture(t), band = await f.read(NOW);
-  assert.deepEqual(band, { type: 'band', lang: 'en', waiting: 2, first: 'Send a sample file (waits on export/04)', fresh: false });
+  assert.deepEqual(band, { type: 'band', lang: 'en', waiting: 2, first: 'Decide the export format', fresh: false });
 
   const project = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect('home', board, NOW);
-  assert.deepEqual(project.waiting.map((item) => item.value), ['Send a sample file (waits on export/04)', 'Decide the export format']);
+  assert.deepEqual(project.waiting.map((item) => item.value), ['Decide the export format', 'Send a sample file (waits on export/04)']);
   const hub = plain(renderMonitor({ state: onPage(undefined), tree: TREE, workboard: board, project, width: 60, height: 40, nowMs: NOW })).join('\n');
   assert.match(hub, new RegExp(`^Needs you ─+ ${band.waiting}$`, 'm'));
   assert.equal(project.ledger.filter((row) => row.state === 'try').length, 2);
@@ -42,11 +42,11 @@ test('the band and Project hub show explicit waiting items, not a prompt to try 
 
 test('the band is read again only when it changes, and announces only what is new', async (t) => {
   const f = fixture(t);
-  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Send a sample file (waits on export/04)', fresh: false, waiting: 2 });
+  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Decide the export format', fresh: false, waiting: 2 });
   assert.equal(await f.read(NOW), undefined);
 
   f.state('Decide the export format', 'Choose a locale', 'Send a sample file (waits on export/04)');
-  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Send a sample file (waits on export/04)', fresh: true, waiting: 3 });
+  assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Decide the export format', fresh: true, waiting: 3 });
 
   f.state('Choose a locale'); // Two items were handled and none added: nothing new to announce.
   assert.deepEqual(await f.read(NOW), { type: 'band', lang: 'en', first: 'Choose a locale', fresh: false, waiting: 1 });
@@ -85,8 +85,8 @@ test('request order is waited-on, then project priority, then oldest dated first
     '2026-01-05 Earlier (waits on export/04)', 'Second undated (work waits)', '2025-12-31 Settled (waits on export/01)'];
   f.state(...items);
   const project = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect('home', board, NOW);
-  assert.deepEqual(project.waiting.map((r) => r.value), [items[3], items[2], items[1], items[4], items[0]]);
-  assert.equal((await f.read(NOW)).first, items[3]);
+  assert.deepEqual(project.waiting.map((r) => r.value), [items[2], items[1], items[4], items[0], items[3]]);
+  assert.equal((await f.read(NOW)).first, items[2]);
 });
 
 test('M1: a routine question wakes main, stays in Jobs → Inspector, and never becomes an owner request', async (t) => {

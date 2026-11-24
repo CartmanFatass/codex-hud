@@ -121,6 +121,24 @@ test('quiet without a report and an in-turn child makes no Decision API call and
   assert.equal(server.requests.length, 1, 'the real quiet-decision path runs once the child is gone');
 });
 
+test('Quiet job off hands a quiet CLI worker to main without reading or sending its pane tail', { timeout: 20000 }, async (t) => {
+  const f = await fixture(t);
+  writeCliRole(f, 'qd-off', 0.25, false);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
+  configureFakeDecision(f, server.baseUrl);
+  fs.writeFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ quietJobDecision: false, sonicAutoThinking: true, impPlacement: 'auto' }));
+  const job = await f.call('hud_create', { role: 'qd-off', request_key: 'qd-off', task: 'Synthetic quiet handoff.' });
+  await until(() => cliState(job.task_dir)?.agent_session_id, t.signal);
+  const paneReads = () => f.commands().filter(({ args }) => args[0] === 'pane' && args[1] === 'read').length;
+  const startupReads = paneReads();
+  f.push(job.job, 'done');
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
+  assert.match(cliState(job.task_dir).reason, /quiet without a report; hud_send to continue or hud_close to stop/);
+  assert.equal(server.requests.length, 0);
+  assert.equal(paneReads(), startupReads);
+});
+
 test('quiet decision discards a stale reply after working/done pushes during the API call', { timeout: 30000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');

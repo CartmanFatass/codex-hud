@@ -175,6 +175,7 @@ const ZH: Record<string, string> = {
   'Question category': '问题类别',
   'Review severity': '评审严重度',
   'Quiet job': '静默任务',
+  'Send the quiet worker’s pane tail to the Decision API; off hands the job back to main': '将静默任务窗格的末尾内容发送给决策 API；关闭时交回主会话',
   'Sonic thinking': 'Sonic 思考级别',
   'Sonic auto-thinking': 'Sonic 自动选档',
   'Imp placement': 'Imp 运行位置',

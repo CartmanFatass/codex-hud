@@ -98,30 +98,22 @@ The pi top-right ribbon stays the same in both styles and retains other extensio
 
 ## Development workbench
 
-The panel has **Home** and **Project** tabs:
+The panel has three tabs:
 
-- **Home:** questions that need you, package lanes with compact job cards, native
-  Claude/Codex subagent lanes, and decisions. Enter expands in place, `o` opens a
-  file, `v` inspects, `a` reveals older items. Settled cards fold after five minutes
-  and hide after fifteen by default; a newly opened panel excludes already-settled
-  HUD jobs.
-- **Project:** STATE/spec progress, local tickets managed with `hud_tickets`, working trees, docs and
-  the effective roles/convention/key availability. It reads project files, not a
-  project-management service, and never changes their state.
-- **Settings, Help, Inspector and Changes:** settings edit a draft, Inspector opens
-  workflow files/transcripts, Changes is only a Git/worktree summary. There is no
-  Timeline, agent-log page, layout selector, picture or status-card footer.
+- **Home:** explicit owner requests, STATE handoff notes and, when known, the calling pane's job load. Enter or click a Waiting entry to read it in Project.
+- **Project:** progress, local tickets, working trees and docs. It reads project files, not a project-management service.
+- **Control:** role chains, harness switches and resource settings.
 
+Use `v` from Home to open **Jobs**, then Enter for **Inspector**. From Jobs or Inspector, `n` shows the calling session's native subagents.
 Claude, Codex and pi all open the standalone side panel with `/hud`
-(`hud panel --here` runs in the current terminal). Controls work directly in the panel
-(`1` Home, `2` Project, `3` Changes, `5` Skills, `,` Settings, `?` Help, plus mouse
-clicks and wheel scrolling). Panels reload after a valid new
-build, keeping their place and waiting for unsaved Settings.
+(`hud panel --here` runs in the current terminal). Use ←/→, Tab or a click to switch tabs, `,` for Settings and `?` for Help.
+Panels reload after a valid new build, keeping their place and waiting for unsaved Settings.
 
 ## Delegation
 
 The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_send**,
 **hud_respond**, **hud_close** and other tools. Use `hud_tickets` for the ticket method.
+Landing records `done` if `Owner try` is omitted or `no`; only `yes` lands `ready-for-human`.
 Start with the roster for roles, model assignments,
 accepted launch options and the dispatch convention. Pi roles use external pi-roles
 and herdr; browser jobs use `jev-ask`, `jev-aistudio` or `jev-flow`. There is no
@@ -192,8 +184,8 @@ After `npm run build` and `npm run build:test`, use these subsets for focused ch
 | Command | Coverage |
 | --- | --- |
 | `npm run test:mcp` | `thin-mcp-*`, `hud-watch`, `cli-judge`, `job-retention*` |
-| `npm run test:panel` | `panel-*`, `split-*`, `project-*`, `home-*`, `control-*`, `role-*`, `kept-pages`, `card-*` |
-| `npm run test:fast` | `test:unit` plus `card-*`, `cleanup-views`, `cli-judge`, `home-*`, `html-board`, `kept-pages`, `model-picker*`, `panel-filter`, `panel-footers`, `panel-keys-rows`, `project-hub`, `project-layout-*`, `role-presets`, `roster-invalid`, `skills-tab`, `split-layout`, `themes`, `waiting-settled` |
+| `npm run test:panel` | `panel-*`, `project-*`, `home-*`, `control-*`, `role-*`, `kept-pages`, `card-*` |
+| `npm run test:fast` | `test:unit` plus `card-*`, `cleanup-views`, `cli-judge`, `home-*`, `html-board`, `kept-pages`, `model-picker*`, `panel-filter`, `panel-footers`, `panel-keys-rows`, `project-hub`, `project-layout-*`, `role-presets`, `roster-invalid`, `skills-tab`, `themes`, `waiting-settled` |
 
 Tests use synthetic data and temporary homes. Frame tests compare terminal cells,
 not font pixels. Normal tests verify, never rewrite snapshots. `CODEX_HUD_PROFILE=1`

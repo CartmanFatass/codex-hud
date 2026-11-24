@@ -509,7 +509,7 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
 - **`ready`**: lists unblocked `ready-for-agent` tickets with no live job as `tickets: [{ticket, path, title, what}]`.
   `what` is one line from the ticket's What to build section.
   Pass `ticket` (`feature/NN`) and `path` (as `brief_file`) to `hud_create`.
-  The live job claims the ticket in the panel and Home progress without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` by default; `ready-for-human` with `**Owner try:** yes`) without touching `STATE.md`.
+  The live job claims the ticket in Project diagnostics without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` by default; `ready-for-human` with `**Owner try:** yes`) without touching `STATE.md`.
 - **`run`**: pass `feature` and optional `max_parallel` (default for new queues: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main. `**Role:** frontend-imp` selects that role, and `**Main review:** yes` stops auto-land. A worker question stops the batch; `hud_respond` to that question resumes it (`queue_resumed`).
   After addressing a failure, call `run` again with the same project and `feature`. A new queue attempt keeps existing jobs and completed lands, and retries eligible lands that failed before fast-forward without dispatching their tickets again. It keeps the previous `max_parallel` unless you override it.
   `run` with the same `feature` and `cancel: true` stops new dispatches and lands; it leaves existing jobs and lands alone.
@@ -687,7 +687,7 @@ If a CLI place needs a trust grant for the project directory, run `hud trust <di
 Home shows the current project's handoff. **Waiting** lists explicit requests from `## Waiting for the owner` in `docs/handoff/STATE.md` (or root `STATE.md`).
 Main writes a bullet only when the owner needs to decide or act. Say what is needed, why now and where to look; answer in the responsible main session and have it remove the resolved bullet.
 
-A bullet may start with an ISO date (`2026-11-23`) and may include `(work waits)` to say that work is waiting for the answer. `(waits on feature/NN, …)` also ranks as waited-on and clears when all named tickets are done or dropped. Requests that work waits on come first, then project priority (equal within the current project), then oldest dated first. Undated requests come after dated requests at the same rank and keep their file order. Home, Project, the owner band and the export read the same scoped requests.
+A bullet may start with an ISO date (`2026-11-23`). Only `(work waits)` raises its rank: work is waiting for the owner's answer. `(waits on feature/NN, …)` marks a dependency, not a higher rank, and clears the request when all named tickets are done or dropped. After waited-on requests, order by project priority (equal within the current project), then oldest dated first. Undated requests come after dated requests at the same rank and keep their file order. Home, Project, the owner band and the export read the same scoped requests. Press Enter on a Waiting entry or click it to open its full text in Project.
 
 Ordinary questions, failures, blockers and completions go to main, not to the owner as HUD alerts. An original worker question stays in Jobs → Inspector, and `hud_respond` still sends the answer and continues the worker.
 
@@ -1025,7 +1025,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `g` | Inspector: focus a job's herdr tab; a headless job shows Output instead |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) in Inspector, where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | On an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then `pi-role-reap <dir>` runs and the panel reads again); any other key cancels |
-| Enter | Open Jobs from Home, or Inspector from a job row; in Project open a page, fold, show a ticket, open a file or run the selected Accept all action |
+| Enter | Home Waiting: open the request in Project; Jobs: open Inspector; Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
 | `o` | Inspector or Project diagnostics: open the file |
 | `v` | Home: open Jobs |
 | `n` | Jobs or Inspector: show this session’s native subagents |
@@ -1035,7 +1035,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project or Control, Esc does nothing |
 | `q` | Close panel |
 
-Mouse clicks select a row/button, a second click on the selected item runs Enter's action (Project hub links, job rows and Inspector file links open on one click), clicking the top crumb goes back, clicking a tab switches tabs, and wheel scrolling moves the viewport without moving the selection.
+Mouse clicks select a row/button, a second click on the selected item runs Enter's action (Home Waiting entries, Project hub links, job rows and Inspector file links open on one click), clicking the top crumb goes back, clicking a tab switches tabs, and wheel scrolling moves the viewport without moving the selection.
 The model picker is an exception: one click sets a model and scrolling keeps the selection visible.
 
 ### Help
@@ -1054,7 +1054,7 @@ Ask the main session to read one when needed.
 
 A job's Inspector shows the original open question and report text (up to 4 KiB; open the report file for the rest), the worker's signature-checked declared summary, role/harness, model/effort, package, state, checks, flow, local timestamps and recorded progress. **Files** includes the brief, questions and answers, reviews and report. Tab selects a file or a Sonic child job; Enter opens it. With no file selected, `o` opens the report or another collected job file. With no Git diff, **Reported files** shows up to 12 worker-listed paths, not verified changes. A headless job's **Output** follows the newest displayable lines of `stdout.jsonl`.
 
-Press `n` or click **subagents** from Jobs or a job Inspector to inspect the calling session's native Claude or Codex tree. It is scanned only while that view is open; incomplete coverage is marked. Tab selects a native transcript; Enter or `o` opens it. Esc returns to Jobs or the job Inspector.
+Press `n` or click **subagents** from Jobs or a job Inspector to inspect the calling session's native Claude or Codex tree. It is scanned only while that view is open; incomplete coverage is marked. The tree shows the role and started, activity and ended times when observed. Tab selects a native transcript; Enter or `o` opens it. Esc returns to Jobs or the job Inspector.
 
 ### Settings
 
@@ -1062,7 +1062,7 @@ Press `n` or click **subagents** from Jobs or a job Inspector to inspect the cal
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
 | Panel | Width, Notifications; in **Advanced**: Refresh, Mouse |
-| Models | Decision API, Sonic auto-thinking, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter) |
+| Models | Decision API, Quiet job, Sonic auto-thinking, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter) |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
 
@@ -1086,7 +1086,7 @@ Retired keys `panelLayout` (including `split`), `tasks`, `cardStallMinutes`, `ca
 
 No display surface calls a text model or the Decision API. Interface labels are localized, but worker questions, reports and declared summaries, ticket titles, routing reasons, landed rows and waiting items keep their source text. Control's model picker still discovers available model IDs.
 
-The CLI supervisor uses the Decision API for quiet jobs past their idle grace. Two dispatch features opt in separately: Sonic auto-thinking (`sonicAutoThinking`, off by default) and Imp placement in `auto` mode. Settings → Models selects the primary Decision API provider. **Decision cap** (`decisionCallsPerHour`) offers 600, 2000 or unlimited (0, the default).
+**Quiet job** (`quietJobDecision`, on by default) controls whether the CLI supervisor sends a quiet worker's pane tail to the Decision API after idle grace; off hands the job to main without sending the tail. This switch is independent of Sonic auto-thinking (`sonicAutoThinking`, off by default) and Imp placement in `auto` mode. Settings → Models selects the primary Decision API provider. **Decision cap** (`decisionCallsPerHour`) offers 600, 2000 or unlimited (0, the default).
 
 The hourly counter reads `display/model-cache/decision-api/calls.json` across processes on one HUD home. Fallback HTTP attempts count separately; unlimited still counts (`n/∞`). Recent historical calls still count until they age out.
 
@@ -1225,7 +1225,7 @@ Old samples say last, not live.
 | `HUD_HEAP_CAPS` | V8 heap caps for panel (`128/4`) and `hud-watch`/`hud-mcp` (`96/2`); `off`/`default`/`0` restores Node defaults, or `<old>[/<semi>]` MB |
 
 Notifications default off.
-They report native session failures, approvals and completions through tmux, optionally desktop OSC/notify-send. They do not announce HUD worker questions or completions, auto-approve, or retry.
+They report native session failures and approvals through tmux, optionally desktop OSC/notify-send. They do not announce routine completions or HUD worker questions, auto-approve, or retry. Delivery to main is unchanged.
 
 **Credentials.**
 `$HUD_HOME/credentials.env` must be a regular 0600 file (not a symlink/FIFO).

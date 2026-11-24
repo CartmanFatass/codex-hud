@@ -6,7 +6,7 @@ import { projectWorkCard } from '../../dist/collectors/work-card.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 test('settled cards drop stale still-working or prompt-report quiet_decision while unsettled and quiet-failed keep it', (t) => {
-  const base = { role: 'imp', task: 'Synthetic job', state: 'working', startedAt: NOW - 60000, settledAt: null, laneId: 'synthetic', work: { reason: 'Synthetic detail', phases: [] } };
+  const base = { role: 'imp', task: 'Synthetic job', state: 'working', startedAt: NOW - 60000, settledAt: null, laneId: 'synthetic', work: { reason: 'Synthetic detail' } };
   for (const [choice, action] of [['still-working', 'wait'], ['finished-no-report', 'prompt-report']]) {
     const settled = {
       ...base,

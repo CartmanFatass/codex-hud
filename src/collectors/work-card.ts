@@ -54,7 +54,6 @@ export function nativeWorker(node: SubagentTreeNode, laneId = `native:${node.id}
       signature: '',
       activityAt: activity,
       activityBasis: 'producer',
-      phases: [],
       request: false,
       failed: node.status === 'error',
       result: node.status === 'completed',

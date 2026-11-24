@@ -176,11 +176,12 @@ export function workInspectorRows(
 }
 
 /** This is the panel's calling native session, not a second list of HUD jobs. */
-export function nativeInspectorRows(tree: SubagentTree | undefined, width: number): MonitorRow[] {
+export function nativeInspectorRows(tree: SubagentTree | undefined, width: number, now: number): MonitorRow[] {
   if (!tree) return [boardRow(fit(t('Loading…'), width))];
   const rows = [section(t('This session'), width)];
   if (tree.incomplete) rows.push(boardRow(fit(theme.board.attention(t('Partial')), width)));
   if (!tree.nodes.length) rows.push(boardRow(fit(t(tree.rootId && !tree.incomplete ? 'No subagents observed' : 'Native tree unavailable'), width)));
+  const stamp = (at?: Date) => at && Number.isFinite(at.getTime()) ? localTime(at.getTime(), now) : '';
   const add = (nodes: SubagentTree['nodes'], depth: number) => {
     for (const node of nodes) {
       const lead = ' '.repeat(Math.min(2 * depth, Math.floor(width / 4)));
@@ -191,14 +192,23 @@ export function nativeInspectorRows(tree: SubagentTree | undefined, width: numbe
       const rate = node.outputRate ? `~${Math.round(node.outputRate.tokensPerSecond)} tok/s` : '';
       const spent = node.tokensSpent
         ? `${formatTokenCount(node.tokensSpent.input + node.tokensSpent.output)} ${t('tokens spent')}` : '';
-      const facts = [extra, context, rate, spent].filter(Boolean);
-      let detail = [status, ...facts].join(' · ');
-      while (facts.length && visualLength(lead + label + detail) + 2 > width) {
-        facts.pop();
-        detail = [status, ...facts].join(' · ');
+      const optional = [extra, context, rate, spent].filter(Boolean);
+      let detail = [status, ...optional].join(' · ');
+      while (optional.length && visualLength(lead + label + detail) + 2 > width) {
+        optional.pop();
+        detail = [status, ...optional].join(' · ');
       }
       const row = itemRow(' ' + lead, label, detail, width);
       rows.push(node.rolloutPath ? { ...row, item: `native:${node.id}`, files: [node.rolloutPath] } : row);
+      const indent = ' '.repeat(Math.min(lead.length + 2, Math.floor(width / 3)));
+      const ended = node.status === 'completed' || node.status === 'error';
+      const observed = facts([
+        ['role', node.role ?? ''],
+        ['started', stamp(node.startedAt ?? node.turnStartedAt)],
+        ['activity', stamp(node.lastEventAt ?? node.lastActivityAt)],
+        ['ended', ended ? stamp(node.statusAt) : ''],
+      ], width - indent.length);
+      rows.push(...observed.map((fact) => boardRow(fit(indent + fact.text, width))));
       // Claude's bounded tail replay exposes one observed step, never a generated summary.
       if (node.transcriptStep) {
         const indent = lead + '    ';

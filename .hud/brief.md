@@ -51,8 +51,8 @@ Applies to every worker job in this repository, after its own task.
   `none` emits no colour.
 - Controls use words/icons with meaningful text, not shortcut letters as labels; footer shortcut hints stay whole when
   fitted.
-- Drop optional fields before cutting; missing evidence stays absent/unknown; cards use observations + optional stored
-  model text, never an inferred verdict.
+- Drop optional fields before cutting; missing evidence stays absent/unknown; rows use observations and worker
+  declarations, never an inferred verdict.
 - Rendering is pure: pass `nowMs`; no I/O, model calls, or lifecycle advances during paint; click geometry uses the
   same frame clock.
 
@@ -65,8 +65,8 @@ Applies to every worker job in this repository, after its own task.
   native-session totals constant-cost.
 
 **Privacy and repository:**
-- The Model text master switch controls display requests (chat also requires a matching endpoint key); Sonic
-  auto-thinking has its own explicit Decision API switch, independent of Model text, like quiet-job dispatch.
+- Display surfaces do not call models. Quiet-job decisions, Sonic auto-thinking and Imp auto routing are
+  execution-side Decision API features with independent switches.
 - List every new outbound model input in `docs/ARCHITECTURE.md` §5 and `docs/reference.md`; carry it into
   `docs/reference.zh.md` under the translation rule above. Land repair sends only the failing cherry-pick/gate step
   and its last 40 output lines to the source worker or same-role replacement.

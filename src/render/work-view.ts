@@ -245,7 +245,7 @@ export function renderWorkboardFrame(
   if (harnessAdd && addingHarness) state = { ...state, overlay: { ...addingHarness, pick: harnessAdd.pick } };
   const rows: MonitorRow[] = helpContent
     ? helpContent.rows
-    : native ? nativeInspectorRows(input.tree, width)
+    : native ? nativeInspectorRows(input.tree, width, now)
       : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id))
         : [boardRow(t('Job not available'))]
         : jobs ? jobsRows(source.workers, width, !!input.paneLoad)
@@ -263,7 +263,8 @@ export function renderWorkboardFrame(
   // the details can still be scrolled without selecting a file first.
   const inspect = inspector ?? native;
   const inspectCursor = inspect?.cursor && actions.some((r) => r.item === inspect.cursor) ? inspect.cursor : undefined;
-  const jobsCursor = jobs && (actions.some((r) => r.item === jobs.cursor) ? jobs.cursor : actions[0]?.item);
+  const listNav = jobs ?? (home ? state.home : undefined);
+  const listCursor = listNav && (actions.some((r) => r.item === listNav.cursor) ? listNav.cursor : actions[0]?.item);
   const nav = controlView?.nav ?? (project ? state.project.nav : undefined);
   const hasCursor = (cursor?: string) => rows.some((r) => r.item && r.item === cursor);
   // A new hub starts on its first destination, ahead of the project switch.
@@ -272,7 +273,7 @@ export function renderWorkboardFrame(
       ?? rows.find((r) => r.item))?.item : nav?.cursor;
   const expCursor = resourcePage && !expEdit && !hasCursor(resourcePage.cursor) ? rows.find((r) => r.item)?.item : resourcePage?.cursor;
   const key = addingHarness ? harnessAdd?.pick : sheet ? sheet.cursor : nav ? cursor : inspect ? inspectCursor
-    : resourcePage ? expEdit ? undefined : expCursor : jobsCursor;
+    : resourcePage ? expEdit ? undefined : expCursor : listCursor;
   const room = Math.max(0, height - 2 - top);
   const helpStart = helpContent?.anchor ? rows.indexOf(helpContent.anchor) : 0;
   const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(helpStart, rows.length - room);
@@ -282,7 +283,7 @@ export function renderWorkboardFrame(
     : addingHarness ? 0 : subpage?.scroll ?? nav?.scroll ?? resourcePage?.scroll ?? state.home.scroll;
   let offset = Math.max(0, Math.min(max, scroll));
   if (anchor && key && cursorAt >= offset + room) offset = Math.max(0, cursorAt - room + 1);
-  let revealed = nav ? nav.revealed : inspect ? inspect.revealed : resourcePage ? resourcePage.revealed : jobs?.revealed;
+  let revealed = nav ? nav.revealed : inspect ? inspect.revealed : resourcePage ? resourcePage.revealed : listNav?.revealed;
   if (!help && !sheet && key && (addingHarness || revealed !== key) && room) {
     if (cursorAt < offset) offset = cursorAt;
     else if (cursorAt >= offset + room) offset = cursorAt - room + 1;
@@ -293,13 +294,13 @@ export function renderWorkboardFrame(
     frame.helpPage = { count: room, maxOffset: max };
   } else if (inspect) state = { ...state, subpage: { ...inspect, cursor: inspectCursor, scroll: offset, revealed } };
   else if (jobs) {
-    const place = { cursor: jobsCursor, scroll: offset, revealed };
+    const place = { cursor: listCursor, scroll: offset, revealed };
     state = { ...state, jobs: place, subpage: { kind: 'jobs', ...place } };
   }
   else if (nav && project) state = { ...state, project: { ...state.project, nav: { ...nav, cursor, scroll: offset, revealed } } };
   else if (nav && !addingHarness && !sheet && input.project) state = { ...state, control: withControlNav({ ...nav, cursor, scroll: offset, revealed }) };
   else if (resourcePage) state = { ...state, exp: { ...resourcePage, cursor: expCursor, scroll: offset, revealed: expEdit ? undefined : revealed } };
-  else if (home) state = { ...state, home: { scroll: offset } };
+  else if (home) state = { ...state, home: { cursor: listCursor, scroll: offset, revealed } };
   frame.state = state;
   headers.slice(0, top).forEach((text, i) => { frame.lines[1 + i] = text; });
   for (let i = 0; i < room; i++) {
@@ -315,7 +316,7 @@ export function renderWorkboardFrame(
   const hints: FooterHints = help
     ? { modal: ['Esc back'] }
     : inspector ? inspectorKeys(worker)
-      : native ? ['Esc back'] : jobs ? [...(jobsCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
+      : native ? ['Esc back'] : jobs ? [...(listCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
         : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
@@ -324,7 +325,7 @@ export function renderWorkboardFrame(
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
           : ['⏎ open', ...projectSwitch])
-        : ['v Jobs'];
+        : [...(listCursor ? ['⏎ open'] : []), 'v Jobs'];
   if (harnesses && height > 1) harnessFooterControls(frame, hints, width, height - 1);
   if (roles && height > 1) presetFooterControls(frame, hints, width, height - 1);
   if (height > 1) {

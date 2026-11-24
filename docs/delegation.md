@@ -26,8 +26,8 @@ agent proposes.
 3. **Build.** One fresh implementer per slice, in parallel only where slices touch different files. No reviewer per
    slice. For ticketed work, call `hud_tickets({op: "ready"})` and pass the returned `ticket` and `path` to `hud_create`
    as `ticket` and `brief_file`. A live job claims the ticket; leave the file at `ready-for-agent` until `hud_land`
-   records `ready-for-human` (or `done` when the ticket says `Owner try: no`). Do not make a claim commit. The implementer runs the main-path tests for what it
-   changed, once, at the end. When a slice needs a lookup
+   records `done` (`Owner try: no` or omitted), or `ready-for-human` only for `Owner try: yes`. Do not make a claim
+   commit. The implementer runs the main-path tests for what it changed, once, at the end. When a slice needs a lookup
    across several files first, pass `scout: "<question>"` on `hud_create` to attach a sonic dossier via `from_jobs`
    (prefixed with the unverified-facts reminder). Scout is for where/what/how-many questions; why/which/is-it-wrong
    questions (root cause, design, review) stay with the deciding model.

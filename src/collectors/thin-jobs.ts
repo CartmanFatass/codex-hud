@@ -13,8 +13,6 @@ import { reportReadHint } from '../utils/report-summary.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
 import { ticketTitle } from './ticket-title.js';
-import { jobStage } from './job-stage.js';
-import { DEFAULT_JOB_STALL_MINUTES } from './work-job.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { computeQueuePositions, queuedTimestamp } from '../roles/concurrency.js';
 import { answerRecord, questionFields, reviewVerdict } from './work-artifacts.js';
@@ -151,9 +149,7 @@ const first = (text: string) =>
     .trim() ?? '';
 export const stripJobPrefix = (s: string) => s.replace(/^(?:slice|ticket|task|package)\s+(?=\S)/i, '');
 const number = (name: string) => Number.parseInt(name.match(/\d+/)?.[0] ?? '0', 10);
-type StageTarget = NonNullable<OwnerWorker['sessionFile']> & { stat: fs.Stats };
-/** Share the existing session selection/stat between stage and sentence material. */
-function latestSession(directory: string): StageTarget | undefined {
+function latestSession(directory: string): OwnerWorker['sessionFile'] {
   const root = join(directory, 'sessions');
   try {
     if (fs.realpathSync(root) !== root) return undefined;
@@ -162,7 +158,7 @@ function latestSession(directory: string): StageTarget | undefined {
       .flatMap((n) => {
         try {
           const path = fs.realpathSync(join(root, n)), st = fs.statSync(path);
-          return path.endsWith('.jsonl') && st.isFile() ? [{ path, at: st.mtimeMs, stat: st }] : [];
+          return path.endsWith('.jsonl') && st.isFile() ? [{ path, at: st.mtimeMs }] : [];
         } catch {
           return [];
         }
@@ -172,12 +168,11 @@ function latestSession(directory: string): StageTarget | undefined {
     return undefined;
   }
 }
-function headlessStageTarget(directory: string): StageTarget | undefined {
-  const path = join(directory, jobFiles.sonicStdout);
+function headlessOutputAt(directory: string): number | undefined {
   try {
-    const stat = fs.lstatSync(path, { throwIfNoEntry: false });
-    if (stat?.isFile()) return { path, at: stat.mtimeMs, stat };
-  } catch { /* Unreadable log: no tool evidence. */ }
+    const stat = fs.lstatSync(join(directory, jobFiles.sonicStdout), { throwIfNoEntry: false });
+    if (stat?.isFile()) return stat.mtimeMs;
+  } catch { /* Unreadable log: no activity evidence. */ }
 }
 export interface ThinJobScope {
   project: string | null;
@@ -677,7 +672,7 @@ export function readThinJobs(
   home: string,
   scope: ThinJobScope,
   parse = JSON.parse,
-  options?: { settledBefore?: number; openedAt?: number; stallMinutes?: number },
+  options?: { settledBefore?: number; openedAt?: number },
   observation?: { complete: boolean },
   inventory?: ThinJobInventory
 ): WorkLane[] {
@@ -744,7 +739,6 @@ export function readThinJobs(
     })
     .sort((a, b) => b.created - a.created || a.id.localeCompare(b.id));
   const lanes = new Map<string, WorkLane>();
-  const stalledBefore = Date.now() - (options?.stallMinutes ?? DEFAULT_JOB_STALL_MINUTES) * 60_000;
   const cards = jobs.flatMap(({ id, job, created, jobAt, status: checkedStatus }) => {
     const directory = join(root, id),
       status = checkedStatus ?? readFact(join(directory, 'STATUS.json')),
@@ -879,10 +873,7 @@ export function readThinJobs(
     const reviews = entries(directory, false, markIncomplete)
       .filter((n) => /^review-\d+\.md$/.test(n))
       .sort((a, b) => number(a) - number(b));
-    const phases: string[] = [];
     const verb = runningVerb(String(job.role), word(s.harness) ?? word(job.harness) ?? 'pi');
-    // Only a build is a step that later rounds follow; a read-only job's chain is just its state.
-    if (verb === 'build' && (report || reviews.length)) phases.push('build ✓');
     let phaseAt = 0,
       lastResult = '';
     for (const name of reviews) {
@@ -890,14 +881,7 @@ export function readThinJobs(
       if (!review) complete = false;
       if (!review) continue;
       const verdict = reviewVerdict(review.text);
-      const major = review.text.match(/\b(\d+)\s+(?:major|important)\b/i)?.[1];
-      const minor = review.text.match(/\b(\d+)\s+minor\b/i)?.[1];
-      const result =
-        verdict === 'accept'
-          ? 'accept'
-          : [major ? `${major} major` : '', minor ? `${minor} minor` : ''].filter(Boolean).join(' ') || (verdict ?? '');
       addFile(name, 'review', review, verdict ?? undefined);
-      phases.push(`review r${number(name)}${result ? ' ' + result : ''}`);
       phaseAt = review.at;
       lastResult = first(review.text);
     }
@@ -932,15 +916,12 @@ export function readThinJobs(
                   : reviews.length
                     ? 'fixing'
                     : verb;
-    phases.push(phase);
     const queuePosition = state === 'queued' ? queuePositions.get(id) : undefined;
     const overflowFrom = word(job.overflow_from);
     const route = job.route as Partial<JobRoute> | undefined;
-    const session = state === 'working' ? latestSession(directory) : undefined;
-    const sessionFile = session && { path: session.path, at: session.at };
-    const target = state === 'working' && job.headless === true ? headlessStageTarget(directory) : session;
-    const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, session?.at ?? 0, target?.at ?? 0, flow?.updatedAt ?? 0);
-    const stage = target && !waiting && activityAt > stalledBefore ? jobStage(target.path, target.stat) : undefined;
+    const sessionFile = state === 'working' ? latestSession(directory) : undefined;
+    const outputAt = state === 'working' && job.headless === true ? headlessOutputAt(directory) : undefined;
+    const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, sessionFile?.at ?? 0, outputAt ?? 0, flow?.updatedAt ?? 0);
     const reportMeta = settledReportMeta(directory, report !== null, settledAt !== null);
     const sentence =
       reportMeta?.summary ||
@@ -972,7 +953,6 @@ export function readThinJobs(
       ...(flow ? { flow } : {}),
       ...(reportMeta ? { reportMeta } : {}),
       sessionFile,
-      ...(stage ? { stage } : {}),
       progress: row.progress,
       latest_progress: row.latest_progress,
       checks: jobChecks(directory, job),
@@ -1023,7 +1003,6 @@ export function readThinJobs(
         signature: String(at),
         activityAt,
         activityBasis: 'observed',
-        phases,
         request: !!waiting,
         failed: state === 'failed',
         result: settledAt !== null,

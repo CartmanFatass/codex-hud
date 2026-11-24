@@ -43,6 +43,12 @@ test('Inspector: real Claude meta/transcript collection and Codex three-level tr
       assert.match(text, /Review schema/);
       assert.match(text, /^ +Check parser tests/m);
       assert.match(text, /^ +Verify index/m);
+      if (lang === 'en') {
+        assert.match(text, /Check parser tests[^\n]*completed\b[\s\S]*role\s+custom-tester/);
+        assert.match(text, /started\s+11:59/);
+        assert.match(text, /activity\s+12:00/);
+        assert.match(text, /ended\s+12:00/);
+      }
       assert.doesNotMatch(text, /PRIVATE-CLAUDE|PRIVATE-CHANNEL|Agents/);
     }
 });

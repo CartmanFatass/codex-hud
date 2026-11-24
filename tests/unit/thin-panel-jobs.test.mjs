@@ -117,6 +117,16 @@ function fixture(t) {
     renderMonitor({ tree, workboard: board, state, width, height, nowMs: now });
   return { env, pipeline, tree, render, put, job, askDir, ready };
 }
+test('native subagent completion stays quiet, but native approvals still notify', () => {
+  const delivered = [];
+  const notifier = new Notifier({ enabled: true, cooldownMs: 0, deliver: event => delivered.push(event) });
+  const snapshot = (status) => ({ subagentTree: { nodes: [{ id: 'agent-a', name: 'Example agent', depth: 1, status, children: [] }] } });
+  notifier.update(snapshot('running'), now);
+  assert.deepEqual(notifier.update(snapshot('completed'), now + 1000), []);
+  assert.deepEqual(delivered, []);
+  notifier.update({ ...snapshot('completed'), pendingApproval: { kind: 'exec', since: new Date(now + 2000), summary: 'Example command' } }, now + 2000);
+  assert.deepEqual(delivered.map(({ message }) => message), ['approval needed: Example command']);
+});
 const plain = (frame) => frame.lines.map(stripAnsi);
 // Everything starts collapsed; this is the state of a panel where every card was expanded with Enter.
 const expandAll = (board, from = initialMonitorState()) => (withState(from, { home: { expanded: new Set([

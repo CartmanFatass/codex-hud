@@ -141,7 +141,7 @@ A parse and a SQLite statement are not preemptible.
 ### 4.3 Main-session facts
 
 `HudStatus.build` combines rollout, Codex config, context, token-rate, quota and cached project/git facts into `HudData`.
-The panel passes its existing tree and skips the bar's Git refresh; Project and Changes own their on-demand probes.
+The panel passes its existing tree and skips the bar's Git refresh; Project owns its on-demand Git probes.
 The output-rate estimate uses current-turn output-token deltas divided by elapsed time minus the union of known tool waits; it includes initial latency and stalls.
 It is not exact request telemetry, and unchanged counters do not refresh it.
 Missing facts are absent, not fabricated zeroes.
@@ -150,21 +150,21 @@ Missing facts are absent, not fabricated zeroes.
 
 Codex descendants come from the incremental rollout tree.
 `ClaudeNativeTree` reads selected-session `subagents/agent-*.meta.json` and JSONL: at most 401 directory entries, 200 agents, four forward reads per refresh, 8 KiB metadata and up to 1 MiB transcript each.
-Separately, up to 16 first-seen transcripts over 64 KiB get their last 64 KiB and metadata read for the first card view, then join forward replay on later refreshes.
+Separately, up to 16 first-seen transcripts over 64 KiB get their last 64 KiB and metadata read for the Native Inspector, then join forward replay on later refreshes.
 Preview text is local display only; forward replay retains public Agent/Task call ids to establish nesting.
 Partial records carry across forward passes, up to 4 MiB; oversized records and deferred/unreadable evidence mark coverage incomplete.
 Shrink/replacement clears prior evidence and replays.
-Unmatched nested cards wait while candidate parents replay, then appear at top level if still unmatched.
+Unmatched nested agents wait while candidate parents replay, then appear at top level if still unmatched.
 
 Completion is provisional: observed transcript growth reopens a completed Claude agent; fresh finished metadata or a caught-up public `end_turn` with no open tool calls settles it again.
-Replay preserves prior metadata lifecycle and settlement age but blocks sentence requests until caught up.
+Replay preserves prior metadata lifecycle and settlement age.
 pi helpers are HUD jobs, not a separate native tree.
 
 ### 4.5 Jobs and workboard
 
-Home's workboard has exactly two live sources: thin jobs in `$HUD_HOME/jobs/` for the caller pane and the selected main session's native Claude/Codex `SubagentTree` (§4.4).
-`PanelJobPipeline` reads the jobs through `readThinJobs` and passes both sources to `buildWorkboard`.
-`DiffStatCollector` adds a bounded Git diff on demand for an inspected thin job, and `ActivityRings` records observed writes in memory; neither supplies workers.
+Home reads the current project's STATE handoff and the caller pane's scoped job totals.
+`PanelJobPipeline` reads thin jobs in `$HUD_HOME/jobs/` via `readThinJobs` for Jobs and Inspector. `DiffStatCollector` adds a bounded Git diff on demand for an inspected job.
+The selected main session's native Claude/Codex `SubagentTree` (§4.4) is collected on demand for the Native Inspector only.
 Failed or incomplete reads are not evidence of absence.
 
 The panel does not poll `herdr agent list`, scan workspace `tmp/tasks/`, or read retired `$HUD_HOME` observation records such as `assoc/`, `native-relations/` and `jev-runtime/`.
@@ -172,46 +172,35 @@ Existing records are left in place.
 `CODEX_HUD_PANEL_ALL_DELEGATIONS` is ignored; it does not widen the pane scope.
 
 A job whose receipt names a `ticket` (`feature/NN`, or a `package` and a number) also gets `ticketTitle`, the heading of `<project_root>/.scratch/<feature>/issues/NN-*.md`: the first 512 bytes of one regular file in an unlinked directory, cached for 30 seconds per ticket (`ticket-title.ts`); a missing or unreadable file is no title.
-Home displays it and never sends it to a model.
+Jobs can display it without sending it to a model.
 
 `readThinJobs` selects up to 200 top-level jobs plus up to 200 of their children and filters to the caller's recorded pane.
-It excludes jobs settled before the panel's original `openedAt` before reading their artifacts or planning model requests.
+A caller can exclude earlier settlements before reading their artifacts; the panel's Jobs list keeps retained jobs.
 Active/unknown jobs remain eligible.
-It reads job/STATUS, brief heading, report, newest review and QA.
+It reads job/STATUS, brief heading, report, reviews and QA.
 Only settled jobs expose worker metadata whose report signature still matches.
 The Inspector shows the summary in the worker's own words and up to 12 reported paths as text only when no Git changes are shown.
 Single-job reads reuse the summary and file list.
 Task notices use the summary and wait for HUD-run checks, reporting only the outcome; watch and `changes` lines and list reads carry only a clipped summary.
 Metadata writes do not wake `hud watch` on their own.
-Working-session target mtime contributes activity.
-For a running job's stage, the collector reuses that stat (or stats `stdout.jsonl` for a headless job) and reads only appended bytes, capped at the newest 32 KiB on first sight or after a gap.
-An unchanged file is not opened.
-The stage is absent without a recognised tool call and clears at the card's stall threshold.
+Working-session target and headless `stdout.jsonl` mtimes contribute observed activity without reading log bodies for stage classification.
 The thin-job signature cache is shared disposable display state, never job authority.
 Ranked display windows check at most 1,024 cached receipts for parent links and follow selected parents’ `.sonic` markers.
-Omitted directories keep Home coverage incomplete.
+Omitted directories keep job coverage incomplete.
 Job directory enumeration/stat/ranking still grows with retained history; the body limits are not a claim of constant total scan cost.
 
 `hud_land` runs in a detached helper.
 The watcher uses the job's latest land attempt to protect its worktree and receipt while queued or running.
 A retry before fast-forward keeps the old attempt readable under its own flow ID and removes its scratch worktree under the `main-checkout` lease.
 Integration tests the source commit directly when possible, otherwise picking only commits not on the current base.
+The landing records `done` when `Owner try` is omitted or `no`; only `yes` lands `ready-for-human`.
 A red gate gets one immediate rerun of the reported Node.js test files (or of the whole command when no files are reported); recovery is stored in the flow and reported with the flaky test names when available.
 
-Home has package lanes plus one lane per native main session.
-Classic draws a package lane's jobs in `work-jobs.ts`: one row per job (glyph, id, the stage strip from `job-stages.ts`, executor group, `⚡N`, age, silence; a reason in the strip's place for a job that needs the owner), a running job's sentence under it, a lane header only when it shows several, queued jobs and read finished jobs folded into one row each; a collapsed question is `askRows`, its slab is `askSlabRows`; native lanes keep `laneRows`.
-The strip's read/edit/test cells use the thin job's `OwnerWorker.stage` when present.
-Direct native children are cards, their children indent one level, deeper descendants say `↳ parent`.
-`work-visibility.ts` owns shared lifetimes: settled cards fold after 5 minutes and hide after 15 by default (failed/stopped at least 30); `a` reveals older items in place.
-Decisions hide after 30 minutes, departures after two hours.
-Enter toggles cards/questions/decisions; only the newest current settled card opens automatically, and explicit choices win.
-All states and lifetimes are presentation, not acceptance.
-
-### 4.6 Project, Control and Changes
+### 4.6 Project and Control
 
 `ProjectCollector` reads STATE, spec milestone, reviews, roles/convention/instructions, key-presence booleans, local tickets, current jobs and Git/worktree facts.
 Full reads run only while Project is shown without a modal.
-Home reads the same progress facts, not the control plane or working-tree diff.
+Home reads the handoff and owner requests, not the control plane or working-tree diff.
 STATE, spec, try records, tickets and the newest 64 top-level jobs (plus up to 64 children) are signature-cached; the last 64 commit subjects are cached by checkout HEAD SHA.
 Tickets come from `.scratch/<feature>/issues/<NN>-<slug>.md` (64 feature directories, 512 files total, 64 KiB each).
 Derive ticket states and resolve local and cross-feature dependencies before limiting detail to open features plus the newest finished ones up to 16.
@@ -222,7 +211,7 @@ The panel owns one `ProjectCollector` per project the Project tab has shown (`Pr
 While the Projects list is open (`MonitorState.projectList`) the shown project's full collection pauses and `ProjectOverviews` reads every listed root lightly: one Home-mode collector per root (file signatures, no Git, no roles) and one `liveCwds()` pass over the newest-64 job lookup, counted per root, at most once per five seconds while the list stays open; the panel attaches each result to its `ProjectChoice`.
 A root just switched to has no snapshot until its first collection: `ProjectVisits.shown` then gives the previous one, with its root, so the first frame is the old page and never a blank one.
 
-Project and `WorktreeCollector` use gated asynchronous Git reads; Changes runs only when focused and probes worktrees round-robin.
+Project and `WorktreeCollector` use gated asynchronous Git reads; Project's Working tree page probes worktrees round-robin only when focused.
 Repository commands/filters and lazy fetching must not execute just to draw status.
 Git failure is unknown, never clean.
 Project opens files through the existing `$EDITOR` herdr-tab action.
@@ -293,27 +282,16 @@ No tool-at-work line or clock appears in the bar.
 The only styles are `line` and `p10k`, both one row.
 Retired style values load as `line`.
 
-`renderMonitor` always uses `renderWorkboardFrame`: Home, Project, Inspector, Changes, Settings and Help share exact-width rows, one title band and whole footer hints.
-Callers without a workboard project native cards into the same Home renderer.
-There is no secondary stacked/compact Agents renderer, Timeline or diagnostics page.
-The `split` layout (`panelLayout`, `render/split-*.ts`) draws Home, the hub and the list pages as a list over a preview: one scene per view (`split-home.ts`, `split-project.ts`), one painter (`split-frame.ts`) and its own keys (`split-input.ts`); `renderWorkboardFrame` and `workboardInput` only branch to them, and what Split does not draw stays Classic's.
-The list is as tall as it needs, at most `MonitorState.splitRatio` of the list-and-preview rows (`=` `+` `-`, `resize` in `split-input.ts`; keys only, no divider drag, so `tree-page.ts` asks the terminal for clicks and the wheel (mode 1000) and no motion reports; the state travels in the reload's JSON), and three rows around the cursor while `splitFocus` is `preview`.
-A preview with more rows than its room (`splitScrolls`) is built again one cell narrower and paints its scrollbar in the freed last cell; a Home lane at work that the cursor is not on may add a cue (`laneCue`) to its row.
-A key has one meaning per page (`n` is only `try-flag`; `>` `<` move between Home's cards that need you; `i` and Delete add and remove a place, `+` `=` `-` are only `list-grow` / `list-shrink`; the decoder names each once and `tests/unit/panel-keys-rows.test.mjs` checks Help lists each key once per section).
-A footer's keys come from the selected row (`homeKeys` in `job-actions.ts`, the `hints` a split scene returns): per-hint words are in `split-i18n.ts`, and `footerLayout` translates a footer hint by hint, so a new hint is one entry, not one whole line per combination.
-Rows that have to fit 40 columns keep what identifies them: `cutWords` cuts at a word, `briefStack` gives a briefed row's sentence its own line when the id is long, and `placeRows` (`control-view.ts`) shows a place's model by short name on the row, or on a second line before it cuts the name.
-The owner's micro-actions on a HUD job (`render/job-actions.ts`, spec §2.2) are pure input: `g` (on a job's row) becomes `focus-job-tab`; `1`–`4` and `d` on an expanded question slab (or in the Inspector) pick an option or the worker's default and become `answer-job` (the digits switch no tab, so they mean nothing elsewhere: tabs are ←→, Tab and a click); `X` opens the stop-confirmation overlay, whose `y`/Enter becomes `stop-job`.
+`renderMonitor` uses `renderWorkboardFrame` for Home, Project, Control, Jobs, Inspector and Help. Frames use exact-width rows and whole footer hints; `footerLayout` translates hint by hint.
+Home Waiting links open the corresponding Project detail. `v` opens Jobs; Enter opens Inspector there, and `n` opens Native Inspector from Jobs or Inspector.
+The owner's Inspector actions (`render/job-actions.ts`, spec §2.2) are pure input: `g` becomes `focus-job-tab`; `1`–`4` and `d` pick an option or the worker's default and become `answer-job`; `X` opens the stop-confirmation overlay, whose `y`/Enter becomes `stop-job`.
 Any other input cancels the stop prompt.
 `tree-page.ts` does the I/O: `focusJobTab` and `stopJob` (`cli/panel-pane.ts`: `herdr tab focus`, `pi-role-reap`) and `answerJobQuestion` (`collectors/panel-actions.ts`), which writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
 `PanelActionLog` turns those records into `[role@job] ANSWERED qN from panel: …` lines for `hud watch` and the MCP `changes`, as the try log does: only answers made while the reader runs.
-The `/` filter (`render/filter.ts`, `MonitorState.filterQuery`/`filterOpen`; the kept query survives reload) is pure input plus a pure match: `filterInput` runs first in `handleMonitorInput` and owns the keyboard while the bar is open, and a change of `filterScope` (Home, or Progress/Tickets of one project) clears it.
-The views are filtered, not their rows: `renderWorkboardFrame` hands Home a `visibleWorkboard` of the matching cards and Progress/Tickets a `filterProject` snapshot, so Classic, Split, the cursor and `workboardInput` all see only what matches.
-The bar is a pinned row under the header (a Split note), never a scrolling one.
-Always retain `frame.state`: reconciliation preserves selection by identity and separate scroll/fold state.
-Cards show a title plus two sentence rows, expanding in place; raw workflow files open from the Inspector or `o`.
+The `/` filter (`render/filter.ts`) owns the keyboard while editing and provides a filtered snapshot for Project Progress and Tickets. Leaving the view clears it; a kept query survives reload. The filter bar is pinned under the header.
+Always retain `frame.state`: reconciliation preserves selection and separate scroll/fold state.
 
-Settings → Panel → Layout (`panelLayout`) defaults to Classic (`home-view.ts` and `project-view.ts`); Split is the other choice.
-Both layouts offer one explicit Accept all action in Project → Tickets, not on the Inbox hub.
+Project → Tickets offers one explicit Accept all action, not on the hub.
 Off the paint path, `panel/actions.ts` uses the displayed project's unfiltered ledger and appends one `accept` record under `$HUD_HOME`, never to project files.
 The `TryLog` reader still understands old `flag` and `accept` records; the list of flagged items shown to the owner comes from STATE Waiting.
 
@@ -417,7 +395,7 @@ No HUD collection writes into Codex's transcripts/configuration; explicit instal
 **Privacy and repository**
 
 - Display surfaces do not call text models or the Decision API.
-  Sonic auto-thinking and Imp auto routing have separate execution-side opt-ins; quiet-job handling runs in the CLI supervisor.
+  Quiet-job decisions in the CLI supervisor, Sonic auto-thinking and Imp auto routing have independent execution-side switches.
 - List every new outbound model input here and in both reference languages.
   A land repair sends only the failing cherry-pick or gate step and its bounded output evidence (§5) to the project's source worker or its same-role replacement.
 - State is private: `writePrivateFile` or equivalent temp-file/0600/rename.
@@ -450,9 +428,8 @@ Performance evidence names host and workload; it is not automatically WSL qualif
 ## 10. Recipes
 
 - **Setting:** add type/default/validation in `settings.ts`, a row in `render/settings-page.ts`, mapping through `monitorSettings` if needed, EN/ZH labels, behaviour tests and both references.
-  No retired card-visibility layer.
 - **Theme:** add its name/order in `hud-config.ts`, palette/board inks in `palette.ts`, translations and contrast/frame tests.
-  Keep 4.5:1 card text, 4:1 failed/question text and 3:1 selected-row floors.
+  Keep 4.5:1 body text, 4:1 failed/question text and 3:1 selected-row floors.
 - **Bar field:** add facts and a builder in `layout/bar-fields.ts`, its field list and fitting-ladder position, then each client's available facts.
   Test widths.
 - **Job/Inspector:** external prose is sanitized and wrapped; show declared or observed evidence, never generate display summaries or verdicts.

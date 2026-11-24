@@ -1,6 +1,7 @@
 /** One CLI job: pushed facts -> pure judge -> effects. No subprocesses or STATUS writes at rest. */
 import { recordFailureExhaustion } from '../roles/roster.js';
 import { decideQuietJob } from '../mcp/quiet-decision.js';
+import { loadSettings } from '../settings.js';
 import { beginPrompt, cliWorkerTools, endPrompt, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment } from '../mcp/cli-judge.js';
 import { procStat } from '../utils/proc.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
@@ -283,18 +284,22 @@ export async function main() {
         wake(); return;
       }
       if (next.action === 'decide') {
-        const read = await effect('read', ['pane', 'read', pane, '--source', 'recent']);
-        if (stopped || read.aborted) return;
+        let enabled = true;
+        try { enabled = loadSettings({ ...process.env, HUD_HOME: hudHome }).quietJobDecision; }
+        catch { /* The decision path already hands off on a settings read error. */ }
+        const skip = !enabled ? 'off' : quietQuestions >= 3 ? 'max-questions' : undefined;
+        const read = skip ? undefined : await effect('read', ['pane', 'read', pane, '--source', 'recent']);
+        if (stopped || read?.aborted) return;
         diskDirty = true;
         const mid = collect(false, true);
         if (!stillQuiet(observed, mid)) { wake(); return; }
-        const { result: decision, aborted } = quietQuestions >= 3
-          ? { aborted: false, result: { choice: null, probability: null, action: 'needs-human' as const, reason: 'max-questions', asked: false } }
+        const { result: decision, aborted } = skip
+          ? { aborted: false, result: { choice: null, probability: null, action: 'needs-human' as const, reason: skip, asked: false } }
           : await withEffect('decide', (signal) => decideQuietJob({ hudHome, jobId: job.job, role: job.role, agent: cli.agent,
               jobState: current.state, backgroundChildAlive: mid.liveChild as false,
               minutesQuiet: Math.max(0, Math.round((Date.now() - next.quietSince!) / 60000)),
               beforeRequest: () => { if (fs.existsSync(stopFile)) terminalWake(); },
-              paneText: read.result.body?.result?.read?.text ?? '', reportPromptSent, questionIndex: quietQuestions + 1, signal }));
+              paneText: read?.result.body?.result?.read?.text ?? '', reportPromptSent, questionIndex: quietQuestions + 1, signal }));
         if (decision.asked) quietQuestions += 1;
         if (stopped || aborted) return;
         diskDirty = true;

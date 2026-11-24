@@ -95,6 +95,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   },
   { key: 'decisionCallsPerHour', group: 'Models', label: 'Decision cap', values: [600, 2000, 0],
     help: 'Decision-API calls per hour (quiet jobs, Sonic thinking, Imp routing)', advanced: true, format: callCap },
+  { key: 'quietJobDecision', group: 'Models', label: 'Quiet job', values: [true, false],
+    help: 'Send the quiet worker’s pane tail to the Decision API; off hands the job back to main' },
   { key: 'sonicAutoThinking', group: 'Models', label: 'Sonic auto-thinking', values: [false, true],
     help: 'Send the Sonic task text to the Decision API to choose its thinking level' },
   { key: 'impPlacement', group: 'Models', label: 'Imp placement', values: ['fixed', 'even', 'auto'],
@@ -193,7 +195,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
   Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse'],
-  Models: ['decisionCallsPerHour', 'sonicAutoThinking', 'impPlacement', 'impEvenPool'],
+  Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'impPlacement', 'impEvenPool'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
 };

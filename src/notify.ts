@@ -11,7 +11,6 @@
 
 import { spawn } from 'child_process';
 import { collectAttention, alertParts, type AttentionItem } from './render/attention.js';
-import { agentCounts } from './collectors/subagent-tree.js';
 import type { HudData } from './types.js';
 
 export interface NotifyEvent {
@@ -130,8 +129,6 @@ export function tmuxDeliver(event: NotifyEvent): void {
 
 export class Notifier {
   private readonly lastFired = new Map<string, { fingerprint: string; at: number }>();
-  private lastActiveAgents: number | null = null;
-  private lastCompletedAgents = 0;
   private initialized = false;
 
   constructor(private options: NotifierOptions) {}
@@ -149,7 +146,6 @@ export class Notifier {
     const candidates = [
       ...this.approvalEvents(data),
       ...this.attentionEvents(data, nowMs),
-      ...this.agentEvents(data),
     ];
     if (!this.initialized || !this.options.enabled) {
       // Opening (or enabling) the panel must not replay existing events.
@@ -227,41 +223,6 @@ export class Notifier {
         kind: 'attention',
         fingerprint: items.map((item: AttentionItem) => `${item.kind}:${item.label}`).join('|'),
         message: alertParts(items, nowMs, undefined, false).join(' · '),
-      },
-    ];
-  }
-
-  private agentEvents(data: HudData): NotifyEvent[] {
-    // The agents the main session started, as every view counts them; a failed subtask or review is an attention event.
-    if (!data.subagentTree) return []; // An on-demand tree was not collected; no transition was observed.
-    const summary = agentCounts(data.subagentTree.nodes).agents;
-    const previousActive = this.lastActiveAgents;
-    const previousCompleted = this.lastCompletedAgents;
-    this.lastActiveAgents = summary.active;
-    this.lastCompletedAgents = summary.completed;
-
-    if (previousActive === null || previousActive === 0 || summary.active > 0) {
-      return [];
-    }
-
-    const finished = summary.completed - previousCompleted;
-    const failed = summary.failed;
-    if (finished <= 0 && failed === 0) {
-      return [];
-    }
-
-    const parts: string[] = [];
-    if (finished > 0) {
-      parts.push(`${finished} agent${finished === 1 ? '' : 's'} finished`);
-    }
-    if (failed > 0) {
-      parts.push(`${failed} failed`);
-    }
-    return [
-      {
-        kind: 'agents-idle',
-        fingerprint: `${summary.completed}/${summary.failed}`,
-        message: parts.join(', '),
       },
     ];
   }

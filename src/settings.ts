@@ -23,13 +23,14 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   worktreeRoot: string;
   /** Draft-only; persisted solely as config.json decisions.primary. */
   decisionApi: DecisionProviderId;
+  quietJobDecision: boolean;
   sonicAutoThinking: boolean;
   impPlacement: 'fixed' | 'even' | 'auto';
   impEvenPool: string[];
   /** Panel UI language; auto follows the locale. */
   language: 'auto' | 'en' | 'zh';
   decisionCallsPerHour: number;
-  /** Notifications in tmux on approvals, failures and finished agents. CODEX_HUD_NOTIFY, when set, wins. */
+  /** Notifications in tmux on approvals and failures. CODEX_HUD_NOTIFY, when set, wins. */
   notify: boolean;
   /** Also notify outside the terminal. CODEX_HUD_NOTIFY_DESKTOP, when set, wins. */
   notifyDesktop: boolean;
@@ -57,6 +58,7 @@ export function defaultSettings(): HudSettings {
     worktreeRoot: '',
     language: 'auto',
     decisionApi: 'openai',
+    quietJobDecision: true,
     sonicAutoThinking: false,
     impPlacement: 'fixed',
     impEvenPool: [],
@@ -90,6 +92,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   decisionApi: oneOf('gemini', 'openai', 'typesafe'),
+  quietJobDecision: isBoolean,
   sonicAutoThinking: isBoolean,
   impPlacement: oneOf('fixed', 'even', 'auto'),
   impEvenPool: (value) => Array.isArray(value) && value.every(name => typeof name === 'string' && /^[A-Za-z0-9._-]{1,32}$/.test(name)),

@@ -12,11 +12,11 @@ export function homeRows(
   waiting: readonly ProjectItem[], handoff: Pick<ProjectSnapshot, 'summary' | 'next'> | undefined,
   load: PaneLoad | undefined, width: number,
 ): MonitorRow[] {
-  const prose = (body: string, prefix = '  ') => flowLines(monitorText(body), Math.max(1, width - 2))
-    .map((line, i) => boardRow(fit((i ? '  ' : prefix) + line, width)));
+  const prose = (body: string, prefix = '  ', item?: string) => flowLines(monitorText(body), Math.max(1, width - 2))
+    .map((line, i) => ({ ...boardRow(fit((i ? '  ' : prefix) + line, width)), item }));
   return [
     section(t('Waiting'), width),
-    ...(waiting.length ? waiting.flatMap((item) => prose(item.value, theme.board.attention('? ')))
+    ...(waiting.length ? waiting.flatMap((item, i) => prose(item.value, theme.board.attention('? '), `project:wait:${i}`))
       : handoff ? [boardRow(theme.board.muted(t('Nothing needs you')))] : [boardRow(t('Loading…'))]),
     ...(handoff?.summary ? [section(t('Now'), width), ...prose(handoff.summary)] : []),
     ...(handoff?.next.length ? [section(t('Next'), width), ...handoff.next.flatMap((item) => prose(item.value, `${mark('•', '-')} `))] : []),

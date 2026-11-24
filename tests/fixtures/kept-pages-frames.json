@@ -264,6 +264,7 @@
     "",
     "Models ─────────────────────────────────────────────────────────────────────────",
     "  Decision API                                                   OpenAI (no key)",
+    "  Quiet job                                                                   on",
     "  Sonic auto-thinking                                                        off",
     "  Imp placement                                                            fixed",
     "",
@@ -290,7 +291,6 @@
     "",
     "",
     "",
-    "",
     "                                    ←→ change  s save  Esc back  r reset  ? help"
   ],
   "settings-80-zh": [
@@ -306,6 +306,7 @@
     "",
     "模型 ───────────────────────────────────────────────────────────────────────────",
     "  决策 API                                                       OpenAI (无 key)",
+    "  静默任务                                                                    开",
     "  Sonic 自动选档                                                              关",
     "  Imp 运行位置                                                              固定",
     "",
@@ -325,7 +326,6 @@
     "  工作者 · imp 上限                                                            3",
     "  工作者 · general 上限                                                        3",
     "  工作者 · imp→general 溢出                                                   开",
-    "",
     "",
     "",
     "",
@@ -652,6 +652,7 @@
     "",
     "Models ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  Decision API                                                                                           OpenAI (no key)",
+    "  Quiet job                                                                                                           on",
     "  Sonic auto-thinking                                                                                                off",
     "  Imp placement                                                                                                    fixed",
     "",
@@ -678,7 +679,6 @@
     "",
     "",
     "",
-    "",
     "                                                                            ←→ change  s save  Esc back  r reset  ? help"
   ],
   "settings-120-zh": [
@@ -694,6 +694,7 @@
     "",
     "模型 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  决策 API                                                                                               OpenAI (无 key)",
+    "  静默任务                                                                                                            开",
     "  Sonic 自动选档                                                                                                      关",
     "  Imp 运行位置                                                                                                      固定",
     "",
@@ -713,7 +714,6 @@
     "  工作者 · imp 上限                                                                                                    3",
     "  工作者 · general 上限                                                                                                3",
     "  工作者 · imp→general 溢出                                                                                           开",
-    "",
     "",
     "",
     "",
@@ -788,6 +788,7 @@
     "",
     "Models ─────────────────────────────────",
     "  Decision API           OpenAI (no key)",
+    "  Quiet job                           on",
     "  Sonic auto-thinking                off",
     "  Imp placement                    fixed",
     "",
@@ -814,7 +815,6 @@
     "",
     "",
     "",
-    "",
     "     ←→ change  s save  Esc back  ? help"
   ],
   "settings-40-zh": [
@@ -830,6 +830,7 @@
     "",
     "模型 ───────────────────────────────────",
     "  决策 API               OpenAI (无 key)",
+    "  静默任务                            开",
     "  Sonic 自动选档                      关",
     "  Imp 运行位置                      固定",
     "",
@@ -856,7 +857,6 @@
     "",
     "",
     "",
-    "",
     "       ←→ 修改  s 保存  Esc 返回  ? 帮助"
   ],
   "settings-even-40-en": [
@@ -872,13 +872,13 @@
     "",
     "Models ─────────────────────────────────",
     "  Decision API           OpenAI (no key)",
+    "  Quiet job                           on",
     "  Sonic auto-thinking                off",
     "* Imp placement                     even",
     "* Even pool         ‹ small · included ›",
     "┃ Choose an Imp preset with ←→; Enter",
     "┃ includes or excludes it",
     "",
-    "Codex ──────────────────────────────────",
     "     ←→ choose  ⏎ toggle  s save  ? help"
   ],
   "settings-even-40-zh": [
@@ -894,13 +894,13 @@
     "",
     "模型 ───────────────────────────────────",
     "  决策 API               OpenAI (无 key)",
+    "  静默任务                            开",
     "  Sonic 自动选档                      关",
     "* Imp 运行位置                      均衡",
     "* 均衡预设池          ‹ small · 已加入 ›",
     "┃ 用 ←→ 选择 Imp 预设，按 Enter 加入或",
     "┃ 移出预设池",
     "",
-    "Codex ──────────────────────────────────",
     "         ←→ 选择  ⏎ 切换  s 保存  ? 帮助"
   ],
   "help-end-40-en": [

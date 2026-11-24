@@ -43,7 +43,7 @@ async function fixture(t) {
   put(join(finished.dir, 'review-1.md'), 'Verdict: accept');
   put(join(working.dir, 'qa/q1.md'), '# Question\n\nKeep the original parser?\n\nOptions:\n- Keep it\n- Replace it\n\nDefault if unanswered: Keep it\n');
   put(join(working.dir, 'report.md'), '# Report\n\nSynthetic preliminary report.');
-  put(join(cwd, 'STATE.md'), '# State\n\n## Waiting for the owner\n- Approve the sample fixture\n\n## Now\n- Validating the example set\n\n## Next\n- Publish the sample run\n');
+  put(join(cwd, 'STATE.md'), '# State\n\n## Waiting for the owner\n- Approve the sample fixture\n- Pick the source for the synthetic run from the examples in the project\n  - Use the synthetic index\n\n## Now\n- Validating the example set\n\n## Next\n- Publish the sample run\n');
   const pipeline = new PanelJobPipeline(home, { pane: 'w4E:p1', project: cwd });
   t.after(() => { pipeline.dispose(); rmSync(root, { recursive: true, force: true }); });
   assert.equal(pipeline.load(), undefined, 'before collection a zero is not known');
@@ -65,6 +65,27 @@ test('Home shows explicit STATE requests, Now, Next and the calling pane load, w
   assert.equal(frame.workboard.targets.size, 0);
   assert.equal(acceptsMonitorInput(frame.state, { type: 'key', text: '/', key: '' }), false);
   assert.equal(press(frame, 'X').state.overlay, undefined);
+});
+
+test('Home Waiting opens the calling project request by keyboard and click', async (t) => {
+  const { draw } = await fixture(t);
+  const home = draw({ ...initialMonitorState(), selectedProject: '/another/sample-project' }, 40);
+  const selected = draw(key(home, 'down').state, 40);
+  const pane = selected.panes[0];
+  const continuation = pane.rows.findIndex((r, i) => r.item && r.item === pane.rows[i - 1]?.item);
+  assert.ok(continuation > 0, 'the request wraps');
+  const clicked = handleMonitorInput(selected.state, { type: 'mouse', button: 'left', x: 3,
+    y: pane.y + continuation - pane.offset }, { frame: selected });
+  for (const outcome of [key(selected, 'enter'), clicked]) {
+    assert.equal(outcome.state.activeTab, 'project');
+    assert.equal(outcome.state.selectedProject, undefined);
+    const detail = draw(outcome.state);
+    assert.match(plain(detail), /Pick the source for the synthetic run/);
+    assert.match(plain(detail), /Use the synthetic index/);
+    assert.doesNotMatch(plain(detail), /Approve the sample fixture/);
+    assert.match(key(detail, 'open-session').action?.files[0], /STATE\.md$/);
+  }
+  assert.equal(press(selected, 'v').state.subpage.kind, 'jobs');
 });
 
 test('Jobs has exactly one row per retained job; Enter and mouse open Inspector evidence and actions', async (t) => {

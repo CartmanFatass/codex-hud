@@ -6,7 +6,6 @@ export interface WorkFacts {
   readonly activityAt: number | null;
   readonly activityBasis: 'producer' | 'observed' | 'unknown';
   readonly signature: string;
-  readonly phases: readonly string[];
   readonly request: boolean;
   readonly requestId?: string;
   readonly requestInfo?: {
@@ -27,7 +26,6 @@ export interface WorkJob {
   readonly state: WorkState;
   readonly role: string;
   readonly title: string;
-  readonly phases: readonly string[];
   readonly reason: string | null;
   readonly elapsedMinutes: number | null;
   readonly inactivityMinutes: number | null;
@@ -51,7 +49,6 @@ export function projectWorkJob(worker: OwnerWorker, now: number, stallMinutes = 
     state,
     role: worker.role || 'agent',
     title: worker.task,
-    phases: w?.phases ?? [],
     reason: w?.reason ?? null,
     elapsedMinutes: workMinute(
       worker.homeNeedsHuman

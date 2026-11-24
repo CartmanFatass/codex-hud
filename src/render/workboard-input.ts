@@ -267,7 +267,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   if (tab === 'help') { next.help = {}; return result(); }
   const sub = next.subpage;
   const enter = key === 'enter' || key === 'activate';
-  if (!sub && next.activeTab === 'home' && (enter || key === 'jobs' || tab === 'board-jobs')) {
+  if (!sub && next.activeTab === 'home' && (key === 'jobs' || tab === 'board-jobs')) {
     next.subpage = jobsPage(next);
     return result();
   }
@@ -280,23 +280,30 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (job) return job;
   }
   const pane = frame?.panes[0];
-  if (!pane) return null;
-  const nav = sub ?? next.home;
+  if (!frame || !pane) return null;
+  const nav = sub ?? frame.state.home;
   const moveScroll = (scroll: number) => {
     const offset = Math.max(0, Math.min(Math.max(0, pane.contentLength - pane.height), scroll));
     if (sub) {
       next.subpage = { ...sub, scroll: offset };
       if (sub.kind === 'jobs') next.jobs = { cursor: sub.cursor, scroll: offset, revealed: sub.revealed };
-    } else next.home = { scroll: offset };
+    } else next.home = { ...nav, scroll: offset };
     return result();
   };
-  const actions = boardFrame.rows.filter((r) => r.item);
-  const cursor = sub?.cursor;
+  const actions = boardFrame.rows.filter((r, i, all) => r.item && (sub || r.item !== all[i - 1]?.item));
+  const cursor = nav.cursor;
   const select = (item?: string) => {
     if (sub) next.subpage = { ...sub, cursor: item, revealed: undefined };
+    else next.home = { ...nav, cursor: item, revealed: undefined };
     return result();
   };
   const act = (row: typeof actions[number] | undefined, fileOnly = false) => {
+    if (!sub && !fileOnly && /^project:wait:\d+$/.test(row?.item ?? '')) {
+      useProject(); // Home always shows the calling project, not the last project visited.
+      goTab('project');
+      readWait(Number(row!.item!.slice(13)));
+      return result();
+    }
     if (row?.files?.length) return result({ type: 'open-files', files: row.files });
     const target = row?.item && boardFrame.targets.get(row.item);
     if (!fileOnly && target && target.kind === 'worker') {
@@ -319,11 +326,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   const step = key === 'up' ? -1 : key === 'down' ? 1 : key === 'page-up' ? -Math.max(1, pane.height) : key === 'page-down' ? Math.max(1, pane.height) : 0;
   if (step || key === 'home' || key === 'end') {
-    if (sub?.kind === 'jobs' && actions.length) {
+    if ((sub?.kind === 'jobs' || (!sub && (key === 'up' || key === 'down'))) && actions.length) {
       const at = actions.findIndex((r) => r.item === cursor);
       return select(actions[key === 'home' ? 0 : key === 'end' ? actions.length - 1 : Math.max(0, Math.min(actions.length - 1, at + step))]?.item);
     }
-    // Inspector scrolls its evidence; Tab visits its files and child-job links.
+    // Home can page past Waiting into the handoff; Inspector scrolls its evidence.
     return moveScroll(key === 'home' ? 0 : key === 'end' ? pane.contentLength : nav.scroll + step);
   }
   if ((sub?.kind === 'inspector' || sub?.kind === 'native-inspector') && actions.length && (key === 'tab' || key === 'shift-tab')) {

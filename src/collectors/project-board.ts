@@ -110,7 +110,7 @@ function requestOrder(value: string): RequestOrder {
   const date = /^\d{4}-\d{2}-\d{2}(?=\s|$)/.exec(value)?.[0];
   const at = date ? Date.parse(date) : NaN;
   return {
-    waitedOn: /[（(]work waits[）)]/i.test(value) || waitRefs(value).length > 0,
+    waitedOn: /[（(]work waits[）)]/i.test(value),
     at: date && Number.isFinite(at) && new Date(at).toISOString().startsWith(date) ? at : undefined,
   };
 }

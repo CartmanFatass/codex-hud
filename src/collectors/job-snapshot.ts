@@ -5,7 +5,7 @@ import type { WorkLane } from './workboard-types.js';
 import type { resumedWorkerRefusal } from '../roles/resume-guard.js';
 import { herdrId } from '../roles/herdr-run.js';
 
-type LaneView = { kind: 'lanes'; home: string; scope: ThinJobScope; options?: { openedAt?: number; settledBefore?: number | 'now'; stallMinutes?: number } };
+type LaneView = { kind: 'lanes'; home: string; scope: ThinJobScope; options?: { openedAt?: number; settledBefore?: number | 'now' } };
 type View = LaneView | { kind: 'codex'; home: string };
 export type Request =
   | { kind: 'read'; view: View; key: number }
@@ -63,11 +63,9 @@ function snapshot<T extends Lanes | string[]>(view: View) {
   const key = ++views;
   let closed = false, current: T | undefined, pendingRead: Promise<T | undefined> | undefined;
   return {
-    read(stallMinutes?: number) {
+    read() {
       if (closed) return Promise.resolve(undefined);
-      const requested = view.kind === 'lanes' && stallMinutes !== undefined
-        ? { ...view, options: { ...view.options, stallMinutes } } : view;
-      return (pendingRead ??= send({ kind: 'read', view: requested, key }).then((value) => {
+      return (pendingRead ??= send({ kind: 'read', view, key }).then((value) => {
         if (!closed && value !== undefined) current = value as T;
         return current;
       }).finally(() => { pendingRead = undefined; }));
