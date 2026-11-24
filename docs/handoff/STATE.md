@@ -1,6 +1,6 @@
 # State of the universal-hud effort (2026-11-23)
 
-Milestone: pivot M1 (take workers off the owner's desk) and M2 (see load without the panel); 0.2.0 is the baseline
+Milestone: pivot M1–M3 accepted (M3: manage outcomes across projects); 0.2.0 is the baseline; the spec implies no M4
 
 [Archived slice rows](archive/STATE-slices-2026-11-22.md); current progress lives in the tickets and land records.
 
@@ -24,4 +24,9 @@ Nothing open.
 - M1 and M2 are accepted: both landed, the milestone review's blocking findings were fixed in 47d29bbc, and the
   live check passed (same machine-wide counts and WSL load in every bar; explicit STATE requests ordered on the
   board). Optional left: duplicate Classic/Split frames in `tests/fixtures/project-page.mjs`.
-- M3: the Objective syntax is settled (D-2026-11-23-04); slice M3 into tickets and run them.
+- M3 is accepted: tickets pivot-m3/01–05 landed, the milestone review's blocking findings were fixed in 9342cacd
+  (plus 876197b0, 2a49c2d9), and the M3 Try passed on a synthetic two-project home (paused project and ticketless
+  result found on Home, evidence opened, request resolved through `hud_objective` and cleared everywhere).
+- The load display is compact per-role icons and C/M/S readings (D-2026-11-23-05, cfab9054).
+- MyHUD and toktrack keep `.hud/objectives.md` through `hud_objective`; the owner's other registered projects get one
+  only when their own sessions create it.
