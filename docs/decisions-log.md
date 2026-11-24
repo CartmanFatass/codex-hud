@@ -7,6 +7,14 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-24
 
+- **D-2026-11-24-02** (§2.2 Home): The owner asked for a card area under the projects and for time management
+  across projects. Settled `docs/design/home-cards/` (4ec4915b): a **Today** card (landings, finished and failed jobs
+  by role, gate first-pass vs retried, today only) and a **Schedule** card (dated owner items in a private
+  `$HUD_HOME/schedule.json`, written only through a new `hud_schedule` MCP tool, countdowns, overdue in amber, plus
+  active projects quiet for over 2 weeks; paused and maintenance skipped), a Home tab badge for items due today or
+  overdue (separate from `?N`), the gate line kept. Brings back "done today" in card form (removed 2026-11-23).
+  Owner also changed Home membership: only projects active today are listed; the others fold into one row that a
+  key expands ("我想看其他的项目我会自己展开查看"), replacing "all registered projects" in §2.2.
 - **D-2026-11-24-01** (§2.2 Home, §2.3 Project): The owner found Home without design (wrapped and cut rows, no
   one-glance progress) and Project repeating it. Settled `docs/design/home-portfolio/` (74836d56) as the build
   template: one block per registered project with a liveness mark, per-role load and age on its header and one

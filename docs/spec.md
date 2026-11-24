@@ -79,10 +79,13 @@ the `codexH` bar and supported native statuslines. (11.04, 12.01, 17.09, 22.12, 
 **Home.** `/hud` opens the same standalone herdr sidebar across clients; delegation stays installed when closed.
 Keep keyboard and mouse navigation, Settings and Help. (11.04, 17.09, 19.03, 20.10)
 
-- Show explicit owner requests first, then **all registered projects**, not just the current pane or recent visits.
-  Show declared stance (e.g. active, paused, maintenance), current goal, recent result, owner priority and update
-  time where known. Keep idle and unavailable projects identifiable. Bound or page detail, not membership. Opening
-  a project is navigation, not a grant to operate its workers. (new)
+- Show explicit owner requests first, then the registered projects **active today** (activity today, running jobs
+  or an open request), not just the current pane or recent visits; every other registered project folds into one
+  row with its count, which one key expands in place (24.02). Show declared stance (e.g. active, paused,
+  maintenance), current goal, recent result, owner priority and update time where known. Keep idle and unavailable
+  projects identifiable once expanded. Bound or page detail, not membership. Opening a project is navigation, not
+  a grant to operate its workers. Below the projects, a **Today** card and a **Schedule** card (owner dates across
+  projects, written through the MCP; not requests) fold first when rows are short (24.02). (new)
 - Attention means **someone has asked this owner to do something**. Say what, why now, which project/Objective,
   whether anyone actually waits, and where to look. A result or research opportunity belongs here only with such
   a request. No request kinds. Order: requests work waits on first, then owner priority, then oldest open; no

@@ -235,3 +235,7 @@ before its failure count, and a due item is never counted against the item cap. 
   items cut to one row, never wrapped; the panel does not edit the schedule; schedule text is shown as recorded.
 - The Proposed Home frames are composed from helpers, not the product renderer; the Unicode and text icon sets are described, not drawn; light themes were not drawn; no cursor, mouse or selection states.
 - The frames are synthetic: Today's numbers come from the shipped `collectJobStats` over made-up records; the schedule is a made-up `schedule.json`; no real project, path or text appears in any file here.
+
+**Settled by the owner 2026-11-24 (D-2026-11-24-02):** build it; 1. due badge yes; 2. the quiet line skips paused
+and maintenance projects; 3. keep the gate line. Also: Home lists only projects active today and folds the others
+into one row expanded by a key.
