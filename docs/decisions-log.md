@@ -10,8 +10,9 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 - **D-2026-11-24-05** (§2.1 dispatch, §2.2 Decision API): The owner generalised the pool pick into **prewalk**, a step
   before a worker starts, of two kinds: a Sonic scout gathers the relevant files and facts, and the Decision API
   makes fixed-set choices. Goal: take cost pressure off the strong models (imp, oracle, frontend-imp) and let HUD
-  do this dispatching automatically instead of the main session asking for a scout each time. Owner-configured per
-  role file; a caller can still name or skip a scout; failures never block the dispatch; toktrack compares jobs with
+  do this dispatching automatically instead of the main session asking for a scout each time. Whether a role
+  prewalks is the owner's switch per role file, not a Decision API call (owner: strong roles such as oracle need
+  broad information most of the time); a caller can still name or skip a scout; failures never block the dispatch; toktrack compares jobs with
   and without prewalk. Narrows "no other automatic role chaining" by exactly this step.
 - **D-2026-11-24-04** (§2.2 Decision API, §1 Personal Standards): Inspired by the even rotation over preset pools,
   the owner asked that the Decision API pick styles and elements from the Personal Standards frontend style pool by
