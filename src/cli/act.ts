@@ -5,6 +5,10 @@ import { appendPanelAction, JOB } from '../collectors/panel-actions.js';
 import { ProjectCollector } from '../collectors/project-board.js';
 import { acceptAll } from '../collectors/try-records.js';
 import { getHudHome } from '../hud-home.js';
+import type { Job } from '../mcp/job-contracts.js';
+import { jobCallerPane } from '../roles/job-pane.js';
+import { packageJobFilter } from '../roles/job-project.js';
+import { removeQueuedJob } from '../roles/concurrency.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
@@ -14,7 +18,9 @@ export const ACT_HELP =
   'Usage: hud act answer <job> <qN> <answer...>   Write qa/qN.answer.md once (resumes a headless job)\n' +
   '       hud act try [--cwd DIR]                   Accept all slices to try, as the panel does\n' +
   '       hud act retry <job>                       Record a retry request; the main session decides\n' +
-  '       hud act stop <job>                        Stop a job\n';
+  '       hud act stop <job>                        Stop a job\n' +
+  '       hud act stop --queued <job>...            Cancel queued work only (no worker)\n' +
+  '       hud act stop --package LABEL --queued     Cancel this pane’s queued package jobs in this project\n';
 
 export async function actCommand(args: readonly string[], io: HudIO): Promise<number> {
   const [verb, ...rest] = args, home = getHudHome(io.env), say = (text: string) => io.stdout(`${text}\n`);
@@ -29,6 +35,43 @@ export async function actCommand(args: readonly string[], io: HudIO): Promise<nu
     try { accepted = acceptAll(home, root, project.ledger); } catch { throw new CliError('could not accept all', 1); }
     await say(accepted ? `Accepted ${accepted} to try` : 'Nothing to try');
     return 0;
+  }
+  if (verb === 'stop' && (rest[0] === '--queued' || rest[0] === '--package')) {
+    const cache = getJobIndexCache(home);
+    let ids: readonly string[], selected: ((job: Job) => boolean) | undefined;
+    if (rest[0] === '--package') {
+      if (!rest[1] || rest[2] !== '--queued' || rest.length !== 3) throw new CliError(ACT_HELP.trimEnd());
+      if (!io.env.HERDR_PANE_ID) throw new CliError('package selection needs a caller pane; use --queued <job>...', 1);
+      const matches = packageJobFilter(process.cwd(), rest[1]);
+      selected = job => !job.scout_only && jobCallerPane(job) === io.env.HERDR_PANE_ID && matches(job);
+      ids = cache.listJobIds();
+    } else {
+      ids = rest.slice(1);
+      if (!ids.length || ids.some(id => !JOB.test(id))) throw new CliError(ACT_HELP.trimEnd());
+    }
+    let cancelled = 0, skipped = 0, failed = 0;
+    for (const id of ids) {
+      try {
+        const receipt = cache.readJob<Job>(id);
+        if (receipt.status !== 'ok' || receipt.value.job !== id) throw new Error('no readable job receipt');
+        if (selected && !selected(receipt.value)) continue;
+        const status = cache.readStatus(id);
+        if (status.status !== 'ok' && status.status !== 'missing') throw new Error('unreadable job status');
+        const outcome = removeQueuedJob(join(home, 'jobs', id), status.status === 'ok' ? status.value.state : null);
+        if (outcome === 'cancelled') {
+          cancelled++;
+          await say(`Cancelled ${id} (never started; no worker)`);
+        } else {
+          skipped++;
+          await say(`Skipped ${id}: ${outcome}`);
+        }
+      } catch (error) {
+        failed++;
+        await say(`Failed ${id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    await say(`${cancelled} cancelled, ${skipped} skipped, ${failed} failed`);
+    return failed ? 1 : 0;
   }
   const [job, qid, ...words] = rest;
   const valid = verb === 'answer' ? /^q\d+$/.test(qid ?? '') && words.length > 0 : (verb === 'retry' || verb === 'stop') && rest.length === 1;

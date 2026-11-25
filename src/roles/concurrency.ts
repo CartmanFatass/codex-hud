@@ -1,8 +1,26 @@
 /** Shared per-role concurrency cap, overflow and queue-order helpers. */
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+import { jobFiles } from '../mcp/paths.js';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { defaultSettings, loadSettings, type HudSettings } from '../settings.js';
 
 export const QUEUE_START_MARKER = '.queue-start';
+
+/** Compete for the watcher's exclusive start marker. Never stop a worker if promotion won. */
+export function removeQueuedJob(dir: string, state: unknown) {
+  if (state !== 'queued' || fs.existsSync(join(dir, jobFiles.session))) return 'not_queued';
+  try {
+    fs.writeFileSync(join(dir, QUEUE_START_MARKER), 'closed\n', { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST') return 'claimed';
+    if (code === 'ENOENT') return 'missing';
+    throw error;
+  }
+  fs.rmSync(dir, { recursive: true, force: true });
+  return 'cancelled';
+}
 
 export type ConcurrencySettings = Pick<HudSettings, 'roleCaps' | 'impOverflow'>;
 

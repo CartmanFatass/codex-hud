@@ -78,6 +78,8 @@ hud trust <dir>           # add the directory to grok, agy and claude trust list
 hud watch                 # pending questions and actionable events (--verbose: every change; --all: every pane)
 hud act answer <job> <qN> <answer...>  # the owner's panel actions from a command: answer once, resuming a headless job
 hud act try [--cwd DIR]   # Accept all pending tries, recorded in tries.jsonl; hud act retry|stop <job>
+hud act stop --queued <job>...  # Cancel queued jobs by ID; never stop running workers
+hud act stop --package LABEL --queued  # Only this caller pane's jobs in the current project
 hud doctor                # run the read-only local install preflight
 hud doctor <jobId>        # print one job's local facts without changing it
 hud stats [--days N] [--by role|model|route|feature]  # per-job usage and outcomes
@@ -328,7 +330,8 @@ With **imp→general overflow** (`impOverflow`, on by default), an `imp` create 
 It is counted as `general` and returns `overflowed: true` and `overflow_from: "imp"`.
 When no slot is free, `hud_create` (including items past the cap in a batch) creates the job as `queued` with its full brief and options and returns `queued: true` and its 1-based `queue_position` (shown in notices and the panel).
 The watcher starts the oldest queued job when a slot frees or a cap is raised in Settings, picking the first available place at start time.
-`hud_close` (or panel `X`) removes a queued job.
+`hud_close` (or panel `X`) removes a queued job: its work never started and it has no worker.
+To cancel several in one call, pass `jobs: [id, ...]`, or `package: "sample", state: "queued"` (optionally `preset`) for your session's jobs in the current project. Both batch forms return per-job results and counts. Nonqueued jobs and jobs already claimed to start are skipped; only the single `job` form can close a running worker.
 
 Pass context as `context_files` (up to 32 paths resolved against `cwd`) and `from_jobs` (up to 16 job IDs, each referring to its `report.md` in `$HUD_HOME/jobs`).
 Use readable UTF-8 text files that resolve inside `cwd` or `$HUD_HOME/jobs`, respectively; invalid references return `invalid_arguments` before dispatch.

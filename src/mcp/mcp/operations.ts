@@ -6,13 +6,13 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type { AnswerResult } from '../../collectors/panel-actions.js';
 import { readJobProgress, jobRowReportMeta, jobChanges, failedAttempt, type JobRow } from '../../collectors/thin-jobs.js';
 import type { ReportMetaFields } from '../../roles/report-meta.js';
-import { QUEUE_START_MARKER } from '../../roles/concurrency.js';
+import { removeQueuedJob } from '../../roles/concurrency.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
 import { herdrId, runHerdr, runCommand } from '../../roles/herdr-run.js';
 import { CHECKS_FILE, jobChecks } from '../../roles/job-checks.js';
 import { recordQuestionAnswer, recordStopOrigin } from '../../roles/job-archive.js';
 import { JOB_ID_RE } from '../../roles/job-index-cache.js';
-import { projectJobFilter } from '../../roles/job-project.js';
+import { packageJobFilter, projectJobFilter } from '../../roles/job-project.js';
 import { takeLease } from '../../roles/lease.js';
 import { ensureQueueWatcher, paneInfo, watching, notify } from '../../roles/notify.js';
 import { piSwitches } from '../../roles/roster.js';
@@ -608,6 +608,8 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     if (queues_resumed.length && callerPane) void ensureQueueWatcher(callerPane, hudHome);
     return { answers, ...(queues_resumed.length && { queues_resumed }) };
   }
+  if (name === 'hud_close' && (args.jobs !== undefined || args.package !== undefined || args.state !== undefined || args.preset !== undefined))
+    return cancelBatch(args, scan);
   if (name === 'hud_wait') return waitJobs(args, scan);
   if (name === 'hud_read') {
     const { view } = args;
@@ -784,6 +786,61 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
   }
 }
 
+const cancelledLine = 'Cancelled queued work: never started (no worker).';
+
+function cancelQueued(id: string, state: unknown) {
+  const outcome = removeQueuedJob(directory(id), state);
+  if (outcome === 'cancelled' || outcome === 'missing') {
+    jobCache.evictJob(id);
+    session.cursor.delete(id);
+    const active = activeTasks.get(id);
+    if (active) {
+      batchTasks.delete(id);
+      const msg = `${taskLabel(active, 'stopped')} — ${cancelledLine}`;
+      updateTask(active, 'cancelled', msg, msg);
+    }
+  }
+  return outcome;
+}
+
+async function cancelBatch(args: Args, scan: JobScan) {
+  let ids: string[], selected: ((job: Job) => boolean) | undefined;
+  if (args.job !== undefined) throw new Error('invalid_arguments: use job or a queued batch, not both');
+  if (args.jobs !== undefined) {
+    if (args.package !== undefined || args.preset !== undefined || args.state !== undefined || !Array.isArray(args.jobs) ||
+        !args.jobs.length || args.jobs.some(id => typeof id !== 'string' || !id)) throw new Error('invalid_arguments: jobs');
+    ids = args.jobs;
+  } else {
+    const label = required(args, 'package');
+    if (args.state !== 'queued') throw new Error('invalid_arguments: package requires state:queued');
+    const preset = args.preset === undefined ? undefined : required(args, 'preset');
+    const matches = packageJobFilter(process.cwd(), label, preset);
+    selected = job => ownsJob(job) && matches(job);
+    ids = scan.all().filter(selected).map(job => job.job);
+  }
+  const jobs = await Promise.all(ids.map(async job => {
+    try {
+      return await keyLock(`job:${job}`, async () => {
+        const receipt = findJob(job);
+        if (!receipt || receipt.job !== job) return { job, result: 'error', code: 'job_not_found' };
+        if (selected && !selected(receipt)) return { job, result: 'skipped', reason: 'no longer matches selector' };
+        const state = readCachedStatus(job).status?.state ?? null;
+        const outcome = cancelQueued(job, state);
+        if (outcome === 'cancelled') return { job, result: 'cancelled' };
+        if (outcome === 'missing') return { job, result: 'error', code: 'job_not_found' };
+        return { job, result: 'skipped', state, reason: outcome === 'claimed' ? 'queue already claimed' : 'not an unstarted queued job' };
+      });
+    } catch (error) { return { job, result: 'error', ...itemError(error) }; }
+  }));
+  const counts = { cancelled: 0, skipped: 0, errors: 0 };
+  for (const { result } of jobs) {
+    if (result === 'cancelled' || result === 'skipped') counts[result]++;
+    else counts.errors++;
+  }
+  if (counts.cancelled) scan.clear(); // Do not deliver changes from the pre-cancellation receipt scan.
+  return { jobs, counts, message: 'Cancelled items never started and had no worker. No running worker was closed.' };
+}
+
 export async function closeJob(job: Job, stop = false) {
   const dir = directory(job.job);
   const scouting = pendingScouts.get(job.job);
@@ -793,38 +850,15 @@ export async function closeJob(job: Job, stop = false) {
     return { exit_code: 0, last_line: job.role === 'council' ? 'stopping council' : 'stopping scouted dispatch' };
   }
   let { row, status } = readRow(job);
-  if (row.state === 'queued' && !fs.existsSync(join(dir, jobFiles.session))) {
-    let claimed = false;
-    try {
-      fs.writeFileSync(join(dir, QUEUE_START_MARKER), 'closed\n', { flag: 'wx', mode: 0o600 });
-      claimed = true;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') {
-        jobCache.evictJob(job.job);
-        session.cursor.delete(job.job);
-        return { exit_code: 0, last_line: 'removed queued job', removed: true };
-      }
-      if (code !== 'EEXIST') throw error;
-    }
-    if (claimed) {
-      const active = activeTasks.get(job.job);
-      if (active) {
-        batchTasks.delete(job.job);
-        const msg = `${taskLabel(active, 'stopped')} — removed from queue`;
-        updateTask(active, 'cancelled', msg, msg);
-      }
-      fs.rmSync(dir, { recursive: true, force: true });
-      jobCache.evictJob(job.job);
-      session.cursor.delete(job.job);
-      return { exit_code: 0, last_line: 'removed queued job', removed: true };
-    }
+  const outcome = cancelQueued(job.job, row.state);
+  if (outcome === 'cancelled' || outcome === 'missing') return { exit_code: 0, last_line: cancelledLine, removed: true };
+  if (outcome === 'claimed') {
     // Watcher just claimed it to start; wait briefly for launch state before reaping.
     for (let i = 0; i < 40; i++) {
       await sleep(25);
       jobCache.invalidateJob(job.job);
       const refreshed = findJob(job.job);
-      if (!refreshed) return { exit_code: 0, last_line: 'removed queued job', removed: true };
+      if (!refreshed) return { exit_code: 0, last_line: cancelledLine, removed: true };
       job = refreshed;
       ({ row, status } = readRow(job));
       if (row.state !== 'queued' || fs.existsSync(join(dir, jobFiles.session))) break;
@@ -912,7 +946,7 @@ export async function withChanges(value: unknown, markExhaustion: boolean, scan:
 export function mutationKey(name: string, args: Args): string | null {
   if (name === 'hud_tickets' && !ticketGuide(args) && args.op !== 'ready')
     return isWorker ? 'tickets' : `tickets:${fs.realpathSync(jobCwd(args))}`;
-  if (name === 'hud_respond' && args.answers !== undefined) return null;
+  if ((name === 'hud_respond' && args.answers !== undefined) || (name === 'hud_close' && args.job === undefined)) return null;
   if (name !== 'hud_respond' && name !== 'hud_close') return null;
   const id = args.job;
   // Leave validation to the tool, without making invalid calls wait for one another.

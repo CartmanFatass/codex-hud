@@ -13,7 +13,7 @@ const detail = { ...bool, description: 'Diagnostics.' };
 const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
   name,
   description,
-  inputSchema: { type: 'object', properties, required, additionalProperties: false },
+  inputSchema: { type: 'object', properties, ...(required.length ? { required } : {}), additionalProperties: false },
 });
 
 export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'wontfix', 'claimed', 'done'] as const;
@@ -97,7 +97,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_read',
-    "List active project jobs + caller's unread settled reports or collect job/jobs. Digest: summary, paths, questions, checks, progress. Full: paged report/path/diagnostics. Pi/CLI close at turn end with a declared report, read or not; inspect via hud_peek.",
+    "List active project jobs + caller's unread reports; read job/jobs for digest or paged full report. Pi/CLI close at turn end with a declared report, read or not; inspect via hud_peek.",
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1, description: 'Input order; per-item errors.' },
@@ -109,7 +109,7 @@ export const ROLE_TOOLS = [
       view: {
         type: 'string',
         enum: ['compact', 'recent'],
-        description: 'List: compact counts children, folds old unread; recent: newest 20 full rows.',
+        description: 'Compact groups children/old unread; recent: latest 20.',
       },
     }
   ),
@@ -134,7 +134,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_send',
-    'Via job, jobs (working) or messages. Closed: resumes session or repairs (continued_as).',
+    'job/jobs (working)/messages. Closed: resume or repair (continued_as).',
     {
       job: text,
       jobs: { type: 'array', items: text, minItems: 1 },
@@ -174,8 +174,13 @@ export const ROLE_TOOLS = [
       },
     }
   ),
-  tool('hud_close', 'Reap early; repeat-safe.', { job: text }, ['job']),
-  tool('hud_land', 'Land settled managed worktree job via project gate; hud_read returned flow ID.', { job: text }, ['job']),
+  tool('hud_close', 'job: close a running worker. Batch: cancel queued work (never started; no worker).', {
+    job: text,
+    jobs: { type: 'array', items: text, minItems: 1, description: 'Queued (no worker); skip running.' },
+    package: { ...text, description: 'With state:queued; caller/project only.' },
+    state: { ...text, enum: ['queued'] }, preset: text,
+  }),
+  tool('hud_land', 'Land settled worktree via project gate; hud_read flow ID.', { job: text }, ['job']),
   LEASE_TOOL,
   tool('hud_objective', 'Edit registered projects without committing. set: Objective id and fields (new: title and state). project: stance/priority. request: text and optional Objective/waits. resolve: request ID and optional resolution/note.', {
     op: { ...text, enum: ['set', 'project', 'request', 'resolve'] },
@@ -208,7 +213,7 @@ export const ROLE_TOOLS = [
   }, ['op']),
   tool(
     'hud_tickets',
-    'Tickets: guide, queue, local edits, GitHub sync. Add/update objective: ID in .hud/objectives.md.',
+    'Guide/queue/edit/sync. objective: .hud/objectives.md ID.',
     {
       op: { ...text, enum: ['guide', 'ready', 'run', 'add', 'update', 'sync'], default: 'guide' },
       cwd: text,
@@ -218,7 +223,7 @@ export const ROLE_TOOLS = [
       tickets: {
         type: 'array',
         minItems: 1,
-        description: 'Add drafts, blockers first.',
+        description: 'Blockers first.',
         items: {
           type: 'object',
           properties: {
@@ -243,7 +248,7 @@ export const ROLE_TOOLS = [
       updates: {
         type: 'array',
         minItems: 1,
-        description: 'Update batch: input order, per-item errors; item feature wins.',
+        description: 'Input order; per-item errors; item feature wins.',
         items: {
           type: 'object',
           properties: {

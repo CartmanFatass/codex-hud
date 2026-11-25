@@ -25,6 +25,12 @@ export function projectJobFilter(cwd: string) {
   };
 }
 
+/** Match a package selector within its project. Callers also check that they own the job. */
+export function packageJobFilter(cwd: string, label: string, preset?: string) {
+  const matches = projectJobFilter(cwd);
+  return (job: Job) => job.package === label && (preset === undefined || (job.route?.preset ?? job.preset) === preset) && matches(job);
+}
+
 /** Missing/malformed herdr evidence cannot transfer ownership. Never use a workspace-filtered list. */
 export async function adoptProjectJobs(home: string, pane: string, cwd: string, jobs: JobOwner[], env: NodeJS.ProcessEnv,
   owesCaller: (dir: string, job: Record<string, unknown>) => boolean, cache?: JobIndexCache, onAdopt?: (id: string) => void) {

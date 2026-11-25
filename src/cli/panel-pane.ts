@@ -10,7 +10,7 @@ import { runHerdr, runCommand, herdrResult, isRecord, herdrId } from '../roles/h
 import { stopSonic } from '../mcp/sonic-process.js';
 import { recordStopOrigin } from '../roles/job-archive.js';
 import { reapWorkerTree } from '../roles/worker-tree.js';
-import { QUEUE_START_MARKER } from '../roles/concurrency.js';
+import { removeQueuedJob } from '../roles/concurrency.js';
 import { OBJECTIVE_HASH } from '../collectors/objectives.js';
 
 async function command(argv: string[], env: NodeJS.ProcessEnv) {
@@ -73,18 +73,9 @@ const readJson = (file: string): Record<string, unknown> | null => {
 /** Stop a HUD job as `hud_close` does: a CLI job already in its idle grace is asked to quit, then `pi-role-reap` reaps it. */
 export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
   const status = readJson(join(jobDir, 'STATUS.json'));
-  if (status?.state === 'queued' && !fs.existsSync(join(jobDir, jobFiles.session))) {
-    try {
-      fs.writeFileSync(join(jobDir, QUEUE_START_MARKER), 'closed\n', { flag: 'wx', mode: 0o600 });
-      fs.rmSync(jobDir, { recursive: true, force: true });
-      return { ok: true };
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ENOENT') return { ok: true };
-      if (code !== 'EEXIST') return { ok: false, reason: 'reap failed' };
-    }
-  }
   try {
+    const outcome = removeQueuedJob(jobDir, status?.state);
+    if (outcome === 'cancelled' || outcome === 'missing') return { ok: true };
     recordStopOrigin(jobDir, 'panel', status?.state);
     if (readJson(join(jobDir, jobFiles.job))?.headless) return await stopSonic(jobDir) ? { ok: true } : { ok: false, reason: 'headless worker cleanup pending' };
     const { result, complete, issue } = await reapWorkerTree(jobDir, status, () => {

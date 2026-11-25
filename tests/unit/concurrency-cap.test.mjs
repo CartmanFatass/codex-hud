@@ -183,9 +183,53 @@ test('three working imps overflow fourth imp to general and queue once both caps
   const closed = await f.call('hud_close', { job: q1.job });
   assert.equal(closed.exit_code, 0);
   assert.equal(closed.removed, true);
+  assert.match(closed.last_line, /never started \(no worker\)/);
   assert.equal(fs.existsSync(q1.task_dir), false);
   assert.equal((await f.call('hud_read', { job: q1.job })).code, 'job_not_found');
   assert.equal((await f.call('hud_read', { job: q2.job })).queue_position, 1);
+});
+
+test('batch close cancels only unclaimed queued work, by package/preset or explicit IDs', async t => {
+  const f = await fixture(t), jobsDir = join(f.env.HUD_HOME, 'jobs');
+  let serial = 0;
+  const seed = (state = 'queued', patch = {}) => {
+    const job = `j${(++serial).toString(16).padStart(16, '0')}`, dir = join(jobsDir, job);
+    fs.mkdirSync(dir, { recursive: true });
+    writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job, role: 'sonic', headless: true, package: 'demo',
+      created_at: '2026-01-01T00:00:00.000Z', caller_pane: f.env.HERDR_PANE_ID, cwd: f.root, preset: 'one', ...patch }));
+    writeStatus(dir, { state });
+    return job;
+  };
+  const bulk = Array.from({ length: 39 }, () => seed('queued', { package: 'bulk' }));
+  const all = await f.call('hud_close', { package: 'bulk', state: 'queued' });
+  assert.deepEqual(all.counts, { cancelled: 39, skipped: 0, errors: 0 });
+  assert.deepEqual(new Set(all.jobs.map(j => j.job)), new Set(bulk));
+  for (const id of bulk) assert.equal(fs.existsSync(join(jobsDir, id)), false);
+  const queued = seed(), routed = seed('queued', { preset: undefined, route: { preset: 'one' } });
+  const working = seed('working'), claimed = seed(), otherPreset = seed('queued', { preset: 'two' });
+  const otherProject = seed('queued', { project_root: join(f.root, 'elsewhere') });
+  const otherOwner = seed('queued', { caller_pane: 'w2:p2' }), otherPackage = seed('queued', { package: 'other' });
+  const session = seed();
+  fs.writeFileSync(join(jobsDir, session, 'SESSION.txt'), 'LEFT=demo:p1\n');
+  fs.writeFileSync(join(jobsDir, claimed, '.queue-start'), '123\n'); // Watcher won the claim; STATUS still says queued.
+  for (const args of [{ job: working, jobs: [queued] }, { package: 'demo' }, { package: 'demo', state: 'working' }]) {
+    const { result } = await f.rpc('tools/call', { name: 'hud_close', arguments: args });
+    assert.ok(result.isError);
+  }
+  const batch = await f.call('hud_close', { package: 'demo', state: 'queued', preset: 'one' });
+  assert.deepEqual(batch.counts, { cancelled: 2, skipped: 3, errors: 0 });
+  assert.deepEqual(Object.fromEntries(batch.jobs.map(j => [j.job, j.result])), {
+    [queued]: 'cancelled', [routed]: 'cancelled', [working]: 'skipped', [claimed]: 'skipped', [session]: 'skipped',
+  });
+  assert.match(batch.message, /never started.*no worker/);
+  const missing = 'jffffffffffffffff';
+  const list = await f.call('hud_close', { jobs: [otherPreset, working, missing, otherPackage] });
+  assert.deepEqual(list.counts, { cancelled: 2, skipped: 1, errors: 1 });
+  assert.deepEqual(list.jobs.map(j => [j.job, j.result]), [[otherPreset, 'cancelled'], [working, 'skipped'], [missing, 'error'], [otherPackage, 'cancelled']]);
+  assert.equal(list.jobs[2].code, 'job_not_found');
+  for (const id of [queued, routed, otherPreset, otherPackage]) assert.equal(fs.existsSync(join(jobsDir, id)), false);
+  for (const id of [working, claimed, session, otherProject, otherOwner]) assert.equal(fs.existsSync(join(jobsDir, id)), true);
+  assert.equal(cliState(join(jobsDir, working)).state, 'working');
 });
 
 test('main-session sonic jobs queue at the cap and start headless in order', { timeout: 30000 }, async (t) => {

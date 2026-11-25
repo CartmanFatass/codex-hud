@@ -66,6 +66,34 @@ test('retry records the request the session hears and decides on; stop reaps a q
   assert.equal(fs.existsSync(f.dir(QUEUED)), false);
 });
 
+test('stop --queued cancels only never-started jobs', async t => {
+  const f = fixture(t);
+  const done = await f.run('stop', '--queued', JOB, QUEUED);
+  assert.equal(done.code, 0);
+  assert.match(done.stdout, new RegExp(`Skipped ${JOB}`));
+  assert.match(done.stdout, new RegExp(`Cancelled ${QUEUED} .*no worker`));
+  assert.equal(fs.existsSync(f.dir(QUEUED)), false);
+  assert.equal(fs.existsSync(f.dir(JOB)), true);
+});
+
+test('stop --package requires --queued and selects only the current pane/project', async t => {
+  const f = fixture(t);
+  for (const job of [JOB, QUEUED]) fs.writeFileSync(join(f.dir(job), 'job.json'), JSON.stringify({
+    job, caller_pane: 'demo:p1', cwd: process.cwd(), package: 'demo',
+  }));
+  assert.equal((await f.run('stop', '--package', 'demo')).code, 2);
+  assert.equal((await f.run('stop', '--package', 'demo', '--queued')).code, 1);
+  f.env.HERDR_PANE_ID = 'demo:p2';
+  assert.equal((await f.run('stop', '--package', 'demo', '--queued')).stdout, '0 cancelled, 0 skipped, 0 failed\n');
+  f.env.HERDR_PANE_ID = 'demo:p1';
+  const done = await f.run('stop', '--package', 'demo', '--queued');
+  assert.equal(done.code, 0);
+  assert.match(done.stdout, new RegExp(`Skipped ${JOB}`));
+  assert.match(done.stdout, new RegExp(`Cancelled ${QUEUED}`));
+  assert.equal(fs.existsSync(f.dir(JOB)), true);
+  assert.equal(fs.existsSync(f.dir(QUEUED)), false);
+});
+
 test('bad arguments and unknown jobs are refused before anything is written', async (t) => {
   const f = fixture(t);
   for (const args of [[], ['nope'], ['answer', JOB, 'q1'], ['answer', JOB, 'x1', 'a'], ['retry'], ['retry', '../x'], ['stop', JOB, 'now'], ['try', 'extra']]) {
