@@ -56,7 +56,7 @@ export const ROLE_TOOLS = [
       prewalk: bool,
       retry_of: { ...text, description: 'Retry failed/stopped ID.' },
       cwd: text,
-      package: text,
+      package: { ...text, description: 'Display label.' },
       ticket: { ...text, description: 'feature/NN ticket link.' },
       ...experimentTags,
       slice: text,
