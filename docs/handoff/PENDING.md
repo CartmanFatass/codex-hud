@@ -17,8 +17,6 @@ Each item says who decides and what would trigger it. Remove an item when it is 
 
 ## Deferred engineering (start when the trigger occurs)
 
-- **Flaky `advisor-shadow.test.mjs:960`.** Its 1 s startup assertion missed by ~100 ms under gate load twice on
-  2026-11-25; passes alone. Trigger: next gate failure on it → ticket, fix at the cause (no longer deadline).
 - **Share MCP processes across gate tests.** Slowest files are spawn-bound: thin-mcp-cli-process ~102 s,
   worker-tools ~97 s, create-context ~85 s. Reusing one hud-mcp per file would cut slot-seconds. Trigger: land
   queue wait becomes a bottleneck.
@@ -32,6 +30,13 @@ Each item says who decides and what would trigger it. Remove an item when it is 
   cost on the panel or watcher hot path.
 - **`bin/codex-hud` (~1,265 lines of Bash)** into `src/cli/`. Low priority; Codex path is stable.
 - **Deeper `hud doctor` checks** (herdr, pi-roles, jev-*, trust, native binary). Keep it read-only and offline.
+
+## In progress (2026-11-25)
+
+- Council (council/01 landed 371218cc; council/02 owner grant in progress). First real use planned: the hmasd
+  research-workflow design once the transcript labels are in.
+- hmasd research-error study: transcripts inventoried (owner + subagent threads, WSL/Windows/sqlite), chunking and
+  per-chunk sonic labelling under way in `tmp/tasks/HMASD-RESEARCH/`.
 
 ## Data waiting to appear
 
