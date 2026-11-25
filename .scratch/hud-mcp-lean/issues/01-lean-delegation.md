@@ -1,6 +1,6 @@
 # 01: Delegate work and collect the result without redundant context or calls
 
-**Status:** implemented and fixture-verified on private branch; live TUI try pending
+**Status:** done
 **Blocked by:** none
 
 **What to build:** Implement the [lean delegation journey](../spec.md) as one change to the model-facing HUD interface. The unit of delivery is a caller getting a usable result, not a shorter roster, a shorter read or a smaller tool list in isolation. Keep the default path actionable and make optional detail discoverable.
@@ -17,3 +17,5 @@
 One implementation and one end-to-end acceptance. The former three command-oriented tickets are superseded.
 
 Offline evidence: the synthetic main pi host delegates twice to `imp` via the real HUD extension and stdio MCP, with a fake worker launcher. Create acknowledges startup before a report exists; the native notice leaves it unread until collection. Cold: roster/create/read; warm: create/read; zero monitor polls. The implementer's cold+warm measured reply total went from 19,235 B to 4,926 B (baseline path strings were longer, and baseline repeat follows the former roster guidance). An independent run under `/tmp` measured 4,169 B cold + 581 B warm, 80 B for a quiet single-job read, and 4,872 B of schemas, down from 5,912 B. In isolated temporary homes both builds and all 208 tests across the six affected suites passed. No installed TUI, live provider, deployment, or merge to the shared branch was exercised.
+
+- 2026-11-25: landed in 32686bf1 (2026-11-20) on universal-hud and used daily since; the live roster/create/read path in Claude Code main sessions is the accepted try.
