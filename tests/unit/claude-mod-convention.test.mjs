@@ -13,7 +13,7 @@ test('review the short default and its hook coverage whenever the shipped conven
   // (create isolation, close approval, report reads, explicit owner_try and wait) or HUD itself
   // (placement, scout checks, batching, land ids, and the tool-specific argument descriptions).
   assert.equal(createHash('sha256').update(shipped).digest('hex'),
-    '8a783fa43f489cdb7169f863845696c95450421765274c5efb3f36ddb6ac3a06',
+    '68747ba4125e8ed84d918922d86bd5ad44347cb08c71f3fcad4ace4ad64a9cbc',
     'Default convention changed: review MOD_CONVENTION and the convention hooks/tests before updating this digest');
   assert.ok(Buffer.byteLength(MOD_CONVENTION) <= 0.45 * Buffer.byteLength(shipped));
 });

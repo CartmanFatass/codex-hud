@@ -269,7 +269,7 @@ test('queued headless imp can overflow without borrowing the general role defini
   fs.mkdirSync(roles, { recursive: true });
   write(join(roles, 'general.json'), JSON.stringify({ role: 'general', instructions: 'general', can_continue: false,
     run: [{ harness: 'pi', model: 'synthetic/general' }] }));
-  const settings = { roleCaps: { imp: 1, general: 1 }, impOverflow: false };
+  const settings = { autoPrewalk: false, roleCaps: { imp: 1, general: 1 }, impOverflow: false };
   write(f.env.HUD_SETTINGS_PATH, JSON.stringify(settings));
   assert.equal((await f.call('hud_create', { role: 'imp', task: 'Fill the imp slot.' })).state, 'working');
   f.overrideBin('pi', fakePi);

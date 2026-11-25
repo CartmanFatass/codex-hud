@@ -32,7 +32,7 @@ test('scouted create returns one MCP task, shares the managed cwd and appends th
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
   const args = { role: 'imp', task: 'Implement the synthetic parser.',
-    cwd, isolation: 'worktree', context_files: ['input.md'], from_jobs: [upstream.job], scout: scoutQuestion };
+    cwd, isolation: 'worktree', context_files: ['input.md'], from_jobs: [upstream.job], scouts: [{ kind: 'code', ask: scoutQuestion }] };
   const task = await taskCall(rpc, 'hud_create', args);
   const target = taskJob(f, task);
   assert.match(task.statusMessage, /scouting/);
@@ -44,7 +44,8 @@ test('scouted create returns one MCP task, shares the managed cwd and appends th
   assert.equal(scouted.thinking_source, 'default');
   assert.equal(scouted.cwd, receipt(target.task_dir).worktree.root);
   assert.deepEqual(scouted.context_files, [join(cwd, 'input.md')]);
-  assert.ok(brief(scout).startsWith(scoutQuestion + '\n'));
+  assert.match(brief(scout), /## Question\n\nWhere is the synthetic input parsed\?/);
+  assert.match(brief(scout), /## Target Brief\n\nImplement the synthetic parser\./);
   assert.ok(!fs.existsSync(join(scout, 'mcp-task.json')));
   assert.ok(!fs.existsSync(join(target.task_dir, 'SESSION.txt')));
   assert.equal(resultValue(await taskCall(rpc, 'hud_create', args)).job, target.job);
@@ -81,7 +82,7 @@ test('a scout cannot ask; a failed query leaves a note and only the target notif
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
   const lines = [];
   t.after(startSessionWatch(f.env.HUD_HOME, f.env.HERDR_PANE_ID, f.root, (batch) => lines.push(...batch), 10));
-  const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic target.', scout: scoutQuestion });
+  const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic target.', scouts: [{ kind: 'code', ask: scoutQuestion }] });
   const scout = await getScout(f, target.job);
   const scouted = receipt(scout);
   const worker = workerClient(t, f, scout, '0');
@@ -89,7 +90,7 @@ test('a scout cannot ask; a failed query leaves a note and only the target notif
   fs.writeFileSync(join(scout, 'fail-sonic'), '');
   fs.writeFileSync(join(scout, 'release-sonic'), '');
   await waitLaunch(target);
-  assert.match(brief(target.task_dir), /^Scout failed: pi exited: 4$/m);
+  assert.match(brief(target.task_dir), /^Scout failed \(code\): pi exited: 4$/m);
   assert.equal(receipt(target.task_dir).from_jobs, undefined);
   assert.equal(JSON.parse(fs.readFileSync(join(scout, 'STATUS.json'))).state, 'failed');
   assert.ok(!f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === f.env.HERDR_PANE_ID));
@@ -104,7 +105,7 @@ test('a scout cannot ask; a failed query leaves a note and only the target notif
 
 test('an unavailable scout leaves a failure note, but sonic cannot request a scout', async (t) => {
   const f = await fixture(t);
-  const invalid = await f.call('hud_create', { role: 'sonic', task: 'Synthetic scout.', scout: scoutQuestion });
+  const invalid = await f.call('hud_create', { role: 'sonic', task: 'Synthetic scout.', scouts: [{ kind: 'code', ask: scoutQuestion }] });
   assert.equal(invalid.code, 'invalid_arguments');
   assert.ok(!fs.existsSync(jobsDir(f)));
   fs.mkdirSync(join(f.root, '.hud'));
@@ -112,9 +113,9 @@ test('an unavailable scout leaves a failure note, but sonic cannot request a sco
   fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({
     version: 1, projects: [{ root: f.root, registered_at: '2026-01-01T00:00:00.000Z' }],
   }));
-  const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic fallback.', scout: scoutQuestion });
+  const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic fallback.', scouts: [{ kind: 'code', ask: scoutQuestion }] });
   await waitLaunch(target);
-  assert.match(brief(target.task_dir), /^Scout failed: Role sonic is not configured or is hidden in this project$/m);
+  assert.match(brief(target.task_dir), /^Scout failed \(code\): Role sonic is not configured or is hidden in this project$/m);
   assert.equal(receipt(target.task_dir).dispatch_exit_code, 0);
   assert.deepEqual(fs.readdirSync(jobsDir(f)), [target.job]);
 });
@@ -126,10 +127,10 @@ test('a scout that exceeds its time cap is closed and the target still starts', 
   const role = join(f.env.HUD_HOME, 'roles', 'sonic.json');
   fs.writeFileSync(role, JSON.stringify({ ...JSON.parse(fs.readFileSync(role, 'utf8')), max_s: 2 }));
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
-  const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic time cap.', scout: scoutQuestion });
+  const target = await f.call('hud_create', { role: 'imp', task: 'Synthetic time cap.', scouts: [{ kind: 'code', ask: scoutQuestion }] });
   const scout = await getScout(f, target.job);
   await waitLaunch(target);
-  assert.match(brief(target.task_dir), /^Scout failed: timeout$/m);
+  assert.match(brief(target.task_dir), /^Scout failed \(code\): timeout$/m);
   const status = JSON.parse(fs.readFileSync(join(scout, 'STATUS.json')));
   assert.equal(status.state, 'failed');
   assert.equal(status.exit_reason, 'timeout');

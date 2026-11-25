@@ -21,6 +21,7 @@ export type PoolDroppedEntry = { entry?: string; reason: 'unknown' | 'kind' | 'i
 export type PrewalkEntry = {
   kind: PrewalkKind;
   source: PrewalkSource;
+  ask?: string;
   job?: string;
   result: string;
   ms: number;
@@ -67,7 +68,8 @@ export interface Job extends PiOptions {
   instructions_from?: string;
   borrowed_instructions?: { name: string; pi_role: string }; // Keep launch selectors across queueing and native resume.
   route?: JobRoute;
-  scout_question?: string;
+  scout_question?: string; // Legacy queued jobs only.
+  queued_scouts?: { kind: PrewalkScoutKind; ask: string }[]; // Retained until queued launch starts scouts.
   headless?: boolean; // Older sonic receipts may own a herdr tab.
   headless_task_fence?: string; // Automatic follow-ups are part of the caller's existing task.
   package?: string;

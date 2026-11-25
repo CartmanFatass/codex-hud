@@ -12,7 +12,7 @@ const frontend = { role, instructions: 'implementer', can_continue: true, run: [
 const read = (file) => fs.readFileSync(file, 'utf8');
 const record = (job) => JSON.parse(read(join(job.task_dir, 'job.json')));
 const brief = (job) => read(join(job.task_dir, 'brief.md'));
-const create = (f, task, options) => f.call('hud_create', { role, task, ...options });
+const create = (f, task, options) => f.call('hud_create', { role, task, scouts: [], ...options });
 const poolEntry = (job) => job.prewalk?.find(entry => entry.kind === 'pool');
 function poolFixture(f) {
   const dir = join(f.env.HOME, 'style-pool');
@@ -35,15 +35,9 @@ function picked(body, names) {
       probabilities: choices.map(({ value }) => ({ value, probability: value === choice ? 1 : 0 })) };
   }) };
 }
-function noScouts(body) {
-  return picked(body, ['no', 'no', 'no']);
-}
-
 test('new look uses a bounded index, drops unknown and incompatible choices, and keeps pool dimension order', async t => {
   const f = await fixture(t, { autoPrewalk: true });
-  const api = await fakeDecisionServer(t, body => body.prompt_cache_key === 'prewalk'
-    ? noScouts(body)
-    : picked(body, ['new', 'personal', 'colour-accent.md', 'unknown.md', 'style-poster.md', 'theme-grey.md']));
+  const api = await fakeDecisionServer(t, body => picked(body, ['new', 'personal', 'colour-accent.md', 'unknown.md', 'style-poster.md', 'theme-grey.md']));
   configureFakeDecision(f, api.baseUrl);
   const pool = poolFixture(f);
   ownerRole(f, { ...frontend, pool, active_preset: 'daily', presets: [{ name: 'daily', run: [pi('daily')] }] });
@@ -104,9 +98,7 @@ test('new look uses a bounded index, drops unknown and incompatible choices, and
 test('existing look ignores ranked slots, and a new look can have no surviving entries', async t => {
   const f = await fixture(t, { autoPrewalk: true });
   let poolCount = 0;
-  const api = await fakeDecisionServer(t, body => body.prompt_cache_key === 'prewalk'
-    ? noScouts(body)
-    : picked(body, [++poolCount === 1 ? 'existing' : 'new', 'personal', 'style-poster.md']));
+  const api = await fakeDecisionServer(t, body => picked(body, [++poolCount === 1 ? 'existing' : 'new', 'personal', 'style-poster.md']));
   configureFakeDecision(f, api.baseUrl);
   const pool = poolFixture(f);
   ownerRole(f, { ...frontend, pool });
@@ -129,7 +121,7 @@ test('existing look ignores ranked slots, and a new look can have no surviving e
 
 test('explicit entries and registered project design skip the API; switches take precedence', async t => {
   const f = await fixture(t, { autoPrewalk: true });
-  const api = await fakeDecisionServer(t, body => body.prompt_cache_key === 'prewalk' ? noScouts(body) : ({ status: 503 }));
+  const api = await fakeDecisionServer(t, () => ({ status: 503 }));
   configureFakeDecision(f, api.baseUrl);
   const pool = poolFixture(f);
   ownerRole(f, { ...frontend, pool });
@@ -154,7 +146,7 @@ test('explicit entries and registered project design skip the API; switches take
   assert.equal(established.pick_summary, 'pick: project design · design.md');
   assert.ok(brief(established).includes(JSON.stringify(join(f.root, design))));
   assert.doesNotMatch(brief(established), /style-pool/);
-  const unrelated = await create(f, 'Build an unrelated dashboard.', { role: 'general' });
+  const unrelated = await create(f, 'Build an unrelated dashboard.', { role: 'general', scouts: undefined });
   assert.equal(unrelated.prewalk, undefined);
   write(join(projectRoles, 'project-only.json'), JSON.stringify({ ...frontend, role: 'project-only', pool }));
   const refused = await create(f, 'Try a project-only pool.', { role: 'project-only' });
@@ -165,12 +157,12 @@ test('explicit entries and registered project design skip the API; switches take
   assert.equal(poolEntry(disabled), undefined);
   assert.doesNotMatch(brief(disabled), /Context References/);
   write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: false, poolPick: true }));
-  const autoOff = await create(f, 'Use colour-accent with autoPrewalk off.');
+  const autoOff = await create(f, 'Use colour-accent with autoPrewalk off.', { scouts: undefined });
   assert.equal(autoOff.prewalk, undefined);
   assert.doesNotMatch(brief(autoOff), /Context References/);
   write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: true, poolPick: true }));
   ownerRole(f, { ...frontend, pool, prewalk: 'off' });
-  const prewalkOff = await create(f, 'Use colour-accent with prewalk off.');
+  const prewalkOff = await create(f, 'Use colour-accent with prewalk off.', { scouts: undefined });
   assert.equal(prewalkOff.prewalk, undefined);
   assert.doesNotMatch(brief(prewalkOff), /Context References/);
   ownerRole(f, { ...frontend, pool });
@@ -202,7 +194,7 @@ test('explicit entries and registered project design skip the API; switches take
 
 test('timeout attaches nothing once at create and the queued launch retains the original pick', async t => {
   const f = await fixture(t, { autoPrewalk: true });
-  const api = await fakeDecisionServer(t, body => body.prompt_cache_key === 'prewalk' ? noScouts(body) : new Promise(() => {}));
+  const api = await fakeDecisionServer(t, () => new Promise(() => {}));
   configureFakeDecision(f, api.baseUrl);
   const pool = poolFixture(f);
   ownerRole(f, { ...frontend, pool });
@@ -225,8 +217,6 @@ test('timeout attaches nothing once at create and the queued launch retains the 
 
 test('browser pool references are bounded inline and task receipts show the pick', async t => {
   const f = await fixture(t, { autoPrewalk: true });
-  const api = await fakeDecisionServer(t, body => noScouts(body));
-  configureFakeDecision(f, api.baseUrl);
   const pool = poolFixture(f);
   ownerRole(f, { role: 'pro', run: [{ harness: 'bro', tool: 'jev-ask', provider: 'chatgpt' }], pool });
   const task = 'Use colour-accent.';
@@ -243,7 +233,7 @@ test('browser pool references are bounded inline and task receipts show the pick
   ownerRole(f, { ...frontend, pool });
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
-  const receipt = await taskCall(rpc, 'hud_create', { role, task });
+  const receipt = await taskCall(rpc, 'hud_create', { role, task, scouts: [] });
   assert.equal(receipt.resultType, 'task');
   assert.deepEqual(poolEntry(receipt).entries, ['colour-accent.md']);
   assert.equal(receipt.pick_summary, 'pick: colour-accent');

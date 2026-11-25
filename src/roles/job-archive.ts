@@ -201,8 +201,10 @@ function archivePrewalk(entries: unknown, legacyPool?: PoolPick): PrewalkEntry[]
           (source !== 'decision' && source !== 'brief' && source !== 'caller' && source !== 'default' && source !== 'project') ||
           !result) return [];
       const ms = typeof entry.ms === 'number' && Number.isFinite(entry.ms) ? entry.ms : 0;
+      const rawAsk = text(entry.ask);
+      const ask = rawAsk ? ([...rawAsk].length > 200 ? [...rawAsk].slice(0, 200).join('') : rawAsk) : undefined;
       const item: PrewalkEntry = {
-        kind, source, ...(text(entry.job) ? { job: text(entry.job) } : {}), result, ms,
+        kind, source, ...(ask ? { ask } : {}), ...(text(entry.job) ? { job: text(entry.job) } : {}), result, ms,
         ...(entry.need === 'existing' || entry.need === 'new' || entry.need === null ? { need: entry.need } : {}),
         ...(entry.pool_kind === 'personal' || entry.pool_kind === 'showcase' || entry.pool_kind === null ? { pool_kind: entry.pool_kind } : {}),
         ...(Array.isArray(entry.entries) ? { entries: entry.entries.filter((v): v is string => typeof v === 'string') } : {}),

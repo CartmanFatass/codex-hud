@@ -51,7 +51,7 @@ import { stopSonic } from '../sonic-process.js';
 import { headlessSonicChildren } from '../../worker/sonic-jobs.js';
 import { pickSonicThinking } from '../sonic-thinking.js';
 import { pickRolePool } from '../pool-pick.js';
-import { decidePrewalkScouts, prewalkScoutTask } from '../prewalk.js';
+import { MAX_PREWALK_SCOUTS, PREWALK_SCOUT_KINDS, prewalkScoutTask, truncateScoutAsk, type PrewalkScoutRequest } from '../prewalk.js';
 import {
   directory, readRow, hudHome, primary, jobs, readCachedStatus, findJob, settled, save, bundled,
   writeCreateStatus, queuePositionsForJobs, jobCache, digestLine, publishWorkSummary, findJobMutable, slice,
@@ -244,13 +244,14 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
 export const pendingScouts = new Map<string, AbortController>();
 export const scoutedCreates = new Set<Promise<void>>();
 
-type ScoutSpec = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; question: string; includeContext: boolean };
-type ScoutOutcome = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; id?: string; failure?: string; ms: number };
+type ScoutSpec = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; ask?: string; question: string; includeContext: boolean };
+type ScoutOutcome = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; ask?: string; id?: string; failure?: string; ms: number };
 
 async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, contextFiles: unknown,
   signal: AbortSignal, requestKey: string): Promise<ScoutOutcome> {
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
+  const ask = spec.ask ? { ask: spec.ask } : {};
   let scout: Job | null = null;
   let discard = false;
   try {
@@ -261,7 +262,7 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
     );
     if (!('job' in result)) {
       return {
-        kind: spec.kind, source: spec.source, ms: elapsed(),
+        kind: spec.kind, source: spec.source, ...ask, ms: elapsed(),
         failure: ('reason' in result && result.reason) || ('error' in result && result.error) || ('code' in result && result.code) || 'could not launch',
       };
     }
@@ -270,28 +271,28 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
       const { row } = readRow(scout);
       if (signal.aborted) {
         discard = !settled(row.state);
-        return { kind: spec.kind, source: spec.source, id, failure: 'stopped', ms: elapsed() };
+        return { kind: spec.kind, source: spec.source, ...ask, id, failure: 'stopped', ms: elapsed() };
       }
       if (settled(row.state)) {
-        if (row.state === 'failed' || row.state === 'stopped') return { kind: spec.kind, source: spec.source, id, failure: row.reason ?? row.state, ms: elapsed() };
-        if (!row.report_present) return { kind: spec.kind, source: spec.source, id, failure: 'settled without a report', ms: elapsed() };
+        if (row.state === 'failed' || row.state === 'stopped') return { kind: spec.kind, source: spec.source, ...ask, id, failure: row.reason ?? row.state, ms: elapsed() };
+        if (!row.report_present) return { kind: spec.kind, source: spec.source, ...ask, id, failure: 'settled without a report', ms: elapsed() };
         save({ ...scout, read_at: new Date().toISOString() });
-        return { kind: spec.kind, source: spec.source, id, ms: elapsed() };
+        return { kind: spec.kind, source: spec.source, ...ask, id, ms: elapsed() };
       }
       if (row.open_questions || row.blocked || row.state === 'waiting_orchestrator') {
         discard = true;
-        return { kind: spec.kind, source: spec.source, id, failure: row.open_questions ? 'asked a question' : row.reason ?? 'needed attention', ms: elapsed() };
+        return { kind: spec.kind, source: spec.source, ...ask, id, failure: row.open_questions ? 'asked a question' : row.reason ?? 'needed attention', ms: elapsed() };
       }
       await sleep(500, undefined, { signal });
     }
-    return { kind: spec.kind, source: spec.source, id, failure: 'scout receipt disappeared', ms: elapsed() };
+    return { kind: spec.kind, source: spec.source, ...ask, id, failure: 'scout receipt disappeared', ms: elapsed() };
   } catch (error) {
     if (signal.aborted) {
       discard = !!scout && !settled(readRow(scout).row.state);
-      return { kind: spec.kind, source: spec.source, ...(scout && { id: scout.job }), failure: 'stopped', ms: elapsed() };
+      return { kind: spec.kind, source: spec.source, ...ask, ...(scout && { id: scout.job }), failure: 'stopped', ms: elapsed() };
     }
     discard = !!scout;
-    return { kind: spec.kind, source: spec.source, ...(scout && { id: scout.job }), failure: error instanceof Error ? error.message : String(error), ms: elapsed() };
+    return { kind: spec.kind, source: spec.source, ...ask, ...(scout && { id: scout.job }), failure: error instanceof Error ? error.message : String(error), ms: elapsed() };
   } finally {
     if (discard && scout) await stopSonic(directory(scout.job)).catch(() => ensureWatcher());
   }
@@ -299,15 +300,15 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
 
 async function runPrewalkScouts(target: Job, specs: readonly ScoutSpec[], contextCwd: string, contextFiles: unknown,
   signal: AbortSignal): Promise<ScoutOutcome[]> {
-  return Promise.all(specs.map((spec) => {
-    const key = spec.source === 'caller' ? `scout:${target.job}` : `prewalk:${target.job}:${spec.kind}`;
+  return Promise.all(specs.map((spec, index) => {
+    const key = `prewalk:${target.job}:${index}:${spec.kind}`;
     return runOneScout(target, spec, contextCwd, contextFiles, signal, key);
   }));
 }
 
 function formatScoutNote(outcome: ScoutOutcome, reason: string): string {
   const clean = digestLine(reason.replace(/\s+/g, ' '), 300);
-  return outcome.source === 'caller' ? `Scout failed: ${clean}` : `Scout failed (${outcome.kind}): ${clean}`;
+  return `Scout failed (${outcome.kind}): ${clean}`;
 }
 
 async function applyScoutOutcomes(
@@ -333,11 +334,12 @@ async function applyScoutOutcomes(
         else { briefContext = withScout; attached++; }
       }
     }
+    const ask = outcome.ask ? { ask: outcome.ask } : {};
     if (outcome.id && !attachFailure && !('code' in briefContext)) {
-      entries.push({ kind: outcome.kind, source: outcome.source, job: outcome.id, result: 'attached', ms: outcome.ms });
+      entries.push({ kind: outcome.kind, source: outcome.source, ...ask, job: outcome.id, result: 'attached', ms: outcome.ms });
     } else {
       const result = 'failed';
-      entries.push({ kind: outcome.kind, source: outcome.source, ...(outcome.id && { job: outcome.id }), result, ms: outcome.ms });
+      entries.push({ kind: outcome.kind, source: outcome.source, ...ask, ...(outcome.id && { job: outcome.id }), result, ms: outcome.ms });
       notes.push(formatScoutNote(outcome, attachFailure ?? result));
     }
   }
@@ -397,8 +399,29 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (args.prewalk !== undefined && typeof args.prewalk !== 'boolean') {
     return { ok: false, code: 'invalid_arguments', error: 'prewalk must be a boolean' };
   }
-  if (args.prewalk === false && args.scout !== undefined) {
-    return { ok: false, code: 'invalid_arguments', error: 'prewalk: false and scout are mutually exclusive' };
+  if (args.scout !== undefined) {
+    return { ok: false, code: 'invalid_arguments', error: 'scout was replaced by scouts: [{kind: "code"|"docs"|"web", ask: "..."}]' };
+  }
+  let scoutsArg: PrewalkScoutRequest[] | undefined;
+  if (args.scouts !== undefined) {
+    if (!Array.isArray(args.scouts) || args.scouts.length > MAX_PREWALK_SCOUTS) {
+      return { ok: false, code: 'invalid_arguments', error: `scouts must be an array of 0–${MAX_PREWALK_SCOUTS} {kind, ask} items` };
+    }
+    scoutsArg = [];
+    for (const item of args.scouts) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return { ok: false, code: 'invalid_arguments', error: 'each scout must be an object with kind ("code"|"docs"|"web") and nonempty ask' };
+      }
+      const { kind, ask } = item as { kind?: unknown; ask?: unknown };
+      if (typeof kind !== 'string' || !PREWALK_SCOUT_KINDS.includes(kind as PrewalkScoutKind) ||
+          typeof ask !== 'string' || !ask.trim()) {
+        return { ok: false, code: 'invalid_arguments', error: 'each scout must have kind ("code"|"docs"|"web") and a nonempty ask string' };
+      }
+      scoutsArg.push({ kind: kind as PrewalkScoutKind, ask: ask.trim() });
+    }
+  }
+  if (args.prewalk === false && scoutsArg && scoutsArg.length > 0) {
+    return { ok: false, code: 'invalid_arguments', error: 'prewalk: false and non-empty scouts are mutually exclusive' };
   }
   const asked = required(args, 'role');
   const cwd = jobCwd(args);
@@ -406,12 +429,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   // `architect` names oracle unless a role file defines its own architect.
   const configured = found.roles(true);
   const requestedRole = asked === 'architect' && !configured.has(asked) ? 'oracle' : asked;
-  if (args.scout !== undefined && (requestedRole === 'sonic' || typeof args.scout !== 'string' || !args.scout.trim())) {
-    return { ok: false, code: 'invalid_arguments', error: requestedRole === 'sonic' ? 'scout is not available for role sonic' : 'scout must be a nonempty question' };
+  if (scoutsArg && scoutsArg.length > 0 && requestedRole === 'sonic') {
+    return { ok: false, code: 'invalid_arguments', error: 'scouts are not available for role sonic' };
   }
-  const scoutQuestion = args.scout as string | undefined;
-  if (scoutQuestion && Array.isArray(args.from_jobs) && args.from_jobs.length >= 16) {
-    return { ok: false, code: 'invalid_arguments', error: 'scouted dispatch reserves one of the 16 from_jobs entries' };
+  if (scoutsArg && scoutsArg.length > 0 && Array.isArray(args.from_jobs) && args.from_jobs.length + scoutsArg.length > 16) {
+    return { ok: false, code: 'invalid_arguments', error: `scouts reserve ${scoutsArg.length} of the 16 from_jobs entries` };
   }
   let role = requestedRole;
   const definition = configured.get(role);
@@ -420,6 +442,17 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (!definition) {
     const invalid = found.invalidRole(role);
     return { ok: false, code: 'role_unavailable', reason: `Role ${asked} is not configured or is hidden in this project`, ...invalid };
+  }
+  let prewalkSettings;
+  try { prewalkSettings = loadSettings({ ...process.env, HUD_HOME: hudHome }); } catch { /* Missing handled by loadSettings; malformed skips auto prewalk. */ }
+  const requireScouts = Boolean(prewalkSettings?.autoPrewalk) && args.prewalk !== false && !landCwd && !repairOf && !retryInput && !ticketQueue
+    && definition.prewalk === 'on' && role !== 'sonic';
+  if (requireScouts && scoutsArg === undefined) {
+    return {
+      ok: false,
+      code: 'invalid_arguments',
+      error: `Role ${role} has prewalk enabled; pass scouts: [{kind: "code"|"docs"|"web", ask: "..."}] (0–${MAX_PREWALK_SCOUTS} items), scouts: [] to skip scouts, or prewalk: false to skip prewalk.`,
+    };
   }
   let borrowed: Pick<Job, 'instructions_from' | 'borrowed_instructions'> = {};
   if (args.instructions !== undefined) {
@@ -533,38 +566,31 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
   }
 
-  let prewalkSettings;
-  try { prewalkSettings = loadSettings({ ...process.env, HUD_HOME: hudHome }); } catch { /* Missing handled by loadSettings; malformed skips auto prewalk. */ }
   const autoPrewalkAllowed = prewalkSettings?.autoPrewalk !== false && args.prewalk !== false && !landCwd && (!repairOf || !!retryInput);
   const poolConfig = autoPrewalkAllowed && chain.prewalk !== 'off' ? chain.pool : undefined;
-  const autoScout = autoPrewalkAllowed && !!prewalkSettings && !scoutQuestion && chain.prewalk === 'on' && role !== 'sonic'
-    && !(retryInput && sourceJob?.prewalk?.some(entry => entry.kind !== 'pool'));
-  let scoutDecision: Awaited<ReturnType<typeof decidePrewalkScouts>> | undefined;
   const poolPlace = plan.candidates[0]?.prepared;
-  if ((poolConfig || autoScout) && poolPlace && !('code' in poolPlace)) {
+  if (poolConfig && poolPlace && !('code' in poolPlace)) {
     // Validate caller context before model calls, and don't hold the concurrency lock over API waits.
     const browser = poolPlace.place.harness === 'bro';
     const validated = (!browser && localContext) || await contextFor(args, browser);
     if ('code' in validated) return validated;
     const projectName = basename(projectRoot);
-    const [pickedPool, decidedScouts] = await Promise.all([
-      poolConfig ? pickRolePool(hudHome, poolConfig, task, role, project, projectName) : Promise.resolve(undefined),
-      autoScout ? decidePrewalkScouts(hudHome, prewalkSettings!, task, role, projectName) : Promise.resolve(undefined),
-    ]);
-    pool = pickedPool;
-    scoutDecision = decidedScouts;
+    pool = await pickRolePool(hudHome, poolConfig, task, role, project, projectName);
     if (pool?.pool_files.length) localContext = undefined;
     else if (!browser) localContext = validated;
   }
-  const scoutSpecs: ScoutSpec[] = scoutQuestion
-    ? [{ kind: 'code', source: 'caller', question: scoutQuestion, includeContext: true }]
-    : scoutDecision
-      ? scoutDecision.scouts.map(({ kind, source }) => ({ kind, source, question: prewalkScoutTask(kind, task), includeContext: kind !== 'web' }))
-      : [];
+  const effectiveScouts = args.prewalk === false ? [] : (scoutsArg ?? []);
+  const scoutSpecs: ScoutSpec[] = effectiveScouts.map(({ kind, ask }) => ({
+    kind,
+    source: 'caller',
+    ask: truncateScoutAsk(ask),
+    question: prewalkScoutTask(kind, ask, task),
+    includeContext: kind !== 'web',
+  }));
   const hasScouts = scoutSpecs.length > 0;
-  const hasPrewalk = Boolean(pool || scoutQuestion || scoutDecision);
+  const hasPrewalk = Boolean(pool || (args.prewalk !== false && scoutsArg !== undefined));
   const initialPrewalk = (state: 'running' | 'queued'): PrewalkEntry[] | undefined => hasPrewalk
-    ? [...(pool ? [pool.entry] : []), ...scoutSpecs.map(({ kind, source }) => ({ kind, source, result: state, ms: scoutDecision?.ms ?? 0 }))]
+    ? [...(pool ? [pool.entry] : []), ...scoutSpecs.map(({ kind, source, ask }) => ({ kind, source, ...(ask ? { ask } : {}), result: state, ms: 0 }))]
     : undefined;
 
   const enforceCap = role !== 'sonic' && !parentJob && !scoutContextCwd && !landCwd;
@@ -632,7 +658,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         ...(checks?.length ? { checks } : {}),
         ...(repairOf ? { repair_of: repairOf } : {}),
         ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
-        ...(scoutQuestion ? { scout_question: scoutQuestion } : {}),
+        ...(hasScouts ? { queued_scouts: effectiveScouts } : {}),
         target_hint: taskTarget(task) || null,
         experiment, arm,
         ...(args.package === undefined ? {} : { package: args.package as string }),
@@ -992,25 +1018,34 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       existing.overflow_from = existing.role;
       existing.role = role;
     }
-    const base: Job = { ...existing, role, ...(role === 'sonic' ? { headless: true } : {}), attempts: [], launcher: launcherId() };
+    const { queued_scouts: queuedScouts, ...restExisting } = existing;
+    const base: Job = { ...restExisting, role, ...(role === 'sonic' ? { headless: true } : {}), attempts: [], launcher: launcherId() };
     const project = found.project();
     const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, cwd, inline, project, existing.repair_of, existing.pool_files);
     const inline = first.prepared.place.harness === 'bro';
     const context = await contextFor(args, inline);
     if ('code' in context) return failQueued(context.error ?? context.code ?? 'invalid_arguments', context.code === 'invalid_arguments' ? 'invalid_arguments' : undefined);
 
-    const scoutQuestion = existing.scout_question;
     const queuedPoolEntry = existing.prewalk?.find(entry => entry.kind === 'pool');
-    const scoutSpecs: ScoutSpec[] = scoutQuestion
-      ? [{ kind: 'code', source: 'caller', question: scoutQuestion, includeContext: true }]
-      : (existing.prewalk ?? [])
-          .filter((entry): entry is PrewalkEntry & { kind: PrewalkScoutKind } => entry.kind !== 'pool' && entry.result === 'queued')
-          .map(entry => ({
-            kind: entry.kind,
-            source: entry.source === 'default' ? 'default' : 'decision',
-            question: prewalkScoutTask(entry.kind, task),
-            includeContext: entry.kind !== 'web',
-          }));
+    const scoutSpecs: ScoutSpec[] = queuedScouts?.length
+      ? queuedScouts.map(({ kind, ask }) => ({
+          kind,
+          source: 'caller',
+          ask: truncateScoutAsk(ask),
+          question: prewalkScoutTask(kind, ask, task),
+          includeContext: kind !== 'web',
+        }))
+      : existing.scout_question
+        ? [{ kind: 'code', source: 'caller', ask: truncateScoutAsk(existing.scout_question), question: existing.scout_question, includeContext: true }]
+        : (existing.prewalk ?? [])
+            .filter((entry): entry is PrewalkEntry & { kind: PrewalkScoutKind } => entry.kind !== 'pool' && entry.result === 'queued')
+            .map(entry => ({
+              kind: entry.kind,
+              source: entry.source === 'caller' || entry.source === 'default' ? entry.source : 'decision',
+              ...(entry.ask ? { ask: entry.ask } : {}),
+              question: prewalkScoutTask(entry.kind, entry.ask ?? '', task),
+              includeContext: entry.kind !== 'web',
+            }));
     const hasScouts = scoutSpecs.length > 0;
     const leaveQueue = () => {
       fs.rmSync(join(dir, jobFiles.status), { force: true });

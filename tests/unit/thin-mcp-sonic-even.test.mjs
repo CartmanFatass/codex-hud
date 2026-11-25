@@ -65,7 +65,7 @@ test('Sonic even rotates round-robin in pool order across creates, scouts and hu
   assert.equal(fs.statSync(join(f.env.HUD_HOME, 'even-sonic.json')).mode & 0o777, 0o600);
 
   // 2. Scout picks deepseek (second in pool order).
-  const scouted = await f.call('hud_create', { role: 'imp', task: 'Scouted imp work.', scout: 'Find the file.' });
+  const scouted = await f.call('hud_create', { role: 'imp', task: 'Scouted imp work.', scouts: [{ kind: 'code', ask: 'Find the file.' }] });
   await until(() => sonicJobs(f).some(j => j.parent_job === scouted.job && j.used_place), t.signal);
   const scout = sonicJobs(f).find(j => j.parent_job === scouted.job);
   assert.equal(scout.route.placement, 'even');
