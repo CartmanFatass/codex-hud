@@ -666,6 +666,7 @@ esac
   assert.ok(commands[1].args.includes(`HUD_TAB_LAUNCH=${session.LAUNCH}`));
   assert.deepEqual(session, {
     TASK: job.job, LAUNCH: session.LAUNCH,
+    HERDR_SOCKET_PATH: f.env.HERDR_SOCKET_PATH,
     TAB: 'w4E:t2',
     TAB_NAME: session.TAB_NAME,
     LEFT: 'w4E:p2',
