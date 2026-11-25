@@ -7,6 +7,14 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-25-03** (§2.1 dispatch): Batch flow. A 140-job Sonic labelling batch (one `hud_create` per job, shared
+  Sonic cap 9) exposed two faults: every create, queue position, checkpoint and settlement woke the main session
+  separately (hundreds of turns), and the single oldest-first queue let the batch starve any later Sonic work for
+  hours. Owner chose a batch flow with reserved slots over role-level priority alone or main-session self-throttling:
+  one call submits the items, the batch runs at most cap minus two at a time, non-batch jobs of the role always go
+  first, main gets one end notice plus failures and questions, and the batch stops, pauses or resumes as a whole.
+  The per-package wake rollup (claude-mod/11) and batch cancel of queued jobs (eng-hygiene/11) stay as building blocks.
+
 - **D-2026-11-25-02** (§2.1 dispatch): Council. Owner: for tasks high in both complexity and value a complete plan
   matters most, so on the owner's explicit request one brief goes to several strong models and comes back as one
   plan. Members write independent plans without seeing each other (default Fable high, Astra high, Carbon high, with

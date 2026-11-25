@@ -67,6 +67,10 @@ execution detail; when space runs out, execution detail is not shown. (new)
   named presets in the council role file, overridable per council, so a model is added by adding a preset. Fewer than
   two member reports fails the council; nothing chains after it. Because it is costly, HUD refuses a council without a
   fresh one-time grant that only an owner action creates (25.02).
+  A batch is a fixed flow for many independent jobs of one role: one call submits all items, HUD runs at most the role
+  cap minus two reserved slots at a time, and non-batch jobs of that role always go first. Main gets one notice when
+  the batch ends, plus failures and questions as they happen; it can stop, pause or resume the batch as a whole. Each
+  item is an ordinary job; nothing chains after the batch (25.03).
   No other automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
 Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)
