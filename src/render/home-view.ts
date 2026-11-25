@@ -66,7 +66,7 @@ function projectView({ root, name, unavailable, snapshot, resultDates, advisor, 
   const noNotes = snapshot && !record && !snapshot.statePath;
   const age = compactAge(homeActivityAt(snapshot), now);
   return { root, name: monitorText(name), unavailable, stance, paused: record?.stance === 'paused', open, finished, blocked,
-    features: new Map(snapshot?.tickets.map((f) => [f.slug, f])),
+    features: new Map(snapshot?.tickets.map((f) => [f.slug, f])), unlinked: snapshot?.unlinked ?? [],
     mark: unavailable ? ink.danger(stateMark.failed()) : running ? liveMark() : idleMark(),
     nameInk: running && !unavailable ? ink.text : ink.muted,
     priority, idleWord, age: age && ink.muted(age), load: loadFacts(jobs),
@@ -145,6 +145,32 @@ function objectiveRows(v: ProjectView, objective: Objective, width: number) {
   const age = ink.muted(recentAge);
   const line = sentenceRows(monitorText(objective.result), width - cells(age) - 1, 1, 4, ink.success(stateMark.done()))[0] ?? '';
   return { row, result: { text: fit(pair(line, age, width), width), item: `home:result:${v.root}:${objective.id}`, objectiveTarget: target } };
+}
+
+/** Work no Objective lists, on one row: live features first, whole `slug done/total` facts, the rest counted. */
+function unlinkedRow(v: ProjectView, width: number): MonitorRow | undefined {
+  if (!v.unlinked.length) return undefined;
+  const ink = theme.board, lead = `  ${ink.muted(`${mark('◌', '-', '\uF127')} ${t('Unlinked')}:`)} `;
+  const facts = v.unlinked.map(({ slug }) => {
+    const data = progress(v.features, [slug]);
+    return { slug: monitorText(slug), count: data ? `${data.counts.accepted}/${data.total}` : '' };
+  });
+  const part = (name: string, count: string) => ink.text(name) + (count ? ` ${ink.muted(count)}` : '');
+  const rest = (shown: number) => shown < facts.length ? ` ${ink.muted(`+${facts.length - shown}`)}` : '';
+  const room = width - cells(lead);
+  let body = '', shown = 0;
+  for (const { slug, count } of facts) {
+    const next = (body ? body + ink.muted(' · ') : '') + part(slug, count);
+    if (cells(next + rest(shown + 1)) > room) break;
+    body = next;
+    shown++;
+  }
+  if (!shown) { // Even one fact is too long: cut its slug, never its count or the number left over.
+    const [{ slug, count }] = facts;
+    shown = 1;
+    body = part(truncateAnsi(slug, Math.max(1, room - cells(rest(shown)) - (count ? cells(count) + 1 : 0))), count);
+  }
+  return { text: fit(lead + body + rest(shown), width), item: `home:unlinked:${v.root}`, homeTarget: { root: v.root } };
 }
 
 function advisorRow(v: ProjectView, width: number): MonitorRow | undefined {
@@ -254,17 +280,19 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
     const noteLines = v.unavailable ? [] : v.note ? sentenceRows(monitorText(v.note), width, 1, 2, mark('¶', '.', '\uF249'))
       : v.noNotes ? [`  ${t('no Objectives or handoff notes')}`] : [];
     const note = noteLines.map((line) => boardRow(fit(ink.muted(line), width)));
-    return { v, header, advisor, previews, note };
+    return { v, header, advisor, previews, note, unlinked: unlinkedRow(v, width) };
   });
-  const tier = (limit: number, results: boolean, gaps = false) => blocks.map(({ v, header, advisor, previews, note }, i) => {
+  const tier = (limit: number, results: boolean, gaps = false, loose = false) => blocks.map(({ v, header, advisor, previews, note, unlinked }, i) => {
     const rows = [header, ...advisor, ...note, ...previews.slice(0, limit).flatMap(({ row, result }) => results && result ? [row, result] : [row])];
     const more = v.open.length + v.finished.length - Math.min(limit, previews.length);
     if (!v.unavailable && more > 0) rows.push({ text: fit(`  ${ink.muted(t('{remaining} more', { remaining: more }))}`, width),
       item: `home:more:${v.root}`, homeTarget: { root: v.root } });
+    if (loose && unlinked) rows.push(unlinked);
     return gaps && i && i !== today.length ? [boardRow(fit('', width)), ...rows] : rows;
   });
-  for (const [limit, results, gaps] of [[2, true, true], [2, true], [2, false], [1, false]] as const) {
-    const rows = withFold(tier(limit, results, gaps));
+  // Separators, then results, then the unlinked row fold before any Objective row does.
+  for (const [limit, results, gaps, loose] of [[2, true, true, true], [2, true, false, true], [2, false, false, true], [2, false], [1, false]] as const) {
+    const rows = withFold(tier(limit, results, gaps, loose));
     if (rows.length <= room) return gaps ? withCards(rows) : rows;
   }
   // When even this exceeds the viewport, the visible projects and requests remain scrollable.

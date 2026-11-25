@@ -72,6 +72,8 @@ export interface ProjectSnapshot {
   objectives?: ObjectiveRecord & { path: string; acceptance: Record<string, { checked: number; total: number }>; resultDates?: Record<string, number> };
   /** Scanned Objective features, including ones outside the Tickets page's finished-feature preview. */
   objectiveTickets?: TicketFeature[];
+  /** With an Objective record: features it does not list that have open tickets or live jobs; live ones first. */
+  unlinked?: TicketFeature[];
   tickets: TicketFeature[];
   ticketTotals?: { doneTickets: number; totalTickets: number; doneFeatures: number; totalFeatures: number; partial?: true };
   waiting: ProjectItem[];
@@ -127,6 +129,15 @@ export function waitSettled(text: string, settled: ReadonlySet<string>): boolean
 export const ownerRequestKey = (item: ProjectItem) => item.request ?? item.text ?? item.value;
 export const blockedObjectives = (waiting: readonly ProjectItem[]) =>
   new Set(waiting.flatMap(({ objective, waitedOn }) => objective && waitedOn ? [objective] : []));
+/** A live job is linked to one of the feature's tickets, or names the feature as its package. */
+function unlinkedFeatures(features: readonly TicketFeature[], { objectives }: ObjectiveRecord, active: readonly ActiveJob[]) {
+  const listed = new Set(objectives.flatMap((o) => o.features)), packages = new Set(active.map((job) => job.package));
+  const live = ({ slug, tickets }: TicketFeature) =>
+    packages.has(slug) || tickets.some(({ job }) => job && !SETTLED_JOB_STATES.has(job.state));
+  return features.filter((f) => !listed.has(f.slug) &&
+    (live(f) || f.tickets.some(({ state }) => state !== 'done' && state !== 'dropped')))
+    .sort((a, b) => Number(live(b)) - Number(live(a)));
+}
 type RequestOrder = Pick<ProjectItem, 'waitedOn' | 'at'>;
 /** Larger project priority comes first. Stable sorting preserves file order for equal age or undated requests. */
 export function compareOwnerRequests(a: RequestOrder, b: RequestOrder, priorityA = 0, priorityB = 0): number {
@@ -681,6 +692,7 @@ export class ProjectCollector {
     }
     if (!home) await this.fullLedgerDetails(out, now, shown === 'export', refreshedGit);
     out.ticketTotals = ticketsScan.partial ? { ...totals, partial: true } : totals;
+    if (out.objectives) out.unlinked = unlinkedFeatures(out.tickets, out.objectives, out.active);
     let objectiveTitles: Map<string, string> | undefined;
     out.waiting = out.waiting.filter((item) => !waitSettled(item.value, settled))
       .map((item) => {

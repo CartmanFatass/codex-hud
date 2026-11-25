@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { projectList } from '../../dist/roles/projects.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { deserializePanelPlace, serializePanelPlace } from '../../dist/render/monitor-reload-codec.js';
@@ -375,6 +376,128 @@ test('Home bars exclude dropped tickets and omit figures for unread linked featu
     }
     fs.writeFileSync(path, original.replace('quota-headers', 'quota-headers, archived-work'));
     assert.match(rate(await rows()), /5\/9/);
+  } finally { setDisplayConfig(prev); }
+});
+
+/** Four features harbor's Objectives do not list: two open ones, and two finished ones with a live job. */
+async function unlinkedWork(t) {
+  const f = await design(t), root = f.roots.harbor;
+  const feature = (slug, statuses, ageDays) => statuses.forEach((status, i) => {
+    const file = join(root, '.scratch', slug, `issues/0${i + 1}-demo.md`), at = new Date(NOW - ageDays * 86_400_000);
+    fs.mkdirSync(join(file, '..'), { recursive: true });
+    fs.writeFileSync(file, `# 0${i + 1}: Sample ${i + 1}\n**Status:** ${status}\n**Blocked by:** none\n`);
+    fs.utimesSync(file, at, at);
+  });
+  const job = (id, receipt, state) => {
+    const dir = join(f.home, 'jobs', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ cwd: root, created_at: new Date(NOW - 60_000).toISOString(), ...receipt }));
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state }));
+  };
+  feature('workflow', ['done', ...Array(6).fill('ready-for-agent')], 1);
+  feature('pi-worker', ['done', 'wontfix', 'ready-for-agent', 'needs-info', 'ready-for-human', 'claimed'], 2);
+  feature('old-batch', ['done', 'wontfix'], 0);
+  feature('council', ['done'], 5);
+  feature('advisor', ['done'], 6);
+  job('j00000000000000a1', { role: 'imp', ticket: 'council/01' }, 'working');
+  job('j00000000000000a2', { role: 'oracle', package: 'advisor' }, 'queued');
+  const rowOf = (rows) => rows.find((r) => r.item === `home:unlinked:${root}`);
+  return { ...f, root, feature, job, rowOf };
+}
+
+test('work no Objective lists shows on one Home row, live features first, and leaves once listed', async (t) => {
+  const f = await unlinkedWork(t), { root } = f;
+  // Open work in a project without an Objective record is not "unlinked".
+  const sketch = join(f.roots.sketch, '.scratch/loose/issues/01-demo.md');
+  fs.mkdirSync(join(sketch, '..'), { recursive: true });
+  fs.writeFileSync(sketch, '# 01: Sample\n**Status:** ready-for-agent\n**Blocked by:** none\n');
+  const prev = setDisplayConfig({ theme: 'none', icons: 'unicode' });
+  try {
+    const portfolio = await f.tick(), frame = f.draw(80, 40, portfolio);
+    const rows = frame.workboard.rows, row = f.rowOf(rows);
+    assert.equal(row.text.trimEnd(), '  ◌ Unlinked: council 1/1 · advisor 1/1 · workflow 1/7 · pi-worker 1/5');
+    assert.deepEqual(rows.filter((r) => r.item?.startsWith('home:unlinked:')), [row]);
+    const objectives = rows.filter((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.root === root);
+    assert.ok(rows.indexOf(row) > rows.indexOf(objectives.at(-1)));
+    assert.ok(rows.indexOf(row) < rows.findIndex((r) => r.item?.startsWith('home:project:') && r.homeTarget.root !== root));
+    const { state } = handleMonitorInput({ ...frame.state, home: { ...frame.state.home, cursor: row.item } },
+      { type: 'key', key: 'enter' }, { frame });
+    assert.equal(state.activeTab, 'project');
+    // An incompletely read feature keeps its name without a figure.
+    fs.writeFileSync(join(root, '.scratch/workflow/issues/08-partial.md'), 'x'.repeat(66_000));
+    assert.match(f.rowOf(f.draw(80, 40, await f.tick()).workboard.rows).text, /advisor 1\/1 · workflow · pi-worker 1\/5/);
+    fs.appendFileSync(join(root, '.hud/objectives.md'), '\n## loose: Listed now\n**State:** done\n**Features:** workflow, pi-worker, council, advisor\n');
+    const linked = await f.tick();
+    assert.deepEqual(linked.projects.find((p) => p.root === root).snapshot.unlinked, []);
+    assert.ok(!f.draw(80, 40, linked).workboard.rows.some((r) => r.item?.startsWith('home:unlinked:')));
+  } finally { setDisplayConfig(prev); }
+});
+
+test('the unlinked row keeps exact width in EN and ZH and folds before any Objective row', async (t) => {
+  const f = await unlinkedWork(t), portfolio = await f.tick();
+  for (const icons of ['unicode', 'nerd', 'text']) for (const lang of ['en', 'zh']) for (const width of [40, 50, 80]) {
+    const prev = setDisplayConfig({ theme: 'mocha', icons }), prevLang = setLanguage(lang);
+    try {
+      const frame = f.draw(width, 60, portfolio), row = f.rowOf(frame.workboard.rows);
+      assert.ok([...frame.lines, row.text].every((line) => visualLength(line) === width));
+      const text = stripAnsi(row.text).trimEnd(), shown = { 40: 1, 50: 2, 80: 4 }[width];
+      assert.match(text, lang === 'en' ? / Unlinked: council 1\/1/ : / 未归入目标: council 1\/1/);
+      assert.equal(text.match(/\d\/\d/g).length, shown, text);
+      assert.equal(text.endsWith(` +${4 - shown}`), shown < 4, text);
+    } finally { setLanguage(prevLang); setDisplayConfig(prev); }
+  }
+  const seen = [];
+  for (let height = 60; height >= 18; height--) {
+    const rows = f.draw(40, height, portfolio).workboard.rows;
+    seen.push({ unlinked: !!f.rowOf(rows), results: rows.some((r) => r.item?.startsWith('home:result:')),
+      objectives: rows.filter((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.root === f.root).length });
+  }
+  assert.ok(seen[0].unlinked);
+  assert.ok(seen.every((s) => !s.unlinked || s.objectives === 2), 'never shown while an Objective row is folded');
+  assert.ok(seen.some((s) => s.unlinked && !s.results), 'results fold first');
+  assert.ok(seen.some((s) => !s.unlinked && s.objectives === 2), 'then the row, before any Objective');
+  // One long slug is cut; its count and the number left over stay.
+  const slug = 'synthetic-feature-with-a-very-long-name';
+  f.feature(slug, ['ready-for-agent'], 0);
+  f.job('j00000000000000a3', { role: 'imp', ticket: `${slug}/01` }, 'working');
+  const prev = setDisplayConfig({ theme: 'none', icons: 'unicode' });
+  try {
+    assert.match(f.rowOf(f.draw(40, 60, await f.tick()).workboard.rows).text, /synthetic-feat\S*… 0\/1 \+4$/);
+  } finally { setDisplayConfig(prev); }
+});
+
+test('Project lists the unlinked features after the Objectives, with their jobs and a five-row preview', async (t) => {
+  const f = await unlinkedWork(t), { root } = f;
+  const collector = new ProjectCollector(root, f.home);
+  const draw = (data, width, state = { ...initialMonitorState(), activeTab: 'project' }) =>
+    renderMonitor({ state, width, height: 80, nowMs: NOW, project: data, projectName: 'harbor-api' });
+  const data = await collector.collect(true, board, NOW);
+  assert.deepEqual(data.unlinked.map((u) => u.slug), ['council', 'advisor', 'workflow', 'pi-worker']);
+  const prev = setDisplayConfig({ theme: 'none', icons: 'unicode' });
+  try {
+    for (const lang of ['en', 'zh']) for (const width of [40, 80]) {
+      const prevLang = setLanguage(lang);
+      try {
+        const frame = draw(data, width), text = plain(frame);
+        assert.ok(frame.lines.every((line) => visualLength(line) === width));
+        const head = lang === 'en' ? 'Unlinked' : '未归入目标', jobs = lang === 'en' ? 'Jobs in Project' : '任务';
+        assert.match(text, new RegExp(`${head} .*4\\n  council +█+ +1/1.*\\n {6}\\S+ 01 Sample 1.*\\n  advisor +█+ +1/1.*\\n  workflow .*1/7.*\\n  pi-worker .*1/5`));
+        assert.ok(text.indexOf(head) < text.indexOf(`${jobs} `), 'a job no ticket claims stays in the jobs list');
+      } finally { setLanguage(prevLang); }
+    }
+    const frame = draw(data, 80), row = frame.workboard.rows.find((r) => /^  workflow /.test(r.text));
+    frame.state.project.nav.cursor = row.item;
+    assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { frame }).action,
+      { type: 'open-files', files: [join(root, '.scratch/workflow/issues/02-demo.md')] });
+    f.feature('fifth', ['ready-for-agent'], 3);
+    f.feature('sixth', ['ready-for-agent'], 4);
+    const more = await collector.collect(true, board, NOW), folded = draw(more, 80);
+    assert.doesNotMatch(plain(folded), /^  sixth /m);
+    const toggle = folded.workboard.rows.find((r) => r.item === 'project:fold:unlinked:more');
+    assert.match(toggle.text, /1 more/);
+    folded.state.project.nav.cursor = toggle.item;
+    const { state } = handleMonitorInput(folded.state, { type: 'key', key: 'enter' }, { frame: folded });
+    assert.match(plain(draw(more, 80, state)), /^  sixth [\s\S]*fewer/m);
   } finally { setDisplayConfig(prev); }
 });
 

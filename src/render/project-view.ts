@@ -418,11 +418,32 @@ function evidenceLabel(text: string, width: number): string {
   return truncateAnsi(`…/${tail}`, width);
 }
 
-/** Objective blocks and the jobs that have no displayed feature/ticket association. */
-export function objectiveRows(data: ProjectSnapshot, width: number, now: number): MonitorRow[] {
+const UNLINKED_CAP = 5;
+
+/** Objective blocks, the features none of them lists, and the jobs that have no displayed feature/ticket association. */
+export function objectiveRows(data: ProjectSnapshot, width: number, now: number, allUnlinked = false): MonitorRow[] {
   const ink = theme.board, record = data.objectives, rows: MonitorRow[] = [];
   const jobs = new Map(data.active.map((job) => [job.jobId, job]));
   const add = (text: string, target?: Partial<MonitorRow>) => rows.push({ ...target, text: fit(text, width) });
+  /** One linked-ticket bar, then the live jobs of its tickets; `lead` is the indented slug column. */
+  const featureLines = (scanned: ReadonlyMap<string, TicketFeature>, slug: string, lead: string, target: Partial<MonitorRow>,
+    paused = false, checks?: { checked: number; total: number }) => {
+    const fc = linkedTicketProgress(scanned, [slug]);
+    const ratio = fc?.total ? `${fc.counts.accepted}/${fc.total}` : '';
+    const unitCount = width >= 56 && ratio ? t('{count} tickets', { count: ratio }) : ratio;
+    const checkText = width >= 56 && checks?.total && ratio ? t('{count} checks', { count: `${checks.checked}/${checks.total}` }) : '';
+    const countText = checkText && visualLength(lead + unitCount + checkText) + 9 <= width
+      ? `${unitCount} · ${ink.muted(checkText)}` : unitCount;
+    const countWidth = Math.max(5, visualLength(countText));
+    const cells = Math.max(0, Math.min(24, width - visualLength(lead) - countWidth - 2));
+    const bar = !fc ? ink.muted(mark('—', '-')) : fc.total ? barText(fc, cells, TICKET_BAR_ORDER, paused)
+      : ink.frame(mark('╌', '.').repeat(cells));
+    add(`${lead} ${bar} ${' '.repeat(countWidth - visualLength(countText))}${countText}`, target);
+    for (const ticket of scanned.get(slug)?.tickets ?? []) {
+      const job = ticket.job?.id && jobs.get(ticket.job.id);
+      if (job) { rows.push(hubJobRow(job, width, now, ticket)); jobs.delete(job.jobId); }
+    }
+  };
   if (record) {
     rows.push(section(t('Objectives'), width, String(record.objectives.length)));
     const root = dirname(dirname(record.path)), blockedIds = blockedObjectives(data.waiting);
@@ -453,25 +474,8 @@ export function objectiveRows(data: ProjectSnapshot, width: number, now: number)
       add(pair(head, right, width), at);
       for (const line of sentenceRows(monitorText(title), width, 3, 4)) add(line, at);
       if (next) for (const line of sentenceRows(monitorText(next), width, 3, 4, ink.active(mark('›', '>', '\uF054')))) add(line, at);
-      for (const slug of new Set(features)) {
-        const fc = linkedTicketProgress(scanned, [slug]);
-        const label = `    ${tokenColumn(monitorText(slug), featureCol)}`;
-        const ratio = fc?.total ? `${fc.counts.accepted}/${fc.total}` : '';
-        const checks = record.acceptance[slug];
-        const unitCount = width >= 56 && ratio ? t('{count} tickets', { count: ratio }) : ratio;
-        const checkText = width >= 56 && checks?.total && ratio ? t('{count} checks', { count: `${checks.checked}/${checks.total}` }) : '';
-        const countText = checkText && visualLength(label + unitCount + checkText) + 9 <= width
-          ? `${unitCount} · ${ink.muted(checkText)}` : unitCount;
-        const countWidth = Math.max(5, visualLength(countText));
-        const cells = Math.max(0, Math.min(24, width - visualLength(label) - countWidth - 2));
-        const bar = !fc ? ink.muted(mark('—', '-')) : fc.total ? barText(fc, cells, TICKET_BAR_ORDER, paused)
-          : ink.frame(mark('╌', '.').repeat(cells));
-        add(`${label} ${bar} ${' '.repeat(countWidth - visualLength(countText))}${countText}`, at);
-        for (const ticket of scanned.get(slug)?.tickets ?? []) {
-          const job = ticket.job?.id && jobs.get(ticket.job.id);
-          if (job) { rows.push(hubJobRow(job, width, now, ticket)); jobs.delete(job.jobId); }
-        }
-      }
+      for (const slug of new Set(features))
+        featureLines(scanned, slug, `    ${tokenColumn(monitorText(slug), featureCol)}`, at, paused, record.acceptance[slug]);
       if (result) {
         const age = compactAge(record.resultDates?.[id], now), body = monitorText(result).replace(/\s+/g, ' ').trim();
         const resultGlyph = ink.success(stateMark.done());
@@ -489,6 +493,21 @@ export function objectiveRows(data: ProjectSnapshot, width: number, now: number)
       if (evidence.length > 3) add(`      ${ink.muted(t('{remaining} more', { remaining: evidence.length - 3 }))}`, at);
     }
     if (record.diagnostics.length) add(`  ${ink.attention(t('Some objectives could not be read'))}`);
+  }
+  const unlinked = data.unlinked ?? [];
+  if (unlinked.length) {
+    rows.push(section(t('Unlinked'), width, String(unlinked.length)));
+    const shown = allUnlinked ? unlinked : unlinked.slice(0, UNLINKED_CAP);
+    const scanned = new Map(unlinked.map((f) => [f.slug, f]));
+    const slugCol = Math.max(8, ...shown.map((f) => Math.min(16, visualLength(monitorText(f.slug)))));
+    for (const { slug, tickets } of shown) {
+      // Enter opens the first ticket still open, else the latest one (a live job on a finished feature).
+      const { path } = tickets.find((r) => r.state !== 'done' && r.state !== 'dropped') ?? tickets.at(-1)!;
+      featureLines(scanned, slug, `  ${tokenColumn(monitorText(slug), slugCol)}`, { item: `project:file:${path}:unlinked`, files: [path] });
+    }
+    const more = unlinked.length - UNLINKED_CAP;
+    if (more > 0) add(`  ${ink.muted(allUnlinked ? `${mark('▾', 'v')} ${t('fewer')}` : `${mark('▸', '>')} ${t('{n} more', { n: more })}`)}`,
+      { item: 'project:fold:unlinked:more' });
   }
   if (jobs.size) rows.push(section(t('Jobs in Project'), width, String(jobs.size)), ...[...jobs.values()].map((job) => hubJobRow(job, width, now)));
   return rows;

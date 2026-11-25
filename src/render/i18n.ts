@@ -76,6 +76,7 @@ const ZH: Record<string, string> = {
   Details: '详情',
   Worktree: '工作区',
   'Jobs in Project': '任务',
+  Unlinked: '未归入目标',
   '{remaining} more': '另 {remaining} 个',
   '{hours}h': '{hours}时',
   '{n}w': '{n}周',

@@ -162,6 +162,14 @@ export function landedTicket(original: string, ticket: number, comment: string) 
   return (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n`;
 }
 
+/** The panel groups work by an Objective's Features; no record, no warning. */
+function unlinkedWarning(root: string, feature: string): string | undefined {
+  const objectives = readObjectives(root)?.objectives;
+  if (!objectives || objectives.some(({ features }) => features.includes(feature))) return;
+  return `feature "${feature}" is in no Objective's Features, so the panel shows it as unlinked. Objective IDs: ${
+    objectives.map(({ id }) => id).join(', ') || 'none'}. Pass objective on each ticket (op: update for these), and list the feature with hud_objective (op: set, features: the whole list).`;
+}
+
 export async function editTickets(cwd: string, args: Record<string, unknown>) {
   const { op, feature } = args;
   if (op === 'sync') {
@@ -237,7 +245,9 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
       fs.writeFileSync(path, body, { flag: 'wx' });
       return { number, path };
     });
-    return { ok: true, tickets };
+    const warning = args.tickets.some((ticket: Record<string, unknown>) => ticket.objective === undefined)
+      ? unlinkedWarning(sharedRoot(cwd), feature) : undefined;
+    return { ok: true, tickets, ...(warning && { warning }) };
   }
 
   const updateOne = (feat: unknown, item: Record<string, unknown>) => {

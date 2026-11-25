@@ -79,7 +79,8 @@ export function projectOverviewRows(
   return [plain('', width),
     { ...section(theme.board.title(title), width, many ? `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}` : ''), ...(many ? { item: 'project:switch' } : {}) },
     ...(identity.length ? [plain(`  ${muted(identity.join(' · '))}`, width)] : []),
-    ...requestRows(data, state, width, now), ...(!record ? stateNotes(data, width) : []), ...objectiveRows(data, width, now), ...detailRows(data, width, now)];
+    ...requestRows(data, state, width, now), ...(!record ? stateNotes(data, width) : []), ...objectiveRows(data, width, now, state.project.folded.has('unlinked:more')),
+    ...detailRows(data, width, now)];
 }
 
 /** Projects list: grouped into Needs you, Running and Quiet (a quiet project is one row). */

@@ -80,6 +80,9 @@ Frame `home-40-zh` (the owner's panel), Proposed, with Nerd glyphs replaced by t
 - **Second row is the graphic**: one row per open Objective: state mark (● active, amber ? blocked, ‖ paused), id, a stacked ticket bar in the panel's own glyphs and inks
   (green done, lavender to try, blue working, amber blocked, grey to do), `done/total`. A ticketless Objective gets a dotted track and no number. Paused Objectives are grey. More than two:
   `另 N 个`. A result appears under *its* Objective, one cut line with its age, only if it is at most 3 days old and dated (an undated result is not known to be recent).
+- **Unlinked row** (only with an `objectives.md`): features no Objective lists that have unfinished tickets or a live job share one row under the block's Objectives and
+  their `N more`: `◌ Unlinked: workflow 1/7 · pi-worker 1/5 +3` (`未归入目标:`; nerd `\uF127`, text `-`). Mark, label, counts and `+N` are dim, slugs normal. Live-job features come first, then the
+  newest; only whole facts, the rest counted. Slugs only, never a generated title. Enter or click opens the Project.
 - **No `objectives.md`**: one dim line with STATE *Now* (¶), never a fabricated goal. **Unavailable root**: ✗ and the word, nothing else.
 - **Use of the free rows**: width goes to the bars, not prose; a blank row separates blocks while the panel has room.
 - **Why the bar is not on the header row.** The brief asked for the graphic first. A header row that carries the name, load and age leaves the bar rows aligned in one column
@@ -100,6 +103,8 @@ Frame `project-40-zh`. Order: identity (one dim row: stance, priority, age), **N
   with the **running job** under its feature (role icon, ticket number, ticket title, age), the **result** (✓, full text, age) and **evidence** links (↗, up to 3, then `另 N 个`).
   Blank row between Objectives. A done Objective is one row.
 - **Home's summary is not repeated**: no Objective bar, no load line, no stance row beyond the identity row. The aggregate figure appears as one count in the head row; the bars are per feature.
+- **Unlinked section** (`未归入目标`, with the count) follows the Objectives: one `slug ████░░ 1/7` row per feature in the Home row's order, linked live jobs beneath as above,
+  5 rows then `N more`/`fewer`. Enter opens the feature's first unfinished ticket file (the latest when all are finished).
 - **Details** replaces `进度 / 工单 / 工作区 / 文档`; each row names its count: `工单 8/14 已完成 · 3 个功能`, `进度 M2 · 2 进行中 · 4 待办`, `文档 spec M2 · 复审 2天前`; the `工作区` row
   (`main · 5 处改动`) stays when Git facts exist and is dropped when the only fact is the jobs list; a partial scan says what it covered (`最近 64 个功能中 …`), never `不完整`.
 - Jobs no Objective claims get their own `任务` section; none in this scenario.
@@ -118,7 +123,7 @@ Frame `project-40-zh`. Order: identity (one dim row: stance, priority, age), **N
 | 7 | Unknown is absent: no `未知`, no `Partial`; a bound that limits a count is named (`最近 64 个功能`). | `:33`, `project-view.ts:39-40` |
 | 8 | A count names its unit once: in the section heading below 56 columns, on every row at 56 and above. Home's only denominator is tickets of the Objective's linked features (done / not dropped); a linked feature that was not read gives no bar, never 0/0. | `工单 64 个功能` |
 | 9 | Time is an age (`20分 4时 9天 5周`, `20m 4h 9d 5w`), not a clock time or ISO date, except on a dated receipt. | `project-view.ts:54-59` |
-| 10 | Under pressure drop in this order: blank separators, results, extra Objective rows (`另 N 个`), then one row per project. Requests and membership never drop. | |
+| 10 | Under pressure drop in this order: blank separators, results, Unlinked rows, extra Objective rows (`另 N 个`), then one row per project. Requests and membership never drop. | |
 
 ## 5. Division table
 

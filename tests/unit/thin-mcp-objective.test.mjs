@@ -118,6 +118,24 @@ test('hud_objective project can start the header with either field', async (t) =
   assert.equal(fs.existsSync(join(home, 'events')), false);
 });
 
+test('hud_tickets add without objective warns only for a feature no Objective lists', async (t) => {
+  const f = await fixture(t, false), cwd = fs.realpathSync(f.root);
+  const add = async (feature, ...objectives) => resultValue((await f.rpc('tools/call', { name: 'hud_tickets', arguments: {
+    op: 'add', cwd, feature, tickets: objectives.map((objective) =>
+      ({ title: 'Sample', what: 'Observe', blocked_by: [], acceptance: [], ...(objective && { objective }) })),
+  } })).result);
+  assert.equal((await add('loose', null)).warning, undefined, 'no Objective file');
+  fs.mkdirSync(join(cwd, '.hud'), { recursive: true });
+  fs.writeFileSync(join(cwd, '.hud/objectives.md'),
+    '## measure: Measure sample\n**State:** active\n**Features:** listed\n\n## publish: Publish sample\n**State:** done\n');
+  assert.equal((await add('listed', null)).warning, undefined);
+  assert.equal((await add('loose', 'measure', 'publish')).warning, undefined);
+  const result = await add('loose', 'measure', null);
+  assert.match(result.warning, /"loose".*Objective IDs: measure, publish\./);
+  assert.equal(result.tickets.length, 2);
+  assert.ok(result.tickets.every(({ path }) => fs.existsSync(path)), 'the tickets are still written');
+});
+
 test('hud_objective opens and resolves one owner request without editing other STATE bytes or tickets', async (t) => {
   const f = await fixture(t, false), cwd = fs.realpathSync(f.root), home = f.env.HUD_HOME;
   const state = join(cwd, 'docs/handoff/STATE.md'), events = join(home, 'events'), old = '2020-01.jsonl';
