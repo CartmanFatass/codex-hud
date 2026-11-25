@@ -1151,7 +1151,8 @@ test('an owner message seen by both the Claude mod trigger and the statusline tr
   );
 
   // 1) Concurrent in-process calls with different messageIds and whitespace normalization make one Decision call.
-  const t0 = Date.parse('2026-11-25T08:00:00.000Z');
+  // Use the same clock as the CLI in part 2 so it does not prune this claim as expired.
+  const t0 = Date.now();
   const [r1, r2] = await Promise.all([
     adviseOnMessage(
       f.hudHome,
