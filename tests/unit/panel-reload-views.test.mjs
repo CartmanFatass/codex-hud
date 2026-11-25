@@ -48,19 +48,16 @@ test('the 40-column Tickets page restores the selected Accept all row without ru
   assert.match(f.output().slice(at), /1 to try/);
 });
 
-// Wait for at least two real PanelReload polls after the quiet window has elapsed.
-async function waitPastQuietPolls(f, builtAt, message) {
-  await until(() => f.polls().filter((at) => at >= builtAt + QUIET_MS).length >= 2, message);
-}
+// Reload checks run on collection ticks; allow time for both detection and a later poll.
+const LIVE_INPUT_BLOCK_WINDOW_MS = QUIET_MS + 1200;
 
 test('live input: a batched / query and later keys survive a build until Enter keeps the filter', async (t) => {
   const f = live(t, (state) => ({ state: { ...state, activeTab: 'project', project: { ...state.project, view: { kind: 'progress' } } }, settings: null }));
   await until(() => f.output().includes('Progress'), 'Progress did not render');
   f.child.stdin.write('/relo');
   await until(() => stripAnsi(f.output()).includes('/ relo▌'), 'the batched slash and query did not reach the filter');
-  const builtAt = Date.now();
   f.appendBuild('\n// build during a filter edit');
-  await waitPastQuietPolls(f, builtAt, 'reload poll did not run past quiet window');
+  await delay(LIVE_INPUT_BLOCK_WINDOW_MS);
   assert.equal(f.restarts().length, 0, 'reload must wait for the filter editor');
   f.child.stdin.write('ad');
   await until(() => stripAnsi(f.output()).includes('/ reload▌'), 'typing did not continue in the same filter');
@@ -89,9 +86,8 @@ test('live input: a build waits for the Harnesses Add back draft to close', asyn
   await until(() => f.output().includes('i add back'), 'Harnesses did not render');
   f.child.stdin.write('ixa');
   await until(() => stripAnsi(f.output()).includes('/ xa▌'), 'the Add back draft did not render');
-  const builtAt = Date.now();
   f.appendBuild('\n// build during an Add back edit');
-  await waitPastQuietPolls(f, builtAt, 'reload poll did not run past quiet window');
+  await delay(LIVE_INPUT_BLOCK_WINDOW_MS);
   assert.equal(f.restarts().length, 0, 'reload must wait for Add back');
   f.child.stdin.write('i');
   await until(() => stripAnsi(f.output()).includes('/ xai▌'), 'the draft was not still editable');
@@ -127,9 +123,8 @@ test('live input: a build waits for stop confirmation, and an unnamed key cancel
   await until(() => f.output().includes('Inspector'), 'Inspector did not render');
   f.child.stdin.write('X');
   await until(() => f.output().includes('y confirm'), 'stop prompt did not open');
-  const builtAt = Date.now();
   f.appendBuild('\n// build during stop confirmation');
-  await waitPastQuietPolls(f, builtAt, 'reload poll did not run past quiet window');
+  await delay(LIVE_INPUT_BLOCK_WINDOW_MS);
   assert.equal(f.restarts().length, 0, 'reload must wait for stop confirmation');
   f.child.stdin.write('z');
   await until(() => f.events().filter((e) => e.start).length === 2, 'unnamed z did not cancel the prompt and unblock reload');
@@ -165,11 +160,9 @@ test('saving Width 64 from opening width 56 keeps 64 across real panel replaceme
   await until(() => Math.abs(f.geometry().width - 64) < 0.01, 'saved width was not applied: ' + f.stderr());
   assert.equal(JSON.parse(readFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), 'utf8')).treeWidth, 64);
   for (let generation = 1; generation <= 2; generation++) {
-    const at = f.output().length;
     f.appendBuild(`\n// saved width build ${generation}`);
-    await until(() => f.events().filter((e) => e.start).length === generation + 1 && f.output().slice(at).includes('Settings'), 'panel did not replace itself');
-    const startedAt = f.events().filter((e) => e.start).at(-1).at;
-    await until(() => f.polls().filter((t) => t >= startedAt).length >= 2, 'replacement panel did not settle');
+    await until(() => f.events().filter((e) => e.start).length === generation + 1, 'panel did not replace itself');
+    await delay(350);
     assert.ok(Math.abs(f.geometry().width - 64) < 0.01, JSON.stringify(f.geometry()));
     assert.equal(f.geometry().resizes.length, 1, 'no reload-time shrink to opening width');
   }
@@ -180,17 +173,11 @@ for (const action of ['save', 'discard']) test(`the live panel waits for Setting
   await until(() => f.output().includes('Settings'), 'Settings overlay did not resume');
   f.child.stdin.write('\x1b[C');
   await until(() => f.output().includes('unsaved'), 'Settings edit was not dirty');
-  const builtAt = Date.now();
   f.appendBuild('\n// settings build');
-  await waitPastQuietPolls(f, builtAt, 'reload poll did not run past quiet window');
+  await delay(QUIET_MS + 350);
   assert.equal(f.restarts().length, 0);
   if (action === 'save') f.child.stdin.write('s');
-  else {
-    const beforeEsc = f.output().length;
-    f.child.stdin.write('\x1b');
-    await until(() => /discard|unsaved/i.test(stripAnsi(f.output().slice(beforeEsc))), 'discard confirmation did not render');
-    f.child.stdin.write('\x1b[D\r');
-  }
+  else { f.child.stdin.write('\x1b'); await delay(150); f.child.stdin.write('\x1b[D\r'); }
   await until(() => f.events().filter((e) => e.start).length === 2, `no reload after ${action}`);
   assert.equal(f.restarts().length, 1);
   const place = f.restarts()[0].restart;

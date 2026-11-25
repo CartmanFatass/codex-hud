@@ -32,14 +32,14 @@ if (process.argv[1]?.endsWith('/hud-watch.mjs')) {
   };
   syncBuiltinESMExports();
 }`;
-  const f = await fixture(t, { watcherTickMs: 25, probe: `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify('data:text/javascript,' + encodeURIComponent(probe))}` });
+  const f = await fixture(t, { watcherTickMs: 60, probe: `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify('data:text/javascript,' + encodeURIComponent(probe))}` });
   f.overrideBin('pi', '#!/bin/sh\nexec sleep 120\n');
   const { task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic quiet query.' });
   const scans = () => fs.readFileSync(join(f.env.HUD_HOME, 'scans'), 'utf8').trim().split('\n').map(Number);
   await until(() => fs.existsSync(join(f.env.HUD_HOME, 'connected')), t.signal);
-  await new Promise(resolve => setTimeout(resolve, 60)); // Let dispatch file events drain.
+  await new Promise(resolve => setTimeout(resolve, 150)); // Let dispatch file events drain.
   const before = scans().length;
-  await new Promise(resolve => setTimeout(resolve, 130));
+  await new Promise(resolve => setTimeout(resolve, 300));
   assert.equal(scans().length, before, 'five former slow ticks without a scan');
   const killed = Date.now();
   process.kill(cliState(dir).pid, 'SIGKILL');
@@ -159,9 +159,8 @@ test('sonic checkpoints reach the caller and keep the original pi process runnin
   // nor the trip through hud_report should race a synthetic two-second policy window.
   const clock = `import { existsSync } from 'node:fs';
 if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
-  const now = Date.now, interval = globalThis.setInterval;
+  const now = Date.now;
   Date.now = () => now() + (existsSync(process.env.HUD_JOB_DIR + '/pi-pid') ? 101000 : 0);
-  globalThis.setInterval = (fn, ms, ...args) => interval(fn, ms === 1000 ? 25 : ms, ...args);
 }`;
   const f = await fixture(t, { probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(clock))}` });
   const defaults = (await f.call('hud_roster', { detail: true })).roles.find(r => r.role === 'sonic');
@@ -246,9 +245,8 @@ test('a running tool call with a declared timeout holds the stall and loop check
 test('a silent running tool tree is ended while the sonic pi process continues and settles', { timeout: 60000 }, async (t) => {
   const clock = `import { existsSync } from 'node:fs';
 if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
-  const now = Date.now, interval = globalThis.setInterval;
+  const now = Date.now;
   Date.now = () => now() + (existsSync(process.env.HUD_JOB_DIR + '/tool-ready') ? ${sonicLimitDefaults.stall_s * 1000 + 1000} : 0);
-  globalThis.setInterval = (fn, ms, ...args) => interval(fn, ms === 1000 ? 25 : ms, ...args);
 }`;
   const f = await fixture(t, {
     watcherTickMs: 250,
@@ -320,29 +318,17 @@ test('a default checkpoint counts worker milestones but not its own progress or 
 
 for (const reason of ['looping', 'stalled']) {
   test(`sonic stops as ${reason} and preserves its last progress in the digest`, { timeout: 60000 }, async (t) => {
-    // Advance the runner's clock only after Pi logs its expected events, which
-    // follow hud_progress. Real startup must not race a synthetic policy window.
-    const clock = reason === 'stalled'
-      ? `import { statSync } from 'node:fs';
+    // Advance the stalled runner's clock only after Pi logs its first event, which
+    // follows hud_progress. Real startup must not race a synthetic inactivity window.
+    const clock = `import { statSync } from 'node:fs';
 if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
-  const now = Date.now, interval = globalThis.setInterval, stdout = process.env.HUD_JOB_DIR + '/stdout.jsonl';
+  const now = Date.now, stdout = process.env.HUD_JOB_DIR + '/stdout.jsonl';
   Date.now = () => now() + (statSync(stdout, { throwIfNoEntry: false })?.size ? ${sonicLimitDefaults.stall_s * 1000 + 1} : 0);
-  globalThis.setInterval = (fn, ms, ...args) => interval(fn, ms === 1000 ? 25 : ms, ...args);
-}`
-      : `import { readFileSync } from 'node:fs';
-if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
-  const now = Date.now, interval = globalThis.setInterval, stdout = process.env.HUD_JOB_DIR + '/stdout.jsonl';
-  Date.now = () => {
-    let lines = 0;
-    try { lines = readFileSync(stdout, 'utf8').split('\\n').length - 1; } catch {}
-    return now() + (lines >= 2 ? 4001 : 0);
-  };
-  globalThis.setInterval = (fn, ms, ...args) => interval(fn, ms === 1000 ? 25 : ms, ...args);
 }`;
     const f = await fixture(t, {
       // Settlement must also complete if the watch misses the runner's stop-receipt rename.
-      watcherTickMs: 80,
-      probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(clock))}`,
+      watcherTickMs: 250,
+      probe: reason === 'stalled' ? `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(clock))}` : '',
     });
     if (reason === 'looping') setLimits(f, { check_s: 4, stall_s: 8, max_s: 20 });
     f.overrideBin('pi', `#!${process.execPath}

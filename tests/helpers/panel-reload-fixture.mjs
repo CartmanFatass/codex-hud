@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, copyFileSync, readdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, copyFileSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -17,7 +17,7 @@ export const QUIET_MS = 150;
 export const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 export async function until(predicate, message, timeout = 10000) {
   const end = Date.now() + timeout;
-  while (Date.now() < end) { if (predicate()) return; await delay(10); }
+  while (Date.now() < end) { if (predicate()) return; await delay(30); }
   assert.fail(message);
 }
 export function fixture(t, settings = {}) {
@@ -60,7 +60,6 @@ function stagePanel(from, to, localFile, nested) {
 export function live(t, initialPlace, { bound = false, width = false, columns = 100, settings } = {}) {
   const f = fixture(t, settings);
   f.env.HUD_PANEL_RELOAD_QUIET_MS = String(QUIET_MS);
-  f.env.HUD_PANEL_ADAPTIVE_MAX_MS = '100';
   if (bound) {
     const source = join(f.env.CLAUDE_CONFIG_DIR, 'projects', 'synthetic');
     mkdirSync(join(source, 'synthetic-session', 'subagents'), { recursive: true });
@@ -93,7 +92,7 @@ console.log(JSON.stringify({result:args[1]==='layout'?{layout:{
     copyFileSync(resolve(file), join(f.root, file));
   }
   symlinkSync(resolve('node_modules'), join(f.root, 'node_modules'), 'dir');
-  const log = join(f.root, 'events.jsonl'), pollsFile = join(f.root, 'polls.jsonl'), runner = join(f.root, 'live.mjs'), entry = join(f.root, 'dist/tree-page.js');
+  const log = join(f.root, 'events.jsonl'), runner = join(f.root, 'live.mjs'), entry = join(f.root, 'dist/tree-page.js');
   for (let i = 0; i < 2; i++) {
     const id = `j${String(i).padStart(16, '0')}`, dir = join(f.env.HUD_HOME, 'jobs', id);
     mkdirSync(dir, { recursive: true });
@@ -106,16 +105,14 @@ console.log(JSON.stringify({result:args[1]==='layout'?{layout:{
   const initial = initialMonitorState();
   const state = { ...initial, jobs: { cursor: targetKey(target), scroll: 0 } };
   writeFixtureFile(log, '');
-  writeFixtureFile(runner, `import {appendFileSync,readFileSync} from 'node:fs';
+  writeFixtureFile(runner, `import {readFileSync} from 'node:fs';
 import {writeFixtureFile} from ${JSON.stringify(atomicWriter)};
 import {PanelReload,encodePanelPlace} from './dist/utils/panel-reload.js';
 import {runLivePage} from './dist/tree-page.js';
 process.stdout.columns=${columns};process.stdout.rows=35;
-const file=${JSON.stringify(log)}, pollsFile=${JSON.stringify(pollsFile)};
+const file=${JSON.stringify(log)};
 const log=v=>writeFixtureFile(file,readFileSync(file,'utf8') + JSON.stringify(v)+'\\n');
-log({start:true,at:Date.now(),pid:process.pid,argv:process.argv.slice(2),test:process.env.SYNTHETIC});
-const originalPoll=PanelReload.prototype.poll;
-PanelReload.prototype.poll=async function(...args){const res=await originalPoll.apply(this,args);appendFileSync(pollsFile,Date.now()+'\\n');return res;};
+log({start:true,pid:process.pid,argv:process.argv.slice(2),test:process.env.SYNTHETIC});
 const original=PanelReload.prototype.restart;
 PanelReload.prototype.restart=function(place,finish){log({restart:JSON.parse(encodePanelPlace(place)),at:Date.now()});return original.call(this,place,finish);};
 await runLivePage();process.exit(process.exitCode??0);`);
@@ -123,8 +120,7 @@ await runLivePage();process.exit(process.exitCode??0);`);
   const run = launch(f, runner, ['same argv'], { SYNTHETIC: 'same env',
     HUD_PANEL_RELOAD_PLACE: typeof place === 'string' ? place : encodePanelPlace(place), CODEX_HUD_INITIAL_COMMAND: 'help' });
   const events = () => readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-  const polls = () => existsSync(pollsFile) ? readFileSync(pollsFile, 'utf8').trim().split('\n').filter(Boolean).map(Number) : [];
-  return { ...f, ...run, entry, events, polls, state, target, geometry: () => JSON.parse(readFileSync(geometry, 'utf8')),
+  return { ...f, ...run, entry, events, state, target, geometry: () => JSON.parse(readFileSync(geometry, 'utf8')),
     baseline: readFileSync(entry, 'utf8'), restarts: () => events().filter((e) => e.restart),
     appendBuild: (suffix) => writeFixtureFile(entry, readFileSync(entry, 'utf8') + suffix) };
 }

@@ -72,7 +72,7 @@ test('supervisor events: a report with a missed status push settles on the safet
 // Two independent turns each settle through the configured grace and real /quit subprocess.
 test('done without report keeps the job open and a later report settles it', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'short-cli', 0.3, true);
+  writeCliRole(f, 'short-cli', 4, true);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   const job = await f.call('hud_create', { role: 'short-cli', request_key: 'grok-missing', task: 'Synthetic missing.' });
   await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.pid, 15000);
@@ -171,7 +171,7 @@ for (const mode of ['rejected-prompt', 'fast-ambiguous-prompt']) {
 
 test('an unchanged cli report after continuation stays open without failing', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'short-cont', 0.25, true);
+  writeCliRole(f, 'short-cont', 1, true);
   fs.writeFileSync(join(f.env.HOME, 'hold-grace'), '');
   fs.writeFileSync(join(f.env.HOME, 'unchanged-report'), '');
   const job = await f.call('hud_create', { role: 'short-cont', request_key: 'grok-same', task: 'Synthetic same.' });
@@ -186,7 +186,7 @@ test('an unchanged cli report after continuation stays open without failing', { 
 
 test('quiet past grace turns waiting_orchestrator without pane notices and self-wake returns to working', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'quiet-cli', 0.25, false);
+  writeCliRole(f, 'quiet-cli', 1, false);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   const notices = () =>
     f.commands().filter((c) => c.args[1] === 'prompt' && String(c.args.at(-1)).includes('quiet without a report'));
@@ -372,7 +372,7 @@ test('report written while working settles only at turn end, not mid-turn slice 
   await Promise.all([
     (async () => {
       const f = await fixture(t);
-      writeCliRole(f, 'mid-report-cli', 0.25, true);
+      writeCliRole(f, 'mid-report-cli', 1, true);
       fs.writeFileSync(join(f.env.HOME, 'report-while-working'), '');
       const job = await f.call('hud_create', {
         role: 'mid-report-cli',
@@ -393,7 +393,7 @@ test('report written while working settles only at turn end, not mid-turn slice 
     })(),
     (async () => {
       const f = await fixture(t);
-      writeCliRole(f, 'no-cont-mid', 0.25, false);
+      writeCliRole(f, 'no-cont-mid', 1, false);
       fs.writeFileSync(join(f.env.HOME, 'report-while-working'), '');
       const noCont = await f.call('hud_create', {
         role: 'no-cont-mid',

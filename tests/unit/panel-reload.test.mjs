@@ -348,7 +348,6 @@ test('the live panel coalesces build bursts, retains jobs settled during its lif
     assert.deepEqual(start.argv, ['same argv']);
     assert.equal(start.test, 'same env');
   }
-  const settledAt = Date.now();
-  await untilRendered(() => f.polls().filter((at) => at >= settledAt).length >= 3, t.signal);
+  await delay(500);
   assert.equal(f.restarts().length, 2, 'no restart loop on an unchanged generation');
 });

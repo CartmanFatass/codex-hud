@@ -82,7 +82,7 @@ lines.on('line', line => {
     setTimeout(() => send({ id: req.id, result: {
       rateLimitsByLimitId: { codex: ${JSON.stringify(windows)} },
       rateLimits: { primary: { usedPercent: 88 } }, accountId: 'do not persist', credits: { balance: '9999' }
-    } }), 20);
+    } }), 180);
   } else process.exit(7);
 });`,
     { mode: 0o700 }

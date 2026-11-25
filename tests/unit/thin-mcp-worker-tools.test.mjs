@@ -355,8 +355,6 @@ test('sonic tooling uses the role settings for main jobs and children', { timeou
 test('sonic auto-thinking uses one capped judgment for each new job and falls back safely', { timeout: 25000 }, async (t) => {
   const probe = `import * as fs from 'node:fs';
     import { join } from 'node:path';
-    const realAbortTimeout = AbortSignal.timeout.bind(AbortSignal);
-    AbortSignal.timeout = (ms) => realAbortTimeout(ms === 5000 ? 50 : ms);
     globalThis.fetch = async (url, init) => {
       fs.appendFileSync(join(process.env.HOME, 'decision-inputs'), JSON.stringify({url, body: JSON.parse(init.body)}) + '\\n');
       const mode = fs.readFileSync(join(process.env.HOME, 'decision-mode'), 'utf8');

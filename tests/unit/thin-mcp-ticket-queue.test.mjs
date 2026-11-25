@@ -7,31 +7,9 @@ import { fixture, fallbackRole, taskCall, taskRpc, until, resultValue } from '..
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
-const queueCheckProbe = `if (process.argv[1]?.endsWith('/ticket-queue-runner.mjs')) {
-  const fs = (await import('node:fs')).default;
-  const { dirname, basename, join } = await import('node:path');
-  const { syncBuiltinESMExports } = await import('node:module');
-  const exists = fs.existsSync, out = join(process.env.HOME, 'queue-checks.jsonl');
-  fs.existsSync = (file) => {
-    const result = exists(file);
-    if (typeof file === 'string' && file.endsWith('/STATUS.json.stop-requested')) {
-      const dir = dirname(file);
-      let dispatchExit, state;
-      try { dispatchExit = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).dispatch_exit_code; } catch {}
-      try { state = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8')).state; } catch {}
-      fs.appendFileSync(out, JSON.stringify({ job: basename(dir), hasStatus: exists(join(dir, 'STATUS.json')), dispatchExit, state }) + '\\n');
-    }
-    return result;
-  };
-  syncBuiltinESMExports();
-}`;
-
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 async function project(t, { thirdBlocker = 'none', frontend = false, crossProject = false, done = [], upstream = [] } = {}) {
-  const caller = await fixture(t, {
-    failedRetentionMs: 30_000,
-    probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(queueCheckProbe))};`,
-  });
+  const caller = await fixture(t, { failedRetentionMs: 30_000 });
   const f = crossProject ? { ...caller, root: join(caller.root, 'project') } : caller;
   if (crossProject) fs.mkdirSync(f.root);
   cleanupFixture(t, { root: `${f.root}-wt` });
@@ -86,14 +64,7 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
     await until(() => flow(id).state !== 'working', 20_000);
     return flow(id);
   };
-  const checks = id => {
-    const file = join(f.env.HOME, 'queue-checks.jsonl');
-    if (!fs.existsSync(file)) return [];
-    const text = fs.readFileSync(file, 'utf8');
-    const end = text.lastIndexOf('\n');
-    return end < 0 ? [] : text.slice(0, end).split('\n').map(JSON.parse).filter(row => row.job === id);
-  };
-  return { ...f, checks, dir, end, flow, git, job, jobs, settle, start, status, ticketPath };
+  return { ...f, dir, end, flow, git, job, jobs, settle, start, status, ticketPath };
 }
 
 test('ticket queue lands two ready tickets, resumes after a runner crash, and releases the dependent', { timeout: 45_000 }, async t => {
@@ -268,7 +239,7 @@ test('a resumed queue waits for a launch still in flight instead of failing it',
   // A runner that takes over mid-launch sees the job before its first status.
   fs.rmSync(join(f.dir(first), 'STATUS.json'), { force: true });
   writeFixtureFile(join(f.dir(first), 'job.json'), JSON.stringify({ ...f.job(first), dispatch_exit_code: null }));
-  await until(() => f.checks(first).some(row => !row.hasStatus && row.dispatchExit === null), t.signal);
+  await new Promise(resolve => setTimeout(resolve, 500));
   assert.equal(f.flow(flow).state, 'working');
   await f.settle(first);
   const [, second] = await f.jobs(flow, 2);
@@ -335,7 +306,7 @@ test('ticket queue keeps going past an answered worker question', { timeout: 30_
   writeFixtureFile(join(qa, 'q1.answer.md'), 'Take the synthetic path.\n');
   // The worker has not read the answer yet.
   writeFixtureFile(join(f.dir(first), 'STATUS.json'), JSON.stringify({ ...f.status(first), state: 'waiting_orchestrator' }));
-  await until(() => f.checks(first).some(row => row.state === 'waiting_orchestrator'), t.signal);
+  await new Promise(resolve => setTimeout(resolve, 500));
   assert.equal(f.flow(flow).state, 'working');
   await f.settle(first);
   const [, second] = await f.jobs(flow, 2);

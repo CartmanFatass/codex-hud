@@ -103,10 +103,6 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
         clearTimeout(recheckTimer);
         recheckTimer = undefined;
       }
-      if (recheckTimer !== undefined) {
-        clearTimeout(recheckTimer);
-        recheckTimer = undefined;
-      }
       if (fallbackTimer !== undefined) {
         clearTimeout(fallbackTimer);
         fallbackTimer = undefined;

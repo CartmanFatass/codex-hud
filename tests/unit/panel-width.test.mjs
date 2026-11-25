@@ -45,9 +45,9 @@ if (args[0] === 'display-message') console.log('160');
 }
 
 async function until(check, message) {
-  for (let i = 0; i < 750; i++) {
+  for (let i = 0; i < 150; i++) {
     if (check()) return;
-    await delay(10);
+    await delay(50);
   }
   assert.fail(message);
 }
