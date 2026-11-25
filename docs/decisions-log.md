@@ -7,6 +7,14 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-25-02** (§2.1 dispatch): Council. Owner: for tasks high in both complexity and value a complete plan
+  matters most, so on the owner's explicit request one brief goes to several strong models and comes back as one
+  plan. Members write independent plans without seeing each other (default Fable high, Astra high, Carbon high, with
+  oracle instructions); the synthesizer is the optional `pro` role (ChatGPT Pro in the browser, judged the strongest
+  at synthesis), which converges them into one plan and lists disagreements and their resolution. Chosen over a
+  cross-critique round (about twice the calls and time). A fixed flow like scouts and land: HUD runs only its own
+  steps, never starts it on its own, and nothing chains after it. Members and synthesizer are owner configuration.
+
 - **D-2026-11-25-01** (§2.1 dispatch): Who chooses prewalk scouts moves from the Decision API to the dispatching
   session. Owner: deciding what to look up before a job is the orchestrator's job; it also drops a Decision API
   dependency and lets work be split sensibly. The orchestrator wrote the brief and knows what is unknown, so it names
