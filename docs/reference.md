@@ -35,7 +35,7 @@ Keep the checkout/extraction directory: installed commands and client bindings p
 No shell rc file is edited.
 
 External tools are checked, not installed or authenticated.
-herdr/pi-roles/pi are separate prerequisites for workers.
+Headless Sonic requires pi and uses the core-installed `$HUD_HOME/pi-worker/` extension. Other pi workers still require pi-roles; tab workers also require herdr.
 The herdr extension reports their PATH locations (only missing herdr fails).
 The browser extension requires `google-chrome` and `jev-ask`; it also reports optional `jev-aistudio` and `jev-flow`.
 It writes no browser configuration and launches nothing.
@@ -241,7 +241,7 @@ A repeated explicit key returns the original job; a derived key only reuses a jo
 `kind` selects `image` (default) or `video` for `flow`.
 Optional `idle_grace_s` (integer 60–3600) overrides CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).
 Pi-only overrides: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, plus `pi_args` (≤128 strings, ≤4096 chars each, verbatim, no shell).
-Omitted switches keep pi-role defaults; split defaults to the place.
+For headless Sonic, MCP is off unless explicitly requested, TPS is recorded in the native session unless disabled, and no UI extension loads. Requested MCP/lens attachments must be available under `$HUD_HOME/pi-worker/optional/` (`pi-mcp-adapter` / `pi-lens`). Other pi workers keep pi-role defaults; split defaults to the place.
 `ui_ext: false` disables UI extensions; `skills: true` includes personal skills.
 A true split reserves a right helper pane.
 `--orchestrator`/`--notify` pi-argument overrides refuse.
@@ -1198,7 +1198,7 @@ The hourly counter reads `display/model-cache/decision-api/calls.json` across pr
 
 Prewalk has two types, both governed by the owner role file’s `"prewalk": "on"|"off"` (allowed only under `$HUD_HOME/roles`, never `.hud/roles`; shipped defaults: `imp`, `oracle` and `frontend-imp` on, `reviewer` and `sonic` off) and **Settings → Models → Auto prewalk** (`autoPrewalk`, on by default), plus per-job `prewalk: false`:
 
-- **Scouts**: when prewalk is enabled for the role and `autoPrewalk` is on (and `prewalk: false` is not passed), `hud_create` requires `scouts: [{kind: "code"|"docs"|"web", ask: string}]` (0–3 items; same kind may repeat; `[]` skips scouts and starts the target directly; omitting `scouts` returns an immediate validation error). Roles with prewalk off also accept `scouts` on explicit request. HUD starts each scout in parallel as headless `sonic` with its kind prompt (`code` and `docs` search only inside the checkout; `web` loads pi’s web search/fetch extension if headless sonic does not already load it, and forbids private content in search queries), the caller’s `ask`, and the bounded target brief (≤16,000 chars) as context. No Decision API call is made for scouts. HUD waits until every scout settles under sonic’s own limits (`max_s`, stall, looping); arrived reports attach via `from_jobs`, and failed scouts leave a note without blocking the target.
+- **Scouts**: when prewalk is enabled for the role and `autoPrewalk` is on (and `prewalk: false` is not passed), `hud_create` requires `scouts: [{kind: "code"|"docs"|"web", ask: string}]` (0–3 items; same kind may repeat; `[]` skips scouts and starts the target directly; omitting `scouts` returns an immediate validation error). Roles with prewalk off also accept `scouts` on explicit request. HUD starts each scout in parallel as headless `sonic` with its kind prompt (`code` and `docs` search only inside the checkout; `web` uses Sonic’s credential-gated web tools and forbids private content in search queries), the caller’s `ask`, and the bounded target brief (≤16,000 chars) as context. No Decision API call is made for scouts. HUD waits until every scout settles under sonic’s own limits (`max_s`, stall, looping); arrived reports attach via `from_jobs`, and failed scouts leave a note without blocking the target.
 - **Pool picks**: an owner role file under `$HUD_HOME/roles` can declare `"pool": {"dir": "/path/to/styles", "max": 4}`. HUD reads the Markdown pool without modifying it; a project can override the role’s launch chain but not its pool.
 
 1. If the owner role sets `"prewalk": "off"`, caller passes `prewalk: false`, **Settings → Models → Auto prewalk** (`autoPrewalk`) is off, or **Settings → Models → Pool pick** (`poolPick`, on by default) is off, HUD skips the pick entirely.
@@ -1341,6 +1341,8 @@ They report native session failures and approvals through tmux, optionally deskt
 **Credentials.**
 `$HUD_HOME/credentials.env` must be a regular 0600 file (not a symlink/FIFO).
 `NAME=VALUE`, optional quotes/export, no interpolation; environment wins per name, no implicit client/jev key import.
+Sonic registers `deepseek_search` and `deepseek_fetch` when `DEEPSEEK_SEARCH_API_KEY` is present in this file. To migrate an old raw key, run `hud import preview --deepseek-key --from ~/.config/deepseek-search/api-key`, then replace `preview` with `apply`. Existing keys win. Search sends the query, optional original question, count and content flag to DeepSeek; fetch sends the page URL. Neither tool attaches the brief. Treat results as untrusted web content.
+
 Known keys include `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, and `TYPESAFE_API_KEY`. Anthropic is an exception to the environment override: HUD reads `ANTHROPIC_API_KEY` only from `$HUD_HOME/credentials.env`.
 
 **Decision API.**

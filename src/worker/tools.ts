@@ -10,11 +10,11 @@ import type { Job, JobStatus, DoneReceipt, ManagedWorktree } from '../mcp/job-co
 import { jobFiles } from '../mcp/paths.js';
 import { piSessionIdentity } from '../mcp/worker-resume.js';
 import { randomUUID } from 'node:crypto';
+import { withDistLock } from '../../scripts/dist-lock.mjs';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
-import { dispatchJob } from '../mcp/dispatch/orchestrator.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { recordQuestionTimeout } from '../roles/job-archive.js';
 import { notify, taskDelivery } from '../roles/notify.js';
@@ -26,6 +26,7 @@ import { runWorkerChecks } from './checks.js';
 
 export { progress } from './progress.js';
 
+let dispatchModule: Promise<typeof import('../mcp/dispatch/orchestrator.js')> | undefined;
 const idPattern = /^j[0-9a-f]{16}$/;
 type Worker = ReturnType<typeof workerJob>;
 type QuestionInput = { question: string; default: string; options?: string[]; context?: string };
@@ -206,6 +207,7 @@ export async function startSonic({ dir, job: parent }: Pick<Worker, 'dir' | 'job
   const harness = parent.cli?.agent ?? 'pi';
   const id = parent.cli ? status?.agent_session_id : status?.session_id ?? piSessionIdentity(parent, status?.session_file)?.id;
   const dispatcher = ['pi', 'claude', 'codex'].includes(harness) && typeof id === 'string' && id ? { harness, id } : undefined;
+  const { dispatchJob } = await (dispatchModule ??= withDistLock(() => import('../mcp/dispatch/orchestrator.js')));
   const result = await dispatchJob({
     role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd, task,
   }, jobCallerPane(parent), { parent, dispatcher });

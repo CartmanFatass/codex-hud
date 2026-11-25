@@ -147,7 +147,7 @@ export type DispatchResult = {
   exit_code: number; stdout: string; stderr: string; code?: Job['dispatch_code'];
   pane?: string; detail?: string; preInput?: boolean; cleanupFailed?: boolean; status?: JobStatus; path?: string;
 };
-export const canTryNext = (job: Job, result: DispatchResult) => job.role !== 'sonic' && result.preInput && !result.cleanupFailed;
+export const canTryNext = (job: Job, result: DispatchResult) => (job.role !== 'sonic' || job.headless) && result.preInput && !result.cleanupFailed;
 export const launchError = (stderr: string, code?: Job['dispatch_code']): DispatchResult => ({ exit_code: 1, stdout: '', stderr, code });
 export async function rejectLaunch(result: DispatchResult, tab?: string): Promise<DispatchResult> {
   const cleanup = tab && await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 });

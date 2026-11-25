@@ -1,6 +1,6 @@
 /** Pi launch and native session setup. */
 import * as fs from 'node:fs';
-import { homedir } from 'node:os';
+import { sonicArgv } from './pi-worker-argv.js';
 import { isAbsolute, join, dirname } from 'node:path';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { herdrId } from '../../roles/herdr-run.js';
@@ -12,7 +12,7 @@ import { jobFiles } from '../paths.js';
 import { piMcpConfigEmpty } from '../pi-mcp-config.js';
 import { sonicLimits } from '../sonic-policy.js';
 import { startHeadlessProcess } from '../sonic-process.js';
-import { prepareSonicRetry, sonicSession } from '../sonic-session.js';
+import { prepareSonicRetry } from '../sonic-session.js';
 import { directory, findJob, readCachedStatus, hudHome, bundled, save, jobCache } from '../store/job-store.js';
 import type { NativeResume } from '../worker-resume.js';
 import { registry, roleCwd } from './places.js';
@@ -83,22 +83,13 @@ function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
   job.worker_prompt = worker_prompt;
   return args;
 }
-function sonicWebExtension(launcher: string): string | undefined {
-  // pi-roles bundles deepseek-search.ts when installed with it; avoid loading a duplicate copy.
-  if (fs.existsSync(join(dirname(dirname(launcher)), 'extensions', 'deepseek-search.ts'))) return undefined;
-  const piDir = process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent');
-  const personal = join(piDir, 'extensions', 'deepseek-search.ts');
-  return fs.existsSync(personal) ? personal : undefined;
-}
 export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, resume?: NativeResume): Promise<DispatchResult> {
   let openedTab: string | undefined;
   let mayHaveInput = false;
   const reject = (result: DispatchResult) => rejectLaunch(result, openedTab);
   try {
     const resources = piSkillArgs(job, role, place);
-    const launcher = executable('pi-role');
-    if (!launcher) throw new Error('pi-role not found on PATH');
-    if (job.role !== 'sonic' && job.headless && !executable('pi')) throw new Error('pi not found on PATH');
+    if (job.headless && !executable('pi')) throw new Error('pi not found on PATH');
     const dir = directory(job.job),
       output = join(dir, jobFiles.report);
     const sessionWorker = job.headless && job.role !== 'sonic';
@@ -112,6 +103,13 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     const borrowed = job.borrowed_instructions;
     const piRole = borrowed?.pi_role ?? place.pi_role ?? role.instructions;
     if (!piRole) throw new Error('missing pi_role');
+    if (job.headless && job.role === 'sonic') {
+      const args = sonicArgv(hudHome, dir, job, role, piRole, resources, prompt);
+      startHeadlessProcess(dir, job, args, undefined, sonicLimits(role));
+      return { exit_code: 0, stdout: '', stderr: '' };
+    }
+    const launcher = executable('pi-role');
+    if (!launcher) throw new Error('pi-role not found on PATH');
     const argv = ['--args-json', piRole];
     if (!job.headless) argv.push('--task-dir', dir, '--role-output', output, '--dispatch-slot', 'primary', '--dispatch-label', job.role);
     argv.push('--allow-write', output);
@@ -134,9 +132,8 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     if (job.mcp === undefined && piMcpConfigEmpty(job.cwd, job.pi_args)) argv.push('--no-mcp');
     if (job.headless || job.ui_ext === false) argv.push('--no-ui-ext');
     if (job.skills === true) argv.push('--skills');
-    const webExt = job.role === 'sonic' && job.prewalk_kind === 'web' ? sonicWebExtension(launcher) : undefined;
     argv.push('--', ...(job.headless ? [] : ['--tui-mode', 'regular']), '--hud-worker-tools', '-e',
-      join(bundled, '../../integrations/pi/package/extensions/hud.mjs'), ...(webExt ? ['-e', webExt] : []));
+      join(bundled, '../../integrations/pi/package/extensions/hud.mjs'));
     for (const key of ['model', 'thinking'] as const) {
       const value = place[key] ?? (borrowed ? job[key] : undefined);
       if (value != null) argv.push(`--${key}`, value);
@@ -147,7 +144,6 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     argv.push(...resources, ...(job.pi_args ?? []));
     // Pi expands even a positional @path into file contents. A follow-up is literal text, not a file grant.
     if (sessionFile) argv.push('--session', sessionFile, '--print', '--mode', 'json', '--', prompt.startsWith('@') ? ` ${prompt}` : prompt);
-    else if (job.headless) argv.push('--exclude-tools', 'hud_ask,ask_orchestrator,hud_sonic', '--session', sonicSession(dir), '--print', '--mode', 'json', '--', prompt);
     else if (resume?.file) argv.push('--session', resume.file);
     const built = await run(launcher, argv, job.cwd, job.headless ? { ...process.env, HERDR_ENV: undefined } : undefined);
     if (built.exit_code !== 0) return reject(built);
@@ -162,8 +158,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
         save(job);
       }
       try {
-        startHeadlessProcess(dir, job, piArgs, sessionFile ? { file: sessionFile, id: resume?.id } : undefined,
-          job.role === 'sonic' ? sonicLimits(role) : undefined);
+        startHeadlessProcess(dir, job, piArgs, sessionFile ? { file: sessionFile, id: resume?.id } : undefined);
       } catch (error) {
         // A rejected handshake never starts pi. Allow another place in this route to launch a fresh session.
         if (sessionFile && !resume) fs.rmSync(sessionFile, { force: true });

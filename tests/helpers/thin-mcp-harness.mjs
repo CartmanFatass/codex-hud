@@ -79,8 +79,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   // The fake shebang finds this Node even on the routing fixture's closed PATH.
   fs.symlinkSync(process.execPath, join(bin, 'node'));
   const commands = ['pi-role-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow', 'grok', 'agy', 'claude', 'codex'];
-  if (withPi) commands.push('pi-role');
-  if (!routingOnly) commands.push('pi', 'pi-dispatch');
+  if (withPi) commands.push('pi-role', 'pi');
+  if (!routingOnly) commands.push('pi-dispatch');
   for (const command of commands) {
     const path = join(bin, command);
     // The roster resolves these launchers' real paths to locate the adjacent roles directory.

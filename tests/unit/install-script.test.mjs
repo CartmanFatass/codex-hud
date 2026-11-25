@@ -199,6 +199,8 @@ test('installer refreshes only remembered extensions and selective uninstall kee
     ]) {
       assert.equal(fs.readlinkSync(path.join(bin, name)), path.join(repo, target));
     }
+    const worker = path.join(hudHome, 'pi-worker', 'hud-worker.mjs');
+    assert.equal(fs.readlinkSync(worker), path.join(repo, 'integrations/pi/worker/hud-worker.mjs'));
     assert.equal(fs.statSync(hudHome).mode & 0o777, 0o700);
     fs.writeFileSync(path.join(hudHome, 'keep.txt'), 'owner data');
     fs.writeFileSync(
@@ -241,6 +243,7 @@ hud_ext_uninstall() { rm -f -- "$HUD_HOME/y"; }
     fs.symlinkSync(foreign, path.join(bin, 'hud-mcp'));
     assert.match(run(path.join(bin, 'hud'), ['uninstall', '--skip-build']).stdout, /data kept/);
     assert.throws(() => fs.lstatSync(path.join(bin, 'hud')), { code: 'ENOENT' });
+    assert.throws(() => fs.lstatSync(worker), { code: 'ENOENT' });
     assert.equal(fs.readlinkSync(path.join(bin, 'hud-mcp')), foreign);
     assert.equal(fs.existsSync(y), false);
     assert.equal(fs.readFileSync(path.join(hudHome, 'keep.txt'), 'utf8'), 'owner data');

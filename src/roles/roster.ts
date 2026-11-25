@@ -21,6 +21,7 @@ import {
   type ExhaustedMark,
   type RolePlace,
 } from './exhausted.js';
+import { piRoleDefaults } from './pi-defaults.js';
 import { registeredProject } from './projects.js';
 import { readModelListCache, type ModelListCache } from './model-discovery.js';
 import { HarnessSwitchError, piProviderId, readHarnessSwitches } from './harness-switches.js';
@@ -711,10 +712,13 @@ export function roleRegistry(
     return createHash('sha256').update(JSON.stringify(sources.get(role)!.layers.map(({ file, raw }) => [file.source_file, raw]))).digest('hex');
   }
   function placeDetails(role: Role, place: RolePlace, source = chainSource(role)) {
-    const piInfo =
-      place.harness === 'pi' ? piRoleInfo(place.pi_role ?? role.instructions, env, read) : { pi_role_file: null, frontmatter: undefined };
+    const owned = role.role === 'sonic' && place.harness === 'pi';
+    const profile = place.pi_role ?? role.instructions;
+    const piInfo = place.harness === 'pi' && !owned ? piRoleInfo(profile, env, read) : { pi_role_file: null, frontmatter: undefined };
     const effective = (key: 'model' | 'thinking') => {
       if (place[key] !== undefined) return { value: place[key]!, source };
+      if (owned && (profile === 'sonic' || profile === 'implementer'))
+        return { value: piRoleDefaults[profile][key], source: `pi_role:${profile}` };
       const value = frontmatterValue(piInfo.frontmatter, key);
       return { value, source: value ? piInfo.pi_role_file : null };
     };
@@ -756,7 +760,8 @@ export function roleRegistry(
       const switch_ids = place.harness === 'pi' ? provider ? ['pi', `pi:${provider}`] : ['pi']
         : place.harness === 'cli' ? [`cli:${place.agent}`] : [`bro:${place.tool}`];
       return { index, place, ...details, key, until: mark?.until, quota_reason: mark?.reason,
-        missing: role.role === 'sonic' && place.harness !== 'pi' ? 'headless pi place for sonic' : missingCommand(place, context.has), switch_ids, provider, provider_source };
+        missing: role.role !== 'sonic' ? missingCommand(place, context.has) : place.harness !== 'pi' ? 'headless pi place for sonic'
+          : context.has('pi') ? undefined : 'pi', switch_ids, provider, provider_source };
     }), context.disabled, overrideModel !== undefined && !inheritedModel);
     const chosen = evaluated.find((entry) => entry.state === 'active') ?? null;
     const activeEntry = chosen ?? evaluated[0]!;

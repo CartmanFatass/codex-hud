@@ -381,8 +381,7 @@ test('sonic auto-thinking uses one capped judgment for each new job and falls ba
     const receipt = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'jobs', reply.job, 'job.json')));
     assert.equal(receipt.thinking, thinking);
     assert.equal(receipt.thinking_source, source);
-    const launch = f.commands().findLast(({ command, args }) => command === 'pi-role' && args.includes('--print')).args;
-    assert.equal(launch[launch.indexOf('--thinking') + 1], thinking);
+    assert.equal(JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'jobs', reply.job, 'pi-worker.json'))).thinking, thinking);
   };
   mode('picked');
   fs.writeFileSync(creds, 'OPENAI_API_KEY=synthetic-key\n', { mode: 0o600 });

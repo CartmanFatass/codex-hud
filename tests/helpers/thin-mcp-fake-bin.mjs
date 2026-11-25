@@ -14,7 +14,26 @@ if (command === 'pi' && args.includes('--print')) {
   const dir = process.env.HUD_JOB_DIR;
   fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args, dir, cwd: process.cwd() }) + '\n');
   const { callWorkerTool } = await import('../../packages/hud-mcp/bin/worker-tools.mjs');
-  await callWorkerTool('hud_progress', { message: 'Checking synthetic input.' });
+  let call = callWorkerTool;
+  if (fs.existsSync(join(dir, 'pi-worker.json'))) {
+    const { default: extension } = await import(args[args.indexOf('-e') + 1]);
+    const hooks = new Map(), tools = new Map();
+    let active = [];
+    const model = args[args.indexOf('--model') + 1].split('/');
+    await extension({ on(name, fn) { hooks.set(name, [...hooks.get(name) ?? [], fn]); },
+      registerTool(tool) { tools.set(tool.name, tool); }, getAllTools: () => [...tools.keys()].map(name => ({ name })),
+      setActiveTools(names) { active = names; }, getActiveTools: () => active, getThinkingLevel: () => args[args.indexOf('--thinking') + 1] });
+    const emit = (key, event, ctx) => { for (const fn of hooks.get(key) ?? []) fn(event, ctx); };
+    emit('session_start', {}, { model: { provider: model[0], id: model.at(-1) } });
+    call = (name, input) => tools.get(name).execute('fake', input);
+    const quota = join(process.env.HOME, 'quota-pi-model');
+    if (fs.existsSync(quota) && fs.readFileSync(quota, 'utf8').trim() === model.join('/')) {
+      emit('message_end', { message: { role: 'assistant', stopReason: 'error', errorMessage: 'HTTP 429: quota exceeded' } });
+      emit('agent_settled', {});
+      process.exit(1);
+    }
+  }
+  await call('hud_progress', { message: 'Checking synthetic input.' });
   console.log(JSON.stringify({ type: 'synthetic' }));
   console.error('Synthetic diagnostic.');
   if (fs.existsSync(join(process.env.HOME, 'hold-sonic'))) {
@@ -26,7 +45,7 @@ if (command === 'pi' && args.includes('--print')) {
   }
   if (fs.existsSync(join(dir, 'fail-sonic'))) process.exit(4);
   const report = join(dir, 'report.md');
-  await callWorkerTool('hud_report', { text: fs.existsSync(report) ? fs.readFileSync(report, 'utf8') : 'Synthetic implementation report.' });
+  await call('hud_report', { text: fs.existsSync(report) ? fs.readFileSync(report, 'utf8') : 'Synthetic implementation report.' });
   process.exit(0);
 } else if (command === 'pi') {
   const caps = join(process.env.HOME, 'pi-model-caps.json');

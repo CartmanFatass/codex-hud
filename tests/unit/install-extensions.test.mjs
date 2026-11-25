@@ -116,7 +116,7 @@ test('browser only reports PATH tools; repeat install and no-op uninstall leave 
   assert.match(text, /from Google Chrome/);
   assert.match(text, /from the external Jev CLIs/);
   assert.match(text, /checks only; configure Chrome and Jev CLIs separately/);
-  assert.deepEqual(fs.readdirSync(f.hud), []);
+  assert.deepEqual(fs.readdirSync(f.hud), ['pi-worker']); // Core entry only; browser installed nothing.
   assert.equal(await browserAvailable(f), true, 'Project readiness needs no owned runtime or config');
   fs.writeFileSync(f.config, '{ "jev": { "chrome": "/synthetic/ignored" }, "owner": true }\n');
   const before = fs.readFileSync(f.config, 'utf8'), stamp = fs.statSync(f.config).mtimeMs;
@@ -128,7 +128,7 @@ test('browser only reports PATH tools; repeat install and no-op uninstall leave 
   assert.match(f.run('browser', true), /browser extension: no-op; nothing to uninstall/);
   assert.equal(fs.readFileSync(f.config, 'utf8'), before);
   assert.equal(fs.statSync(f.config).mtimeMs, stamp);
-  assert.deepEqual(fs.readdirSync(f.hud), ['config.json']);
+  assert.deepEqual(fs.readdirSync(f.hud).sort(), ['config.json', 'pi-worker']);
 });
 
 test('browser preflight refuses missing google-chrome, jev-ask, or both without changes; Project agrees', async (t) => {

@@ -131,27 +131,40 @@ test('Sonic even skips unavailable or exhausted presets, reports them, and falls
   }
 });
 
-test('Sonic even keeps the same job after a startup quota refusal and reuses the preset at expiry', async t => {
+test('Sonic falls through after a pre-input rejection without creating a second job', async t => {
+  const f = await fixture(t);
+  const dir = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(dir, { recursive: true });
+  write(join(dir, 'sonic.json'), JSON.stringify({ role: 'sonic', instructions: 'sonic', can_continue: false, run: [
+    { ...pi('synthetic', 'first'), mcp: true }, pi('synthetic', 'second'),
+  ] }));
+  const job = await f.call('hud_create', { role: 'sonic', task: 'Synthetic fallback.' });
+  assert.equal(job.attempts.length, 2, JSON.stringify(job));
+  assert.match(job.attempts[0].reason, /missing: .*pi-mcp-adapter/);
+  assert.equal(receipt(job.task_dir).model, 'synthetic/second');
+  assert.deepEqual(sonicJobs(f).map(j => j.job), [job.job]);
+});
+
+test('Sonic even records a provider 429 after input without replaying and reuses the preset at expiry', async t => {
   const f = await fixture(t);
   writeSonicRole(f);
   settings(f, { sonicPlacement: 'even', sonicEvenPool: ['luna', 'haiku', 'deepseek'] });
   const refused = join(f.env.HOME, 'quota-pi-model');
   write(refused, 'synth-luna/luna');
   const create = task => f.call('hud_create', { role: 'sonic', task });
-  const first = await create('Startup quota refusal.');
-  assert.equal(first.route.preset, 'haiku');
-  assert.match(first.route.fallback, /Skipped preset luna: HTTP 429: quota exceeded, retry in 10m/);
-  assert.equal(first.attempts.length, 2);
-  assert.match(first.attempts[0].reason, /HTTP 429/);
-  assert.equal(first.attempts[1].reason, undefined);
-  assert.equal(receipt(first.task_dir).model, 'synth-haiku/haiku');
+  const first = await create('Post-input quota error.');
+  assert.equal(first.route.preset, 'luna');
+  assert.equal(first.attempts.length, 1);
+  await until(() => receipt(first.task_dir).exhaustion_marked, t.signal);
+  assert.equal(receipt(first.task_dir).model, 'synth-luna/luna');
   assert.deepEqual(receipt(first.task_dir).route, first.route);
   assert.deepEqual(sonicJobs(f).map(job => job.job), [first.job]);
   const file = join(f.env.HUD_HOME, 'exhausted.json');
   const marks = read(file);
-  assert.match(marks.places['pi:synth-luna/luna'].reason, /HTTP 429/);
+  assert.match(marks.places['pi:synth-luna/luna'].reason, /quota exceeded/i);
 
   fs.rmSync(refused); // The provider is ready again, but HUD still honors the cooldown.
+  assert.equal((await create('Next healthy preset.')).route.preset, 'haiku');
   assert.equal((await create('Advance past the replacement.')).route.preset, 'deepseek');
   const skipped = await create('Wrap past the quota mark.');
   assert.equal(skipped.route.preset, 'haiku');

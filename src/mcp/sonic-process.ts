@@ -205,6 +205,8 @@ export function sonicExit(dir: string, status: Partial<JobStatus>, asking = fals
   }
   if (exit.at >= deadline) return timeout;
   const agent = status.harness === 'cli' ? status.agent : undefined;
+  if (status.slot === 'sonic' && fs.existsSync(join(dir, 'pi-quota')))
+    return { state: 'failed', exit_reason: 'Provider quota exceeded' };
   if ((exit.code !== 0 && !(agent && asking && exit.paused)) || exit.error)
     return { state: 'failed', exit_reason: exit.error || `${agent ?? 'pi'} exited: ${exit.signal || exit.code}`,
       ...(agent && { agent_session_id: null }) };

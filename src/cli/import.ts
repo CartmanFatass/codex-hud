@@ -14,6 +14,7 @@ import { validateFooterSettings } from '../harness/pi/footer-settings.js';
 export const IMPORT_HELP = `Usage: hud import preview|apply [--from <file>]...
 Explicitly name each old hud-settings.json or .env file. No Codex home is guessed.
 For p10k settings: hud import preview|apply --pi-footer --from ABS (only config.json.piFooter).
+For a DeepSeek Search key: hud import preview|apply --deepseek-key --from ABS (raw key file).
 Also merges $HUD_HOME/jev.env into credentials.env when present.
 An explicitly named .env may be imported too (replaces the old setup command).
 Existing destination names/keys win; changed existing files get timestamped 0600 backups.
@@ -30,13 +31,15 @@ export async function importCommand(args: readonly string[], io: HudIO): Promise
   const mode = args[0];
   if (mode !== 'preview' && mode !== 'apply') throw new CliError('invalid_arguments');
   const piFooter = args[1] === '--pi-footer';
+  const deepseek = args[1] === '--deepseek-key';
+  const singleSource = piFooter || deepseek;
   const sources: string[] = [];
-  for (let i = piFooter ? 2 : 1; i < args.length; i += 2) {
+  for (let i = singleSource ? 2 : 1; i < args.length; i += 2) {
     if (args[i] !== '--from' || !args[i + 1] || args[i + 1].startsWith('--')) throw new CliError('invalid_arguments');
-    if (piFooter && !path.isAbsolute(args[i + 1])) throw new CliError('invalid_arguments');
+    if (singleSource && !path.isAbsolute(args[i + 1])) throw new CliError('invalid_arguments');
     sources.push(path.resolve(args[i + 1]));
   }
-  if (piFooter && sources.length !== 1) throw new CliError('invalid_arguments');
+  if (singleSource && sources.length !== 1) throw new CliError('invalid_arguments');
   try {
     const home = getHudHome(io.env);
     if (!path.isAbsolute(home) || home.includes('\0')) throw new Error();
@@ -80,17 +83,21 @@ export async function importCommand(args: readonly string[], io: HudIO): Promise
     };
     const legacy = path.join(home, 'jev.env');
     // The sole implicit source is HUD's own old credential filename, never another tool's home.
-    if (!piFooter && !sources.includes(legacy) && readSafe(legacy, true) !== undefined) sources.unshift(legacy);
+    if (!singleSource && !sources.includes(legacy) && readSafe(legacy, true) !== undefined) sources.unshift(legacy);
     for (const source of sources) {
       const bytes = readSafe(source)!;
-      if (piFooter) {
+      if (deepseek) {
+        const key = bytes.toString('utf8').trim();
+        if (!/^[A-Za-z0-9._~+/=-]+$/.test(key)) throw new Error();
+        plan(source, path.join(home, 'credentials.env'), new Map([['DEEPSEEK_SEARCH_API_KEY', key]]));
+      } else if (piFooter) {
         const settings = validateFooterSettings(jsonObject(bytes.toString('utf8')));
         plan(source, path.join(home, 'config.json'), { piFooter: settings });
       } else if (source.endsWith('.env')) {
         const entries = parseAssignments(bytes.toString('utf8'));
         const known = new Map(
           [...entries].filter(([name]) =>
-            /^(?:(?:GEMINI|OPENAI|MISTRAL)_API_KEY|(?:OPENAI|MISTRAL)_BASE_URL|TYPESAFE_API_KEY|TYPESAFE_MODEL|TEXT_MODEL_[A-Z0-9_]+)$/.test(
+            /^(?:(?:GEMINI|OPENAI|MISTRAL|DEEPSEEK_SEARCH)_API_KEY|(?:OPENAI|MISTRAL)_BASE_URL|TYPESAFE_API_KEY|TYPESAFE_MODEL|TEXT_MODEL_[A-Z0-9_]+)$/.test(
               name
             )
           )

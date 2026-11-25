@@ -110,14 +110,14 @@ test('prewalk role requires scouts; empty list starts directly; code+web run in 
   assert.equal(receipt(byKind.web).context_files, undefined);
   assert.deepEqual(receipt(byKind.code).context_files, [join(f.root, 'local-ctx.md')]);
 
-  // Web tools extension passed ONLY for web kind.
-  const piRoleCalls = f.commands().filter(c => c.command === 'pi-role' && c.args[1] === 'sonic');
-  const webCall = piRoleCalls.find(c => c.args.includes(join(byKind.web, 'report.md')));
-  const codeCall = piRoleCalls.find(c => c.args.includes(join(byKind.code, 'report.md')));
-  assert.ok(webCall && codeCall);
-  const extFlagIdx = webCall.args.lastIndexOf(webExtPath);
-  assert.ok(extFlagIdx > 0 && webCall.args[extFlagIdx - 1] === '-e', 'web sonic loads deepseek-search extension');
-  assert.ok(!codeCall.args.includes(webExtPath), 'code sonic does not load web extension');
+  // Both scouts load the owned entry; no personal web plugin, even when one exists.
+  for (const dir of Object.values(byKind)) {
+    await until(() => f.commands().some(c => c.dir === dir), t.signal);
+    const { args } = f.commands().find(c => c.dir === dir);
+    assert.match(args[args.indexOf('-e') + 1], /\/hud-worker\.mjs$/);
+    assert.ok(!args.includes(webExtPath));
+  }
+  assert.ok(!f.commands().some(c => c.command === 'pi-role' && c.args[1] === 'sonic'));
 
   write(join(byKind.code, 'report.md'), 'Synthetic code facts.\n');
   write(join(byKind.web, 'report.md'), 'Synthetic web facts with https://example.invalid/rfc6749.\n');
