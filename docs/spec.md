@@ -62,11 +62,11 @@ execution detail; when space runs out, execution detail is not shown. (new)
   pool entries; their results are attached as references and recorded, nothing chains after the target (24.05, 25.01).
   Council is a fixed flow the main session starts only on the owner's explicit request: one brief goes to the members
   (default Fable, Astra and Carbon, all high, with oracle instructions, independent and read-only); when they settle, a
-  synthesizer (default `pro`; Fable high or the main session itself on request) writes one converged plan that lists the
+  synthesizer (default the main session, which also accepts the plan; `pro` or Fable high on request) writes one converged plan that lists the
   members' disagreements and how each was resolved; `pro` gets a file index, not bodies. Members and synthesizer are
   named presets in the council role file, overridable per council, so a model is added by adding a preset. Fewer than
   two member reports fails the council; nothing chains after it. Because it is costly, HUD refuses a council without a
-  fresh one-time grant that only an owner action creates (25.02).
+  fresh one-time grant that only an owner action creates (25.02, 25.04).
   A batch is a fixed flow for many independent jobs of one role: one call submits all items, HUD runs at most the role
   cap minus two reserved slots at a time, and non-batch jobs of that role always go first. Main gets one notice when
   the batch ends, plus failures and questions as they happen; it can stop, pause or resume the batch as a whole. Each

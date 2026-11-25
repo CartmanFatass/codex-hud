@@ -7,6 +7,10 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-25-04** (§2.1 dispatch): Council synthesis defaults to the main session. Owner: the main session
+  converges the member plans and accepts the result; a council without a synthesizer argument uses `main` (no synthesis
+  job). `pro` and Fable high stay selectable per council. Supersedes the `pro` default in D-2026-11-25-02.
+
 - **D-2026-11-25-03** (§2.1 dispatch): Batch flow. A 140-job Sonic labelling batch (one `hud_create` per job, shared
   Sonic cap 9) exposed two faults: every create, queue position, checkpoint and settlement woke the main session
   separately (hundreds of turns), and the single oldest-first queue let the batch starve any later Sonic work for
