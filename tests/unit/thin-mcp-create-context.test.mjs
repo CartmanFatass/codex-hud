@@ -663,8 +663,9 @@ esac
       .split('\n')
       .map((l) => l.split('='))
   );
+  assert.ok(commands[1].args.includes(`HUD_TAB_LAUNCH=${session.LAUNCH}`));
   assert.deepEqual(session, {
-    TASK: job.job,
+    TASK: job.job, LAUNCH: session.LAUNCH,
     TAB: 'w4E:t2',
     TAB_NAME: session.TAB_NAME,
     LEFT: 'w4E:p2',
@@ -685,6 +686,7 @@ esac
     '0.5',
     '--cwd',
     f.root,
+    '--env', `HUD_JOB_DIR=${job.task_dir}`, '--env', `HUD_TAB_LAUNCH=${session.LAUNCH}`,
     '--no-focus',
   ]);
   assert.deepEqual(commands[3].args, [

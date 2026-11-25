@@ -369,13 +369,16 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
   // 1. Live pid stays working across repeated herdr errors, then closes cleanly once herdr recovers.
   const liveProc = spawnDummy();
   writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(liveProc.pid));
-  fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
+  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const keepAlive = await f.call('hud_create', {
     role: 'general',
     on: 'grok',
     request_key: 'herdr-errors-alive',
     task: 'Keep working when herdr errors while pid lives.',
   });
+  await until(() => cliState(keepAlive.task_dir)?.pid === liveProc.pid, t.signal);
+  fs.writeFileSync(join(f.env.HOME, 'herdr-errors'), '');
+  fs.unlinkSync(join(f.env.HOME, 'hold-turn'));
   await until(
     () =>
       f.socketRequests.filter((req) => req.method === 'agent.get' && req.params.target === `${keepAlive.job}-primary`).length >= 5,

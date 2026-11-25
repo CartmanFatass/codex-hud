@@ -5,8 +5,8 @@ import { clearTimeout, setTimeout } from 'node:timers';
 interface Reply {
   error?: { code: string };
   result?: {
-    agent?: { agent_status?: string; agent_session?: { kind: string; value: string } };
-    process_info?: { shell_pid: number; foreground_processes?: { pid: number }[] };
+    agent?: { name?: string; pane_id?: string; tab_id?: string; agent_status?: string; agent_session?: { kind: string; value: string } };
+    process_info?: { pane_id: string; shell_pid: number; foreground_process_group_id?: number; foreground_processes?: { pid: number; name: string }[] };
   };
 }
 

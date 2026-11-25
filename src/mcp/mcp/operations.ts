@@ -17,7 +17,7 @@ import { takeLease } from '../../roles/lease.js';
 import { ensureQueueWatcher, paneInfo, watching, notify } from '../../roles/notify.js';
 import { piSwitches } from '../../roles/roster.js';
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
-import { reapWorkerTree } from '../../roles/worker-tree.js';
+import { reapWorkerTree, tabTreeGrant } from '../../roles/worker-tree.js';
 import { readFileBounded, writePrivateFile } from '../../utils/atomic-fs.js';
 import { waitUntilFs, type WatchTarget } from '../../utils/fs-wait.js';
 import { reportReadHint } from '../../utils/report-summary.js';
@@ -855,6 +855,7 @@ async function cancelBatch(args: Args, scan: JobScan) {
 
 export async function closeJob(job: Job, stop = false) {
   const dir = directory(job.job);
+  if (!job.headless && findJob(job.job)?.reaped_at) return { exit_code: 0, last_line: 'already reaped' };
   const scouting = pendingScouts.get(job.job);
   if (scouting) {
     recordStopOrigin(dir, 'mcp', readCachedStatus(job.job).status?.state, undefined, jobCache);
@@ -900,7 +901,7 @@ export async function closeJob(job: Job, stop = false) {
       }
     }
     return runCommand(process.execPath, [binScript('hud-reap'), dir], process.env, { budgetMs: 135_000, killProcessGroup: true });
-  }, (run) => run.ok);
+  }, (run) => run.ok, { treeGrant: tabTreeGrant });
   const statusFile = join(dir, jobFiles.status);
   const stoppingPi = !job.cli && !job.bro && !job.jev && fs.existsSync(join(dir, jobFiles.stopRequested));
   // Reaping can succeed even when Pi exited before its shutdown hook wrote STATUS.
@@ -917,7 +918,7 @@ export async function closeJob(job: Job, stop = false) {
   return {
     exit_code: complete ? 0 : result.exitCode || 1,
     last_line: issue ?? (result.reason === 'timeout' ? 'hud-reap timed out' :
-      (result.stdout.trim() || result.stderr.trim()).split('\n').at(-1) ?? ''),
+      ((!result.ok && result.stderr.trim()) || result.stdout.trim() || result.stderr.trim()).split('\n').at(-1) ?? ''),
   };
 }
 

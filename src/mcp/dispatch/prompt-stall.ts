@@ -1,11 +1,8 @@
 /** Last-resort first-prompt recovery. Never paste the brief again. */
 import * as fs from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { createInterface } from 'node:readline';
 import { runHerdr } from '../../roles/herdr-run.js';
 
-// Pi can report its session before creating the file. Resolve existing ancestors;
-// a dangling symlink is not evidence of a missing task-local file.
 function canonical(file: string): string {
   try { return fs.realpathSync(file); }
   catch (error) {
@@ -25,46 +22,43 @@ function boundSession(task: string, reported: unknown): string | undefined {
     if (!['ENOENT', 'EINVAL'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
   }
 }
-async function hasUserMessage(file: string | undefined) {
-  if (!file) return false;
-  const stat = fs.statSync(file, { throwIfNoEntry: false });
-  if (!stat) return false;
-  if (!stat.isFile()) throw Error('session is not a file');
-  const stream = fs.createReadStream(file, { encoding: 'utf8' });
+type Boundary = { file: string; offset: number; inode?: bigint; dev?: bigint };
+/** Snapshot before `agent prompt`. Missing proof disables only recovery, not ordinary submission. */
+export function promptBoundary(task: string, reported: unknown): Boundary | undefined {
   try {
-    for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) {
+    const file = boundSession(task, reported);
+    if (!file) return;
+    const stat = fs.statSync(file, { bigint: true, throwIfNoEntry: false });
+    if (!stat) return { file, offset: 0 };
+    if (stat.isFile() && Number.isSafeInteger(Number(stat.size))) return { file, offset: Number(stat.size), inode: stat.ino, dev: stat.dev };
+  } catch { /* Cannot establish a baseline. */ }
+}
+function delivered(b: Boundary, prompt: string) {
+  let fd;
+  try { fd = fs.openSync(b.file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW); }
+  catch (error) { if (b.inode === undefined && (error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+  try {
+    const stat = fs.fstatSync(fd, { bigint: true });
+    if (!stat.isFile() || stat.size < b.offset || b.inode !== undefined && (stat.ino !== b.inode || stat.dev !== b.dev))
+      throw Error('stalled prompt transcript changed');
+    if (stat.size === BigInt(b.offset)) return false;
+    const length = Number(stat.size) - b.offset;
+    if (length > 1024 * 1024) throw Error('too much new transcript for safe recovery');
+    const bytes = Buffer.alloc(length);
+    if (fs.readSync(fd, bytes, 0, length, b.offset) !== length) throw Error('incomplete stalled prompt transcript');
+    for (const line of new TextDecoder('utf-8', { fatal: true }).decode(bytes).split('\n')) {
       if (!line.trim()) continue;
       const entry = JSON.parse(line);
-      if (entry.type === 'message' && entry.message?.role === 'user') return true;
+      if (entry.type !== 'message' || entry.message?.role !== 'user') continue;
+      const content = entry.message.content;
+      if (content === prompt || Array.isArray(content) && content.length === 1 && content[0]?.type === 'text' && content[0].text === prompt) return true;
+      throw Error('different user input since submission');
     }
     return false;
-  } finally { stream.destroy(); }
+  } finally { fs.closeSync(fd); }
 }
 
-// Detection can include the screen around Pi's horizontal editor borders. Do not
-// match an old transcript line or a prompt that is only part of the editor text.
-function exactEditor(text: string, prompt: string): boolean {
-  const lines = text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
-  if (!prompt) return false;
-  if (lines.join('\n') === prompt) return true;
-  let bottom = -1, top = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (bottom < 0) { if (/^─{3,}\s*$/.test(lines[i])) bottom = i; }
-    else if (/^──.*─\s*$/.test(lines[i])) { top = i; break; }
-  }
-  if (top >= 0 && /↑ \d+ more/.test(lines[top])) return false; // Only part of the editor is visible.
-  const editor = top >= 0 ? lines.slice(top + 1, bottom) : lines;
-  let at = 0;
-  for (const [i, line] of editor.entries()) {
-    if (i && prompt[at] === '\n') at++; // Original hard newline. Other breaks may only be soft wraps.
-    else if (i && (!line || !editor[i - 1])) return false;
-    if (!prompt.startsWith(line, at)) return false;
-    at += line.length;
-  }
-  return at === prompt.length;
-}
-
-export async function recoverStalledPrompt(task: string, name: string, pane: string, prompt: string,
+export async function recoverStalledPrompt(task: string, name: string, pane: string, prompt: string, boundary: Boundary | undefined,
   herdr = (args: string[]) => runHerdr(args, process.env)) {
   const hint = `inspect with: herdr agent read ${name} --source detection --format text`;
   const checked = async (...args: string[]) => {
@@ -74,22 +68,22 @@ export async function recoverStalledPrompt(task: string, name: string, pane: str
   };
   const get = async () => {
     const agent = JSON.parse(await checked('agent', 'get', name)).result?.agent;
-    if (agent?.name !== name || agent.pane_id !== pane) throw Error('stalled prompt agent does not match the just-started agent');
+    if (agent?.name !== name || agent.pane_id !== pane || !boundary || boundSession(task, agent.agent_session?.value) !== boundary.file)
+      throw Error('stalled prompt agent or transcript does not match the just-started agent');
     return agent;
   };
   try {
+    if (!boundary) throw Error('no pre-submission transcript boundary');
     const live = await get();
-    const reported = live.agent_session?.value;
-    const file = boundSession(task, reported);
-    if (await hasUserMessage(file)) return;
-    if (live.agent_status !== 'idle' || !exactEditor(await checked('agent', 'read', name, '--source', 'detection', '--format', 'text'), prompt))
-      throw Error('stalled prompt is not still in the idle editor');
-    if (await hasUserMessage(file)) return;
-    const current = await get(); // Recheck the binding and idle state immediately before sending the key.
-    if (current.agent_session?.value !== reported) throw Error('stalled prompt session changed');
-    if (current.agent_status !== 'idle') throw Error('stalled prompt is not still in the idle editor');
+    if (delivered(boundary, prompt)) return;
+    // Text-format detection does not identify editor borders or soft wraps. Never
+    // discard screen prefixes, rule-looking prompt lines or additional newlines.
+    const text = await checked('agent', 'read', name, '--source', 'detection', '--format', 'text');
+    if (live.agent_status !== 'idle' || !prompt || (text !== prompt && text !== `${prompt}\n`)) throw Error('ambiguous idle editor');
+    if (delivered(boundary, prompt)) return;
+    if ((await get()).agent_status !== 'idle') throw Error('stalled prompt is not still in the idle editor');
     await checked('pane', 'send-keys', pane, 'Enter');
     const waited = await herdr(['agent', 'wait', name, '--until', 'working', '--until', 'blocked', '--until', 'done', '--timeout', '120000']);
-    if (!waited.ok && !await hasUserMessage(file)) throw Error('stalled prompt did not start after one Enter');
+    if (!delivered(boundary, prompt)) throw Error(waited.ok ? 'no matching new user message after one Enter' : 'stalled prompt did not start after one Enter');
   } catch (error) { throw Error(`${(error as Error).message}; ${hint}`); }
 }

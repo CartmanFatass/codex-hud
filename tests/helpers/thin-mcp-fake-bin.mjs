@@ -647,6 +647,7 @@ if (command === 'pi-dispatch') {
   }
   try {
     const status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
+    if (status?.pid && status.pid_start_time) console.log(`tree-owner ${status.pid}:${status.pid_start_time}`);
     if (status && !['closed', 'failed', 'stopped', 'idle_grace'].includes(status.state))
       fs.writeFileSync(join(dir, 'STATUS.json.stop-requested'), '');
     fs.writeFileSync(join(dir, 'agent-gone'), '');

@@ -1,14 +1,15 @@
-/** Per-job cleanup. The watcher/caller owns the helper process group; this helper
- * only signals the exact process recorded in STATUS, never a worker group. */
+/** One explicit job. A pane ID, a label or an empty agent inventory is not proof
+ * of ownership. The shell and occupants must still carry the launch environment. */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { jobFiles } from '../mcp/paths.js';
 import type { JobStatus } from '../mcp/job-contracts.js';
 import { isActiveProcState, isValidPid, readProcStat } from '../utils/proc.js';
 import { herdrId } from '../roles/herdr-run.js';
+import { tabProcessStart } from './tab-owner.js';
 
 const command = (args: string[], timeout = 15_000) => spawnSync('herdr', args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL' });
 function query(args: string[], timeout?: number) {
@@ -24,19 +25,27 @@ function list(kind: 'pane' | 'agent' | 'tab', timeout?: number): Row[] {
   return rows;
 }
 function session(task: string) {
-  const info: Partial<Record<'TAB' | 'TAB_NAME' | 'PRIMARY' | 'LEFT' | 'RIGHT' | 'ORCH' | 'RIGHT_SPLIT', string>> = {};
+  const info: Partial<Record<'TAB' | 'TAB_NAME' | 'PRIMARY' | 'LEFT' | 'RIGHT' | 'ORCH' | 'RIGHT_SPLIT' | 'LAUNCH', string>> = {};
   const path = join(task, jobFiles.session);
-  if (fs.existsSync(path)) for (const line of fs.readFileSync(path, 'utf8').split('\n')) {
-    const match = /^(TAB|TAB_NAME|PRIMARY|LEFT|RIGHT|ORCH|RIGHT_SPLIT)=(.*)$/.exec(line);
+  for (const line of fs.readFileSync(path, 'utf8').split('\n')) {
+    const match = /^(TAB|TAB_NAME|PRIMARY|LEFT|RIGHT|ORCH|RIGHT_SPLIT|LAUNCH)=(.*)$/.exec(line);
     if (match) info[match[1] as keyof typeof info] = match[2];
   }
   return info;
 }
 function primary(task: string): JobStatus | undefined {
-  const path = join(task, jobFiles.status);
-  if (!fs.existsSync(path)) return;
-  const s = JSON.parse(fs.readFileSync(path, 'utf8'));
-  if (s?.version === 1 && s.slot === 'primary' && s.task_dir === task) return s;
+  let text;
+  try { text = fs.readFileSync(join(task, jobFiles.status), 'utf8'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
+  const s = JSON.parse(text);
+  let canonicalDir;
+  if (typeof s?.task_dir === 'string' && isAbsolute(s.task_dir)) {
+    try { canonicalDir = fs.realpathSync(s.task_dir); } catch { /* Unresolved receipt is not ownership. */ }
+  }
+  if (s?.version !== 1 || s.slot !== 'primary' || !s.state || typeof s.state !== 'string' || canonicalDir !== task ||
+      s.pid != null && !isValidPid(s.pid) || s.pid_start_time != null && (!isValidPid(s.pid) || typeof s.pid_start_time !== 'string' || !/^\d+$/.test(s.pid_start_time)))
+    throw Error('incompatible primary STATUS; cleanup incomplete');
+  return s;
 }
 function liveStart(pid: number) {
   const stat = readProcStat(pid, { strict: true });
@@ -46,114 +55,122 @@ function callerAncestor(pid: number) {
   for (let p = process.pid; p > 1; p = readProcStat(p, { strict: true })?.ppid ?? 0) if (p === pid) return true;
   return false;
 }
+function alreadyReaped(task: string) {
+  try { return Boolean(JSON.parse(fs.readFileSync(join(task, jobFiles.job), 'utf8')).reaped_at); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+}
 
-async function reap(task: string, after?: number): Promise<boolean> {
-  const info = session(task), s = primary(task), pid = s?.pid, start = s?.pid_start_time;
-  const errors: string[] = [];
-  const problem = (msg: string) => { errors.push(msg); console.error(`hud-reap: ${task}: ${msg}`); };
-  if (after && isValidPid(pid) && pid !== after) throw Error('recorded PID changed while waiting; nothing reaped');
-  if (s && !['closed', 'failed', 'stopped', 'idle_grace'].includes(s.state)) {
+async function reap(task: string, after?: number) {
+  if (alreadyReaped(task)) return;
+  const s = primary(task), pid = s?.pid, start = s?.pid_start_time;
+  const refuse = (message: string): never => { throw Error(`${task}: ${message}`); };
+  if (after && isValidPid(pid) && pid !== after) refuse('recorded PID changed while waiting; nothing reaped');
+  if (!s?.state || !['closed', 'failed', 'stopped', 'idle_grace'].includes(s.state)) {
     try { fs.writeFileSync(join(task, jobFiles.stopRequested), '', { flag: 'wx', mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
   }
-  if (isValidPid(pid) && liveStart(pid) && !(typeof start === 'string' && /^\d+$/.test(start))) {
-    problem(`live PID ${pid} missing start time; left alone`);
-    console.log(`hud-reap: ${task}: cleanup incomplete: ${errors[0]}`);
-    return false;
-  }
-  const hasPanes = !!(info.TAB || info.LEFT || info.RIGHT || info.PRIMARY);
-  const owned = (a: Row) => Boolean((info.PRIMARY && a.name === info.PRIMARY) || (s?.session_file && a.agent_session?.value === s.session_file));
-  const inventory = () => {
-    const panes = list('pane'), agents = list('agent');
-    const orch = panes.find(p => p.pane_id === info.ORCH) ?? agents.find(a => a.name && a.name === info.ORCH);
-    const protectedPane = (a: Row) => a.pane_id === (orch?.pane_id ?? info.ORCH) || a.tab_id === orch?.tab_id;
-    return { panes, agents, orch, protectedPane };
-  };
-  let protectedPid = false;
-  if (hasPanes) {
-    const { agents, protectedPane, orch } = inventory();
-    protectedPid = Boolean((info.ORCH && info.ORCH === info.LEFT) || (orch && (orch.pane_id === info.LEFT || orch.tab_id === info.TAB)));
-    const deadline = performance.now() + 30_000, waiting = new Set<string>();
-    const budget = () => Math.max(0, Math.min(15_000, Math.ceil(deadline - performance.now())));
-    // Send quits before polling. A working agent cannot consume /quit: go
-    // straight to the exact recorded PID instead of holding the shared grace.
-    for (const agent of agents.filter(owned)) {
-      if (protectedPane(agent)) { protectedPid = true; problem(`protected orchestrator agent in ${agent.pane_id}; left alone`); continue; }
-      if (info.TAB && agent.tab_id !== info.TAB || info.LEFT && agent.pane_id !== info.LEFT) {
-        problem(`agent moved to ${agent.pane_id}; left alone`); continue;
-      }
-      const getBudget = budget();
-      if (!getBudget) break;
-      const current: Row = query(['agent', 'get', agent.pane_id], getBudget).agent;
-      if (!current || !owned(current) || current.pane_id !== agent.pane_id || current.tab_id !== agent.tab_id ||
-          current.agent_session?.value !== agent.agent_session?.value || protectedPane(current)) {
-        problem(`agent changed in ${agent.pane_id}; left alone`); continue;
-      }
-      const ms = budget();
-      if (ms && ['idle', 'done'].includes(current.agent_status ?? '')) {
-        waiting.add(agent.pane_id);
-        command(['agent', 'prompt', agent.pane_id, '/quit'], ms);
-      }
-    }
-    // A detached pane or 'done' is not exit evidence. Wait for the agent list.
-    while (waiting.size) {
-      const ms = budget();
-      if (!ms) break;
-      let agents: Row[];
-      try { agents = list('agent', ms); }
-      catch (error) { if (!budget()) break; throw error; }
-      for (const pane of waiting) if (!agents.some(a => a.pane_id === pane && owned(a))) waiting.delete(pane);
-      if (waiting.size && budget()) await delay(Math.min(500, budget()));
-    }
-  }
+  if (isValidPid(pid) && liveStart(pid) && !(typeof start === 'string' && /^\d+$/.test(start)))
+    refuse(`live PID ${pid} missing start time; cleanup incomplete`);
   const alive = () => isValidPid(pid) && typeof start === 'string' && liveStart(pid) === start;
-  if (isValidPid(pid) && alive()) {
-    if (hasPanes) {
-      const { agents, protectedPane, orch } = inventory();
-      protectedPid ||= Boolean(orch && (info.LEFT === orch.pane_id || info.TAB === orch.tab_id)) || agents.some(a => owned(a) && protectedPane(a));
+  if (alive() && callerAncestor(pid!)) refuse(`protected caller PID ${pid}; cleanup incomplete`);
+  const info = session(task), left = info.TAB ? info.LEFT : info.RIGHT;
+  if (!left || (!info.TAB && info.RIGHT_SPLIT !== '1')) refuse('missing pane receipt; cleanup incomplete');
+  const ids = info.TAB ? [left, ...(info.RIGHT ? [info.RIGHT] : [])] : [left];
+  const expectedSession = s?.session_file || s?.agent_session_id;
+  const matches = (a: Row) => Boolean(info.PRIMARY && a.name === info.PRIMARY && a.pane_id === left &&
+    (!expectedSession || expectedSession === a.agent_session?.value));
+  function inspect() {
+    if (alreadyReaped(task)) return null;
+    const fresh = primary(task);
+    if (fresh?.pid !== pid || fresh?.pid_start_time !== start || JSON.stringify(session(task)) !== JSON.stringify(info))
+      refuse('launch or worker identity changed; cleanup incomplete');
+    const panes = list('pane'), agents = list('agent');
+    const target = info.TAB ? list('tab').find(t => t.tab_id === info.TAB) : panes.find(p => p.pane_id === left);
+    const selected = panes.filter(p => info.TAB ? p.tab_id === info.TAB : p.pane_id === left);
+    if (!target) {
+      if (alive() || selected.length || panes.some(p => ids.includes(p.pane_id)) || agents.some(a => ids.includes(a.pane_id) || matches(a) || a.tab_id === info.TAB))
+        refuse('recorded target missing but worker or panes remain');
+      return null; // Already gone. This is NOT a grant to signal descendants.
     }
-    if (protectedPid || callerAncestor(pid)) problem(`protected orchestrator PID ${pid}; left alone`);
-    else if (!errors.length && alive()) {
-      try { process.kill(pid, 'SIGTERM'); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-      for (let waited = 0; waited < 5000 && alive(); waited += 250) await delay(250);
-      await delay(500); // herdr drops the agent shortly after process exit
-      if (alive()) problem(`PID ${pid} still running`);
+    const tab = target.tab_id;
+    // Keep this one-line stderr diagnostic: watch-runtime parses it.
+    if (info.TAB && (!info.TAB_NAME || target.label !== info.TAB_NAME)) refuse(`TAB ${tab} name changed or missing; not closing`);
+    const orch = panes.find(p => p.pane_id === info.ORCH) ?? agents.find(a => a.name && a.name === info.ORCH);
+    if (ids.includes(info.ORCH) || orch?.tab_id === tab) refuse(`TAB ${tab} is the orchestrator tab; not closing`);
+    if (selected.length !== ids.length || ids.some(id => !selected.some(p => p.pane_id === id))) refuse('recorded pane set changed; not closing');
+    if (agents.some(a => (ids.includes(a.pane_id) || info.TAB && a.tab_id === tab || info.PRIMARY && a.name === info.PRIMARY) &&
+      (!matches(a) || a.tab_id !== tab))) refuse('foreign agent in recorded pane or binding changed; not closing');
+    const agent = agents.find(matches);
+    const foreground = new Map<number, string>();
+    for (const p of selected) {
+      const kind = s?.harness === 'cli' ? s.agent : info.PRIMARY ? 'pi' : undefined;
+      if (p.agent && (!agent || agent.pane_id !== p.pane_id || p.agent !== kind)) refuse('unidentified agent in recorded pane; not closing');
+      const proc = query(['pane', 'process-info', '--pane', p.pane_id])?.process_info;
+      if (proc?.pane_id !== p.pane_id || !tabProcessStart(task, p.pane_id, tab, proc.shell_pid, info.LAUNCH) || !Array.isArray(proc.foreground_processes))
+        refuse('pane launch ownership unverified; not closing');
+      for (const item of proc.foreground_processes) {
+        if (item?.pid === proc.shell_pid) continue;
+        if (s?.harness === 'cli' && item?.pid === pid && (item.name !== s.agent || proc.foreground_process_group_id !== pid))
+          refuse('recorded CLI worker is not the expected foreground agent');
+        const ticks = tabProcessStart(task, p.pane_id, tab, item?.pid, info.LAUNCH);
+        if (!ticks || p.pane_id !== left) refuse('foreign or unverified foreground occupant; not closing');
+        foreground.set(item.pid, ticks!);
+      }
+    }
+    return { agent, foreground, tab };
+  }
+  let state = inspect();
+  if (!state) return;
+  let verifiedRoot = false;
+  if (isValidPid(pid) && state.foreground.has(pid) && state.foreground.get(pid) !== start) refuse('foreground PID start time changed; left alone');
+  if (alive() && state.foreground.get(pid!) !== start) refuse('recorded process is not the verified pane occupant');
+  if (state.agent) {
+    const current = query(['agent', 'get', left!]).agent;
+    if (!current || !matches(current) || current.tab_id !== state.tab || current.agent_session?.value !== state.agent.agent_session?.value)
+      refuse('agent changed in recorded pane; left alone');
+    if (['idle', 'done'].includes(current.agent_status)) {
+      if (!state.foreground.size || !alive() && (s?.harness === 'cli' || !(expectedSession && current.agent_session?.value === expectedSession)))
+        refuse('idle agent launch identity unverified; left alone');
+      verifiedRoot = alive() && state.foreground.get(pid!) === start && !callerAncestor(pid!);
+      const deadline = performance.now() + 30_000;
+      command(['agent', 'prompt', left!, '/quit']);
+      for (;;) {
+        const ms = Math.ceil(deadline - performance.now());
+        if (ms <= 0 || !list('agent', Math.min(15_000, ms)).some(matches)) break;
+        await delay(Math.min(500, ms));
+      }
+      state = inspect();
+      if (!state) {
+        if (verifiedRoot && !alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
+        return;
+      }
     }
   }
-  if (hasPanes) {
-    const { panes, agents, orch } = inventory();
-    for (const agent of agents.filter(owned)) problem(`owned agent remains in ${agent.pane_id}`);
-    if (info.TAB) {
-      const tab = list('tab').find(t => t.tab_id === info.TAB);
-      if (tab) {
-        // This single stderr line on an otherwise clean refusal is parsed by watch-runtime.
-        if (!info.TAB_NAME || tab.label !== info.TAB_NAME) problem(`TAB ${info.TAB} name changed or missing; not closing`);
-        else if (tab.tab_id === orch?.tab_id || panes.some(p => p.tab_id === tab.tab_id && p.pane_id === info.ORCH))
-          problem(`TAB ${info.TAB} is the orchestrator tab; not closing`);
-        else if (panes.some(p => p.tab_id === tab.tab_id && p.agent) || agents.some(a => a.tab_id === tab.tab_id))
-          problem(`TAB ${info.TAB} still has an agent; not closing`);
-        else if (panes.some(p => p.tab_id === tab.tab_id && ![info.LEFT, info.RIGHT].includes(p.pane_id)))
-          problem(`TAB ${info.TAB} has an unrecorded pane; not closing`);
-        else if (errors.length) problem(`agents not confirmed gone; not closing TAB ${info.TAB}`);
-        else {
-          const closed = command(['tab', 'close', info.TAB]);
-          if (closed.status !== 0) problem(`could not close TAB ${info.TAB}: ${closed.stderr}`);
-          if (list('tab').some(t => t.tab_id === info.TAB)) problem(`TAB ${info.TAB} still exists`);
-        }
-      }
-    } else if (info.RIGHT_SPLIT === '1' && info.RIGHT) {
-      const pane = panes.find(p => p.pane_id === info.RIGHT);
-      if (pane) {
-        if (pane.pane_id === info.ORCH || pane.pane_id === orch?.pane_id) problem(`RIGHT ${info.RIGHT} is protected; not closing`);
-        else if (pane.agent || agents.some(a => a.pane_id === pane.pane_id) || errors.length) problem(`RIGHT ${info.RIGHT} not confirmed empty; not closing`);
-        else if (command(['pane', 'close', info.RIGHT]).status !== 0 || list('pane').some(p => p.pane_id === info.RIGHT)) problem(`RIGHT ${info.RIGHT} still exists`);
-      }
-    }
-    for (const pane of panes) if ([info.LEFT, info.RIGHT].includes(pane.pane_id) && pane.agent) problem(`agent remains in recorded pane ${pane.pane_id}`);
+  if (alive() && isValidPid(pid)) {
+    if (callerAncestor(pid) || state.foreground.get(pid) !== start || tabProcessStart(task, left!, state.tab, pid, info.LAUNCH) !== start)
+      refuse(`PID ${pid} is not a verified worker; left alone`);
+    process.kill(pid, 'SIGTERM');
+    verifiedRoot = true;
+    for (let waited = 0; waited < 5000 && alive(); waited += 250) await delay(250);
+    await delay(500);
   }
-  console.log(`hud-reap: ${task}: ${errors.length ? 'cleanup incomplete' : 'reaped'}`);
-  return !errors.length;
+  state = inspect();
+  if (!state) {
+    if (verifiedRoot && !alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
+    return;
+  }
+  if (state.agent || state.foreground.size || alive()) {
+    if (verifiedRoot) console.log(`tree-owner ${pid}:${start}`); // A verified worker may be waiting for its child.
+    refuse(state.agent ? `owned agent remains in ${left}` : 'worker or foreground process remains; not closing');
+  }
+  const kind = info.TAB ? 'tab' : 'pane', id = info.TAB || left!;
+  const closed = command([kind, 'close', id]);
+  if (closed.status !== 0 || list(kind).some(p => (info.TAB ? p.tab_id : p.pane_id) === id)) refuse(`${kind} ${id} still exists`);
+  if (isValidPid(pid) && typeof start === 'string') {
+    // When the root exited before this invocation, the pane proof is not a PID
+    // proof. Only positively job-tagged captured members may be cleaned then.
+    console.log(`${verifiedRoot ? 'tree-owner' : 'tree-pane'} ${pid}:${start}`);
+  }
 }
 
 export async function main(args = process.argv.slice(2)) {
@@ -166,6 +183,7 @@ export async function main(args = process.argv.slice(2)) {
     if (args.length === 3) {
       after = Number(args[2]);
       if (!/^[1-9]\d*$/.test(args[2]) || !isValidPid(after) || after === process.pid) throw Error('invalid --after-pid PID');
+      if (alreadyReaped(task)) { console.log(`hud-reap: ${task}: already reaped`); return; }
       const deadline = performance.now() + 30_000;
       while (liveStart(after)) {
         const ms = deadline - performance.now();
@@ -173,6 +191,7 @@ export async function main(args = process.argv.slice(2)) {
         await delay(Math.min(250, ms));
       }
     }
-    if (!await reap(task, after)) process.exitCode = 1;
+    await reap(task, after);
+    console.log(`hud-reap: ${task}: reaped`);
   } catch (error) { console.error(`hud-reap: ${(error as Error).message}`); process.exitCode = 1; }
 }

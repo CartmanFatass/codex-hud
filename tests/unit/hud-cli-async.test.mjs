@@ -27,12 +27,15 @@ async function until(t, ready) {
   while (!ready()) await delay(10, null, { signal: t.signal });
 }
 
-async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload } = {}) {
+async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload, pendingIdentity = false, foreign = false } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-cli-async-'));
   const home = join(root, 'hud'), jobs = join(home, 'jobs'), bin = join(root, 'bin');
   const untrack = trackFixture({ root, hudHome: home });
   const job = 'j0000000000000001', dir = join(jobs, job), herdrPath = join(root, 'herdr.sock');
   const env = { PATH: bin, NODE_OPTIONS: reapStubOptions(bin), HOME: join(root, 'home'), HUD_HOME: home, HERDR_SOCKET_PATH: herdrPath, TZ: 'UTC' };
+  const agent = spawn(process.execPath, ['-e', 'setInterval(()=>{},60000)'], { stdio: 'ignore', env: { ...env, HUD_JOB_DIR: foreign ? root : dir, HERDR_PANE_ID: 'synthetic-pane', HERDR_TAB_ID: tab } });
+  t.after(() => agent.kill('SIGKILL'));
+  let discover = !pendingIdentity;
   const subscribers = new Map(), sockets = new Set(), children = [];
   let calls = 0, disconnected = false;
   const http = httpServer((req, res) => {
@@ -50,7 +53,8 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
     createInterface({ input: conn }).on('line', (line) => {
       const { id, method } = JSON.parse(line);
       if (method === 'events.subscribe') subscribers.set(id, conn);
-      const result = method === 'agent.get' ? { agent: { agent_status: 'idle', agent_session: { kind: 'id', value: 'demo' } } } : {};
+      const result = method === 'agent.get' ? { agent: { name: 'synthetic-agent', pane_id: 'synthetic-pane', tab_id: tab, agent_status: 'idle', agent_session: { kind: 'id', value: 'demo' } } } :
+        method === 'pane.process_info' ? { process_info: { pane_id: 'synthetic-pane', shell_pid: 1, foreground_process_group_id: agent.pid, foreground_processes: discover ? [{ pid: agent.pid, name: 'grok' }] : [] } } : {};
       conn.write(JSON.stringify({ id, result }) + '\n');
     });
   });
@@ -127,13 +131,34 @@ console.log(JSON.stringify({ result: { read: { text: 'Synthetic quiet pane.' } }
     return run;
   }
   return {
-    dir, jobs, start, cli: start('hud-cli.mjs', [dir]), finishReport,
+    dir, jobs, start, agent, enableDiscovery: () => { discover = true; writeFixtureFile(join(dir, 'STATUS.json.stop-requested'), ''); }, cli: start('hud-cli.mjs', [dir]), finishReport,
     herdrPid: () => Number(read(join(home, 'herdr-pid'))), calls: () => calls, disconnected: () => disconnected,
     stop: () => fs.writeFileSync(join(dir, 'STATUS.json.stop-requested'), ''),
     subscribed: (id) => subscribers.has(id),
     closeTab: (id = 'hud-cli-events', tabId = tab) => subscribers.get(id).write(JSON.stringify({ event: 'tab.closed', data: { tab_id: tabId } }) + '\n'),
   };
 }
+
+test('stop before discovery retains the supervisor until a verified worker PID can be stamped', watchdog, async t => {
+  const f = await fixture(t, { pendingIdentity: true });
+  f.stop();
+  await until(t, () => status(f.dir)?.reason === 'stop pending verified worker identity');
+  assert.equal(status(f.dir).pid, null);
+  f.enableDiscovery();
+  await until(t, () => status(f.dir)?.state === 'stopped');
+  assert.equal(status(f.dir).pid, f.agent.pid);
+  assert.equal(status(f.dir).pid_start_time, procStat(f.agent.pid).start);
+});
+
+test('stable foreign foreground from discovery through stop cannot acquire a PID stamp', watchdog, async t => {
+  const f = await fixture(t, { foreign: true });
+  await until(t, () => status(f.dir)?.supervisor_pid);
+  assert.equal(status(f.dir).pid, null);
+  f.stop();
+  await until(t, () => status(f.dir)?.reason === 'stop pending verified worker identity');
+  assert.equal(status(f.dir).pid, null);
+  assert.equal(f.agent.exitCode, null);
+});
 
 async function expectState(t, f, state, reason) {
   await until(t, () => status(f.dir)?.state === state);

@@ -34,6 +34,19 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
       }
       return value;
     };
+    // These supervisor fixtures use stand-in foreground PIDs created outside a
+    // pane. Model the environment herdr actually injects into that one occupant.
+    const readFile = fs.readFileSync, dir = process.argv[2];
+    fs.readFileSync = (file, ...args) => {
+      const pid = /^\/proc\/(\d+)\/environ$/.exec(String(file))?.[1];
+      if (pid && (pid === String(process.pid) || ['cli-pid', 'fake-agent-pid'].some(name => {
+        const path = join(process.env.HOME, name); return fs.existsSync(path) && readFile(path, 'utf8') === pid;
+      }))) {
+        const fields = Object.fromEntries(readFile(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map(l => l.split('=')));
+        return `HUD_JOB_DIR=${dir}\0HERDR_PANE_ID=${fields.LEFT}\0HERDR_TAB_ID=${fields.TAB}\0` + (fields.LAUNCH ? `HUD_TAB_LAUNCH=${fields.LAUNCH}\0` : '');
+      }
+      return readFile(file, ...args);
+    };
     const opendir = fs.opendirSync;
     fs.opendirSync = (...args) => {
       if (/^\/proc\/\d+\/task$/.test(args[0])) fs.appendFileSync(join(process.env.HOME, 'proc-scans'), 'scan\n');

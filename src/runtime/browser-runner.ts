@@ -9,7 +9,8 @@ import * as fs from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 export async function main() {
-  const [dir, taskLength] = process.argv.slice(2);
+  const [, , path, taskLength] = process.argv;
+  const dir = fs.realpathSync(path);
   const bundled = BUNDLED_ROOT;
   const hudHome = dirname(dirname(resolve(dir)));
   let job: Job;

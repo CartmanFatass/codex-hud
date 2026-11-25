@@ -9,7 +9,7 @@ import { truncateAnsi } from '../render/colors.js';
 import { runHerdr, runCommand, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
 import { stopSonic } from '../mcp/sonic-process.js';
 import { recordStopOrigin } from '../roles/job-archive.js';
-import { reapWorkerTree } from '../roles/worker-tree.js';
+import { reapWorkerTree, tabTreeGrant } from '../roles/worker-tree.js';
 import { removeQueuedJob } from '../roles/concurrency.js';
 import { OBJECTIVE_HASH } from '../collectors/objectives.js';
 
@@ -74,6 +74,8 @@ const readJson = (file: string): Record<string, unknown> | null => {
 export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
   const status = readJson(join(jobDir, 'STATUS.json'));
   try {
+    const job = readJson(join(jobDir, jobFiles.job));
+    if (!job?.headless && job?.reaped_at) return { ok: true };
     const outcome = removeQueuedJob(jobDir, status?.state);
     if (outcome === 'cancelled' || outcome === 'missing') return { ok: true };
     recordStopOrigin(jobDir, 'panel', status?.state);
@@ -84,7 +86,7 @@ export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
       }
       return runCommand(process.execPath, [binScript('hud-reap'), jobDir], env, { budgetMs: 60_000, killProcessGroup: true });
-    }, (run) => run.ok);
+    }, (run) => run.ok, { treeGrant: tabTreeGrant });
     return complete ? { ok: true } : { ok: false, reason: issue ?? (result.reason === 'unavailable' ? 'hud-reap missing' : 'reap failed') };
   } catch { return { ok: false, reason: 'reap failed' }; }
 }

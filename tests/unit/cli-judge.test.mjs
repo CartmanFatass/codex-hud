@@ -120,12 +120,15 @@ test('worker reap: a same-group, tagged sibling is not a descendant; PID reuse s
   const status = { slot: 'primary', task_dir: dir, pid: root, pid_start_time: '100' };
   assert.equal((await reapWorkerTree(dir, status, () => false, Boolean)).complete, false);
   assert.deepEqual(signals, [], 'a protected live tab refusal leaves the root’s children alone');
+  procs.delete(root);
+  const refused = await reapWorkerTree(dir, status, () => false, Boolean);
+  assert.equal(refused.complete, false);
+  assert.deepEqual(signals, [], 'independent root exit cannot overturn an ownership refusal');
   const { complete } = await reapWorkerTree(dir, status, () => {
-    procs.delete(root);
     procs.set(child, [1, 101]);
     procs.set(reused, [50, 202]); // Reuse before the initial TERM.
-    return false; // Even on a tab ownership refusal, only proof can authorize a signal.
-  }, Boolean);
+    return false; // Verified worker cleanup is incomplete, not an ownership refusal.
+  }, Boolean, { treeGrant: () => 'root' });
   assert.equal(complete, false);
   assert.deepEqual(signals, [[child, 'SIGTERM']]);
 });

@@ -1,4 +1,5 @@
 /** Pi launch and native session setup. */
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { sonicArgv } from './pi-worker-argv.js';
 import { isAbsolute, join, dirname } from 'node:path';
@@ -15,7 +16,7 @@ import { startHeadlessProcess } from '../sonic-process.js';
 import { prepareSonicRetry } from '../sonic-session.js';
 import { directory, findJob, readCachedStatus, hudHome, bundled, save, jobCache } from '../store/job-store.js';
 import type { NativeResume } from '../worker-resume.js';
-import { recoverStalledPrompt } from './prompt-stall.js';
+import { promptBoundary, recoverStalledPrompt } from './prompt-stall.js';
 import { registry, roleCwd } from './places.js';
 import {
   rejectLaunch, binScript, quote, run, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
@@ -186,12 +187,12 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
       '--env',
       'GIT_OPTIONAL_LOCKS=0',
-      '--no-focus',
     ];
     let left = '';
     let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
     for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
-      const result = await run('herdr', tabArgv);
+      const launch = randomUUID();
+      const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, '--no-focus']);
       if (result.exit_code !== 0) return reject(result);
       const { tab, root_pane } = JSON.parse(result.stdout).result;
       if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
@@ -200,7 +201,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       let right = '';
       const record = () => {
         const fields: SessionReceipt = {
-          TASK: job.job,
+          TASK: job.job, LAUNCH: launch,
           TAB: tab.tab_id,
           TAB_NAME: tabName,
           LEFT: left,
@@ -232,6 +233,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
           '0.5',
           '--cwd',
           job.cwd,
+          '--env', `HUD_JOB_DIR=${dir}`, '--env', `HUD_TAB_LAUNCH=${launch}`,
           '--no-focus',
         ]);
         if (split.exit_code !== 0) return reject(split);
@@ -251,6 +253,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     }
     job.pi_sent_at = new Date().toISOString();
     save(job);
+    const boundary = promptBoundary(dir, resume?.file ?? readCachedStatus(job.job).status?.session_file);
     mayHaveInput = true;
     const submitted = await run('herdr', [
       'agent',
@@ -268,7 +271,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     if (submitted.exit_code !== 0 && !completed) {
       if (refusedBeforeInput(submitted)) return reject(submitted);
       if (!promptStalled(submitted)) return submitted;
-      await recoverStalledPrompt(dir, name, left, prompt);
+      await recoverStalledPrompt(dir, name, left, prompt, boundary);
       return { exit_code: 0, stdout: '', stderr: '' };
     }
     return { ...submitted, exit_code: 0 };

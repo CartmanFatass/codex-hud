@@ -604,7 +604,7 @@ Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; 
 `hud_roster({detail:true})` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
 The supervisor wakes on herdr pushes, file changes and its own deadlines, plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes.
 The on-demand watcher starts on `hud_create`, `hud_read`, `hud_send`, `hud_respond` or `hud_land` if needed.
-It reaps finished tabs through HUD's bundled `hud-reap`, keeps failed tabs for two hours, and exits with no open job or pending failed-job deadline.
+It reaps finished tabs through HUD's bundled `hud-reap`, keeps failed tabs for two hours, and exits with no open job or pending failed-job deadline. Reaping requires launch ownership evidence from the pane processes; matching a tab label is not enough. `hud-reap <job-dir> --after-pid PID` waits up to 30 seconds without acting, then refuses if STATUS names a different worker.
 The watcher learns of a HUD runner's exit through a socket close, not a periodic scan.
 Native pi-roles workers have no such runner; their liveness and pending stop/read-close checks use `HUD_WATCH_CLI_CHECK_MS` (default 30000).
 A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited; worker still running"); the watcher rechecks this unsupervised worker with exponential backoff.

@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { reapWorkerTree, tabTreeGrant } from '../../dist/roles/worker-tree.js';
 import { procStat } from '../../dist/utils/proc.js';
 
 const cli = resolve('packages/hud-mcp/bin/hud-reap.mjs');
@@ -18,6 +19,11 @@ const out = result => console.log(JSON.stringify({ result }));
 if (op === 'list') {
   if (s.quitPolls && kind === 'agent' && !--s.quitPolls) s.agents = [];
   out({[kind+'s']: s[kind+'s']});
+} else if (op === 'process-info') {
+  const status = JSON.parse(fs.readFileSync(process.env.DIR + '/STATUS.json')), root = status.pid;
+  const fg = s.foreground ?? (root ?? (s.agents.length ? s.occupant : 0));
+  const live = fg && fs.existsSync('/proc/' + fg + '/stat') && !/\) [ZX] /.test(fs.readFileSync('/proc/' + fg + '/stat','utf8'));
+  out({process_info:{pane_id:args[3], shell_pid:s.shell, foreground_process_group_id:fg, foreground_processes:live ? [{pid:fg, name:status.agent || 'pi'}] : []}});
 } else if (kind === 'agent' && op === 'get') out({agent: s.replacement ?? s.agents.find(a => a.pane_id === target)});
 else if (kind === 'agent' && op === 'prompt' && args[3] === '/quit') {
   s.quitPolls = 2; s.panes[0].agent = null; // Detached pane: agent still listed.
@@ -26,27 +32,34 @@ else if (kind === 'agent' && op === 'prompt' && args[3] === '/quit') {
 else throw Error('unexpected fake herdr command: ' + args);
 fs.writeFileSync(path, JSON.stringify(s));`;
 
-function fixture(t, { status = 'idle', orch = 'main-pane', label = 'synthetic', name = 'worker', replacement } = {}) {
+function fixture(t, { status = 'idle', orch = 'main-pane', label = 'synthetic', name = 'worker', replacement, foreignShell = false } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-reap-')), dir = join(root, 'job');
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(dir);
   fs.writeFileSync(join(root, 'herdr'), `#!${process.execPath}\n${herdr}`, { mode: 0o700 });
   const state = join(root, 'state'), log = `${state}.log`;
-  const agent = { pane_id: 'worker-pane', tab_id: 'worker-tab', name, agent_status: status };
-  fs.writeFileSync(state, JSON.stringify({
+  const tags = { HUD_JOB_DIR: dir, HERDR_PANE_ID: 'worker-pane', HERDR_TAB_ID: 'worker-tab', HUD_TAB_LAUNCH: 'original-launch' };
+  const sleeper = (env) => {
+    const p = spawn('/bin/sleep', ['600'], { env, stdio: 'ignore' }); t.after(() => p.kill('SIGKILL')); return p.pid;
+  };
+  const shell = sleeper({ ...tags, ...(foreignShell && { HUD_TAB_LAUNCH: 'replacement' }) });
+  const occupant = sleeper(tags);
+  const native = join(dir, 'pi.jsonl');
+  const agent = { agent_session: { value: native }, pane_id: 'worker-pane', tab_id: 'worker-tab', name, agent_status: status };
+  fs.writeFileSync(state, JSON.stringify({ shell, occupant,
     tabs: [{ tab_id: 'worker-tab', label }], panes: [{ pane_id: 'worker-pane', tab_id: 'worker-tab', agent: status && 'pi' },
       { pane_id: 'main-pane', tab_id: 'main-tab', agent: 'pi' }], agents: status ? [agent] : [], replacement: replacement && { ...agent, ...replacement },
   }));
-  fs.writeFileSync(join(dir, 'SESSION.txt'), `TAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\nORCH=${orch}\nPRIMARY=worker\n`);
-  const env = { ...process.env, HOME: root, HUD_HOME: root, STATE: state, PATH: root, PI_ROLES_LEDGER: join(root, 'ledger') };
-  const put = (fields) => fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ version: 1, task_dir: dir, slot: 'primary', state: 'idle_grace', ...fields }));
+  fs.writeFileSync(join(dir, 'SESSION.txt'), `LAUNCH=original-launch\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\nORCH=${orch}\nPRIMARY=worker\n`);
+  const env = { ...process.env, HOME: root, HUD_HOME: root, DIR: dir, STATE: state, PATH: root, PI_ROLES_LEDGER: join(root, 'ledger') };
+  const put = (fields) => fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ version: 1, task_dir: dir, slot: 'primary', session_file: native, state: 'idle_grace', ...fields }));
   put({});
   const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trimEnd().split('\n').map(l => JSON.parse(l)) : [];
-  return { dir, env, put, calls, root, run: (...args) => spawnSync(process.execPath, [cli, dir, ...args], { env, encoding: 'utf8', timeout: 15000 }) };
+  return { dir, env, tags, put, calls, root, state, run: (...args) => spawnSync(process.execPath, [cli, dir, ...args], { env, encoding: 'utf8', timeout: 15000 }) };
 }
 function worker(t, f) {
   // Even with the exact task dir in argv, only the start stamp can authorize SIGTERM.
-  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60000)', f.dir], { stdio: 'ignore' });
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60000)', f.dir], { env: f.tags, stdio: 'ignore' });
   t.after(() => { child.kill('SIGKILL'); });
   return child;
 }
@@ -68,7 +81,9 @@ test('idle/done: one /quit, wait for inventory (not just pane detachment), verif
 test('renamed tab, foreign occupant, changed occupant and orchestrator pane are never quit or closed', async t => {
   for (const [options, reason] of [
     [{ status: null, label: 'renamed' }, /: TAB worker-tab name changed or missing; not closing\n$/],
-    [{ name: 'foreign' }, /still has an agent; not closing/],
+    [{ name: 'foreign' }, /foreign agent/], // Even though it reopened the recorded session.
+    [{ status: null, foreignShell: true }, /pane launch ownership unverified/],
+    [{ replacement: { agent_session: { value: '/other' } } }, /agent changed/],
     [{ replacement: { name: 'foreign' } }, /agent changed/],
     [{ orch: 'worker-pane' }, /orchestrator tab; not closing/],
   ]) {
@@ -87,15 +102,16 @@ test('renamed tab, foreign occupant, changed occupant and orchestrator pane are 
 test('working CLI: publish stop before exact-PID SIGTERM; skip /quit and idle polling; occupied tab stays', async t => {
   const f = fixture(t, { status: 'working' });
   const marker = join(f.dir, 'STATUS.json.stop-requested');
-  const child = spawn(process.execPath, ['-e', `process.title = 'synthetic'; process.on('SIGTERM', () => process.exit(require('node:fs').existsSync(${JSON.stringify(marker)}) ? 0 : 1)); console.log('ready'); setInterval(()=>{}, 60000)`], { stdio: ['ignore', 'pipe', 'ignore'] });
+  const child = spawn(process.execPath, ['-e', `process.title = 'synthetic'; process.on('SIGTERM', () => process.exit(require('node:fs').existsSync(${JSON.stringify(marker)}) ? 0 : 1)); console.log('ready'); setInterval(()=>{}, 60000)`], { env: f.tags, stdio: ['ignore', 'pipe', 'ignore'] });
   t.after(() => child.kill('SIGKILL'));
   await once(child.stdout, 'data');
   const end = once(child, 'exit');
+  const state = JSON.parse(fs.readFileSync(f.state)); state.panes[0].agent = 'codex'; fs.writeFileSync(f.state, JSON.stringify(state));
   f.put({ state: 'working', harness: 'cli', agent: 'codex', pid: child.pid, pid_start_time: procStat(child.pid).start });
   const r = f.run(); assert.equal(r.status, 1, r.stderr); assert.match(r.stderr, /owned agent remains/);
   assert.deepEqual(await end, [0, null]);
   assert.deepEqual(f.calls().filter(a => a[1] === 'prompt' || a[1] === 'close'), []);
-  assert.equal(f.calls().filter(a => a.join(' ') === 'agent list').length, 3, 'no grace polls');
+  assert.equal(f.calls().filter(a => a.join(' ') === 'agent list').length, 2, 'no grace polls');
   assert.equal(fs.statSync(marker).mode & 0o777, 0o600);
 });
 
@@ -103,11 +119,67 @@ test('reused PID is not signalled; live unstamped PID is incomplete and cannot c
   for (const stamped of [true, false]) {
     const f = fixture(t, { status: null }), child = worker(t, f), start = procStat(child.pid).start;
     f.put({ state: 'working', pid: child.pid, ...(stamped && { pid_start_time: String(BigInt(start) + 1n) }) });
-    const r = f.run(); assert.equal(r.status, stamped ? 0 : 1, r.stderr);
+    const r = f.run(); assert.equal(r.status, 1, r.stderr); // A live foreground occupant is not an empty shell.
     assert.equal(procStat(child.pid)?.start, start); assert.ok(!/^[XZ]$/.test(procStat(child.pid).state));
     if (!stamped) { assert.match(r.stderr, /missing start time/); assert.deepEqual(f.calls(), []); }
     assert.ok(fs.existsSync(join(f.dir, 'STATUS.json.stop-requested')));
   }
+});
+
+test('recycled split or tab without its recorded pane is never closed; reaped job is a no-op', t => {
+  const f = fixture(t, { status: null, foreignShell: true });
+  fs.writeFileSync(join(f.dir, 'SESSION.txt'), 'RIGHT_SPLIT=1\nRIGHT=worker-pane\nLAUNCH=original-launch\nORCH=main-pane\n');
+  let r = f.run(); assert.equal(r.status, 1); assert.match(r.stderr, /launch ownership unverified/);
+  assert.ok(!f.calls().some(a => a[1] === 'close'));
+  const g = fixture(t, { status: null });
+  const data = JSON.parse(fs.readFileSync(g.state)); data.panes.shift(); fs.writeFileSync(g.state, JSON.stringify(data));
+  r = g.run(); assert.equal(r.status, 1); assert.match(r.stderr, /pane set changed/);
+  assert.ok(!g.calls().some(a => a[1] === 'close'));
+  const h = fixture(t); h.put({ state: 'working' });
+  fs.writeFileSync(join(h.dir, 'job.json'), JSON.stringify({ reaped_at: new Date().toISOString() }));
+  assert.equal(h.run().status, 0); assert.deepEqual(h.calls(), []);
+  assert.equal(fs.existsSync(join(h.dir, 'STATUS.json.stop-requested')), false);
+});
+
+for (const foreign of [true, false]) test(foreign ? 'refused replacement and its tree survive even a retry after root exit' :
+  'verified worker waiting for its child: incomplete TERM explicitly authorizes captured child cleanup', async t => {
+  const f = fixture(t, { status: 'working', name: foreign ? 'replacement' : 'worker' });
+  const root = spawn(process.execPath, ['-e', `const c=require('node:child_process').spawn('/bin/sleep',['600'],{stdio:'ignore'});
+    process.on('SIGTERM',()=>{}); c.once('exit',()=>process.exit(0)); console.log(c.pid);`],
+    { env: foreign ? { ...f.tags, HUD_JOB_DIR: f.root } : f.tags, stdio: ['ignore','pipe','ignore'] });
+  const end = once(root, 'exit');
+  t.after(() => root.kill('SIGKILL'));
+  const member = Number((await once(root.stdout, 'data'))[0]), start = procStat(member).start;
+  t.after(() => { if (procStat(member)?.start === start) process.kill(member, 'SIGKILL'); });
+  f.put({ state: 'working', pid: root.pid, pid_start_time: procStat(root.pid).start });
+  const runTree = () => reapWorkerTree(f.dir, JSON.parse(fs.readFileSync(join(f.dir, 'STATUS.json'))), () => {
+    const r = f.run(); return { ok: r.status === 0, reason: r.status ? 'failed' : 'ok', stdout: r.stdout };
+  }, r => r.ok, { treeGrant: tabTreeGrant });
+  const attempt = await runTree();
+  assert.equal(attempt.complete, false);
+  if (foreign) {
+    assert.equal(root.exitCode, null); assert.equal(root.signalCode, null);
+    assert.equal(procStat(member).start, start); assert.match(attempt.issue, /not authorized/);
+    root.kill('SIGKILL'); await end;
+    const state = JSON.parse(fs.readFileSync(f.state)); state.tabs = []; state.panes = []; state.agents = [];
+    fs.writeFileSync(f.state, JSON.stringify(state));
+    assert.match((await runTree()).issue, /not authorized/); assert.ok(!/^[ZX]$/.test(procStat(member).state));
+  } else {
+    assert.match(attempt.result.stdout, /^tree-owner /m); assert.equal(attempt.issue, undefined);
+    assert.deepEqual(await end, [0, null]); assert.equal(procStat(member), null);
+  }
+});
+
+test('symlinked task_dir in a live browser receipt is verified and stopped; incompatible receipt is incomplete', async t => {
+  const f = fixture(t, { status: null });
+  const alias = join(f.root, 'job-link'); fs.symlinkSync(f.dir, alias);
+  const child = worker(t, f), end = once(child, 'exit');
+  f.put({ harness: 'bro', state: 'working', task_dir: alias, pid: child.pid, pid_start_time: procStat(child.pid).start });
+  const r = f.run(); assert.equal(r.status, 0, r.stderr); assert.deepEqual(await end, [null, 'SIGTERM']);
+  assert.ok(fs.existsSync(join(f.dir, 'STATUS.json.stop-requested')));
+  assert.ok(f.calls().some(a => a[1] === 'close'));
+  const g = fixture(t, { status: null }); g.put({ task_dir: g.root });
+  const bad = g.run(); assert.equal(bad.status, 1); assert.match(bad.stderr, /incompatible primary STATUS/); assert.deepEqual(g.calls(), []);
 });
 
 test('browser worker records its own exact PID and start before invoking its CLI', t => {
@@ -117,9 +189,11 @@ test('browser worker records its own exact PID and start before invoking its CLI
 const stat = fs.readFileSync('/proc/' + process.ppid + '/stat', 'utf8');
 fs.writeFileSync(process.argv[process.argv.indexOf('--out')+1], JSON.stringify([process.ppid, stat.slice(stat.lastIndexOf(')')+1).trim().split(/\\s+/)[19]]));`);
   fs.chmodSync(join(f.root, 'jev-aistudio'), 0o700);
-  const r = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-jev.mjs'), f.dir], { env: f.env, encoding: 'utf8' });
+  const alias = join(f.root, 'job-link'); fs.symlinkSync(f.dir, alias);
+  const r = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-jev.mjs'), alias], { env: f.env, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   const status = JSON.parse(fs.readFileSync(join(f.dir, 'STATUS.json')));
+  assert.equal(status.task_dir, f.dir);
   assert.deepEqual([status.pid, status.pid_start_time], JSON.parse(fs.readFileSync(join(f.dir, 'report.md'))));
 });
 

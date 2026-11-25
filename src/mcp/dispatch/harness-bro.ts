@@ -1,4 +1,5 @@
 /** Browser-worker launch. */
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { herdrId } from '../../roles/herdr-run.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
@@ -8,7 +9,7 @@ import { directory, hudHome, jobCache } from '../store/job-store.js';
 import { tabLabel, run, workspaceArgs, rejectLaunch, binScript, quote, type DispatchResult } from './proc.js';
 
 export async function dispatchBro(job: Job, task: string): Promise<DispatchResult> {
-  const dir = directory(job.job),
+  const launch = randomUUID(), dir = directory(job.job),
     tabName = tabLabel(job, task);
   const result = await run('herdr', [
     'tab',
@@ -20,6 +21,7 @@ export async function dispatchBro(job: Job, task: string): Promise<DispatchResul
     tabName,
     '--env',
     `HUD_JOB_DIR=${dir}`,
+    '--env', `HUD_TAB_LAUNCH=${launch}`,
     '--env',
     `HUD_HOME=${hudHome}`,
     '--no-focus',
@@ -36,7 +38,7 @@ export async function dispatchBro(job: Job, task: string): Promise<DispatchResul
   const sessionFile = join(dir, jobFiles.session);
   writePrivateFile(
     sessionFile,
-    `TASK=${job.job}\nTAB=${tab.tab_id}\nTAB_NAME=${tabName}\nLEFT=${root_pane.pane_id}\nORCH=${job.herdr_pane}\n`,
+    `TASK=${job.job}\nLAUNCH=${launch}\nTAB=${tab.tab_id}\nTAB_NAME=${tabName}\nLEFT=${root_pane.pane_id}\nORCH=${job.herdr_pane}\n`,
     { mkdir: false }
   );
   jobCache.invalidateFile(sessionFile);

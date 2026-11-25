@@ -153,19 +153,20 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
       '--env',
       'GIT_OPTIONAL_LOCKS=0',
-      '--no-focus',
     ];
+    const starting: JobStatus = { version: 1, slot: 'primary', task_dir: fs.realpathSync(dir), state: 'working', harness: 'cli', agent: place.agent, pid: null, pid_start_time: null };
     let left = '';
     let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
     for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
-      const result = await run('herdr', tabArgv);
+      const launch = randomUUID();
+      const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, '--no-focus']);
       if (result.exit_code !== 0) return reject(result);
       const { tab, root_pane } = JSON.parse(result.stdout).result;
       if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
       left = root_pane?.pane_id;
       if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
       const fields: SessionReceipt = {
-        TASK: job.job,
+        TASK: job.job, LAUNCH: launch,
         TAB: tab.tab_id,
         TAB_NAME: tabName,
         LEFT: left,
@@ -184,6 +185,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
         { mkdir: false }
       );
       jobCache.invalidateFile(sessionFile);
+      writeCreateStatus(dir, starting); // Stop intent may arrive before the supervisor discovers the worker.
       const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
       if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
       argv.push('--', ...agentArgs);
@@ -220,7 +222,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       const agent = got.exit_code === 0 ? JSON.parse(got.stdout).result?.agent : null;
       if (agent?.agent_session?.kind !== 'id' || agent.agent_session.value !== resume.id)
         return reject(launchError(`${place.agent} did not open the recorded session`));
-      writeCreateStatus(dir, { state: 'working', agent_session_id: resume.id });
+      writeCreateStatus(dir, { ...starting, agent_session_id: resume.id });
     }
     const turn = writeTurn(dir, { restarted: !!resume, callerToken });
     const prompt = withDonePrompt(resume?.message ?? startup.prompt, bundled, dir, turn, place.agent!);

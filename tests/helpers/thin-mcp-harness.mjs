@@ -202,7 +202,9 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
           const sub = [...subscribers].reverse().find((item) => item.supervisor && !item.id) ?? [...subscribers].find((item) => item.supervisor && item.id === id);
           if (sub) sub.id = id;
           if (has('herdr-errors') || has('no-pid')) { socket.write(JSON.stringify({ id: req.id, error: { code: 'agent_not_found' } }) + '\n'); return; }
-          reply({ agent: { agent_status: sub?.state ?? 'working', agent_session: has('late-session') && !has('exit-after-done') && !has('socket-got-session') ? null : { kind: 'id', value: 'synthetic-grok-session' } } });
+          const session = join(env.HUD_HOME, 'jobs', id, 'SESSION.txt');
+          const fields = fs.existsSync(session) ? Object.fromEntries(fs.readFileSync(session, 'utf8').trim().split('\n').map(l => l.split('='))) : {};
+          reply({ agent: { name: req.params.target, pane_id: fields.LEFT, tab_id: fields.TAB, agent_status: sub?.state ?? 'working', agent_session: has('late-session') && !has('exit-after-done') && !has('socket-got-session') ? null : { kind: 'id', value: 'synthetic-grok-session' } } });
           fs.writeFileSync(join(env.HOME, 'socket-got-session'), '');
         } else if (req.method === 'pane.read') {
           if (has('pane-read-timeout')) return;
@@ -211,7 +213,10 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
           const pidFile = ['cli-pid', 'fake-agent-pid'].map((file) => join(env.HOME, file)).find((file) => fs.existsSync(file));
           const id = [...subscribers].filter((item) => item.supervisor).at(-1)?.id;
           const supervisor = id && join(env.HUD_HOME, 'jobs', id, 'supervisor.pid');
-          reply({ process_info: { shell_pid: 1, foreground_processes: has('no-pid') ? [] : [{ pid: pidFile ? Number(fs.readFileSync(pidFile)) : supervisor && fs.existsSync(supervisor) ? Number(fs.readFileSync(supervisor)) : child.pid }] } });
+          const pid = pidFile ? Number(fs.readFileSync(pidFile)) : supervisor && fs.existsSync(supervisor) ? Number(fs.readFileSync(supervisor)) : child.pid;
+          const job = id && join(env.HUD_HOME, 'jobs', id, 'job.json');
+          const name = job && fs.existsSync(job) ? JSON.parse(fs.readFileSync(job)).cli?.agent : undefined;
+          reply({ process_info: { pane_id: req.params.pane_id, shell_pid: 1, foreground_process_group_id: pid, foreground_processes: has('no-pid') ? [] : [{ pid, name }] } });
         }
       });
       socket.on('error', () => {});
@@ -243,6 +248,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
         if (['cli-exit', 'cli-unknown', 'cli-gone', 'exit-after-done'].some(has) || (status?.state === 'idle_grace' && has('grace-quiet-gone')) || (has('cli-blocked') && has('blocked-quiet-gone'))) {
           if (['cli-exit', 'cli-unknown', 'cli-gone', 'exit-after-done'].some(has)) { try { fs.unlinkSync(report); } catch {} }
           const pidFile = join(env.HOME, 'fake-agent-pid');
+          if (!status?.pid_start_time && fs.existsSync(pidFile)) continue; // Model exit after the worker identity is discovered.
           if (fs.existsSync(pidFile)) { try { process.kill(Number(fs.readFileSync(pidFile)), 'SIGKILL'); } catch {} }
           push(client, 'unknown'); continue;
         }

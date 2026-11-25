@@ -3,7 +3,7 @@ import { isQuotaFailure, recordFailureExhaustion } from '../roles/roster.js';
 import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT, REPORT_SETTLED_EXIT } from '../mcp/cli-judge.js';
 import { piSessionIdentity, resumeDeadline } from '../mcp/worker-resume.js';
 import { headlessSonicChildren, sonicChildren } from '../worker/sonic-jobs.js';
-import { reapWorkerTree, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../roles/worker-tree.js';
+import { reapWorkerTree, tabTreeGrant, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../roles/worker-tree.js';
 import { piReportSettlement } from '../mcp/pi-read-settlement.js';
 import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { archivedClosedJobs, mainHead, reapWorktree, sweepArchivedWorktrees, type ArchivedClosedJob } from '../mcp/managed-worktree.js';
@@ -498,7 +498,7 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     // Own a new process group so stopping hud-reap also stops its Herdr CLI child.
     () => runCommand(process.execPath, [binScript('hud-reap'), dir], process.env, {
       budgetMs: REAP_BUDGET_MS, killGraceMs: REAP_KILL_GRACE_MS, killProcessGroup: true, signal,
-    }), (run) => run.ok, { carry: retry?.snapshot, expectSnapshot, signal });
+    }), (run) => run.ok, { carry: retry?.snapshot, expectSnapshot, signal, treeGrant: tabTreeGrant });
   entry.snapshot = snapshot;
   const exit = signal.aborted ? 'aborted' : result.exitCode ?? result.reason;
   const groupIssue = result.groupCleanupIssue?.replace(/^group \d+ /, 'reaper group ');
@@ -510,7 +510,7 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   const refusal = result.exitCode === 1 &&
     result.stderr.trimEnd().endsWith(`: TAB ${tab} name changed or missing; not closing`) && !result.stderr.trim().includes('\n');
   // When ancestry cannot be recovered, only the tab outcome remains to be verified.
-  if (!complete && !(unrecoverable && (result.ok || refusal || closedTabs.has(tab)))) {
+  if (!complete && !(unrecoverable && (result.ok || refusal))) {
     deferReap(entry, input, message(), refusal && !issue && !readClose);
     return;
   }

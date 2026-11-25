@@ -235,7 +235,8 @@ test('hud_close stops a working cli job and closes an idle-grace one', { timeout
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
   const working = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-stop', task: 'Synthetic stop.' });
-  await until(() => cliState(working.task_dir)?.state === 'working', t.signal);
+  await until(() => cliState(working.task_dir)?.pid_start_time, t.signal);
+  assert.equal(cliState(working.task_dir).state, 'working');
   assert.equal(typeof cliState(working.task_dir).pid, 'number');
   assert.match(cliState(working.task_dir).pid_start_time, /^\d+$/);
   const { exit_code, last_line } = await f.call('hud_close', { job: working.job });

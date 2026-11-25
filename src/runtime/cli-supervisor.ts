@@ -3,7 +3,7 @@ import { recordFailureExhaustion } from '../roles/roster.js';
 import { decideQuietJob } from '../mcp/quiet-decision.js';
 import { loadSettings } from '../settings.js';
 import { beginPrompt, cliWorkerTools, endPrompt, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment } from '../mcp/cli-judge.js';
-import { procStat } from '../utils/proc.js';
+import { tabProcessStart } from './tab-owner.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { fileStampOf, statsMtimeMs } from '../roles/job-index-cache.js';
 import { reportWasRead } from '../collectors/thin-jobs.js';
@@ -150,8 +150,20 @@ export async function main() {
     if (signal.aborted || epoch !== generation) return;
     agentMissing = got?.error?.code === 'agent_not_found';
     const agent = got?.result?.agent;
-    observeStatus(agent?.agent_status ?? null);
-    if (agent?.agent_session?.kind === 'id') current.agent_session_id = agent.agent_session.value;
+    const bound = agent && agent.name === name && agent.pane_id === pane && agent.tab_id === session.TAB &&
+      (!current.agent_session_id || current.agent_session_id === agent.agent_session?.value);
+    observeStatus(bound ? agent.agent_status ?? null : null);
+    return bound ? agent : undefined;
+  }
+  async function foreground(signal: AbortSignal) {
+    const epoch = generation;
+    const info = (await request('pane.process_info', { pane_id: pane }, { signal }))?.result?.process_info;
+    // The job's agent, not the first foreground tool subprocess or a replacement shell.
+    const pid = info?.foreground_process_group_id;
+    if (signal.aborted || epoch !== generation || info?.pane_id !== pane || !pid || pid === info.shell_pid ||
+        !info.foreground_processes?.some(p => p.pid === pid && p.name === cli.agent)) return;
+    const start = tabProcessStart(dir, pane, session.TAB, pid, session.LAUNCH);
+    if (start) return { pid, start };
   }
   function connect() {
     if (stopped || !process.env.HERDR_SOCKET_PATH) return;
@@ -254,14 +266,16 @@ export async function main() {
       // Terminal facts never wait on a socket query. The safety tick refreshes missed status pushes.
       const stopping = fs.existsSync(stopFile);
       if (stopping) diskDirty = true;
-      if (!tabClosed && !stopping && (refreshAgent || !current.pid_start_time)) {
+      if (!tabClosed && ((!stopping && refreshAgent) || !current.pid_start_time)) {
         const { aborted } = await withEffect('query', async (signal) => {
-          if (refreshAgent) await seed(signal);
-          if (!current.pid_start_time && !signal.aborted) {
-            const info = (await request('pane.process_info', { pane_id: pane }, { signal }))?.result?.process_info;
-            const pid = info?.foreground_processes?.find((item) => item.pid && item.pid !== info.shell_pid)?.pid;
-            const start = !signal.aborted && pid ? procStat(pid)?.start : null;
-            if (pid && start) { current.pid = pid; current.pid_start_time = start; }
+          const agent = await seed(signal);
+          const nativeId = agent?.agent_session?.kind === 'id' ? agent.agent_session.value : undefined;
+          if (agent && (!current.pid_start_time || (!current.agent_session_id && nativeId)) && !signal.aborted) {
+            const owner = await foreground(signal);
+            if (owner && (!current.pid_start_time || (current.pid === owner.pid && current.pid_start_time === owner.start))) {
+              current.pid = owner.pid; current.pid_start_time = owner.start;
+              if (nativeId) current.agent_session_id ??= nativeId;
+            }
           }
         });
         if (stopped || aborted) return;
@@ -269,6 +283,15 @@ export async function main() {
       let observed = collect(isTick);
       if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
       let next = judge(prev, observed, Date.now());
+      if ((observed.stop || observed.close) && !current.pid_start_time && !tabClosed && !receipt.reaped_at) {
+        // Stop intent is durable. Don't retire the only writer of a verified PID
+        // while discovery is unavailable. Tab events and the safety tick retry.
+        const gone = await request('pane.get', { pane_id: pane }, { signal: lifecycle.signal });
+        if (gone?.error?.code !== 'not_found' && !tabClosed) {
+          write({ ...next, state: 'waiting_orchestrator', reason: 'stop pending verified worker identity', exitReason: null });
+          return;
+        }
+      }
       if (next.action === 'sample') {
         observed = { ...observed, liveChild: sampleChild() };
         next = judge(prev, observed, Date.now());
@@ -351,9 +374,10 @@ export async function main() {
       if (next.action === 'quit' && observed.alive !== false && !(job.checks?.length && next.declared && !observed.close)) {
         const { issue } = rememberWorkerTree(dir, current);
         // On capture failure let the reaper try again with the root still in place.
-        if (issue) {
+        const { result: owner } = await withEffect('query', async signal => await seed(signal) ? foreground(signal) : undefined);
+        if (issue || !owner || owner.pid !== current.pid || owner.start !== current.pid_start_time) {
           deferredQuit = true;
-          console.error(`pre-quit snapshot: ${issue}; deferring quit to watcher`);
+          if (issue) console.error(`pre-quit snapshot: ${issue}; deferring quit to watcher`);
         } else {
           // Reserve the terminal write until delivery/cancellation; the watcher must not race it with tab failure.
           fs.writeFileSync(quitFile, '', { flag: 'wx', mode: 0o600 });

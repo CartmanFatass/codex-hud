@@ -1,3 +1,4 @@
+import { tabProcessStart } from '../runtime/tab-owner.js';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -153,9 +154,17 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
   }
 }
 
-/** Keep the external reaper's worker/tab checks; clean only descendants with captured ancestry. */
+type Grant = 'root' | 'pane' | 'none';
+/** Explicitly tied to the snapshot's root instance; an exit code, even zero,
+ * never attests ownership. A verified root may still need its children stopped. */
+export function tabTreeGrant(result: { stdout: string; reason: string }, snapshot: Snapshot): Grant {
+  if (result.reason !== 'ok' && result.reason !== 'failed') return 'none';
+  const first = result.stdout.split('\n', 1)[0], stamp = `${snapshot.pid}:${snapshot.start}`;
+  return first === `tree-owner ${stamp}` ? 'root' : first === `tree-pane ${stamp}` ? 'pane' : 'none';
+}
+/** Keep the reaper's worker/tab checks; clean only descendants with captured ancestry. */
 export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () => T | Promise<T>, ok: (result: T) => boolean,
-  { carry, expectSnapshot, signal }: { carry?: Snapshot; expectSnapshot?: boolean; signal?: AbortSignal } = {}) {
+  { carry, expectSnapshot, signal, treeGrant }: { carry?: Snapshot; expectSnapshot?: boolean; signal?: AbortSignal; treeGrant?: (result: T, snapshot: Snapshot) => Grant } = {}) {
   const before = rememberWorkerTree(dir, status, carry);
   const result = await reap();
   // A cancelled reaper may not have verified tab ownership yet.
@@ -168,22 +177,30 @@ export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () =
   // An unreadable snapshot or /proc is not proof that ancestry is unrecoverable.
   const unrecoverable = after.missingAfterExit && !after.issue ? missingNote : undefined;
   let issue = unrecoverable ?? before.issue ?? after.issue ?? missingNote;
-  // A tab reaper can refuse a live protected orchestrator/foreign pane. Its
-  // descendants must be left alone too. Keep the snapshot for a later retry.
-  const refusedLiveTab = snapshot && (status as { slot?: string } | null)?.slot === 'primary' &&
-    !ok(result) && !workerTreeRootGone(snapshot.pid, snapshot.start);
-  if (snapshot && !refusedLiveTab) {
+  if (snapshot) {
+    const slot = (status as { slot?: string } | null)?.slot;
+    const grant = treeGrant ? treeGrant(result, snapshot) : ok(result) || slot === 'headless' || slot === 'sonic' ? 'root' : 'none';
     const protectedPids = new Set<number>();
     try {
       for (let id = process.pid; id > 1; id = readProcStat(id)?.ppid ?? 0) protectedPids.add(id);
       if (boot() === snapshot.bootId && !protectedPids.has(snapshot.pid)) {
-        const members = snapshot.members.filter(({ pid }) => !protectedPids.has(pid));
+        let members = snapshot.members.filter(({ pid }) => !protectedPids.has(pid));
         const live = ({ pid, start }: Stamp) => {
           try {
             const stat = readProcStat(pid);
             return stat?.start === start && active(stat.state);
           } catch (error) { issue ??= `worker-tree identity unresolved: ${(error as Error).message}`; return false; }
         };
+        if (grant !== 'root' && members.some(live)) {
+          const session = grant === 'pane' ? fs.readFileSync(join(dir, jobFiles.session), 'utf8') : '';
+          const pane = /^LEFT=(.+)$/m.exec(session)?.[1], tab = /^TAB=(.+)$/m.exec(session)?.[1];
+          members = members.filter(member => {
+            if (!live(member)) return false;
+            if (pane && tab && tabProcessStart(fs.realpathSync(dir), pane, tab, member.pid, /^LAUNCH=(.+)$/m.exec(session)?.[1]) === member.start) return true;
+            issue ??= 'worker descendant cleanup not authorized; left alone';
+            return false;
+          });
+        }
         const signalMembers = (name: NodeJS.Signals) => {
           for (const member of members) if (live(member)) {
             // Node's numeric kill is not atomic with /proc: exit and reuse between the two remain possible.
