@@ -82,10 +82,14 @@ execution detail; when space runs out, execution detail is not shown. (new)
   confirm scale and run a pilot first (25.05, 25.06). The engine is a free composition engine: step kinds and the
   interaction protocols (who answers a hand-back, whether jobs may ask) are building blocks, and a template or main
   may combine them in any valid graph; the defaults below are policies of the shipped templates, not engine limits.
-  Default (test version, owner 2026-11-25): jobs inside a run do not stop to ask; they proceed on the ticket, spec and
-  their own default, record each assumption as an `Assumed:` line that goes to the run's todo list, and report a
-  blocker (which pauses the run) only for an owner matter. Branches between steps follow rules (checks pass →
-  continue; fail → at most two repairs → pause). A run ends with at most one lead acceptance. A hand-back goes by
+  Default (test version, owner 2026-11-25): the aim is that jobs in a run rarely ask and are sure of their task.
+  Before a run starts HUD checks each ticket for missing parts (goal, acceptance, dependencies, how to try it) and
+  refuses to start with the list of gaps. Jobs proceed on the ticket, spec and their own default and record each
+  assumption as an `Assumed:` line that goes to the run's todo; a job with more than three assumptions, or one about
+  scope, pauses the run like a failed pilot. A job asks only when no reasonable default is safe; its question goes to
+  a temporary lead (the fallback), never to main. Owner matters are reported as a blocker, which pauses the run.
+  Branches between steps follow rules (checks pass → continue; fail → at most two repairs → pause). A run ends with
+  one lead acceptance. A hand-back goes by
   default to a project-lead acceptance session (role `lead`: a fresh Claude Code session on Claude Opus 5.5 at high with the HUD tools, the same model and
   powers as the main session; a template may name another preset), not to main. It accepts the way the main session
   does today, not as a code review: it reads the reports and checks (including the independent `reviewer` step the

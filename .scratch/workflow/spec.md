@@ -86,6 +86,7 @@ blocking owner matters. The ticket-queue template ends with a lead acceptance st
 ## Free composition; test-version policy (owner 2026-11-25)
 
 The engine is a free composition engine: step kinds and interaction protocols (ask-enabled jobs, hand-back to a
-per-decision lead or to main) are building blocks any valid graph may combine. Shipped templates default to: jobs do
-not ask (no `hud_ask`; `Assumed:` lines → run todo; `Blockers:` only for owner matters, pausing the run), rule-based
-branches, and at most one lead at the end of a run.
+per-decision lead or to main) are building blocks any valid graph may combine. Shipped templates default to: ticket gap check before
+the run; jobs rarely ask (`Assumed:` lines → run todo; > 3 assumptions or one about scope pauses the run; a real
+question goes to a temporary lead, the fallback; `Blockers:` only for owner matters), rule-based branches, and one
+lead at the end of a run. A resident lead is ruled out (it would be main again).
