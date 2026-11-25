@@ -88,7 +88,10 @@ execution detail; when space runs out, execution detail is not shown. (new)
   through herdr when it answers. Anything it is
   unsure of goes to a todo list on the run, not a wake. It escalates to main only what blocks on the owner (scope,
   value trade-offs, visible deletions, irreversible acts). Main is the
-  owner's discussion session and is decoupled from runs: it starts them and receives the one end notice (25.07).
+  owner's discussion session and is decoupled from runs: it starts them and receives the one end notice. A run does
+  not depend on main staying alive: worker questions inside a run go to the run's lead session, notices and
+  escalations wait on the run record for whichever main session reads next, and main (or the owner in the panel) can
+  look at any run at any time (25.07).
   Outside workflows there is no automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
 Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)
