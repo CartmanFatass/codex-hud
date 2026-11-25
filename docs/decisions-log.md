@@ -7,6 +7,16 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-25-05** (§2.1 dispatch; workflow): Workflows return. Owner: batches and automatic prewalk show that any
+  ordered execution should be automatable as a workflow. HUD had grown five separate fixed flows (prewalk, land,
+  ticket queue, council, batch), each with its own runner, notices and failure handling. One deterministic runner now
+  executes declarative step graphs; the five flows become shipped templates with unchanged behaviour. Owner choices:
+  authors are owner templates plus graphs main composes at call time (validated before running); confirmation by cost
+  (cheap steps start on main's confirmation; council, `pro`, browser roles or large batches need a one-time owner
+  grant); order: build the engine and move batch and prewalk onto it first, then land, council and the ticket queue,
+  then open ad-hoc composition. Reverses the WF1 deferral (scope convergence 2026-11-07) and the "general plan
+  execution stays out" line of D-2026-11-22-19; judgement still hands back to main, and no model coordinates a run.
+
 - **D-2026-11-25-04** (§2.1 dispatch): Council synthesis defaults to the main session. Owner: the main session
   converges the member plans and accepts the result; a council without a synthesizer argument uses `main` (no synthesis
   job). `pro` and Fable high stay selectable per council. Supersedes the `pro` default in D-2026-11-25-02.

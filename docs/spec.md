@@ -71,7 +71,15 @@ execution detail; when space runs out, execution detail is not shown. (new)
   cap minus two reserved slots at a time, and non-batch jobs of that role always go first. Main gets one notice when
   the batch ends, plus failures and questions as they happen; it can stop, pause or resume the batch as a whole. Each
   item is an ordinary job; nothing chains after the batch (25.03).
-  No other automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
+  Workflows are how HUD runs any ordered set of steps: one deterministic runner (no model coordinates) executes a
+  declarative graph of steps (job, batch, council, land, check, and hand-back to main for any judgement), passes each
+  step's reports on by reference, applies one failure policy (circuit breaker, bounded repairs, failures grouped by
+  reason) and sends one notice per run. Prewalk, land, the ticket queue, council and batch become shipped templates
+  with unchanged behaviour. Templates live in `$HUD_HOME` or the project's `.hud/`; main may also compose a graph at
+  call time, which HUD validates before it runs. A run using only cheap steps (Sonic, imp, land, checks) starts on
+  main's confirmation; a run with council, `pro`, browser roles or a large batch needs a fresh one-time owner grant
+  like council. Fan-out steps confirm scale and run a pilot first (25.05).
+  Outside workflows there is no automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
 Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)
 for tool contracts, role defaults, launches, wake, checks, trains, repairs and cleanup; ARCHITECTURE §4.5 for job collection.
