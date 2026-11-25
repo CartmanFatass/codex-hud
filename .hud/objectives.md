@@ -20,3 +20,25 @@
 **State:** active
 **Next:** Build handoff/01 queues wait on other features, 02 design previews open themselves, 03 docs-only commits; measure handoff waits on toktrack's Workflow page before/after. Parallel proposal comparison deferred (owner 2026-11-24).
 **Features:** handoff
+
+## engine: 一个工作流引擎运行 HUD 的固定流程（批次、prewalk、council、land），MCP 重启不再丢流程
+
+**State:** active
+**Next:** workflow/02 prewalk、03 council 在做，04 land 排队；05–07 复杂工作流按 D-2026-11-25-08 搁置
+**Result:** 引擎和批次模板已落地（4dbb54ab），真实 4 项 Sonic 批次冒烟通过
+**Evidence:** 4dbb54ab, docs/decisions-log.md
+**Features:** workflow, batch, council
+
+## pi-worker: HUD 用自己的 pi worker 扩展启动 pi worker，不再依赖 pi-roles
+
+**State:** active
+**Next:** pi-worker/03（回收 tab 和首条消息卡住）第三轮修复后再审；02 等 03 落地
+**Result:** Sonic 已改走 HUD 扩展（e86ed24c），含联网搜索的 5 个真实 Sonic 冒烟通过
+**Evidence:** e86ed24c, 599d2644
+**Features:** pi-worker
+
+## advisor: Advisor 影子模式：推荐技能、指出违反的规则，只展示不注入
+
+**State:** active
+**Next:** 等你试用影子模式（2 张待你试的工单），之后再定注入范围（advisor/03）
+**Features:** advisor
