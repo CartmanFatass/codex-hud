@@ -8,6 +8,7 @@
 
 - [ ] Before/after median of three runs of the gate's mjs command, with the five slowest files after
 - [ ] Every former thin-mcp-land test still exists by name in the split files; at least one test still runs a real npm run build
+- [ ] 'hud_read names the land holding the lease and how long its gate step has run' (thin-mcp-land.test.mjs:349) failed once under load with `condition did not settle` after 18.9 s (/home/fires/.hud/flows/f23e2c0c383f2d633.json.gate-1.log line 2); its cause is named and fixed at the cause (no longer timeout, no retry)
 - [ ] The full gate passes three times in a row
 - [ ] If the land gate command list changes, .hud/project.json and package.json stay in sync and CI still runs the same set
 
