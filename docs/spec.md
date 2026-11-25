@@ -82,14 +82,15 @@ execution detail; when space runs out, execution detail is not shown. (new)
   confirm scale and run a pilot first (25.05, 25.06). A hand-back goes by default to a project-lead acceptance
   session (role `lead`: a fresh Claude Code session on Claude Opus 5.5 at high with the HUD tools, the same model and
   powers as the main session; a template may name another preset), not to main. It accepts the way the main session
-  does today, not as a code review: it reads the reports and checks, tries the result live, judges it against the
-  ticket or feature goal, dispatches the independent `reviewer` where the convention calls for one and acts on its
-  findings, chooses one of the declared branches (finish, repair, continue) and states why; its session is closed
-  through herdr when it answers. Anything it is
+  does today, not as a code review: it reads the reports and checks (including the independent `reviewer` step the
+  template runs where the convention calls for one), tries the result live, judges it against the ticket or feature
+  goal, chooses one of the declared branches (finish, repair, continue) and states why. A lead lives for one decision
+  only: it starts with a compact packet built from the run record, answers, and is closed through herdr; no lead
+  stays alive between decisions, and the run record, not a session, carries the run's memory. Anything it is
   unsure of goes to a todo list on the run, not a wake. It escalates to main only what blocks on the owner (scope,
   value trade-offs, visible deletions, irreversible acts). Main is the
   owner's discussion session and is decoupled from runs: it starts them and receives the one end notice. A run does
-  not depend on main staying alive: worker questions inside a run go to the run's lead session, notices and
+  not depend on main staying alive: worker questions inside a run go to a lead started for that question, notices and
   escalations wait on the run record for whichever main session reads next, and main (or the owner in the panel) can
   look at any run at any time (25.07).
   Outside workflows there is no automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
