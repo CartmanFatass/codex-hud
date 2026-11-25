@@ -118,22 +118,60 @@ test('hud_objective project can start the header with either field', async (t) =
   assert.equal(fs.existsSync(join(home, 'events')), false);
 });
 
-test('hud_tickets add without objective warns only for a feature no Objective lists', async (t) => {
-  const f = await fixture(t, false), cwd = fs.realpathSync(f.root);
-  const add = async (feature, ...objectives) => resultValue((await f.rpc('tools/call', { name: 'hud_tickets', arguments: {
-    op: 'add', cwd, feature, tickets: objectives.map((objective) =>
+/** Synthetic `hud_tickets add` of one draft per entry (`null`: no Objective of its own). */
+async function ticketAdds(t) {
+  const f = await fixture(t, false), cwd = fs.realpathSync(f.root), record = join(cwd, '.hud/objectives.md');
+  const call = async (feature, objectives, args) => (await f.rpc('tools/call', { name: 'hud_tickets', arguments: {
+    op: 'add', cwd, feature, ...args, tickets: objectives.map((objective) =>
       ({ title: 'Sample', what: 'Observe', blocked_by: [], acceptance: [], ...(objective && { objective }) })),
-  } })).result);
-  assert.equal((await add('loose', null)).warning, undefined, 'no Objective file');
-  fs.mkdirSync(join(cwd, '.hud'), { recursive: true });
-  fs.writeFileSync(join(cwd, '.hud/objectives.md'),
-    '## measure: Measure sample\n**State:** active\n**Features:** listed\n\n## publish: Publish sample\n**State:** done\n');
-  assert.equal((await add('listed', null)).warning, undefined);
-  assert.equal((await add('loose', 'measure', 'publish')).warning, undefined);
-  const result = await add('loose', 'measure', null);
+  } })).result;
+  const add = async (...input) => resultValue(await call(...input));
+  const objectives = () => {
+    fs.mkdirSync(join(cwd, '.hud'), { recursive: true });
+    fs.writeFileSync(record, '## measure: Measure sample\n**State:** active\n**Features:** listed\n\n## publish: Publish sample\n**State:** done\n');
+  };
+  const features = () => Object.fromEntries(readObjectives(cwd).objectives.map((item) => [item.id, item.features]));
+  return { cwd, record, call, add, objectives, features };
+}
+
+test('hud_tickets add without objective warns only for a feature no Objective lists', async (t) => {
+  const f = await ticketAdds(t);
+  assert.equal((await f.add('loose', [null])).warning, undefined, 'no Objective file');
+  f.objectives();
+  const before = fs.readFileSync(f.record, 'utf8');
+  assert.equal((await f.add('listed', [null])).warning, undefined);
+  const result = await f.add('loose', [null, null]);
   assert.match(result.warning, /"loose".*Objective IDs: measure, publish\./);
   assert.equal(result.tickets.length, 2);
   assert.ok(result.tickets.every(({ path }) => fs.existsSync(path)), 'the tickets are still written');
+  assert.equal(fs.readFileSync(f.record, 'utf8'), before);
+});
+
+test('hud_tickets add applies a top-level objective to every draft without its own', async (t) => {
+  const f = await ticketAdds(t);
+  f.objectives();
+  const result = await f.add('loose', ['publish', null], { objective: 'measure' });
+  assert.deepEqual(result.tickets.map(({ path }) => fs.readFileSync(path, 'utf8').match(/^\*\*Objective:\*\* (.*)$/m)?.[1]),
+    ['publish', 'measure']);
+  assert.equal(result.warning, undefined);
+});
+
+test('hud_tickets add lists the feature in each named Objective, or writes nothing for an unknown ID', async (t) => {
+  const f = await ticketAdds(t);
+  f.objectives();
+  const before = fs.readFileSync(f.record, 'utf8');
+  for (const [drafts, args] of [[['measure', 'missing'], {}], [['measure'], { objective: 'missing' }], [[null], { objective: 'missing' }]]) {
+    const result = await f.call('loose', drafts, args);
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /unknown objective: missing/);
+    assert.equal(fs.readFileSync(f.record, 'utf8'), before);
+    assert.ok(!fs.existsSync(join(f.cwd, '.scratch/loose')));
+  }
+  assert.equal((await f.add('loose', ['measure', 'publish', null])).warning, undefined);
+  assert.deepEqual(f.features(), { measure: ['listed', 'loose'], publish: ['loose'] });
+  const linked = fs.readFileSync(f.record, 'utf8');
+  await f.add('loose', ['measure']);
+  assert.equal(fs.readFileSync(f.record, 'utf8'), linked, 'listed once');
 });
 
 test('hud_objective opens and resolves one owner request without editing other STATE bytes or tickets', async (t) => {

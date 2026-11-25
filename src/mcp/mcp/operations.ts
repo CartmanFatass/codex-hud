@@ -489,7 +489,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
       if (!q.task && callerPane) void ensureQueueWatcher(callerPane, hudHome);
       return { ...ticketQueueView(q), ...(args.cancel === true && { cancel_requested: true }) };
     }
-    return args.op === 'ready' ? readyTickets(cwd, jobCache) : editTickets(cwd, args);
+    return args.op === 'ready' ? readyTickets(cwd, jobCache) : editTickets(cwd, args, hudHome);
   }
   if (args.detail !== undefined && typeof args.detail !== 'boolean') throw new Error('invalid_arguments: detail');
   const detail = args.detail === true;

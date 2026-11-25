@@ -12,6 +12,7 @@ import { projectRoot, sharedRoot } from '../roles/projects.js';
 import { TICKET_STATUSES } from '../roles/tool-definitions.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
+import { linkFeature } from './local-objectives.js';
 
 const number = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
@@ -167,10 +168,10 @@ function unlinkedWarning(root: string, feature: string): string | undefined {
   const objectives = readObjectives(root)?.objectives;
   if (!objectives || objectives.some(({ features }) => features.includes(feature))) return;
   return `feature "${feature}" is in no Objective's Features, so the panel shows it as unlinked. Objective IDs: ${
-    objectives.map(({ id }) => id).join(', ') || 'none'}. Pass objective on each ticket (op: update for these), and list the feature with hud_objective (op: set, features: the whole list).`;
+    objectives.map(({ id }) => id).join(', ') || 'none'}. List it with hud_objective (op: set, features: the whole list); op: add with objective does this itself.`;
 }
 
-export async function editTickets(cwd: string, args: Record<string, unknown>) {
+export async function editTickets(cwd: string, args: Record<string, unknown>, home: string) {
   const { op, feature } = args;
   if (op === 'sync') {
     const output: string[] = [];
@@ -210,6 +211,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
     const existing = list(featureDir);
     const known = new Set(existing.map(t => t.number));
     if (!Array.isArray(args.tickets) || !args.tickets.length) return invalid('tickets');
+    const shared = args.objective === undefined ? undefined : objectiveId(args.objective);
     let next = existing.reduce((max, ticket) => Math.max(max, ticket.number), 0);
     // Plan the entire batch before making directories or writing any ticket.
     const plans = args.tickets.map((ticket: Record<string, unknown>) => {
@@ -222,13 +224,14 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
       const blocked = resolveBlockers(ticket.blocked_by, feature, known);
       if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');
       const items = ticket.acceptance.map((item) => `- [ ] ${line(item, 'acceptance')}`);
+      const objective = ticket.objective === undefined ? shared : objectiveId(ticket.objective);
       const body = [
         `# ${nn(next)}: ${title}`,
         '',
         `**Status:** ${label}`,
         ...tryLine,
         `**Blocked by:** ${blocked}`,
-        ...(ticket.objective === undefined ? [] : [`**Objective:** ${objectiveId(ticket.objective)}`]),
+        ...(objective === undefined ? [] : [`**Objective:** ${objective}`]),
         '',
         `**What to build:** ${what}`,
         '',
@@ -238,15 +241,17 @@ export async function editTickets(cwd: string, args: Record<string, unknown>) {
         '',
       ].join('\n');
       known.add(next);
-      return { number: next, path: join(issues, `${nn(next)}-${slugify(title, next)}.md`), body };
+      return { number: next, path: join(issues, `${nn(next)}-${slugify(title, next)}.md`), body, objective };
     });
+    // Link first: if the record cannot be edited, no ticket is written.
+    const linked = [...new Set(plans.flatMap(({ objective }) => objective ?? []))];
+    if (linked.length) await linkFeature(sharedRoot(cwd), home, linked, feature);
     fs.mkdirSync(issues, { recursive: true });
     const tickets = plans.map(({ number, path, body }) => {
       fs.writeFileSync(path, body, { flag: 'wx' });
       return { number, path };
     });
-    const warning = args.tickets.some((ticket: Record<string, unknown>) => ticket.objective === undefined)
-      ? unlinkedWarning(sharedRoot(cwd), feature) : undefined;
+    const warning = unlinkedWarning(sharedRoot(cwd), feature);
     return { ok: true, tickets, ...(warning && { warning }) };
   }
 

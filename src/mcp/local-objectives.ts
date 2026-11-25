@@ -225,6 +225,16 @@ async function editRequest(root: string, home: string, args: Record<string, unkn
   return { ok: true, path, changed: true, request, change };
 }
 
+/** `hud_tickets add` with an Objective: list the feature there, with the writer and lock of `set`. */
+export function linkFeature(root: string, home: string, ids: readonly string[], feature: string) {
+  return withAbstractLock('objective', root, () => {
+    for (const id of ids) {
+      const features = readObjectives(root)?.objectives.find((item) => item.id === id)?.features ?? invalid('unknown objective');
+      if (!features.includes(feature)) edit(root, home, { op: 'set', id, features: [...features, feature] });
+    }
+  });
+}
+
 export function editObjectives(cwd: string, home: string, args: Record<string, unknown>, by: RequestCaller = {}) {
   const { root, registered } = registeredProject(home, cwd);
   if (!registered) throw new Error('hud_objective requires a registered project');

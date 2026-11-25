@@ -215,7 +215,7 @@ export const ROLE_TOOLS = [
   }, ['op']),
   tool(
     'hud_tickets',
-    'Guide/queue/edit/sync. objective: .hud/objectives.md ID.',
+    'Guide/queue/edit/sync. objective: .hud/objectives.md ID; add lists the feature there.',
     {
       op: { ...text, enum: ['guide', 'ready', 'run', 'add', 'update', 'sync'], default: 'guide' },
       cwd: text,
