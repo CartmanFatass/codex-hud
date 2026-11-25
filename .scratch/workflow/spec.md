@@ -82,3 +82,10 @@ requires; the lead acts on its findings. A lead lives for one decision (packet f
 closed); none stays alive.
 It chooses finish / repair / continue with reasons; uncertain items go to the run's todo; escalates to main only
 blocking owner matters. The ticket-queue template ends with a lead acceptance step. Main starts runs and gets the one end notice. Ticket 07.
+
+## Free composition; test-version policy (owner 2026-11-25)
+
+The engine is a free composition engine: step kinds and interaction protocols (ask-enabled jobs, hand-back to a
+per-decision lead or to main) are building blocks any valid graph may combine. Shipped templates default to: jobs do
+not ask (no `hud_ask`; `Assumed:` lines → run todo; `Blockers:` only for owner matters, pausing the run), rule-based
+branches, and at most one lead at the end of a run.

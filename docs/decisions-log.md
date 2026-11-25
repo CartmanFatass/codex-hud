@@ -16,10 +16,14 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   project-lead acceptance like the main session's today, not code review; code review stays with the independent
   `reviewer` role per the convention, dispatched by the lead where required; a wrong verdict is caught later by the owner or main rather than at each
   slice. Main still starts runs and gets one end notice; uncertain items go to a todo list on the run (no wake); only
-  blocking owner matters escalate to main. A run is an independent work stream and never depends on the main session being alive (worker
-  questions go to a lead started for that question; a lead lives for one decision and is closed after it, so no
+  blocking owner matters escalate to main. A run is an independent work stream and never depends on the main session being alive (a lead
+  lives for one decision and is closed after it, so no
   orchestrator-like session lives inside the run (owner: a long-lived lead would only move main into the workflow); notices and escalations wait on the run for the next main session); main can look
-  in at any time. Owner's reasoning: tickets form a clear dependency path suited to automatic
+  in at any time. Test-version default (owner, after 25 % of retained imp jobs
+  were seen asking and all five questions that day took the worker's default): jobs in a run do not ask; they record
+  `Assumed:` lines that go to the run's todo, branches follow rules, and a run ends with at most one lead; owner
+  matters pause the run as a blocker. The engine stays a free composition engine: these are template policies, and
+  hand-back to a lead or main remains a step kind any graph may use. Owner's reasoning: tickets form a clear dependency path suited to automatic
   progress, same-model acceptance keeps behaviour consistent, and main's tool-call load drops sharply. Supersedes "hand-back to main
   for any judgement" (D-2026-11-25-05) and delegation steps 4–6 where a workflow runs the work.
 

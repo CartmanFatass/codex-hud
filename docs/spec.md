@@ -79,8 +79,14 @@ execution detail; when space runs out, execution detail is not shown. (new)
   call time, which HUD validates before it runs. A run using only cheap steps (Sonic, imp, land, checks) starts on
   main's confirmation; a run with council, `pro`, browser roles or a large batch (more than 50 Sonic items or 2 MiB of
   Sonic input, or more than 12 items of another role) needs a fresh one-time owner grant like council. Fan-out steps
-  confirm scale and run a pilot first (25.05, 25.06). A hand-back goes by default to a project-lead acceptance
-  session (role `lead`: a fresh Claude Code session on Claude Opus 5.5 at high with the HUD tools, the same model and
+  confirm scale and run a pilot first (25.05, 25.06). The engine is a free composition engine: step kinds and the
+  interaction protocols (who answers a hand-back, whether jobs may ask) are building blocks, and a template or main
+  may combine them in any valid graph; the defaults below are policies of the shipped templates, not engine limits.
+  Default (test version, owner 2026-11-25): jobs inside a run do not stop to ask; they proceed on the ticket, spec and
+  their own default, record each assumption as an `Assumed:` line that goes to the run's todo list, and report a
+  blocker (which pauses the run) only for an owner matter. Branches between steps follow rules (checks pass →
+  continue; fail → at most two repairs → pause). A run ends with at most one lead acceptance. A hand-back goes by
+  default to a project-lead acceptance session (role `lead`: a fresh Claude Code session on Claude Opus 5.5 at high with the HUD tools, the same model and
   powers as the main session; a template may name another preset), not to main. It accepts the way the main session
   does today, not as a code review: it reads the reports and checks (including the independent `reviewer` step the
   template runs where the convention calls for one), tries the result live, judges it against the ticket or feature
@@ -90,7 +96,7 @@ execution detail; when space runs out, execution detail is not shown. (new)
   unsure of goes to a todo list on the run, not a wake. It escalates to main only what blocks on the owner (scope,
   value trade-offs, visible deletions, irreversible acts). Main is the
   owner's discussion session and is decoupled from runs: it starts them and receives the one end notice. A run does
-  not depend on main staying alive: worker questions inside a run go to a lead started for that question, notices and
+  not depend on main staying alive: notices and
   escalations wait on the run record for whichever main session reads next, and main (or the owner in the panel) can
   look at any run at any time (25.07).
   Outside workflows there is no automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
