@@ -120,7 +120,7 @@ function observeSpeed(s: State['speed'], e: Record<string, unknown>, message: Re
 const ADVISOR_WAKE_RE =
   /^(?:HUD events \(status only;|The [A-Za-z0-9_.-]+ plugin sent a message:|<local-command-|<command-name>|<task-notification>|\/)/;
 const SYSTEM_REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
-const OWNER_ORIGIN_KINDS = new Set(['user', 'human', 'composer']);
+const OWNER_ORIGIN_KINDS = new Set(['user', 'human']);
 
 function isPlainUserOrigin(value: unknown): boolean {
   return typeof value === 'string' && OWNER_ORIGIN_KINDS.has(value.toLowerCase());
@@ -133,7 +133,7 @@ function isOwnerUserRecord(e: Record<string, unknown>): boolean {
     const kind = typeof e.origin === 'string' ? e.origin : record(e.origin).kind;
     if (!isPlainUserOrigin(kind)) return false;
   }
-  if (e.promptSource !== undefined && e.promptSource !== null && !isPlainUserOrigin(e.promptSource)) return false;
+  if (e.promptSource === 'system') return false;
   if (e.turnOrigin !== undefined && e.turnOrigin !== null && !isPlainUserOrigin(e.turnOrigin)) return false;
   return true;
 }

@@ -1037,6 +1037,8 @@ test('transcript newOwnerMessage ignores plugin, system, task-notification and f
       type: 'user',
       uuid: 's4',
       origin: { kind: 'task-notification' },
+      promptSource: 'system',
+      turnOrigin: 'task_notification',
       message: { content: 'Background job finished.' },
     },
     {
@@ -1081,7 +1083,7 @@ test('transcript newOwnerMessage ignores plugin, system, task-notification and f
     assert.equal(append(ignored).newOwnerMessage, undefined, `expected ${ignored.uuid} to be ignored`);
   }
 
-  // Normal owner records (without origin fields or with explicit human/user/composer fields) still become newOwnerMessage.
+  // Older records without origin fields still become newOwnerMessage.
   const first = append({
     type: 'user',
     uuid: 'u1',
@@ -1094,19 +1096,24 @@ test('transcript newOwnerMessage ignores plugin, system, task-notification and f
   });
 
   append({ type: 'assistant', uuid: 'a1', message: { content: 'Tests added.' } });
-  const second = append({
-    type: 'user',
-    uuid: 'u2',
-    origin: { kind: 'human' },
-    promptSource: 'user',
-    turnOrigin: 'user',
-    message: { content: [{ type: 'text', text: 'Now add edge cases.' }] },
-  });
-  assert.deepEqual(second.newOwnerMessage, {
-    id: 'u2',
-    text: 'Now add edge cases.',
-    previousReply: 'Tests added.',
-  });
+  for (const [promptSource, text] of [
+    ['typed', 'Now add edge cases.'],
+    ['queued', 'Also cover empty input.'],
+  ]) {
+    const owner = append({
+      type: 'user',
+      uuid: `owner-${promptSource}`,
+      origin: { kind: 'human' },
+      promptSource,
+      turnOrigin: 'human',
+      message: { content: [{ type: 'text', text }] },
+    });
+    assert.deepEqual(owner.newOwnerMessage, {
+      id: `owner-${promptSource}`,
+      text,
+      previousReply: 'Tests added.',
+    });
+  }
 
   // Claude mod startAdvisorTurn also ignores wrapped plugin prompts.
   const advisor = createAdvisor({ cwd: f.projectRoot, isInteractive: true });
