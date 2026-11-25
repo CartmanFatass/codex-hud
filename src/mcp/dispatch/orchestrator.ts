@@ -28,6 +28,8 @@ import {
 import { loadSettings } from '../../settings.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { waitUntilFs } from '../../utils/fs-wait.js';
+import { hostInline } from '../../workflows/inline.js';
+import { reservePrewalk, drivePrewalk, type PrewalkRun, type ScoutSpec, type ScoutOutcome, type ReservedLaunch, type PrewalkInputs } from '../prewalk-flow.js';
 import { waitChildReport } from './child-report.js';
 import { prepareCouncil, type CouncilSeat } from './council.js';
 import { procStat } from '../../utils/proc.js';
@@ -258,43 +260,71 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
     }));
 }
 
-export const pendingScouts = new Map<string, AbortController>();
-export const scoutedCreates = new Set<Promise<void>>();
-
-type ScoutSpec = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; ask?: string; question: string; includeContext: boolean };
-type ScoutOutcome = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; ask?: string; id?: string; failure?: string; ms: number };
-
 async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, contextFiles: unknown,
-  signal: AbortSignal, requestKey: string): Promise<ScoutOutcome> {
+  signal: AbortSignal, requestKey: string, recovering: boolean, stopping: () => boolean): Promise<ScoutOutcome> {
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
   const ask = spec.ask ? { ask: spec.ask } : {};
   try {
-    const result = await dispatchWithKey(
+    const prior = recovering && jobs().find(j => j.request_key === requestKey && j.parent_job === target.job);
+    const result = prior ? { job: prior.job } : recovering ? { error: 'scout dispatch interrupted' } : await dispatchWithKey(
       { role: 'sonic', task: spec.question, cwd: target.cwd, ...(spec.includeContext ? { context_files: contextFiles } : {}) },
       jobCallerPane(target), requestKey, false, target, undefined, undefined,
       { scoutContextCwd: contextCwd, prewalkKind: spec.kind, dispatcher: target.dispatcher },
     );
-    if (!('job' in result)) {
+    if (!('job' in result) || !result.job) {
       return {
         kind: spec.kind, source: spec.source, ...ask, ms: elapsed(),
         failure: ('reason' in result && result.reason) || ('error' in result && result.error) || ('code' in result && result.code) || 'could not launch',
       };
     }
     const id = result.job;
-    const failure = await waitChildReport(id, signal, child => stopSonic(directory(child.job)).catch(() => ensureWatcher()));
-    return { kind: spec.kind, source: spec.source, ...ask, id, failure, ms: elapsed() };
+    const failure = prior && prior.dispatch_exit_code === null && !readCachedStatus(id).status ? 'scout dispatch interrupted' :
+      await waitChildReport(id, signal, child => stopSonic(directory(child.job)).catch(() => ensureWatcher()), stopping);
+    return { kind: spec.kind, source: spec.source, ...ask, id, failure,
+      ms: prior ? Math.max(elapsed(), Date.now() - Date.parse(prior.created_at)) : elapsed() };
   } catch (error) {
     return { kind: spec.kind, source: spec.source, ...ask, failure: signal.aborted ? 'stopped' : String(error), ms: elapsed() };
   }
 }
 
-async function runPrewalkScouts(target: Job, specs: readonly ScoutSpec[], contextCwd: string, contextFiles: unknown,
-  signal: AbortSignal): Promise<ScoutOutcome[]> {
-  return Promise.all(specs.map((spec, index) => {
-    const key = `prewalk:${target.job}:${index}:${spec.kind}`;
-    return runOneScout(target, spec, contextCwd, contextFiles, signal, key);
-  }));
+export function runReservedPrewalk(id: string, host: PrewalkRun['host'], signal: AbortSignal) {
+  const base = findJobMutable(id)!;
+  return drivePrewalk(id, host, signal, {
+    scouts: async ({ launch: { args, cwd, worktree, plan }, scouts }, recovering, stopping) => {
+      if (worktree && !base.worktree && plan.candidates.some(({ candidate: { place }, prepared }) => !('code' in prepared) &&
+          (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree.main_root))))) {
+        await prepareWorktree(base, worktree);
+      }
+      if ((!recovering && (signal.aborted || stopping())) || (worktree && !base.worktree)) return [];
+      return Promise.all(scouts.map((spec, i) => runOneScout(base, spec, cwd, args.context_files, signal,
+        `prewalk:${id}:${i}:${spec.kind}`, recovering, stopping)));
+    },
+    launch: (launch, outcomes) => keyLock(`job:${id}`, async () => {
+      const args = { ...launch.args, task: originalTask(base) };
+      await launchReservedJob(base, { ...launch, args }, outcomes);
+    }),
+    targetReceipt: () => findJob(id),
+    failed: reason => finishLaunch(findJobMutable(id) ?? base, directory(id), { ...launchError(reason), preInput: true }, reason, false),
+    stopped: () => {
+      base.prewalk = base.prewalk?.map(entry => entry.kind === 'pool' ? entry : { ...entry, result: 'stopped' });
+      save({ ...base, dispatch_exit_code: 1 });
+      writeCreateStatus(directory(id), { state: 'stopped', exit_reason: 'scouted dispatch stopped', ended_at: new Date().toISOString() });
+    },
+  });
+}
+
+function startPrewalk(base: Job, host: 'watcher' | 'mcp', inputs: PrewalkInputs) {
+  // The reserved brief holds the task. Persist only options consumed by the launch adapter.
+  const options = (args: Args) => Object.fromEntries([...replayOptions, 'from_jobs'].filter(k => args[k] !== undefined).map(k => [k, args[k]]));
+  const { launch, scouts } = inputs;
+  reservePrewalk(base, host, { scouts, launch: { ...launch, args: options(launch.args), retryInput: launch.retryInput && options(launch.retryInput) } });
+  return hostInline(base.job, signal => runReservedPrewalk(base.job, host, signal));
+}
+
+function callerScouts(requests: readonly PrewalkScoutRequest[], task: string): ScoutSpec[] {
+  return requests.map(({ kind, ask }) => ({ kind, source: 'caller', ask: truncateScoutAsk(ask),
+    question: prewalkScoutTask(kind, ask, task), includeContext: kind !== 'web' }));
 }
 
 function formatScoutNote(outcome: ScoutOutcome, reason: string): string {
@@ -626,13 +656,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     else if (!browser) localContext = validated;
   }
   const effectiveScouts = args.prewalk === false ? [] : (scoutsArg ?? []);
-  const scoutSpecs: ScoutSpec[] = effectiveScouts.map(({ kind, ask }) => ({
-    kind,
-    source: 'caller',
-    ask: truncateScoutAsk(ask),
-    question: prewalkScoutTask(kind, ask, task),
-    includeContext: kind !== 'web',
-  }));
+  const scoutSpecs = callerScouts(effectiveScouts, task);
   const hasScouts = scoutSpecs.length > 0;
   const hasPrewalk = Boolean(pool || (args.prewalk !== false && scoutsArg !== undefined));
   const initialPrewalk = (state: 'running' | 'queued'): PrewalkEntry[] | undefined => hasPrewalk
@@ -780,7 +804,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(council && seat && { workflow: council.id, council, preset: seat.preset }),
       ...(first.route && { route: first.route }),
       ...(role === 'sonic' || first.route?.mode === 'headless' || args.mode === 'headless' ? { headless: true } : {}),
-      ...(scoutContextCwd === undefined ? {} : { scout_only: true }),
+      ...(scoutContextCwd === undefined ? {} : { scout_only: true, workflow: parentJob }),
       experiment, arm,
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
@@ -815,7 +839,6 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const attempts = base.attempts!;
   const candidates = plan.candidates;
   let scoutTask: HudTask | undefined;
-  let scoutOutcomes: ScoutOutcome[] | undefined;
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
   const launch = () => keyLock(`job:${id}`, async () => {
     let job = base;
@@ -868,20 +891,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       };
       if (imp) job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
-      let briefContext = inline === browser ? context! : await contextFor(args, browser);
-      let scoutNote = '';
-      if (hasScouts && scoutOutcomes) {
-        const applied = await applyScoutOutcomes(args, browser, briefContext, scoutOutcomes, pool?.entry, contextFor);
-        briefContext = applied.briefContext;
-        scoutNote = applied.note;
-        job.prewalk = applied.entries;
-        job.scout_state = applied.scoutState;
-        if (applied.scoutError) job.scout_error = applied.scoutError;
-        else delete job.scout_error;
-      }
+      const briefContext = inline === browser ? context! : await contextFor(args, browser);
       if (!('code' in briefContext)) {
         Object.assign(job, briefContext.metadata);
-        writeBrief(job, dir, task, scoutNote + briefContext.block, !hasScouts && attempts.length === 0);
+        writeBrief(job, dir, task, briefContext.block, attempts.length === 0);
       }
       // Persist before dispatch: an interrupted launch must not dispatch again on retry.
       save(job, attempts.length > 0);
@@ -897,14 +910,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           fs.writeFileSync(join(children, id), '', { mode: 0o600, flag: 'wx' });
         } else if (!parentJob) trackCreatedJob(id);
         ensureWatcher();
-        if (session.taskClient && !parentJob && !scoutTask) taskEntry = beginTask(job);
-        else if (!scoutTask && !job.scout_only && !job.council) void ensureQueueWatcher(pane, hudHome);
+        if (session.taskClient && !parentJob) taskEntry = beginTask(job);
+        else if (!job.scout_only && !job.council) void ensureQueueWatcher(pane, hudHome);
       }
       const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
-      if (hasScouts && attempts.length === 0) {
-        fs.rmSync(join(dir, jobFiles.status), { force: true });
-        jobCache.invalidateFile(join(dir, jobFiles.status));
-      }
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
       else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing);
       base.launch_agent_args = job.launch_agent_args;
@@ -922,11 +931,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
     if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
       job.route = plan.fallback;
-    const launchRow = finishLaunch(job, dir, result, reason, !hasScouts);
-    if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && jobCallerPane(job) === scoutTask.pane) {
-      scoutTask.fence = taskFence(job);
-      extendTask(scoutTask, job);
-    }
+    const launchRow = finishLaunch(job, dir, result, reason);
     if (batch) {
       registerBatchTask(taskEntry, job, result.exit_code === 0);
       return created(job, launchRow);
@@ -952,42 +957,12 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (batch) registerBatchTask(scoutTask, base, true);
   const reply = batch ? created(base, scoutRow)
     : (finishTask(scoutTask, base, true, scoutTask && launchSummary(base)) ?? created(base, scoutRow));
-  const controller = new AbortController();
-  pendingScouts.set(id, controller);
-  const creating = (async () => {
-    try {
-      // Keep worktree creation behind the same trust gate as ordinary worktree dispatch.
-      if (worktree && !base.worktree && candidates.some(({ candidate: { place }, prepared }) => !('code' in prepared) &&
-        (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree!.main_root))))) {
-        await prepareWorktree(base, worktree);
-      }
-      if (!controller.signal.aborted && (!worktree || base.worktree)) {
-        scoutOutcomes = await runPrewalkScouts(base, scoutSpecs, cwd, context!.metadata.context_files, controller.signal);
-      }
-      if (controller.signal.aborted) {
-        if (base.prewalk) {
-          base.prewalk = base.prewalk.map(entry => entry.kind === 'pool' ? entry : { ...entry, result: 'stopped' });
-        }
-        save({ ...base, dispatch_exit_code: 1 });
-        writeCreateStatus(dir, { state: 'stopped', exit_reason: 'scouted dispatch stopped', ended_at: new Date().toISOString() });
-        return;
-      }
-      // Hand off synchronously: subsequent mutations queue behind the target launch lock.
-      pendingScouts.delete(id);
-      await launch();
-    } catch (error) {
-      const latest = findJobMutable(id) ?? base;
-      finishLaunch(latest, dir, { ...launchError(String(error)), preInput: true }, String(error), false);
-      if (scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && jobCallerPane(latest) === scoutTask.pane) {
-        scoutTask.fence = taskFence(latest);
-        persistTask(scoutTask);
-      }
-    } finally {
-      pendingScouts.delete(id);
+  void startPrewalk(base, 'mcp', { scouts: scoutSpecs, launch: { cwd, args, retryInput, chain, plan, worktree } }).then(() => {
+    const latest = findJob(id);
+    if (latest && scoutTask && activeTasks.get(id) === scoutTask && scoutTask.view.status === 'working' && jobCallerPane(latest) === scoutTask.pane) {
+      scoutTask.fence = taskFence(latest); extendTask(scoutTask, latest);
     }
-  })();
-  scoutedCreates.add(creating);
-  void creating.then(() => scoutedCreates.delete(creating), () => scoutedCreates.delete(creating));
+  }).catch(() => ensureWatcher());
   return reply;
 }
 
@@ -1006,7 +981,8 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     if (code === 'EEXIST' || code === 'ENOENT') return { started: false };
     throw error;
   }
-  return keyLock(`job:${id}`, async () => {
+  let prewalking: Promise<void> | undefined;
+  const result = await keyLock(`job:${id}`, async () => {
     jobCache.invalidateJob(id);
     const existing = findJobMutable(id);
     const status = readCachedStatus(id).status;
@@ -1045,7 +1021,6 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const presetName = typeof args.preset === 'string' ? args.preset : undefined;
     if (!existing.route && presetName !== undefined && !chain.presets?.some(p => p.name === presetName))
       return failQueued(`unknown preset: ${presetName}`, 'invalid_arguments');
-    const modelOverride = typeof args.model === 'string' ? args.model : undefined;
     const settings = existing.route?.placement === 'even' && !retryInput ? impPlacementSettings(hudHome) : undefined;
     const even = settings && launchRoleName === 'imp' ? evenPlanner(found, chain, args, routing, 'imp', settings.impEvenPool)
       : settings && launchRoleName === 'sonic' ? evenPlanner(found, chain, args, routing, 'sonic', settings.sonicEvenPool) : undefined;
@@ -1082,15 +1057,8 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const context = await contextFor(args, inline);
     if ('code' in context) return failQueued(context.error ?? context.code ?? 'invalid_arguments', context.code === 'invalid_arguments' ? 'invalid_arguments' : undefined);
 
-    const queuedPoolEntry = existing.prewalk?.find(entry => entry.kind === 'pool');
     const scoutSpecs: ScoutSpec[] = queuedScouts?.length
-      ? queuedScouts.map(({ kind, ask }) => ({
-          kind,
-          source: 'caller',
-          ask: truncateScoutAsk(ask),
-          question: prewalkScoutTask(kind, ask, task),
-          includeContext: kind !== 'web',
-        }))
+      ? callerScouts(queuedScouts, task)
       : existing.scout_question
         ? [{ kind: 'code', source: 'caller', ask: truncateScoutAsk(existing.scout_question), question: existing.scout_question, includeContext: true }]
         : (existing.prewalk ?? [])
@@ -1125,21 +1093,35 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       return true;
     }, { timeoutMs: 10_000 });
     if (!reserved) return { started: false };
-    let scoutOutcomes: ScoutOutcome[] | undefined;
+    const launch = { cwd, args, retryInput, chain, plan, worktree };
     if (hasScouts) {
-      const controller = new AbortController();
-      if (worktree && !base.worktree && plan.candidates.some(({ candidate: { place }, prepared }) => !('code' in prepared) &&
-        (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree!.main_root))))) {
-        await prepareWorktree(base, worktree);
-      }
-      if (!worktree || base.worktree) {
-        scoutOutcomes = await runPrewalkScouts(base, scoutSpecs, cwd, context.metadata.context_files, controller.signal);
-      }
+      // Release the job lock while the driver waits for child reports.
+      prewalking = startPrewalk(base, 'watcher', { scouts: scoutSpecs, launch });
+      return { started: true };
     }
+    return launchReservedJob(base, launch, undefined, { even, context });
+  });
+  if (!prewalking) return result;
+  // Keep this start in the watcher's drain set (including across binary reload).
+  await prewalking;
+  const job = findJob(id);
+  return job?.dispatch_exit_code === 0 ? { started: true } : { started: false, failed: true, reason: job?.stderr_tail };
+}
 
-    if (hasScouts) leaveQueue();
-
-    const harnessesSource = harnessesSourceFor(onName);
+/** Launch the already admitted target at its reserved id and frozen placement. */
+async function launchReservedJob(base: Job, { cwd, args, retryInput, chain, plan, worktree }: ReservedLaunch, scoutOutcomes?: ScoutOutcome[],
+  queued?: { even?: ReturnType<typeof evenPlanner>; context: Awaited<ReturnType<typeof assembleContext>> }) {
+    const { job: id, role } = base, dir = directory(id), task = required(args, 'task');
+    const found = registry(cwd), project = found.project();
+    const contextFor = (targetArgs: Args, browser: boolean) => assembleContext(targetArgs, cwd, browser, project, base.repair_of, base.pool_files);
+    const launchRoleName = base.overflow_from ?? role;
+    const settings = !queued && base.route?.placement === 'even' && !retryInput ? impPlacementSettings(hudHome) : undefined;
+    const even = queued?.even ?? (settings && (launchRoleName === 'imp' || launchRoleName === 'sonic')
+      ? evenPlanner(found, chain, args, found.routing(Date.now()), launchRoleName, launchRoleName === 'imp' ? settings.impEvenPool : settings.sonicEvenPool) : undefined);
+    const modelOverride = typeof args.model === 'string' ? args.model : undefined;
+    const onEntry = typeof args.on === 'string' ? harnessDefaults(hudHome, bundled)[args.on] : undefined;
+    const harnessesSource = harnessesSourceFor(typeof args.on === 'string' ? args.on : null);
+    const poolEntry = base.prewalk?.find(entry => entry.kind === 'pool');
     const attempts = base.attempts!;
     const candidates = plan.candidates;
     let job = base;
@@ -1189,10 +1171,10 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       };
       if (launchRoleName === 'imp') job.imp_preset = effective.preset;
       const browser = place.harness === 'bro';
-      let briefContext = inline === browser ? context : await contextFor(args, browser);
+      let briefContext = queued && browser === (plan.candidates[0].candidate.place.harness === 'bro') ? queued.context : await contextFor(args, browser);
       let scoutNote = '';
-      if (hasScouts && scoutOutcomes) {
-        const applied = await applyScoutOutcomes(args, browser, briefContext, scoutOutcomes, queuedPoolEntry, contextFor);
+      if (scoutOutcomes?.length) {
+        const applied = await applyScoutOutcomes(args, browser, briefContext, scoutOutcomes, poolEntry, contextFor);
         briefContext = applied.briefContext;
         scoutNote = applied.note;
         job.prewalk = applied.entries;
@@ -1204,14 +1186,19 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
         Object.assign(job, briefContext.metadata);
         writeBrief(job, dir, task, scoutNote + briefContext.block, false);
       }
+      job.launcher = launcherId();
       save(job, attempts.length > 0);
+      if (scoutOutcomes && attempts.length === 0) {
+        fs.rmSync(join(dir, jobFiles.status), { force: true });
+        jobCache.invalidateFile(join(dir, jobFiles.status));
+      }
       if (attempts.length === 0 && job.retry_of) {
         const source = findJob(job.retry_of);
         if (source) save({ ...source, observed_at: new Date().toISOString() });
       }
       const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
       if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
-      else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing, { callerToken: existing.created_at });
+      else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing, { callerToken: base.created_at });
       base.launch_agent_args = job.launch_agent_args;
       reason = result.exit_code === 0 ? '' : launchFailure(result).reason;
       if (reason) attempt.reason = reason;
@@ -1226,7 +1213,6 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       job.route = plan.fallback;
     finishLaunch(job, dir, result, reason, false);
     return { started: result.exit_code === 0, ...(result.exit_code !== 0 ? { failed: true, reason } : {}) };
-  });
 }
 
 function writeBrief(job: Job, dir: string, task: string, block: string, first: boolean) {

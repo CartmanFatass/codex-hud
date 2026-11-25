@@ -23,7 +23,9 @@ import { waitUntilFs, type WatchTarget } from '../../utils/fs-wait.js';
 import { reportReadHint } from '../../utils/report-summary.js';
 import { required, jobCwd, type Args } from '../dispatch/context.js';
 import { prepareCouncil, synthesisTemplate } from '../dispatch/council.js';
-import { sendJob, dispatchJob, resumeJob, pendingScouts } from '../dispatch/orchestrator.js';
+import { abortInline } from '../../workflows/inline.js';
+import { requestPrewalkStop } from '../prewalk-flow.js';
+import { sendJob, dispatchJob, resumeJob } from '../dispatch/orchestrator.js';
 import { registry, harnessSwitchFailure, compactAssignment } from '../dispatch/places.js';
 import { paneText, ensureWatcher } from '../dispatch/proc.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
@@ -856,11 +858,10 @@ async function cancelBatch(args: Args, scan: JobScan) {
 export async function closeJob(job: Job, stop = false) {
   const dir = directory(job.job);
   if (!job.headless && findJob(job.job)?.reaped_at) return { exit_code: 0, last_line: 'already reaped' };
-  const scouting = pendingScouts.get(job.job);
-  if (scouting) {
+  if (job.scout_state === 'scouting' && await requestPrewalkStop(job.job)) {
     recordStopOrigin(dir, 'mcp', readCachedStatus(job.job).status?.state, undefined, jobCache);
-    scouting.abort();
-    return { exit_code: 0, last_line: job.role === 'council' ? 'stopping council' : 'stopping scouted dispatch' };
+    abortInline(job.job);
+    return { exit_code: 0, last_line: 'stopping scouted dispatch' };
   }
   let { row, status } = readRow(job);
   if (job.role === 'council' && row.state === 'working' && fs.existsSync(join(hudHome, 'flows', `${job.job}.json`))) {

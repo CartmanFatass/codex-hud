@@ -18,8 +18,15 @@ import { directory, hudHome } from './store/job-store.js';
  * The outer receipt is the small, watcher-facing projection; never schedule from that copy. */
 export async function runWorkflow(id: string) {
   if (JOB_ID_RE.test(id)) {
+    // A parent job id is shared by several templates. Route on the header, not the prefix.
     const path = `${runDir(hudHome, id)}.json`;
-    if (fs.existsSync(path) && (readJsonFile(path) as { template?: string }).template === 'council') return driveCouncil(id);
+    if (!fs.existsSync(path)) return;
+    const header = readJsonFile(path) as { template?: string; state?: string };
+    if (header.template === 'council') return driveCouncil(id);
+    if (header.template === 'prewalk' && header.state === 'working') {
+      const { runReservedPrewalk } = await import('./dispatch/orchestrator.js');
+      return runReservedPrewalk(id, 'detached', new AbortController().signal);
+    }
     return;
   }
   if (!isBatchId(id)) return;

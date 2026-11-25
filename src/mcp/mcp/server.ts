@@ -5,7 +5,7 @@ import type { Job } from '../job-contracts.js';
 import type { RequestCaller } from '../local-objectives.js';
 import * as workerTools from '../../worker/tools.js';
 import { statuslineTool, statuslineResource, readCodexStatusline } from '../codex-statusline.js';
-import { scoutedCreates, pendingScouts } from '../dispatch/orchestrator.js';
+import { inlinePending, shutdownInline } from '../../workflows/inline.js';
 import { isWorker, hudHome, publishWorkSummary, scanForCall, writeScan, findJob } from '../store/job-store.js';
 import { locks, keyLock } from '../store/key-lock.js';
 import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js';
@@ -239,7 +239,7 @@ async function snapshot() {
   pruneCreatedJobs(session.createdJobs, (id) => !!findJob(id));
   pruneLandTasks(landTasks, landActive);
   pruneTasks(tasks, Date.now(), evictTask);
-  return { version: 1, scoutedCreatePending: scoutedCreates.size > 0, toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
+  return { version: 1, scoutedCreatePending: inlinePending(), toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
     callerHarness: session.callerHarness, sentConventionVersion: session.sentConventionVersion, sentCreateHint: session.sentCreateHint, createdJobs: session.createdJobs, cursor: session.cursor, modLive: session.modLive, triesAt: tries.delivered, answersAt: answers.offset };
 }
 export function openRuntime() {
@@ -279,8 +279,7 @@ export function openRuntime() {
       clearTaskSweep();
       await ownerDelivery?.stop();
       await stopBatchDelivery(!handedOff);
-      for (const scout of pendingScouts.values()) scout.abort();
-      await Promise.allSettled([...scoutedCreates]);
+      await shutdownInline();
       clearTaskMaps();
       session.createdJobs.clear(); session.cursor?.clear();
     },

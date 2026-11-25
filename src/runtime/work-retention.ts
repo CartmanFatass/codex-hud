@@ -65,7 +65,7 @@ async function pruneExpiredWorkflow(home: string, id: string, cutoff: number) {
       const receipt = join(dir, `${id}.json`), stat = fs.lstatSync(receipt);
       if (!stat.isFile() || stat.mtimeMs >= cutoff) return;
       const b = readJsonBounded(receipt, stat.size) as { template?: string; state: string; totals?: { running: number } };
-      if (id.startsWith('j') ? b.template !== 'council' || !['completed', 'stopped', 'failed'].includes(b.state)
+      if (id.startsWith('j') ? (b.template !== 'council' && b.template !== 'prewalk') || !['completed', 'stopped', 'failed'].includes(b.state)
         : !['completed', 'stopped', 'paused'].includes(b.state) || b.totals?.running !== 0) return;
       inDirectory(join(dir, id), batch => {
         const files = fs.readdirSync(batch);

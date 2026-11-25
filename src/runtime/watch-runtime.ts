@@ -15,6 +15,7 @@ import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/s
 import { landAttempt, activeLand, isFlowId } from '../mcp/land-state.js';
 import type { CouncilRun } from '../mcp/council-state.js';
 import { wakeWorkflow } from '../workflows/wake.js';
+import type { PrewalkRun } from '../mcp/prewalk-flow.js';
 import { headerScanner } from '../workflows/header-scan.js';
 import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
 import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
@@ -914,8 +915,8 @@ function scan(retryWatch = false) {
         if (!q || q.state !== 'working') continue;
         wakeTicketQueue(home, q);
       } else if (/^j[0-9a-f]{16}$/.test(id)) {
-        const run = header<CouncilRun>(file);
-        if (run?.template !== 'council' || run.state !== 'working') continue;
+        const run = header<CouncilRun | PrewalkRun>(file);
+        if ((run?.template !== 'council' && run?.template !== 'prewalk') || run.state !== 'working') continue;
         wakeWorkflow(home, run);
       } else if (isBatchId(id)) {
         const b = header<Batch>(file);

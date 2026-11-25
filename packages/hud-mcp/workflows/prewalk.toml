@@ -1,0 +1,20 @@
+version = 1
+name = "prewalk"
+
+[policy]
+breaker = "none"
+
+# Scouts belong to the already-admitted target; no ordinary role slots or pilots.
+[steps.scouts]
+kind = "batch"
+role = "sonic"
+manifest = "manifest.json"
+max_parallel = "{count}"
+optional = true
+
+[steps.target]
+kind = "job"
+role = "{role}"
+brief_file = "{target_brief}"
+needs = ["scouts"]
+from = ["scouts"]

@@ -6,7 +6,7 @@ import { jobFiles } from '../paths.js';
 import { directory, findJob, readRow, save, settled } from '../store/job-store.js';
 
 /** A file alone is not a result: collect a settled report or account for the failure. */
-export async function waitChildReport(id: string, signal: AbortSignal, discard: (child: Job) => Promise<unknown>) {
+export async function waitChildReport(id: string, signal: AbortSignal, discard: (child: Job) => Promise<unknown>, stopping?: () => boolean) {
   const dir = directory(id);
   let child: Job | null = null, abandon = false;
   try {
@@ -24,6 +24,7 @@ export async function waitChildReport(id: string, signal: AbortSignal, discard: 
           save({ ...child }, false, reportStamp);
           return { done: true, value: undefined };
         }
+        if (stopping?.()) { abandon = true; return { done: true, value: 'stopped' }; }
         if (row.open_questions || row.blocked || row.state === 'waiting_orchestrator') {
           abandon = true;
           return { done: true, value: row.open_questions ? 'asked a question' : row.reason ?? 'needed attention' };

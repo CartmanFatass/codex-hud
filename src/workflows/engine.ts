@@ -25,7 +25,7 @@ export function controlRun(run: Omit<Run, 'steps'> & { steps?: Run['steps'] }, a
   } else return;
   return action;
 }
-export interface Tick { state: 'running' | 'done' | 'failed'; reason?: string; changed?: boolean; effect?: () => Promise<number> }
+export interface Tick { state: 'running' | 'done' | 'failed' | 'cancelled'; reason?: string; changed?: boolean; effect?: () => Promise<number> }
 /** One deterministic pass under flow-state. Step adapters can inspect receipts or stage
  * one admission. The caller commits this cursor BEFORE performing the returned effect. */
 export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: (id: string, step: Step) => Tick) {
