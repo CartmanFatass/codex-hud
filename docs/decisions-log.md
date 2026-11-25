@@ -7,6 +7,15 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-25-07** (§2.1 workflow; delegation loop): Acceptance leaves the main session. Owner: the main session
+  is a session for discussing problems with the owner; ticket-style work should not need it to accept each result.
+  A workflow ends (or pauses at a hand-back) with a qualified acceptance session that reads the reports, decides to
+  finish, repair or continue along the declared branches, and is then closed through herdr. Gains: no main-session
+  wakes or context per slice, no prompt-cache cost of keeping main waiting, no main turn per acceptance. Cost: one
+  acceptance job per run (default `oracle`); a wrong verdict is caught later by the owner or main rather than at each
+  slice. Main still starts runs and gets one end notice; owner matters escalate to main. Supersedes "hand-back to main
+  for any judgement" (D-2026-11-25-05) and delegation steps 4–6 where a workflow runs the work.
+
 - **D-2026-11-25-06** (§3; §2.1 workflow): Workflow details from the council design (synthesized by main). §3 no
   longer lists "workflow engine" among things HUD does not build; the runner is short-lived per run with no resident
   process. A large batch, which needs the one-time owner grant, is more than 50 Sonic items or more than 2 MiB of

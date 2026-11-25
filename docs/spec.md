@@ -72,14 +72,18 @@ execution detail; when space runs out, execution detail is not shown. (new)
   the batch ends, plus failures and questions as they happen; it can stop, pause or resume the batch as a whole. Each
   item is an ordinary job; nothing chains after the batch (25.03).
   Workflows are how HUD runs any ordered set of steps: one deterministic runner (no model coordinates) executes a
-  declarative graph of steps (job, batch, council, land, check, and hand-back to main for any judgement), passes each
+  declarative graph of steps (job, batch, council, land, check, and hand-back for any judgement), passes each
   step's reports on by reference, applies one failure policy (circuit breaker, bounded repairs, failures grouped by
   reason) and sends one notice per run. Prewalk, land, the ticket queue, council and batch become shipped templates
   with unchanged behaviour. Templates live in `$HUD_HOME` or the project's `.hud/`; main may also compose a graph at
   call time, which HUD validates before it runs. A run using only cheap steps (Sonic, imp, land, checks) starts on
   main's confirmation; a run with council, `pro`, browser roles or a large batch (more than 50 Sonic items or 2 MiB of
   Sonic input, or more than 12 items of another role) needs a fresh one-time owner grant like council. Fan-out steps
-  confirm scale and run a pilot first (25.05, 25.06).
+  confirm scale and run a pilot first (25.05, 25.06). A hand-back goes by default to a qualified acceptance session
+  (an `oracle` job, or the role the template names), not to main: it reads the run's reports, chooses one of the
+  declared branches (finish, repair, continue) and states why; its session closes when it answers. It escalates to
+  main only what needs the owner (scope, value trade-offs, visible deletions, irreversible acts). Main is the
+  owner's discussion session and is decoupled from runs: it starts them and receives the one end notice (25.07).
   Outside workflows there is no automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
 Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)

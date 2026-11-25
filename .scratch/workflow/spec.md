@@ -72,3 +72,9 @@ no resident process, intent persisted before effect, request-key recovery, one n
 5. **Ticket queue**: ticket source + `job → land`; queue suite untouched.
 6. **Ad-hoc composition**: `check` + `handback` kinds, `hud_workflow`, template loading, cost class + bound grant,
    reference docs; build-review recipe end to end; validation and grant refusals.
+
+## Acceptance (owner 2026-11-25, D-2026-11-25-07)
+
+Hand-backs default to a qualified acceptance session (`oracle` or the role the template names), not main. It
+chooses finish / repair / continue with reasons; escalates to main only owner matters. The ticket-queue template ends
+with an acceptance session (two-axis review + live try). Main starts runs and gets the one end notice. Ticket 07.
