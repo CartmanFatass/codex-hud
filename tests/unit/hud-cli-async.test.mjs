@@ -30,14 +30,23 @@ async function until(t, ready) {
   while (!ready()) await delay(10, null, { signal: t.signal });
 }
 
-async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload, pendingIdentity = false, foreign = false, replacement = false, missingWitness = false, foregroundInfo } = {}) {
+async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload, pendingIdentity = false, foreign = false, replacement = false, missingWitness = false, zshWitness = false, foregroundInfo } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-cli-async-'));
   const home = join(root, 'hud'), jobs = join(home, 'jobs'), bin = join(root, 'bin');
   const untrack = trackFixture({ root, hudHome: home });
   const job = 'j0000000000000001', dir = join(jobs, job), herdrPath = join(root, 'herdr.sock');
   const env = { PATH: bin, NODE_OPTIONS: reapStubOptions(bin), HOME: join(root, 'home'), HUD_HOME: home, HERDR_SOCKET_PATH: herdrPath, TZ: 'UTC' };
   fs.mkdirSync(dir, { recursive: true });
-  const launch = randomUUID(), { dir: shims, env: launchEnv } = prepareCliInvocation(dir, launch, 'grok', process.execPath);
+  const launch = randomUUID(), useZsh = missingWitness || zshWitness;
+  const login = zshWitness !== 'interactive';
+  const ownerZdotdir = process.env.ZDOTDIR;
+  const { dir: shims, env: launchEnv } = (() => {
+    // Do not source a real owner's ZDOTDIR if one leaked in from the test runner.
+    delete process.env.ZDOTDIR;
+    try { return prepareCliInvocation(dir, launch, 'grok', process.execPath); }
+    finally { if (ownerZdotdir !== undefined) process.env.ZDOTDIR = ownerZdotdir; }
+  })();
+  if (missingWitness) delete launchEnv.ZDOTDIR; // Model a shell without the HUD startup wrapper.
   const shim = join(shims, 'grok'), agentEnv = { ...env, HUD_JOB_DIR: foreign ? root : dir, HUD_TAB_LAUNCH: launch, HERDR_PANE_ID: 'synthetic-pane', HERDR_TAB_ID: tab };
   if (replacement) {
     const original = spawnSync(shim, ['-e', 'console.log(process.pid)'], { env: { ...agentEnv, ...launchEnv }, encoding: 'utf8' });
@@ -49,23 +58,29 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
   }
   fs.mkdirSync(bin);
   fs.mkdirSync(env.HOME);
-  const rc = 'export PATH="$HOME/owner-bin:$PATH"\n';
-  if (missingWitness) {
-    fs.mkdirSync(join(env.HOME, 'owner-bin'));
-    fs.symlinkSync(process.execPath, join(env.HOME, 'owner-bin', 'grok'));
-    fs.writeFileSync(join(env.HOME, '.zshrc'), rc);
+  const ownerBin = join(env.HOME, 'owner-bin');
+  const rcFiles = {
+    '.zshenv': 'export SYNTHETIC_RC=env\n',
+    '.zprofile': 'SYNTHETIC_RC+=,profile\n',
+    '.zshrc': 'SYNTHETIC_RC+=,rc\nexport PATH="$HOME/owner-bin:$PATH"\n',
+    '.zlogin': 'SYNTHETIC_RC+=,login\nexport PATH="$HOME/owner-bin:$PATH"\n',
+  };
+  if (useZsh) {
+    fs.mkdirSync(ownerBin);
+    fs.symlinkSync(process.execPath, join(ownerBin, 'grok'));
+    fs.mkdirSync(join(env.HOME, 'zsh-config'));
+    rcFiles['.zshenv'] += 'export ZDOTDIR="$HOME/zsh-config"\n';
+    for (const [file, body] of Object.entries(rcFiles))
+      fs.writeFileSync(join(env.HOME, file === '.zshenv' ? file : 'zsh-config/' + file), body);
   }
-  const nativeArgs = ['-e', 'console.log(JSON.stringify(process.argv.slice(1)));setInterval(()=>{},60000)', '--', 'native arg'];
-  const agent = spawn(missingWitness ? 'zsh' : shim, missingWitness ? ['-ic', 'exec "$@"', 'zsh', 'grok', ...nativeArgs] : nativeArgs, {
+  const nativeArgs = ['-e', `console.log(JSON.stringify({ args: process.argv.slice(1), rc: process.env.SYNTHETIC_RC,
+    firstPath: process.env.PATH.split(':')[0], zdotdir: process.env.ZDOTDIR, token: !!process.env.HUD_INVOCATION_TOKEN }));
+    setInterval(()=>{},60000)`, '--', 'native arg'];
+  const agent = spawn(useZsh ? 'zsh' : shim, useZsh ? [login ? '-ilc' : '-ic', 'exec "$@"', 'zsh', 'grok', ...nativeArgs] : nativeArgs, {
     stdio: ['ignore','pipe','inherit'], env: { ...agentEnv, ...(replacement ? {} : launchEnv) },
   });
   t.after(() => agent.kill('SIGKILL'));
-  const [ready] = await once(agent.stdout, 'data', { signal: t.signal });
-  assert.deepEqual(JSON.parse(ready), ['native arg']);
-  if (missingWitness) {
-    assert.equal(invocationWitness(dir, launch), null);
-    assert.equal(fs.readFileSync(join(env.HOME, '.zshrc'), 'utf8'), rc);
-  }
+  const ready = once(agent.stdout, 'data', { signal: t.signal });
   let discover = !pendingIdentity;
   const subscribers = new Map(), sockets = new Set(), children = [];
   let calls = 0, disconnected = false;
@@ -104,6 +119,18 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
       `Fixture left live process(es) for ${home}: ${survivors.map((p) => `${p.pid} (${p.state}) ${p.cmdline}`).join('; ')}`
     );
   });
+  const [data] = await ready;
+  const started = JSON.parse(data);
+  assert.deepEqual(started.args, ['native arg']);
+  if (useZsh) {
+    assert.equal(started.rc, login ? 'env,profile,rc,login' : 'env,rc');
+    assert.equal(started.zdotdir, join(env.HOME, 'zsh-config'));
+    assert.equal(started.firstPath, missingWitness ? ownerBin : shims);
+    assert.equal(started.token, missingWitness);
+    assert.deepEqual(invocationWitness(dir, launch), missingWitness ? null : { pid: agent.pid, start: procStat(agent.pid).start });
+    for (const [file, body] of Object.entries(rcFiles))
+      assert.equal(fs.readFileSync(join(env.HOME, file === '.zshenv' ? file : 'zsh-config/' + file), 'utf8'), body);
+  }
   const turn = { seq: 1, sent_at: new Date().toISOString(), report_sig: null };
   const record = { job, role: 'imp', dispatch_exit_code: 0, cli: { agent: 'grok', idle_grace_s: 0.05, can_continue: true } };
   save(dir, 'turn.json', turn);
@@ -178,6 +205,14 @@ test('stop before discovery retains the supervisor until a verified worker PID c
   await until(t, () => status(f.dir)?.state === 'stopped');
   assert.equal(status(f.dir).pid, f.agent.pid);
   assert.equal(status(f.dir).pid_start_time, procStat(f.agent.pid).start);
+});
+
+for (const mode of ['interactive', 'login']) test(`zsh (${mode}) puts the shim ahead of the real CLI after owner startup and adopts the exact PID`, { ...watchdog, skip: noZsh }, async t => {
+  const f = await fixture(t, { zshWitness: mode });
+  await until(t, () => status(f.dir)?.pid);
+  assert.equal(status(f.dir).pid, f.agent.pid);
+  assert.equal(status(f.dir).pid_start_time, procStat(f.agent.pid).start);
+  assert.equal(status(f.dir).reason, null);
 });
 
 test('stable foreign foreground from discovery through stop cannot acquire a PID stamp', watchdog, async t => {

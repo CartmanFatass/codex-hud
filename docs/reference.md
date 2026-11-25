@@ -448,6 +448,8 @@ A native resume adds the recorded session identifier; launches keep the configur
 HUD never trusts a directory while dispatching: a trust dialog is declined and the launch fails, naming `hud trust <cwd>`.
 Sessions stay in each CLI's own store.
 herdr starts the CLI through the interactive shell, so that shell's functions apply.
+For zsh, a private startup wrapper sources the owner's startup files before putting HUD's invocation shim first in `PATH`; HUD does not edit those files.
+Other shells keep their usual startup. If command lookup bypasses the shim, the CLI still starts, but HUD reports that it could not verify its identity and does not adopt the process.
 
 `hud trust <dir>` adds that directory to the trust files of grok, agy and claude after a backup under `$HUD_HOME`.
 A missing CLI file is not created.

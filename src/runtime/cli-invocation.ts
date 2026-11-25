@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { binScript } from '../mcp/paths.js';
-import { readJsonBounded, writeFileAtomic, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { readJsonBounded, writeFileAtomic, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { isValidPid, procStat } from '../utils/proc.js';
 
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -12,13 +12,41 @@ function launchDir(task: string, launch: string) {
   if (!uuid.test(launch)) throw Error('invalid CLI invocation generation');
   return join(task, 'cli-invocations', launch);
 }
+/** Let zsh run the owner's startup files before putting the shim first. Non-zsh
+ * shells ignore ZDOTDIR and retain the normal PATH lookup and witness refusal. */
+function prepareZshStartup(dir: string): string {
+  const zdotdir = join(dir, 'zsh');
+  const initial = process.env.ZDOTDIR;
+  // Start with the caller's normal PATH and ZDOTDIR. Each owner file can
+  // redirect the next one by changing ZDOTDIR, just as in native startup.
+  const init = `PATH=\${PATH#${quote(dir)}:}\n${initial === undefined ? 'unset ZDOTDIR' : `export ZDOTDIR=${quote(initial)}`}`;
+  const restore = 'if [[ -v _hud_owner_zdotdir ]]; then ZDOTDIR=$_hud_owner_zdotdir; else unset ZDOTDIR; fi';
+  for (const [file, next] of [
+    ['.zshenv', '[[ -o interactive || -o login ]]'],
+    ['.zprofile', 'true'],
+    ['.zshrc', '[[ -o login ]]'],
+    ['.zlogin', 'false'],
+  ]) {
+    writePrivateFile(join(zdotdir, file), `${file === '.zshenv' ? init : restore}
+if [[ -r "\${ZDOTDIR-$HOME}/${file}" ]]; then builtin source "\${ZDOTDIR-$HOME}/${file}"; fi
+if [[ -o rcs ]] && ${next}; then
+  if [[ -v ZDOTDIR ]]; then typeset -g _hud_owner_zdotdir=$ZDOTDIR; else unset _hud_owner_zdotdir; fi
+  export ZDOTDIR=${quote(zdotdir)}
+else
+  unset _hud_owner_zdotdir
+  export PATH=${quote(dir)}:"$PATH"
+fi
+`, { exclusive: true });
+  }
+  return zdotdir;
+}
 export function prepareCliInvocation(task: string, launch: string, agent: string, real: string) {
   const dir = launchDir(task, launch), token = randomUUID();
   if (!/^[a-z]+$/.test(agent) || /[:\r\n]/.test(dir)) throw Error('invalid CLI invocation path');
   const exec = [process.execPath, binScript('hud-cli'), '--exec-witness', join(dir, 'witness.json'), real].map(quote).join(' ');
   // An invocation outside the launch environment runs normally, without a witness.
   writeFileAtomic(join(dir, agent), `#!/bin/sh\nif [ "$HUD_INVOCATION_TOKEN" = ${quote(token)} ]; then\n  unset HUD_INVOCATION_TOKEN\n  exec ${exec} "$@"\nfi\nexec ${quote(real)} "$@"\n`, { mode: 0o700, exclusive: true });
-  return { dir, env: { HUD_INVOCATION_TOKEN: token, PATH: `${dir}:${process.env.PATH ?? ''}` } };
+  return { dir, env: { HUD_INVOCATION_TOKEN: token, PATH: `${dir}:${process.env.PATH ?? ''}`, ZDOTDIR: prepareZshStartup(dir) } };
 }
 export function invocationWitness(task: string, launch?: string): { pid: number; start: string } | null {
   try {
