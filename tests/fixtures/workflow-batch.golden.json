@@ -1,0 +1,64 @@
+{
+  "notices": {
+    "failure-0-2": "b0000000000000001 item 2 (j0000000000000002): sample failure",
+    "pause-0": "b0000000000000001 batch paused (failure circuit breaker): 0 waiting, 0 running, 1 done, 2 failed. Failures: sample failure ×2 (j0000000000000002). hud_create batch=b0000000000000001 action=resume, retry_failed or stop",
+    "end-1": "b0000000000000001 batch: 0 waiting, 0 running, 1 done, 2 failed; failures: sample failure ×2 (j0000000000000002) — final; list unread reports: hud_read view:compact"
+  },
+  "view": {
+    "flow": "b0000000000000001",
+    "state": "completed",
+    "scale": {
+      "count": 3,
+      "role": "sonic",
+      "cap": 4,
+      "max_parallel": 2,
+      "presets": [
+        "sample"
+      ],
+      "input_bytes": {
+        "max": 7,
+        "median": 6,
+        "total": 18
+      }
+    },
+    "totals": {
+      "waiting": 0,
+      "running": 0,
+      "done": 1,
+      "failed": 2
+    },
+    "failures": [
+      {
+        "reason": "sample failure",
+        "count": 2,
+        "example": "j0000000000000002"
+      }
+    ],
+    "items": [
+      {
+        "item": 1,
+        "job": "j0000000000000001",
+        "state": "done",
+        "preset": "sample",
+        "pilot": true
+      },
+      {
+        "item": 2,
+        "job": "j0000000000000002",
+        "state": "failed",
+        "preset": "sample",
+        "pilot": false,
+        "reason": "sample failure"
+      },
+      {
+        "item": 3,
+        "job": "j0000000000000003",
+        "state": "failed",
+        "preset": "sample",
+        "pilot": false,
+        "reason": "sample failure"
+      }
+    ],
+    "result_index": "$HUD_HOME/flows/b0000000000000001/index.json"
+  }
+}
