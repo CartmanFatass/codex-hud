@@ -23,6 +23,9 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   (local) or the main session (no synthesis job; main converges the member reports with the same template); the role
   file sets the default. `pro` reads the owner's GitHub itself, so its brief carries an index of the original context
   files (repository, commit, paths; files not pushed are marked local-only) instead of their bodies.
+  Owner, same day: members and synthesizer are named presets in the council role file (`members`, `synthesizer`, with
+  `main` reserved), overridable per `hud_create`; behaviour follows the preset's harness, so adding a model needs only a
+  new preset entry.
 
 - **D-2026-11-25-01** (§2.1 dispatch): Who chooses prewalk scouts moves from the Decision API to the dispatching
   session. Owner: deciding what to look up before a job is the orchestrator's job; it also drops a Decision API
