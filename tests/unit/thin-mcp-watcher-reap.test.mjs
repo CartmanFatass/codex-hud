@@ -510,11 +510,14 @@ test('failed STATUS uses its mtime when ended_at is absent or invalid', { timeou
 
 test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
-  let socket, request;
+  let socket, subscription;
   const server = createServer((client) => {
-    socket = client;
     createInterface({ input: client }).on('line', (line) => {
-      request = JSON.parse(line);
+      const request = JSON.parse(line);
+      if (request.method === 'events.subscribe') {
+        socket = client;
+        subscription = request.params;
+      }
       client.write(JSON.stringify({ id: request.id, result: {} }) + '\n');
     });
   });
@@ -525,9 +528,8 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
   server.listen(f.env.HERDR_SOCKET_PATH);
   await once(server, 'listening');
   const job = await f.call('hud_create', { role: 'imp', request_key: 'tab-close', task: 'Synthetic task.' });
-  await until(() => request, t.signal);
-  assert.equal(request.method, 'events.subscribe');
-  assert.deepEqual(request.params, { subscriptions: [{ type: 'tab.closed' }] });
+  await until(() => socket, t.signal);
+  assert.deepEqual(subscription, { subscriptions: [{ type: 'tab.closed' }] });
   const statusFile = join(job.task_dir, 'STATUS.json');
   const emit = (tab_id) =>
     socket.write(
