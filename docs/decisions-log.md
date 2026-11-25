@@ -7,6 +7,15 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-25-09** (§1): HUD runs on an owner-maintained herdr fork. Owner: HUD already depends deeply on herdr and
+  the direction makes it a deep herdr customization; herdr upstream is stable and its recent work is mostly GUI; this
+  is personal use, so no upstream contributions, and upstream changes are taken selectively or the fork goes
+  independent. Evidence (2026-11-25): pi-worker/07, /09 and /10 regressions and the /08 and /10 review blockers all
+  came from HUD inferring from outside herdr what herdr holds (agent PID and start, agent recognition by process
+  name, reused tab IDs with close events carrying no launch generation, tab close on agent exit); about 600 lines
+  (`cli-invocation`, `tab-shell`, `reap-tab`, part of `worker-tree`) exist for that inference. herdr is Apache-2.0.
+  Primitive list and plan: oracle j66f7c7b4cf976c21 (`tmp/tasks/herdr-fork/`).
+
 - **D-2026-11-25-08** (§2.1 workflow): Complex workflows deferred. Owner: long automated flows fail more easily;
   small flows (prewalk) and mechanical flows (batch) are the right starting point, and a general engine lets a
   complex workflow be designed whenever it is needed. Build scope: engine with batch (workflow/01), prewalk (02),

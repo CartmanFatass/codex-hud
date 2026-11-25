@@ -9,6 +9,10 @@ Moving protocol detail to [reference.md](reference.md) does not retire the capab
 ## 1. What it is
 
 One HUD for Claude Code, Codex, pi and Antigravity, for one owner on one Linux/WSL machine inside herdr. (10.02, 22.12)
+HUD runs on an owner-maintained fork of herdr (Apache-2.0, personal use): no upstream contributions; upstream changes
+are taken selectively or not at all. The fork provides what HUD would otherwise infer from outside herdr (the agent
+process's identity and exit, launch-scoped tab identity, caller-declared agent kind, closing a tab when its agent
+exits), and HUD stops inferring those once the fork provides them. (25.09)
 
 MyHUD is an operational workbench: it answers *what should happen now*. With the panel closed, the owner sees
 current load. With it open, they can tell what each project is trying to achieve, what has changed and what needs
