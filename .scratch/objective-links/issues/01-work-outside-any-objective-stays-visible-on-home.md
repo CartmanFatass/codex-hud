@@ -14,3 +14,10 @@
 - [ ] Land gate passes
 
 ## Comments
+
+
+- 2026-11-25 main (addendum before land): one call must link. (a) A top-level `objective` on `hud_tickets` op add
+  applies to every draft that has none (today it is silently ignored). (b) When a ticket is added with an `objective`,
+  the feature slug is appended to that Objective's `Features` in `.hud/objectives.md` (same writer as `hud_objective`;
+  unknown Objective ID → error, nothing written), so the panel and the ticket agree and the warning stays only for the
+  no-objective case. Explicit link, not inference.
