@@ -474,6 +474,7 @@ CLI 声明后 120 秒仍未结束时，交由主会话处理，不强制中断�
 此变更前已启动的任务仍使用原有宽限期。
 读取失败或受阻状态会单独标记为已查看。
 工作者调用 `hud_report` 时可附带单行 `summary`（最多 160 个 Unicode 码点）和 `files`（最多 50 个相对路径），不在对话中重复报告正文。
+评审角色（`role: "reviewer"`）还可在 `hud_report` 或备用命令 `hud-progress --done --findings '<json>' --reviewed '<json>'` 中声明 `findings: {blocker, major, minor}`（非负整数）和 `reviewed: {base, head}`（40 位十六进制提交 SHA，语义同 `git rev-list base..head`）；无效值或其他角色的声明会带警告丢弃，不会导致报告失败。
 托管工作树若有未提交的改动，`hud_report` 和备用命令 `hud-progress --done` 都会拒绝声明报告。
 Git 忽略的文件不会阻止报告；
 干净的工作树即使没有新提交，也可以报告没有改动。
@@ -611,6 +612,7 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。
 `land.attempt_details` 记录每次尝试的编号、状态、已知时间、发布的 SHA（若有）以及修正和重跑次数。
 `repair_details: [{attempt, step_kind, step, outcome}]` 将 cherry-pick 步骤标为 `conflict`，其余步骤标为 `gate`。
 `rerun_details: [{attempt, step, passed_unchanged, tests?}]` 记录已知的重跑结果；若未做改动即重跑通过，则保留回执中的不稳定命令或测试名称。
+评审任务声明了 `findings: {blocker, major, minor}` 或 `reviewed: {base, head}` 时，`job.json` 和归档行会原样保留这两个字段（未声明或被丢弃时省略）。
 旧归档行可能没有这些新字段。
 归档不含任务说明或报告正文；
 写入失败不影响删除，HUD 不会清理归档。

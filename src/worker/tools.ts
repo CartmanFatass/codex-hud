@@ -1,5 +1,5 @@
 /** Worker protocol shared by MCP, the native pi extension and the CLI fallbacks. */
-import { normalizeReportMeta, readReportMeta, REPORT_LINE_LIMIT, validPreviewPath, writeReportMeta } from '../roles/report-meta.js';
+import { extractReviewDeclaration, normalizeReportMeta, readReportMeta, REPORT_LINE_LIMIT, validPreviewPath, writeReportMeta } from '../roles/report-meta.js';
 import { openPreview, publishPreview } from './preview.js';
 import { DONE_FILE, readTurn, saveTurn, turnToken, reportSignature, withTurnLock, workerAlive } from '../mcp/cli-judge.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
@@ -104,17 +104,30 @@ async function reportConflict({ root, main_root, branch, base_head }: ManagedWor
 
 // Omit text for the fallback command, which declares a report the worker wrote itself.
 export async function finishReport({ dir, job }: Worker, turn: unknown, text?: string,
-  metadata: Parameters<typeof normalizeReportMeta>[0] & { preview?: unknown } = {}, opener = openPreview) {
+  metadata: Parameters<typeof normalizeReportMeta>[0] & { preview?: unknown; findings?: unknown; reviewed?: unknown } = {}, opener = openPreview) {
   if (job.bro || job.jev) throw new Error('only local workers can declare a report');
   if (text !== undefined && (typeof text !== 'string' || !text.trim())) throw new Error('write a nonempty report');
   const fields = normalizeReportMeta(metadata);
   const requestedPreview = metadata.preview;
   if (requestedPreview !== undefined && !validPreviewPath(requestedPreview)) throw new Error('invalid_arguments: preview');
+  const review = extractReviewDeclaration(job.role, metadata);
   async function publishMetadata(sig: string) {
     const previous = readReportMeta(dir, false)?.preview;
     const source = job.preview ?? requestedPreview ?? previous?.source;
     if (validPreviewPath(source)) fields.preview = await publishPreview(dir, job, source, previous, opener);
     writeReportMeta(dir, sig, fields);
+    for (const message of review.warnings) console.error(message);
+    if (job.role === 'reviewer') {
+      const current = readJob(dir);
+      if (review.findings !== undefined || review.reviewed !== undefined || current.findings !== undefined || current.reviewed !== undefined) {
+        const next: Job = { ...current };
+        if (review.findings !== undefined) next.findings = review.findings;
+        else delete next.findings;
+        if (review.reviewed !== undefined) next.reviewed = review.reviewed;
+        else delete next.reviewed;
+        writePrivateFile(join(dir, jobFiles.job), JSON.stringify(next, null, 2) + '\n', { mkdir: false });
+      }
+    }
   }
   if (job.worktree) {
     const { root, branch } = job.worktree;
@@ -180,7 +193,7 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
     await publishMetadata(sig);
     if (job.headless) writeJsonPrivate(join(dir, DONE_FILE), { report_sig: sig }, { mkdir: false });
   }
-  return { path };
+  return review.warnings.length ? { path, warnings: review.warnings } : { path };
 }
 
 export async function startSonic({ dir, job: parent }: Pick<Worker, 'dir' | 'job'>, task: string, cwd?: unknown) {
@@ -374,6 +387,24 @@ export async function workerTools(cli = false) {
   } catch { /* Keep the caller's schema when no job receipt is available. */ }
   const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({ name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false } });
+  const nonNegativeInt = { type: 'integer', minimum: 0 };
+  const sha40 = { type: 'string', pattern: '^[0-9a-f]{40}$' };
+  const reviewerFields = role === 'reviewer' ? {
+    findings: {
+      type: 'object',
+      properties: { blocker: nonNegativeInt, major: nonNegativeInt, minor: nonNegativeInt },
+      required: ['blocker', 'major', 'minor'],
+      additionalProperties: false,
+      description: 'Review finding counts by severity.',
+    },
+    reviewed: {
+      type: 'object',
+      properties: { base: sha40, head: sha40 },
+      required: ['base', 'head'],
+      additionalProperties: false,
+      description: 'Reviewed 40-hex commit range (base..head); omit if unknown.',
+    },
+  } : {};
   return [
     tool('hud_report', 'Finish the turn by publishing your report. Returns its path. Give a one-line plain summary of the result; code roles list the files changed.',
       {
@@ -383,6 +414,7 @@ export async function workerTools(cli = false) {
         files: { type: 'array', items: { ...string, maxLength: 260 }, maxItems: 50, description: 'Optional list of relative paths to files changed by code roles (up to 50).' },
         skip_checks_reason: { ...string, minLength: 1, maxLength: REPORT_LINE_LIMIT, description: 'If blocked, skip the project’s worker checks and include this reason in the report digest.' },
         preview: { ...string, maxLength: 260, description: 'HTML preview path relative to cwd, if the brief did not specify one.' },
+        ...reviewerFields,
       },
       cli ? ['text', 'turn'] : ['text']),
     tool('hud_ask', headless ? 'Ask the orchestrator and end the turn. The answer resumes this session.'

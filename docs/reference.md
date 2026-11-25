@@ -487,6 +487,7 @@ Jobs launched before this change keep their original idle grace.
 Reading a failure/block separately marks that attention as seen.
 Workers finish with `hud_report`, which publishes the report without repeating it in chat.
 They may supply a one-line `summary` (up to 160 Unicode code points) and a `files` list of up to 50 relative paths.
+Reviewers (`role: "reviewer"`) may also declare `findings: {blocker, major, minor}` (non-negative integers) and `reviewed: {base, head}` (40-hex commit SHAs, same meaning as `git rev-list base..head`) in `hud_report` or via `hud-progress --done --findings '<json>' --reviewed '<json>'`; invalid values or declarations from other roles are dropped with a warning without failing the report.
 If `hud_create` did not set `preview`, the worker can supply it in `hud_report` (or `hud-progress --done --preview <path>`).
 On declaration HUD copies the self-contained HTML to `<project root>/tmp/preview/<job>/<basename>` so it survives landing.
 A rewritten preview is copied and opened again on report; another report for the same job with an unchanged preview does not reopen it.
@@ -602,6 +603,7 @@ Session paths are recorded as observed; the underlying files may later move or d
 `repair_details: [{attempt, step_kind, step, outcome}]` uses `conflict` for cherry-pick and `gate` otherwise.
 `rerun_details: [{attempt, step, passed_unchanged, tests?}]` records known rerun results and the recorded flaky command or test names for unchanged reruns that passed.
 When present, archive lines also record placement, worktree and stop facts: `model_source`, `thinking_source`, `imp_preset`, `requested_on`, `requested_model`, `had_worktree`, `worktree_removed_at`, `worktree_kept_reason`, and `stop_origin: {actor, prior_state, at}` (`mcp`, `panel`, or `pane_vanished`, recorded once when a working job is stopped or its pane vanishes).
+For reviewer jobs that declare them, `job.json` and the archive line also keep `findings: {blocker, major, minor}` and `reviewed: {base, head}` unchanged (omitted when undeclared or dropped).
 Older archive lines may omit the new fields.
 It stores neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the archive.
 In the same housekeeping pass, once a job directory is gone, the watcher prunes its settled land receipts and sidecars in `$HUD_HOME/flows/` after a day without changes.

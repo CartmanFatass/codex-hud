@@ -24,6 +24,57 @@ export function cachedReportSignature(dir: string): string | null {
 /** Display metadata only. The caller supplies normalized fields and the signature of its report. */
 export type PreviewReceipt = { source: string; path?: string; stamp?: string; error?: string };
 export type ReportMetaFields = { summary?: string; files?: readonly string[]; skip_checks_reason?: string; preview?: PreviewReceipt };
+
+/** Structured reviewer report declarations recorded on job.json and archived unchanged. */
+export type ReviewFindings = { blocker: number; major: number; minor: number };
+export type ReviewedRange = { base: string; head: string };
+
+const HEX40 = /^[0-9a-f]{40}$/;
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+const isNonNegInt = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+export function parseReviewFindings(value: unknown): ReviewFindings | undefined {
+  if (!isPlainObject(value)) return undefined;
+  if (Object.keys(value).length !== 3 || !Object.hasOwn(value, 'blocker') || !Object.hasOwn(value, 'major') || !Object.hasOwn(value, 'minor')) {
+    return undefined;
+  }
+  const { blocker, major, minor } = value;
+  if (!isNonNegInt(blocker) || !isNonNegInt(major) || !isNonNegInt(minor)) return undefined;
+  return { blocker: blocker + 0, major: major + 0, minor: minor + 0 };
+}
+
+export function parseReviewedRange(value: unknown): ReviewedRange | undefined {
+  if (!isPlainObject(value)) return undefined;
+  if (Object.keys(value).length !== 2 || !Object.hasOwn(value, 'base') || !Object.hasOwn(value, 'head')) return undefined;
+  const { base, head } = value;
+  if (typeof base !== 'string' || typeof head !== 'string' || !HEX40.test(base) || !HEX40.test(head)) return undefined;
+  return { base, head };
+}
+
+export function extractReviewDeclaration(
+  role: string,
+  input: { findings?: unknown; reviewed?: unknown },
+): { findings?: ReviewFindings; reviewed?: ReviewedRange; warnings: string[] } {
+  const warnings: string[] = [];
+  if (role !== 'reviewer') {
+    if (input.findings !== undefined) warnings.push('hud_report: dropped findings (reviewer role only)');
+    if (input.reviewed !== undefined) warnings.push('hud_report: dropped reviewed (reviewer role only)');
+    return { warnings };
+  }
+  let findings: ReviewFindings | undefined;
+  if (input.findings !== undefined) {
+    findings = parseReviewFindings(input.findings);
+    if (!findings) warnings.push('hud_report: dropped invalid findings');
+  }
+  let reviewed: ReviewedRange | undefined;
+  if (input.reviewed !== undefined) {
+    reviewed = parseReviewedRange(input.reviewed);
+    if (!reviewed) warnings.push('hud_report: dropped invalid reviewed');
+  }
+  return { ...(findings ? { findings } : {}), ...(reviewed ? { reviewed } : {}), warnings };
+}
 export const validPreviewPath = (value: unknown): value is string => typeof value === 'string' &&
   value.length <= 260 && !/^\//u.test(value) && !/[\\:\p{Cc}\p{Bidi_Control}\u2028\u2029]/u.test(value) &&
   !value.split('/').includes('..') && /\.html?$/iu.test(value);

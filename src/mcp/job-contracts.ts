@@ -7,7 +7,8 @@ import type { SonicLimits } from './sonic-policy.js';
 import type { ObjectiveLink } from '../collectors/objectives.js';
 
 export type { ProgressEntry } from '../collectors/workboard-types.js';
-export type { ReportMeta } from '../roles/report-meta.js';
+export type { ReportMeta, ReviewFindings, ReviewedRange } from '../roles/report-meta.js';
+import type { ReviewFindings, ReviewedRange } from '../roles/report-meta.js';
 export type { CitationFailure, JobCitations } from '../roles/sonic-citations.js';
 import type { JobCitations } from '../roles/sonic-citations.js';
 
@@ -137,6 +138,8 @@ export interface Job extends PiOptions {
   skipped_skills?: { name: string; reason: string }[];
   worker_prompt?: string | null;
   citations?: JobCitations;
+  findings?: ReviewFindings;
+  reviewed?: ReviewedRange;
 }
 
 /** STATUS.json ranges from minimal dispatch/scout updates to full harness receipts. */

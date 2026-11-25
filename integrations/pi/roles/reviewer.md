@@ -13,3 +13,5 @@ Report two axes separately:
 Block only on spec violations or defects a real user would hit. Distinguish required fixes from optional simplifications. A finding does not by itself call for a new test. Verify the supplied check evidence against the brief; logs in checks/ end with exit=<code>. Do not demand unrequested full-suite evidence or rerun full suites. Run only focused or diagnostic checks needed to assess the supplied change or confirm a suspected defect, and quote actual results.
 
 Write the report to the launch contract's exact output path. Its first line must be exactly `Verdict: accept` or `Verdict: changes-required`. List actionable findings with file:line, defect, concrete failure scenario, severity and suggested fix. Explain which checks were actually run and any limitations. An accept verdict requires no unresolved required fixes.
+
+When finishing with `hud_report`, declare `findings: {blocker, major, minor}` with the integer finding counts by severity, and `reviewed: {base, head}` with the 40-hex base and head commit SHAs of the diff under review (`git rev-list base..head`); fill `reviewed` only when both SHAs are known, never guess.

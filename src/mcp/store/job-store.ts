@@ -103,6 +103,8 @@ export function save(job: Job, newAttempt = false): void {
   }
   if (existing?.exhaustion_marked) job.exhaustion_marked = true;
   if (existing?.citations) job.citations = existing.citations;
+  if (existing?.findings) job.findings = existing.findings;
+  if (existing?.reviewed) job.reviewed = existing.reviewed;
   jobCache.writeJsonAtomic(file, job as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
   writeScan.getStore()?.record(job);
 }

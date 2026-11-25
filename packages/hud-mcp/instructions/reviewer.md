@@ -50,3 +50,5 @@ Finish with `hud_report`. Do not repeat the report in chat:
 3. **Simplicity and quality** findings (blocking, or none), plus what can be deleted.
 4. Optional non-blocking notes (if any).
 5. Files read and read-only checks run, with the command and the actual result.
+
+When declaring the report with `hud_report` (or the `hud-progress --done` fallback via `--findings '<json>'` and `--reviewed '<json>'`), include `findings: {blocker, major, minor}` with integer finding counts by severity and `reviewed: {base, head}` with the 40-hex base and head commit SHAs of the diff under review (`git rev-list base..head`). Fill `reviewed` only when both SHAs are known; never guess.

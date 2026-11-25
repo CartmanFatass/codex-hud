@@ -12,7 +12,7 @@ import { jobChecks } from './job-checks.js';
 import { cliSession } from './job-sessions.js';
 import { archiveJobLand, type JobLand } from './job-land.js';
 import { epoch, readJobUsage, record, text, type JobUsage } from './job-usage.js';
-import { normalizeReportMeta, readReportMeta } from './report-meta.js';
+import { normalizeReportMeta, parseReviewedRange, parseReviewFindings, readReportMeta } from './report-meta.js';
 import { jobCitations } from './sonic-citations.js';
 function reason(value: unknown) {
   if (typeof value !== 'string') return;
@@ -261,6 +261,8 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
       experiment: typeof job.experiment === 'string' ? job.experiment : undefined,
       arm: typeof job.arm === 'string' ? job.arm : undefined,
       citations: jobCitations(job.citations),
+      findings: job.role === 'reviewer' ? parseReviewFindings(job.findings) : undefined,
+      reviewed: job.role === 'reviewer' ? parseReviewedRange(job.reviewed) : undefined,
       prewalk: archivePrewalk(job.prewalk, job.pool_pick),
       land: archiveJobLand(home, id),
       outcome: cachedOutcome(home, id, epoch(status.settled_at) ?? ended),
