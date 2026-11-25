@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { syntheticProc } from './fixtures/local-load.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).version;
@@ -241,6 +242,10 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
     observed_at: 1000, watching: true, complete: true, global: scope, panes: {},
   }), { mode: 0o600 });
   fs.writeFileSync(path.join(hud, 'watch.pid'), `${process.pid}\n`);
+  // Keep the frame comparison independent of live RAM and successive CPU samples.
+  const proc = syntheticProc(home);
+  proc.write('meminfo', 'MemTotal: 8388608 kB\nMemAvailable: 2097152 kB\n');
+  env.HUD_STATUSLINE_PROC_ROOT = proc.root;
   const tsFrame = run('node', [statusline], { input: fixture });
   if (hasNative) {
     assert.equal(run(statusline, [], { input: fixture }), tsFrame);
