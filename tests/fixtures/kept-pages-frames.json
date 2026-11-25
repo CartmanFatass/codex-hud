@@ -371,7 +371,8 @@
     "g       Inspector: focus the job tab;",
     "        headless output is shown here",
     "1-4 d   job: answer its open question",
-    "X       job: stop it (y confirms)",
+    "X       job: stop (y confirms); Jobs",
+    "        batch: pause/resume/stop",
     "r       failed job: request a retry",
     "",
     "Project ──────────────────────────────",
@@ -384,7 +385,6 @@
     "p       role: choose a preset by name",
     "N I     role: new draft, copied or",
     "        empty",
-    "R D     role: rename / delete the",
     "                                                                        Esc back"
   ],
   "home-120-en": [
@@ -755,7 +755,8 @@
     "g       Inspector: focus the job tab; headless output is",
     "        shown here",
     "1-4 d   job: answer its open question",
-    "X       job: stop it (y confirms)",
+    "X       job: stop (y confirms); Jobs batch:",
+    "        pause/resume/stop",
     "r       failed job: request a retry",
     "",
     "Project ──────────────────────────────────────────────────",
@@ -772,7 +773,6 @@
     "m       role/place: picker in this pane; one click or",
     "        Enter sets. In a draft, fill only; else save.",
     "Esc     picker: clear filter, then close",
-    "^R      picker: refresh model lists",
     "                                                                                                                Esc back"
   ],
   "settings-40-en": [

@@ -1,5 +1,6 @@
 import { parentPort } from 'node:worker_threads';
 import { setImmediate as yieldToWatch } from 'node:timers/promises';
+import { readBatchRows } from './batch-rows.js';
 import { watchJobChanges } from './job-changes.js';
 import { readSessionJobRows, readThinJobs } from './thin-jobs.js';
 import { JobSnapshotIndex, RECONCILE_MS } from './job-snapshot-index.js';
@@ -17,7 +18,7 @@ function project({ home, scope, options }: Extract<Request, { kind: 'project' }>
   const cutoff = options?.settledBefore;
   const scanOptions = options && { ...options, settledBefore: cutoff === 'now' ? Date.now() : cutoff };
   const lanes = readThinJobs(home, scope, undefined, scanOptions, observation, index?.directoryInventory());
-  return { lanes, complete: observation.complete };
+  return { lanes, complete: observation.complete, batches: readBatchRows(home, scope) };
 }
 
 async function collect(request: Request): Promise<Lanes | string[] | unknown> {

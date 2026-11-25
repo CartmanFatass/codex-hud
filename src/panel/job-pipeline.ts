@@ -5,7 +5,7 @@ import { readJobFile } from '../collectors/read-job-file.js';
 import { jobFiles } from '../mcp/paths.js';
 import type { ThinJobScope } from '../collectors/thin-jobs.js';
 import { jobLaneSnapshot } from '../collectors/job-snapshot.js';
-import type { WorkboardSnapshot, WorkLane } from '../collectors/workboard-types.js';
+import type { WorkBatch, WorkboardSnapshot, WorkLane } from '../collectors/workboard-types.js';
 import { buildWorkboard } from '../collectors/workboard.js';
 import type { SubagentTree } from '../types.js';
 import { jobPanelObservation } from '../utils/collection-observation.js';
@@ -15,6 +15,7 @@ export class PanelJobPipeline {
   private boardCache?: { tree: SubagentTree; board: WorkboardSnapshot };
   private readonly snapshot;
   private thinJobs: WorkLane[] = [];
+  private batches?: WorkBatch[];
   private jobDiffs = new DiffStatCollector();
   private thinObservation = { complete: false };
   private generation = 0;
@@ -31,7 +32,7 @@ export class PanelJobPipeline {
   }
   workboard(tree: SubagentTree): WorkboardSnapshot {
     if (this.boardCache?.tree === tree) return this.boardCache.board;
-    const board = buildWorkboard(tree, this.thinJobs);
+    const board = buildWorkboard(tree, this.thinJobs, this.batches);
     this.boardCache = { tree, board };
     return board;
   }
@@ -62,8 +63,9 @@ export class PanelJobPipeline {
         ...l, workers: l.workers.map((w) => w === worker ? { ...w, ...(diffStat && { diffStat }), ...(output && { output }), ...(report && { report }) } : w),
       });
     }
-    if (this.thinJobs !== lanes) this.boardCache = undefined;
+    if (this.thinJobs !== lanes || this.batches !== snapshot.batches) this.boardCache = undefined;
     this.thinJobs = lanes;
+    this.batches = snapshot.batches;
     this.thinObservation = { complete: snapshot.complete };
     return true;
   }

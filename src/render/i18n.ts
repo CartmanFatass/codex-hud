@@ -781,6 +781,8 @@ const EN_OVERRIDES: Record<string, string> = {
   zh: '中文',
   // Schedule names the unit in its heading; Chinese uses a classifier on the fold row.
   '{n} more items': '{n} more',
+  // Chinese words a batch's unstarted items apart from requests that wait for the owner.
+  'batch: {n} waiting': '{n} waiting',
 };
 
 export function t(text: string, vars?: Record<string, string | number>): string {

@@ -7,7 +7,7 @@ import { monitorRowAt } from './monitor-input.js';
 import { ACCEPT_ALL, projectPageOf, projectListOpen } from './project-view.js';
 import type { RoleFact } from '../roles/role-control.js';
 import { openQuickModel, roleModelIndex } from './chain-input.js';
-import { openJobAction } from './job-actions.js';
+import { openBatchAction, openJobAction } from './job-actions.js';
 import { controlShown, resourcesShown, MAIN_TABS, type MainTab } from './main-tabs.js';
 import { expInput } from './exp-view.js';
 import { harnessId, restoreId } from './harness-page.js';
@@ -286,6 +286,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   if (sub?.kind === 'inspector') {
     const job = openJobAction(next, input, key, boardFrame.snapshot, result);
     if (job) return job;
+  }
+  if (sub?.kind === 'jobs' && key === 'stop-job') {
+    const batch = boardFrame.rows.find((row) => row.item === sub.cursor)?.batch;
+    if (batch) openBatchAction(next, batch);
+    return result();
   }
   const pane = frame?.panes[0];
   if (!frame || !pane) return null;

@@ -1,9 +1,9 @@
 /** Pure projection of thin jobs and native subagents. */
 import type { SubagentTree, SubagentTreeNode } from '../types.js';
 import { nativeWorker } from './work-card.js';
-import type { OwnerWorker, WorkboardSnapshot, WorkLane } from './workboard-types.js';
+import type { OwnerWorker, WorkBatch, WorkboardSnapshot, WorkLane } from './workboard-types.js';
 
-export function buildWorkboard(tree: SubagentTree, thinJobs: readonly WorkLane[] = []): WorkboardSnapshot {
+export function buildWorkboard(tree: SubagentTree, thinJobs: readonly WorkLane[] = [], batches?: readonly WorkBatch[]): WorkboardSnapshot {
   const nativeLanes = new Map<string, WorkLane>();
   const addNative = (node: SubagentTreeNode, parent?: SubagentTreeNode) => {
     const harness = node.ref?.harness ?? 'codex';
@@ -39,6 +39,7 @@ export function buildWorkboard(tree: SubagentTree, thinJobs: readonly WorkLane[]
     lanes: [...thinJobs, ...native],
     workers: [...thinJobs.flatMap((l) => l.workers), ...native.flatMap((l) => l.workers).slice(0, 200)],
     decisions: thinJobs.flatMap((l) => l.decisions),
+    ...(batches?.length ? { batches } : {}),
     coverage: { incomplete: !!tree.incomplete || nativeLanes.size > 200, workspace: null, diagnostics: [] },
   };
 }

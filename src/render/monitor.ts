@@ -1,7 +1,7 @@
 /** Pure Home, Project and retained passive pages. No legacy Agents layout. */
 import type { HudData, SubagentTree } from '../types.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
-import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
+import type { WorkBatch, WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { buildWorkboard } from '../collectors/workboard.js';
 import { renderWorkboardFrame } from './work-view.js';
 import type { ProjectItem, ProjectSnapshot } from '../collectors/project-board.js';
@@ -67,6 +67,8 @@ export interface MonitorRow {
   objectiveEvidence?: { root: string; text: string };
   advisorCopy?: { root: string; session: string; skill: string; path: string };
   commit?: { cwd: string; hash: string };
+  /** The row of a fixed batch on the Jobs page: `X` there acts on the whole batch. */
+  batch?: WorkBatch;
 }
 export interface MonitorRect {
   id: MonitorPane;
@@ -191,6 +193,7 @@ export interface MonitorOutcome {
     | { type: 'focus-job-tab'; dir: string }
     | { type: 'answer-job'; home: string; jobId: string; qid: string; answer: string; role: string | null }
     | { type: 'stop-job'; dir: string }
+    | { type: 'batch-control'; flow: string; control: 'pause' | 'resume' | 'stop' }
     /** `w` on Home or Project: the panel writes the shown project's HTML review board and opens it. */
     | { type: 'export-board' };
 }

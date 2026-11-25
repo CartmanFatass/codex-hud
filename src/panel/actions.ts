@@ -8,6 +8,7 @@ import type { ProjectVisits } from '../collectors/project-visits.js';
 import { acceptAll, TryLog } from '../collectors/try-records.js';
 import { finishChain } from '../render/chain-input.js';
 import { effectiveModel } from '../render/control-view.js';
+import { batchStateWord } from '../render/work-jobs.js';
 import { harnessItem } from '../render/harness-page.js';
 import { language, t } from '../render/i18n.js';
 import { resourcesShown } from '../render/main-tabs.js';
@@ -136,6 +137,14 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
             host.repaint();
             host.collect();
           });
+          break;
+        // One call acts on the whole batch, through the engine control behind `hud_create({batch, action})`.
+        case 'batch-control':
+          void import('../mcp/batch.js')
+            .then(({ controlBatchAsOwner }) => controlBatchAsOwner(home, action.flow, action.control))
+            .then((b) => { if (!b.applied) host.notice(t('Batch unchanged: {state}', { state: t(batchStateWord(b)) })); })
+            .catch((error: Error) => host.notice(`${t('Could not control batch')}: ${error.message}`))
+            .finally(() => { host.repaint(); host.collect(); });
           break;
         case 'exp-save': {
           if (!resourcesShown(state)) break;

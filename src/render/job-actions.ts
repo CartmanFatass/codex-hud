@@ -1,11 +1,11 @@
-/** Inspector actions are pure; the panel applies focus, answer, retry and confirmed stop. */
+/** Inspector and batch-row actions are pure; the panel applies focus, answer, retry, confirmed stop and batch control. */
 import { join } from 'node:path';
-import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
+import type { OwnerWorker, WorkBatch, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 import { theme } from './colors.js';
-import { fit, monitorText } from './monitor-text.js';
-import { boardRow } from './workboard-rows.js';
+import { fit, flowLines, monitorText } from './monitor-text.js';
+import { boardRow, pack } from './workboard-rows.js';
 import { isHeadless } from './worker-roster.js';
 import { t } from './i18n.js';
 
@@ -45,6 +45,22 @@ export function stopPromptRows(state: MonitorState, width: number): MonitorRow[]
   return stop?.kind === 'confirm-stop' ? [boardRow(fit(theme.board.attention(t('Stop {role} {id}?  y confirm · Esc cancel', { role: monitorText(stop.role), id: stop.jobId.slice(0, 8) })), width))] : [];
 }
 
+/** A batch takes `X` while it works or is paused; an ended one has nothing left to control. */
+export const batchKeys = ({ state }: WorkBatch) => state === 'working' ? ['X pause/stop'] : state === 'paused' ? ['X resume/stop'] : [];
+export function openBatchAction(next: MonitorState, batch: WorkBatch): void {
+  if (batchKeys(batch).length) next.overlay = { kind: 'confirm-batch', flow: batch.flow, paused: batch.state === 'paused',
+    waiting: batch.totals.waiting, running: batch.totals.running };
+}
+/** The one confirmation for a whole batch: what a stop does, then the keys, wrapped whole above the list. */
+export function batchPromptRows(state: MonitorState, width: number): MonitorRow[] {
+  const ask = state.overlay;
+  if (ask?.kind !== 'confirm-batch') return [];
+  const effect = t(ask.running ? 'Batch {id}: stop cancels {waiting} waiting; {running} running finish.'
+    : 'Batch {id}: stop cancels {waiting} waiting.', { id: ask.flow.slice(0, 8), waiting: ask.waiting, running: ask.running });
+  const keys = [ask.paused ? 'r resume' : 'p pause', 's stop', 'Esc cancel'].map((key) => t(key));
+  return [...flowLines(effect, width), ...pack(keys, width)].map((line) => boardRow(fit(theme.board.attention(line), width)));
+}
+
 /** Job actions are only available in Inspector, never in the job list. */
 export function openJobAction(next: MonitorState, input: WorkbenchInput, key: string, board: WorkboardSnapshot | undefined, result: (action?: MonitorOutcome['action']) => MonitorOutcome): MonitorOutcome | undefined {
   if (input.type !== 'key') return undefined;
@@ -65,9 +81,14 @@ export function openJobAction(next: MonitorState, input: WorkbenchInput, key: st
   return answer ? result({ type: 'answer-job', home: job.home, jobId: a.jobId, qid: a.qid, answer, role: job.worker.role }) : undefined;
 }
 
-/** While a stop prompt is open it owns the keyboard: `y` or Enter stops, anything else cancels. */
+/** An open prompt owns the keyboard. A job stop takes `y` or Enter, a batch `p` / `r` or `s`; anything else cancels. */
 export function jobModalInput(state: MonitorState, input: WorkbenchInput): MonitorOutcome | null {
   const stop = state.overlay;
+  if (stop?.kind === 'confirm-batch') {
+    const text = input.type === 'key' ? input.text : undefined;
+    const control = text === 's' ? 'stop' : text === (stop.paused ? 'r' : 'p') ? stop.paused ? 'resume' : 'pause' : undefined;
+    return { state: { ...state, overlay: undefined }, close: false, action: control && { type: 'batch-control', flow: stop.flow, control } };
+  }
   if (stop?.kind !== 'confirm-stop') return null;
   const confirmed = input.type === 'key' && (input.key === 'enter' || input.text === 'y');
   return { state: { ...state, overlay: undefined }, close: false, action: confirmed ? { type: 'stop-job', dir: stop.dir } : undefined };

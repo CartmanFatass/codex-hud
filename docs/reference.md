@@ -80,6 +80,7 @@ hud act answer <job> <qN> <answer...>  # the owner's panel actions from a comman
 hud act try [--cwd DIR]   # Accept all pending tries, recorded in tries.jsonl; hud act retry|stop <job>
 hud act stop --queued <job>...  # Cancel queued jobs by ID; never stop running workers
 hud act stop --package LABEL --queued  # Only this caller pane's jobs in the current project
+hud act stop|pause|resume <batch>  # the owner's control of a whole fixed batch, from any directory
 hud doctor                # run the read-only local install preflight
 hud doctor <jobId>        # print one job's local facts without changing it
 hud stats [--days N] [--by role|model|route|feature]  # per-job usage and outcomes
@@ -199,6 +200,8 @@ Read `hud_read({job:flow})` for totals, failure groups, and the result index: ea
 The batch runs independently of the main session that started it. Closing that pane or its MCP does not cancel the run. A main session in the same project can read the batch ID or control it; undelivered notices wait on the run for the next project reader.
 
 `hud_create({batch:flow,action:"pause"|"resume"|"stop"|"retry_failed"})` acts on the whole batch. Pause keeps waiters; stop cancels them without touching admitted jobs. Resume acknowledges failed pilots and continues in order. Retry-failed runs all currently failed items again as new jobs with the snapshotted briefs and placements, keeping their previous job IDs/reasons in the same index. Failed pilots run again before the remainder. Resume and retry reset the breaker window. Inactive batch receipts and their state directories follow the job retention window.
+
+The owner pauses, resumes or stops a whole batch with the same control, never one confirmation per job: `X` on its row in the panel's [Jobs](#home) page, or `hud act stop|pause|resume <batch>` from any directory. The command runs at once, with no prompt, and prints the new state and totals; after a stop with members still running it names their jobs (`hud act stop <job>` stops one). It exits 1 and changes nothing when the batch's state does not take the action (pause needs a working batch, resume a paused one, stop one that has not completed). Retry-failed stays with the main session. Jobs created one by one are not a batch: `hud act stop --package LABEL --queued` cancels their queued ones.
 
 `hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) to link progress.
 `slice` is a legacy target label.
@@ -777,6 +780,10 @@ Short panels fold the cards before taking space from the projects. The last card
 
 Press `v` or click **Jobs** for one plain row per retained HUD job of the calling pane, including queued, settled and Sonic child jobs. Press Enter or click a row for the [Inspector](#inspector), where reports and job actions live.
 
+[Fixed batches](#universal-cli-and-mcp) of this project (and the calling pane's) head the list, one row each, unfinished ones first and newest first: the flow ID's first eight characters, `Batch`, `done/total`, then failed, running, waiting and cancelled counts as far as they fit, the role when there is room, and the state (`working`, `paused` in the attention colour, `stopping` while a stopped batch's members finish, `stopped`, `done`). A pause that nobody asked for shows its reason on up to two lines below. An ended batch stays listed for an hour after its last change. Waiting items have no job rows, so the batch row is where they show.
+
+On a working or paused batch row, `X` opens one prompt above the list for the whole batch: `Batch <id>: stop cancels N waiting; M running finish.` with `p pause  s stop  Esc cancel`, or `r resume  s stop  Esc cancel` when paused. `p`, `r` or `s` acts at once; any other key or a click cancels (`q` still closes the panel). Running members are never stopped by it. If the batch changed state in the meantime and the action no longer applies, the panel says `Batch unchanged: <state>`.
+
 ## Project
 
 Project → **Working tree** includes the Git diagnostics formerly on the separate Changes page: branch and HEAD, ahead/behind, staged/unstaged/untracked counts, and each worktree's path, branch and observed dirty state. The worktree probe runs only on that page. Unknown, stale and incomplete readings are not treated as clean. The probe does not fetch or run repository filters.
@@ -1118,7 +1125,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
 | `g` | Inspector: focus a job's herdr tab; a headless job shows Output instead |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) in Inspector, where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
-| `X` | On an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then the bundled `hud-reap` runs and the panel reads again); any other key cancels |
+| `X` | Jobs, on a working or paused batch row: the one prompt for the whole batch (`p` pause or `r` resume, `s` stop; any other key cancels). Inspector, on an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then the bundled `hud-reap` runs and the panel reads again); any other key cancels |
 | Enter | Home: open the project or the request in its Project tab; Jobs: open Inspector; Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
 | `o` | Inspector or Project diagnostics: open the file |
 | `v` | Home: open Jobs |

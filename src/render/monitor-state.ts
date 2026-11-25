@@ -143,6 +143,7 @@ export interface ExpEditDraft {
 
 export type OverlayState =
   | { kind: 'confirm-stop'; jobId: string; role: string; dir: string }
+  | { kind: 'confirm-batch'; flow: string; paused: boolean; waiting: number; running: number }
   | { kind: 'control-preset'; sheet: PresetInput }
   | { kind: 'control-quick-model'; role: RoleFact; index: number; picker: ModelPickerState }
   | { kind: 'control-chain'; role: RoleFact; at: number; draft?: { name?: string; run: DraftPlace[] }; error?: string; mode: ChainSubMode }
@@ -193,7 +194,8 @@ export function hasUnsavedDraft(state: MonitorState): boolean {
   const overlay = state.overlay;
   switch (overlay?.kind) {
     case undefined:
-    case 'confirm-stop': return false;
+    case 'confirm-stop':
+    case 'confirm-batch': return false;
     case 'control-chain': return !!overlay.draft || overlay.mode.kind !== 'places';
     case 'control-preset': return overlay.sheet.mode !== 'list' || overlay.sheet.text.length > 0;
     case 'control-quick-model':
@@ -228,6 +230,7 @@ export function acceptsRawText(state: MonitorState): boolean {
     }
     case 'control-preset': return overlay.sheet.mode !== 'delete';
     case 'confirm-stop': // An unnamed key must cancel the prompt too.
+    case 'confirm-batch':
     case 'control-quick-model':
     case 'control-harness-add':
     case 'exp-edit': return true;

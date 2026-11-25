@@ -27,7 +27,7 @@ job-file / herdr events ─► on-demand watcher ─► pi-role-reap
 
 The panel observes; it does not brief workers, accept work or chain roles.
 The main session makes those decisions through the MCP.
-Its writes are the Control plane's role places (§4.6) and the owner's three micro-actions on a HUD job (§6): focus its tab, answer an open question, stop it.
+Its writes are the Control plane's role places (§4.6), the owner's three micro-actions on a HUD job (§6: focus its tab, answer an open question, stop it) and pause, resume or stop of a whole fixed batch (§6).
 Models write only display text.
 There is no ledger database, resident execution host or owned browser runtime.
 
@@ -175,6 +175,7 @@ Home reads the current project's STATE handoff and the caller pane's scoped job 
 `PanelJobPipeline` reads thin jobs in `$HUD_HOME/jobs/` via `readThinJobs` for Jobs and Inspector. `DiffStatCollector` adds a bounded Git diff on demand for an inspected job.
 The selected main session's native Claude/Codex `SubagentTree` (§4.4) is collected on demand for the Native Inspector only.
 Failed or incomplete reads are not evidence of absence.
+The same snapshot worker reads fixed-batch flow headers for the Jobs page's batch rows (`batch-rows.ts`): batches visible as `hud_read` sees them (`runVisible`), unfinished ones plus those written within the last hour, counts from the header only. It never reads a batch's item index or lists member jobs for them.
 
 The panel does not poll `herdr agent list`, scan workspace `tmp/tasks/`, or read retired `$HUD_HOME` observation records such as `assoc/`, `native-relations/` and `jev-runtime/`.
 Existing records are left in place.
@@ -301,6 +302,8 @@ Retired style values load as `line`.
 Home Waiting links open the corresponding Project detail. `v` opens Jobs; Enter opens Inspector there, and `n` opens Native Inspector from Jobs or Inspector.
 The owner's Inspector actions (`render/job-actions.ts`, spec §2.2) are pure input: `g` becomes `focus-job-tab`; `1`–`4` and `d` pick an option or the worker's default and become `answer-job`; `X` opens the stop-confirmation overlay, whose `y`/Enter becomes `stop-job`.
 Any other input cancels the stop prompt.
+On a Jobs batch row `X` opens the batch prompt (`confirm-batch`); `p` / `r` / `s` become `batch-control`, any other input cancels.
+The panel and `hud act stop|pause|resume <batch>` both call `controlBatchAsOwner` (`mcp/batch.ts`): `controlBatch`, the control behind `hud_create({batch, action})`, without its session visibility check, then `wakeWorkflow`. There is no second control path.
 `tree-page.ts` does the I/O: `focusJobTab` and `stopJob` (`cli/panel-pane.ts`: `herdr tab focus`, `pi-role-reap`) and `answerJobQuestion` (`collectors/panel-actions.ts`), which writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
 `PanelActionLog` turns those records into `[role@job] ANSWERED qN from panel: …` lines for `hud watch` and the MCP `changes`, as the try log does: only answers made while the reader runs.
 The `/` filter (`render/filter.ts`) owns the keyboard while editing and provides a filtered snapshot for Project Progress and Tickets. Leaving the view clears it; a kept query survives reload. The filter bar is pinned under the header.
@@ -316,7 +319,7 @@ Mouse hit testing uses the same frame controls.
 
 The panel polls its own installed entry signature per collection.
 A change must be quiet for two seconds and pass a bounded child import before reload.
-Dirty Settings, an open filter, stop confirmation and Control/EXP editors delay replacement.
+Dirty Settings, an open filter, a stop or batch confirmation and Control/EXP editors delay replacement.
 The transient `MonitorState.overlay` is never sent to the next process; a clean chain view returns to its role row.
 `render/monitor-state.ts` holds these reload rules and the input rule for unnamed keys (including `/` and `g`).
 A bad generation leaves the old panel running.

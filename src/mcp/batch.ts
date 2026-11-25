@@ -4,6 +4,7 @@ import { sharedRoot } from '../roles/projects.js';
 import { procStat } from '../utils/proc.js';
 import { runVisible } from '../workflows/scope.js';
 import { freezeGraph } from '../workflows/store.js';
+import { wakeWorkflow } from '../workflows/wake.js';
 import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
@@ -49,7 +50,7 @@ export function batchView(home: string, id: string, pane: string | null) {
   return { flow: id, state: b.state, reason: b.reason, scale: b.scale, totals: b.totals, failures: failuresByReason(items), items,
     result_index: join(batchDir(home, id), 'index.json') };
 }
-export async function controlBatch(home: string, pane: string | null, args: Args) {
+export async function controlBatch(home: string, pane: string | null, args: Args, owner = false) {
   const { batch: id, action } = args;
   if (!isBatchId(id) || !['resume','pause','stop','retry_failed'].includes(String(action)) || Object.keys(args).length !== 2) throw Error('invalid_arguments: batch action');
   const apply = () => {
@@ -65,14 +66,22 @@ export async function controlBatch(home: string, pane: string | null, args: Args
       if (b.steps?.items) b.steps.items.state = 'running';
     }
     saveBatch(home, b, items);
-    return b;
+    return { ...b, applied };
   };
   return withAbstractLock('concurrency', home, () => batchLock(home, id, () => {
     const header = readBatch(home, id);
-    if (!header || !runVisible(header, pane)) throw Error('flow_not_found');
+    if (!header || !(owner || runVisible(header, pane))) throw Error('flow_not_found');
     // An already-running pre-upgrade binary keeps its original mutex until it drains.
     return header.template ? apply() : withAbstractLock('batch-state', `${home}\0${id}`, apply);
   }), { timeoutMs: 10_000 });
+}
+
+/** The owner's panel key and `hud act`: the same control as `hud_create({batch, action})`, from any pane or directory.
+ * `applied` is absent when the batch's state did not take the action. */
+export async function controlBatchAsOwner(home: string, id: string, action: Control) {
+  const b = await controlBatch(home, null, { batch: id, action }, true);
+  wakeWorkflow(home, b);
+  return b;
 }
 
 export async function startBatch(home: string, pane: string | null, args: Args, dispatcher?: Job['dispatcher']) {

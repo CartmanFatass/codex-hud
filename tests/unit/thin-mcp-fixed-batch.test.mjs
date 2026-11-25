@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
 import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { batchIndex, failuresByReason, settleItem } from '../../dist/mcp/batch-state.js';
 import { fixture, sonicTask, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
@@ -162,6 +163,39 @@ test('20 doomed items in a task session: pilot failure wakes once, folds peers, 
   for (const i of pilots()) release(i.job);
   await until(() => index(flow).batch.totals.done === 3, t.signal);
   assert.equal(index(flow).batch.totals.cancelled, 17);
+});
+
+test('owner CLI pauses, resumes and stops a whole batch from any directory, including a stop during a pause', { timeout: 30_000 }, async t => {
+  const f = await fixture(t, { failedRetentionMs: 60_000 });
+  const { release, index } = setup(f, ['sample']);
+  const { flow } = await f.call('hud_create', { role: 'sonic', max_parallel: 1, items: [1, 2, 3, 4].map(n => ({ task: `Look up ${n}.` })) });
+  // The owner's shell: no caller pane, outside the project.
+  const env = { ...f.env };
+  delete env.HERDR_PANE_ID;
+  const act = (...args) => new Promise(done => execFile(process.execPath, [resolve('bin/hud'), 'act', ...args], { env, cwd: tmpdir() },
+    (error, stdout, stderr) => done({ code: error ? error.code : 0, stdout, stderr })));
+  const snapshot = () => index(flow), states = () => snapshot().items.map(i => i.state);
+  await until(() => snapshot().items[0].job, t.signal);
+  assert.equal((await act('pause', flow)).stdout, `Batch ${flow} paused: 3 waiting, 1 running, 0 done, 0 failed\n`);
+  assert.equal((await f.call('hud_read', { job: flow })).state, 'paused');
+  release(snapshot().items[0].job);
+  await until(() => snapshot().items[0].state === 'done', t.signal);
+  assert.deepEqual(states(), ['done', 'waiting', 'waiting', 'waiting'], 'a paused batch starts nothing');
+  assert.equal((await act('resume', flow)).stdout, `Batch ${flow} working: 3 waiting, 0 running, 1 done, 0 failed\n`);
+  await until(() => snapshot().items[1].job, t.signal);
+  assert.deepEqual(states(), ['done', 'running', 'waiting', 'waiting'], 'resume continues in order');
+  assert.deepEqual(await act('resume', flow), { code: 1, stdout: '', stderr: `could not resume ${flow}: batch is working\n` });
+  assert.equal((await act('pause', flow)).code, 0);
+  const second = snapshot().items[1].job;
+  assert.equal((await act('stop', flow)).stdout, `Batch ${flow} stopped: 0 waiting, 1 running, 1 done, 0 failed, 2 cancelled\n` +
+    `Running items finish; to stop one: hud act stop <job> (${second})\n`);
+  assert.deepEqual(states(), ['done', 'running', 'cancelled', 'cancelled']);
+  assert.equal(read(join(f.env.HUD_HOME, 'jobs', second, 'STATUS.json')).state, 'working', 'a running member is not killed');
+  release(second);
+  await until(() => snapshot().batch.totals.done === 2, t.signal);
+  assert.equal(snapshot().batch.state, 'stopped');
+  assert.deepEqual(snapshot().batch.totals, { waiting: 0, running: 0, done: 2, failed: 0, cancelled: 2 });
+  assert.deepEqual(await act('pause', flow), { code: 1, stdout: '', stderr: `could not pause ${flow}: batch is stopped\n` });
 });
 
 test('batch code jobs keep per-job worktrees and report-declared files in the index', { timeout: 30_000 }, async t => {

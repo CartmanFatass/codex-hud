@@ -54,7 +54,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud setup --remove [--cwd DIR]  Drop project registration\n' +
           '       hud tickets sync [--cwd DIR]  Mirror GitHub parent/sub-issues into .scratch/\n' +
           '       hud watch [--all]         Stream job change lines for this pane (or all jobs)\n' +
-          '       hud act answer|try|retry|stop  Owner actions from a command (--help)\n' +
+          '       hud act answer|try|retry|stop|pause|resume  Owner actions from a command (--help)\n' +
           '       hud council allow         Authorize one council for 30 minutes\n' +
           '       hud doctor               Check the local installation without changing it\n' +
           '       hud doctor <jobId>       Print one job\'s disk facts without changing it\n' +

@@ -14,7 +14,7 @@ import { modelInput, pickOf } from './model-input.js';
 import { theme, visualLength } from './colors.js';
 import { fit, monitorText } from './monitor-text.js';
 import { t } from './i18n.js';
-import { inspectorKeys, stopPromptRows } from './job-actions.js';
+import { batchKeys, batchPromptRows, inspectorKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterProject, filterRow, filterScope } from './filter.js';
 import { controlShown, resourcesShown, MAIN_TABS } from './main-tabs.js';
 import { controlHeader, controlHints, controlRows, presetFooterControls, roleRows } from './control-page.js';
@@ -52,7 +52,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['n', 'Jobs or Inspector: show this session’s native subagents'],
     ['g', 'Inspector: focus the job tab; headless output is shown here'],
     ['1-4 d', 'job: answer its open question'],
-    ['X', 'job: stop it (y confirms)'],
+    ['X', 'job: stop (y confirms); Jobs batch: pause/resume/stop'],
     ['r', 'failed job: request a retry'],
   ];
   const project = [
@@ -179,6 +179,7 @@ export function renderWorkboardFrame(
   const truncatedFiles = project && !list && [input.project?.stateTruncated && 'STATE.md', input.project?.specTruncated && 'spec.md'].filter(Boolean).join(', ');
   const headers = [...controlTop.map((r) => r.text), ...(bar ? [bar.text] : []),
     ...(inspector ? stopPromptRows(state, width).map((r) => r.text) : []),
+    ...(jobs ? batchPromptRows(state, width).map((r) => r.text) : []),
     ...(truncatedFiles ? [fit(theme.board.attention(t('Truncated: {files}', { files: truncatedFiles })), width)] : []),
     ...(control && input.error ? [theme.error(monitorText(input.error))] : [])];
   const top = Math.min(headers.length, Math.max(0, height - 2));
@@ -258,7 +259,7 @@ export function renderWorkboardFrame(
     : native ? nativeInspectorRows(input.tree, width, now)
       : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id))
         : [boardRow(t('Job not available'))]
-        : jobs ? jobsRows(source.workers, width, !!input.jobsObserved)
+        : jobs ? jobsRows(source.workers, width, !!input.jobsObserved, source.batches)
         : project
           ? projectRows(input.project, state, width, now, source, input.projectName, input.projects, input.worktrees)
           : resourcePage ? expRows(resourcePage, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.publicationNotice)))
@@ -329,7 +330,7 @@ export function renderWorkboardFrame(
     ? { modal: ['Esc back'] }
     : objective ? [...(selected?.files ? ['o file'] : selected?.commit ? ['o commit'] : []), 'Esc back']
     : inspector ? inspectorKeys(worker)
-      : native ? ['Esc back'] : jobs ? [...(listCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
+      : native ? ['Esc back'] : jobs ? [...(selected?.batch ? batchKeys(selected.batch) : listCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
         : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)

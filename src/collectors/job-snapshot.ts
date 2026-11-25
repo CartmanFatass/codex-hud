@@ -1,7 +1,7 @@
 /** Client for the process's background collector. No job tree I/O on the caller's thread. */
 import { Worker } from 'node:worker_threads';
 import type { ThinJobScope, WatchJobRow } from './thin-jobs.js';
-import type { WorkLane } from './workboard-types.js';
+import type { WorkBatch, WorkLane } from './workboard-types.js';
 import type { resumedWorkerRefusal } from '../roles/resume-guard.js';
 import { herdrId } from '../roles/herdr-run.js';
 
@@ -14,7 +14,7 @@ export type Request =
   | { kind: 'watch'; home: string; key: number }
   | { kind: 'rows'; home: string; pane: string; cwd: string; env: NodeJS.ProcessEnv }
   | { kind: 'resume'; args: Parameters<typeof resumedWorkerRefusal> };
-export type Lanes = { lanes: WorkLane[]; complete: boolean };
+export type Lanes = { lanes: WorkLane[]; complete: boolean; batches?: WorkBatch[] };
 type Result = Lanes | string[] | WatchJobRow[] | string | undefined;
 
 let worker: Worker | undefined;

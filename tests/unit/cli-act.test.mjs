@@ -96,12 +96,18 @@ test('stop --package requires --queued and selects only the current pane/project
 
 test('bad arguments and unknown jobs are refused before anything is written', async (t) => {
   const f = fixture(t);
-  for (const args of [[], ['nope'], ['answer', JOB, 'q1'], ['answer', JOB, 'x1', 'a'], ['retry'], ['retry', '../x'], ['stop', JOB, 'now'], ['try', 'extra']]) {
+  for (const args of [[], ['nope'], ['answer', JOB, 'q1'], ['answer', JOB, 'x1', 'a'], ['retry'], ['retry', '../x'], ['stop', JOB, 'now'], ['try', 'extra'],
+    ['pause', JOB], ['resume'], ['stop', 'b9999999999999999', 'now']]) {
     const done = await f.run(...args);
     assert.deepEqual([args.join(' '), done.code, done.stdout, done.stderr.startsWith('Usage: hud act')], [args.join(' '), 2, '', true]);
   }
   const unknown = await f.run('retry', 'j9999999999999999');
   assert.deepEqual([unknown.code, unknown.stderr], [1, 'no such job: j9999999999999999\n']);
   assert.equal(fs.existsSync(join(f.hud, PANEL_ACTIONS_FILE)), false);
+  for (const verb of ['stop', 'pause', 'resume']) {
+    const batch = await f.run(verb, 'b9999999999999999');
+    assert.deepEqual([batch.code, batch.stderr], [1, 'no such batch: b9999999999999999\n']);
+  }
+  assert.equal(fs.existsSync(join(f.hud, 'flows')), false);
   assert.match((await f.run('--help')).stdout, /^Usage: hud act answer/);
 });

@@ -45,7 +45,7 @@ function recount(b: Batch, items: ItemResult[]) {
   for (const i of items) b.totals[i.state] = (b.totals[i.state] ?? 0) + 1;
 }
 const groupsLine = (items: ItemResult[]) => failuresByReason(items).map(g => `${g.reason} ×${g.count} (${g.example})`).join('; ');
-const totalsLine = (b: Batch) => Object.entries(b.totals).map(([state,n]) => `${n} ${state}`).join(', ');
+export const totalsLine = (b: Batch) => Object.entries(b.totals).map(([state,n]) => `${n} ${state}`).join(', ');
 export function settleItem(b: Batch, items: ItemResult[], i: ItemResult, failure?: string, breaker: Breaker = 'rate') {
   i.state = failure ? 'failed' : 'done'; i.reason = failure && failureReason(failure); delete i.stall;
   if (b.state !== 'working') return;

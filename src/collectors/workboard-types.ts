@@ -140,6 +140,15 @@ export interface WorkLane {
   readonly decisions: readonly DecisionRecord[];
   readonly evidence: readonly EvidenceRef[];
 }
+/** A fixed batch as the panel shows it: the counts of its header, never derived from the member jobs listed. */
+export interface WorkBatch {
+  readonly flow: string;
+  readonly role: string;
+  readonly state: 'working' | 'paused' | 'stopped' | 'completed';
+  readonly reason?: string;
+  readonly count: number;
+  readonly totals: { readonly done: number; readonly failed: number; readonly running: number; readonly waiting: number; readonly cancelled?: number };
+}
 export interface WorkCoverage {
   readonly incomplete: boolean;
   readonly diagnostics: readonly string[];
@@ -150,6 +159,7 @@ export interface WorkboardSnapshot {
   readonly lanes: readonly WorkLane[];
   readonly workers: readonly OwnerWorker[];
   readonly decisions: readonly DecisionRecord[];
+  readonly batches?: readonly WorkBatch[];
   readonly coverage: WorkCoverage;
 }
 export const targetKey = (target: WorkTarget): string =>

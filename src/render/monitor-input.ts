@@ -64,6 +64,7 @@ function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext):
     case 'control-chain': return chainInputKey(state, overlay, input, ctx, route);
     case 'control-harness-add': return harnessAddInput(state, overlay, input, ctx);
     case 'confirm-stop':
+    case 'confirm-batch':
     case undefined: break;
     default: overlay satisfies never;
   }

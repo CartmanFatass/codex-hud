@@ -2,14 +2,15 @@ import type { HudData, SubagentTree } from '../types.js';
 import { eachThread } from '../collectors/subagent-tree.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
 export function jobPanelObservation(board: WorkboardSnapshot, complete: boolean, nativeQuiet: boolean) {
-  const active = board.workers.some((w) => w.state === 'working' || w.homeNeedsHuman || w.work?.request);
+  const active = board.workers.some((w) => w.state === 'working' || w.homeNeedsHuman || w.work?.request) ||
+    board.batches?.some((b) => b.state === 'working' || b.totals.running > 0);
   const uncertain =
     !(complete && nativeQuiet) ||
     board.coverage.incomplete ||
     board.workers.some((w) => w.stale || w.settledAt === null || w.files?.some((f) => f.state === 'open'));
   return {
     activity: active ? ('active' as const) : uncertain ? ('uncertain' as const) : ('quiet' as const),
-    fingerprint: active || uncertain ? undefined : JSON.stringify([board.workers, board.decisions]),
+    fingerprint: active || uncertain ? undefined : JSON.stringify([board.workers, board.decisions, board.batches]),
     succeeded: complete,
   };
 }
