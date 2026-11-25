@@ -37,6 +37,9 @@ Each item says who decides and what would trigger it. Remove an item when it is 
   research-workflow design once the transcript labels are in.
 - hmasd research-error study: transcripts inventoried (owner + subagent threads, WSL/Windows/sqlite), chunking and
   per-chunk sonic labelling under way in `tmp/tasks/HMASD-RESEARCH/`.
+- `haiku` is out of the sonic even pool (`~/.hud/hud-settings.json`, backup `.bak-20261125-haiku-pool`) for the
+  hmasd labelling batch, by owner decision on 2026-11-25: haiku jobs hung in pi auto-compaction (eng-hygiene/10).
+  Restore `["deepseek","haiku","luna"]` when the batch is done and eng-hygiene/10 has landed.
 
 ## Data waiting to appear
 
