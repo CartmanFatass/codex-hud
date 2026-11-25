@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import {
   ADVISOR_DEDUPE_MS,
@@ -893,7 +894,6 @@ test('no session transcript, hook output, or prompt receives advisor text (Claud
 });
 
 function runAdviseChild(t, argv, env, { stdinMode = 'open', payload, detached = false } = {}) {
-  const started = Date.now();
   const child = spawn(process.execPath, argv, {
     env,
     detached,
@@ -910,18 +910,32 @@ function runAdviseChild(t, argv, env, { stdinMode = 'open', payload, detached = 
   child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
   if (stdinMode === 'close') child.stdin.end();
   else if (stdinMode === 'payload') child.stdin.end(Buffer.from(JSON.stringify(payload), 'utf8'));
-  const exited = once(child, 'exit').then(([code, signal]) => ({
-    code,
-    signal,
-    stdout,
-    stderr,
-    elapsedMs: Date.now() - started,
-  }));
-  return exited;
+  return once(child, 'close').then(([code, signal]) => ({ code, signal, stdout, stderr }));
 }
 
-test('hud advise --help and no-stdin invocations exit within 1 s; detached statusline runs stay silent', async (t) => {
+test('hud advise skips stdin for help and flags, bounds an empty pipe, and stays silent when detached', async (t) => {
   const f = setupEnv(t);
+  const stdin = new PassThrough();
+  const getStdin = t.mock.getter(process, 'stdin', () => stdin);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const io = { env: f.env, stdout() {}, stderr() {} };
+  // Give the command a turn to settle, without advancing its clock or providing input.
+  const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
+  const assertExited = async (run, message) => assert.equal(await Promise.race([run, nextTurn()]), 0, message);
+  for (const args of [['--help'], []]) {
+    await assertExited(adviseCommand(args, io), `hud advise ${args[0] ?? '(no arguments)'} waited`);
+    assert.equal(getStdin.mock.callCount(), 0, 'help and flag-only invocations must not read stdin');
+  }
+  // Explicit --stdin (also the detached launcher's default) may wait for input,
+  // but must release an open, empty pipe at the 150 ms idle timeout without EOF.
+  const idle = adviseCommand(['--stdin'], io);
+  await nextTurn();
+  t.mock.timers.tick(150);
+  await assertExited(idle, 'advise --stdin waited past its idle timeout');
+  stdin.end();
+  await assertExited(adviseCommand(['--stdin'], io), 'advise --stdin waited after EOF');
+  t.mock.reset();
+
   writeSkill(f.skillsDir, 'tdd', 'tdd', 'Test-driven development red-green loop.');
   const api = await fakeDecisionServer(t, (body) => choiceResponse(body, 'tdd'));
   configureStubDecision(f.env, f.hudHome, api.baseUrl);
@@ -940,7 +954,6 @@ test('hud advise --help and no-stdin invocations exit within 1 s; detached statu
     const res = await runAdviseChild(t, argv, f.env, { stdinMode: 'open' });
     assert.equal(res.code, 0, `${argv.join(' ')} stderr=${res.stderr}`);
     assert.equal(res.signal, null);
-    assert.ok(res.elapsedMs < 1000, `${argv.join(' ')} took ${res.elapsedMs}ms`);
     assert.match(res.stdout, /Usage: hud advise/);
     assert.equal(res.stderr, '');
   }
@@ -957,7 +970,6 @@ test('hud advise --help and no-stdin invocations exit within 1 s; detached statu
     const res = await runAdviseChild(t, argv, f.env, { stdinMode });
     assert.equal(res.code, 0, `${argv.join(' ')} (${stdinMode}) stderr=${res.stderr}`);
     assert.equal(res.signal, null);
-    assert.ok(res.elapsedMs < 1000, `${argv.join(' ')} (${stdinMode}) took ${res.elapsedMs}ms`);
     assert.equal(res.stdout, '');
     assert.equal(res.stderr, '');
   }
