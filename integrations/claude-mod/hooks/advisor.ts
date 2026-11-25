@@ -3,6 +3,7 @@ import type { EngineInterface, SessionStartInput, TurnCompleteInput, TurnStartIn
 // Advisor shadow trigger for Claude Code main sessions: fire-and-forget out-of-band check.
 // Never returns or injects any advisor text into the session, prompt, transcript, or hook output.
 const WAKE_PREFIX = 'HUD events (status only;';
+const PLUGIN_PROMPT_RE = /^The [A-Za-z0-9_.-]+ plugin sent a message:/;
 
 async function triggerAdvisor(
   $: EngineInterface,
@@ -63,7 +64,7 @@ export async function startAdvisorTurn($: EngineInterface, advisor: Advisor, e: 
   advisor.owner = undefined;
   if (!advisor.interactive || typeof e.text !== 'string') return;
   const text = e.text.trim();
-  if (!text || text.startsWith(WAKE_PREFIX) || text.startsWith('/') || text.startsWith('<task-notification>')) return;
+  if (!text || text.startsWith(WAKE_PREFIX) || PLUGIN_PROMPT_RE.test(text) || text.startsWith('/') || text.startsWith('<task-notification>')) return;
   if (text.startsWith('<system-reminder>') && !text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim()) return;
   advisor.owner = { turn: e.turnId, text: text.slice(0, 16_000) };
   void triggerAdvisor($, text, e.turnId, advisor.lastReply, advisor.fallbackCwd).catch(() => {});

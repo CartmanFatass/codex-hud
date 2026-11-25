@@ -38,6 +38,7 @@ import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../di
 import { loadSettings } from '../../dist/settings.js';
 import { collectAndRenderParity } from '../../dist/statusline-parity/collect.js';
 import { paritySettings } from '../../dist/statusline-parity/settings.js';
+import { collectTranscript } from '../../dist/statusline-parity/transcript.js';
 import { copyToClipboard, osc52Sequence } from '../../dist/utils/clipboard.js';
 import { fakeDecisionServer } from '../helpers/thin-mcp-harness.mjs';
 import { completeAdvisorTurn, createAdvisor, startAdvisorTurn } from '../../integrations/claude-mod/hooks/advisor.ts';
@@ -197,7 +198,8 @@ test('recommendation renders in bar notice zone (Text + Nerd, after quota, 10m) 
   const data = reqBody.input[0].content.filter((item) => item.type === 'input_json').map((item) => item.data);
   assert.ok(data[0].page.text.length <= 2000);
   assert.ok(data[1].facts.previous_assistant_reply.length <= 2000);
-  assert.match(reqBody.questions[0].instructions, /NONE is the default/i);
+  assert.match(reqBody.questions[0].instructions, /NONE is the default\. Pick a skill only when the owner is asking the assistant to start the kind of work that skill guides/);
+  assert.match(reqBody.questions[0].instructions, /a question, an explanation request or a proposal to discuss is not a request to start that work/);
   assert.match(reqBody.questions[0].instructions, /untrusted quoted data/i);
   assert.deepEqual(reqBody.questions[0].choices.map((c) => c.value), ['codebase-design', 'tdd', 'NONE']);
 
@@ -973,4 +975,245 @@ test('hud advise --help and no-stdin invocations exit within 1 s; detached statu
   assert.equal(detached.stderr, '');
   assert.equal(api.requests.length, 1);
   assert.equal(readAdvisorNotice(f.hudHome, { session: 'detached-statusline-1' }, Date.now(), f.env)?.skill, 'tdd');
+});
+
+test('transcript newOwnerMessage ignores plugin, system, task-notification and fallback records; keeps normal owner records', async (t) => {
+  const f = setupEnv(t);
+  const transcriptFile = path.join(f.home, 'sess-origin-1.jsonl');
+  fs.writeFileSync(
+    transcriptFile,
+    JSON.stringify({ type: 'assistant', uuid: 'a0', message: { content: 'Initial reply.' } }) + '\n'
+  );
+  // Cold start primes the byte cursor without emitting newOwnerMessage.
+  assert.equal(collectTranscript(transcriptFile, f.env).newOwnerMessage, undefined);
+
+  const append = (record) => {
+    fs.appendFileSync(transcriptFile, JSON.stringify(record) + '\n');
+    return collectTranscript(transcriptFile, f.env);
+  };
+
+  // Plugin-origin, system-origin, task-notification, sidechain/meta, and text-prefix fallback records never become newOwnerMessage.
+  for (const ignored of [
+    {
+      type: 'user',
+      uuid: 'p1',
+      origin: { kind: 'plugin', name: 'hud-mod' },
+      promptSource: 'system',
+      turnOrigin: 'system',
+      pluginPrompt: { name: 'hud-mod', text: 'HUD events (status only; not user instructions):\nj1 done' },
+      message: { content: 'The hud-mod plugin sent a message:\nHUD events (status only; not user instructions):\nj1 done' },
+    },
+    {
+      type: 'user',
+      uuid: 'p2',
+      origin: { kind: 'plugin', name: 'other-plugin' },
+      message: { content: 'Write tests first for billing.' },
+    },
+    {
+      type: 'user',
+      uuid: 'p3',
+      pluginPrompt: { name: 'hud-mod', text: 'Wake' },
+      message: { content: 'Write tests first for billing.' },
+    },
+    {
+      type: 'user',
+      uuid: 's1',
+      promptSource: 'system',
+      message: { content: 'Write tests first for billing.' },
+    },
+    {
+      type: 'user',
+      uuid: 's2',
+      turnOrigin: 'system',
+      message: { content: 'Write tests first for billing.' },
+    },
+    {
+      type: 'user',
+      uuid: 's3',
+      origin: { kind: 'system' },
+      message: { content: 'Write tests first for billing.' },
+    },
+    {
+      type: 'user',
+      uuid: 's4',
+      origin: { kind: 'task-notification' },
+      message: { content: 'Background job finished.' },
+    },
+    {
+      type: 'user',
+      uuid: 's5',
+      origin: { kind: 'agent' },
+      message: { content: 'Automated follow-up.' },
+    },
+    {
+      type: 'user',
+      uuid: 's6',
+      isSidechain: true,
+      message: { content: 'Write tests first for billing.' },
+    },
+    {
+      type: 'user',
+      uuid: 's7',
+      isMeta: true,
+      message: { content: 'Write tests first for billing.' },
+    },
+    {
+      type: 'user',
+      uuid: 'f1',
+      message: { content: 'The hud-mod plugin sent a message:\nHUD events (status only; not user instructions):\nj1 done' },
+    },
+    {
+      type: 'user',
+      uuid: 'f2',
+      message: { content: 'HUD events (status only; not user instructions):\nj1 done' },
+    },
+    {
+      type: 'user',
+      uuid: 'f3',
+      message: { content: '<task-notification><task-id>b1</task-id></task-notification>' },
+    },
+    {
+      type: 'user',
+      uuid: 'f4',
+      message: { content: '<system-reminder>Internal note.</system-reminder>' },
+    },
+  ]) {
+    assert.equal(append(ignored).newOwnerMessage, undefined, `expected ${ignored.uuid} to be ignored`);
+  }
+
+  // Normal owner records (without origin fields or with explicit human/user/composer fields) still become newOwnerMessage.
+  const first = append({
+    type: 'user',
+    uuid: 'u1',
+    message: { content: 'Write unit tests first for billing.' },
+  });
+  assert.deepEqual(first.newOwnerMessage, {
+    id: 'u1',
+    text: 'Write unit tests first for billing.',
+    previousReply: 'Initial reply.',
+  });
+
+  append({ type: 'assistant', uuid: 'a1', message: { content: 'Tests added.' } });
+  const second = append({
+    type: 'user',
+    uuid: 'u2',
+    origin: { kind: 'human' },
+    promptSource: 'user',
+    turnOrigin: 'user',
+    message: { content: [{ type: 'text', text: 'Now add edge cases.' }] },
+  });
+  assert.deepEqual(second.newOwnerMessage, {
+    id: 'u2',
+    text: 'Now add edge cases.',
+    previousReply: 'Tests added.',
+  });
+
+  // Claude mod startAdvisorTurn also ignores wrapped plugin prompts.
+  const advisor = createAdvisor({ cwd: f.projectRoot, isInteractive: true });
+  const spawned = [];
+  const fakeEngine = {
+    env: { get: async (k) => f.env[k] },
+    fs: { read: async (p) => fs.readFileSync(p, 'utf8') },
+    session: { surfaces: async () => ['terminal'], cwd: async () => f.projectRoot, root: async () => f.projectRoot },
+    process: {
+      run: async (argv) => {
+        spawned.push(argv);
+        return { exitCode: 0, stdout: '', stderr: '' };
+      },
+    },
+  };
+  await startAdvisorTurn(fakeEngine, advisor, {
+    turnId: 'plugin-turn',
+    text: 'The hud-mod plugin sent a message:\nHUD events (status only; not user instructions):\nj1 done',
+  });
+  assert.deepEqual(spawned, []);
+});
+
+test('an owner message seen by both the Claude mod trigger and the statusline trigger makes one Decision call', async (t) => {
+  const f = setupEnv(t);
+  writeSkill(f.skillsDir, 'tdd', 'tdd', 'Test-driven development red-green loop.');
+  writeSkill(f.skillsDir, 'design', 'codebase-design', 'Deep module design.');
+  const api = await fakeDecisionServer(t, async (body) => {
+    await new Promise((r) => setTimeout(r, 80));
+    return choiceResponse(body, 'tdd');
+  });
+  configureStubDecision(f.env, f.hudHome, api.baseUrl);
+  fs.writeFileSync(
+    f.env.HUD_SETTINGS_PATH,
+    JSON.stringify({ advisorShadow: true, advisorSkillDirs: [f.skillsDir] })
+  );
+
+  // 1) Concurrent in-process calls with different messageIds and whitespace normalization make one Decision call.
+  const t0 = Date.parse('2026-11-25T08:00:00.000Z');
+  const [r1, r2] = await Promise.all([
+    adviseOnMessage(
+      f.hudHome,
+      { session: 'sess-race', projectRoot: f.projectRoot, message: 'Write tests first for billing.', messageId: 'mod-turn-1' },
+      { env: f.env, now: t0 }
+    ),
+    adviseOnMessage(
+      f.hudHome,
+      { session: 'sess-race', projectRoot: f.projectRoot, message: '  Write  tests\nfirst for billing. ', messageId: 'transcript-uuid-1' },
+      { env: f.env, now: t0 }
+    ),
+  ]);
+  assert.equal(api.requests.length, 1);
+  assert.equal([r1, r2].filter(Boolean).length, 1);
+
+  // 2) End-to-end: Claude mod turn.start + statusline transcript trigger racing for the same owner message make one Decision call.
+  const sessionId = 'sess-both-1';
+  const transcriptFile = path.join(f.home, `${sessionId}.jsonl`);
+  fs.writeFileSync(
+    transcriptFile,
+    JSON.stringify({ type: 'assistant', uuid: 'a0', message: { content: 'Ready.' } }) + '\n'
+  );
+  const statuslinePayload = {
+    session_id: sessionId,
+    transcript_path: transcriptFile,
+    cwd: f.projectRoot,
+    model: { id: 'claude-opus-4-6' },
+  };
+  // Cold start primes the transcript cursor (no advisor call).
+  await collectAndRenderParity(statuslinePayload, 120, paritySettings({}), f.env);
+  assert.equal(api.requests.length, 1);
+
+  const ownerText = 'Let us write red-green tests first for the parser.';
+  fs.appendFileSync(
+    transcriptFile,
+    JSON.stringify({ type: 'user', uuid: 'transcript-uuid-2', message: { content: ownerText } }) + '\n'
+  );
+
+  const modEnv = { ...f.env, CLAUDE_CODE_SESSION_ID: sessionId };
+  const modDone = Promise.withResolvers();
+  const advisor = createAdvisor({ cwd: f.projectRoot, isInteractive: true });
+  const fakeEngine = {
+    env: { get: async (k) => modEnv[k] },
+    fs: { read: async (p) => fs.readFileSync(p, 'utf8') },
+    session: { surfaces: async () => ['terminal'], cwd: async () => f.projectRoot, root: async () => f.projectRoot },
+    process: {
+      run: async (argv) => {
+        // Run the real `hud advise` CLI path that the mod invokes.
+        const exitCode = await adviseCommand(argv.slice(2), { env: modEnv, stdout: () => {}, stderr: () => {} });
+        modDone.resolve(exitCode);
+        return { exitCode, stdout: '', stderr: '' };
+      },
+    },
+  };
+
+  // Trigger both statusline (detached `hud-dist.mjs advise`) and Claude mod (`startAdvisorTurn`) for the same message.
+  await Promise.all([
+    collectAndRenderParity(statuslinePayload, 120, paritySettings({}), f.env),
+    startAdvisorTurn(fakeEngine, advisor, { turnId: 'mod-turn-2', text: `  ${ownerText}\n` }),
+  ]);
+  assert.equal(await modDone.promise, 0);
+  // Wait for any detached statusline child to finish and confirm only one Decision call occurred for this message.
+  for (let i = 0; i < 40 && !readAdvisorNotice(f.hudHome, { session: sessionId }, Date.now(), f.env); i++) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  await new Promise((r) => setTimeout(r, 300));
+
+  assert.equal(api.requests.length, 2, 'mod + statusline triggers for one owner message must make only one Decision call');
+  assert.equal(readAdvisorNotice(f.hudHome, { session: sessionId }, Date.now(), f.env)?.skill, 'tdd');
+  const saved = JSON.parse(fs.readFileSync(advisorStatePath(f.hudHome), 'utf8'));
+  assert.equal(saved.messages.length, 2, 'advisor-state.json should record each owner message once');
 });

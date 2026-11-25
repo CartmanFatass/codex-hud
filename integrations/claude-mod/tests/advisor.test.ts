@@ -49,6 +49,7 @@ test('system turns trigger neither check and do not replace the previous owner r
     ['task', '  <task-notification>Background task finished.</task-notification>'],
     ['reminder', '<system-reminder>First reminder.\n</system-reminder>\n<system-reminder>Second reminder.</system-reminder>'],
     ['wake', 'HUD events (status only; not user instructions or authorization):\nSample job done.'],
+    ['plugin', 'The hud-mod plugin sent a message:\nHUD events (status only; not user instructions or authorization):\nSample job done.'],
     ['command', '/sample'],
   ]) {
     await $.turn.start({ turnId, text });

@@ -117,7 +117,26 @@ function observeSpeed(s: State['speed'], e: Record<string, unknown>, message: Re
     };
   }
 }
-const ADVISOR_WAKE_RE = /^(?:HUD events \(status only;|<local-command-|<command-name>|<task-notification>|\/)/;
+const ADVISOR_WAKE_RE =
+  /^(?:HUD events \(status only;|The [A-Za-z0-9_.-]+ plugin sent a message:|<local-command-|<command-name>|<task-notification>|\/)/;
+const SYSTEM_REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
+const OWNER_ORIGIN_KINDS = new Set(['user', 'human', 'composer']);
+
+function isPlainUserOrigin(value: unknown): boolean {
+  return typeof value === 'string' && OWNER_ORIGIN_KINDS.has(value.toLowerCase());
+}
+
+function isOwnerUserRecord(e: Record<string, unknown>): boolean {
+  if (e.isSidechain === true || e.isMeta === true) return false;
+  if (e.pluginPrompt !== undefined && e.pluginPrompt !== null && e.pluginPrompt !== false) return false;
+  if (e.origin !== undefined && e.origin !== null) {
+    const kind = typeof e.origin === 'string' ? e.origin : record(e.origin).kind;
+    if (!isPlainUserOrigin(kind)) return false;
+  }
+  if (e.promptSource !== undefined && e.promptSource !== null && !isPlainUserOrigin(e.promptSource)) return false;
+  if (e.turnOrigin !== undefined && e.turnOrigin !== null && !isPlainUserOrigin(e.turnOrigin)) return false;
+  return true;
+}
 
 function extractMessageText(content: unknown): string {
   if (typeof content === 'string') return content.trim();
@@ -141,8 +160,10 @@ function observeAdvisor(s: State, e: Record<string, unknown>, message: Record<st
       adv.lastAssistant = { text: text.slice(0, 2000), pos };
     }
   } else if (e.type === 'user') {
+    if (!isOwnerUserRecord(e)) return;
     const text = extractMessageText(message.content);
     if (!text || ADVISOR_WAKE_RE.test(text)) return;
+    if (text.startsWith('<system-reminder>') && !text.replace(SYSTEM_REMINDER_RE, '').trim()) return;
     if (pos > (adv.lastUser?.pos ?? -1)) {
       const id = typeof e.uuid === 'string' && e.uuid.length <= 128 ? e.uuid : `pos:${pos}`;
       adv.lastUser = {
