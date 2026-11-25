@@ -16,10 +16,13 @@ import {
   getSkillIndex,
   messageNamesSkillPath,
   onAdvisorUpdate,
+  parseAdvisorRules,
   parseSkillFrontmatter,
   readAdvisorNotice,
   readAdvisorRecommendations,
+  readAdvisorRuleHits,
   readAdvisorRuleNotice,
+  runBuiltinRuleCheck,
   scrubSecrets,
 } from '../../dist/collectors/advisor-shadow.js';
 import { AdvisorHistory } from '../../dist/collectors/advisor-history.js';
@@ -1224,4 +1227,271 @@ test('an owner message seen by both the Claude mod trigger and the statusline tr
   assert.equal(readAdvisorNotice(f.hudHome, { session: sessionId }, Date.now(), f.env)?.skill, 'tdd');
   const saved = JSON.parse(fs.readFileSync(advisorStatePath(f.hudHome), 'utf8'));
   assert.equal(saved.messages.length, 2, 'advisor-state.json should record each owner message once');
+});
+
+test('parseAdvisorRules handles built-in checks, skips unknown checks as invalid, and keeps 30-rule bound', () => {
+  const parsed = parseAdvisorRules([
+    '# Owner rules',
+    'Ignored prose line',
+    '- R1 (check: chinese-reply): Reply to the owner in Simplified Chinese.',
+    '- R2: Name the checks you ran.',
+    '- R3 (check: bogus-check): Should be skipped as invalid.',
+    '- R4 (check: no-secrets): Never print raw credentials.',
+    '- R5 (check: ): Empty check name is also invalid.',
+    '- R1: Duplicate ID keeps first entry.',
+    '- R6 (check: chinese-reply):   ',
+  ].join('\n'));
+  assert.equal(parsed.invalid, 2);
+  assert.deepEqual(parsed.rules, [
+    { id: 'R1', sentence: 'Reply to the owner in Simplified Chinese.', check: 'chinese-reply' },
+    { id: 'R2', sentence: 'Name the checks you ran.' },
+    { id: 'R4', sentence: 'Never print raw credentials.', check: 'no-secrets' },
+  ]);
+
+  // 30 matched rule lines (including invalid-check lines) stay within bound; 31 disables rule checks.
+  const atLimit = [
+    ...Array.from({ length: 29 }, (_, n) => `- R${n + 1}: Rule ${n + 1}.`),
+    '- R30 (check: unknown): Invalid check counted toward bound.',
+  ].join('\n');
+  const parsedLimit = parseAdvisorRules(atLimit);
+  assert.equal(parsedLimit.rules.length, 29);
+  assert.equal(parsedLimit.invalid, 1);
+
+  const overLimit = `${atLimit}\n- R31 (check: no-secrets): Over the 30-rule limit.`;
+  assert.deepEqual(parseAdvisorRules(overLimit), { rules: [], invalid: 0 });
+});
+
+test('chinese-reply built-in check strips code/paths/tokens and enforces letter and Han thresholds', () => {
+  // Chinese reply packed with code names, paths, URLs, env assignments, inline code and fenced code -> pass.
+  const chineseWithCode = [
+    '已完成修改：在 `src/collectors/advisor-shadow.ts` 中新增了 parseAdvisorRules 和 runBuiltinRuleCheck，',
+    '支持 chinese-reply 与 no-secrets，保留 rule_hits 事件与 advisor-counters.json 计数。',
+    '路径 src/collectors/advisor-shadow.ts:654-790 与 tests/unit/advisor-shadow.test.mjs 已验证，',
+    '设置了 HUD_HOME=/tmp/hud-test 和 OPENAI_BASE_URL=http://127.0.0.1:8080，参考 https://example.com/docs/advisor-rules 。',
+    '```ts',
+    'export function veryLongEnglishHelperName(inputText: string): boolean {',
+    '  // This fenced block has plenty of English prose that must be ignored completely.',
+    '  return inputText.length > 0;',
+    '}',
+    '```',
+  ].join('\n');
+  assert.equal(runBuiltinRuleCheck('chinese-reply', chineseWithCode), false);
+
+  // Plain English paragraph -> hit.
+  const englishParagraph =
+    'I updated the advisor shadow rules parser to support deterministic local checks and merged their hits with the model results.';
+  assert.equal(runBuiltinRuleCheck('chinese-reply', englishParagraph), true);
+
+  // English paragraph with a tiny Chinese quote (< 30% Han) -> hit.
+  const mostlyEnglish =
+    'I checked the rule for "中文回复" and confirmed that an English explanation paragraph still triggers the deterministic check.';
+  assert.equal(runBuiltinRuleCheck('chinese-reply', mostlyEnglish), true);
+
+  // Very short English reply (< 40 letters) -> no verdict (pass).
+  assert.equal(runBuiltinRuleCheck('chinese-reply', 'Done. All checks passed.'), false);
+
+  // Short English intro with large fenced code block -> no verdict (pass).
+  const shortWithFence = [
+    'Here is the patch:',
+    '~~~js',
+    'function explainEverythingInEnglish() {',
+    '  return "This entire block is inside a tilde fence and has far more than forty letters.";',
+    '}',
+    '~~~',
+  ].join('\n');
+  assert.equal(runBuiltinRuleCheck('chinese-reply', shortWithFence), false);
+
+  // Only URLs, paths and KEY=value -> no verdict (pass).
+  const tokensOnly = [
+    'https://example.com/very/long/documentation/path/with/many/english/words',
+    'src/collectors/advisor-shadow.ts:10-20',
+    'ADVISOR_RULES_FILE=/home/user/project/rules.md',
+  ].join('\n');
+  assert.equal(runBuiltinRuleCheck('chinese-reply', tokensOnly), false);
+
+  // Exact boundaries: 39 letters -> pass; 40 letters -> hit; 70 letters + 30 Han (30%) -> pass; 70 + 29 -> hit.
+  assert.equal(runBuiltinRuleCheck('chinese-reply', `${'a'.repeat(39)}`), false);
+  assert.equal(runBuiltinRuleCheck('chinese-reply', `${'a'.repeat(40)}`), true);
+  assert.equal(runBuiltinRuleCheck('chinese-reply', `${'a'.repeat(70)} ${'中'.repeat(30)}`), false);
+  assert.equal(runBuiltinRuleCheck('chinese-reply', `${'a'.repeat(70)} ${'中'.repeat(29)}`), true);
+});
+
+test('no-secrets built-in check reuses scrubSecrets and ignores env names, credential paths and masked values', () => {
+  // Real synthetic secrets -> hit.
+  for (const leaky of [
+    'Key is sk-proj-abcdefghijklmnopqrstuvwxyz123456',
+    'Token: ghp_abcdefghijklmnopqrstuvwxyz123456',
+    'Authorization: Bearer synthetic_bearer_token_value_12345',
+    'JWT: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefghijk123456',
+    'Connect to https://alice:supersecretpass@example.com/repo',
+    'OPENAI_API_KEY=synthetic-secret-value-12345',
+    '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQ\n-----END PRIVATE KEY-----',
+  ]) {
+    assert.equal(runBuiltinRuleCheck('no-secrets', leaky), true, `expected hit for: ${leaky}`);
+  }
+
+  // Env var names, credential file paths, and masked values -> pass.
+  for (const safe of [
+    'Set OPENAI_API_KEY and ANTHROPIC_API_KEY before running.',
+    'Export OPENAI_API_KEY=${OPENAI_API_KEY} or API_KEY=$MY_API_KEY.',
+    'Read TOKEN=process.env.GITHUB_TOKEN in the worker.',
+    'Keys are stored in ~/.hud/credentials.env and $HUD_HOME/credentials.env.',
+    'SECRET_FILE=/home/user/.hud/credentials.env.',
+    'PRIVATE_KEY: ~/.ssh/id_ed25519,',
+    'TOKEN_PATH=./credentials.env',
+    'API_KEY=[REDACTED].',
+    '(API_KEY=[REDACTED])',
+    'API_KEY=********',
+    'API_KEY=sk-****1234',
+    'API_KEY=sk-proj-...1234',
+    'API_KEY=••••••1234',
+    'API_KEY=<your-api-key>.',
+    'Bearer [REDACTED]',
+    'Bearer sk-proj-...1234567890',
+    'https://alice:****@example.com/repo',
+    'https://alice:[REDACTED]@example.com/repo',
+  ]) {
+    assert.equal(runBuiltinRuleCheck('no-secrets', safe), false, `expected pass for: ${safe}`);
+    assert.equal(scrubSecrets(safe), safe, `scrubSecrets should leave safe text unchanged: ${safe}`);
+  }
+});
+
+test('adviseOnReply merges local check hits with model hits, skips unknown checks, and counts no-hit replies once', async (t) => {
+  const f = setupEnv(t);
+  const rulesFile = path.join(f.home, 'rules.md');
+  fs.writeFileSync(rulesFile, [
+    '- R1 (check: chinese-reply): Reply in Simplified Chinese.',
+    '- R2: Name the tests run.',
+    '- R3 (check: unknown-check): Invalid rule must not go to the model.',
+    '- R4 (check: no-secrets): Never print secrets.',
+    '- R5: State what is unverified.',
+  ].join('\n') + '\n');
+
+  let yes = ['R2'];
+  let failApi = false;
+  const api = await fakeDecisionServer(t, (body) => (failApi ? { status: 500, body: { error: 'boom' } } : ruleResponse(body, yes)));
+  configureStubDecision(f.env, f.hudHome, api.baseUrl);
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ advisorShadow: true, advisorRulesFile: rulesFile }));
+
+  const now = Date.parse('2026-11-25T08:00:00.000Z');
+  let listenerCalls = 0;
+  const unlisten = onAdvisorUpdate(f.hudHome, () => { listenerCalls += 1; });
+  t.after(unlisten);
+
+  // 1) Mixed hit: R1 (local chinese-reply) + R2 (model) + R4 (local no-secrets) merge into one notice/event in file order.
+  await adviseOnReply(f.hudHome, {
+    session: 'mix-sess',
+    projectRoot: f.projectRoot,
+    replyId: 'r-mix-hit',
+    message: 'Please explain the change.',
+    reply: 'I updated the parser and leaked sk-proj-abcdefghijklmnopqrstuvwxyz123456 directly in the reply text.',
+  }, { env: f.env, now });
+
+  assert.equal(api.requests.length, 1);
+  // Only model-judged rules (R2, R5) are sent; check-based (R1, R4) and unknown (R3) are excluded.
+  assert.deepEqual(api.requests[0].questions.map(({ name }) => name), ['R2', 'R5']);
+  assert.equal(listenerCalls, 1);
+
+  const notice = readAdvisorRuleNotice(f.hudHome, { session: 'mix-sess' }, now, f.env);
+  assert.deepEqual(notice, { ids: ['R1', 'R2', 'R4'], at: now });
+  const hits = readAdvisorRuleHits(f.hudHome, now, f.env);
+  assert.deepEqual(hits[0].rules, [
+    { id: 'R1', sentence: 'Reply in Simplified Chinese.' },
+    { id: 'R2', sentence: 'Name the tests run.' },
+    { id: 'R4', sentence: 'Never print secrets.' },
+  ]);
+
+  const eventsFile = path.join(f.hudHome, 'events', '2026-11.jsonl');
+  const events = fs.readFileSync(eventsFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0].rules, ['R1', 'R2', 'R4']);
+
+  // 2) Mixed no-hit reply increments rule_no_hits exactly once.
+  yes = [];
+  await adviseOnReply(f.hudHome, {
+    session: 'mix-clean',
+    projectRoot: f.projectRoot,
+    replyId: 'r-mix-clean',
+    message: '请说明修改内容。',
+    reply: '已在 advisor-shadow.ts 中更新解析器并通过了单测，环境变量 OPENAI_API_KEY 保持在 ~/.hud/credentials.env。',
+  }, { env: f.env, now });
+  assert.equal(api.requests.length, 2);
+  assert.equal(readAdvisorRuleNotice(f.hudHome, { session: 'mix-clean' }, now, f.env), undefined);
+  const countersFile = path.join(f.hudHome, 'events', 'advisor-counters.json');
+  assert.deepEqual(JSON.parse(fs.readFileSync(countersFile, 'utf8')), { '2026-11': { rule_no_hits: 1 } });
+
+  // 3) Mixed rules with Decision failure: no local hit does NOT increment rule_no_hits; local hit STILL records notice.
+  failApi = true;
+  await adviseOnReply(f.hudHome, {
+    session: 'mix-fail-clean',
+    projectRoot: f.projectRoot,
+    replyId: 'r-fail-clean',
+    message: '请检查。',
+    reply: '已完成检查，没有发现问题。',
+  }, { env: f.env, now });
+  assert.deepEqual(JSON.parse(fs.readFileSync(countersFile, 'utf8')), { '2026-11': { rule_no_hits: 1 } });
+
+  await adviseOnReply(f.hudHome, {
+    session: 'mix-fail-local-hit',
+    projectRoot: f.projectRoot,
+    replyId: 'r-fail-local-hit',
+    message: 'Check keys.',
+    reply: 'Found OPENAI_API_KEY=synthetic-secret-value-99999 in output.',
+  }, { env: f.env, now });
+  assert.deepEqual(readAdvisorRuleNotice(f.hudHome, { session: 'mix-fail-local-hit' }, now, f.env), { ids: ['R4'], at: now });
+});
+
+test('adviseOnReply makes no Decision call when only check-based or invalid-check rules remain', async (t) => {
+  const f = setupEnv(t);
+  const rulesFile = path.join(f.home, 'rules.md');
+  fs.writeFileSync(rulesFile, [
+    '- R1 (check: chinese-reply): Reply in Simplified Chinese.',
+    '- R2 (check: no-secrets): Never print secrets.',
+    '- R3 (check: unknown): Skipped invalid check.',
+  ].join('\n') + '\n');
+
+  const api = await fakeDecisionServer(t, (body) => ruleResponse(body, ['R1']));
+  configureStubDecision(f.env, f.hudHome, api.baseUrl);
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ advisorShadow: true, advisorRulesFile: rulesFile }));
+  const now = Date.parse('2026-11-25T08:05:00.000Z');
+
+  // Hit on R1 with zero Decision calls.
+  await adviseOnReply(f.hudHome, {
+    session: 'local-only-hit',
+    projectRoot: f.projectRoot,
+    replyId: 'r-local-1',
+    message: 'What changed?',
+    reply: 'I refactored the entire rules parser and added deterministic checks that run completely offline without calling any model.',
+  }, { env: f.env, now });
+  assert.equal(api.requests.length, 0);
+  assert.deepEqual(readAdvisorRuleNotice(f.hudHome, { session: 'local-only-hit' }, now, f.env), { ids: ['R1'], at: now });
+  const hits = readAdvisorRuleHits(f.hudHome, now, f.env);
+  assert.deepEqual(hits[0].rules, [{ id: 'R1', sentence: 'Reply in Simplified Chinese.' }]);
+
+  // No-hit reply counts once with zero Decision calls.
+  await adviseOnReply(f.hudHome, {
+    session: 'local-only-clean',
+    projectRoot: f.projectRoot,
+    replyId: 'r-local-2',
+    message: '改了什么？',
+    reply: '已在 advisor-shadow.ts 加上内置检查并跑完测试，所有规则本地完成。',
+  }, { env: f.env, now });
+  assert.equal(api.requests.length, 0);
+  const countersFile = path.join(f.hudHome, 'events', 'advisor-counters.json');
+  assert.deepEqual(JSON.parse(fs.readFileSync(countersFile, 'utf8')), { '2026-11': { rule_no_hits: 1 } });
+
+  // File with only an unknown check makes zero Decision calls and does not increment no-hit counter.
+  const mtime = fs.statSync(rulesFile).mtime;
+  fs.writeFileSync(rulesFile, '- R9 (check: nope): Unknown check only.\n');
+  fs.utimesSync(rulesFile, mtime, new Date(mtime.getTime() + 1000));
+  await adviseOnReply(f.hudHome, {
+    session: 'invalid-only',
+    projectRoot: f.projectRoot,
+    replyId: 'r-invalid-only',
+    message: 'Hello',
+    reply: 'Plain English reply that is definitely longer than forty characters to prove no check ran.',
+  }, { env: f.env, now });
+  assert.equal(api.requests.length, 0);
+  assert.equal(readAdvisorRuleNotice(f.hudHome, { session: 'invalid-only' }, now, f.env), undefined);
+  assert.deepEqual(JSON.parse(fs.readFileSync(countersFile, 'utf8')), { '2026-11': { rule_no_hits: 1 } });
 });
