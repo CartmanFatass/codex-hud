@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, universal-hud]
   pull_request:
 
 jobs:
@@ -24,4 +24,21 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npm run test:release
       - run: npm run check:fixtures
+
+  native:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.8.1
+        with:
+          workspaces: native
+      - run: cargo build --locked
+      - run: cargo test --locked

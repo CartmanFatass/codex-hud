@@ -432,7 +432,7 @@ Snapshot updates are explicit: inspect their diff; normal tests do not rewrite f
 Tests use temporary homes, fixed clocks and synthetic data; render checks compare terminal cells, not font pixels.
 Restore display/language state in `finally`.
 A real client/browser check remains separate from fixtures.
-CI runs `npm test` and fixture checks on Node 24 with and without colour.
+CI runs `npm test`, `npm run test:release` and fixture checks on Node 24 with and without colour; a separate stable Rust job builds and tests `native/`.
 For a clean regression run, use `npm run clean` before testing in an isolated checkout, not one serving a live panel.
 
 `CODEX_HUD_PROFILE=1` appends stage timings to `display/profile.log`.
