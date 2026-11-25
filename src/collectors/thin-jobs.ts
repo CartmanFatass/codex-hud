@@ -33,6 +33,7 @@ interface Snap {
   at: number;
   whole: boolean;
   progress?: JobProgress;
+  stamp?: string;
 }
 type ArtifactStore = Map<string, { stamp: string; snap: Snap }>;
 const artifactStores = new WeakMap<JobIndexCache, ArtifactStore>();
@@ -56,7 +57,7 @@ function sameStamps(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, strin
 }
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
 const factKeys = new Set(['job', 'role', 'herdr_pane', 'caller_pane', 'created_at', 'queued_at', 'overflow_from', 'route', 'headless', 'title', 'package', 'ticket', 'objective', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
-  'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
+  'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'read_report_stamp', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
 function restore(home: string, idx: JobIndexCache): void {
   if (hydrated.has(idx)) return;
   hydrated.add(idx);
@@ -75,7 +76,7 @@ function restore(home: string, idx: JobIndexCache): void {
       if (typeof rel !== 'string' || !/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
         !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
         !(snap.json === null || (snap.json && typeof snap.json === 'object' && !Array.isArray(snap.json)))) throw Error('cache');
-      if (rel.endsWith('/job.json') && snap.factsVersion !== 8) { allCurrent = false; continue; } // Older projections lack Objective attribution.
+      if (rel.endsWith('/job.json') && snap.factsVersion !== 9) { allCurrent = false; continue; } // Older projections lack report read identity.
       facts.push({ rel, stamp, at: snap.at, whole: snap.whole, json: snap.json });
       const kind = !snap.whole ? 'truncated' : snap.json === null ? 'invalid' : 'ok';
       stamps.set(join(home, 'jobs', rel), `${kind}:${stamp}`);
@@ -92,7 +93,7 @@ function persist(home: string, idx: JobIndexCache, seenStamps: Map<string, strin
     if (liveStamp !== null && liveStamp === prev.fileStamp) return;
   }
   // Entry order in JobIndexCache reflects recent lookups, not a change in facts.
-  const text = JSON.stringify(idx.exportFacts(seenStamps.keys(), factKeys, { factsVersion: 8 }).sort(([a], [b]) => a.localeCompare(b)));
+  const text = JSON.stringify(idx.exportFacts(seenStamps.keys(), factKeys, { factsVersion: 9 }).sort(([a], [b]) => a.localeCompare(b)));
   if (text.length > 1048576) return;
   try {
     const { bytes, truncated } = readFileBounded(file, 1048576);
@@ -122,7 +123,7 @@ function readArtifact(path: string, max = 65536, store: ArtifactStore | null = n
       return hit.snap;
     }
     const { bytes, truncated } = readFileBounded(path, max);
-    const snap: Snap = { text: bytes.toString('utf8'), at: statsMtimeMs(st.mtimeNs), whole: !truncated };
+    const snap: Snap = { stamp, text: bytes.toString('utf8'), at: statsMtimeMs(st.mtimeNs), whole: !truncated };
     if (!snap.whole) onIncomplete?.();
     if (store) {
       store.delete(path); store.set(path, { stamp, snap });
@@ -139,8 +140,8 @@ const when = (v: unknown): number | null => {
   const at = typeof v === 'string' ? Date.parse(v) : NaN;
   return Number.isFinite(at) ? at : null;
 };
-export const reportWasRead = (readAt: unknown, mtime: number | null): boolean =>
-  mtime !== null && mtime <= (when(readAt) ?? -Infinity);
+export const reportWasRead = (job: Pick<Job, 'read_at' | 'read_report_stamp'>, mtime: number | null, stamp?: string | null): boolean =>
+  job.read_report_stamp !== undefined ? job.read_report_stamp === stamp : mtime !== null && mtime <= (when(job.read_at) ?? -Infinity);
 const word = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v.trim() : null);
 const first = (text: string) =>
   text
@@ -207,6 +208,7 @@ export interface JobRowExtras {
   openQuestions?: number;
   reportPresent?: boolean;
   reportAt?: number | null;
+  reportStamp?: string | null;
   progress?: JobProgress;
   queuePosition?: number;
 }
@@ -240,8 +242,8 @@ function openQuestionIds(dir: string): string[] {
 function statReport(dir: string) {
   try {
     const st = fs.lstatSync(join(dir, jobFiles.report), { bigint: true, throwIfNoEntry: false });
-    return st && st.isFile() ? { present: true, mtimeMs: statsMtimeMs(st.mtimeNs) } : { present: false, mtimeMs: null };
-  } catch { return { present: false, mtimeMs: null }; }
+    return st && st.isFile() ? { present: true, mtimeMs: statsMtimeMs(st.mtimeNs), stamp: fileStampOf(st) } : null;
+  } catch { return null; }
 }
 /**
  * Derive one job's shared status row from its receipt (`job.json`) and `STATUS.json`.
@@ -295,19 +297,10 @@ export function jobRow(
           : displayState === 'working'
             ? (word(s.reason) ?? null)
             : (word(s.reason) ?? word(s.exit_reason) ?? null);
-  const reportInfo = () => (extras?.cache ? extras.cache.readReportStat(extras.dir!) : statReport(extras!.dir!));
-  let reportPresent: boolean;
-  let reportMtime: number | null = extras?.reportAt ?? null;
-  if (extras?.reportPresent !== undefined) {
-    reportPresent = extras.reportPresent;
-    if (extras.dir && reportPresent && extras.reportAt === undefined) reportMtime = reportInfo().mtimeMs;
-  } else if (extras?.dir) {
-    const rep = reportInfo();
-    reportPresent = rep.present;
-    if (extras.reportAt === undefined) reportMtime = rep.mtimeMs;
-  } else {
-    reportPresent = s.output_written === true;
-  }
+  const rep = extras?.dir && (extras.reportPresent === undefined || (extras.reportPresent && extras.reportAt === undefined))
+    ? (extras.cache ? extras.cache.readReportStat(extras.dir) : statReport(extras.dir)) : null;
+  const reportPresent = extras?.reportPresent ?? (extras?.dir ? !!rep?.present : s.output_written === true);
+  const reportMtime = extras?.reportAt ?? rep?.mtimeMs ?? null;
   const parent = word(j.parent_job);
   const overflowFrom = word(j.overflow_from);
   return {
@@ -325,7 +318,7 @@ export function jobRow(
     blocked,
     open_questions: openQuestions,
     report_present: reportPresent,
-    report_unread: reportPresent && reportMtime !== null && !reportWasRead(j.read_at, reportMtime),
+    report_unread: reportPresent && reportMtime !== null && !reportWasRead(j, reportMtime, extras?.reportStamp ?? rep?.stamp),
     report_mtime: reportMtime,
     question_ids: questionIds,
     ...extras?.progress,
@@ -855,7 +848,7 @@ export function readThinJobs(
     }
     const report = readArt(join(directory, 'report.md'));
     const row = jobRow(job, status?.v ?? null, {
-      openQuestions: openCount, reportPresent: report !== null, reportAt: report?.at,
+      openQuestions: openCount, reportPresent: report !== null, reportAt: report?.at, reportStamp: report?.stamp,
       progress: readJobProgress(directory, true, artifacts, seenArtifacts),
     });
     const cliJob = word(s.harness) === 'cli' || (job.cli !== null && typeof job.cli === 'object');

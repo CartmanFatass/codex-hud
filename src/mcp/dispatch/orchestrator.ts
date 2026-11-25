@@ -284,7 +284,7 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
         if (!scout) {
           return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: 'scout receipt disappeared', ms: elapsed() } };
         }
-        const { row } = readRow(scout);
+        const { row, reportStamp } = readRow(scout);
         if (signal.aborted) {
           discard = !settled(row.state);
           return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: 'stopped', ms: elapsed() } };
@@ -296,7 +296,7 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
           if (!row.report_present) {
             return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: 'settled without a report', ms: elapsed() } };
           }
-          save({ ...scout, read_at: new Date().toISOString() });
+          save({ ...scout }, false, reportStamp);
           return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, ms: elapsed() } };
         }
         if (row.open_questions || row.blocked || row.state === 'waiting_orchestrator') {
@@ -1393,7 +1393,9 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
     if (answerFile) { fs.unlinkSync(answerFile); jobCache.invalidateQa(id); }
     if (priorTurn) saveTurn(dir, priorTurn);
     const touched = findJob(id);
-    save({ ...current, read_at: touched?.read_at ?? current.read_at, observed_at: touched?.observed_at ?? current.observed_at }, true);
+    save({ ...current, read_at: touched?.read_at ?? current.read_at,
+      read_report_stamp: touched?.read_at ? touched.read_report_stamp : current.read_report_stamp,
+      observed_at: touched?.observed_at ?? current.observed_at }, true);
     writeCreateStatus(dir, status);
     if (priorSession) writePrivateFile(join(dir, jobFiles.session), priorSession.text, { mkdir: false });
     if (priorPid !== null) writePrivateFile(pidFile, `${priorPid}\n`, { mkdir: false });

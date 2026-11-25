@@ -70,7 +70,7 @@ export function readCachedStatus(id: string): { status: JobStatus | null; at: nu
 export function directory(job: string): string {
   return join(jobsRoot, job);
 }
-export function save(job: Job, newAttempt = false): void {
+export function save(job: Job, newAttempt = false, collectedStamp?: string | null): void {
   const file = join(directory(job.job), jobFiles.job);
   // A waiting read can stamp the report while dispatch/send is awaiting a CLI.
   const receipt = findJob(job.job);
@@ -86,6 +86,12 @@ export function save(job: Job, newAttempt = false): void {
   // The watcher may learn a native identity while launch, send or repair awaits the harness.
   if (receipt?.sessions) job.sessions = receipt.sessions;
   const existing = newAttempt ? null : receipt;
+  if (collectedStamp) {
+    job.read_at = new Date().toISOString();
+    job.read_report_stamp = collectedStamp;
+  } else if (existing?.read_at && (!job.read_at || existing.read_at >= job.read_at)) {
+    job.read_report_stamp = existing.read_report_stamp;
+  }
   for (const key of ['read_at', 'observed_at', 'pi_sent_at'] as const) {
     const at = existing?.[key];
     if (at && (!job[key] || at > job[key])) job[key] = at;
@@ -186,7 +192,9 @@ export function readRow(job: Job, markExhaustion = true, lookup?: number | JobSc
   const pos = status?.state === 'queued' && lookup !== null
     ? (typeof lookup === 'number' ? lookup : scan ? scan.position(job.job) : queuePositionsForJobs().get(job.job))
     : undefined;
-  let row = jobRow(job, status, { dir, cache: jobCache, queuePosition: pos });
+  const report = jobCache.readReportStat(dir);
+  const facts = { dir, cache: jobCache, reportPresent: report.present, reportAt: report.mtimeMs, reportStamp: report.stamp };
+  let row = jobRow(job, status, { ...facts, queuePosition: pos });
   let currentJob = job;
   if (markExhaustion && row.display_state === 'failed' && !job.exhaustion_marked && status && row.reason) {
     const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, row.reason);
@@ -205,16 +213,10 @@ export function readRow(job: Job, markExhaustion = true, lookup?: number | JobSc
         /* Ignore transient STATUS.json write error. */
       }
       (scan ?? writeScan.getStore())?.record(currentJob);
-      row = jobRow(currentJob, status, {
-        dir,
-        cache: jobCache,
-        questionIds: row.question_ids,
-        reportPresent: row.report_present,
-        reportAt: row.report_mtime,
-      });
+      row = jobRow(currentJob, status, { ...facts, questionIds: row.question_ids });
     }
   }
-  return { row, status, statusAt, job: currentJob };
+  return { row, status, statusAt, job: currentJob, reportStamp: report.stamp };
 }
 
 export const settled = (state: string | null) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(state ?? '');

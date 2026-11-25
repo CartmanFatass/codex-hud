@@ -124,7 +124,7 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly humanEndedAt: number | null;
   /** First line of the question waiting for the owner; set only on thin jobs with an unanswered qa/qN.md. */
   readonly ask?: string;
-  /** A thin job's report is newer than its `read_at` (the MCP's `report_unread`); set only while true. */
+  /** The current report hasn't been collected (the MCP's `report_unread`); set only while true. */
   readonly reportUnread?: true;
   readonly stale: boolean;
   readonly evidence: readonly EvidenceRef[];

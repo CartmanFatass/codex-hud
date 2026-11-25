@@ -467,7 +467,7 @@ The digest gives the `hud_read` hint, byte size, Git changed-file count for a ma
 The report-ready notice and digest name the copied `preview_path` and note any missing file or failure to copy or open (`preview_error` in the digest).
 The response keeps open questions, one line per completed check and the latest milestone.
 For worktrees it lists up to 20 changed paths, then `+N more`, and warns about overlaps.
-Already-read reports return `report_unchanged: true` without reopening the body.
+Already-read reports return `report_unchanged: true` without reopening the body. A replacement is unread even if its modification time matches the collected file’s. Older receipts without a file stamp use `read_at` alone.
 `mode: "full"` (or `full: true`) returns the report even if already read, its `report_path`, and the usual metadata, progress, checks and worktree diagnostics.
 Report text is capped at 24 KiB per page after JSON escaping.
 If more remains, the result includes `report_bytes` (total file size), `report_truncated: true` and `next_offset`.

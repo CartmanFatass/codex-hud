@@ -650,7 +650,9 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
   writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'imp', cwd: f.root, created_at: '2026-01-01', herdr_pane: 'w4E:p1', cli: { idle_grace_s: 120 } }));
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
-  writeFixtureFile(join(dir, 'report.md'), 'First report.');
+  const report = join(dir, 'report.md'), mtime = new Date('2026-01-01T00:00:00Z');
+  writeFixtureFile(report, 'First report.');
+  fs.utimesSync(report, mtime, mtime);
   writeFixtureFile(join(dir, 'qa/q1.md'), 'Question?');
   const recent = (await f.call('hud_read', { view: 'recent' })).jobs[0];
   assert.equal(recent.open_questions, 1);
@@ -669,7 +671,9 @@ test('hud_read returns unread reports in idle grace, omits read bodies, supports
   assert.deepEqual((await f.call('hud_read')).jobs, []);
   assert.equal((await f.call('hud_read', { job: id, full: true })).report, 'First report.');
   await until(() => Date.now() > Date.parse(stamp), t.signal);
-  writeFixtureFile(join(dir, 'report.md'), 'Second report.');
+  // Model an atomic replacement on the same filesystem clock tick as the original.
+  writeFixtureFile(report, 'Second report.');
+  fs.utimesSync(report, mtime, mtime);
   assert.equal((await f.call('hud_read', { job: id })).digest.result, 'Second report.');
   assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).read_at > stamp);
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));

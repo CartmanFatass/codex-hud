@@ -103,6 +103,7 @@ export interface Job extends PiOptions {
   thinking_source?: 'decision' | 'default' | 'explicit';
   model_source?: string | null;
   read_at?: string;
+  read_report_stamp?: string;
   parent_job?: string;
   scout_only?: true;
   scout_state?: 'scouting' | 'done' | 'failed';

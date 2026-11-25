@@ -307,6 +307,7 @@ test('low probability, cap reached, and provider error all fall back to needs-hu
   configureFakeDecision(fLow, sLow.baseUrl);
   const jLow = await fLow.call('hud_create', { role: 'qd-low', request_key: 'qd-low', task: 'Synthetic low prob.' });
   await until(() => cliState(jLow.task_dir)?.state === 'waiting_orchestrator', t.signal);
+  assert.equal(sLow.requests.length, 1, 'the synthetic provider received the low-probability request');
   assert.equal(cliState(jLow.task_dir).quiet_decision.choice, 'finished-no-report');
   assert.equal(cliState(jLow.task_dir).quiet_decision.probability, 0.79);
   assert.equal(cliState(jLow.task_dir).quiet_decision.action, 'needs-human');

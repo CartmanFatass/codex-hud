@@ -687,10 +687,9 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
         const observed = result.blocked || failedAttempt(currentRow);
         if (!isWorker && (collected || observed)) {
           const latest = findJobMutable(job.job)!;
-          const at = new Date().toISOString();
-          if (collected) latest.read_at = at;
-          if (observed) latest.observed_at = at;
-          save(latest);
+          if (observed) latest.observed_at = new Date().toISOString();
+          // Use the pre-read stat: a racing replacement must never be acknowledged sight unseen.
+          save(latest, false, collected ? polled.reportStamp : null);
         }
         return { done: true, value: result };
       },

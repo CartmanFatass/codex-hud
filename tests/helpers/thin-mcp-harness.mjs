@@ -102,6 +102,9 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     PATH: routingOnly ? bin : `${bin}:${process.env.PATH}`,
     FAKE_BIN: fakeBin,
     FAKE_LOG: log,
+    // Node fetch must reach the fixture's loopback Decision server, not the caller's HTTP proxy.
+    no_proxy: '127.0.0.1,localhost',
+    NO_PROXY: '127.0.0.1,localhost',
     HERDR_SOCKET_PATH: join(root, 'events.sock'),
   };
   if (!mcpJson) delete env.HUD_MCP_JSON;

@@ -5,6 +5,7 @@ import { loadSettings } from '../settings.js';
 import { beginPrompt, cliWorkerTools, endPrompt, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment } from '../mcp/cli-judge.js';
 import { procStat } from '../utils/proc.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
+import { fileStampOf, statsMtimeMs } from '../roles/job-index-cache.js';
 import { reportWasRead } from '../collectors/thin-jobs.js';
 import { runHerdr } from '../roles/herdr-run.js';
 import { recordStopOrigin } from '../roles/job-archive.js';
@@ -25,7 +26,7 @@ export async function main() {
   await publishRunnerLifetime(dir);
   const bundled = BUNDLED_ROOT, hudHome = dirname(dirname(dir));
   const jobFile = join(dir, jobFiles.job), job = readJsonFile(jobFile) as Job;
-  let readAt = job.read_at;
+  let receipt = job;
   const session = Object.fromEntries(fs.readFileSync(join(dir, jobFiles.session), 'utf8').split('\n').flatMap((line) => {
     const at = line.indexOf('=');
     return at > 0 ? [[line.slice(0, at), line.slice(at + 1)]] : [];
@@ -196,8 +197,7 @@ export async function main() {
     if (diskDirty || isTick) {
       turn = readTurn(dir) ?? turn;
       done = readDone(dir);
-      const receipt = readJsonFile(jobFile) as Job;
-      readAt = receipt.read_at;
+      receipt = readJsonFile(jobFile) as Job;
       // Keep the prior settlement while the sender can still cancel this baseline. If it dies, assume delivery is possible.
       sendInFlight = !!turn.send && !!receipt.send_outcomes?.some((attempt) => attempt.key === turn.send?.key && attempt.exit_code === null)
         && workerAlive(turn.send.pid, turn.send.start) === true;
@@ -207,10 +207,10 @@ export async function main() {
       openQuestions = fs.existsSync(qa) && fs.readdirSync(qa).some((file) => /^q\d+\.md$/.test(file) && !fs.existsSync(join(qa, file.replace('.md', '.answer.md'))));
       diskDirty = false;
     }
-    const st = fs.statSync(output, { throwIfNoEntry: false });
-    const nextStamp = st ? `${st.mtimeMs}:${st.ctimeMs}:${st.ino}:${st.size}` : null;
+    const st = fs.statSync(output, { bigint: true, throwIfNoEntry: false });
+    const nextStamp = st?.isFile() ? fileStampOf(st) : null;
     if (nextStamp !== stamp) { signature = reportSignature(dir); stamp = nextStamp; }
-    return { turn, reportSig: signature, reportRead: reportWasRead(readAt, st?.isFile() ? st.mtimeMs : null),
+    return { turn, reportSig: signature, reportRead: reportWasRead(receipt, st?.isFile() ? statsMtimeMs(st.mtimeNs) : null, nextStamp),
       closeAtReport: job.resume_s !== undefined,
       alive: workerAlive(current.pid ?? null, current.pid_start_time ?? null), status, statusAt,
       liveChild: checkChild ? sampleChild() : null,
