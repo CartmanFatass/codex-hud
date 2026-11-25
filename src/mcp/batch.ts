@@ -1,29 +1,22 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { controlRun, type Control } from '../workflows/engine.js';
+import { loadGraph } from '../workflows/graph.js';
+import { sharedRoot } from '../roles/projects.js';
+import { procStat } from '../utils/proc.js';
+import { runVisible } from '../workflows/scope.js';
+import { freezeGraph } from '../workflows/store.js';
 import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { capForRole, loadConcurrencySettings } from '../roles/concurrency.js';
 import { currentPreset } from '../roles/roster.js';
-import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { writeJsonPrivate } from '../utils/atomic-fs.js';
 import { assembleContext, jobCwd, readBriefFile, required, type Args } from './dispatch/context.js';
 import { evenPlanner, launchPlan, registry } from './dispatch/places.js';
 import { defaultImpRoute, impPlacementSettings, pickImpRoute } from './imp-routing.js';
 import type { Job } from './job-contracts.js';
-import { binScript } from './paths.js';
-import { batchActive, batchDir, batchIds, batchIndex, batchLock, failuresByReason, isBatchId, readBatch, saveBatch, type Batch, type BatchInput, type Manifest } from './batch-state.js';
-
-const starting = new Map<string, ChildProcess>();
-export function wakeBatch(home: string, b: Batch) {
-  if (!batchActive(b) || starting.has(b.flow) || (b.pid && b.start && !workerTreeRootGone(b.pid, b.start))) return;
-  const { HUD_JOB_DIR: _worker, ...env } = process.env;
-  const child = spawn(process.execPath, [binScript('batch-runner'), b.flow], { detached: true, stdio: 'ignore',
-    cwd: b.cwd, env: { ...env, HUD_HOME: home, HERDR_PANE_ID: b.pane } });
-  starting.set(b.flow, child);
-  const clear = () => { if (starting.get(b.flow) === child) starting.delete(b.flow); };
-  child.once('exit', clear).once('error', clear).unref();
-}
+import { BUNDLED_ROOT } from './paths.js';
+import { batchDir, batchIds, batchIndex, batchLock, failuresByReason, isBatchId, readBatch, saveBatch, type Batch, type BatchInput, type Manifest } from './batch-state.js';
 
 // Size existing project files, not prose, glob expansions, directories, URLs or prospective outputs.
 function inputBytes(cwd: string, task: string, brief: string | undefined, context: string[]) {
@@ -50,7 +43,8 @@ function inputBytes(cwd: string, task: string, brief: string | undefined, contex
 }
 
 export function batchView(home: string, id: string, pane: string | null) {
-  if (!isBatchId(id) || readBatch(home, id)?.pane !== pane) return { ok: false, code: 'flow_not_found' };
+  const header = readBatch(home, id);
+  if (!header || !runVisible(header, pane)) return { ok: false, code: 'flow_not_found' };
   const { batch: b, items } = batchIndex(home, id);
   return { flow: id, state: b.state, reason: b.reason, scale: b.scale, totals: b.totals, failures: failuresByReason(items), items,
     result_index: join(batchDir(home, id), 'index.json') };
@@ -58,22 +52,26 @@ export function batchView(home: string, id: string, pane: string | null) {
 export async function controlBatch(home: string, pane: string | null, args: Args) {
   const { batch: id, action } = args;
   if (!isBatchId(id) || !['resume','pause','stop','retry_failed'].includes(String(action)) || Object.keys(args).length !== 2) throw Error('invalid_arguments: batch action');
-  return withAbstractLock('concurrency', home, () => batchLock(home, id, () => {
-    if (readBatch(home, id)?.pane !== pane) throw Error('flow_not_found');
+  const apply = () => {
     const { batch: b, items } = batchIndex(home, id);
-    if (action === 'stop' && b.state !== 'completed') {
-      b.state = 'stopped';
+    const applied = controlRun(b, action as Control, items.some(i => i.state === 'failed'));
+    if (applied === 'stop') {
       for (const i of items) if (i.state === 'waiting') i.state = 'cancelled'; // Manifest waiters have no queued jobs to close.
-    } else if (action === 'pause' && b.state === 'working') { b.state = 'paused'; b.reason = 'paused by caller'; }
-    else if ((action === 'resume' && b.state === 'paused') || (action === 'retry_failed' && items.some(i => i.state === 'failed'))) {
-      if (action === 'retry_failed') for (const i of items) if (i.state === 'failed') {
+    } else if (applied === 'retry_failed' || applied === 'resume') {
+      if (applied === 'retry_failed') for (const i of items) if (i.state === 'failed') {
         (i.previous ??= []).push({ job: i.job, reason: i.reason });
         i.state = 'waiting'; delete i.job; delete i.reason; delete i.report_path; delete i.files;
       }
-      b.epoch++; b.streak = b.settled = b.failures = 0; b.state = 'working'; delete b.reason;
+      if (b.steps?.items) b.steps.items.state = 'running';
     }
     saveBatch(home, b, items);
     return b;
+  };
+  return withAbstractLock('concurrency', home, () => batchLock(home, id, () => {
+    const header = readBatch(home, id);
+    if (!header || !runVisible(header, pane)) throw Error('flow_not_found');
+    // An already-running pre-upgrade binary keeps its original mutex until it drains.
+    return header.template ? apply() : withAbstractLock('batch-state', `${home}\0${id}`, apply);
   }), { timeoutMs: 10_000 });
 }
 
@@ -92,7 +90,7 @@ export async function startBatch(home: string, pane: string | null, args: Args, 
       const prior = readBatch(home, id);
       if (prior?.key === key && (request_key !== undefined || Date.now() - prior.created_at < 600_000)) return prior;
     }
-    const found = registry(cwd), chain = found.roles().get(role);
+    const found = registry(cwd), roles = found.roles(), chain = roles.get(role);
     if (!chain || role === 'council') throw Error('invalid_arguments: batch requires one available ordinary role');
     const cap = capForRole(loadConcurrencySettings(), role);
     if (cap && cap < 3) throw Error(`invalid_arguments: ${role} cap ${cap} leaves no batch slots after reserving two`);
@@ -109,6 +107,7 @@ export async function startBatch(home: string, pane: string | null, args: Args, 
     const context = await assembleContext(args, cwd, false, found.project());
     if ('code' in context) throw Error(context.error);
     const inputs: BatchInput[] = [];
+    let browser = false;
     for (const raw of items) {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw) || Object.keys(raw).some(k => !['task','brief_file','package'].includes(k)) ||
         (raw.task === undefined) === (raw.brief_file === undefined) || (raw.package !== undefined && typeof raw.package !== 'string')) throw Error('invalid_arguments: batch item');
@@ -127,6 +126,8 @@ export async function startBatch(home: string, pane: string | null, args: Args, 
       const pinned = { ...route, tier: 'standard' as const, preset };
       const plan = launchPlan(found, chain, Date.now(), args, routing, undefined, undefined, pinned);
       if (!plan.candidates.length) throw Error(`no_available_place: ${preset ?? role}`);
+      const places = chain.presets?.find(p => p.name === preset)?.run ?? chain.run;
+      browser ||= places.some(place => place.harness === 'bro');
       inputs.push({ task, brief_file: brief, package: raw.package, ...size, route: pinned, pilot: false });
     }
     const pilots = new Map<string | null, BatchInput>();
@@ -140,11 +141,20 @@ export async function startBatch(home: string, pane: string | null, args: Args, 
     const b: Batch = { flow, cwd, pane, key, created_at: Date.now(), dispatcher, state: 'working', epoch: 0, streak: 0, settled: 0, failures: 0,
       totals: { waiting: n, running: 0, done: 0, failed: 0 }, notices: {}, scale: { count: n, role, cap, max_parallel: limit,
         presets: [...pilots.keys()], input_bytes: { max: sizes[n-1], median: (sizes[(n-1)>>1] + sizes[n>>1])/2, total: sizes.reduce((a,b) => a+b, 0) } } };
+    const graph = loadGraph(fs.readFileSync(join(BUNDLED_ROOT, 'workflows/batch.toml'), 'utf8'), 'toml', {
+      roles, bindings: { role, max_parallel: limit }, manifest: { role, count: n, bytes: b.scale.input_bytes.total, cap, browser },
+    });
+    const origin = procStat(process.pid);
+    if (origin) b.origin_mcp = { pid: process.pid, start: origin.start };
+    b.project_root = sharedRoot(cwd);
+    b.template = 'batch'; b.host = 'detached'; b.cost = graph.cost; b.cost_reasons = graph.cost_reasons;
+    b.steps = Object.fromEntries(Object.keys(graph.steps).map(id => [id, { state: 'waiting' }]));
     const dir = batchDir(home, flow);
     fs.mkdirSync(dir, { mode: 0o700, recursive: true });
+    freezeGraph(home, flow, graph);
     if ((role === 'imp' || role === 'frontend-imp') && shared.isolation === undefined) shared.isolation = 'worktree';
     writeJsonPrivate(join(dir, 'manifest.json'), { shared, items: inputs } satisfies Manifest);
-    saveBatch(home, b, inputs.map((i, k) => ({ item: k+1, state: 'waiting', preset: i.route.preset ?? null, pilot: i.pilot, brief_file: i.brief_file })));
+    await batchLock(home, flow, () => saveBatch(home, b, inputs.map((i, k) => ({ item: k+1, state: 'waiting', preset: i.route.preset ?? null, pilot: i.pilot, brief_file: i.brief_file }))));
     return b;
   });
 }

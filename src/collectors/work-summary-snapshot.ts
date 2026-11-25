@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
+import { headerScanner, type HeaderPass } from '../workflows/header-scan.js';
 import { activeLand, isFlowId, isLandWait, readLand, type LandFlow } from '../mcp/land-state.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
@@ -59,14 +60,16 @@ const sortScope = (scope: WorkSummaryScope): WorkSummaryScope => ({
   roles: Object.fromEntries(Object.keys(scope.roles).sort().map((k) => [k, scope.roles[k]!])),
 });
 
-function collectLandWork(home: string): MachineLandWork | undefined {
+const scanSummaryFlows = headerScanner();
+function collectLandWork(home: string, pass?: HeaderPass): MachineLandWork | undefined {
   let count = 0, oldest: LandFlow | undefined, oldestAt = Infinity;
   try {
-    for (const file of fs.readdirSync(join(home, 'flows'), { withFileTypes: true })) {
-      if (!file.isFile() || !file.name.endsWith('.json')) continue;
-      const id = file.name.slice(0, -5);
+    pass ??= scanSummaryFlows(home);
+    for (const file of pass.files) {
+      if (!file.endsWith('.json')) continue;
+      const id = file.slice(0, -5);
       if (!isFlowId(id)) continue;
-      const flow = readLand(home, id);
+      const flow = readLand(home, id, pass);
       if (!flow || !activeLand(flow)) continue;
       const created = Date.parse(flow.created_at);
       if (!Number.isFinite(created)) return undefined;
@@ -91,7 +94,7 @@ function collectLandWork(home: string): MachineLandWork | undefined {
 export function collectWorkSummary(
   home: string,
   cache: JobIndexCache = getJobIndexCache(home),
-  options?: { ids?: readonly string[]; jobs?: readonly (Job & Record<string, unknown>)[] }
+  options?: { flows?: HeaderPass; ids?: readonly string[]; jobs?: readonly (Job & Record<string, unknown>)[] }
 ) {
   let complete = true, queued = 0;
   const global = emptyWorkSummaryScope();
@@ -133,7 +136,7 @@ export function collectWorkSummary(
     }
   }
   const panes = Object.fromEntries(Object.keys(rawPanes).sort().map((p) => [p, sortScope(rawPanes[p]!)]));
-  const land = collectLandWork(home);
+  const land = collectLandWork(home, options?.flows);
   return { global: { ...sortScope(global), queued, ...(land && { land }) }, panes, complete };
 }
 
@@ -250,6 +253,7 @@ export function createWorkSummaryPublisher(home: string, producer: WorkSummaryPr
       ids?: readonly string[];
       jobs?: readonly (Job & Record<string, unknown>)[];
       jobsExist?: boolean;
+      flows?: HeaderPass;
     }): boolean {
       const collected = collectWorkSummary(home, cache, options);
       lastCollected = collected;

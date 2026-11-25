@@ -21,7 +21,7 @@ export function packageBatches() {
       const now = performance.now(), grouped = new Map<string, JobRow[]>();
       const terminal = new Set<string>();
       for (const row of rows) {
-        if (!row.package || !row.state || row.land_turn || row.ticket_queue || row.batch_flow || row.parent_job) continue;
+        if (!row.package || !row.state || row.land_turn || row.ticket_queue || row.workflow || row.batch_flow || row.parent_job) continue;
         if (!live(row.display_state)) terminal.add(row.job);
         const group = grouped.get(row.package);
         if (group) group.push(row); else grouped.set(row.package, [row]);

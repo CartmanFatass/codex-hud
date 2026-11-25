@@ -184,6 +184,7 @@ export interface JobRow extends Partial<JobProgress> {
   job: string;
   land_turn?: true;
   ticket_queue?: true;
+  workflow?: string;
   batch_flow?: string;
   parent_job?: string;
   role: string | null;
@@ -309,6 +310,7 @@ export function jobRow(
     ...(parent ? { parent_job: parent } : {}),
     ...(j.land_turn ? { land_turn: true } : {}),
     ...(j.ticket_queue ? { ticket_queue: true } : {}),
+    ...(j.workflow && { workflow: j.workflow }),
     ...(j.batch_flow && { batch_flow: j.batch_flow }),
     role: word(j.role),
     ...(overflowFrom ? { overflow_from: overflowFrom } : {}),
@@ -457,7 +459,7 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   const lines: string[] = [];
   for (const row of rows) {
     const old = prior.get(row.job);
-    if (row.batch_flow && !row.question_ids.some(id => !old?.question_ids.includes(id)) && !(row.blocked && !old?.blocked)) continue;
+    if ((row.workflow || row.batch_flow) && !row.question_ids.some(id => !old?.question_ids.includes(id)) && !(row.blocked && !old?.blocked)) continue;
     if (row.ticket_queue || (row.land_turn && !row.question_ids.some(id => !old?.question_ids.includes(id)))) continue;
     if (row.parent_job && row.display_state !== 'working' && row.display_state !== 'failed' &&
         !row.question_ids.some((id) => !old?.question_ids.includes(id))) continue;

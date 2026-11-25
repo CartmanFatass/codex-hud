@@ -1,0 +1,4 @@
+{
+  "error": "b0000000000000001 batch paused: Error: ENOENT: no such file or directory, open '$HUD_HOME/flows/b0000000000000001/manifest.json'; use hud_create batch=b0000000000000001 action=resume or stop",
+  "stall": "b0000000000000001 batch paused — pilot 1 (j0000000000000002) stalled: synthetic input needed; use hud_create batch=b0000000000000001 action=resume or stop"
+}

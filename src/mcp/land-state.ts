@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { sharedRoot } from '../roles/projects.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import type { ManagedWorktree } from './managed-worktree.js';
-import { batchActive, batchEvents, isBatchId, readBatch } from './batch-state.js';
-import { isTicketQueueId, readTicketQueue, ticketQueueNotice } from './ticket-queue-state.js';
+import { runVisible } from '../workflows/scope.js';
+import { headerScanner, type HeaderPass } from '../workflows/header-scan.js';
+import { batchActive, batchEvents, isBatchId, type Batch } from './batch-state.js';
+import { isTicketQueueId, type TicketQueue, ticketQueueNotice } from './ticket-queue-state.js';
 
 export const DEFAULT_LAND_TIMEOUT_S = 900;
 export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string; timeout_s?: number }
@@ -44,19 +46,26 @@ export function writeLand(home: string, f: LandFlow, create = false) {
   f.updated_at = new Date().toISOString();
   writeJsonPrivate(landFile(home, f.flow), f, { mkdir: false, exclusive: create });
 }
-export function readLand(home: string, id: string): LandFlow | null {
+export function readLand(home: string, id: string, pass?: HeaderPass): LandFlow | null {
   if (!isFlowId(id)) return null;
+  if (pass) {
+    const row = pass.header<LandFlow>(`${id}.json`);
+    return row && reconcileLand(home, id, row);
+  }
   const path = landFile(home, id);
   let f: LandFlow;
   try { f = JSON.parse(fs.readFileSync(path, 'utf8')); }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; }
+  return reconcileLand(home, id, f);
+}
+function reconcileLand(home: string, id: string, f: LandFlow) {
   const helperGone = (row: LandFlow) => {
     const { pid, start } = row.boarded ?? row;
     return activeLand(row) && workerTreeRootGone(pid, start);
   };
   if (helperGone(f)) {
     // A terminal write or a train handoff may have landed during the exit check.
-    f = JSON.parse(fs.readFileSync(path, 'utf8'));
+    f = JSON.parse(fs.readFileSync(landFile(home, id), 'utf8'));
     if (helperGone(f)) {
       f.state = 'failed'; f.error = 'Land helper exited; inspect the checkout before retrying. No step was replayed.';
       writeLand(home, f);
@@ -65,15 +74,15 @@ export function readLand(home: string, id: string): LandFlow | null {
   return f;
 }
 /** Keep previous receipts (and their task/notice IDs) intact. Concurrent callers pick the same next ID. */
-export function landAttempt(home: string, job: string) {
+export function landAttempt(home: string, job: string, pass?: HeaderPass) {
   const base = `f${job.slice(1)}`, cleanup: string[] = [];
-  let attempt = 1, flow = base, prior = readLand(home, flow);
+  let attempt = 1, flow = base, prior = readLand(home, flow, pass);
   while (prior && retryableLand(prior)) {
     // A run that got past prepare may have registered its disposable checkout.
     if (prior.boarded?.flow === flow) cleanup.push(`${flow}-train`);
     else if (!prior.boarded && prior.base_sha && prior.step !== 'prepare') cleanup.push(flow);
     flow = `${base}-${++attempt}`;
-    const next = readLand(home, flow);
+    const next = readLand(home, flow, pass);
     if (!next) break;
     prior = next;
   }
@@ -107,14 +116,13 @@ export function landNotice(f: LandFlow) {
       return `${one(r.step)} ${outcome}${tests}${r.output_path ? `; output: ${r.output_path}` : ''}${r.rerun_output_path ? `; rerun output: ${r.rerun_output_path}` : ''}`;
     }), ...(f.tail ?? [])].join('\n');
 }
+const scanNotices = headerScanner();
 /** Native/watch and MCP changes share one terminal notice claim for the calling pane. */
 export function landEvents(home: string, pane: string | null, all = false, cwd = process.cwd(), modCatchup = false) {
   const dir = join(home, 'flows');
   const lines: string[] = [];
   let pending = false;
-  let files: string[];
-  try { files = fs.readdirSync(dir); }
-  catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { lines, pending }; throw e; }
+  const { files, header } = scanNotices(home);
   for (const file of files) {
     const sidecar = /^(.*)\.json\.gate-[1-9]\d*(?:-rerun)?\.log$/.exec(file);
     if (sidecar && isFlowId(sidecar[1])) {
@@ -126,8 +134,8 @@ export function landEvents(home: string, pane: string | null, all = false, cwd =
     }
     const id = file.replace(/\.json$/, '');
     if (file.endsWith('.json') && isBatchId(id)) {
-      const b = readBatch(home, id);
-      if (b && (all || b.pane === pane)) {
+      const b = header<Batch>(file);
+      if (b && (all || runVisible(b, pane, cwd))) {
         lines.push(...batchEvents(home, b, all).map(event => event.line));
         pending ||= batchActive(b);
       }
@@ -136,7 +144,8 @@ export function landEvents(home: string, pane: string | null, all = false, cwd =
     if (!file.endsWith('.json') || (!isFlowId(id) && !isTicketQueueId(id))) continue;
     const marker = `${landFile(home, id)}.${all ? 'observed' : 'noticed'}`;
     if (fs.existsSync(marker)) continue;
-    const f = isTicketQueueId(id) ? readTicketQueue(home, id) : readLand(home, id);
+    const row = header<TicketQueue | LandFlow>(file);
+    const f = row && 'wt' in row ? reconcileLand(home, id, row) : row;
     if (!f || f.task || (!all && f.pane !== pane) || ('ticket_queue' in f && f.ticket_queue)) continue;
     // Explicit cross-project flows still report to their authorizing pane; pane-less watches stay project-scoped.
     if (!all && !pane && 'wt' in f && f.wt.main_root !== cwd && f.wt.main_root !== sharedRoot(cwd)) continue;

@@ -1,0 +1,12 @@
+version = 1
+name = "batch"
+
+[policy]
+breaker = "rate"
+
+[steps.items]
+kind = "batch"
+role = "{role}"
+max_parallel = "{max_parallel}"
+# Frozen tasks, input sizes and per-preset pilots live in the existing private manifest.
+manifest = "manifest.json"

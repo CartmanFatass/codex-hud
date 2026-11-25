@@ -13,9 +13,10 @@ import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sess
 import { recordJobUsage } from '../roles/job-usage.js';
 import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/sonic-citations.js';
 import { landAttempt, activeLand, isFlowId } from '../mcp/land-state.js';
-import { wakeBatch } from '../mcp/batch.js';
-import { batchActive, batchIds, readBatch } from '../mcp/batch-state.js';
-import { queueIds, readTicketQueue } from '../mcp/ticket-queue-state.js';
+import { wakeWorkflow } from '../workflows/wake.js';
+import { headerScanner } from '../workflows/header-scan.js';
+import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
+import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { wakeTicketQueue } from '../mcp/ticket-queue.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
 import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
@@ -54,6 +55,7 @@ const cliCheck = Number(process.env.HUD_WATCH_CLI_CHECK_MS ?? 30000);
 // Test-only retry interval override while no file watch is available.
 const degradedOverride = Number(process.env.HUD_WATCH_DEGRADED_MS);
 const degradedMs = Number.isInteger(degradedOverride) && degradedOverride > 0 ? degradedOverride : 1000;
+const scanDrivers = headerScanner();
 const MAX_CONCURRENT_REAPS = 4;
 const MAX_REAP_ATTEMPTS = 10;
 const MAX_REAP_BACKOFF_MS = 60 * 60_000;
@@ -582,6 +584,7 @@ function scan(retryWatch = false) {
     const scratch = pruneProjectScratch(home);
     if (scratch !== null) log(`pruned project scratch entries: ${scratch}`);
   }
+  const flows = scanDrivers(home);
   const baseHeads = new Map<string, ReturnType<typeof mainHead>>();
   const busyWorktrees = new Set<string>(), knownWorktrees = new Set<string>(), knownWorktreeRoots = new Set<string>();
   const worktreeChecks: { id: string; jobFile: string; job: Job; root: string; sweep: boolean }[] = [];
@@ -781,7 +784,7 @@ function scan(retryWatch = false) {
         continue;
       }
       // Land can start in idle_grace as well as after closure; its receipt is outside jobs/.
-      const land = job?.worktree && landAttempt(home, id).prior;
+      const land = job?.worktree && landAttempt(home, id, flows).prior;
       const landing = land && activeLand(land);
       if (landing) { watch(dir, land.pid); open = true; markBusy(job); }
       const check = checkDeadline(id, dir, job, status);
@@ -900,19 +903,22 @@ function scan(retryWatch = false) {
     }
   }
   // The batch driver watches settlement itself; this on-demand watcher only recovers a dead driver.
-  for (const id of queueIds(home)) {
+  const { files, header } = flows;
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    const id = file.slice(0, -5);
     try {
-      const queue = readTicketQueue(home, id);
-      if (queue?.state !== 'working') continue;
-      wakeTicketQueue(home, queue);
+      if (isTicketQueueId(id)) {
+        const q = header<TicketQueue>(file);
+        if (!q || q.state !== 'working') continue;
+        wakeTicketQueue(home, q);
+      } else if (isBatchId(id)) {
+        const b = header<Batch>(file);
+        if (!b || !batchActive(b)) continue;
+        wakeWorkflow(home, b);
+      } else continue;
       nearest = Math.min(nearest, Date.now() + 5000);
-    } catch (error) { warn(`ticket queue ${id}`, `ticket queue ${id}: ${(error as Error).message}`); }
-  }
-  for (const id of batchIds(home)) {
-    try {
-      const b = readBatch(home, id);
-      if (b && batchActive(b)) { wakeBatch(home, b); nearest = Math.min(nearest, Date.now() + 5000); }
-    } catch (error) { warn(`batch ${id}`, `batch ${id}: ${(error as Error).message}`); }
+    } catch (error) { warn(`flow ${id}`, `flow ${id}: ${(error as Error).message}`); }
   }
   // Archive expired jobs before dropping the flow receipts those archives read.
   if (housekeep) pruneLandFlows(home);
@@ -982,7 +988,7 @@ function scan(retryWatch = false) {
   if (watcher) jobChanges.start();
   if (open) subscribe();
   const watching = Boolean(watcher && flowsWatcher);
-  workSummary.publish({ watching, ids: listedIds, jobsExist: true });
+  workSummary.publish({ watching, ids: listedIds, jobsExist: true, flows });
   open ||= workSummary.hasActiveLand;
   runners.finishScan();
   for (const id of orphanRetries.keys()) if (!orphans.has(id)) orphanRetries.delete(id);

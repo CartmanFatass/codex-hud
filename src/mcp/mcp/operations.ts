@@ -28,8 +28,11 @@ import { registry, harnessSwitchFailure, compactAssignment } from '../dispatch/p
 import { paneText, ensureWatcher } from '../dispatch/proc.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import type { AnswerActor, Job } from '../job-contracts.js';
-import { batchView, controlBatch, startBatch, wakeBatch } from '../batch.js';
-import { batchEvents, batchIds, isBatchId, readBatch } from '../batch-state.js';
+import { wakeWorkflow } from '../../workflows/wake.js';
+import { batchView, controlBatch, startBatch } from '../batch.js';
+import { runVisible } from '../../workflows/scope.js';
+import { headerScanner } from '../../workflows/header-scan.js';
+import { batchEvents, isBatchId, type Batch } from '../batch-state.js';
 import { landView, isFlowId, readLand, landEvents } from '../land-state.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, editTickets } from '../local-tickets.js';
@@ -541,7 +544,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
   if (name === 'hud_create') {
     if (args.items !== undefined || args.batch !== undefined || args.action !== undefined) {
       const b = args.items === undefined ? await controlBatch(hudHome, callerPane, args) : await startBatch(hudHome, callerPane, args, dispatcher);
-      wakeBatch(hudHome, b); ensureWatcher();
+      wakeWorkflow(hudHome, b); ensureWatcher();
       if (callerPane && !session.taskClient) void ensureQueueWatcher(callerPane, hudHome);
       return { flow: b.flow, state: b.state, totals: b.totals, scale: b.scale };
     }
@@ -940,12 +943,15 @@ export async function checkModTakeover() {
   }
   return live;
 }
+const scanTaskRuns = headerScanner();
 export async function withChanges(value: unknown, markExhaustion: boolean, scan: JobScan): Promise<unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) || await checkModTakeover()) return value;
   if (session.taskClient) {
-    const changes = [...(await ownerDelivery?.changes() ?? []), ...(await drainBatchChanges()), ...batchIds(hudHome).flatMap(id => {
-      const b = readBatch(hudHome, id);
-      return b && b.pane === callerPane ? batchEvents(hudHome, b).map(e => e.line) : [];
+    const { files, header } = scanTaskRuns(hudHome);
+    const changes = [...(await ownerDelivery?.changes() ?? []), ...(await drainBatchChanges()), ...files.flatMap(file => {
+      if (!file.endsWith('.json') || !isBatchId(file.slice(0, -5))) return [];
+      const b = header<Batch>(file);
+      return b && runVisible(b, callerPane) ? batchEvents(hudHome, b).map(e => e.line) : [];
     })];
     return changes.length ? { ...value, changes } : value;
   }

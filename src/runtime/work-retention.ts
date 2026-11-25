@@ -58,7 +58,7 @@ function sameInode(a: fs.Stats, b: fs.Stats | undefined): boolean {
 
 // Resume/retry can reactivate even a completed batch. Recheck expiration under its state lock.
 async function pruneExpiredBatch(home: string, id: string, cutoff: number) {
-  const release = await tryAbstractLock('batch-state', `${home}\0${id}`);
+  const release = await tryAbstractLock('flow-state', `${home}\0${id}`);
   if (!release) return;
   try {
     inAbsoluteDir(join(home, 'flows'), dir => {
@@ -68,7 +68,7 @@ async function pruneExpiredBatch(home: string, id: string, cutoff: number) {
       if (!['completed', 'stopped', 'paused'].includes(b.state) || b.totals.running) return;
       inDirectory(join(dir, id), batch => {
         const files = fs.readdirSync(batch);
-        if (!files.every(f => /^(?:index|manifest)\.json$|^(?:failure-\d+-\d+|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f) && fs.lstatSync(join(batch, f)).isFile())) return;
+        if (!files.every(f => /^(?:graph|index|manifest)\.json$|^(?:failure-\d+-\d+|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f) && fs.lstatSync(join(batch, f)).isFile())) return;
         for (const f of files) fs.unlinkSync(join(batch, f));
         fs.rmdirSync(join(dir, id)); fs.unlinkSync(receipt);
       });

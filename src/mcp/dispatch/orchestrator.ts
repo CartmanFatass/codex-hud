@@ -775,7 +775,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
       ...(landCwd ? { land_turn: request_key } : {}),
       ...(ticketQueue && { ticket_queue: ticketQueue }),
-      ...(member && { batch_flow: member.flow }),
+      ...(member && { workflow: member.flow, batch_flow: member.flow }),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),
       ...(council && seat && { council, preset: seat.preset }),
@@ -1393,6 +1393,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const delivered = pending.map(({ text: _, ...receipt }) => ({ ...receipt, resumed: true as const }));
   const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : undefined,
     ticket_queue: land || automatic ? current.ticket_queue : undefined,
+    workflow: automatic || answerRequest ? current.workflow : undefined,
     batch_flow: automatic || answerRequest ? current.batch_flow : undefined,
     headless_task_fence: automatic ? taskFence(current) : undefined,
     send_outcomes: [...(current.send_outcomes ?? []), ...delivered, ...(automatic ? [] : [outcome])] };
@@ -1586,7 +1587,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
     exit_code: null, stderr_tail: '' };
   current.land_turn = land ? key : undefined;
   // A note queued into a working turn leaves that turn with its queue; only a new turn is taken over.
-  if (!land && !queued) { delete current.ticket_queue; delete current.batch_flow; }
+  if (!land && !queued) { delete current.ticket_queue; delete current.batch_flow; delete current.workflow; }
   (current.send_outcomes ??= []).push(outcome);
   save(current);
   // Read the rollback baseline at mutation time, with no pane query between it and the write.
