@@ -24,7 +24,8 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   and are sure of their task. HUD checks tickets for gaps before a run; workers record `Assumed:` lines (run todo);
   more than three assumptions or one about scope pauses the run; a worker asks only when no default is safe, and the
   question goes to a temporary lead, the fallback (a resident lead would only be main again, owner); a run ends
-  with one lead; owner matters pause the run as a blocker. The engine stays a free composition engine: these are template policies, and
+  with one lead (owner: the final lead acceptance is kept as the guarantee that runs match today's low-parallel,
+  main-accepted quality); owner matters pause the run as a blocker. The engine stays a free composition engine: these are template policies, and
   hand-back to a lead or main remains a step kind any graph may use. Owner's reasoning: tickets form a clear dependency path suited to automatic
   progress, same-model acceptance keeps behaviour consistent, and main's tool-call load drops sharply. Supersedes "hand-back to main
   for any judgement" (D-2026-11-25-05) and delegation steps 4–6 where a workflow runs the work.
