@@ -79,10 +79,13 @@ execution detail; when space runs out, execution detail is not shown. (new)
   call time, which HUD validates before it runs. A run using only cheap steps (Sonic, imp, land, checks) starts on
   main's confirmation; a run with council, `pro`, browser roles or a large batch (more than 50 Sonic items or 2 MiB of
   Sonic input, or more than 12 items of another role) needs a fresh one-time owner grant like council. Fan-out steps
-  confirm scale and run a pilot first (25.05, 25.06). A hand-back goes by default to a qualified acceptance session
-  (default an `oracle` job on Claude Opus 5.5 at high, the same model as the main session; a template may name
-  another role or preset), not to main: it reads the run's reports, chooses one of the
-  declared branches (finish, repair, continue) and states why; its session closes when it answers. Anything it is
+  confirm scale and run a pilot first (25.05, 25.06). A hand-back goes by default to a project-lead acceptance
+  session (role `lead`: a fresh Claude Code session on Claude Opus 5.5 at high with the HUD tools, the same model and
+  powers as the main session; a template may name another preset), not to main. It accepts the way the main session
+  does today, not as a code review: it reads the reports and checks, tries the result live, judges it against the
+  ticket or feature goal, dispatches the independent `reviewer` where the convention calls for one and acts on its
+  findings, chooses one of the declared branches (finish, repair, continue) and states why; its session is closed
+  through herdr when it answers. Anything it is
   unsure of goes to a todo list on the run, not a wake. It escalates to main only what blocks on the owner (scope,
   value trade-offs, visible deletions, irreversible acts). Main is the
   owner's discussion session and is decoupled from runs: it starts them and receives the one end notice (25.07).

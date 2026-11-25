@@ -12,7 +12,9 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   A workflow ends (or pauses at a hand-back) with a qualified acceptance session that reads the reports, decides to
   finish, repair or continue along the declared branches, and is then closed through herdr. Gains: no main-session
   wakes or context per slice, no prompt-cache cost of keeping main waiting, no main turn per acceptance. Cost: one
-  acceptance job per run (default `oracle` on Claude Opus 5.5 high, matching the main session, owner); a wrong verdict is caught later by the owner or main rather than at each
+  acceptance job per run (role `lead`: Claude Opus 5.5 high with the HUD tools, matching the main session, owner). Owner: this is
+  project-lead acceptance like the main session's today, not code review; code review stays with the independent
+  `reviewer` role per the convention, dispatched by the lead where required; a wrong verdict is caught later by the owner or main rather than at each
   slice. Main still starts runs and gets one end notice; uncertain items go to a todo list on the run (no wake); only
   blocking owner matters escalate to main. Owner's reasoning: tickets form a clear dependency path suited to automatic
   progress, same-model acceptance keeps behaviour consistent, and main's tool-call load drops sharply. Supersedes "hand-back to main

@@ -75,6 +75,8 @@ no resident process, intent persisted before effect, request-key recovery, one n
 
 ## Acceptance (owner 2026-11-25, D-2026-11-25-07)
 
-Hand-backs default to a qualified acceptance session (default `oracle` on the `opus` preset: Claude Opus 5.5, high; or the role/preset the template names), not main. It
-chooses finish / repair / continue with reasons; escalates to main only owner matters. The ticket-queue template ends
-with an acceptance session (two-axis review + live try). Main starts runs and gets the one end notice. Ticket 07.
+Hand-backs default to a project-lead acceptance session (new role `lead`: Claude Code on Claude Opus 5.5 high with
+the HUD MCP tools, like main), not main. Project-lead acceptance, not code review: reports, checks, live try, judged
+against the goal; it dispatches the independent `reviewer` where the convention requires and acts on the findings.
+It chooses finish / repair / continue with reasons; uncertain items go to the run's todo; escalates to main only
+blocking owner matters. The ticket-queue template ends with a lead acceptance step. Main starts runs and gets the one end notice. Ticket 07.
