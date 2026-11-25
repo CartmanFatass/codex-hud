@@ -16,9 +16,10 @@
 **Features:** home-portfolio, home-cards
 
 ## handoff: HUD takes over the mechanical handoff steps between jobs, while the main session keeps the judgement
+**Result:** handoff/01–03 已落地：队列等待其他 feature、设计预览自动打开、纯文档提交
 
-**State:** active
-**Next:** Build handoff/01 queues wait on other features, 02 design previews open themselves, 03 docs-only commits; measure handoff waits on toktrack's Workflow page before/after. Parallel proposal comparison deferred (owner 2026-11-24).
+**State:** done
+**Next:** 用 toktrack 测交接等待的前后对比，按你 11-25 的意思留到之后做 toktrack 时再说
 **Features:** handoff
 
 ## engine: 一个工作流引擎运行 HUD 的固定流程（批次、prewalk、council、land），MCP 重启不再丢流程
