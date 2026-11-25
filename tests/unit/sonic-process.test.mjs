@@ -216,11 +216,74 @@ test('a running tool call with a declared timeout holds the stall and loop check
   fs.utimesSync(output, new Date(started), new Date(started + 20000));
   assert.deepEqual(after(started + 199999), {});
   assert.deepEqual(after(started + 200000), { stop: 'stalled' });
-  // A call without a declared timeout gets no hold.
+  // A call without a declared timeout gets its tool tree ended once, then stops as stalled if it repeats.
   fs.writeFileSync(output, event('tool_execution_start', 'synthetic-2', { command: 'find .' }));
   fs.utimesSync(output, new Date(started), new Date(started + 30000));
   const plain = monitorSonic(f.root, sonicLimitDefaults, started);
-  assert.deepEqual(plain(started + 210000), { stop: 'stalled' });
+  assert.deepEqual(plain(started + 209999), {});
+  assert.deepEqual(plain(started + 210000), { killTool: true, progress: 'ended a silent tool after 180 s: bash' });
+  assert.deepEqual(plain(started + 389999), {});
+  assert.deepEqual(plain(started + 390000), { stop: 'stalled' });
+  // Once that call ends, a silent model with no running tool stalls, and a new silent call gets one kill.
+  const recovered = monitorSonic(f.root, sonicLimitDefaults, started);
+  assert.deepEqual(recovered(started + 210000), { killTool: true, progress: 'ended a silent tool after 180 s: bash' });
+  fs.appendFileSync(output, event('tool_execution_end', 'synthetic-2', {}));
+  fs.utimesSync(output, new Date(started), new Date(started + 215000));
+  assert.deepEqual(recovered(started + 394999), {});
+  assert.deepEqual(recovered(started + 395000), { stop: 'stalled' });
+  fs.writeFileSync(output, event('tool_execution_start', 'synthetic-2', { command: 'find .' }));
+  fs.utimesSync(output, new Date(started), new Date(started + 30000));
+  const nextCall = monitorSonic(f.root, sonicLimitDefaults, started);
+  assert.deepEqual(nextCall(started + 210000), { killTool: true, progress: 'ended a silent tool after 180 s: bash' });
+  fs.appendFileSync(output, event('tool_execution_end', 'synthetic-2', {}) + event('tool_execution_start', 'synthetic-3', { command: 'grep -r x .' }));
+  fs.utimesSync(output, new Date(started), new Date(started + 215000));
+  assert.deepEqual(nextCall(started + 395000), { killTool: true, progress: 'ended a silent tool after 180 s: bash' });
+});
+
+test('a silent running tool tree is ended while the sonic pi process continues and settles', { timeout: 60000 }, async (t) => {
+  const clock = `import { existsSync } from 'node:fs';
+if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
+  const now = Date.now;
+  Date.now = () => now() + (existsSync(process.env.HUD_JOB_DIR + '/tool-ready') ? ${sonicLimitDefaults.stall_s * 1000 + 1000} : 0);
+}`;
+  const f = await fixture(t, {
+    watcherTickMs: 250,
+    probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(clock))}`,
+  });
+  f.overrideBin('pi', `#!${process.execPath}
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const dir = process.env.HUD_JOB_DIR;
+const child = spawn(process.execPath, ['-e', \`
+  const { spawn } = require('node:child_process');
+  const grandchild = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); process.send("ready"); process.disconnect()'],
+    { detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  grandchild.once('message', () => {
+    process.send(grandchild.pid);
+    process.disconnect();
+  });
+  setInterval(() => {}, 1000);
+\`], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+const [grandchildPid] = await once(child, 'message');
+writeFileSync(join(dir, 'pids.json'), JSON.stringify({ pi: process.pid, child: child.pid, grandchild: grandchildPid }));
+console.log(JSON.stringify({ type: 'tool_execution_start', toolCallId: 'silent-tool-1', toolName: 'bash', args: { command: 'find /' } }));
+writeFileSync(join(dir, 'tool-ready'), '');
+const [code, signal] = await once(child, 'exit');
+console.log(JSON.stringify({ type: 'tool_execution_end', toolCallId: 'silent-tool-1', toolName: 'bash', isError: true }));
+const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
+await callWorkerTool('hud_report', { text: 'Recovered in Pi PID ' + process.pid + ' after ' + (signal || code) });
+`);
+  const { job, task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic silent tool query.' });
+  await until(() => cliState(dir)?.state === 'closed', t.signal);
+  const pids = JSON.parse(fs.readFileSync(join(dir, 'pids.json'), 'utf8'));
+  assert.equal(isProcAlive(pids.child), false);
+  assert.equal(isProcAlive(pids.grandchild), false);
+  assert.match(fs.readFileSync(join(dir, 'report.md'), 'utf8'), new RegExp(`^Recovered in Pi PID ${pids.pi} after SIG(TERM|KILL)$`));
+  const progressLines = fs.readFileSync(join(dir, 'progress.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.ok(progressLines.some(row => row.source === 'checkpoint' && /^ended a silent tool after 18\d s: bash$/.test(row.text)));
+  assert.match((await f.call('hud_read', { job })).latest_progress.text, /^ended a silent tool after 18\d s: bash$/);
 });
 
 test('a default checkpoint counts worker milestones but not its own progress or a reread of an old target', async (t) => {
@@ -268,8 +331,9 @@ if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
     f.overrideBin('pi', `#!${process.execPath}
 const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
 await callWorkerTool('hud_progress', { message: 'Synthetic partial milestone.' });
-const log = () => console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'read', args: { path: 'synthetic.md' } }));
+const log = () => console.log(JSON.stringify({ type: 'tool_execution_start', toolCallId: 'done-1', toolName: 'read', args: { path: 'synthetic.md' } }));
 log();
+${reason === 'stalled' ? "console.log(JSON.stringify({ type: 'tool_execution_end', toolCallId: 'done-1', toolName: 'read' }));" : ''}
 setInterval(${reason === 'looping' ? 'log' : '() => {}'}, 50);
 `);
     const { job, task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic interrupted query.' });

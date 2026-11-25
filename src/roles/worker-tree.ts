@@ -201,3 +201,53 @@ export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () =
   }
   return { result, complete: ok(result) && !issue, issue, snapshot, unrecoverable };
 }
+
+/** End only verified live descendants of a running process (never the root itself or caller ancestors). */
+export async function killDescendantTree(rootPid: number, rootStart: string,
+  { dir, signal }: { dir?: string; signal?: AbortSignal } = {}): Promise<number> {
+  if (!validPid(rootPid) || !validStart(rootStart) || !recordedRootAlive(rootPid, rootStart)) return 0;
+  const protectedPids = new Set<number>([rootPid]);
+  for (let id = process.pid; id > 1; id = readProcStat(id)?.ppid ?? 0) protectedPids.add(id);
+  const children = new Map<number, Stamp[]>();
+  for (const id of listProcPids()) {
+    if (!validPid(id) || protectedPids.has(id)) continue;
+    const child = readProcStat(id);
+    if (!child || !active(child.state) || Number(child.start) < Number(rootStart)) continue;
+    const member = { pid: id, start: child.start };
+    const siblings = children.get(child.ppid);
+    if (siblings) siblings.push(member); else children.set(child.ppid, [member]);
+  }
+  const members: Stamp[] = [];
+  const parents: Stamp[] = [{ pid: rootPid, start: rootStart }];
+  for (const parent of parents) for (const child of children.get(parent.pid) ?? []) {
+    const current = readProcStat(child.pid);
+    // Check the child first, then recheck the parent's identity: a recycled PPID alone is not ancestry.
+    if (current?.start !== child.start || current.ppid !== parent.pid || readProcStat(parent.pid)?.start !== parent.start) continue;
+    if (dir && current.session === child.pid) {
+      const argv = readProcCmdline(child.pid), childDir = argv?.[2];
+      if (argv?.[1] === binScript('sonic-run') && childDir && dirname(childDir) === dirname(dir) &&
+          fs.existsSync(join(dir, jobFiles.sonic, basename(childDir)))) continue;
+    }
+    parents.push(child);
+    members.push(child);
+  }
+  if (!members.length) return 0;
+  // Signal leaves first so a child exits before a parent shell can mask or respawn it.
+  const targets = [...members].reverse();
+  const live = ({ pid, start }: Stamp) => {
+    const stat = readProcStat(pid);
+    return stat?.start === start && active(stat.state);
+  };
+  const signalMembers = (name: NodeJS.Signals) => {
+    for (const member of targets) if (live(member)) {
+      try { process.kill(member.pid, name); } catch { /* Verify again below; never signal blindly. */ }
+    }
+  };
+  signalMembers('SIGTERM');
+  for (let attempt = 0; attempt < 5 && targets.some(live); attempt++) await delay(50, undefined, { signal });
+  if (targets.some(live)) {
+    signalMembers('SIGKILL');
+    for (let attempt = 0; attempt < 10 && targets.some(live); attempt++) await delay(50, undefined, { signal });
+  }
+  return members.length;
+}

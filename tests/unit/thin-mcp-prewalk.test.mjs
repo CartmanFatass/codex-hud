@@ -3,8 +3,9 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { archiveJob } from '../../dist/roles/job-archive.js';
+import { prewalkScoutTask } from '../../dist/mcp/prewalk.js';
 import {
-  configureFakeDecision, fakeDecisionServer, fixture, publishSonic,
+  cliState, configureFakeDecision, fakeDecisionServer, fixture, publishSonic,
   sonicTask, taskCall, taskJob, taskRpc, until,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
@@ -74,7 +75,10 @@ test('prewalk on: code+web starts two parallel sonics then imp with both attache
   assert.deepEqual(Object.keys(byKind).sort(), ['code', 'web']);
   assert.ok(!fs.existsSync(join(target.task_dir, 'SESSION.txt')), 'target waits while both scouts run in parallel');
 
-  // Verify web scout brief forbids private content in queries and gets no local context_files.
+  // Verify code scout carries the checkout-only rule and web scout forbids private content in queries.
+  const codeBrief = brief(byKind.code);
+  assert.match(codeBrief, /Search only inside this checkout/i);
+  assert.match(codeBrief, /not found in checkout/i);
   const webBrief = brief(byKind.web);
   assert.match(webBrief, /primary external sources/i);
   assert.match(webBrief, /NEVER include local file paths.*private content/i);
@@ -144,13 +148,15 @@ test('prewalk on: code+web starts two parallel sonics then imp with both attache
   assert.equal(receipt(switchOff.task_dir).prewalk, undefined);
 });
 
-test('Decision API failure falls back to code scout; caller scout, caller skip and prewalk timeout behave as specified', async (t) => {
-  const prevTimeout = process.env.HUD_PREWALK_TIMEOUT_MS;
-  process.env.HUD_PREWALK_TIMEOUT_MS = '2500';
-  t.after(() => {
-    if (prevTimeout === undefined) delete process.env.HUD_PREWALK_TIMEOUT_MS;
-    else process.env.HUD_PREWALK_TIMEOUT_MS = prevTimeout;
-  });
+test('Decision API failure falls back to code scout; caller scout, caller skip, scout prompts and partial failure behave as specified', async (t) => {
+  // Verify code and docs scout prompts carry the checkout-only rule; web prompt stays external-only.
+  for (const kind of ['code', 'docs']) {
+    const prompt = prewalkScoutTask(kind, 'Check claude-code.d.ts.');
+    assert.match(prompt, /Search only inside this checkout/i);
+    assert.match(prompt, /never `\/`, `\$HOME` or other drives/i);
+    assert.match(prompt, /"not found in checkout"/);
+  }
+  assert.doesNotMatch(prewalkScoutTask('web', 'Check RFC 6749.'), /Search only inside this checkout/i);
 
   const f = await fixture(t, { autoPrewalk: true });
   sonicTask(f);
@@ -197,22 +203,62 @@ test('Decision API failure falls back to code scout; caller scout, caller skip a
   assert.equal(receipt(custom.task_dir).prewalk[0].source, 'caller');
   assert.equal(receipt(custom.task_dir).prewalk[0].result, 'attached');
 
-  // 4. Prewalk timeout: code arrives, docs exceeds timeout -> target starts with code attached + note for docs.
+  // 4. Partial scout failure: code arrives, docs fails -> target still starts with code attached + note for docs.
   failApi = false;
-  const timed = await f.call('hud_create', { role: 'imp', task: 'Partial timeout synthetic task.' });
-  const pair = await waitScouts(f, timed.job, 2);
+  const partial = await f.call('hud_create', { role: 'imp', task: 'Partial failure synthetic task.' });
+  const pair = await waitScouts(f, partial.job, 2);
   const byKind = Object.fromEntries(pair.map(dir => [receipt(dir).prewalk_kind, dir]));
   assert.deepEqual(Object.keys(byKind).sort(), ['code', 'docs']);
+  assert.match(brief(byKind.docs), /Search only inside this checkout/i);
+  assert.match(brief(byKind.docs), /"not found in checkout"/);
   write(join(byKind.code, 'report.md'), 'Arrived code facts.\n');
   write(join(byKind.code, 'release-sonic'), '');
-  // Do NOT release docs: it hits HUD_PREWALK_TIMEOUT_MS and gets stopped.
-  await waitLaunch(timed);
-  const timedRec = receipt(timed.task_dir);
-  assert.deepEqual(timedRec.from_jobs, [receipt(byKind.code).job]);
-  assert.equal(timedRec.prewalk.find(e => e.kind === 'code').result, 'attached');
-  assert.equal(timedRec.prewalk.find(e => e.kind === 'docs').result, 'timeout');
-  assert.match(brief(timed.task_dir), /^Scout failed \(docs\): timeout$/m);
-  await until(() => JSON.parse(read(join(byKind.docs, 'STATUS.json'))).state === 'stopped', 10000);
+  write(join(byKind.docs, 'fail-sonic'), '');
+  write(join(byKind.docs, 'release-sonic'), '');
+  await waitLaunch(partial);
+  const partialRec = receipt(partial.task_dir);
+  assert.deepEqual(partialRec.from_jobs, [receipt(byKind.code).job]);
+  assert.equal(partialRec.prewalk.find(e => e.kind === 'code').result, 'attached');
+  assert.equal(partialRec.prewalk.find(e => e.kind === 'docs').result, 'failed');
+  assert.match(brief(partial.task_dir), /^Scout failed \(docs\): pi exited: 4$/m);
+  await until(() => cliState(byKind.docs).state === 'failed', 10000);
+});
+
+test('prewalk waits past 5 minutes for a slow scout and attaches its report when it settles', async (t) => {
+  // Compress any long timeout (>= 60 s) in the MCP process so a restored 5-minute prewalk cap fires immediately,
+  // and advance performance.now/Date.now past 6 minutes once the slow scout is running.
+  const probe = `import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+const marker = join(process.env.HOME, 'fast-forward-prewalk');
+const realSetTimeout = globalThis.setTimeout;
+globalThis.setTimeout = (fn, ms, ...args) => realSetTimeout(fn, typeof ms === 'number' && ms >= 60000 ? 50 : ms, ...args);
+const realPerfNow = performance.now.bind(performance);
+const realDateNow = Date.now;
+const jump = () => existsSync(marker) ? 6 * 60_000 : 0;
+performance.now = () => realPerfNow() + jump();
+Date.now = () => realDateNow() + jump();
+`;
+  const f = await fixture(t, { autoPrewalk: true, probe });
+  sonicTask(f);
+  fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const api = await fakeDecisionServer(t, (body) => decisionReply(body, { code: 'yes', docs: 'no', web: 'no' }));
+  configureFakeDecision(f, api.baseUrl);
+
+  const target = await f.call('hud_create', { role: 'imp', task: 'Slow scout synthetic task.' });
+  const [slowScout] = await waitScouts(f, target.job, 1);
+  // Jump past 5 minutes without sleeping and give any leftover cap timer time to fire.
+  write(join(f.env.HOME, 'fast-forward-prewalk'), '');
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(cliState(slowScout).state, 'working', 'slow scout is still running past 5 minutes');
+  assert.ok(!fs.existsSync(join(target.task_dir, 'SESSION.txt')), 'target still waits for the slow scout');
+
+  write(join(slowScout, 'report.md'), 'Slow scout facts after 6 minutes.\n');
+  write(join(slowScout, 'release-sonic'), '');
+  await waitLaunch(target);
+  const launched = receipt(target.task_dir);
+  assert.deepEqual(launched.from_jobs, [receipt(slowScout).job]);
+  assert.equal(launched.prewalk[0].result, 'attached');
+  assert.ok(launched.prewalk[0].ms >= 6 * 60_000, `expected elapsed >= 360000 ms, got ${launched.prewalk[0].ms}`);
 });
 
 test('shipped defaults: reviewer and sonic never prewalk by default; oracle and frontend-imp prewalk; project prewalk rejected', async (t) => {

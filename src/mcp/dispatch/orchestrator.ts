@@ -51,7 +51,7 @@ import { stopSonic } from '../sonic-process.js';
 import { headlessSonicChildren } from '../../worker/sonic-jobs.js';
 import { pickSonicThinking } from '../sonic-thinking.js';
 import { pickRolePool } from '../pool-pick.js';
-import { decidePrewalkScouts, prewalkScoutTask, prewalkTimeoutMs } from '../prewalk.js';
+import { decidePrewalkScouts, prewalkScoutTask } from '../prewalk.js';
 import {
   directory, readRow, hudHome, primary, jobs, readCachedStatus, findJob, settled, save, bundled,
   writeCreateStatus, queuePositionsForJobs, jobCache, digestLine, publishWorkSummary, findJobMutable, slice,
@@ -245,7 +245,7 @@ export const pendingScouts = new Map<string, AbortController>();
 export const scoutedCreates = new Set<Promise<void>>();
 
 type ScoutSpec = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; question: string; includeContext: boolean };
-type ScoutOutcome = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; id?: string; failure?: string; timedOut?: boolean; ms: number };
+type ScoutOutcome = { kind: PrewalkScoutKind; source: 'decision' | 'caller' | 'default'; id?: string; failure?: string; ms: number };
 
 async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, contextFiles: unknown,
   signal: AbortSignal, requestKey: string): Promise<ScoutOutcome> {
@@ -270,7 +270,7 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
       const { row } = readRow(scout);
       if (signal.aborted) {
         discard = !settled(row.state);
-        return { kind: spec.kind, source: spec.source, id, timedOut: true, failure: 'timeout', ms: elapsed() };
+        return { kind: spec.kind, source: spec.source, id, failure: 'stopped', ms: elapsed() };
       }
       if (settled(row.state)) {
         if (row.state === 'failed' || row.state === 'stopped') return { kind: spec.kind, source: spec.source, id, failure: row.reason ?? row.state, ms: elapsed() };
@@ -288,7 +288,7 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
   } catch (error) {
     if (signal.aborted) {
       discard = !!scout && !settled(readRow(scout).row.state);
-      return { kind: spec.kind, source: spec.source, ...(scout && { id: scout.job }), timedOut: true, failure: 'timeout', ms: elapsed() };
+      return { kind: spec.kind, source: spec.source, ...(scout && { id: scout.job }), failure: 'stopped', ms: elapsed() };
     }
     discard = !!scout;
     return { kind: spec.kind, source: spec.source, ...(scout && { id: scout.job }), failure: error instanceof Error ? error.message : String(error), ms: elapsed() };
@@ -298,18 +298,11 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
 }
 
 async function runPrewalkScouts(target: Job, specs: readonly ScoutSpec[], contextCwd: string, contextFiles: unknown,
-  callerSignal: AbortSignal): Promise<ScoutOutcome[]> {
-  const timeout = new AbortController();
-  const timer = setTimeout(() => timeout.abort(), prewalkTimeoutMs());
-  const signal = AbortSignal.any([callerSignal, timeout.signal]);
-  try {
-    return await Promise.all(specs.map((spec) => {
-      const key = spec.source === 'caller' ? `scout:${target.job}` : `prewalk:${target.job}:${spec.kind}`;
-      return runOneScout(target, spec, contextCwd, contextFiles, signal, key);
-    }));
-  } finally {
-    clearTimeout(timer);
-  }
+  signal: AbortSignal): Promise<ScoutOutcome[]> {
+  return Promise.all(specs.map((spec) => {
+    const key = spec.source === 'caller' ? `scout:${target.job}` : `prewalk:${target.job}:${spec.kind}`;
+    return runOneScout(target, spec, contextCwd, contextFiles, signal, key);
+  }));
 }
 
 function formatScoutNote(outcome: ScoutOutcome, reason: string): string {
@@ -343,7 +336,7 @@ async function applyScoutOutcomes(
     if (outcome.id && !attachFailure && !('code' in briefContext)) {
       entries.push({ kind: outcome.kind, source: outcome.source, job: outcome.id, result: 'attached', ms: outcome.ms });
     } else {
-      const result = outcome.timedOut ? 'timeout' : 'failed';
+      const result = 'failed';
       entries.push({ kind: outcome.kind, source: outcome.source, ...(outcome.id && { job: outcome.id }), result, ms: outcome.ms });
       notes.push(formatScoutNote(outcome, attachFailure ?? result));
     }

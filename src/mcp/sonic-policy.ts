@@ -32,15 +32,21 @@ function toolEvents(file: string, offset: number, size: number) {
   const lines = complete.split('\n');
   // The tail may start in the middle of an event; a truncated window can't prove inactivity.
   if (start > offset) lines.shift();
-  const opened: { id: string; timeout_s: number }[] = [], ended: string[] = [];
+  const opened: { id: string; tool: string; timeout_s?: number }[] = [], ended: string[] = [];
   const calls = lines.flatMap(line => {
     try {
       const event = JSON.parse(line);
       const id = typeof event?.toolCallId === 'string' ? event.toolCallId : undefined;
       if (id && event?.type === 'tool_execution_end') ended.push(id);
-      const timeout = event?.args?.timeout;
-      if (id && event?.type === 'tool_execution_start' && typeof timeout === 'number' && timeout > 0) opened.push({ id, timeout_s: timeout });
       const tool = event?.toolName;
+      if (id && event?.type === 'tool_execution_start') {
+        const timeout = event?.args?.timeout;
+        opened.push({
+          id,
+          tool: typeof tool === 'string' && tool ? tool : 'tool',
+          ...(typeof timeout === 'number' && timeout > 0 ? { timeout_s: timeout } : {}),
+        });
+      }
       if (event?.type !== 'tool_execution_start' || typeof tool !== 'string' || tool === 'hud_progress') return [];
       const args = event.args;
       const target = args && typeof args === 'object' && ('path' in args || 'file_path' in args)
@@ -80,8 +86,11 @@ export function monitorSonic(dir: string, limits: SonicLimits, started: number) 
   let lastActivity = started, next = started + limits.check_s * 1000;
   // A tool call that declared its own timeout (a long build or test run) is not a stall until that timeout passes.
   const running = new Map<string, number>();
+  // A tool call without a declared timeout gets its child process tree ended once on silence so pi can continue.
+  const unbounded = new Map<string, string>();
+  const killedTools = new Set<string>();
   let milestone: ReturnType<typeof workerProgress>, checkpointWorkerLine: string | undefined, lastTool: string | undefined;
-  return (now: number): { stop?: SonicStop; progress?: string } => {
+  return (now: number): { stop?: SonicStop; killTool?: boolean; progress?: string } => {
     if (now >= started + limits.max_s * 1000) return { stop: 'timeout' };
     const output = fs.statSync(stdout);
     if (output.size > size) lastActivity = Math.max(lastActivity, output.mtimeMs);
@@ -90,8 +99,15 @@ export function monitorSonic(dir: string, limits: SonicLimits, started: number) 
       const batch = toolEvents(stdout, offset, size);
       offset = batch.offset;
       complete &&= batch.complete;
-      for (const { id, timeout_s } of batch.opened) running.set(id, output.mtimeMs + timeout_s * 1000);
-      for (const id of batch.ended) running.delete(id);
+      for (const { id, tool, timeout_s } of batch.opened) {
+        if (timeout_s !== undefined) running.set(id, output.mtimeMs + timeout_s * 1000);
+        else unbounded.set(id, tool);
+      }
+      for (const id of batch.ended) {
+        running.delete(id);
+        unbounded.delete(id);
+        killedTools.delete(id);
+      }
       for (const { tool, target, call } of batch.calls) {
         if (!seen.has(target)) newTarget = true;
         seen.add(target);
@@ -110,7 +126,16 @@ export function monitorSonic(dir: string, limits: SonicLimits, started: number) 
         progressMtime = mtime;
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     }
-    if (now >= Math.max(lastActivity + limits.stall_s * 1000, ...running.values())) return { stop: 'stalled' };
+    if (now >= Math.max(lastActivity + limits.stall_s * 1000, ...running.values())) {
+      if (!running.size && unbounded.size && [...unbounded.keys()].every(id => !killedTools.has(id))) {
+        const silent = Math.floor((now - lastActivity) / 1000);
+        const tools = [...new Set(unbounded.values())].join(', ');
+        for (const id of unbounded.keys()) killedTools.add(id);
+        lastActivity = now;
+        return { killTool: true, progress: `ended a silent tool after ${silent} s: ${tools}` };
+      }
+      return { stop: 'stalled' };
+    }
     if (now < next) return {};
     const newProgress = milestone?.line !== checkpointWorkerLine ? milestone?.text : undefined;
     if (complete && !running.size && (repeats(calls) || (!newTarget && !newProgress))) return { stop: 'looping' };

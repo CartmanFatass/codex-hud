@@ -14,7 +14,7 @@ import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { procStat, readBootId } from '../utils/proc.js';
 import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { cliStreamSession } from '../roles/job-sessions.js';
-import { rememberWorkerTree, sonicRoot } from '../roles/worker-tree.js';
+import { killDescendantTree, rememberWorkerTree, sonicRoot } from '../roles/worker-tree.js';
 import { readDone, readTurn, receiptForTurn, reportSignature } from '../roles/cli-turn.js';
 import { REPORT_SETTLED_EXIT } from './cli-judge.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
@@ -77,13 +77,14 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
 
 type HeadlessExit = { code: number | null; signal?: string | null; paused?: boolean; error?: string; agent_session_id?: string };
 
-async function launchTurn(dir: string, argv: string[], status: JobStatus, command: string) {
+async function launchTurn(dir: string, argv: string[], status: JobStatus, command: string,
+  onChild?: (child: { pid: number; start: string } | undefined) => void) {
   const pause = join(dir, jobFiles.pauseRequested);
   if (status.harness === 'cli') fs.rmSync(pause, { force: true }); // A fresh handoff for each native turn.
   const child = spawn(command, argv, { stdio: ['ignore', 'inherit', 'inherit'] });
   const exit = new Promise<HeadlessExit>(resolve => {
-    child.once('error', error => resolve({ code: null, error: error.message }));
-    child.once('exit', (code, signal) => resolve({ code, signal }));
+    child.once('error', error => { onChild?.(undefined); resolve({ code: null, error: error.message }); });
+    child.once('exit', (code, signal) => { onChild?.(undefined); resolve({ code, signal }); });
   });
   if (child.pid) {
     const capture = rememberWorkerTree(dir, status);
@@ -91,6 +92,8 @@ async function launchTurn(dir: string, argv: string[], status: JobStatus, comman
       child.kill('SIGKILL');
       throw Error(capture.issue ?? 'cannot capture sonic child');
     }
+    const start = procStat(child.pid)?.start;
+    if (start) onChild?.({ pid: child.pid, start });
   }
   if (status.harness !== 'cli') return exit;
   const controller = new AbortController();
@@ -125,26 +128,46 @@ export async function runHeadlessTurn(dir: string, argv: string[]) {
   // Wake a replacement watcher if the original died while the harness was running. The watcher is
   // the sole terminal writer, even when the dispatcher's MCP connection is already gone.
   const wake = () => ensureJobWatcher(dirname(dirname(dir)));
+  let activeChild: { pid: number; start: string } | undefined;
+  let killingTool = false;
+  const stopTools = new AbortController();
   const inspect = status.slot === 'sonic' && monitorSonic(dir, status.sonic_limits ?? sonicLimitDefaults, Date.parse(status.started_at!));
   const timer = inspect ? setInterval(() => {
+    if (killingTool) return;
     const result = inspect(Date.now());
     if (result.stop) {
       writeJsonPrivate(join(dir, jobFiles.sonicStop), result.stop, { mkdir: false });
       clearInterval(timer);
       wake();
+    } else if (result.killTool) {
+      killingTool = true;
+      const target = activeChild;
+      if (result.progress) {
+        progress({ dir }, result.progress, 'checkpoint');
+        wake();
+      }
+      void (async () => {
+        try {
+          if (target) {
+            rememberWorkerTree(dir, status);
+            await killDescendantTree(target.pid, target.start, { dir, signal: stopTools.signal });
+          }
+        } catch { /* Best-effort tool cleanup; a still-stuck call stops as stalled on the next window. */ }
+        finally { killingTool = false; }
+      })();
     } else if (result.progress) {
       progress({ dir }, result.progress, 'checkpoint');
       wake();
     }
   }, 1000) : undefined;
   try {
-    let result = await launchTurn(dir, argv, status, agent ?? 'pi');
+    let result = await launchTurn(dir, argv, status, agent ?? 'pi', child => { activeChild = child; });
     // JSON mode emits the session header before input. Only retry a rejected Sonic open,
     // never replay work after Pi may already have taken the continuation.
     if (resuming && result.code !== null && result.code !== 0 && fs.statSync(join(dir, jobFiles.sonicStdout)).size === 0 &&
         Date.now() < headlessDeadline(status) && ![jobFiles.stopRequested, jobFiles.sonicStop, jobFiles.sonicTimeout].some(f => fs.existsSync(join(dir, f)))) {
       fs.renameSync(session, `${session}.rejected`);
-      result = await launchTurn(dir, [...argv.slice(0, -1), briefPrompt(join(dir, jobFiles.brief))], status, 'pi');
+      result = await launchTurn(dir, [...argv.slice(0, -1), briefPrompt(join(dir, jobFiles.brief))], status, 'pi', child => { activeChild = child; });
     }
     if (agent && (result.code === 0 || result.paused)) {
       try {
@@ -156,7 +179,7 @@ export async function runHeadlessTurn(dir: string, argv: string[]) {
     }
     writeJsonPrivate(join(dir, jobFiles.sonicExit), { ...result, at: Date.now() }, { mkdir: false });
     wake();
-  } finally { clearInterval(timer); }
+  } finally { clearInterval(timer); stopTools.abort(); }
 }
 
 export const headlessDeadline = (status: Partial<JobStatus>) => status.slot === 'headless' ? Infinity : Date.parse(status.started_at!) + (status.sonic_limits ?? sonicLimitDefaults).max_s * 1000;
