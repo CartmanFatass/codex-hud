@@ -23,7 +23,6 @@ import { waitUntilFs, type WatchTarget } from '../../utils/fs-wait.js';
 import { reportReadHint } from '../../utils/report-summary.js';
 import { required, jobCwd, type Args } from '../dispatch/context.js';
 import { prepareCouncil, synthesisTemplate } from '../dispatch/council.js';
-import { abortInline } from '../../workflows/inline.js';
 import { requestPrewalkStop } from '../prewalk-flow.js';
 import { sendJob, dispatchJob, resumeJob } from '../dispatch/orchestrator.js';
 import { registry, harnessSwitchFailure, compactAssignment } from '../dispatch/places.js';
@@ -861,7 +860,6 @@ export async function closeJob(job: Job, stop = false) {
   if (!job.headless && findJob(job.job)?.reaped_at) return { exit_code: 0, last_line: 'already reaped' };
   if (job.scout_state === 'scouting' && await requestPrewalkStop(job.job)) {
     recordStopOrigin(dir, 'mcp', readCachedStatus(job.job).status?.state, undefined, jobCache);
-    abortInline(job.job);
     return { exit_code: 0, last_line: 'stopping scouted dispatch' };
   }
   let { row, status } = readRow(job);

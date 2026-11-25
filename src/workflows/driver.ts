@@ -17,6 +17,7 @@ export interface DriverProfile<S> {
   tick(state: S, id: string, step: Step, plan: Plan): Tick;
   watches(state: S): WatchTarget[];
   active(state: S): boolean;
+  retiring?: AbortSignal; // Yield before the next turn; let an admitted effect finish first.
   errorLine(run: Run): string;
   // Some compatibility transports only claim notices in a watcher/MCP scan.
   readerNotices?: boolean;
@@ -38,12 +39,15 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
     await waitUntilFs({ timeoutMs: Infinity,
       targets: () => [{ dir: join(home, 'flows'), filter: f => !f || f === `${id}.json` }, ...watches],
       check: async () => {
-        const { run, active, effect } = await locked(s => {
+        const turn = await locked(s => {
+          if (profile.retiring?.aborted) return;
           const run = profile.header(s), turn = advance(graph, run, (key, step) => profile.tick(s, key, step, graph));
           if (turn.changed) profile.save(s);
           watches = profile.watches(s);
           return { run, active: profile.active(s), effect: turn.effect };
         });
+        if (!turn) return { done: true, value: undefined };
+        const { run, active, effect } = turn;
         // If the original main exited, leave the outbox unclaimed for the next project
         // reader. Its PID/pane never determine whether this or any subsequent step runs.
         if (!profile.readerNotices && Object.keys(run.notices).length && directRecipient(run) && !watching(run.pane, home)) for (const { line, marker } of noticeEvents(home, run)) {

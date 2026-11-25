@@ -70,10 +70,10 @@ async function publishSynthesis(dir: string, child: string, signal: AbortSignal)
 
 export async function runCouncil(parent: Job, plan: CouncilPlan, task: string, start: Start, signal: AbortSignal, releaseUnused: () => Promise<void>) {
   const dir = directory(parent.job), members = parent.council_members!;
-  const wait = (job: string) => waitChildReport(job, signal, async child => {
+  const wait = (job: string) => waitChildReport(job, async child => {
     const { closeJob } = await import('../mcp/operations.js');
     return closeJob(child, true);
-  });
+  }, { signal });
   try {
     const browser = plan.members.some(s => s.place.harness === 'bro') || (plan.synthesizer !== 'main' && plan.synthesizer.place.harness === 'bro');
     const index = browser ? await councilIndex(parent) : '';

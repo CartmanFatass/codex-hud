@@ -261,7 +261,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
 }
 
 async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, contextFiles: unknown,
-  signal: AbortSignal, requestKey: string, recovering: boolean, stopping: () => boolean): Promise<ScoutOutcome> {
+  retiring: AbortSignal, requestKey: string, recovering: boolean, stopping: () => boolean): Promise<ScoutOutcome> {
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
   const ask = spec.ask ? { ask: spec.ask } : {};
@@ -280,24 +280,24 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
     }
     const id = result.job;
     const failure = prior && prior.dispatch_exit_code === null && !readCachedStatus(id).status ? 'scout dispatch interrupted' :
-      await waitChildReport(id, signal, child => stopSonic(directory(child.job)).catch(() => ensureWatcher()), stopping);
+      await waitChildReport(id, child => stopSonic(directory(child.job)).catch(() => ensureWatcher()), { retiring, stopping });
     return { kind: spec.kind, source: spec.source, ...ask, id, failure,
       ms: prior ? Math.max(elapsed(), Date.now() - Date.parse(prior.created_at)) : elapsed() };
   } catch (error) {
-    return { kind: spec.kind, source: spec.source, ...ask, failure: signal.aborted ? 'stopped' : String(error), ms: elapsed() };
+    return { kind: spec.kind, source: spec.source, ...ask, failure: String(error), ms: elapsed() };
   }
 }
 
-export function runReservedPrewalk(id: string, host: PrewalkRun['host'], signal: AbortSignal) {
+export function runReservedPrewalk(id: string, host: PrewalkRun['host'], retiring: AbortSignal) {
   const base = findJobMutable(id)!;
-  return drivePrewalk(id, host, signal, {
+  return drivePrewalk(id, host, retiring, {
     scouts: async ({ launch: { args, cwd, worktree, plan }, scouts }, recovering, stopping) => {
       if (worktree && !base.worktree && plan.candidates.some(({ candidate: { place }, prepared }) => !('code' in prepared) &&
           (place.harness === 'pi' || (place.harness === 'cli' && isCliDirTrusted(place.agent!, worktree.main_root))))) {
         await prepareWorktree(base, worktree);
       }
-      if ((!recovering && (signal.aborted || stopping())) || (worktree && !base.worktree)) return [];
-      return Promise.all(scouts.map((spec, i) => runOneScout(base, spec, cwd, args.context_files, signal,
+      if ((!recovering && stopping()) || (worktree && !base.worktree)) return [];
+      return Promise.all(scouts.map((spec, i) => runOneScout(base, spec, cwd, args.context_files, retiring,
         `prewalk:${id}:${i}:${spec.kind}`, recovering, stopping)));
     },
     launch: (launch, outcomes) => keyLock(`job:${id}`, async () => {
@@ -319,7 +319,7 @@ function startPrewalk(base: Job, host: 'watcher' | 'mcp', inputs: PrewalkInputs)
   const options = (args: Args) => Object.fromEntries([...replayOptions, 'from_jobs'].filter(k => args[k] !== undefined).map(k => [k, args[k]]));
   const { launch, scouts } = inputs;
   reservePrewalk(base, host, { scouts, launch: { ...launch, args: options(launch.args), retryInput: launch.retryInput && options(launch.retryInput) } });
-  return hostInline(base.job, signal => runReservedPrewalk(base.job, host, signal));
+  return hostInline(base.job, retiring => runReservedPrewalk(base.job, host, retiring));
 }
 
 function callerScouts(requests: readonly PrewalkScoutRequest[], task: string): ScoutSpec[] {
@@ -598,7 +598,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       const entry = session.taskClient ? beginTask(base) : undefined;
       if (!entry) void ensureQueueWatcher(pane, hudHome);
       const reply = finishTask(entry, base, true) ?? created(base, row);
-      const flow = await createCouncilRun(hudHome, base, pane!, configured, { plan: councilPlan, grant });
+      const flow = await createCouncilRun(hudHome, base, pane, configured, { plan: councilPlan, grant });
       wakeWorkflow(hudHome, flow);
       return reply;
     } catch (error) {
@@ -835,75 +835,24 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (admissionError !== undefined) return admissionError;
   if (queuedReply !== undefined) return queuedReply;
 
-  const harnessesSource = harnessesSourceFor(onName);
-  const attempts = base.attempts!;
-  const candidates = plan.candidates;
   let scoutTask: HudTask | undefined;
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
   const launch = () => keyLock(`job:${id}`, async () => {
-    let job = base;
-    let result: DispatchResult = launchError('no launch attempted');
-    let reason = '';
     let taskEntry: HudTask | undefined;
-    let sonicPick: Promise<string | undefined> | undefined;
-    for (const [index, { candidate, prepared, effective, route }] of candidates.entries()) {
-      const launchArgs = argsForPlace(args, candidate.place, retryInput);
-      if ('code' in prepared) continue; // Explicit harness-only options still constrain this dispatch.
-      if (attempts.length) {
-        const exhausted = readExhausted(hudHome);
-        const quota = isQuotaFailure(reason);
-        if ((quota && candidate.key === job.place_key) || exhausted.has(candidate.key)) continue;
-        if (quota && !exhausted.has(job.place_key!)) markExhausted(hudHome, job.place_key!, reason);
-        // The previous tab is closed. Keep the job, but do not carry its launch/turn state into a new worker.
-        for (const file of [jobFiles.session, jobFiles.status, jobFiles.turn]) fs.rmSync(join(dir, file), { force: true });
-        jobCache.invalidateJob(id);
-      } else fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-
-      const { place, options } = prepared;
-      let thinking_source: Job['thinking_source'];
-      if (role === 'sonic' && place.harness !== 'bro') {
-        if (args.thinking !== undefined) thinking_source = 'explicit';
-        else {
-          const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, chain.thinking_choices));
-          if (picked !== undefined) place.thinking = picked;
-          thinking_source = picked === undefined ? 'default' : 'decision';
+    const { job, result, reason } = await launchAttempts(base, { cwd: landCwd ?? cwd, args, retryInput, chain, plan, worktree }, {
+      even, modelSource: modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSourceFor(onName) : undefined,
+      async prepare(job, browser, first) {
+        if (first) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const briefContext = inline === browser ? context! : await contextFor(args, browser);
+        if (!('code' in briefContext)) {
+          Object.assign(job, briefContext.metadata);
+          writeBrief(job, dir, task, briefContext.block, first);
         }
-      }
-      const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
-      job = {
-        ...base, ...options, place, place_key: candidate.key,
-        ...(route && { route, headless: route.mode === 'headless' || role === 'sonic' ? true : undefined }),
-        ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: chain.resume_s ?? DEFAULT_RESUME_S }),
-        create_options: {
-          cwd: landCwd ?? cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
-        },
-        ...(job.worktree ? { worktree: job.worktree, cwd: job.cwd } : {}),
-        ...(place.harness === 'bro' ? { bro: place } : {
-          model: candidate.model.value, thinking: place.thinking ?? candidate.thinking.value,
-          ...(thinking_source ? { thinking_source } : {}),
-          model_source: route ? candidate.model.source : modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSource : candidate.model.source,
-        }),
-        ...(place.harness === 'cli' ? { cli: {
-          agent: place.agent!, can_continue: (effective.harness === 'bro' ? chain.can_continue : effective.can_continue) === true,
-          idle_grace_s: (args.idle_grace_s as number | undefined) ?? chain.idle_grace_s ?? 600,
-          state_trust: candidate.state_trust ?? 'advisory',
-        } } : {}),
-      };
-      if (imp) job.imp_preset = effective.preset;
-      const browser = place.harness === 'bro';
-      const briefContext = inline === browser ? context! : await contextFor(args, browser);
-      if (!('code' in briefContext)) {
-        Object.assign(job, briefContext.metadata);
-        writeBrief(job, dir, task, briefContext.block, attempts.length === 0);
-      }
-      // Persist before dispatch: an interrupted launch must not dispatch again on retry.
-      save(job, attempts.length > 0);
-      if (attempts.length === 0) publishWorkSummary();
-      if (attempts.length === 0) {
-        if (job.retry_of) {
-          const source = findJob(job.retry_of);
-          if (source) save({ ...source, observed_at: new Date().toISOString() });
-        }
+        return briefContext;
+      },
+      onFirst(job) {
+        publishWorkSummary();
+        observeRetrySource(job);
         if (parentJob && !job.scout_only && !job.council) {
           const children = join(directory(parentJob), jobFiles.sonic);
           fs.mkdirSync(children, { recursive: true, mode: 0o700 });
@@ -912,25 +861,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         ensureWatcher();
         if (session.taskClient && !parentJob) taskEntry = beginTask(job);
         else if (!job.scout_only && !job.council) void ensureQueueWatcher(pane, hudHome);
-      }
-      const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
-      if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
-      else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing);
-      base.launch_agent_args = job.launch_agent_args;
-      reason = result.exit_code === 0 ? '' : launchFailure(result).reason;
-      if (reason) attempt.reason = reason;
-      attempts.push(attempt);
-      if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) {
-        job.used_place = attempt.place;
-        memberStarted?.(); // Pre-input failures also have job IDs; only a used place spends the grant.
-      }
-      const next = even && reason ? await nextEvenLaunch(even, job, result, reason) : undefined;
-      if (next) candidates.splice(index + 1, candidates.length, ...next.candidates);
-      else if (!canTryNext(job, result)) break;
-      save(job);
-    }
-    if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
-      job.route = plan.fallback;
+      },
+      onUsedPlace: memberStarted, // Pre-input failures also have job IDs; only a used place spends the grant.
+    });
     const launchRow = finishLaunch(job, dir, result, reason);
     if (batch) {
       registerBatchTask(taskEntry, job, result.exit_code === 0);
@@ -943,7 +876,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   // The target ID (and task, if negotiated) is stable across both stages.
   base.scout_state = 'scouting';
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  writeBrief({ ...base, place: candidates[0].candidate.place }, dir, task, context!.block, true);
+  writeBrief({ ...base, place: plan.candidates[0].candidate.place }, dir, task, context!.block, true);
   save(base);
   writeCreateStatus(dir, { state: 'working', reason: 'scouting' });
   trackCreatedJob(id);
@@ -1109,68 +1042,24 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
 }
 
 /** Launch the already admitted target at its reserved id and frozen placement. */
-async function launchReservedJob(base: Job, { cwd, args, retryInput, chain, plan, worktree }: ReservedLaunch, scoutOutcomes?: ScoutOutcome[],
+async function launchReservedJob(base: Job, launch: ReservedLaunch, scoutOutcomes?: ScoutOutcome[],
   queued?: { even?: ReturnType<typeof evenPlanner>; context: Awaited<ReturnType<typeof assembleContext>> }) {
-    const { job: id, role } = base, dir = directory(id), task = required(args, 'task');
-    const found = registry(cwd), project = found.project();
-    const contextFor = (targetArgs: Args, browser: boolean) => assembleContext(targetArgs, cwd, browser, project, base.repair_of, base.pool_files);
-    const launchRoleName = base.overflow_from ?? role;
-    const settings = !queued && base.route?.placement === 'even' && !retryInput ? impPlacementSettings(hudHome) : undefined;
-    const even = queued?.even ?? (settings && (launchRoleName === 'imp' || launchRoleName === 'sonic')
-      ? evenPlanner(found, chain, args, found.routing(Date.now()), launchRoleName, launchRoleName === 'imp' ? settings.impEvenPool : settings.sonicEvenPool) : undefined);
-    const modelOverride = typeof args.model === 'string' ? args.model : undefined;
-    const onEntry = typeof args.on === 'string' ? harnessDefaults(hudHome, bundled)[args.on] : undefined;
-    const harnessesSource = harnessesSourceFor(typeof args.on === 'string' ? args.on : null);
-    const poolEntry = base.prewalk?.find(entry => entry.kind === 'pool');
-    const attempts = base.attempts!;
-    const candidates = plan.candidates;
-    let job = base;
-    let result: DispatchResult = launchError('no launch attempted');
-    let reason = '';
-    let sonicPick: Promise<string | undefined> | undefined;
-    for (const [index, { candidate, prepared, effective, route }] of candidates.entries()) {
-      const launchArgs = argsForPlace(args, candidate.place, retryInput);
-      if ('code' in prepared) continue;
-      if (attempts.length) {
-        const exhausted = readExhausted(hudHome);
-        const quota = isQuotaFailure(reason);
-        if ((quota && candidate.key === job.place_key) || exhausted.has(candidate.key)) continue;
-        if (quota && !exhausted.has(job.place_key!)) markExhausted(hudHome, job.place_key!, reason);
-        for (const file of [jobFiles.session, jobFiles.status, jobFiles.turn]) fs.rmSync(join(dir, file), { force: true });
-        jobCache.invalidateJob(id);
-      }
-      const { place, options } = prepared;
-      let thinking_source: Job['thinking_source'];
-      if (role === 'sonic' && place.harness !== 'bro') {
-        if (args.thinking !== undefined) thinking_source = 'explicit';
-        else {
-          const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, chain.thinking_choices));
-          if (picked !== undefined) place.thinking = picked;
-          thinking_source = picked === undefined ? 'default' : 'decision';
-        }
-      }
-      const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
-      job = {
-        ...base, ...options, place, place_key: candidate.key,
-        ...(route && { route, headless: route.mode === 'headless' || role === 'sonic' ? true : undefined }),
-        ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: chain.resume_s ?? DEFAULT_RESUME_S }),
-        create_options: {
-          cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
-        },
-        ...(job.worktree ? { worktree: job.worktree, cwd: job.cwd } : {}),
-        ...(place.harness === 'bro' ? { bro: place } : {
-          model: candidate.model.value, thinking: place.thinking ?? candidate.thinking.value,
-          ...(thinking_source ? { thinking_source } : {}),
-          model_source: route ? candidate.model.source : modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSource : candidate.model.source,
-        }),
-        ...(place.harness === 'cli' ? { cli: {
-          agent: place.agent!, can_continue: (effective.harness === 'bro' ? chain.can_continue : effective.can_continue) === true,
-          idle_grace_s: (args.idle_grace_s as number | undefined) ?? chain.idle_grace_s ?? 600,
-          state_trust: candidate.state_trust ?? 'advisory',
-        } } : {}),
-      };
-      if (launchRoleName === 'imp') job.imp_preset = effective.preset;
-      const browser = place.harness === 'bro';
+  const { cwd, args, retryInput, chain, plan } = launch;
+  const dir = directory(base.job), task = required(args, 'task');
+  const found = registry(cwd), project = found.project();
+  const contextFor = (targetArgs: Args, browser: boolean) => assembleContext(targetArgs, cwd, browser, project, base.repair_of, base.pool_files);
+  const launchRoleName = base.overflow_from ?? base.role;
+  // A fixed-batch route can say "even", but the manifest already pinned its preset.
+  const settings = !base.batch_flow && !queued && base.route?.placement === 'even' && !retryInput ? impPlacementSettings(hudHome) : undefined;
+  const even = queued?.even ?? (settings && (launchRoleName === 'imp' || launchRoleName === 'sonic')
+    ? evenPlanner(found, chain, args, found.routing(Date.now()), launchRoleName, launchRoleName === 'imp' ? settings.impEvenPool : settings.sonicEvenPool) : undefined);
+  const onName = typeof args.on === 'string' ? args.on : null;
+  const onEntry = onName === null ? undefined : harnessDefaults(hudHome, bundled)[onName];
+  const poolEntry = base.prewalk?.find(entry => entry.kind === 'pool');
+  const { job, result, reason } = await launchAttempts(base, launch, {
+    even, callerToken: base.created_at,
+    modelSource: typeof args.model === 'string' ? 'hud_create' : onEntry?.model !== undefined ? harnessesSourceFor(onName) : undefined,
+    async prepare(job, browser) {
       let briefContext = queued && browser === (plan.candidates[0].candidate.place.harness === 'bro') ? queued.context : await contextFor(args, browser);
       let scoutNote = '';
       if (scoutOutcomes?.length) {
@@ -1187,32 +1076,106 @@ async function launchReservedJob(base: Job, { cwd, args, retryInput, chain, plan
         writeBrief(job, dir, task, scoutNote + briefContext.block, false);
       }
       job.launcher = launcherId();
-      save(job, attempts.length > 0);
-      if (scoutOutcomes && attempts.length === 0) {
+      return briefContext;
+    },
+    onFirst(job) {
+      if (scoutOutcomes) {
         fs.rmSync(join(dir, jobFiles.status), { force: true });
         jobCache.invalidateFile(join(dir, jobFiles.status));
       }
-      if (attempts.length === 0 && job.retry_of) {
-        const source = findJob(job.retry_of);
-        if (source) save({ ...source, observed_at: new Date().toISOString() });
-      }
-      const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
-      if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
-      else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing, { callerToken: base.created_at });
-      base.launch_agent_args = job.launch_agent_args;
-      reason = result.exit_code === 0 ? '' : launchFailure(result).reason;
-      if (reason) attempt.reason = reason;
-      attempts.push(attempt);
-      if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
-      const next = even && reason ? await nextEvenLaunch(even, job, result, reason) : undefined;
-      if (next) candidates.splice(index + 1, candidates.length, ...next.candidates);
-      else if (!canTryNext(job, result)) break;
-      save(job);
+      observeRetrySource(job);
+    },
+  });
+  finishLaunch(job, dir, result, reason, false);
+  return { started: result.exit_code === 0, ...(result.exit_code !== 0 ? { failed: true, reason } : {}) };
+}
+
+function observeRetrySource(job: Job) {
+  const source = job.retry_of && findJob(job.retry_of);
+  if (source) save({ ...source, observed_at: new Date().toISOString() });
+}
+
+/** Shared place selection and retry/fallback policy for an admitted job. */
+async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, worktree }: ReservedLaunch, hooks: {
+  even?: ReturnType<typeof evenPlanner>; callerToken?: string; modelSource?: string;
+  prepare(job: Job, browser: boolean, first: boolean): Promise<Awaited<ReturnType<typeof assembleContext>>>;
+  onFirst(job: Job): void;
+  onUsedPlace?: () => void;
+}) {
+  const { job: id, role } = base, dir = directory(id), task = required(args, 'task');
+  const attempts = base.attempts!;
+  const candidates = [...plan.candidates];
+  let job = base;
+  let result: DispatchResult = launchError('no launch attempted');
+  let reason = '';
+  let sonicPick: Promise<string | undefined> | undefined;
+  for (const [index, { candidate, prepared, effective, route }] of candidates.entries()) {
+    const launchArgs = argsForPlace(args, candidate.place, retryInput);
+    if ('code' in prepared) continue; // Explicit harness-only options still constrain this dispatch.
+    const first = attempts.length === 0;
+    if (!first) {
+      const exhausted = readExhausted(hudHome);
+      const quota = isQuotaFailure(reason);
+      if ((quota && candidate.key === job.place_key) || exhausted.has(candidate.key)) continue;
+      if (quota && !exhausted.has(job.place_key!)) markExhausted(hudHome, job.place_key!, reason);
+      // The previous tab is closed. Don't carry its launch/turn state into a new worker.
+      for (const file of [jobFiles.session, jobFiles.status, jobFiles.turn]) fs.rmSync(join(dir, file), { force: true });
+      jobCache.invalidateJob(id);
     }
-    if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
-      job.route = plan.fallback;
-    finishLaunch(job, dir, result, reason, false);
-    return { started: result.exit_code === 0, ...(result.exit_code !== 0 ? { failed: true, reason } : {}) };
+    const { place, options } = prepared;
+    let thinking_source: Job['thinking_source'];
+    if (role === 'sonic' && place.harness !== 'bro') {
+      if (args.thinking !== undefined) thinking_source = 'explicit';
+      else {
+        const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, chain.thinking_choices));
+        if (picked !== undefined) place.thinking = picked;
+        thinking_source = picked === undefined ? 'default' : 'decision';
+      }
+    }
+    const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
+    job = {
+      ...base, ...options, place, place_key: candidate.key,
+      ...(route && { route, headless: route.mode === 'headless' || role === 'sonic' ? true : undefined }),
+      ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: chain.resume_s ?? DEFAULT_RESUME_S }),
+      create_options: {
+        cwd, ...Object.fromEntries(replayOptions.filter((key) => launchArgs[key] !== undefined).map((key) => [key, launchArgs[key]])),
+      },
+      ...(job.worktree ? { worktree: job.worktree, cwd: job.cwd } : {}),
+      ...(place.harness === 'bro' ? { bro: place } : {
+        model: candidate.model.value, thinking: place.thinking ?? candidate.thinking.value,
+        ...(thinking_source ? { thinking_source } : {}),
+        model_source: route ? candidate.model.source : hooks.modelSource ?? candidate.model.source,
+      }),
+      ...(place.harness === 'cli' ? { cli: {
+        agent: place.agent!, can_continue: (effective.harness === 'bro' ? chain.can_continue : effective.can_continue) === true,
+        idle_grace_s: (args.idle_grace_s as number | undefined) ?? chain.idle_grace_s ?? 600,
+        state_trust: candidate.state_trust ?? 'advisory',
+      } } : {}),
+    };
+    if ((base.overflow_from ?? role) === 'imp') job.imp_preset = effective.preset;
+    const briefContext = await hooks.prepare(job, place.harness === 'bro', first);
+    // Persist before dispatch: an interrupted launch must not dispatch again on retry.
+    save(job, !first);
+    if (first) hooks.onFirst(job);
+    const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
+    if ('code' in briefContext) result = { ...launchError(briefContext.error ?? 'could not prepare launch context'), preInput: true };
+    else result = await launchPlace(job, launchRole, place, dir, task, worktree, briefContext.standing, { callerToken: hooks.callerToken });
+    base.launch_agent_args = job.launch_agent_args;
+    reason = result.exit_code === 0 ? '' : launchFailure(result).reason;
+    if (reason) attempt.reason = reason;
+    attempts.push(attempt);
+    if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) {
+      job.used_place = attempt.place;
+      hooks.onUsedPlace?.();
+    }
+    const next = hooks.even && reason ? await nextEvenLaunch(hooks.even, job, result, reason) : undefined;
+    if (next) candidates.splice(index + 1, candidates.length, ...next.candidates);
+    else if (!canTryNext(job, result)) break;
+    save(job);
+  }
+  if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
+    job.route = plan.fallback;
+  return { job, result, reason };
 }
 
 function writeBrief(job: Job, dir: string, task: string, block: string, first: boolean) {

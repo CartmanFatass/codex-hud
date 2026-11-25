@@ -6,14 +6,15 @@ import { jobFiles } from '../paths.js';
 import { directory, findJob, readRow, save, settled } from '../store/job-store.js';
 
 /** A file alone is not a result: collect a settled report or account for the failure. */
-export async function waitChildReport(id: string, signal: AbortSignal, discard: (child: Job) => Promise<unknown>, stopping?: () => boolean) {
+export async function waitChildReport(id: string, discard: (child: Job) => Promise<unknown>,
+  { signal, retiring, stopping }: { signal?: AbortSignal; retiring?: AbortSignal; stopping?: () => boolean }) {
   const dir = directory(id);
   let child: Job | null = null, abandon = false;
   try {
     return await waitUntilFs<string | undefined>({
       targets: () => [{ dir, filter: file => !file || file === jobFiles.status || file === jobFiles.report || file === jobFiles.job || file === jobFiles.qa },
         ...(fs.existsSync(join(dir, jobFiles.qa)) ? [{ dir: join(dir, jobFiles.qa) }] : [])],
-      timeoutMs: Infinity, fallbackIntervalMs: 500, signal,
+      timeoutMs: Infinity, fallbackIntervalMs: 500, signal: retiring ?? signal,
       check: () => {
         child = findJob(id);
         if (!child) return { done: true, value: 'child receipt disappeared' };
@@ -33,9 +34,10 @@ export async function waitChildReport(id: string, signal: AbortSignal, discard: 
       },
     });
   } catch (error) {
+    if (retiring?.aborted) return; // Leave the live child for the next workflow host.
     child = findJob(id);
     abandon = !!child && !settled(readRow(child).row.state);
-    return signal.aborted ? 'stopped' : String(error);
+    return signal?.aborted ? 'stopped' : String(error);
   } finally {
     if (abandon && child) await discard(child);
   }

@@ -6,7 +6,6 @@ import { procStat } from '../utils/proc.js';
 import { driveWorkflow } from '../workflows/driver.js';
 import type { Run } from '../workflows/engine.js';
 import { loadGraph, type Graph } from '../workflows/graph.js';
-import { handOffInline } from '../workflows/inline.js';
 import { freezeGraph, runDir, runLock, saveHeader } from '../workflows/store.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { tickJob } from './job-step.js';
@@ -61,11 +60,11 @@ interface Effects {
 }
 /** The reserved target job is the public receipt. Batch outputs stay ordered, including
  * failures. Only target dispatch (not the worker's subsequent lifetime) belongs to this run. */
-export async function drivePrewalk(id: string, host: PrewalkRun['host'], signal: AbortSignal, effects: Effects) {
+export async function drivePrewalk(id: string, host: PrewalkRun['host'], retiring: AbortSignal, effects: Effects) {
   const dir = runDir(hudHome, id), index = join(dir, 'index.json');
   let inputs: PrewalkInputs, recovering = false;
   await driveWorkflow(hudHome, id, {
-    read: () => readPrewalk(id), header: run => run,
+    read: () => readPrewalk(id), header: run => run, retiring,
     save(run) {
       // A failed dispatch uses its existing job receipt, not a second public hand-back.
       if (run.state === 'paused') {
@@ -82,7 +81,7 @@ export async function drivePrewalk(id: string, host: PrewalkRun['host'], signal:
     },
     tick(run, key, step) {
       const collectingOrphans = recovering && step.kind === 'batch' && !fs.existsSync(index);
-      if ((run.stopping || signal.aborted) && !collectingOrphans) {
+      if (run.stopping && !collectingOrphans) {
         effects.stopped(); run.state = 'stopped';
         for (const cursor of Object.values(run.steps)) if (cursor.state === 'waiting') cursor.state = 'cancelled';
         return { state: 'cancelled', changed: true };
@@ -95,15 +94,15 @@ export async function drivePrewalk(id: string, host: PrewalkRun['host'], signal:
         }
         return { state: 'running', effect: async () => {
           const outcomes = await effects.scouts(inputs, recovering, () => !!readPrewalk(id).stopping);
-          writeJsonPrivate(index, { [key]: outcomes }); return 0;
+          // A retired wait isn't a result. The next host rebinds the keyed scouts.
+          if (!retiring.aborted) writeJsonPrivate(index, { [key]: outcomes });
+          return 0;
         } };
       }
       if (step.kind !== 'job') throw Error(`unsupported prewalk executor ${step.kind}`);
       const target = effects.targetReceipt();
       if (!target) throw Error('reserved target receipt missing');
-      return tickJob(step, target, ref => (readJsonFile(index) as Record<string, ScoutOutcome[]>)[ref], async from => {
-        handOffInline(id); await effects.launch(inputs.launch, from);
-      });
+      return tickJob(step, target, ref => (readJsonFile(index) as Record<string, ScoutOutcome[]>)[ref], from => effects.launch(inputs.launch, from));
     },
     active: run => run.state === 'working', watches: () => [], errorLine: run => run.reason ?? 'prewalk failed',
   });

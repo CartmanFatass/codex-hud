@@ -5,7 +5,7 @@ import type { Job } from '../job-contracts.js';
 import type { RequestCaller } from '../local-objectives.js';
 import * as workerTools from '../../worker/tools.js';
 import { statuslineTool, statuslineResource, readCodexStatusline } from '../codex-statusline.js';
-import { inlinePending, shutdownInline } from '../../workflows/inline.js';
+import { inlinePending, retireInline } from '../../workflows/inline.js';
 import { isWorker, hudHome, publishWorkSummary, scanForCall, writeScan, findJob } from '../store/job-store.js';
 import { locks, keyLock } from '../store/key-lock.js';
 import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js';
@@ -279,7 +279,7 @@ export function openRuntime() {
       clearTaskSweep();
       await ownerDelivery?.stop();
       await stopBatchDelivery(!handedOff);
-      await shutdownInline();
+      await retireInline();
       clearTaskMaps();
       session.createdJobs.clear(); session.cursor?.clear();
     },

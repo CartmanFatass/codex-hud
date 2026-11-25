@@ -8,7 +8,7 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { batchIndex, failuresByReason, settleItem } from '../../dist/mcp/batch-state.js';
-import { fixture, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
+import { fixture, sonicTask, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 
 const read = path => JSON.parse(fs.readFileSync(path));
 function setup(f, presets, cap = 4) {
@@ -96,6 +96,43 @@ test('pilot failure pauses once; retry_failed keeps the manifest, creates a new 
   await until(() => { const s = snapshot(); for (const i of s.items) if (i.job && i.state === 'running') release(i.job); return !s.batch.totals.running; }, t.signal);
   assert.equal(snapshot().batch.state, 'stopped'); assert.equal(snapshot().batch.totals.waiting, 0);
   assert.equal(snapshot().items[2].state, 'cancelled'); assert.equal(snapshot().items[2].job, undefined);
+});
+
+test('a scouted imp pilot reports quota refusal without rotating out of its frozen preset', { timeout: 30_000 }, async t => {
+  const f = await fixture(t, { failedRetentionMs: 60_000 });
+  sonicTask(f);
+  const home = f.env.HUD_HOME;
+  const presets = ['alpha', 'beta'].map(name => ({ name, run: [{ harness: 'pi', pi_role: 'implementer', model: `synthetic/${name}` }] }));
+  fs.writeFileSync(join(home, 'roles', 'imp.json'), JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true,
+    run: presets[1].run, active_preset: 'beta', presets }));
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: false, impPlacement: 'even', impEvenPool: ['alpha', 'beta'], roleCaps: { imp: 3 } }));
+  fs.writeFileSync(join(f.env.HOME, 'quota-pi-model'), 'synthetic/alpha');
+  const { flow, scale } = await f.call('hud_create', { role: 'imp', isolation: 'none', scouts: [{ kind: 'code', ask: 'Find the entry point.' }],
+    items: [{ task: 'Implement example A.' }, { task: 'Implement example B.' }] });
+  assert.deepEqual(scale.presets, ['alpha', 'beta']);
+  const index = () => batchIndex(home, flow), jobs = join(home, 'jobs');
+  let scoutDir;
+  await until(() => fs.readdirSync(jobs).some(id => {
+    const dir = join(jobs, id), file = join(dir, 'job.json');
+    if (!fs.existsSync(file) || read(file).prewalk_kind !== 'code' || !fs.existsSync(join(dir, 'STATUS.json'))) return false;
+    scoutDir = dir; return true;
+  }), t.signal);
+  fs.writeFileSync(join(scoutDir, 'release-sonic'), '');
+  const pilotJob = index().items[0].job;
+  const readPilot = () => read(join(jobs, pilotJob, 'job.json'));
+  await until(() => readPilot().dispatch_exit_code !== null, t.signal);
+  const receipt = readPilot();
+  assert.equal(receipt.route.preset, 'alpha');
+  assert.equal(receipt.model, 'synthetic/alpha');
+  assert.equal(receipt.attempts.length, 1, JSON.stringify(receipt));
+  assert.match(receipt.attempts[0].reason, /HTTP 429/);
+  assert.equal(receipt.used_place, undefined);
+  await until(() => index().batch.state === 'paused', t.signal);
+  const { items: [pilot, next] } = index();
+  assert.equal(pilot.preset, 'alpha');
+  assert.equal(pilot.state, 'failed');
+  assert.equal(pilot.reason, 'dispatch_failed');
+  assert.equal(next.job, undefined);
 });
 
 test('20 doomed items in a task session: pilot failure wakes once, folds peers, retries all failures as new member jobs', { timeout: 30_000 }, async t => {

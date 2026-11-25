@@ -216,6 +216,7 @@ When prewalk is enabled for a role (owner role `"prewalk": "on"|"off"`, shipped 
 - **Pick**: when the owner role declares a `pool`, HUD picks pool entries (or project design) unless `prewalk: "off"`, `prewalk: false`, `autoPrewalk` is off or `poolPick` is off.
 
 `hud_create` returns the target job ID or one MCP task immediately when scouts run; HUD waits until every scout settles (each bounded only by sonic's own `max_s`, stall and looping limits), reserves one of the 16 `from_jobs` slots per scout, attaches arrived reports via `from_jobs`, and leaves a failure note in the target brief for any failed scout without blocking the target. There is no separate scout notice, and nothing chains after the target. Passing `prewalk: false` skips prewalk (scouts and pool pick) for that job. The `hud_create` receipt, `job.json` and archive record `prewalk: [{kind, source, ask?, job?, result, ms, ...}]` with `source: "caller"` and `ask` truncated to 200 characters for scouts (old records without `ask` or with `decision`/`default` stay readable). A browser target receives attached reports and pool files subject to the usual context byte limits.
+An MCP disconnect does not cancel an accepted scouted dispatch; the watcher can resume it. An explicit job stop still cancels it before the target launches.
 
 Pass `checks` for up to five shell commands you would otherwise run yourself in the job's `cwd`.
 The HUD runs them in order with `bash -lc` after a declared pi or CLI settlement, with a ten-minute timeout per command.
@@ -420,10 +421,10 @@ If Cargo is unavailable and no matching artifact exists on a supported platform,
 
 The call returns a flow ID (one task for MCP-task clients) without waiting for the gate.
 The helper loads one build before running any steps.
-If it cannot load the build, the flow fails with `HUD was rebuilt; retry the land`.
+If it cannot load the build, the flow fails with `HUD was rebuilt; retry the land`. A ticket queue still running the old land protocol reports the same failure; restart it before retrying.
 Calling `hud_land` again returns the existing flow if it is active or has already fast-forwarded the base.
 If it failed or was cancelled before fast-forward, the call starts a new flow, keeps the old receipt under its original ID and removes the old integration worktree once it holds the lease.
-If the helper died during fast-forward and did not record its result, the call returns the failed receipt rather than retrying an unknown checkout change.
+If Git refuses the fast-forward and HUD verifies that the base tip and touched paths are unchanged, a new call can retry. If the fast-forward result is unknown (for example, the helper dies before recording it or Git times out), the call returns the failed receipt rather than retrying an unknown checkout change.
 `hud_read({job: "<flow ID>"})` gives any attempt's state, current step and per-step wall-clock `timings` (including reruns and skipped `after` rebuilds).
 The receipt records `tested_tree` (the latest green tree) and `published_tree` (the candidate tree, even if fast-forward or push does not happen).
 While another land holds the lease, the queued flow names the holder in `hud_read` and in its Inspector; when the holder is in the gate, it also shows the step number and elapsed minutes.

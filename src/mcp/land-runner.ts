@@ -340,7 +340,20 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     }
     publishing = true;
     for (const row of members) { row.publish_pending = landed; writeLand(home, row); }
-    await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
+    try {
+      await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
+    } catch (error) {
+      const refusal = error as { code?: number | string; killed?: boolean; signal?: string | null };
+      // A normal Git exit alone doesn't prove that the ref, index and files stayed put.
+      if (typeof refusal.code === 'number' && !refusal.killed && !refusal.signal) {
+        try {
+          await checkClean(landedPaths);
+          await checkMain(target);
+          for (const row of members) delete row.publish_pending; // Persist with the failure.
+        } catch { /* If either check fails, keep the interlock. */ }
+      }
+      throw error;
+    }
     const at = new Date().toISOString();
     for (const row of members) {
       if (target !== base) row.replayed_onto = target;
