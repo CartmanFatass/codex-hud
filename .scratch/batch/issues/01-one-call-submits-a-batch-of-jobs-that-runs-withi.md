@@ -11,7 +11,8 @@
 - [ ] Main receives one end notice plus individual failure/stall/question notices, and no per-member create/queued/checkpoint/settled lines.
 - [ ] hud_read on the batch flow shows totals and item→job mapping.
 - [ ] Scale is confirmed before the batch runs: submission returns a scale summary (item count, per-item input size max/median/total from the brief plus the files it names, role, placement presets the items will use, cap and max_parallel) and the batch starts with a pilot, one item on each placement preset; the remaining items start only after every pilot settles with a report. A failed or stalled pilot pauses the batch and notifies main with the failure, so a sizing error costs one item per preset, not the whole batch.
-- [ ] Tests cover admission order, reserved slots, end notice, failure passthrough, the scale summary and the pilot gate; a live run with 3–4 briefs works.
+- [ ] Each batch has its own state directory (under the batch flow, e.g. `$HUD_HOME/flows/<batch>/` or beside its flow file) holding the item manifest (brief path, input size), per-item state and job ID, and a result index (item → job, state, report path, files the job reported); main reads the batch result from this one index instead of collecting each job. HUD's batch runner is the coordinator: no model worker coordinates a batch (owner 2026-11-25). Items that change code keep today's per-job worktree rule.
+- [ ] Tests cover admission order, reserved slots, end notice, failure passthrough, the scale summary, the pilot gate and the result index; a live run with 3–4 briefs works.
 - [ ] Land gate passes.
 
 ## Comments
