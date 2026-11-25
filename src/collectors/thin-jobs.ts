@@ -492,7 +492,7 @@ function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnTy
   const statuses = new Map<string, Partial<JobStatus> | null>();
   for (const { id, dir, job, receiptAt } of receipts) {
     if (rows.length === 200) break;
-    if (job.scout_only === true || (pane !== null && jobCallerPane(job) !== pane)) continue;
+    if (job.scout_only === true || job.council || (pane !== null && jobCallerPane(job) !== pane)) continue;
     const statusRes = cache.readStatus<JobStatus>(id);
     const status = statusRes.status === 'ok' ? statusRes.value : null;
     statuses.set(id, status);

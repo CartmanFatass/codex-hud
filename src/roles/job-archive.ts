@@ -43,7 +43,7 @@ export function projectJobFacts(home: string, dir: string, id: string, job: Part
   try { question_count = getJobIndexCache(home).readQa(dir).allQuestionFiles.length; } catch { /* Unknown. */ }
   const terminal = ['idle_grace', 'done', 'closed', 'failed', 'stopped'].includes(status.state ?? '');
   const summary = terminal ? readReportMeta(dir)?.summary : undefined;
-  const harness = job.cli?.agent ?? status.agent ?? (job.bro ? 'bro' : job.jev ? 'jev' : status.harness ?? (hasJob ? 'pi' : undefined));
+  const harness = job.cli?.agent ?? status.agent ?? (job.bro ? 'bro' : job.jev ? 'jev' : status.harness ?? (hasJob && !job.council_members ? 'pi' : undefined));
   return {
     job: id, project: text(job.project_root) ?? text(job.worktree?.main_root) ?? text(job.cwd), role: text(job.role) ?? text(status.role),
     harness, model: text(job.model) ?? text(status.model), used_place: text(job.used_place),
@@ -256,6 +256,8 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
       checks: checks && { passed: checks.passed, total: checks.total, stale: checks.stale },
       repair_of: text(job.repair_of), retry_of: text(job.retry_of), sessions: sessions.length ? sessions : undefined,
       dispatcher: archiveDispatcher(job.dispatcher),
+      council: typeof job.council?.id === 'string' && /^j[0-9a-f]{16}$/.test(job.council.id) && ['member', 'synthesizer'].includes(job.council.part)
+        ? { id: job.council.id, part: job.council.part } : undefined,
       output_written: typeof status.output_written === 'boolean' ? status.output_written : undefined,
       questions: archiveQuestions(home, dir, job, status),
       experiment: typeof job.experiment === 'string' ? job.experiment : undefined,

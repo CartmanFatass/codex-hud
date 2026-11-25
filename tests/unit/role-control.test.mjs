@@ -99,7 +99,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   // Folded: a place at its limit (and where the next job goes), a role with nowhere to run, a role file that does not load; the rest are names.
   const lines = plain(s.frame(80, 'en', 64));
   const at = (re) => lines.findIndex((l) => re.test(l));
-  assert.deepEqual([...new Set(s.rows().map((r) => r.item))], ['project:role:pro', 'project:role:flow']);
+  assert.deepEqual([...new Set(s.rows().map((r) => r.item))], ['project:role:pro', 'project:role:flow', 'project:role:council']);
   assert.match(lines[at(/^Needs attention ─/)], / 3$/);
   assert.match(lines[at(/ pro /)], /^ {2}✗ pro → gemini +on$/);
   assert.match(lines[at(/ pro /) + 1], /^ {6}chatgpt exhausted 60m$/);
@@ -126,7 +126,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   assert.match(narrow, /^▸ 正常 ─+ 5$/m);
   s.session.state = select(s.session.state, 'project:fold:healthy');
   await s.press('\r');
-  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow)$/.test(i)), ['imp', 'reviewer', 'sonic', 'oracle', 'general'].map((x) => `project:role:${x}`));
+  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow|council)$/.test(i)), ['imp', 'reviewer', 'sonic', 'oracle', 'general'].map((x) => `project:role:${x}`));
   assert.match(s.text(), /^Healthy ─+ 5$/m);
   await s.press('\r');
   assert.match(s.text(), /^▸ Healthy ─+ 5$/m, 'Enter again folds them');

@@ -25,6 +25,8 @@ import {
 import { loadSettings } from '../../settings.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { waitUntilFs } from '../../utils/fs-wait.js';
+import { waitChildReport } from './child-report.js';
+import { prepareCouncil, runCouncil, type CouncilSeat } from './council.js';
 import { procStat } from '../../utils/proc.js';
 import {
   beginPrompt, cliWorkerTools, endPrompt, readTurn, saveTurn, REPORT_READ_EXIT, withDonePrompt, workerAlive, turnToken,
@@ -52,7 +54,7 @@ import { pickSonicThinking } from '../sonic-thinking.js';
 import { pickRolePool } from '../pool-pick.js';
 import { MAX_PREWALK_SCOUTS, PREWALK_SCOUT_KINDS, prewalkScoutTask, truncateScoutAsk, type PrewalkScoutRequest } from '../prewalk.js';
 import {
-  directory, readRow, hudHome, primary, jobs, readCachedStatus, findJob, settled, save, bundled,
+  directory, readRow, hudHome, primary, jobs, readCachedStatus, findJob, save, bundled,
   writeCreateStatus, queuePositionsForJobs, jobCache, digestLine, publishWorkSummary, findJobMutable, slice,
 } from '../store/job-store.js';
 import { keyLock } from '../store/key-lock.js';
@@ -231,7 +233,8 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   }
   // An explicit key can retrieve a prior job even when other arguments in the retry differ.
   const requestKey = args.request_key === undefined
-    ? derivedKey(retryOf ? 'retry' : 'create', pane, role, cwd, required(args, 'task'), retryOf)
+    ? derivedKey(retryOf ? 'retry' : 'create', pane, role, cwd, required(args, 'task'), retryOf,
+      ...(role === 'council' ? [args.members, args.synthesizer, args.context_files, args.from_jobs] : []))
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
@@ -251,8 +254,6 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
   const started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
   const ask = spec.ask ? { ask: spec.ask } : {};
-  let scout: Job | null = null;
-  let discard = false;
   try {
     const result = await dispatchWithKey(
       { role: 'sonic', task: spec.question, cwd: target.cwd, ...(spec.includeContext ? { context_files: contextFiles } : {}) },
@@ -266,55 +267,10 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
       };
     }
     const id = result.job;
-    const dir = directory(id);
-    scout = findJob(id);
-    return await waitUntilFs<ScoutOutcome>({
-      targets: () => [
-        {
-          dir,
-          filter: (file) => !file || file === jobFiles.status || file === jobFiles.report || file === jobFiles.job || file === jobFiles.qa,
-        },
-        ...(fs.existsSync(join(dir, jobFiles.qa)) ? [{ dir: join(dir, jobFiles.qa) }] : []),
-      ],
-      timeoutMs: Infinity,
-      fallbackIntervalMs: 500,
-      signal,
-      check: () => {
-        scout = findJob(id);
-        if (!scout) {
-          return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: 'scout receipt disappeared', ms: elapsed() } };
-        }
-        const { row, reportStamp } = readRow(scout);
-        if (signal.aborted) {
-          discard = !settled(row.state);
-          return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: 'stopped', ms: elapsed() } };
-        }
-        if (settled(row.state)) {
-          if (row.state === 'failed' || row.state === 'stopped') {
-            return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: row.reason ?? row.state, ms: elapsed() } };
-          }
-          if (!row.report_present) {
-            return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: 'settled without a report', ms: elapsed() } };
-          }
-          save({ ...scout }, false, reportStamp);
-          return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, ms: elapsed() } };
-        }
-        if (row.open_questions || row.blocked || row.state === 'waiting_orchestrator') {
-          discard = true;
-          return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: row.open_questions ? 'asked a question' : row.reason ?? 'needed attention', ms: elapsed() } };
-        }
-        return { done: false };
-      },
-    });
+    const failure = await waitChildReport(id, signal, child => stopSonic(directory(child.job)).catch(() => ensureWatcher()));
+    return { kind: spec.kind, source: spec.source, ...ask, id, failure, ms: elapsed() };
   } catch (error) {
-    if (signal.aborted) {
-      discard = !!scout && !settled(readRow(scout).row.state);
-      return { kind: spec.kind, source: spec.source, ...ask, ...(scout && { id: scout.job }), failure: 'stopped', ms: elapsed() };
-    }
-    discard = !!scout;
-    return { kind: spec.kind, source: spec.source, ...ask, ...(scout && { id: scout.job }), failure: error instanceof Error ? error.message : String(error), ms: elapsed() };
-  } finally {
-    if (discard && scout) await stopSonic(directory(scout.job)).catch(() => ensureWatcher());
+    return { kind: spec.kind, source: spec.source, ...ask, failure: signal.aborted ? 'stopped' : String(error), ms: elapsed() };
   }
 }
 
@@ -405,7 +361,8 @@ async function nextEvenLaunch(even: ReturnType<typeof evenPlanner>, job: Job, re
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<Job, 'job' | 'objective'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit, dispatcher }: {
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit, dispatcher, seat, council }: {
+    seat?: CouncilSeat; council?: Job['council'];
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
     ticketQueue?: string; canAdmit?: () => boolean; dispatcher?: Job['dispatcher'];
   } = {}) {
@@ -456,7 +413,14 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     return { ok: false, code: 'invalid_arguments', error: `scouts reserve ${scoutsArg.length} of the 16 from_jobs entries` };
   }
   let role = requestedRole;
-  const definition = configured.get(role);
+  if ((args.members !== undefined || args.synthesizer !== undefined) && role !== 'council')
+    return { ok: false, code: 'invalid_arguments', error: 'members and synthesizer are council-only' };
+  // An internal seat is the resolved council preset, not the general/pro role’s launch chain.
+  const councilRole = seat && configured.get('council');
+  if (seat && (!councilRole || councilRole.optionalEnabled === false || (seat.place.harness === 'bro' && !configured.get('pro')?.optionalEnabled)))
+    return { ok: false, code: 'role_unavailable', reason: 'Council or its browser role is no longer enabled' };
+  const definition = seat && councilRole ? { ...councilRole, role, run: [seat.place], preset: null, presets: [], skills: seat.place.skills,
+    members: undefined, can_continue: false } : configured.get(role);
   if (definition?.optionalEnabled === false) return { ok: false, code: 'role_unavailable',
     reason: `Optional role ${role} is off. Turn it on in Control → Roles (Space), or configure it in $HUD_HOME/role-switches.json.` };
   if (!definition) {
@@ -466,7 +430,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   let prewalkSettings;
   try { prewalkSettings = loadSettings({ ...process.env, HUD_HOME: hudHome }); } catch { /* Missing handled by loadSettings; malformed skips auto prewalk. */ }
   const requireScouts = Boolean(prewalkSettings?.autoPrewalk) && args.prewalk !== false && !landCwd && !repairOf && !retryInput && !ticketQueue
-    && definition.prewalk === 'on' && role !== 'sonic';
+    && definition.prewalk === 'on' && role !== 'sonic' && role !== 'council';
   if (requireScouts && scoutsArg === undefined) {
     return {
       ok: false,
@@ -483,7 +447,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
     const name = from.instructions ?? from.role;
     borrowed = { instructions_from: from.role, borrowed_instructions: { name,
-      pi_role: from.run.find(p => p.harness === 'pi')?.pi_role ?? name } };
+      pi_role: seat?.place.pi_role ?? from.run.find(p => p.harness === 'pi')?.pi_role ?? name } };
   }
   const now = Date.now();
   const existing = jobs().find((job) =>
@@ -553,6 +517,43 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const contextCwd = scoutContextCwd ?? cwd;
   let pool: Awaited<ReturnType<typeof pickRolePool>> | undefined;
   const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf, pool?.pool_files);
+  if (role === 'council') {
+    const allowed = ['role', 'task', 'cwd', 'request_key', 'members', 'synthesizer', 'context_files', 'from_jobs', 'retry_of'];
+    const extra = Object.keys(args).find(k => args[k] !== undefined && !allowed.includes(k));
+    if (extra || parent || repairOf || ticketQueue) return { ok: false, code: 'invalid_arguments', error: `Council is a standalone fixed flow; unsupported: ${extra ?? 'nested dispatch'}` };
+    const councilPlan = prepareCouncil(args, definition, found, configured, routing);
+    if ('code' in councilPlan) return councilPlan;
+    const context = await contextFor(args, false);
+    if ('code' in context) return context;
+    const members = councilPlan.members.map(s => s.preset);
+    const synthesizer = councilPlan.synthesizer === 'main' ? 'main' : councilPlan.synthesizer.preset;
+    const base: Job = { job: id, role, cwd, project_root: projectRoot, caller_pane: pane, request_key, created_at: new Date().toISOString(), dispatcher,
+      task_length: task.length, dispatch_exit_code: 0, stderr_tail: '', ...context.metadata, ...(retryInput && { retry_of: required(retryInput, 'retry_of') }),
+      council_members: members.map(preset => ({ preset })), synthesizer, create_options: { members, synthesizer } };
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writePrivateFile(join(dir, jobFiles.brief), `${task}\n\n${context.block}`);
+    save(base);
+    writeCreateStatus(dir, { state: 'working', reason: 'Council in progress' });
+    trackCreatedJob(id);
+    const row = readRow(base).row;
+    session.cursor.set(id, row);
+    ensureWatcher();
+    const entry = session.taskClient ? beginTask(base) : undefined;
+    if (!entry) void ensureQueueWatcher(pane, hudHome);
+    const reply = finishTask(entry, base, true) ?? created(base, row);
+    const controller = new AbortController();
+    pendingScouts.set(id, controller);
+    const running = runCouncil(base, councilPlan, task, async (seat, part, childArgs): Promise<{ job?: string; failure?: string }> => {
+      const role = seat.place.harness === 'bro' ? 'pro' : 'general';
+      const result = await dispatchWithKey({ ...childArgs, role, cwd, prewalk: false }, jobCallerPane(base), `council:${id}:${randomBytes(8).toString('hex')}`, false,
+        base, undefined, undefined, { dispatcher, seat, council: { id, part } });
+      return 'job' in result ? { job: result.job } : { failure: [('code' in result && result.code), ('reason' in result && result.reason) || ('error' in result && result.error)].filter(Boolean).join(': ') || 'could not launch' };
+    }, controller.signal);
+    scoutedCreates.add(running);
+    const release = () => { pendingScouts.delete(id); scoutedCreates.delete(running); };
+    void running.then(release, release);
+    return reply;
+  }
   const imp = requestedRole === 'imp' || fromImp;
   const sonic = requestedRole === 'sonic';
   const settings = (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
@@ -746,6 +747,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(ticketQueue && { ticket_queue: ticketQueue }),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),
+      ...(council && seat && { council, preset: seat.preset }),
       ...(first.route && { route: first.route }),
       ...(role === 'sonic' || first.route?.mode === 'headless' || args.mode === 'headless' ? { headless: true } : {}),
       ...(scoutContextCwd === undefined ? {} : { scout_only: true }),
@@ -859,14 +861,14 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           const source = findJob(job.retry_of);
           if (source) save({ ...source, observed_at: new Date().toISOString() });
         }
-        if (parentJob && !job.scout_only) {
+        if (parentJob && !job.scout_only && !job.council) {
           const children = join(directory(parentJob), jobFiles.sonic);
           fs.mkdirSync(children, { recursive: true, mode: 0o700 });
           fs.writeFileSync(join(children, id), '', { mode: 0o600, flag: 'wx' });
         } else if (!parentJob) trackCreatedJob(id);
         ensureWatcher();
         if (session.taskClient && !parentJob && !scoutTask) taskEntry = beginTask(job);
-        else if (!scoutTask && !job.scout_only) void ensureQueueWatcher(pane, hudHome);
+        else if (!scoutTask && !job.scout_only && !job.council) void ensureQueueWatcher(pane, hudHome);
       }
       const launchRole = effective.preset ? { ...chain, skills: place.skills } : chain;
       if (hasScouts && attempts.length === 0) {
@@ -1441,7 +1443,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   const matchKey = explicitKey ?? derivedKey('send', id, message);
   let current = findJobMutable(id);
   if (!current) return { ok: false, code: 'job_not_found' };
-  if (current.role === 'sonic') return { ok: false, code: 'not_continuable' };
+  if (current.role === 'sonic' || current.role === 'council' || current.council) return { ok: false, code: 'not_continuable' };
   const dir = directory(current.job);
   const now = Date.now();
   const duplicate = explicitKey === undefined

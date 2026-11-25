@@ -197,6 +197,7 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
 }
 
 export async function startSonic({ dir, job: parent }: Pick<Worker, 'dir' | 'job'>, task: string, cwd?: unknown) {
+  if (parent.council) throw new Error('council participants write plans without starting other jobs');
   if (parent.role === 'sonic') throw new Error('a sonic worker cannot start sonic');
   if (!task.trim()) throw new Error('the sub-task is empty');
   let status: Partial<JobStatus> | undefined;
@@ -471,6 +472,7 @@ function orchestrator(dir: string) {
 }
 
 export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: QuestionInput, timeoutRaw = process.env.HUD_ASK_TIMEOUT, signal?: AbortSignal) {
+  if (job.council) throw new Error('list open questions in your council report');
   if (job.role === 'sonic') throw new Error('sonic cannot ask questions');
   signal?.throwIfAborted();
   const tag = `${typeof job.role === 'string' ? job.role : 'cli'}@${basename(job.cwd || dir)}`;

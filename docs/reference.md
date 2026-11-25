@@ -410,7 +410,11 @@ The helper survives a watcher restart; an interrupted helper is reported, not re
 Receipts live under `$HUD_HOME/flows/`.
 
 A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s` (CLI quiet-job grace, default 600), optional `resume_s` (default 1620 seconds; `0` disables native resume), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude` or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place files load as `run[0]` and `"harness": "jev"` loads as `"bro"`.
-Shipped roles: `imp` (`pi` implementer), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one), plus the optional `pro` (`chatgpt`, `gemini`, `argon`) and `flow` (`jev-flow`) roles.
+Shipped roles: `imp` (`pi` implementer), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one), plus the optional `council`, `pro` (`chatgpt`, `gemini`, `argon`) and `flow` (`jev-flow`) roles.
+**Council** is for an explicit owner request for independent plans. `hud_create({role: "council", task, cwd})` starts the configured `members` in parallel (default: `fable`, `astra`, `carbon`, with `oracle` instructions). Use `brief_file` instead of `task`, or pass `context_files` and `from_jobs`. In `$HUD_HOME/roles/council.json`, define ordinary named `presets` and choose the `members` and `synthesizer` defaults; either choice can be overridden per call (2–5 member names; synthesis defaults to `pro`). HUD refuses unavailable choices before launching anyone. Local members get the original context references; browser members get the borrowed instructions and a GitHub index instead of original attachment bodies. The index uses the repository, commit and paths from local remote-tracking evidence, without fetching; changed, untracked and unverifiable files are marked `local-only`.
+
+After all members settle, two or more reports suffice. The synthesis brief names failures and requests one converged plan, a disagreement table with choices and reasons, and open questions. Browser synthesis requires `pro` enabled and gets the original task, GitHub index, member reports and standard standing brief (64 KiB per inlined file, 256 KiB total; `context_too_large` fails the council). Local synthesis gets the member reports and original `context_files` as references. With `synthesizer: "main"`, no synthesis job starts: `hud_read({job})` returns the member IDs, digests and synthesis instructions. Otherwise read the synthesis like any job report (`mode: "full"` for the text). Only the council delivers a notice or MCP task; nothing chains after it.
+
 Optional roles are off by default: `hud_roster` omits them and `hud_create` refuses them with an enablement hint.
 An existing valid role file under `$HUD_HOME/roles` enables the role by name unless an explicit switch says otherwise.
 A `cli` place requires `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), otherwise `hud_create` returns `unsupported_harness`.
@@ -872,7 +876,7 @@ A detailed `hud_roster` returns the effective `run`, `preset` and merged `preset
 Only `general` can use `hud_create(preset: …)` to select a named chain for one job without saving it.
 
 In **Control → Roles**, off optional roles are listed under **Optional roles**.
-Select `pro` or `flow` and press Space (or click the footer's **Space on/off**) to toggle it for all projects.
+Select `council`, `pro` or `flow` and press Space (or click the footer's **Space on/off**) to toggle it for all projects.
 This atomically writes `$HUD_HOME/role-switches.json` (mode 0600) without touching role files.
 To set it by hand, use a JSON object such as `{ "pro": true, "flow": false }`; remove a key to fall back to whether an owner role file defines it.
 A project's role allowlist still applies; it cannot turn a globally off role on.

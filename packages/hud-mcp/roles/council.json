@@ -1,0 +1,13 @@
+{
+  "role": "council",
+  "optional": true,
+  "instructions": "oracle",
+  "members": ["fable", "astra", "carbon"],
+  "synthesizer": "pro",
+  "presets": [
+    { "name": "fable", "run": [{ "harness": "cli", "agent": "claude", "model": "claude-fable-5-2", "thinking": "high" }] },
+    { "name": "astra", "run": [{ "harness": "pi", "pi_role": "architect", "model": "openai/gpt-6.2-astra", "thinking": "high" }] },
+    { "name": "carbon", "run": [{ "harness": "cli", "agent": "agy", "model": "gemini-4-carbon-high" }] },
+    { "name": "pro", "run": [{ "harness": "bro", "tool": "jev-ask", "provider": "chatgpt", "model": "6 Pro", "effort": "6 Pro" }] }
+  ]
+}

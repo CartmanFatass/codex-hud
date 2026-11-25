@@ -30,13 +30,15 @@ export const ROLE_TOOLS = [
   }),
   tool(
     'hud_create',
-    'Placement: role files/Control. Single general job only: preset/on/model/thinking. Options: hud_roster(detail:true).',
+    'Role-file placement; only general takes preset/on/model/thinking.',
     {
       role: text,
-      request_key: { ...text, description: 'Repeat key; omit for 10m dedupe.' },
+      request_key: { ...text, description: 'Omit for 10m dedupe.' },
       task: text,
       brief_file: { ...text, description: 'UTF-8 task file within cwd.' },
-      preview: { ...text, maxLength: 260, description: 'Relative HTML path; opened on report.' },
+      members: { type: 'array', items: text, minItems: 2, maxItems: 5, description: 'Council presets.' },
+      synthesizer: { ...text, description: 'Council synthesis preset or main.' },
+      preview: { ...text, maxLength: 260, description: 'Relative HTML preview path.' },
       jobs: {
         type: 'array',
         minItems: 1,
@@ -63,7 +65,7 @@ export const ROLE_TOOLS = [
         type: 'array',
         items: { ...text, pattern: '^j[0-9a-f]{16}$' },
         maxItems: 16,
-        description: 'Report context without marking read.',
+        description: 'Reports; not marked read.',
       },
       isolation: {
         type: 'string',
@@ -76,7 +78,7 @@ export const ROLE_TOOLS = [
       on: { ...text, description: 'pi|agy|claude|codex|grok|chatgpt|gemini|argon|flow.' },
       preset: { ...text, description: 'Preset name; excludes on.' },
       instructions: { ...text, description: 'Borrow role (general only).' },
-      kind: { type: 'string', enum: ['image', 'video'], description: 'Flow only (default image).' },
+      kind: { type: 'string', enum: ['image', 'video'], description: 'Flow; default image.' },
       model: { ...text, description: 'Model (pi/CLI).' },
       thinking: { ...text, description: 'Thinking effort (pi/CLI).' },
       lens: { ...bool, description: 'Pi: pi-lens.' },

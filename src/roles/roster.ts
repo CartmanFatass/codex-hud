@@ -66,6 +66,8 @@ export interface Role extends Partial<SonicLimits> {
   /** Defined only for shipped optional roles, independently of the winning definition. */
   optionalEnabled?: boolean;
   instructions?: string;
+  members?: string[];
+  synthesizer?: string;
   mcp_servers?: string[];
   harness: 'pi' | 'bro' | 'cli';
   run: RolePlace[];
@@ -259,9 +261,16 @@ function roleReason(value: unknown): string | null {
           !validPresetName(preset.name)) return 'bad preset name';
       if (names.has(preset.name)) return `duplicate preset ${preset.name}`;
       names.add(preset.name);
-      const reason = runReason(preset.run, raw.instructions, raw.can_continue);
+      if (raw.role === 'council' && preset.name === 'main') return 'main is reserved for the main session';
+      const reason = runReason(preset.run, raw.instructions, raw.role === 'council' ? false : raw.can_continue);
       if (reason) return `preset ${preset.name}: ${reason}`;
     }
+  }
+  if (raw.role === 'council') {
+    if (!Array.isArray(raw.members) || raw.members.length < 2 || raw.members.length > 5 || !raw.members.every(validPresetName))
+      return 'council requires 2–5 member preset names';
+    if (raw.synthesizer !== undefined && !validPresetName(raw.synthesizer)) return 'bad council synthesizer';
+    return null;
   }
   if (raw.run !== undefined) return runReason(raw.run, raw.instructions, raw.can_continue);
   const checked = placeReason(value, raw.instructions, true);
@@ -274,6 +283,7 @@ export function projectReason(value: unknown): string | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return 'unparseable JSON';
   const raw = value as Record<string, unknown>;
   if (typeof raw.role !== 'string' || !raw.role.trim()) return 'missing role';
+  if (raw.role === 'council') return 'council is only configured by the owner';
   if (raw.pool !== undefined) return 'pool is only allowed in owner role files';
   if (raw.prewalk !== undefined) return 'prewalk is only allowed in owner role files';
   if (raw.run === undefined && normalizeHarness(raw.harness) !== 'pi')
@@ -316,7 +326,10 @@ function normalizePlace(raw: Partial<RolePlace>, instructions?: string): RolePla
 }
 function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
   const rawInstructions = typeof parsed.instructions === 'string' ? parsed.instructions.trim() : undefined;
-  const rawRun = Array.isArray(parsed.run) ? (parsed.run as Partial<RolePlace>[]) : [parsed as Partial<RolePlace>];
+  const council = parsed.role === 'council';
+  // The primary place is used for roster display; dispatch resolves every seat by preset name.
+  const places = council ? (parsed.presets as RolePreset[] | undefined)?.[0]?.run ?? parsed.run : parsed.run;
+  const rawRun = Array.isArray(places) ? places as Partial<RolePlace>[] : [parsed as Partial<RolePlace>];
   const run = rawRun.map((item) => normalizePlace(item, rawInstructions));
   const primary = run[0]!;
   const instructions =
@@ -335,6 +348,7 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     ...(instructions !== undefined ? { instructions } : {}),
     ...primaryFields(primary),
     run,
+    ...(council ? { members: parsed.members as string[], instructions: rawInstructions ?? 'oracle', synthesizer: String(parsed.synthesizer ?? 'pro') } : {}),
     ...(parsed.mcp_servers === undefined ? {} : { mcp_servers: parsed.mcp_servers as string[] }),
     ...(parsed.thinking_choices === undefined ? {} : { thinking_choices: parsed.thinking_choices as Record<string, string> }),
     ...(parsed.routing === undefined ? {} : { routing: parsed.routing as RoleRouting }),
@@ -599,14 +613,17 @@ export function roleRegistry(
           if (reason) invalid.push({ path, reason });
           continue;
         }
-        const reason = projectFile ? projectReason(parsed) : roleReason(parsed);
+        // A council override can add a single named preset without restating the shipped defaults.
+        const prior = namedRole(parsed) === 'council' && layers.get('council')?.at(-1)?.file;
+        const effective = prior ? { members: prior.members, synthesizer: prior.synthesizer, instructions: prior.instructions, run: prior.run, ...parsed as Record<string, unknown> } : parsed;
+        const reason = projectFile ? projectReason(effective) : roleReason(effective);
         if (reason) {
           const role = namedRole(parsed);
           invalid.push(role ? { path, reason, role } : { path, reason });
           continue;
         }
         const raw = parsed as RoleLayer['raw'];
-        const definition = normalizeRole(raw, path);
+        const definition = normalizeRole(effective as Record<string, unknown>, path);
         const stack = layers.get(definition.role) ?? [];
         stack.push({ file: definition, raw });
         layers.set(definition.role, stack);
@@ -635,7 +652,12 @@ export function roleRegistry(
       const presets = [...merged.values()].map(({ preset }) => preset);
       const selected = raw.active_preset ? merged.get(raw.active_preset)?.preset : undefined;
       let role = { ...file, presets };
-      if (selected) {
+      if (file.members) {
+        // Council runs its chosen presets separately, never as a failover chain of members.
+        const first = merged.get(file.members[0])?.preset ?? presets[0];
+        if (!first) { invalid.push({ role: name, path: file.source_file, reason: 'council has no presets' }); continue; }
+        role = { ...role, ...primaryFields(first.run[0]), run: first.run };
+      } else if (selected) {
         // Launch fields follow the effective chain; the winning file still owns the role metadata.
         const { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file, routing } = file;
         role = { role: name, instructions, mcp_servers, idle_grace_s, resume_s, source_file, routing, presets, run: selected.run,
@@ -760,12 +782,13 @@ export function roleRegistry(
       agent: active.harness === 'cli' ? active.agent : undefined,
       ...(active.harness === 'cli' ? { state_trust: activeEntry.state_trust } : {}),
       accepts_options: [
+        ...(role.members ? ['members', 'synthesizer'] : []),
         ...(role.role === 'general' ? [
           'on', 'instructions',
           ...((role.presets?.length ?? 0) > 0 ? ['preset'] : []),
           ...(active.harness === 'bro' ? [] : ['model', 'thinking']),
         ] : []),
-        ...(active.harness === 'pi' ? [...piSwitches, 'pi_args'] : active.harness === 'bro' && active.tool === 'jev-flow' ? ['kind'] : []),
+        ...(role.members ? [] : active.harness === 'pi' ? [...piSwitches, 'pi_args'] : active.harness === 'bro' && active.tool === 'jev-flow' ? ['kind'] : []),
       ],
       available: chosen !== null,
       ...(chosen ? {} : {

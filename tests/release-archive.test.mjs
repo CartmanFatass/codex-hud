@@ -286,7 +286,7 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
   const roster = JSON.parse(replies.find(reply => reply.id === 3).result.content[0].text);
   const rolesDir = path.join(tree, 'packages/hud-mcp/roles');
   const shipped = fs.readdirSync(rolesDir).map(name => json(path.join(rolesDir, name)));
-  assert.deepEqual(shipped.filter(role => role.optional).map(role => role.role).sort(), ['flow', 'pro']);
+  assert.deepEqual(shipped.filter(role => role.optional).map(role => role.role).sort(), ['council', 'flow', 'pro']);
   assert.deepEqual(roster.roles.map(role => role.role).sort(), shipped.filter(role => !role.optional).map(role => role.role).sort());
   assert.equal(roster.convention.path, path.join(tree, 'packages/hud-mcp/hud-convention.md'));
   assert.ok(roster.convention.text.length > 100);

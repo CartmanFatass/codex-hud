@@ -78,10 +78,10 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.control.find((r) => r.label === 'convention').path, join(f.cwd, 'hud-convention.md'));
   // Roles live on `roles` now, grouped for the page: browser tasks apart, the project's own files marked.
   assert.deepEqual(f.data.roles.map((r) => [r.role, r.group]), [['imp', 'roles'], ['reviewer', 'roles'], ['sonic', 'roles'],
-    ['oracle', 'roles'], ['pro', 'browser'], ['flow', 'browser'], ['general', 'roles']]);
+    ['oracle', 'roles'], ['pro', 'browser'], ['flow', 'browser'], ['council', 'roles'], ['general', 'roles']]);
   assert.deepEqual(first('oracle').places.map((p) => [p.label, p.model, p.state]),
     [['claude', 'fable', 'missing'], ['pi', null, 'active']]);
-  for (const name of ['pro', 'flow']) {
+  for (const name of ['pro', 'flow', 'council']) {
     assert.equal(first(name).optionalEnabled, false);
     assert.deepEqual(first(name).places, []);
   }

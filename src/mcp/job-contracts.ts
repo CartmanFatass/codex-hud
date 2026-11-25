@@ -105,6 +105,10 @@ export interface Job extends PiOptions {
   read_at?: string;
   read_report_stamp?: string;
   parent_job?: string;
+  council?: { id: string; part: 'member' | 'synthesizer' };
+  council_members?: { preset: string; job?: string; failure?: string; digest?: string }[];
+  synthesizer?: string;
+  synthesis_job?: string;
   scout_only?: true;
   scout_state?: 'scouting' | 'done' | 'failed';
   scout_error?: string;

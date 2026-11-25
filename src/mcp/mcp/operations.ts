@@ -22,6 +22,7 @@ import { readFileBounded, writePrivateFile } from '../../utils/atomic-fs.js';
 import { waitUntilFs, type WatchTarget } from '../../utils/fs-wait.js';
 import { reportReadHint } from '../../utils/report-summary.js';
 import { required, jobCwd, type Args } from '../dispatch/context.js';
+import { prepareCouncil, synthesisTemplate } from '../dispatch/council.js';
 import { sendJob, dispatchJob, resumeJob, pendingScouts } from '../dispatch/orchestrator.js';
 import { registry, harnessSwitchFailure, compactAssignment } from '../dispatch/places.js';
 import { paneText, ensureWatcher } from '../dispatch/proc.js';
@@ -362,6 +363,10 @@ function observation(
       job: currentJob.job,
       role: currentJob.role,
       ...(currentJob.overflow_from ? { overflow_from: currentJob.overflow_from } : {}),
+      ...(currentJob.council && { council: currentJob.council }),
+      ...(currentJob.council_members && { members: currentJob.council_members, synthesizer: currentJob.synthesizer,
+        ...(currentJob.synthesis_job && { synthesis_job: currentJob.synthesis_job }),
+        ...(currentJob.synthesizer === 'main' && row.display_state === 'done' && { synthesis_template: synthesisTemplate }) }),
       ...(currentJob.instructions_from && { instructions_from: currentJob.instructions_from }),
       ...(currentJob.route && { route: currentJob.route }),
       state: detail ? row.state : row.state ?? row.display_state,
@@ -501,8 +506,15 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
       if (error instanceof HarnessSwitchError) return harnessSwitchFailure(error);
       throw error;
     }
-    const roles = [...found.roles().values()].map((role) => {
+    const configured = found.roles(true);
+    const roles = [...configured.values()].filter(role => role.optionalEnabled !== false).map((role) => {
       const assignment = found.assignment(role, now, undefined, routing);
+      if (role.members) {
+        const defaults = prepareCouncil({}, role, found, configured, routing);
+        return { ...(detail ? assignment : { role: role.role, presets: role.presets?.map(p => p.name) }),
+          members: role.members, synthesizer: role.synthesizer, instructions: role.instructions, available: !('code' in defaults),
+          ...('code' in defaults && { reason: defaults.reason }) };
+      }
       if (!detail) return compactAssignment(assignment);
       return role.role === 'imp' && assignment.routing ? {
         ...assignment,
@@ -778,7 +790,7 @@ export async function closeJob(job: Job, stop = false) {
   if (scouting) {
     recordStopOrigin(dir, 'mcp', readCachedStatus(job.job).status?.state, undefined, jobCache);
     scouting.abort();
-    return { exit_code: 0, last_line: 'stopping scouted dispatch' };
+    return { exit_code: 0, last_line: job.role === 'council' ? 'stopping council' : 'stopping scouted dispatch' };
   }
   let { row, status } = readRow(job);
   if (row.state === 'queued' && !fs.existsSync(join(dir, jobFiles.session))) {

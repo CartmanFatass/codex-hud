@@ -302,7 +302,11 @@ HUD 勾选验收项，并在评论中写入 `Landed in this commit`、重放基�
 角色文件定义 `role`、`instructions`、`can_continue`、可选 `idle_grace_s`（CLI 静默任务宽限，默认 600 秒）、可选 `resume_s`（默认 1620 秒，`0` 禁用原生恢复）及有序的 `run` 位置列表，支持 `pi`、`cli`（`grok`、`agy`、`claude` 或 `codex`）与 `bro`（`jev-ask`、`jev-aistudio`、`jev-flow`）；
 旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。
 内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；
-没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、以及可选角色 `pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。
+没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、以及可选角色 `council`、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。
+**Council（会商）** 只在所有者明确要求独立方案时使用。`hud_create({role: "council", task, cwd})` 并行启动 `members`（默认 `fable`、`astra`、`carbon`，借用 `oracle` 只读指令）。可用 `brief_file` 代替 `task`，也可附上 `context_files`、`from_jobs`。在 `$HUD_HOME/roles/council.json` 中定义命名 `presets`，设置默认 `members` 和 `synthesizer`；单次调用可覆盖这两项（2–5 个成员，默认由 `pro` 综合）。任何所选预设不可用时，在启动前拒绝。本地成员收到原始上下文引用；浏览器成员收到借用的指令和 GitHub 文件索引，不内联原始附件正文。索引依据本地远程跟踪记录给出仓库、提交和路径，不执行 fetch；有修改、未跟踪或无法验证的文件标为 `local-only`。
+
+全部成员结束后，少于两份报告则失败；否则综合简报列出失败成员，要求写一份收敛方案、含取舍及理由的分歧表，以及待所有者确认的问题。浏览器综合要求启用 `pro`，收到原任务、GitHub 索引、成员报告及项目常规简报（内联文件每个上限 64 KiB、总计 256 KiB，超限以 `context_too_large` 失败）。本地综合收到成员报告和原 `context_files` 的本地引用。选 `synthesizer: "main"` 时不启动综合任务，`hud_read({job})` 返回成员任务 ID、报告摘要和综合模板，供主会话自行综合；否则像普通报告一样读取综合结果（`mode: "full"` 返回正文）。整个流程只有一条通知或一个 MCP 任务，结束后不再串联其他工作。
+
 可选角色默认停用：`hud_roster` 不列出，`hud_create` 拒绝派发并提示如何启用。
 `$HUD_HOME/roles` 中定义同名角色的有效文件会启用该角色，除非显式开关另有设置。
 在 `cli` 位置启动需要 `instructions/<instructions>.md`（内置 `implementer.md` 与只读 `reviewer.md`、`oracle.md`），缺失时返回 `unsupported_harness`。
@@ -887,7 +891,7 @@ Agy 的交互模式没有对应的系统提示参数，也不能按次严格选�
 只有 `general` 能用 `hud_create(preset: …)` 为单次任务选取预设，不保存。
 
 在**控制 → 角色**中，停用的可选角色列在**可选角色**下。
-选中 `pro` 或 `flow` 后按空格（或点击页脚的 **Space 开关**），即可为所有项目切换该角色。
+选中 `council`、`pro` 或 `flow` 后按空格（或点击页脚的 **Space 开关**），即可为所有项目切换该角色。
 此操作原子写入 `$HUD_HOME/role-switches.json`（权限 0600），不改动角色文件。
 手动设置可使用 `{ "pro": true, "flow": false }` 这样的 JSON 对象；
 移除某个键后，是否启用取决于是否有用户角色文件定义该角色。

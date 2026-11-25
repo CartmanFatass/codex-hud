@@ -74,7 +74,8 @@ export function ownsJob(job: Job) {
   return !job.scout_only && (callerPane ? jobCallerPane(job) === callerPane : session.createdJobs.has(job.job));
 }
 export function sessionJobs(scan: JobScan) {
-  const own = scan.all().filter(ownsJob);
+  // Council participants are directly readable, but implicit waits and changes track the parent.
+  const own = scan.all().filter(job => !job.council && ownsJob(job));
   return own.length ? own.filter(projectJobFilter(process.cwd())) : own;
 }
 export function sessionRows(markExhaustion: boolean, scan = scanForCall()): JobRow[] {
