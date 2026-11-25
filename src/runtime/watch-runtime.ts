@@ -502,9 +502,23 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   entry.snapshot = snapshot;
   const exit = signal.aborted ? 'aborted' : result.exitCode ?? result.reason;
   const groupIssue = result.groupCleanupIssue?.replace(/^group \d+ /, 'reaper group ');
+  let reapReason = !result.ok && !signal.aborted && result.reason !== 'aborted'
+    ? result.stderr.trim().split('\n').map(line => line.trim()).filter(Boolean).at(-1) ?? ''
+    : '';
+  if (reapReason) {
+    if (reapReason.startsWith('hud-reap: ')) reapReason = reapReason.slice('hud-reap: '.length);
+    if (reapReason.startsWith(`${dir}: `)) reapReason = reapReason.slice(dir.length + 2);
+    else {
+      try {
+        const real = fs.realpathSync(dir);
+        if (reapReason.startsWith(`${real}: `)) reapReason = reapReason.slice(real.length + 2);
+      } catch { /* Keep the diagnostic as-is if the job dir is gone. */ }
+    }
+    reapReason = reapReason.replace(/[\r\n\x00-\x1f]+/g, ' ').trim().slice(0, 240);
+  }
   const message = () => {
     const noted = snapshotIssueForLog(id, dir, issue);
-    return `reap ${id} state=${status.state} exit=${exit}; ${noted ? `${noted}; ` : ''}${groupIssue ? `${groupIssue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
+    return `reap ${id} state=${status.state} exit=${exit}; ${reapReason ? `${reapReason}; ` : ''}${noted ? `${noted}; ` : ''}${groupIssue ? `${groupIssue}; ` : ''}${UNVERIFIED_TREE_NOTE}`;
   };
   if (signal.aborted || result.reason === 'aborted') { log(message()); return; }
   const refusal = result.exitCode === 1 &&

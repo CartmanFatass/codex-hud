@@ -25,6 +25,7 @@ import { progress } from './progress.js';
 import { runWorkerChecks } from './checks.js';
 
 export { progress } from './progress.js';
+export { recordStartupShellSession } from '../runtime/tab-shell.js';
 
 let dispatchModule: Promise<typeof import('../mcp/dispatch/orchestrator.js')> | undefined;
 const idPattern = /^j[0-9a-f]{16}$/;

@@ -226,6 +226,22 @@ test('unresolved worker-tree warnings are logged once per job across changing re
   assert.deepEqual(dirs.map(count), [1, 1]);
 });
 
+test('watch.log carries the reaper refusal reason on exit 1', { timeout: 60000 }, async (t) => {
+  const f = fixture(t), dir = f.job(closed(), {}, true);
+  reapStub(f, `
+console.error('hud-reap: ' + dir + ': active post-worker process remains in shell session; not closing');
+process.exitCode = 1;`);
+  const { child, exited } = f.start("process.env.HUD_WATCH_CLI_CHECK_MS = '30';");
+  const log = () => text(join(f.home, 'watch.log'));
+  await until(() => log().includes(`reap ${basename(dir)} state=closed exit=1;`), t.signal);
+  const line = log().split('\n').find(l => l.includes(`reap ${basename(dir)} state=closed exit=1;`));
+  assert.ok(line, log());
+  assert.match(line, /active post-worker process remains in shell session; not closing/);
+  assert.doesNotMatch(line, /hud-reap:/);
+  child.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+});
+
 test('overlapping watcher startups publish only one ready PID', async (t) => {
   const f = fixture(t);
   f.job({ state: 'working' });

@@ -1,5 +1,6 @@
 /** One visible browser CLI job. The CLIs own the browser, keys and send-once rules. */
 import { procStat } from '../utils/proc.js';
+import { recordStartupShellSession } from './tab-shell.js';
 import { recordFailureExhaustion } from '../roles/roster.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import { jobFiles, BUNDLED_ROOT } from '../mcp/paths.js';
@@ -81,6 +82,7 @@ export async function main() {
   let failure = null;
   try {
     if (!pidStart) throw new Error('browser runner process identity unavailable');
+    recordStartupShellSession(dir, process.env.HUD_TAB_LAUNCH, process.env.HERDR_PANE_ID);
     status('working');
     if (role.tool === 'jev-ask') {
       const provider = ['--provider', role.provider!];

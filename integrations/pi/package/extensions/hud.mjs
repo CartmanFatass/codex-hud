@@ -28,9 +28,12 @@ export default async function hud(pi) {
     const url = nativeAsk
       ? new URL('../../../../packages/hud-mcp/bin/worker-tools.mjs', import.meta.url)
       : pathToFileURL(loadBinding(new URL('../binding.json', import.meta.url)).release + '/packages/hud-mcp/bin/worker-tools.mjs');
-    const { callWorkerTool, listWorkerTools, watchSonicReady, capturePiTree } = await import(url.href);
+    const { callWorkerTool, listWorkerTools, watchSonicReady, capturePiTree, recordStartupShellSession } = await import(url.href);
     const notices = new AbortController();
     const waits = new Set(), pendingReady = new Map();
+    pi.on('session_start', () => {
+      recordStartupShellSession?.(process.env.HUD_JOB_DIR, process.env.HUD_TAB_LAUNCH, process.env.HERDR_PANE_ID);
+    });
     pi.on('session_shutdown', () => {
       notices.abort();
       pendingReady.clear();

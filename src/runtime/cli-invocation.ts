@@ -1,10 +1,11 @@
 /** Invocation proof is published by the process that will exec the agent, not
  * by observing whoever happens to be in the pane after `agent start`. */
 import { randomUUID } from 'node:crypto';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { binScript } from '../mcp/paths.js';
 import { readJsonBounded, writeFileAtomic, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { isValidPid, procStat } from '../utils/proc.js';
+import { recordStartupShellSessionAt, STARTUP_SESSION_FILE } from './tab-shell.js';
 
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
@@ -69,6 +70,9 @@ export function execWitness(file: string, target: string, argv: string[]): never
     if (!start) throw Error('cannot witness CLI invocation');
     // Atomic link, never overwrite: replaying the same command cannot adopt a later PID.
     writeJsonPrivate(file, { pid: process.pid, start }, { mkdir: false, exclusive: true });
+    const dir = dirname(file), launch = basename(dir);
+    if (process.env.HUD_TAB_LAUNCH === launch)
+      recordStartupShellSessionAt(join(dir, STARTUP_SESSION_FILE), launch, process.env.HERDR_PANE_ID, { mkdir: false });
   }
   // Linux derives comm from the exec path's basename, even when it is a symlink.
   return execve(target, [basename(target), ...argv], process.env);

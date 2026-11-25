@@ -4,12 +4,16 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { createServer } from 'node:net';
 import { recordTabShells } from '../../dist/runtime/tab-shell.js';
+import { prepareCliInvocation } from '../../dist/runtime/cli-invocation.js';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { reapWorkerTree, tabTreeGrant } from '../../dist/roles/worker-tree.js';
 import { randomUUID } from 'node:crypto';
-import { procStat } from '../../dist/utils/proc.js';
+import { isActiveProcState, listProcPids, procStat } from '../../dist/utils/proc.js';
+import { until } from '../helpers/until.mjs';
+
+const noZsh = spawnSync('zsh', ['--version']).error?.code === 'ENOENT';
 
 const cli = resolve('packages/hud-mcp/bin/hud-reap.mjs');
 const herdr = String.raw`
@@ -24,9 +28,11 @@ if (op === 'list') {
   out({[kind+'s']: s[kind+'s']});
 } else if (op === 'process-info') {
   const status = JSON.parse(fs.readFileSync(process.env.DIR + '/STATUS.json')), root = status.pid;
-  const fg = s.foreground ?? (root ?? (s.agents.length ? s.occupant : 0));
+  const pane = args[3], shellPid = s.shells?.[pane] ?? s.shell;
+  const isWorkerPane = !s.shells || pane === (s.workerPane ?? 'worker-pane');
+  const fg = isWorkerPane ? (s.foreground ?? (root ?? (s.agents.length ? s.occupant : 0))) : 0;
   const live = fg && fs.existsSync('/proc/' + fg + '/stat') && !/\) [ZX] /.test(fs.readFileSync('/proc/' + fg + '/stat','utf8'));
-  out({process_info:{pane_id:args[3], shell_pid:s.shell, foreground_process_group_id:live ? fg : s.shell, foreground_processes:live ? [{pid:fg, name:status.agent || 'pi'}] : [{pid:s.shell,name:'shell'}]}});
+  out({process_info:{pane_id:pane, shell_pid:shellPid, foreground_process_group_id:live ? fg : shellPid, foreground_processes:live ? [{pid:fg, name:status.agent || 'pi'}] : [{pid:shellPid,name:'shell'}]}});
 } else if (kind === 'agent' && op === 'get') out({agent: s.replacement ?? s.agents.find(a => a.pane_id === target)});
 else if (kind === 'agent' && op === 'prompt' && args[3] === '/quit') {
   process.kill(s.occupant, 'SIGTERM');
@@ -265,4 +271,292 @@ test('--after-pid: invalid or live caller takes no action; caller exit resumes t
   child.kill('SIGTERM');
   assert.deepEqual(await finish, [1, null]); assert.match(err, /name changed or missing; not closing/);
   assert.ok(fs.existsSync(join(f.dir, 'STATUS.json.stop-requested')));
+});
+
+async function zshTabFixture(t, { harness, leaveBackground = false, precmdSleep = '0.35', stampCliStatus = true, liveIdlePi = false, omitSnapshot = false, splitPreWorkerBackground = false }) {
+  const root = fs.mkdtempSync(join(tmpdir(), 'hud-reap-zsh-'));
+  const dir = join(root, 'job'), ownerHome = join(root, 'home'), fakeBin = join(root, 'fake-bin'), herdrBin = join(root, 'herdr-bin');
+  for (const d of [dir, ownerHome, fakeBin, herdrBin]) fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(join(herdrBin, 'herdr'), `#!${process.execPath}\n${herdr}`, { mode: 0o700 });
+  const launch = randomUUID();
+  const tags = { HUD_JOB_DIR: dir, HERDR_PANE_ID: 'worker-pane', HERDR_TAB_ID: 'worker-tab', HUD_TAB_LAUNCH: launch };
+  const hudExt = new URL('../../integrations/pi/package/extensions/hud.mjs', import.meta.url).href;
+
+  // Owner zsh rc modeled on powerlevel10k: a reparented startup daemon plus a per-prompt precmd helper.
+  fs.writeFileSync(join(ownerHome, '.zshrc'), `
+export PATH=${JSON.stringify(fakeBin)}:"$PATH"
+( /bin/sleep 600 </dev/null >/dev/null 2>&1 & echo $! > "$HOME/daemon.pid" )
+precmd() {
+  ( /bin/sleep ${precmdSleep} </dev/null >/dev/null 2>&1 & echo $! >> "$HOME/precmd.pids" )
+  printf 'PROMPT_READY\\n'
+}
+PS1=''
+`);
+
+  const piSessionStart = harness === 'pi' && !omitSnapshot ? `
+  const { default: hud } = await import(${JSON.stringify(hudExt)});
+  const hooks = new Map();
+  process.argv.push('--hud-worker-tools');
+  await hud({ on: (name, fn) => hooks.set(name, fn), registerTool: () => {}, sendMessage: () => {} });
+  await hooks.get('session_start')?.();
+` : '';
+  const workerBody = `(async () => {
+  const fs = require('node:fs');
+  const { spawn } = require('node:child_process');
+  const stat = fs.readFileSync('/proc/' + process.pid + '/stat', 'utf8');
+  const start = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\\s+/)[19];
+  ${piSessionStart}
+  fs.writeFileSync(${JSON.stringify(join(root, 'worker.json'))}, JSON.stringify({ pid: process.pid, start }));
+  if (${JSON.stringify(leaveBackground)}) {
+    // Reparented background child in the same shell session, using the exact same /bin/sleep binary as the startup daemon.
+    const bg = spawn('/bin/sleep', ['600'], { stdio: 'ignore' });
+    fs.writeFileSync(${JSON.stringify(join(root, 'bg.pid'))}, String(bg.pid));
+    bg.unref();
+  }
+  if (${JSON.stringify(liveIdlePi)}) {
+    process.on('SIGTERM', () => process.exit(0));
+    setInterval(() => {}, 60000);
+  } else {
+    setTimeout(() => process.exit(0), 60);
+  }
+})().catch(err => { console.error(err); process.exit(1); });
+`;
+  const workerPath = join(fakeBin, harness === 'cli' ? 'codex' : 'pi');
+  fs.writeFileSync(workerPath, `#!${process.execPath}\n${workerBody}`, { mode: 0o700 });
+
+  let zshEnv = { ...process.env, ...tags, HOME: ownerHome, ZDOTDIR: ownerHome };
+  if (harness === 'cli') {
+    const cliInv = prepareCliInvocation(dir, launch, 'codex', workerPath);
+    zshEnv = { ...zshEnv, ...cliInv.env };
+  }
+
+  const sh = spawn('zsh', ['-i'], { detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: zshEnv });
+  const shStart = procStat(sh.pid)?.start;
+  assert.ok(shStart, 'zsh shell started');
+  const trackedShells = [{ sh, start: shStart }];
+  t.after(() => {
+    for (const { sh: proc, start: startTick } of trackedShells) {
+      for (const pid of listProcPids()) {
+        const st = procStat(pid);
+        if (st && st.session === proc.pid && BigInt(st.start) >= BigInt(startTick)) {
+          try { process.kill(pid, 'SIGKILL'); } catch { /* Already gone. */ }
+        }
+      }
+      try { proc.kill('SIGKILL'); } catch { /* Already gone. */ }
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  let prompts = 0;
+  sh.stdout.on('data', chunk => {
+    const matches = chunk.toString('utf8').match(/PROMPT_READY/g);
+    if (matches) prompts += matches.length;
+  });
+
+  const daemonFile = join(ownerHome, 'daemon.pid'), precmdFile = join(ownerHome, 'precmd.pids');
+  await until(() => prompts >= 1 && fs.existsSync(daemonFile) && fs.existsSync(precmdFile), 10000);
+  const daemonPid = Number(fs.readFileSync(daemonFile, 'utf8').trim());
+  const daemonStat = procStat(daemonPid);
+  assert.ok(daemonStat && daemonStat.session === sh.pid && isActiveProcState(daemonStat.state), 'startup daemon active in shell session');
+
+  const exe = `/proc/${sh.pid}/exe`, image = fs.statSync(exe, { bigint: true });
+  const tabShells = [
+    { pane: 'worker-pane', pid: sh.pid, start: shStart, exe: fs.readlinkSync(exe), inode: `${image.dev}:${image.ino}` },
+  ];
+
+  let splitSh = null, splitBgPid = null, splitBgStart = null;
+  if (splitPreWorkerBackground) {
+    const splitHome = join(root, 'split-home');
+    fs.mkdirSync(splitHome);
+    const splitEnv = { ...process.env, ...tags, HERDR_PANE_ID: 'split-pane', HOME: splitHome, ZDOTDIR: splitHome };
+    splitSh = spawn('zsh', ['-f', '-i'], { detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: splitEnv });
+    const splitStart = procStat(splitSh.pid)?.start;
+    assert.ok(splitStart, 'split zsh shell started');
+    trackedShells.push({ sh: splitSh, start: splitStart });
+    const splitExe = `/proc/${splitSh.pid}/exe`, splitImage = fs.statSync(splitExe, { bigint: true });
+    tabShells.push({ pane: 'split-pane', pid: splitSh.pid, start: splitStart, exe: fs.readlinkSync(splitExe), inode: `${splitImage.dev}:${splitImage.ino}` });
+    const splitBgFile = join(splitHome, 'owner-bg.pid');
+    // Owner starts a background job in the right-hand split shell BEFORE the worker starts.
+    splitSh.stdin.write(`( /bin/sleep 600 </dev/null >/dev/null 2>&1 & echo $! > ${JSON.stringify(splitBgFile)} )\n`);
+    await until(() => fs.existsSync(splitBgFile), 5000);
+    splitBgPid = Number(fs.readFileSync(splitBgFile, 'utf8').trim());
+    const splitBgStat = procStat(splitBgPid);
+    assert.ok(splitBgStat && splitBgStat.session === splitSh.pid && isActiveProcState(splitBgStat.state), 'owner split background job active');
+    assert.ok(BigInt(splitStart) <= BigInt(splitBgStat.start));
+    splitBgStart = splitBgStat.start;
+  }
+
+  fs.writeFileSync(join(dir, 'tab-shells.json'), JSON.stringify({ launch, tab: 'worker-tab', shells: tabShells }));
+
+  // Ensure the worker starts on a strictly later kernel tick than both the startup daemon and any split background job.
+  await new Promise(r => setTimeout(r, 30));
+
+  sh.stdin.write(harness === 'cli' ? 'codex\n' : `${workerPath}\n`);
+  const workerFile = join(root, 'worker.json');
+  await until(() => fs.existsSync(workerFile) && (liveIdlePi || prompts >= 2), 10000);
+  const workerInfo = JSON.parse(fs.readFileSync(workerFile, 'utf8'));
+  if (!liveIdlePi) {
+    await until(() => {
+      const st = procStat(workerInfo.pid);
+      return !st || st.start !== workerInfo.start || !isActiveProcState(st.state);
+    }, 5000);
+  }
+
+  assert.ok(BigInt(daemonStat.start) < BigInt(workerInfo.start), `daemon (${daemonStat.start}) started before worker (${workerInfo.start})`);
+  if (splitBgStart) assert.ok(BigInt(splitBgStart) < BigInt(workerInfo.start), 'owner split background job started strictly before worker');
+  if (!liveIdlePi) {
+    const precmdPids = fs.readFileSync(precmdFile, 'utf8').trim().split('\n').map(Number);
+    assert.ok(precmdPids.length >= 2, 'precmd helper spawned again after worker exit');
+    if (Number(precmdSleep) >= 0.3) {
+      const postPrecmd = procStat(precmdPids.at(-1));
+      assert.ok(postPrecmd && postPrecmd.session === sh.pid && isActiveProcState(postPrecmd.state),
+        'post-exit precmd helper is still active when hud-reap starts');
+      assert.ok(BigInt(postPrecmd.start) > BigInt(workerInfo.start));
+    }
+  }
+
+  let bgPid = null, bgStart = null;
+  if (leaveBackground) {
+    const bgFile = join(root, 'bg.pid');
+    await until(() => fs.existsSync(bgFile), 5000);
+    bgPid = Number(fs.readFileSync(bgFile, 'utf8').trim());
+    const bgStat = procStat(bgPid);
+    assert.ok(bgStat && bgStat.session === sh.pid && isActiveProcState(bgStat.state), 'worker background child active in shell session');
+    assert.ok(BigInt(bgStat.start) >= BigInt(workerInfo.start), 'worker background child started at/after worker start');
+    bgStart = bgStat.start;
+  }
+
+  const native = join(dir, 'pi.jsonl');
+  const statePath = join(root, 'state'), logPath = `${statePath}.log`;
+  const panes = [
+    { pane_id: 'worker-pane', tab_id: 'worker-tab', agent: liveIdlePi ? 'pi' : null },
+    ...(splitSh ? [{ pane_id: 'split-pane', tab_id: 'worker-tab', agent: null }] : []),
+    { pane_id: 'main-pane', tab_id: 'main-tab', agent: 'pi' },
+  ];
+  fs.writeFileSync(statePath, JSON.stringify({
+    shell: sh.pid,
+    ...(splitSh && { shells: { 'worker-pane': sh.pid, 'split-pane': splitSh.pid }, workerPane: 'worker-pane' }),
+    occupant: workerInfo.pid,
+    tabs: [{ tab_id: 'worker-tab', label: 'synthetic' }],
+    panes,
+    agents: liveIdlePi ? [{ agent_session: { value: native }, pane_id: 'worker-pane', tab_id: 'worker-tab', name: 'worker', agent_status: 'idle' }] : [],
+  }));
+  fs.writeFileSync(join(dir, 'SESSION.txt'), `LAUNCH=${launch}\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\n${splitSh ? 'RIGHT=split-pane\n' : ''}ORCH=main-pane\nPRIMARY=worker\n`);
+  const status = harness === 'cli'
+    ? { version: 1, task_dir: dir, slot: 'primary', harness: 'cli', agent: 'codex', state: 'closed',
+        pid: stampCliStatus ? workerInfo.pid : null, pid_start_time: stampCliStatus ? workerInfo.start : null }
+    : { version: 1, task_dir: dir, slot: 'primary', session_file: native, state: liveIdlePi ? 'idle_grace' : 'closed',
+        pid: workerInfo.pid, pid_start_time: workerInfo.start };
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(status));
+
+  const env = { ...process.env, HOME: root, HUD_HOME: root, DIR: dir, STATE: statePath, PATH: herdrBin };
+  const calls = () => fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8').trimEnd().split('\n').map(l => JSON.parse(l)) : [];
+  return {
+    dir, launch, daemonPid, daemonStart: daemonStat.start, workerInfo, bgPid, bgStart, splitBgPid, splitBgStart, calls,
+    precmdCount: () => fs.readFileSync(precmdFile, 'utf8').trim().split('\n').length,
+    snapshotPath: join(dir, 'cli-invocations', launch, 'shell-session.json'),
+    run: () => spawnSync(process.execPath, [cli, dir], { env, encoding: 'utf8', timeout: 15000 }),
+  };
+}
+
+for (const [label, opts] of [
+  ['finished pi job', { harness: 'pi' }],
+  ['live idle_grace pi job quit into precmd', { harness: 'pi', liveIdlePi: true }],
+  ['finished CLI job with stamped STATUS', { harness: 'cli', stampCliStatus: true }],
+  ['finished CLI job using witness alone', { harness: 'cli', stampCliStatus: false }],
+]) test(`real zsh with p10k-style startup daemon and precmd helper: ${label} closes`, { skip: noZsh }, async t => {
+  const f = await zshTabFixture(t, opts);
+  const snap = JSON.parse(fs.readFileSync(f.snapshotPath, 'utf8'));
+  assert.ok(snap.members.some(m => m.pid === f.daemonPid && m.start === f.daemonStart), 'startup daemon recorded in session snapshot');
+  const r = f.run();
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(f.calls().some(a => a[0] === 'tab' && a[1] === 'close' && a[2] === 'worker-tab'));
+  if (opts.liveIdlePi) assert.ok(f.precmdCount() >= 2, 'post-/quit precmd helper ran before tab closed');
+  // Startup daemon was still running (exempted by exact PID+start in startup snapshot, never by name or age).
+  assert.equal(procStat(f.daemonPid)?.start, f.daemonStart);
+});
+
+for (const harness of ['pi', 'cli']) test(`real zsh with p10k-style startup daemon: background child started by ${harness} worker still blocks close`, { skip: noZsh }, async t => {
+  const f = await zshTabFixture(t, { harness, leaveBackground: true, precmdSleep: '0.05' });
+  const r = f.run();
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /active unlisted process remains in shell session; not closing/);
+  assert.ok(!f.calls().some(a => a[1] === 'close'));
+  assert.equal(procStat(f.bgPid)?.start, f.bgStart);
+});
+
+test('real zsh with p10k-style startup daemon: missing startup snapshot fails closed even with worker start stamped', { skip: noZsh }, async t => {
+  const f = await zshTabFixture(t, { harness: 'pi', omitSnapshot: true, precmdSleep: '0.05' });
+  assert.equal(fs.existsSync(f.snapshotPath), false);
+  const r = f.run();
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /without startup snapshot; not closing/);
+  assert.ok(!f.calls().some(a => a[1] === 'close'));
+});
+
+test('owner background job in a split shell started before the worker refuses tab close', { skip: noZsh }, async t => {
+  const f = await zshTabFixture(t, { harness: 'pi', splitPreWorkerBackground: true, precmdSleep: '0.05' });
+  const r = f.run();
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /non-worker shell session; not closing/);
+  assert.ok(!f.calls().some(a => a[1] === 'close'));
+  assert.equal(procStat(f.splitBgPid)?.start, f.splitBgStart);
+});
+
+test('startup helper listed in the worker pane snapshot permits tab close; mismatched start or missing snapshot refuses', async t => {
+  const f = fixture(t, { status: null });
+  const helperSh = spawn('/bin/sh', ['-c', '/bin/sleep 600 </dev/null >/dev/null 2>&1 & echo $!; read line'], {
+    detached: true, stdio: ['pipe', 'pipe', 'ignore'], env: f.tags,
+  });
+  const shStart = procStat(helperSh.pid).start;
+  t.after(() => {
+    for (const pid of listProcPids()) {
+      const st = procStat(pid);
+      if (st && st.session === helperSh.pid && BigInt(st.start) >= BigInt(shStart)) {
+        try { process.kill(pid, 'SIGKILL'); } catch { /* Already gone. */ }
+      }
+    }
+    try { helperSh.kill('SIGKILL'); } catch { /* Already gone. */ }
+  });
+  const [chunk] = await once(helperSh.stdout, 'data');
+  const helperPid = Number(chunk.toString('utf8').trim());
+  const helperStat = procStat(helperPid);
+  assert.ok(helperStat && helperStat.session === helperSh.pid && isActiveProcState(helperStat.state));
+
+  const exe = `/proc/${helperSh.pid}/exe`, image = fs.statSync(exe, { bigint: true });
+  fs.writeFileSync(join(f.dir, 'tab-shells.json'), JSON.stringify({ launch: f.launch, tab: 'worker-tab', shells: [
+    { pane: 'worker-pane', pid: helperSh.pid, start: shStart, exe: fs.readlinkSync(exe), inode: `${image.dev}:${image.ino}` },
+  ] }));
+  const state = JSON.parse(fs.readFileSync(f.state));
+  state.shell = helperSh.pid;
+  fs.writeFileSync(f.state, JSON.stringify(state));
+
+  // Missing snapshot -> refuse.
+  const noSnap = f.run();
+  assert.equal(noSnap.status, 1, noSnap.stdout);
+  assert.match(noSnap.stderr, /without startup snapshot; not closing/);
+  assert.ok(!f.calls().some(a => a[1] === 'close'));
+
+  // Wrong start tick in snapshot (PID reuse protection) -> refuse.
+  const snapDir = join(f.dir, 'cli-invocations', f.launch);
+  fs.mkdirSync(snapDir, { recursive: true });
+  const snapPath = join(snapDir, 'shell-session.json');
+  fs.writeFileSync(snapPath, JSON.stringify({
+    version: 1, launch: f.launch, pane: 'worker-pane', session: helperSh.pid, session_start: shStart,
+    members: [{ pid: helperPid, start: String(BigInt(helperStat.start) + 1n) }],
+  }));
+  const wrongStart = f.run();
+  assert.equal(wrongStart.status, 1, wrongStart.stdout);
+  assert.match(wrongStart.stderr, /active unlisted process remains in shell session; not closing/);
+  assert.ok(!f.calls().some(a => a[1] === 'close'));
+
+  // Exact PID+start listed in worker pane snapshot -> close.
+  fs.writeFileSync(snapPath, JSON.stringify({
+    version: 1, launch: f.launch, pane: 'worker-pane', session: helperSh.pid, session_start: shStart,
+    members: [{ pid: helperPid, start: helperStat.start }],
+  }));
+  const ok = f.run();
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.ok(f.calls().some(a => a[0] === 'tab' && a[1] === 'close' && a[2] === 'worker-tab'));
+  assert.equal(procStat(helperPid)?.start, helperStat.start);
 });

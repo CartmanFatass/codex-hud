@@ -73,15 +73,14 @@ async function reap(task: string, after?: number) {
   if (alive() && callerAncestor(pid!)) refuse(`protected caller PID ${pid}; cleanup incomplete`);
   const info = session(task), left = info.TAB ? info.LEFT : info.RIGHT;
   if (!left || (!info.TAB && info.RIGHT_SPLIT !== '1')) refuse('missing pane receipt; cleanup incomplete');
-  if (s?.harness === 'cli' && alive()) {
-    const witness = invocationWitness(task, info.LAUNCH);
-    if (!witness || witness.pid !== pid || witness.start !== start) refuse('CLI invocation witness mismatch; cleanup incomplete');
-  }
+  const witness = s?.harness === 'cli' ? invocationWitness(task, info.LAUNCH) : null;
+  if (s?.harness === 'cli' && alive() && (!witness || witness.pid !== pid || witness.start !== start))
+    refuse('CLI invocation witness mismatch; cleanup incomplete');
   const ids = info.TAB ? [left, ...(info.RIGHT ? [info.RIGHT] : [])] : [left];
   const expectedSession = s?.session_file || s?.agent_session_id;
   const matches = (a: Row) => Boolean(info.PRIMARY && a.name === info.PRIMARY && a.pane_id === left &&
     (!expectedSession || expectedSession === a.agent_session?.value));
-  function inspect() {
+  function inspect(allowExitedForeground = false) {
     if (alreadyReaped(task)) return null;
     const fresh = primary(task);
     if (fresh?.pid !== pid || fresh?.pid_start_time !== start || JSON.stringify(session(task)) !== JSON.stringify(info))
@@ -105,6 +104,7 @@ async function reap(task: string, after?: number) {
     const agent = agents.find(matches);
     const foreground = new Map<number, string>();
     const shells: Parameters<typeof confirmIdleShells>[3] = [];
+    let exitedForeground = false;
     for (const p of selected) {
       const kind = s?.harness === 'cli' ? s.agent : info.PRIMARY ? 'pi' : undefined;
       if (p.agent && (!agent || agent.pane_id !== p.pane_id || p.agent !== kind)) refuse('unidentified agent in recorded pane; not closing');
@@ -117,13 +117,22 @@ async function reap(task: string, after?: number) {
         if (s?.harness === 'cli' && item?.pid === pid && (item.name !== s.agent || proc.foreground_process_group_id !== pid))
           refuse('recorded CLI worker is not the expected foreground agent');
         const ticks = tabProcessStart(task, p.pane_id, tab, item?.pid, info.LAUNCH);
-        if (!ticks || p.pane_id !== left && item?.pid !== proc.shell_pid) refuse('foreign or unverified foreground occupant; not closing');
+        if (!ticks || p.pane_id !== left && item?.pid !== proc.shell_pid) {
+          if (allowExitedForeground && isValidPid(item?.pid)) {
+            const itemStat = readProcStat(item.pid, { strict: true });
+            if (!itemStat || !isActiveProcState(itemStat.state)) {
+              exitedForeground = true;
+              continue;
+            }
+          }
+          refuse('foreign or unverified foreground occupant; not closing');
+        }
         foreground.set(item.pid, ticks!);
       }
     }
-    return { agent, foreground, tab, shells };
+    return { agent, foreground, tab, shells, exitedForeground };
   }
-  let state = inspect();
+  let state = inspect(!alive());
   if (!state) return;
   let verifiedRoot = false;
   if (isValidPid(pid) && state.foreground.has(pid) && state.foreground.get(pid) !== start) refuse('foreground PID start time changed; left alone');
@@ -144,13 +153,14 @@ async function reap(task: string, after?: number) {
         if (ms <= 0 || !list('agent', Math.min(15_000, ms)).some(matches)) break;
         await delay(Math.min(500, ms));
       }
-      state = inspect();
+      state = inspect(!alive());
       if (!state) {
         if (verifiedRoot && !alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
         return;
       }
     }
   }
+  let needInspect = false;
   if (alive() && isValidPid(pid)) {
     if (callerAncestor(pid) || state.foreground.get(pid) !== start || tabProcessStart(task, left!, state.tab, pid, info.LAUNCH) !== start)
       refuse(`PID ${pid} is not a verified worker; left alone`);
@@ -158,20 +168,35 @@ async function reap(task: string, after?: number) {
     verifiedRoot = true;
     for (let waited = 0; waited < 5000 && alive(); waited += 250) await delay(250);
     await delay(500);
+    needInspect = true;
   }
-  state = inspect();
-  if (!state) {
-    if (verifiedRoot && !alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
-    return;
-  }
-  const shellPids = new Set(state.shells.map(shell => shell.pid));
-  if (state.agent || [...state.foreground.keys()].some(id => !shellPids.has(id)) || alive()) {
-    if (verifiedRoot) console.log(`tree-owner ${pid}:${start}`); // A verified worker may be waiting for its child.
-    refuse(state.agent ? `owned agent remains in ${left}` : 'worker or foreground process remains; not closing');
-  }
-  if (!confirmIdleShells(task, state.tab, info.LAUNCH, state.shells)) {
+  const refuseWithOwner = (message: string): never => {
     if (verifiedRoot) console.log(`tree-owner ${pid}:${start}`);
-    refuse('original shell identity or idle foreground unverified; not closing');
+    return refuse(message);
+  };
+  const IDLE_SETTLE_MS = 2_000;
+  const settleDeadline = performance.now() + IDLE_SETTLE_MS;
+  for (;;) {
+    if (needInspect) state = inspect(true);
+    needInspect = true;
+    if (!state) {
+      if (verifiedRoot && !alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
+      return;
+    }
+    if (state.agent || alive()) {
+      // A verified worker may be waiting for its child.
+      refuseWithOwner(state.agent ? `owned agent remains in ${left}` : 'worker or foreground process remains; not closing');
+    }
+    const shellPids = new Set(state.shells.map(shell => shell.pid));
+    const foregroundBusy = state.exitedForeground || [...state.foreground.keys()].some(id => !shellPids.has(id)) ||
+      state.shells.some(shell => shell.group !== shell.pid);
+    const check = foregroundBusy
+      ? { ok: false as const, retryable: true, reason: 'worker or foreground process remains; not closing' }
+      : confirmIdleShells(task, state.tab, info.LAUNCH, state.shells, left);
+    if (check.ok) break;
+    const remaining = Math.ceil(settleDeadline - performance.now());
+    if (!check.retryable || remaining <= 0) refuseWithOwner(check.reason);
+    await delay(Math.min(200, remaining));
   }
   const kind = info.TAB ? 'tab' : 'pane', id = info.TAB || left!;
   const closed = command([kind, 'close', id]);
