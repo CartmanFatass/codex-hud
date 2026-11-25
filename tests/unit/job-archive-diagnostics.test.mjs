@@ -31,6 +31,7 @@ async function herdrSocket(t, rf, paneReply) {
     socket.on('close', () => sockets.delete(socket));
     createInterface({ input: socket }).on('line', (line) => {
       const { method, id, params } = JSON.parse(line);
+      if (method === 'ping') socket.write(JSON.stringify({ id, result: { type: 'pong', version: '0.9.5', protocol: 22 } }) + '\n');
       if (method === 'events.subscribe') subscribed.resolve();
       if (method === 'pane.get') socket.write(JSON.stringify({ id, ...paneReply(params.pane_id) }) + '\n');
     });

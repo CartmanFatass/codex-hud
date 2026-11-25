@@ -1,6 +1,6 @@
 /** On-demand file-event reaper. Native pi owns normal settlement; hud-reap owns tab safety. */
 import { isQuotaFailure, recordFailureExhaustion } from '../roles/roster.js';
-import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT, REPORT_SETTLED_EXIT } from '../mcp/cli-judge.js';
+import { formatPaneExitReason, terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT, REPORT_SETTLED_EXIT, type PaneExit } from '../mcp/cli-judge.js';
 import { piSessionIdentity, resumeDeadline } from '../mcp/worker-resume.js';
 import { headlessSonicChildren, sonicChildren } from '../worker/sonic-jobs.js';
 import { reapWorkerTree, tabTreeGrant, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../roles/worker-tree.js';
@@ -146,7 +146,9 @@ type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<Job
   ownership: string; retry: Retry | null; readInGrace: string | null; resumeReadReap?: boolean; jobFile: string; statusFile: string };
 type ActiveReap = { session: SessionEntry | null; ownership: string; readClose: boolean; busy: string[]; phase: 'preflight' | 'reaping';
   controller: AbortController; promise?: Promise<void>; snapshot?: WorkerTreeSnapshot };
-const goneTabs = new Map<string, string>(); // job ID -> exact SESSION stamp confirmed absent
+const goneTabs = new Map<string, string>(); // stock only: job ID -> exact SESSION stamp confirmed absent
+const closedLaunches = new Map<string, true>(); // fork direct-exec: launch_id confirmed closed
+const exitedLaunches = new Map<string, PaneExit>(); // fork direct-exec: launch_id -> pane.exited status
 const tabRetries = new Map<string, { stamp: string; at: number; failures: number }>();
 let tabWakes = new Map<string, true>(), checkAllTabs = true, tabProbe: AbortController | undefined, nextTabProbe = 0;
 function wakeTab(key: string) {
@@ -154,8 +156,13 @@ function wakeTab(key: string) {
   checkAllTabs = true;
   tabWakes.clear();
 }
-const tabWasClosed = (id: string, session: SessionEntry | null) =>
-  !!session && goneTabs.get(id) === session.stamp && hasLocalHerdrTarget(session.fields);
+const isDirectExecSession = (session: SessionEntry | null): boolean =>
+  Boolean(session?.fields.directExec === '1' && session.fields.launchId);
+const tabWasClosed = (id: string, session: SessionEntry | null) => {
+  if (!session || !hasLocalHerdrTarget(session.fields)) return false;
+  if (isDirectExecSession(session)) return closedLaunches.has(session.fields.launchId!);
+  return goneTabs.get(id) === session.stamp;
+};
 const sameSession = (id: string, session: SessionEntry | null) =>
   !!session && jobCache.readSession(id, { throwOnError: true })?.stamp === session.stamp;
 function probeTabs(checks: { id: string; session: SessionEntry }[]) {
@@ -181,7 +188,8 @@ function probeTabs(checks: { id: string; session: SessionEntry }[]) {
         }
         tabRetries.delete(id);
         if (result === 'present') continue;
-        rememberTab(goneTabs, id, session.stamp);
+        if (isDirectExecSession(session)) rememberTab(closedLaunches, session.fields.launchId!, true);
+        else rememberTab(goneTabs, id, session.stamp);
         const active = inFlightReaps.get(id);
         if (active?.phase === 'preflight' && active.session?.stamp === session.stamp) active.controller.abort();
         schedule();
@@ -678,8 +686,9 @@ function scan(retryWatch = false) {
       pendingTabRetries.add(id);
       if (retry.at > nowMs) { nearest = Math.min(nearest, retry.at); return; }
     }
+    const direct = isDirectExecSession(session);
     if (!tabProbe && (pending || scanAllTabs || wakes?.has(`job:${id}`) ||
-        (session.fields.tab && wakes?.has(`tab:${session.fields.tab}`)))) tabChecks.push({ id, session });
+        (!direct && session.fields.tab && wakes?.has(`tab:${session.fields.tab}`)))) tabChecks.push({ id, session });
   };
   const listedIds = jobCache.listJobIds({ onError: (error) => { throw error; } });
   const liveIds = new Set(listedIds);
@@ -756,6 +765,7 @@ function scan(retryWatch = false) {
       const previous = reapRetries.get(id);
       const retry = !job?.reaped_at && previous?.ownership === ownership ? previous : null;
       const closedForLaunch = tabWasClosed(id, session);
+      const paneExit = isDirectExecSession(session) ? exitedLaunches.get(session!.fields.launchId!) ?? null : null;
       // A previous read-close attempt may have closed its own tab before retrying cleanup.
       const tabClosed = !retry?.readClose && closedForLaunch;
       if (!job?.headless && !job?.reaped_at &&
@@ -785,13 +795,13 @@ function scan(retryWatch = false) {
           if (pid && liveSupervisor) watch(dir, pid);
           // A live supervisor delivering /quit owns the terminal write and knows why the tab closed.
           const quitting = tabClosed && liveSupervisor && fs.existsSync(`${statusFile}.quit-${pid}`);
-          if (!quitting && (tabClosed || (pid && !liveSupervisor))) {
+          if (!quitting && (tabClosed || (pid && !liveSupervisor) || (!pid && paneExit))) {
             // The quit marker is removed after STATUS is published; ignore a snapshot taken before that write.
             ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile));
             if (['done', 'closed', 'failed', 'stopped'].includes(status?.state ?? '')) { schedule(); continue; }
-            if (tabClosed && !sameSession(id, session)) { schedule(); continue; }
+            if ((tabClosed || paneExit) && !sameSession(id, session)) { schedule(); continue; }
             const alive = workerAlive(status?.pid ?? null, status?.pid_start_time ?? null);
-            const end = terminalFact({ alive, tabClosed, stop: fs.existsSync(`${statusFile}.stop-requested`),
+            const end = terminalFact({ alive, paneExit, tabClosed, stop: fs.existsSync(`${statusFile}.stop-requested`),
               turn: readTurn(dir), reportSig: reportSignature(dir) });
             if (!end && alive === true && status?.pid && !liveSupervisor) {
               // The remaining third-party worker owns no HUD socket. Back off until a replacement
@@ -806,9 +816,10 @@ function scan(retryWatch = false) {
             }
             const reason = alive === true ? 'supervisor exited; worker still running' : 'supervisor exited; worker liveness unknown';
             if (end) {
-              if (tabClosed && !fs.existsSync(`${statusFile}.stop-requested`) && !end.outputWritten)
+              if (tabClosed && !paneExit && !fs.existsSync(`${statusFile}.stop-requested`) && !end.outputWritten)
                 recordStopOrigin(dir, 'pane_vanished', status?.state, now);
               update = { state: end.state, reason: null, blocked: false, output_written: end.outputWritten,
+                ...(paneExit ? { runner_exit_code: paneExit.exitCode, runner_exit_signal: paneExit.signal as NodeJS.Signals | null } : {}),
                 settled_at: status?.settled_at ?? now, ended_at: now, exit_reason: end.exitReason,
                 error: end.state === 'failed' ? end.exitReason : null, updated_at: now };
             }
@@ -825,6 +836,31 @@ function scan(retryWatch = false) {
             nearest = Math.min(nearest, Date.now() + cliCheck); // Native pi-roles has no HUD runner.
             if (isWorkingForCap(job, status)) countWorking(job!.role);
             continue;
+          }
+        } else if (job && !job.bro && !job.jev && !job.headless && !job.reaped_at && paneExit) {
+          // Direct-exec Pi exit reported by herdr's pane.exited event (matched by launch_id).
+          const latest = readJson<JobStatus>(statusFile);
+          if (['done', 'closed', 'failed', 'stopped'].includes(latest?.state ?? '')) {
+            status = latest;
+            jobCache.invalidateFile(statusFile);
+            statusAt = null;
+          } else if (latest && sameSession(id, session) && reapOwner(session, latest) === ownership) {
+            status = latest;
+            if (paneExit.exitCode === 0 && !paneExit.signal) {
+              const settled = Boolean(latest.output_written || readCloseTurn(dir, job, latest));
+              update = settled
+                ? { state: 'closed', reason: null, blocked: false, idle_deadline_at: null,
+                    settled_at: latest.settled_at ?? now, ended_at: now, exit_reason: latest.exit_reason ?? 'settled',
+                    error: null, runner_exit_code: 0, runner_exit_signal: null, updated_at: now }
+                : { state: 'failed', reason: null, blocked: false, idle_deadline_at: null,
+                    ended_at: now, exit_reason: 'process exited without a report', error: 'process exited without a report',
+                    runner_exit_code: 0, runner_exit_signal: null, updated_at: now };
+            } else {
+              const exitReason = formatPaneExitReason(paneExit);
+              update = { state: 'failed', reason: null, blocked: false, idle_deadline_at: null,
+                ended_at: now, exit_reason: exitReason, error: exitReason,
+                runner_exit_code: paneExit.exitCode, runner_exit_signal: paneExit.signal as NodeJS.Signals | null, updated_at: now };
+            }
           }
         } else if (job && !job.bro && !job.jev && !job.headless && !job.reaped_at &&
             status?.pid && status.pid_start_time && piTurnUnfinished(status)) {
@@ -1161,6 +1197,15 @@ export function openRuntime(emit: typeof notify) {
   return {
     shutdown,
     tab(id: string) { if (id) wakeTab(`tab:${id}`); schedule(); },
+    tabClosedByLaunch(launchId: string, tabId?: string) {
+      if (launchId) rememberTab(closedLaunches, launchId, true);
+      if (tabId) wakeTab(`tab:${tabId}`);
+      schedule();
+    },
+    paneExited(launchId: string, exit: PaneExit) {
+      if (launchId) rememberTab(exitedLaunches, launchId, exit);
+      schedule();
+    },
     reconcileTabs() { checkAllTabs = true; schedule(); },
     pause() {
       if (stopped) return null;

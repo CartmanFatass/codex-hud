@@ -1,5 +1,5 @@
 /** Pi launch and native session setup. */
-import { herdrEndpoint } from '../../runtime/herdr-socket.js';
+import { herdrEndpoint, isHudHerdrFork, request as herdrRequest } from '../../runtime/herdr-socket.js';
 import { recordTabShells } from '../../runtime/tab-shell.js';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -10,6 +10,7 @@ import { jobCallerPane } from '../../roles/job-pane.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { executable, type Role, type RolePlace } from '../../roles/roster.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
+import { isValidPid } from '../../utils/proc.js';
 import { briefPrompt } from '../brief-prompt.js';
 import type { Job, SessionReceipt } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
@@ -23,7 +24,7 @@ import { promptBoundary, recoverStalledPrompt } from './prompt-stall.js';
 import { registry, roleCwd } from './places.js';
 import {
   rejectLaunch, binScript, quote, run, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
-  startupFailure, launchError, refusedBeforeInput, promptStalled, type DispatchResult,
+  startupFailure, launchError, refusedBeforeInput, promptStalled, directExecEnv, waitedAgentStatus, type DispatchResult,
 } from './proc.js';
 
 /** A skill name is one path segment under `.hud/skills`. Anything else is not a link we made. */
@@ -90,8 +91,9 @@ function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
 }
 export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, resume?: NativeResume): Promise<DispatchResult> {
   let openedTab: string | undefined;
+  let openedLaunchId: string | undefined;
   let mayHaveInput = false;
-  const reject = (result: DispatchResult) => rejectLaunch(result, openedTab);
+  const reject = (result: DispatchResult) => rejectLaunch(result, openedTab, openedLaunchId);
   try {
     const resources = piSkillArgs(job, role, place);
     if (job.headless && !executable('pi')) throw new Error('pi not found on PATH');
@@ -130,7 +132,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     if (!isPiProfile(piRole)) throw Error(piProfileError);
     const launcher = executable('pi-role');
     if (!launcher) throw new Error('pi-role not found on PATH');
-    const argv = ['--args-json', piRole, '--task-dir', dir, '--role-output', output, '--dispatch-slot', 'primary', '--dispatch-label', job.role,
+    const argv = [piRole, '--task-dir', dir, '--role-output', output, '--dispatch-slot', 'primary', '--dispatch-label', job.role,
       '--allow-write', output, '--qa-dir', join(dir, jobFiles.qa)];
     const owner = jobCallerPane(job);
     if (owner) {
@@ -160,63 +162,81 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     }
     argv.push(...resources, ...(job.pi_args ?? []));
     if (resume?.file) argv.push('--session', resume.file);
-    const built = await run(launcher, argv, job.cwd);
-    if (built.exit_code !== 0) return reject(built);
-    const piArgs: string[] = JSON.parse(built.stdout);
-    fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
-    const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
-    const tabName = tabLabel(job, task),
-      name = `${job.job}-primary`;
-    const tabArgv = [
-      'tab',
-      'create',
-      ...(await workspaceArgs(job)),
-      '--cwd',
-      job.cwd,
-      '--label',
-      tabName,
-      '--env',
-      `HUD_JOB_DIR=${dir}`,
-      '--env',
-      `HUD_HOME=${hudHome}`,
-      // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
-      '--env',
-      'GIT_OPTIONAL_LOCKS=0',
-    ];
+    const writeSession = (fields: SessionReceipt) => {
+      if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
+      const sessionFile = join(dir, jobFiles.session);
+      writePrivateFile(
+        sessionFile,
+        Object.entries(fields)
+          .map(([k, v]) => `${k}=${v}\n`)
+          .join(''),
+        { mkdir: false }
+      );
+      jobCache.invalidateFile(sessionFile);
+    };
+    const fork = await isHudHerdrFork();
     let left = '';
     let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
-    for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
-      const launch = randomUUID(), endpoint = herdrEndpoint();
-      const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, '--no-focus']);
-      if (result.exit_code !== 0) return reject(result);
-      const { tab, root_pane } = JSON.parse(result.stdout).result;
-      if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
-      left = root_pane?.pane_id;
-      if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
+    const name = `${job.job}-primary`;
+    if (fork) {
+      fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
+      const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
+      const tabName = tabLabel(job, task);
+      const wsArgs = await workspaceArgs(job);
+      const workspaceId = wsArgs[1];
+      const endpoint = herdrEndpoint();
+      const reply = await herdrRequest('agent.start', {
+        executable: launcher,
+        argv,
+        kind: 'pi',
+        name,
+        cwd: job.cwd,
+        env: directExecEnv({
+          HUD_JOB_DIR: dir,
+          HUD_HOME: hudHome,
+          // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
+          GIT_OPTIONAL_LOCKS: '0',
+        }),
+        label: tabName,
+        on_exit: 'close_on_zero',
+        focus: false,
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
+      }, { timeoutMs: 15_000 });
+      if (!reply) return reject(launchError('herdr agent.start failed: no response'));
+      if (reply.error) return reject({ exit_code: 1, stdout: '', stderr: JSON.stringify(reply) });
+      const res = reply.result;
+      const tabId = res?.tab?.tab_id;
+      const paneId = res?.root_pane?.pane_id;
+      const launchId = herdrId(res?.launch_id) ? res.launch_id
+        : herdrId(res?.tab?.launch_id) ? res.tab.launch_id
+        : herdrId(res?.root_pane?.launch_id) ? res.root_pane.launch_id : undefined;
+      const pid = res?.pid;
+      const rawStart = res?.pid_start_time;
+      const pidStart = typeof rawStart === 'number' && Number.isSafeInteger(rawStart) && rawStart >= 0
+        ? String(rawStart)
+        : typeof rawStart === 'string' && /^\d+$/.test(rawStart) ? rawStart : undefined;
+      if (herdrId(tabId)) openedTab = tabId;
+      if (herdrId(launchId)) openedLaunchId = launchId;
+      if (!openedTab || !herdrId(paneId) || !openedLaunchId || !isValidPid(pid) || !pidStart)
+        throw new Error('direct-exec agent.start did not return tab, pane, launch_id, pid, and pid_start_time');
+      left = paneId;
       let right = '';
-      const record = () => {
-        const fields: SessionReceipt = {
-          TASK: job.job, LAUNCH: launch, HERDR_SOCKET_PATH: endpoint ?? '',
-          TAB: tab.tab_id,
-          TAB_NAME: tabName,
-          LEFT: left,
-          RIGHT: right,
-          ORCH: owner,
-          BASE: base,
-          PRIMARY: name,
-        };
-        if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
-        const sessionFile = join(dir, jobFiles.session);
-        writePrivateFile(
-          sessionFile,
-          Object.entries(fields)
-            .map(([k, v]) => `${k}=${v}\n`)
-            .join(''),
-          { mkdir: false }
-        );
-        jobCache.invalidateFile(sessionFile);
-      };
-      record();
+      const recordDirect = () => writeSession({
+        TASK: job.job,
+        LAUNCH_ID: openedLaunchId,
+        DIRECT_EXEC: '1',
+        PID: String(pid),
+        PID_START: pidStart,
+        HERDR_SOCKET_PATH: endpoint ?? '',
+        TAB: openedTab,
+        TAB_NAME: tabName,
+        LEFT: left,
+        RIGHT: right,
+        ORCH: owner,
+        BASE: base,
+        PRIMARY: name,
+      });
+      recordDirect();
       if (job.split) {
         const split = await run('herdr', [
           'pane',
@@ -228,20 +248,98 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
           '0.5',
           '--cwd',
           job.cwd,
-          '--env', `HUD_JOB_DIR=${dir}`, '--env', `HUD_TAB_LAUNCH=${launch}`,
+          '--env', `HUD_JOB_DIR=${dir}`,
           '--no-focus',
         ]);
         if (split.exit_code !== 0) return reject(split);
         right = JSON.parse(split.stdout).result.pane.pane_id;
         if (!herdrId(right)) throw new Error('split did not return a pane id');
-        record();
+        recordDirect();
       }
-      await recordTabShells(dir, launch, openedTab, right ? [left, right] : [left]);
-      started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
-      if (!await retryBusyPane(started, tabAttempt, openedTab)) break;
-      openedTab = undefined;
+      const waited = await run('herdr', [
+        'agent', 'wait', name, '--until', 'idle', '--until', 'done', '--until', 'blocked',
+        '--timeout', '30000',
+      ]);
+      if (waited.exit_code === 0 && waitedAgentStatus(waited.stdout) === 'blocked') {
+        started = {
+          exit_code: 1,
+          stdout: '',
+          stderr: JSON.stringify({ error: { code: 'agent_not_ready', message: `agent ${name} is blocked during startup and is not ready for prompts` } }),
+          notStarted: false,
+        };
+      } else {
+        started = waited;
+      }
+    } else {
+      const built = await run(launcher, ['--args-json', ...argv], job.cwd);
+      if (built.exit_code !== 0) return reject(built);
+      const piArgs: string[] = JSON.parse(built.stdout);
+      fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
+      const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
+      const tabName = tabLabel(job, task);
+      const tabArgv = [
+        'tab',
+        'create',
+        ...(await workspaceArgs(job)),
+        '--cwd',
+        job.cwd,
+        '--label',
+        tabName,
+        '--env',
+        `HUD_JOB_DIR=${dir}`,
+        '--env',
+        `HUD_HOME=${hudHome}`,
+        // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
+        '--env',
+        'GIT_OPTIONAL_LOCKS=0',
+      ];
+      for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
+        const launch = randomUUID(), endpoint = herdrEndpoint();
+        const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, '--no-focus']);
+        if (result.exit_code !== 0) return reject(result);
+        const { tab, root_pane } = JSON.parse(result.stdout).result;
+        if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
+        left = root_pane?.pane_id;
+        if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
+        let right = '';
+        const record = () => writeSession({
+          TASK: job.job, LAUNCH: launch, HERDR_SOCKET_PATH: endpoint ?? '',
+          TAB: tab.tab_id,
+          TAB_NAME: tabName,
+          LEFT: left,
+          RIGHT: right,
+          ORCH: owner,
+          BASE: base,
+          PRIMARY: name,
+        });
+        record();
+        if (job.split) {
+          const split = await run('herdr', [
+            'pane',
+            'split',
+            left,
+            '--direction',
+            'right',
+            '--ratio',
+            '0.5',
+            '--cwd',
+            job.cwd,
+            '--env', `HUD_JOB_DIR=${dir}`, '--env', `HUD_TAB_LAUNCH=${launch}`,
+            '--no-focus',
+          ]);
+          if (split.exit_code !== 0) return reject(split);
+          right = JSON.parse(split.stdout).result.pane.pane_id;
+          if (!herdrId(right)) throw new Error('split did not return a pane id');
+          record();
+        }
+        await recordTabShells(dir, launch, openedTab, right ? [left, right] : [left]);
+        started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
+        if (!await retryBusyPane(started, tabAttempt, openedTab)) break;
+        openedTab = undefined;
+      }
     }
     if (started.exit_code !== 0) return reject(await startupFailure(started, left));
+    if (fork) jobCache.invalidateFile(join(dir, jobFiles.status));
     if (resume) {
       const native = readCachedStatus(job.job).status;
       if (native?.session_id !== resume.id || native.session_file !== resume.file)

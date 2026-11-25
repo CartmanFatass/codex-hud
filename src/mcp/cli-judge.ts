@@ -189,12 +189,21 @@ export interface Judgment {
 export const REPORT_READ_EXIT = 'closed after report read';
 export const REPORT_SETTLED_EXIT = 'closed after declared report';
 
+export type PaneExit = { exitCode: number | null; signal: string | null };
+
+export function formatPaneExitReason(exit: PaneExit): string {
+  if (exit.signal) return `worker exited (signal ${exit.signal})`;
+  if (typeof exit.exitCode === 'number') return `worker exited (code ${exit.exitCode})`;
+  return 'worker exited';
+}
+
 export interface Facts {
   turn: Turn;
   reportSig: string | null;
   reportRead: boolean;
   closeAtReport?: boolean; // Jobs launched before close-at-report keep their original grace.
   alive: boolean | null;
+  paneExit?: PaneExit | null;
   status: string | null;
   statusAt?: number | null;
   liveChild: boolean | 'unknown' | null; // null: not sampled yet
@@ -214,10 +223,15 @@ export interface Facts {
   supervisorError?: string;
 }
 
-export function terminalFact({ stop, alive, tabClosed, turn, reportSig }: Pick<Facts, 'stop' | 'alive' | 'tabClosed' | 'reportSig'> & { turn: Turn | null }) {
+export function terminalFact({ stop, alive, paneExit, tabClosed, turn, reportSig }: Pick<Facts, 'stop' | 'alive' | 'paneExit' | 'tabClosed' | 'reportSig'> & { turn: Turn | null }) {
   const outputWritten = reportSig !== null && reportSig !== turn?.report_sig;
   // Stop intent is written before termination, so it wins over both exit and tab close.
   if (stop) return { state: 'stopped', exitReason: 'stop requested', outputWritten } as const;
+  if (paneExit) {
+    if (paneExit.exitCode === 0 && !paneExit.signal)
+      return { state: outputWritten ? 'closed' : 'failed', exitReason: outputWritten ? 'settled' : 'worker exited', outputWritten } as const;
+    return { state: 'failed', exitReason: formatPaneExitReason(paneExit), outputWritten } as const;
+  }
   if (alive === false) return { state: outputWritten ? 'closed' : 'failed', exitReason: outputWritten ? 'settled' : 'worker exited', outputWritten } as const;
   if (tabClosed) return { state: 'failed', exitReason: 'tab closed', outputWritten } as const;
   return null;

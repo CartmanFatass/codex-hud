@@ -63,6 +63,9 @@ async function herdrSocket(t, f, answer, paneReply) {
     lines.on('error', (error) => { if (error.code !== 'ECONNRESET') throw error; });
     lines.on('line', async (line) => {
       const { method, id, params } = JSON.parse(line);
+      if (method === 'ping') {
+        socket.write(JSON.stringify({ id, result: { type: 'pong', version: '0.9.5', protocol: 22 } }) + '\n');
+      }
       if (method === 'events.subscribe') {
         subscriber = socket; subscriptions++; subscribed.resolve();
         socket.write(JSON.stringify({ id, result: { type: 'subscribed' } }) + '\n');

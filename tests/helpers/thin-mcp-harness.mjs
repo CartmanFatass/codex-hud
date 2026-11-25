@@ -188,6 +188,10 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
         const req = JSON.parse(line);
         socketRequests.push(req);
         const reply = (result) => socket.write(JSON.stringify({ id: req.id, result }) + '\n');
+        if (req.method === 'ping') {
+          reply({ type: 'pong', version: '0.9.5', protocol: 22 });
+          return;
+        }
         if (req.method === 'events.subscribe') {
           client.pane = req.params.subscriptions.find((sub) => sub.type === 'pane.agent_status_changed')?.pane_id;
           client.supervisor = !!client.pane;

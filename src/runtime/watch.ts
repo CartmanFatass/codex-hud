@@ -10,6 +10,7 @@ import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
 import { setTimeout } from 'node:timers';
 import { buildStamp, publishGeneration } from '../../scripts/dist-lock.mjs';
+import { isHudHerdrFork } from './herdr-socket.js';
 
 type Runtime = ReturnType<typeof import('./watch-runtime.js').openRuntime>;
 type Handoff = NonNullable<Awaited<ReturnType<Runtime['pause']>>>;
@@ -56,7 +57,7 @@ export async function openWatcher() {
   const pidFile = join(home, 'watch.pid'), logFile = join(home, 'watch.log'), handoffFile = join(home, HANDOFF_FILE);
   const ownsPid = () => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid);
   let stamp: string | null, buildWatch: fs.FSWatcher | undefined, switching: Promise<void> | undefined, probeAbort: AbortController | undefined;
-  let stopping = false, reloading = false, socket: ReturnType<typeof createConnection> | undefined;
+  let stopping = false, reloading = false, connecting = false, socket: ReturnType<typeof createConnection> | undefined;
   let reconnectTimer: NodeJS.Timeout | undefined, reconnectMs = 5000, warned = false;
   let runtime: Runtime;
   function log(message: string) {
@@ -66,38 +67,55 @@ export async function openWatcher() {
   function disconnect() {
     clearTimeout(reconnectTimer);
     reconnectTimer = undefined;
+    connecting = false;
     const peer = socket;
     socket = undefined;
     peer?.destroy();
   }
   function subscribe() {
-    if (socket || reconnectTimer || stopping || reloading) return;
+    if (socket || connecting || reconnectTimer || stopping || reloading) return;
     const path = process.env.HERDR_SOCKET_PATH;
     if (!path) { log('herdr events unavailable: HERDR_SOCKET_PATH unset; using file events only'); return; }
-    const peer = socket = createConnection(path);
-    const unavailable = (message: string) => {
-      if (socket !== peer) return;
-      disconnect();
-      if (!warned) log(`herdr events unavailable: ${message}; using file events only until reconnect`);
-      warned = true;
-      reconnectTimer = setTimeout(() => { reconnectTimer = undefined; subscribe(); }, reconnectMs).unref();
-      reconnectMs = Math.min(30000, reconnectMs * 2);
-    };
-    peer.on('connect', () => peer.write(JSON.stringify({ id: 'hud-watch', method: 'events.subscribe',
-      params: { subscriptions: [{ type: 'tab.closed' }] } }) + '\n'));
-    const lines = createInterface({ input: peer });
-    lines.on('line', (line) => {
-      if (socket !== peer) return;
-      let event;
-      try { event = JSON.parse(line); } catch { return unavailable('invalid JSON'); }
-      if (event.error) return unavailable(event.error.message);
-      if (event.id === 'hud-watch') { reconnectMs = 5000; warned = false; runtime.reconcileTabs(); }
-      if (String(event.event ?? '').replace(/\./g, '_') === 'tab_closed' && typeof event.data?.tab_id === 'string')
-        runtime.tab(event.data.tab_id);
+    connecting = true;
+    void isHudHerdrFork().then((fork) => {
+      if (!connecting || socket || stopping || reloading) return;
+      connecting = false;
+      const peer = socket = createConnection(path);
+      const unavailable = (message: string) => {
+        if (socket !== peer) return;
+        disconnect();
+        if (!warned) log(`herdr events unavailable: ${message}; using file events only until reconnect`);
+        warned = true;
+        reconnectTimer = setTimeout(() => { reconnectTimer = undefined; subscribe(); }, reconnectMs).unref();
+        reconnectMs = Math.min(30000, reconnectMs * 2);
+      };
+      const subscriptions = fork ? [{ type: 'tab.closed' }, { type: 'pane.exited' }] : [{ type: 'tab.closed' }];
+      peer.on('connect', () => peer.write(JSON.stringify({ id: 'hud-watch', method: 'events.subscribe',
+        params: { subscriptions } }) + '\n'));
+      const lines = createInterface({ input: peer });
+      lines.on('line', (line) => {
+        if (socket !== peer) return;
+        let event;
+        try { event = JSON.parse(line); } catch { return unavailable('invalid JSON'); }
+        if (event.error) return unavailable(event.error.message);
+        if (event.id === 'hud-watch') { reconnectMs = 5000; warned = false; runtime.reconcileTabs(); }
+        const kind = String(event.event ?? '').replace(/\./g, '_'), data = event.data;
+        if (kind === 'tab_closed') {
+          if (typeof data?.launch_id === 'string' && data.launch_id)
+            runtime.tabClosedByLaunch(data.launch_id, typeof data.tab_id === 'string' ? data.tab_id : undefined);
+          else if (typeof data?.tab_id === 'string')
+            runtime.tab(data.tab_id);
+        } else if (kind === 'pane_exited' && typeof data?.launch_id === 'string' && data.launch_id) {
+          runtime.paneExited(data.launch_id, {
+            exitCode: typeof data.exit_code === 'number' ? data.exit_code : null,
+            signal: typeof data.signal === 'string' ? data.signal : null,
+          });
+        }
+      });
+      lines.on('error', (error) => unavailable(error.message));
+      peer.on('error', (error) => unavailable(error.message));
+      peer.on('close', () => { lines.close(); unavailable('socket closed'); });
     });
-    lines.on('error', (error) => unavailable(error.message));
-    peer.on('error', (error) => unavailable(error.message));
-    peer.on('close', () => { lines.close(); unavailable('socket closed'); });
   }
   async function finish(reason: string) {
     if (stopping) return;

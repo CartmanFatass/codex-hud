@@ -2,7 +2,7 @@
 import { recordFailureExhaustion } from '../roles/roster.js';
 import { decideQuietJob } from '../mcp/quiet-decision.js';
 import { loadSettings } from '../settings.js';
-import { beginPrompt, cliWorkerTools, endPrompt, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment } from '../mcp/cli-judge.js';
+import { beginPrompt, cliWorkerTools, endPrompt, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment, type PaneExit } from '../mcp/cli-judge.js';
 import { invocationWitness } from './cli-invocation.js';
 import { tabProcessStart } from './tab-owner.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
@@ -11,6 +11,7 @@ import { reportWasRead } from '../collectors/thin-jobs.js';
 import { runHerdr } from '../roles/herdr-run.js';
 import { recordStopOrigin } from '../roles/job-archive.js';
 import { readJsonFile, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
+import { isValidPid } from '../utils/proc.js';
 import type { Job, JobStatus, DoneReceipt } from '../mcp/job-contracts.js';
 import { jobFiles, BUNDLED_ROOT } from '../mcp/paths.js';
 import * as fs from 'node:fs';
@@ -34,6 +35,17 @@ export async function main() {
   if (!binding?.fields.left || !binding.fields.primary || !binding.fields.tab) throw Error('CLI tab receipt missing or incomplete');
   const session = binding.fields;
   const name = session.primary!, pane = session.left!, tab = session.tab!, cli = job.cli!;
+  const directExec = session.directExec === '1' && Boolean(session.launchId);
+  const launchId = session.launchId;
+  let directPid: number | null = null;
+  let directStart: string | null = null;
+  if (directExec) {
+    const parsedPid = Number(session.pid);
+    if (!isValidPid(parsedPid) || !session.pidStart || !/^\d+$/.test(session.pidStart))
+      throw Error('CLI direct-exec receipt missing pid/start');
+    directPid = parsedPid;
+    directStart = session.pidStart;
+  }
   const sameSession = () => jobCache.readSession(job.job, { throwOnError: true })?.stamp === binding.stamp;
   const tools = cliWorkerTools(cli.agent);
   const output = join(dir, jobFiles.report), graceMs = (cli.idle_grace_s ?? 600) * 1000;
@@ -51,14 +63,16 @@ export async function main() {
   }
   let initialStatus: JobStatus | null = null;
   try { initialStatus = readJsonFile(statusFile) as JobStatus; } catch { /* Fresh job has no STATUS yet. */ }
-  const witness = invocationWitness(dir, session.launch);
-  const restore = witness && initialStatus?.pid === witness.pid && initialStatus.pid_start_time === witness.start;
+  const witness = directExec ? null : invocationWitness(dir, session.launch);
+  const restore = directExec
+    ? initialStatus?.pid === directPid && initialStatus.pid_start_time === directStart
+    : witness && initialStatus?.pid === witness.pid && initialStatus.pid_start_time === witness.start;
   let current: JobStatus = {
     version: 1, task_dir: dir, slot: 'primary', harness: 'cli', agent: cli.agent,
     role: job.role, model: job.model ?? null, thinking: job.thinking ?? null,
     state: 'working', output_path: output, output_written: false,
-    pid: restore ? witness.pid : null,
-    pid_start_time: restore ? witness.start : null,
+    pid: directExec ? directPid : restore ? witness!.pid : null,
+    pid_start_time: directExec ? directStart : restore ? witness!.start : null,
     agent_session_id: restore ? initialStatus?.agent_session_id ?? null : null,
     started_at: typeof initialStatus?.started_at === 'string' ? initialStatus.started_at : new Date().toISOString(),
     settled_at: null, idle_deadline_at: null,
@@ -66,6 +80,7 @@ export async function main() {
   };
   let prev: Judgment | null = null, status: string | null = null, statusAt: number | null = null;
   let agentMissing = false, workingAt: number | null = null, tabClosed = false;
+  let paneExit: PaneExit | null = null;
   let tabCheckPending = false, checkingTab = false, nextTabProbe = 0, tabProbeFailures = 0;
   let tabProbeTimer: NodeJS.Timeout | undefined;
   let turn = readTurn(dir) ?? writeTurn(dir), done: DoneReceipt | null = null, signature: string | null = null, stamp: string | null | undefined;
@@ -187,12 +202,13 @@ export async function main() {
     agentMissing = got?.error?.code === 'agent_not_found';
     const agent = got?.result?.agent;
     const bound = agent && agent.name === name && agent.pane_id === pane && agent.tab_id === tab &&
+      (!directExec || agent.launch_id === launchId) &&
       (!current.agent_session_id || current.agent_session_id === agent.agent_session?.value);
     observeStatus(bound ? agent.agent_status ?? null : null);
     return bound ? agent : undefined;
   }
-  let refusedInvocation = !witness;
-  if (!witness) console.error('CLI invocation witness missing or invalid; identity not adopted');
+  let refusedInvocation = !directExec && !witness;
+  if (!directExec && !witness) console.error('CLI invocation witness missing or invalid; identity not adopted');
   async function foreground(signal: AbortSignal) {
     const epoch = generation;
     const info = (await request('pane.process_info', { pane_id: pane }, { signal }))?.result?.process_info;
@@ -240,7 +256,22 @@ export async function main() {
       }
       // herdr names pushed events like their subscriptions (`pane.agent_status_changed`); the schema's kinds use `_`.
       const kind = String(event.event ?? '').replace(/\./g, '_'), data = event.data;
-      if (!data || (data.pane_id !== pane && !(kind === 'tab_closed' && data.tab_id === tab))) return;
+      if (!data) return;
+      if (directExec && (kind === 'pane_exited' || kind === 'pane_closed' || kind === 'tab_closed')) {
+        if (data.launch_id !== launchId) return;
+        if (kind === 'pane_exited') {
+          paneExit = {
+            exitCode: typeof data.exit_code === 'number' ? data.exit_code : null,
+            signal: typeof data.signal === 'string' ? data.signal : null,
+          };
+          terminalWake();
+          return;
+        }
+        tabClosed = true;
+        terminalWake();
+        return;
+      }
+      if (data.pane_id !== pane && !(kind === 'tab_closed' && data.tab_id === tab)) return;
       if (kind === 'pane_closed' || kind === 'tab_closed') { checkTab(); return; }
       generation += 1;
       if (kind === 'pane_agent_status_changed') {
@@ -272,14 +303,14 @@ export async function main() {
     if (nextStamp !== stamp) { signature = reportSignature(dir); stamp = nextStamp; }
     return { turn, reportSig: signature, reportRead: reportWasRead(receipt, st?.isFile() ? statsMtimeMs(st.mtimeNs) : null, nextStamp),
       closeAtReport: job.resume_s !== undefined,
-      alive: workerAlive(current.pid ?? null, current.pid_start_time ?? null), status, statusAt,
+      alive: workerAlive(current.pid ?? null, current.pid_start_time ?? null), paneExit, status, statusAt,
       liveChild: checkChild ? sampleChild() : null,
       sonic: sonicChildren(dir),
       stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
       tick: isTick, agentMissing, workingAt, done, tabClosed };
   }
   function stillQuiet(before: ReturnType<typeof collect>, latest: ReturnType<typeof collect>) {
-    return !sendInFlight && !latest.stop && !latest.close && !latest.tabClosed && latest.alive !== false &&
+    return !sendInFlight && !latest.stop && !latest.close && !latest.tabClosed && !latest.paneExit && latest.alive !== false &&
       latest.turn.seq === before.turn.seq && latest.turn.sent_at === before.turn.sent_at &&
       latest.reportSig === before.reportSig && latest.done?.at === before.done?.at &&
       latest.status === before.status && latest.workingAt === before.workingAt && !latest.openQuestions &&
@@ -291,6 +322,7 @@ export async function main() {
     const row: JobStatus = { ...current, state: result.state, blocked: result.blocked, reason: result.reason ?? (refusedInvocation ? 'CLI invocation identity unverified' : null),
       output_written: result.outputWritten, settled_at: iso(result.settledAt), idle_deadline_at: iso(result.deadline),
       ...(job.checks?.length ? { declared_report_sig: result.declared ? result.reportSig : null } : {}),
+      ...(terminal && paneExit ? { runner_exit_code: paneExit.exitCode, runner_exit_signal: paneExit.signal as NodeJS.Signals | null } : {}),
       ended_at: terminal ? current.ended_at ?? iso(Date.now()) : null, exit_reason: result.exitReason,
       error: result.state === 'failed' ? result.exitReason : null };
     const changed = JSON.stringify(row);
@@ -300,7 +332,7 @@ export async function main() {
       if (['closed', 'failed', 'stopped'].includes((readJsonFile(statusFile) as JobStatus).state)) { shutdown(); return; }
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     if (tabClosed && !sameSession()) { shutdown(); return; }
-    if (terminal && tabClosed && !stop && !result.outputWritten)
+    if (terminal && tabClosed && !stop && !result.outputWritten && !paneExit)
       recordStopOrigin(dir, 'pane_vanished', current.state, row.ended_at ?? new Date().toISOString());
     if (tabClosed && !sameSession()) { shutdown(); return; }
     writeJsonPrivate(statusFile, { ...row, updated_at: iso(Date.now()) }, { mkdir: false });
@@ -316,11 +348,13 @@ export async function main() {
       // Terminal facts never wait on a socket query. The safety tick refreshes missed status pushes.
       const stopping = fs.existsSync(stopFile);
       if (stopping) diskDirty = true;
-      if (!tabClosed && ((!stopping && refreshAgent) || !current.pid_start_time)) {
+      if (!tabClosed && !paneExit && ((!stopping && refreshAgent) || !current.pid_start_time)) {
         const { aborted } = await withEffect('query', async (signal) => {
           const agent = await seed(signal);
           const nativeId = agent?.agent_session?.kind === 'id' ? agent.agent_session.value : undefined;
-          if (agent && (!current.pid_start_time || (!current.agent_session_id && nativeId)) && !signal.aborted) {
+          if (directExec) {
+            if (agent && nativeId) current.agent_session_id ??= nativeId;
+          } else if (agent && (!current.pid_start_time || (!current.agent_session_id && nativeId)) && !signal.aborted) {
             const owner = await foreground(signal);
             if (owner && (!current.pid_start_time || (current.pid === owner.pid && current.pid_start_time === owner.start))) {
               current.pid = owner.pid; current.pid_start_time = owner.start;
@@ -422,8 +456,15 @@ export async function main() {
       if (next.action === 'quit' && observed.alive !== false && !(job.checks?.length && next.declared && !observed.close)) {
         const { issue } = rememberWorkerTree(dir, current);
         // On capture failure let the reaper try again with the root still in place.
-        const { result: owner } = await withEffect('query', async signal => await seed(signal) ? foreground(signal) : undefined);
-        if (issue || !owner || owner.pid !== current.pid || owner.start !== current.pid_start_time) {
+        let okToQuit = false;
+        if (directExec) {
+          const { result: agent } = await withEffect('query', async signal => await seed(signal));
+          okToQuit = Boolean(agent) && workerAlive(current.pid ?? null, current.pid_start_time ?? null) === true;
+        } else {
+          const { result: owner } = await withEffect('query', async signal => await seed(signal) ? foreground(signal) : undefined);
+          okToQuit = Boolean(owner && owner.pid === current.pid && owner.start === current.pid_start_time);
+        }
+        if (issue || !okToQuit) {
           deferredQuit = true;
           if (issue) console.error(`pre-quit snapshot: ${issue}; deferring quit to watcher`);
         } else {

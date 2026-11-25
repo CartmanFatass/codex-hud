@@ -19,7 +19,7 @@ function query(args: string[], timeout?: number) {
   if (r.status !== 0) throw Error(`herdr ${args.join(' ')}: ${r.error?.message ?? r.stderr}`);
   return JSON.parse(r.stdout).result;
 }
-type Row = { pane_id: string; tab_id: string; name?: string; agent?: string; agent_status?: string; agent_session?: { value: string }; label?: string };
+type Row = { pane_id: string; tab_id: string; launch_id?: string; name?: string; agent?: string; agent_status?: string; agent_session?: { value: string }; label?: string };
 function list(kind: 'pane' | 'agent' | 'tab', timeout?: number): Row[] {
   const rows = query([kind, 'list'], timeout)?.[`${kind}s`];
   if (!Array.isArray(rows) || !rows.every(row => herdrId(row?.tab_id) && (kind === 'tab' || herdrId(row.pane_id))))
@@ -27,10 +27,10 @@ function list(kind: 'pane' | 'agent' | 'tab', timeout?: number): Row[] {
   return rows;
 }
 function session(task: string) {
-  const info: Partial<Record<'TAB' | 'TAB_NAME' | 'PRIMARY' | 'LEFT' | 'RIGHT' | 'ORCH' | 'RIGHT_SPLIT' | 'LAUNCH', string>> = {};
+  const info: Partial<Record<'TAB' | 'TAB_NAME' | 'PRIMARY' | 'LEFT' | 'RIGHT' | 'ORCH' | 'RIGHT_SPLIT' | 'LAUNCH' | 'LAUNCH_ID' | 'DIRECT_EXEC' | 'PID' | 'PID_START', string>> = {};
   const path = join(task, jobFiles.session);
   for (const line of fs.readFileSync(path, 'utf8').split('\n')) {
-    const match = /^(TAB|TAB_NAME|PRIMARY|LEFT|RIGHT|ORCH|RIGHT_SPLIT|LAUNCH)=(.*)$/.exec(line);
+    const match = /^(TAB|TAB_NAME|PRIMARY|LEFT|RIGHT|ORCH|RIGHT_SPLIT|LAUNCH|LAUNCH_ID|DIRECT_EXEC|PID|PID_START)=(.*)$/.exec(line);
     if (match) info[match[1] as keyof typeof info] = match[2];
   }
   return info;
@@ -58,9 +58,108 @@ function alreadyReaped(task: string) {
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
 }
 
+/** Direct-exec fork path: no shell, no witness, no tab-shells; match by launch_id and exact (pid, start). */
+async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnType<typeof session>, after?: number) {
+  const refuse = (message: string): never => { throw Error(`${task}: ${message}`); };
+  const launchId = info.LAUNCH_ID, left = info.LEFT;
+  const pid = Number(info.PID), start = info.PID_START;
+  if (!info.TAB || !left || !herdrId(launchId) || !isValidPid(pid) || typeof start !== 'string' || !/^\d+$/.test(start))
+    refuse('missing direct-exec launch identity; cleanup incomplete');
+  if ((s?.pid != null && s.pid !== pid) || (s?.pid_start_time != null && s.pid_start_time !== start))
+    refuse('recorded worker identity does not match direct-exec launch; cleanup incomplete');
+  if (after && pid !== after) refuse('recorded PID changed while waiting; nothing reaped');
+  if (!s?.state || !['closed', 'failed', 'stopped', 'idle_grace'].includes(s.state)) {
+    try { fs.writeFileSync(join(task, jobFiles.stopRequested), '', { flag: 'wx', mode: 0o600 }); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  }
+  const alive = () => liveStart(pid) === start;
+  if (alive() && callerAncestor(pid)) refuse(`protected caller PID ${pid}; cleanup incomplete`);
+  const ids = [left, ...(info.RIGHT ? [info.RIGHT] : [])];
+  const expectedSession = s?.session_file || s?.agent_session_id;
+  const matches = (a: Row) => Boolean(info.PRIMARY && a.name === info.PRIMARY && a.pane_id === left &&
+    a.launch_id === launchId && (!expectedSession || expectedSession === a.agent_session?.value));
+  function inspect() {
+    if (alreadyReaped(task)) return null;
+    const fresh = primary(task);
+    if ((fresh?.pid != null && fresh.pid !== pid) || (fresh?.pid_start_time != null && fresh.pid_start_time !== start) ||
+        JSON.stringify(session(task)) !== JSON.stringify(info))
+      refuse('launch or worker identity changed; cleanup incomplete');
+    const tabs = list('tab'), panes = list('pane'), agents = list('agent');
+    const target = tabs.find(t => t.launch_id === launchId);
+    const selected = target ? panes.filter(p => p.tab_id === target.tab_id) : panes.filter(p => p.launch_id === launchId);
+    if (!target) {
+      if (alive() || selected.length || agents.some(a => a.launch_id === launchId))
+        refuse('recorded target missing but worker or panes remain');
+      return null;
+    }
+    const tab = target.tab_id;
+    // Keep this one-line stderr diagnostic: watch-runtime parses it.
+    if (!info.TAB_NAME || target.label !== info.TAB_NAME) refuse(`TAB ${tab} name changed or missing; not closing`);
+    const orch = panes.find(p => p.pane_id === info.ORCH) ?? agents.find(a => a.name && a.name === info.ORCH);
+    if (ids.includes(info.ORCH) || orch?.tab_id === tab) refuse(`TAB ${tab} is the orchestrator tab; not closing`);
+    if (selected.some(p => p.launch_id !== launchId)) refuse('pane launch_id mismatch; not closing');
+    if (selected.length !== ids.length || ids.some(id => !selected.some(p => p.pane_id === id))) refuse('recorded pane set changed; not closing');
+    if (agents.some(a => (ids.includes(a.pane_id) || a.tab_id === tab || a.launch_id === launchId || (info.PRIMARY && a.name === info.PRIMARY)) &&
+      (!matches(a) || a.tab_id !== tab))) refuse('foreign agent in recorded pane or binding changed; not closing');
+    return { agent: agents.find(matches), tab };
+  }
+  let state = inspect();
+  if (!state) {
+    if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
+    return;
+  }
+  if (state.agent && alive()) {
+    const current = query(['agent', 'get', left!]).agent;
+    if (!current || !matches(current) || current.tab_id !== state.tab || current.agent_session?.value !== state.agent.agent_session?.value)
+      refuse('agent changed in recorded pane; left alone');
+    if (['idle', 'done'].includes(current.agent_status)) {
+      if (!alive() || callerAncestor(pid)) refuse('idle agent launch identity unverified; left alone');
+      const deadline = performance.now() + 30_000;
+      command(['agent', 'prompt', left!, '/quit']);
+      for (;;) {
+        const ms = Math.ceil(deadline - performance.now());
+        if (ms <= 0 || !alive() || !list('tab', Math.min(15_000, ms)).some(t => t.launch_id === launchId) ||
+            !list('agent', Math.min(15_000, ms)).some(matches)) break;
+        await delay(Math.min(500, ms));
+      }
+      state = inspect();
+      if (!state) {
+        if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
+        return;
+      }
+    }
+  }
+  if (alive()) {
+    if (callerAncestor(pid)) refuse(`protected caller PID ${pid}; left alone`);
+    if (liveStart(pid) !== start) refuse(`PID ${pid} start time changed; left alone`);
+    process.kill(pid, 'SIGTERM');
+    for (let waited = 0; waited < 5000 && alive(); waited += 250) await delay(250);
+    await delay(250);
+    state = inspect();
+    if (!state) {
+      if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
+      return;
+    }
+  }
+  if (alive()) {
+    console.log(`tree-owner ${pid}:${start}`);
+    refuse('worker process remains; not closing');
+  }
+  state = inspect();
+  if (!state) {
+    if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
+    return;
+  }
+  const closed = command(['tab', 'close', state.tab]);
+  if (closed.status !== 0 || list('tab').some(t => t.launch_id === launchId)) refuse(`tab ${state.tab} still exists`);
+  console.log(`tree-owner ${pid}:${start}`);
+}
+
 async function reap(task: string, after?: number) {
   if (alreadyReaped(task)) return;
   const s = primary(task), pid = s?.pid, start = s?.pid_start_time;
+  const info = session(task);
+  if (info.DIRECT_EXEC === '1') return reapDirect(task, s, info, after);
   const refuse = (message: string): never => { throw Error(`${task}: ${message}`); };
   if (after && isValidPid(pid) && pid !== after) refuse('recorded PID changed while waiting; nothing reaped');
   if (!s?.state || !['closed', 'failed', 'stopped', 'idle_grace'].includes(s.state)) {
@@ -71,7 +170,7 @@ async function reap(task: string, after?: number) {
     refuse(`live PID ${pid} missing start time; cleanup incomplete`);
   const alive = () => isValidPid(pid) && typeof start === 'string' && liveStart(pid) === start;
   if (alive() && callerAncestor(pid!)) refuse(`protected caller PID ${pid}; cleanup incomplete`);
-  const info = session(task), left = info.TAB ? info.LEFT : info.RIGHT;
+  const left = info.TAB ? info.LEFT : info.RIGHT;
   if (!left || (!info.TAB && info.RIGHT_SPLIT !== '1')) refuse('missing pane receipt; cleanup incomplete');
   const witness = s?.harness === 'cli' ? invocationWitness(task, info.LAUNCH) : null;
   if (s?.harness === 'cli' && alive() && (!witness || witness.pid !== pid || witness.start !== start))

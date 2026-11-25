@@ -32,7 +32,8 @@ export default async function hud(pi) {
     const notices = new AbortController();
     const waits = new Set(), pendingReady = new Map();
     pi.on('session_start', () => {
-      recordStartupShellSession?.(process.env.HUD_JOB_DIR, process.env.HUD_TAB_LAUNCH, process.env.HERDR_PANE_ID);
+      if (process.env.HUD_TAB_LAUNCH)
+        recordStartupShellSession?.(process.env.HUD_JOB_DIR, process.env.HUD_TAB_LAUNCH, process.env.HERDR_PANE_ID);
     });
     pi.on('session_shutdown', () => {
       notices.abort();

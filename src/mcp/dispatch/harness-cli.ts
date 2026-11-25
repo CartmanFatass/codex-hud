@@ -8,11 +8,11 @@ import { isCliDirTrusted } from '../../cli/trust.js';
 import { cliKinds, type CliAgent } from '../../roles/cli-kinds.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { executablePath, type RolePlace } from '../../roles/roster.js';
-import { herdrEndpoint } from '../../runtime/herdr-socket.js';
+import { herdrEndpoint, isHudHerdrFork, request as herdrRequest } from '../../runtime/herdr-socket.js';
 import { recordTabShells } from '../../runtime/tab-shell.js';
 import { prepareCliInvocation } from '../../runtime/cli-invocation.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
-import { isProcAlive } from '../../utils/proc.js';
+import { isProcAlive, isValidPid } from '../../utils/proc.js';
 import { writeTurn, withDonePrompt, reportSignature } from '../cli-judge.js';
 import { cliWorkerStartup, isHerdrAgentArg, type StandingBriefRef } from '../cli-worker-startup.js';
 import type { JobStatus, Job, SessionReceipt } from '../job-contracts.js';
@@ -22,7 +22,7 @@ import { jobCache, directory, bundled, hudHome, save, writeCreateStatus } from '
 import type { NativeResume } from '../worker-resume.js';
 import {
   run, binScript, launchError, rejectLaunch, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
-  startupFailure, paneText, refusedBeforeInput, type DispatchResult,
+  startupFailure, paneText, refusedBeforeInput, directExecEnv, waitedAgentStatus, type DispatchResult,
 } from './proc.js';
 
 function agentStatus(stdout: string): string | null {
@@ -107,8 +107,9 @@ export function failCli(dir: string, job: Job, place: RolePlace, reason: string)
 export async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[], standingBrief?: StandingBriefRef, options: { callerToken?: string; resume?: NativeResume } = {}): Promise<DispatchResult> {
   const { callerToken, resume } = options;
   let openedTab: string | undefined;
+  let openedLaunchId: string | undefined;
   let mayHaveInput = false;
-  const reject = (result: DispatchResult) => rejectLaunch(result, openedTab);
+  const reject = (result: DispatchResult) => rejectLaunch(result, openedTab, openedLaunchId);
   try {
     const kind = cliKinds[place.agent as CliAgent];
     const dir = directory(job.job);
@@ -141,47 +142,18 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
-    const tabArgv = [
-      'tab',
-      'create',
-      ...(place.agent === 'codex' ? ['--env', `CODEX_HOME=${resolve(process.env.CODEX_HOME || join(homedir(), '.codex'))}`] : []),
-      ...(place.agent === 'claude' && process.env.CLAUDE_CONFIG_DIR ? ['--env', `CLAUDE_CONFIG_DIR=${resolve(process.env.CLAUDE_CONFIG_DIR)}`] : []),
-      ...(await workspaceArgs(job)),
-      '--cwd',
-      job.cwd,
-      '--label',
-      tabName,
-      '--env',
-      `HUD_JOB_DIR=${dir}`,
-      '--env',
-      `HUD_HOME=${hudHome}`,
-      // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
-      '--env',
-      'GIT_OPTIONAL_LOCKS=0',
-    ];
     const starting: JobStatus = { version: 1, slot: 'primary', task_dir: fs.realpathSync(dir), state: 'working', harness: 'cli', agent: place.agent, pid: null, pid_start_time: null };
+    const wsArgs = await workspaceArgs(job);
     let left = '';
     let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
-    for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
-      const launch = randomUUID(), endpoint = herdrEndpoint();
-      const { env } = prepareCliInvocation(dir, launch, place.agent!, target);
-      const witnessEnv = Object.entries(env).flatMap(([key, value]) => ['--env', `${key}=${value}`]);
-      const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, ...witnessEnv, '--no-focus']);
-      if (result.exit_code !== 0) return reject(result);
-      const { tab, root_pane } = JSON.parse(result.stdout).result;
-      if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
-      left = root_pane?.pane_id;
-      if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
-      const fields: SessionReceipt = {
-        TASK: job.job, LAUNCH: launch, HERDR_SOCKET_PATH: endpoint ?? '',
-        TAB: tab.tab_id,
-        TAB_NAME: tabName,
-        LEFT: left,
-        RIGHT: '',
-        ORCH: job.herdr_pane,
-        BASE: base,
-        PRIMARY: name,
-      };
+    // Keep start arguments in detailed diagnostics only; never record the first prompt.
+    const recordLaunchArgs = () => {
+      const args = agentArgs.slice(0, 32).map(arg => arg.length <= 128 ? arg : `${arg.slice(0, 127)}…`);
+      if (args.length < agentArgs.length) args.push('…');
+      job.launch_agent_args = [...(job.launch_agent_args ?? []).slice(-3), { place: job.place_key ?? place.agent!, args }];
+      save(job);
+    };
+    const writeSession = (fields: SessionReceipt) => {
       if (Object.values(fields).some((value) => /[\r\n]/.test(value))) throw new Error('newlines in SESSION values');
       const sessionFile = join(dir, jobFiles.session);
       writePrivateFile(
@@ -192,21 +164,128 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
         { mkdir: false }
       );
       jobCache.invalidateFile(sessionFile);
-      writeCreateStatus(dir, starting); // Stop intent may arrive before the supervisor discovers the worker.
-      await recordTabShells(dir, launch, openedTab, [left]);
-      const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
-      if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
-      argv.push('--', ...agentArgs);
-      // Keep start arguments in detailed diagnostics only; never record the first prompt.
-      if (!tabAttempt) {
-        const args = agentArgs.slice(0, 32).map(arg => arg.length <= 128 ? arg : `${arg.slice(0, 127)}…`);
-        if (args.length < agentArgs.length) args.push('…');
-        job.launch_agent_args = [...(job.launch_agent_args ?? []).slice(-3), { place: job.place_key ?? place.agent!, args }];
-        save(job);
+    };
+    if (await isHudHerdrFork()) {
+      const endpoint = herdrEndpoint();
+      const workspaceId = wsArgs[1];
+      recordLaunchArgs();
+      const reply = await herdrRequest('agent.start', {
+        executable: target,
+        argv: agentArgs,
+        kind: place.agent!,
+        name,
+        cwd: job.cwd,
+        env: directExecEnv({
+          HUD_JOB_DIR: dir,
+          HUD_HOME: hudHome,
+          // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
+          GIT_OPTIONAL_LOCKS: '0',
+          ...(place.agent === 'codex' ? { CODEX_HOME: resolve(process.env.CODEX_HOME || join(homedir(), '.codex')) } : {}),
+          ...(place.agent === 'claude' && process.env.CLAUDE_CONFIG_DIR ? { CLAUDE_CONFIG_DIR: resolve(process.env.CLAUDE_CONFIG_DIR) } : {}),
+        }),
+        label: tabName,
+        on_exit: 'close_on_zero',
+        focus: false,
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
+      }, { timeoutMs: 15_000 });
+      if (!reply) return reject(launchError('herdr agent.start failed: no response'));
+      if (reply.error) return reject({ exit_code: 1, stdout: '', stderr: JSON.stringify(reply) });
+      const res = reply.result;
+      const tabId = res?.tab?.tab_id;
+      const paneId = res?.root_pane?.pane_id;
+      const launchId = herdrId(res?.launch_id) ? res.launch_id
+        : herdrId(res?.tab?.launch_id) ? res.tab.launch_id
+        : herdrId(res?.root_pane?.launch_id) ? res.root_pane.launch_id : undefined;
+      const pid = res?.pid;
+      const rawStart = res?.pid_start_time;
+      const pidStart = typeof rawStart === 'number' && Number.isSafeInteger(rawStart) && rawStart >= 0
+        ? String(rawStart)
+        : typeof rawStart === 'string' && /^\d+$/.test(rawStart) ? rawStart : undefined;
+      if (herdrId(tabId)) openedTab = tabId;
+      if (herdrId(launchId)) openedLaunchId = launchId;
+      if (!openedTab || !herdrId(paneId) || !openedLaunchId || !isValidPid(pid) || !pidStart)
+        throw new Error('direct-exec agent.start did not return tab, pane, launch_id, pid, and pid_start_time');
+      left = paneId;
+      writeSession({
+        TASK: job.job,
+        LAUNCH_ID: openedLaunchId,
+        DIRECT_EXEC: '1',
+        PID: String(pid),
+        PID_START: pidStart,
+        HERDR_SOCKET_PATH: endpoint ?? '',
+        TAB: openedTab,
+        TAB_NAME: tabName,
+        LEFT: left,
+        RIGHT: '',
+        ORCH: job.herdr_pane,
+        BASE: base,
+        PRIMARY: name,
+      });
+      writeCreateStatus(dir, { ...starting, pid, pid_start_time: pidStart });
+      const waitTimeout = kind.startTimeoutMs ?? 30_000;
+      const waited = await run('herdr', [
+        'agent', 'wait', name, '--until', 'idle', '--until', 'done', '--until', 'blocked',
+        '--timeout', String(waitTimeout),
+      ]);
+      if (waited.exit_code === 0 && waitedAgentStatus(waited.stdout) === 'blocked') {
+        started = {
+          exit_code: 1,
+          stdout: '',
+          stderr: JSON.stringify({ error: { code: 'agent_not_ready', message: `agent ${name} is blocked during startup and is not ready for prompts` } }),
+          notStarted: false,
+        };
+      } else {
+        started = waited;
       }
-      started = await run('herdr', argv);
-      if (!await retryBusyPane(started, tabAttempt, openedTab)) break;
-      openedTab = undefined;
+    } else {
+      const tabArgv = [
+        'tab',
+        'create',
+        ...(place.agent === 'codex' ? ['--env', `CODEX_HOME=${resolve(process.env.CODEX_HOME || join(homedir(), '.codex'))}`] : []),
+        ...(place.agent === 'claude' && process.env.CLAUDE_CONFIG_DIR ? ['--env', `CLAUDE_CONFIG_DIR=${resolve(process.env.CLAUDE_CONFIG_DIR)}`] : []),
+        ...wsArgs,
+        '--cwd',
+        job.cwd,
+        '--label',
+        tabName,
+        '--env',
+        `HUD_JOB_DIR=${dir}`,
+        '--env',
+        `HUD_HOME=${hudHome}`,
+        // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
+        '--env',
+        'GIT_OPTIONAL_LOCKS=0',
+      ];
+      for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
+        const launch = randomUUID(), endpoint = herdrEndpoint();
+        const { env } = prepareCliInvocation(dir, launch, place.agent!, target);
+        const witnessEnv = Object.entries(env).flatMap(([key, value]) => ['--env', `${key}=${value}`]);
+        const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, ...witnessEnv, '--no-focus']);
+        if (result.exit_code !== 0) return reject(result);
+        const { tab, root_pane } = JSON.parse(result.stdout).result;
+        if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
+        left = root_pane?.pane_id;
+        if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
+        writeSession({
+          TASK: job.job, LAUNCH: launch, HERDR_SOCKET_PATH: endpoint ?? '',
+          TAB: tab.tab_id,
+          TAB_NAME: tabName,
+          LEFT: left,
+          RIGHT: '',
+          ORCH: job.herdr_pane,
+          BASE: base,
+          PRIMARY: name,
+        });
+        writeCreateStatus(dir, starting); // Stop intent may arrive before the supervisor discovers the worker.
+        await recordTabShells(dir, launch, openedTab, [left]);
+        const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
+        if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
+        argv.push('--', ...agentArgs);
+        if (!tabAttempt) recordLaunchArgs();
+        started = await run('herdr', argv);
+        if (!await retryBusyPane(started, tabAttempt, openedTab)) break;
+        openedTab = undefined;
+      }
     }
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
     if (started.exit_code !== 0 && !notReady) return reject(await startupFailure(started, left));

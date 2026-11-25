@@ -5,6 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { herdrId, runHerdr } from '../../roles/herdr-run.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { isQuotaFailure } from '../../roles/roster.js';
+import { request as herdrSocketRequest } from '../../runtime/herdr-socket.js';
 import type { Job, JobStatus } from '../job-contracts.js';
 import { callerPane, rememberCallerHarness } from '../mcp/session-state.js';
 import { bundled, hudHome, jobs, jobCache } from '../store/job-store.js';
@@ -146,13 +147,65 @@ export async function startupFailure(result: DispatchResult, pane: string): Prom
   return { ...result, pane, ...(reason && { detail: reason }) };
 }
 
+/** Build explicit worker env for direct-exec `agent.start` from HUD's own process env plus job vars. */
+const STRIPPED_PARENT_ENV = new Set([
+  'CLAUDECODE',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CODEX_THREAD_ID',
+  'OMPCODE',
+  'HUD_MCP_SURFACE',
+  'HUD_MCP_PI_SESSION_ID',
+  'HUD_MCP_JSON',
+  'HUD_JOB_DIR',
+  'HUD_TAB_LAUNCH',
+  'HUD_INVOCATION_TOKEN',
+  'HERDR_PANE_ID',
+  'HERDR_TAB_ID',
+  'HERDR_WORKSPACE_ID',
+]);
+
+export function directExecEnv(extra: Record<string, string>, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(base)) {
+    if (!key || typeof value !== 'string' || STRIPPED_PARENT_ENV.has(key)) continue;
+    if (key.includes('=') || key.includes('\0') || value.includes('\0')) continue;
+    env[key] = value;
+  }
+  for (const [key, value] of Object.entries(extra)) {
+    if (!key || key.includes('=') || key.includes('\0') || value.includes('\0')) continue;
+    env[key] = value;
+  }
+  return env;
+}
+
+export function waitedAgentStatus(stdout: string): string | null {
+  try {
+    const res = JSON.parse(stdout)?.result;
+    const status = res?.event?.data?.agent_status ?? res?.agent?.agent_status;
+    return typeof status === 'string' ? status : null;
+  } catch {
+    return null;
+  }
+}
+
 export type DispatchResult = {
   exit_code: number; stdout: string; stderr: string; code?: Job['dispatch_code'];
   pane?: string; detail?: string; preInput?: boolean; cleanupFailed?: boolean; status?: JobStatus; path?: string;
 };
 export const canTryNext = (job: Job, result: DispatchResult) => (job.role !== 'sonic' || job.headless) && result.preInput && !result.cleanupFailed;
 export const launchError = (stderr: string, code?: Job['dispatch_code']): DispatchResult => ({ exit_code: 1, stdout: '', stderr, code });
-export async function rejectLaunch(result: DispatchResult, tab?: string): Promise<DispatchResult> {
+export async function rejectLaunch(result: DispatchResult, tab?: string, launchId?: string): Promise<DispatchResult> {
+  if (tab && launchId) {
+    const check = await herdrSocketRequest('tab.get', { tab_id: tab }).catch(() => null);
+    if (check?.error?.code === 'tab_not_found') return { ...result, preInput: true, cleanupFailed: false };
+    const actual = check?.result?.tab?.launch_id;
+    if (actual && actual !== launchId) return { ...result, preInput: true, cleanupFailed: false };
+    if (!actual) return { ...result, preInput: true, cleanupFailed: true };
+  }
   const cleanup = tab && await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 });
-  return { ...result, preInput: true, cleanupFailed: Boolean(cleanup && !cleanup.ok) };
+  const alreadyGone = Boolean(cleanup && !cleanup.ok && launchId &&
+    cliError({ exit_code: cleanup.exitCode ?? 1, stdout: cleanup.stdout, stderr: cleanup.stderr })?.code === 'tab_not_found');
+  return { ...result, preInput: true, cleanupFailed: Boolean(cleanup && !cleanup.ok && !alreadyGone) };
 }

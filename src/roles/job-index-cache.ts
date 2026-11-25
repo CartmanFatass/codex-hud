@@ -27,6 +27,10 @@ const EMPTY_STRING_ARRAY: readonly string[] = Object.freeze([]);
 const SESSION_KEY_MAP: Record<string, keyof SessionFields> = {
   TASK: 'task',
   LAUNCH: 'launch',
+  LAUNCH_ID: 'launchId',
+  DIRECT_EXEC: 'directExec',
+  PID: 'pid',
+  PID_START: 'pidStart',
   HERDR_SOCKET_PATH: 'herdrSocket',
   TAB: 'tab',
   TAB_NAME: 'tabName',
@@ -65,6 +69,10 @@ export interface ReportStat {
 export interface SessionFields {
   readonly task?: string;
   readonly launch?: string;
+  readonly launchId?: string;
+  readonly directExec?: string;
+  readonly pid?: string;
+  readonly pidStart?: string;
   readonly herdrSocket?: string;
   readonly tab?: string;
   readonly tabName?: string;
