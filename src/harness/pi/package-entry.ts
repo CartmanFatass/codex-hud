@@ -5,6 +5,7 @@ import type { PiPackageBinding, PiPackageContext } from './package-context.js';
 export type { PiPackageBinding, PiPackageContext } from './package-context.js';
 import { closePanelPane, panelPaneExists } from '../../cli/panel-pane.js';
 import { startSessionWatch } from '../../cli/watch.js';
+import { allowCouncil } from '../../roles/council-grant.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { collectResumeRefusal } from '../../collectors/job-snapshot.js';
 import { openPiPanel } from './package-native.js';
@@ -19,6 +20,7 @@ export interface PiPackageAPI extends FooterAPI {
     message: { customType: string; content: string; display: boolean; details?: unknown },
     options?: { triggerTurn?: boolean; deliverAs?: 'steer' | 'followUp' | 'nextTurn' }
   ): void;
+  sendUserMessage(content: string, options?: { deliverAs: 'followUp' }): void;
   registerCommand(
     name: string,
     options: { description: string; handler(args: string, ctx: PiPackageContext): Promise<void> }
@@ -298,6 +300,17 @@ export function installPiPackage(
     },
   });
   if (mode !== 'delegate') return;
+  // A slash command, never a model tool. The display package need not be loaded.
+  if (!env.HUD_JOB_DIR && typeof pi.sendUserMessage === 'function') pi.registerCommand('council', {
+    description: 'Authorize one council and submit its request',
+    async handler(args, ctx) {
+      if (!args.trim()) return ctx.ui.notify('Usage: /council <request>', 'info');
+      if (!active || !current(active) || active.ctx.sessionManager !== ctx.sessionManager)
+        return ctx.ui.notify('HUD: session_unbound', 'warning');
+      await allowCouncil(binding.hudHome, 'pi');
+      pi.sendUserMessage(`Start a HUD council for this request:\n\n${args.trim()}`, { deliverAs: 'followUp' });
+    },
+  });
   const expUsage = piExpUsage(binding.hudHome);
   on('context', expUsage.requestStart);
   on('message_end', expUsage.messageEnd);

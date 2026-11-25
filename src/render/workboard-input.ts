@@ -176,6 +176,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         ? frame?.controls.find((c) => c.kind.startsWith('preset-') && c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.item
         : undefined;
       const fact = (clickedRole ? rows.find((r) => r.item === clickedRole) : rows[at])?.roleFact;
+      if (fact?.role === 'council' && ((input.type === 'key' && input.text === 'g') || tab === 'council-grant'))
+        return result({ type: 'council-grant' });
       if (fact?.optionalEnabled !== undefined && (key === 'space' || tab === 'role-toggle')) {
         nav.revealed = undefined;
         return result({ type: 'role-switch', role: fact.role, enabled: !fact.optionalEnabled });

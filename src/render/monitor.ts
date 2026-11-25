@@ -95,6 +95,7 @@ export interface MonitorControl {
     | 'control-open-file'
     | 'control-model'
     | 'role-toggle'
+    | 'council-grant'
     | 'model-cancel'
     | 'harness-add'
     | 'harness-toggle'
@@ -180,6 +181,7 @@ export interface MonitorOutcome {
     | ({ type: 'preset-edit'; modelIndex?: number } & PresetEdit)
     | { type: 'model-picked'; value: string }
     | { type: 'harness-switch'; id: string; off: boolean }
+    | { type: 'council-grant' }
     | { type: 'role-switch'; role: string; enabled: boolean }
     | { type: 'accept-all' }
     | { type: 'request-retry'; home: string; jobId: string }

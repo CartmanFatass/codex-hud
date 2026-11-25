@@ -131,6 +131,20 @@ test('Control plane: what needs the owner first with the place the next job uses
   await s.press('\r');
   assert.match(s.text(), /^▸ Healthy ─+ 5$/m, 'Enter again folds them');
 });
+test('Control offers a one-time grant only on the selected council row', async t => {
+  const s = await setup(t, { healthyOpen: false });
+  s.session.state = onControl({ cursor: 'project:role:pro' });
+  assert.equal((await s.press('g')).action, undefined);
+  s.session.state = select(s.session.state, 'project:role:council');
+  assert.ok(s.frame().controls.some(c => c.kind === 'council-grant'));
+  const { action, state } = await s.press('g');
+  assert.deepEqual(action, { type: 'council-grant' });
+  const { promise, resolve } = Promise.withResolvers();
+  createPanelActions(s.hud, s.cwd, {}, { state, notice() {}, repaint: resolve }).execute(action, state);
+  await promise;
+  assert.equal(JSON.parse(fs.readFileSync(join(s.hud, 'council-grant.json'))).via, 'panel');
+});
+
 test('Control switches optional roles on with Space and off with the footer in both layouts', async (t) => {
   const s = await setup(t, { healthyOpen: false });
   const visit = { collector: s.collector, control: s.session.snap };

@@ -14,6 +14,7 @@ import { resourcesShown } from '../render/main-tabs.js';
 import { rememberModel } from '../render/model-input.js';
 import { controlRoleItem } from '../render/monitor-state.js';
 import type { MonitorOutcome, MonitorState } from '../render/monitor.js';
+import { allowCouncil } from '../roles/council-grant.js';
 import { HarnessSwitchError, setHarnessDisabled } from '../roles/harness-switches.js';
 import { editPlaces, editPreset } from '../roles/role-control.js';
 import { roleRegistry } from '../roles/roster.js';
@@ -175,6 +176,10 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
           if (visit.control) visit.collector.refreshRoles(visit.control, Date.now());
           break;
         }
+        case 'council-grant':
+          void allowCouncil(home, 'panel').then(() => host.notice(t('One council authorized for 30 minutes')),
+            () => host.notice(t('Could not authorize council'))).finally(() => host.repaint());
+          break;
         case 'role-switch': {
           const root = host.shownRoot(), visit = visits.visit(root);
           try {

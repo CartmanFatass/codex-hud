@@ -47,7 +47,20 @@ const run = ($: Engine, command: string, args = '') =>
 test('an owner session gets the commands; a worker session gets none', async ($, on) => {
   const f = session(on, {});
   await $.session.start(start);
-  expect(f.registered).toEqual(['jobs', 'answer', 'try', 'retry', 'land', 'stop']);
+  expect(f.registered).toEqual(['council', 'jobs', 'answer', 'try', 'retry', 'land', 'stop']);
+});
+
+test('/council is a composer-only command and passes the owner request after granting', async ($, on) => {
+  const f = session(on, {}), clock = mock.clock(on), prompts: string[] = [];
+  on('prompt.submit', (_, e) => { prompts.push(e.text); return { text: e.text }; });
+  await $.session.start(start);
+  await $.command.run({ command: 'council', args: 'Not typed', origin: { kind: 'plugin', name: 'synthetic' }, presentation: { isFullscreen: false, columns: 80 } });
+  expect((await run($, 'council')).text).toBe('Usage: /council <request>');
+  expect(f.runs).toEqual([]);
+  expect((await run($, 'council', 'Compare A and B.')).text).toBe('Council request queued');
+  expect(f.runs).toEqual([['hud', 'council', 'allow', '--via', 'claude-mod']]);
+  await clock.advance(1);
+  expect(prompts).toEqual(['Start a HUD council for this request:\n\nCompare A and B.']);
 });
 
 test('a worker session registers no command', async ($, on) => {

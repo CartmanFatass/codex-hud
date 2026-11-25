@@ -299,6 +299,22 @@ test('pi on/off/toggle/status uses the caller pane without native ancestry and r
   await h.emit('session_shutdown', c.ctx);
 });
 
+test('pi owner /council grants once and submits the following text, without a grant tool', async t => {
+  const f = setup(t), h = host(), c = context(f, h), p = ports(f);
+  const texts = [];
+  h.pi.sendUserMessage = (text, opts) => texts.push([text, opts]);
+  await load(f, h, p);
+  await h.emit('session_start', c.ctx);
+  const run = args => h.commands.get('council').handler(args, c.ctx);
+  const grant = path.join(f.env.HUD_HOME, 'council-grant.json');
+  await run('');
+  assert.ok(!fs.existsSync(grant));
+  await run('Compare A and B.');
+  assert.equal(JSON.parse(fs.readFileSync(grant)).via, 'pi');
+  assert.deepEqual(texts, [['Start a HUD council for this request:\n\nCompare A and B.', { deliverAs: 'followUp' }]]);
+  assert.ok(![...h.tools.keys()].some(name => /grant|allow|council/.test(name)));
+});
+
 test('combined pi packages retain delegation after canceled navigation and display reconnect', async (t) => {
   const f = setup(t),
     h = host(),
@@ -317,7 +333,7 @@ test('combined pi packages retain delegation after canceled navigation and displ
     assert.match((await roster()).content[0].text, /^roles: \[\{/);
   }
   assert.equal(h.tools.size, toolCount);
-  assert.equal(h.commands.size, 1);
+  assert.deepEqual([...h.commands.keys()].sort(), ['council', 'hud']);
   assert.equal(p.counts().splits, 0);
 });
 
@@ -436,7 +452,8 @@ test('delegation collects live oapi requests, using request-time prices and pers
   assert.equal(h.calls.footer, 0);
   const count = lines().length;
   await h.emit('session_shutdown', c.ctx);
-  h.tools.clear(); // The replacement Pi runtime starts with a fresh tool registry.
+  h.tools.clear(); // The replacement Pi runtime starts with fresh registries.
+  h.commands.clear();
   await load(f, h, { options: { env: f.env } });
   await h.emit('session_start', c.ctx);
   await finish(reply());
@@ -739,7 +756,7 @@ test('the delegation-only package registers the tools but no footer, no /hud and
   assert.deepEqual([...h.tools.values()].map(({ name, description, parameters }) => ({
     name, description, inputSchema: parameters,
   })), PI_ROLE_TOOLS);
-  assert.equal(h.commands.size, 0, 'no /hud command');
+  assert.deepEqual([...h.commands.keys()], ['council'], 'owner command only; no display commands');
   await h.emit('session_start', c.ctx);
   const guide = await h.tools.get('hud_tickets').execute('synthetic', { op: 'guide' }, undefined, undefined, c.ctx);
   assert.match(guide.content[0].text, /^# Ticket method/);

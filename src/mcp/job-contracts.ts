@@ -1,5 +1,6 @@
 /** The records exchanged in a HUD job directory. Types only: readers keep their
  * existing size limits, validation and treatment of missing/legacy evidence. */
+import type { CouncilGrant } from '../roles/council-grant.js';
 import type { CliAgent } from '../roles/cli-kinds.js';
 import type { Role, RolePlace, RouteMode, RouteTier, piSwitches } from '../roles/roster.js';
 import type { QuietDecision } from './quiet-decision.js';
@@ -105,6 +106,7 @@ export interface Job extends PiOptions {
   read_at?: string;
   read_report_stamp?: string;
   parent_job?: string;
+  grant?: CouncilGrant;
   council?: { id: string; part: 'member' | 'synthesizer' };
   council_members?: { preset: string; job?: string; failure?: string; digest?: string }[];
   synthesizer?: string;

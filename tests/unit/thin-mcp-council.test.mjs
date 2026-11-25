@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -14,12 +15,18 @@ const dir = (f, id) => join(f.env.HUD_HOME, 'jobs', id);
 const receipt = (f, id) => json(join(dir(f, id), 'job.json'));
 const brief = (f, id) => text(join(dir(f, id), 'brief.md'));
 const states = (f, id) => json(join(dir(f, id), 'STATUS.json'));
+const grantFile = f => join(f.env.HUD_HOME, 'council-grant.json');
+async function allow(f, ...via) {
+  execFileSync(process.execPath, ['bin/hud', 'council', 'allow', ...via], { env: f.env });
+  return json(grantFile(f));
+}
 async function setup(t) {
   const f = await fixture(t);
   enableOptionalRoles(f, 'council', 'pro');
   put(join(f.env.HOME, 'hold-turn'), '');
   put(join(f.env.HOME, 'defer-pi-report'), '');
   await f.startCliSocket();
+  f.grant = await allow(f);
   return f;
 }
 async function members(f, id) {
@@ -53,6 +60,9 @@ test('shipped council runs three independent members and one browser synthesis; 
   t.after(startSessionWatch(f.env.HUD_HOME, f.env.HERDR_PANE_ID, f.root, batch => lines.push(...batch), 10));
   const { job } = await f.call('hud_create', { role: 'council', brief_file: 'brief.md', context_files: ['public.md', 'changed.md', 'local.md'] });
   const seats = await members(f, job);
+  assert.equal(f.grant.via, 'cli');
+  assert.deepEqual(receipt(f, job).grant, f.grant);
+  assert.equal((await f.call('hud_create', { role: 'council', task: 'Another council.' })).code, 'owner_grant_required');
   assert.deepEqual(seats.map(m => m.preset), ['fable', 'astra', 'carbon']);
   for (const [i, m] of seats.entries()) {
     assert.ok(m.job, JSON.stringify(m));
@@ -81,10 +91,13 @@ test('shipped council runs three independent members and one browser synthesis; 
   assert.equal(lines.length, 1, JSON.stringify(lines));
   for (const child of [...seats.map(m => receipt(f, m.job)), synth])
     archiveJob(f.env.HUD_HOME, dir(f, child.job), child.job, child, states(f, child.job), Date.now(), assert.fail);
+  archiveJob(f.env.HUD_HOME, dir(f, job), job, receipt(f, job), states(f, job), Date.now(), assert.fail);
   const archive = join(f.env.HUD_HOME, 'archive');
   const rows = fs.readdirSync(archive).flatMap(file => text(join(archive, file)).trim().split('\n').map(JSON.parse));
-  assert.deepEqual(rows.map(r => r.council.part).sort(), ['member','member','member','synthesizer']);
-  assert.ok(rows.every(r => r.council.id === job));
+  assert.deepEqual(rows.find(r => r.job === job).grant, f.grant);
+  const children = rows.filter(r => r.job !== job);
+  assert.deepEqual(children.map(r => r.council.part).sort(), ['member','member','member','synthesizer']);
+  assert.ok(children.every(r => r.council.id === job && !r.grant));
 });
 
 test('local synthesis with one failed member gets local references, successful reports and a failure note', async t => {
@@ -150,10 +163,53 @@ for (const overflow of [false, true]) test(overflow ? 'browser overflow fails pl
   assert.ok(!f.commands().some(c => c.command === 'jev-ask'));
 });
 
+test('one global grant: missing and expired grants start nothing, replacement does not stack, concurrent creates admit one', async t => {
+  const f = await fixture(t);
+  enableOptionalRoles(f, 'council', 'pro');
+  const create = task => f.call('hud_create', { role: 'council', task, members: ['astra','astra'], synthesizer: 'main' });
+  const refused = async promise => {
+    const no = await promise;
+    assert.equal(no.code, 'owner_grant_required');
+    assert.match(no.reason, /ask the owner/i);
+    assert.doesNotMatch(no.reason, /\/council|council allow/);
+  };
+  await refused(create('No grant.'));
+  put(grantFile(f), JSON.stringify({ via: 'cli', created_at: new Date(Date.now() - 30 * 60_000).toISOString() }));
+  await refused(create('Expired grant.'));
+  assert.ok(!fs.existsSync(join(f.env.HUD_HOME, 'jobs')));
+  await allow(f);
+  const latest = await allow(f, '--via', 'claude-mod');
+  assert.equal(latest.via, 'claude-mod');
+  assert.equal(fs.statSync(grantFile(f)).mode & 0o777, 0o600);
+  const replies = await Promise.all([create('First.'), create('Second.')]);
+  const jobs = replies.filter(r => r.job);
+  assert.equal(jobs.length, 1);
+  assert.equal(replies.find(r => !r.job)?.code, 'owner_grant_required');
+  await members(f, jobs[0].job);
+  assert.deepEqual(receipt(f, jobs[0].job).grant, latest);
+  await refused(create('Third.'));
+});
+
+test('all member launches refused before input leave the same grant usable', async t => {
+  const f = await setup(t), fail = join(f.env.HOME, 'fail-start');
+  const create = task => f.call('hud_create', { role: 'council', task, members: ['fable','fable'], synthesizer: 'main' });
+  put(fail, 'Synthetic startup failure');
+  const first = await create('Cannot launch members.');
+  assert.equal((await outcome(f, first.job)).state, 'failed');
+  assert.equal(receipt(f, first.job).grant, undefined);
+  assert.deepEqual(json(grantFile(f)), f.grant);
+  fs.unlinkSync(fail);
+  const next = await create('Now launch.');
+  for (const m of await members(f, next.job)) finish(f, m, 'Independent idea.');
+  assert.equal((await outcome(f, next.job)).state, 'closed');
+  assert.deepEqual(receipt(f, next.job).grant, f.grant);
+});
+
 test('disabled council, browser switch, bad count, unknown or unavailable seat start nothing', async t => {
   const f = await fixture(t);
   const create = args => f.call('hud_create', { role: 'council', task: 'Plan.', ...args });
   assert.match((await create({})).reason, /council is off.*Control/);
+  const grant = await allow(f);
   enableOptionalRoles(f, 'council');
   assert.match((await create({})).reason, /Enable pro.*Control/);
   assert.match((await create({ members: ['missing','astra'] })).reason, /Unknown council preset.*Valid council presets:.*fable/);
@@ -161,5 +217,6 @@ test('disabled council, browser switch, bad count, unknown or unavailable seat s
   assert.match((await create({ synthesizer: 'missing' })).reason, /Unknown council preset/);
   put(join(f.env.HUD_HOME, 'harnesses.json'), JSON.stringify({ disabled: ['cli:claude'] }));
   assert.match((await create({ members: ['astra','astra'], synthesizer: 'fable' })).reason, /fable unavailable/);
+  assert.deepEqual(json(grantFile(f)), grant);
   assert.ok(!fs.existsSync(join(f.env.HUD_HOME, 'jobs')));
 });

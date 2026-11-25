@@ -8,6 +8,7 @@ import { taskTarget } from '../../collectors/job-supersession.js';
 import { objectiveLink } from '../../collectors/objectives.js';
 import type { JobRow } from '../../collectors/thin-jobs.js';
 import { isWorkingForCap, loadConcurrencySettings, capForRole, QUEUE_START_MARKER } from '../../roles/concurrency.js';
+import { availableCouncilGrant, reserveCouncilGrant } from '../../roles/council-grant.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { herdrId } from '../../roles/herdr-run.js';
@@ -361,8 +362,8 @@ async function nextEvenLaunch(even: ReturnType<typeof evenPlanner>, job: Job, re
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<Job, 'job' | 'objective'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit, dispatcher, seat, council }: {
-    seat?: CouncilSeat; council?: Job['council'];
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit, dispatcher, seat, council, memberStarted }: {
+    seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
     ticketQueue?: string; canAdmit?: () => boolean; dispatcher?: Job['dispatcher'];
   } = {}) {
@@ -521,6 +522,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     const allowed = ['role', 'task', 'cwd', 'request_key', 'members', 'synthesizer', 'context_files', 'from_jobs', 'retry_of'];
     const extra = Object.keys(args).find(k => args[k] !== undefined && !allowed.includes(k));
     if (extra || parent || repairOf || ticketQueue) return { ok: false, code: 'invalid_arguments', error: `Council is a standalone fixed flow; unsupported: ${extra ?? 'nested dispatch'}` };
+    const askOwner = { ok: false, code: 'owner_grant_required', reason: 'Ask the owner to authorize one council before starting it.' };
+    if (!availableCouncilGrant(hudHome)) return askOwner;
     const councilPlan = prepareCouncil(args, definition, found, configured, routing);
     if ('code' in councilPlan) return councilPlan;
     const context = await contextFor(args, false);
@@ -530,29 +533,38 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     const base: Job = { job: id, role, cwd, project_root: projectRoot, caller_pane: pane, request_key, created_at: new Date().toISOString(), dispatcher,
       task_length: task.length, dispatch_exit_code: 0, stderr_tail: '', ...context.metadata, ...(retryInput && { retry_of: required(retryInput, 'retry_of') }),
       council_members: members.map(preset => ({ preset })), synthesizer, create_options: { members, synthesizer } };
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writePrivateFile(join(dir, jobFiles.brief), `${task}\n\n${context.block}`);
-    save(base);
-    writeCreateStatus(dir, { state: 'working', reason: 'Council in progress' });
-    trackCreatedJob(id);
-    const row = readRow(base).row;
-    session.cursor.set(id, row);
-    ensureWatcher();
-    const entry = session.taskClient ? beginTask(base) : undefined;
-    if (!entry) void ensureQueueWatcher(pane, hudHome);
-    const reply = finishTask(entry, base, true) ?? created(base, row);
-    const controller = new AbortController();
-    pendingScouts.set(id, controller);
-    const running = runCouncil(base, councilPlan, task, async (seat, part, childArgs): Promise<{ job?: string; failure?: string }> => {
-      const role = seat.place.harness === 'bro' ? 'pro' : 'general';
-      const result = await dispatchWithKey({ ...childArgs, role, cwd, prewalk: false }, jobCallerPane(base), `council:${id}:${randomBytes(8).toString('hex')}`, false,
-        base, undefined, undefined, { dispatcher, seat, council: { id, part } });
-      return 'job' in result ? { job: result.job } : { failure: [('code' in result && result.code), ('reason' in result && result.reason) || ('error' in result && result.error)].filter(Boolean).join(': ') || 'could not launch' };
-    }, controller.signal);
-    scoutedCreates.add(running);
-    const release = () => { pendingScouts.delete(id); scoutedCreates.delete(running); };
-    void running.then(release, release);
-    return reply;
+    const reservation = await reserveCouncilGrant(hudHome, id);
+    if (!reservation) return askOwner;
+    try {
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      writePrivateFile(join(dir, jobFiles.brief), `${task}\n\n${context.block}`);
+      save(base);
+      writeCreateStatus(dir, { state: 'working', reason: 'Council in progress' });
+      trackCreatedJob(id);
+      const row = readRow(base).row;
+      session.cursor.set(id, row);
+      ensureWatcher();
+      const entry = session.taskClient ? beginTask(base) : undefined;
+      if (!entry) void ensureQueueWatcher(pane, hudHome);
+      const reply = finishTask(entry, base, true) ?? created(base, row);
+      const controller = new AbortController();
+      pendingScouts.set(id, controller);
+      const running = runCouncil(base, councilPlan, task, async (seat, part, childArgs): Promise<{ job?: string; failure?: string }> => {
+        const role = seat.place.harness === 'bro' ? 'pro' : 'general';
+        const result = await dispatchWithKey({ ...childArgs, role, cwd, prewalk: false }, jobCallerPane(base), `council:${id}:${randomBytes(8).toString('hex')}`, false,
+          base, undefined, undefined, { dispatcher, seat, council: { id, part }, memberStarted: part !== 'member' ? undefined : () => {
+            if (!base.grant) { base.grant = reservation.grant; save(base); }
+          } });
+        return 'job' in result ? { job: result.job } : { failure: [('code' in result && result.code), ('reason' in result && result.reason) || ('error' in result && result.error)].filter(Boolean).join(': ') || 'could not launch' };
+      }, controller.signal, reservation.releaseUnused);
+      scoutedCreates.add(running);
+      const release = () => { pendingScouts.delete(id); scoutedCreates.delete(running); };
+      void running.then(release, release);
+      return reply;
+    } catch (error) {
+      await reservation.releaseUnused();
+      throw error;
+    }
   }
   const imp = requestedRole === 'imp' || fromImp;
   const sonic = requestedRole === 'sonic';
@@ -881,7 +893,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       reason = result.exit_code === 0 ? '' : launchFailure(result).reason;
       if (reason) attempt.reason = reason;
       attempts.push(attempt);
-      if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) job.used_place = attempt.place;
+      if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) {
+        job.used_place = attempt.place;
+        memberStarted?.(); // Pre-input failures also have job IDs; only a used place spends the grant.
+      }
       const next = even && reason ? await nextEvenLaunch(even, job, result, reason) : undefined;
       if (next) candidates.splice(index + 1, candidates.length, ...next.candidates);
       else if (!canTryNext(job, result)) break;

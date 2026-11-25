@@ -54,7 +54,7 @@ export function controlHeader(input: MonitorData, state: MonitorState, width: nu
 export function controlHints(data: ProjectSnapshot | undefined, item?: string): string[] {
   const role = data?.roles.find((r) => r.role === controlRoleOf(item));
   if (role) {
-    const toggle = role.optionalEnabled === undefined ? [] : ['Space on/off'];
+    const toggle = [...(role.role === 'council' ? ['g grant once'] : []), ...(role.optionalEnabled === undefined ? [] : ['Space on/off'])];
     if (role.optionalEnabled === false) return [...toggle, 'o file', 'h harnesses'];
     if (role.source === 'project') return [...toggle, 'o file', '⏎ chain', 'h harnesses'];
     const model = takesModel(role.editor?.places[roleModelIndex(role)]) ? ['m model'] : [];
@@ -197,7 +197,7 @@ function roleActions(role: RoleFact, width: number): MonitorRow[] {
 /** Match the footer's whole translated hints and their cells (same alignment as footRow). */
 export function presetFooterControls(frame: MonitorFrame, hints: FooterHints, width: number, y: number) {
   const kinds: Record<string, MonitorControl['kind']> = {
-    'Space on/off': 'role-toggle', 'p presets': 'preset-list', 'N copy': 'preset-copy', 'I empty': 'preset-empty', 'R rename': 'preset-rename', 'D delete': 'preset-delete',
+    'g grant once': 'council-grant', 'Space on/off': 'role-toggle', 'p presets': 'preset-list', 'N copy': 'preset-copy', 'I empty': 'preset-empty', 'R rename': 'preset-rename', 'D delete': 'preset-delete',
     '⏎ apply': 'preset-accept', '⏎ delete': 'preset-accept', '⏎ rename': 'preset-accept',
     '⏎ continue': 'preset-accept', 'Esc cancel': 'preset-cancel', 'o file': 'control-open-file',
     'i add': 'chain-add', 's save': 'chain-save', '⏎ edit': 'chain-edit', '⏎ choose': 'chain-edit', '⏎ fill': 'chain-accept',

@@ -256,6 +256,7 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
       checks: checks && { passed: checks.passed, total: checks.total, stale: checks.stale },
       repair_of: text(job.repair_of), retry_of: text(job.retry_of), sessions: sessions.length ? sessions : undefined,
       dispatcher: archiveDispatcher(job.dispatcher),
+      grant: job.role === 'council' && job.grant ? { via: job.grant.via, created_at: job.grant.created_at } : undefined,
       council: typeof job.council?.id === 'string' && /^j[0-9a-f]{16}$/.test(job.council.id) && ['member', 'synthesizer'].includes(job.council.part)
         ? { id: job.council.id, part: job.council.part } : undefined,
       output_written: typeof status.output_written === 'boolean' ? status.output_written : undefined,

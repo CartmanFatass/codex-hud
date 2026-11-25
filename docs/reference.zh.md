@@ -303,6 +303,8 @@ HUD 勾选验收项，并在评论中写入 `Landed in this commit`、重放基�
 旧版单位置文件自动加载为 `run[0]`，`"harness": "jev"` 自动加载为 `"bro"`。
 内置角色：`imp`（`pi` implementer）、`reviewer`（`pi` reviewer → `agy` Hydrogen high）、`sonic`、`oracle`（`cli` `claude` `fable` high → `pi` `architect`；
 没有角色文件定义 `architect` 时，`hud_create` 也接受 `architect` 作为它的别名）、以及可选角色 `council`、`pro`（依次为 `chatgpt`、`gemini`、`argon`）和 `flow`（`jev-flow`）。
+会商需要所有者单独授权，启用角色不等于授权。在 Claude mod 或 pi 中输入 `/council <请求>`，即可授权一次，并将后面的文字作为会商请求提交给主会话。在 Codex 或 Antigravity 中，可在 Control → Roles 选中 `council` 后按 **g**；也可以在终端运行 `hud council allow`。面板和终端只授权，请另行告诉主会话要讨论的问题。`$HUD_HOME` 中只保留一条私有记录，跨会话、跨项目有效，30 分钟后过期，新授权替换未使用的授权。第一个成员启动即消耗授权；被拒绝或所有成员均未能启动时不消耗。会商回执和归档行记录 `grant: {via, created_at}`。调用方遇到 `owner_grant_required` 应请所有者授权，绝不能自行授权。
+
 **Council（会商）** 只在所有者明确要求独立方案时使用。`hud_create({role: "council", task, cwd})` 并行启动 `members`（默认 `fable`、`astra`、`carbon`，借用 `oracle` 只读指令）。可用 `brief_file` 代替 `task`，也可附上 `context_files`、`from_jobs`。在 `$HUD_HOME/roles/council.json` 中定义命名 `presets`，设置默认 `members` 和 `synthesizer`；单次调用可覆盖这两项（2–5 个成员，默认由 `pro` 综合）。任何所选预设不可用时，在启动前拒绝。本地成员收到原始上下文引用；浏览器成员收到借用的指令和 GitHub 文件索引，不内联原始附件正文。索引依据本地远程跟踪记录给出仓库、提交和路径，不执行 fetch；有修改、未跟踪或无法验证的文件标为 `local-only`。
 
 全部成员结束后，少于两份报告则失败；否则综合简报列出失败成员，要求写一份收敛方案、含取舍及理由的分歧表，以及待所有者确认的问题。浏览器综合要求启用 `pro`，收到原任务、GitHub 索引、成员报告及项目常规简报（内联文件每个上限 64 KiB、总计 256 KiB，超限以 `context_too_large` 失败）。本地综合收到成员报告和原 `context_files` 的本地引用。选 `synthesizer: "main"` 时不启动综合任务，`hud_read({job})` 返回成员任务 ID、报告摘要和综合模板，供主会话自行综合；否则像普通报告一样读取综合结果（`mode: "full"` 返回正文）。整个流程只有一条通知或一个 MCP 任务，结束后不再串联其他工作。
@@ -661,7 +663,7 @@ Sonic 和未设置 `resume_s` 的旧任务使用默认的 1620 秒。
   监听器运行期间横条会刷新；
   十分钟空闲退出后，要到下次重启（调用 HUD 或出现面板决定）才更新。
 - **负责人命令。**
-  在负责人的会话中（工作者会话没有），mod 声明若干立即执行的斜杠命令（回合进行中也可用），输出只给负责人看： 显示出来，但不进入任何模型请求，也不增加 MCP schema。
+  在负责人的会话中（工作者会话没有），mod 声明若干立即执行的斜杠命令（回合进行中也可用），输出只给负责人看： 显示出来，但不进入任何模型请求，也不增加 MCP schema。例外是 `/council <请求>`：它授权一次会商，并将请求提交给主会话。
   `/hud` 打开面板（在 herdr 窗格中；
   其他情况由 skill 回答）。
   `/jobs` 列出运行中的任务和未读报告，`/jobs <id>` 查看单个任务，不会把报告标为已读。

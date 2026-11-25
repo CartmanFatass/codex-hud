@@ -1,6 +1,8 @@
 import { statuslineCommand } from './statusline.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
+import { getHudHome } from '../hud-home.js';
+import { allowCouncil } from '../roles/council-grant.js';
 import { codexCommand } from './compat.js';
 import { panelCommand, PANEL_HELP } from './panel.js';
 import { trustCommand } from './trust.js';
@@ -28,6 +30,13 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
     if (args[0] === 'setup') return await setupCommand(args.slice(1), io);
     if (args[0] === 'tickets') return await ticketsCommand(args.slice(1), io);
     if (args[0] === 'watch') return await watchCommand(args.slice(1), io);
+    if (args[0] === 'council') {
+      const mod = args.length === 4 && args[2] === '--via' && args[3] === 'claude-mod';
+      if (args[1] !== 'allow' || (!mod && args.length !== 2)) throw new CliError('Usage: hud council allow');
+      await allowCouncil(getHudHome(io.env), mod ? 'claude-mod' : 'cli');
+      await io.stdout('One council authorized for the next 30 minutes.\n');
+      return 0;
+    }
     if (args[0] === 'act') return await actCommand(args.slice(1), io);
     if (args[0] === 'board') return await boardCommand(args.slice(1), io);
     if (args[0] === 'advise') return await adviseCommand(args.slice(1), io);
@@ -46,6 +55,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud tickets sync [--cwd DIR]  Mirror GitHub parent/sub-issues into .scratch/\n' +
           '       hud watch [--all]         Stream job change lines for this pane (or all jobs)\n' +
           '       hud act answer|try|retry|stop  Owner actions from a command (--help)\n' +
+          '       hud council allow         Authorize one council for 30 minutes\n' +
           '       hud doctor               Check the local installation without changing it\n' +
           '       hud doctor <jobId>       Print one job\'s disk facts without changing it\n' +
           '       hud --version            Print version, build commit and build time\n' +
@@ -57,7 +67,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
       );
       return 0;
     }
-    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|watch|act|board|doctor|stats|day|codex|codex-hud|uninstall\n');
+    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|watch|act|council|board|doctor|stats|day|codex|codex-hud|uninstall\n');
     return 2;
   } catch (error) {
     if (error instanceof CliError) {

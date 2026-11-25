@@ -68,7 +68,7 @@ async function publishSynthesis(dir: string, child: string, signal: AbortSignal)
   } finally { await src.close(); await rm(tmp, { force: true }); }
 }
 
-export async function runCouncil(parent: Job, plan: Plan, task: string, start: Start, signal: AbortSignal) {
+export async function runCouncil(parent: Job, plan: Plan, task: string, start: Start, signal: AbortSignal, releaseUnused: () => Promise<void>) {
   const dir = directory(parent.job), members = parent.council_members!;
   const wait = (job: string) => waitChildReport(job, signal, async child => {
     const { closeJob } = await import('../mcp/operations.js');
@@ -77,7 +77,8 @@ export async function runCouncil(parent: Job, plan: Plan, task: string, start: S
   try {
     const browser = plan.members.some(s => s.place.harness === 'bro') || (plan.synthesizer !== 'main' && plan.synthesizer.place.harness === 'bro');
     const index = browser ? await councilIndex(parent) : '';
-    await Promise.all(plan.members.map(async (seat, i) => {
+    // Account for every launch before deciding that no member spent the reservation.
+    const outcomes = await Promise.allSettled(plan.members.map(async (seat, i) => {
       const member = members[i];
       try {
         signal.throwIfAborted();
@@ -97,6 +98,8 @@ export async function runCouncil(parent: Job, plan: Plan, task: string, start: S
       if (member.failure) member.failure = digestLine(member.failure, 400);
       save(parent);
     }));
+    const rejected = outcomes.find(outcome => outcome.status === 'rejected');
+    if (rejected) throw rejected.reason;
     signal.throwIfAborted();
     const reports = members.flatMap(m => m.job && !m.failure ? [m.job] : []);
     const roster = members.map((m, i) => `Member ${i + 1} (${m.preset}${m.job ? `, ${m.job}` : ''}): ${m.failure ? `failed — ${m.failure}` : 'report available'}`).join('\n');
@@ -118,6 +121,7 @@ export async function runCouncil(parent: Job, plan: Plan, task: string, start: S
     const now = new Date().toISOString();
     writeCreateStatus(dir, { state: 'closed', output_written: true, settled_at: now, ended_at: now });
   } catch (error) {
+    if (!parent.grant) await releaseUnused();
     const reason = signal.aborted ? 'Council stopped' : error instanceof Error ? error.message : String(error);
     writeCreateStatus(dir, { state: signal.aborted ? 'stopped' : 'failed', exit_reason: reason, ended_at: new Date().toISOString() });
   }

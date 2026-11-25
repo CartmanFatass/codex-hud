@@ -5,6 +5,7 @@ const SERVER = { plugin: 'hud-mod', key: 'server' } as const;
 const JOB = /^j[0-9a-f]{16}$/;
 const SETTLED = ['idle_grace', 'closed', 'done', 'failed', 'stopped'];
 const COMMANDS = [
+  { name: 'council', description: 'Authorize one council and submit its request', argumentHint: '<request>' },
   { name: 'jobs', description: 'HUD jobs, or one job without marking its report read', argumentHint: '[job]' },
   { name: 'answer', description: 'Answer a HUD job question', argumentHint: '<job> <q1> <answer>' },
   { name: 'try', description: 'Accept all slices to try' },
@@ -76,6 +77,20 @@ export function registerCommands(on: On) {
   on('command.run', { command: 'hud' }, async ($, e, next) => {
     const opened = e.args.trim() ? undefined : await openPanel($);
     return opened ? show(opened) : next(e);
+  });
+  // command.register exposes a local command, not a Skill. Only a composer-origin run can grant.
+  on('command.run', { command: 'council', origin: { kind: 'composer' } }, async ($, e) => {
+    if (await $.env.get('HUD_JOB_DIR') !== undefined) return show('Owner sessions only');
+    if (!e.args.trim()) return usage('council');
+    const done = await $.process.run(['hud', 'council', 'allow', '--via', 'claude-mod'], { cwd: await $.session.cwd(), timeoutMs: 15_000 }).catch(() => undefined);
+    if (done?.exitCode !== 0) return show('Could not authorize council');
+    // command.run holds the current turn. Submit on the engine clock after the command returns.
+    const text = `Start a HUD council for this request:\n\n${e.args.trim()}`;
+    $.clock.after(1, async () => {
+      const sent = await $.prompt.submit({ text, asUser: true }).catch(() => undefined);
+      if (!sent || 'deny' in sent || 'drop' in sent) await $.ui.toast('Could not submit council request');
+    });
+    return show('Council request queued');
   });
   on('command.run', { command: 'jobs' }, async ($, e) => {
     const job = e.args.trim();
