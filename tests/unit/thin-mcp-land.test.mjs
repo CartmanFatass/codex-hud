@@ -974,6 +974,70 @@ test('land cleanup preserves commits added to the source worktree after landing 
   assert.equal(f.git(f.main, 'branch', '--list', '--format=%(refname:short)', f.branch), f.branch);
 });
 
+for (const dirty of [false, true]) test(`land publishes completed and done in one atomic flow write (${dirty ? 'with cleanup note' : 'clean worktree'})`, async t => {
+  const preload = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const rename = fs.renameSync;
+const pause = new Int32Array(new SharedArrayBuffer(4));
+fs.renameSync = (from, to) => {
+  rename(from, to);
+  const target = String(to);
+  if (!target.startsWith(process.env.HUD_HOME + '/flows/') || !target.endsWith('.json')) return;
+  const flow = JSON.parse(fs.readFileSync(target, 'utf8'));
+  const receipt = JSON.parse(fs.readFileSync(process.env.HUD_HOME + '/jobs/' + flow.job + '/job.json', 'utf8'));
+  fs.appendFileSync(process.env.HOME + '/flow-writes.jsonl', JSON.stringify({
+    state: flow.state,
+    step: flow.step,
+    cleanup_note: flow.cleanup_note ?? null,
+    cleanup_timed: Boolean(flow.timings?.some(e => e.step === 'cleanup' && e.ok)),
+    worktree_removed_at: Boolean(receipt.worktree_removed_at),
+    worktree_kept_reason: receipt.worktree_kept_reason ?? null,
+  }) + '\\n');
+  const seen = process.env.HOME + '/completed-seen';
+  const release = process.env.HOME + '/completed-release';
+  if (flow.state === 'completed' && !fs.existsSync(seen)) {
+    fs.writeFileSync(seen, '1');
+    for (let i = 0; i < 1000 && !fs.existsSync(release); i++) Atomics.wait(pause, 0, 0, 10);
+  }
+};
+syncBuiltinESMExports();`;
+  const f = await checkout(t, ['true'], {
+    probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(preload))};`,
+  });
+  if (dirty) fs.writeFileSync(join(f.worktree, 'untracked-note.txt'), 'keep me\n');
+  const seen = join(f.env.HOME, 'completed-seen'), release = join(f.env.HOME, 'completed-release');
+  const { flow } = await f.call('hud_land', { job });
+  let firstRead, firstReceipt;
+  try {
+    await until(() => fs.existsSync(seen), 15000);
+    firstRead = await f.call('hud_read', { job: flow });
+    firstReceipt = JSON.parse(fs.readFileSync(join(jobDir(f), 'job.json'), 'utf8'));
+  } finally {
+    fs.writeFileSync(release, 'go');
+  }
+  assert.equal(firstRead.state, 'completed', JSON.stringify(firstRead));
+  assert.equal(firstRead.step, 'done', JSON.stringify(firstRead));
+  assert.equal(firstRead.timings?.some(e => e.step === 'cleanup' && e.ok), true, JSON.stringify(firstRead.timings));
+  if (dirty) {
+    assert.match(firstRead.cleanup_note ?? '', /dirty/);
+    assert.match(firstReceipt.worktree_kept_reason ?? '', /dirty/);
+    assert.equal(firstReceipt.worktree_removed_at, undefined);
+  } else {
+    assert.equal(firstRead.cleanup_note, undefined);
+    assert.ok(firstReceipt.worktree_removed_at);
+    assert.equal(firstReceipt.worktree_kept_reason, undefined);
+  }
+  assert.equal((await f.call('hud_lease', { name: 'main-checkout', wait_s: 5 })).granted, true);
+  const writes = fs.readFileSync(join(f.env.HOME, 'flow-writes.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  const completed = writes.filter(row => row.state === 'completed');
+  assert.equal(completed.length, 1, JSON.stringify(completed));
+  assert.equal(completed[0].step, 'done', JSON.stringify(completed[0]));
+  assert.equal(completed[0].cleanup_timed, true, JSON.stringify(completed[0]));
+  if (dirty) assert.match(completed[0].cleanup_note ?? '', /dirty/);
+  else assert.equal(completed[0].worktree_removed_at, true);
+});
+
 test('a main commit on unrelated paths including STATE.md during the gate replays tested commits and ticket update without rerunning the gate', async t => {
   const f = await checkout(t, ['echo run >> "$HOME/gate-count"; while test ! -f "$HOME/release"; do sleep .05; done']);
   const dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', file = join(dir, 'job.json');

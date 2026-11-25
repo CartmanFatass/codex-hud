@@ -85,17 +85,17 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
     const at = new Date().toISOString();
     for (const row of members) { setLandStep(row, name, at); writeLand(home, row); }
   };
-  const recordTiming = (name: string, t0: number, ok: boolean, extra?: { rerun?: true; skipped?: true }) => {
+  const recordTiming = (name: string, t0: number, ok: boolean, extra?: { rerun?: true; skipped?: true }, write = true) => {
     // Shared work is timed only on the lead receipt, not counted once per passenger.
     (f.timings ??= []).push({ step: name, ms: Math.max(0, Math.round(performance.now() - t0)), ok, ...extra, train: f.train });
-    writeLand(home, f);
+    if (write) writeLand(home, f);
   };
   let activeStep: [string, number] | undefined;
   const startStep = (name: string) => { step(name); activeStep = [name, performance.now()]; };
-  const endStep = (ok = true) => {
+  const endStep = (ok = true, write = true) => {
     if (!activeStep) return;
     const [name, t0] = activeStep; activeStep = undefined;
-    recordTiming(name, t0, ok);
+    recordTiming(name, t0, ok, undefined, write);
   };
   const checkCancel = () => {
     if (!members.some(cancelled)) return;
@@ -389,13 +389,14 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
       if (notes.length) row.cleanup_note = notes.join('; ');
       notes.length = integrationNotes;
       row.after_note = f.after_note;
-      row.state = 'completed';
     }
-    endStep();
+    // Publish terminal state, final step, cleanup note and timing in one atomic flow write.
+    endStep(true, false);
+    for (const row of members) row.state = 'completed';
     step('done');
   }
   function fail(e: unknown) {
-    endStep(false);
+    endStep(false, false);
     for (const row of members) {
       if (row.state !== 'cancelled') row.state = 'failed';
       row.error = (e as Error).message.split('\n')[0];
