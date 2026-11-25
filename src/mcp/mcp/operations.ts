@@ -891,16 +891,23 @@ export async function closeJob(job: Job, stop = false) {
       save({ ...(findJob(job.job) ?? job), observed_at: new Date().toISOString() });
     return { exit_code: closed ? 0 : 1, last_line: `${job.role} ${closed ? 'closed' : 'cleanup pending'}` };
   }
+  const initialSession = jobCache.readSession(job.job);
+  const launchStamp = initialSession
+    ? (initialSession.fields.launchId || initialSession.fields.launch || `stamp:${initialSession.stamp}`)
+    : undefined;
   const { result, complete, issue } = await reapWorkerTree(dir, status, () => {
+    const currentSession = jobCache.readSession(job.job);
+    const sameLaunch = !initialSession || currentSession?.stamp === initialSession.stamp;
     // Idle grace already finished: reap quits and the supervisor closes. A working job is stopped.
-    if (row.state === 'idle_grace' && (stop || job.cli)) {
+    if (sameLaunch && row.state === 'idle_grace' && (stop || job.cli)) {
       try {
         fs.writeFileSync(join(dir, stop ? jobFiles.stopRequested : jobFiles.closeRequested), '', { flag: 'wx', mode: 0o600 });
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
     }
-    return runCommand(process.execPath, [binScript('hud-reap'), dir], process.env, { budgetMs: 135_000, killProcessGroup: true });
+    const reapArgs = [binScript('hud-reap'), dir, ...(launchStamp ? ['--launch', launchStamp] : [])];
+    return runCommand(process.execPath, reapArgs, process.env, { budgetMs: 135_000, killProcessGroup: true });
   }, (run) => run.ok, { treeGrant: tabTreeGrant });
   const statusFile = join(dir, jobFiles.status);
   const stoppingPi = !job.cli && !job.bro && !job.jev && fs.existsSync(join(dir, jobFiles.stopRequested));

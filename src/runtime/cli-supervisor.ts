@@ -37,12 +37,13 @@ export async function main() {
   const name = session.primary!, pane = session.left!, tab = session.tab!, cli = job.cli!;
   const directExec = session.directExec === '1' && Boolean(session.launchId);
   const launchId = session.launchId;
+  const terminalId = session.terminalId;
   let directPid: number | null = null;
   let directStart: string | null = null;
   if (directExec) {
     const parsedPid = Number(session.pid);
-    if (!isValidPid(parsedPid) || !session.pidStart || !/^\d+$/.test(session.pidStart))
-      throw Error('CLI direct-exec receipt missing pid/start');
+    if (!terminalId || !isValidPid(parsedPid) || !session.pidStart || !/^\d+$/.test(session.pidStart))
+      throw Error('CLI direct-exec receipt missing terminal_id or pid/start');
     directPid = parsedPid;
     directStart = session.pidStart;
   }
@@ -81,6 +82,7 @@ export async function main() {
   let prev: Judgment | null = null, status: string | null = null, statusAt: number | null = null;
   let agentMissing = false, workingAt: number | null = null, tabClosed = false;
   let paneExit: PaneExit | null = null;
+  let deadObservedAt: number | null = null;
   let tabCheckPending = false, checkingTab = false, nextTabProbe = 0, tabProbeFailures = 0;
   let tabProbeTimer: NodeJS.Timeout | undefined;
   let turn = readTurn(dir) ?? writeTurn(dir), done: DoneReceipt | null = null, signature: string | null = null, stamp: string | null | undefined;
@@ -202,7 +204,7 @@ export async function main() {
     agentMissing = got?.error?.code === 'agent_not_found';
     const agent = got?.result?.agent;
     const bound = agent && agent.name === name && agent.pane_id === pane && agent.tab_id === tab &&
-      (!directExec || agent.launch_id === launchId) &&
+      (!directExec || (agent.launch_id === launchId && agent.terminal_id === terminalId)) &&
       (!current.agent_session_id || current.agent_session_id === agent.agent_session?.value);
     observeStatus(bound ? agent.agent_status ?? null : null);
     return bound ? agent : undefined;
@@ -259,6 +261,13 @@ export async function main() {
       if (!data) return;
       if (directExec && (kind === 'pane_exited' || kind === 'pane_closed' || kind === 'tab_closed')) {
         if (data.launch_id !== launchId) return;
+        if (kind === 'tab_closed') {
+          tabClosed = true;
+          terminalWake();
+          return;
+        }
+        // launch_id is per tab; match pane events on both launch_id AND root terminal_id so sibling exits never retire the worker.
+        if (data.terminal_id !== terminalId) return;
         if (kind === 'pane_exited') {
           paneExit = {
             exitCode: typeof data.exit_code === 'number' ? data.exit_code : null,
@@ -303,7 +312,7 @@ export async function main() {
     if (nextStamp !== stamp) { signature = reportSignature(dir); stamp = nextStamp; }
     return { turn, reportSig: signature, reportRead: reportWasRead(receipt, st?.isFile() ? statsMtimeMs(st.mtimeNs) : null, nextStamp),
       closeAtReport: job.resume_s !== undefined,
-      alive: workerAlive(current.pid ?? null, current.pid_start_time ?? null), paneExit, status, statusAt,
+      alive: workerAlive(current.pid ?? null, current.pid_start_time ?? null), paneExit, directExec, status, statusAt,
       liveChild: checkChild ? sampleChild() : null,
       sonic: sonicChildren(dir),
       stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
@@ -327,14 +336,14 @@ export async function main() {
       error: result.state === 'failed' ? result.exitReason : null };
     const changed = JSON.stringify(row);
     if (changed === rowStamp) return;
-    // A watcher may have reached a terminal verdict while this socket was down.
+    // A watcher may have reached a terminal verdict while this socket was down, or resume may have replaced SESSION.
     try {
       if (['closed', 'failed', 'stopped'].includes((readJsonFile(statusFile) as JobStatus).state)) { shutdown(); return; }
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    if (tabClosed && !sameSession()) { shutdown(); return; }
+    if (!sameSession()) { shutdown(); return; }
     if (terminal && tabClosed && !stop && !result.outputWritten && !paneExit)
       recordStopOrigin(dir, 'pane_vanished', current.state, row.ended_at ?? new Date().toISOString());
-    if (tabClosed && !sameSession()) { shutdown(); return; }
+    if (!sameSession()) { shutdown(); return; }
     writeJsonPrivate(statusFile, { ...row, updated_at: iso(Date.now()) }, { mkdir: false });
     current = row; rowStamp = changed;
   }
@@ -365,6 +374,19 @@ export async function main() {
         if (stopped || aborted) return;
       }
       let observed = collect(isTick);
+      if (directExec && observed.alive === false && !observed.paneExit && !observed.tabClosed && !observed.stop) {
+        // Allow a brief window for an in-flight pane.exited before settling as missed/exit-unknown.
+        const now = Date.now();
+        deadObservedAt ??= now;
+        const remaining = 200 - (now - deadObservedAt);
+        if (remaining > 0) {
+          clearTimeout(deadline);
+          deadline = setTimeout(() => wake(), remaining);
+          return;
+        }
+      } else {
+        deadObservedAt = null;
+      }
       if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
       let next = judge(prev, observed, Date.now());
       if ((observed.stop || observed.close) && !current.pid_start_time && !tabClosed && !receipt.reaped_at) {

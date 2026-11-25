@@ -7,9 +7,11 @@ import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { jobFiles } from '../mcp/paths.js';
 import type { JobStatus } from '../mcp/job-contracts.js';
+import { fileStampOf } from '../roles/job-index-cache.js';
 import { isActiveProcState, isValidPid, readProcStat } from '../utils/proc.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { invocationWitness } from './cli-invocation.js';
+import { herdrEndpoint, isHudHerdrFork } from './herdr-socket.js';
 import { confirmIdleShells } from './tab-shell.js';
 import { sameTaskDirectory, tabProcessStart } from './tab-owner.js';
 
@@ -19,7 +21,7 @@ function query(args: string[], timeout?: number) {
   if (r.status !== 0) throw Error(`herdr ${args.join(' ')}: ${r.error?.message ?? r.stderr}`);
   return JSON.parse(r.stdout).result;
 }
-type Row = { pane_id: string; tab_id: string; launch_id?: string; name?: string; agent?: string; agent_status?: string; agent_session?: { value: string }; label?: string };
+type Row = { pane_id: string; tab_id: string; launch_id?: string; terminal_id?: string; name?: string; agent?: string; agent_status?: string; agent_session?: { value: string }; label?: string };
 function list(kind: 'pane' | 'agent' | 'tab', timeout?: number): Row[] {
   const rows = query([kind, 'list'], timeout)?.[`${kind}s`];
   if (!Array.isArray(rows) || !rows.every(row => herdrId(row?.tab_id) && (kind === 'tab' || herdrId(row.pane_id))))
@@ -27,13 +29,23 @@ function list(kind: 'pane' | 'agent' | 'tab', timeout?: number): Row[] {
   return rows;
 }
 function session(task: string) {
-  const info: Partial<Record<'TAB' | 'TAB_NAME' | 'PRIMARY' | 'LEFT' | 'RIGHT' | 'ORCH' | 'RIGHT_SPLIT' | 'LAUNCH' | 'LAUNCH_ID' | 'DIRECT_EXEC' | 'PID' | 'PID_START', string>> = {};
+  const info: Partial<Record<'TAB' | 'TAB_NAME' | 'PRIMARY' | 'LEFT' | 'RIGHT' | 'ORCH' | 'RIGHT_SPLIT' | 'LAUNCH' | 'LAUNCH_ID' | 'TERMINAL_ID' | 'RIGHT_TERMINAL_ID' | 'DIRECT_EXEC' | 'PID' | 'PID_START' | 'HERDR_SOCKET_PATH', string>> = {};
   const path = join(task, jobFiles.session);
   for (const line of fs.readFileSync(path, 'utf8').split('\n')) {
-    const match = /^(TAB|TAB_NAME|PRIMARY|LEFT|RIGHT|ORCH|RIGHT_SPLIT|LAUNCH|LAUNCH_ID|DIRECT_EXEC|PID|PID_START)=(.*)$/.exec(line);
+    const match = /^(TAB|TAB_NAME|PRIMARY|LEFT|RIGHT|ORCH|RIGHT_SPLIT|LAUNCH|LAUNCH_ID|TERMINAL_ID|RIGHT_TERMINAL_ID|DIRECT_EXEC|PID|PID_START|HERDR_SOCKET_PATH)=(.*)$/.exec(line);
     if (match) info[match[1] as keyof typeof info] = match[2];
   }
   return info;
+}
+function checkLaunchStamp(task: string, info: ReturnType<typeof session>, expected?: string) {
+  if (!expected) return;
+  if (expected.startsWith('stamp:')) {
+    const st = fs.lstatSync(join(task, jobFiles.session), { bigint: true });
+    if (`stamp:${fileStampOf(st)}` !== expected) throw Error(`${task}: launch stamp changed; nothing reaped`);
+    return;
+  }
+  const actual = info.LAUNCH_ID || info.LAUNCH;
+  if (actual !== expected) throw Error(`${task}: launch stamp changed; nothing reaped`);
 }
 function primary(task: string): JobStatus | undefined {
   let text;
@@ -58,33 +70,46 @@ function alreadyReaped(task: string) {
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
 }
 
-/** Direct-exec fork path: no shell, no witness, no tab-shells; match by launch_id and exact (pid, start). */
-async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnType<typeof session>, after?: number) {
+/** Direct-exec fork path: matches by launch_id + terminal_id and exact (pid, start).
+ * Never drops to the stock reaper; refuses unknown capability (e.g. stock rollback) and respawned shells;
+ * closes a remaining split helper only with positive ownership and idle-shell evidence. */
+async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnType<typeof session>, after?: number, expectedLaunch?: string) {
   const refuse = (message: string): never => { throw Error(`${task}: ${message}`); };
-  const launchId = info.LAUNCH_ID, left = info.LEFT;
+  checkLaunchStamp(task, info, expectedLaunch);
+  const launchId = info.LAUNCH_ID, left = info.LEFT, right = info.RIGHT || undefined;
+  const terminalId = info.TERMINAL_ID || undefined;
+  const rightTerminalId = info.RIGHT_TERMINAL_ID || undefined;
   const pid = Number(info.PID), start = info.PID_START;
   if (!info.TAB || !left || !herdrId(launchId) || !isValidPid(pid) || typeof start !== 'string' || !/^\d+$/.test(start))
     refuse('missing direct-exec launch identity; cleanup incomplete');
   if ((s?.pid != null && s.pid !== pid) || (s?.pid_start_time != null && s.pid_start_time !== start))
     refuse('recorded worker identity does not match direct-exec launch; cleanup incomplete');
   if (after && pid !== after) refuse('recorded PID changed while waiting; nothing reaped');
+  if (info.HERDR_SOCKET_PATH && herdrEndpoint() === info.HERDR_SOCKET_PATH && !(await isHudHerdrFork()))
+    refuse('herdr endpoint lacks launch_id capability; not closing');
   if (!s?.state || !['closed', 'failed', 'stopped', 'idle_grace'].includes(s.state)) {
     try { fs.writeFileSync(join(task, jobFiles.stopRequested), '', { flag: 'wx', mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
   }
   const alive = () => liveStart(pid) === start;
   if (alive() && callerAncestor(pid)) refuse(`protected caller PID ${pid}; cleanup incomplete`);
-  const ids = [left, ...(info.RIGHT ? [info.RIGHT] : [])];
+  const ids = [left, ...(right ? [right] : [])];
   const expectedSession = s?.session_file || s?.agent_session_id;
   const matches = (a: Row) => Boolean(info.PRIMARY && a.name === info.PRIMARY && a.pane_id === left &&
-    a.launch_id === launchId && (!expectedSession || expectedSession === a.agent_session?.value));
+    a.launch_id === launchId && (!terminalId || a.terminal_id === terminalId) &&
+    (!expectedSession || expectedSession === a.agent_session?.value));
   function inspect() {
     if (alreadyReaped(task)) return null;
+    const freshInfo = session(task);
+    checkLaunchStamp(task, freshInfo, expectedLaunch);
     const fresh = primary(task);
     if ((fresh?.pid != null && fresh.pid !== pid) || (fresh?.pid_start_time != null && fresh.pid_start_time !== start) ||
-        JSON.stringify(session(task)) !== JSON.stringify(info))
+        JSON.stringify(freshInfo) !== JSON.stringify(info))
       refuse('launch or worker identity changed; cleanup incomplete');
     const tabs = list('tab'), panes = list('pane'), agents = list('agent');
+    // On rollback to stock herdr, inventory omits launch_id. Treat capability absence as unknown, never as absence.
+    if (tabs.some(t => !herdrId(t.launch_id)) || panes.some(p => !herdrId(p.launch_id)) || agents.some(a => !herdrId(a.launch_id)))
+      refuse('herdr inventory missing launch_id; endpoint lacks launch_id capability; not closing');
     const target = tabs.find(t => t.launch_id === launchId);
     const selected = target ? panes.filter(p => p.tab_id === target.tab_id) : panes.filter(p => p.launch_id === launchId);
     if (!target) {
@@ -98,10 +123,56 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
     const orch = panes.find(p => p.pane_id === info.ORCH) ?? agents.find(a => a.name && a.name === info.ORCH);
     if (ids.includes(info.ORCH) || orch?.tab_id === tab) refuse(`TAB ${tab} is the orchestrator tab; not closing`);
     if (selected.some(p => p.launch_id !== launchId)) refuse('pane launch_id mismatch; not closing');
-    if (selected.length !== ids.length || ids.some(id => !selected.some(p => p.pane_id === id))) refuse('recorded pane set changed; not closing');
+    if (selected.some(p => p.pane_id !== left && p.pane_id !== right)) refuse('recorded pane set changed; not closing');
+    const rootPane = selected.find(p => p.pane_id === left);
+    const helperPane = right ? selected.find(p => p.pane_id === right) : undefined;
+    // Under close_on_zero on a split tab, a clean root-only exit removes LEFT and leaves only helper RIGHT.
+    if (!rootPane && (!helperPane || alive())) refuse('recorded pane set changed; not closing');
+    if (rootPane && terminalId) {
+      if (!herdrId(rootPane.terminal_id)) refuse('herdr inventory missing terminal_id; not closing');
+      if (rootPane.terminal_id !== terminalId) refuse('root pane terminal_id mismatch; not closing');
+    }
+    if (helperPane) {
+      if (rightTerminalId && helperPane.terminal_id && helperPane.terminal_id !== rightTerminalId)
+        refuse('helper pane terminal_id mismatch; not closing');
+      if (helperPane.agent) refuse('foreign agent in helper pane; not closing');
+    }
     if (agents.some(a => (ids.includes(a.pane_id) || a.tab_id === tab || a.launch_id === launchId || (info.PRIMARY && a.name === info.PRIMARY)) &&
-      (!matches(a) || a.tab_id !== tab))) refuse('foreign agent in recorded pane or binding changed; not closing');
-    return { agent: agents.find(matches), tab };
+      (!rootPane || !matches(a) || a.tab_id !== tab))) refuse('foreign agent in recorded pane or binding changed; not closing');
+    // Verify the root pane's process matches our recorded direct-exec PID/start (never close a restored/respawned shell after handoff).
+    if (rootPane) {
+      const proc = query(['pane', 'process-info', '--pane', left!])?.process_info;
+      if (proc?.pane_id !== left) refuse('root pane process info unavailable; not closing');
+      if (alive()) {
+        if (proc.shell_pid !== pid) refuse('root pane process does not match direct-exec launch; not closing');
+      } else {
+        if (isValidPid(proc.shell_pid) && liveStart(proc.shell_pid) !== null)
+          refuse('root pane hosts a different live process; not closing');
+        if (Array.isArray(proc.foreground_processes) &&
+            proc.foreground_processes.some((item: { pid?: number }) => isValidPid(item?.pid) && liveStart(item.pid) !== null))
+          refuse('live foreground process remains in root pane; not closing');
+      }
+    }
+    return { agent: rootPane ? agents.find(matches) : undefined, tab, rootPane, helperPane };
+  }
+  const emitOwnerAndRefuse = (message: string): never => {
+    console.log(`tree-owner ${pid}:${start}`);
+    return refuse(message);
+  };
+  function checkHelperIdle(tab: string): { ok: true } | { ok: false; retryable: boolean; reason: string } {
+    if (!right) return { ok: true };
+    const proc = query(['pane', 'process-info', '--pane', right])?.process_info;
+    if (proc?.pane_id !== right || !isValidPid(proc.shell_pid) || !Array.isArray(proc.foreground_processes))
+      return { ok: false, retryable: false, reason: 'helper pane launch ownership unverified; not closing' };
+    if (!tabProcessStart(task, right, tab, proc.shell_pid, launchId))
+      return { ok: false, retryable: false, reason: 'helper pane launch ownership unverified; not closing' };
+    const foregroundBusy = proc.foreground_process_group_id !== proc.shell_pid ||
+      proc.foreground_processes.some((item: { pid?: number }) => item?.pid !== proc.shell_pid);
+    if (foregroundBusy)
+      return { ok: false, retryable: true, reason: 'helper pane has active foreground process; not closing' };
+    return confirmIdleShells(task, tab, launchId, [{
+      pane: right, pid: proc.shell_pid, group: proc.foreground_process_group_id, foreground: proc.foreground_processes,
+    }], left);
   }
   let state = inspect();
   if (!state) {
@@ -141,25 +212,41 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
       return;
     }
   }
-  if (alive()) {
-    console.log(`tree-owner ${pid}:${start}`);
-    refuse('worker process remains; not closing');
-  }
+  if (alive()) emitOwnerAndRefuse('worker process remains; not closing');
   state = inspect();
   if (!state) {
     if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
     return;
+  }
+  if (state.helperPane) {
+    // Never whole-tab close while a non-agent foreground program runs in the helper, or without positive helper-shell proof.
+    const settleDeadline = performance.now() + 1_000;
+    for (;;) {
+      const check = checkHelperIdle(state.tab);
+      if (check.ok) break;
+      const remaining = Math.ceil(settleDeadline - performance.now());
+      if (!check.retryable || remaining <= 0) emitOwnerAndRefuse(check.reason);
+      await delay(Math.min(200, remaining));
+      state = inspect();
+      if (!state) {
+        if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
+        return;
+      }
+      if (!state.helperPane) break;
+    }
   }
   const closed = command(['tab', 'close', state.tab]);
   if (closed.status !== 0 || list('tab').some(t => t.launch_id === launchId)) refuse(`tab ${state.tab} still exists`);
   console.log(`tree-owner ${pid}:${start}`);
 }
 
-async function reap(task: string, after?: number) {
+async function reap(task: string, after?: number, expectedLaunch?: string) {
   if (alreadyReaped(task)) return;
-  const s = primary(task), pid = s?.pid, start = s?.pid_start_time;
   const info = session(task);
-  if (info.DIRECT_EXEC === '1') return reapDirect(task, s, info, after);
+  checkLaunchStamp(task, info, expectedLaunch);
+  const s = primary(task), pid = s?.pid, start = s?.pid_start_time;
+  // A fork receipt never drops to the stock reaper.
+  if (info.DIRECT_EXEC === '1' || info.LAUNCH_ID || info.TERMINAL_ID) return reapDirect(task, s, info, after, expectedLaunch);
   const refuse = (message: string): never => { throw Error(`${task}: ${message}`); };
   if (after && isValidPid(pid) && pid !== after) refuse('recorded PID changed while waiting; nothing reaped');
   if (!s?.state || !['closed', 'failed', 'stopped', 'idle_grace'].includes(s.state)) {
@@ -308,16 +395,29 @@ async function reap(task: string, after?: number) {
 }
 
 export async function main(args = process.argv.slice(2)) {
-  const usage = 'hud-reap <task-dir> [--after-pid PID]';
+  const usage = 'hud-reap <task-dir> [--after-pid PID] [--launch STAMP]';
   try {
     if (args.length === 1 && ['--help', '-h'].includes(args[0])) { console.log(usage); return; }
-    if (!(args.length === 1 || args.length === 3 && args[1] === '--after-pid') || args[0].startsWith('-')) throw Error(`usage: ${usage}`);
+    if (args.length < 1 || args[0].startsWith('-')) throw Error(`usage: ${usage}`);
     const task = fs.realpathSync(args[0]);
     let after: number | undefined;
-    if (args.length === 3) {
-      after = Number(args[2]);
-      if (!/^[1-9]\d*$/.test(args[2]) || !isValidPid(after) || after === process.pid) throw Error('invalid --after-pid PID');
+    let expectedLaunch: string | undefined;
+    for (let i = 1; i < args.length; i += 2) {
+      const flag = args[i], value = args[i + 1];
+      if (!value) throw Error(`usage: ${usage}`);
+      if (flag === '--after-pid' && after === undefined) {
+        after = Number(value);
+        if (!/^[1-9]\d*$/.test(value) || !isValidPid(after) || after === process.pid) throw Error('invalid --after-pid PID');
+      } else if (flag === '--launch' && expectedLaunch === undefined) {
+        if (!herdrId(value)) throw Error('invalid --launch STAMP');
+        expectedLaunch = value;
+      } else {
+        throw Error(`usage: ${usage}`);
+      }
+    }
+    if (after !== undefined) {
       if (alreadyReaped(task)) { console.log(`hud-reap: ${task}: already reaped`); return; }
+      checkLaunchStamp(task, session(task), expectedLaunch);
       const deadline = performance.now() + 30_000;
       while (liveStart(after)) {
         const ms = deadline - performance.now();
@@ -325,7 +425,7 @@ export async function main(args = process.argv.slice(2)) {
         await delay(Math.min(250, ms));
       }
     }
-    await reap(task, after);
+    await reap(task, after, expectedLaunch);
     console.log(`hud-reap: ${task}: reaped`);
   } catch (error) { console.error(`hud-reap: ${(error as Error).message}`); process.exitCode = 1; }
 }

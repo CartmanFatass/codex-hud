@@ -49,7 +49,7 @@ hud_ext_install() {
     # Codex trims the MCP environment. Its remove/add above recreates the HUD entry on every install.
     local config="${CODEX_HOME:-$HOME/.codex}/config.toml"
     if [[ -f "$config" ]]; then
-      sed -i --follow-symlinks '/^\[mcp_servers\.hud\]$/a env_vars = ["HERDR_PANE_ID", "HERDR_SOCKET_PATH", "HERDR_ENV", "HERDR_BIN_PATH", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "HUD_JOB_DIR"]' "$config"
+      sed -i --follow-symlinks '/^\[mcp_servers\.hud\]$/a env_vars = ["HERDR_PANE_ID", "HERDR_SOCKET_PATH", "HERDR_ENV", "HERDR_BIN_PATH", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "HUD_JOB_DIR", "CODEX_HOME"]' "$config"
     fi
   else
     printf 'Warning: codex is not on PATH; skipping Codex MCP registration.\n' >&2

@@ -28,6 +28,8 @@ const SESSION_KEY_MAP: Record<string, keyof SessionFields> = {
   TASK: 'task',
   LAUNCH: 'launch',
   LAUNCH_ID: 'launchId',
+  TERMINAL_ID: 'terminalId',
+  RIGHT_TERMINAL_ID: 'rightTerminalId',
   DIRECT_EXEC: 'directExec',
   PID: 'pid',
   PID_START: 'pidStart',
@@ -70,6 +72,8 @@ export interface SessionFields {
   readonly task?: string;
   readonly launch?: string;
   readonly launchId?: string;
+  readonly terminalId?: string;
+  readonly rightTerminalId?: string;
   readonly directExec?: string;
   readonly pid?: string;
   readonly pidStart?: string;

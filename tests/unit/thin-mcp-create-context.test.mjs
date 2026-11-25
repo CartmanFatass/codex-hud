@@ -746,7 +746,8 @@ esac
   });
   assert.equal(fs.readFileSync(join(job.task_dir, 'qa', 'q1.answer.md'), 'utf8'), answer.answer);
   assert.deepEqual(await f.call('hud_close', { job: job.job }), { exit_code: 0, last_line: 'Synthetic reap complete' });
-  assert.deepEqual(f.commands().at(-1), { command: 'hud-reap', args: [job.task_dir] });
+  const piLaunch = /^LAUNCH=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))?.[1];
+  assert.deepEqual(f.commands().at(-1), { command: 'hud-reap', args: [job.task_dir, '--launch', piLaunch] });
 });
 
 test('a slow CLI launch blocks only retries with the same request key, not other job mutations', { timeout: 60000 }, async (t) => {
@@ -1159,7 +1160,8 @@ test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate se
   );
   assert.equal((await f.call('hud_roster')).roles.find(({ role }) => role === 'pro').can_continue, false);
   assert.equal((await f.call('hud_close', { job: job.job })).exit_code, 0);
-  assert.deepEqual(f.commands().at(-1), { command: 'hud-reap', args: [job.task_dir] });
+  const broLaunch = /^LAUNCH=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))?.[1];
+  assert.deepEqual(f.commands().at(-1), { command: 'hud-reap', args: [job.task_dir, '--launch', broLaunch] });
   for (const args of [
     { role: 'general', on: 'gemini', request_key: 'gemini', task: 'Synthetic request.' },
     { role: 'general', on: 'argon', request_key: 'argon', task: 'Synthetic request.' },

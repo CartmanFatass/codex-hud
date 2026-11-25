@@ -90,7 +90,7 @@ fs.writeFileSync(config, sections.join(''));
       if (content === null) assert.ok(result.stderr.includes(backup));
       assert.equal(fs.readFileSync(backup, 'utf8'), original);
       assert.equal(fs.readlinkSync(config), configTarget);
-      const envVars = `env_vars = [${[...oldEnv, 'HUD_JOB_DIR'].map((name) => JSON.stringify(name)).join(', ')}]\n`;
+      const envVars = `env_vars = [${[...oldEnv, 'HUD_JOB_DIR', 'CODEX_HOME'].map((name) => JSON.stringify(name)).join(', ')}]\n`;
       assert.equal(fs.readFileSync(config, 'utf8'), unrelated + hudEntry.replace('\n', '\n' + envVars));
       for (const [target, link] of skillPaths) assert.equal(fs.readlinkSync(link), target);
       if (content === null) {

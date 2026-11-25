@@ -194,7 +194,7 @@ export type PaneExit = { exitCode: number | null; signal: string | null };
 export function formatPaneExitReason(exit: PaneExit): string {
   if (exit.signal) return `worker exited (signal ${exit.signal})`;
   if (typeof exit.exitCode === 'number') return `worker exited (code ${exit.exitCode})`;
-  return 'worker exited';
+  return 'worker exited (exit unknown)';
 }
 
 export interface Facts {
@@ -204,6 +204,7 @@ export interface Facts {
   closeAtReport?: boolean; // Jobs launched before close-at-report keep their original grace.
   alive: boolean | null;
   paneExit?: PaneExit | null;
+  directExec?: boolean;
   status: string | null;
   statusAt?: number | null;
   liveChild: boolean | 'unknown' | null; // null: not sampled yet
@@ -223,7 +224,7 @@ export interface Facts {
   supervisorError?: string;
 }
 
-export function terminalFact({ stop, alive, paneExit, tabClosed, turn, reportSig }: Pick<Facts, 'stop' | 'alive' | 'paneExit' | 'tabClosed' | 'reportSig'> & { turn: Turn | null }) {
+export function terminalFact({ stop, alive, paneExit, directExec, tabClosed, turn, reportSig }: Pick<Facts, 'stop' | 'alive' | 'paneExit' | 'directExec' | 'tabClosed' | 'reportSig'> & { turn: Turn | null }) {
   const outputWritten = reportSig !== null && reportSig !== turn?.report_sig;
   // Stop intent is written before termination, so it wins over both exit and tab close.
   if (stop) return { state: 'stopped', exitReason: 'stop requested', outputWritten } as const;
@@ -232,7 +233,11 @@ export function terminalFact({ stop, alive, paneExit, tabClosed, turn, reportSig
       return { state: outputWritten ? 'closed' : 'failed', exitReason: outputWritten ? 'settled' : 'worker exited', outputWritten } as const;
     return { state: 'failed', exitReason: formatPaneExitReason(paneExit), outputWritten } as const;
   }
-  if (alive === false) return { state: outputWritten ? 'closed' : 'failed', exitReason: outputWritten ? 'settled' : 'worker exited', outputWritten } as const;
+  if (alive === false) {
+    // On direct-exec, a missed exit with no exit code must never settle as success on a partial report.
+    if (directExec) return { state: 'failed', exitReason: 'worker exited (exit unknown)', outputWritten } as const;
+    return { state: outputWritten ? 'closed' : 'failed', exitReason: outputWritten ? 'settled' : 'worker exited', outputWritten } as const;
+  }
   if (tabClosed) return { state: 'failed', exitReason: 'tab closed', outputWritten } as const;
   return null;
 }

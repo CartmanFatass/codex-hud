@@ -40,7 +40,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { setTimeout as delay } from 'node:timers/promises';
 import { RunnerWatches } from './runner-watches.js';
 import { RUNNER_READY } from '../utils/runner-lifetime.js';
-import { isProcAlive } from '../utils/proc.js';
+import { isProcAlive, isValidPid } from '../utils/proc.js';
 import { hasLocalHerdrTarget, probeHerdrTarget, request, TAB_PROBE_INTERVAL_MS, tabProbeBackoff } from './herdr-socket.js';
 import { pruneDisplayFiles } from './display-retention.js';
 import { JOB_RETENTION_MS, pruneJobLogs, pruneLandFlows, pruneProjectScratch } from './work-retention.js';
@@ -147,8 +147,10 @@ type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<Job
 type ActiveReap = { session: SessionEntry | null; ownership: string; readClose: boolean; busy: string[]; phase: 'preflight' | 'reaping';
   controller: AbortController; promise?: Promise<void>; snapshot?: WorkerTreeSnapshot };
 const goneTabs = new Map<string, string>(); // stock only: job ID -> exact SESSION stamp confirmed absent
-const closedLaunches = new Map<string, true>(); // fork direct-exec: launch_id confirmed closed
-const exitedLaunches = new Map<string, PaneExit>(); // fork direct-exec: launch_id -> pane.exited status
+const closedLaunches = new Map<string, true>(); // fork direct-exec: launch_id confirmed tab-closed
+const closedPanes = new Map<string, true>(); // fork direct-exec: launch_id + root terminal_id confirmed pane-closed/absent
+const exitedLaunches = new Map<string, PaneExit>(); // fork direct-exec: launch_id + root terminal_id -> pane.exited status
+const deadDirectRoots = new Map<string, true>(); // fork direct-exec: reconciled present tab with dead root PID
 const tabRetries = new Map<string, { stamp: string; at: number; failures: number }>();
 let tabWakes = new Map<string, true>(), checkAllTabs = true, tabProbe: AbortController | undefined, nextTabProbe = 0;
 function wakeTab(key: string) {
@@ -156,11 +158,20 @@ function wakeTab(key: string) {
   checkAllTabs = true;
   tabWakes.clear();
 }
+const directPaneKey = (launchId: string, terminalId: string) => `${launchId}\0${terminalId}`;
 const isDirectExecSession = (session: SessionEntry | null): boolean =>
-  Boolean(session?.fields.directExec === '1' && session.fields.launchId);
+  Boolean(session?.fields.directExec === '1' && session.fields.launchId && session.fields.terminalId);
+const directRootPid = (session: SessionEntry | null): { pid: number; start: string } | null => {
+  if (!session?.fields.pid || !session.fields.pidStart || !/^\d+$/.test(session.fields.pidStart)) return null;
+  const pid = Number(session.fields.pid);
+  return isValidPid(pid) ? { pid, start: session.fields.pidStart } : null;
+};
 const tabWasClosed = (id: string, session: SessionEntry | null) => {
   if (!session || !hasLocalHerdrTarget(session.fields)) return false;
-  if (isDirectExecSession(session)) return closedLaunches.has(session.fields.launchId!);
+  if (isDirectExecSession(session)) {
+    const key = directPaneKey(session.fields.launchId!, session.fields.terminalId!);
+    return closedLaunches.has(session.fields.launchId!) || closedPanes.has(key);
+  }
   return goneTabs.get(id) === session.stamp;
 };
 const sameSession = (id: string, session: SessionEntry | null) =>
@@ -187,9 +198,26 @@ function probeTabs(checks: { id: string; session: SessionEntry }[]) {
           continue;
         }
         tabRetries.delete(id);
-        if (result === 'present') continue;
-        if (isDirectExecSession(session)) rememberTab(closedLaunches, session.fields.launchId!, true);
-        else rememberTab(goneTabs, id, session.stamp);
+        if (result === 'present') {
+          if (isDirectExecSession(session)) {
+            const root = directRootPid(session);
+            const key = directPaneKey(session.fields.launchId!, session.fields.terminalId!);
+            if (root && !exitedLaunches.has(key) && !deadDirectRoots.has(key) && workerAlive(root.pid, root.start) === false) {
+              // Brief pause in case a live pane.exited event is already in flight on the event socket.
+              await delay(150, undefined, { signal });
+              if (!signal.aborted && sameSession(id, session) && !exitedLaunches.has(key) && workerAlive(root.pid, root.start) === false) {
+                rememberTab(deadDirectRoots, key, true);
+                schedule();
+              }
+            }
+          }
+          continue;
+        }
+        if (isDirectExecSession(session)) {
+          rememberTab(closedPanes, directPaneKey(session.fields.launchId!, session.fields.terminalId!), true);
+        } else {
+          rememberTab(goneTabs, id, session.stamp);
+        }
         const active = inFlightReaps.get(id);
         if (active?.phase === 'preflight' && active.session?.stamp === session.stamp) active.controller.abort();
         schedule();
@@ -554,9 +582,11 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   entry.phase = 'reaping';
   // Only native Pi may exit using a worker-side snapshot the watcher never saw.
   const expectSnapshot = !!job && !job.cli && !job.bro && !job.jev;
+  const launchStamp = session ? (session.fields.launchId || session.fields.launch || `stamp:${session.stamp}`) : undefined;
+  const reapArgs = [binScript('hud-reap'), dir, ...(launchStamp ? ['--launch', launchStamp] : [])];
   const { result, complete, issue, snapshot, unrecoverable } = await reapWorkerTree(dir, status,
     // Own a new process group so stopping hud-reap also stops its Herdr CLI child.
-    () => runCommand(process.execPath, [binScript('hud-reap'), dir], process.env, {
+    () => runCommand(process.execPath, reapArgs, process.env, {
       budgetMs: REAP_BUDGET_MS, killGraceMs: REAP_KILL_GRACE_MS, killProcessGroup: true, signal,
     }), (run) => run.ok, { carry: retry?.snapshot, expectSnapshot, signal, treeGrant: tabTreeGrant });
   entry.snapshot = snapshot;
@@ -764,8 +794,12 @@ function scan(retryWatch = false) {
       const ownership = reapOwner(session, status);
       const previous = reapRetries.get(id);
       const retry = !job?.reaped_at && previous?.ownership === ownership ? previous : null;
+      const direct = isDirectExecSession(session);
+      const directKey = direct ? directPaneKey(session!.fields.launchId!, session!.fields.terminalId!) : null;
+      const directRoot = direct ? directRootPid(session) : null;
       const closedForLaunch = tabWasClosed(id, session);
-      const paneExit = isDirectExecSession(session) ? exitedLaunches.get(session!.fields.launchId!) ?? null : null;
+      const paneExit = directKey ? exitedLaunches.get(directKey) ?? null : null;
+      const reconciledDeadRoot = Boolean(directKey && deadDirectRoots.has(directKey));
       // A previous read-close attempt may have closed its own tab before retrying cleanup.
       const tabClosed = !retry?.readClose && closedForLaunch;
       if (!job?.headless && !job?.reaped_at &&
@@ -793,24 +827,26 @@ function scan(retryWatch = false) {
           const pid = supervisorPid(dir, status);
           const liveSupervisor = pid && isProcAlive(pid);
           if (pid && liveSupervisor) watch(dir, pid);
-          // A live supervisor delivering /quit owns the terminal write and knows why the tab closed.
+          // A live supervisor delivering /quit (or holding a direct-exec exit event we missed) owns the terminal write.
           const quitting = tabClosed && liveSupervisor && fs.existsSync(`${statusFile}.quit-${pid}`);
-          if (!quitting && (tabClosed || (pid && !liveSupervisor) || (!pid && paneExit))) {
+          const deferDirect = direct && Boolean(liveSupervisor) && !paneExit;
+          if (!quitting && !deferDirect && (tabClosed || (pid && !liveSupervisor) || (direct && (paneExit || (!liveSupervisor && reconciledDeadRoot))))) {
             // The quit marker is removed after STATUS is published; ignore a snapshot taken before that write.
             ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile));
             if (['done', 'closed', 'failed', 'stopped'].includes(status?.state ?? '')) { schedule(); continue; }
-            if ((tabClosed || paneExit) && !sameSession(id, session)) { schedule(); continue; }
-            const alive = workerAlive(status?.pid ?? null, status?.pid_start_time ?? null);
-            const end = terminalFact({ alive, paneExit, tabClosed, stop: fs.existsSync(`${statusFile}.stop-requested`),
+            if ((tabClosed || paneExit || reconciledDeadRoot) && !sameSession(id, session)) { schedule(); continue; }
+            const alive = workerAlive(status?.pid ?? directRoot?.pid ?? null, status?.pid_start_time ?? directRoot?.start ?? null);
+            const end = terminalFact({ alive, paneExit, directExec: direct, tabClosed, stop: fs.existsSync(`${statusFile}.stop-requested`),
               turn: readTurn(dir), reportSig: reportSignature(dir) });
-            if (!end && alive === true && status?.pid && !liveSupervisor) {
+            if (!end && alive === true && (status?.pid ?? directRoot?.pid) && !liveSupervisor) {
               // The remaining third-party worker owns no HUD socket. Back off until a replacement
               // supervisor, a tab event, or verified worker exit ends this degraded handoff.
+              const orphanPid = (status?.pid ?? directRoot?.pid)!;
               orphans.add(id);
               let retry = orphanRetries.get(id);
-              if (!retry || retry.pid !== status.pid || retry.at <= Date.now()) {
-                const delay = Math.min(MAX_REAP_BACKOFF_MS, retry?.pid === status.pid ? retry.delay * 2 : cliCheck);
-                orphanRetries.set(id, retry = { pid: status.pid, delay, at: Date.now() + delay });
+              if (!retry || retry.pid !== orphanPid || retry.at <= Date.now()) {
+                const delay = Math.min(MAX_REAP_BACKOFF_MS, retry?.pid === orphanPid ? retry.delay * 2 : cliCheck);
+                orphanRetries.set(id, retry = { pid: orphanPid, delay, at: Date.now() + delay });
               }
               nearest = Math.min(nearest, retry.at);
             }
@@ -828,7 +864,10 @@ function scan(retryWatch = false) {
           }
         } else if (!job?.bro && !job?.jev && fs.existsSync(`${statusFile}.stop-requested`)) {
           // Stop intent takes precedence over a tab closing while the worker is exiting.
-          const terminal = settleStoppedPi(statusFile, status);
+          const stopStatus = direct && directRoot && status
+            ? { ...status, pid: status.pid ?? directRoot.pid, pid_start_time: status.pid_start_time ?? directRoot.start }
+            : status;
+          const terminal = settleStoppedPi(statusFile, stopStatus);
           if (terminal) { status = terminal; jobCache.invalidateFile(statusFile); statusAt = null; }
           else if (status) {
             // The marker or tab event can arrive before the PID is gone.
@@ -837,30 +876,54 @@ function scan(retryWatch = false) {
             if (isWorkingForCap(job, status)) countWorking(job!.role);
             continue;
           }
-        } else if (job && !job.bro && !job.jev && !job.headless && !job.reaped_at && paneExit) {
-          // Direct-exec Pi exit reported by herdr's pane.exited event (matched by launch_id).
+        } else if (direct && job && !job.bro && !job.jev && !job.headless && !job.reaped_at && paneExit) {
+          // Direct-exec Pi exit reported by herdr's pane.exited event (matched by launch_id + root terminal_id).
           const latest = readJson<JobStatus>(statusFile);
           if (['done', 'closed', 'failed', 'stopped'].includes(latest?.state ?? '')) {
             status = latest;
             jobCache.invalidateFile(statusFile);
             statusAt = null;
-          } else if (latest && sameSession(id, session) && reapOwner(session, latest) === ownership) {
+          } else if (sameSession(id, session) && (!latest || reapOwner(session, latest) === ownership)) {
             status = latest;
+            const baseFields: Partial<JobStatus> = latest ? {} : {
+              version: 1, task_dir: dir, slot: 'primary', harness: 'pi',
+              ...(directRoot ? { pid: directRoot.pid, pid_start_time: directRoot.start } : {}),
+            };
             if (paneExit.exitCode === 0 && !paneExit.signal) {
-              const settled = Boolean(latest.output_written || readCloseTurn(dir, job, latest));
+              const settled = Boolean(latest?.output_written || (latest && readCloseTurn(dir, job, latest)));
               update = settled
-                ? { state: 'closed', reason: null, blocked: false, idle_deadline_at: null,
-                    settled_at: latest.settled_at ?? now, ended_at: now, exit_reason: latest.exit_reason ?? 'settled',
+                ? { ...baseFields, state: 'closed', reason: null, blocked: false, idle_deadline_at: null,
+                    settled_at: latest?.settled_at ?? now, ended_at: now, exit_reason: latest?.exit_reason ?? 'settled',
                     error: null, runner_exit_code: 0, runner_exit_signal: null, updated_at: now }
-                : { state: 'failed', reason: null, blocked: false, idle_deadline_at: null,
+                : { ...baseFields, state: 'failed', reason: null, blocked: false, idle_deadline_at: null,
                     ended_at: now, exit_reason: 'process exited without a report', error: 'process exited without a report',
                     runner_exit_code: 0, runner_exit_signal: null, updated_at: now };
             } else {
               const exitReason = formatPaneExitReason(paneExit);
-              update = { state: 'failed', reason: null, blocked: false, idle_deadline_at: null,
+              update = { ...baseFields, state: 'failed', reason: null, blocked: false, idle_deadline_at: null,
                 ended_at: now, exit_reason: exitReason, error: exitReason,
                 runner_exit_code: paneExit.exitCode, runner_exit_signal: paneExit.signal as NodeJS.Signals | null, updated_at: now };
             }
+          }
+        } else if (direct && job && !job.bro && !job.jev && !job.headless && !job.reaped_at && (tabClosed || reconciledDeadRoot)) {
+          // Direct-exec Pi missed exit (disconnected/restarted during crash or root vanished): never settle as success without exit_code 0.
+          const latest = readJson<JobStatus>(statusFile);
+          if (['done', 'closed', 'failed', 'stopped'].includes(latest?.state ?? '')) {
+            status = latest;
+            jobCache.invalidateFile(statusFile);
+            statusAt = null;
+          } else if (sameSession(id, session) && (!latest || reapOwner(session, latest) === ownership)) {
+            status = latest;
+            const rootDead = directRoot ? workerAlive(directRoot.pid, directRoot.start) === false : false;
+            const baseFields: Partial<JobStatus> = {
+              ...(latest ? {} : { version: 1, task_dir: dir, slot: 'primary', harness: 'pi' }),
+              ...(directRoot ? { pid: latest?.pid ?? directRoot.pid, pid_start_time: latest?.pid_start_time ?? directRoot.start } : {}),
+            };
+            if (tabClosed && !fs.existsSync(`${statusFile}.stop-requested`))
+              recordStopOrigin(dir, 'pane_vanished', latest?.state, now);
+            const exitReason = rootDead ? 'worker exited (exit unknown)' : 'tab closed';
+            update = { ...baseFields, state: 'failed', reason: null, blocked: false, idle_deadline_at: null,
+              ended_at: now, exit_reason: exitReason, error: exitReason, updated_at: now };
           }
         } else if (job && !job.bro && !job.jev && !job.headless && !job.reaped_at &&
             status?.pid && status.pid_start_time && piTurnUnfinished(status)) {
@@ -892,7 +955,7 @@ function scan(retryWatch = false) {
           update = { state: 'failed', exit_reason: 'tab closed', ended_at: now };
         }
         if (update) {
-          if (tabClosed && !sameSession(id, session)) { schedule(); continue; }
+          if ((tabClosed || paneExit || reconciledDeadRoot) && !sameSession(id, session)) { schedule(); continue; }
           status = { ...status, ...update };
           writeJsonAtomic(statusFile, status);
           statusAt = null;
@@ -918,7 +981,7 @@ function scan(retryWatch = false) {
       if (retry?.readClose && retry.at !== Infinity)
         nearest = Math.min(nearest, retry.at > Date.now() ? retry.at : Date.now() + cliCheck);
       // Once the recorded tab or root is gone, retry that owner's cleanup without an agent preflight.
-      const resumeReadReap = retry?.readClose && (closedForLaunch || workerTreeRootGone(status.pid, status.pid_start_time));
+      const resumeReadReap = retry?.readClose && (closedForLaunch || workerTreeRootGone(status.pid ?? directRoot?.pid, status.pid_start_time ?? directRoot?.start));
       if (job && ['idle_grace', 'done', 'closed', 'failed', 'stopped'].includes(status.state ?? ''))
         recordJobUsage(dir, job, status);
       if (job && shouldCheckSonicCitations(job, status)) {
@@ -1202,8 +1265,12 @@ export function openRuntime(emit: typeof notify) {
       if (tabId) wakeTab(`tab:${tabId}`);
       schedule();
     },
-    paneExited(launchId: string, exit: PaneExit) {
-      if (launchId) rememberTab(exitedLaunches, launchId, exit);
+    paneExited(launchId: string, terminalId: string, exit: PaneExit) {
+      if (launchId && terminalId) rememberTab(exitedLaunches, directPaneKey(launchId, terminalId), exit);
+      schedule();
+    },
+    paneClosedByLaunch(launchId: string, terminalId: string) {
+      if (launchId && terminalId) rememberTab(closedPanes, directPaneKey(launchId, terminalId), true);
       schedule();
     },
     reconcileTabs() { checkAllTabs = true; schedule(); },

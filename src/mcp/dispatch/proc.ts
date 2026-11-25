@@ -5,7 +5,6 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { herdrId, runHerdr } from '../../roles/herdr-run.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { isQuotaFailure } from '../../roles/roster.js';
-import { request as herdrSocketRequest } from '../../runtime/herdr-socket.js';
 import type { Job, JobStatus } from '../job-contracts.js';
 import { callerPane, rememberCallerHarness } from '../mcp/session-state.js';
 import { bundled, hudHome, jobs, jobCache } from '../store/job-store.js';
@@ -147,23 +146,52 @@ export async function startupFailure(result: DispatchResult, pane: string): Prom
   return { ...result, pane, ...(reason && { detail: reason }) };
 }
 
-/** Build explicit worker env for direct-exec `agent.start` from HUD's own process env plus job vars. */
+/** Build explicit worker env for direct-exec `agent.start` from HUD's own process env plus job vars.
+ * Forwards auth and toolchain vars (PATH, GOOGLE_*, NVM_*, credentials) while stripping parent
+ * job/session/control handles and outer-terminal handles unless explicitly supplied in `extra`. */
 const STRIPPED_PARENT_ENV = new Set([
+  // Agent / parent session nesting handles
   'CLAUDECODE',
+  'CLAUDE_CODE_ENTRYPOINT',
   'CLAUDE_CODE_SESSION_ID',
   'CLAUDE_CODE_CHILD_SESSION',
   'CLAUDE_CODE_MESSAGING_TOKEN',
   'CODEX_THREAD_ID',
   'OMPCODE',
+  // HUD & pi-roles job/session/control handles
   'HUD_MCP_SURFACE',
   'HUD_MCP_PI_SESSION_ID',
   'HUD_MCP_JSON',
   'HUD_JOB_DIR',
   'HUD_TAB_LAUNCH',
   'HUD_INVOCATION_TOKEN',
+  'HUD_RESUME_SESSION_ID',
+  'HUD_REAP_GROUP_TOKEN',
+  'HUD_CLAUDE_MOD',
+  'HUD_PANEL_CALLER_PANE',
+  'PI_ROLE_NOTIFY',
+  'PI_ORCHESTRATOR_PANE',
+  'PI_ROLES_KEEP_TAB',
+  // Outer-terminal / multiplexer handles
   'HERDR_PANE_ID',
   'HERDR_TAB_ID',
   'HERDR_WORKSPACE_ID',
+  'TMUX',
+  'TMUX_PANE',
+  'CODEX_HUD_TMUX_SESSION',
+  'CODEX_HUD_TMUX_BIN',
+  'STY',
+  'WINDOW',
+  'ZELLIJ',
+  'ZELLIJ_SESSION_NAME',
+  'ZELLIJ_PANE_ID',
+  'WEZTERM_PANE',
+  'WEZTERM_UNIX_SOCKET',
+  'KITTY_WINDOW_ID',
+  'KITTY_LISTEN_ON',
+  'TERM_SESSION_ID',
+  'ITERM_SESSION_ID',
+  'WT_SESSION',
 ]);
 
 export function directExecEnv(extra: Record<string, string>, base: NodeJS.ProcessEnv = process.env): Record<string, string> {
@@ -180,32 +208,14 @@ export function directExecEnv(extra: Record<string, string>, base: NodeJS.Proces
   return env;
 }
 
-export function waitedAgentStatus(stdout: string): string | null {
-  try {
-    const res = JSON.parse(stdout)?.result;
-    const status = res?.event?.data?.agent_status ?? res?.agent?.agent_status;
-    return typeof status === 'string' ? status : null;
-  } catch {
-    return null;
-  }
-}
-
 export type DispatchResult = {
   exit_code: number; stdout: string; stderr: string; code?: Job['dispatch_code'];
   pane?: string; detail?: string; preInput?: boolean; cleanupFailed?: boolean; status?: JobStatus; path?: string;
 };
 export const canTryNext = (job: Job, result: DispatchResult) => (job.role !== 'sonic' || job.headless) && result.preInput && !result.cleanupFailed;
 export const launchError = (stderr: string, code?: Job['dispatch_code']): DispatchResult => ({ exit_code: 1, stdout: '', stderr, code });
-export async function rejectLaunch(result: DispatchResult, tab?: string, launchId?: string): Promise<DispatchResult> {
-  if (tab && launchId) {
-    const check = await herdrSocketRequest('tab.get', { tab_id: tab }).catch(() => null);
-    if (check?.error?.code === 'tab_not_found') return { ...result, preInput: true, cleanupFailed: false };
-    const actual = check?.result?.tab?.launch_id;
-    if (actual && actual !== launchId) return { ...result, preInput: true, cleanupFailed: false };
-    if (!actual) return { ...result, preInput: true, cleanupFailed: true };
-  }
+/** Stock-herdr and pre-spawn rejection helper. Direct-exec rollback uses rollbackDirectLaunch instead. */
+export async function rejectLaunch(result: DispatchResult, tab?: string): Promise<DispatchResult> {
   const cleanup = tab && await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 });
-  const alreadyGone = Boolean(cleanup && !cleanup.ok && launchId &&
-    cliError({ exit_code: cleanup.exitCode ?? 1, stdout: cleanup.stdout, stderr: cleanup.stderr })?.code === 'tab_not_found');
-  return { ...result, preInput: true, cleanupFailed: Boolean(cleanup && !cleanup.ok && !alreadyGone) };
+  return { ...result, preInput: true, cleanupFailed: Boolean(cleanup && !cleanup.ok) };
 }

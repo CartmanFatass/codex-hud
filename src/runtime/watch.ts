@@ -89,7 +89,7 @@ export async function openWatcher() {
         reconnectTimer = setTimeout(() => { reconnectTimer = undefined; subscribe(); }, reconnectMs).unref();
         reconnectMs = Math.min(30000, reconnectMs * 2);
       };
-      const subscriptions = fork ? [{ type: 'tab.closed' }, { type: 'pane.exited' }] : [{ type: 'tab.closed' }];
+      const subscriptions = fork ? [{ type: 'tab.closed' }, { type: 'pane.exited' }, { type: 'pane.closed' }] : [{ type: 'tab.closed' }];
       peer.on('connect', () => peer.write(JSON.stringify({ id: 'hud-watch', method: 'events.subscribe',
         params: { subscriptions } }) + '\n'));
       const lines = createInterface({ input: peer });
@@ -105,11 +105,15 @@ export async function openWatcher() {
             runtime.tabClosedByLaunch(data.launch_id, typeof data.tab_id === 'string' ? data.tab_id : undefined);
           else if (typeof data?.tab_id === 'string')
             runtime.tab(data.tab_id);
-        } else if (kind === 'pane_exited' && typeof data?.launch_id === 'string' && data.launch_id) {
-          runtime.paneExited(data.launch_id, {
+        } else if (kind === 'pane_exited' && typeof data?.launch_id === 'string' && data.launch_id &&
+            typeof data?.terminal_id === 'string' && data.terminal_id) {
+          runtime.paneExited(data.launch_id, data.terminal_id, {
             exitCode: typeof data.exit_code === 'number' ? data.exit_code : null,
             signal: typeof data.signal === 'string' ? data.signal : null,
           });
+        } else if (kind === 'pane_closed' && typeof data?.launch_id === 'string' && data.launch_id &&
+            typeof data?.terminal_id === 'string' && data.terminal_id) {
+          runtime.paneClosedByLaunch(data.launch_id, data.terminal_id);
         }
       });
       lines.on('error', (error) => unavailable(error.message));
