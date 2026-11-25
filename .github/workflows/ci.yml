@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # npm ci rewrites tracked vendored metadata; the release packager requires a clean tree.
+      - run: git restore -- node_modules
       - run: npm run test:release
       - run: npm run check:fixtures
 
