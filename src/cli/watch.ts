@@ -71,7 +71,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
             .split(/^(?:Options:\s*$|Default if unanswered:|Context:|Answer:)/m, 1)[0];
           return { line: `[${one(tag)}] QUESTION ${id}: ${one(question)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)}${q.context ? ` | context: ${one(q.context)}` : ''} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}` };
         });
-    if (row.land_turn) return questions;
+    if (row.land_turn || (row.batch_flow && !row.blocked)) return questions;
     if (row.parent_job && settled(row) && row.display_state !== 'failed') return questions;
     // A newly visible row can be old work promoted into the bounded window by retention.
     if (catchup === false && !old && settled(row) && row.notice_mtime + NOTICE_MTIME_SLOP_MS < lastScanAt) return questions;
@@ -119,7 +119,7 @@ function sonicCheckpointNotices() {
   return (rows: JobRow[], verbose: boolean): string[] => {
     const next = new Map<string, string>();
     const lines = rows.flatMap(row => {
-      if (row.role !== 'sonic' || row.state !== 'working') return [];
+      if (row.batch_flow || row.role !== 'sonic' || row.state !== 'working') return [];
       const checkpoint = row.progress?.filter(p => p.source === 'checkpoint').at(-1);
       const before = seen.get(row.job);
       const at = checkpoint?.at ?? before;
@@ -408,7 +408,7 @@ export async function watchCommand(
       const band = readBand && await readBand(scanAt);
       if (band) await io.stdout(JSON.stringify(band) + '\n');
       if (queue || mod) {
-        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running')))) ||
+        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running')))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {

@@ -1,7 +1,7 @@
 // Pure helpers of the HUD mod: no engine calls, so register.ts and the tests share them.
 
 /** Job and flow ids, question replies: what a HUD line starts with, so other Monitor output is left alone. */
-const HUD_LINE = /^(?:[jf][0-9a-f]{16}(?:-\d+)?\b|\[[^\]\n]+\] QUESTION q\d+:|\[sonic j[0-9a-f]{16}\])/;
+const HUD_LINE = /^(?:[bjf][0-9a-f]{16}(?:-\d+)?\b|\[[^\]\n]+\] QUESTION q\d+:|\[sonic j[0-9a-f]{16}\])/;
 
 /** What this turn already delivered: HUD lines, and the Monitor tasks whose rows were shown. */
 export type Turn = { seen: Set<string>; tasks: Set<string> };

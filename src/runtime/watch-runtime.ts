@@ -13,6 +13,8 @@ import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sess
 import { recordJobUsage } from '../roles/job-usage.js';
 import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/sonic-citations.js';
 import { landAttempt, activeLand, isFlowId } from '../mcp/land-state.js';
+import { wakeBatch } from '../mcp/batch.js';
+import { batchActive, batchIds, readBatch } from '../mcp/batch-state.js';
 import { queueIds, readTicketQueue } from '../mcp/ticket-queue-state.js';
 import { wakeTicketQueue } from '../mcp/ticket-queue.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
@@ -906,6 +908,12 @@ function scan(retryWatch = false) {
       nearest = Math.min(nearest, Date.now() + 5000);
     } catch (error) { warn(`ticket queue ${id}`, `ticket queue ${id}: ${(error as Error).message}`); }
   }
+  for (const id of batchIds(home)) {
+    try {
+      const b = readBatch(home, id);
+      if (b && batchActive(b)) { wakeBatch(home, b); nearest = Math.min(nearest, Date.now() + 5000); }
+    } catch (error) { warn(`batch ${id}`, `batch ${id}: ${(error as Error).message}`); }
+  }
   // Archive expired jobs before dropping the flow receipts those archives read.
   if (housekeep) pruneLandFlows(home);
   for (const id of [...reapRetries.keys()]) if (!liveIds.has(id)) reapRetries.delete(id);
@@ -1017,7 +1025,7 @@ function startWatch() {
     flowsWatcher = fs.watch(flows, { persistent: false }, (_event, name) => {
       const file = name?.toString();
       // Ticket queues still wake their existing recovery scan; they are not counted as lands.
-      if (!file || (file.endsWith('.json') && isFlowId(file.slice(0, -5))) || /^q[a-f0-9]{16}\.json$/.test(file)) schedule();
+      if (!file || (file.endsWith('.json') && isFlowId(file.slice(0, -5))) || /^[bq][a-f0-9]{16}\.json$/.test(file)) schedule();
     }).once('error', () => {
       flowsWatcher?.close(); flowsWatcher = undefined;
       workSummary.markDegraded();

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { sharedRoot } from '../roles/projects.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import type { ManagedWorktree } from './managed-worktree.js';
+import { batchActive, batchEvents, isBatchId, readBatch } from './batch-state.js';
 import { isTicketQueueId, readTicketQueue, ticketQueueNotice } from './ticket-queue-state.js';
 
 export const DEFAULT_LAND_TIMEOUT_S = 900;
@@ -124,6 +125,14 @@ export function landEvents(home: string, pane: string | null, all = false, cwd =
       continue;
     }
     const id = file.replace(/\.json$/, '');
+    if (file.endsWith('.json') && isBatchId(id)) {
+      const b = readBatch(home, id);
+      if (b && (all || b.pane === pane)) {
+        lines.push(...batchEvents(home, b, all).map(event => event.line));
+        pending ||= batchActive(b);
+      }
+      continue;
+    }
     if (!file.endsWith('.json') || (!isFlowId(id) && !isTicketQueueId(id))) continue;
     const marker = `${landFile(home, id)}.${all ? 'observed' : 'noticed'}`;
     if (fs.existsSync(marker)) continue;

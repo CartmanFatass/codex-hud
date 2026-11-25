@@ -1,6 +1,7 @@
 /** On-demand cleanup of raw job logs, land flows and explicitly configured project scratch. */
 import * as fs from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { projectRegistryRoots } from '../roles/projects.js';
 import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
@@ -55,6 +56,26 @@ function sameInode(a: fs.Stats, b: fs.Stats | undefined): boolean {
   return a.dev === b?.dev && a.ino === b.ino;
 }
 
+// Resume/retry can reactivate even a completed batch. Recheck expiration under its state lock.
+async function pruneExpiredBatch(home: string, id: string, cutoff: number) {
+  const release = await tryAbstractLock('batch-state', `${home}\0${id}`);
+  if (!release) return;
+  try {
+    inAbsoluteDir(join(home, 'flows'), dir => {
+      const receipt = join(dir, `${id}.json`), stat = fs.lstatSync(receipt);
+      if (!stat.isFile() || stat.mtimeMs >= cutoff) return;
+      const b = readJsonBounded(receipt, stat.size) as { state: string; totals: { running: number } };
+      if (!['completed', 'stopped', 'paused'].includes(b.state) || b.totals.running) return;
+      inDirectory(join(dir, id), batch => {
+        const files = fs.readdirSync(batch);
+        if (!files.every(f => /^(?:index|manifest)\.json$|^(?:failure-\d+-\d+|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f) && fs.lstatSync(join(batch, f)).isFile())) return;
+        for (const f of files) fs.unlinkSync(join(batch, f));
+        fs.rmdirSync(join(dir, id)); fs.unlinkSync(receipt);
+      });
+    });
+  } finally { await release(); }
+}
+
 export function pruneLandFlows(home: string, now = Date.now()): void {
   const cutoff = now - JOB_RETENTION_MS;
   try {
@@ -62,6 +83,10 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
       const jobs = new Map<string, string[]>();
       const names = fs.readdirSync(dir);
       for (const name of names) {
+        if (/^b[a-f0-9]{16}\.json$/.test(name)) {
+          if (fs.lstatSync(join(dir, name)).mtimeMs < cutoff) void pruneExpiredBatch(home, name.slice(0, -5), cutoff).catch(() => {});
+          continue;
+        }
         if (/^q[a-f0-9]{16}\.json$/.test(name)) {
           try {
             const path = join(dir, name), stat = fs.lstatSync(path);

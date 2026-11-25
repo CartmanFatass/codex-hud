@@ -151,7 +151,7 @@ Launch details remain in `hud_read({job, detail:true})`.
 A successful fan-out send keeps the job’s existing active task instead of starting a new one.
 The same caller can poll existing worker and land tasks after an MCP restart until their task TTL expires.
 Cancelling a still-current task on its original connection stops the worker like `hud_close`; repeating cancel, cancelling an old task or cancelling from a fresh connection does nothing.
-To start several jobs in a task session, send one `hud_create` per job in parallel.
+To start several unrelated jobs with individual MCP tasks, send one `hud_create` per job in parallel. The fixed `items` flow below instead returns one batch ID (also in a task session).
 `hud_create({jobs})` returns an error without creating any jobs.
 Dispatch failures, duplicates and fan-out sends return immediately.
 Batch `hud_send({messages})` and `hud_respond({answers})` still return per-item results in input order.
@@ -189,6 +189,14 @@ Stale PIDs never suppress delivery.
 MCP `changes` stays the fuller, query-only stream; a `report` token always means unread.
 With live events, keep working until notified instead of polling or waiting.
 A report-ready notice leaves the report unread; collect it explicitly.
+
+**Fixed batches.** `hud_create({role:"sonic", items:[{brief_file:"briefs/a.md"},{task:"Label the second file",package:"labels"}], max_parallel:4})` returns a batch flow ID and its scale before the main run. Supply 1–512 independent items, each with exactly one `task` or `brief_file`. Shared `cwd`, `package`, `context_files`, `mode`, `isolation`, `scouts`, `prewalk`, `checks`, `experiment` and `arm` apply to every member. An item’s package overrides the shared label. A `request_key` deduplicates submission. Imp and frontend-imp default to a separate managed worktree for each item; specify `isolation:"worktree"` for code changes by other roles.
+
+The scale lists the item count, role, selected presets (`null`: the configured run without a named preset), role cap, effective `max_parallel`, and maximum, median and total estimated input bytes. HUD counts the UTF-8 brief, explicit context files and existing literal project file paths it recognizes in the brief (once per file per item, relative to `cwd`, not glob/recursive inputs or explicit output paths). Use `context_files` for inputs not named literally. The private manifest records the brief text, paths and size calculation. HUD runs the largest item assigned to each preset as a pilot, pinning each member to its planned preset; a refused placement never switches to an unpiloted preset. The remaining briefs stay in manifest order until every pilot has settled with a report. No coordinator model is launched. Ordinary jobs have priority over manifest waiters, and across batches at most the role cap minus two members run. A cap of 1–2 leaves no batch slots; zero is uncapped, so set `max_parallel` to bound the run.
+
+Read `hud_read({job:flow})` for totals, failure groups, and the result index: each item’s job ID, state, report path, reported files and failure reason. This does not collect the individual reports. Watch delivers questions, not per-member starts, queue positions, checkpoints or settlements. The first failure of each reason is announced; repeats are folded. A failed/stalled pilot, two consecutive failures, or at least two failures making up 20% of settlements pauses admission. A breaker notice groups reasons with counts and examples. Already running jobs finish; further failures while paused update the index silently. Completion delivers one totals line and a hint for listing unread reports.
+
+`hud_create({batch:flow,action:"pause"|"resume"|"stop"|"retry_failed"})` acts on the whole batch. Pause keeps waiters; stop cancels them without touching admitted jobs. Resume acknowledges failed pilots and continues in order. Retry-failed runs all currently failed items again as new jobs with the snapshotted briefs and placements, keeping their previous job IDs/reasons in the same index. Failed pilots run again before the remainder. Resume and retry reset the breaker window. Inactive batch receipts and their state directories follow the job retention window.
 
 `hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) to link progress.
 `slice` is a legacy target label.

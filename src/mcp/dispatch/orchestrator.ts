@@ -125,6 +125,17 @@ function countWorkingByRole(allJobs = jobs()): Map<string, number> {
   return counts;
 }
 
+export function batchHasRoom(role: string, all = jobs(), cap = capForRole(loadConcurrencySettings(), role)) {
+  let working = 0, members = 0;
+  for (const j of all) if (j.role === role) {
+    const status = readCachedStatus(j.job).status;
+    if (status?.state === 'queued') return false;
+    if (isWorkingForCap(j, status)) { working++; if (j.batch_flow) members++; }
+    else if (j.batch_flow && status?.state === 'waiting_orchestrator') members++; // A headless answer resumes the same item.
+  }
+  return !cap || (working < cap && members < cap - 2);
+}
+
 function jobOptions(job: Job): Args {
   return {
     role: job.role, cwd: job.worktree?.main_root ?? job.cwd, package: job.package, ticket: job.ticket, slice: job.slice, preset: job.preset,
@@ -172,11 +183,12 @@ function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): 
   return fallback?.worktree?.owner ? fallback : undefined;
 }
 
+type BatchMember = { flow: string; route: JobRoute; canAdmit: () => boolean };
 type SlotGate = { wait: Promise<void>; release: () => void };
 
-export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, dispatcher }: {
+export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher }: {
   parent?: SonicParent; repair?: { source: Job; derived: boolean }; batch?: boolean; slotGate?: SlotGate;
-  queue?: { id: string; canAdmit: () => boolean }; dispatcher?: Job['dispatcher'];
+  queue?: { id: string; canAdmit: () => boolean }; member?: BatchMember; dispatcher?: Job['dispatcher'];
 } = {}) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
@@ -240,7 +252,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
     dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, {
-      worktreeSource, batch, slotGate, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: queue?.canAdmit, dispatcher,
+      worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: member?.canAdmit ?? queue?.canAdmit, dispatcher,
     }));
 }
 
@@ -362,10 +374,10 @@ async function nextEvenLaunch(even: ReturnType<typeof evenPlanner>, job: Job, re
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<Job, 'job' | 'objective'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, canAdmit, dispatcher, seat, council, memberStarted }: {
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, member, canAdmit, dispatcher, seat, council, memberStarted }: {
     seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
-    ticketQueue?: string; canAdmit?: () => boolean; dispatcher?: Job['dispatcher'];
+    ticketQueue?: string; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher'];
   } = {}) {
   const { experiment, arm, preview } = args;
   if (preview !== undefined && !validPreviewPath(preview)) {
@@ -568,12 +580,14 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   const imp = requestedRole === 'imp' || fromImp;
   const sonic = requestedRole === 'sonic';
-  const settings = (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
+  const settings = !member && (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
   const even = imp && settings?.impPlacement === 'even' ? evenPlanner(found, chain, args, routing, 'imp', settings.impEvenPool)
     : sonic && settings?.sonicPlacement === 'even' ? evenPlanner(found, chain, args, routing, 'sonic', settings.sonicEvenPool) : undefined;
   let route: JobRoute | undefined;
   let localContext: Awaited<ReturnType<typeof contextFor>> | undefined;
-  if (imp && (retryInput || fromImp)) {
+  if (member) {
+    route = member.route;
+  } else if (imp && (retryInput || fromImp)) {
     route = landCwd ? repairImpRoute(chain, sourceJob?.route) : sourceJob?.route;
   } else if (sonic && retryInput) {
     route = sourceJob?.route;
@@ -640,7 +654,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     if (enforceCap) {
       const concurrency = loadConcurrencySettings();
       const cap = capForRole(concurrency, role);
-      const workingByRole = countWorkingByRole();
+      const all = jobs();
+      const workingByRole = countWorkingByRole(all);
+      // A fixed batch waits in its manifest, never in the ordinary queue. Check under the
+      // same cross-process lock as normal admission, including other batches of this role.
+      if (member && !batchHasRoom(role, all, cap)) return { ok: false as const, code: 'batch_wait' };
       if (cap > 0 && (workingByRole.get(role) ?? 0) >= cap) {
         const generalCap = capForRole(concurrency, 'general');
         const generalHasRoom = generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap;
@@ -757,6 +775,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
       ...(landCwd ? { land_turn: request_key } : {}),
       ...(ticketQueue && { ticket_queue: ticketQueue }),
+      ...(member && { batch_flow: member.flow }),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),
       ...(council && seat && { council, preset: seat.preset }),
@@ -1374,6 +1393,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const delivered = pending.map(({ text: _, ...receipt }) => ({ ...receipt, resumed: true as const }));
   const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : undefined,
     ticket_queue: land || automatic ? current.ticket_queue : undefined,
+    batch_flow: automatic || answerRequest ? current.batch_flow : undefined,
     headless_task_fence: automatic ? taskFence(current) : undefined,
     send_outcomes: [...(current.send_outcomes ?? []), ...delivered, ...(automatic ? [] : [outcome])] };
   const answerFile = answerRequest && join(dir, jobFiles.qa, `${answerRequest}.answer.md`);
@@ -1398,7 +1418,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
       message += `\n\nSonic ${child.id} ${child.state === 'open' ? 'still running' : child.state}. Collect its result with hud_sonic (wait: ["${child.id}"]).`;
     }
   }
-  const taskEntry = session.taskClient && !land && !carryTask ? beginTask(next, row.report_mtime, answerRequest) : undefined;
+  const taskEntry = session.taskClient && !next.batch_flow && !land && !carryTask ? beginTask(next, row.report_mtime, answerRequest) : undefined;
   // The reaper has finished. Retire its CLI tab and supervisor before any scan can
   // pair their closure with the new working status. Dispatch publishes fresh receipts.
   const pidFile = join(dir, jobFiles.supervisorPid);
@@ -1566,13 +1586,13 @@ export async function sendJob(id: string, message: string, explicitKey: string |
     exit_code: null, stderr_tail: '' };
   current.land_turn = land ? key : undefined;
   // A note queued into a working turn leaves that turn with its queue; only a new turn is taken over.
-  if (!land && !queued) delete current.ticket_queue;
+  if (!land && !queued) { delete current.ticket_queue; delete current.batch_flow; }
   (current.send_outcomes ??= []).push(outcome);
   save(current);
   // Read the rollback baseline at mutation time, with no pane query between it and the write.
   const submission = current.cli ? await beginPrompt(dir, { send: { key, pid: process.pid, start: procStat(process.pid)?.start ?? null } }) : null;
   const turn = submission?.turn;
-  const taskEntry = session.taskClient && !workingOnly && !land && !carryTask
+  const taskEntry = session.taskClient && !current.batch_flow && !workingOnly && !land && !carryTask
     ? beginTask(current, row.report_mtime, undefined, row, statusAt) : undefined;
   const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
   const blocked = result.exit_code !== 0 && launchFailure(result).code === 'agent_blocked';

@@ -28,6 +28,8 @@ import { registry, harnessSwitchFailure, compactAssignment } from '../dispatch/p
 import { paneText, ensureWatcher } from '../dispatch/proc.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import type { AnswerActor, Job } from '../job-contracts.js';
+import { batchView, controlBatch, startBatch, wakeBatch } from '../batch.js';
+import { batchEvents, batchIds, isBatchId, readBatch } from '../batch-state.js';
 import { landView, isFlowId, readLand, landEvents } from '../land-state.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, editTickets } from '../local-tickets.js';
@@ -537,6 +539,12 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     };
   }
   if (name === 'hud_create') {
+    if (args.items !== undefined || args.batch !== undefined || args.action !== undefined) {
+      const b = args.items === undefined ? await controlBatch(hudHome, callerPane, args) : await startBatch(hudHome, callerPane, args, dispatcher);
+      wakeBatch(hudHome, b); ensureWatcher();
+      if (callerPane && !session.taskClient) void ensureQueueWatcher(callerPane, hudHome);
+      return { flow: b.flow, state: b.state, totals: b.totals, scale: b.scale };
+    }
     if (args.jobs !== undefined) {
       if (session.taskClient) throw new Error('In a task session, send one hud_create per job as parallel calls; each gets its own MCP task.');
       if (!Array.isArray(args.jobs) || !args.jobs.length ||
@@ -620,7 +628,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     if (args.mode !== undefined && args.mode !== 'digest' && args.mode !== 'full') throw new Error('invalid_arguments: mode');
     if (args.full !== undefined && typeof args.full !== 'boolean') throw new Error('invalid_arguments: full');
     if (args.offset !== undefined && (typeof args.offset !== 'number' || !Number.isSafeInteger(args.offset) || args.offset < 0 ||
-        !fullRead(args) || typeof args.job !== 'string' || args.jobs !== undefined || isFlowId(args.job) || isTicketQueueId(args.job)))
+        !fullRead(args) || typeof args.job !== 'string' || args.jobs !== undefined || isFlowId(args.job) || isTicketQueueId(args.job) || isBatchId(args.job)))
       throw new Error('invalid_arguments: offset requires a nonnegative integer and one full job read');
     if (args.wait_ms !== undefined && (typeof args.wait_ms !== 'number' || !Number.isFinite(args.wait_ms)))
       throw new Error('invalid_arguments: wait_ms');
@@ -644,6 +652,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
 
 async function callJob(name: string, args: Args, detail: boolean, scan: JobScan) {
   const id = required(args, 'job');
+  if (name === 'hud_read' && isBatchId(id)) return batchView(hudHome, id, callerPane);
   if (name === 'hud_read' && isFlowId(id)) {
     const flow = readLand(hudHome, id);
     return flow ? landView(flow) : { ok: false, code: 'flow_not_found' };
@@ -753,7 +762,7 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
       { ok: false, code: 'resume_failed' };
   }
   const oldTask = activeTasks.get(id);
-  const polled = session.taskClient ? readRow(job, false) : undefined;
+  const polled = session.taskClient && !job.batch_flow ? readRow(job, false) : undefined;
   const row = polled?.row;
   const state = row?.state ?? row?.display_state;
   const canCarry = !!oldTask && oldTask.view.status === 'working' &&
@@ -934,7 +943,10 @@ export async function checkModTakeover() {
 export async function withChanges(value: unknown, markExhaustion: boolean, scan: JobScan): Promise<unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) || await checkModTakeover()) return value;
   if (session.taskClient) {
-    const changes = [...(await ownerDelivery?.changes() ?? []), ...(await drainBatchChanges())];
+    const changes = [...(await ownerDelivery?.changes() ?? []), ...(await drainBatchChanges()), ...batchIds(hudHome).flatMap(id => {
+      const b = readBatch(hudHome, id);
+      return b && b.pane === callerPane ? batchEvents(hudHome, b).map(e => e.line) : [];
+    })];
     return changes.length ? { ...value, changes } : value;
   }
   const rows = sessionRows(markExhaustion, scan);
