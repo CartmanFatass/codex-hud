@@ -82,8 +82,9 @@ execution detail; when space runs out, execution detail is not shown. (new)
   confirm scale and run a pilot first (25.05, 25.06). A hand-back goes by default to a qualified acceptance session
   (default an `oracle` job on Claude Opus 5.5 at high, the same model as the main session; a template may name
   another role or preset), not to main: it reads the run's reports, chooses one of the
-  declared branches (finish, repair, continue) and states why; its session closes when it answers. It escalates to
-  main only what needs the owner (scope, value trade-offs, visible deletions, irreversible acts). Main is the
+  declared branches (finish, repair, continue) and states why; its session closes when it answers. Anything it is
+  unsure of goes to a todo list on the run, not a wake. It escalates to main only what blocks on the owner (scope,
+  value trade-offs, visible deletions, irreversible acts). Main is the
   owner's discussion session and is decoupled from runs: it starts them and receives the one end notice (25.07).
   Outside workflows there is no automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 

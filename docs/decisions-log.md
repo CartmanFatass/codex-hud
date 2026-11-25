@@ -13,7 +13,9 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   finish, repair or continue along the declared branches, and is then closed through herdr. Gains: no main-session
   wakes or context per slice, no prompt-cache cost of keeping main waiting, no main turn per acceptance. Cost: one
   acceptance job per run (default `oracle` on Claude Opus 5.5 high, matching the main session, owner); a wrong verdict is caught later by the owner or main rather than at each
-  slice. Main still starts runs and gets one end notice; owner matters escalate to main. Supersedes "hand-back to main
+  slice. Main still starts runs and gets one end notice; uncertain items go to a todo list on the run (no wake); only
+  blocking owner matters escalate to main. Owner's reasoning: tickets form a clear dependency path suited to automatic
+  progress, same-model acceptance keeps behaviour consistent, and main's tool-call load drops sharply. Supersedes "hand-back to main
   for any judgement" (D-2026-11-25-05) and delegation steps 4–6 where a workflow runs the work.
 
 - **D-2026-11-25-06** (§3; §2.1 workflow): Workflow details from the council design (synthesized by main). §3 no
