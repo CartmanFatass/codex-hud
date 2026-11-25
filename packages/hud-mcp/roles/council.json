@@ -3,7 +3,7 @@
   "optional": true,
   "instructions": "oracle",
   "members": ["fable", "astra", "carbon"],
-  "synthesizer": "pro",
+  "synthesizer": "main",
   "presets": [
     { "name": "fable", "run": [{ "harness": "cli", "agent": "claude", "model": "claude-fable-5-2", "thinking": "high" }] },
     { "name": "astra", "run": [{ "harness": "pi", "pi_role": "architect", "model": "openai/gpt-6.2-astra", "thinking": "high" }] },

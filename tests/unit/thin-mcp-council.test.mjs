@@ -58,7 +58,7 @@ test('shipped council runs three independent members and one browser synthesis; 
   put(join(f.root, 'brief.md'), 'Plan synthetic work.');
   const lines = [];
   t.after(startSessionWatch(f.env.HUD_HOME, f.env.HERDR_PANE_ID, f.root, batch => lines.push(...batch), 10));
-  const { job } = await f.call('hud_create', { role: 'council', brief_file: 'brief.md', context_files: ['public.md', 'changed.md', 'local.md'] });
+  const { job } = await f.call('hud_create', { role: 'council', brief_file: 'brief.md', synthesizer: 'pro', context_files: ['public.md', 'changed.md', 'local.md'] });
   const seats = await members(f, job);
   assert.equal(f.grant.via, 'cli');
   assert.deepEqual(receipt(f, job).grant, f.grant);
@@ -98,6 +98,21 @@ test('shipped council runs three independent members and one browser synthesis; 
   const children = rows.filter(r => r.job !== job);
   assert.deepEqual(children.map(r => r.council.part).sort(), ['member','member','member','synthesizer']);
   assert.ok(children.every(r => r.council.id === job && !r.grant));
+});
+
+test('shipped council defaults to main synthesis and returns member digests and instructions', async t => {
+  const f = await setup(t);
+  enableOptionalRoles(f, 'council');
+  const { job } = await f.call('hud_create', { role: 'council', task: 'Compare plans.' });
+  const seats = await members(f, job);
+  const plans = seats.map(m => `Plan from ${m.preset}.`);
+  seats.forEach((m, i) => finish(f, m, plans[i]));
+  await until(() => states(f, job).state === 'closed', 30000);
+  const result = await f.call('hud_read', { job });
+  assert.deepEqual(result.members.map(m => m.digest), plans);
+  assert.match(result.synthesis_template, /table of disagreements/);
+  assert.equal(result.synthesis_job, undefined);
+  assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).sort(), [job, ...seats.map(m => m.job)].sort());
 });
 
 test('local synthesis with one failed member gets local references, successful reports and a failure note', async t => {
@@ -153,7 +168,7 @@ test('main synthesis returns member digests and the template with one MCP task, 
 
 for (const overflow of [false, true]) test(overflow ? 'browser overflow fails plainly without sending' : 'fewer than two reports fails without synthesis', async t => {
   const f = await setup(t);
-  const { job } = await f.call('hud_create', { role: 'council', task: 'Plan.', members: ['astra','astra','astra'] });
+  const { job } = await f.call('hud_create', { role: 'council', task: 'Plan.', members: ['astra','astra','astra'], synthesizer: 'pro' });
   const seats = await members(f, job);
   seats.forEach((m,i) => finish(f, m, overflow ? 'x'.repeat(65537) : i ? undefined : 'One plan.', !overflow && i ? `failure ${i}` : undefined));
   const result = await outcome(f, job);
@@ -211,7 +226,7 @@ test('disabled council, browser switch, bad count, unknown or unavailable seat s
   assert.match((await create({})).reason, /council is off.*Control/);
   const grant = await allow(f);
   enableOptionalRoles(f, 'council');
-  assert.match((await create({})).reason, /Enable pro.*Control/);
+  assert.match((await create({ synthesizer: 'pro' })).reason, /Enable pro.*Control/);
   assert.match((await create({ members: ['missing','astra'] })).reason, /Unknown council preset.*Valid council presets:.*fable/);
   assert.match((await create({ members: ['astra'] })).reason, /2–5/);
   assert.match((await create({ synthesizer: 'missing' })).reason, /Unknown council preset/);
