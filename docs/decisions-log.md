@@ -7,6 +7,12 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-25-06** (§3; §2.1 workflow): Workflow details from the council design (synthesized by main). §3 no
+  longer lists "workflow engine" among things HUD does not build; the runner is short-lived per run with no resident
+  process. A large batch, which needs the one-time owner grant, is more than 50 Sonic items or more than 2 MiB of
+  Sonic input, or more than 12 items of any other role. Plain batch submission stays one call (the call is main's
+  confirmation).
+
 - **D-2026-11-25-05** (§2.1 dispatch; workflow): Workflows return. Owner: batches and automatic prewalk show that any
   ordered execution should be automatable as a workflow. HUD had grown five separate fixed flows (prewalk, land,
   ticket queue, council, batch), each with its own runner, notices and failure handling. One deterministic runner now

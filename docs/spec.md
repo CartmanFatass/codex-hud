@@ -77,8 +77,9 @@ execution detail; when space runs out, execution detail is not shown. (new)
   reason) and sends one notice per run. Prewalk, land, the ticket queue, council and batch become shipped templates
   with unchanged behaviour. Templates live in `$HUD_HOME` or the project's `.hud/`; main may also compose a graph at
   call time, which HUD validates before it runs. A run using only cheap steps (Sonic, imp, land, checks) starts on
-  main's confirmation; a run with council, `pro`, browser roles or a large batch needs a fresh one-time owner grant
-  like council. Fan-out steps confirm scale and run a pilot first (25.05).
+  main's confirmation; a run with council, `pro`, browser roles or a large batch (more than 50 Sonic items or 2 MiB of
+  Sonic input, or more than 12 items of another role) needs a fresh one-time owner grant like council. Fan-out steps
+  confirm scale and run a pilot first (25.05, 25.06).
   Outside workflows there is no automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
 Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)
@@ -201,8 +202,9 @@ one-way GitHub Issues mirror via `gh`; no polling GitHub or contacting it from t
 
 ## 3. What it does not do
 
-- No new harness, general supervisor, workflow engine, ledger database or resident server. Local adapters and the
-  on-demand watcher suffice. No native Windows, multi-user identity, cross-machine control or npm publishing. (10.01, 10.03, 14.02, 22.10)
+- No new harness, general supervisor, ledger database or resident server. Local adapters and the on-demand watcher
+  suffice; the workflow runner is short-lived per run and exits when the run pauses or ends. No native Windows,
+  multi-user identity, cross-machine control or npm publishing. (10.01, 10.03, 14.02, 22.10, 25.06)
 - No transactional installer, vendor pins or upstream tracking for HUD-owned bars. Back up edited client files. (10.01, 10.03)
 - Not a replacement for Git, issues or project docs. No inferred attention score, human activity surveillance, ROI
   or “intelligence” ranking. Historical comparisons belong in toktrack or a requested study. Teaching, preferences
