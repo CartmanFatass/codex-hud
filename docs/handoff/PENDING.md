@@ -33,17 +33,19 @@ Each item says who decides and what would trigger it. Remove an item when it is 
 
 ## In progress (2026-11-25)
 
-- Workflow engine (D-2026-11-25-05/06): tickets `.scratch/workflow/` 01–06; 01 dispatched. Pi worker extension
-  (owner approved removals R1–R4): `.scratch/pi-worker/` 01–05; 01 and 03 dispatched. Lands of workflow/01 and
-  pi-worker/01 wait until the hmasd Sonic batch ends (they replace the batch runner and the Sonic launch path).
-- Known fault until workflow/03 lands: council runs inside the MCP process; an MCP restart orphans it (council
-  j84ec335faab925fb stayed `working` after its members finished; synthesized by hand).
-- hmasd research-error study: transcripts inventoried (owner + subagent threads, WSL/Windows/sqlite), chunking and
-  per-chunk sonic labelling under way in `tmp/tasks/HMASD-RESEARCH/` (60/287 done; remaining 227 in batch
-  b8d86947d528de015).
-- Sonic runs fixed on `deepseek` (`sonicPlacement: fixed`, owner 2026-11-25; backup `hud-settings.json.bak-20261125-sonic-fixed`).
-  The even pool setting (`deepseek`, `luna`) is kept but inactive. Haiku hung in pi auto-compaction at `max` on 120 KB
-  chunks; thinking is not capped (eng-hygiene/12 wontfix): the fault was task size.
+- Workflow engine, narrowed by the owner (D-2026-11-25-08): workflow/01 landed (4dbb54ab, real 4-item Sonic batch
+  smoke passed); 02 prewalk (j5467e4d747739e9f) and 03 council (jf0c28cb0de949fc5) building, 04 land queued
+  (j05b45100d93a978c). 05–07 deferred (needs-triage). The council orphan fault stays until 03 lands.
+- Pi worker extension: pi-worker/01 landed (e86ed24c + fixture repair 599d2644); DeepSeek search key imported into
+  `~/.hud/credentials.env` (backups beside it); live smoke passed (5 Sonic jobs incl. web search + fetch).
+  pi-worker/03 (j3bd8576dccfd4ee1) in its third repair after three process-safety reviews; re-review before land.
+  pi-worker/02 waits for 03 (same harness files).
+- HMASD failure lessons: three neon xhigh writers (A trajectory jda097fc885c09ffb, B evidence j10f1e6c8d46d381e,
+  C organization jc35bc55ccab545ba) write to `tmp/tasks/HMASD-RESEARCH/lessons/`; main merges. The labelling batch
+  finished (323 label files, 3,502 items). hmasd-wsl git repo repaired (13 missing promisor objects refetched).
+- Known HUD bug: resuming a closed tab job (hud_send) emits a spurious "failed | tab closed" notice while the job is
+  working (seen twice on j3bd8576dccfd4ee1). Fix after pi-worker/03 lands (same reap code).
+- Minor: `deepseek_fetch` cannot reach raw.githubusercontent.com (404); github.com pages work.
 
 ## Data waiting to appear
 

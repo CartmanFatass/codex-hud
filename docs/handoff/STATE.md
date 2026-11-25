@@ -1,4 +1,4 @@
-# State of the universal-hud effort (2026-11-23)
+# State of the universal-hud effort (2026-11-25)
 
 Milestone: pivot M1–M3 accepted (M3: manage outcomes across projects); 0.2.0 is the baseline; the spec implies no M4
 
@@ -14,6 +14,10 @@ Older handoffs: [2026-11-03 to 11-14](archive/STATE-2026-11-03-to-11-14.md), [20
 - Imp defaults to the `sol` preset with routing off; the owner configures placement and uses `even` to balance
   subscriptions (D-2026-11-22-30). Reviewer runs on `astra`.
 - toktrack (separate repo) is landing the hud-insight pages and the 27-slice overhaul through ticket queues.
+
+- 2026-11-25: the workflow engine is narrowed to batch, prewalk, council and land templates; complex workflows
+  (ticket queue on the engine, main-composed graphs, lead acceptance) are deferred (D-2026-11-25-08). Progress and
+  holds are in [PENDING.md](PENDING.md#in-progress-2026-11-25).
 
 ## Waiting for the owner
 
