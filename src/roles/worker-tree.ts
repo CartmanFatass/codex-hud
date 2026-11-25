@@ -48,6 +48,16 @@ export function sonicRoot(dir: string, pid: number, start: string, bootId: unkno
   throw Error('sonic runner identity unresolved');
 }
 
+/** A separately registered Sonic owns its subtree, including when reached via an alias. */
+function registeredSonicChild(dir: string, pid: number): boolean {
+  const argv = readProcCmdline(pid);
+  if (argv?.[1] !== binScript('sonic-run') || !argv[2]) return false;
+  const registered = (parent: string, child: string) => sameTaskDirectory(dirname(parent), dirname(child)) &&
+    fs.existsSync(join(dir, jobFiles.sonic, basename(child)));
+  // Compare the jobs roots, then account for links to individual job directories.
+  return registered(dir, argv[2]) || registered(fs.realpathSync(dir), fs.realpathSync(argv[2]));
+}
+
 /** Capture only individually verified parent/child links, before quit or native shutdown can orphan them. */
 export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapshot): Capture {
   let snapshot: Snapshot | undefined, issue: string | undefined;
@@ -127,11 +137,7 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
         if (current?.start !== child.start || current.ppid !== parent.pid || readProcStat(parent.pid)?.start !== parent.start) continue;
         // detached:true creates a new session, but not a new PPID. A registered sonic
         // runner owns its entire subtree; other detached helpers still belong to this turn.
-        if (current.session === child.pid) {
-          const argv = readProcCmdline(child.pid), childDir = argv?.[2];
-          if (argv?.[1] === binScript('sonic-run') && childDir && dirname(childDir) === dirname(dir) &&
-              fs.existsSync(join(dir, jobFiles.sonic, basename(childDir)))) continue;
-        }
+        if (current.session === child.pid && registeredSonicChild(dir, child.pid)) continue;
         parents.push(child);
         add(child);
       }
@@ -247,11 +253,7 @@ export async function killDescendantTree(rootPid: number, rootStart: string,
     const current = readProcStat(child.pid);
     // Check the child first, then recheck the parent's identity: a recycled PPID alone is not ancestry.
     if (current?.start !== child.start || current.ppid !== parent.pid || readProcStat(parent.pid)?.start !== parent.start) continue;
-    if (dir && current.session === child.pid) {
-      const argv = readProcCmdline(child.pid), childDir = argv?.[2];
-      if (argv?.[1] === binScript('sonic-run') && childDir && dirname(childDir) === dirname(dir) &&
-          fs.existsSync(join(dir, jobFiles.sonic, basename(childDir)))) continue;
-    }
+    if (dir && current.session === child.pid && registeredSonicChild(dir, child.pid)) continue;
     parents.push(child);
     members.push(child);
   }

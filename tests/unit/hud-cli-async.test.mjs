@@ -29,7 +29,7 @@ async function until(t, ready) {
   while (!ready()) await delay(10, null, { signal: t.signal });
 }
 
-async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload, pendingIdentity = false, foreign = false, replacement = false, missingWitness = false } = {}) {
+async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload, pendingIdentity = false, foreign = false, replacement = false, missingWitness = false, foregroundInfo } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-cli-async-'));
   const home = join(root, 'hud'), jobs = join(home, 'jobs'), bin = join(root, 'bin');
   const untrack = trackFixture({ root, hudHome: home });
@@ -67,8 +67,8 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
     createInterface({ input: conn }).on('line', (line) => {
       const { id, method } = JSON.parse(line);
       if (method === 'events.subscribe') subscribers.set(id, conn);
-      const result = method === 'agent.get' ? { agent: { name: 'synthetic-agent', pane_id: 'synthetic-pane', tab_id: tab, agent_status: 'idle', agent_session: { kind: 'id', value: 'demo' } } } :
-        method === 'pane.process_info' ? { process_info: { pane_id: 'synthetic-pane', shell_pid: 1, foreground_process_group_id: agent.pid, foreground_processes: discover ? [{ pid: agent.pid, name: 'grok' }] : [] } } : {};
+      const result = method === 'agent.get' ? { agent: { name: 'synthetic-agent', pane_id: 'synthetic-pane', tab_id: tab, agent_status: foregroundInfo || pendingIdentity ? 'working' : 'idle', agent_session: { kind: 'id', value: 'demo' } } } :
+        method === 'pane.process_info' ? { process_info: { pane_id: 'synthetic-pane', shell_pid: 1, foreground_process_group_id: agent.pid, foreground_processes: discover ? [{ pid: agent.pid, name: 'grok' }] : [], ...foregroundInfo?.(agent.pid) } } : {};
       conn.write(JSON.stringify({ id, result }) + '\n');
     });
   });
@@ -154,6 +154,8 @@ console.log(JSON.stringify({ result: { read: { text: 'Synthetic quiet pane.' } }
 
 test('stop before discovery retains the supervisor until a verified worker PID can be stamped', watchdog, async t => {
   const f = await fixture(t, { pendingIdentity: true });
+  await until(t, () => status(f.dir)?.supervisor_pid);
+  assert.equal(status(f.dir).reason, null, 'a missing leader row alone is not contradictory evidence');
   f.stop();
   await until(t, () => status(f.dir)?.reason === 'stop pending verified worker identity');
   assert.equal(status(f.dir).pid, null);
@@ -171,6 +173,17 @@ test('stable foreign foreground from discovery through stop cannot acquire a PID
   await until(t, () => status(f.dir)?.reason === 'stop pending verified worker identity');
   assert.equal(status(f.dir).pid, null);
   assert.equal(f.agent.exitCode, null);
+});
+
+for (const [caseName, foregroundInfo] of [
+  ['different foreground PGID', () => ({ foreground_process_group_id: process.pid, foreground_processes: [] })],
+  ['shell is the group leader', pid => ({ shell_pid: pid })],
+  ['different leader name', pid => ({ foreground_processes: [{ pid, name: 'other' }] })],
+]) test(`discovery reports a contradictory observation before stop: ${caseName}`, watchdog, async t => {
+  const f = await fixture(t, { foregroundInfo });
+  await until(t, () => status(f.dir)?.reason === 'CLI invocation identity unverified');
+  const row = status(f.dir);
+  assert.equal(row.state, 'working'); assert.equal(row.pid, null); assert.equal(row.pid_start_time, null); assert.equal(row.agent_session_id, null);
 });
 
 for (const mode of ['replacement', 'missingWitness']) test(`same CLI in the original shell without exact invocation proof is not adopted (${mode})`, watchdog, async t => {

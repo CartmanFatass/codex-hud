@@ -165,10 +165,19 @@ export async function main() {
     const info = (await request('pane.process_info', { pane_id: pane }, { signal }))?.result?.process_info;
     // The job's agent, not the first foreground tool subprocess or a replacement shell.
     const pid = info?.foreground_process_group_id;
-    if (signal.aborted || epoch !== generation || info?.pane_id !== pane || !pid || pid === info.shell_pid ||
-        !info.foreground_processes?.some(p => p.pid === pid && p.name === cli.agent)) return;
-    const start = tabProcessStart(dir, pane, session.TAB, pid, session.LAUNCH);
-    if (start && witness?.pid === pid && witness.start === start) { refusedInvocation = false; return witness; }
+    if (signal.aborted || epoch !== generation || info?.pane_id !== pane || !pid || !Number.isSafeInteger(pid) || pid < 1) return;
+    // A concrete different group (or the shell itself) already contradicts the
+    // witness, even if its leader row is absent. Missing facts alone can retry.
+    if (pid === witness?.pid && pid !== info.shell_pid) {
+      const leader = info.foreground_processes?.find(p => p.pid === pid);
+      if (!leader?.name) return;
+      if (leader.name === cli.agent) {
+        if (!info.shell_pid) return;
+        if (tabProcessStart(dir, pane, session.TAB, pid, session.LAUNCH) === witness.start) {
+          refusedInvocation = false; return witness;
+        }
+      }
+    }
     if (!refusedInvocation) console.error('CLI invocation witness missing or does not match the foreground worker; identity not adopted');
     refusedInvocation = true;
   }
