@@ -13,3 +13,8 @@
 - [ ] Land gate passes.
 
 ## Comments
+
+- 2026-11-25 main: imp jbd90857fd49955de committed b61136ba (goldens) + e7782305 (engine; worktree
+  MyHUD-wt/workflow-9955de). Kill/recovery and dispatcher-loss tests pass; fixed-batch suite unchanged; flow notice
+  scan 4.39 → 1.71 ms. Held: land only after the hmasd batch b8d86947d528de015 ends (replaces the batch runner).
+  After land, main runs a real-provider 3-item Sonic batch smoke.

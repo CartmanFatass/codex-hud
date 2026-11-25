@@ -12,3 +12,9 @@
 - [ ] Land gate passes.
 
 ## Comments
+
+- 2026-11-25 main: imp j9d0b51127341b4a9 committed d6787754 (worktree MyHUD-wt/pi-worker-41b4a9): real-pi parity
+  matched, offline startup median 398 → 265 ms, 77/77 + 85/85 focused tests. Held: land only after the hmasd Sonic
+  batch b8d86947d528de015 ends (it changes the Sonic launch path). After land, main: `hud import preview
+  --deepseek-key --from <old key file>` then apply, then ~10 live Sonic jobs incl. a web scout, then project-lead
+  acceptance.

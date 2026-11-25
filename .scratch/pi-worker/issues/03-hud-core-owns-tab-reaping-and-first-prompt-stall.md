@@ -10,3 +10,13 @@
 - [ ] Land gate passes.
 
 ## Comments
+
+- 2026-11-25 main: imp j3bd8576dccfd4ee1 committed 42e93cf9 (worktree MyHUD-wt/pi-worker-fd4ee1). Reviewer
+  j689ee8785e0968d7: changes-required. Blockers: (1) CLI supervisor may stamp a replacement occupant's PID — prove
+  job ownership before publishing, fail closed; (2) stale receipt can /quit or close a replacement tab (label match +
+  no agent is not ownership; split-only path; session OR name) — require positive launch evidence (e.g. HUD_JOB_DIR).
+  Majors: (3) stop before CLI PID discovery freezes cleanup; (4) resumed pi prompt counted delivered by a prior user
+  turn — use a transcript boundary; (5) editor matcher accepts ambiguous buffers — decline Enter; (6) distinct
+  ownership-refused vs verified-cleanup outcome for descendants; (7) browser receipt path not canonicalized
+  (symlinked HUD_HOME). Optional: document --after-pid tightening. Repair sent to the same imp; re-review required
+  before land (process-killing code).
