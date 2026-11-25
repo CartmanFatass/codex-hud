@@ -135,6 +135,27 @@ test('waitUntilFs settles on timeout after full budget and closes all watchers',
   assert.equal(stats.closed, stats.opened);
 });
 
+for (const phase of ['initial', 'catchup']) test(`waitUntilFs delivers the deadline that elapsed during ${phase}`, async t => {
+  let now = 0;
+  t.mock.method(performance, 'now', () => now);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const reasons = [];
+  const waiting = waitUntilFs({
+    targets: [], timeoutMs: 1000, signal: t.signal,
+    check: ({ timedOut, reason }) => {
+      reasons.push(reason);
+      if (reason === phase) {
+        // Simulate the blocked lease check being descheduled. Its caller receives no more file events.
+        now = 1001;
+        t.mock.timers.tick(now);
+      }
+      return timedOut ? { done: true, value: 'deadline' } : { done: false };
+    },
+  });
+  assert.equal(await Promise.race([waiting, new Promise(resolve => setImmediate(resolve))]), 'deadline');
+  assert.deepEqual(reasons, phase === 'initial' ? ['initial', 'timeout'] : ['initial', 'catchup', 'timeout']);
+});
+
 test('waitUntilFs catchup eliminates the setup race between initial check and fs.watch', async (t) => {
   const dir = makeTempDir(t);
   const file = join(dir, 'STATUS.json');

@@ -370,7 +370,6 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
       }
 
       inFlight = true;
-      let runTimeoutNow = false;
       try {
         if (reason === 'fallback') {
           // Recover broken/missing watchers BEFORE checking so events during check are captured.
@@ -415,7 +414,8 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
         }
 
         if (remainingMs() <= 0) {
-          runTimeoutNow = true;
+          // The deadline may have fired during check. Recheck after finally clears inFlight.
+          queueMicrotask(() => void evaluate('timeout'));
           return;
         }
 
@@ -442,15 +442,10 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
       } finally {
         inFlight = false;
       }
-
-      if (runTimeoutNow && !settled) {
-        void evaluate('timeout');
-      }
     }
 
     async function start() {
       inFlight = true;
-      let runTimeoutNow = false;
       let runCatchupNow = false;
       let delayedCatchupMs: number | undefined;
       try {
@@ -487,7 +482,8 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
         }
 
         if (remainingMs() <= 0) {
-          runTimeoutNow = true;
+          // No watcher or deadline timer has been armed yet.
+          queueMicrotask(() => void evaluate('timeout'));
           return;
         }
 
@@ -509,9 +505,7 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
       }
 
       if (settled) return;
-      if (runTimeoutNow) {
-        void evaluate('timeout');
-      } else if (delayedCatchupMs !== undefined) {
+      if (delayedCatchupMs !== undefined) {
         scheduleCoalesce(delayedCatchupMs, 'catchup');
       } else if (runCatchupNow) {
         void evaluate('catchup');

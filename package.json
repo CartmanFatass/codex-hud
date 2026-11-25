@@ -20,7 +20,7 @@
     "build:test": "node scripts/build.mjs --target test",
     "test": "npm run build && npm run build:test && npm run test:unit && npm run test:mjs",
     "test:unit": "node tests/run-default.mjs",
-    "test:mjs": "TZ=UTC node --test --test-timeout=60000 --test-force-exit tests/unit/*.mjs",
+    "test:mjs": "TZ=UTC node tests/run-mjs.mjs",
     "test:mcp": "TZ=UTC node --test tests/unit/thin-mcp-*.test.mjs tests/unit/hud-watch.test.mjs tests/unit/cli-judge.test.mjs tests/unit/job-retention*.test.mjs",
     "test:panel": "TZ=UTC node --test tests/unit/panel-*.test.mjs tests/unit/project-*.test.mjs tests/unit/home-*.test.mjs tests/unit/control-*.test.mjs tests/unit/role-*.test.mjs tests/unit/kept-pages.test.mjs tests/unit/card-*.test.mjs",
     "test:fast": "npm run test:unit && TZ=UTC node --test tests/unit/card-*.test.mjs tests/unit/cleanup-views.test.mjs tests/unit/cli-judge.test.mjs tests/unit/home-*.test.mjs tests/unit/html-board.test.mjs tests/unit/kept-pages.test.mjs tests/unit/model-picker*.test.mjs tests/unit/panel-filter.test.mjs tests/unit/panel-keys-rows.test.mjs tests/unit/project-hub.test.mjs tests/unit/project-layout-*.test.mjs tests/unit/role-presets.test.mjs tests/unit/roster-invalid.test.mjs tests/unit/skills-tab.test.mjs tests/unit/themes.test.mjs tests/unit/waiting-settled.test.mjs",

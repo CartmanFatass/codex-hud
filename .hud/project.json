@@ -34,7 +34,7 @@
     "gate": [
       "npm run build",
       "npm run build:test",
-      "TZ=UTC node --test --test-timeout=60000 --test-force-exit --test-concurrency=8 tests/unit/*.mjs",
+      "TZ=UTC node tests/run-mjs.mjs 8",
       "npm run test:unit",
       "npm run check:fixtures"
     ],
