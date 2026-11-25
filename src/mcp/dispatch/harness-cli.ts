@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { isCliDirTrusted } from '../../cli/trust.js';
 import { cliKinds, type CliAgent } from '../../roles/cli-kinds.js';
 import { herdrId } from '../../roles/herdr-run.js';
-import { executable, type RolePlace } from '../../roles/roster.js';
+import { executablePath, type RolePlace } from '../../roles/roster.js';
 import { recordTabShells } from '../../runtime/tab-shell.js';
 import { prepareCliInvocation } from '../../runtime/cli-invocation.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
@@ -134,8 +134,8 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       startHeadlessProcess(dir, job, [...nativeArgs, ...kind.headless!(prompt, resume?.id, initialId)], { id: resume?.id, initialId });
       return { exit_code: 0, stdout: '', stderr: '' };
     }
-    const real = executable(place.agent!);
-    if (!real) return reject(launchError(`${place.agent} executable not found`));
+    const target = executablePath(place.agent!);
+    if (!target) return reject(launchError(`${place.agent} executable not found`));
     const agentArgs = resume ? kind.resume!(resume.id, nativeArgs) : nativeArgs;
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
@@ -163,7 +163,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
     for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
       const launch = randomUUID();
-      const { env } = prepareCliInvocation(dir, launch, place.agent!, real);
+      const { env } = prepareCliInvocation(dir, launch, place.agent!, target);
       const witnessEnv = Object.entries(env).flatMap(([key, value]) => ['--env', `${key}=${value}`]);
       const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, ...witnessEnv, '--no-focus']);
       if (result.exit_code !== 0) return reject(result);

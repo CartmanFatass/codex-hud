@@ -111,17 +111,24 @@ export interface HarnessDefault {
   kind?: 'image' | 'video';
 }
 export const piSwitches = ['lens', 'mcp', 'tps', 'ui_ext', 'skills', 'split'] as const;
-export function executable(command: string, env: NodeJS.ProcessEnv = process.env): string | null {
+function lookupExecutable(command: string, env: NodeJS.ProcessEnv): { path: string; real: string } | null {
   for (const dir of (env.PATH ?? '').split(delimiter)) {
     const path = resolve(dir, command);
     try {
       fs.accessSync(path, fs.constants.X_OK);
-      return fs.realpathSync(path);
+      return { path, real: fs.realpathSync(path) };
     } catch {
       /* Try the next PATH entry. */
     }
   }
   return null;
+}
+export function executable(command: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  return lookupExecutable(command, env)?.real ?? null;
+}
+/** The executable as found on PATH, without replacing its symlink name. */
+export function executablePath(command: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  return lookupExecutable(command, env)?.path ?? null;
 }
 function normalizeHarness(value: unknown): unknown {
   return value === 'jev' ? 'bro' : value;

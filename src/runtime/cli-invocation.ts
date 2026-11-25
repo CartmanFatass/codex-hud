@@ -1,7 +1,7 @@
 /** Invocation proof is published by the process that will exec the agent, not
  * by observing whoever happens to be in the pane after `agent start`. */
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { binScript } from '../mcp/paths.js';
 import { readJsonBounded, writeFileAtomic, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { isValidPid, procStat } from '../utils/proc.js';
@@ -40,12 +40,18 @@ fi
   }
   return zdotdir;
 }
-export function prepareCliInvocation(task: string, launch: string, agent: string, real: string) {
+export function prepareCliInvocation(task: string, launch: string, agent: string, target: string) {
   const dir = launchDir(task, launch), token = randomUUID();
   if (!/^[a-z]+$/.test(agent) || /[:\r\n]/.test(dir)) throw Error('invalid CLI invocation path');
-  const exec = [process.execPath, binScript('hud-cli'), '--exec-witness', join(dir, 'witness.json'), real].map(quote).join(' ');
-  // An invocation outside the launch environment runs normally, without a witness.
-  writeFileAtomic(join(dir, agent), `#!/bin/sh\nif [ "$HUD_INVOCATION_TOKEN" = ${quote(token)} ]; then\n  unset HUD_INVOCATION_TOKEN\n  exec ${exec} "$@"\nfi\nexec ${quote(real)} "$@"\n`, { mode: 0o700, exclusive: true });
+  const exec = [process.execPath, binScript('hud-cli'), '--exec-witness'].map(quote).join(' ');
+  // Both branches set argv[0]; an empty witness path runs without publishing proof.
+  writeFileAtomic(join(dir, agent), `#!/bin/sh
+if [ "$HUD_INVOCATION_TOKEN" = ${quote(token)} ]; then
+  unset HUD_INVOCATION_TOKEN
+  exec ${exec} ${quote(join(dir, 'witness.json'))} ${quote(target)} "$@"
+fi
+exec ${exec} '' ${quote(target)} "$@"
+`, { mode: 0o700, exclusive: true });
   return { dir, env: { HUD_INVOCATION_TOKEN: token, PATH: `${dir}:${process.env.PATH ?? ''}`, ZDOTDIR: prepareZshStartup(dir) } };
 }
 export function invocationWitness(task: string, launch?: string): { pid: number; start: string } | null {
@@ -55,11 +61,15 @@ export function invocationWitness(task: string, launch?: string): { pid: number;
     return isValidPid(record?.pid) && typeof record.start === 'string' && /^\d+$/.test(record.start) ? { pid: record.pid, start: record.start } : null;
   } catch { return null; }
 }
-export function execWitness(file: string, real: string, argv: string[]): never {
-  const start = procStat(process.pid)?.start;
+export function execWitness(file: string, target: string, argv: string[]): never {
   const execve = (process as NodeJS.Process & { execve?: (path: string, args: string[], env: NodeJS.ProcessEnv) => never }).execve;
-  if (!start || !execve) throw Error('cannot witness CLI invocation');
-  // Atomic link, never overwrite: replaying the same command cannot adopt a later PID.
-  writeJsonPrivate(file, { pid: process.pid, start }, { mkdir: false, exclusive: true });
-  return execve(real, [real, ...argv], process.env);
+  if (!execve) throw Error('cannot exec CLI invocation');
+  if (file) {
+    const start = procStat(process.pid)?.start;
+    if (!start) throw Error('cannot witness CLI invocation');
+    // Atomic link, never overwrite: replaying the same command cannot adopt a later PID.
+    writeJsonPrivate(file, { pid: process.pid, start }, { mkdir: false, exclusive: true });
+  }
+  // Linux derives comm from the exec path's basename, even when it is a symlink.
+  return execve(target, [basename(target), ...argv], process.env);
 }
