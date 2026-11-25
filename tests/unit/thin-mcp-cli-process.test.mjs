@@ -315,6 +315,25 @@ for (const first of ['watcher', 'supervisor']) {
   }
 }
 
+test('a buffered close of a reused tab cannot fail a live CLI worker', { timeout: 30000 }, async (t) => {
+  const f = await fixture(t), worker = fakeCliWithChild(t, f);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  writeCliRole(f, 'reused-cli', 10);
+  const job = await f.call('hud_create', { role: 'reused-cli', task: 'Synthetic replacement worker.' });
+  const dir = job.task_dir;
+  await until(() => cliState(dir)?.pid === worker.pid && f.socketRequests.some(req => req.id === 'hud-watch'), t.signal);
+  const lookups = () => f.socketRequests.filter(req => ['pane.get', 'tab.get'].includes(req.method)).length;
+  const before = lookups();
+  f.emitTabClosed('w4E:t2'); // The prior occupant's buffered event; this job's pane still exists.
+  await until(() => lookups() >= before + 2 || cliState(dir)?.state !== 'working', t.signal);
+  assert.equal(cliState(dir).state, 'working');
+  assert.equal(cliState(dir).pid, worker.pid);
+  assert.ok(procStat(worker.pid));
+  f.closeTab();
+  await until(() => cliState(dir)?.exit_reason === 'tab closed', t.signal);
+  assert.equal(cliState(dir).state, 'failed');
+});
+
 test('supervisor preserves the watcher tab-close fact when its own push socket was lost', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);

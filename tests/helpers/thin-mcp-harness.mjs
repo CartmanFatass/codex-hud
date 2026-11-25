@@ -170,7 +170,10 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   const rpc = rpcClient(child);
   let cliSocket, piStatus = () => 'idle';
   const socketRequests = [];
-  const subscribers = new Set();
+  const subscribers = new Set(), vanishedTabs = new Set();
+  const emitTabClosed = (tab_id) => {
+    for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'tab.closed', data: { tab_id, workspace_id: 'w4E' } }) + '\n');
+  };
   const has = (name) => fs.existsSync(join(env.HOME, name));
   const push = (client, state) => {
     client.state = state;
@@ -206,6 +209,10 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
           const fields = fs.existsSync(session) ? Object.fromEntries(fs.readFileSync(session, 'utf8').trim().split('\n').map(l => l.split('='))) : {};
           reply({ agent: { name: req.params.target, pane_id: fields.LEFT, tab_id: fields.TAB, agent_status: sub?.state ?? 'working', agent_session: has('late-session') && !has('exit-after-done') && !has('socket-got-session') ? null : { kind: 'id', value: 'synthetic-grok-session' } } });
           fs.writeFileSync(join(env.HOME, 'socket-got-session'), '');
+        } else if (req.method === 'pane.get' || req.method === 'tab.get') {
+          const id = req.params.tab_id ?? req.params.pane_id.replace(/:p/, ':t');
+          if (vanishedTabs.has(id)) socket.write(JSON.stringify({ id: req.id, error: { code: req.method === 'pane.get' ? 'pane_not_found' : 'tab_not_found' } }) + '\n');
+          else reply(req.method === 'pane.get' ? { pane: { pane_id: req.params.pane_id } } : { tab: { tab_id: id } });
         } else if (req.method === 'pane.read') {
           if (has('pane-read-timeout')) return;
           reply({ read: { text: has('pane-read') ? fs.readFileSync(join(env.HOME, 'pane-read'), 'utf8') : 'synthetic pane' } });
@@ -302,7 +309,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
       for (const client of clients) client.socket.destroy();
       return clients.length > 0;
     },
-    closeTab: (tab_id = 'w4E:t2') => { for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'tab.closed', data: { tab_id, workspace_id: 'w4E' } }) + '\n'); },
+    emitTabClosed,
+    closeTab: (tab_id = 'w4E:t2') => { vanishedTabs.add(tab_id); emitTabClosed(tab_id); },
     commands: () => {
       if (!fs.existsSync(log)) return [];
       const text = fs.readFileSync(log, 'utf8');

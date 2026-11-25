@@ -44,13 +44,13 @@ fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
     writeFixtureFile(join(dir, 'report.md'), 'Synthetic report.');
     return dir;
   }
-  function start(probe = '', agentDir = pi) {
+  function start(probe = '', agentDir = pi, entry = watcher) {
     const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
     const env = { ...process.env, HOME: join(root, 'home'), HUD_HOME: home, PI_CODING_AGENT_DIR: agentDir,
       HERDR_SOCKET_PATH: join(root, 'absent.sock'), PATH: `${bin}:${process.env.PATH}`, NODE_OPTIONS: reapStubOptions(bin), HUD_WATCH_CLI_CHECK_MS: '1000' };
     if (degradedMs === undefined) delete env.HUD_WATCH_DEGRADED_MS;
     else env.HUD_WATCH_DEGRADED_MS = String(degradedMs);
-    const child = spawn(process.execPath, [...preload, watcher], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [...preload, entry], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     const exited = once(child, 'exit');
     let stderr = '';
     child.stderr.on('data', (data) => { stderr += data; });

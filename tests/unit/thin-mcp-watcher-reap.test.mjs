@@ -511,6 +511,7 @@ test('failed STATUS uses its mtime when ended_at is absent or invalid', { timeou
 test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   let socket, subscription;
+  const vanished = new Set();
   const server = createServer((client) => {
     createInterface({ input: client }).on('line', (line) => {
       const request = JSON.parse(line);
@@ -518,7 +519,10 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
         socket = client;
         subscription = request.params;
       }
-      client.write(JSON.stringify({ id: request.id, result: {} }) + '\n');
+      const pane = request.params?.pane_id, tab = request.params?.tab_id ?? pane?.replace(/:p/, ':t');
+      const reply = vanished.has(tab) ? { error: { code: pane ? 'pane_not_found' : 'tab_not_found' } }
+        : { result: pane ? { pane: { pane_id: pane } } : tab ? { tab: { tab_id: tab } } : {} };
+      client.write(JSON.stringify({ id: request.id, ...reply }) + '\n');
     });
   });
   t.after(() => {
@@ -531,7 +535,8 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
   await until(() => socket, t.signal);
   assert.deepEqual(subscription, { subscriptions: [{ type: 'tab.closed' }] });
   const statusFile = join(job.task_dir, 'STATUS.json');
-  const emit = (tab_id) =>
+  const emit = (tab_id) => {
+    vanished.add(tab_id);
     socket.write(
       JSON.stringify({
         event: 'tab.closed',
@@ -542,11 +547,12 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
         },
       }) + '\n'
     );
+  };
   await nextScan(t, f, () => emit('foreign-tab'));
   assert.equal(JSON.parse(fs.readFileSync(statusFile)).state, 'working');
   const finalDir = join(f.env.HUD_HOME, 'jobs', 'j0000000000000000');
   fs.mkdirSync(finalDir);
-  writeFixtureFile(join(finalDir, 'SESSION.txt'), 'TAB=w4E:t2\n');
+  writeFixtureFile(join(finalDir, 'SESSION.txt'), `TAB=w4E:t2\nHERDR_SOCKET_PATH=${f.env.HERDR_SOCKET_PATH}\n`);
   writeFixtureFile(
     join(finalDir, 'STATUS.json'),
     JSON.stringify({ state: 'failed', exit_reason: 'original', ended_at: new Date().toISOString() })

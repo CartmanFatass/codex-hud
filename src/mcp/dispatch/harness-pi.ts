@@ -1,4 +1,5 @@
 /** Pi launch and native session setup. */
+import { herdrEndpoint } from '../../runtime/herdr-socket.js';
 import { recordTabShells } from '../../runtime/tab-shell.js';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
@@ -185,7 +186,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     let left = '';
     let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
     for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
-      const launch = randomUUID();
+      const launch = randomUUID(), endpoint = herdrEndpoint();
       const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, '--no-focus']);
       if (result.exit_code !== 0) return reject(result);
       const { tab, root_pane } = JSON.parse(result.stdout).result;
@@ -195,7 +196,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       let right = '';
       const record = () => {
         const fields: SessionReceipt = {
-          TASK: job.job, LAUNCH: launch,
+          TASK: job.job, LAUNCH: launch, HERDR_SOCKET_PATH: endpoint ?? '',
           TAB: tab.tab_id,
           TAB_NAME: tabName,
           LEFT: left,

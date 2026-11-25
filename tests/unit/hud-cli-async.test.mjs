@@ -82,8 +82,9 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
   t.after(() => agent.kill('SIGKILL'));
   const ready = once(agent.stdout, 'data', { signal: t.signal });
   let discover = !pendingIdentity;
-  const subscribers = new Map(), sockets = new Set(), children = [];
-  let calls = 0, disconnected = false;
+  const subscribers = new Map(), sockets = new Set(), children = [], vanished = new Set();
+  let calls = 0, disconnected = false, loseNextProbe = false;
+  const closeProbes = [];
   const http = httpServer((req, res) => {
     req.resume();
     req.on('end', () => {
@@ -97,9 +98,16 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
     conn.on('error', () => {});
     conn.once('close', () => sockets.delete(conn));
     createInterface({ input: conn }).on('line', (line) => {
-      const { id, method } = JSON.parse(line);
+      const { id, method, params } = JSON.parse(line);
       if (method === 'events.subscribe') subscribers.set(id, conn);
-      const result = method === 'agent.get' ? { agent: { name: 'synthetic-agent', pane_id: 'synthetic-pane', tab_id: tab, agent_status: foregroundInfo || pendingIdentity ? 'working' : 'idle', agent_session: { kind: 'id', value: 'demo' } } } :
+      if ((method === 'pane.get' && vanished.has(tab)) || (method === 'tab.get' && vanished.has(params.tab_id))) {
+        closeProbes.push(Date.now());
+        if (loseNextProbe) { loseNextProbe = false; conn.destroy(); return; }
+        conn.write(JSON.stringify({ id, error: { code: method === 'pane.get' ? 'pane_not_found' : 'tab_not_found' } }) + '\n');
+        return;
+      }
+      const result = method === 'pane.get' ? { pane: { pane_id: params.pane_id } } :
+        method === 'tab.get' ? { tab: { tab_id: params.tab_id } } : method === 'agent.get' ? { agent: { name: 'synthetic-agent', pane_id: 'synthetic-pane', tab_id: tab, agent_status: foregroundInfo || pendingIdentity ? 'working' : 'idle', agent_session: { kind: 'id', value: 'demo' } } } :
         method === 'pane.process_info' ? { process_info: { pane_id: 'synthetic-pane', shell_pid: 1, foreground_process_group_id: agent.pid, foreground_processes: discover ? [{ pid: agent.pid, name: 'grok' }] : [], ...foregroundInfo?.(agent.pid) } } : {};
       conn.write(JSON.stringify({ id, result }) + '\n');
     });
@@ -135,7 +143,7 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
   const record = { job, role: 'imp', dispatch_exit_code: 0, cli: { agent: 'grok', idle_grace_s: 0.05, can_continue: true } };
   save(dir, 'turn.json', turn);
   save(dir, 'STATUS.json', { state: 'working' });
-  fs.writeFileSync(join(dir, 'SESSION.txt'), `TAB=${tab}\nLEFT=synthetic-pane\nPRIMARY=synthetic-agent\nLAUNCH=${launch}\n`);
+  fs.writeFileSync(join(dir, 'SESSION.txt'), `TAB=${tab}\nLEFT=synthetic-pane\nPRIMARY=synthetic-agent\nLAUNCH=${launch}\nHERDR_SOCKET_PATH=${herdrPath}\n`);
   function finishReport() {
     writeFixtureFile(join(dir, 'report.md'), 'Synthetic report.');
     save(dir, 'done.json', { ...turn, report_sig: reportSignature(dir), at: new Date().toISOString() });
@@ -186,13 +194,31 @@ console.log(JSON.stringify({ result: { read: { text: 'Synthetic quiet pane.' } }
     return run;
   }
   return {
-    dir, jobs, start, agent, enableDiscovery: () => { discover = true; writeFixtureFile(join(dir, 'STATUS.json.stop-requested'), ''); }, cli: start('hud-cli.mjs', [dir]), finishReport,
+    dir, jobs, start, agent, herdrPath, closeProbes, loseNextProbe: () => { loseNextProbe = true; }, enableDiscovery: () => { discover = true; writeFixtureFile(join(dir, 'STATUS.json.stop-requested'), ''); }, cli: start('hud-cli.mjs', [dir]), finishReport,
     herdrPid: () => Number(read(join(home, 'herdr-pid'))), calls: () => calls, disconnected: () => disconnected,
     stop: () => fs.writeFileSync(join(dir, 'STATUS.json.stop-requested'), ''),
     subscribed: (id) => subscribers.has(id),
-    closeTab: (id = 'hud-cli-events', tabId = tab) => subscribers.get(id).write(JSON.stringify({ event: 'tab.closed', data: { tab_id: tabId } }) + '\n'),
+    hideTab: () => vanished.add(tab),
+    closeTab: (id = 'hud-cli-events', tabId = tab) => {
+      vanished.add(tabId);
+      subscribers.get(id).write(JSON.stringify({ event: 'tab.closed', data: { tab_id: tabId } }) + '\n');
+    },
   };
 }
+
+test('CLI supervisor retries an unknown Herdr answer without another close event', { timeout: 6000 }, async (t) => {
+  const f = await fixture(t);
+  await until(t, () => status(f.dir)?.pid === f.agent.pid);
+  f.loseNextProbe();
+  f.closeTab();
+  await until(t, () => f.closeProbes.length === 1);
+  assert.equal(status(f.dir).state, 'working');
+  await until(t, () => status(f.dir)?.exit_reason === 'tab closed');
+  assert.equal(f.closeProbes.length, 2);
+  assert.ok(f.closeProbes[1] - f.closeProbes[0] >= 200);
+  assert.equal(status(f.dir).state, 'failed');
+  assert.deepEqual(await f.cli.exited, [1, null]);
+});
 
 test('stop before discovery retains the supervisor until a verified worker PID can be stamped', watchdog, async t => {
   const f = await fixture(t, { pendingIdentity: true });
@@ -205,6 +231,17 @@ test('stop before discovery retains the supervisor until a verified worker PID c
   await until(t, () => status(f.dir)?.state === 'stopped');
   assert.equal(status(f.dir).pid, f.agent.pid);
   assert.equal(status(f.dir).pid_start_time, procStat(f.agent.pid).start);
+});
+
+test('stop before PID discovery accepts pane_not_found from the bound endpoint', watchdog, async t => {
+  const f = await fixture(t, { pendingIdentity: true });
+  await until(t, () => status(f.dir)?.supervisor_pid);
+  f.hideTab(); // No push: the stop check must query the recorded pane.
+  f.stop();
+  await until(t, () => status(f.dir)?.state === 'stopped');
+  assert.equal(status(f.dir).exit_reason, 'stop requested');
+  assert.equal(status(f.dir).pid, null);
+  assert.deepEqual(await f.cli.exited, [0, null]);
 });
 
 for (const mode of ['interactive', 'login']) test(`zsh (${mode}) puts the shim ahead of the real CLI after owner startup and adopts the exact PID`, { ...watchdog, skip: noZsh }, async t => {
@@ -319,7 +356,7 @@ test('tab close during /quit records closed even when the global watcher sees it
   fs.mkdirSync(other);
   save(other, 'job.json', { job: 'j0000000000000002', cli: { agent: 'grok' } });
   save(other, 'STATUS.json', { state: 'working' });
-  fs.writeFileSync(join(other, 'SESSION.txt'), 'TAB=control-tab\n');
+  fs.writeFileSync(join(other, 'SESSION.txt'), `TAB=control-tab\nHERDR_SOCKET_PATH=${f.herdrPath}\n`);
   const guard = join(f.dir, 'watcher-saw-quit');
   f.start('hud-watch.mjs', [], `
 import fs from 'node:fs';

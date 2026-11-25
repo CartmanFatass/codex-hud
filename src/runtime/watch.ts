@@ -8,28 +8,16 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
+import { setTimeout } from 'node:timers';
 import { buildStamp, publishGeneration } from '../../scripts/dist-lock.mjs';
 
 type Runtime = ReturnType<typeof import('./watch-runtime.js').openRuntime>;
 type Handoff = NonNullable<Awaited<ReturnType<Runtime['pause']>>>;
-const CLOSED_TABS_LIMIT = 512;
 const RELOAD_ENV = 'HUD_WATCH_RELOAD';
 const HANDOFF_FILE = 'watch-handoff.json';
 
-function rememberClosedTab(tabs: Set<string>, id: string): void {
-  if (!id) return;
-  tabs.delete(id);
-  tabs.add(id);
-  while (tabs.size > CLOSED_TABS_LIMIT) {
-    const oldest = tabs.values().next().value;
-    if (oldest === undefined) break;
-    tabs.delete(oldest);
-  }
-}
-
-const serializeHandoff = (state: Handoff, tabs: Set<string>) => JSON.stringify({
+const serializeHandoff = (state: Handoff) => JSON.stringify({
   version: 1,
-  closedTabs: [...tabs].slice(-CLOSED_TABS_LIMIT),
   reapRetries: [...state.reapRetries].map(([id, r]) => [id, { ...r, at: Number.isFinite(r.at) ? r.at : null }]),
   preflightHold: [...state.preflightHold],
   worktreeRetries: [...state.worktreeRetries],
@@ -41,23 +29,20 @@ function unlinkIfPresent(file: string): void {
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
 }
 
-function readHandoff(file: string): { state: Handoff | null; closedTabs: Set<string> } {
-  const closedTabs = new Set<string>();
+function readHandoff(file: string): Handoff | null {
   try {
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (raw?.version !== 1) return { state: null, closedTabs };
-    if (Array.isArray(raw.closedTabs)) for (const id of raw.closedTabs) if (typeof id === 'string') rememberClosedTab(closedTabs, id);
-    if (!Array.isArray(raw.reapRetries) || !Array.isArray(raw.preflightHold) || !Array.isArray(raw.worktreeRetries)) return { state: null, closedTabs };
+    if (raw?.version !== 1 || !Array.isArray(raw.reapRetries) || !Array.isArray(raw.preflightHold) || !Array.isArray(raw.worktreeRetries)) return null;
     const summaryGeneration = typeof raw.summaryGeneration === 'number' && Number.isSafeInteger(raw.summaryGeneration) && raw.summaryGeneration >= 0
       ? raw.summaryGeneration : 0;
-    return { closedTabs, state: {
+    return {
       version: 1,
       reapRetries: new Map(raw.reapRetries.map(([id, r]: [string, Record<string, unknown>]) => [id, { ...r, at: r.at === null ? Infinity : Number(r.at) }])) as Handoff['reapRetries'],
       preflightHold: new Map(raw.preflightHold) as Handoff['preflightHold'],
       worktreeRetries: new Map(raw.worktreeRetries) as Handoff['worktreeRetries'],
       summaryGeneration,
-    } };
-  } catch { return { state: null, closedTabs }; }
+    };
+  } catch { return null; }
   finally { unlinkIfPresent(file); }
 }
 
@@ -71,45 +56,55 @@ export async function openWatcher() {
   const pidFile = join(home, 'watch.pid'), logFile = join(home, 'watch.log'), handoffFile = join(home, HANDOFF_FILE);
   const ownsPid = () => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8').trim() === String(process.pid);
   let stamp: string | null, buildWatch: fs.FSWatcher | undefined, switching: Promise<void> | undefined, probeAbort: AbortController | undefined;
-  let stopping = false, reloading = false, subscribed = false, socket: ReturnType<typeof createConnection> | undefined;
-  let runtime: Runtime, closedTabs = new Set<string>();
+  let stopping = false, reloading = false, socket: ReturnType<typeof createConnection> | undefined;
+  let reconnectTimer: NodeJS.Timeout | undefined, reconnectMs = 5000, warned = false;
+  let runtime: Runtime;
   function log(message: string) {
     try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); }
     catch (error) { console.error(`watch log: ${(error as Error).message}; ${message}`); }
   }
+  function disconnect() {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = undefined;
+    const peer = socket;
+    socket = undefined;
+    peer?.destroy();
+  }
   function subscribe() {
-    if (subscribed || stopping) return;
-    subscribed = true;
-    let warned = false;
+    if (socket || reconnectTimer || stopping || reloading) return;
+    const path = process.env.HERDR_SOCKET_PATH;
+    if (!path) { log('herdr events unavailable: HERDR_SOCKET_PATH unset; using file events only'); return; }
+    const peer = socket = createConnection(path);
     const unavailable = (message: string) => {
-      if (!warned && !stopping && !reloading) log(`herdr events unavailable: ${message}; using file events only`);
+      if (socket !== peer) return;
+      disconnect();
+      if (!warned) log(`herdr events unavailable: ${message}; using file events only until reconnect`);
       warned = true;
-      socket?.destroy();
+      reconnectTimer = setTimeout(() => { reconnectTimer = undefined; subscribe(); }, reconnectMs).unref();
+      reconnectMs = Math.min(30000, reconnectMs * 2);
     };
-    if (!process.env.HERDR_SOCKET_PATH) return unavailable('HERDR_SOCKET_PATH unset');
-    socket = createConnection(process.env.HERDR_SOCKET_PATH);
-    socket.on('connect', () => socket?.write(JSON.stringify({ id: 'hud-watch', method: 'events.subscribe',
+    peer.on('connect', () => peer.write(JSON.stringify({ id: 'hud-watch', method: 'events.subscribe',
       params: { subscriptions: [{ type: 'tab.closed' }] } }) + '\n'));
-    const lines = createInterface({ input: socket });
+    const lines = createInterface({ input: peer });
     lines.on('line', (line) => {
+      if (socket !== peer) return;
       let event;
       try { event = JSON.parse(line); } catch { return unavailable('invalid JSON'); }
       if (event.error) return unavailable(event.error.message);
-      if (String(event.event ?? '').replace(/\./g, '_') === 'tab_closed') {
-        rememberClosedTab(closedTabs, event.data.tab_id);
+      if (event.id === 'hud-watch') { reconnectMs = 5000; warned = false; runtime.reconcileTabs(); }
+      if (String(event.event ?? '').replace(/\./g, '_') === 'tab_closed' && typeof event.data?.tab_id === 'string')
         runtime.tab(event.data.tab_id);
-      }
     });
     lines.on('error', (error) => unavailable(error.message));
-    socket.on('error', (error) => unavailable(error.message));
-    socket.on('close', () => { lines.close(); unavailable('socket closed'); });
+    peer.on('error', (error) => unavailable(error.message));
+    peer.on('close', () => { lines.close(); unavailable('socket closed'); });
   }
   async function finish(reason: string) {
     if (stopping) return;
     stopping = true;
     probeAbort?.abort();
     buildWatch?.close();
-    socket?.destroy();
+    disconnect();
     await runtime.shutdown();
     await switching;
     if (ownsPid()) fs.unlinkSync(pidFile);
@@ -144,9 +139,9 @@ export async function openWatcher() {
     const env: NodeJS.ProcessEnv = { ...initialEnv, [RELOAD_ENV]: '1' };
     reloading = true;
     try {
-      writePrivateFile(handoffFile, serializeHandoff(state, closedTabs), { mkdir: false });
+      writePrivateFile(handoffFile, serializeHandoff(state), { mkdir: false });
       buildWatch?.close();
-      socket?.destroy();
+      disconnect();
       if (execve) execve(process.execPath, argv, env);
       // Fallback without process.execve: release watch.pid and hand off to a detached replacement.
       if (ownsPid()) fs.unlinkSync(pidFile);
@@ -157,13 +152,12 @@ export async function openWatcher() {
       unlinkIfPresent(handoffFile);
       log(`keeping previous build: ${(error as Error).message}`);
       stamp = seen;
-      if (!stopping) { subscribed = false; watchBuild(onChange); runtime.start(state, closedTabs); }
+      if (!stopping) { watchBuild(onChange); runtime.start(state); subscribe(); }
     }
   }
   if (watcherReady(pidFile, binScript('hud-watch'))) process.exit(0);
   const { openRuntime } = await import('./watch-runtime.js');
-  const handoff = reloaded ? readHandoff(handoffFile) : (unlinkIfPresent(handoffFile), { state: null, closedTabs });
-  closedTabs = handoff.closedTabs;
+  const state = reloaded ? readHandoff(handoffFile) : (unlinkIfPresent(handoffFile), null);
   runtime = openRuntime(event);
   stamp = buildStamp();
   if (!reloaded) {
@@ -187,7 +181,7 @@ export async function openWatcher() {
     }
     if (stopping) return;
     watchBuild(checkBuild);
-    runtime.start(handoff.state, closedTabs);
+    runtime.start(state);
     checkBuild();
   };
 }

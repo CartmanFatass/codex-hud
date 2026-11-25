@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import { createServer } from 'node:net';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
@@ -35,7 +35,9 @@ fs.appendFileSync(join(process.env.HUD_HOME, 'reaps'), dir + '\\n');
 ${body}`);
 }
 const attempts = (f, dir) => text(join(f.home, 'reaps')).split('\n').filter((line) => line === dir).length;
-const tab = (dir, name) => writeFixtureFile(join(dir, 'SESSION.txt'), `TAB=${name}\nPRIMARY=${name}-agent\n`);
+const session = (dir, fields, endpoint = join(dir, '../../../herdr.sock')) =>
+  writeFixtureFile(join(dir, 'SESSION.txt'), `${fields}HERDR_SOCKET_PATH=${endpoint}\n`);
+const tab = (dir, name) => session(dir, `TAB=${name}\nPRIMARY=${name}-agent\n`);
 function settled() {
   const now = Date.now();
   return {
@@ -48,15 +50,29 @@ async function herdrSocket(t, f, answer, paneReply) {
   const path = join(dirname(f.home), 'herdr.sock');
   const sockets = new Set();
   const subscribed = Promise.withResolvers(), queried = Promise.withResolvers();
-  let subscriber, queries = 0, pending = 0;
+  let subscriber, subscriptions = 0, queries = 0, pending = 0;
+  const vanished = new Set(), lookups = [];
+  const emitTabClosed = (id) => subscriber.write(JSON.stringify({ event: 'tab.closed', data: { tab_id: id } }) + '\n');
   const server = createServer((socket) => {
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
-    createInterface({ input: socket }).on('line', (line) => {
+    const lines = createInterface({ input: socket });
+    // The watcher may abort a probe or preflight while Herdr is replying.
+    lines.on('error', (error) => { if (error.code !== 'ECONNRESET') throw error; });
+    lines.on('line', async (line) => {
       const { method, id, params } = JSON.parse(line);
-      if (method === 'events.subscribe') { subscriber = socket; subscribed.resolve(); }
-      if (method === 'pane.get' && paneReply)
-        socket.write(JSON.stringify({ id, ...paneReply(params.pane_id) }) + '\n');
+      if (method === 'events.subscribe') {
+        subscriber = socket; subscriptions++; subscribed.resolve();
+        socket.write(JSON.stringify({ id, result: { type: 'subscribed' } }) + '\n');
+      }
+      if (method === 'pane.get' || method === 'tab.get') {
+        const target = params.pane_id ?? params.tab_id;
+        lookups.push(target);
+        const reply = method === 'pane.get' && paneReply ? await paneReply(target) : vanished.has(target)
+          ? { error: { code: method === 'pane.get' ? 'pane_not_found' : 'tab_not_found' } } : method === 'pane.get'
+            ? { result: { pane: { pane_id: target } } } : { result: { tab: { tab_id: target } } };
+        socket.write(JSON.stringify({ id, ...reply }) + '\n');
+      }
       if (method === 'agent.get') {
         queried.resolve();
         queries++;
@@ -75,8 +91,10 @@ async function herdrSocket(t, f, answer, paneReply) {
   return {
     preload: `process.env.HERDR_SOCKET_PATH = ${JSON.stringify(path)};`,
     preflight: Promise.all([subscribed.promise, queried.promise]),
-    ready: () => Boolean(subscriber), queries: () => queries, pending: () => pending,
-    closeTab: (id) => subscriber.write(JSON.stringify({ event: 'tab.closed', data: { tab_id: id } }) + '\n'),
+    ready: () => Boolean(subscriber), subscriptions: () => subscriptions, queries: () => queries, pending: () => pending,
+    lookups, emitTabClosed, drop: () => subscriber.destroy(),
+    hide: (id) => vanished.add(id),
+    closeTab: (id, pane = id) => { vanished.add(pane); emitTabClosed(id); },
   };
 }
 
@@ -127,27 +145,164 @@ test('watcher settles other jobs, starts checks and handles failures during a pe
   assert.equal(child.exitCode, 0);
 });
 
+for (const kind of ['fresh Pi', 'fresh CLI', 'resumed Pi', 'resumed Pi after reload']) {
+  test(`watcher ignores a buffered tab close for ${kind} but handles its own close`, { timeout: 30000 }, async (t) => {
+    const f = fixture(t), herdr = await herdrSocket(t, f);
+    const reused = 'w4E:t2';
+    const prior = f.job(closed(), { role: 'imp', resume_s: 60, reaped_at: new Date().toISOString() });
+    const launch = (dir, token) => session(dir, `TAB=${reused}\nLEFT=${token}-pane\nLAUNCH=${token}\n`);
+    launch(prior, 'old-launch');
+    let root;
+    if (kind.endsWith('after reload')) {
+      root = join(dirname(f.home), 'build');
+      for (const name of ['dist', 'packages/hud-mcp', 'scripts/dist-lock.mjs', 'package.json'])
+        fs.cpSync(resolve(name), join(root, name), { recursive: true });
+      fs.symlinkSync(resolve('node_modules'), join(root, 'node_modules'));
+    }
+    const keepOpen = f.job({ state: 'working' });
+    const { child, exited } = f.start(herdr.preload, f.pi, root && join(root, 'packages/hud-mcp/bin/hud-watch.mjs'));
+    await until(herdr.ready, t.signal);
+
+    const cli = kind === 'fresh CLI';
+    const dir = kind.startsWith('resumed') ? prior : f.job({ state: 'working' }, cli ? { cli: { agent: 'claude' } } : {});
+    fs.unlinkSync(join(dir, 'report.md'));
+    if (dir === prior) {
+      // A resume retires the old SESSION and publishes working before the new tab receipt.
+      save(dir, 'job.json', { ...receipt(dir), reaped_at: undefined });
+      fs.unlinkSync(join(dir, 'SESSION.txt'));
+      save(dir, 'STATUS.json', { state: 'working' });
+    }
+    launch(dir, 'new-launch');
+    if (root) {
+      // Deliver the buffered event even after a reload; only the replacement's state matters.
+      fs.appendFileSync(join(root, 'dist/index.js'), '\n// synthetic reload\n');
+      await until(() => herdr.subscriptions() === 2, t.signal);
+      assert.match(f.log(), new RegExp(`reloaded pid=${child.pid}`));
+    }
+    const marker = f.job({ state: 'working' });
+    tab(marker, 'marker');
+    const checks = () => herdr.lookups.filter(pane => pane === 'new-launch-pane').length;
+    const before = checks();
+    herdr.emitTabClosed(reused); // Old close arrives after this launch, whose target is present.
+    herdr.closeTab('marker');
+    await until(() => status(marker)?.exit_reason === 'tab closed' && checks() > before, t.signal);
+    assert.equal(status(dir).state, 'working', 'a prior occupant closed, not this launch');
+
+    herdr.closeTab(reused, 'new-launch-pane');
+    await until(() => status(dir)?.exit_reason === 'tab closed', t.signal);
+    assert.equal(status(dir).state, 'failed');
+    assert.deepEqual(receipt(dir).stop_origin, { actor: 'pane_vanished', prior_state: 'working', at: status(dir).ended_at });
+    assert.equal(status(keepOpen).state, 'working');
+    child.kill('SIGTERM');
+    assert.deepEqual(await exited, [0, null]);
+  });
+}
+
+test('watcher reconciles a new receipt whose tab disappeared before publication', { timeout: 15000 }, async (t) => {
+  const f = fixture(t), herdr = await herdrSocket(t, f);
+  const dir = f.job({ state: 'working' });
+  const { child, exited } = f.start(herdr.preload);
+  await until(herdr.ready, t.signal);
+  herdr.hide('early-close'); // No close event is required once the receipt exists.
+  tab(dir, 'early-close');
+  await until(() => status(dir)?.exit_reason === 'tab closed', t.signal);
+  assert.equal(status(dir).state, 'failed');
+  child.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+});
+
+test('watcher reconciles a missing tab on resubscribe without a close event', { timeout: 15000 }, async (t) => {
+  const f = fixture(t), herdr = await herdrSocket(t, f);
+  const dir = f.job({ state: 'working' });
+  tab(dir, 'gap-tab');
+  const { child, exited } = f.start(herdr.preload + "process.env.HUD_WATCH_CLI_CHECK_MS = '60000';");
+  await until(() => herdr.ready() && herdr.lookups.includes('gap-tab'), t.signal);
+  herdr.drop();
+  herdr.hide('gap-tab'); // The disappearance happened without a subscribed watcher.
+  await until(() => herdr.subscriptions() === 2 && status(dir)?.exit_reason === 'tab closed', t.signal);
+  assert.equal(status(dir).state, 'failed');
+  child.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+});
+
+test('watcher retries an unknown Herdr answer without another close event', { timeout: 6000 }, async (t) => {
+  const f = fixture(t), probes = [];
+  let gone = false;
+  const herdr = await herdrSocket(t, f, null, pane => {
+    if (!gone) return { result: { pane: { pane_id: pane } } };
+    probes.push(Date.now());
+    // The wrong method's absence code is not proof that this pane is missing.
+    return { error: { code: probes.length === 1 ? 'tab_not_found' : 'pane_not_found' } };
+  });
+  f.job({ state: 'working' });
+  const { child, exited } = f.start(herdr.preload + "process.env.HUD_WATCH_CLI_CHECK_MS = '60000';");
+  await until(herdr.ready, t.signal);
+  const dir = f.job({ state: 'working' });
+  session(dir, 'TAB=lost-tab\nLEFT=lost-pane\n');
+  await until(() => herdr.lookups.includes('lost-pane'), t.signal);
+  gone = true;
+  herdr.emitTabClosed('lost-tab');
+  await until(() => status(dir)?.exit_reason === 'tab closed', t.signal);
+  assert.equal(probes.length, 2);
+  assert.ok(probes[1] - probes[0] >= 200, 'the next probe must back off');
+  child.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+});
+
+test('watcher does not probe a receipt from another Herdr socket', { timeout: 6000 }, async (t) => {
+  const f = fixture(t), herdr = await herdrSocket(t, f);
+  const other = f.job({ state: 'working' }), local = f.job({ state: 'working' });
+  session(other, 'TAB=foreign-tab\nLEFT=foreign-pane\n', join(dirname(f.home), 'other-herdr.sock'));
+  tab(local, 'local-tab');
+  const { child, exited } = f.start(herdr.preload);
+  await until(() => herdr.ready() && herdr.lookups.includes('local-tab'), t.signal);
+  herdr.closeTab('foreign-tab', 'foreign-pane');
+  assert.equal(herdr.lookups.includes('foreign-pane'), false);
+  herdr.closeTab('local-tab');
+  await until(() => status(local)?.exit_reason === 'tab closed', t.signal);
+  assert.equal(herdr.lookups.includes('foreign-pane'), false);
+  assert.equal(status(other).state, 'working');
+  child.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+});
+
+test('watcher discards a pane_not_found reply when the SESSION changes during the query', { timeout: 15000 }, async (t) => {
+  const f = fixture(t), reply = Promise.withResolvers();
+  const herdr = await herdrSocket(t, f, null, (pane) => pane === 'old-pane' ? reply.promise : { result: { pane: { pane_id: pane } } });
+  const dir = f.job({ state: 'working' });
+  const bind = (pane) => session(dir, `TAB=reused-tab\nLEFT=${pane}\n`);
+  bind('old-pane');
+  const { child, exited } = f.start(herdr.preload);
+  await until(() => herdr.lookups.includes('old-pane'), t.signal);
+  bind('new-pane');
+  reply.resolve({ error: { code: 'pane_not_found' } });
+  await until(() => herdr.lookups.includes('new-pane'), t.signal);
+  assert.equal(status(dir).state, 'working');
+  child.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+});
+
 test('watcher settles an unreported Pi exit on its safety tick once the pane is also gone', { timeout: 30000 }, async (t) => {
   const f = fixture(t), panes = [];
   let paneGone = false;
   const herdr = await herdrSocket(t, f, null, (id) => {
     panes.push(id);
-    return paneGone ? { error: { code: 'not_found' } } : { result: { pane: { pane_id: id } } };
+    return paneGone ? { error: { code: 'pane_not_found' } } : { result: { pane: { pane_id: id } } };
   });
   const worker = spawn(process.execPath, ['-e', 'process.stdin.resume()']);
   const ended = once(worker, 'exit');
   t.after(async () => { worker.kill(); await ended; });
   const dir = f.job({ state: 'working', slot: 'primary', pid: worker.pid, pid_start_time: procStat(worker.pid).start });
   fs.unlinkSync(join(dir, 'report.md'));
-  writeFixtureFile(join(dir, 'SESSION.txt'), 'TAB=synthetic-tab\nLEFT=synthetic-worker\n');
+  session(dir, 'TAB=synthetic-tab\nLEFT=synthetic-worker\n');
   const { exited } = f.start(herdr.preload + "process.env.HUD_WATCH_CLI_CHECK_MS = '75';");
-  await until(herdr.ready, t.signal);
+  await until(() => herdr.ready() && panes.length > 0, t.signal);
   assert.equal(status(dir).state, 'working');
-  assert.deepEqual(panes, []);
   worker.stdin.end();
   await ended;
+  const baseline = panes.length;
   // No job file changes, tab-close event or stop request: only the liveness tick can notice.
-  await until(() => panes.length > 0, t.signal);
+  await until(() => panes.length > baseline, t.signal);
   assert.equal(panes[0], 'synthetic-worker');
   assert.equal(status(dir).state, 'working', 'a remaining pane is not evidence of closure');
   paneGone = true;
@@ -337,7 +492,7 @@ test('failed Pi read-close retries its live root after the tab disappears', asyn
   const { exited } = f.start(herdr.preload);
   // The shared attempts log records entry, not which branch the reaper took.
   await until(() => herdr.ready() && fs.existsSync(join(dir, 'waiting-for-tab-close')), t.signal);
-  herdr.closeTab('pi');
+  herdr.closeTab('pi', 'pi-worker');
   fs.writeFileSync(join(dir, 'tab-gone'), '');
   await until(() => f.log().includes('state=idle_grace exit=1'), t.signal);
   assert.equal(status(dir).state, 'idle_grace');

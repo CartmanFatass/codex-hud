@@ -1,4 +1,5 @@
 /** Browser-worker launch. */
+import { herdrEndpoint } from '../../runtime/herdr-socket.js';
 import { recordTabShells } from '../../runtime/tab-shell.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -10,7 +11,7 @@ import { directory, hudHome, jobCache } from '../store/job-store.js';
 import { tabLabel, run, workspaceArgs, rejectLaunch, binScript, quote, type DispatchResult } from './proc.js';
 
 export async function dispatchBro(job: Job, task: string): Promise<DispatchResult> {
-  const launch = randomUUID(), dir = directory(job.job),
+  const launch = randomUUID(), endpoint = herdrEndpoint(), dir = directory(job.job),
     tabName = tabLabel(job, task);
   const result = await run('herdr', [
     'tab',
@@ -39,7 +40,7 @@ export async function dispatchBro(job: Job, task: string): Promise<DispatchResul
   const sessionFile = join(dir, jobFiles.session);
   writePrivateFile(
     sessionFile,
-    `TASK=${job.job}\nLAUNCH=${launch}\nTAB=${tab.tab_id}\nTAB_NAME=${tabName}\nLEFT=${root_pane.pane_id}\nORCH=${job.herdr_pane}\n`,
+    `TASK=${job.job}\nLAUNCH=${launch}\nHERDR_SOCKET_PATH=${endpoint ?? ''}\nTAB=${tab.tab_id}\nTAB_NAME=${tabName}\nLEFT=${root_pane.pane_id}\nORCH=${job.herdr_pane}\n`,
     { mkdir: false }
   );
   jobCache.invalidateFile(sessionFile);

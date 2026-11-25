@@ -7,7 +7,7 @@ export const piTurnUnfinished = (status: Partial<JobStatus>) =>
   status.state === 'working' || status.state?.startsWith('waiting');
 
 /** A Pi worker can exit without publishing its shutdown status. Don't replace a live writer. */
-export function settleStoppedPi(statusFile: string, status: Partial<JobStatus> | null, paneGone = false) {
+export function settleStoppedPi(statusFile: string, status: Partial<JobStatus> | null, paneGone = false, stillBound?: () => boolean) {
   if (!status || !workerTreeRootGone(status.pid, status.pid_start_time)) return null;
   // Preserve a terminal write made just before exit, and don't settle a replacement worker.
   let latest: Partial<JobStatus> | null;
@@ -23,6 +23,7 @@ export function settleStoppedPi(statusFile: string, status: Partial<JobStatus> |
   const now = new Date().toISOString();
   const stopped: JobStatus = { ...latest, state: 'stopped', reason: null, blocked: false, idle_deadline_at: null,
     ended_at: now, exit_reason: requested ? 'stop requested' : 'process exited without a report', error: null, updated_at: now };
+  if (stillBound && !stillBound()) return null;
   writePrivateFile(statusFile, JSON.stringify(stopped) + '\n');
   return stopped;
 }

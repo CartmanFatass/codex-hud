@@ -221,7 +221,7 @@ export type WorkerTreeSnapshot = {
   version: 2; bootId: string; pid: number; start: string; members: { pid: number; start: string }[];
 };
 
-export type SessionReceipt = Partial<Record<'TASK' | 'LAUNCH' | 'TAB' | 'TAB_NAME' | 'LEFT' | 'RIGHT' | 'ORCH' | 'BASE' | 'PRIMARY', string>>;
+export type SessionReceipt = Partial<Record<'TASK' | 'LAUNCH' | 'HERDR_SOCKET_PATH' | 'TAB' | 'TAB_NAME' | 'LEFT' | 'RIGHT' | 'ORCH' | 'BASE' | 'PRIMARY', string>>;
 export type McpTaskMarker = { id: string; pane: string; pid: number; start?: string; expires: number };
 export type BatchNotice = {
   task_id: string; fence: string; status: 'working' | 'completed' | 'failed' | 'cancelled';

@@ -32,8 +32,8 @@ import {
 } from '../../dist/mcp/task-bounds.js';
 import {
   recordWarning,
-  rememberClosedTab,
-  WATCH_CLOSED_TABS_LIMIT,
+  rememberTab,
+  WATCH_TAB_FACTS_LIMIT,
   WATCH_WARNINGS_LIMIT,
 } from '../../dist/runtime/watch-runtime.js';
 import { ProjectOverviews } from '../../dist/collectors/project-visits.js';
@@ -185,20 +185,20 @@ test('hud-mcp task-bounds caps createdJobs, landTasks and tasks while dropping s
   assert.equal(evicted.length, 27);
 });
 
-test('watch closedTabs and warnings stay bounded under churn', () => {
-  const tabs = new Set();
-  for (let i = 0; i < WATCH_CLOSED_TABS_LIMIT + 100; i++) {
-    rememberClosedTab(tabs, `tab-${i}`);
+test('watch tab facts and warnings stay bounded under churn', () => {
+  const tabs = new Map();
+  for (let i = 0; i < WATCH_TAB_FACTS_LIMIT + 100; i++) {
+    rememberTab(tabs, `tab-${i}`, `stamp-${i}`);
   }
-  assert.equal(tabs.size, WATCH_CLOSED_TABS_LIMIT);
+  assert.equal(tabs.size, WATCH_TAB_FACTS_LIMIT);
   assert.equal(tabs.has('tab-0'), false);
-  assert.equal(tabs.has(`tab-${WATCH_CLOSED_TABS_LIMIT + 99}`), true);
+  assert.equal(tabs.get(`tab-${WATCH_TAB_FACTS_LIMIT + 99}`), `stamp-${WATCH_TAB_FACTS_LIMIT + 99}`);
 
   // Re-adding an existing tab promotes it so it survives the next eviction.
   const survivor = `tab-100`;
-  rememberClosedTab(tabs, survivor);
-  rememberClosedTab(tabs, 'tab-extra');
-  assert.equal(tabs.size, WATCH_CLOSED_TABS_LIMIT);
+  rememberTab(tabs, survivor, 'new-stamp');
+  rememberTab(tabs, 'tab-extra', 'extra-stamp');
+  assert.equal(tabs.size, WATCH_TAB_FACTS_LIMIT);
   assert.equal(tabs.has(survivor), true);
   assert.equal(tabs.has('tab-101'), false);
 

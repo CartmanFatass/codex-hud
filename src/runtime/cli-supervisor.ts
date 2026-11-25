@@ -6,7 +6,7 @@ import { beginPrompt, cliWorkerTools, endPrompt, firstInput, judge, terminalFact
 import { invocationWitness } from './cli-invocation.js';
 import { tabProcessStart } from './tab-owner.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
-import { fileStampOf, statsMtimeMs } from '../roles/job-index-cache.js';
+import { fileStampOf, getJobIndexCache, statsMtimeMs } from '../roles/job-index-cache.js';
 import { reportWasRead } from '../collectors/thin-jobs.js';
 import { runHerdr } from '../roles/herdr-run.js';
 import { recordStopOrigin } from '../roles/job-archive.js';
@@ -17,7 +17,8 @@ import * as fs from 'node:fs';
 import { createConnection } from 'node:net';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { request } from './herdr-socket.js';
+import { setTimeout as scheduleTabProbe } from 'node:timers';
+import { hasLocalHerdrTarget, probeHerdrTarget, request, TAB_PROBE_INTERVAL_MS, tabProbeBackoff } from './herdr-socket.js';
 import { sonicChildren, sonicCollectPrompt } from '../worker/sonic-jobs.js';
 
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
@@ -28,11 +29,12 @@ export async function main() {
   const bundled = BUNDLED_ROOT, hudHome = dirname(dirname(dir));
   const jobFile = join(dir, jobFiles.job), job = readJsonFile(jobFile) as Job;
   let receipt = job;
-  const session = Object.fromEntries(fs.readFileSync(join(dir, jobFiles.session), 'utf8').split('\n').flatMap((line) => {
-    const at = line.indexOf('=');
-    return at > 0 ? [[line.slice(0, at), line.slice(at + 1)]] : [];
-  }));
-  const name = session.PRIMARY, pane = session.LEFT, cli = job.cli!;
+  const jobCache = getJobIndexCache(hudHome);
+  const binding = jobCache.readSession(job.job, { throwOnError: true });
+  if (!binding?.fields.left || !binding.fields.primary || !binding.fields.tab) throw Error('CLI tab receipt missing or incomplete');
+  const session = binding.fields;
+  const name = session.primary!, pane = session.left!, tab = session.tab!, cli = job.cli!;
+  const sameSession = () => jobCache.readSession(job.job, { throwOnError: true })?.stamp === binding.stamp;
   const tools = cliWorkerTools(cli.agent);
   const output = join(dir, jobFiles.report), graceMs = (cli.idle_grace_s ?? 600) * 1000;
   const statusFile = join(dir, jobFiles.status), stopFile = join(dir, jobFiles.stopRequested), closeFile = join(dir, jobFiles.closeRequested);
@@ -49,7 +51,7 @@ export async function main() {
   }
   let initialStatus: JobStatus | null = null;
   try { initialStatus = readJsonFile(statusFile) as JobStatus; } catch { /* Fresh job has no STATUS yet. */ }
-  const witness = invocationWitness(dir, session.LAUNCH);
+  const witness = invocationWitness(dir, session.launch);
   const restore = witness && initialStatus?.pid === witness.pid && initialStatus.pid_start_time === witness.start;
   let current: JobStatus = {
     version: 1, task_dir: dir, slot: 'primary', harness: 'cli', agent: cli.agent,
@@ -64,6 +66,8 @@ export async function main() {
   };
   let prev: Judgment | null = null, status: string | null = null, statusAt: number | null = null;
   let agentMissing = false, workingAt: number | null = null, tabClosed = false;
+  let tabCheckPending = false, checkingTab = false, nextTabProbe = 0, tabProbeFailures = 0;
+  let tabProbeTimer: NodeJS.Timeout | undefined;
   let turn = readTurn(dir) ?? writeTurn(dir), done: DoneReceipt | null = null, signature: string | null = null, stamp: string | null | undefined;
   let stop = false, close = false, openQuestions = false, diskDirty = true, sendInFlight = false;
   let socket: ReturnType<typeof createConnection>, lines: ReturnType<typeof createInterface>;
@@ -88,7 +92,7 @@ export async function main() {
     if (stopped) return;
     stopped = true;
     lifecycle.abort();
-    for (const timer of [reconnectTimer, debounce, deadline, tickTimer]) clearTimeout(timer);
+    for (const timer of [reconnectTimer, debounce, deadline, tickTimer, tabProbeTimer]) clearTimeout(timer);
     clearImmediate(immediate);
     dirWatch?.close(); qaWatch?.close(); lines?.close(); socket?.destroy();
   }
@@ -108,6 +112,35 @@ export async function main() {
     diskDirty = true;
     activeEffect?.controller.abort();
     wake(false, true);
+  }
+  function checkTab() {
+    if (stopped || tabClosed || !hasLocalHerdrTarget(session)) return;
+    tabCheckPending = true;
+    if (checkingTab || tabProbeTimer) return;
+    const now = performance.now();
+    if (nextTabProbe > now) {
+      tabProbeTimer = scheduleTabProbe(() => { tabProbeTimer = undefined; checkTab(); }, Math.ceil(nextTabProbe - now));
+      return;
+    }
+    checkingTab = true;
+    tabCheckPending = false;
+    nextTabProbe = now + TAB_PROBE_INTERVAL_MS;
+    void probeHerdrTarget(session, lifecycle.signal).then(result => {
+      if (stopped) return;
+      if (!sameSession()) { shutdown(); return; }
+      if (result === 'unknown') {
+        tabProbeFailures = Math.min(tabProbeFailures + 1, 8);
+        nextTabProbe = performance.now() + tabProbeBackoff(tabProbeFailures);
+        tabCheckPending = true;
+        return;
+      }
+      tabProbeFailures = 0;
+      if (result === 'absent') {
+        tabClosed = true;
+        terminalWake(); // Abort a held effect only on confirmed disappearance, not on the push.
+      }
+    }).catch((error) => console.error(`CLI tab probe: ${(error as Error).message}`))
+      .finally(() => { checkingTab = false; if (tabCheckPending) checkTab(); });
   }
   function watchQa() {
     if (qaWatch || !fs.existsSync(join(dir, jobFiles.qa))) return;
@@ -153,7 +186,7 @@ export async function main() {
     if (signal.aborted || epoch !== generation) return;
     agentMissing = got?.error?.code === 'agent_not_found';
     const agent = got?.result?.agent;
-    const bound = agent && agent.name === name && agent.pane_id === pane && agent.tab_id === session.TAB &&
+    const bound = agent && agent.name === name && agent.pane_id === pane && agent.tab_id === tab &&
       (!current.agent_session_id || current.agent_session_id === agent.agent_session?.value);
     observeStatus(bound ? agent.agent_status ?? null : null);
     return bound ? agent : undefined;
@@ -173,7 +206,7 @@ export async function main() {
       if (!leader?.name) return;
       if (leader.name === cli.agent) {
         if (!info.shell_pid) return;
-        if (tabProcessStart(dir, pane, session.TAB, pid, session.LAUNCH) === witness.start) {
+        if (tabProcessStart(dir, pane, tab, pid, session.launch) === witness.start) {
           refusedInvocation = false; return witness;
         }
       }
@@ -203,18 +236,17 @@ export async function main() {
       if (event.error) { unavailable(); return; }
       if (event.id === 'hud-cli-events') {
         reconnectMs = 5000;
-        seedPending = true; wake(); return;
+        checkTab(); seedPending = true; wake(); return;
       }
       // herdr names pushed events like their subscriptions (`pane.agent_status_changed`); the schema's kinds use `_`.
       const kind = String(event.event ?? '').replace(/\./g, '_'), data = event.data;
-      if (!data || (data.pane_id !== pane && !(kind === 'tab_closed' && data.tab_id === session.TAB))) return;
+      if (!data || (data.pane_id !== pane && !(kind === 'tab_closed' && data.tab_id === tab))) return;
+      if (kind === 'pane_closed' || kind === 'tab_closed') { checkTab(); return; }
       generation += 1;
       if (kind === 'pane_agent_status_changed') {
         observeStatus(data.agent_status); agentMissing = false;
         if (status === 'working') cancelQuiet();
         if (!current.agent_session_id) seedPending = true;
-      } else if (kind === 'pane_closed' || kind === 'tab_closed') {
-        tabClosed = true; terminalWake(); return;
       } else if (kind === 'pane_agent_detected') seedPending = true;
       wake();
     });
@@ -267,8 +299,10 @@ export async function main() {
     try {
       if (['closed', 'failed', 'stopped'].includes((readJsonFile(statusFile) as JobStatus).state)) { shutdown(); return; }
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    if (tabClosed && !sameSession()) { shutdown(); return; }
     if (terminal && tabClosed && !stop && !result.outputWritten)
       recordStopOrigin(dir, 'pane_vanished', current.state, row.ended_at ?? new Date().toISOString());
+    if (tabClosed && !sameSession()) { shutdown(); return; }
     writeJsonPrivate(statusFile, { ...row, updated_at: iso(Date.now()) }, { mkdir: false });
     current = row; rowStamp = changed;
   }
@@ -300,13 +334,11 @@ export async function main() {
       if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
       let next = judge(prev, observed, Date.now());
       if ((observed.stop || observed.close) && !current.pid_start_time && !tabClosed && !receipt.reaped_at) {
-        // Stop intent is durable. Don't retire the only writer of a verified PID
-        // while discovery is unavailable. Tab events and the safety tick retry.
-        const gone = await request('pane.get', { pane_id: pane }, { signal: lifecycle.signal });
-        if (gone?.error?.code !== 'not_found' && !tabClosed) {
-          write({ ...next, state: 'waiting_orchestrator', reason: 'stop pending verified worker identity', exitReason: null });
-          return;
-        }
+        // Stop intent is durable. Wait for verified PID discovery or the same
+        // endpoint-bound probe used by close hints before retiring this writer.
+        checkTab();
+        write({ ...next, state: 'waiting_orchestrator', reason: 'stop pending verified worker identity', exitReason: null });
+        return;
       }
       if (next.action === 'sample') {
         observed = { ...observed, liveChild: sampleChild() };

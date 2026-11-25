@@ -147,7 +147,7 @@ test('Codex uses the recorded thread ID and honors the role resume window', asyn
 const tabFor = (job) => /^TAB=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))[1];
 
 for (const closeCurrent of [false, true]) test(closeCurrent
-  ? 'a close of the resumed Pi tab still fails the job and wakes the mod'
+  ? 'a buffered close of a reused Pi tab is silent; the resumed tab closing fails and wakes the mod'
   : 'a delayed close of the old Pi tab does not fail or wake during resume', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   await f.startCliSocket();
@@ -181,7 +181,8 @@ for (const closeCurrent of [false, true]) test(closeCurrent
     await until(() => wakes.some(line => line.startsWith(`${job.job} `) && line.includes('First.')), t.signal);
     const launchCount = () => f.commands().filter(({ command }) => command === 'pi-role').length;
     const launched = launchCount();
-    if (!closeCurrent) write(join(f.env.HOME, 'hold-pi-role'), '');
+    if (closeCurrent) write(join(f.env.HOME, 'tab-seq'), String(Number(oldTab.split(':t')[1]) - 1));
+    else write(join(f.env.HOME, 'hold-pi-role'), '');
     const sending = taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic Pi continuation.' });
     let task;
     try {
@@ -204,13 +205,21 @@ for (const closeCurrent of [false, true]) test(closeCurrent
     assert.deepEqual(args.slice(-2), ['--session', file]);
     assert.equal(cliState(dir).session_id, id);
     assert.ok(json(dir, 'job.json').pi_sent_at > previous);
-    assert.notEqual(tabFor(job), oldTab);
     if (closeCurrent) {
+      assert.equal(tabFor(job), oldTab, 'the replacement got the same synthetic tab ID');
+      const pane = /^LEFT=(.+)$/m.exec(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8'))[1];
+      const checks = () => f.socketRequests.filter(req => req.method === 'pane.get' && req.params.pane_id === pane).length;
+      const before = checks();
+      f.emitTabClosed(oldTab);
+      await until(() => failed(job) || checks() > before, t.signal);
+      assert.equal(cliState(dir).state, 'working');
+      assert.equal(failed(job), false);
       f.closeTab(tabFor(job));
       await until(() => failed(job), t.signal);
       assert.equal(cliState(dir).state, 'failed');
       assert.equal(cliState(dir).exit_reason, 'tab closed');
     } else {
+      assert.notEqual(tabFor(job), oldTab);
       f.closeTab(oldTab); // A duplicate delayed event after the replacement is live is harmless too.
       assert.equal((await f.call('hud_peek', { job: job.job })).status.state, 'working');
       const next = fakeCliWithChild(t, f);

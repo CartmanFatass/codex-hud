@@ -8,6 +8,7 @@ import { isCliDirTrusted } from '../../cli/trust.js';
 import { cliKinds, type CliAgent } from '../../roles/cli-kinds.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { executablePath, type RolePlace } from '../../roles/roster.js';
+import { herdrEndpoint } from '../../runtime/herdr-socket.js';
 import { recordTabShells } from '../../runtime/tab-shell.js';
 import { prepareCliInvocation } from '../../runtime/cli-invocation.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
@@ -162,7 +163,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     let left = '';
     let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
     for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
-      const launch = randomUUID();
+      const launch = randomUUID(), endpoint = herdrEndpoint();
       const { env } = prepareCliInvocation(dir, launch, place.agent!, target);
       const witnessEnv = Object.entries(env).flatMap(([key, value]) => ['--env', `${key}=${value}`]);
       const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, ...witnessEnv, '--no-focus']);
@@ -172,7 +173,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       left = root_pane?.pane_id;
       if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
       const fields: SessionReceipt = {
-        TASK: job.job, LAUNCH: launch,
+        TASK: job.job, LAUNCH: launch, HERDR_SOCKET_PATH: endpoint ?? '',
         TAB: tab.tab_id,
         TAB_NAME: tabName,
         LEFT: left,

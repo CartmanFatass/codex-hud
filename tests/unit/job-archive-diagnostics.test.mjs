@@ -41,6 +41,7 @@ async function herdrSocket(t, rf, paneReply) {
     await new Promise((resolve) => server.close(resolve));
   });
   return {
+    path,
     preload: `process.env.HERDR_SOCKET_PATH = ${JSON.stringify(path)};\n`,
     ready: () => subscribed.promise,
   };
@@ -178,13 +179,13 @@ test('stopping a working job via hud_close, panel stopJob, and vanished pane rec
   const rf = retentionFixture(t);
   let paneGone = false;
   const herdr = await herdrSocket(t, rf, (id) =>
-    paneGone ? { error: { code: 'not_found' } } : { result: { pane: { pane_id: id } } });
+    paneGone ? { error: { code: 'pane_not_found' } } : { result: { pane: { pane_id: id } } });
   const worker = spawn(process.execPath, ['-e', 'process.stdin.resume()']);
   const exited = once(worker, 'exit');
   t.after(async () => { worker.kill(); await exited; });
   const dir = rf.job({ state: 'working', slot: 'primary', pid: worker.pid, pid_start_time: procStat(worker.pid).start });
   fs.unlinkSync(join(dir, 'report.md'));
-  write(join(dir, 'SESSION.txt'), 'TAB=synthetic-tab\nLEFT=synthetic-pane\n');
+  write(join(dir, 'SESSION.txt'), `TAB=synthetic-tab\nLEFT=synthetic-pane\nHERDR_SOCKET_PATH=${herdr.path}\n`);
   const watch = rf.start(herdr.preload + "process.env.HUD_WATCH_CLI_CHECK_MS = '75';");
   await herdr.ready();
   worker.stdin.end();

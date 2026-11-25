@@ -27,6 +27,7 @@ const EMPTY_STRING_ARRAY: readonly string[] = Object.freeze([]);
 const SESSION_KEY_MAP: Record<string, keyof SessionFields> = {
   TASK: 'task',
   LAUNCH: 'launch',
+  HERDR_SOCKET_PATH: 'herdrSocket',
   TAB: 'tab',
   TAB_NAME: 'tabName',
   LEFT: 'left',
@@ -64,6 +65,7 @@ export interface ReportStat {
 export interface SessionFields {
   readonly task?: string;
   readonly launch?: string;
+  readonly herdrSocket?: string;
   readonly tab?: string;
   readonly tabName?: string;
   readonly left?: string;
