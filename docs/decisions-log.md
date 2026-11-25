@@ -19,6 +19,10 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   `/council` command in the Claude mod or pi extension (not model-invocable), a panel key, or `hud council allow`
   typed by the owner in a shell. The residual risk that a model with shell access runs that command itself is
   accepted under §4 (trusted local tools); the refusal tells the model to ask the owner, not how to grant.
+  Owner, same day: `pro` is not a required synthesizer. The synthesizer is chosen per council from `pro`, Fable high
+  (local) or the main session (no synthesis job; main converges the member reports with the same template); the role
+  file sets the default. `pro` reads the owner's GitHub itself, so its brief carries an index of the original context
+  files (repository, commit, paths; files not pushed are marked local-only) instead of their bodies.
 
 - **D-2026-11-25-01** (§2.1 dispatch): Who chooses prewalk scouts moves from the Decision API to the dispatching
   session. Owner: deciding what to look up before a job is the orchestrator's job; it also drops a Decision API

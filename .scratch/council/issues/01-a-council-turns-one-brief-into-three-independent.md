@@ -14,3 +14,5 @@
 - [ ] Targeted tests only; reference (+zh) and hud-delegate line updated
 
 ## Comments
+
+- 2026-11-25 owner change (D-2026-11-25-02): synthesizer per council from `pro` | Fable high (local, cli claude `claude-fable-5-2` thinking high, oracle instructions) | `main` (no synthesis job; the council settles when members do and its read returns the three reports plus the synthesis template for main). Role file `synthesizer` is the default; `hud_create` takes `synthesizer` to override. Refuse up front only when the chosen synthesizer is unavailable. For `pro`, attach member reports as before and add an index of the original context_files/from_jobs as repository, commit and paths that Pro can open on GitHub (mark files not on the pushed remote as local-only); no bodies of original attachments.
