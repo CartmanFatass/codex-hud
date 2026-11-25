@@ -5,17 +5,17 @@
 
 # HUD
 
-One HUD for **Claude Code, Codex and pi**, on Linux/WSL inside herdr:
-shared bottom status lines, an opt-in Home/Project panel, and MCP tools for
-local role delegation and tickets. Lightweight observation and thin execution adapters, not a
-workflow engine. The main session decides every next step.
+One HUD for **Claude Code, Codex, pi, and Antigravity (`agy`)** on Linux/WSL inside herdr:
+shared bottom bars, an opt-in project panel, and MCP tools for local role delegation
+and tickets. Lightweight observation and thin execution adapters, not a workflow
+engine. The main session decides every next step.
 
 Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud).
 
 ## Quick Start
 
 Requires **Node ≥24.0.0** (Node 24 is the tested supported line), npm, and the clients
-you select. Codex's bar also needs tmux. Jobs need herdr, pi and separately installed
+you select. Codex's tmux bar also needs tmux. Jobs need herdr, pi and separately installed
 **pi-roles** on PATH; browser roles need their external **jev-*** CLIs configured.
 The installer does not install/authenticate those tools. See the
 [Node floor evidence](./docs/ARCHITECTURE.md#3-launch-and-installation).
@@ -27,16 +27,17 @@ Download `hud-<version>.tar.gz` from the project's
 ```sh
 tar -xzf hud-0.2.0.tar.gz
 cd hud-0.2.0
-./install                         # core only
-./install --with claude,pi,codex   # core plus selected extensions
+./install                            # core only on a fresh install
+./install --with claude,pi,codex,agy  # example: core plus all four clients
 
 # Add the printed Codex function to your shell, then launch:
 codexH() { hud codex "$@"; }
 codexH
 ```
 
-Choose any of `claude,pi,codex,browser,herdr`; core is always included. Browser/herdr
-extensions check external prerequisites, not install them. Default installation
+Choose any of `claude`, `claude-mod`, `pi`, `codex`, `agy`, `browser`, and `herdr`;
+core is always included. Put `agy` on PATH before selecting its extension.
+Browser/herdr extensions check external prerequisites, not install them. Default installation
 builds the HUD and MCP. The source archive includes tracked build dependencies,
 including TypeScript, so `./install` builds without network access (`npm ci` is
 only needed in a checkout without dependencies). `--skip-build` uses existing
@@ -49,10 +50,22 @@ The installer never edits shell rc files.
 data is kept. Then run the extracted archive's `./install --with` command above.
 Do not delete unrelated colliding commands to make an installation succeed.
 
-Ordinary `claude` uses the HUD statusline; an existing owner-defined non-HUD
-statusline is preserved. Ordinary `pi` loads the HUD footer. `codexH` starts Codex
-with its tmux bar. Only the side panel is opt-in: `/hud` opens it in Claude,
-Codex and pi; it never opens at launch. Restart clients after registration changes.
+Restart clients after registration changes. The Claude Code and Antigravity
+installers preserve an existing owner-defined non-HUD statusline.
+
+| Client | Bar | Open the panel | Worker modes when selected as a role place |
+| --- | --- | --- | --- |
+| Claude Code | Statusline in ordinary `claude` | `/hud` | herdr tab or headless |
+| Codex | `codexH` tmux bar or opt-in [native status line](./docs/reference.md#codex-native-status-line) | `/hud` | herdr tab |
+| pi | Footer and editor ribbon in ordinary `pi` | `/hud` | herdr tab or headless |
+| Antigravity (`agy`) | Statusline in ordinary `agy` | `hud panel` from a shell in herdr | herdr tab or headless |
+
+The panel never opens at launch. Headless mode needs a continuable role.
+A role's ordered worker places are independent of the client dispatching the job.
+
+**Optional Claude Code mod:** use `./install --with claude,claude-mod` to add
+[HUD event wake, merged notices, an owner waiting band, and owner commands](./docs/reference.md#claude-code-mod).
+The `claude` extension alone does not install the mod.
 
 ```sh
 hud uninstall
@@ -81,17 +94,16 @@ WSL. Font downloads use pinned hashes.
 
 ## What's on the HUD?
 
-The three clients share one field set, showing only available facts:
+The bars share a field set, showing only available facts:
 
 ```text
-model effort │ context %/window │ repo branch(dirty) │ quota │ notices ··· MCP n  skills n
+model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s │ notices ··· MCP n  skills n
 ```
 
 Context follows the client's compaction window when known; quota belongs to that
-client alone (pi uses session cost in its editor ribbon). Agent/job start, completion,
-failure and Claude skill-load events stay for three minutes. Open questions/approvals
-are pinned. Narrow bars shorten/drop optional fields; missing data is absent, not zero.
-No turn clock, output rate, task count or tool-at-work line remains.
+client alone (pi uses session cost in its editor ribbon). Notices include machine-wide
+HUD job counts, local load, and recent client events where available. Open approvals
+are pinned first. Narrow bars shorten or drop optional fields; missing data is absent, not zero.
 
 Settings offers two single-row styles: `line` (default) and `p10k`. Saved retired styles load as `line`.
 The pi top-right ribbon stays the same in both styles and retains other extensions' statuses.
@@ -104,20 +116,26 @@ The panel has three tabs:
 - **Project:** progress, local tickets, working trees and docs. It reads project files, not a project-management service.
 - **Control:** role chains, harness switches and resource settings.
 
-Use `v` from Home to open **Jobs**, then Enter for **Inspector**. From Jobs or Inspector, `n` shows the calling session's native subagents.
-Claude, Codex and pi all open the standalone side panel with `/hud`
-(`hud panel --here` runs in the current terminal). Use ←/→, Tab or a click to switch tabs, `,` for Settings and `?` for Help.
+Use `v` from Home to open **Jobs**, then Enter for **Inspector**. From Jobs or
+Inspector, `n` shows native subagents when the panel is bound to a supported session.
+All clients use the same standalone panel (`hud panel --here` runs in the current terminal).
+Use ←/→, Tab or a click to switch tabs, `,` for Settings and `?` for Help.
 Panels reload after a valid new build, keeping their place and waiting for unsaved Settings.
 
 ## Delegation
 
-The MCP exposes **hud_roster**, **hud_create**, **hud_read**, **hud_send**,
-**hud_respond**, **hud_close** and other tools. Use `hud_tickets` for the ticket method.
-Landing records `done` if `Owner try` is omitted or `no`; only `yes` lands `ready-for-human`.
-Start with the roster for roles, model assignments,
-accepted launch options and the dispatch convention. Pi roles use external pi-roles
-and herdr; browser jobs use `jev-ask`, `jev-aistudio` or `jev-flow`. There is no
-automatic role chaining. See [hud-mcp](./packages/hud-mcp/README.md).
+The [main-session MCP](./docs/reference.md#universal-cli-and-mcp) exposes
+**hud_roster**, **hud_create**, **hud_read**, **hud_wait**, **hud_peek**, **hud_send**,
+**hud_respond**, **hud_close**, **hud_land**, **hud_lease**, **hud_objective**,
+**hud_schedule**, and **hud_tickets**. Clients that negotiate MCP tasks receive
+settlement notices instead of `hud_wait`.
+
+Start with `hud_roster` for roles, available places and the dispatch convention;
+pass `detail: true` for accepted launch options. Roles can use external pi-roles,
+CLI places (`claude`, `codex`, `agy`, `grok`), or browser places (`jev-ask`,
+`jev-aistudio`, `jev-flow`). There is no automatic role chaining.
+Use `hud_tickets` for the ticket method. Landing records `done` if `Owner try`
+is omitted or `no`; only `yes` lands `ready-for-human`. See [hud-mcp](./packages/hud-mcp/README.md).
 
 Jobs/reports live under `$HUD_HOME/jobs`. The on-demand watcher reaps finished jobs
 and expires settled directories one day after closure on a later scan. Pi session

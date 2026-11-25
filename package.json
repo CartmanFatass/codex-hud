@@ -1,7 +1,7 @@
 {
   "name": "codex-hud",
   "version": "0.2.0",
-  "description": "Real-time statusline HUD for OpenAI Codex CLI",
+  "description": "Status bars, a project panel, and worker delegation for Claude Code, Codex, pi, and Antigravity",
   "type": "module",
   "main": "dist/index.js",
   "bin": {

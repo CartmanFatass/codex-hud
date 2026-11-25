@@ -55,17 +55,26 @@ No panel opens at launch.
 |---|---|
 | `bin/` | Public launchers and Codex tmux helpers |
 | `install`, `install.d/` | Core installer and selected client/prerequisite extensions |
-| `src/mcp/thin-main.ts` | Main and worker stdio MCP surfaces; job dispatch |
-| `packages/hud-mcp/bin/worker-tools.mjs` | Worker tools shared by MCP, pi and fallback commands; CLI report receipts bind the prompt's token to the fresh disk report |
-| `packages/hud-mcp/bin/hud-watch.mjs`, `hud-cli.mjs`, `hud-jev.mjs` | On-demand reaper, CLI supervisor, browser-CLI wrapper |
+| `packages/hud-mcp/bin/hud-mcp.mjs`, `packages/hud-mcp/bin/surface.mjs` | Stdio transport and entry selection for the reloadable MCP runtime |
+| `src/mcp/mcp/server.ts`, `src/mcp/mcp/operations.ts`, `src/roles/tool-definitions.ts` | Main/worker MCP request handling, main-session operations and role tool schemas |
+| `src/mcp/codex-statusline.ts` | Codex native status line tool and MCP resource |
+| `src/mcp/dispatch/orchestrator.ts`, `src/mcp/dispatch/places.ts`, `src/mcp/dispatch/context.ts` | Job dispatch, place selection and context assembly |
+| `src/mcp/dispatch/harness-pi.ts`, `src/mcp/dispatch/harness-cli.ts`, `src/mcp/dispatch/harness-bro.ts` | pi, CLI and browser dispatch adapters |
+| `src/worker/tools.ts`, `packages/hud-mcp/bin/worker-tools.mjs` | Shared worker tools and their JS bridge; CLI report receipts bind the current turn token to the fresh disk report |
+| `packages/hud-mcp/bin/hud-watch.mjs`, `src/runtime/watch.ts`, `src/runtime/watch-runtime.ts` | Watcher launcher, reloadable watcher host and on-demand reaper |
+| `packages/hud-mcp/bin/hud-cli.mjs`, `src/runtime/cli-supervisor.ts` | Launcher and implementation of the per-job CLI supervisor |
+| `packages/hud-mcp/bin/hud-jev.mjs`, `src/runtime/browser-runner.ts` | Launcher and implementation of the browser-CLI wrapper |
 | `src/roles/roster.ts` | Role definitions, assignments and convention, shared by MCP/Project |
-| `src/cli/` | Panel, statusline, import and Codex compatibility commands |
-| `src/index.ts`, `src/tree-page.ts` | Codex bar and shared panel loops |
-| `src/collectors/` | Disk/sqlite/git observations and display generators |
-| `src/render/` | Pure bar/panel rendering, input state, themes and EN/ZH labels |
-| `src/settings.ts`, `src/settings-runtime.ts` | Validated saved settings and display configuration |
-| `src/snapshot.ts`, `src/notify.ts` | Snapshot and optional notifications |
-| `integrations/` | Client/skill assets consumed by the installer |
+| `src/cli/` | HUD commands including panel, statusline, settings import and Codex launcher compatibility |
+| `src/index.ts` | Codex tmux bar loop |
+| `src/cli/statusline.ts`, `src/statusline-parity/` | Statusline command and Claude/Antigravity statusline collection and rendering adapters |
+| `src/harness/pi/p10k-footer.ts` | pi footer and editor ribbon |
+| `src/tree-page.ts`, `src/panel/controller.ts` | Standalone panel entry and interaction/repaint loop |
+| `src/collectors/` | Display observations from disk, SQLite and Git; workboard and project snapshots |
+| `src/render/` | Bar/panel renderers, input state, themes and EN/ZH labels |
+| `src/settings.ts`, `src/settings-runtime.ts` | Saved settings validation and I/O; runtime display configuration |
+| `src/snapshot.ts`, `src/notify.ts`, `src/roles/notify.ts` | Display snapshot, opt-in Codex display notifications and worker-event delivery, respectively |
+| `integrations/` | Client assets and bundled skills consumed by the installer |
 | `tests/unit/`, `tests/fixtures/` | Behaviour tests and synthetic data/frames |
 
 ## 3. Launch and installation
