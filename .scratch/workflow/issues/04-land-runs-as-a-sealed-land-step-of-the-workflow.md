@@ -11,3 +11,5 @@
 - [ ] Land gate passes.
 
 ## Comments
+
+- 2026-11-25 main: scope (owner, D-2026-11-25-08): the engine ships only batch, prewalk, council and land templates; tickets 05-07 are deferred. workflow/02, 03 and 04 are built in parallel on the landed engine (4dbb54ab) and each adds a step kind: keep step-kind registration additive so the lands compose. Run the focused tests once at the end; the full gate is the land's job. Land is the critical path: the land helper stays whole and never-replay holds; the existing ticket queue keeps calling land through the `hud_land` shim (05 deferred).
