@@ -109,7 +109,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
     const worker = fakeCliWithChild(t, f);
     const mcp = await fakeMcpBootstrap(t, f, worker, scenario === 'generic package');
     fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-    writeCliRole(f, 'mcp-bootstrap', 8);
+    writeCliRole(f, 'mcp-bootstrap', scenario === 'no report' ? 0.25 : 8);
     const job = await f.call('hud_create', { role: 'mcp-bootstrap', request_key: scenario, task: 'Synthetic task.' });
     const dir = job.task_dir, report = join(dir, 'report.md');
     await until(() => cliState(dir)?.pid === worker.pid && cliState(dir)?.agent_session_id, t.signal);
@@ -169,8 +169,7 @@ for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direc
 }
 
 test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; socket loss stays working', { timeout: 30000 }, async (t) => {
-  const clockScale = 20;
-  const f = await fixture(t, { clockScale });
+  const f = await fixture(t);
   // Keep the 10 s real-time grace headroom during flaps instead of grok's 10 s virtual turn-trust deadline.
   writeFixtureFile(join(f.env.HUD_HOME, 'harnesses.json'), JSON.stringify({ grok: { state_trust: 'advisory' } }));
   writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
@@ -338,7 +337,7 @@ test('an unread declared report closes at the idle deadline and reaps leftovers'
   const f = await fixture(t);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-  writeCliRole(f, 'grace-bg-cli', 1, true);
+  writeCliRole(f, 'grace-bg-cli', 0.3, true);
   const graceJob = await f.call('hud_create', {
     role: 'grace-bg-cli',
     request_key: 'grace-bg-hold',
@@ -439,8 +438,8 @@ test('exit is a /proc pid check: herdr errors keep working while pid lives, PID 
 });
 
 test('hud_send restarts a dead supervisor only when the worker is confirmed alive', { timeout: 20000 }, async (t) => {
-  const f = await fixture(t, { watcherTickMs: 200 }); // Scale the orphan retry, not the supervisor death event.
-  writeCliRole(f, 'respawn-cli', 1, true);
+  const f = await fixture(t, { watcherTickMs: 80 }); // Scale the orphan retry, not the supervisor death event.
+  writeCliRole(f, 'respawn-cli', 0.3, true);
   const spawnDummy = () => {
     const child = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { env: f.env, stdio: 'ignore' });
     t.after(() => { try { child.kill('SIGKILL'); } catch {} });

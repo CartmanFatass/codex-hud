@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { basename, join, isAbsolute, resolve, relative, sep } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { isCliDirTrusted, propagateCliTrust } from '../../cli/trust.js';
 import { taskTarget } from '../../collectors/job-supersession.js';
 import { objectiveLink } from '../../collectors/objectives.js';
@@ -267,25 +266,46 @@ async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, con
       };
     }
     const id = result.job;
-    while ((scout = findJob(id))) {
-      const { row } = readRow(scout);
-      if (signal.aborted) {
-        discard = !settled(row.state);
-        return { kind: spec.kind, source: spec.source, ...ask, id, failure: 'stopped', ms: elapsed() };
-      }
-      if (settled(row.state)) {
-        if (row.state === 'failed' || row.state === 'stopped') return { kind: spec.kind, source: spec.source, ...ask, id, failure: row.reason ?? row.state, ms: elapsed() };
-        if (!row.report_present) return { kind: spec.kind, source: spec.source, ...ask, id, failure: 'settled without a report', ms: elapsed() };
-        save({ ...scout, read_at: new Date().toISOString() });
-        return { kind: spec.kind, source: spec.source, ...ask, id, ms: elapsed() };
-      }
-      if (row.open_questions || row.blocked || row.state === 'waiting_orchestrator') {
-        discard = true;
-        return { kind: spec.kind, source: spec.source, ...ask, id, failure: row.open_questions ? 'asked a question' : row.reason ?? 'needed attention', ms: elapsed() };
-      }
-      await sleep(500, undefined, { signal });
-    }
-    return { kind: spec.kind, source: spec.source, ...ask, id, failure: 'scout receipt disappeared', ms: elapsed() };
+    const dir = directory(id);
+    scout = findJob(id);
+    return await waitUntilFs<ScoutOutcome>({
+      targets: () => [
+        {
+          dir,
+          filter: (file) => !file || file === jobFiles.status || file === jobFiles.report || file === jobFiles.job || file === jobFiles.qa,
+        },
+        ...(fs.existsSync(join(dir, jobFiles.qa)) ? [{ dir: join(dir, jobFiles.qa) }] : []),
+      ],
+      timeoutMs: Infinity,
+      fallbackIntervalMs: 500,
+      signal,
+      check: () => {
+        scout = findJob(id);
+        if (!scout) {
+          return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: 'scout receipt disappeared', ms: elapsed() } };
+        }
+        const { row } = readRow(scout);
+        if (signal.aborted) {
+          discard = !settled(row.state);
+          return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: 'stopped', ms: elapsed() } };
+        }
+        if (settled(row.state)) {
+          if (row.state === 'failed' || row.state === 'stopped') {
+            return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: row.reason ?? row.state, ms: elapsed() } };
+          }
+          if (!row.report_present) {
+            return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: 'settled without a report', ms: elapsed() } };
+          }
+          save({ ...scout, read_at: new Date().toISOString() });
+          return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, ms: elapsed() } };
+        }
+        if (row.open_questions || row.blocked || row.state === 'waiting_orchestrator') {
+          discard = true;
+          return { done: true, value: { kind: spec.kind, source: spec.source, ...ask, id, failure: row.open_questions ? 'asked a question' : row.reason ?? 'needed attention', ms: elapsed() } };
+        }
+        return { done: false };
+      },
+    });
   } catch (error) {
     if (signal.aborted) {
       discard = !!scout && !settled(readRow(scout).row.state);

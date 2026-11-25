@@ -92,7 +92,7 @@ async function drive(q: TicketQueue) {
           filter: (file: string | null) => !file || /^(?:qa(?:\/q\d+\.md)?|STATUS\.json(?:\.stop-requested)?|report\.md|checks\.json|job\.json|done\.json|turn\.json)$/.test(file) }] : [])],
       check: async () => {
         let issue = dispatchError, changed = false, recheck: number | undefined;
-        const later = () => ({ done: false as const, ...(recheck !== undefined && { minDelayMs: recheck }) });
+        const later = () => ({ done: false as const, ...(recheck !== undefined && { recheckMs: recheck }) });
         const clean: { item: TicketQueueItem; job: Job; state: JobStatus['state']; retry?: string }[] = [];
         for (const item of q.tickets) {
           if (!item.job || item.landed) continue;

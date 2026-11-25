@@ -41,8 +41,8 @@ function answer(body, tier, mode) {
       probabilities: choices.map(({ value }) => ({ value, probability: value === choice ? 1 : 0 })) };
   }) };
 }
-async function setup(t, handler) {
-  const f = await fixture(t);
+async function setup(t, handler, probe = '') {
+  const f = await fixture(t, probe ? { probe } : undefined);
   const api = await fakeDecisionServer(t, handler);
   configureFakeDecision(f, api.baseUrl);
   settings(f);
@@ -290,8 +290,10 @@ test('standard/headless falls back to the active tab on validation or pre-input 
 });
 
 test('API error and timeout are visible; explicit headless wins and asks only for tier', { timeout: 18000 }, async t => {
+  const probe = `const realAbortTimeout = AbortSignal.timeout.bind(AbortSignal);
+    AbortSignal.timeout = (ms) => realAbortTimeout(ms === 5000 ? 50 : ms);`;
   const { f, api } = await setup(t, (body, n) => n === 1 ? { status: 400 }
-    : n === 2 ? new Promise(() => {}) : answer(body, 'light', 'tab'));
+    : n === 2 ? new Promise(() => {}) : answer(body, 'light', 'tab'), probe);
   role(f, routing);
   for (const [task, reason] of [['Synthetic API error dispatch.', /unavailable/], ['Synthetic timeout dispatch.', /timed out/]]) {
     const result = await create(f, task);

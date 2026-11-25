@@ -170,12 +170,14 @@ test('waitUntilFs coalesces bursty atomic renames with a non-sliding window', as
   const file = join(dir, 'STATUS.json');
   const stats = trackWatches(t);
   let eventChecks = 0;
+  const ready = Promise.withResolvers();
 
   const waiting = waitUntilFs({
     targets: [{ dir, filter: (name) => name === null || name === 'STATUS.json' }],
     timeoutMs: 5000,
     coalesceMs: 25,
     check: ({ timedOut, reason }) => {
+      if (reason === 'catchup') ready.resolve();
       if (reason === 'event') eventChecks++;
       if (fs.existsSync(file)) {
         const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -186,7 +188,7 @@ test('waitUntilFs coalesces bursty atomic renames with a non-sliding window', as
     },
   });
 
-  await new Promise((r) => setTimeout(r, 30));
+  await ready.promise;
   for (let i = 1; i <= 20; i++) {
     writeFixtureFile(file, JSON.stringify({ seq: i }));
   }
@@ -202,13 +204,16 @@ test('waitUntilFs retries transient SyntaxError without aborting the wait', asyn
   const file = join(dir, 'STATUS.json');
   const stats = trackWatches(t);
   let sawTruncated = false;
+  const ready = Promise.withResolvers();
+  const truncatedSeen = Promise.withResolvers();
 
   const waiting = waitUntilFs({
     targets: [{ dir, filter: (name) => name === null || name === 'STATUS.json' }],
     timeoutMs: 5000,
     coalesceMs: 5,
     isTransientError: (error) => error instanceof SyntaxError,
-    check: ({ timedOut }) => {
+    check: ({ timedOut, reason }) => {
+      if (reason === 'catchup') ready.resolve();
       if (fs.existsSync(file)) {
         const raw = fs.readFileSync(file, 'utf8');
         try {
@@ -216,6 +221,7 @@ test('waitUntilFs retries transient SyntaxError without aborting the wait', asyn
           return { done: true, value: parsed };
         } catch (error) {
           sawTruncated = true;
+          truncatedSeen.resolve();
           throw error;
         }
       }
@@ -224,9 +230,10 @@ test('waitUntilFs retries transient SyntaxError without aborting the wait', asyn
     },
   });
 
-  await new Promise((r) => setTimeout(r, 30));
+  await ready.promise;
   fs.writeFileSync(file, '{"state":');
-  setTimeout(() => writeFixtureFile(file, JSON.stringify({ state: 'done' })), 20);
+  await truncatedSeen.promise;
+  writeFixtureFile(file, JSON.stringify({ state: 'done' }));
 
   const result = await waiting;
   assert.equal(sawTruncated, true);
@@ -241,6 +248,11 @@ test('waitUntilFs dynamically adds qa/ watcher and closes removed targets', asyn
   fs.mkdirSync(otherDir);
   const stats = trackWatches(t);
   let watchOther = true;
+  const ready = Promise.withResolvers();
+  const waitActive = async (expected) => {
+    const end = Date.now() + 3000;
+    while (stats.active !== expected && Date.now() < end) await new Promise((r) => setTimeout(r, 5));
+  };
 
   const waiting = waitUntilFs({
     targets: () => [
@@ -249,7 +261,8 @@ test('waitUntilFs dynamically adds qa/ watcher and closes removed targets', asyn
       ...(fs.existsSync(qaDir) ? [{ dir: qaDir, filter: (name) => name === null || /^q\d+\.md$/.test(name) }] : []),
     ],
     timeoutMs: 5000,
-    check: ({ timedOut }) => {
+    check: ({ timedOut, reason }) => {
+      if (reason === 'catchup') ready.resolve();
       if (fs.existsSync(join(dir, 'drop-other'))) watchOther = false;
       const q1 = join(qaDir, 'q1.md');
       if (fs.existsSync(q1)) return { done: true, value: fs.readFileSync(q1, 'utf8') };
@@ -258,17 +271,17 @@ test('waitUntilFs dynamically adds qa/ watcher and closes removed targets', asyn
     },
   });
 
-  await new Promise((r) => setTimeout(r, 30));
+  await ready.promise;
   assert.equal(stats.active, 2);
 
   // Drop otherDir from targets and confirm its watcher is closed immediately.
   fs.writeFileSync(join(dir, 'drop-other'), '');
-  await new Promise((r) => setTimeout(r, 40));
+  await waitActive(1);
   assert.equal(stats.active, 1);
 
   // Create qa/ first, wait for watcher to attach, then write q1.md and check wakeup latency.
   fs.mkdirSync(qaDir);
-  await new Promise((r) => setTimeout(r, 40));
+  await waitActive(2);
   assert.equal(stats.active, 2);
 
   const writeAt = performance.now();
@@ -304,12 +317,16 @@ test('waitUntilFs degrades cleanly on watcher error storms and recovers without 
   });
 
   let checkCalls = 0;
+  const twoErrors = Promise.withResolvers();
   const waiting = waitUntilFs({
     targets: () => [{ dir }],
     timeoutMs: 5000,
-    degradedIntervalMs: 60,
+    degradedIntervalMs: 30,
     fallbackIntervalMs: 5000,
-    onWatchError: (watchDir, err) => errors.push([watchDir, err.code]),
+    onWatchError: (watchDir, err) => {
+      errors.push([watchDir, err.code]);
+      if (errors.length >= 2) twoErrors.resolve();
+    },
     check: async ({ timedOut }) => {
       checkCalls++;
       // Make check async to verify async error emission during check cannot loop.
@@ -320,15 +337,17 @@ test('waitUntilFs degrades cleanly on watcher error storms and recovers without 
     },
   });
 
-  await new Promise((r) => setTimeout(r, 150));
-  assert.ok(watchAttempts <= 4, `error storm detected: ${watchAttempts} watch attempts in 150 ms`);
-  assert.ok(checkCalls <= 6, `check storm detected: ${checkCalls} check calls in 150 ms`);
+  await twoErrors.promise;
+  await new Promise((r) => setTimeout(r, 40));
+  assert.ok(watchAttempts <= 4, `error storm detected: ${watchAttempts} watch attempts`);
+  assert.ok(checkCalls <= 6, `check storm detected: ${checkCalls} check calls`);
   assert.ok(errors.length >= 2);
   assert.equal(errors[0][1], 'ELOOP');
   assert.equal(errors[1][1], 'EIO');
 
   healthy = true;
-  await new Promise((r) => setTimeout(r, 90));
+  const recoverEnd = Date.now() + 3000;
+  while (stats.active !== 1 && Date.now() < recoverEnd) await new Promise((r) => setTimeout(r, 5));
   const writeAt = performance.now();
   writeFixtureFile(file, 'recovered');
   const result = await waiting;
@@ -359,14 +378,18 @@ test('waitUntilFs rejects on pre-aborted and mid-wait AbortSignal with zero leak
   assert.equal(stats.opened, 0);
 
   const ac = new AbortController();
+  const ready = Promise.withResolvers();
   const waiting = waitUntilFs({
     targets: [{ dir }],
     timeoutMs: 5000,
     signal: ac.signal,
-    check: () => ({ done: false }),
+    check: ({ reason }) => {
+      if (reason === 'catchup') ready.resolve();
+      return { done: false };
+    },
   });
 
-  await new Promise((r) => setTimeout(r, 30));
+  await ready.promise;
   assert.equal(stats.active, 1);
   const abortAt = performance.now();
   ac.abort();
@@ -387,18 +410,24 @@ test('waitUntilFs performs zero extra checks while idle', async (t) => {
   let checks = 0;
 
   const ac = new AbortController();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.after(() => t.mock.timers.reset());
+  const ready = Promise.withResolvers();
   const waiting = waitUntilFs({
     targets: [{ dir }],
     timeoutMs: 5000,
     fallbackIntervalMs: 5000,
     signal: ac.signal,
-    check: () => {
+    check: ({ reason }) => {
       checks++;
+      if (reason === 'catchup') ready.resolve();
       return { done: false };
     },
   });
 
-  await new Promise((r) => setTimeout(r, 250));
+  await ready.promise;
+  t.mock.timers.tick(250);
+  await Promise.resolve();
   assert.equal(checks, 2, 'only initial + catchup while idle');
   assert.equal(stats.active, 1);
 

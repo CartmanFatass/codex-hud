@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rmSync, readFileSync } from 'node:fs';
+import { existsSync, rmSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { encodePanelPlace, PanelReload, readPanelPlace } from '../../dist/utils/panel-reload.js';
@@ -235,13 +235,21 @@ test('dirty Settings block reload, including edits made while the load check is 
   const f = fixture(t), entry = join(f.root, 'entry.js');
   writeFixtureFile(entry, 'export {};');
   const reload = new PanelReload(entry);
-  writeFixtureFile(entry, 'await new Promise(r => setTimeout(r, 200));');
+  const entered = join(f.root, 'entered'), release = join(f.root, 'release');
+  writeFixtureFile(
+    entry,
+    `import { existsSync, writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(entered)}, '');
+for (let i = 0; i < 600 && !existsSync(${JSON.stringify(release)}); i++) await new Promise(r => setTimeout(r, 5));`
+  );
   let dirty = true;
   assert.equal(await reload.poll(() => dirty, 10000), false);
   assert.equal(await reload.poll(() => dirty, 13000), false);
   dirty = false;
   const pending = reload.poll(() => dirty, 14000);
+  await until(() => existsSync(entered), 'load check did not start');
   dirty = true;
+  writeFixtureFile(release, '');
   assert.equal(await pending, false);
   dirty = false;
   assert.equal(await reload.poll(() => dirty, 15000), true);
@@ -340,6 +348,7 @@ test('the live panel coalesces build bursts, retains jobs settled during its lif
     assert.deepEqual(start.argv, ['same argv']);
     assert.equal(start.test, 'same env');
   }
-  await delay(500);
+  const settledAt = Date.now();
+  await untilRendered(() => f.polls().filter((at) => at >= settledAt).length >= 3, t.signal);
   assert.equal(f.restarts().length, 2, 'no restart loop on an unchanged generation');
 });

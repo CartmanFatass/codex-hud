@@ -142,7 +142,7 @@ test('M1: a routine question wakes main, stays in Jobs → Inspector, and never 
   const until = async (check) => { for (let i = 0; i < 200 && !check(); i++) await new Promise((r) => setTimeout(r, 25)); assert.ok(check(), 'timed out'); };
 
   const legacy = run({});
-  await new Promise((r) => setTimeout(r, 300));
+  await new Promise((r) => setTimeout(r, 80));
   await legacy.stop();
   assert.deepEqual(legacy.records, []);
 

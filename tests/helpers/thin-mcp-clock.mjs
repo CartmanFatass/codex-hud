@@ -12,7 +12,7 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
     const now = Date.now,
       timer = globalThis.setTimeout,
       anchor = Date.now(),
-      scale = Number(process.env.HUD_TEST_CLOCK_SCALE ?? 20);
+      scale = Number(process.env.HUD_TEST_CLOCK_SCALE ?? 100);
     Date.now = () => anchor + (now() - anchor) * scale;
     globalThis.setTimeout = (fn, ms, ...args) => timer(fn, ms === 250 ? 15 : ms / scale, ...args);
     // Keep external done.json timestamps on the supervisor's accelerated clock so slow runs never expire declared turns early.

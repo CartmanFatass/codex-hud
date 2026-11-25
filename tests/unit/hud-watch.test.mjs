@@ -1083,7 +1083,7 @@ test('hud watch --queue queues catch-up and settlement silently and exits on age
   const ac = new AbortController(), stdout = [], stderr = [];
   t.after(() => ac.abort());
   // Queue scans also run synthetic CLI subprocesses; keep headroom for the second scan.
-  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, settlementWindowMs: 1000 });
+  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => stdout.push(s), stderr: (s) => stderr.push(s) }, { signal: ac.signal, rescanMs: 60, settlementWindowMs: 200 });
   await until(() => fs.existsSync(join(f.home, 'watchers/w4E:p1.pid')), t.signal);
   writeFixtureFile(join(dir, 'report.md'), 'Done.');
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));

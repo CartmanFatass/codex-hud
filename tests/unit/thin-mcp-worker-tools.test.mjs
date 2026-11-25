@@ -48,11 +48,12 @@ case "$2" in
 esac
 `);
   const queued = join(f.root, 'queue-start');
+  const release = join(f.root, 'queue-release');
   f.overrideBin('codex', `#!${process.execPath}
 import fs from 'node:fs';
 import { setTimeout } from 'node:timers/promises';
 fs.writeFileSync(${JSON.stringify(queued)}, String(process.pid));
-await setTimeout(2000);
+for (let i = 0; i < 500 && !fs.existsSync(${JSON.stringify(release)}); i++) await setTimeout(10);
 `);
   const call = workerClient(t, f, parent.task_dir, '0');
   const pending = call('hud_ask', { question: 'Which layout?', default: 'rows' });
@@ -60,6 +61,7 @@ await setTimeout(2000);
   const start = performance.now();
   assert.deepEqual((await call.rpc('ping')).result, {});
   const pingMs = performance.now() - start;
+  fs.writeFileSync(release, '');
   const reply = await pending;
   t.diagnostic(`worker ping during hud_ask: ${pingMs.toFixed(0)} ms`);
   assert.match(reply.content[0].text, /pushed via codex queue/);
@@ -67,6 +69,7 @@ await setTimeout(2000);
 
   // Native callers supply an AbortSignal directly to the same worker tool.
   fs.unlinkSync(queued);
+  fs.unlinkSync(release);
   const workerTools = resolve('packages/hud-mcp/bin/worker-tools.mjs');
   const cancellable = spawn(process.execPath, ['--input-type=module', '-e', `
     import { pathToFileURL } from 'node:url';
@@ -352,6 +355,8 @@ test('sonic tooling uses the role settings for main jobs and children', { timeou
 test('sonic auto-thinking uses one capped judgment for each new job and falls back safely', { timeout: 25000 }, async (t) => {
   const probe = `import * as fs from 'node:fs';
     import { join } from 'node:path';
+    const realAbortTimeout = AbortSignal.timeout.bind(AbortSignal);
+    AbortSignal.timeout = (ms) => realAbortTimeout(ms === 5000 ? 50 : ms);
     globalThis.fetch = async (url, init) => {
       fs.appendFileSync(join(process.env.HOME, 'decision-inputs'), JSON.stringify({url, body: JSON.parse(init.body)}) + '\\n');
       const mode = fs.readFileSync(join(process.env.HOME, 'decision-mode'), 'utf8');

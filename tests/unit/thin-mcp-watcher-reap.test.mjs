@@ -195,7 +195,7 @@ test('read-close: aborts Pi reap when fresh Herdr status has turned working', { 
 });
 
 test('read-close: failed Pi reap is retried on the slow safety tick without a file event', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t, true, '', 350);
+  const f = await fixture(t, true, '', 80);
   await f.startCliSocket();
   const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-retry', task: 'Synthetic task.' });
   await publishPiGrace(t, job);
@@ -211,7 +211,7 @@ test('read-close: failed Pi reap is retried on the slow safety tick without a fi
 });
 
 for (const rewrite of [false, true]) test(`read-close: Pi retries captured children after root exit and snapshot ENOSPC (rewrite=${rewrite})`, { timeout: 60000 }, async (t) => {
-  const f = await fixture(t, true, '', 350);
+  const f = await fixture(t, true, '', 80);
   const worker = fakeCliWithChild(t, f);
   await f.startCliSocket();
   const job = await f.call('hud_create', { role: 'imp', request_key: 'pi-partial-reap', task: 'Synthetic task.' });
@@ -300,7 +300,7 @@ for (const fault of ['rename', 'open']) test(`pi reap: --done snapshot ${fault} 
 });
 
 test('read-close: rejected CLI quit keeps closed while the watcher retries terminal reap', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t, true, '', 450);
+  const f = await fixture(t, true, '', 100);
   const worker = fakeCliWithChild(t, f);
   writeCliRole(f, 'cli-retry', 1800); // The accelerated idle deadline is not the trigger under test.
   const job = await f.call('hud_create', { role: 'cli-retry', request_key: 'cli-retry', task: 'Synthetic cleanup retry.' });
@@ -325,7 +325,7 @@ test('read-close: rejected CLI quit keeps closed while the watcher retries termi
 });
 
 test('read-close: CLI pre-quit snapshot failure hands cleanup to the watcher and retries', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t, true, '', 350);
+  const f = await fixture(t, true, '', 80);
   const worker = fakeCliWithChild(t, f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'cli-snapshot-failure', 30);
@@ -392,7 +392,7 @@ test('read-close: a settled Pi with a fresh report closes and reaps a current-tu
 
 test('read-close: listing an unread report leaves the CLI grace deadline in place', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'unread-close-cli', 2);
+  writeCliRole(f, 'unread-close-cli', 0.4);
   const job = await f.call('hud_create', { role: 'unread-close-cli', request_key: 'unread-close', task: 'Synthetic task.' });
   await until(() => cliState(job.task_dir)?.state === 'idle_grace', t.signal);
   const { idle_deadline_at } = cliState(job.task_dir);

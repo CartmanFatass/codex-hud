@@ -286,11 +286,16 @@ test('two scouts of the same kind both run with their own ask; partial failure, 
 });
 
 test('prewalk waits past 5 minutes for a slow scout and attaches its report when it settles', async (t) => {
-  const probe = `import { existsSync } from 'node:fs';
+  const probe = `import { appendFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 const marker = join(process.env.HOME, 'fast-forward-prewalk');
+const ticks = join(process.env.HOME, 'prewalk-ticks');
 const realSetTimeout = globalThis.setTimeout;
-globalThis.setTimeout = (fn, ms, ...args) => realSetTimeout(fn, typeof ms === 'number' && ms >= 60000 ? 50 : ms, ...args);
+globalThis.setTimeout = (fn, ms, ...args) => realSetTimeout(
+  ms === 500 ? (...cbArgs) => { if (existsSync(marker)) appendFileSync(ticks, '1\\n'); return fn(...cbArgs); } : fn,
+  typeof ms === 'number' && (ms === 500 || ms >= 60000) ? 40 : ms,
+  ...args
+);
 const realPerfNow = performance.now.bind(performance);
 const realDateNow = Date.now;
 const jump = () => existsSync(marker) ? 6 * 60_000 : 0;
@@ -307,7 +312,8 @@ Date.now = () => realDateNow() + jump();
   });
   const [slowScout] = await waitScouts(f, target.job, 1);
   write(join(f.env.HOME, 'fast-forward-prewalk'), '');
-  await new Promise(resolve => setTimeout(resolve, 200));
+  const ticksFile = join(f.env.HOME, 'prewalk-ticks');
+  await until(() => fs.existsSync(ticksFile) && fs.readFileSync(ticksFile, 'utf8').length >= 2, t.signal);
   assert.equal(cliState(slowScout).state, 'working', 'slow scout is still running past 5 minutes');
   assert.ok(!fs.existsSync(join(target.task_dir, 'SESSION.txt')), 'target still waits for the slow scout');
 

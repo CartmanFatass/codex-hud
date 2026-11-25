@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { judge, procStat, REPORT_SETTLED_EXIT } from '../../dist/mcp/cli-judge.js';
@@ -236,10 +237,9 @@ test('exit matrix: stop intent wins; non-stop early close retains its existing b
   assert.equal(close.exitReason, 'settled');
 });
 
-test('exit matrix: a headless sonic missing its report stays failed', async (t) => {
-  const f = await fixture(t);
-  const dir = join(f.env.HUD_HOME, 'jobs', 'j0000000000000001');
-  fs.mkdirSync(dir, { recursive: true });
+test('exit matrix: a headless sonic missing its report stays failed', (t) => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'sonic-missing-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   // Native pi-roles emits this terminal receipt when its headless run has no fresh output.
   write(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', output_written: false, exit_reason: 'output missing, empty or unchanged' }));
   assert.deepEqual(sonicState(dir), { state: 'failed', reason: 'output missing, empty or unchanged' });

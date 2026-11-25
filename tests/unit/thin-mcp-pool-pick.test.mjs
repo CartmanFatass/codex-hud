@@ -193,7 +193,9 @@ test('explicit entries and registered project design skip the API; switches take
 });
 
 test('timeout attaches nothing once at create and the queued launch retains the original pick', async t => {
-  const f = await fixture(t, { autoPrewalk: true });
+  const probe = `const realAbortTimeout = AbortSignal.timeout.bind(AbortSignal);
+    AbortSignal.timeout = (ms) => realAbortTimeout(ms === 5000 ? 50 : ms);`;
+  const f = await fixture(t, { autoPrewalk: true, probe });
   const api = await fakeDecisionServer(t, () => new Promise(() => {}));
   configureFakeDecision(f, api.baseUrl);
   const pool = poolFixture(f);

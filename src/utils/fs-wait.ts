@@ -27,7 +27,7 @@ export interface FsWaitCheckContext {
 
 export type FsWaitStep<T> =
   | { done: true; value: T }
-  | { done: false; minDelayMs?: number };
+  | { done: false; minDelayMs?: number; recheckMs?: number };
 
 export interface FsWaitOptions<T> {
   targets: readonly WatchTarget[] | (() => readonly WatchTarget[]);
@@ -89,6 +89,7 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
     let degraded = false;
     let transientErrors = 0;
     let coalesceTimer: ReturnType<typeof setTimeout> | undefined;
+    let recheckTimer: ReturnType<typeof setTimeout> | undefined;
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
     let fallbackMode: 'none' | 'healthy' | 'degraded' = 'none';
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
@@ -97,6 +98,14 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
       if (coalesceTimer !== undefined) {
         clearTimeout(coalesceTimer);
         coalesceTimer = undefined;
+      }
+      if (recheckTimer !== undefined) {
+        clearTimeout(recheckTimer);
+        recheckTimer = undefined;
+      }
+      if (recheckTimer !== undefined) {
+        clearTimeout(recheckTimer);
+        recheckTimer = undefined;
       }
       if (fallbackTimer !== undefined) {
         clearTimeout(fallbackTimer);
@@ -207,6 +216,29 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
           return;
         }
         void evaluate(reason);
+      }, clampDelay(delay));
+    }
+
+    function scheduleRecheck(delayMs: number) {
+      if (settled) return;
+      if (recheckTimer !== undefined) {
+        clearTimeout(recheckTimer);
+        recheckTimer = undefined;
+      }
+      const rem = remainingMs();
+      if (rem <= 0) {
+        if (!inFlight) void evaluate('timeout');
+        return;
+      }
+      const delay = Math.min(Math.max(0, delayMs), rem);
+      recheckTimer = setTimeout(() => {
+        recheckTimer = undefined;
+        if (settled) return;
+        if (inFlight) {
+          recheckPending = true;
+          return;
+        }
+        void evaluate('fallback');
       }, clampDelay(delay));
     }
 
@@ -336,6 +368,10 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
         clearTimeout(coalesceTimer);
         coalesceTimer = undefined;
       }
+      if (recheckTimer !== undefined) {
+        clearTimeout(recheckTimer);
+        recheckTimer = undefined;
+      }
 
       inFlight = true;
       let runTimeoutNow = false;
@@ -401,6 +437,9 @@ export function waitUntilFs<T>(options: FsWaitOptions<T>): Promise<T> {
           recheckPending = false;
           const nextDelay = minDelay !== undefined ? minDelay : wasPending ? coalesceMs : 0;
           scheduleCoalesce(nextDelay, 'event');
+        }
+        if (step.recheckMs !== undefined) {
+          scheduleRecheck(Math.max(0, step.recheckMs));
         }
       } catch (error) {
         finishReject(error);

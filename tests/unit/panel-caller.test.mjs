@@ -49,9 +49,8 @@ console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p1'}}}));
     const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
     const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
     if (!initiallyMissing) {
-      for (let i = 0; i < 200 && !calls().some((a) => a[1] === 'get'); i++) await delay(25);
-      assert.ok(calls().some((a) => a[1] === 'get'), stderr);
-      await delay(100);
+      for (let i = 0; i < 400 && calls().filter((a) => a[1] === 'get').length < 2; i++) await delay(10);
+      assert.ok(calls().filter((a) => a[1] === 'get').length >= 2, stderr);
       assert.equal(child.exitCode, null, stderr);
       assert.ok(!calls().some((a) => a[1] === 'close'));
       writeFixtureFile(missing, '');

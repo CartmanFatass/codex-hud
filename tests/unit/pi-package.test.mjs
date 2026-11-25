@@ -758,6 +758,12 @@ async function until(check, failure = 'timed out waiting for the native watcher'
 }
 
 test('pi watches at the next model boundary or wakes when idle, and drops stale deliveries', async (t) => {
+  const prevSettlement = process.env.HUD_WATCH_SETTLEMENT_MS;
+  process.env.HUD_WATCH_SETTLEMENT_MS = '50';
+  t.after(() => {
+    if (prevSettlement === undefined) delete process.env.HUD_WATCH_SETTLEMENT_MS;
+    else process.env.HUD_WATCH_SETTLEMENT_MS = prevSettlement;
+  });
   const f = setup(t), h = host(), c = context(f, h), p = ports(f);
   const home = f.binding.hudHome, pane = f.env.HERDR_PANE_ID;
   const marker = path.join(home, 'watchers', `${pane}.pid`);

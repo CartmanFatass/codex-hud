@@ -38,7 +38,7 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   const f = await fixture(t);
   const task = sonicTask(f);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-  writeCliRole(f, 'sonic-parent-cli', 1, false);
+  writeCliRole(f, 'sonic-parent-cli', 0.25, false);
   const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
   configureFakeDecision(f, server.baseUrl);
   const rpc = taskRpc(f.rpc);
@@ -166,7 +166,7 @@ test('quiet decision discards a stale reply after working/done pushes during the
 
 test('quiet decision still-working keeps waiting up to 3 questions then escalates, showing on card and Inspector', { timeout: 20000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'qd-wait', 1, false);
+  writeCliRole(f, 'qd-wait', 0.2, false);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   writeFixtureFile(
     join(f.env.HOME, 'pane-read'),
@@ -200,7 +200,7 @@ test('quiet decision still-working keeps waiting up to 3 questions then escalate
 
 test('quiet decision finished-no-report sends fixed prompt once per job and settles; second never sends twice', { timeout: 45000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'qd-prompt', 1, false);
+  writeCliRole(f, 'qd-prompt', 0.2, false);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   fs.writeFileSync(join(f.env.HOME, 'write-on-report-prompt'), '');
   const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.93));
@@ -226,7 +226,7 @@ test('quiet decision finished-no-report sends fixed prompt once per job and sett
 
   // Second finished-no-report in the same job must NOT send the prompt twice -> needs-human.
   const f2 = await fixture(t);
-  writeCliRole(f2, 'qd-prompt2', 1, false);
+  writeCliRole(f2, 'qd-prompt2', 0.2, false);
   fs.writeFileSync(join(f2.env.HOME, 'missing-report'), '');
   const server2 = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.94));
   configureFakeDecision(f2, server2.baseUrl);
@@ -282,7 +282,7 @@ test('quiet decision failed uses screen line and quota marks place exhausted', {
 
 test('quiet decision failed without quota regex falls back to needs-human without exhausting', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'qd-nonquota', 1, false);
+  writeCliRole(f, 'qd-nonquota', 0.2, false);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   writeFixtureFile(join(f.env.HOME, 'pane-read'), 'working...\nError: segmentation fault in worker\n> \n');
   const server = await fakeDecisionServer(t, () => decisionAnswer('failed', 0.95));
@@ -301,7 +301,7 @@ test('quiet decision failed without quota regex falls back to needs-human withou
 test('low probability, cap reached, and provider error all fall back to needs-human without prompting worker', { timeout: 20000 }, async (t) => {
   // 1. Low probability (< 0.8)
   const fLow = await fixture(t);
-  writeCliRole(fLow, 'qd-low', 1, false);
+  writeCliRole(fLow, 'qd-low', 0.2, false);
   fs.writeFileSync(join(fLow.env.HOME, 'missing-report'), '');
   const sLow = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.79));
   configureFakeDecision(fLow, sLow.baseUrl);
@@ -314,7 +314,7 @@ test('low probability, cap reached, and provider error all fall back to needs-hu
 
   // 2. Cap reached
   const fCap = await fixture(t);
-  writeCliRole(fCap, 'qd-cap', 1, false);
+  writeCliRole(fCap, 'qd-cap', 0.2, false);
   fs.writeFileSync(join(fCap.env.HOME, 'missing-report'), '');
   const sCap = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
   configureFakeDecision(fCap, sCap.baseUrl, 1);
@@ -330,7 +330,7 @@ test('low probability, cap reached, and provider error all fall back to needs-hu
 
   // 3. Provider error (HTTP 500)
   const fErr = await fixture(t);
-  writeCliRole(fErr, 'qd-err', 1, false);
+  writeCliRole(fErr, 'qd-err', 0.2, false);
   fs.writeFileSync(join(fErr.env.HOME, 'missing-report'), '');
   const sErr = await fakeDecisionServer(t, () => ({ status: 500, body: { error: 'boom' } }));
   configureFakeDecision(fErr, sErr.baseUrl);
@@ -344,7 +344,7 @@ test('low probability, cap reached, and provider error all fall back to needs-hu
 
 test('failed prompt-report keeps waiting_orchestrator across turn wake', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'qd-prompt-fail', 1, false);
+  writeCliRole(f, 'qd-prompt-fail', 0.2, false);
   fs.writeFileSync(join(f.env.HOME, 'missing-report'), '');
   fs.writeFileSync(join(f.env.HOME, 'fail-report-prompt'), '');
   const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.93));
@@ -380,7 +380,7 @@ test('failed prompt-report keeps waiting_orchestrator across turn wake', { timeo
 
 test('reportPromptSent persists across supervisor restart via hud_send', { timeout: 20000 }, async (t) => {
   const f = await fixture(t);
-  writeCliRole(f, 'qd-prompt-respawn', 1, true);
+  writeCliRole(f, 'qd-prompt-respawn', 0.2, true);
   const liveWorker = spawn(process.execPath, ['-e', 'setInterval(()=>{}, 1000)'], { stdio: 'ignore' });
   t.after(() => { try { liveWorker.kill('SIGKILL'); } catch {} });
   writeFixtureFile(join(f.env.HOME, 'cli-pid'), String(liveWorker.pid));

@@ -304,7 +304,7 @@ await runLivePage();
   const before = mark();
   child.stdin.write(']');
   await until(() => collects().slice(before).some((c) => c.cwd === other && c.shown === true), 'the second project');
-  await new Promise((r) => setTimeout(r, 400));
+  await until(() => collects().slice(before).length >= 3, 'multiple collection ticks on the second project');
   assert.ok(collects().slice(before).every((c) => c.cwd === other && c.shown === true), 'only the shown project is collected');
   const leave = mark();
   child.stdin.write('\x1b[D'); // ← is Home again

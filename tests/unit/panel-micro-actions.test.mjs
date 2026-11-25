@@ -98,11 +98,12 @@ test('hud watch tells the main session what the owner answered from the panel', 
   const f = fixture(t), lines = [], ac = new AbortController();
   t.after(() => ac.abort());
   const running = watchCommand([], { env: { HUD_HOME: f.home, HERDR_PANE_ID: PANE }, stdout: (s) => lines.push(s.trim()), stderr: () => {} }, { signal: ac.signal, rescanMs: 60 });
-  await new Promise((r) => setTimeout(r, 200));
+  const initEnd = Date.now() + 4000;
+  while (lines.length === 0 && Date.now() < initEnd) await new Promise((r) => setTimeout(r, 10));
   lines.length = 0;
   answerJobQuestion(f.home, ASKING, 'q1', 'remove it now', 'imp');
   const end = Date.now() + 4000;
-  while (!lines.some((l) => l.includes('ANSWERED')) && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+  while (!lines.some((l) => l.includes('ANSWERED')) && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
   ac.abort();
   await running;
   assert.deepEqual(lines.filter((l) => l.includes('ANSWERED')), [`[imp@${ASKING}] ANSWERED q1 from panel: remove it now`]);

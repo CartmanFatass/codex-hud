@@ -284,12 +284,24 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   for (const cmd of ['pi-role', 'herdr', 'claude', 'codex', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
     writeFakeCli(s.bin, cmd, '');
   }
-  fs.writeFileSync(join(s.hud, 'hud-settings.json'), JSON.stringify({ modelEnabled: false, refreshMs: 60, language: 'en' }));
+  fs.writeFileSync(join(s.hud, 'hud-settings.json'), JSON.stringify({ modelEnabled: false, refreshMs: 100, language: 'en' }));
 
   const runner = join(s.root, 'live.mjs');
+  const ticksFile = join(s.root, 'ticks.log');
   fs.writeFileSync(
     runner,
-    `import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};\nawait runLivePage();\nprocess.exit(0);\n`
+    `import { appendFileSync } from 'node:fs';
+import { PanelReload } from ${JSON.stringify(pathToFileURL(resolve('dist/utils/panel-reload.js')).href)};
+import { runLivePage } from ${JSON.stringify(pathToFileURL(resolve('dist/tree-page.js')).href)};
+const origPoll = PanelReload.prototype.poll;
+PanelReload.prototype.poll = async function (...args) {
+  const res = await origPoll.apply(this, args);
+  appendFileSync(${JSON.stringify(ticksFile)}, '1\\n');
+  return res;
+};
+await runLivePage();
+process.exit(0);
+`
   );
   const place = encodePanelPlace({ state: { ...initialMonitorState(), activeTab: 'project',
     control: onControl({ cursor: 'project:role:imp', folded: new Set(['agents', 'files', 'usage']) }).control }, settings: null });
@@ -303,6 +315,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
       CODEX_HUD_STANDALONE_PANEL: '1',
       CODEX_HUD_CWD: s.cwd,
       HUD_PANEL_RELOAD_PLACE: place,
+      HUD_PANEL_ADAPTIVE_MAX_MS: '100',
     },
   });
   let out = '',
@@ -317,14 +330,19 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
     if (child.exitCode === null) child.kill('SIGKILL');
   });
   const spawns = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : []);
+  const ticks = () => (fs.existsSync(ticksFile) ? fs.readFileSync(ticksFile, 'utf8').length / 2 : 0);
   const until = async (ok, what) => {
-    for (const end = Date.now() + 10000; Date.now() < end; await new Promise((r) => setTimeout(r, 25))) if (ok()) return;
+    for (const end = Date.now() + 10000; Date.now() < end; await new Promise((r) => setTimeout(r, 10))) if (ok()) return;
     assert.fail(`${what}: err=${err}`);
+  };
+  const waitFrames = async (count, what) => {
+    const start = ticks();
+    await until(() => ticks() >= start + count, what);
   };
 
   // Hub opens first: wait across several refreshMs=60ms ticks -> 0 spawns.
   await until(() => stripAnsi(out).includes('Progress'), 'Project hub rendered');
-  await new Promise((r) => setTimeout(r, 300));
+  await waitFrames(2, 'hub refresh ticks');
   assert.deepEqual(spawns(), []);
 
   // Open Control with Tab -> spawns pi, agy, grok once each.
@@ -333,7 +351,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   assert.deepEqual([...spawns()].sort(), ['agy', 'grok', 'pi']);
 
   // Sit through multiple refresh ticks -> still 0 extra spawns.
-  await new Promise((r) => setTimeout(r, 350));
+  await waitFrames(2, 'Control refresh ticks');
   assert.equal(spawns().length, 3);
 
   // Leave Control and open it again within 1 day -> cache hit, 0 extra spawns.
@@ -343,7 +361,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   const back = out.length;
   child.stdin.write('\t');
   await until(() => /◉ imp → /.test(stripAnsi(out.slice(back))), 'Control re-opened');
-  await new Promise((r) => setTimeout(r, 200));
+  await waitFrames(1, 'cached Control refresh tick');
   assert.equal(spawns().length, 3);
 
   // An r burst is one refresh; send more r keys after the commands have started but pi is still pending.
@@ -354,7 +372,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   child.stdin.write('rr\rmGPT-LIVE');
   await until(() => /\/ GPT-LIVE/.test(stripAnsi(out)) && /gpt-live-1/.test(stripAnsi(out)), 'picker filters the last-good list during the refresh');
   child.stdin.write('\x12');
-  await new Promise((r) => setTimeout(r, 100));
+  await waitFrames(1, 'picker Ctrl+R tick while refresh pending');
   assert.equal(spawns().length, 6, 'picker refresh coalesces with the pending Control refresh');
   fs.unlinkSync(hold);
   await until(() => readModelListCache(s.hud)?.fetchedAt > firstList, 'refresh finished');
@@ -365,7 +383,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   // The picker owns even r, q and Tab; none may spawn a command. A full ID selects directly.
   child.stdin.write('\x7f'.repeat('GPT-LIVE'.length) + 'rqq\t');
   await until(() => /rqq▌/.test(stripAnsi(out)), 'refresh/quit keys typed into the picker');
-  await new Promise((r) => setTimeout(r, 350));
+  await waitFrames(1, 'picker idle refresh tick');
   assert.equal(spawns().length, 6);
   const secondList = readModelListCache(s.hud).fetchedAt;
   fs.writeFileSync(hold, 'hold');
