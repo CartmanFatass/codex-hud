@@ -63,7 +63,8 @@ execution detail; when space runs out, execution detail is not shown. (new)
   Council is a fixed flow the main session starts only on the owner's explicit request: one brief goes to the configured
   member places (default Fable, Astra and Carbon, all high, with oracle instructions, independent and read-only); when
   they settle, the configured synthesizer (default `pro`) writes one converged plan that lists the members'
-  disagreements and how each was resolved. Fewer than two member reports fails the council; nothing chains after it (25.02).
+  disagreements and how each was resolved. Fewer than two member reports fails the council; nothing chains after it.
+  Because it is costly, HUD refuses a council without a fresh one-time grant that only an owner action creates (25.02).
   No other automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
 Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)

@@ -14,6 +14,11 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   at synthesis), which converges them into one plan and lists disagreements and their resolution. Chosen over a
   cross-critique round (about twice the calls and time). A fixed flow like scouts and land: HUD runs only its own
   steps, never starts it on its own, and nothing chains after it. Members and synthesizer are owner configuration.
+  Owner, same day: council costs real time and money, so the main session must not start it on its own judgement.
+  HUD enforces this with a one-time grant (single use, 30 minutes, global) created only by an owner action: the
+  `/council` command in the Claude mod or pi extension (not model-invocable), a panel key, or `hud council allow`
+  typed by the owner in a shell. The residual risk that a model with shell access runs that command itself is
+  accepted under §4 (trusted local tools); the refusal tells the model to ask the owner, not how to grant.
 
 - **D-2026-11-25-01** (§2.1 dispatch): Who chooses prewalk scouts moves from the Decision API to the dispatching
   session. Owner: deciding what to look up before a job is the orchestrator's job; it also drops a Decision API
