@@ -33,10 +33,14 @@ Each item says who decides and what would trigger it. Remove an item when it is 
 
 ## In progress (2026-11-25)
 
-- Council (council/01 landed 371218cc; council/02 owner grant in progress). First real use planned: the hmasd
-  research-workflow design once the transcript labels are in.
+- Workflow engine (D-2026-11-25-05/06): tickets `.scratch/workflow/` 01–06; 01 dispatched. Pi worker extension
+  (owner approved removals R1–R4): `.scratch/pi-worker/` 01–05; 01 and 03 dispatched. Lands of workflow/01 and
+  pi-worker/01 wait until the hmasd Sonic batch ends (they replace the batch runner and the Sonic launch path).
+- Known fault until workflow/03 lands: council runs inside the MCP process; an MCP restart orphans it (council
+  j84ec335faab925fb stayed `working` after its members finished; synthesized by hand).
 - hmasd research-error study: transcripts inventoried (owner + subagent threads, WSL/Windows/sqlite), chunking and
-  per-chunk sonic labelling under way in `tmp/tasks/HMASD-RESEARCH/`.
+  per-chunk sonic labelling under way in `tmp/tasks/HMASD-RESEARCH/` (60/287 done; remaining 227 in batch
+  b8d86947d528de015).
 - Sonic runs fixed on `deepseek` (`sonicPlacement: fixed`, owner 2026-11-25; backup `hud-settings.json.bak-20261125-sonic-fixed`).
   The even pool setting (`deepseek`, `luna`) is kept but inactive. Haiku hung in pi auto-compaction at `max` on 120 KB
   chunks; thinking is not capped (eng-hygiene/12 wontfix): the fault was task size.
