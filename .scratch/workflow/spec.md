@@ -77,6 +77,8 @@ no resident process, intent persisted before effect, request-key recovery, one n
 
 Hand-backs default to a project-lead acceptance session (new role `lead`: Claude Code on Claude Opus 5.5 high with
 the HUD MCP tools, like main), not main. Project-lead acceptance, not code review: reports, checks, live try, judged
-against the goal; it dispatches the independent `reviewer` where the convention requires and acts on the findings.
+against the goal; the independent `reviewer` runs as a template step before the lead where the convention
+requires; the lead acts on its findings. A lead lives for one decision (packet from the run record → answer →
+closed); none stays alive.
 It chooses finish / repair / continue with reasons; uncertain items go to the run's todo; escalates to main only
 blocking owner matters. The ticket-queue template ends with a lead acceptance step. Main starts runs and gets the one end notice. Ticket 07.
