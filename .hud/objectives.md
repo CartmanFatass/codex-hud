@@ -43,3 +43,10 @@
 **State:** active
 **Next:** 等你试用影子模式（2 张待你试的工单），之后再定注入范围（advisor/03）
 **Features:** advisor
+
+## herdr-fork: HUD 运行在自己维护的 herdr fork 上，进程身份、tab 身份和关闭由 herdr 直接提供
+
+**State:** active
+**Next:** 构建 fork（Zig 工具链、关闭自更新）；安装切换需 owner 确认
+**Evidence:** docs/spec.md, docs/decisions-log.md, tmp/tasks/herdr-fork/brief.md
+**Features:** herdr-fork
