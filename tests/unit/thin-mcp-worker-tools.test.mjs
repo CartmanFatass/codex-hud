@@ -787,7 +787,9 @@ for (const refused of [false, true]) {
     const job = await f.call('hud_create', { role: 'gap-worker', task: 'Synthetic first prompt.' });
     const dir = job.task_dir, call = workerClient(t, f, dir);
     const first = cliToken(dir);
-    await until(() => cliState(dir)?.state === 'working', t.signal);
+    // The launch receipt says working before the supervisor subscribes. Wait for its
+    // agent lookup to bind the fixture subscription, or the final idle push can be lost.
+    await until(() => cliState(dir)?.agent_session_id, t.signal, 'CLI supervisor did not discover the worker');
     assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic second prompt.' })).sent, true);
     const second = cliToken(dir);
     writeFixtureFile(join(f.env.HOME, refused ? 'rejected-prompt' : 'hold-prompt-result'), '');
