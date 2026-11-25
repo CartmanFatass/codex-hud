@@ -64,9 +64,11 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
           latest = readJsonFile(file) as Partial<Job>;
         }
         if (latest?.job !== job.job || jobCallerPane(latest) !== jobCallerPane(job) || !matches(latest) || !owesCaller(dir, latest)) continue;
+        const dirStat = fs.lstatSync(dir, { throwIfNoEntry: false });
         const updated = { ...latest, [latest.caller_pane !== undefined ? 'caller_pane' : 'herdr_pane']: pane };
         if (cache) cache.writeJsonAtomic(file, updated, { indent: 2, mkdir: false });
         else writePrivateFile(file, JSON.stringify(updated, null, 2) + '\n', { mkdir: false });
+        if (dirStat) try { fs.utimesSync(dir, dirStat.atime, dirStat.mtime); } catch { /* Best-effort ordering preservation. */ }
         adopted = true;
         onAdopt?.(job.job);
       } catch {

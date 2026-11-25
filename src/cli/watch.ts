@@ -385,7 +385,7 @@ export async function watchCommand(
       const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...(modCatchup ? [] : progress)];
       const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
         ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;
-      const events = first || !verbose ? actionable(home, prev, rows, modCatchup ? modCutoff : first, lastScanAt) : [];
+      const events = first || !verbose ? actionable(home, prev, rows, first && mod ? modCutoff : first, lastScanAt) : [];
       // Release the mod's first HUD call only after capturing its pre-call baseline.
       if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
       const band = readBand && await readBand(scanAt);
@@ -420,7 +420,7 @@ export async function watchCommand(
         }
         continue;
       }
-      const batches = modCatchup && lines.length ? [lines.join('\n')] : lines;
+      const batches = first && mod && lines.length ? [lines.join('\n')] : lines;
       for (const [i, line] of batches.entries()) {
         if (stopped) break;
         try {

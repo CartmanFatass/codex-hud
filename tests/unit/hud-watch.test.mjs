@@ -858,6 +858,157 @@ test('mod retention does not announce old settlements entering the watch window'
   } finally { ac.abort(); await run; }
 });
 
+test('mod watcher does not replay old settled unread jobs from other callers across a runtime reload', { timeout: 30000 }, async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'watch-reload-adopt-'));
+  const hudHome = join(root, 'hud');
+  let runtime, runtimeExited, mod, modExited;
+  cleanupFixture(t, { root, hudHome }, async () => {
+    await Promise.all([
+      mod && stopChild(mod, modExited, { killMs: 500 }),
+      runtime && stopChild(runtime, runtimeExited, { killMs: 500 }),
+    ]);
+  });
+  for (const name of ['bin/hud', 'dist', 'packages/hud-mcp', 'scripts/dist-lock.mjs', 'package.json'])
+    fs.cpSync(resolve(name), join(root, name), { recursive: true });
+  fs.symlinkSync(resolve('node_modules'), join(root, 'node_modules'));
+  const bin = join(root, 'bin-stub'), panesFile = join(root, 'panes.json');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.mkdirSync(hudHome, { mode: 0o700 });
+  fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}
+import fs from 'node:fs';
+const args = process.argv.slice(2);
+if (args[0] === 'pane' && args[1] === 'list') {
+  const panes = JSON.parse(fs.readFileSync(${JSON.stringify(panesFile)}, 'utf8')).map((pane_id) => ({ pane_id }));
+  console.log(JSON.stringify({ result: { panes } }));
+}
+`, { mode: 0o700 });
+  const pane = 'w4E:p1', otherPane = 'w4E:p8', projectCwd = process.cwd();
+  const past = new Date(Date.now() - 12 * 3600_000);
+  const id = (i) => `j${i.toString(16).padStart(16, '0')}`;
+  const writeOld = (i, status, report, extra = {}) => {
+    const dir = writeJob(hudHome, id(i), otherPane, 'old-other', status, report, extra.parent_job);
+    const file = join(dir, 'job.json');
+    const receipt = { ...JSON.parse(fs.readFileSync(file)), created_at: past.toISOString(), cwd: projectCwd, ...extra };
+    writeFixtureFile(file, JSON.stringify(receipt));
+    for (const rel of [...(report ? ['report.md'] : []), 'STATUS.json', 'job.json', '.'])
+      fs.utimesSync(join(dir, rel), past, past);
+    return dir;
+  };
+  // 20 old settled unread/unobserved jobs from another caller: 18 closed top-level, 1 failed child, 1 closed child.
+  for (let i = 1; i <= 18; i++) writeOld(i, { state: 'closed', settled_at: past.toISOString(), ended_at: past.toISOString() }, true);
+  const oldFailedChild = writeOld(19, { state: 'failed', exit_reason: 'sonic exited', settled_at: past.toISOString(), ended_at: past.toISOString() }, false,
+    { role: 'sonic', parent_job: 'j0000000000000099' });
+  const oldClosedChild = writeOld(20, { state: 'closed', settled_at: past.toISOString(), ended_at: past.toISOString() }, true,
+    { role: 'sonic', parent_job: 'j0000000000000099' });
+
+  const duringId = 'j0000000000000a01', afterId = 'j0000000000000a02';
+  const duringDir = writeJob(hudHome, duringId, pane, 'during', { state: 'working' });
+  const afterDir = writeJob(hudHome, afterId, pane, 'after', { state: 'working' });
+  for (const dir of [duringDir, afterDir]) {
+    const file = join(dir, 'job.json');
+    writeFixtureFile(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), cwd: projectCwd }));
+  }
+
+  writeFixtureFile(panesFile, JSON.stringify([pane, otherPane]));
+  const env = { ...process.env, HOME: root, HUD_HOME: hudHome, HERDR_PANE_ID: pane, HUD_WATCH_SETTLEMENT_MS: '40', PATH: `${bin}:${process.env.PATH}` };
+  delete env.HUD_HEAP_CAPS;
+  runtime = spawn(process.execPath, [join(root, 'packages/hud-mcp/bin/hud-watch.mjs')], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  runtimeExited = once(runtime, 'exit');
+  const logFile = join(hudHome, 'watch.log');
+  await until(() => ['watch.pid', 'watch.log', 'jobs-revision.json'].every((name) => fs.existsSync(join(hudHome, name))) &&
+    fs.readFileSync(logFile, 'utf8').includes('start pid='), t.signal);
+
+  const records = [];
+  let buf = '', modStderr = '';
+  mod = spawn(process.execPath, [join(root, 'bin/hud'), 'watch', '--mod'], {
+    cwd: projectCwd, env: { ...env, HUD_MOD_CURSOR: '' }, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  modExited = once(mod, 'exit');
+  mod.stdout.setEncoding('utf8').on('data', (chunk) => {
+    buf += chunk;
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const record = JSON.parse(buf.slice(0, nl));
+      buf = buf.slice(nl + 1);
+      if (record.type !== 'band') records.push(record);
+    }
+  });
+  mod.stderr.setEncoding('utf8').on('data', (chunk) => { modStderr += chunk; });
+  await until(() => records.some((r) => r.type === 'ready'), t.signal);
+
+  let step = 0;
+  const triggerBuildReload = () => {
+    const tmp = join(root, `dist/index.js.${++step}.tmp`);
+    fs.writeFileSync(tmp, fs.readFileSync(join(root, 'dist/index.js')));
+    fs.renameSync(tmp, join(root, 'dist/index.js'));
+  };
+  const reloadCount = () => (fs.readFileSync(logFile, 'utf8').match(/reloaded pid=/g) ?? []).length;
+
+  // Reload 1 while the other caller is still live: no adoption, no replay.
+  triggerBuildReload();
+  await until(() => reloadCount() === 1, t.signal);
+  assert.deepEqual(records.filter((r) => r.type === 'wake'), []);
+
+  // Other caller disappears, then Reload 2 (same after-build path) runs and a real job settles during reload.
+  writeFixtureFile(panesFile, JSON.stringify([pane]));
+  triggerBuildReload();
+  writeFixtureFile(join(duringDir, 'report.md'), 'Genuine settlement during reload.');
+  writeFixtureFile(join(duringDir, 'STATUS.json'), JSON.stringify({ state: 'done' }));
+  await until(() => reloadCount() === 2 &&
+    JSON.parse(fs.readFileSync(join(hudHome, 'jobs', id(1), 'job.json'), 'utf8')).herdr_pane === pane &&
+    records.some((r) => r.type === 'wake' && r.lines.some((line) => line.includes(duringId))), t.signal);
+
+  // A second job settling right after the reload is also delivered once.
+  writeFixtureFile(join(afterDir, 'report.md'), 'Genuine settlement after reload.');
+  writeFixtureFile(join(afterDir, 'STATUS.json'), JSON.stringify({ state: 'done' }));
+  await until(() => records.some((r) => r.type === 'wake' && r.lines.some((line) => line.includes(afterId))), t.signal);
+
+  assert.equal(modStderr, '');
+  const wakeLines = records.filter((r) => r.type === 'wake').flatMap((r) => r.lines);
+  assert.deepEqual(wakeLines, [
+    `${duringId} imp during: done | report | ${readHint(duringId)}`,
+    `${afterId} imp after: done | report | ${readHint(afterId)}`,
+  ]);
+  assert.equal(JSON.parse(fs.readFileSync(join(oldFailedChild, 'job.json'), 'utf8')).herdr_pane, pane);
+  assert.equal(JSON.parse(fs.readFileSync(join(oldClosedChild, 'job.json'), 'utf8')).herdr_pane, otherPane,
+    'settled closed child jobs are not mass-adopted');
+});
+
+test('mod sleep-resume folds old adopted unread jobs into one summary line and delivers a fresh settlement', async (t) => {
+  const f = queueFixture(t), pane = f.env.HERDR_PANE_ID, otherPane = 'w4E:p8', now = Date.now();
+  const past = new Date(now - 12 * 3600_000), projectCwd = process.cwd();
+  fs.writeFileSync(join(f.home, 'bin/herdr'), `#!${process.execPath}
+const args = process.argv.slice(2);
+if (args[0] === 'pane' && args[1] === 'list') console.log(JSON.stringify({ result: { panes: [{ pane_id: ${JSON.stringify(pane)} }] } }));
+`, { mode: 0o700 });
+  for (let i = 1; i <= 20; i++) {
+    const dir = writeJob(f.home, `j${i.toString(16).padStart(16, '0')}`, otherPane, 'old',
+      { state: 'closed', settled_at: past.toISOString(), ended_at: past.toISOString() }, true);
+    const file = join(dir, 'job.json');
+    writeFixtureFile(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), created_at: past.toISOString(), cwd: projectCwd }));
+    for (const rel of ['report.md', 'STATUS.json', 'job.json', '.']) fs.utimesSync(join(dir, rel), past, past);
+  }
+  const freshId = 'j0000000000000b01';
+  const freshDir = writeJob(f.home, freshId, pane, 'fresh', { state: 'closed', settled_at: new Date(now - 5_000).toISOString() }, true);
+  const freshFile = join(freshDir, 'job.json');
+  writeFixtureFile(freshFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(freshFile)), cwd: projectCwd }));
+
+  const ac = new AbortController(), wakes = [];
+  const run = watchCommand(['--mod'], {
+    env: { ...f.env, HUD_MOD_CURSOR: '0:0', HUD_MOD_LAST_DELIVERY: String(now - 60_000) },
+    stdout: (s) => { const r = JSON.parse(s); if (r.type === 'wake') wakes.push(r.lines); },
+    stderr: (s) => assert.fail(s),
+  }, { signal: ac.signal, rescanMs: 50, settlementWindowMs: 40 });
+  try {
+    await until(() => wakes.length > 0, t.signal);
+    const lines = wakes.flat();
+    assert.deepEqual(lines, [
+      `${freshId} imp fresh: closed | report | ${readHint(freshId)}`,
+      '20 older unread reports — hud_read view:compact',
+    ]);
+  } finally { ac.abort(); await run; }
+});
+
 test('a live pi watcher suppresses fallback, but dead, reused and mismatched PIDs do not', async (t) => {
   const f = queueFixture(t, 'pi'), pane = f.env.HERDR_PANE_ID;
   const pidFile = join(f.home, 'watchers', `${pane}.pid`);

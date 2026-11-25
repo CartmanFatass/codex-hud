@@ -374,9 +374,10 @@ function jobOwesCaller(dir: string, job: Record<string, unknown>, superseded: (j
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
   const row = jobRow(job, status, { dir, cache: jobCache });
-  if (failedAttempt(row) && superseded(job)) return false;
-  return row.display_state === 'working' || row.display_state === 'queued' || row.state === 'idle_grace' || row.report_unread || row.open_questions > 0 ||
-    (failedAttempt(row) && failureUnobserved(dir, job.observed_at, statusAt));
+  if (row.ticket_queue || (failedAttempt(row) && superseded(job))) return false;
+  const reportOwed = !row.parent_job && !row.land_turn && row.report_unread;
+  return row.display_state === 'working' || row.display_state === 'queued' || row.state === 'idle_grace' || reportOwed || row.open_questions > 0 ||
+    (!row.land_turn && failedAttempt(row) && failureUnobserved(dir, job.observed_at, statusAt));
 }
 
 export interface LeaseRecord {
@@ -509,9 +510,9 @@ function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnTy
       const reportMeta = jobRowReportMeta(row, dir);
       const checksAt = checks?.state === 'done' && !checks.stale
         ? fs.lstatSync(join(dir, jobFiles.checks), { throwIfNoEntry: false })?.mtimeMs : undefined;
-      // Directory mtime also moves on maintenance; only actionable artifacts count as live evidence.
-      const notice_mtime = Math.max(statusRes.status === 'ok' ? statusRes.at : receiptAt,
-        row.report_unread ? row.report_mtime ?? 0 : 0, checksAt ?? 0, adopted?.has(id) ? receiptAt : 0);
+      // Directory mtime and receipt rewrites (maintenance, adoption) are not new settlement evidence.
+      const statusAt = statusRes.status === 'ok' ? statusRes.at : (adopted?.has(id) ? (when(job.created_at) ?? 0) : receiptAt);
+      const notice_mtime = Math.max(statusAt, row.report_unread ? row.report_mtime ?? 0 : 0, checksAt ?? 0);
       rows.push({ ...row, notice_mtime, ...(checks ? { checks } : {}), ...(reportMeta ? { report_meta: reportMeta } : {}) });
     } catch {
       /* Job directory disappeared or became unreadable during the scan; skip it. */
