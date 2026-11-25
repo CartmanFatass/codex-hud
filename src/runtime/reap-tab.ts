@@ -2,14 +2,16 @@
  * of ownership. The shell and occupants must still carry the launch environment. */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { jobFiles } from '../mcp/paths.js';
 import type { JobStatus } from '../mcp/job-contracts.js';
 import { isActiveProcState, isValidPid, readProcStat } from '../utils/proc.js';
 import { herdrId } from '../roles/herdr-run.js';
-import { tabProcessStart } from './tab-owner.js';
+import { invocationWitness } from './cli-invocation.js';
+import { confirmIdleShells } from './tab-shell.js';
+import { sameTaskDirectory, tabProcessStart } from './tab-owner.js';
 
 const command = (args: string[], timeout = 15_000) => spawnSync('herdr', args, { encoding: 'utf8', timeout, killSignal: 'SIGKILL' });
 function query(args: string[], timeout?: number) {
@@ -38,11 +40,7 @@ function primary(task: string): JobStatus | undefined {
   try { text = fs.readFileSync(join(task, jobFiles.status), 'utf8'); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error; }
   const s = JSON.parse(text);
-  let canonicalDir;
-  if (typeof s?.task_dir === 'string' && isAbsolute(s.task_dir)) {
-    try { canonicalDir = fs.realpathSync(s.task_dir); } catch { /* Unresolved receipt is not ownership. */ }
-  }
-  if (s?.version !== 1 || s.slot !== 'primary' || !s.state || typeof s.state !== 'string' || canonicalDir !== task ||
+  if (s?.version !== 1 || s.slot !== 'primary' || !s.state || typeof s.state !== 'string' || !sameTaskDirectory(task, s.task_dir) ||
       s.pid != null && !isValidPid(s.pid) || s.pid_start_time != null && (!isValidPid(s.pid) || typeof s.pid_start_time !== 'string' || !/^\d+$/.test(s.pid_start_time)))
     throw Error('incompatible primary STATUS; cleanup incomplete');
   return s;
@@ -75,6 +73,10 @@ async function reap(task: string, after?: number) {
   if (alive() && callerAncestor(pid!)) refuse(`protected caller PID ${pid}; cleanup incomplete`);
   const info = session(task), left = info.TAB ? info.LEFT : info.RIGHT;
   if (!left || (!info.TAB && info.RIGHT_SPLIT !== '1')) refuse('missing pane receipt; cleanup incomplete');
+  if (s?.harness === 'cli' && alive()) {
+    const witness = invocationWitness(task, info.LAUNCH);
+    if (!witness || witness.pid !== pid || witness.start !== start) refuse('CLI invocation witness mismatch; cleanup incomplete');
+  }
   const ids = info.TAB ? [left, ...(info.RIGHT ? [info.RIGHT] : [])] : [left];
   const expectedSession = s?.session_file || s?.agent_session_id;
   const matches = (a: Row) => Boolean(info.PRIMARY && a.name === info.PRIMARY && a.pane_id === left &&
@@ -102,22 +104,24 @@ async function reap(task: string, after?: number) {
       (!matches(a) || a.tab_id !== tab))) refuse('foreign agent in recorded pane or binding changed; not closing');
     const agent = agents.find(matches);
     const foreground = new Map<number, string>();
+    const shells: Parameters<typeof confirmIdleShells>[3] = [];
     for (const p of selected) {
       const kind = s?.harness === 'cli' ? s.agent : info.PRIMARY ? 'pi' : undefined;
       if (p.agent && (!agent || agent.pane_id !== p.pane_id || p.agent !== kind)) refuse('unidentified agent in recorded pane; not closing');
       const proc = query(['pane', 'process-info', '--pane', p.pane_id])?.process_info;
       if (proc?.pane_id !== p.pane_id || !tabProcessStart(task, p.pane_id, tab, proc.shell_pid, info.LAUNCH) || !Array.isArray(proc.foreground_processes))
         refuse('pane launch ownership unverified; not closing');
+      shells.push({ pane: p.pane_id, pid: proc.shell_pid, group: proc.foreground_process_group_id, foreground: proc.foreground_processes });
       for (const item of proc.foreground_processes) {
-        if (item?.pid === proc.shell_pid) continue;
+        if (item?.pid === proc.shell_pid && item.pid === pid) refuse('recorded worker is the pane shell; left alone');
         if (s?.harness === 'cli' && item?.pid === pid && (item.name !== s.agent || proc.foreground_process_group_id !== pid))
           refuse('recorded CLI worker is not the expected foreground agent');
         const ticks = tabProcessStart(task, p.pane_id, tab, item?.pid, info.LAUNCH);
-        if (!ticks || p.pane_id !== left) refuse('foreign or unverified foreground occupant; not closing');
+        if (!ticks || p.pane_id !== left && item?.pid !== proc.shell_pid) refuse('foreign or unverified foreground occupant; not closing');
         foreground.set(item.pid, ticks!);
       }
     }
-    return { agent, foreground, tab };
+    return { agent, foreground, tab, shells };
   }
   let state = inspect();
   if (!state) return;
@@ -129,9 +133,10 @@ async function reap(task: string, after?: number) {
     if (!current || !matches(current) || current.tab_id !== state.tab || current.agent_session?.value !== state.agent.agent_session?.value)
       refuse('agent changed in recorded pane; left alone');
     if (['idle', 'done'].includes(current.agent_status)) {
-      if (!state.foreground.size || !alive() && (s?.harness === 'cli' || !(expectedSession && current.agent_session?.value === expectedSession)))
+      if (!isValidPid(pid) || !alive() || state.foreground.get(pid!) !== start || callerAncestor(pid!) ||
+          tabProcessStart(task, left!, state.tab, pid, info.LAUNCH) !== start)
         refuse('idle agent launch identity unverified; left alone');
-      verifiedRoot = alive() && state.foreground.get(pid!) === start && !callerAncestor(pid!);
+      verifiedRoot = true;
       const deadline = performance.now() + 30_000;
       command(['agent', 'prompt', left!, '/quit']);
       for (;;) {
@@ -159,9 +164,14 @@ async function reap(task: string, after?: number) {
     if (verifiedRoot && !alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
     return;
   }
-  if (state.agent || state.foreground.size || alive()) {
+  const shellPids = new Set(state.shells.map(shell => shell.pid));
+  if (state.agent || [...state.foreground.keys()].some(id => !shellPids.has(id)) || alive()) {
     if (verifiedRoot) console.log(`tree-owner ${pid}:${start}`); // A verified worker may be waiting for its child.
     refuse(state.agent ? `owned agent remains in ${left}` : 'worker or foreground process remains; not closing');
+  }
+  if (!confirmIdleShells(task, state.tab, info.LAUNCH, state.shells)) {
+    if (verifiedRoot) console.log(`tree-owner ${pid}:${start}`);
+    refuse('original shell identity or idle foreground unverified; not closing');
   }
   const kind = info.TAB ? 'tab' : 'pane', id = info.TAB || left!;
   const closed = command([kind, 'close', id]);

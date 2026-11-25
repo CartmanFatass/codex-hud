@@ -1,4 +1,4 @@
-import { tabProcessStart } from '../runtime/tab-owner.js';
+import { sameTaskDirectory, tabProcessStart } from '../runtime/tab-owner.js';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -56,18 +56,21 @@ export function rememberWorkerTree(dir: string, status: unknown, carry?: Snapsho
   try {
     if (!status || typeof status !== 'object') return {};
     const { pid, pid_start_time: start, slot, task_dir } = status as Record<string, unknown>;
-    if (!validPid(pid) || !validStart(start) || (task_dir !== dir && task_dir !== fs.realpathSync(dir))) return {};
+    if ((task_dir !== undefined || pid != null || start != null) && !sameTaskDirectory(dir, task_dir))
+      throw Error('worker receipt task directory mismatch');
+    if (pid == null && start == null) return {}; // No process identity was published.
+    if (!validPid(pid) || !validStart(start)) throw Error('incompatible worker PID/start receipt');
     const headless = slot === 'sonic' || slot === 'headless';
     let captureLive = true;
     if (headless) {
       const bootId = (status as Record<string, unknown>).boot_id;
-      if (bootId !== boot()) return {};
+      if (bootId !== boot()) throw Error('worker receipt boot identity mismatch');
       captureLive = sonicRoot(dir, pid, start, bootId) === 'owned';
     } else {
-      if (slot !== 'primary') return {};
+      if (slot !== 'primary') throw Error('worker receipt slot mismatch');
       const session = fs.readFileSync(join(dir, jobFiles.session), 'utf8');
       const pane = /^LEFT=([^\r\n]+)$/m.exec(session)?.[1];
-      if (!pane || pane === /^ORCH=([^\r\n]+)$/m.exec(session)?.[1]) return {};
+      if (!pane || pane === /^ORCH=([^\r\n]+)$/m.exec(session)?.[1]) throw Error('missing or protected worker pane identity');
     }
     const bootId = boot(), file = join(dir, jobFiles.workerTree);
     if (!bootId) throw Error('boot identity unavailable');

@@ -2,6 +2,11 @@ import { realpathSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { isActiveProcState, isValidPid, procStat, readProcEnviron } from '../utils/proc.js';
 
+export function sameTaskDirectory(task: string, claimed: unknown): boolean {
+  if (typeof claimed !== 'string' || !isAbsolute(claimed)) return false;
+  try { return realpathSync(claimed) === realpathSync(task); } catch { return false; }
+}
+
 /** Herdr supplies pane/tab IDs; HUD supplies the job directory on pane creation.
  * Bracket the env read with start ticks so it cannot stamp a recycled PID. */
 export function tabProcessStart(task: string, pane: string, tab: string, pid: unknown, launch?: string) {

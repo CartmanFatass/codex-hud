@@ -7,7 +7,9 @@ import { join, resolve } from 'node:path';
 import { isCliDirTrusted } from '../../cli/trust.js';
 import { cliKinds, type CliAgent } from '../../roles/cli-kinds.js';
 import { herdrId } from '../../roles/herdr-run.js';
-import type { RolePlace } from '../../roles/roster.js';
+import { executable, type RolePlace } from '../../roles/roster.js';
+import { recordTabShells } from '../../runtime/tab-shell.js';
+import { prepareCliInvocation } from '../../runtime/cli-invocation.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { isProcAlive } from '../../utils/proc.js';
 import { writeTurn, withDonePrompt, reportSignature } from '../cli-judge.js';
@@ -132,6 +134,8 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       startHeadlessProcess(dir, job, [...nativeArgs, ...kind.headless!(prompt, resume?.id, initialId)], { id: resume?.id, initialId });
       return { exit_code: 0, stdout: '', stderr: '' };
     }
+    const real = executable(place.agent!);
+    if (!real) return reject(launchError(`${place.agent} executable not found`));
     const agentArgs = resume ? kind.resume!(resume.id, nativeArgs) : nativeArgs;
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
@@ -159,7 +163,8 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
     for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
       const launch = randomUUID();
-      const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, '--no-focus']);
+      const witness = prepareCliInvocation(dir, launch, place.agent!, real);
+      const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, '--env', `PATH=${witness.dir}:${process.env.PATH ?? ''}`, '--no-focus']);
       if (result.exit_code !== 0) return reject(result);
       const { tab, root_pane } = JSON.parse(result.stdout).result;
       if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
@@ -186,9 +191,10 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       );
       jobCache.invalidateFile(sessionFile);
       writeCreateStatus(dir, starting); // Stop intent may arrive before the supervisor discovers the worker.
+      await recordTabShells(dir, launch, openedTab, [left]);
       const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
       if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
-      argv.push('--', ...agentArgs);
+      argv.push('--', witness.token, ...agentArgs);
       // Keep start arguments in detailed diagnostics only; never record the first prompt.
       if (!tabAttempt) {
         const args = agentArgs.slice(0, 32).map(arg => arg.length <= 128 ? arg : `${arg.slice(0, 127)}…`);
@@ -222,7 +228,6 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       const agent = got.exit_code === 0 ? JSON.parse(got.stdout).result?.agent : null;
       if (agent?.agent_session?.kind !== 'id' || agent.agent_session.value !== resume.id)
         return reject(launchError(`${place.agent} did not open the recorded session`));
-      writeCreateStatus(dir, { ...starting, agent_session_id: resume.id });
     }
     const turn = writeTurn(dir, { restarted: !!resume, callerToken });
     const prompt = withDonePrompt(resume?.message ?? startup.prompt, bundled, dir, turn, place.agent!);

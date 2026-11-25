@@ -113,7 +113,8 @@ if (command === 'pi-dispatch') {
     console.error(fs.readFileSync(failure, 'utf8') || 'synthetic start failed');
     process.exit(1);
   }
-  const nativeResume = args.includes('--resume') || args.includes('--conversation') || args[args.indexOf('--') + 1] === 'resume';
+  const first = args.indexOf('--') + 1, witnessToken = args[first]?.startsWith('--hud-invocation=') ? args[first] : null;
+  const nativeResume = args.includes('--resume') || args.includes('--conversation') || args[first + (witnessToken ? 1 : 0)] === 'resume';
   if (nativeResume) fs.rmSync(join(process.env.HUD_HOME, 'jobs', args[2].replace(/-primary$/, ''), 'agent-gone'), { force: true });
   const at = args.indexOf('--task-dir');
   if (!routingOnly && at >= 0) {
@@ -142,6 +143,18 @@ if (command === 'pi-dispatch') {
     const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], { detached: true, stdio: 'ignore' });
     sleeper.unref();
     writeFixtureFile(join(process.env.HOME, 'fake-agent-pid'), String(sleeper.pid));
+  }
+  if (witnessToken) {
+    const dir = join(process.env.HUD_HOME, 'jobs', args[2].replace(/-primary$/, ''));
+    const launch = /^LAUNCH=(.+)$/m.exec(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8'))[1];
+    const shims = join(dir, 'cli-invocations', launch);
+    if (!fs.readFileSync(join(shims, kind), 'utf8').includes(witnessToken)) throw Error('wrong synthetic invocation token');
+    // This fake models a successful agent.start, not a later discovery query.
+    const p = ['cli-pid', 'fake-agent-pid'].map(n => join(process.env.HOME, n)).find(fs.existsSync);
+    if (p) {
+      const pid = Number(fs.readFileSync(p)), stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+      fs.writeFileSync(join(shims, 'witness.json'), JSON.stringify({ pid, start: stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)[19] }), { flag: 'wx', mode: 0o600 });
+    } else fs.writeFileSync(join(shims, 'synthetic-start'), '', { flag: 'wx' });
   }
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'read' && !routingOnly) {
   const paneFile = join(process.env.HOME, 'pane-read');

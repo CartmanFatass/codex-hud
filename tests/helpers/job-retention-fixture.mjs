@@ -39,7 +39,7 @@ fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
     const dir = join(jobs, name);
     fs.mkdirSync(dir);
     writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: name, dispatch_exit_code: 0, ...receipt }));
-    if (status) writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify(status));
+    if (status) writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify(status.pid ? { version: 1, slot: 'primary', task_dir: dir, ...status } : status));
     if (tab) writeFixtureFile(join(dir, 'SESSION.txt'), 'TAB=synthetic-tab\n');
     writeFixtureFile(join(dir, 'report.md'), 'Synthetic report.');
     return dir;

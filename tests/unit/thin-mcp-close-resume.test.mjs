@@ -140,7 +140,7 @@ test('Codex uses the recorded thread ID and honors the role resume window', asyn
   fakeCliWithChild(t, f);
   assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic Codex continuation.' })).continuation, 'resumed');
   const args = starts(f).at(-1).args;
-  assert.deepEqual(args.slice(args.indexOf('--') + 1, args.indexOf('--') + 3), ['resume', id]);
+  assert.deepEqual(args.slice(args.indexOf('--') + 2, args.indexOf('--') + 4), ['resume', id]);
 });
 
 test('pi closes on native settlement after hud_report and resumes the saved file under the same job task', async (t) => {

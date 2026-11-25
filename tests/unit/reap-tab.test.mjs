@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
+import { createServer } from 'node:net';
+import { recordTabShells } from '../../dist/runtime/tab-shell.js';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { reapWorkerTree, tabTreeGrant } from '../../dist/roles/worker-tree.js';
+import { randomUUID } from 'node:crypto';
 import { procStat } from '../../dist/utils/proc.js';
 
 const cli = resolve('packages/hud-mcp/bin/hud-reap.mjs');
@@ -23,9 +26,10 @@ if (op === 'list') {
   const status = JSON.parse(fs.readFileSync(process.env.DIR + '/STATUS.json')), root = status.pid;
   const fg = s.foreground ?? (root ?? (s.agents.length ? s.occupant : 0));
   const live = fg && fs.existsSync('/proc/' + fg + '/stat') && !/\) [ZX] /.test(fs.readFileSync('/proc/' + fg + '/stat','utf8'));
-  out({process_info:{pane_id:args[3], shell_pid:s.shell, foreground_process_group_id:fg, foreground_processes:live ? [{pid:fg, name:status.agent || 'pi'}] : []}});
+  out({process_info:{pane_id:args[3], shell_pid:s.shell, foreground_process_group_id:live ? fg : s.shell, foreground_processes:live ? [{pid:fg, name:status.agent || 'pi'}] : [{pid:s.shell,name:'shell'}]}});
 } else if (kind === 'agent' && op === 'get') out({agent: s.replacement ?? s.agents.find(a => a.pane_id === target)});
 else if (kind === 'agent' && op === 'prompt' && args[3] === '/quit') {
+  process.kill(s.occupant, 'SIGTERM');
   s.quitPolls = 2; s.panes[0].agent = null; // Detached pane: agent still listed.
   out({});
 } else if (kind === 'tab' && op === 'close') { s.tabs = s.tabs.filter(t => t.tab_id !== target); out({}); }
@@ -38,11 +42,17 @@ function fixture(t, { status = 'idle', orch = 'main-pane', label = 'synthetic', 
   fs.mkdirSync(dir);
   fs.writeFileSync(join(root, 'herdr'), `#!${process.execPath}\n${herdr}`, { mode: 0o700 });
   const state = join(root, 'state'), log = `${state}.log`;
-  const tags = { HUD_JOB_DIR: dir, HERDR_PANE_ID: 'worker-pane', HERDR_TAB_ID: 'worker-tab', HUD_TAB_LAUNCH: 'original-launch' };
+  const launch = randomUUID();
+  const tags = { HUD_JOB_DIR: dir, HERDR_PANE_ID: 'worker-pane', HERDR_TAB_ID: 'worker-tab', HUD_TAB_LAUNCH: launch };
   const sleeper = (env) => {
     const p = spawn('/bin/sleep', ['600'], { env, stdio: 'ignore' }); t.after(() => p.kill('SIGKILL')); return p.pid;
   };
-  const shell = sleeper({ ...tags, ...(foreignShell && { HUD_TAB_LAUNCH: 'replacement' }) });
+  const sh = spawn('/bin/sh', ['-c', 'read line; exec /bin/sleep 600'], { detached: true, stdio: ['pipe','ignore','ignore'], env: { ...tags, ...(foreignShell && { HUD_TAB_LAUNCH: 'replacement' }) } });
+  t.after(() => sh.kill('SIGKILL'));
+  const shell = sh.pid, exe = `/proc/${shell}/exe`, image = fs.statSync(exe, { bigint: true });
+  fs.writeFileSync(join(dir, 'tab-shells.json'), JSON.stringify({ launch, tab: 'worker-tab', shells: [
+    { pane: 'worker-pane', pid: shell, start: procStat(shell).start, exe: fs.readlinkSync(exe), inode: `${image.dev}:${image.ino}` },
+  ] }));
   const occupant = sleeper(tags);
   const native = join(dir, 'pi.jsonl');
   const agent = { agent_session: { value: native }, pane_id: 'worker-pane', tab_id: 'worker-tab', name, agent_status: status };
@@ -50,12 +60,12 @@ function fixture(t, { status = 'idle', orch = 'main-pane', label = 'synthetic', 
     tabs: [{ tab_id: 'worker-tab', label }], panes: [{ pane_id: 'worker-pane', tab_id: 'worker-tab', agent: status && 'pi' },
       { pane_id: 'main-pane', tab_id: 'main-tab', agent: 'pi' }], agents: status ? [agent] : [], replacement: replacement && { ...agent, ...replacement },
   }));
-  fs.writeFileSync(join(dir, 'SESSION.txt'), `LAUNCH=original-launch\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\nORCH=${orch}\nPRIMARY=worker\n`);
+  fs.writeFileSync(join(dir, 'SESSION.txt'), `LAUNCH=${launch}\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\nORCH=${orch}\nPRIMARY=worker\n`);
   const env = { ...process.env, HOME: root, HUD_HOME: root, DIR: dir, STATE: state, PATH: root, PI_ROLES_LEDGER: join(root, 'ledger') };
   const put = (fields) => fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ version: 1, task_dir: dir, slot: 'primary', session_file: native, state: 'idle_grace', ...fields }));
   put({});
   const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trimEnd().split('\n').map(l => JSON.parse(l)) : [];
-  return { dir, env, tags, put, calls, root, state, run: (...args) => spawnSync(process.execPath, [cli, dir, ...args], { env, encoding: 'utf8', timeout: 15000 }) };
+  return { dir, env, tags, put, calls, root, state, occupant, sh, launch, run: (...args) => spawnSync(process.execPath, [cli, dir, ...args], { env, encoding: 'utf8', timeout: 15000 }) };
 }
 function worker(t, f) {
   // Even with the exact task dir in argv, only the start stamp can authorize SIGTERM.
@@ -67,7 +77,7 @@ function worker(t, f) {
 test('idle/done: one /quit, wait for inventory (not just pane detachment), verify tab closed; no ledger or stop marker', t => {
   for (const status of ['idle', 'done']) {
     const f = fixture(t, { status });
-    f.put({ session_id: 'synthetic-run' });
+    f.put({ session_id: 'synthetic-run', pid: f.occupant, pid_start_time: procStat(f.occupant).start });
     const r = f.run(); assert.equal(r.status, 0, r.stderr);
     const log = f.calls();
     assert.deepEqual(log.filter(a => ['prompt','close'].includes(a[1])), [['agent','prompt','worker-pane','/quit'], ['tab','close','worker-tab']]);
@@ -76,6 +86,45 @@ test('idle/done: one /quit, wait for inventory (not just pane detachment), verif
     assert.equal(fs.existsSync(join(f.dir, 'STATUS.json.stop-requested')), false);
     assert.equal(fs.existsSync(f.env.PI_ROLES_LEDGER), false);
   }
+});
+
+test('missing or exited stamped Pi cannot quit a replacement on the identical transcript', async t => {
+  for (const dead of [false, true]) {
+    const f = fixture(t);
+    if (dead) {
+      const original = worker(t, f), start = procStat(original.pid).start, end = once(original, 'exit'); original.kill(); await end;
+      f.put({ pid: original.pid, pid_start_time: start });
+    }
+    const state = JSON.parse(fs.readFileSync(f.state)); state.foreground = f.occupant; fs.writeFileSync(f.state, JSON.stringify(state));
+    const r = f.run(); assert.equal(r.status, 1); assert.match(r.stderr, /idle agent launch identity unverified/);
+    assert.ok(!f.calls().some(a => ['prompt','close'].includes(a[1])));
+    assert.ok(!/^[XZ]$/.test(procStat(f.occupant).state));
+  }
+});
+
+test('launch-time shell capture permits the same otherwise-empty foreground shell, not a missing receipt', async t => {
+  const f = fixture(t, { status: null }); fs.unlinkSync(join(f.dir, 'tab-shells.json'));
+  assert.equal(f.run().status, 1); assert.ok(!f.calls().some(a => a[1] === 'close'));
+  const socket = join(f.root, 'herdr.sock'), server = createServer(conn => conn.once('data', bytes => {
+    const msg = JSON.parse(bytes.toString());
+    assert.equal(msg.method, 'pane.process_info');
+    conn.end(JSON.stringify({ id: msg.id, result: { process_info: { pane_id: 'worker-pane', shell_pid: f.sh.pid } } }) + '\n');
+  }));
+  server.listen(socket); await once(server, 'listening');
+  const prior = process.env.HERDR_SOCKET_PATH; process.env.HERDR_SOCKET_PATH = socket;
+  try { await recordTabShells(f.dir, f.launch, 'worker-tab', ['worker-pane']); }
+  finally { if (prior === undefined) delete process.env.HERDR_SOCKET_PATH; else process.env.HERDR_SOCKET_PATH = prior; await new Promise(done => server.close(done)); }
+  const r = f.run(); assert.equal(r.status, 0, r.stderr); assert.ok(f.calls().some(a => a[1] === 'close'));
+});
+
+test('exec in the original shell keeps the tab even with identical PID, start, session and foreground group', async t => {
+  const f = fixture(t, { status: null }), pid = f.sh.pid, start = procStat(pid).start;
+  f.sh.stdin.end('replace\n');
+  const { until } = await import('../helpers/until.mjs');
+  await until(() => fs.readlinkSync(`/proc/${pid}/exe`).endsWith('/sleep'), 2000);
+  assert.equal(procStat(pid).start, start);
+  const r = f.run(); assert.equal(r.status, 1); assert.match(r.stderr, /original shell identity/);
+  assert.ok(!f.calls().some(a => a[1] === 'close'));
 });
 
 test('renamed tab, foreign occupant, changed occupant and orchestrator pane are never quit or closed', async t => {
@@ -107,6 +156,8 @@ test('working CLI: publish stop before exact-PID SIGTERM; skip /quit and idle po
   await once(child.stdout, 'data');
   const end = once(child, 'exit');
   const state = JSON.parse(fs.readFileSync(f.state)); state.panes[0].agent = 'codex'; fs.writeFileSync(f.state, JSON.stringify(state));
+  const proof = join(f.dir, 'cli-invocations', f.launch); fs.mkdirSync(proof, { recursive: true });
+  fs.writeFileSync(join(proof, 'witness.json'), JSON.stringify({ pid: child.pid, start: procStat(child.pid).start }));
   f.put({ state: 'working', harness: 'cli', agent: 'codex', pid: child.pid, pid_start_time: procStat(child.pid).start });
   const r = f.run(); assert.equal(r.status, 1, r.stderr); assert.match(r.stderr, /owned agent remains/);
   assert.deepEqual(await end, [0, null]);

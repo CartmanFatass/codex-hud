@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { prepareCliInvocation, invocationWitness } from '../../dist/runtime/cli-invocation.js';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import { createServer as httpServer } from 'node:http';
@@ -27,14 +29,26 @@ async function until(t, ready) {
   while (!ready()) await delay(10, null, { signal: t.signal });
 }
 
-async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload, pendingIdentity = false, foreign = false } = {}) {
+async function fixture(t, { hang, resistant = false, fail = false, report = false, sonic = false, model, preload, pendingIdentity = false, foreign = false, replacement = false, missingWitness = false } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-cli-async-'));
   const home = join(root, 'hud'), jobs = join(home, 'jobs'), bin = join(root, 'bin');
   const untrack = trackFixture({ root, hudHome: home });
   const job = 'j0000000000000001', dir = join(jobs, job), herdrPath = join(root, 'herdr.sock');
   const env = { PATH: bin, NODE_OPTIONS: reapStubOptions(bin), HOME: join(root, 'home'), HUD_HOME: home, HERDR_SOCKET_PATH: herdrPath, TZ: 'UTC' };
-  const agent = spawn(process.execPath, ['-e', 'setInterval(()=>{},60000)'], { stdio: 'ignore', env: { ...env, HUD_JOB_DIR: foreign ? root : dir, HERDR_PANE_ID: 'synthetic-pane', HERDR_TAB_ID: tab } });
+  fs.mkdirSync(dir, { recursive: true });
+  const launch = randomUUID(), { dir: shims, token } = prepareCliInvocation(dir, launch, 'grok', process.execPath);
+  const shim = join(shims, 'grok'), agentEnv = { ...env, HUD_JOB_DIR: foreign ? root : dir, HUD_TAB_LAUNCH: launch, HERDR_PANE_ID: 'synthetic-pane', HERDR_TAB_ID: tab };
+  if (replacement) {
+    const original = spawnSync(shim, [token, '-e', 'console.log(process.pid)'], { env: agentEnv, encoding: 'utf8' });
+    assert.equal(original.status, 0, original.stderr);
+    const proof = invocationWitness(dir, launch); assert.equal(proof.pid, Number(original.stdout));
+    assert.equal(fs.statSync(join(shims, 'witness.json')).mode & 0o777, 0o600);
+    const replay = spawnSync(shim, [token, '-e', 'console.log("should not run")'], { env: agentEnv, encoding: 'utf8' });
+    assert.notEqual(replay.status, 0); assert.equal(replay.stdout, ''); assert.deepEqual(invocationWitness(dir, launch), proof);
+  }
+  const agent = spawn(shim, [...(replacement || missingWitness ? [] : [token]), '-e', 'console.log("ready");setInterval(()=>{},60000)'], { stdio: ['ignore','pipe','inherit'], env: agentEnv });
   t.after(() => agent.kill('SIGKILL'));
+  await once(agent.stdout, 'data');
   let discover = !pendingIdentity;
   const subscribers = new Map(), sockets = new Set(), children = [];
   let calls = 0, disconnected = false;
@@ -73,14 +87,13 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
       `Fixture left live process(es) for ${home}: ${survivors.map((p) => `${p.pid} (${p.state}) ${p.cmdline}`).join('; ')}`
     );
   });
-  fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(bin);
   fs.mkdirSync(env.HOME);
   const turn = { seq: 1, sent_at: new Date().toISOString(), report_sig: null };
   const record = { job, role: 'imp', dispatch_exit_code: 0, cli: { agent: 'grok', idle_grace_s: 0.05, can_continue: true } };
   save(dir, 'turn.json', turn);
   save(dir, 'STATUS.json', { state: 'working' });
-  fs.writeFileSync(join(dir, 'SESSION.txt'), `TAB=${tab}\nLEFT=synthetic-pane\nPRIMARY=synthetic-agent\n`);
+  fs.writeFileSync(join(dir, 'SESSION.txt'), `TAB=${tab}\nLEFT=synthetic-pane\nPRIMARY=synthetic-agent\nLAUNCH=${launch}\n`);
   function finishReport() {
     writeFixtureFile(join(dir, 'report.md'), 'Synthetic report.');
     save(dir, 'done.json', { ...turn, report_sig: reportSignature(dir), at: new Date().toISOString() });
@@ -158,6 +171,14 @@ test('stable foreign foreground from discovery through stop cannot acquire a PID
   await until(t, () => status(f.dir)?.reason === 'stop pending verified worker identity');
   assert.equal(status(f.dir).pid, null);
   assert.equal(f.agent.exitCode, null);
+});
+
+for (const mode of ['replacement', 'missingWitness']) test(`same CLI in the original shell without exact invocation proof is not adopted (${mode})`, watchdog, async t => {
+  const f = await fixture(t, { [mode]: true });
+  await until(t, () => status(f.dir).supervisor_pid && f.cli.stderr().includes('identity not adopted'));
+  assert.equal(status(f.dir).pid, null); assert.equal(status(f.dir).agent_session_id, null);
+  f.stop(); await until(t, () => status(f.dir)?.reason === 'stop pending verified worker identity');
+  assert.equal(status(f.dir).pid_start_time, null); assert.equal(f.agent.signalCode, null);
 });
 
 async function expectState(t, f, state, reason) {

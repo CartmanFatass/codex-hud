@@ -1,4 +1,5 @@
 /** Pi launch and native session setup. */
+import { recordTabShells } from '../../runtime/tab-shell.js';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { sonicArgv } from './pi-worker-argv.js';
@@ -241,6 +242,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
         if (!herdrId(right)) throw new Error('split did not return a pane id');
         record();
       }
+      await recordTabShells(dir, launch, openedTab, right ? [left, right] : [left]);
       started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
       if (!await retryBusyPane(started, tabAttempt, openedTab)) break;
       openedTab = undefined;

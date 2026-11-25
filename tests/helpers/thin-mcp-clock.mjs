@@ -4,7 +4,7 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
   const fs = (await import('node:fs')).default;
   const { join } = await import('node:path');
   const { syncBuiltinESMExports } = await import('node:module');
-  const isCli = script.endsWith('/hud-cli.mjs');
+  const isCli = script.endsWith('/hud-cli.mjs') && process.argv[2] !== '--exec-witness';
   const isWatcher = script.endsWith('/hud-watch.mjs');
 
   // Accelerate deadlines, not observations: production still wakes from real socket/file events.
@@ -37,6 +37,13 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
     // These supervisor fixtures use stand-in foreground PIDs created outside a
     // pane. Model the environment herdr actually injects into that one occupant.
     const readFile = fs.readFileSync, dir = process.argv[2];
+    const launch = /^LAUNCH=(.+)$/m.exec(readFile(join(dir, 'SESSION.txt'), 'utf8'))?.[1];
+    const shims = launch && join(dir, 'cli-invocations', launch);
+    if (shims && fs.existsSync(join(shims, 'synthetic-start')) && !fs.existsSync(join(shims, 'witness.json'))) {
+      // The supervisor PID stands in for this fixture's original CLI when no disposable PID was supplied.
+      const start = readFile('/proc/self/stat', 'utf8').split(') ').at(-1).split(' ')[19];
+      fs.writeFileSync(join(shims, 'witness.json'), JSON.stringify({ pid: process.pid, start }), { flag: 'wx', mode: 0o600 });
+    }
     fs.readFileSync = (file, ...args) => {
       const pid = /^\/proc\/(\d+)\/environ$/.exec(String(file))?.[1];
       if (pid && (pid === String(process.pid) || ['cli-pid', 'fake-agent-pid'].some(name => {

@@ -1,4 +1,5 @@
 /** Browser-worker launch. */
+import { recordTabShells } from '../../runtime/tab-shell.js';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { herdrId } from '../../roles/herdr-run.js';
@@ -42,6 +43,7 @@ export async function dispatchBro(job: Job, task: string): Promise<DispatchResul
     { mkdir: false }
   );
   jobCache.invalidateFile(sessionFile);
+  await recordTabShells(dir, launch, tab.tab_id, [root_pane.pane_id]);
   const script = binScript('hud-jev.mjs');
   return run('herdr', ['pane', 'run', root_pane.pane_id, [process.execPath, script, dir, String(task.length)].map(quote).join(' ')]);
 }

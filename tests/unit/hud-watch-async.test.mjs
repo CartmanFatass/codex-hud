@@ -311,6 +311,7 @@ test('failed Pi read-close retries its live root after the tab disappears', asyn
     { created_at: created, read_at: new Date().toISOString() });
   fs.utimesSync(join(dir, 'report.md'), reportTime, reportTime);
   tab(dir, 'pi');
+  fs.appendFileSync(join(dir, 'SESSION.txt'), 'LEFT=pi-worker\n');
   reapStub(f, `if (!fs.existsSync(join(dir, 'tab-gone'))) {
     fs.writeFileSync(join(dir, 'waiting-for-tab-close'), '');
     while (!fs.existsSync(join(dir, 'tab-gone'))) await delay(10);

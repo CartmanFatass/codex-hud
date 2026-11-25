@@ -3,6 +3,7 @@ import { recordFailureExhaustion } from '../roles/roster.js';
 import { decideQuietJob } from '../mcp/quiet-decision.js';
 import { loadSettings } from '../settings.js';
 import { beginPrompt, cliWorkerTools, endPrompt, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment } from '../mcp/cli-judge.js';
+import { invocationWitness } from './cli-invocation.js';
 import { tabProcessStart } from './tab-owner.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { fileStampOf, statsMtimeMs } from '../roles/job-index-cache.js';
@@ -48,13 +49,15 @@ export async function main() {
   }
   let initialStatus: JobStatus | null = null;
   try { initialStatus = readJsonFile(statusFile) as JobStatus; } catch { /* Fresh job has no STATUS yet. */ }
+  const witness = invocationWitness(dir, session.LAUNCH);
+  const restore = witness && initialStatus?.pid === witness.pid && initialStatus.pid_start_time === witness.start;
   let current: JobStatus = {
     version: 1, task_dir: dir, slot: 'primary', harness: 'cli', agent: cli.agent,
     role: job.role, model: job.model ?? null, thinking: job.thinking ?? null,
     state: 'working', output_path: output, output_written: false,
-    pid: Number.isInteger(initialStatus?.pid) ? initialStatus!.pid : null,
-    pid_start_time: typeof initialStatus?.pid_start_time === 'string' ? initialStatus.pid_start_time : null,
-    agent_session_id: typeof initialStatus?.agent_session_id === 'string' ? initialStatus.agent_session_id : null,
+    pid: restore ? witness.pid : null,
+    pid_start_time: restore ? witness.start : null,
+    agent_session_id: restore ? initialStatus?.agent_session_id ?? null : null,
     started_at: typeof initialStatus?.started_at === 'string' ? initialStatus.started_at : new Date().toISOString(),
     settled_at: null, idle_deadline_at: null,
     ended_at: null, exit_reason: null, error: null, supervisor_pid: process.pid,
@@ -155,6 +158,8 @@ export async function main() {
     observeStatus(bound ? agent.agent_status ?? null : null);
     return bound ? agent : undefined;
   }
+  let refusedInvocation = !witness;
+  if (!witness) console.error('CLI invocation witness missing or invalid; identity not adopted');
   async function foreground(signal: AbortSignal) {
     const epoch = generation;
     const info = (await request('pane.process_info', { pane_id: pane }, { signal }))?.result?.process_info;
@@ -163,7 +168,9 @@ export async function main() {
     if (signal.aborted || epoch !== generation || info?.pane_id !== pane || !pid || pid === info.shell_pid ||
         !info.foreground_processes?.some(p => p.pid === pid && p.name === cli.agent)) return;
     const start = tabProcessStart(dir, pane, session.TAB, pid, session.LAUNCH);
-    if (start) return { pid, start };
+    if (start && witness?.pid === pid && witness.start === start) { refusedInvocation = false; return witness; }
+    if (!refusedInvocation) console.error('CLI invocation witness missing or does not match the foreground worker; identity not adopted');
+    refusedInvocation = true;
   }
   function connect() {
     if (stopped || !process.env.HERDR_SOCKET_PATH) return;
@@ -240,7 +247,7 @@ export async function main() {
   function write(result: Judgment) {
     const terminal = ['closed', 'failed', 'stopped'].includes(result.state);
     const iso = (time: number | null) => time === null ? null : new Date(time).toISOString();
-    const row: JobStatus = { ...current, state: result.state, blocked: result.blocked, reason: result.reason,
+    const row: JobStatus = { ...current, state: result.state, blocked: result.blocked, reason: result.reason ?? (refusedInvocation ? 'CLI invocation identity unverified' : null),
       output_written: result.outputWritten, settled_at: iso(result.settledAt), idle_deadline_at: iso(result.deadline),
       ...(job.checks?.length ? { declared_report_sig: result.declared ? result.reportSig : null } : {}),
       ended_at: terminal ? current.ended_at ?? iso(Date.now()) : null, exit_reason: result.exitReason,
