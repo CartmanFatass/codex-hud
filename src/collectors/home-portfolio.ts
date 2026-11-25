@@ -6,6 +6,7 @@ import { compareOwnerRequests, ProjectCollector, projectJobWindow, type ProjectI
 import type { WorkboardSnapshot } from './workboard-types.js';
 import { archivedActivityProjects, localDayStart } from './job-stats.js';
 import { advisorForProject, readAdvisorRecommendations, readAdvisorRuleHits, type AdvisorRuleHit } from './advisor-shadow.js';
+import { AdvisorHistory, type AdviceEvent } from './advisor-history.js';
 
 export interface HomeProject extends ListedProject {
   snapshot?: ProjectSnapshot;
@@ -15,7 +16,7 @@ export interface HomeProject extends ListedProject {
   advisorRules?: AdvisorRuleHit;
 }
 export interface HomeRequest { project: HomeProject; item: ProjectItem; index: number }
-export interface HomePortfolio { projects: HomeProject[]; requests: HomeRequest[] }
+export interface HomePortfolio { projects: HomeProject[]; requests: HomeRequest[]; recentAdvice?: AdviceEvent[] }
 
 const priorities: Record<ObjectiveRecord['priority'], number> = { high: 1, normal: 0, low: -1 };
 const priority = (p: HomeProject) => priorities[p.snapshot?.objectives?.priority ?? 'normal'];
@@ -55,8 +56,12 @@ function compareProjects(a: HomeProject, b: HomeProject): number {
 export class HomePortfolioCollector {
   private pool = new Map<string, ProjectCollector>();
   private receipts: ResultReceipts;
+  private advice: AdvisorHistory;
   private history?: { since: number; at: number; projects: ReadonlySet<string> };
-  constructor(private home: string) { this.receipts = new ResultReceipts(join(home, 'events')); }
+  constructor(private home: string) {
+    this.receipts = new ResultReceipts(join(home, 'events'));
+    this.advice = new AdvisorHistory(home);
+  }
 
   private jobHistory(since: number, now: number) {
     const hit = this.history;
@@ -107,6 +112,7 @@ export class HomePortfolioCollector {
     // Build requests in the original list order so project-block sorting cannot affect request ties.
     const requests = projects.flatMap((project) => project.snapshot?.waiting.map((item, index) => ({ project, item, index })) ?? []);
     requests.sort((a, b) => compareOwnerRequests(a.item, b.item, priority(a.project), priority(b.project)));
-    return { projects: projects.sort(compareProjects), requests };
+    const recentAdvice = this.advice.read(now);
+    return { projects: projects.sort(compareProjects), requests, ...(recentAdvice.length && { recentAdvice }) };
   }
 }

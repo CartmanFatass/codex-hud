@@ -387,7 +387,8 @@ function saveState(hudHome: string, state: AdvisorStateFile): void {
 /** Append one advice fact to `$HUD_HOME/events/<YYYY-MM>.jsonl` (0600, O_NOFOLLOW). */
 export function appendAdviceEvent(
   hudHome: string,
-  event: { session: string; at: string; ms: number } & ({ skill: string } | { kind: 'rule_hits'; rules: string[] })
+  event: { session: string; project: string; at: string; ms: number } &
+    ({ skill: string; path: string } | { kind: 'rule_hits'; rules: string[] })
 ): void {
   const dir = path.join(hudHome, 'events');
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -582,7 +583,9 @@ export async function adviseOnMessage(
     try {
       appendAdviceEvent(hudHome, {
         session,
-        skill: matched.name,
+        project: rec.projectRoot,
+        skill: rec.skill,
+        path: rec.path,
         at: new Date(finishedAt).toISOString(),
         ms,
       });
@@ -757,7 +760,8 @@ export async function adviseOnReply(
       const hit = { session: input.session, projectRoot: resolveAdvisorProjectRoot(input.projectRoot), rules: hits, at };
       state.hits = [hit, ...state.hits.filter((item) => item.session !== input.session)].slice(0, MAX_RULE_NOTICES);
       writeJsonPrivate(ruleStatePath(hudHome), state);
-      appendAdviceEvent(hudHome, { kind: 'rule_hits', session: input.session, rules: hits.map(({ id }) => id), at: iso, ms });
+      appendAdviceEvent(hudHome, { kind: 'rule_hits', session: hit.session, project: hit.projectRoot,
+        rules: hits.map(({ id }) => id), at: iso, ms });
     });
     if (hits.length) notifyAdvisorListeners(hudHome);
   } catch { /* Rules are best-effort and never write into a session. */ }

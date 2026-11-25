@@ -1,4 +1,6 @@
 /** Portfolio handoff. A job waiting for main is not an owner request. */
+import { basename } from 'node:path';
+import { RECENT_ADVICE_MS } from '../collectors/advisor-history.js';
 import { blockedObjectives, ownerRequestKey, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { Objective } from '../collectors/objectives.js';
 import { homeActivityAt, type HomePortfolio, type HomeProject, type HomeRequest } from '../collectors/home-portfolio.js';
@@ -182,6 +184,26 @@ function advisorRows(v: ProjectView, width: number): MonitorRow[] {
   ];
 }
 
+function recentAdviceRows({ recentAdvice, projects }: HomePortfolio, width: number, now: number, room: number): MonitorRow[] {
+  const events = recentAdvice?.filter(({ at }) => at <= now && now - at <= RECENT_ADVICE_MS);
+  if (!events?.length || events.length + 1 > room) return [];
+  const ink = theme.board;
+  return [section(t('Recent advice'), width), ...events.map((event) => {
+    const { project, session, at } = event;
+    const name = project ? monitorText(projects.find(({ root }) => root === project)?.name ?? (basename(project) || project))
+      : t('unknown project');
+    const age = compactAge(at, now);
+    const detail = event.kind === 'advice' ? t('skill: {name}', { name: monitorText(event.skill) })
+      : t('rules: {ids}', { ids: monitorText(event.rules.join(' ')) });
+    const detailRoom = Math.min(cells(detail), Math.max(14, Math.floor(width / 2)));
+    const nameWidth = Math.max(1, width - cells(age) - 2 - detailRoom);
+    const row = boardRow(fit(`${ink.muted(age)} ${ink.muted(truncateAnsi(name, nameWidth))} ${ink.text(detail)}`, width));
+    if (event.kind !== 'advice' || !project || !event.path) return row;
+    return { ...row, item: `home:recent-advice:${JSON.stringify([at, session, project, event.skill])}`,
+      advisorCopy: { root: project, session, skill: event.skill, path: event.path } };
+  })];
+}
+
 function compactProjects(projects: ProjectView[], width: number): MonitorRow[][] {
   const nameCol = Math.min(11, nameCap(width), Math.max(1, width - 10));
   const rollups = projects.map((v) => !v.unavailable ? progress(v.features, v.open.flatMap((o) => o.features)) : undefined);
@@ -208,7 +230,12 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
   const { requests, projects } = portfolio;
   const top = requests.length ? [section(t('Waiting'), width, String(requests.length)), ...requests.flatMap((r) => requestRows(r, width, now))] : [];
   top.push(section(t('Projects'), width, width < 56 ? t('done/tickets') : ''));
-  const withCards = (rows: MonitorRow[]) => [...rows, ...homeCardRows(todayFacts, schedule, projects, width, now, room - rows.length)];
+  const withCards = (rows: MonitorRow[]) => {
+    const cards = homeCardRows(todayFacts, schedule, projects, width, now, room - rows.length);
+    // Recent advice only uses spare height when the other Home blocks are still at full size.
+    const advice = cards.full ? recentAdviceRows(portfolio, width, now, room - rows.length - cards.rows.length) : [];
+    return [...rows, ...advice, ...cards.rows];
+  };
   if (!projects.length) return withCards([...top, boardRow(fit(ink.muted(t('No registered projects')), width))]);
   const today = projects.filter((p) => p.activeToday), count = projects.length - today.length;
   const fold = count ? [{

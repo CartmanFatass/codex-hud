@@ -22,14 +22,17 @@ import {
   readAdvisorRuleNotice,
   scrubSecrets,
 } from '../../dist/collectors/advisor-shadow.js';
+import { AdvisorHistory } from '../../dist/collectors/advisor-history.js';
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
 import { panelActionLine, PANEL_ACTIONS_FILE } from '../../dist/collectors/panel-actions.js';
 import { adviseCommand } from '../../dist/cli/advise.js';
 import { installPiPackage } from '../../dist/harness/pi/package-entry.js';
 import { createPanelActions } from '../../dist/panel/actions.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
+import { scheduleView } from '../../dist/render/home-cards.js';
 import { homeRows } from '../../dist/render/home-view.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
+import { setLanguage } from '../../dist/render/i18n.js';
 import { renderBar } from '../../dist/render/layout/bar-fields.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { loadSettings } from '../../dist/settings.js';
@@ -172,9 +175,11 @@ test('recommendation renders in bar notice zone (Text + Nerd, after quota, 10m) 
   const rawMessage = `Help me write tests first. Token sk-proj-abcdefghijklmnopqrstuvwxyz123456 Bearer secret_token_value_1234567890 ${'x'.repeat(2500)}`;
   const rawReply = `Sure, API_KEY=supersecretvalue99999 ${'y'.repeat(2500)}`;
 
+  const alias = path.join(f.root, 'project-link');
+  fs.symlinkSync(f.projectRoot, alias, 'dir');
   const rec = await adviseOnMessage(
     f.hudHome,
-    { session: 'sess-1', projectRoot: f.projectRoot, message: rawMessage, previousReply: rawReply, messageId: 'm1' },
+    { session: 'sess-1', projectRoot: alias, message: rawMessage, previousReply: rawReply, messageId: 'm1' },
     { env: f.env, now }
   );
   assert.ok(rec);
@@ -203,7 +208,9 @@ test('recommendation renders in bar notice zone (Text + Nerd, after quota, 10m) 
   assert.equal(eventLines.length, 1);
   assert.equal(eventLines[0].kind, 'advice');
   assert.equal(eventLines[0].session, 'sess-1');
+  assert.equal(eventLines[0].project, fs.realpathSync(f.projectRoot));
   assert.equal(eventLines[0].skill, 'tdd');
+  assert.equal(eventLines[0].path, tddPath);
   assert.equal(eventLines[0].at, new Date(now).toISOString());
   assert.ok(Number.isInteger(eventLines[0].ms) && eventLines[0].ms >= 0);
 
@@ -280,8 +287,12 @@ test('batches rules with secret-scrubbed excerpts, shows hits beside skills, and
   configureStubDecision(f.env, f.hudHome, api.baseUrl);
   fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ advisorShadow: true, advisorRulesFile: rulesFile }));
   const now = Date.parse('2026-11-24T20:00:00.000Z');
+  const nested = path.join(f.projectRoot, 'subdir');
+  fs.mkdirSync(nested);
+  fs.mkdirSync(path.join(f.projectRoot, '.git'));
+  fs.writeFileSync(path.join(f.projectRoot, '.git', 'HEAD'), 'ref: refs/heads/main\n');
   const input = {
-    session: 'hit-session', projectRoot: f.projectRoot, replyId: 'r1',
+    session: 'hit-session', projectRoot: nested, replyId: 'r1',
     message: `API_KEY=synthetic-owner-key ${'m'.repeat(2500)} owner tail`,
     reply: `reply head ${'r'.repeat(4500)} API_KEY=synthetic-reply-key reply tail`,
   };
@@ -347,7 +358,8 @@ test('batches rules with secret-scrubbed excerpts, shows hits beside skills, and
   const event = JSON.parse(fs.readFileSync(eventsFile, 'utf8'));
   const { ms, ...rest } = event;
   assert.ok(Number.isInteger(ms) && ms >= 0);
-  assert.deepEqual(rest, { v: 1, kind: 'rule_hits', session: input.session, rules: ['R2', 'R5'], at: new Date(now).toISOString() });
+  assert.deepEqual(rest, { v: 1, kind: 'rule_hits', session: input.session, project: fs.realpathSync(f.projectRoot),
+    rules: ['R2', 'R5'], at: new Date(now).toISOString() });
   const counters = path.join(f.hudHome, 'events', 'advisor-counters.json');
   assert.equal(fs.statSync(counters).mode & 0o777, 0o600);
   assert.deepEqual(JSON.parse(fs.readFileSync(counters, 'utf8')), { '2026-11': { rule_no_hits: 2 } });
@@ -487,6 +499,125 @@ test('panel Enter and click emit copy-advisor, write OSC 52 (+ WSL clip.exe), an
   assert.equal(logged.path, tddPath);
   // Panel copy log must never surface into hud watch / MCP changes.
   assert.equal(panelActionLine(actionLog[0], () => true, projectRoot), undefined);
+});
+
+test('Home recent advice spans sessions and UTC months, expires, caps at five, and copies only recorded skill paths', async (t) => {
+  const f = setupEnv(t);
+  const previousSettings = process.env.HUD_SETTINGS_PATH;
+  process.env.HUD_SETTINGS_PATH = f.env.HUD_SETTINGS_PATH;
+  const prevDisplay = setDisplayConfig({ theme: 'none', icons: 'text' }), prevLang = setLanguage('en');
+  t.after(() => {
+    if (previousSettings === undefined) delete process.env.HUD_SETTINGS_PATH;
+    else process.env.HUD_SETTINGS_PATH = previousSettings;
+    setDisplayConfig(prevDisplay);
+    setLanguage(prevLang);
+  });
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, '{"advisorShadow":true}');
+  const now = Date.parse('2027-01-01T00:20:00Z'), min = 60_000, day = 24 * 60 * min;
+  const other = path.join(f.root, 'other-project');
+  const skillPath = writeSkill(f.skillsDir, 'review', 'review', 'Review a change.');
+  const append = (delta, event) => {
+    const at = new Date(now + delta).toISOString();
+    const dir = path.join(f.hudHome, 'events');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, `${at.slice(0, 7)}.jsonl`), JSON.stringify({ v: 1, at, ms: 3, ...event }) + '\n');
+  };
+  append(-5 * min, { kind: 'rule_hits', session: 'a', project: other, rules: ['R3', 'R8'] });
+  append(-8 * min, { kind: 'advice', session: 'b', project: f.projectRoot, skill: 'review', path: skillPath });
+  append(-6 * min, { kind: 'advice', session: 'a', skill: 'legacy' });
+  append(-2 * min, { kind: 'objective', project: other });
+  append(min, { kind: 'advice', session: 'c', skill: 'future' });
+  append(-30 * min, { kind: 'rule_hits', session: 'c', rules: ['R2'] });
+  append(-day, { kind: 'advice', session: 'c', skill: 'at-cutoff' });
+  append(-day - 1, { kind: 'advice', session: 'c', skill: 'expired' });
+
+  const collector = new HomePortfolioCollector(f.hudHome);
+  const projects = [{ root: f.projectRoot, name: 'Demo', registrationIndex: 0, unavailable: true }];
+  const collect = (at = now) => collector.read(projects, { workers: [] }, at);
+  const portfolio = await collect();
+  assert.deepEqual(portfolio.recentAdvice.map(e => e.skill ?? e.rules.join(' ')), ['R3 R8', 'legacy', 'review', 'R2', 'at-cutoff']);
+  assert.equal((await collect(now + 1)).recentAdvice.length, 4);
+  append(-25 * min, { kind: 'advice', session: 'c', skill: 'earlier' });
+  assert.deepEqual((await collect()).recentAdvice.map(e => e.skill ?? e.rules.join(' ')), ['R3 R8', 'legacy', 'review', 'earlier', 'R2']);
+
+  const draw = (state = initialMonitorState()) => renderMonitor({ state, homePortfolio: portfolio, width: 40, height: 20, nowMs: now });
+  const frame = draw();
+  const { x, y, rows } = frame.panes[0];
+  const header = rows.findIndex(r => r.text.startsWith('Recent advice'));
+  assert.ok(header > 0);
+  assert.equal(rows[header - 1].item, 'home:other-projects');
+  const [rules, oldSkill, skill, oldRules] = rows.slice(header + 1, header + 5);
+  assert.deepEqual([rules, oldSkill, skill, oldRules].map(row => row.text.trimEnd()),
+    ['5m other-project rules: R3 R8', '6m unknown project skill: legacy', '8m Demo skill: review', '30m unknown project rules: R2']);
+  assert.ok(rows.every(row => visualLength(row.text) === 40));
+  const copy = { type: 'copy-advisor', root: f.projectRoot, session: 'b', skill: 'review', path: skillPath };
+  const click = (row) => handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: x + 4, y: y + rows.indexOf(row) }, { frame });
+  assert.deepEqual(click(skill).action, copy);
+  for (const row of [rules, oldSkill, oldRules]) assert.equal(click(row).action, undefined);
+  const selected = draw({ ...frame.state, home: { ...frame.state.home, cursor: skill.item } });
+  assert.deepEqual(handleMonitorInput(selected.state, { type: 'key', key: 'enter' }, { frame: selected }).action, copy);
+  setLanguage('zh');
+  const translated = draw().panes[0].rows;
+  assert.ok(translated.some(row => row.text.startsWith('近期建议')));
+  assert.ok(translated.every(row => visualLength(row.text) === 40));
+  setLanguage('en');
+
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, '{"advisorShadow":false}');
+  const off = await collect();
+  const offRows = homeRows(off, 40, now, 20, false, undefined, scheduleView([], now));
+  assert.equal(off.recentAdvice, undefined);
+  assert.ok(!offRows.some(row => row.text.includes('Recent advice')));
+});
+
+test('Home drops the whole recent advice block before live advice, projects or cards', () => {
+  const now = Date.parse('2026-11-24T20:00:00Z'), root = '/demo/project', skillPath = '/demo/skills/live/SKILL.md';
+  const portfolio = {
+    requests: [],
+    projects: [{ root, name: 'Demo', activeToday: true, advisor: { skill: 'live', session: 'live-session', path: skillPath, at: now } }],
+    recentAdvice: [{ kind: 'rule_hits', at: now, project: root, session: 'old-session', rules: ['R3'] }],
+  };
+  const schedule = scheduleView(Array.from({ length: 4 }, (_, id) => ({ id: `due-${id}`, text: 'Review the plan', date: '2026-11-24' })), now);
+  const draw = (p, room) => homeRows(p, 50, now, room, false, undefined, schedule);
+  const full = draw(portfolio, 20), short = draw(portfolio, full.length - 1);
+  assert.ok(full.some(r => stripAnsi(r.text).startsWith('Recent advice')));
+  assert.ok(full.findIndex(r => stripAnsi(r.text).startsWith('Recent advice')) > full.findIndex(r => r.item === `home:advisor:${root}`));
+  assert.ok(!short.some(r => r.text.includes('Recent advice') || r.text.includes('rules: R3')));
+  assert.deepEqual(short, draw({ ...portfolio, recentAdvice: undefined }, full.length - 1));
+  assert.ok(short.some(r => r.advisorCopy?.path === skillPath));
+  assert.ok(short.some(r => stripAnsi(r.text).startsWith('Schedule')));
+  const folded = draw(portfolio, 7);
+  assert.ok(folded.some(r => stripAnsi(r.text).startsWith('Schedule')));
+  assert.ok(!folded.some(r => stripAnsi(r.text).startsWith('Recent advice')), 'recent advice stays hidden when cards fold');
+  assert.ok(draw(portfolio, 1).some(r => r.advisorCopy?.path === skillPath));
+});
+
+test('recent advice only parses changed monthly tails and ignores truncated lines', (t) => {
+  const f = setupEnv(t);
+  const previousSettings = process.env.HUD_SETTINGS_PATH;
+  process.env.HUD_SETTINGS_PATH = f.env.HUD_SETTINGS_PATH;
+  t.after(() => {
+    if (previousSettings === undefined) delete process.env.HUD_SETTINGS_PATH;
+    else process.env.HUD_SETTINGS_PATH = previousSettings;
+  });
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, '{"advisorShadow":true}');
+  const now = Date.parse('2026-11-24T20:00:00Z');
+  const dir = path.join(f.hudHome, 'events'), file = path.join(dir, '2026-11.jsonl');
+  fs.mkdirSync(dir);
+  const line = (skill) => JSON.stringify({ v: 1, kind: 'advice', at: new Date(now).toISOString(), session: 'a', skill });
+  // The beginning and incomplete end both look like advice but are outside the complete tail.
+  const prefix = `${line('beyond-tail')}\n${'x'.repeat(1024 * 1024)}\n`;
+  fs.writeFileSync(file, `${prefix}${line('first')}\n${line('in-progress')}`);
+  const history = new AdvisorHistory(f.hudHome);
+  const [entry, ...others] = history.read(now);
+  assert.equal(entry.skill, 'first');
+  assert.deepEqual(others, []);
+  assert.equal(history.read(now)[0], entry, 'unchanged signature reuses parsed entries');
+  const mtime = fs.statSync(file).mtimeMs;
+  fs.writeFileSync(file, `${prefix}${line('newer')}\n${line('in-progress')}`);
+  fs.utimesSync(file, new Date(mtime), new Date(mtime + 1_000));
+  assert.equal(history.read(now)[0].skill, 'newer', 'same-size replacement with changed mtime reparses');
+  fs.appendFileSync(file, '\n');
+  assert.deepEqual(history.read(now).map(e => e.skill), ['in-progress', 'newer']);
 });
 
 test('skip and dedupe rules hold (skill path skip, 1 per message, 30-min same-session skill dedupe)', async (t) => {

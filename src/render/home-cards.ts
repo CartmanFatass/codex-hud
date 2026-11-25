@@ -153,13 +153,13 @@ function scheduleRows({ sorted, overdue, today }: ScheduleView, projects: readon
 
 /** Cards never borrow a row from the full-tier portfolio. */
 export function homeCardRows(today: TodayFacts | undefined, schedule: ScheduleView, projects: readonly HomeProject[], width: number, now: number, spare: number) {
-  if (spare <= 0) return [];
+  if (spare <= 0) return { rows: [], full: false };
   const blank = line('', width);
   for (let level = 0; level <= 3; level++) {
     const a = todayRows(today, width, now, level), b = scheduleRows(schedule, projects, width, now, level);
-    if (!a.length && !b.length) return [];
+    if (!a.length && !b.length) return { rows: [], full: level === 0 };
     const rows = [...(level < 3 ? [blank] : []), ...a, ...(a.length && b.length && level < 2 ? [blank] : []), ...b];
-    if (rows.length <= spare) return rows;
+    if (rows.length <= spare) return { rows, full: level === 0 };
   }
-  return [];
+  return { rows: [], full: false };
 }
