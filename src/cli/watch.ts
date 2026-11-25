@@ -16,6 +16,7 @@ import { getJobIndexCache } from '../roles/job-index-cache.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 import { bandReader } from './watch-band.js';
+import { packageBatches, type Notice } from './watch-batches.js';
 
 export const WATCH_HELP =
   'Usage: hud watch [--all] [--verbose] [--queue | --mod]\n' +
@@ -44,7 +45,6 @@ const isBrokenPipe = (error: unknown): boolean => {
 };
 
 const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(row.state ?? '');
-type Notice = { line: string; defer?: boolean };
 // A numeric catch-up value is the Claude mod's cutoff for individual report notices.
 function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: WatchJobRow[], catchup: boolean | number = false, lastScanAt = -Infinity): Notice[] {
   let olderReports = 0, olderFailures = 0;
@@ -54,7 +54,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
       ? [status.value.settled_at, status.value.ended_at].map(v => typeof v === 'string' ? Date.parse(v) : NaN).find(Number.isFinite) ?? status.at
       : -Infinity;
   };
-  const notices = rows.flatMap((row) => {
+  const notices = rows.flatMap<Notice>((row) => {
     if (row.ticket_queue) return [];
     const old = prev.get(row.job);
     const questions = row.question_ids.filter((id) => !old?.question_ids.includes(id)).map((id) => {
@@ -103,7 +103,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
     ));
     if (!(catchup ? pending : event)) return questions;
     const defer = !row.blocked && row.display_state !== 'failed' && !escalation && (settled(row) || report || checks);
-    return [...questions, { line: formatJobChange(row), defer }];
+    return [...questions, { line: formatJobChange(row), defer, status: row }];
   });
   const older = [
     olderReports && `${olderReports} older unread report${olderReports === 1 ? '' : 's'}`,
@@ -115,7 +115,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
 
 function sonicCheckpointNotices() {
   let seen = new Map<string, string>();
-  return (rows: JobRow[]): string[] => {
+  return (rows: JobRow[], members?: ReadonlySet<string>): string[] => {
     const next = new Map<string, string>();
     const lines = rows.flatMap(row => {
       if (row.role !== 'sonic' || row.state !== 'working') return [];
@@ -123,7 +123,7 @@ function sonicCheckpointNotices() {
       const before = seen.get(row.job);
       const at = checkpoint?.at ?? before;
       if (at) next.set(row.job, at);
-      return checkpoint && (!before || checkpoint.at > before)
+      return checkpoint && (!before || checkpoint.at > before) && !(members?.has(row.job) && checkpoint.text.startsWith('still working at '))
         ? [`[sonic ${row.job}] ${checkpoint.text}`] : [];
     });
     seen = next;
@@ -155,6 +155,21 @@ function settlementNotices(windowMs: number) {
         held.push(...lines);
       }
       return ready;
+    },
+  };
+}
+
+// Both transports advance the same delivery cursors once per scan, never on the idle/pending probe.
+function watchNotices(windowMs: number) {
+  const settlements = settlementNotices(windowMs), batches = packageBatches(), checkpoints = sonicCheckpointNotices();
+  return {
+    collect: settlements.collect,
+    get delay() { return Math.min(settlements.delay, batches.delay); },
+    get pending() { return settlements.pending || Number.isFinite(batches.delay); },
+    select(home: string, prev: ReadonlyMap<string, JobRow>, rows: WatchJobRow[], catchup: boolean | number, lastScanAt: number, verbose = false) {
+      if (verbose) return { events: catchup ? actionable(home, prev, rows, catchup, lastScanAt) : [], progress: checkpoints(rows) };
+      const { events, members } = batches.collect(rows, prev, actionable(home, prev, rows, catchup, lastScanAt));
+      return { events, progress: checkpoints(rows, members) };
     },
   };
 }
@@ -201,7 +216,7 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
   let prev = new Map<string, JobRow>();
   let first = true, stopped = false, scanning = false, dirty = false, lastScanAt = -Infinity;
   let timer: ReturnType<typeof setTimeout>;
-  const notices = settlementNotices(settlementWindowMs), checkpoints = sonicCheckpointNotices();
+  const notices = watchNotices(settlementWindowMs);
   const inputs = watchInputs(home, () => {
     if (scanning) dirty = true;
     else schedule(DEBOUNCE_MS);
@@ -221,7 +236,8 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     catch { if (!stopped) schedule(DEFAULT_RESCAN_MS); return; }
     finally { scanning = false; }
     if (stopped) return;
-    const lines = notices.collect(actionable(home, prev, rows, first, lastScanAt), [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...landEvents(home, pane, false, cwd).lines, ...checkpoints(rows)]);
+    const { events, progress } = notices.select(home, prev, rows, first, lastScanAt);
+    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...landEvents(home, pane, false, cwd).lines, ...progress]);
     first = false;
     lastScanAt = scanAt;
     prev = new Map(rows.map((row) => [row.job, row]));
@@ -291,7 +307,7 @@ export async function watchCommand(
   if (options.signal?.aborted) return 0;
   const controller = new AbortController(), { signal } = controller;
   let idleSince: number | null = null;
-  const notices = settlementNotices(options.settlementWindowMs ?? settlementWindow(io.env)), checkpoints = sonicCheckpointNotices();
+  const notices = watchNotices(options.settlementWindowMs ?? settlementWindow(io.env));
   const inputs = watchInputs(home, () => {
     // A change during a scan is kept for the next wait, never lost until the rescan.
     dirty = true;
@@ -381,11 +397,10 @@ export async function watchCommand(
       const modCatchup = first && freshMod;
       const flows = landEvents(home, callerPane, all, process.cwd(), modCatchup);
       const trySize = modHandshake ? fs.lstatSync(join(home, TRIES_FILE), { throwIfNoEntry: false })?.size ?? 0 : 0;
-      const progress = checkpoints(rows); // Seed the cursor, but don't replay progress from before the switch.
-      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...(modCatchup ? [] : progress)];
       const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
         ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;
-      const events = first || !verbose ? actionable(home, prev, rows, first && mod ? modCutoff : first, lastScanAt) : [];
+      const { events, progress } = notices.select(home, prev, rows, first && mod ? modCutoff : first, lastScanAt, verbose);
+      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...(modCatchup ? [] : progress)];
       // Release the mod's first HUD call only after capturing its pre-call baseline.
       if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
       const band = readBand && await readBand(scanAt);

@@ -164,6 +164,10 @@ It skips working starts/resumes, answered questions and already-reported closure
 Both `hud watch` and `changes` append a current worker summary, clipped to 140 characters.
 Unread report notices point to `hud_read job=<id>` (`mode: "full"` for the whole report), not to a file.
 The watch groups settlements arriving within three seconds into one notice; questions are delivered immediately.
+Once three ordinary top-level jobs with the same package are running or queued, quiet watch treats them as a batch until the last member settles.
+It skips individual queue and still-working notices, summarizes settlements at most once every five minutes, and sends a final tally with a hint to list unread reports.
+Failures (including failed checks), stalls and requests for input still arrive individually. A rollup does not mark reports read.
+Batch tracking belongs to the watch: after a restart, the three-live-job threshold is evaluated against its current snapshot.
 On start the watch catches up pending questions, unread settled reports and unread failures/blocks.
 It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan.
 Claude Code without tasks or mod-owned wake runs it under Monitor; re-arm after expiry.

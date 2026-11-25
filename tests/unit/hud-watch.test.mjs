@@ -489,7 +489,7 @@ test('hud watch batches jobs settling within the settlement window into one noti
   const ac = new AbortController(), writes = [], pane = 'w4E:p1';
   t.after(() => { ac.abort(); fs.rmSync(home, { recursive: true, force: true }); });
   const ids = ['j0000000000000001', 'j0000000000000002', 'j0000000000000003'];
-  const dirs = ids.map((id) => writeJob(home, id, pane, 'batch', { state: 'working' }));
+  const dirs = ids.map((id, i) => writeJob(home, id, pane, i < 2 ? 'batch' : 'other', { state: 'working' }));
   const scans = observeStats(t, join(dirs[0], 'STATUS.json'));
   let now = 0;
   t.mock.method(performance, 'now', () => now);
@@ -506,7 +506,76 @@ test('hud watch batches jobs settling within the settlement window into one noti
   await until(() => writes.length > 0, t.signal);
   ac.abort();
   assert.equal(await running, 0);
-  assert.deepEqual(writes, [ids.map((id) => `${id} imp batch: done\n`).join('')]);
+  assert.deepEqual(writes, [ids.map((id, i) => `${id} imp ${i < 2 ? 'batch' : 'other'}: done\n`).join('')]);
+});
+
+test('quiet watch rolls up a package from its third live member until the last settlement', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-package-'));
+  const ac = new AbortController(), writes = [], pane = 'w4E:p1';
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const ids = Array.from({ length: 6 }, (_, i) => `j${String(i + 1).padStart(16, '0')}`);
+  const create = (i, state) => writeJob(home, ids[i], pane, 'labels', { state });
+  const first = create(0, 'working'), receipt = join(first, 'job.json');
+  writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), role: 'sonic' }));
+  const file = (i, name) => join(home, 'jobs', ids[i], name);
+  const status = (i, state, reason) => writeFixtureFile(file(i, 'STATUS.json'), JSON.stringify({ state, reason }));
+  const scans = observeStats(t, file(0, 'STATUS.json'));
+  let now = 0;
+  t.mock.method(performance, 'now', () => now);
+  const run = watchCommand(['--all'], { env: { HUD_HOME: home }, stdout: s => writes.push(s.trim()), stderr: assert.fail },
+    { signal: ac.signal, rescanMs: 50 });
+  const step = async (change) => {
+    const before = scans(); change(); await until(() => scans() > before, t.signal);
+    return writes.splice(0);
+  };
+  try {
+    const [queued] = await step(() => create(1, 'queued'));
+    assert.match(queued, /labels: queued/); // Only two live: ordinary notice.
+    assert.deepEqual(await step(() => { create(2, 'queued'); create(3, 'queued'); create(4, 'working'); }), []);
+    const checkpoint = (time, text) => writeFixtureFile(file(0, 'progress.jsonl'), JSON.stringify({ at: new Date(time).toISOString(), source: 'checkpoint', text }));
+    assert.deepEqual(await step(() => checkpoint(1, 'still working at 10 min: tool read')), []);
+    assert.deepEqual(await step(() => checkpoint(2, 'ended a silent tool after 90 s: read')), [`[sonic ${ids[0]}] ended a silent tool after 90 s: read`]);
+    const [question] = await step(() => {
+      fs.mkdirSync(file(4, 'qa')); writeFixtureFile(file(4, 'qa/q1.md'), 'Proceed?');
+      status(4, 'waiting_orchestrator', 'question');
+    });
+    assert.match(question, /QUESTION q1: Proceed\?/);
+    assert.deepEqual(await step(() => { writeFixtureFile(file(4, 'qa/q1.answer.md'), 'yes'); status(4, 'working'); }), []);
+    assert.deepEqual(await step(() => status(0, 'closed')), ['labels batch: 1 done, 0 failed, 1 running, 3 queued']);
+    assert.deepEqual(await step(() => status(1, 'done')), []);
+    assert.deepEqual(await step(() => status(2, 'failed', 'stalled')), [`${ids[2]} imp labels: failed | stalled`]);
+    assert.deepEqual(await step(() => { now = 299_999; }), []);
+    assert.deepEqual(await step(() => { now++; }), ['labels batch: 2 done, 1 failed, 1 running, 1 queued']);
+    assert.deepEqual(await step(() => status(3, 'closed')), []);
+    assert.deepEqual(await step(() => status(4, 'idle_grace')), ['labels batch: 4 done, 1 failed, 0 running, 0 queued — final; list unread reports: hud_read view:compact']);
+    assert.deepEqual(await step(() => { status(4, 'closed'); writeFixtureFile(file(4, 'report.md'), 'Later publication.'); }), []);
+    const job = JSON.parse(fs.readFileSync(file(4, 'job.json')));
+    assert.equal(job.read_at, undefined);
+    const checks = await step(() => {
+      writeFixtureFile(file(4, 'job.json'), JSON.stringify({ ...job, cli: null, checks: ['synthetic-check'] }));
+      writeFixtureFile(file(4, 'checks.json'), JSON.stringify({ state: 'done', turn: job.created_at,
+        report_sig: cachedReportSignature(file(4, '.')), results: [{ command: 'synthetic-check', exit_code: 1 }] }));
+    });
+    assert.equal(checks.length, 1); assert.match(checks[0], /checks 0\/1/);
+    assert.match((await step(() => create(5, 'queued')))[0], /labels: queued/); // No latch on a reused label.
+  } finally { ac.abort(); assert.equal(await run, 0); }
+});
+
+test('mod catch-up folds pending reports for a live package without replaying them on rescan', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-package-catchup-')), pane = 'w4E:p1';
+  const ac = new AbortController(), lines = [];
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const create = (i, state, report) => writeJob(home, `j${String(i).padStart(16, '0')}`, pane, 'labels', { state }, report);
+  const dir = create(1, 'working'); create(2, 'queued'); create(3, 'queued');
+  create(4, 'closed', true); create(5, 'idle_grace', true);
+  const scans = observeStats(t, join(dir, 'STATUS.json'));
+  const run = watchCommand(['--mod'], { env: { HUD_HOME: home, HERDR_PANE_ID: pane },
+    stdout: s => lines.push(...JSON.parse(s).lines), stderr: assert.fail }, { signal: ac.signal, rescanMs: 50 });
+  try {
+    await until(() => lines.length > 0, t.signal);
+    const before = scans(); await until(() => scans() > before, t.signal);
+    assert.deepEqual(lines, ['labels batch: 2 done, 0 failed, 1 running, 2 queued']);
+  } finally { ac.abort(); assert.equal(await run, 0); }
 });
 
 test('hud watch flushes a held settlement with an immediate question', async (t) => {
