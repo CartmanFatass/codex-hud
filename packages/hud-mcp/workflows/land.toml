@@ -1,0 +1,9 @@
+version = 1
+name = "land"
+
+[policy]
+breaker = "none"
+
+[steps.land]
+kind = "land"
+job = "{job}"

@@ -16,6 +16,8 @@ export interface Graph { version: 1; name: string; policy: { breaker: Breaker };
 interface Inputs {
   roles: ReadonlyMap<string, Pick<Role, 'run' | 'optionalEnabled'>>;
   bindings?: Record<string, unknown>;
+  // The bundled standalone land template binds a managed job already admitted by hud_land.
+  landSource?: string;
   caps?: Readonly<Record<string, number>>;
   manifest?: { role: string; count: number; bytes: number; cap: number; browser?: boolean };
   // Callers planning file inputs must provide the same resolved byte estimate used for admission.
@@ -134,8 +136,10 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
   }
   for (const [id, step] of Object.entries(steps)) {
     const all = visit(id);
-    for (const ref of [...step.from, ...(step.kind === 'land' ? [step.job] : [])]) if (!all.has(ref)) invalid(`${ref} is not an ancestor of ${id}`);
-    if (step.kind === 'land') {
+    const standaloneLand = name === 'land' && entries.length === 1 && step.kind === 'land' &&
+      step.job === inputs.landSource && /^j[a-f0-9]{16}$/.test(step.job);
+    for (const ref of [...step.from, ...(step.kind === 'land' && !standaloneLand ? [step.job] : [])]) if (!all.has(ref)) invalid(`${ref} is not an ancestor of ${id}`);
+    if (step.kind === 'land' && !standaloneLand) {
       const source = steps[step.job];
       if (source.kind !== 'job' || source.isolation !== 'worktree') invalid('land requires a worktree job');
     }

@@ -102,7 +102,7 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
           } catch { /* Missing or unreadable queue receipt: leave it alone. */ }
           continue;
         }
-        const match = /^f([a-f0-9]{16})(?:-[1-9]\d*)?\.json(?:\.(?:cancel|noticed|observed|gate-[1-9]\d*(?:-rerun)?\.log))?$/.exec(name);
+        const match = /^f([a-f0-9]{16})(?:-[1-9]\d*)?(?:\.json(?:\.(?:cancel|noticed|observed|gate-[1-9]\d*(?:-rerun)?\.log))?)?$/.exec(name);
         if (!match) continue;
         const job = `j${match[1]}`, files = jobs.get(job);
         if (files) files.push(name); else jobs.set(job, [name]);
@@ -111,8 +111,11 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
         try {
           // Keep all attempts until the job (and its archive read) is gone.
           if (fs.lstatSync(join(home, 'jobs', job), { throwIfNoEntry: false })) continue;
-          const files = names.map((name) => ({ path: join(dir, name), stat: fs.lstatSync(join(dir, name)) }));
-          if (files.some(({ stat }) => !stat.isFile() || stat.mtimeMs >= cutoff)) continue;
+          const files = names.map(name => {
+            const path = join(dir, name);
+            return { path, graphDir: !name.includes('.'), stat: fs.lstatSync(path) };
+          });
+          if (files.some(({ graphDir, stat }) => stat.mtimeMs >= cutoff || (graphDir ? !stat.isDirectory() : !stat.isFile()))) continue;
           if (files.some(({ path }) => {
             if (!path.endsWith('.json')) return false;
             const receipt = readJsonBounded(path, 128 * 1024) as { state?: unknown } | null;
@@ -121,7 +124,17 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
           for (const { path, stat } of files) {
             try {
               const current = fs.lstatSync(path, { throwIfNoEntry: false });
-              if (sameInode(stat, current) && current?.ctimeMs === stat.ctimeMs) fs.unlinkSync(path);
+              if (!sameInode(stat, current) || current?.ctimeMs !== stat.ctimeMs) continue;
+            if (stat.isFile()) fs.unlinkSync(path);
+            else {
+              const empty = inDirectory(path, graph => {
+                const names = fs.readdirSync(graph);
+                if (!names.every(name => name === 'graph.json' && fs.lstatSync(join(graph, name)).isFile())) return false;
+                for (const name of names) fs.unlinkSync(join(graph, name));
+                return true;
+              });
+              if (empty) fs.rmdirSync(path);
+            }
             } catch { /* Missing, replaced or inaccessible artifact; retry next pass. */ }
           }
         } catch { /* Unreadable receipt or job state: keep this flow family. */ }

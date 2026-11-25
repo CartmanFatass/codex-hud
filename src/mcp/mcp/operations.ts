@@ -35,7 +35,8 @@ import { batchView, controlBatch, startBatch } from '../batch.js';
 import { runVisible } from '../../workflows/scope.js';
 import { headerScanner } from '../../workflows/header-scan.js';
 import { batchEvents, isBatchId, type Batch } from '../batch-state.js';
-import { landView, isFlowId, readLand, landEvents } from '../land-state.js';
+import { landView, isFlowId, recoverLand } from '../land-state.js';
+import { workflowEvents } from '../../workflows/events.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, editTickets } from '../local-tickets.js';
 import { editObjectives, type RequestCaller } from '../local-objectives.js';
@@ -659,7 +660,7 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
   const id = required(args, 'job');
   if (name === 'hud_read' && isBatchId(id)) return batchView(hudHome, id, callerPane);
   if (name === 'hud_read' && isFlowId(id)) {
-    const flow = readLand(hudHome, id);
+    const flow = await recoverLand(hudHome, id);
     return flow ? landView(flow) : { ok: false, code: 'flow_not_found' };
   }
   if (name === 'hud_read' && isTicketQueueId(id)) {
@@ -964,7 +965,7 @@ export async function withChanges(value: unknown, markExhaustion: boolean, scan:
     return changes.length ? { ...value, changes } : value;
   }
   const rows = sessionRows(markExhaustion, scan);
-  const changes = [...jobChanges(session.cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)), process.cwd()), ...landEvents(hudHome, callerPane).lines];
+  const changes = [...jobChanges(session.cursor, rows), ...tries.changes(process.cwd()), ...answers.changes(new Set(rows.map((row) => row.job)), process.cwd()), ...workflowEvents(hudHome, callerPane).lines];
   session.cursor = new Map(rows.map((row) => [row.job, row]));
   return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
 }

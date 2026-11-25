@@ -1,14 +1,15 @@
 /** A land helper outlives its MCP and watcher. Never replay a step whose outcome is unknown. */
-import { writeJsonPrivate } from '../utils/atomic-fs.js';
+import { readDirSafe, readJsonFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { sharedRoot } from '../roles/projects.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import type { ManagedWorktree } from './managed-worktree.js';
-import { runVisible } from '../workflows/scope.js';
-import { headerScanner, type HeaderPass } from '../workflows/header-scan.js';
-import { batchActive, batchEvents, isBatchId, type Batch } from './batch-state.js';
-import { isTicketQueueId, type TicketQueue, ticketQueueNotice } from './ticket-queue-state.js';
+import { settleSealedRun, type Run } from '../workflows/engine.js';
+import type { HeaderPass } from '../workflows/header-scan.js';
+import type { RunScope } from '../workflows/scope.js';
+import { runLock, saveHeader } from '../workflows/store.js';
+import type { Job } from './job-contracts.js';
+import { jobFiles } from './paths.js';
 
 export const DEFAULT_LAND_TIMEOUT_S = 900;
 export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string; timeout_s?: number }
@@ -27,12 +28,16 @@ export interface LandFlow {
   boarded?: { flow: string; pid: number; start: string };
   after_note?: string;
   landed_at?: string;
+  // A SIGKILL may land between Git's ref update and the result write. Never retry
+  // an unknown fast-forward, even via a new attempt. Keep its candidate for inspection.
+  publish_pending?: string;
+  workflow?: Run & RunScope;
   repairs?: { step: string; job?: string; outcome: string }[];
   reruns?: (string | LandRerun)[];
   timings?: LandTiming[];
 }
 export const isFlowId = (id: unknown): id is string => typeof id === 'string' && /^f[a-f0-9]{16}(?:-[1-9]\d*)?$/.test(id);
-export const retryableLand = (f: LandFlow) => !f.landed_sha && (f.state === 'failed' || f.state === 'cancelled');
+export const retryableLand = (f: LandFlow) => !f.landed_sha && !f.publish_pending && (f.state === 'failed' || f.state === 'cancelled');
 export const activeLand = (f: LandFlow) => f.state === 'queued' || f.state === 'running';
 export const landFile = (home: string, id: string) => join(home, 'flows', `${id}.json`);
 export const isLandWait = (step: string) => step === 'main-checkout lease' || step.startsWith('waiting for ');
@@ -44,34 +49,72 @@ export function setLandStep(f: LandFlow, step: string, at = new Date().toISOStri
 export function writeLand(home: string, f: LandFlow, create = false) {
   f.step_started_at ??= f.updated_at;
   f.updated_at = new Date().toISOString();
-  writeJsonPrivate(landFile(home, f.flow), f, { mkdir: false, exclusive: create });
+  if (f.workflow && !activeLand(f)) settleSealedRun(f.workflow, 'land', f.state === 'cancelled' ? 'stopped' : f.state === 'completed' ? 'completed' : 'failed',
+    f.task || f.ticket_queue ? undefined : landNoticeLine(f));
+  saveHeader(home, f, create);
+}
+function landHeader(home: string, id: string): LandFlow | null {
+  try { return readJsonFile(landFile(home, id)) as LandFlow; }
+  catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; }
+}
+export function landOwnerGone(row: LandFlow) {
+  const { pid, start } = row.boarded ?? row;
+  return activeLand(row) && workerTreeRootGone(pid, start);
 }
 export function readLand(home: string, id: string, pass?: HeaderPass): LandFlow | null {
   if (!isFlowId(id)) return null;
-  if (pass) {
-    const row = pass.header<LandFlow>(`${id}.json`);
-    return row && reconcileLand(home, id, row);
-  }
-  const path = landFile(home, id);
-  let f: LandFlow;
-  try { f = JSON.parse(fs.readFileSync(path, 'utf8')); }
-  catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null; throw e; }
-  return reconcileLand(home, id, f);
+  const f = pass ? pass.header<LandFlow>(`${id}.json`) : landHeader(home, id);
+  if (!f || !landOwnerGone(f)) return f;
+  if (!f.workflow) return recordInterruption(home, id); // Legacy receipt and train protocol.
+  // Keep synchronous readers compatible. The durable replacement wakes their next
+  // pass. Do not emit a terminal result from liveness alone: a live lead can board
+  // a passenger at the same time its original helper dies.
+  void recoverLand(home, id, f).catch(() => {});
+  return f;
 }
-function reconcileLand(home: string, id: string, f: LandFlow) {
-  const helperGone = (row: LandFlow) => {
-    const { pid, start } = row.boarded ?? row;
-    return activeLand(row) && workerTreeRootGone(pid, start);
-  };
-  if (helperGone(f)) {
-    // A terminal write or a train handoff may have landed during the exit check.
-    f = JSON.parse(fs.readFileSync(landFile(home, id), 'utf8'));
-    if (helperGone(f)) {
-      f.state = 'failed'; f.error = 'Land helper exited; inspect the checkout before retrying. No step was replayed.';
-      writeLand(home, f);
-    }
+const recovering = new Map<string, Promise<LandFlow | null>>();
+export async function recoverLand(home: string, id: string, f?: LandFlow | null): Promise<LandFlow | null> {
+  if (!isFlowId(id)) return null;
+  if (f === undefined) f = landHeader(home, id);
+  if (!f || !landOwnerGone(f)) return f;
+  const key = `${home}\0${id}`;
+  let pending = recovering.get(key);
+  if (!pending) {
+    pending = runLock(home, id, () => recordInterruption(home, id)).finally(() => recovering.delete(key));
+    recovering.set(key, pending);
+  }
+  return pending;
+}
+function recordInterruption(home: string, id: string) {
+  const f = landHeader(home, id);
+  // A terminal write or a train handoff may have landed during the exit check.
+  if (f && landOwnerGone(f)) {
+    f.state = 'failed'; f.error = 'Land helper exited; inspect the checkout before retrying. No step was replayed.';
+    if (f.workflow && /^repair \d+$/.test(f.step)) recoverRepairReceipt(home, f);
+    writeLand(home, f);
   }
   return f;
+}
+// A killed runner may have dispatched a repair without binding its receipt yet.
+// Bind the exact keyed turn as evidence, never send again or resume the land.
+function recoverRepairReceipt(home: string, f: LandFlow) {
+  const attempt = f.repairs?.at(-1);
+  if (!attempt || attempt.job || attempt.outcome !== 'dispatching') return;
+  const key = `land:${f.flow}:${f.repairs!.length}`;
+  const root = join(home, 'jobs');
+  let ids: string[];
+  try { ids = readDirSafe(root); } catch { return; }
+  for (const id of ids) {
+    if (!/^j[a-f0-9]{16}$/.test(id)) continue;
+    try {
+      const job = readJsonFile(join(root, id, jobFiles.job)) as Job;
+      if (job.job === id && (job.land_turn === key || job.request_key === key || job.send_outcomes?.at(-1)?.key === key)) {
+        attempt.job = id;
+        attempt.outcome = 'dispatched; land helper exited';
+        break;
+      }
+    } catch { /* Receipt missing or unreadable; do not infer an outcome. */ }
+  }
 }
 /** Keep previous receipts (and their task/notice IDs) intact. Concurrent callers pick the same next ID. */
 export function landAttempt(home: string, job: string, pass?: HeaderPass) {
@@ -116,45 +159,4 @@ export function landNotice(f: LandFlow) {
       return `${one(r.step)} ${outcome}${tests}${r.output_path ? `; output: ${r.output_path}` : ''}${r.rerun_output_path ? `; rerun output: ${r.rerun_output_path}` : ''}`;
     }), ...(f.tail ?? [])].join('\n');
 }
-const scanNotices = headerScanner();
-/** Native/watch and MCP changes share one terminal notice claim for the calling pane. */
-export function landEvents(home: string, pane: string | null, all = false, cwd = process.cwd(), modCatchup = false) {
-  const dir = join(home, 'flows');
-  const lines: string[] = [];
-  let pending = false;
-  const { files, header } = scanNotices(home);
-  for (const file of files) {
-    const sidecar = /^(.*)\.json\.gate-[1-9]\d*(?:-rerun)?\.log$/.exec(file);
-    if (sidecar && isFlowId(sidecar[1])) {
-      // Keep excerpts as long as the receipt exists; only sweep orphaned sidecars.
-      try {
-        if (!fs.lstatSync(landFile(home, sidecar[1]), { throwIfNoEntry: false })) fs.unlinkSync(join(dir, file));
-      } catch { /* Retry at the next scan. */ }
-      continue;
-    }
-    const id = file.replace(/\.json$/, '');
-    if (file.endsWith('.json') && isBatchId(id)) {
-      const b = header<Batch>(file);
-      if (b && (all || runVisible(b, pane, cwd))) {
-        lines.push(...batchEvents(home, b, all).map(event => event.line));
-        pending ||= batchActive(b);
-      }
-      continue;
-    }
-    if (!file.endsWith('.json') || (!isFlowId(id) && !isTicketQueueId(id))) continue;
-    const marker = `${landFile(home, id)}.${all ? 'observed' : 'noticed'}`;
-    if (fs.existsSync(marker)) continue;
-    const row = header<TicketQueue | LandFlow>(file);
-    const f = row && 'wt' in row ? reconcileLand(home, id, row) : row;
-    if (!f || f.task || (!all && f.pane !== pane) || ('ticket_queue' in f && f.ticket_queue)) continue;
-    // Explicit cross-project flows still report to their authorizing pane; pane-less watches stay project-scoped.
-    if (!all && !pane && 'wt' in f && f.wt.main_root !== cwd && f.wt.main_root !== sharedRoot(cwd)) continue;
-    if ('wt' in f ? activeLand(f) : f.state === 'working') { pending = true; continue; }
-    try { fs.closeSync(fs.openSync(marker, 'wx', 0o600)); }
-    catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') continue; throw e; }
-    if (modCatchup && 'wt' in f && f.state !== 'failed') continue;
-    // Queued transports (and hud watch) use one physical line per event.
-    lines.push(('wt' in f ? landNotice(f) : ticketQueueNotice(f)).replace(/\r?\n/g, ' | ').replace(/[\x00-\x1f\x7f-\x9f]/g, ' '));
-  }
-  return { lines, pending };
-}
+export const landNoticeLine = (f: LandFlow) => landNotice(f).replace(/\r?\n/g, ' | ');

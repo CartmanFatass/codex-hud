@@ -18,6 +18,9 @@ export interface DriverProfile<S> {
   watches(state: S): WatchTarget[];
   active(state: S): boolean;
   errorLine(run: Run): string;
+  // Some compatibility transports only claim notices in a watcher/MCP scan.
+  readerNotices?: boolean;
+  onError?(state: S, error: unknown): void;
 }
 /** One short-lived elected driver per run. Only the profile knows its output projection,
  * effect receipts and wording; election, scheduling, commit-before-effect and delivery are shared. */
@@ -43,7 +46,7 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
         });
         // If the original main exited, leave the outbox unclaimed for the next project
         // reader. Its PID/pane never determine whether this or any subsequent step runs.
-        if (Object.keys(run.notices).length && directRecipient(run) && !watching(run.pane, home)) for (const { line, marker } of noticeEvents(home, run)) {
+        if (!profile.readerNotices && Object.keys(run.notices).length && directRecipient(run) && !watching(run.pane, home)) for (const { line, marker } of noticeEvents(home, run)) {
           try {
             const sent = await notify(run.pane, line, home);
             if (!sent.skipped && sent.status === 0) continue;
@@ -56,6 +59,7 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
     });
   } catch (error) {
     await locked(s => {
+      if (profile.onError) return profile.onError(s, error);
       const run = profile.header(s);
       if (run.state === 'stopped' || run.state === 'completed') return;
       const step = Object.entries(run.steps ?? {}).find(([, c]) => c.state === 'running')?.[0] ?? 'run';

@@ -1,14 +1,14 @@
 /** Main-session entry points. Only read executable configuration from the registered main checkout. */
-import { fork } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { registeredProject } from '../roles/projects.js';
-import { notifyRunner } from '../utils/runner-lifetime.js';
-import { procStat } from '../utils/proc.js';
-import { activeLand, landAttempt, landFile, landNotice, landOutcome, readLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
+import { loadGraph } from '../workflows/graph.js';
+import { freezeGraph, requestStop, runDir, runLock } from '../workflows/store.js';
+import { wakeSealedWorkflow } from '../workflows/wake.js';
+import { activeLand, landAttempt, landNotice, landOutcome, readLand, recoverLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
 import { managedReceiptMatches } from './managed-worktree.js';
-import { binScript } from './paths.js';
+import { BUNDLED_ROOT } from './paths.js';
 import type { Job } from './job-contracts.js';
 
 export function validLandConfig(home: string, root: string): LandConfig {
@@ -25,7 +25,12 @@ export async function startLand(home: string, id: string, job: Pick<Job, 'job' |
   const wt = job?.worktree;
   if (!job || job.job !== id || !wt || wt.root !== job.cwd)
     throw Error('hud_land requires a managed worktree job');
-  const { flow, prior, cleanup } = landAttempt(home, id);
+  let attempt = landAttempt(home, id);
+  if (attempt.prior && activeLand(attempt.prior)) {
+    await recoverLand(home, attempt.prior.flow);
+    attempt = landAttempt(home, id);
+  }
+  const { flow, prior, cleanup } = attempt;
   // A recovering runner observes its earlier attempt. An explicitly resumed queue can retry that specific receipt.
   if (prior && (!retryableLand(prior) || (ticketQueue && prior.flow !== retry))) {
     if (!registeredProject(home, wt.main_root).registered) throw Error('hud_land requires a registered project');
@@ -39,31 +44,27 @@ export async function startLand(home: string, id: string, job: Pick<Job, 'job' |
   if (trees[0]?.path !== wt.main_root || !tree?.head || tree.locked !== undefined || tree.prunable !== undefined ||
       !managedReceiptMatches(id, { ...job, worktree: wt }))
     throw Error('Source is no longer the registered job worktree');
-  fs.mkdirSync(join(home, 'flows'), { mode: 0o700, recursive: true });
-  const child = fork(binScript('land-runner'), [], { detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], execArgv: [] });
-  const ready = new Promise<boolean>((done) => {
-    child.once('message', (msg) => done(msg === 'ready'));
-    child.once('disconnect', () => done(false));
-    child.on('error', () => done(false));
+  const source_sha = tree.head;
+  const graph = loadGraph(fs.readFileSync(join(BUNDLED_ROOT, 'workflows/land.toml'), 'utf8'), 'toml', {
+    roles: new Map(), bindings: { job: id }, landSource: id,
   });
-  try {
-    const pid = child.pid, start = pid && procStat(pid)?.start;
-    if (!pid || !start) throw Error('Could not start land helper');
-    const loaded = await ready, now = new Date().toISOString();
-    const f: LandFlow = { flow, job: id, pane, task, ...(ticketQueue && { ticket_queue: ticketQueue }), wt, config: c, source_sha: tree.head, pid, start,
-      state: loaded ? 'queued' : 'failed', step: loaded ? 'main-checkout lease' : 'load land helper', created_at: now, updated_at: now };
+  return wakeSealedWorkflow<LandFlow>(join(home, 'jobs', id), (pid, start, loaded) => runLock(home, flow, () => {
+    const won = readLand(home, flow);
+    if (won) return { result: won };
+    const now = new Date().toISOString();
+    const f: LandFlow = { flow, job: id, pane, task, ...(ticketQueue && { ticket_queue: ticketQueue }), wt, config: c, source_sha, pid, start,
+      state: loaded ? 'queued' : 'failed', step: loaded ? 'main-checkout lease' : 'load land helper', created_at: now, updated_at: now,
+      workflow: { flow, pane: pane ?? '', state: 'working', epoch: 0, streak: 0, settled: 0, failures: 0,
+        steps: { land: { state: 'waiting' } }, notices: {} } };
     if (!loaded) f.error = 'HUD was rebuilt; retry the land';
-    // Publish before granting permission to run; a concurrent caller can win the receipt but cannot start a second land.
-    try { writeLand(home, f, true); }
-    catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') return readLand(home, flow)!; throw e; }
-    // flows/ is outside the jobs watch. Wake it on startup failure too so a terminal notice can be delivered.
-    notifyRunner(join(home, 'jobs', id), pid);
-    if (loaded) child.send({ home, flow, cleanup });
-    return f;
-  } finally { if (child.connected) child.disconnect(); child.unref(); }
+    if (!fs.existsSync(join(runDir(home, flow), 'graph.json'))) freezeGraph(home, flow, graph);
+    // The engine commits admission to the sealed step again before invoking it.
+    writeLand(home, f, true);
+    return { result: f, claimed: true, input: loaded ? { home, flow, cleanup } : undefined };
+  }));
 }
 export function landTask(home: string, f: LandFlow, cancel = false) {
-  if (cancel && activeLand(f)) fs.closeSync(fs.openSync(`${landFile(home, f.flow)}.cancel`, 'a', 0o600));
+  if (cancel && activeLand(f)) requestStop(home, f.flow);
   return { taskId: f.flow, status: activeLand(f) ? 'working' : f.state,
     statusMessage: `${f.flow} — ${f.state === 'failed' ? landOutcome(f) : `${f.state}: ${f.step}`}`,
     createdAt: f.created_at, lastUpdatedAt: f.updated_at, ttlMs: 3 * 60 * 60_000, pollIntervalMs: 5000,

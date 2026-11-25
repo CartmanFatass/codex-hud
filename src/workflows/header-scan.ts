@@ -26,3 +26,4 @@ export function headerScanner() {
   };
 }
 export type HeaderPass = ReturnType<ReturnType<typeof headerScanner>>;
+export const workflowHeaders = headerScanner();

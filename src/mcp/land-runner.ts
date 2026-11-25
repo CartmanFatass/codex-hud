@@ -1,4 +1,4 @@
-/** Runs in its own process so rebuilding HUD or restarting a watcher cannot replay the landing. */
+/** The land step's sealed effect. The driver admits it once; no part of this transaction is scheduled separately. */
 import { spawn } from 'node:child_process';
 import type { Job, JobStatus } from './job-contracts.js';
 import { jobFiles } from './paths.js';
@@ -12,10 +12,11 @@ import { withAbstractLock } from '../utils/abstract-lock.js';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { takeLease } from '../roles/lease.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
-import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, readLand, setLandStep, writeLand, type LandFlow, type LandRerun } from './land-state.js';
+import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, landOwnerGone, readLand, setLandStep, writeLand, type LandFlow, type LandRerun } from './land-state.js';
+import { canRepairSealedStep } from '../workflows/engine.js';
+import { runLock, stopRequested } from '../workflows/store.js';
 import { reapWorktree } from './managed-worktree.js';
 import { recordLanding } from './land-records.js';
-import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { repairLand } from './land-repair.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 import { LandOutput } from './land-evidence.js';
@@ -25,7 +26,7 @@ class CommandError extends Error {
   get tail() { return this.evidence.tail; }
 }
 class CommandTimeout extends CommandError {}
-const MAX_RECOVERIES = 2; // Independent limits for worker repairs and moved bases.
+const MAX_BASE_MOVES = 2; // Independent of the engine's worker repair bound.
 const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
 function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, env = process.env) {
   return new Promise<string[]>((ok, fail) => {
@@ -73,14 +74,14 @@ function pathsOverlap(a: string[], b: string[]) {
   }
   return false;
 }
-async function execute(home: string, own: LandFlow, cleanup: string[]) {
+export async function executeLand(home: string, own: LandFlow, cleanup: string[]) {
   const { wt, config: c } = own, main = wt.main_root;
   const scratch = (id: string) => join(dirname(wt.root), `land-${id}`);
   let f = own, members = [own], integration = scratch(own.flow), publishing = false;
   const ref = `refs/heads/${c.base}`, lease = { home, cwd: main, holder: own.flow };
   // A queued helper can update its receipt without the checkout lease; serialize that with boarding.
   const queueLock = <T>(run: () => T) => withAbstractLock('land-queue', `${home}\0${main}`, run);
-  const cancelled = (row: LandFlow) => fs.existsSync(`${landFile(home, row.flow)}.cancel`);
+  const cancelled = (row: LandFlow) => stopRequested(home, row.flow);
   const step = (name: string) => {
     const at = new Date().toISOString();
     for (const row of members) { setLandStep(row, name, at); writeLand(home, row); }
@@ -288,7 +289,7 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
     const replay = async (target: string, current: string) => {
       // Fall back to singles (with normal replay/re-gate) rather than rebuild a moving train.
       if (trainTips) throw Error('Main checkout is not at the recorded base tip');
-      if ((f.base_moves ?? 0) >= MAX_RECOVERIES)
+      if ((f.base_moves ?? 0) >= MAX_BASE_MOVES)
         throw Error('Main checkout is not at the recorded base tip (base move retry limit reached)');
       try { await git(main, ['merge-base', '--is-ancestor', target, current]); }
       catch { throw Error('Main checkout is not at the recorded base tip'); }
@@ -338,12 +339,14 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
       if (current === target) break;
     }
     publishing = true;
+    for (const row of members) { row.publish_pending = landed; writeLand(home, row); }
     await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
     const at = new Date().toISOString();
     for (const row of members) {
       if (target !== base) row.replayed_onto = target;
       if (trainTips) row.published_sha = landed;
       row.landed_sha = trainTips?.get(row) ?? landed; row.landed_at = at;
+      delete row.publish_pending;
       writeLand(home, row);
     }
     endStep();
@@ -407,23 +410,36 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
   async function train() {
     const eligible = (row: LandFlow | null): row is LandFlow => !!row && row.state === 'queued' &&
       row.wt.main_root === main && !row.single && !row.repairs?.length &&
-      isDeepStrictEqual(row.config, c) && !cancelled(row);
+      isDeepStrictEqual(row.config, c) && !cancelled(row) && !landOwnerGone(row);
     if (!eligible(own)) return false;
     const ids = fs.readdirSync(join(home, 'flows')).filter(file => file.endsWith('.json')).map(file => file.slice(0, -5))
       .filter(id => id !== own.flow && isFlowId(id) && eligible(readLand(home, id)));
     if (!ids.length) return false;
     const base = await head(main);
     await checkMain(base);
-    const claimed = await queueLock(() => {
+    const claimed = await queueLock(async () => {
       const queue = [...ids.map(id => readLand(home, id)).filter(eligible), own]
         .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.flow.localeCompare(b.flow));
       if (queue.length < 2) return [];
-      return queue.map(row => {
-        // Point at the checkout owner while boarded, so a crash cannot silently replay a train.
+      const rows: { row: LandFlow; boarded: LandFlow }[] = [];
+      for (const candidate of queue) await runLock(home, candidate.flow, () => {
+        const row = readLand(home, candidate.flow);
+        if (!eligible(row)) return;
+        // Point at the checkout owner before the train can touch Git. Retain the
+        // original cursor for a live, pre-publish fallback to singles.
         const boarded: LandFlow = { ...row, boarded: { flow: own.flow, pid: own.pid, start: own.start }, base_sha: base, state: 'running' };
+        if (row.workflow) {
+          boarded.workflow = structuredClone(row.workflow);
+          boarded.workflow.steps.land = { state: 'running', admitted: true };
+        }
         setLandStep(boarded, 'prepare'); writeLand(home, boarded);
-        return { row, boarded };
+        rows.push({ row, boarded });
       });
+      if (rows.length < 2) {
+        for (const { row } of rows) await runLock(home, row.flow, () => writeLand(home, row));
+        return [];
+      }
+      return rows;
     });
     if (!claimed.length) return false;
     const tips = new Map<LandFlow, string>();
@@ -474,7 +490,8 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
         row.single = true;
         row.timings = boarded.timings;
         if (cleanupNote) row.cleanup_note = cleanupNote;
-        writeLand(home, row);
+        await runLock(home, row.flow, () => writeLand(home, row));
+        if (row.flow === own.flow) Object.assign(own, row);
       }
     }
     if (publishing && members.some(row => row.flow === own.flow)) return true;
@@ -493,7 +510,7 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
         if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
         const prior = f.repairs?.at(-1);
         if (prior) prior.outcome = `failed at ${f.step}`;
-        if (e instanceof CommandTimeout || (f.repairs?.length ?? 0) >= MAX_RECOVERIES) throw e;
+        if (e instanceof CommandTimeout || !canRepairSealedStep(f.repairs?.length ?? 0)) throw e;
         checkCancel(); await checkSource(f);
         f.error = e.message; f.tail = e.tail;
         // Only the helper-created scratch checkout is disposable, never the source or main.
@@ -513,11 +530,3 @@ async function execute(home: string, own: LandFlow, cleanup: string[]) {
   } catch (e) { fail(e); }
   finally { if (acquired) await takeLease({ name: 'main-checkout', release: true }, lease); }
 }
-// The bootstrap reports ready only after this listener and the complete import graph are loaded.
-process.once('message', async ({ home, flow, cleanup }: { home: string; flow: string; cleanup: string[] }) => {
-  const f = readLand(home, flow);
-  if (f && activeLand(f) && f.pid === process.pid) {
-    await publishRunnerLifetime(join(home, 'jobs', f.job));
-    await execute(home, f, cleanup);
-  }
-});

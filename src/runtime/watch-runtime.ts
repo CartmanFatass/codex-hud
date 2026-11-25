@@ -12,11 +12,11 @@ import { archiveJob, recordStopOrigin } from '../roles/job-archive.js';
 import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sessions.js';
 import { recordJobUsage } from '../roles/job-usage.js';
 import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/sonic-citations.js';
-import { landAttempt, activeLand, isFlowId } from '../mcp/land-state.js';
+import { landAttempt, activeLand, isFlowId, readLand } from '../mcp/land-state.js';
 import type { CouncilRun } from '../mcp/council-state.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import type { PrewalkRun } from '../mcp/prewalk-flow.js';
-import { headerScanner } from '../workflows/header-scan.js';
+import { workflowHeaders } from '../workflows/header-scan.js';
 import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
 import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { wakeTicketQueue } from '../mcp/ticket-queue.js';
@@ -57,7 +57,6 @@ const cliCheck = Number(process.env.HUD_WATCH_CLI_CHECK_MS ?? 30000);
 // Test-only retry interval override while no file watch is available.
 const degradedOverride = Number(process.env.HUD_WATCH_DEGRADED_MS);
 const degradedMs = Number.isInteger(degradedOverride) && degradedOverride > 0 ? degradedOverride : 1000;
-const scanDrivers = headerScanner();
 const MAX_CONCURRENT_REAPS = 4;
 const MAX_REAP_ATTEMPTS = 10;
 const MAX_REAP_BACKOFF_MS = 60 * 60_000;
@@ -586,7 +585,7 @@ function scan(retryWatch = false) {
     const scratch = pruneProjectScratch(home);
     if (scratch !== null) log(`pruned project scratch entries: ${scratch}`);
   }
-  const flows = scanDrivers(home);
+  const flows = workflowHeaders(home);
   const baseHeads = new Map<string, ReturnType<typeof mainHead>>();
   const busyWorktrees = new Set<string>(), knownWorktrees = new Set<string>(), knownWorktreeRoots = new Set<string>();
   const worktreeChecks: { id: string; jobFile: string; job: Job; root: string; sweep: boolean }[] = [];
@@ -931,6 +930,11 @@ function scan(retryWatch = false) {
         const b = header<Batch>(file);
         if (!b || !batchActive(b)) continue;
         wakeWorkflow(home, b);
+      } else if (isFlowId(id)) {
+        const f = readLand(home, id, flows);
+        // A sealed owner is reconciled, never re-elected. Keep checking in case
+        // there was no live job directory to subscribe to its lifetime socket.
+        if (!f || !activeLand(f)) continue;
       } else continue;
       nearest = Math.min(nearest, Date.now() + 5000);
     } catch (error) { warn(`flow ${id}`, `flow ${id}: ${(error as Error).message}`); }

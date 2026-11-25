@@ -421,6 +421,7 @@ The helper loads one build before running any steps.
 If it cannot load the build, the flow fails with `HUD was rebuilt; retry the land`.
 Calling `hud_land` again returns the existing flow if it is active or has already fast-forwarded the base.
 If it failed or was cancelled before fast-forward, the call starts a new flow, keeps the old receipt under its original ID and removes the old integration worktree once it holds the lease.
+If the helper died during fast-forward and did not record its result, the call returns the failed receipt rather than retrying an unknown checkout change.
 `hud_read({job: "<flow ID>"})` gives any attempt's state, current step and per-step wall-clock `timings` (including reruns and skipped `after` rebuilds).
 The receipt records `tested_tree` (the latest green tree) and `published_tree` (the candidate tree, even if fast-forward or push does not happen).
 While another land holds the lease, the queued flow names the holder in `hud_read` and in its Inspector; when the holder is in the gate, it also shows the step number and elapsed minutes.

@@ -9,7 +9,7 @@ import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.
 import { getHudHome } from '../hud-home.js';
 import { watchJobChanges } from '../collectors/job-changes.js';
 import { collectSessionJobRows, watchJobsInBackground } from '../collectors/job-snapshot.js';
-import { landEvents } from '../mcp/land-state.js';
+import { workflowEvents } from '../workflows/events.js';
 import { registerWatcher } from '../roles/notify.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
@@ -239,7 +239,7 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     finally { scanning = false; }
     if (stopped) return;
     const { events, progress } = notices.select(home, prev, rows, first, lastScanAt);
-    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...landEvents(home, pane, false, cwd).lines, ...progress]);
+    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...workflowEvents(home, pane, false, cwd).lines, ...progress]);
     first = false;
     lastScanAt = scanAt;
     prev = new Map(rows.map((row) => [row.job, row]));
@@ -397,7 +397,7 @@ export async function watchCommand(
       if (stopped) break;
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const modCatchup = first && freshMod;
-      const flows = landEvents(home, callerPane, all, process.cwd(), modCatchup);
+      const flows = workflowEvents(home, callerPane, all, process.cwd(), modCatchup);
       const trySize = modHandshake ? fs.lstatSync(join(home, TRIES_FILE), { throwIfNoEntry: false })?.size ?? 0 : 0;
       const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
         ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;

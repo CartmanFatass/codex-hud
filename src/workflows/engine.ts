@@ -1,7 +1,7 @@
 import type { Graph, Step } from './graph.js';
 import { failureReason, failuresByReason, settlement, type FailureWindow } from './policy.js';
 
-export interface Cursor { state: 'waiting' | 'ready' | 'running' | 'asking' | 'done' | 'failed' | 'skipped' | 'cancelled'; answer?: string; reason?: string }
+export interface Cursor { state: 'waiting' | 'ready' | 'running' | 'asking' | 'done' | 'failed' | 'skipped' | 'cancelled'; answer?: string; reason?: string; admitted?: true }
 export interface Run extends FailureWindow {
   flow: string; state: 'proposed' | 'working' | 'paused' | 'stopped' | 'completed' | 'failed'; epoch: number; reason?: string;
   handback?: { step: string; choices: string[] };
@@ -26,6 +26,21 @@ export function controlRun(run: Omit<Run, 'steps'> & { steps?: Run['steps'] }, a
   return action;
 }
 export interface Tick { state: 'running' | 'done' | 'failed' | 'cancelled'; reason?: string; changed?: boolean; effect?: () => Promise<number> }
+
+export const canRepairSealedStep = (attempts: number) => attempts < 2;
+/** A sealed effect can contain its own transaction and repair loop. The durable
+ * admission is consumed even if the driver dies without an outcome. */
+export function sealedEffect(cursor: Cursor, effect: () => Promise<number>): Tick {
+  if (cursor.admitted) throw Error('Sealed step already admitted; not replayed');
+  cursor.admitted = true;
+  return { state: 'running', effect };
+}
+/** Standalone sealed runs put the result, cursor and outbox in the same atomic header. */
+export function settleSealedRun(run: Run, step: string, state: 'completed' | 'failed' | 'stopped', notice?: string) {
+  run.state = state;
+  run.steps[step].state = state === 'completed' ? 'done' : state === 'stopped' ? 'cancelled' : 'failed';
+  if (notice !== undefined) run.notices[`end-${run.epoch}`] = notice;
+}
 /** One deterministic pass under flow-state. Step adapters can inspect receipts or stage
  * one admission. The caller commits this cursor BEFORE performing the returned effect. */
 export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: (id: string, step: Step) => Tick) {
