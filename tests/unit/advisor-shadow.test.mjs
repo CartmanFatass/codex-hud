@@ -501,7 +501,7 @@ test('panel Enter and click emit copy-advisor, write OSC 52 (+ WSL clip.exe), an
   assert.equal(panelActionLine(actionLog[0], () => true, projectRoot), undefined);
 });
 
-test('Home recent advice spans sessions and UTC months, expires, caps at five, and copies only recorded skill paths', async (t) => {
+test('Home recent advice spans sessions and UTC months, expires, caps at five, and copies recorded or indexed skill paths', async (t) => {
   const f = setupEnv(t);
   const previousSettings = process.env.HUD_SETTINGS_PATH;
   process.env.HUD_SETTINGS_PATH = f.env.HUD_SETTINGS_PATH;
@@ -515,7 +515,10 @@ test('Home recent advice spans sessions and UTC months, expires, caps at five, a
   fs.writeFileSync(f.env.HUD_SETTINGS_PATH, '{"advisorShadow":true}');
   const now = Date.parse('2027-01-01T00:20:00Z'), min = 60_000, day = 24 * 60 * min;
   const other = path.join(f.root, 'other-project');
-  const skillPath = writeSkill(f.skillsDir, 'review', 'review', 'Review a change.');
+  const skillPath = '/demo/previous-skills/review/SKILL.md';
+  writeSkill(f.skillsDir, 'review', 'review', 'Review a change.');
+  const legacyPath = writeSkill(f.skillsDir, 'legacy', 'legacy', 'Legacy skill.');
+  getSkillIndex(f.hudHome, [f.skillsDir]);
   const append = (delta, event) => {
     const at = new Date(now + delta).toISOString();
     const dir = path.join(f.hudHome, 'events');
@@ -528,14 +531,16 @@ test('Home recent advice spans sessions and UTC months, expires, caps at five, a
   append(-2 * min, { kind: 'objective', project: other });
   append(min, { kind: 'advice', session: 'c', skill: 'future' });
   append(-30 * min, { kind: 'rule_hits', session: 'c', rules: ['R2'] });
-  append(-day, { kind: 'advice', session: 'c', skill: 'at-cutoff' });
+  append(-day, { kind: 'advice', session: 'c', skill: 'Legacy' });
   append(-day - 1, { kind: 'advice', session: 'c', skill: 'expired' });
 
   const collector = new HomePortfolioCollector(f.hudHome);
   const projects = [{ root: f.projectRoot, name: 'Demo', registrationIndex: 0, unavailable: true }];
   const collect = (at = now) => collector.read(projects, { workers: [] }, at);
   const portfolio = await collect();
-  assert.deepEqual(portfolio.recentAdvice.map(e => e.skill ?? e.rules.join(' ')), ['R3 R8', 'legacy', 'review', 'R2', 'at-cutoff']);
+  assert.deepEqual(portfolio.recentAdvice.map(e => e.skill ?? e.rules.join(' ')), ['R3 R8', 'legacy', 'review', 'R2', 'Legacy']);
+  assert.equal(portfolio.recentAdvice[1].path, legacyPath);
+  assert.equal(portfolio.recentAdvice[2].path, skillPath);
   assert.equal((await collect(now + 1)).recentAdvice.length, 4);
   append(-25 * min, { kind: 'advice', session: 'c', skill: 'earlier' });
   assert.deepEqual((await collect()).recentAdvice.map(e => e.skill ?? e.rules.join(' ')), ['R3 R8', 'legacy', 'review', 'earlier', 'R2']);
@@ -546,16 +551,36 @@ test('Home recent advice spans sessions and UTC months, expires, caps at five, a
   const header = rows.findIndex(r => r.text.startsWith('Recent advice'));
   assert.ok(header > 0);
   assert.equal(rows[header - 1].item, 'home:other-projects');
-  const [rules, oldSkill, skill, oldRules] = rows.slice(header + 1, header + 5);
+  const [rules, oldSkill, skill, oldRules, missingSkill] = rows.slice(header + 1, header + 6);
   assert.deepEqual([rules, oldSkill, skill, oldRules].map(row => row.text.trimEnd()),
     ['5m other-project rules: R3 R8', '6m unknown project skill: legacy', '8m Demo skill: review', '30m unknown project rules: R2']);
+  assert.match(missingSkill.text, /skill: Legacy/);
   assert.ok(rows.every(row => visualLength(row.text) === 40));
   const copy = { type: 'copy-advisor', root: f.projectRoot, session: 'b', skill: 'review', path: skillPath };
+  const legacyCopy = { type: 'copy-advisor', root: '', session: 'a', skill: 'legacy', path: legacyPath };
   const click = (row) => handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: x + 4, y: y + rows.indexOf(row) }, { frame });
   assert.deepEqual(click(skill).action, copy);
-  for (const row of [rules, oldSkill, oldRules]) assert.equal(click(row).action, undefined);
-  const selected = draw({ ...frame.state, home: { ...frame.state.home, cursor: skill.item } });
-  assert.deepEqual(handleMonitorInput(selected.state, { type: 'key', key: 'enter' }, { frame: selected }).action, copy);
+  assert.deepEqual(click(oldSkill).action, legacyCopy);
+  for (const row of [rules, oldRules, missingSkill]) {
+    assert.equal(row.item, undefined);
+    assert.equal(click(row).action, undefined);
+  }
+  const start = draw({ ...frame.state, home: { ...frame.state.home, cursor: rows[header - 1].item } });
+  const down = handleMonitorInput(start.state, { type: 'key', key: 'down' }, { frame: start });
+  assert.ok(oldSkill.item);
+  assert.equal(down.state.home.cursor, oldSkill.item);
+  const selected = draw(down.state);
+  const enter = handleMonitorInput(selected.state, { type: 'key', key: 'enter' }, { frame: selected });
+  assert.deepEqual(enter.action, legacyCopy);
+  const copied = [];
+  createPanelActions(f.hudHome, f.projectRoot, null, {
+    state: enter.state,
+    copyClipboard(text) { copied.push(text); return true; },
+    notice() {},
+  }).execute(enter.action, selected.state);
+  assert.deepEqual(copied, [legacyPath]);
+  const { at, ...logged } = JSON.parse(fs.readFileSync(path.join(f.hudHome, PANEL_ACTIONS_FILE), 'utf8'));
+  assert.deepEqual(logged, { type: 'advice-copy', project: '', session: 'a', skill: 'legacy', path: legacyPath });
   setLanguage('zh');
   const translated = draw().panes[0].rows;
   assert.ok(translated.some(row => row.text.startsWith('近期建议')));
@@ -612,6 +637,19 @@ test('recent advice only parses changed monthly tails and ignores truncated line
   assert.equal(entry.skill, 'first');
   assert.deepEqual(others, []);
   assert.equal(history.read(now)[0], entry, 'unchanged signature reuses parsed entries');
+  const index = advisorIndexPath(f.hudHome);
+  fs.mkdirSync(path.dirname(index));
+  const replaceIndex = (skillPath) => {
+    const staged = `${index}.tmp`;
+    fs.writeFileSync(staged, JSON.stringify({ version: 1, dirs: {}, skills: [{ name: 'first', description: 'First skill.', path: skillPath }] }));
+    fs.renameSync(staged, index);
+  };
+  replaceIndex('/demo/skills/first/SKILL.md');
+  assert.equal(history.read(now)[0].path, '/demo/skills/first/SKILL.md', 'new index resolves an unchanged event');
+  replaceIndex('/demo/skills/moved/SKILL.md');
+  assert.equal(history.read(now)[0].path, '/demo/skills/moved/SKILL.md', 'replaced index refreshes the path');
+  replaceIndex('relative/SKILL.md');
+  assert.equal(history.read(now)[0], entry, 'invalid paths do not survive an index replacement');
   const mtime = fs.statSync(file).mtimeMs;
   fs.writeFileSync(file, `${prefix}${line('newer')}\n${line('in-progress')}`);
   fs.utimesSync(file, new Date(mtime), new Date(mtime + 1_000));

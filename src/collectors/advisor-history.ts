@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'node:path';
 import { loadSettings, settingsPath } from '../settings.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { fileSignature } from '../utils/file-signature.js';
+import { advisorIndexPath, readAdvisorIndex } from './advisor-shadow.js';
 
 export const RECENT_ADVICE_MS = 24 * 60 * 60_000;
 const TAIL_BYTES = 64 * 1024;
@@ -36,6 +37,7 @@ const utcMonth = (at: number) => new Date(at).toISOString().slice(0, 7);
 export class AdvisorHistory {
   private cache = new Map<string, { stamp: string; events: AdviceEvent[] }>();
   private settings?: { file: string; stamp: string; enabled: boolean };
+  private index?: { stamp: string | null; paths: Map<string, string> };
   constructor(private home: string) {}
 
   private enabled(): boolean {
@@ -67,7 +69,22 @@ export class AdvisorHistory {
       }
       for (let i = lo; i < Math.min(lo + MAX_ROWS, events.length) && events[i].at >= since; i++) recent.push(events[i]);
     }
-    return recent.sort(newestFirst).slice(0, MAX_ROWS);
+    // Enrich only visible candidates, leaving the cached log events unchanged when the index changes.
+    let paths: Map<string, string> | undefined;
+    return recent.sort(newestFirst).slice(0, MAX_ROWS).map((event) => {
+      if (event.kind !== 'advice' || event.path) return event;
+      const path = (paths ??= this.skillPaths()).get(event.skill);
+      return path ? { ...event, path } : event;
+    });
+  }
+
+  private skillPaths(): Map<string, string> {
+    const stamp = fileSignature(advisorIndexPath(this.home));
+    if (this.index?.stamp === stamp) return this.index.paths;
+    const skills = stamp === null ? undefined : readAdvisorIndex(this.home)?.skills;
+    const paths = new Map(skills?.map(({ name, path }) => [name, path]));
+    this.index = { stamp, paths };
+    return paths;
   }
 
   private readMonth(month: string): AdviceEvent[] {

@@ -198,9 +198,9 @@ function recentAdviceRows({ recentAdvice, projects }: HomePortfolio, width: numb
     const detailRoom = Math.min(cells(detail), Math.max(14, Math.floor(width / 2)));
     const nameWidth = Math.max(1, width - cells(age) - 2 - detailRoom);
     const row = boardRow(fit(`${ink.muted(age)} ${ink.muted(truncateAnsi(name, nameWidth))} ${ink.text(detail)}`, width));
-    if (event.kind !== 'advice' || !project || !event.path) return row;
+    if (event.kind !== 'advice' || !event.path) return row;
     return { ...row, item: `home:recent-advice:${JSON.stringify([at, session, project, event.skill])}`,
-      advisorCopy: { root: project, session, skill: event.skill, path: event.path } };
+      advisorCopy: { root: project ?? '', session, skill: event.skill, path: event.path } };
   })];
 }
 

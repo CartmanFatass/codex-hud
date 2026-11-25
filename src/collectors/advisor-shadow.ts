@@ -239,9 +239,8 @@ function findSkillFiles(root: string): string[] {
   return found;
 }
 
-function readCachedIndex(hudHome: string): CachedSkillIndex | undefined {
-  const mem = indexMemory.get(hudHome);
-  if (mem) return mem;
+/** Read the persisted index without rebuilding it or consulting the writer's memory cache. */
+export function readAdvisorIndex(hudHome: string): CachedSkillIndex | undefined {
   try {
     const { bytes, truncated } = readFileBounded(advisorIndexPath(hudHome), MAX_STATE_BYTES);
     if (truncated) return undefined;
@@ -252,12 +251,18 @@ function readCachedIndex(hudHome: string): CachedSkillIndex | undefined {
         !!s && typeof s.name === 'string' && typeof s.description === 'string' && typeof s.path === 'string' && path.isAbsolute(s.path)
     );
     if (!valid) return undefined;
-    const cached: CachedSkillIndex = { version: 1, dirs: parsed.dirs as Record<string, string>, skills: parsed.skills };
-    indexMemory.set(hudHome, cached);
-    return cached;
+    return { version: 1, dirs: parsed.dirs as Record<string, string>, skills: parsed.skills };
   } catch {
     return undefined;
   }
+}
+
+function readCachedIndex(hudHome: string): CachedSkillIndex | undefined {
+  const mem = indexMemory.get(hudHome);
+  if (mem) return mem;
+  const cached = readAdvisorIndex(hudHome);
+  if (cached) indexMemory.set(hudHome, cached);
+  return cached;
 }
 
 /** Build or return the cached SKILL.md index; rebuilt only when a configured directory's mtime changes. */
