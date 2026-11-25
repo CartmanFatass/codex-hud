@@ -10,10 +10,10 @@ import { startSessionWatch } from '../../dist/cli/watch.js';
 import { monitorSonic, sonicLimitDefaults } from '../../dist/mcp/sonic-policy.js';
 
 const workerTools = new URL('../../packages/hud-mcp/bin/worker-tools.mjs', import.meta.url).href;
-function setLimits(f, limits) {
+function setSonicRole(f, overrides) {
   fs.mkdirSync(join(f.env.HUD_HOME, 'roles'), { recursive: true });
   writeFixtureFile(join(f.env.HUD_HOME, 'roles', 'sonic.json'), JSON.stringify({
-    role: 'sonic', instructions: 'sonic', can_continue: false, run: [{ harness: 'pi', pi_role: 'sonic' }], ...limits,
+    role: 'sonic', instructions: 'sonic', can_continue: false, run: [{ harness: 'pi', pi_role: 'sonic' }], ...overrides,
   }));
 }
 
@@ -92,7 +92,7 @@ test('the headless deadline fails the query, preserves partial output and reaps 
   // Backdating STATUS below must be noticed within the test window even if its rename event is missed.
   const f = await fixture(t, { watcherTickMs: 250 });
   const max_s = 60;
-  setLimits(f, { check_s: 120, stall_s: 120, max_s });
+  setSonicRole(f, { check_s: 120, stall_s: 120, max_s });
   f.overrideBin('pi', `#!${process.execPath}
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -165,7 +165,7 @@ if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
   const f = await fixture(t, { probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(clock))}` });
   const defaults = (await f.call('hud_roster', { detail: true })).roles.find(r => r.role === 'sonic');
   assert.deepEqual([defaults.check_s, defaults.stall_s, defaults.max_s], [600, 180, 1800]);
-  setLimits(f, { check_s: 101, stall_s: 250, max_s: 400 });
+  setSonicRole(f, { check_s: 101, stall_s: 250, max_s: 400 });
   const role = (await f.call('hud_roster', { detail: true })).roles.find(r => r.role === 'sonic');
   assert.deepEqual([role.check_s, role.stall_s, role.max_s], [101, 250, 400]);
   const notice = Promise.withResolvers();
@@ -316,7 +316,29 @@ test('a default checkpoint counts worker milestones but not its own progress or 
   assert.deepEqual(loop(started + 1506000), { stop: 'looping' });
 });
 
-for (const reason of ['looping', 'stalled']) {
+test('Sonic bounds threshold compaction from its start, not from its last retry, and clears the bound on end', t => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'sonic-compaction-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const started = Date.now(), stdout = join(dir, 'stdout.jsonl');
+  const emit = (type, seconds, reason) => {
+    fs.appendFileSync(stdout, JSON.stringify({ type, reason }) + '\n');
+    fs.utimesSync(stdout, new Date(started), new Date(started + seconds * 1000));
+  };
+  const check = monitorSonic(dir, { check_s: 60, stall_s: 10, max_s: 600 }, started);
+  emit('compaction_start', 58, 'threshold');
+  assert.deepEqual(check(started + 60000), { progress: 'still working at 1 min: pi threshold compaction' });
+  emit('auto_retry_start', 67);
+  assert.deepEqual(check(started + 67999), {});
+  assert.deepEqual(check(started + 68000), { stop: 'pi threshold compaction did not finish within 10 s' });
+  // An end already in the log at the deadline wins, even when read in the same batch as the start.
+  emit('compaction_end', 68, 'threshold');
+  assert.deepEqual(check(started + 68000), {});
+  const replay = monitorSonic(dir, sonicLimitDefaults, started);
+  assert.deepEqual(replay(started + 248000), { stop: 'stalled' });
+});
+
+const compactionFailure = `pi overflow compaction did not finish within ${sonicLimitDefaults.stall_s} s`;
+for (const reason of ['looping', 'stalled', compactionFailure]) {
   test(`sonic stops as ${reason} and preserves its last progress in the digest`, { timeout: 60000 }, async (t) => {
     // Advance the stalled runner's clock only after Pi logs its first event, which
     // follows hud_progress. Real startup must not race a synthetic inactivity window.
@@ -328,14 +350,19 @@ if (process.argv[1]?.endsWith('/sonic-run.mjs')) {
     const f = await fixture(t, {
       // Settlement must also complete if the watch misses the runner's stop-receipt rename.
       watcherTickMs: 250,
-      probe: reason === 'stalled' ? `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(clock))}` : '',
+      probe: reason !== 'looping' ? `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(clock))}` : '',
     });
-    if (reason === 'looping') setLimits(f, { check_s: 4, stall_s: 8, max_s: 20 });
+    if (reason === 'looping') setSonicRole(f, { check_s: 4, stall_s: 8, max_s: 20 });
+    if (reason === compactionFailure) setSonicRole(f, { run: [{
+      harness: 'pi', pi_role: 'sonic', model: 'anthropic/claude-haiku-5-5', thinking: 'max',
+    }] });
     f.overrideBin('pi', `#!${process.execPath}
 const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
 await callWorkerTool('hud_progress', { message: 'Synthetic partial milestone.' });
 const log = () => console.log(JSON.stringify({ type: 'tool_execution_start', toolCallId: 'done-1', toolName: 'read', args: { path: 'synthetic.md' } }));
-log();
+${reason === compactionFailure ? `
+if (!process.argv.includes('--print') || !process.argv.includes('anthropic/claude-haiku-5-5')) process.exit(2);
+console.log(JSON.stringify({ type: 'compaction_start', reason: 'overflow' }));` : 'log();'}
 ${reason === 'stalled' ? "console.log(JSON.stringify({ type: 'tool_execution_end', toolCallId: 'done-1', toolName: 'read' }));" : ''}
 setInterval(${reason === 'looping' ? 'log' : '() => {}'}, 50);
 `);
@@ -344,7 +371,9 @@ setInterval(${reason === 'looping' ? 'log' : '() => {}'}, 50);
     const status = cliState(dir);
     assert.equal(status.exit_reason, reason);
     assert.ok(status.stdout_bytes > 0);
-    assert.equal((await f.call('hud_read', { job })).latest_progress.text, 'Synthetic partial milestone.');
+    const digest = await f.call('hud_read', { job });
+    assert.equal(digest.reason, reason);
+    assert.equal(digest.latest_progress.text, 'Synthetic partial milestone.');
   });
 }
 

@@ -254,6 +254,7 @@ The sonic role file accepts `check_s` (600), `stall_s` (180) and `max_s` (1800),
 At each checkpoint HUD stops a repeating query (`looping`), or sends a progress line and lets the same pi process continue.
 When no stdout growth or worker progress arrives for `stall_s` while an unbounded tool call (no declared timeout) is still running, HUD ends only that tool's process tree, records a progress line (for example `ended a silent tool after 180 s: bash`), and lets pi continue with the tool error.
 If no tool is running (or the same tool call stalls again, or a tool's declared timeout expires), HUD stops the sonic job as `stalled`; the hard cap stops it as `timeout`.
+Sonic gives pi automatic compaction one `stall_s` window to finish. In pi 1.6.0, Haiku at `max` thinking has reached `compaction_start` without a matching `compaction_end` before that window expired. Pi's built-in summarizer waits for the whole model response without forwarding summary deltas to JSON stdout; silence alone cannot distinguish slow summarization from a hung request. HUD lets compaction finish, or stops the job with a reason naming threshold or overflow compaction and the expired window. The hard cap still applies.
 These failures retain partial stdout and the latest progress line.
 To retry a stopped query, use `hud_create({role:"sonic", retry_of:job})`.
 The new job resumes a private copy of the stopped job’s `sonic-session.jsonl` with a short continuation naming the stop reason.

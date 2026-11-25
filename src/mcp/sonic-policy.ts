@@ -6,7 +6,8 @@ import { jobFiles } from './paths.js';
 
 export const sonicLimitDefaults = { check_s: 600, stall_s: 180, max_s: 1800 };
 export type SonicLimits = typeof sonicLimitDefaults;
-export type SonicStop = 'looping' | 'stalled' | 'timeout';
+type AutoCompaction = 'overflow' | 'threshold';
+export type SonicStop = 'looping' | 'stalled' | 'timeout' | `pi ${AutoCompaction} compaction did not finish within ${number} s`;
 export const sonicLimitKeys = ['check_s', 'stall_s', 'max_s'] as const;
 export function sonicLimits(role: Partial<SonicLimits>): SonicLimits {
   return {
@@ -24,7 +25,7 @@ function fingerprint(tool: string, args: unknown): string {
   return createHash('sha256').update(tool).update('\0').update(canonical ?? '').digest('hex');
 }
 
-function toolEvents(file: string, offset: number, size: number) {
+function sonicEvents(file: string, offset: number, size: number) {
   const start = Math.max(offset, size - eventTailBytes);
   const { bytes } = readFileBounded(file, size - start, { offset: start });
   const newline = bytes.lastIndexOf(10);
@@ -33,9 +34,12 @@ function toolEvents(file: string, offset: number, size: number) {
   // The tail may start in the middle of an event; a truncated window can't prove inactivity.
   if (start > offset) lines.shift();
   const opened: { id: string; tool: string; timeout_s?: number }[] = [], ended: string[] = [];
+  let compaction: AutoCompaction | null | undefined; // Last boundary in this batch; null means ended.
   const calls = lines.flatMap(line => {
     try {
       const event = JSON.parse(line);
+      if (event?.type === 'compaction_start' && (event.reason === 'overflow' || event.reason === 'threshold')) compaction = event.reason;
+      if (event?.type === 'compaction_end') compaction = null;
       const id = typeof event?.toolCallId === 'string' ? event.toolCallId : undefined;
       if (id && event?.type === 'tool_execution_end') ended.push(id);
       const tool = event?.toolName;
@@ -54,7 +58,7 @@ function toolEvents(file: string, offset: number, size: number) {
       return [{ tool, call: fingerprint(tool, args), target: fingerprint(tool, target) }];
     } catch { return []; }
   });
-  return { calls, opened, ended, offset: newline < 0 ? offset : start + newline + 1, complete: start === offset };
+  return { calls, opened, ended, compaction, offset: newline < 0 ? offset : start + newline + 1, complete: start === offset };
 }
 
 function repeats(calls: string[]): boolean {
@@ -83,6 +87,7 @@ export function monitorSonic(dir: string, limits: SonicLimits, started: number) 
   const seen = new Set<string>();
   let offset = 0, size = 0, progressMtime: number | undefined;
   let calls: string[] = [], newTarget = false, complete = true;
+  let compacting: { reason: AutoCompaction; deadline: number } | undefined;
   let lastActivity = started, next = started + limits.check_s * 1000;
   // A tool call that declared its own timeout (a long build or test run) is not a stall until that timeout passes.
   const running = new Map<string, number>();
@@ -96,7 +101,10 @@ export function monitorSonic(dir: string, limits: SonicLimits, started: number) 
     if (output.size > size) lastActivity = Math.max(lastActivity, output.mtimeMs);
     if (output.size !== size) {
       size = output.size;
-      const batch = toolEvents(stdout, offset, size);
+      const batch = sonicEvents(stdout, offset, size);
+      // A skipped part of the log may contain compaction_end. Only act on an observed open phase.
+      if (!batch.complete || batch.compaction === null) compacting = undefined;
+      if (batch.compaction) compacting = { reason: batch.compaction, deadline: output.mtimeMs + limits.stall_s * 1000 };
       offset = batch.offset;
       complete &&= batch.complete;
       for (const { id, tool, timeout_s } of batch.opened) {
@@ -126,7 +134,10 @@ export function monitorSonic(dir: string, limits: SonicLimits, started: number) 
         progressMtime = mtime;
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     }
-    if (now >= Math.max(lastActivity + limits.stall_s * 1000, ...running.values())) {
+    // Pi waits for the summary as one result; retries or unrelated progress aren't a completed summary.
+    if (compacting && now >= compacting.deadline)
+      return { stop: `pi ${compacting.reason} compaction did not finish within ${limits.stall_s} s` };
+    if (!compacting && now >= Math.max(lastActivity + limits.stall_s * 1000, ...running.values())) {
       if (!running.size && unbounded.size && [...unbounded.keys()].every(id => !killedTools.has(id))) {
         const silent = Math.floor((now - lastActivity) / 1000);
         const tools = [...new Set(unbounded.values())].join(', ');
@@ -138,7 +149,7 @@ export function monitorSonic(dir: string, limits: SonicLimits, started: number) 
     }
     if (now < next) return {};
     const newProgress = milestone?.line !== checkpointWorkerLine ? milestone?.text : undefined;
-    if (complete && !running.size && (repeats(calls) || (!newTarget && !newProgress))) return { stop: 'looping' };
+    if (!compacting && complete && !running.size && (repeats(calls) || (!newTarget && !newProgress))) return { stop: 'looping' };
     calls = [];
     newTarget = false;
     complete = true;
@@ -147,6 +158,6 @@ export function monitorSonic(dir: string, limits: SonicLimits, started: number) 
     // If scheduling was delayed, don't run missed checkpoints back to back.
     next = started + (elapsed + limits.check_s) * 1000;
     const time = elapsed % 60 === 0 ? `${elapsed / 60} min` : `${elapsed} s`;
-    return { progress: `still working at ${time}: ${newProgress ?? (lastTool ? `tool ${lastTool}` : 'processing output')}` };
+    return { progress: `still working at ${time}: ${compacting ? `pi ${compacting.reason} compaction` : newProgress ?? (lastTool ? `tool ${lastTool}` : 'processing output')}` };
   };
 }
