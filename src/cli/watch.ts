@@ -95,14 +95,15 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
     const pending = unread || attention;
     const report = !row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime);
     const escalation = row.state === 'waiting_orchestrator' && !row.open_questions && (old?.state !== row.state || old.reason !== row.reason);
-    const checks = checksJustFinished(row, old);
-    const event = checks || (row.blocked && !old?.blocked) || (row.state !== 'working' && (
-      (!old && row.state !== null && !questions.length) ||
+    const failingChecks = row.checks && row.checks.passed < row.checks.total && checksJustFinished(row, old);
+    const failureOrStop = row.display_state === 'failed' || row.display_state === 'stopped';
+    const event = failingChecks || (row.blocked && !old?.blocked) || (row.state !== 'working' && (
+      (!old && row.state !== null && row.state !== 'queued' && !questions.length) ||
       (old && settled(row) && !settled(old)) || report || escalation ||
-      (row.parent_job && row.display_state === 'failed' && old?.display_state !== 'failed')
+      (failureOrStop && row.display_state !== old?.display_state)
     ));
     if (!(catchup ? pending : event)) return questions;
-    const defer = !row.blocked && row.display_state !== 'failed' && !escalation && (settled(row) || report || checks);
+    const defer = !row.blocked && !failureOrStop && !failingChecks && !escalation && (settled(row) || report);
     return [...questions, { line: formatJobChange(row), defer, status: row }];
   });
   const older = [
@@ -115,7 +116,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
 
 function sonicCheckpointNotices() {
   let seen = new Map<string, string>();
-  return (rows: JobRow[], members?: ReadonlySet<string>): string[] => {
+  return (rows: JobRow[], verbose: boolean): string[] => {
     const next = new Map<string, string>();
     const lines = rows.flatMap(row => {
       if (row.role !== 'sonic' || row.state !== 'working') return [];
@@ -123,7 +124,7 @@ function sonicCheckpointNotices() {
       const before = seen.get(row.job);
       const at = checkpoint?.at ?? before;
       if (at) next.set(row.job, at);
-      return checkpoint && (!before || checkpoint.at > before) && !(members?.has(row.job) && checkpoint.text.startsWith('still working at '))
+      return checkpoint && (!before || checkpoint.at > before) && (verbose || !checkpoint.text.startsWith('still working at '))
         ? [`[sonic ${row.job}] ${checkpoint.text}`] : [];
     });
     seen = next;
@@ -167,9 +168,10 @@ function watchNotices(windowMs: number) {
     get delay() { return Math.min(settlements.delay, batches.delay); },
     get pending() { return settlements.pending || Number.isFinite(batches.delay); },
     select(home: string, prev: ReadonlyMap<string, JobRow>, rows: WatchJobRow[], catchup: boolean | number, lastScanAt: number, verbose = false) {
-      if (verbose) return { events: catchup ? actionable(home, prev, rows, catchup, lastScanAt) : [], progress: checkpoints(rows) };
-      const { events, members } = batches.collect(rows, prev, actionable(home, prev, rows, catchup, lastScanAt));
-      return { events, progress: checkpoints(rows, members) };
+      const progress = checkpoints(rows, verbose);
+      if (verbose && !catchup) return { events: [], progress };
+      const events = actionable(home, prev, rows, catchup, lastScanAt);
+      return { events: verbose ? events : batches.collect(rows, prev, events), progress };
     },
   };
 }

@@ -70,7 +70,7 @@ export function packageBatches() {
         if (row.display_state === 'working' || (row.display_state === 'failed' && old?.display_state !== 'failed')) return [event];
         return [];
       });
-      return { events: individual.concat(failures, rollups), members };
+      return individual.concat(failures, rollups);
     },
   };
 }

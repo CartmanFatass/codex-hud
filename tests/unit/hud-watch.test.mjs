@@ -320,6 +320,27 @@ test('hud watch --verbose retains the existing MCP change lines', async (t) => {
   assert.equal(fs.existsSync(join(hudHome, 'watchers', 'w4E:p1.pid')), false);
 });
 
+for (const verbose of [false, true]) test(`a single queued sonic and its routine checkpoint (${verbose ? 'verbose' : 'quiet'})`, async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-checkpoint-')), pane = 'w4E:p1', id = 'j0000000000000001';
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const dir = join(home, 'jobs', id), status = join(dir, 'STATUS.json'), scans = observeStats(t, status);
+  const ac = new AbortController(), lines = [];
+  const run = watchCommand(verbose ? ['--all', '--verbose'] : ['--all'], { env: { HUD_HOME: home },
+    stdout: s => lines.push(s.trim()), stderr: assert.fail }, { signal: ac.signal, rescanMs: 50 });
+  try {
+    writeJob(home, id, pane, 'query', { state: 'queued' });
+    const receipt = join(dir, 'job.json');
+    writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), role: 'sonic' }));
+    await until(() => scans() > 0, t.signal);
+    const before = scans();
+    const text = 'still working at 10 min: tool read';
+    writeFixtureFile(join(dir, 'progress.jsonl'), JSON.stringify({ at: new Date().toISOString(), source: 'checkpoint', text }));
+    writeFixtureFile(status, '{"state":"working"}');
+    await until(() => scans() > before, t.signal);
+    assert.deepEqual(lines, verbose ? [`${id} sonic query: queued (#1)`, `${id} sonic query: working`, `[sonic ${id}] ${text}`] : []);
+  } finally { ac.abort(); assert.equal(await run, 0); }
+});
+
 test('hud watch shows the signed settlement summary and ignores metadata-only writes', async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-summary-'));
   const pane = 'w4E:p1', id = 'j00000000000000a1', staleId = 'j00000000000000b2';
@@ -529,8 +550,7 @@ test('quiet watch rolls up a package from its third live member until the last s
     return writes.splice(0);
   };
   try {
-    const [queued] = await step(() => create(1, 'queued'));
-    assert.match(queued, /labels: queued/); // Only two live: ordinary notice.
+    assert.deepEqual(await step(() => create(1, 'queued')), []); // Below the batch threshold.
     assert.deepEqual(await step(() => { create(2, 'queued'); create(3, 'queued'); create(4, 'working'); }), []);
     const checkpoint = (time, text) => writeFixtureFile(file(0, 'progress.jsonl'), JSON.stringify({ at: new Date(time).toISOString(), source: 'checkpoint', text }));
     assert.deepEqual(await step(() => checkpoint(1, 'still working at 10 min: tool read')), []);
@@ -557,7 +577,29 @@ test('quiet watch rolls up a package from its third live member until the last s
         report_sig: cachedReportSignature(file(4, '.')), results: [{ command: 'synthetic-check', exit_code: 1 }] }));
     });
     assert.equal(checks.length, 1); assert.match(checks[0], /checks 0\/1/);
-    assert.match((await step(() => create(5, 'queued')))[0], /labels: queued/); // No latch on a reused label.
+    assert.deepEqual(await step(() => create(5, 'queued')), []);
+    assert.deepEqual(await step(() => status(5, 'stopped')), [`${ids[5]} imp labels: stopped`]); // No latch on a reused label.
+  } finally { ac.abort(); assert.equal(await run, 0); }
+});
+
+test('late check results wake quiet watch immediately only on failure', async (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-checks-')), pane = 'w4E:p1';
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const checks = [0, 1].map(exit_code => {
+    const dir = writeJob(home, `j000000000000000${exit_code}`, pane, 'checks', { state: 'closed' }, true);
+    const file = join(dir, 'job.json'), job = JSON.parse(fs.readFileSync(file));
+    writeFixtureFile(file, JSON.stringify({ ...job, cli: null, checks: ['synthetic-check'], read_at: new Date(Date.now() + 1000).toISOString() }));
+    return () => writeFixtureFile(join(dir, 'checks.json'), JSON.stringify({ state: 'done', turn: job.created_at,
+      report_sig: cachedReportSignature(dir), results: [{ command: 'synthetic-check', exit_code }] }));
+  });
+  const ac = new AbortController(), lines = [];
+  t.mock.method(performance, 'now', () => 0); // No settlement window can expire.
+  const run = watchCommand(['--all'], { env: { HUD_HOME: home }, stdout: s => lines.push(s.trim()), stderr: assert.fail },
+    { signal: ac.signal, rescanMs: 50 });
+  try {
+    for (const finish of checks) finish();
+    await until(() => lines.length > 0, t.signal);
+    assert.deepEqual(lines, ['j0000000000000001 imp checks: closed | checks 0/1']);
   } finally { ac.abort(); assert.equal(await run, 0); }
 });
 

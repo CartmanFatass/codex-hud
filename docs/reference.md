@@ -161,13 +161,14 @@ Task clients do not get `hud_wait`, `changes` (beyond panel and undelivered batc
 
 For other clients, MCP tool responses carry `changes`: one line per state change of the jobs this pane dispatched since the last response (omitted when there is none).
 Panel, statusline, pi footer, MCP and `hud watch` derive a job's state through one shared `jobRow`, so they agree.
-`hud watch` defaults to actionable events: new questions (with text, options, default and `hud_respond` reply), settlement/unread reports, blocks and new quiet-worker reasons.
-It skips working starts/resumes, answered questions and already-reported closure; `--verbose` keeps all MCP change lines.
+`hud watch` defaults to actionable events: new questions (with text, options, default and `hud_respond` reply), settlements and unread reports, failures, stalls, stops, failed checks, blocks and new quiet-worker reasons. It also delivers land results and owner decisions.
+Routine `still working` checkpoints and individual queue positions do not wake the caller. Check the panel, `hud_peek` or `hud_read` for progress; `hud_create` returns a queued job's position.
+Quiet watch also skips working starts/resumes, answered questions and already-reported closure; `--verbose` keeps all MCP change lines and Sonic checkpoints.
 Both `hud watch` and `changes` append a current worker summary, clipped to 140 characters.
 Unread report notices point to `hud_read job=<id>` (`mode: "full"` for the whole report), not to a file.
 The watch groups settlements arriving within three seconds into one notice; questions are delivered immediately.
 Once three ordinary top-level jobs with the same package are running or queued, quiet watch treats them as a batch until the last member settles.
-It skips individual queue and still-working notices, summarizes settlements at most once every five minutes, and sends a final tally with a hint to list unread reports.
+It summarizes batch settlements at most once every five minutes and sends a final tally with a hint to list unread reports.
 Failures (including failed checks), stalls and requests for input still arrive individually. A rollup does not mark reports read.
 Batch tracking belongs to the watch: after a restart, the three-live-job threshold is evaluated against its current snapshot.
 On start the watch catches up pending questions, unread settled reports and unread failures/blocks.
@@ -210,7 +211,7 @@ Pass `checks` for up to five shell commands you would otherwise run yourself in 
 The HUD runs them in order with `bash -lc` after a declared pi or CLI settlement, with a ten-minute timeout per command.
 Retries and closed-job repairs inherit them.
 `hud_read({job})` shows check outcomes; `mode: "full"` includes the bounded failure tail; a new turn or rewritten report marks the previous results stale.
-`hud watch` adds `checks 2/3` on settlement or in a follow-up notice when the results arrive.
+`hud watch` includes available results (e.g. `checks 2/3`) on settlement. A later failing result wakes the caller immediately; a passing result alone does not.
 The Inspector show the same count of passed/total checks (`✓` pass, `✗` fail, `↻` running, `~` stale).
 Checks do not settle jobs or decide acceptance.
 
@@ -257,7 +258,7 @@ If the session tail contains assistant text and no report exists, HUD saves that
 Sonic can publish milestones and take a lease, but it cannot ask questions or receive follow-ups.
 There is no idle grace.
 The sonic role file accepts `check_s` (600), `stall_s` (180) and `max_s` (1800), all positive whole seconds; `hud_roster({detail:true})` shows the effective values.
-At each checkpoint HUD stops a repeating query (`looping`), or sends a progress line and lets the same pi process continue.
+At each checkpoint HUD stops a repeating query (`looping`), or records a progress line and lets the same pi process continue.
 When no stdout growth or worker progress arrives for `stall_s` while an unbounded tool call (no declared timeout) is still running, HUD ends only that tool's process tree, records a progress line (for example `ended a silent tool after 180 s: bash`), and lets pi continue with the tool error.
 If no tool is running (or the same tool call stalls again, or a tool's declared timeout expires), HUD stops the sonic job as `stalled`; the hard cap stops it as `timeout`.
 Sonic gives pi automatic compaction one `stall_s` window to finish. In pi 1.6.0, Haiku at `max` thinking has reached `compaction_start` without a matching `compaction_end` before that window expired. Pi's built-in summarizer waits for the whole model response without forwarding summary deltas to JSON stdout; silence alone cannot distinguish slow summarization from a hung request. HUD lets compaction finish, or stops the job with a reason naming threshold or overflow compaction and the expired window. The hard cap still applies.
@@ -633,7 +634,7 @@ The panel remains the herdr panel.
 
 - **Event wake.**
   In an interactive herdr main session the mod starts `hud watch --mod` in a HUD project or on the first HUD tool call.
-  It sends only the watch's status lines: job and report notices, questions, sonic checkpoints, land and panel decisions.
+  It sends the quiet watch's actionable job notices, batch tallies, land results and panel decisions, not routine checkpoints or queue positions.
   Settlements share a three-second window; questions do not wait for it.
   One batch submits a prompt when idle, without editing the draft.
   During work the mod appends a merged note; on interruption it parks pending events for the next prompt rather than waking again.
