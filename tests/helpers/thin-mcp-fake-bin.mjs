@@ -114,8 +114,8 @@ if (command === 'pi-dispatch') {
     console.error(fs.readFileSync(failure, 'utf8') || 'synthetic start failed');
     process.exit(1);
   }
-  const first = args.indexOf('--') + 1, witnessToken = args[first]?.startsWith('--hud-invocation=') ? args[first] : null;
-  const nativeResume = args.includes('--resume') || args.includes('--conversation') || args[first + (witnessToken ? 1 : 0)] === 'resume';
+  const first = args.indexOf('--') + 1;
+  const nativeResume = args.includes('--resume') || args.includes('--conversation') || args[first] === 'resume';
   if (nativeResume) fs.rmSync(join(process.env.HUD_HOME, 'jobs', args[2].replace(/-primary$/, ''), 'agent-gone'), { force: true });
   const at = args.indexOf('--task-dir');
   if (!routingOnly && at >= 0) {
@@ -145,11 +145,14 @@ if (command === 'pi-dispatch') {
     sleeper.unref();
     writeFixtureFile(join(process.env.HOME, 'fake-agent-pid'), String(sleeper.pid));
   }
-  if (witnessToken) {
+  if (kind !== 'pi') {
     const dir = join(process.env.HUD_HOME, 'jobs', args[2].replace(/-primary$/, ''));
     const launch = /^LAUNCH=(.+)$/m.exec(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8'))[1];
+    const tab = fs.readFileSync(process.env.FAKE_LOG, 'utf8').trimEnd().split('\n').map(line => JSON.parse(line))
+      .find(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create' && args.includes(`HUD_TAB_LAUNCH=${launch}`));
+    const token = tab?.args.find((arg, i) => tab.args[i - 1] === '--env' && arg.startsWith('HUD_INVOCATION_TOKEN='))?.split('=')[1];
     const shims = join(dir, 'cli-invocations', launch);
-    if (!fs.readFileSync(join(shims, kind), 'utf8').includes(witnessToken)) throw Error('wrong synthetic invocation token');
+    if (!token || !fs.readFileSync(join(shims, kind), 'utf8').includes(token)) throw Error('wrong synthetic invocation token');
     // This fake models a successful agent.start, not a later discovery query.
     const p = ['cli-pid', 'fake-agent-pid'].map(n => join(process.env.HOME, n)).find(fs.existsSync);
     if (p) {

@@ -163,8 +163,9 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     let started: Awaited<ReturnType<typeof run>> = { exit_code: 1, stdout: '', stderr: 'tab create not attempted', notStarted: false };
     for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
       const launch = randomUUID();
-      const witness = prepareCliInvocation(dir, launch, place.agent!, real);
-      const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, '--env', `PATH=${witness.dir}:${process.env.PATH ?? ''}`, '--no-focus']);
+      const { env } = prepareCliInvocation(dir, launch, place.agent!, real);
+      const witnessEnv = Object.entries(env).flatMap(([key, value]) => ['--env', `${key}=${value}`]);
+      const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, ...witnessEnv, '--no-focus']);
       if (result.exit_code !== 0) return reject(result);
       const { tab, root_pane } = JSON.parse(result.stdout).result;
       if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
@@ -194,7 +195,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       await recordTabShells(dir, launch, openedTab, [left]);
       const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
       if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
-      argv.push('--', witness.token, ...agentArgs);
+      argv.push('--', ...agentArgs);
       // Keep start arguments in detailed diagnostics only; never record the first prompt.
       if (!tabAttempt) {
         const args = agentArgs.slice(0, 32).map(arg => arg.length <= 128 ? arg : `${arg.slice(0, 127)}…`);

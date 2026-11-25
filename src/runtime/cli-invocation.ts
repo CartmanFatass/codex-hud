@@ -13,12 +13,12 @@ function launchDir(task: string, launch: string) {
   return join(task, 'cli-invocations', launch);
 }
 export function prepareCliInvocation(task: string, launch: string, agent: string, real: string) {
-  const dir = launchDir(task, launch), token = `--hud-invocation=${randomUUID()}`;
+  const dir = launchDir(task, launch), token = randomUUID();
   if (!/^[a-z]+$/.test(agent) || /[:\r\n]/.test(dir)) throw Error('invalid CLI invocation path');
   const exec = [process.execPath, binScript('hud-cli'), '--exec-witness', join(dir, 'witness.json'), real].map(quote).join(' ');
-  // Ordinary manual invocations still run the CLI but cannot publish/replace a witness.
-  writeFileAtomic(join(dir, agent), `#!/bin/sh\nif [ "$1" = ${quote(token)} ]; then\n  shift\n  exec ${exec} "$@"\nfi\nexec ${quote(real)} "$@"\n`, { mode: 0o700, exclusive: true });
-  return { dir, token };
+  // An invocation outside the launch environment runs normally, without a witness.
+  writeFileAtomic(join(dir, agent), `#!/bin/sh\nif [ "$HUD_INVOCATION_TOKEN" = ${quote(token)} ]; then\n  unset HUD_INVOCATION_TOKEN\n  exec ${exec} "$@"\nfi\nexec ${quote(real)} "$@"\n`, { mode: 0o700, exclusive: true });
+  return { dir, env: { HUD_INVOCATION_TOKEN: token, PATH: `${dir}:${process.env.PATH ?? ''}` } };
 }
 export function invocationWitness(task: string, launch?: string): { pid: number; start: string } | null {
   try {

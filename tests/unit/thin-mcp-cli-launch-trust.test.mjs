@@ -40,8 +40,8 @@ test(
       '--pane',
       'w4E:p2',
     ]);
-    assert.match(start[dash + 1], /^--hud-invocation=[a-f0-9-]+$/);
-    assert.deepEqual(start.slice(dash + 2), [
+    assert.match(tab.find((arg, i) => tab[i - 1] === '--env' && arg.startsWith('HUD_INVOCATION_TOKEN=')), /^HUD_INVOCATION_TOKEN=[a-f0-9-]+$/);
+    assert.deepEqual(start.slice(dash + 1), [
       '-m',
       'grok-4.7',
       '--reasoning-effort',
@@ -135,7 +135,7 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     thinking: 'low',
   });
   const start = f.commands().find((c) => c.args[1] === 'start').args;
-  assert.deepEqual(start.slice(start.indexOf('--') + 2), [
+  assert.deepEqual(start.slice(start.indexOf('--') + 1), [
     '-m',
     'grok-4.7-build-fast',
     '--reasoning-effort',
@@ -153,7 +153,7 @@ test('cli launch accepts model and thinking overrides and refuses pi-only switch
     .commands()
     .filter((c) => c.args[1] === 'start')
     .at(-1).args;
-  assert.deepEqual(plainStart.slice(plainStart.indexOf('--') + 2), [
+  assert.deepEqual(plainStart.slice(plainStart.indexOf('--') + 1), [
     '--permission-mode',
     'bypassPermissions',
     '--extra',
@@ -233,7 +233,7 @@ test(
     fs.writeFileSync(join(f.env.HOME, 'startup-done'), '');
     const job = await f.call('hud_create', { role: 'general', on: 'agy', request_key: 'agy-life', task: 'Synthetic agy task.' });
     const start = f.commands().find((c) => c.args[1] === 'start').args;
-    assert.deepEqual(start.slice(start.indexOf('--') + 2), [
+    assert.deepEqual(start.slice(start.indexOf('--') + 1), [
       '--model',
       'gemini-4-argon-high',
       '--dangerously-skip-permissions',
@@ -396,7 +396,7 @@ test('a claude role launches with its flags and settles through idle grace', { t
   ]);
   const config = join(job.task_dir, 'worker-mcp.json');
   const roleFile = start.at(-1);
-  assert.deepEqual(start.slice(dash + 2), ['--model', 'opus', '--effort', 'high', '--dangerously-skip-permissions',
+  assert.deepEqual(start.slice(dash + 1), ['--model', 'opus', '--effort', 'high', '--dangerously-skip-permissions',
     '--strict-mcp-config', '--mcp-config', config, '--append-system-prompt-file', roleFile]);
   assert.ok(start.slice(dash + 1).every((arg) => !/\p{Cc}/u.test(arg)));
   assert.equal(fs.readFileSync(roleFile, 'utf8'), roleText);
@@ -532,7 +532,7 @@ test('a codex role waits out a phantom startup and passes the start timeout', { 
     '--timeout',
     '90000',
   ]);
-  assert.deepEqual(start.slice(dash + 2, dash + 7), [
+  assert.deepEqual(start.slice(dash + 1, dash + 6), [
     '-m',
     'gpt-6.1-sol',
     '-c',

@@ -141,7 +141,7 @@ test('Codex uses the recorded thread ID and honors the role resume window', asyn
   fakeCliWithChild(t, f);
   assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic Codex continuation.' })).continuation, 'resumed');
   const args = starts(f).at(-1).args;
-  assert.deepEqual(args.slice(args.indexOf('--') + 2, args.indexOf('--') + 4), ['resume', id]);
+  assert.deepEqual(args.slice(args.indexOf('--') + 1, args.indexOf('--') + 3), ['resume', id]);
 });
 
 const tabFor = (job) => /^TAB=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))[1];
