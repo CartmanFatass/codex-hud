@@ -57,8 +57,9 @@ execution detail; when space runs out, execution detail is not shown. (new)
   Checks are evidence, not owner acceptance. (18.03, 21.08, 22.19, 22.26)
 - Keep `hud_tickets`, dependencies, acceptance criteria and ready work. Main may authorize a fixed scouted dispatch,
   ticket batch or land flow; hand back at the first judgement point or after two failed repairs. Prewalk is the one
-  automatic step before a job: the owner switches it on or off per role file; the Decision API then starts 0–3 Sonic
-  scouts by the size of the task (code, project docs, web sources) and picks pool entries; their results are attached as references and recorded, nothing chains after the target (24.05).
+  automatic step before a job: the owner switches it on or off per role file; the dispatching session then names 0–3
+  Sonic scouts, each with a kind (code, project docs, web sources) and its own question, and the Decision API picks
+  pool entries; their results are attached as references and recorded, nothing chains after the target (24.05, 25.01).
   No other automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
 Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)

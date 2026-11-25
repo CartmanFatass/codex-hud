@@ -5,6 +5,17 @@ Dates are the owner dates in the source spec unless marked *recorded*: a spec re
 separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-NN`. Section refs point into
 `docs/spec.md`.
 
+## 2026-11-25
+
+- **D-2026-11-25-01** (§2.1 dispatch): Who chooses prewalk scouts moves from the Decision API to the dispatching
+  session. Owner: deciding what to look up before a job is the orchestrator's job; it also drops a Decision API
+  dependency and lets work be split sensibly. The orchestrator wrote the brief and knows what is unknown, so it names
+  0–3 scouts, each with a kind and a specific question (the same kind may repeat, for example two code scouts on two
+  modules); the Decision API saw only the brief's first 4000 characters and answered yes/no per kind, and every scout
+  searched with the whole brief. For roles with prewalk on, a dispatch must state its scouts (an empty list skips),
+  so the step stays automatic without relying on memory. The pool pick stays with the Decision API. Supersedes the
+  "how much is the Decision API's call" part of D-2026-11-24-05.
+
 ## 2026-11-24
 
 - **D-2026-11-24-07** (§2.2): Owner: fixed answers plus automatic triggering is exactly where the low-cost, fast
