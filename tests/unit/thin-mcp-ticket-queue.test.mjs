@@ -297,7 +297,8 @@ test('a resumed queue drops a ticket that was closed since the queue failed', { 
 
 test('ticket queue keeps going past an answered worker question', { timeout: 30_000 }, async t => {
   const f = await project(t);
-  const { flow } = await f.start();
+  // Each settlement must release exactly one next job for the staged assertions below.
+  const { flow } = await f.start(1);
   const [first] = await f.jobs(flow, 1);
   const qa = join(f.dir(first), 'qa');
   fs.mkdirSync(qa, { recursive: true });

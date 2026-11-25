@@ -23,9 +23,9 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      - run: npm test
-      # npm ci rewrites tracked vendored metadata; the release packager requires a clean tree.
+      # Restore the vendored lock stamp for npm test and a clean tree for the release packager.
       - run: git restore -- node_modules
+      - run: npm test
       - run: npm run test:release
       - run: npm run check:fixtures
 

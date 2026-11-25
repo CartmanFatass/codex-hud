@@ -51,7 +51,7 @@ function fixture(t, mode) {
     fs.writeFileSync(join(target, name), 'new\n');
     fs.utimesSync(join(target, name), new Date(0), new Date(0));
   }
-  return { cwd, markers };
+  return { cwd, markers, root };
 }
 
 async function piFacts(cwd) {
@@ -123,8 +123,10 @@ const paths = {
     const text = await piFacts(cwd);
     return { branch: text.includes('synthetic-safe') ? 'synthetic-safe' : undefined, dirty: text.includes('synthetic-safe') ? text.includes('*2') : undefined };
   },
-  Project: async (cwd) => {
-    const value = await new ProjectCollector(cwd, process.env.HUD_HOME).collect(true, { workers: [], lanes: [], decisions: [] }, Date.now());
+  Project: async (cwd, _t, root) => {
+    const hudHome = join(root, 'hud');
+    const env = { ...process.env, HOME: root, HUD_HOME: hudHome };
+    const value = await new ProjectCollector(cwd, hudHome, env, root).collect(true, { workers: [], lanes: [], decisions: [] }, Date.now());
     return { branch: value.git?.branch, dirty: value.git ? value.git.unstaged === 2 : undefined };
   },
   Changes: async (cwd) => {
@@ -137,7 +139,7 @@ test('production Git safety matrix: repository commands never execute; facts sur
   for (const mode of ['repository', 'unsafe', 'submodule']) for (const [name, read] of Object.entries(paths)) {
     await t.test(`${name}: ${mode}`, { timeout: 60000 }, async (t) => {
       const f = fixture(t, mode);
-      const facts = await read(f.cwd, t);
+      const facts = await read(f.cwd, t, f.root);
       const markers = Object.fromEntries(Object.entries(f.markers).map(([kind, path]) => [kind, fs.existsSync(path)]));
       t.diagnostic(JSON.stringify({ path: name, mode, markers, facts }));
       assert.deepEqual(markers, { clean: false, process: false, smudge: false, fsmonitor: false });

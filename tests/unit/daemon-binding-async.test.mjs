@@ -4,6 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -215,19 +216,21 @@ test('DaemonBinding invalidates cached thread on PID replacement or reuse withou
 test('tuiPidForPane runs tmux asynchronously without blocking the event loop', async (t) => {
   if (process.platform !== 'linux') return;
   const dir = fs.mkdtempSync(join(tmpdir(), 'hud-daemon-tmux-'));
-  const codexBin = join(dir, 'codex');
-  fs.symlinkSync('/bin/sleep', codexBin);
-  const child = spawn(codexBin, ['30'], { stdio: 'ignore' });
-  const fakeTmux = join(dir, 'tmux');
-  fs.writeFileSync(fakeTmux, `#!/bin/sh\nsleep 0.08\necho ${child.pid}\n`, { mode: 0o755 });
+  // The collector checks /proc/<pid>/comm, not the name used to spawn the process.
+  const child = spawn(process.execPath, ['-e', `process.title = 'codex'; process.send('ready'); setInterval(() => {}, 1000);`], {
+    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+  });
   const prevTmux = process.env.CODEX_HUD_TMUX_BIN;
-  process.env.CODEX_HUD_TMUX_BIN = fakeTmux;
   t.after(() => {
     child.kill();
     if (prevTmux === undefined) delete process.env.CODEX_HUD_TMUX_BIN;
     else process.env.CODEX_HUD_TMUX_BIN = prevTmux;
     fs.rmSync(dir, { recursive: true, force: true });
   });
+  await once(child, 'message');
+  const fakeTmux = join(dir, 'tmux');
+  fs.writeFileSync(fakeTmux, `#!/bin/sh\n/bin/sleep 0.08\necho ${child.pid}\n`, { mode: 0o755 });
+  process.env.CODEX_HUD_TMUX_BIN = fakeTmux;
 
   let heartbeats = 0;
   const hb = setInterval(() => {
