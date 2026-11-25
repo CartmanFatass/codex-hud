@@ -1,5 +1,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
+import { JOB_ID_RE } from '../roles/job-index-cache.js';
+import { driveCouncil } from './council-step.js';
 import { sharedRoot } from '../roles/projects.js';
 import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
@@ -15,6 +17,11 @@ import { directory, hudHome } from './store/job-store.js';
 /** Batch projects the engine cursor into index.json alongside its ordered item results.
  * The outer receipt is the small, watcher-facing projection; never schedule from that copy. */
 export async function runWorkflow(id: string) {
+  if (JOB_ID_RE.test(id)) {
+    const path = `${runDir(hudHome, id)}.json`;
+    if (fs.existsSync(path) && (readJsonFile(path) as { template?: string }).template === 'council') return driveCouncil(id);
+    return;
+  }
   if (!isBatchId(id)) return;
   const header = readBatch(hudHome, id);
   if (!header) return;

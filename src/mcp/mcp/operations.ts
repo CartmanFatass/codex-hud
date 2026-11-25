@@ -862,6 +862,12 @@ export async function closeJob(job: Job, stop = false) {
     return { exit_code: 0, last_line: job.role === 'council' ? 'stopping council' : 'stopping scouted dispatch' };
   }
   let { row, status } = readRow(job);
+  if (job.role === 'council' && row.state === 'working' && fs.existsSync(join(hudHome, 'flows', `${job.job}.json`))) {
+    recordStopOrigin(dir, 'mcp', status?.state, undefined, jobCache);
+    writePrivateFile(join(dir, jobFiles.stopRequested), '');
+    ensureWatcher();
+    return { exit_code: 0, last_line: 'stopping council' };
+  }
   const outcome = cancelQueued(job.job, row.state);
   if (outcome === 'cancelled' || outcome === 'missing') return { exit_code: 0, last_line: cancelledLine, removed: true };
   if (outcome === 'claimed') {

@@ -13,6 +13,7 @@ import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sess
 import { recordJobUsage } from '../roles/job-usage.js';
 import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/sonic-citations.js';
 import { landAttempt, activeLand, isFlowId } from '../mcp/land-state.js';
+import type { CouncilRun } from '../mcp/council-state.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import { headerScanner } from '../workflows/header-scan.js';
 import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
@@ -912,6 +913,10 @@ function scan(retryWatch = false) {
         const q = header<TicketQueue>(file);
         if (!q || q.state !== 'working') continue;
         wakeTicketQueue(home, q);
+      } else if (/^j[0-9a-f]{16}$/.test(id)) {
+        const run = header<CouncilRun>(file);
+        if (run?.template !== 'council' || run.state !== 'working') continue;
+        wakeWorkflow(home, run);
       } else if (isBatchId(id)) {
         const b = header<Batch>(file);
         if (!b || !batchActive(b)) continue;

@@ -57,15 +57,16 @@ function sameInode(a: fs.Stats, b: fs.Stats | undefined): boolean {
 }
 
 // Resume/retry can reactivate even a completed batch. Recheck expiration under its state lock.
-async function pruneExpiredBatch(home: string, id: string, cutoff: number) {
+async function pruneExpiredWorkflow(home: string, id: string, cutoff: number) {
   const release = await tryAbstractLock('flow-state', `${home}\0${id}`);
   if (!release) return;
   try {
     inAbsoluteDir(join(home, 'flows'), dir => {
       const receipt = join(dir, `${id}.json`), stat = fs.lstatSync(receipt);
       if (!stat.isFile() || stat.mtimeMs >= cutoff) return;
-      const b = readJsonBounded(receipt, stat.size) as { state: string; totals: { running: number } };
-      if (!['completed', 'stopped', 'paused'].includes(b.state) || b.totals.running) return;
+      const b = readJsonBounded(receipt, stat.size) as { template?: string; state: string; totals?: { running: number } };
+      if (id.startsWith('j') ? b.template !== 'council' || !['completed', 'stopped', 'failed'].includes(b.state)
+        : !['completed', 'stopped', 'paused'].includes(b.state) || b.totals?.running !== 0) return;
       inDirectory(join(dir, id), batch => {
         const files = fs.readdirSync(batch);
         if (!files.every(f => /^(?:graph|index|manifest)\.json$|^(?:failure-\d+-\d+|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f) && fs.lstatSync(join(batch, f)).isFile())) return;
@@ -83,8 +84,8 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
       const jobs = new Map<string, string[]>();
       const names = fs.readdirSync(dir);
       for (const name of names) {
-        if (/^b[a-f0-9]{16}\.json$/.test(name)) {
-          if (fs.lstatSync(join(dir, name)).mtimeMs < cutoff) void pruneExpiredBatch(home, name.slice(0, -5), cutoff).catch(() => {});
+        if (/^[bj][a-f0-9]{16}\.json$/.test(name)) {
+          if (fs.lstatSync(join(dir, name)).mtimeMs < cutoff) void pruneExpiredWorkflow(home, name.slice(0, -5), cutoff).catch(() => {});
           continue;
         }
         if (/^q[a-f0-9]{16}\.json$/.test(name)) {

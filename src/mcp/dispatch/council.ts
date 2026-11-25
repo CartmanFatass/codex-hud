@@ -17,8 +17,8 @@ import type { registry } from './places.js';
 
 type Registry = ReturnType<typeof registry>;
 export type CouncilSeat = { preset: string; place: RolePlace };
-type Plan = { members: CouncilSeat[]; synthesizer: CouncilSeat | 'main'; instructions: string; browserInstructions?: string };
-export function prepareCouncil(args: Args, role: Role, found: Registry, configured: Map<string, Role>, routing: ReturnType<Registry['routing']>): Plan | { ok: false; code: string; reason: string } {
+export type CouncilPlan = { members: CouncilSeat[]; synthesizer: CouncilSeat | 'main'; instructions: string; browserInstructions?: string };
+export function prepareCouncil(args: Args, role: Role, found: Registry, configured: Map<string, Role>, routing: ReturnType<Registry['routing']>): CouncilPlan | { ok: false; code: string; reason: string } {
   const members = args.members === undefined ? role.members : args.members;
   const synthesizer = args.synthesizer === undefined ? role.synthesizer : args.synthesizer;
   const names = role.presets!.map(p => p.name);
@@ -55,7 +55,7 @@ export function prepareCouncil(args: Args, role: Role, found: Registry, configur
 
 export const synthesisTemplate = 'Write one converged plan for the original brief using the independent member reports. Include a table of disagreements: point; each member’s position; the choice; why. List open questions for the owner. Where members disagree on a fact the original attachments would settle, list it under open questions for the main session to check, naming the file if a member cited one. Do no new work beyond the plan.';
 const memberInstruction = 'Write an independent plan for the original brief. Do not implement changes or delegate. Put open questions in your report.';
-type Start = (seat: CouncilSeat, part: 'member' | 'synthesizer', args: Args) => Promise<{ job?: string; failure?: string }>;
+type Start = (seat: CouncilSeat, part: 'member' | 'synthesizer', args: Args, slot: string) => Promise<{ job?: string; failure?: string }>;
 
 /** Snapshot the final report privately so collecting or archiving either job is independent. */
 async function publishSynthesis(dir: string, child: string, signal: AbortSignal) {
@@ -68,7 +68,7 @@ async function publishSynthesis(dir: string, child: string, signal: AbortSignal)
   } finally { await src.close(); await rm(tmp, { force: true }); }
 }
 
-export async function runCouncil(parent: Job, plan: Plan, task: string, start: Start, signal: AbortSignal, releaseUnused: () => Promise<void>) {
+export async function runCouncil(parent: Job, plan: CouncilPlan, task: string, start: Start, signal: AbortSignal, releaseUnused: () => Promise<void>) {
   const dir = directory(parent.job), members = parent.council_members!;
   const wait = (job: string) => waitChildReport(job, signal, async child => {
     const { closeJob } = await import('../mcp/operations.js');
@@ -81,12 +81,12 @@ export async function runCouncil(parent: Job, plan: Plan, task: string, start: S
     const outcomes = await Promise.allSettled(plan.members.map(async (seat, i) => {
       const member = members[i];
       try {
-        signal.throwIfAborted();
+        if (member.failure || member.digest !== undefined) return;
         const local = seat.place.harness !== 'bro';
-        const result = await start(seat, 'member', {
+        const result = member.job ? { job: member.job } : await start(seat, 'member', {
           task: `${local ? '' : plan.browserInstructions + '\n\n'}${memberInstruction}\n\nOriginal brief:\n${task}${local ? '' : index}`,
           ...(local && { instructions: plan.instructions, context_files: parent.context_files, from_jobs: parent.from_jobs }),
-        });
+        }, `member-${i}`);
         member.job = result.job;
         save(parent);
         member.failure = result.failure ?? (result.job && await wait(result.job));
@@ -108,8 +108,8 @@ export async function runCouncil(parent: Job, plan: Plan, task: string, start: S
     if (plan.synthesizer === 'main') writePrivateFile(join(dir, jobFiles.report), prompt);
     else {
       const local = plan.synthesizer.place.harness !== 'bro';
-      const result = await start(plan.synthesizer, 'synthesizer', { task: prompt + (local ? '' : index), from_jobs: reports,
-        ...(local && { context_files: parent.context_files, instructions: plan.instructions }) });
+      const result = parent.synthesis_job ? { job: parent.synthesis_job } : await start(plan.synthesizer, 'synthesizer', { task: prompt + (local ? '' : index), from_jobs: reports,
+        ...(local && { context_files: parent.context_files, instructions: plan.instructions }) }, 'synthesis');
       parent.synthesis_job = result.job;
       save(parent);
       if (!result.job || result.failure) throw new Error(result.failure ?? 'synthesis did not start');
@@ -120,9 +120,12 @@ export async function runCouncil(parent: Job, plan: Plan, task: string, start: S
     signal.throwIfAborted();
     const now = new Date().toISOString();
     writeCreateStatus(dir, { state: 'closed', output_written: true, settled_at: now, ended_at: now });
+    return { state: 'closed' as const };
   } catch (error) {
     if (!parent.grant) await releaseUnused();
     const reason = signal.aborted ? 'Council stopped' : error instanceof Error ? error.message : String(error);
-    writeCreateStatus(dir, { state: signal.aborted ? 'stopped' : 'failed', exit_reason: reason, ended_at: new Date().toISOString() });
+    const state = signal.aborted ? 'stopped' : 'failed';
+    writeCreateStatus(dir, { state, exit_reason: reason, ended_at: new Date().toISOString() });
+    return { state, exit_reason: reason } as const;
   }
 }

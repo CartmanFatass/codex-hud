@@ -1,0 +1,9 @@
+version = 1
+name = "council"
+
+[policy]
+breaker = "none"
+
+[steps.council]
+kind = "council"
+brief_file = "{brief_file}"
