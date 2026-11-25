@@ -14,6 +14,10 @@ import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 const pi = (provider, model) => ({ harness: 'pi', pi_role: 'sonic', model: `${provider}/${model}`, thinking: 'high', split: false });
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const receipt = dir => read(join(dir, 'job.json'));
+// A job directory appears before its first job.json write; skip it until the receipt exists.
+const readCreated = file => {
+  try { return read(file); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+};
 const settings = (f, patch) => write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ ...defaultSettings(), autoPrewalk: false, ...patch }));
 
 function writeSonicRole(f) {
@@ -35,8 +39,8 @@ function sonicJobs(f) {
   if (!fs.existsSync(root)) return [];
   return fs.readdirSync(root)
     .filter(id => /^j[0-9a-f]{16}$/.test(id))
-    .map(id => read(join(root, id, 'job.json')))
-    .filter(job => job.role === 'sonic');
+    .map(id => readCreated(join(root, id, 'job.json')))
+    .filter(job => job?.role === 'sonic');
 }
 
 test('Sonic even rotates round-robin in pool order across creates, scouts and hud_sonic; retries keep preset and callers cannot override', async t => {
