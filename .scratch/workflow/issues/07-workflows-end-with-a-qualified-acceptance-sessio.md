@@ -1,6 +1,6 @@
 # 07: Workflows end with a qualified acceptance session instead of waking main
 
-**Status:** ready-for-agent
+**Status:** needs-triage
 **Owner try:** no
 **Blocked by:** 05, 06
 
@@ -15,3 +15,5 @@
 - [ ] Land gate passes.
 
 ## Comments
+
+- 2026-11-25 main: deferred by the owner (D-2026-11-25-08): complex workflows wait until one is designed on the engine. Not ready for agents.

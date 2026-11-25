@@ -103,6 +103,10 @@ execution detail; when space runs out, execution detail is not shown. (new)
   not depend on main staying alive: notices and
   escalations wait on the run record for whichever main session reads next, and main (or the owner in the panel) can
   look at any run at any time (25.07).
+  Deferred (owner 2026-11-25, 25.08): the build stops at the engine with the batch, prewalk, council and land
+  templates. The ticket queue on the engine, main-composed graphs with their owner grant, and the lead and
+  test-version policy above wait until a complex workflow is designed on the engine; the existing ticket queue
+  keeps running as it does today.
   Outside workflows there is no automatic role chaining. Job access stays project-scoped, with same-project orphan adoption. (17.07, 20.03, 21.09, 22.19, 22.26)
 
 Detail: [reference — CLI and MCP](reference.md#universal-cli-and-mcp) and [Claude Code mod](reference.md#claude-code-mod)

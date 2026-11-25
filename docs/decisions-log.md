@@ -7,6 +7,15 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-25-08** (§2.1 workflow): Complex workflows deferred. Owner: long automated flows fail more easily;
+  small flows (prewalk) and mechanical flows (batch) are the right starting point, and a general engine lets a
+  complex workflow be designed whenever it is needed. Build scope: engine with batch (workflow/01), prewalk (02),
+  council (03, also fixes the council orphaned by an MCP restart) and land (04) templates. Deferred: ticket queue
+  on the engine (05), main-composed graphs with owner grants (06), and the lead acceptance, temporary lead and
+  test-version policy of D-2026-11-25-07 (07). Evidence gathered for the lead design before the deferral (44
+  worker questions: 45 % answered with the default, 27 % overridden, about 1 in 44 needing owner-side judgement no
+  ticket could foresee) is kept in `tmp/tasks/lead-paradigm/`.
+
 - **D-2026-11-25-07** (§2.1 workflow; delegation loop): Acceptance leaves the main session. Owner: the main session
   is a session for discussing problems with the owner; ticket-style work should not need it to accept each result.
   A workflow ends (or pauses at a hand-back) with a qualified acceptance session that reads the reports, decides to

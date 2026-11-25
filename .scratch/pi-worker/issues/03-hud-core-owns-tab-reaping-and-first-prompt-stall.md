@@ -30,3 +30,11 @@
   `task_dir` verbatim, so an aliased older browser receipt skips both tree captures and `hud_close` can return 0 with a
   grandchild alive — one canonical receipt check at both layers, mismatch is an issue, not a no-op. Second repair round
   to the same imp; another re-review before land.
+
+- 2026-11-25 main: repair 5abe6f23 re-reviewed by je20e15fcf0ec3567: changes-required. Fixed: Pi `/quit` (#2), tab
+  close by shell identity (#3), canonical receipt check (#4). Blocker (new, reproduced with a real `sonic-run`): the
+  registered-sonic exclusion in `worker-tree.ts:130–134` still compares jobs-root path strings literally, so a stop
+  through a path alias captures and SIGTERMs a separately registered sonic child — use the same canonical comparison.
+  Partly fixed (#1): CLI adoption is exact, but a completed contradictory foreground observation (different PGID,
+  leader is the shell or another name) returns at `cli-supervisor.ts:168–169` without recording the refusal — report
+  it, distinct from an aborted query. Third repair to the same imp; re-review before land.
