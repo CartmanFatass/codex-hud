@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { runCommand } from '../../dist/roles/herdr-run.js';
+import { WATCH_TAB_FACTS_LIMIT } from '../../dist/runtime/watch-runtime.js';
 import { workSummaryPath } from '../../dist/collectors/work-summary-snapshot.js';
 import { procStat } from '../../dist/roles/worker-tree.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
@@ -53,6 +54,7 @@ async function herdrSocket(t, f, answer, paneReply) {
   let subscriber, subscriptions = 0, queries = 0, pending = 0;
   const vanished = new Set(), lookups = [];
   const emitTabClosed = (id) => subscriber.write(JSON.stringify({ event: 'tab.closed', data: { tab_id: id } }) + '\n');
+  const emitTabsClosed = (ids) => subscriber.write(ids.map((id) => JSON.stringify({ event: 'tab.closed', data: { tab_id: id } }) + '\n').join(''));
   const server = createServer((socket) => {
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
@@ -92,7 +94,7 @@ async function herdrSocket(t, f, answer, paneReply) {
     preload: `process.env.HERDR_SOCKET_PATH = ${JSON.stringify(path)};`,
     preflight: Promise.all([subscribed.promise, queried.promise]),
     ready: () => Boolean(subscriber), subscriptions: () => subscriptions, queries: () => queries, pending: () => pending,
-    lookups, emitTabClosed, drop: () => subscriber.destroy(),
+    lookups, emitTabClosed, emitTabsClosed, drop: () => subscriber.destroy(),
     hide: (id) => vanished.add(id),
     closeTab: (id, pane = id) => { vanished.add(pane); emitTabClosed(id); },
   };
@@ -278,6 +280,46 @@ test('watcher discards a pane_not_found reply when the SESSION changes during th
   reply.resolve({ error: { code: 'pane_not_found' } });
   await until(() => herdr.lookups.includes('new-pane'), t.signal);
   assert.equal(status(dir).state, 'working');
+  child.kill('SIGTERM');
+  assert.deepEqual(await exited, [0, null]);
+});
+
+test('watcher recovers an evicted tab close wake through a full tab pass', { timeout: 15000 }, async (t) => {
+  const f = fixture(t);
+  let hold = null, gone = false;
+  const herdr = await herdrSocket(t, f, null, (pane) => {
+    if (pane === 'blocker-pane' && hold) return hold.promise;
+    if (pane === 'evicted-pane' && gone) return { error: { code: 'pane_not_found' } };
+    return { result: { pane: { pane_id: pane } } };
+  });
+  const blocker = f.job({ state: 'working' }), evicted = f.job({ state: 'working' });
+  session(blocker, 'TAB=blocker-tab\nLEFT=blocker-pane\n');
+  session(evicted, 'TAB=evicted-tab\nLEFT=evicted-pane\n');
+  const { child, exited } = f.start(herdr.preload + "process.env.HUD_WATCH_CLI_CHECK_MS = '60000';");
+  const lookups = (pane) => herdr.lookups.filter((id) => id === pane).length;
+  await until(() => herdr.ready() && lookups('blocker-pane') >= 1 && lookups('evicted-pane') >= 1, t.signal);
+
+  const beforeBlocker = lookups('blocker-pane');
+  hold = Promise.withResolvers();
+  herdr.emitTabClosed('blocker-tab');
+  await until(() => lookups('blocker-pane') > beforeBlocker, t.signal);
+
+  const summary = workSummaryPath(f.home);
+  const revisionBefore = json(f.home, 'jobs-revision.json')?.notice ?? 0;
+  gone = true;
+  fs.rmSync(summary, { force: true });
+  herdr.emitTabsClosed(['evicted-tab', ...Array.from({ length: WATCH_TAB_FACTS_LIMIT + 10 }, (_, i) => `n${i}`)]);
+  await until(() => fs.existsSync(summary), t.signal);
+
+  const release = hold;
+  hold = null;
+  release.resolve({ result: { pane: { pane_id: 'blocker-pane' } } });
+  await until(() => status(evicted)?.exit_reason === 'tab closed' &&
+    (json(f.home, 'jobs-revision.json')?.notice ?? 0) > revisionBefore &&
+    json(f.home, 'jobs-revision.json')?.jobs?.[basename(evicted)] > 0, t.signal);
+  assert.equal(status(evicted).state, 'failed');
+  assert.deepEqual(receipt(evicted).stop_origin, { actor: 'pane_vanished', prior_state: 'working', at: status(evicted).ended_at });
+  assert.equal(status(blocker).state, 'working');
   child.kill('SIGTERM');
   assert.deepEqual(await exited, [0, null]);
 });

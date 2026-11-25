@@ -14,3 +14,7 @@
 - [ ] Land gate passes
 
 ## Comments
+
+- Accepted residuals (known liveness gaps until `herdr-fork/03-04`):
+  - Receipts with an unmatched or missing `HERDR_SOCKET_PATH` endpoint are skipped by tab/pane probes.
+  - A pane ID reused across a Herdr restart answers present to `pane.get`.

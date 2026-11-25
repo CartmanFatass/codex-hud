@@ -95,15 +95,18 @@ export const WATCH_TAB_FACTS_LIMIT = 512;
 const WARN_COOLDOWN_MS = 60_000;
 const MAX_TAB_QUERIES = 4;
 
-export function rememberTab<T>(map: Map<string, T>, key: string, value: T): void {
-  if (!key) return;
+export function rememberTab<T>(map: Map<string, T>, key: string, value: T): boolean {
+  if (!key) return false;
   map.delete(key);
   map.set(key, value);
+  let evicted = false;
   while (map.size > WATCH_TAB_FACTS_LIMIT) {
     const oldest = map.keys().next().value;
     if (oldest === undefined) break;
     map.delete(oldest);
+    evicted = true;
   }
+  return evicted;
 }
 
 export function recordWarning(
@@ -146,6 +149,11 @@ type ActiveReap = { session: SessionEntry | null; ownership: string; readClose: 
 const goneTabs = new Map<string, string>(); // job ID -> exact SESSION stamp confirmed absent
 const tabRetries = new Map<string, { stamp: string; at: number; failures: number }>();
 let tabWakes = new Map<string, true>(), checkAllTabs = true, tabProbe: AbortController | undefined, nextTabProbe = 0;
+function wakeTab(key: string) {
+  if (checkAllTabs || !rememberTab(tabWakes, key, true)) return;
+  checkAllTabs = true;
+  tabWakes.clear();
+}
 const tabWasClosed = (id: string, session: SessionEntry | null) =>
   !!session && goneTabs.get(id) === session.stamp && hasLocalHerdrTarget(session.fields);
 const sameSession = (id: string, session: SessionEntry | null) =>
@@ -1133,7 +1141,7 @@ function startWatch() {
       const path = filename?.toString();
       jobChanges.change(path ?? '');
       if (path?.endsWith(`/${RUNNER_READY}`)) { runners.ready(join(jobs, dirname(path))); schedule(); return; }
-      if (path?.endsWith(`/${jobFiles.session}`)) rememberTab(tabWakes, `job:${dirname(path)}`, true);
+      if (path?.endsWith(`/${jobFiles.session}`)) wakeTab(`job:${dirname(path)}`);
       if (event === 'rename' && path && /^[^/]+\/(sonic-session\.jsonl|(?:\.dispatch\/[^/]+\/)?sessions(?:\/[^/]+\.jsonl)?)$/.test(path)) schedule();
       if (!path || !path.includes('/') || /^[^/]+\/(supervisor\.pid|STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-(?:exit|stop)\.json|headless-sends\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
     }).on('error', (error) => {
@@ -1152,7 +1160,7 @@ export function openRuntime(emit: typeof notify) {
   notify = emit;
   return {
     shutdown,
-    tab(id: string) { if (id) rememberTab(tabWakes, `tab:${id}`, true); schedule(); },
+    tab(id: string) { if (id) wakeTab(`tab:${id}`); schedule(); },
     reconcileTabs() { checkAllTabs = true; schedule(); },
     pause() {
       if (stopped) return null;
