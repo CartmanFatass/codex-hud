@@ -234,7 +234,8 @@ test('a note sent to a working queue job keeps the job in its queue', { timeout:
 
 test('a resumed queue waits for a launch still in flight instead of failing it', { timeout: 30_000 }, async t => {
   const f = await project(t);
-  const { flow } = await f.start();
+  // Keep ticket 2 queued until the simulated in-flight launch settles.
+  const { flow } = await f.start(1);
   const [first] = await f.jobs(flow, 1);
   // A runner that takes over mid-launch sees the job before its first status.
   fs.rmSync(join(f.dir(first), 'STATUS.json'), { force: true });
