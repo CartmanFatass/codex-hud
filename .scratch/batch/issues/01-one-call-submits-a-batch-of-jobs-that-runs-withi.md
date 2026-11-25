@@ -8,11 +8,11 @@
 
 - [ ] One hud_create call with items returns a batch flow ID; items become ordinary jobs with reports.
 - [ ] At most min(max_parallel, cap−2) batch members run; a non-batch job of the role submitted during the batch starts before any waiting batch member.
-- [ ] Main receives one end notice plus individual failure/stall/question notices, and no per-member create/queued/checkpoint/settled lines.
+- [ ] Main receives one end notice and no per-member create/queued/checkpoint/settled lines. Failures never become their own storm: the first failure of each distinct reason is delivered at once; repeats are folded; a circuit breaker auto-pauses the batch (no new starts, running members finish) after 2 consecutive failures or failures reaching 20% of settled members (min 2) and sends one notice with failures grouped by reason (count, example job) and the resume/stop action; failures while paused are folded. One action retries all failed items as new members of the same batch. The result index records each item's failure reason. A batch of 20 whose members all fail produces at most 2 wakes. (Owner 2026-11-25.)
 - [ ] hud_read on the batch flow shows totals and item→job mapping.
 - [ ] Scale is confirmed before the batch runs: submission returns a scale summary (item count, per-item input size max/median/total from the brief plus the files it names, role, placement presets the items will use, cap and max_parallel) and the batch starts with a pilot, one item on each placement preset; the remaining items start only after every pilot settles with a report. A failed or stalled pilot pauses the batch and notifies main with the failure, so a sizing error costs one item per preset, not the whole batch.
 - [ ] Each batch has its own state directory (under the batch flow, e.g. `$HUD_HOME/flows/<batch>/` or beside its flow file) holding the item manifest (brief path, input size), per-item state and job ID, and a result index (item → job, state, report path, files the job reported); main reads the batch result from this one index instead of collecting each job. HUD's batch runner is the coordinator: no model worker coordinates a batch (owner 2026-11-25). Items that change code keep today's per-job worktree rule.
-- [ ] Tests cover admission order, reserved slots, end notice, failure passthrough, the scale summary, the pilot gate and the result index; a live run with 3–4 briefs works.
+- [ ] Tests cover admission order, reserved slots, end notice, breaker (consecutive and rate), reason grouping, folding while paused, retry-failed, the all-fail wake bound, the scale summary, the pilot gate and the result index; a live run with 3–4 briefs works.
 - [ ] Land gate passes.
 
 ## Comments

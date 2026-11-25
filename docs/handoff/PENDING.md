@@ -37,10 +37,9 @@ Each item says who decides and what would trigger it. Remove an item when it is 
   research-workflow design once the transcript labels are in.
 - hmasd research-error study: transcripts inventoried (owner + subagent threads, WSL/Windows/sqlite), chunking and
   per-chunk sonic labelling under way in `tmp/tasks/HMASD-RESEARCH/`.
-- `haiku` is out of the sonic even pool (`~/.hud/hud-settings.json`, backup `.bak-20261125-haiku-pool`) for the
-  hmasd labelling batch, by owner decision on 2026-11-25: haiku jobs hung in pi auto-compaction (eng-hygiene/10).
-  Restore `["deepseek","haiku","luna"]` after one live haiku run on a ≤60 KB chunk at the decided thinking level
-  (including `max`) settles with a report. Thinking is not capped (eng-hygiene/12 wontfix): the fault was task size.
+- Sonic runs fixed on `deepseek` (`sonicPlacement: fixed`, owner 2026-11-25; backup `hud-settings.json.bak-20261125-sonic-fixed`).
+  The even pool setting (`deepseek`, `luna`) is kept but inactive. Haiku hung in pi auto-compaction at `max` on 120 KB
+  chunks; thinking is not capped (eng-hygiene/12 wontfix): the fault was task size.
 
 ## Data waiting to appear
 
