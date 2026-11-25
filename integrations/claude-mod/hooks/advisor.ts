@@ -1,4 +1,4 @@
-import type { EngineInterface, On } from 'claude-code';
+import type { EngineInterface, SessionStartInput, TurnCompleteInput, TurnStartInput } from 'claude-code';
 
 // Advisor shadow trigger for Claude Code main sessions: fire-and-forget out-of-band check.
 // Never returns or injects any advisor text into the session, prompt, transcript, or hook output.
@@ -46,43 +46,36 @@ async function triggerAdvisor(
   await $.process.run(argv, { cwd: cwd || '.', timeoutMs: 10_000 }).catch(() => undefined);
 }
 
-export function registerAdvisor(on: On) {
-  let sessionCwd = '';
-  let interactive = false;
-  let lastReply = '';
-  let owner: { turn: string; text: string } | undefined;
+type Advisor = {
+  fallbackCwd: string;
+  interactive: boolean | undefined;
+  lastReply: string;
+  owner?: { turn: string; text: string };
+};
 
-  on('session.start', async (_, e, next) => {
-    interactive = e.isInteractive;
-    sessionCwd = e.cwd;
-    lastReply = '';
-    owner = undefined;
-    return next(e);
-  });
+export function createAdvisor(session?: SessionStartInput): Advisor {
+  return { fallbackCwd: session?.cwd ?? '', interactive: session?.isInteractive, lastReply: '' };
+}
 
-  on('turn.complete', async ($, e, next) => {
-    if (e.agentId === undefined) {
-      const latest = owner?.turn === e.turnId ? owner : undefined;
-      if (latest) owner = undefined; // Consume the reply boundary, even if no rule check runs.
-      if (typeof e.answer === 'string' && e.answer.trim()) {
-        lastReply = e.answer.slice(0, 2000);
-        if (latest && e.reason !== 'aborted') {
-          void triggerAdvisor($, latest.text, e.turnId, '', sessionCwd, e.answer).catch(() => {});
-        }
-      }
-    }
-    return next(e);
-  });
+export async function startAdvisorTurn($: EngineInterface, advisor: Advisor, e: TurnStartInput) {
+  // A fresh module can first see a turn after /reload-plugins, not a session start.
+  advisor.interactive ??= (await $.session.surfaces()).length > 0;
+  advisor.owner = undefined;
+  if (!advisor.interactive || typeof e.text !== 'string') return;
+  const text = e.text.trim();
+  if (!text || text.startsWith(WAKE_PREFIX) || text.startsWith('/') || text.startsWith('<task-notification>')) return;
+  if (text.startsWith('<system-reminder>') && !text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim()) return;
+  advisor.owner = { turn: e.turnId, text: text.slice(0, 16_000) };
+  void triggerAdvisor($, text, e.turnId, advisor.lastReply, advisor.fallbackCwd).catch(() => {});
+}
 
-  on('turn.start', async ($, e, next) => {
-    if (interactive && e.agentId === undefined && typeof e.text === 'string') {
-      const trimmed = e.text.trim();
-      owner = undefined;
-      if (trimmed && !trimmed.startsWith(WAKE_PREFIX) && !trimmed.startsWith('/')) {
-        owner = { turn: e.turnId, text: trimmed.slice(0, 16_000) };
-        void triggerAdvisor($, trimmed, e.turnId, lastReply, sessionCwd).catch(() => {});
-      }
-    }
-    return next(e);
-  });
+export function completeAdvisorTurn($: EngineInterface, advisor: Advisor, e: TurnCompleteInput) {
+  if (advisor.owner?.turn !== e.turnId) return;
+  const { text } = advisor.owner;
+  advisor.owner = undefined; // Consume the reply boundary, even if no rule check runs.
+  if (typeof e.answer !== 'string' || !e.answer.trim()) return;
+  advisor.lastReply = e.answer.slice(0, 2000);
+  if (e.reason !== 'aborted') {
+    void triggerAdvisor($, text, e.turnId, '', advisor.fallbackCwd, e.answer).catch(() => {});
+  }
 }

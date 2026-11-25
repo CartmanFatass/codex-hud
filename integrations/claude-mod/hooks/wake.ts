@@ -1,4 +1,5 @@
 import type { EngineInterface, On, Timer } from 'claude-code';
+import { completeAdvisorTurn, createAdvisor, startAdvisorTurn } from './advisor';
 import { takeBand } from './band';
 import { offerCommands } from './commands';
 import { mergeChanges, mergeNotice, type Turn } from './compact';
@@ -94,32 +95,48 @@ async function wakeLane($: EngineInterface, cwd: string, turn: Turn) {
   };
 }
 
+async function startWake($: EngineInterface, turn: Turn, interactive: boolean, cwd?: string) {
+  if (!interactive) return;
+  await offerCommands($);
+  if (await inPane($)) {
+    await $.env.set('HUD_CLAUDE_MOD', '1').catch(() => {}); // Marker takeover also works for an existing server.
+    return wakeLane($, cwd ?? await $.session.cwd(), turn);
+  }
+}
+
 export function registerWake(on: On, turn: Turn) {
   let lane: Awaited<ReturnType<typeof wakeLane>> | undefined;
+  let advisor = createAdvisor();
+
   registerConvention(on, () => lane?.live() ?? false);
   on('mcp.connect', { server: /(?:^|_)hud$/ }, async ($, e, next) => {
     if (await inPane($) && (await $.session.surfaces()).length) await $.env.set('HUD_CLAUDE_MOD', '1').catch(() => {});
     return next(e);
   });
+  // The engine permits only one unfiltered hook per event. Share the lifecycle with the advisor.
   on('session.start', async ($, e, next) => {
+    advisor = createAdvisor(e);
     const started = await next(e);
-    if (e.isInteractive) await offerCommands($);
-    if (e.isInteractive && await inPane($)) {
-      await $.env.set('HUD_CLAUDE_MOD', '1').catch(() => {}); // Marker takeover also works for an existing server.
-      lane = await wakeLane($, e.cwd, turn);
-    }
+    lane = await startWake($, turn, e.isInteractive, e.cwd);
     return started;
   });
-  on('turn.start', async (_, e, next) => {
+  on('turn.start', async ($, e, next) => {
     if (e.agentId === undefined) {
+      const needsInit = advisor.interactive === undefined;
+      await startAdvisorTurn($, advisor, e);
       turn.seen.clear(); turn.tasks.clear();
+      // A reload can miss session.start. Restore the watch and its cursor on the next turn.
+      if (needsInit) lane = await startWake($, turn, advisor.interactive === true);
       await lane?.begin(e.turnId);
     }
     return next(e);
   });
   on('session.stop', async (_, e, next) => { await lane?.stopTurn(); return next(e); });
-  on('turn.complete', async (_, e, next) => {
-    if (e.agentId === undefined) await lane?.complete(e.reason === 'aborted');
+  on('turn.complete', async ($, e, next) => {
+    if (e.agentId === undefined) {
+      completeAdvisorTurn($, advisor, e);
+      await lane?.complete(e.reason === 'aborted');
+    }
     return next(e);
   });
   on('session.end', (_, e, next) => { if (e.reason !== 'clear') lane?.stop(); return next(e); });

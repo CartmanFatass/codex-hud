@@ -37,7 +37,7 @@ import { collectAndRenderParity } from '../../dist/statusline-parity/collect.js'
 import { paritySettings } from '../../dist/statusline-parity/settings.js';
 import { copyToClipboard, osc52Sequence } from '../../dist/utils/clipboard.js';
 import { fakeDecisionServer } from '../helpers/thin-mcp-harness.mjs';
-import { registerAdvisor } from '../../integrations/claude-mod/hooks/advisor.ts';
+import { completeAdvisorTurn, createAdvisor, startAdvisorTurn } from '../../integrations/claude-mod/hooks/advisor.ts';
 
 function setupEnv(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hud-advisor-'));
@@ -643,20 +643,19 @@ test('no session transcript, hook output, or prompt receives advisor text (Claud
   assert.deepEqual(notifications, []);
   assert.equal(fs.readFileSync(sessionFile, 'utf8'), initialTranscript);
 
-  // 2) Claude mod hooks pass events through, never append or submit, and spawn hud advise silently.
-  const claudeHandlers = new Map();
-  registerAdvisor((event, handler) => {
-    claudeHandlers.set(event, handler);
-  });
+  // 2) The Claude advisor spawns hud advise silently, even without session.start.
+  const advisor = createAdvisor();
   const spawned = [];
   const appended = [];
   const submitted = [];
+  const skillSpawned = Promise.withResolvers();
   const ruleSpawned = Promise.withResolvers();
   f.env.CLAUDE_CODE_SESSION_ID = 'claude-cli-1';
   const fakeEngine = {
     env: { get: async (k) => f.env[k] },
     fs: { read: async (p) => fs.readFileSync(p, 'utf8') },
     session: {
+      surfaces: async () => ['terminal'],
       cwd: async () => f.projectRoot,
       root: async () => f.projectRoot,
       append: async (x) => { appended.push(x); return {}; },
@@ -665,28 +664,20 @@ test('no session transcript, hook output, or prompt receives advisor text (Claud
     process: {
       run: async (argv, opts) => {
         spawned.push({ argv, opts });
-        if (argv.includes('--reply')) ruleSpawned.resolve(argv);
+        (argv.includes('--reply') ? ruleSpawned : skillSpawned).resolve(argv);
         return { exitCode: 0, stdout: 'synthetic child output', stderr: '' };
       },
     },
   };
-  await claudeHandlers.get('session.start')(fakeEngine, { cwd: f.projectRoot, isInteractive: true }, async (e) => e);
-  await claudeHandlers.get('turn.complete')(fakeEngine, { turnId: 't0', answer: 'Ready to implement.' }, async (e) => e);
   const turnEvent = { turnId: 't1', text: 'Write tests first for the parser.' };
-  const hookReturn = await claudeHandlers.get('turn.start')(fakeEngine, turnEvent, async (e) => ({ passedThrough: e }));
-  await new Promise((r) => setTimeout(r, 25));
-  assert.deepEqual(hookReturn, { passedThrough: turnEvent });
-  assert.deepEqual(appended, []);
-  assert.deepEqual(submitted, []);
+  await startAdvisorTurn(fakeEngine, advisor, turnEvent);
+  assert.deepEqual((await skillSpawned.promise).slice(0, 2), ['hud', 'advise']);
   assert.equal(spawned.length, 1);
-  assert.equal(spawned[0].argv[0], 'hud');
-  assert.equal(spawned[0].argv[1], 'advise');
-  assert.doesNotMatch(JSON.stringify(hookReturn), /tdd|skill:|SKILL\.md|advisor/i);
+  assert.equal(spawned[0].opts.cwd, f.projectRoot);
 
   const completed = { turnId: 't1', answer: '--help', reason: 'answer' }; // A reply is data, not a CLI option.
-  const complete = claudeHandlers.get('turn.complete');
-  assert.deepEqual(await complete(fakeEngine, completed, async (e) => ({ passedThrough: e })), { passedThrough: completed });
-  assert.equal(await complete(fakeEngine, completed, async () => undefined), undefined);
+  completeAdvisorTurn(fakeEngine, advisor, completed);
+  completeAdvisorTurn(fakeEngine, advisor, completed);
   const ruleArgs = (await ruleSpawned.promise).slice(2);
   assert.equal(spawned.length, 2);
   assert.deepEqual(appended, []);

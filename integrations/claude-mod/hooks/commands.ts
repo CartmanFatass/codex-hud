@@ -63,7 +63,7 @@ async function confirm($: EngineInterface, question: string, yes: string) {
   return (await $.ui.ask(question, [yes, 'Cancel']).catch(() => 'Cancel')) === yes;
 }
 
-/** Declares the slash commands in an owner's session (a worker, HUD_JOB_DIR set, has none); called from the one `session.start` hook. */
+/** Declares the slash commands in an owner's session (a worker, HUD_JOB_DIR set, has none). */
 export async function offerCommands($: EngineInterface) {
   if (!(await $.env.get('HUD_JOB_DIR'))) for (const c of COMMANDS) await $.command.register({ ...c, immediate: true }).catch(() => {});
 }

@@ -77,8 +77,10 @@ test('a reload restores the last watch delivery and checkpoints newer batches wi
   const held = { busy: null, aborted: false, pending: [], seed: [], seen: [], lastDelivery: 123 };
   mock.env(on, { HERDR_PANE_ID: 'w4E:p1', HUD_HOME: '/state' });
   on('env.set', () => ({ value: {} }));
-  on('session.start', (_, e) => ({ cwd: e.cwd }));
+  on('session.surfaces', () => ({ value: ['terminal'] }));
+  on('session.cwd', () => ({ value: '/demo' }));
   on('session.root', () => ({ value: '/demo' }));
+  on('turn.start', (_, e) => ({ turnId: e.turnId }));
   on('fs.exists', () => ({ value: true }));
   on('state.get', () => ({ value: { value: held, version: 1 } }));
   const writes: unknown[] = [];
@@ -90,10 +92,13 @@ test('a reload restores the last watch delivery and checkpoints newer batches wi
     yield { stream: 'stdout', text: JSON.stringify({ type: 'wake', lines: [line], at: 456 }) + '\n' };
     return { value: { code: 0, signal: null } };
   });
-  await $.session.start(session);
+  await $.turn.start({ text: 'Continue working', turnId: 'after-reload' });
   expect(cutoffs).toEqual(['123']);
   await clock.advance(10);
-  expect(writes).toEqual([{ ...held, lastDelivery: 456, pending: [line] }]);
+  expect(writes).toEqual([
+    { ...held, busy: 'after-reload' },
+    { ...held, busy: 'after-reload', lastDelivery: 456, pending: [line] },
+  ]);
 });
 
 test('after idle exit only a changed panel log restarts the child with its resume cursor', async ($, on) => {
