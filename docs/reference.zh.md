@@ -408,7 +408,7 @@ HUD 会报告跳过的预设；
 详情标题有档位和无界面标记，另有一行 `分流：轻量 · 无界面 — <原因>`。
 
 按角色的软并发上限（`roleCaps`，默认 `imp: 3`、`general: 3`，其他角色不限；
-`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed`、`stopped`、sonic 子任务和无界面 sonic）。
+`0` 表示无上限）在整机范围内统计处于工作状态的任务（不计 `queued`、`idle_grace`、`done`、`closed`、`failed` 和 `stopped`）。主会话创建的无界面 sonic 任务计入 `roleCaps.sonic`；工作者的 sonic 子任务和预检侦察任务既不占用名额，也无需排队。
 开启 **imp→general 溢出**（`impOverflow`，默认开启）时，若 `imp` 达到上限而 `general` 尚有空位，则计入 `general` 的名额，但保留 `imp` 的执行链（沿用选定的运行位置），并返回 `overflowed: true`、`overflow_from: "imp"`。
 无空位时，`hud_create`（以及批量创建中超出上限的条目）将任务创建为 `queued` 状态并保留完整简报与选项，在结果、通知与面板中显示排队位置 `queue_position`。
 有空位释放或在设置中调高上限时，watcher 立即按启动时的首个可用位置启动最早排队的任务；

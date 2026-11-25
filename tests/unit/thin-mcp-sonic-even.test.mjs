@@ -8,7 +8,7 @@ import { defaultSettings, loadSettings } from '../../dist/settings.js';
 import { pickEvenPreset } from '../../dist/mcp/imp-routing.js';
 import { SETTING_ROWS, handleSettingsInput, renderSettingsPage, resetSettingsGroup } from '../../dist/render/settings-page.js';
 import { stripAnsi } from '../../dist/render/colors.js';
-import { fixture, runSonic, until } from '../helpers/thin-mcp-harness.mjs';
+import { cliState, fixture, runSonic, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 
 const pi = (provider, model) => ({ harness: 'pi', pi_role: 'sonic', model: `${provider}/${model}`, thinking: 'high', split: false });
@@ -49,7 +49,8 @@ test('Sonic even rotates round-robin in pool order across creates, scouts and hu
   assert.equal(fs.statSync(join(f.env.HUD_HOME, 'even-imp.json')).mode & 0o777, 0o600);
 
   writeSonicRole(f);
-  settings(f, { sonicPlacement: 'even', sonicEvenPool: ['luna', 'deepseek', 'haiku'] });
+  settings(f, { sonicPlacement: 'even', sonicEvenPool: ['luna', 'deepseek', 'haiku'], roleCaps: { sonic: 1 } });
+  write(join(f.env.HOME, 'hold-sonic'), '');
 
   // Callers still cannot pass placement overrides for sonic.
   for (const override of [{ preset: 'haiku' }, { on: 'pi' }, { model: 'synth-haiku/haiku' }, { thinking: 'low' }]) {
@@ -81,13 +82,22 @@ test('Sonic even rotates round-robin in pool order across creates, scouts and hu
   assert.equal(child.route.preset, 'haiku');
   assert.equal(child.model, 'synth-haiku/haiku');
 
-  // 4. Next create wraps back to luna.
+  // Only the direct create takes a slot: helpers started at cap and do not block the queued job.
   const fourth = await f.call('hud_create', { role: 'sonic', task: 'Fourth sonic lookup.' });
+  assert.equal(fourth.queued, true);
   assert.equal(fourth.route.preset, 'luna');
+  markExhausted(f.env.HUD_HOME, 'pi:synth-luna/luna', 'rate limit');
+  write(join(first.task_dir, 'release-sonic'), '');
+  await until(() => receipt(fourth.task_dir).used_place, t.signal);
+  assert.equal(receipt(fourth.task_dir).route.preset, 'deepseek');
+  assert.equal(receipt(fourth.task_dir).headless, true);
 
   // 5. Retry keeps the chosen preset even after settings change.
   settings(f, { sonicPlacement: 'even', sonicEvenPool: ['deepseek'] });
-  write(join(f.env.HUD_HOME, 'jobs', child.job, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'Synthetic failure' }));
+  const childDir = join(f.env.HUD_HOME, 'jobs', child.job);
+  write(join(childDir, 'fail-sonic'), '');
+  write(join(childDir, 'release-sonic'), '');
+  await until(() => cliState(childDir)?.state === 'failed', t.signal);
   const retry = await f.call('hud_create', { role: 'sonic', retry_of: child.job });
   assert.equal(retry.route.placement, 'even');
   assert.equal(retry.route.preset, 'haiku');

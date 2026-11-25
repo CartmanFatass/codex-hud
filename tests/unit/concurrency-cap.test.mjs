@@ -4,9 +4,12 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   cliState,
+  configureFakeDecision,
+  fakeDecisionServer,
   fixture,
   publishPiGrace,
   resultValue,
+  sonicTask,
   taskCall,
   taskJob,
   taskRpc,
@@ -185,23 +188,43 @@ test('three working imps overflow fourth imp to general and queue once both caps
   assert.equal((await f.call('hud_read', { job: q2.job })).queue_position, 1);
 });
 
-test('a headless sonic starts even when a legacy sonic fills the role cap', async (t) => {
-  const f = await fixture(t);
-  writeHudSettings(f, { roleCaps: { sonic: 1 } });
-  const id = 'j00000000000000a1';
-  const dir = join(f.env.HUD_HOME, 'jobs', id);
-  fs.mkdirSync(dir, { recursive: true });
-  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job: id, role: 'sonic', cwd: f.root,
-    herdr_pane: 'w4E:p1', created_at: new Date().toISOString() }));
-  writeStatus(dir, { state: 'working' });
+test('main-session sonic jobs queue at the cap and start headless in order', { timeout: 30000 }, async (t) => {
+  const f = await fixture(t, { watcherTickMs: 200 });
+  sonicTask(f); // Hold each fake pi until its release file appears.
+  const decision = await fakeDecisionServer(t, () => ({ answers: [{ name: 'sonic_thinking', type: 'choice', choice: 'low',
+    confidence: 0.9, probabilities: [{ value: 'low', probability: 0.9 }, { value: 'high', probability: 0.1 }] }] }));
+  configureFakeDecision(f, decision.baseUrl);
+  writeHudSettings(f, { roleCaps: { sonic: 2 }, sonicAutoThinking: true });
+  const create = task => f.call('hud_create', { role: 'sonic', task });
+  const first = await create('First query.');
+  const second = await create('Second query.');
+  for (const running of [first, second]) {
+    assert.equal(running.state, 'working');
+    assert.equal(running.mode, 'headless');
+  }
+  const third = await create('Third query.');
+  const fourth = await create('Fourth query.');
+  assert.equal(third.queued, true);
+  assert.equal(third.queue_position, 1);
+  assert.equal(third.mode, 'headless');
+  assert.deepEqual(third.attempts, []);
+  assert.equal(fourth.queue_position, 2);
+  assert.equal(decision.requests.length, 2, 'queued jobs defer thinking selection until launch');
 
-  const job = await f.call('hud_create', { role: 'sonic', task: 'Synthetic query at cap.' });
-  assert.notEqual(job.state, 'queued');
-  await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
-  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
+  fs.writeFileSync(join(first.task_dir, 'release-sonic'), '');
+  await until(() => cliState(third.task_dir)?.state === 'working', t.signal);
+  assert.equal(cliState(fourth.task_dir).state, 'queued');
+  const status = cliState(third.task_dir);
+  assert.equal(status.slot, 'sonic');
+  assert.deepEqual(status.sonic_limits, cliState(second.task_dir).sonic_limits);
+  assert.ok(status.sonic_limits.max_s > 0);
+  const receipt = JSON.parse(fs.readFileSync(join(third.task_dir, 'job.json')));
+  assert.equal(decision.requests.length, 3);
+  assert.equal(receipt.thinking_source, 'decision');
+  assert.equal(receipt.thinking, 'low');
   assert.equal(receipt.headless, true);
   assert.equal(receipt.resume_s, undefined, 'headless sonic has no native resume window');
-  assert.equal(fs.existsSync(join(job.task_dir, 'SESSION.txt')), false);
+  assert.equal(fs.existsSync(join(third.task_dir, 'SESSION.txt')), false);
 });
 
 test('queued imp starts automatically when a working imp settles, picking the first available place at start time', { timeout: 45000 }, async (t) => {

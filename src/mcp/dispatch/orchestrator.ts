@@ -614,7 +614,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     ? [...(pool ? [pool.entry] : []), ...scoutSpecs.map(({ kind, source, ask }) => ({ kind, source, ...(ask ? { ask } : {}), result: state, ms: 0 }))]
     : undefined;
 
-  const enforceCap = role !== 'sonic' && !parentJob && !scoutContextCwd && !landCwd;
+  const enforceCap = !parentJob && !scoutContextCwd && !landCwd;
   let overflowFrom = fromImp ? 'imp' : undefined;
   let inline = false;
   let context: Exclude<Awaited<ReturnType<typeof assembleContext>>, { ok: false }> | undefined;
@@ -670,7 +670,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         dispatcher,
         ...(ticketQueue && { ticket_queue: ticketQueue }),
         ...(queuedRoute && { route: queuedRoute }),
-        ...((first.route?.mode === 'headless' || args.mode === 'headless') && { headless: true }),
+        ...((sonic || first.route?.mode === 'headless' || args.mode === 'headless') && { headless: true }),
         ...(overflowFrom && { overflow_from: overflowFrom }),
         task_length: task.length,
         ...queuedContext.metadata,
@@ -1014,7 +1014,8 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
       return failQueued(`unknown preset: ${presetName}`, 'invalid_arguments');
     const modelOverride = typeof args.model === 'string' ? args.model : undefined;
     const settings = existing.route?.placement === 'even' && !retryInput ? impPlacementSettings(hudHome) : undefined;
-    const even = settings && launchRoleName === 'imp' ? evenPlanner(found, chain, args, routing, 'imp', settings.impEvenPool) : undefined;
+    const even = settings && launchRoleName === 'imp' ? evenPlanner(found, chain, args, routing, 'imp', settings.impEvenPool)
+      : settings && launchRoleName === 'sonic' ? evenPlanner(found, chain, args, routing, 'sonic', settings.sonicEvenPool) : undefined;
     let plan = launchPlan(found, chain, now, args, routing, onEntry, retryInput, existing.route);
     if (even && !plan.candidates.length) {
       const exhausted = plan.effective.places.find(place => place.state === 'exhausted');
@@ -1078,7 +1079,11 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const reserved = await withAbstractLock('concurrency', hudHome, () => {
       if (readCachedStatus(id).status?.state !== 'queued') return false;
       const cap = capForRole(loadConcurrencySettings(), role);
-      if (cap && (countWorkingByRole().get(role) ?? 0) >= cap) return false;
+      if (cap && (countWorkingByRole().get(role) ?? 0) >= cap) {
+        // A concurrent create took the slot. Leave the queued job claimable on the next scan.
+        fs.unlinkSync(join(dir, QUEUE_START_MARKER));
+        return false;
+      }
       if (hasScouts) {
         base.scout_state = 'scouting';
         save(base);

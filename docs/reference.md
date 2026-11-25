@@ -318,7 +318,7 @@ Overflow to `general` keeps the imp chain.
 `retry_of` keeps the tier without another decision, and a light job's land repair starts on standard.
 The job record, create result and per-job `hud_read` show `route` with `tier`, `mode`, `reason`, `source`, and any `fallback` or `mode_reason`; Inspector shows the route and why: tier and headless marks in its header and a `Route: light · headless — <reason>` row.
 
-Soft per-role concurrency caps (`roleCaps`, defaults `imp: 3`, `general: 3`, other roles uncapped; `0` means unlimited) are counted machine-wide over jobs in a working state (excluding `queued`, `idle_grace`, `done`, `closed`, `failed`, `stopped`, sonic children and headless sonic).
+Soft per-role concurrency caps (`roleCaps`, defaults `imp: 3`, `general: 3`, other roles uncapped; `0` means unlimited) are counted machine-wide over jobs in a working state (excluding `queued`, `idle_grace`, `done`, `closed`, `failed` and `stopped`). Top-level headless sonic jobs count toward `roleCaps.sonic`; worker sonic children and prewalk scouts neither use nor wait for a slot.
 With **imp→general overflow** (`impOverflow`, on by default), an `imp` create at its cap uses a free `general` slot while retaining the `imp` chain (with the selected placement).
 It is counted as `general` and returns `overflowed: true` and `overflow_from: "imp"`.
 When no slot is free, `hud_create` (including items past the cap in a batch) creates the job as `queued` with its full brief and options and returns `queued: true` and its 1-based `queue_position` (shown in notices and the panel).
