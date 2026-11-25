@@ -51,7 +51,7 @@ agent proposes.
    One fresh implementer fixes the findings in one pass. Findings block only if a real user would hit them or the
    spec is violated.
    When the work runs as a workflow (ticket queue or a composed graph), steps 4–6 run inside it: clean slices land
-   automatically, and the run ends with a qualified acceptance session (default `oracle`) that does the two-axis
+   automatically, and the run ends with a qualified acceptance session (default `oracle` on Opus 5.5 high) that does the two-axis
    review and live try, then finishes, repairs or continues the run; the orchestrator only starts it, reads the end
    notice and handles what is escalated for the owner (D-2026-11-25-07).
 6. **Accept.** The orchestrator accepts work after verification; there is no routine ticket-level owner acceptance.

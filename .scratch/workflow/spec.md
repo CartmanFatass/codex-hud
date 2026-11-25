@@ -75,6 +75,6 @@ no resident process, intent persisted before effect, request-key recovery, one n
 
 ## Acceptance (owner 2026-11-25, D-2026-11-25-07)
 
-Hand-backs default to a qualified acceptance session (`oracle` or the role the template names), not main. It
+Hand-backs default to a qualified acceptance session (default `oracle` on the `opus` preset: Claude Opus 5.5, high; or the role/preset the template names), not main. It
 chooses finish / repair / continue with reasons; escalates to main only owner matters. The ticket-queue template ends
 with an acceptance session (two-axis review + live try). Main starts runs and gets the one end notice. Ticket 07.

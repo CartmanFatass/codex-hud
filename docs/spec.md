@@ -80,7 +80,8 @@ execution detail; when space runs out, execution detail is not shown. (new)
   main's confirmation; a run with council, `pro`, browser roles or a large batch (more than 50 Sonic items or 2 MiB of
   Sonic input, or more than 12 items of another role) needs a fresh one-time owner grant like council. Fan-out steps
   confirm scale and run a pilot first (25.05, 25.06). A hand-back goes by default to a qualified acceptance session
-  (an `oracle` job, or the role the template names), not to main: it reads the run's reports, chooses one of the
+  (default an `oracle` job on Claude Opus 5.5 at high, the same model as the main session; a template may name
+  another role or preset), not to main: it reads the run's reports, chooses one of the
   declared branches (finish, repair, continue) and states why; its session closes when it answers. It escalates to
   main only what needs the owner (scope, value trade-offs, visible deletions, irreversible acts). Main is the
   owner's discussion session and is decoupled from runs: it starts them and receives the one end notice (25.07).

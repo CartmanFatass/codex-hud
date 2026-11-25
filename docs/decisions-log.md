@@ -12,7 +12,7 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   A workflow ends (or pauses at a hand-back) with a qualified acceptance session that reads the reports, decides to
   finish, repair or continue along the declared branches, and is then closed through herdr. Gains: no main-session
   wakes or context per slice, no prompt-cache cost of keeping main waiting, no main turn per acceptance. Cost: one
-  acceptance job per run (default `oracle`); a wrong verdict is caught later by the owner or main rather than at each
+  acceptance job per run (default `oracle` on Claude Opus 5.5 high, matching the main session, owner); a wrong verdict is caught later by the owner or main rather than at each
   slice. Main still starts runs and gets one end notice; owner matters escalate to main. Supersedes "hand-back to main
   for any judgement" (D-2026-11-25-05) and delegation steps 4–6 where a workflow runs the work.
 
