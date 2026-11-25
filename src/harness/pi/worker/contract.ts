@@ -1,27 +1,35 @@
-import { basename, join } from 'node:path';
+import { basename, isAbsolute, join } from 'node:path';
+import type { GuardMode } from '../../../roles/pi-defaults.js';
 import { readJsonBounded, writeJsonPrivate } from '../../../utils/atomic-fs.js';
 
 export const sonicProtocolTools = ['hud_report', 'hud_progress', 'hud_lease'] as const;
 
-export interface SonicContract {
+export const sessionProtocolTools = [...sonicProtocolTools, 'hud_ask', 'hud_sonic'] as const;
+
+export interface WorkerContract {
   version: 1;
   job: string;
-  role: 'sonic';
+  role: string;
   instructions: string;
-  model: string;
-  thinking: string;
+  model?: string;
+  thinking?: string;
+  guard?: GuardMode;
+  session?: string; // Present for session workers; Sonic has its own one-shot file.
   explicitTools: boolean;
   tps: boolean;
 }
 
-export function writeContract(dir: string, contract: SonicContract) {
+export function writeContract(dir: string, contract: WorkerContract) {
   writeJsonPrivate(join(dir, 'pi-worker.json'), contract, { mkdir: false });
 }
 
-export function readContract(dir: string): SonicContract {
-  const c = readJsonBounded(join(dir, 'pi-worker.json'), 16384) as Partial<SonicContract> | null;
-  if (c?.version !== 1 || c.job !== basename(dir) || c.role !== 'sonic' || typeof c.instructions !== 'string' ||
-      !/^[\w-]+$/.test(c.instructions) || typeof c.model !== 'string' || !c.model || typeof c.thinking !== 'string' ||
-      !c.thinking || typeof c.explicitTools !== 'boolean' || typeof c.tps !== 'boolean') throw Error('Invalid pi worker contract');
-  return c as SonicContract;
+export function readContract(dir: string): WorkerContract {
+  const c = readJsonBounded(join(dir, 'pi-worker.json'), 16384) as Partial<WorkerContract> | null;
+  const nonempty = (s: unknown) => typeof s === 'string' && Boolean(s);
+  if (c?.version !== 1 || c.job !== basename(dir) || !nonempty(c.role) || typeof c.instructions !== 'string' ||
+      !/^[\w-]+$/.test(c.instructions) || (c.model !== undefined && !nonempty(c.model)) ||
+      (c.thinking !== undefined && !nonempty(c.thinking)) || (c.guard !== undefined && c.guard !== 'strict' && c.guard !== 'oracle') ||
+      (c.role === 'sonic' ? c.session !== undefined : typeof c.session !== 'string' || !isAbsolute(c.session)) ||
+      typeof c.explicitTools !== 'boolean' || typeof c.tps !== 'boolean') throw Error('Invalid pi worker contract');
+  return c as WorkerContract;
 }

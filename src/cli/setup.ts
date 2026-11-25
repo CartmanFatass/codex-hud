@@ -7,6 +7,7 @@ import { getHudHome } from '../hud-home.js';
 import { proposedDisposablePaths } from '../mcp/managed-worktree.js';
 import { projectRoot, registeredProject } from '../roles/projects.js';
 import { executable, projectReason, roleRegistry, type Role } from '../roles/roster.js';
+import { isPiProfile, piProfileError } from '../roles/pi-defaults.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 
@@ -449,6 +450,7 @@ function loadPiRoles(value: unknown, skillNames: Set<string>, reference: Registr
         bad(`pi_roles.${name}.${key}`);
       role[key] = raw[key];
     }
+    if (role.pi_role !== undefined && !isPiProfile(role.pi_role)) bad(`pi_roles.${name}.pi_role: ${piProfileError}`);
     for (const key of ['split', 'can_continue'] as const) {
       if (raw[key] === undefined) continue;
       if (typeof raw[key] !== 'boolean') bad(`pi_roles.${name}.${key}`);

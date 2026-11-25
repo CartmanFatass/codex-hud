@@ -344,12 +344,10 @@ test('CLI fallback hud-progress --done supports findings and reviewed for review
   assert.equal(Object.hasOwn(impJob, 'reviewed'), false);
 });
 
-test('pi and CLI reviewer instructions explain how and when to declare findings and reviewed', () => {
-  for (const rel of ['integrations/pi/roles/reviewer.md', 'packages/hud-mcp/instructions/reviewer.md']) {
-    const body = fs.readFileSync(resolve(rel), 'utf8');
-    assert.match(body, /findings:\s*\{blocker,\s*major,\s*minor\}/, rel);
-    assert.match(body, /reviewed:\s*\{base,\s*head\}/, rel);
-    assert.match(body, /40-hex/, rel);
-    assert.match(body, /never guess/i, rel);
-  }
+test('the shared reviewer instructions explain how and when to declare findings and reviewed', () => {
+  const body = fs.readFileSync(resolve('packages/hud-mcp/instructions/reviewer.md'), 'utf8');
+  assert.match(body, /findings:\s*\{blocker,\s*major,\s*minor\}/);
+  assert.match(body, /reviewed:\s*\{base,\s*head\}/);
+  assert.match(body, /40-hex/);
+  assert.match(body, /never guess/i);
 });

@@ -167,7 +167,7 @@ test('provider attribution uses local settings or the unfiltered cache; unknown 
   put(settings, { defaultProvider: 'xai', defaultModel: 'settings-model' });
   fs.mkdirSync(join(home, 'roles'));
   put(join(home, 'roles', 'defaulted.json'), { role: 'defaulted', instructions: 'implementer', can_continue: true,
-    run: [{ harness: 'pi', pi_role: 'without-model' }] });
+    run: [{ harness: 'pi', pi_role: 'general' }] });
   const unknown = await roster('imp'); // frontmatter has a bare ID and there is no cache yet
   assert.equal(unknown.provider, null);
   assert.equal(unknown.state, 'active');

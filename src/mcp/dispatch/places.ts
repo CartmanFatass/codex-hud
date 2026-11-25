@@ -112,13 +112,16 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
   const choice = pin !== undefined && pin !== chain.preset && !missingPin ? { preset: pin }
     : route ? undefined : onEntry ? { run: [{ ...chain.run.find(p => matchPlace(p, onEntry)), ...onEntry }] }
     : preset !== undefined ? { preset } : undefined;
-  const standard = found.assignment(chain, now, route ? undefined : model, routing, choice,
-    !!retryInput && retryInput.model === undefined);
+  const explicit = args.mode !== undefined;
+  const headless = chain.role === 'sonic' || args.mode === 'headless' ||
+    (!explicit && chain.can_continue === true && (route?.mode === 'headless' || !!route?.mode_reason));
+  const standardFor = (native: boolean) => found.assignment(chain, now, route ? undefined : model, routing, choice,
+    !!retryInput && retryInput.model === undefined, native);
+  const standard = standardFor(headless);
   const tierPreset = route && chain.routing?.[route.tier]?.preset;
   const tier = !route || route.tier === 'standard' ? standard
     : tierPreset && chain.presets?.some(p => p.name === tierPreset)
-      ? found.assignment(chain, now, undefined, routing, { preset: tierPreset }) : undefined;
-  const explicit = args.mode !== undefined;
+      ? found.assignment(chain, now, undefined, routing, { preset: tierPreset }, false, headless) : undefined;
   const entries = (effective: Assignment, route?: JobRoute) => effective.places.flatMap(candidate => {
     if ((!land && !effective.available) || (candidate.state !== 'active' && candidate.state !== 'standby') ||
       (land && candidate.place.harness === 'bro')) return [];
@@ -146,7 +149,8 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
       : `${route.tier} tier has no usable place; using standard`].filter(Boolean).join('; '),
   } : undefined;
   // On the same chain, tab-only candidates already had their tab attempt.
-  const all = fallback ? [...preferred, ...entries(standard, fallback).filter(({ candidate }) => !modeFallback || supportsHeadless(candidate.place))] : preferred;
+  const fallbackAssignment = fallback && fallback.mode !== (headless ? 'headless' : 'tab') ? standardFor(false) : standard;
+  const all = fallback ? [...preferred, ...entries(fallbackAssignment, fallback).filter(({ candidate }) => !modeFallback || supportsHeadless(candidate.place))] : preferred;
   const candidates = route || args.mode === 'headless' ? all.filter(entry => !('code' in entry.prepared)) : all;
   return { candidates, error: all.find(entry => 'code' in entry.prepared)?.prepared,
     effective: candidates[0]?.effective ?? standard, route: candidates[0]?.route ?? fallback ?? route, fallback };

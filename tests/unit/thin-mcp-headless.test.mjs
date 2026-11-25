@@ -3,9 +3,10 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { fixture, cliState, resultValue, taskCall, taskJob, taskRpc, until, workerFor } from '../helpers/thin-mcp-harness.mjs';
+import { fixture, rolePlacesFixture, cliState, resultValue, taskCall, taskJob, taskRpc, until, workerFor } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 import { isProcAlive } from '../../dist/utils/proc.js';
+import { readContract } from '../../dist/harness/pi/worker/contract.js';
 
 const moduleUrl = path => new URL(path, import.meta.url).href;
 const read = path => JSON.parse(fs.readFileSync(path));
@@ -32,12 +33,28 @@ assert.ok(!args.includes('--no-session'));
 const fresh = !fs.statSync(file).size;
 if (fresh) fs.appendFileSync(file, JSON.stringify({ type: 'session', id: randomUUID(), cwd: process.cwd() }) + '\\n');
 const id = JSON.parse(fs.readFileSync(file, 'utf8').split('\\n')[0]).id;
-const { default: extension } = await import(${JSON.stringify(moduleUrl('../../integrations/pi/package/extensions/hud.mjs'))});
-const hooks = {}, tools = {}, ctx = { sessionManager: { getSessionId: () => id, getSessionFile: () => file } };
-await extension({ on: (name, handler) => hooks[name] = handler, registerTool: t => tools[t.name] = t, sendMessage() {} });
-assert.deepEqual(Object.keys(tools).sort(), ['hud_lease', 'hud_progress', 'hud_report', 'hud_sonic']); // pi-role owns hud_ask.
+const { default: extension } = await import(args[args.indexOf('-e') + 1]);
+assert.ok(!args.some(arg => /^--(?:hud-|role-bundle)/.test(arg)));
+const hooks = new Map(), tools = {}, notices = [];
+const option = name => args.includes(name) ? args[args.lastIndexOf(name) + 1] : undefined;
+const model = (option('--model') ?? 'synthetic/native').split('/');
+const replaceFile = join(process.env.HOME, 'replace-session');
+const mismatch = process.env.HUD_RESUME_SESSION_ID && fs.existsSync(replaceFile) && fs.readFileSync(replaceFile, 'utf8');
+const ctx = { model: { provider: model[0], id: model.at(-1) },
+  sessionManager: { getSessionId: () => mismatch === 'id' ? 'replacement' : id,
+    getSessionFile: () => mismatch === 'file' ? file + '.replacement' : file } };
+let active = [];
+await extension({ on: (name, fn) => hooks.set(name, [...hooks.get(name) ?? [], fn]),
+  registerTool: t => tools[t.name] = t, sendMessage: message => notices.push(message),
+  getAllTools: () => Object.keys(tools).map(name => ({ name })), getActiveTools: () => active,
+  setActiveTools: names => { active = names; }, getThinkingLevel: () => option('--thinking') ?? 'off' });
+const emit = (key, event, context = ctx) => { for (const fn of hooks.get(key) ?? []) fn(event, context); };
+emit('session_start', {});
+assert.deepEqual([...active].sort(), ['hud_ask', 'hud_lease', 'hud_progress', 'hud_report', 'hud_sonic']);
+const opts = { sections: {}, skills: [] };
+emit('before_agent_start', { systemPromptOptions: opts });
+fs.writeFileSync(join(dir, 'role-section'), opts.sections.role);
 const prompt = args.at(-1);
-assert.equal(hooks.input({}, ctx), undefined);
 fs.appendFileSync(file, JSON.stringify({ prompt }) + '\\n');
 console.log(JSON.stringify({ id, prompt }));
 const gate = fresh ? 'first' : 'next', home = process.env.HOME;
@@ -51,13 +68,12 @@ if (fs.existsSync(join(home, 'hold-' + gate))) {
 await tools.hud_progress.execute('progress', { message: 'Synthetic progress.' });
 if (fresh && fs.existsSync(join(process.env.HOME, 'ask'))) {
   if (fs.existsSync(join(home, 'hold-sonic'))) await tools.hud_sonic.execute('start', { task: 'Read a fact before the decision.' });
-  const event = { toolName: 'hud_ask', input: { mode: 'async', question: 'Which value?', default: 'A' } };
-  hooks.tool_call(event);
-  assert.equal(event.input.mode, 'sync');
-  assert.equal(args[args.indexOf('--qa-timeout') + 1], '0');
-  await callWorkerTool('hud_ask', event.input);
+  const result = await tools.hud_ask.execute('ask', { question: 'Which value?', default: 'A' });
+  assert.equal(result.terminate, true);
+  assert.match(result.content[0].text, /answer resumes this session/);
+  fs.appendFileSync(file, JSON.stringify({ toolResult: result }) + '\\n');
   let ended = false;
-  hooks.turn_end({ toolResults: [{ toolName: 'hud_ask' }] }, { abort: () => ended = true });
+  emit('turn_end', { toolResults: [{ toolName: 'hud_ask' }, { toolName: 'hud_progress' }] }, { ...ctx, abort: () => ended = true });
   assert.ok(ended);
 } else if (prompt !== 'No new report.') {
   if (prompt.startsWith('Collect after pause.')) {
@@ -70,9 +86,19 @@ if (fresh && fs.existsSync(join(process.env.HOME, 'ask'))) {
     const started = await tools.hud_sonic.execute('start', { task: 'Read a synthetic fact.' });
     const collected = await tools.hud_sonic.execute('wait', { wait: [started.details.job] });
     assert.equal(collected.details.reports[0].body, 'Synthetic sonic facts.');
+    assert.deepEqual(notices, [], 'an active wait already received the report');
+  }
+  if (prompt.startsWith('Notify when ready.')) {
+    const { until } = await import(${JSON.stringify(moduleUrl('../helpers/thin-mcp-harness.mjs'))});
+    const started = await tools.hud_sonic.execute('start', { task: 'Read another synthetic fact.' });
+    await until(() => notices.length > 0, 10000);
+    assert.deepEqual(notices.map(n => n.customType), ['hud-sonic-ready']);
+    assert.ok(notices[0].content.includes(started.details.job + ' settled'));
+    await tools.hud_sonic.execute('wait', { wait: [started.details.job] });
   }
   await tools.hud_report.execute('report', { text: 'Synthetic report: ' + prompt });
 }
+emit('session_shutdown', {});
 `;
 
 const create = f => f.call('hud_create', { role: 'imp', mode: 'headless', task: 'Synthetic change.' });
@@ -86,6 +112,7 @@ const noTab = f => !f.commands().some(({ args }) => args[0] === 'tab' && args[1]
 test('question, follow-up and land repair reopen the same tabless pi session; expiry starts a headless repair', { timeout: 60000 }, async t => {
   const f = await fixture(t);
   f.overrideBin('pi', fakePi);
+  f.overrideBin('pi-role', '#!/bin/sh\nexit 1\n');
   write(join(f.env.HOME, 'ask'), '');
   const cwd = join(f.root, 'linked-cwd');
   fs.symlinkSync(f.root, cwd);
@@ -113,7 +140,9 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.deepEqual(lines.map(x => x.id), Array(4).fill(paused.session_id));
   assert.deepEqual(lines.slice(1).map(x => x.prompt), ['Choose B.', 'Check C.', 'Synthetic land repair.']);
   assert.equal(cliState(dir).session_file, paused.session_file);
-  assert.ok(fs.existsSync(paused.session_file));
+  const transcript = fs.readFileSync(paused.session_file, 'utf8');
+  assert.ok(transcript.indexOf('toolResult') > 0 && transcript.indexOf('toolResult') < transcript.indexOf('Choose B.'));
+  assert.ok(!f.commands().some(({ command }) => command === 'pi-role'));
   assert.equal(fs.existsSync(join(dir, 'SESSION.txt')), false);
   write(join(dir, 'STATUS.json'), JSON.stringify({ ...cliState(dir), ended_at: new Date(0).toISOString() }));
   const repair = await f.call('hud_send', { job: job.job, text: 'Expired follow-up.' });
@@ -127,6 +156,25 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.ok(noTab(f));
 });
 
+test('resumed Pi rejects a replacement session ID or file before delivering the answer', async t => {
+  const f = await fixture(t);
+  f.overrideBin('pi', fakePi);
+  write(join(f.env.HOME, 'ask'), '');
+  for (const replacement of ['id', 'file']) {
+    const job = await f.call('hud_create', { role: 'imp', mode: 'headless', task: `Synthetic replacement ${replacement}.` });
+    const dir = job.task_dir;
+    await until(() => cliState(dir)?.state === 'waiting_orchestrator', t.signal);
+    const session = cliState(dir).session_file;
+    write(join(f.env.HOME, 'replace-session'), replacement);
+    const answer = 'Do not deliver to the replacement.';
+    assert.equal((await f.call('hud_respond', { job: job.job, request_id: 'q1', answer })).continuation, 'resumed');
+    await until(() => cliState(dir)?.state === 'failed', t.signal);
+    assert.match(fs.readFileSync(join(dir, 'stderr.log'), 'utf8'), /Pi did not open the recorded session/);
+    assert.ok(!fs.readFileSync(join(dir, 'stdout.jsonl'), 'utf8').includes(answer));
+    assert.ok(!fs.readFileSync(session, 'utf8').includes(answer));
+  }
+});
+
 test('headless general resumes its own pi session with the borrowed role selectors', async t => {
   const f = await fixture(t);
   f.overrideBin('pi', fakePi);
@@ -136,7 +184,7 @@ test('headless general resumes its own pi session with the borrowed role selecto
   const source = join(roles, 'imp.json');
   write(source, JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true,
     run: [{ harness: 'pi', pi_role: 'implementer' }], active_preset: 'synthetic',
-    presets: [{ name: 'synthetic', run: [{ harness: 'cli', agent: 'agy' }, { harness: 'pi', pi_role: 'synthetic-imp' }] }] }));
+    presets: [{ name: 'synthetic', run: [{ harness: 'cli', agent: 'agy' }, { harness: 'pi', pi_role: 'reviewer' }] }] }));
   const job = await f.call('hud_create', { role: 'general', mode: 'headless', instructions: 'imp', task: 'Synthetic comparison.' });
   const dir = job.task_dir;
   await until(() => cliState(dir)?.state === 'waiting_orchestrator', t.signal);
@@ -149,13 +197,41 @@ test('headless general resumes its own pi session with the borrowed role selecto
   await closed(job, t.signal);
   assert.equal(cliState(dir).session_id, session);
   assert.equal(read(join(dir, 'job.json')).instructions_from, 'imp');
-  const launches = f.commands().filter(({ command }) => command === 'pi-role');
-  assert.equal(launches.length, 2);
-  for (const { args } of launches) {
-    assert.equal(args[1], 'synthetic-imp');
-    assert.match(args[args.indexOf('--hud-instructions') + 1], /\/implementer\.md$/);
-    assert.ok(args.includes('--model=') && args.includes('--thinking='), 'let pi use native defaults, not the borrowed role defaults');
+  const contract = readContract(dir);
+  assert.equal(contract.instructions, 'implementer');
+  assert.equal(contract.guard, 'strict');
+  assert.equal(contract.model, undefined, 'use the general seat’s native defaults, not the borrowed role defaults');
+  assert.equal(contract.thinking, undefined);
+  assert.equal(fs.readFileSync(join(dir, 'role-section'), 'utf8'), fs.readFileSync('packages/hud-mcp/instructions/implementer.md', 'utf8').trim());
+});
+
+test('headless presets resolve profile defaults and report Sonic ready once without pi-role', async t => {
+  const f = await rolePlacesFixture(t);
+  fs.unlinkSync(join(f.root, 'bin', 'pi-role'));
+  f.overrideBin('pi', fakePi);
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles);
+  write(join(roles, 'general.json'), JSON.stringify({ role: 'general', instructions: 'general', can_continue: true,
+    run: [{ harness: 'pi' }], presets: [
+      { name: 'review', run: [{ harness: 'pi', pi_role: 'reviewer' }] },
+      { name: 'advice', run: [{ harness: 'pi', pi_role: 'architect', thinking: 'low' }] },
+    ] }));
+  for (const [preset, model, thinking, guard] of [
+    ['review', 'openai/gpt-6.2-sol', 'xhigh', 'strict'], ['advice', 'openai/gpt-6.2-astra', 'low', 'oracle'],
+  ]) {
+    const task = preset === 'review' ? 'Notify when ready.' : 'Synthetic advice.';
+    const job = await f.call('hud_create', { role: 'general', preset, mode: 'headless', task });
+    assert.ok(job.task_dir, JSON.stringify(job));
+    await closed(job, t.signal);
+    const contract = readContract(job.task_dir);
+    assert.deepEqual([contract.model, contract.thinking, contract.guard], [model, thinking, guard]);
+    const receipt = read(join(job.task_dir, 'job.json'));
+    assert.deepEqual([receipt.model, receipt.thinking], [model, thinking]);
   }
+  write(join(roles, 'custom.json'), JSON.stringify({ role: 'custom', can_continue: true, run: [{ harness: 'pi', pi_role: 'security-reviewer' }] }));
+  const invalid = await f.call('hud_create', { role: 'custom', mode: 'headless', task: 'Not launched.' });
+  assert.equal(invalid.code, 'role_unavailable');
+  assert.match(invalid.reason, /Unknown pi_role; expected sonic, implementer, reviewer, architect, general/);
 });
 
 test('a sonic survives its headless pi parent asking; resume carries ready input, stop reaps instead', async t => {
@@ -281,7 +357,7 @@ test('queued headless imp can overflow without borrowing the general role defini
   assert.equal(receipt.role, 'general');
   assert.equal(receipt.overflow_from, 'imp');
   assert.equal(receipt.headless, true);
-  assert.equal(receipt.model, 'synthetic/default');
+  assert.equal(receipt.model, 'openai/gpt-6.2-sol');
   write(join(queued.task_dir, 'STATUS.json'), JSON.stringify({ ...cliState(queued.task_dir), ended_at: new Date(0).toISOString() }));
   const replacement = await f.call('hud_send', { job: queued.job, text: 'Expired overflow follow-up.' });
   assert.equal(replacement.continuation, 'repair');

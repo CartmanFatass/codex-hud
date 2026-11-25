@@ -255,10 +255,10 @@ test('disabled, exhausted, and pre-input failures fall back to the active preset
 test('a pre-input headless launch failure falls through to a tab on the standard preset', async t => {
   const { f } = await setup(t, body => answer(body, 'light', 'headless'));
   role(f, routing);
-  f.overrideBin('pi-role', '#!/bin/sh\ncase " $* " in\n  *" synthetic/small "*) echo "Synthetic headless launcher failure" >&2; exit 1;;\nesac\nexec node "$FAKE_BIN" pi-role "$@"\n');
+  fs.mkdirSync(join(f.env.HUD_HOME, 'pi-worker', 'hud-worker.mjs'), { recursive: true });
   const result = await create(f, 'Small work with a refused headless launch.');
   assert.equal(result.attempts.length, 2);
-  assert.match(result.attempts[0].reason, /headless launcher failure/);
+  assert.match(result.attempts[0].reason, /Invalid pi worker entry/);
   assert.equal(result.route.tier, 'standard');
   assert.equal(result.route.mode, 'tab');
   assert.match(result.route.fallback, /light.*standard/);
@@ -269,7 +269,8 @@ test('a pre-input headless launch failure falls through to a tab on the standard
 test('standard/headless falls back to the active tab on validation or pre-input rejection', async t => {
   const { f } = await setup(t, body => answer(body, 'standard', 'headless'));
   role(f, routing);
-  f.overrideBin('pi-role', '#!/bin/sh\ncase " $* " in *" --print "*) echo "Headless rejected" >&2; exit 1;; esac\nexec node "$FAKE_BIN" pi-role "$@"\n');
+  const invalidEntry = join(f.env.HUD_HOME, 'pi-worker', 'hud-worker.mjs');
+  fs.mkdirSync(invalidEntry, { recursive: true });
   for (const [task, options, attempts] of [['Invalid in headless.', { pi_args: ['--session-dir', f.root] }, 1], ['Headless launch rejected.', {}, 2]]) {
     const job = await create(f, task, options);
     assert.equal(job.state, 'working', JSON.stringify(job));
@@ -281,7 +282,7 @@ test('standard/headless falls back to the active tab on validation or pre-input 
   const pinned = await create(f, 'Pinned headless launch rejected.', { mode: 'headless' });
   assert.equal(pinned.state, 'failed');
   assert.equal(pinned.attempts.length, 1);
-  f.overrideBin('pi-role', '#!/bin/sh\nexec node "$FAKE_BIN" pi-role "$@"\n');
+  fs.rmdirSync(invalidEntry);
   f.overrideBin('pi', '#!/bin/sh\necho "Received prompt"; exit 1\n');
   const delivered = await create(f, 'Failure after input reached pi.');
   await until(() => read(join(delivered.task_dir, 'STATUS.json')).state === 'failed', t.signal);

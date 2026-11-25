@@ -2,7 +2,8 @@
 import { recordTabShells } from '../../runtime/tab-shell.js';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import { sonicArgv } from './pi-worker-argv.js';
+import { piWorkerArgv } from './pi-worker-argv.js';
+import { implicitPiProfile, isPiProfile, piProfileError } from '../../roles/pi-defaults.js';
 import { isAbsolute, join, dirname } from 'node:path';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { herdrId } from '../../roles/herdr-run.js';
@@ -95,8 +96,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     if (job.headless && !executable('pi')) throw new Error('pi not found on PATH');
     const dir = directory(job.job),
       output = join(dir, jobFiles.report);
-    const sessionWorker = job.headless && job.role !== 'sonic';
-    const sessionFile = sessionWorker ? resume?.file ?? join(dir, 'sessions', `${job.job}.jsonl`) : undefined;
+    const sessionFile = job.headless && job.role !== 'sonic' ? resume?.file ?? join(dir, 'sessions', `${job.job}.jsonl`) : undefined;
     let continuation = resume?.message;
     if (job.role === 'sonic' && job.retry_of) {
       const source = findJob(job.retry_of);
@@ -104,22 +104,35 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     }
     const prompt = continuation ?? briefPrompt(join(dir, jobFiles.brief));
     const borrowed = job.borrowed_instructions;
-    const piRole = borrowed?.pi_role ?? place.pi_role ?? role.instructions;
-    if (!piRole) throw new Error('missing pi_role');
-    if (job.headless && job.role === 'sonic') {
-      const args = sonicArgv(hudHome, dir, job, role, piRole, resources, prompt);
-      startHeadlessProcess(dir, job, args, undefined, sonicLimits(role));
+    const profile = place.pi_role ?? implicitPiProfile(role.instructions);
+    if (job.headless) {
+      const args = piWorkerArgv(hudHome, dir, job, role, profile, resources, prompt, sessionFile);
+      if (sessionFile) {
+        if (!resume) {
+          fs.mkdirSync(dirname(sessionFile), { recursive: true, mode: 0o700 });
+          writePrivateFile(sessionFile, '', { exclusive: true, mkdir: false });
+        }
+        job.pi_sent_at = new Date().toISOString();
+        save(job);
+      }
+      try {
+        startHeadlessProcess(dir, job, args, sessionFile ? { file: sessionFile, id: resume?.id } : undefined,
+          job.role === 'sonic' ? sonicLimits(role) : undefined);
+      } catch (error) {
+        // A rejected handshake never starts pi. Allow another place to launch a fresh session.
+        if (sessionFile && !resume) fs.rmSync(sessionFile, { force: true });
+        throw error;
+      }
       return { exit_code: 0, stdout: '', stderr: '' };
     }
+    const piRole = borrowed?.pi_role ?? profile;
+    if (!isPiProfile(piRole)) throw Error(piProfileError);
     const launcher = executable('pi-role');
     if (!launcher) throw new Error('pi-role not found on PATH');
-    const argv = ['--args-json', piRole];
-    if (!job.headless) argv.push('--task-dir', dir, '--role-output', output, '--dispatch-slot', 'primary', '--dispatch-label', job.role);
-    argv.push('--allow-write', output);
-    if (!job.headless || sessionWorker) argv.push('--qa-dir', join(dir, jobFiles.qa));
-    if (sessionWorker) argv.push('--qa-timeout', '0');
+    const argv = ['--args-json', piRole, '--task-dir', dir, '--role-output', output, '--dispatch-slot', 'primary', '--dispatch-label', job.role,
+      '--allow-write', output, '--qa-dir', join(dir, jobFiles.qa)];
     const owner = jobCallerPane(job);
-    if ((!job.headless || sessionWorker) && owner) {
+    if (owner) {
       const notify = binScript('hud-notify.mjs');
       argv.push('--notify', [process.execPath, notify, hudHome, owner, job.job].map(quote).join(' '));
     }
@@ -133,9 +146,9 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     for (const key of ['lens', 'mcp', 'tps'] as const)
       if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
     if (job.mcp === undefined && piMcpConfigEmpty(job.cwd, job.pi_args)) argv.push('--no-mcp');
-    if (job.headless || job.ui_ext === false) argv.push('--no-ui-ext');
+    if (job.ui_ext === false) argv.push('--no-ui-ext');
     if (job.skills === true) argv.push('--skills');
-    argv.push('--', ...(job.headless ? [] : ['--tui-mode', 'regular']), '--hud-worker-tools', '-e',
+    argv.push('--', '--tui-mode', 'regular', '--hud-worker-tools', '-e',
       join(bundled, '../../integrations/pi/package/extensions/hud.mjs'));
     for (const key of ['model', 'thinking'] as const) {
       const value = place[key] ?? (borrowed ? job[key] : undefined);
@@ -145,30 +158,10 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       else if (borrowed) argv.push(`--${key}=`);
     }
     argv.push(...resources, ...(job.pi_args ?? []));
-    // Pi expands even a positional @path into file contents. A follow-up is literal text, not a file grant.
-    if (sessionFile) argv.push('--session', sessionFile, '--print', '--mode', 'json', '--', prompt.startsWith('@') ? ` ${prompt}` : prompt);
-    else if (resume?.file) argv.push('--session', resume.file);
-    const built = await run(launcher, argv, job.cwd, job.headless ? { ...process.env, HERDR_ENV: undefined } : undefined);
+    if (resume?.file) argv.push('--session', resume.file);
+    const built = await run(launcher, argv, job.cwd);
     if (built.exit_code !== 0) return reject(built);
     const piArgs: string[] = JSON.parse(built.stdout);
-    if (job.headless) {
-      if (sessionFile) {
-        if (!resume) {
-          fs.mkdirSync(dirname(sessionFile), { recursive: true, mode: 0o700 });
-          writePrivateFile(sessionFile, '', { exclusive: true, mkdir: false });
-        }
-        job.pi_sent_at = new Date().toISOString();
-        save(job);
-      }
-      try {
-        startHeadlessProcess(dir, job, piArgs, sessionFile ? { file: sessionFile, id: resume?.id } : undefined);
-      } catch (error) {
-        // A rejected handshake never starts pi. Allow another place in this route to launch a fresh session.
-        if (sessionFile && !resume) fs.rmSync(sessionFile, { force: true });
-        throw error;
-      }
-      return { exit_code: 0, stdout: '', stderr: '' };
-    }
     fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),

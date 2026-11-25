@@ -9,7 +9,7 @@ import { roleRuntime } from '../../dist/harness/pi/worker/role-runtime.js';
 import { mistralBudget } from '../../dist/harness/pi/worker/mistral-budget.js';
 import { trackTps } from '../../dist/harness/pi/worker/tps.js';
 import { webSearch } from '../../dist/harness/pi/worker/web-search.js';
-import { sonicArgv } from '../../dist/mcp/dispatch/pi-worker-argv.js';
+import { piWorkerArgv } from '../../dist/mcp/dispatch/pi-worker-argv.js';
 import { rolePlacesFixture, until } from '../helpers/thin-mcp-harness.mjs';
 
 const model = 'mistral/deepseek-v4-1-flash-1017';
@@ -32,7 +32,7 @@ function host() {
 test('native Sonic argv and private contract round trip, checkout and installed entry', t => {
   const home = temp(t), dir = join(home, 'jobs', job.job), installed = join(home, 'pi-worker', 'hud-worker.mjs');
   fs.mkdirSync(dir, { recursive: true });
-  const build = more => sonicArgv(home, dir, { ...job, ...more }, { instructions: 'sonic' }, 'sonic', ['--skill', '/synthetic/skill'], 'literal brief');
+  const build = more => piWorkerArgv(home, dir, { ...job, ...more }, { instructions: 'sonic' }, 'sonic', ['--skill', '/synthetic/skill'], 'literal brief');
   assert.deepEqual(build(), ['-ne', '-ns', '-np', '--no-themes', '--no-mcp', '-e', resolve('integrations/pi/worker/hud-worker.mjs'),
     '--model', model, '--thinking', 'high', '--skill', '/synthetic/skill', '--exclude-tools', 'hud_ask,ask_orchestrator,hud_sonic',
     '--session', join(dir, 'sonic-session.jsonl'), '--print', '--mode', 'json', '--', 'literal brief']);

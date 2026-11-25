@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { basename, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
 
@@ -13,25 +14,26 @@ const routingOnly = process.env.FAKE_ROUTING_ONLY === '1';
 if (command === 'pi' && args.includes('--print')) {
   const dir = process.env.HUD_JOB_DIR;
   fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args, dir, cwd: process.cwd() }) + '\n');
-  const { callWorkerTool } = await import('../../packages/hud-mcp/bin/worker-tools.mjs');
-  let call = callWorkerTool;
-  if (fs.existsSync(join(dir, 'pi-worker.json'))) {
-    const { default: extension } = await import(args[args.indexOf('-e') + 1]);
-    const hooks = new Map(), tools = new Map();
-    let active = [];
-    const model = args[args.indexOf('--model') + 1].split('/');
-    await extension({ on(name, fn) { hooks.set(name, [...hooks.get(name) ?? [], fn]); },
-      registerTool(tool) { tools.set(tool.name, tool); }, getAllTools: () => [...tools.keys()].map(name => ({ name })),
-      setActiveTools(names) { active = names; }, getActiveTools: () => active, getThinkingLevel: () => args[args.indexOf('--thinking') + 1] });
-    const emit = (key, event, ctx) => { for (const fn of hooks.get(key) ?? []) fn(event, ctx); };
-    emit('session_start', {}, { model: { provider: model[0], id: model.at(-1) } });
-    call = (name, input) => tools.get(name).execute('fake', input);
-    const quota = join(process.env.HOME, 'quota-pi-model');
-    if (fs.existsSync(quota) && fs.readFileSync(quota, 'utf8').trim() === model.join('/')) {
-      emit('message_end', { message: { role: 'assistant', stopReason: 'error', errorMessage: 'HTTP 429: quota exceeded' } });
-      emit('agent_settled', {});
-      process.exit(1);
-    }
+  const opt = flag => args.includes(flag) ? args[args.lastIndexOf(flag) + 1] : undefined;
+  const { default: extension } = await import(opt('-e'));
+  const hooks = new Map(), tools = new Map();
+  let active = [];
+  const model = (opt('--model') ?? 'synthetic/native-default').split('/');
+  const file = opt('--session');
+  if (!fs.existsSync(file) || !fs.statSync(file).size) fs.appendFileSync(file, JSON.stringify({ type: 'session', id: randomUUID(), cwd: process.cwd() }) + '\n');
+  const id = JSON.parse(fs.readFileSync(file, 'utf8').split('\n')[0]).id;
+  await extension({ on(name, fn) { hooks.set(name, [...hooks.get(name) ?? [], fn]); },
+    registerTool(tool) { tools.set(tool.name, tool); }, getAllTools: () => [...tools.keys()].map(name => ({ name })),
+    setActiveTools(names) { active = names; }, getActiveTools: () => active, getThinkingLevel: () => opt('--thinking') ?? 'off' });
+  const emit = (key, event, ctx) => { for (const fn of hooks.get(key) ?? []) fn(event, ctx); };
+  emit('session_start', {}, { model: { provider: opt('--provider') ?? model[0], id: model.at(-1) },
+    sessionManager: { getSessionId: () => id, getSessionFile: () => file } });
+  const call = (name, input) => tools.get(name).execute('fake', input);
+  const quota = join(process.env.HOME, 'quota-pi-model');
+  if (fs.existsSync(quota) && fs.readFileSync(quota, 'utf8').trim() === model.join('/')) {
+    emit('message_end', { message: { role: 'assistant', stopReason: 'error', errorMessage: 'HTTP 429: quota exceeded' } });
+    emit('agent_settled', {});
+    process.exit(1);
   }
   await call('hud_progress', { message: 'Checking synthetic input.' });
   console.log(JSON.stringify({ type: 'synthetic' }));

@@ -386,7 +386,7 @@ export async function workerTools(cli = false) {
     const { job } = workerJob();
     role = job.role;
     cli = cli && Boolean(job.cli);
-    headless = cli && job.headless === true;
+    headless = job.headless === true;
   } catch { /* Keep the caller's schema when no job receipt is available. */ }
   const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({ name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false } });

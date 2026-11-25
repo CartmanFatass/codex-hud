@@ -21,7 +21,7 @@ import {
   type ExhaustedMark,
   type RolePlace,
 } from './exhausted.js';
-import { piRoleDefaults } from './pi-defaults.js';
+import { implicitPiProfile, isPiProfile, piProfileError, piRoleDefaults } from './pi-defaults.js';
 import { registeredProject } from './projects.js';
 import { readModelListCache, type ModelListCache } from './model-discovery.js';
 import { HarnessSwitchError, piProviderId, readHarnessSwitches } from './harness-switches.js';
@@ -129,9 +129,7 @@ function normalizeHarness(value: unknown): unknown {
 function badStrings(value: unknown): boolean {
   return value !== undefined && (!Array.isArray(value) || value.some((item) => typeof item !== 'string'));
 }
-function badPi(place: Partial<RolePlace>, instructions: unknown, requireSplit: boolean): boolean {
-  const piRole = place.pi_role ?? instructions;
-  if (typeof piRole !== 'string' || !piRole.trim()) return true;
+function badPi(place: Partial<RolePlace>, requireSplit: boolean): boolean {
   if (requireSplit ? typeof place.split !== 'boolean' : place.split !== undefined && typeof place.split !== 'boolean')
     return true;
   for (const flag of ['lens', 'mcp', 'tps', 'ui_ext'] as const)
@@ -178,8 +176,12 @@ function placeReason(
   const harness = normalizeHarness(place.harness);
   if (harness !== 'pi' && harness !== 'bro' && harness !== 'cli')
     return { reason: `unknown harness ${harnessToken(place.harness)}` };
-  if (harness === 'pi' && (badPi(place, instructions, requireSplit) || badSkills(value)))
-    return { reason: 'bad pi fields' };
+  if (harness === 'pi') {
+    const profile = place.pi_role === undefined ? implicitPiProfile(instructions) : place.pi_role;
+    if (profile === undefined || typeof profile !== 'string' || !profile.trim() || badPi(place, requireSplit) || badSkills(value))
+      return { reason: 'bad pi fields' };
+    if (!isPiProfile(profile)) return { reason: piProfileError };
+  }
   if (harness === 'cli' && (badCli(place) || skillsOf(value) !== undefined)) return { reason: 'bad cli fields' };
   if (harness === 'bro' && (badBro(place) || skillsOf(value) !== undefined)) return { reason: 'bad bro fields' };
   if (
@@ -308,7 +310,7 @@ function normalizePlace(raw: Partial<RolePlace>, instructions?: string): RolePla
   if (raw.model !== undefined) place.model = raw.model;
   if (raw.thinking !== undefined) place.thinking = raw.thinking;
   if (harness === 'pi') {
-    place.pi_role = raw.pi_role ?? instructions;
+    place.pi_role = raw.pi_role ?? implicitPiProfile(instructions);
     place.split = raw.split ?? false;
     for (const flag of ['lens', 'mcp', 'tps', 'ui_ext'] as const)
       if (raw[flag] !== undefined) place[flag] = raw[flag];
@@ -337,7 +339,7 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
     rawInstructions ??
     (!Array.isArray(parsed.run)
       ? primary.harness === 'pi'
-        ? primary.pi_role
+        ? primary.pi_role === 'architect' ? 'oracle' : primary.pi_role
         : primary.harness === 'cli'
           ? 'implementer'
           : undefined
@@ -711,14 +713,16 @@ export function roleRegistry(
   function revision(role: Role) {
     return createHash('sha256').update(JSON.stringify(sources.get(role)!.layers.map(({ file, raw }) => [file.source_file, raw]))).digest('hex');
   }
-  function placeDetails(role: Role, place: RolePlace, source = chainSource(role)) {
-    const owned = role.role === 'sonic' && place.harness === 'pi';
-    const profile = place.pi_role ?? role.instructions;
+  function placeDetails(role: Role, place: RolePlace, source = chainSource(role), headless = role.role === 'sonic') {
+    const owned = headless && place.harness === 'pi';
+    const profile = place.pi_role ?? implicitPiProfile(role.instructions);
     const piInfo = place.harness === 'pi' && !owned ? piRoleInfo(profile, env, read) : { pi_role_file: null, frontmatter: undefined };
     const effective = (key: 'model' | 'thinking') => {
       if (place[key] !== undefined) return { value: place[key]!, source };
-      if (owned && (profile === 'sonic' || profile === 'implementer'))
-        return { value: piRoleDefaults[profile][key], source: `pi_role:${profile}` };
+      if (owned && isPiProfile(profile)) {
+        const value = piRoleDefaults[profile][key];
+        return { value: value ?? null, source: value ? `pi_role:${profile}` : null };
+      }
       const value = frontmatterValue(piInfo.frontmatter, key);
       return { value, source: value ? piInfo.pi_role_file : null };
     };
@@ -731,7 +735,8 @@ export function roleRegistry(
     return { pi_role_file: piInfo.pi_role_file, model, thinking, state_trust };
   }
   const routing = (now = Date.now(), exhausted?: ReturnType<typeof readExhausted>) => routingContext(hudHome, env, now, exhausted);
-  function assignment(role: Role, nowMs = Date.now(), overrideModel?: string, context = routing(nowMs), choice?: ChainChoice, inheritedModel = false) {
+  function assignment(role: Role, nowMs = Date.now(), overrideModel?: string, context = routing(nowMs), choice?: ChainChoice,
+    inheritedModel = false, headless = role.role === 'sonic') {
     const stored = sources.get(role);
     const layer = stored?.layers.at(-1);
     let run = role.run, preset = currentPreset(role), source = chainSource(role), canContinue = role.can_continue;
@@ -748,7 +753,7 @@ export function roleRegistry(
     const evaluated = evaluatePlaces(run.map((configured, index) => {
       const overridden = overrideModel !== undefined && configured.harness !== 'bro';
       const place = overridden ? { ...configured, model: overrideModel } : configured;
-      const details = placeDetails(role, place, source);
+      const details = placeDetails(role, place, source, headless);
       const pi = place.harness === 'pi' ? attributePiModel(details.model.value, context) : undefined;
       const provider = pi?.provider;
       const provider_source = !provider ? undefined : qualifiedPiProvider(details.model.value) ? (place.model === undefined ? 'pi_role' : 'model')
@@ -760,8 +765,9 @@ export function roleRegistry(
       const switch_ids = place.harness === 'pi' ? provider ? ['pi', `pi:${provider}`] : ['pi']
         : place.harness === 'cli' ? [`cli:${place.agent}`] : [`bro:${place.tool}`];
       return { index, place, ...details, key, until: mark?.until, quota_reason: mark?.reason,
-        missing: role.role !== 'sonic' ? missingCommand(place, context.has) : place.harness !== 'pi' ? 'headless pi place for sonic'
-          : context.has('pi') ? undefined : 'pi', switch_ids, provider, provider_source };
+        missing: role.role === 'sonic' && place.harness !== 'pi' ? 'headless pi place for sonic'
+          : headless && place.harness === 'pi' ? context.has('pi') ? undefined : 'pi'
+          : missingCommand(place, context.has), switch_ids, provider, provider_source };
     }), context.disabled, overrideModel !== undefined && !inheritedModel);
     const chosen = evaluated.find((entry) => entry.state === 'active') ?? null;
     const activeEntry = chosen ?? evaluated[0]!;

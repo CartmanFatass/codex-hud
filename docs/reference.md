@@ -234,14 +234,15 @@ Alternatively, `on` overrides the harness/provider (defaults from shipped `harne
 Other roles reject these four fields before launch, including in batch items and retry overrides.
 A detailed job read or peek shows the selected `preset`.
 Only `general` can also set `instructions: "imp"` (or another role visible in `hud_roster`).
-The borrowed role's instructions go to the selected pi or CLI worker instead of general's; on pi this also selects the borrowed role's first pi role in its active chain, or its instructions name if there is no pi place.
+The borrowed role's instructions replace general's on the selected pi or CLI worker. A headless pi job keeps the selected place's model and thinking; borrowing can tighten its read-only guard. A pi tab uses the borrowed role's first pi profile in its active chain, or its instructions name if there is no pi place.
 The job keeps general's placement and concurrency slot.
 `hud_read` shows `instructions_from`; retrying as general and resuming the native session retain the borrowed role.
 A repeated explicit key returns the original job; a derived key only reuses a job created within the last 10 minutes.
 `kind` selects `image` (default) or `video` for `flow`.
 Optional `idle_grace_s` (integer 60–3600) overrides CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).
 Pi-only overrides: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, plus `pi_args` (≤128 strings, ≤4096 chars each, verbatim, no shell).
-For headless Sonic, MCP is off unless explicitly requested, TPS is recorded in the native session unless disabled, and no UI extension loads. Requested MCP/lens attachments must be available under `$HUD_HOME/pi-worker/optional/` (`pi-mcp-adapter` / `pi-lens`). Other pi workers keep pi-role defaults; split defaults to the place.
+Headless pi jobs use the HUD worker extension directly, without `pi-role`. MCP is off unless requested, TPS is recorded in the native session unless disabled, and no UI extension loads. Requested MCP/lens attachments must be available under `$HUD_HOME/pi-worker/optional/` (`pi-mcp-adapter` / `pi-lens`). Pi tabs keep pi-role defaults; split defaults to the place.
+A `pi_role` must be one of `sonic`, `implementer`, `reviewer`, `architect` (oracle), or `general`. Headless places use the profile's defaults for omitted model and thinking; `general` leaves those fields to pi.
 `ui_ext: false` disables UI extensions; `skills: true` includes personal skills.
 A true split reserves a right helper pane.
 `--orchestrator`/`--notify` pi-argument overrides refuse.
@@ -255,7 +256,8 @@ Each turn runs in a new process on the same native session and appends output to
 Pi keeps its session under the job’s `sessions/`; Claude Code and Antigravity keep theirs in their native stores.
 Headless CLI turns use the same prompts and worker MCP setup as tab workers: Claude Code gets the job’s `--mcp-config`; Antigravity uses its installed `hud` server and inherits the job environment.
 The job has no tab to focus. Open it from Jobs; the Inspector’s `Output` section shows the newest lines of `stdout.jsonl` (tool calls, assistant text and errors, up to 12 rows; labelled `live` while the job runs) and follows the log at the panel's collection cadence; Stop (`X`) works as for any job.
-A question ends the turn; `hud_respond` or an answer from the panel restarts it with the decision.
+A question ends the turn; `hud_respond` or an answer from the panel restarts it with the decision. Pi writes the question and tool result before ending, and verifies the session ID and file before accepting the answer.
+Headless reviewer tools are read-only except for writing the report. The oracle guard also allows scratch writes under `/tmp`, `/dev/shm`, and the job directory, outside the repository. The Bash guard blocks recognized Git mutations, in-place edits, and installs; it is a backstop, not a shell sandbox.
 With a valid report declaration, the worker closes at turn end even if the report is unread.
 Follow-ups sent while a headless worker is running queue in send order for its next turn, alongside the answer if it asked.
 After closure, follow-ups and land repairs resume that session within `resume_s`, otherwise they start a repair job.

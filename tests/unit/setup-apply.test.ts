@@ -393,6 +393,9 @@ test('invalid plans write nothing', async (t) => {
     ['pi_roles.imp.model', { version: 1, roles: ['imp'], pi_roles: { imp: { model: 1 } } }],
     ['pi_roles.imp.thinking', { version: 1, roles: ['imp'], pi_roles: { imp: { thinking: 1 } } }],
     ['pi_roles.imp.pi_role', { version: 1, roles: ['imp'], pi_roles: { imp: { pi_role: '' } } }],
+    ['pi_roles.imp.pi_role: Unknown pi_role; expected sonic, implementer, reviewer, architect, general', {
+      version: 1, roles: ['imp'], pi_roles: { imp: { pi_role: 'security-implementer' } },
+    }],
     ['pi_roles.imp.skills', { version: 1, roles: ['imp'], pi_roles: { imp: { skills: ['missing'] } } }],
     ['pi_roles.imp.skills', { version: 1, roles: ['imp'], pi_roles: { imp: { skills: 'to-tickets' } } }],
     ['pi_roles...', { version: 1, roles: ['imp'], pi_roles: { '..': { from: 'imp' } } }],

@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { sonicArgv } from '../../dist/mcp/dispatch/pi-worker-argv.js';
+import { piWorkerArgv } from '../../dist/mcp/dispatch/pi-worker-argv.js';
 import { piRoleDefaults } from '../../dist/roles/pi-defaults.js';
 
 const root = fs.mkdtempSync(join(tmpdir(), 'hud-pi-worker-probe-'));
@@ -38,7 +38,7 @@ try {
     const args = arm === 'legacy' ? JSON.parse(run('pi-role', ['--args-json', 'sonic', '--hud-sonic-jobs', resolve('packages/hud-mcp/bin/sonic-jobs.mjs'),
       '--allow-write', join(dir, 'report.md'), '--hud-instructions', instructions, '--no-ui-ext', '--no-mcp', '--', '--hud-worker-tools', '-e',
       resolve('integrations/pi/package/extensions/hud.mjs'), '--thinking', thinking, ...tail]))
-      : sonicArgv(home, dir, receipt, { instructions: 'sonic' }, 'sonic', [], tail.at(-1));
+      : piWorkerArgv(home, dir, receipt, { instructions: 'sonic' }, 'sonic', [], tail.at(-1));
     run('pi', ['--offline', ...args.slice(0, -2), '-e', tap, ...args.slice(-2)], { CAPTURE: capture });
     times[arm].push(performance.now() - start);
     dumps[arm] = JSON.parse(fs.readFileSync(capture));

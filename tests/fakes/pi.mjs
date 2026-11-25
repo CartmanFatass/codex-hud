@@ -66,9 +66,8 @@ export async function runWorker() {
       const { createHash } = await import('node:crypto');
       const resources = {};
       for (const relative of [
-        'integrations/pi/worker.ts',
-        'integrations/pi/skills/helper-pane/SKILL.md',
-        ...['implementer', 'sonic', 'reviewer', 'architect'].map((r) => `integrations/pi/roles/${r}.md`),
+        'integrations/pi/worker/hud-worker.mjs',
+        ...['implementer', 'sonic', 'reviewer', 'oracle', 'general'].map((r) => `packages/hud-mcp/instructions/${r}.md`),
       ])
         resources[relative] = createHash('sha256')
           .update(fs.readFileSync(join(contract.release.root, relative)))
