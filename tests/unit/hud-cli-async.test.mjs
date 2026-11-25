@@ -12,6 +12,7 @@ import test from 'node:test';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { procStat } from '../../dist/roles/worker-tree.js';
 import { configureFakeDecision, decisionAnswer } from '../helpers/thin-mcp-harness.mjs';
+import { reapStubOptions } from '../helpers/reap-stub.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { reapFixtureProcesses, stopChild, trackFixture } from '../helpers/process-cleanup.mjs';
 
@@ -31,7 +32,7 @@ async function fixture(t, { hang, resistant = false, fail = false, report = fals
   const home = join(root, 'hud'), jobs = join(home, 'jobs'), bin = join(root, 'bin');
   const untrack = trackFixture({ root, hudHome: home });
   const job = 'j0000000000000001', dir = join(jobs, job), herdrPath = join(root, 'herdr.sock');
-  const env = { PATH: bin, HOME: join(root, 'home'), HUD_HOME: home, HERDR_SOCKET_PATH: herdrPath, TZ: 'UTC' };
+  const env = { PATH: bin, NODE_OPTIONS: reapStubOptions(bin), HOME: join(root, 'home'), HUD_HOME: home, HERDR_SOCKET_PATH: herdrPath, TZ: 'UTC' };
   const subscribers = new Map(), sockets = new Set(), children = [];
   let calls = 0, disconnected = false;
   const http = httpServer((req, res) => {
@@ -111,7 +112,7 @@ if (kind === ${JSON.stringify(hang ?? null)}) {
 }
 console.log(JSON.stringify({ result: { read: { text: 'Synthetic quiet pane.' } } }));
 `, { mode: 0o700 });
-  fs.writeFileSync(join(bin, 'pi-role-reap'), `#!${process.execPath}\n`, { mode: 0o700 });
+  fs.writeFileSync(join(bin, 'hud-reap'), `#!${process.execPath}\n`, { mode: 0o700 });
   http.listen(0, '127.0.0.1'); socket.listen(herdrPath);
   await Promise.all([once(http, 'listening'), once(socket, 'listening')]);
   configureFakeDecision({ env }, `http://127.0.0.1:${http.address().port}`);

@@ -30,7 +30,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 ${body}\n`, { mode: 0o700 });
 }
 function reapStub(f, body) {
-  bin(f, 'pi-role-reap', `const dir = process.argv[2];
+  bin(f, 'hud-reap', `const dir = process.argv[2];
 fs.appendFileSync(join(process.env.HUD_HOME, 'reaps'), dir + '\\n');
 ${body}`);
 }
@@ -170,7 +170,7 @@ for (const outcome of ['closed tab', 'missing or renamed tab']) test(`watcher re
   writeFixtureFile(join(dir, 'SESSION.txt'), 'TAB=synthetic-tab\nLEFT=synthetic-worker\nORCH=synthetic-caller\n');
   assert.equal(fs.existsSync(join(dir, 'worker-tree.json')), false);
   if (outcome === 'missing or renamed tab') reapStub(f, `
-console.error('pi-role-reap: ' + dir + ': TAB synthetic-tab name changed or missing; not closing');
+console.error('hud-reap: ' + dir + ': TAB synthetic-tab name changed or missing; not closing');
 process.exitCode = 1;`);
   const { child, exited } = f.start("process.env.HUD_WATCH_CLI_CHECK_MS = '30';");
   await until(() => child.exitCode !== null || attempts(f, dir) >= 2, t.signal);
@@ -398,7 +398,7 @@ fs.writeFileSync(join(process.env.HUD_HOME, 'helper'), String(process.pid));
 await delay(30000);`);
   reapStub(f, `fs.writeFileSync(join(dir, 'leader'), String(process.pid));
 spawnSync('herdr', [], { stdio: 'ignore', env: ${token ? 'process.env' : "{ ...process.env, HUD_REAP_GROUP_TOKEN: 'unrelated' }"} });`);
-  const run = runCommand('pi-role-reap', [dir], env, { killProcessGroup: true, killGraceMs: 100 });
+  const run = runCommand('hud-reap', [dir], env, { killProcessGroup: true, killGraceMs: 100 });
   await until(() => text(join(f.home, 'helper')), t.signal);
   const pid = Number(text(join(f.home, 'helper'))), start = procStat(pid).start;
   const alive = () => { const s = procStat(pid); return s?.start === start && !/^[ZXx]$/.test(s.state); };
@@ -422,7 +422,9 @@ import timers from 'node:timers';
 import { syncBuiltinESMExports } from 'node:module';
 const raw = timers.setTimeout;
 timers.setTimeout = (cb, ms, ...args) => raw(cb, ms === 135000 ? 150 : ms, ...args);
-syncBuiltinESMExports();` : "process.env.PATH = '';";
+syncBuiltinESMExports();` : `// Keep the watcher itself running: only its child launch is unavailable.
+process.env.HUD_HEAP_CAPS = 'off';
+Object.defineProperty(process, 'execPath', { value: '/absent/synthetic-node' });`;
     const { child, exited } = f.start(preload);
     await until(() => text(join(f.home, 'watch.log')).includes(`state=closed exit=${reason};`), t.signal);
     assert.equal(reaped(dir), undefined);

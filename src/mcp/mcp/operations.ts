@@ -42,7 +42,7 @@ import { resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask, wakeTicketQu
 import { isTicketQueueId, readTicketQueue, ticketQueueView } from '../ticket-queue-state.js';
 import { gitSummary } from '../managed-worktree.js';
 import { panelDelivery } from '../panel-delivery.js';
-import { jobFiles } from '../paths.js';
+import { binScript, jobFiles } from '../paths.js';
 import { settleStoppedPi } from '../pi-stop-settlement.js';
 import { stopSonic } from '../sonic-process.js';
 import {
@@ -899,7 +899,7 @@ export async function closeJob(job: Job, stop = false) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
     }
-    return runCommand('pi-role-reap', [dir], process.env, { budgetMs: 135_000 });
+    return runCommand(process.execPath, [binScript('hud-reap'), dir], process.env, { budgetMs: 135_000, killProcessGroup: true });
   }, (run) => run.ok);
   const statusFile = join(dir, jobFiles.status);
   const stoppingPi = !job.cli && !job.bro && !job.jev && fs.existsSync(join(dir, jobFiles.stopRequested));
@@ -916,7 +916,7 @@ export async function closeJob(job: Job, stop = false) {
   }
   return {
     exit_code: complete ? 0 : result.exitCode || 1,
-    last_line: issue ?? (result.reason === 'timeout' ? 'pi-role-reap timed out' :
+    last_line: issue ?? (result.reason === 'timeout' ? 'hud-reap timed out' :
       (result.stdout.trim() || result.stderr.trim()).split('\n').at(-1) ?? ''),
   };
 }

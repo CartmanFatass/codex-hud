@@ -1,7 +1,7 @@
 /** Simple local herdr pane operations shared by the CLI and pi package. */
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
-import { jobFiles } from '../mcp/paths.js';
+import { binScript, jobFiles } from '../mcp/paths.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
 import { loadSettings } from '../settings.js';
 import { panelWidth, DEFAULT_WIDTH } from '../utils/pane-width.js';
@@ -70,7 +70,7 @@ const readJson = (file: string): Record<string, unknown> | null => {
     return isRecord(value) ? value : null;
   } catch { return null; }
 };
-/** Stop a HUD job as `hud_close` does: a CLI job already in its idle grace is asked to quit, then `pi-role-reap` reaps it. */
+/** Stop a HUD job as `hud_close` does: a CLI job already in its idle grace is asked to quit, then `hud-reap` reaps it. */
 export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
   const status = readJson(join(jobDir, 'STATUS.json'));
   try {
@@ -83,9 +83,9 @@ export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{
         try { fs.writeFileSync(join(jobDir, jobFiles.closeRequested), '', { flag: 'wx', mode: 0o600 }); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
       }
-      return runCommand('pi-role-reap', [jobDir], env, { budgetMs: 60_000 });
+      return runCommand(process.execPath, [binScript('hud-reap'), jobDir], env, { budgetMs: 60_000, killProcessGroup: true });
     }, (run) => run.ok);
-    return complete ? { ok: true } : { ok: false, reason: issue ?? (result.reason === 'unavailable' ? 'pi-role-reap missing' : 'reap failed') };
+    return complete ? { ok: true } : { ok: false, reason: issue ?? (result.reason === 'unavailable' ? 'hud-reap missing' : 'reap failed') };
   } catch { return { ok: false, reason: 'reap failed' }; }
 }
 

@@ -118,6 +118,8 @@ test('worker reap: a same-group, tagged sibling is not a descendant; PID reuse s
   syncBuiltinESMExports();
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
   const status = { slot: 'primary', task_dir: dir, pid: root, pid_start_time: '100' };
+  assert.equal((await reapWorkerTree(dir, status, () => false, Boolean)).complete, false);
+  assert.deepEqual(signals, [], 'a protected live tab refusal leaves the root’s children alone');
   const { complete } = await reapWorkerTree(dir, status, () => {
     procs.delete(root);
     procs.set(child, [1, 101]);

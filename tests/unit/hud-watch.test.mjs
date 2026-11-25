@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { main } from '../../dist/cli/hud-main.js';
+import { reapStubOptions } from '../helpers/reap-stub.mjs';
 import { watchingMod } from '../../dist/roles/notify.js';
 import { appendPanelAction } from '../../dist/collectors/panel-actions.js';
 import { appendTry } from '../../dist/collectors/try-records.js';
@@ -104,8 +105,8 @@ for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 
   }
   fs.mkdirSync(join(main_root, 'node_modules'));
   fs.symlinkSync(join(main_root, 'node_modules'), join(root, 'node_modules'));
-  fs.writeFileSync(join(home, 'pi-role-reap'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
-  const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), PATH: `${home}:${process.env.PATH}` };
+  fs.writeFileSync(join(home, 'hud-reap'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), NODE_OPTIONS: reapStubOptions(home), PATH: `${home}:${process.env.PATH}` };
   const dir = writeJob(env.HUD_HOME, id, 'w4E:p1', 'imp', { state: 'closed', ended_at: new Date().toISOString() });
   if (scenario === 'disposable' || scenario === 'mixed ignored') {
     fs.mkdirSync(join(main_root, '.hud'));
@@ -168,8 +169,8 @@ test('watcher preserves a shared worktree while a continuation job is active and
   const name = `imp-${sourceId.slice(-6)}`, root = join(home, 'demo-wt', name), branch = `wt/${name}`;
   const base_head = git(main_root, 'rev-parse', 'HEAD');
   git(main_root, 'worktree', 'add', '-qb', branch, root, base_head);
-  fs.writeFileSync(join(home, 'pi-role-reap'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
-  const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), PATH: `${home}:${process.env.PATH}` };
+  fs.writeFileSync(join(home, 'hud-reap'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  const env = { ...process.env, HOME: home, HUD_HOME: join(home, 'hud'), NODE_OPTIONS: reapStubOptions(home), PATH: `${home}:${process.env.PATH}` };
   const now = new Date().toISOString();
   const wt = { main_root, root, branch, base_head };
   const sourceDir = writeJob(env.HUD_HOME, sourceId, 'w4E:p1', 'imp', { state: 'closed', ended_at: now });

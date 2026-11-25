@@ -168,7 +168,11 @@ export async function reapWorkerTree<T>(dir: string, status: unknown, reap: () =
   // An unreadable snapshot or /proc is not proof that ancestry is unrecoverable.
   const unrecoverable = after.missingAfterExit && !after.issue ? missingNote : undefined;
   let issue = unrecoverable ?? before.issue ?? after.issue ?? missingNote;
-  if (snapshot) {
+  // A tab reaper can refuse a live protected orchestrator/foreign pane. Its
+  // descendants must be left alone too. Keep the snapshot for a later retry.
+  const refusedLiveTab = snapshot && (status as { slot?: string } | null)?.slot === 'primary' &&
+    !ok(result) && !workerTreeRootGone(snapshot.pid, snapshot.start);
+  if (snapshot && !refusedLiveTab) {
     const protectedPids = new Set<number>();
     try {
       for (let id = process.pid; id > 1; id = readProcStat(id)?.ppid ?? 0) protectedPids.add(id);

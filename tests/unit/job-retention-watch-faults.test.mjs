@@ -85,7 +85,7 @@ Date.now = () => Number(fs.readFileSync(${JSON.stringify(clock)}, 'utf8'));`);
 
 test('ambiguous reap failures back off, log outcome changes and stop without claiming cleanup', { timeout }, async (t) => {
   const f = fixture(t), dir = f.job(expired(), {}, true);
-  fs.appendFileSync(join(f.home, '..', 'bin', 'pi-role-reap'), `
+  fs.appendFileSync(join(f.home, '..', 'bin', 'hud-reap'), `
 const attempts = fs.readFileSync(process.env.HUD_HOME + '/reaps', 'utf8').trim().split('\\n').length;
 process.exitCode = attempts < 3 ? 1 : 2;
 `);

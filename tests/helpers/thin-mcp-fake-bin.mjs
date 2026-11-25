@@ -625,7 +625,7 @@ if (command === 'pi-dispatch') {
   if (!routingOnly && args[args.indexOf('--kind') + 1] === 'video' && !args.includes('--confirm-credits'))
     process.exit(17);
   writeFixtureFile(join(args[args.indexOf('--out-dir') + 1], 'synthetic-media.mp4'), 'synthetic media');
-} else if (command === 'pi-role-reap') {
+} else if (command === 'hud-reap') {
   if (routingOnly) {
     console.log('Synthetic reap complete');
     process.exit(0);

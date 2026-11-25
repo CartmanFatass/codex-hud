@@ -14,6 +14,7 @@ import { stripAnsi } from '../../dist/render/colors.js';
 import { procStat, turnToken } from '../../dist/mcp/cli-judge.js';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
 import { cleanupFixture, stopChild } from './process-cleanup.mjs';
+import { reapStubOptions } from './reap-stub.mjs';
 import { until } from './until.mjs';
 
 const fakeBin = fileURLToPath(new URL('./thin-mcp-fake-bin.mjs', import.meta.url));
@@ -78,7 +79,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   const log = join(root, 'commands.jsonl');
   // The fake shebang finds this Node even on the routing fixture's closed PATH.
   fs.symlinkSync(process.execPath, join(bin, 'node'));
-  const commands = ['pi-role-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow', 'grok', 'agy', 'claude', 'codex'];
+  const commands = ['hud-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow', 'grok', 'agy', 'claude', 'codex'];
   if (withPi) commands.push('pi-role', 'pi');
   if (!routingOnly) commands.push('pi-dispatch');
   for (const command of commands) {
@@ -116,6 +117,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${clock}`;
     env.HUD_TEST_CLOCK_SCALE = String(clockScale);
   }
+  env.NODE_OPTIONS = reapStubOptions(bin, env.NODE_OPTIONS);
   // Never pass the outer test runner's session into the synthetic MCP caller.
   for (const key of ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'HUD_MCP_PI_SESSION_ID']) delete env[key];
   for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'MISTRAL_API_KEY']) {
@@ -482,7 +484,7 @@ export const statusQueries = (f, job) => f.socketRequests.filter((r) =>
 export const readCloseQuit = (f, job) => f.commands().some((c) =>
   c.command === 'herdr' && c.args[1] === 'prompt' && c.args[2] === job.agent && c.args[3] === '/quit');
 export const readCloseReaped = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8')).reaped_at;
-export const reapAttempts = (f, job) => f.commands().filter((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir).length;
+export const reapAttempts = (f, job) => f.commands().filter((c) => c.command === 'hud-reap' && c.args[0] === job.task_dir).length;
 const progressCommand = resolve('packages/hud-mcp/bin/hud-progress.mjs');
 export const cliToken = (dir) => turnToken(JSON.parse(fs.readFileSync(join(dir, 'turn.json'), 'utf8')));
 export const runProgress = (f, dir, ...args) => spawnSync(process.execPath, [progressCommand, ...args], {

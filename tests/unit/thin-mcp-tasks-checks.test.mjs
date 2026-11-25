@@ -82,7 +82,7 @@ test('MCP tasks: discover, progress and report settlement without reading or clo
   assert.ok(text.length < 600);
   assert.deepEqual(await rpc('tasks/cancel', { taskId: task.taskId }), done);
   assert.equal(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).read_at, undefined);
-  assert.equal(f.commands().some(({ command }) => command === 'pi-role-reap'), false);
+  assert.equal(f.commands().some(({ command }) => command === 'hud-reap'), false);
   const compact = resultValue(await taskCall(rpc, 'hud_read', { job: job.job }));
   assert.deepEqual(text.split('\n'), [`${compact.job} (${compact.role}) — ${compact.state}`,
     `Report: ${compact.digest.read_hint}`, `Summary: ${compact.digest.result}`]);
@@ -289,7 +289,7 @@ test('MCP tasks: cancel fences stale tasks and reaps live tasks once even with d
   assert.equal(send.resultType, 'complete');
   assert.equal(resultValue(send).sent, true);
   assert.equal((await rpc('tasks/get', { taskId: task.taskId })).status, 'working');
-  const reaps = () => f.commands().filter(({ command }) => command === 'pi-role-reap');
+  const reaps = () => f.commands().filter(({ command }) => command === 'hud-reap');
   assert.equal(reaps().length, 0);
   const params = { taskId: task.taskId };
   const [first, duplicate] = await Promise.all([rpc('tasks/cancel', params), rpc('tasks/cancel', params)]);

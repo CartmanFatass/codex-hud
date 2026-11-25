@@ -350,7 +350,7 @@ test('an unread declared report closes at the idle deadline and reaps leftovers'
   declareDone(f, graceJob);
   await until(() => cliState(graceJob.task_dir)?.state === 'idle_grace', t.signal);
   const quit = () => f.commands().some((c) => c.args[1] === 'prompt' && c.args[2] === `${graceJob.job}-primary` && c.args[3] === '/quit');
-  const reaped = () => f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === graceJob.task_dir);
+  const reaped = () => f.commands().some((c) => c.command === 'hud-reap' && c.args[0] === graceJob.task_dir);
   assert.ok(procStat(child));
   await until(() => cliState(graceJob.task_dir)?.state === 'closed', 2200);
   await until(reaped, t.signal);

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
 import { cleanupFixture, stopChild } from './process-cleanup.mjs';
+import { reapStubOptions } from './reap-stub.mjs';
 import { until as waitUntil } from './until.mjs';
 
 export const hour = 3600000;
@@ -29,7 +30,7 @@ export function fixture(t, degradedMs) {
   fs.mkdirSync(jobs, { recursive: true });
   fs.mkdirSync(bin);
   fs.mkdirSync(join(root, 'home'));
-  fs.writeFileSync(join(bin, 'pi-role-reap'), `#!${process.execPath}
+  fs.writeFileSync(join(bin, 'hud-reap'), `#!${process.execPath}
 import fs from 'node:fs';
 fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
 `, { mode: 0o700 });
@@ -46,7 +47,7 @@ fs.appendFileSync(process.env.HUD_HOME + '/reaps', process.argv[2] + '\\n');
   function start(probe = '', agentDir = pi) {
     const preload = probe ? ['--import', 'data:text/javascript,' + encodeURIComponent(probe)] : [];
     const env = { ...process.env, HOME: join(root, 'home'), HUD_HOME: home, PI_CODING_AGENT_DIR: agentDir,
-      HERDR_SOCKET_PATH: join(root, 'absent.sock'), PATH: `${bin}:${process.env.PATH}`, HUD_WATCH_CLI_CHECK_MS: '1000' };
+      HERDR_SOCKET_PATH: join(root, 'absent.sock'), PATH: `${bin}:${process.env.PATH}`, NODE_OPTIONS: reapStubOptions(bin), HUD_WATCH_CLI_CHECK_MS: '1000' };
     if (degradedMs === undefined) delete env.HUD_WATCH_DEGRADED_MS;
     else env.HUD_WATCH_DEGRADED_MS = String(degradedMs);
     const child = spawn(process.execPath, [...preload, watcher], { env, stdio: ['ignore', 'pipe', 'pipe'] });

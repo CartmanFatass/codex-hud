@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 
 const bin = 'packages/hud-mcp/bin';
 const wrappers = ['herdr-request', 'hud-ask', 'hud-check', 'hud-cli', 'hud-jev', 'hud-lease', 'hud-notify',
-  'hud-progress', 'hud-sonic', 'hud-watch', 'sonic-jobs', 'sonic-run', 'watch-runtime', 'worker-tools'];
+  'hud-progress', 'hud-reap', 'hud-sonic', 'hud-watch', 'sonic-jobs', 'sonic-run', 'watch-runtime', 'worker-tools'];
 function release(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud wrapper test '));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -20,7 +20,7 @@ test('installed bin paths and executable bits survive the move to dist', () => {
   assert.deepEqual(fs.readdirSync(bin).filter(file => file.endsWith('.mjs')).sort(),
     [...wrappers, ...bootstraps].map(name => `${name}.mjs`).sort());
   for (const name of wrappers) assert.ok(fs.readFileSync(join(bin, `${name}.mjs`), 'utf8').trimEnd().split('\n').length <= 6, name);
-  for (const name of ['hud-check', 'hud-mcp', 'hud-watch']) fs.accessSync(join(bin, `${name}.mjs`), fs.constants.X_OK);
+  for (const name of ['hud-check', 'hud-mcp', 'hud-reap', 'hud-watch']) fs.accessSync(join(bin, `${name}.mjs`), fs.constants.X_OK);
 });
 
 test('MCP refuses an unsupported Node before loading any dist modules', t => {

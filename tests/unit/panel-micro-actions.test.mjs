@@ -2,6 +2,7 @@ import { withState } from '../fixtures/state-helpers.mjs';
 /** The owner's micro-actions on a HUD job from the panel (spec §2.2): `g` its tab, `1`–`4` / `d` on its expanded question to answer, `X` to stop. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { reapStubOptions } from '../helpers/reap-stub.mjs';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -113,9 +114,9 @@ function stubs(t, { herdr = 0, reap = 0 } = {}) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const make = (name, code) => { fs.writeFileSync(join(dir, name), `#!/bin/sh\necho "$@" >> "${join(dir, name)}.log"\nexit ${code}\n`, { mode: 0o700 }); };
   make('herdr', herdr);
-  make('pi-role-reap', reap);
+  make('hud-reap', reap);
   const log = (name) => { try { return fs.readFileSync(join(dir, `${name}.log`), 'utf8').trim().split('\n'); } catch { return []; } };
-  return { env: { PATH: dir }, log };
+  return { env: { PATH: dir, NODE_OPTIONS: reapStubOptions(dir) }, log };
 }
 
 test('focusJobTab runs herdr tab focus with the TAB of SESSION.txt and says why it could not', async (t) => {
@@ -134,7 +135,7 @@ test('focusJobTab runs herdr tab focus with the TAB of SESSION.txt and says why 
 test('stopJob reaps the job directory, and first asks a CLI job already in its idle grace to quit', async (t) => {
   const f = fixture(t), s = stubs(t), dir = f.dir(RUNNING);
   assert.deepEqual(await stopJob(dir, s.env), { ok: true });
-  assert.deepEqual(s.log('pi-role-reap'), [dir]);
+  assert.deepEqual(s.log('hud-reap'), [dir]);
   assert.equal(fs.existsSync(join(dir, 'STATUS.json.close-requested')), false, 'a working job is only reaped');
   fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({ job: RUNNING, cli: { agent: 'claude' } }));
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));

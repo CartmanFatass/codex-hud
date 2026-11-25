@@ -1,4 +1,4 @@
-/** On-demand file-event reaper. Native pi owns normal settlement; pi-role-reap owns tab safety. */
+/** On-demand file-event reaper. Native pi owns normal settlement; hud-reap owns tab safety. */
 import { isQuotaFailure, recordFailureExhaustion } from '../roles/roster.js';
 import { terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT, REPORT_SETTLED_EXIT } from '../mcp/cli-judge.js';
 import { piSessionIdentity, resumeDeadline } from '../mcp/worker-resume.js';
@@ -495,8 +495,8 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   // Only native Pi may exit using a worker-side snapshot the watcher never saw.
   const expectSnapshot = !!job && !job.cli && !job.bro && !job.jev;
   const { result, complete, issue, snapshot, unrecoverable } = await reapWorkerTree(dir, status,
-    // Own a new process group so stopping pi-role-reap also stops its Herdr CLI child.
-    () => runCommand('pi-role-reap', [dir], process.env, {
+    // Own a new process group so stopping hud-reap also stops its Herdr CLI child.
+    () => runCommand(process.execPath, [binScript('hud-reap'), dir], process.env, {
       budgetMs: REAP_BUDGET_MS, killGraceMs: REAP_KILL_GRACE_MS, killProcessGroup: true, signal,
     }), (run) => run.ok, { carry: retry?.snapshot, expectSnapshot, signal });
   entry.snapshot = snapshot;

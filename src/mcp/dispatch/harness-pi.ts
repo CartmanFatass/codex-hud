@@ -15,10 +15,11 @@ import { startHeadlessProcess } from '../sonic-process.js';
 import { prepareSonicRetry } from '../sonic-session.js';
 import { directory, findJob, readCachedStatus, hudHome, bundled, save, jobCache } from '../store/job-store.js';
 import type { NativeResume } from '../worker-resume.js';
+import { recoverStalledPrompt } from './prompt-stall.js';
 import { registry, roleCwd } from './places.js';
 import {
   rejectLaunch, binScript, quote, run, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
-  startupFailure, launchError, refusedBeforeInput, type DispatchResult,
+  startupFailure, launchError, refusedBeforeInput, promptStalled, type DispatchResult,
 } from './proc.js';
 
 /** A skill name is one path segment under `.hud/skills`. Anything else is not a link we made. */
@@ -266,8 +267,9 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     const completed = status?.task_dir === dir && status.slot === 'primary' && status.state === 'closed' && status.output_written;
     if (submitted.exit_code !== 0 && !completed) {
       if (refusedBeforeInput(submitted)) return reject(submitted);
-      if (!(submitted.stderr + submitted.stdout).includes('agent_prompt_stalled')) return submitted;
-      return run(process.execPath, [join(dirname(launcher), 'prompt-stall.mjs'), dir, name, left, prompt, '120000']);
+      if (!promptStalled(submitted)) return submitted;
+      await recoverStalledPrompt(dir, name, left, prompt);
+      return { exit_code: 0, stdout: '', stderr: '' };
     }
     return { ...submitted, exit_code: 0 };
   } catch (error) {

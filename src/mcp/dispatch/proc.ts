@@ -46,9 +46,12 @@ function cliError(result: DispatchResult): { code: string; message?: string } | 
         } catch { /* Pretty-printed JSON, or a JSON line followed by CLI output. */ }
       }
     }
-    const match = /^(?:Error:\s*)?(agent_not_ready|agent_not_found|invalid_agent_argument|agent_pane_busy|agent_blocked)(?=[:\s]|$)[:\s]*(.*)$/.exec(first);
+    const match = /^(?:Error:\s*)?(agent_not_ready|agent_not_found|invalid_agent_argument|agent_pane_busy|agent_blocked|agent_prompt_stalled)(?=[:\s]|$)[:\s]*(.*)$/.exec(first);
     if (match) return { code: match[1], message: match[2] };
   }
+}
+export function promptStalled(result: DispatchResult): boolean {
+  return cliError(result)?.code === 'agent_prompt_stalled';
 }
 export function launchFailure(result: DispatchResult) {
   const error = cliError(result);
@@ -103,7 +106,7 @@ function cut(text: string, max: number): string {
 
 /**
  * The worker's herdr tab label: `<role> <package or brief title>` in about 28 columns, on one line (it is recorded as
- * TAB_NAME and pi-role-reap compares it with the tab). A short job suffix is added only when another open job's tab
+ * TAB_NAME and hud-reap compares it with the tab). A short job suffix is added only when another open job's tab
  * already has the same label.
  */
 export function tabLabel(job: Job, task: string): string {

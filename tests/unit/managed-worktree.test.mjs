@@ -241,7 +241,6 @@ test('watcher one-time sweep removes stale closed and archived managed worktrees
   fs.mkdirSync(join(hud, 'jobs'), { recursive: true, mode: 0o700 });
   fs.mkdirSync(join(hud, 'archive'), { recursive: true, mode: 0o700 });
   fs.writeFileSync(join(hud, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: main }] }));
-  fs.writeFileSync(join(home, 'pi-role-reap'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
 
   const now = new Date().toISOString();
   const makeManaged = async (hex, { state = 'closed', keptReason = null, archived = false, userFile = null, unmerged = false } = {}) => {

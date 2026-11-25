@@ -260,7 +260,8 @@ export async function main() {
           if (!current.pid_start_time && !signal.aborted) {
             const info = (await request('pane.process_info', { pane_id: pane }, { signal }))?.result?.process_info;
             const pid = info?.foreground_processes?.find((item) => item.pid && item.pid !== info.shell_pid)?.pid;
-            if (!signal.aborted && pid) { current.pid = pid; current.pid_start_time = procStat(pid)?.start ?? null; }
+            const start = !signal.aborted && pid ? procStat(pid)?.start : null;
+            if (pid && start) { current.pid = pid; current.pid_start_time = start; }
           }
         });
         if (stopped || aborted) return;

@@ -98,7 +98,7 @@ test(
     assert.match(cardText(workerFor(f, job.job)), /\bgeneral\b/);
     assert.match(cardText(workerFor(f, job.job)), /Synthetic grok report/);
     await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, t.signal);
-    assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
+    assert.ok(f.commands().some((c) => c.command === 'hud-reap' && c.args[0] === job.task_dir));
   }
 );
 

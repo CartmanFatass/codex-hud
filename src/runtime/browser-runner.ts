@@ -1,4 +1,5 @@
 /** One visible browser CLI job. The CLIs own the browser, keys and send-once rules. */
+import { procStat } from '../utils/proc.js';
 import { recordFailureExhaustion } from '../roles/roster.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import { jobFiles, BUNDLED_ROOT } from '../mcp/paths.js';
@@ -21,7 +22,7 @@ export async function main() {
   const role = (job.bro ?? job.jev)!,
     output = join(dir, jobFiles.report),
     brief = join(dir, jobFiles.brief);
-  const started = new Date().toISOString();
+  const started = new Date().toISOString(), pidStart = procStat(process.pid)?.start;
   function status(state: JobStatus['state'], reason: string | null = null) {
     const time = new Date().toISOString();
     const value: JobStatus = {
@@ -31,7 +32,7 @@ export async function main() {
       role: job.role,
       harness: 'bro',
       provider: role.provider === 'chatgpt' ? 'openai' : 'gemini',
-      pid: process.pid,
+      pid: pidStart ? process.pid : null, pid_start_time: pidStart ?? null,
       model: role.model ?? null,
       thinking: role.thinking ?? null,
       state,
@@ -77,8 +78,9 @@ export async function main() {
     });
   }
   let failure = null;
-  status('working');
   try {
+    if (!pidStart) throw new Error('browser runner process identity unavailable');
+    status('working');
     if (role.tool === 'jev-ask') {
       const provider = ['--provider', role.provider!];
       const raw = await cli(role.tool, ['key', ...provider, '--label', job.job, '--prompt-file', brief]);

@@ -137,7 +137,7 @@ test('read-close: hud_read closes settled CLI and pi workers within one tick', {
     assert.ok(after <= queries + 1, `${role}: agent.get ${queries} -> ${after}`);
     if (role !== 'imp') assert.ok(readCloseQuit(f, job));
     await until(() => readCloseReaped(job), 15000);
-    assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
+    assert.ok(f.commands().some((c) => c.command === 'hud-reap' && c.args[0] === job.task_dir));
     const send = { job: job.job, text: 'Synthetic repair.' };
     const repair = await f.call('hud_send', send);
     assert.equal(repair.continued_as, repair.job);
@@ -466,7 +466,7 @@ test('startup failure closes the tab, reports the pi-roles cause instead of the 
     ['tab', 'close', 'w4E:t2']);
   assert.equal(f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt'), false);
   await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, t.signal);
-  assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
+  assert.ok(f.commands().some((c) => c.command === 'hud-reap' && c.args[0] === job.task_dir));
   await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), t.signal);
 });
 
@@ -555,7 +555,7 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
   assert.equal(JSON.parse(fs.readFileSync(join(finalDir, 'STATUS.json'))).exit_reason, 'original');
   await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, t.signal);
   await until(() => !fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), t.signal);
-  assert.ok(f.commands().some((c) => c.command === 'pi-role-reap' && c.args[0] === job.task_dir));
+  assert.ok(f.commands().some((c) => c.command === 'hud-reap' && c.args[0] === job.task_dir));
   assert.ok(!f.commands().some((c) => c.command === 'herdr' && c.args[1] === 'get' && c.args[2] !== 'w4E:p1'));
 });
 
@@ -591,7 +591,7 @@ test(
     writeFixtureFile(join(caught, 'SESSION.txt'), 'TAB=synthetic-catchup\n');
     writeFixtureFile(join(caught, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
     const first = await f.call('hud_create', { role: 'imp', request_key: 'watch-one', task: 'Synthetic task.' });
-    const reaped = (dir) => f.commands().filter((c) => c.command === 'pi-role-reap' && c.args[0] === dir).length;
+    const reaped = (dir) => f.commands().filter((c) => c.command === 'hud-reap' && c.args[0] === dir).length;
     await until(() => reaped(caught) === 1, t.signal);
     const pidFile = join(f.env.HUD_HOME, 'watch.pid');
     const pid = fs.readFileSync(pidFile, 'utf8');
