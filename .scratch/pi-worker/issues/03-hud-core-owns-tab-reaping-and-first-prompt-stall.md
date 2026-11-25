@@ -20,3 +20,13 @@
   ownership-refused vs verified-cleanup outcome for descendants; (7) browser receipt path not canonicalized
   (symlinked HUD_HOME). Optional: document --after-pid tightening. Repair sent to the same imp; re-review required
   before land (process-killing code).
+
+- 2026-11-25 main: fix 072a9d7a re-reviewed by jb91504b183e4bb03: changes-required. Fixed: #3, #4, #5, #6. Still
+  blocking: (1) CLI discovery proves the shell, not the agent invocation — a same-named CLI restarted in the job shell
+  inherits the UUID env and can be stamped and SIGTERMed; refuse unless evidence is specific to the agent launch.
+  (2) Dead-PID Pi fallback (`reap-tab.ts:125–136`) still allows `/quit` on a reopened same-transcript Pi — remove it.
+  (new) `reap-tab.ts:108–118` discards the shell PID's own foreground entry, so `exec vim` in the old pane gets its tab
+  closed — require the original shell at an interactive prompt or decline. Major: (7) `worker-tree.ts:58–61` compares
+  `task_dir` verbatim, so an aliased older browser receipt skips both tree captures and `hud_close` can return 0 with a
+  grandchild alive — one canonical receipt check at both layers, mismatch is an issue, not a no-op. Second repair round
+  to the same imp; another re-review before land.
