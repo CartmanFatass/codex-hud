@@ -30,7 +30,7 @@ export const ROLE_TOOLS = [
   }),
   tool(
     'hud_create',
-    'Role-file placement; only general takes preset/on/model/thinking.',
+    'Role files. Single general job only: preset/on/model/thinking.',
     {
       role: text,
       request_key: { ...text, description: 'Omit for 10m dedupe.' },
