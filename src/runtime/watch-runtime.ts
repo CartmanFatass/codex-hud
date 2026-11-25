@@ -769,6 +769,15 @@ function scan(retryWatch = false) {
               .finally(() => checkingPiExit.delete(id));
           }
         } else if (tabClosed && !(job?.resume_s !== undefined && readCloseTurn(dir, job, status))) {
+          // A reopen rollback publishes closed STATUS before restoring the old
+          // SESSION. Don't pair that receipt with a working status read earlier.
+          const latest = readJson<JobStatus>(statusFile);
+          if (latest?.state !== status?.state ||
+              reapOwner(jobCache.readSession(id, { throwOnError: true }), latest) !== ownership) {
+            schedule();
+            continue;
+          }
+          status = latest;
           if (!fs.existsSync(`${statusFile}.stop-requested`))
             recordStopOrigin(dir, 'pane_vanished', status?.state, now);
           update = { state: 'failed', exit_reason: 'tab closed', ended_at: now };

@@ -302,7 +302,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
       for (const client of clients) client.socket.destroy();
       return clients.length > 0;
     },
-    closeTab: () => { for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'tab.closed', data: { tab_id: 'w4E:t2', workspace_id: 'w4E' } }) + '\n'); },
+    closeTab: (tab_id = 'w4E:t2') => { for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'tab.closed', data: { tab_id, workspace_id: 'w4E' } }) + '\n'); },
     commands: () => {
       if (!fs.existsSync(log)) return [];
       const text = fs.readFileSync(log, 'utf8');

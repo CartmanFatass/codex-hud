@@ -1405,15 +1405,13 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
     }
   }
   const taskEntry = session.taskClient && !next.batch_flow && !land && !carryTask ? beginTask(next, row.report_mtime, answerRequest) : undefined;
-  // The reaper has finished. Retire its CLI tab and supervisor before any scan can
-  // pair their closure with the new working status. Dispatch publishes fresh receipts.
+  // Retire the reaped turn's tab before publishing the new working status, so a
+  // delayed close can't claim the new turn. Dispatch publishes a fresh receipt.
   const pidFile = join(dir, jobFiles.supervisorPid);
   const tabCli = current.cli && !current.headless;
   const priorPid = tabCli ? jobCache.readPid(pidFile) : null;
-  if (tabCli) {
-    fs.rmSync(pidFile, { force: true });
-    fs.unlinkSync(join(dir, jobFiles.session));
-  }
+  if (tabCli) fs.rmSync(pidFile, { force: true });
+  if (priorSession) fs.unlinkSync(join(dir, jobFiles.session));
   writeCreateStatus(dir, { state: 'working' });
   save(next, true);
   const result = await launchPlace(next, role, place, dir, message, undefined, undefined, { resume: { ...identity, message } });

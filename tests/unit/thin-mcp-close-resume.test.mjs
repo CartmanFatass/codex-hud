@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { watchCommand } from '../../dist/cli/watch.js';
 import { judge, procStat, REPORT_SETTLED_EXIT } from '../../dist/mcp/cli-judge.js';
 import { sonicState } from '../../dist/worker/sonic-jobs.js';
 import {
@@ -143,10 +144,17 @@ test('Codex uses the recorded thread ID and honors the role resume window', asyn
   assert.deepEqual(args.slice(args.indexOf('--') + 2, args.indexOf('--') + 4), ['resume', id]);
 });
 
-test('pi closes on native settlement after hud_report and resumes the saved file under the same job task', async (t) => {
+const tabFor = (job) => /^TAB=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))[1];
+
+for (const closeCurrent of [false, true]) test(closeCurrent
+  ? 'a close of the resumed Pi tab still fails the job and wakes the mod'
+  : 'a delayed close of the old Pi tab does not fail or wake during resume', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   await f.startCliSocket();
+  write(join(f.env.HOME, 'tab-seq'), '1');
   write(join(f.env.HOME, 'defer-pi-report'), '');
+  // Keep the watcher subscribed across the original turn's settlement.
+  const sibling = await f.call('hud_create', { role: 'general', on: 'pi', task: 'Synthetic sibling.' });
   const worker = fakeCliWithChild(t, f);
   const job = await f.call('hud_create', { role: 'imp', task: 'Synthetic Pi brief.' });
   const dir = job.task_dir, file = join(f.env.PI_CODING_AGENT_DIR, 'example.jsonl'), id = 'synthetic-pi-session';
@@ -164,17 +172,61 @@ test('pi closes on native settlement after hud_report and resumes the saved file
   const previous = json(dir, 'job.json').pi_sent_at;
   const rpc = taskRpc(f.rpc);
   await rpc('server/discover');
-  const task = await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic Pi continuation.' });
-  assert.equal(task.resultType, 'task');
-  assert.equal(task.continuation, 'resumed');
-  assert.equal(task.job, job.job);
-  const args = starts(f).at(-1).args;
-  assert.deepEqual(args.slice(-2), ['--session', file]);
-  assert.equal(cliState(dir).session_id, id);
-  assert.ok(json(dir, 'job.json').pi_sent_at > previous);
-  await publishPiGrace(t, job, undefined, true, session);
-  const result = await rpc('tasks/get', { taskId: task.taskId });
-  assert.equal(result.status, 'completed');
+  const oldTab = tabFor(job);
+  const ac = new AbortController(), wakes = [];
+  const watch = watchCommand(['--mod'], { env: f.env, stdout: (line) => wakes.push(...JSON.parse(line).lines), stderr: assert.fail },
+    { signal: ac.signal, settlementWindowMs: 0 });
+  const failed = (job) => wakes.some(line => line.startsWith(`${job.job} `) && line.includes('failed | tab closed'));
+  try {
+    await until(() => wakes.some(line => line.startsWith(`${job.job} `) && line.includes('First.')), t.signal);
+    const launchCount = () => f.commands().filter(({ command }) => command === 'pi-role').length;
+    const launched = launchCount();
+    if (!closeCurrent) write(join(f.env.HOME, 'hold-pi-role'), '');
+    const sending = taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic Pi continuation.' });
+    let task;
+    try {
+      if (!closeCurrent) {
+        // The working STATUS is published, but the replacement tab hasn't been created.
+        await until(() => launchCount() > launched, t.signal);
+        f.closeTab(oldTab);
+        f.closeTab(tabFor(sibling)); // A second event witnesses processing of the first.
+        await until(() => failed(sibling), t.signal);
+        assert.equal(cliState(dir).state, 'working');
+      }
+    } finally {
+      if (!closeCurrent) write(join(f.env.HOME, 'release-prompt-result'), '');
+      task = await sending;
+    }
+    assert.equal(task.resultType, 'task');
+    assert.equal(task.continuation, 'resumed');
+    assert.equal(task.job, job.job);
+    const args = starts(f).at(-1).args;
+    assert.deepEqual(args.slice(-2), ['--session', file]);
+    assert.equal(cliState(dir).session_id, id);
+    assert.ok(json(dir, 'job.json').pi_sent_at > previous);
+    assert.notEqual(tabFor(job), oldTab);
+    if (closeCurrent) {
+      f.closeTab(tabFor(job));
+      await until(() => failed(job), t.signal);
+      assert.equal(cliState(dir).state, 'failed');
+      assert.equal(cliState(dir).exit_reason, 'tab closed');
+    } else {
+      f.closeTab(oldTab); // A duplicate delayed event after the replacement is live is harmless too.
+      assert.equal((await f.call('hud_peek', { job: job.job })).status.state, 'working');
+      const next = fakeCliWithChild(t, f);
+      write(join(dir, 'STATUS.json'), JSON.stringify({ ...cliState(dir), version: 1, task_dir: dir, slot: 'primary',
+        pid: next.pid, pid_start_time: procStat(next.pid).start }));
+      resultValue(await report('hud_report', { text: 'Synthetic native second result.', summary: 'Second.' }));
+      await publishPiGrace(t, job, next, false, session);
+      await until(() => reaped(job) && dead(next.pid), t.signal, 'the resumed report should settle and reap');
+      const result = await rpc('tasks/get', { taskId: task.taskId });
+      assert.equal(result.status, 'completed');
+      assert.match(result.result.content[0].text, /Summary: Second\./);
+      await until(() => wakes.some(line => line.startsWith(`${job.job} `) && line.includes('Second.')), t.signal, 'the resumed report should wake the mod');
+      assert.equal(failed(job), false);
+      assert.equal(json(dir, 'job.json').read_at, undefined, 'wake delivery does not mark the report read');
+    }
+  } finally { ac.abort(); await watch; }
 });
 
 test('native Pi settlement does not close while a question is open', async (t) => {

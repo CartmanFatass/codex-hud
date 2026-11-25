@@ -69,6 +69,7 @@ if (command === 'pi-dispatch') {
     console.error('HTTP 429: quota exceeded, retry in 10m');
     process.exit(1);
   }
+  if (fs.existsSync(join(process.env.HOME, 'hold-pi-role'))) waitToReply();
   console.log(JSON.stringify(args.slice(2)));
 } else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
   const pane = args[args.indexOf('--pane') + 1];
