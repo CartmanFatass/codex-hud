@@ -1,5 +1,6 @@
 /** The ready PID and handoff state live across scan-engine rebuilds via execve. */
 import { watcherReady } from '../mcp/watch-pid.js';
+import { withAbstractLock } from '../utils/abstract-lock.js';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import { binScript } from '../mcp/paths.js';
 import { execFile, spawn } from 'node:child_process';
@@ -180,21 +181,28 @@ export async function openWatcher() {
       if (!stopping) { watchBuild(onChange); runtime.start(state); subscribe(); }
     }
   }
-  if (watcherReady(pidFile, binScript('hud-watch'))) process.exit(0);
+  const alreadyRunning = () => watcherReady(pidFile, binScript('hud-watch'));
+  if (alreadyRunning()) return;
   const { openRuntime } = await import('./watch-runtime.js');
-  const state = reloaded ? readHandoff(handoffFile) : (unlinkIfPresent(handoffFile), null);
-  runtime = openRuntime(event);
-  stamp = buildStamp();
-  if (!reloaded) {
-    const oldLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
-    fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), { mode: 0o600 });
-  }
-  process.on('SIGTERM', () => void finish('signal=SIGTERM'));
-  process.on('SIGINT', () => void finish('signal=SIGINT'));
-  if (!reloaded || !ownsPid()) writePrivateFile(pidFile, `${process.pid}\n`, { mkdir: false });
-  publishGeneration('watcher', stamp);
-  if (process.connected) process.send?.('ready', () => {});
-  log(`${reloaded ? 'reloaded' : 'start'} pid=${process.pid}`);
+  // The dist lock is shared by readers. Recheck and publish under a per-home startup mutex.
+  const state = await withAbstractLock('watch-start', fs.realpathSync(home), () => {
+    if (alreadyRunning()) return;
+    const state = reloaded ? readHandoff(handoffFile) : (unlinkIfPresent(handoffFile), null);
+    runtime = openRuntime(event);
+    stamp = buildStamp();
+    if (!reloaded) {
+      const oldLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
+      fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), { mode: 0o600 });
+    }
+    process.on('SIGTERM', () => void finish('signal=SIGTERM'));
+    process.on('SIGINT', () => void finish('signal=SIGINT'));
+    if (!reloaded || !ownsPid()) writePrivateFile(pidFile, `${process.pid}\n`, { mkdir: false });
+    publishGeneration('watcher', stamp);
+    if (process.connected) process.send?.('ready', () => {});
+    log(`${reloaded ? 'reloaded' : 'start'} pid=${process.pid}`);
+    return state;
+  }, { timeoutMs: 15_000 });
+  if (state === undefined) return;
   return async () => {
     function checkBuild() {
       if (switching || stopping) return;

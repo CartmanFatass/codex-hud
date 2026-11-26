@@ -446,15 +446,41 @@ process.exitCode = 1;`);
   assert.deepEqual(await exited, [0, null]);
 });
 
-test('overlapping watcher startups publish only one ready PID', async (t) => {
+test('overlapping watcher startups publish only one ready PID', { timeout: 60000 }, async (t) => {
   const f = fixture(t);
   f.job({ state: 'working' });
-  const runs = [f.start(), f.start()];
-  await until(() => runs.some(({ child }) => child.exitCode === 0) && fs.existsSync(join(f.home, 'watch.pid')), 15000);
+  // Both processes must reach the runtime import before either can publish readiness.
+  const path = join(dirname(f.home), 'startup.sock'), peers = [];
+  const gate = createServer((socket) => {
+    peers.push(socket);
+    if (peers.length === 2) for (const peer of peers) peer.end();
+  });
+  const listening = once(gate, 'listening');
+  gate.listen(path);
+  t.after(() => {
+    for (const peer of peers) peer.destroy();
+    return new Promise((done) => gate.close(done));
+  });
+  await listening;
+  const startupGate = `
+import { createConnection as connectStartupGate } from 'node:net';
+for await (const _ of connectStartupGate(${JSON.stringify(path)})) {}
+`;
+  const preload = `
+import { registerHooks } from 'node:module';
+registerHooks({ load(url, context, nextLoad) {
+  const result = nextLoad(url, context);
+  return url.endsWith('/runtime/watch-runtime.js')
+    ? { ...result, source: String(result.source) + ${JSON.stringify(startupGate)} } : result;
+} });`;
+  const runs = [f.start(preload), f.start(preload)];
+  const starts = () => text(join(f.home, 'watch.log')).match(/start pid=/g)?.length ?? 0;
+  await until(() => runs.some(({ child }) => child.exitCode === 0) || starts() > 1, t.signal);
+  assert.equal(starts(), 1, 'only one process starts the watcher');
   const pid = Number(text(join(f.home, 'watch.pid')));
   const live = runs.find(({ child }) => child.pid === pid);
   assert.ok(live);
-  assert.equal(f.log().match(/start pid=/g)?.length, 1);
+  assert.equal(live.child.exitCode, null);
   live.child.kill('SIGTERM');
   assert.deepEqual(await Promise.all(runs.map(({ exited }) => exited)), [[0, null], [0, null]]);
   assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
