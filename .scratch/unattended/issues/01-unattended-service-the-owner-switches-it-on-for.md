@@ -1,6 +1,6 @@
 # 01: Unattended service: the owner switches it on for chosen Objectives and their ticket queues keep moving
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** workflow/05, workflow/07
 **Objective:** unattended
@@ -16,3 +16,5 @@
 - Landed in this commit (replay base ccc3c9c7bbefe4fb405648367b23f83be4ea7459); gate 5/5 passed.
 
 - Landed in this commit (replay base 776c1f02c5f5308e070cf25639b132a9f77a238f); gate 5/5 passed.
+
+- 2026-11-26 main (owner-delegated acceptance): trial 3 on the synthetic project, service on unattended/03 code, run q0f016c4a0df7d92d: the clean ticket (07) landed without an owner hold, the spec ticket (08) was held for the owner while 07 continued, one milestone review and one lead acceptance (verdict finish), acceptance recorded on the ticket. Sessions: 2 imps + 1 question lead (08 escalated) + 1 reviewer + 1 lead. Home showed trial hand-backs to the owner earlier the same day. `off` let the process exit by itself.
