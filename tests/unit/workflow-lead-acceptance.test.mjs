@@ -548,6 +548,66 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
   assert.equal(f.flow(repFlow).decisions.length, 3);
 });
 
+test('hud_respond cannot revive a superseded main hand-back', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const start = () => f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, handback_to: 'main' });
+  const pauseAtAccept = async (flow, jobs) => {
+    await f.settle((await f.jobs(flow, jobs)).at(-1));
+    await until(() => Boolean(f.flow(flow).review_job), 15_000);
+    await f.settleReview(f.flow(flow).review_job);
+    assert.equal((await f.end(flow)).steps.accept.state, 'asking');
+  };
+  const addRepair = title => f.call('hud_tickets', {
+    op: 'add', cwd: f.root, feature: 'sample',
+    tickets: [{ title, blocked_by: [], what: 'Make the synthetic fix.', acceptance: ['Fixed'], live_try: 'none' }],
+  });
+  const repair = job => f.call('hud_respond', { job, answer: 'repair' });
+  const working = () => fs.readdirSync(join(f.home, 'flows')).filter(file => /^q[a-f0-9]{16}\.json$/.test(file))
+    .map(file => f.flow(file.slice(0, -5))).filter(q => q.feature === 'sample' && q.state === 'working').map(q => q.flow);
+
+  const { flow } = await start();
+  await pauseAtAccept(flow, 1);
+  await addRepair('First repair');
+  const { flow: successor } = await start();
+  assert.notEqual(successor, flow);
+  const rejected = await repair(flow);
+  assert.equal(rejected.code, 'superseded_run');
+  assert.match(rejected.error, new RegExp(successor));
+  assert.equal(f.flow(flow).state, 'paused');
+  assert.equal(f.flow(flow).steps.accept.state, 'asking');
+  assert.equal(f.flow(flow).repair_rounds, undefined);
+  assert.deepEqual(working(), [successor]);
+
+  // A simultaneous answer and explicit start can choose either path, but not both.
+  await pauseAtAccept(successor, 2);
+  await addRepair('Second repair');
+  const [started, answered] = await Promise.all([start(), repair(successor)]);
+  assert.deepEqual(working(), [started.flow]);
+  if (started.flow === successor) {
+    assert.equal(answered.ok, true);
+    assert.equal(answered.flow, successor);
+  } else {
+    assert.equal(answered.code, 'superseded_run');
+    assert.equal(f.flow(successor).state, 'paused');
+  }
+});
+
+test('hud_tickets run preflights the frontend role of a dependency successor before dispatch', async t => {
+  const f = await setupWorkflowProject(t, { tickets: {
+    '01-synthetic.md': goodTicket(1),
+    '02-synthetic.md': goodTicket(2, { blocked: '01' }).replace('**Blocked by:** 01', '**Blocked by:** 01 · **Who:** frontend-implementer'),
+  } });
+  const config = join(f.root, '.hud', 'project.json');
+  writeFixtureFile(config, JSON.stringify({ ...JSON.parse(fs.readFileSync(config, 'utf8')), roles: ['imp', 'reviewer', 'lead'] }));
+  const { result } = await f.rpc('tools/call', {
+    name: 'hud_tickets', arguments: { op: 'run', feature: 'sample', cwd: f.root },
+  });
+  assert.equal(result.isError, true);
+  assert.match(JSON.parse(result.content[0].text).error, /frontend-imp.*Run `hud setup` to enable frontend-imp/);
+  assert.equal(fs.existsSync(join(f.home, 'flows')), false);
+  assert.equal(fs.existsSync(join(f.home, 'jobs')), false);
+});
+
 test('hud_tickets run and unattended on refuse to start when a needed role is not enabled, naming hud setup before dispatching anything', { timeout: 30_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-rolecheck.md': goodTicket(1) } });
   const projectJson = join(f.root, '.hud', 'project.json');

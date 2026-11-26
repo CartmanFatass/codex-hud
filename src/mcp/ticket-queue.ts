@@ -5,6 +5,7 @@ import { capForRole, loadConcurrencySettings } from '../roles/concurrency.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { roleRegistry } from '../roles/roster.js';
+import { readObjectives } from '../collectors/objectives.js';
 import { ticketFileEvidence } from '../collectors/ticket-evidence.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
@@ -16,34 +17,41 @@ import { freezeGraph, runDir, runLock } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import { ESCALATION_RULE, isOpenTicketRun } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
-import { checkFeatureTickets, checkTicketPaths, ticketReadiness } from './local-tickets.js';
+import { checkFeatureTickets, checkTicketPaths, declaredReadyTickets, ticketObjectiveOwner, ticketReadiness } from './local-tickets.js';
 import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
 import { BUNDLED_ROOT } from './paths.js';
 import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
-  cancelTicketQueue, isTicketQueueId, MAX_REPAIR_ROUNDS, queueIds, readTicketQueue, recordDecision,
+  cancelTicketQueue, isTicketQueueId, prepareTicketQueueRepair, queueIds, readTicketQueue, recordDecision,
   ticketQueueNotice, ticketQueueView, writeTicketQueue, type TicketQueue,
 } from './ticket-queue-state.js';
 
 let template: string | undefined;
-const FRONTEND_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im;
 
-/** Verify every role a ticket-queue or unattended run will need is enabled in the project before starting anything. */
+/** Verify every role needed by the declared workset, not just the tickets dispatchable now. */
 export function requireTicketQueueRoles(
   home: string,
   root: string,
-  needed: readonly string[],
+  workset: { feature: string; handbackTo?: 'main' | 'lead' } | { objectives: readonly string[] },
   env = process.env,
-  opts?: { allowMainFallback?: boolean },
 ) {
+  const featureRun = 'feature' in workset;
+  let tickets = declaredReadyTickets(root, featureRun ? workset.feature : undefined);
+  if (!featureRun) {
+    const objectives = readObjectives(root)?.objectives ?? [];
+    const selected = new Set(objectives.filter(o => o.state === 'active' && workset.objectives.includes(o.id)).map(o => o.id));
+    tickets = tickets.filter(t => selected.has(ticketObjectiveOwner(objectives, t.ticket, t.objective) ?? ''));
+  }
+  const needed = new Set(['imp', ...tickets.map(t => t.role), 'reviewer']);
+  if (!featureRun || workset.handbackTo !== 'main') needed.add('lead');
   const registry = roleRegistry(home, root, env, undefined, undefined, BUNDLED_ROOT);
   const enabled = registry.roles();
   const withOff = registry.roles(true);
   const hidden: string[] = [];
   const off: string[] = [];
   const invalid: string[] = [];
-  for (const name of [...new Set(needed)]) {
+  for (const name of needed) {
     if (enabled.has(name)) continue;
     if (withOff.get(name)?.optionalEnabled === false) {
       off.push(name);
@@ -59,7 +67,7 @@ export function requireTicketQueueRoles(
   const problems: string[] = [];
   if (hidden.length) {
     const list = hidden.join(', ');
-    const mainHint = opts?.allowMainFallback && hidden.length === 1 && hidden[0] === 'lead'
+    const mainHint = featureRun && hidden.length === 1 && hidden[0] === 'lead'
       ? ' (or pass handback_to: "main")' : '';
     problems.push(`Required role(s) not enabled in this project: ${list}. Run \`hud setup\` to enable ${list} in .hud/project.json${mainHint}.`);
   }
@@ -137,6 +145,16 @@ export async function cancelTicketQueueRun(
   return { queue: q, changed: false };
 }
 
+// Admission always takes the feature/Objective lock before a per-run lock.
+function withTicketAdmission<T>(home: string, root: string, feature: string, objective: string | undefined, run: () => T | Promise<T>) {
+  return withAbstractLock('ticket-start', `${home}\0${root}\0${objective ? `unattended:${objective}` : feature}`, run);
+}
+
+function admissionQueues(home: string, root: string, feature: string, objective?: string) {
+  return queueIds(home).map(id => readTicketQueue(home, id)).filter(q => q !== null)
+    .filter(q => q.root === root && (objective ? q.unattended?.objective === objective : !q.unattended && q.feature === feature));
+}
+
 export async function startTicketQueue(home: string, cwd: string, pane: string | null, task: boolean,
   args: Record<string, unknown>, dispatcher?: TicketQueue['dispatcher'],
   unattended?: { flow: string; objective: string; ready?: readonly { ticket: string; path: string }[] }) {
@@ -159,10 +177,8 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     throw Error('invalid_arguments: handback_to');
   const resolvedWorkspace = pane ? await resolveWorkspace(pane) : undefined;
   const startHead = await dispatchBase(root);
-  const lockScope = unattended ? `unattended:${unattended.objective}` : target;
-  return withAbstractLock('ticket-start', `${home}\0${root}\0${lockScope}`, async () => {
-    const queues = queueIds(home).map(id => readTicketQueue(home, id)).filter(q => q !== null)
-      .filter(q => q.root === root && (unattended ? q.unattended?.objective === unattended.objective : !q.unattended && q.feature === target));
+  return withTicketAdmission(home, root, target, unattended?.objective, async () => {
+    const queues = admissionQueues(home, root, target, unattended?.objective);
     const prior = queues.find(q => unattended ? isOpenTicketRun(q) : q.state === 'working');
     if (prior) {
       if (unattended) return null;
@@ -180,8 +196,8 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     }
     if (!registeredProject(home, root).registered) throw Error('hud_tickets run requires a registered project');
     validLandConfig(home, root);
-    const latest = queues.filter(q => !q.unattended).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-    const resumed = !unattended && latest && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;
+    const latest = unattended ? undefined : queues.sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    const resumed = latest && !latest.superseded_by && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;
     const effectiveHandbackTo = unattended ? 'lead' : handback_to ?? resumed?.handback_to;
     if (!unattended) {
       const ticketGaps = checkFeatureTickets(root, target);
@@ -193,20 +209,8 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       if (!unattended.ready.some(t => !bad.has(t.ticket))) return null;
     }
     const readiness = unattended ? undefined : ticketReadiness(root, jobCache, target, { home });
-    const readyPaths = unattended ? (unattended.ready ?? []).map(t => t.path) : (readiness?.tickets ?? []).map(t => t.path);
-    const needsFrontend = readyPaths.some(path => {
-      try {
-        const header = readFileBounded(path, 64 * 1024).bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
-        return FRONTEND_ROLE_RE.test(header);
-      } catch { return false; }
-    });
-    const neededRoles = [
-      'imp',
-      ...(needsFrontend ? ['frontend-imp'] : []),
-      'reviewer',
-      ...(effectiveHandbackTo === 'main' ? [] : ['lead']),
-    ];
-    const roles = requireTicketQueueRoles(home, root, neededRoles, process.env, { allowMainFallback: !unattended });
+    const roles = requireTicketQueueRoles(home, root, unattended
+      ? { objectives: [unattended.objective] } : { feature: target, handbackTo: effectiveHandbackTo });
     fs.mkdirSync(join(home, 'flows'), { mode: 0o700, recursive: true });
     const handback = resumed?.state === 'paused' && resumed.handback?.kind === 'assumption' ? resumed.handback : undefined;
     const limit = max_parallel ?? resumed?.max_parallel ?? capForRole(loadConcurrencySettings(), 'imp');
@@ -253,14 +257,26 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     if (readiness?.blocked.length) q.blocked = readiness.blocked;
     fs.mkdirSync(runDir(home, flow), { mode: 0o700, recursive: true });
     freezeGraph(home, flow, graph);
-    writeTicketQueue(home, q, true);
+    if (resumed?.state === 'paused') {
+      await runLock(home, resumed.flow, () => {
+        const predecessor = readTicketQueue(home, resumed.flow);
+        writeTicketQueue(home, q, true);
+        // Publish the successor first; the answer path also checks receipts if the marker is missing.
+        if (predecessor?.state === 'paused') {
+          predecessor.superseded_by = q.flow;
+          writeTicketQueue(home, predecessor);
+        }
+      });
+    } else {
+      writeTicketQueue(home, q, true);
+    }
     wakeWorkflow(home, q);
     return q;
   });
 }
 export type HandbackAnswerResult =
   | { ok: true; queue: TicketQueue; resumed: boolean }
-  | { ok: false; code: 'flow_not_found' | 'no_pending_handback' | 'invalid_arguments' | 'invalid_choice' | 'no_repair_tickets'; error: string };
+  | { ok: false; code: 'flow_not_found' | 'no_pending_handback' | 'invalid_arguments' | 'invalid_choice' | 'no_repair_tickets' | 'superseded_run'; error: string };
 
 function parseHandbackAnswer(raw: string, allowedChoices: readonly string[]): { choice: string; reason?: string } | null {
   const match = /^\s*([a-z][a-z0-9_-]*)(?:\s*(?::|\r?\n)\s*([\s\S]*))?\s*$/i.exec(raw);
@@ -287,8 +303,11 @@ export async function answerTicketQueueHandback(
   answer: string,
   opts: { pane: string | null; cwd?: string; requestId?: string },
 ): Promise<HandbackAnswerResult> {
-  if (!isTicketQueueId(id)) return { ok: false, code: 'flow_not_found', error: `Ticket queue ${id} not found` };
-  const result = await runLock(home, id, (): HandbackAnswerResult => {
+  const queue = readTicketQueue(home, id);
+  if (!queue || !runVisible({ ...queue, project_root: queue.project_root ?? queue.root }, opts.pane, opts.cwd)) {
+    return { ok: false, code: 'flow_not_found', error: `Ticket queue ${id} not found` };
+  }
+  const settle = (): HandbackAnswerResult => {
     const cur = readTicketQueue(home, id);
     if (!cur || !runVisible({ ...cur, project_root: cur.project_root ?? cur.root }, opts.pane, opts.cwd)) {
       return { ok: false, code: 'flow_not_found', error: `Ticket queue ${id} not found` };
@@ -297,6 +316,11 @@ export async function answerTicketQueueHandback(
     if (cur.state !== 'paused' || !step || !cur.handback?.choices?.length || cur.steps?.[step]?.state !== 'asking') {
       const detail = cur.state === 'paused' && cur.handback?.kind ? `paused for ${cur.handback.kind}` : `state: ${cur.state}`;
       return { ok: false, code: 'no_pending_handback', error: `Ticket queue ${id} has no pending hand-back (${detail})` };
+    }
+    const successor = cur.superseded_by ?? admissionQueues(home, cur.root, cur.feature, cur.unattended?.objective)
+      .find(q => q.flow !== id && (q.state === 'working' || q.created_at > cur.created_at))?.flow;
+    if (successor) {
+      return { ok: false, code: 'superseded_run', error: `Ticket queue ${id} was superseded by ${successor}; its hand-back is no longer answerable` };
     }
     if (opts.requestId !== undefined && opts.requestId !== step) {
       return { ok: false, code: 'invalid_arguments', error: `Ticket queue ${id} pending hand-back is at step ${step}, not ${opts.requestId}` };
@@ -310,28 +334,9 @@ export async function answerTicketQueueHandback(
       };
     }
     if (parsed.choice === 'repair') {
-      if ((cur.repair_rounds ?? 0) >= MAX_REPAIR_ROUNDS) {
-        const msg = `max repair rounds (${MAX_REPAIR_ROUNDS}) reached${parsed.reason ? `: ${parsed.reason}` : ''}`;
-        recordDecision(cur, {
-          step, kind: 'accept', job: 'main', decision: 'repair',
-          ...(parsed.reason && { reason: parsed.reason }),
-          at: new Date().toISOString(),
-        });
-        cur.epoch = (cur.epoch ?? 0) + 1;
-        cur.steps ??= {};
-        cur.steps[step] = { state: 'failed', reason: msg };
-        cur.reason = msg;
-        cur.queued = undefined;
-        cur.remaining = cur.remaining ?? [];
-        cur.handback = { step, choices: ['resume', 'stop'], kind: 'escalate' };
-        cur.state = 'paused';
-        cur.notices = cur.task ? {} : { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
-        writeTicketQueue(home, cur);
-        return { ok: true, queue: cur, resumed: false };
-      }
-      const { tickets: ready, queued } = ticketReadiness(cur.root, jobCache, cur.feature, { home });
-      const hasNewWork = ready.some(t => !cur.tickets.some(own => own.ticket === t.ticket)) || queued.length > 0;
-      if (!hasNewWork) {
+      const repair = prepareTicketQueueRepair(cur, handbackStepKeys(home, cur),
+        () => ticketReadiness(cur.root, jobCache, cur.feature, { home }), parsed.reason);
+      if (repair.kind === 'no_work') {
         return {
           ok: false,
           code: 'no_repair_tickets',
@@ -343,17 +348,24 @@ export async function answerTicketQueueHandback(
         ...(parsed.reason && { reason: parsed.reason }),
         at: new Date().toISOString(),
       });
-      cur.repair_rounds = (cur.repair_rounds ?? 0) + 1;
-      cur.repair_admitted_base = cur.tickets.length;
-      delete cur.review_job;
+      cur.epoch = (cur.epoch ?? 0) + 1;
+      if (repair.kind === 'cap') {
+        cur.steps ??= {};
+        cur.steps[step] = { state: 'failed', reason: repair.reason };
+        cur.reason = repair.reason;
+        cur.queued = undefined;
+        cur.remaining = cur.remaining ?? [];
+        cur.handback = { step, choices: ['resume', 'stop'], kind: 'escalate' };
+        cur.notices = cur.task ? {} : { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
+        writeTicketQueue(home, cur);
+        return { ok: true, queue: cur, resumed: false };
+      }
       delete cur.handback;
       delete cur.reason;
       delete cur.pid;
       delete cur.start;
-      cur.epoch = (cur.epoch ?? 0) + 1;
       cur.streak = 0; cur.settled = 0; cur.failures = 0;
       cur.notices = {};
-      cur.steps = Object.fromEntries(handbackStepKeys(home, cur).map(s => [s, { state: 'waiting' as const }]));
       cur.state = 'working';
       writeTicketQueue(home, cur);
       return { ok: true, queue: cur, resumed: true };
@@ -404,7 +416,9 @@ export async function answerTicketQueueHandback(
     cur.state = 'working';
     writeTicketQueue(home, cur);
     return { ok: true, queue: cur, resumed: true };
-  });
+  };
+  const result = await withTicketAdmission(home, queue.root, queue.feature, queue.unattended?.objective,
+    () => runLock(home, id, settle));
   if (result.ok && result.resumed) {
     // Wait briefly if the exiting runner from the prior pause still holds the driver lock.
     try { await withAbstractLock('flow-runner', `${home}\0${id}`, () => {}, { timeoutMs: 2_000 }); }

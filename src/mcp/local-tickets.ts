@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import { join, relative, isAbsolute, resolve } from 'node:path';
 import { scanScratch, slugify, ticketsCommand } from '../cli/tickets.js';
-import { OBJECTIVE_SLUG, objectiveLink, readObjectives } from '../collectors/objectives.js';
+import { OBJECTIVE_SLUG, objectiveLink, readObjectives, type Objective } from '../collectors/objectives.js';
 import type { ProjectTicket } from '../collectors/project-board.js';
 import { STATE_BYTES } from '../collectors/state-ledger.js';
 import { targetKey, ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
@@ -118,6 +118,15 @@ export function ticketObjective(cwd: string, ticket: unknown, shared: string) {
     const record = readObjectives(checkout) ?? (checkout !== shared ? readObjectives(shared) : undefined);
     return objectiveLink(record?.objectives.find(item => item.id === id));
   } catch { /* No attribution. */ }
+}
+
+/** Explicit attribution wins; otherwise the feature must have exactly one Objective. */
+export function ticketObjectiveOwner(objectives: readonly Objective[], ticket: string, declared?: string) {
+  const feature = ticket.split('/')[0];
+  if (!/^[a-z0-9-]+$/.test(feature)) return undefined;
+  if (declared) return declared;
+  const linked = objectives.filter(o => o.features.includes(feature));
+  return linked.length === 1 ? linked[0].id : undefined;
 }
 
 export function readyTickets(cwd: string, jobs: JobIndexCache, home?: string) {
@@ -247,13 +256,13 @@ export function checkTicketPaths(cwd: string, items: readonly { ticket: string; 
   return results;
 }
 
-interface ParsedTicketMemo {
-  stamp: string;
-  ticket: (ProjectTicket & { what: string; objective?: string }) | null;
-}
-const parsedTicketMemo = new Map<string, ParsedTicketMemo>();
+type LocalTicket = ProjectTicket & { what: string; objective?: string; role: 'imp' | 'frontend-imp' };
+const FRONTEND_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im;
+const declaredReady = (t: LocalTicket) => /^ready-for-agent$/i.test(t.status);
+const ticketRef = (slug: string, t: LocalTicket) => `${slug}/${nn(Number(t.number))}`;
+const parsedTicketMemo = new Map<string, { stamp: string; ticket: LocalTicket | null }>();
 
-function parseTicketForReadiness(path: string, num: number): (ProjectTicket & { what: string; objective?: string }) | null {
+function parseTicketForReadiness(path: string, num: number): LocalTicket | null {
   const st = fs.lstatSync(path, { throwIfNoEntry: false });
   if (!st || !st.isFile()) { parsedTicketMemo.delete(path); return null; }
   const stamp = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}:${num}`;
@@ -262,7 +271,7 @@ function parseTicketForReadiness(path: string, num: number): (ProjectTicket & { 
     return hit.ticket ? { ...hit.ticket, blockers: [...hit.ticket.blockers] } : null;
   }
   const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
-  let parsed: (ProjectTicket & { what: string; objective?: string }) | null = null;
+  let parsed: LocalTicket | null = null;
   if (!truncated) {
     const text = bytes.toString('utf8');
     const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
@@ -272,7 +281,8 @@ function parseTicketForReadiness(path: string, num: number): (ProjectTicket & { 
       const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
         ?.replace(/\s+/g, ' ').trim() ?? '';
       const objective = objectiveField.exec(ticketHeader(text))?.[2]?.trim() || undefined;
-      parsed = { ...heading, path, what, ...(objective && { objective }), status, at: 0, items, checked,
+      const role = FRONTEND_ROLE_RE.test(body) ? 'frontend-imp' : 'imp';
+      parsed = { ...heading, path, what, role, ...(objective && { objective }), status, at: 0, items, checked,
         total: items.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
         state: landed ?? (/^ready-for-human$/i.test(status) ? 'try' : 'ready') };
     }
@@ -283,6 +293,27 @@ function parseTicketForReadiness(path: string, num: number): (ProjectTicket & { 
   return parsed ? { ...parsed, blockers: [...parsed.blockers] } : null;
 }
 
+function readTicketFeatures(scratch: string, feature?: string) {
+  const slugs = feature === undefined
+    ? fs.readdirSync(scratch, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name)
+      .sort((a, b) => a.localeCompare(b))
+    : [feature];
+  return slugs.map(slug => ({ slug, at: 0,
+    tickets: list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number: num, path }) => {
+      const ticket = parseTicketForReadiness(path, num);
+      return ticket ? [ticket] : [];
+    }),
+  }));
+}
+
+/** Start-time workset, before dependency and live-job rollup hides non-dispatchable tickets. */
+export function declaredReadyTickets(cwd: string, feature?: string) {
+  const scratch = join(cwd, '.scratch');
+  if (!directoryExists(scratch)) return [];
+  return readTicketFeatures(scratch, feature).flatMap(({ slug, tickets }) => tickets.filter(t => t.state === 'ready' && declaredReady(t))
+    .map(t => ({ ticket: ticketRef(slug, t), role: t.role, objective: t.objective })));
+}
+
 export interface ReadinessOptions {
   home?: string;
   excludeTickets?: ReadonlySet<string>;
@@ -291,13 +322,7 @@ export interface ReadinessOptions {
 export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: string, options?: ReadinessOptions) {
   const scratch = join(cwd, '.scratch');
   if (!directoryExists(scratch)) return { tickets: [], queued: [], blocked: [] };
-  const features = fs.readdirSync(scratch, { withFileTypes: true }).filter(entry => entry.isDirectory())
-    .sort((a, b) => a.name.localeCompare(b.name)).map(({ name: slug }) => ({ slug, at: 0,
-      tickets: list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number: num, path }) => {
-        const ticket = parseTicketForReadiness(path, num);
-        return ticket ? [ticket] : [];
-      }),
-    }));
+  const features = readTicketFeatures(scratch);
   const rollup = new TicketRollup(features), matches = projectJobFilter(cwd);
   for (const id of jobs.listJobIds({ onError: error => { throw error; } })) {
     const receipt = jobs.readJob<Job>(id);
@@ -319,15 +344,15 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
   const { crossBlockers, missingCrossBlockers } = rollup.derive(
     Date.now(), undefined, undefined, undefined, blockedSet.size ? blockedSet : undefined,
   );
-  const candidates = features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) => tickets.flatMap(t =>
-    /^ready-for-agent$/i.test(t.status) ? [{ t, ticket: `${slug}/${nn(Number(t.number))}` }] : []));
+  const candidates = features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) =>
+    tickets.filter(declaredReady).map(t => ({ t, ticket: ticketRef(slug, t) })));
   if (feature !== undefined) for (const { t, ticket } of candidates) {
     const missing = missingCrossBlockers.get(t);
     if (missing) throw Error(`${ticket}: unknown blocked_by ticket: ${missing}`);
   }
   return {
     tickets: candidates.flatMap(({ t, ticket }) => t.state === 'ready'
-      ? [{ ticket, path: t.path, title: t.title, what: t.what, ...(t.objective && { objective: t.objective }) }] : []),
+      ? [{ ticket, path: t.path, title: t.title, what: t.what, role: t.role, ...(t.objective && { objective: t.objective }) }] : []),
     queued: candidates.flatMap(({ t, ticket }) => {
       const blockers = crossBlockers.get(t);
       return t.state === 'queued' && blockers ? [{ ticket, blockers }] : [];

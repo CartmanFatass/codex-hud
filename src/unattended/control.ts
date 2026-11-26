@@ -60,7 +60,7 @@ export async function setUnattended(home: string, enabled: boolean,
     const available = readObjectives(root)?.objectives;
     for (const id of objectives) if (!available?.some(o => o.id === id)) throw Error(`Unknown Objective: ${id}`);
     validLandConfig(home, root);
-    requireTicketQueueRoles(home, root, ['imp', 'reviewer', 'lead'], env);
+    requireTicketQueueRoles(home, root, { objectives }, env);
     requireProjectTrust(home, root, env);
     writeJsonPrivate(controlPath(home), { root, objectives, enabled: true });
     if (liveIdentity(home)) return;

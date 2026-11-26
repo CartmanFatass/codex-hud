@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import { readObjectives } from '../collectors/objectives.js';
 import { getHudHome } from '../hud-home.js';
 import { retryPendingFlakeCollections } from '../mcp/land-flakes.js';
-import { checkTicketPaths, ticketReadiness } from '../mcp/local-tickets.js';
+import { checkTicketPaths, ticketObjectiveOwner, ticketReadiness } from '../mcp/local-tickets.js';
 import { jobCache } from '../mcp/store/job-store.js';
 import { startTicketQueue } from '../mcp/ticket-queue.js';
 import { ensureJobWatcher } from '../mcp/watch-pid.js';
@@ -67,10 +67,8 @@ function groupBySelectedObjective(control: UnattendedControl, home: string) {
   const readiness = ticketReadiness(control.root, jobCache, undefined, { home, excludeTickets: openRunTickets(home, control.root) });
   const byObjective = new Map<string, { ticket: string; path: string }[]>();
   for (const { ticket, path, objective: declared } of readiness.tickets) {
-    const feature = ticket.split('/')[0];
-    if (!/^[a-z0-9-]+$/.test(feature)) continue;
-    const linked = objectives.filter(o => o.features.includes(feature));
-    const owner = selected.find(o => o.id === (declared ?? (linked.length === 1 ? linked[0].id : undefined)));
+    const ownerId = ticketObjectiveOwner(objectives, ticket, declared);
+    const owner = selected.find(o => o.id === ownerId);
     if (!owner) continue;
     const list = byObjective.get(owner.id) ?? [];
     list.push({ ticket, path });

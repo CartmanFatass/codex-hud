@@ -60,6 +60,7 @@ export interface TicketQueue extends RunScope {
   flow: string; root: string; cwd?: string; feature: string; pane: string; workspace?: string; task: boolean; max_parallel: number;
   created_at: string; updated_at: string; pid?: number; start?: string;
   start_head?: string;
+  superseded_by?: string; // A successor may expire while this paused receipt remains.
   template?: 'ticket-queue'; host?: 'detached'; cost?: 'cheap' | 'costly'; cost_reasons?: string[];
   unattended?: UnattendedRun;
   handback_to?: 'lead' | 'main';
@@ -120,6 +121,23 @@ export function ticketQueueView(q: TicketQueue) {
     jobs: q.tickets.map(({ ticket, job, land }) => ({ ticket, job, land })) };
 }
 export const MAX_REPAIR_ROUNDS = 2;
+
+/** Check admission and reset the workflow steps for another repair round. Callers own hand-back and lead closure. */
+export function prepareTicketQueueRepair(q: TicketQueue, stepKeys: readonly string[], workset: () => {
+  tickets: readonly { ticket: string }[]; queued?: readonly unknown[];
+}, reason?: string) {
+  if ((q.repair_rounds ?? 0) >= MAX_REPAIR_ROUNDS) {
+    return { kind: 'cap', reason: `max repair rounds (${MAX_REPAIR_ROUNDS}) reached${reason ? `: ${reason}` : ''}` } as const;
+  }
+  const { tickets, queued } = workset();
+  if (!queued?.length && !tickets.some(t => !q.tickets.some(own => own.ticket === t.ticket))) return { kind: 'no_work' } as const;
+  q.repair_rounds = (q.repair_rounds ?? 0) + 1;
+  q.repair_admitted_base = q.tickets.length;
+  delete q.review_job;
+  q.steps = Object.fromEntries(stepKeys.map(key => [key, { state: 'waiting' as const }]));
+  return { kind: 'ready' } as const;
+}
+
 const MAX_RUN_DECISIONS = 100;
 
 export function recordDecision(q: TicketQueue, entry: RunDecision): void {

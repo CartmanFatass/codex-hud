@@ -358,6 +358,25 @@ test('unattended on preflights land fields and trust for the lead and imp pool b
   assert.equal(unattended(f).status().on, false);
 });
 
+test('unattended on preflights the frontend role for selected Objectives only', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0, extraFeatures: {
+    detached: { '01-synthetic.md': goodTicket(1, { objective: 'selected' })
+      .replace('**Blocked by:** none', '**Blocked by:** none\n**Role:** frontend-imp') },
+  } });
+  const config = join(f.root, '.hud', 'project.json');
+  writeFixtureFile(config, JSON.stringify({ ...readJson(config), roles: ['imp', 'reviewer', 'lead'] }));
+  await assert.rejects(runFile(process.execPath, [resolve('bin/hud'), 'unattended', 'on', '--objective', 'selected'], {
+    cwd: f.root, env: f.env, timeout: 15_000,
+  }), error => error.code === 2 && /frontend-imp.*Run `hud setup` to enable frontend-imp/.test(error.stderr));
+  assert.equal(fs.existsSync(join(f.home, 'unattended.json')), false);
+  assert.equal(fs.existsSync(join(f.home, 'flows')), false);
+  assert.equal(fs.existsSync(join(f.home, 'jobs')), false);
+
+  const u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  assert.deepEqual(u.cmd('on', '--objective', 'other').objectives, ['other']);
+});
+
 test('unattended holds an item whose imp dispatch refuses trust after preflight', { timeout: 30_000 }, async t => {
   const f = await setupWorkflowProject(t, { count: 0 });
   const roles = join(f.root, '.hud', 'roles');

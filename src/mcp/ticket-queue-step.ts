@@ -21,19 +21,19 @@ import type { Job, JobStatus } from './job-contracts.js';
 import { activeLand, landAttempt, landOutcome, readLand, retryableLand, SPEC_CHANGE_REFUSAL } from './land-state.js';
 import { startLand, validLandConfig } from './land.js';
 import {
-  checkTicketPaths, recordUnattendedAcceptance, ticketApprovedRemovals, ticketObjectiveId, ticketReadiness,
+  checkTicketPaths, recordUnattendedAcceptance, ticketApprovedRemovals, ticketObjectiveOwner, ticketReadiness,
 } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { piReportSettlement } from './pi-read-settlement.js';
 import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/job-store.js';
 import {
-  readTicketQueue, ticketQueueNotice, writeTicketQueue,
+  prepareTicketQueueRepair, readTicketQueue, ticketQueueNotice, writeTicketQueue,
   type TicketHandback, type TicketHandbackKind, type TicketQueue, type TicketQueueItem,
 } from './ticket-queue-state.js';
 import {
   appendTodos, applyLeadQuestionAnswer, assumptionOwnerApproval, buildAcceptPacket, buildAssumptionPacket,
   buildQuestionPacket, buildRemovalAmbiguityPacket, buildReviewBrief, closeLeadJob, extractAssumedLines,
-  extractRemovalsDeclaration, hasReportBlockers, MAX_ANSWER_RETRIES, MAX_REPAIR_ROUNDS, parseLeadReport,
+  extractRemovalsDeclaration, hasReportBlockers, MAX_ANSWER_RETRIES, parseLeadReport,
   recordDecision, WORKFLOW_WORKER_RULE, WORKFLOW_WORKER_RULE_NO_ASK,
 } from './workflow-lead.js';
 
@@ -202,18 +202,11 @@ function objectiveWorkset(home: string, q: TicketQueue) {
   const excluded = openRunTickets(home, root, flow);
   for (const item of q.tickets) if (item.failed || item.held) excluded.add(item.ticket);
   const readiness = ticketReadiness(root, jobCache, undefined, { home, excludeTickets: excluded });
-  const belongs = (ticket: string, path?: string, declared?: string) => {
-    const feature = ticket.split('/')[0];
-    if (!/^[a-z0-9-]+$/.test(feature)) return false;
-    const explicit = declared ?? (path ? (() => { try { return ticketObjectiveId(path); } catch { return undefined; } })() : undefined);
-    const linked = objectives.filter(o => o.features.includes(feature));
-    const ownerId = explicit ?? (linked.length === 1 ? linked[0].id : undefined);
-    return ownerId === objective;
-  };
+  const belongs = (t: { ticket: string; objective?: string }) => ticketObjectiveOwner(objectives, t.ticket, t.objective) === objective;
   return {
-    tickets: readiness.tickets.filter(t => belongs(t.ticket, t.path, t.objective)),
-    queued: readiness.queued.filter(t => belongs(t.ticket)),
-    blocked: readiness.blocked.filter(t => belongs(t.ticket)),
+    tickets: readiness.tickets.filter(belongs),
+    queued: readiness.queued.filter(belongs),
+    blocked: readiness.blocked.filter(belongs),
   };
 }
 
@@ -1163,7 +1156,7 @@ function tickTicketQueue(
     next = freshCandidates.filter(t => !invalid.has(t.ticket));
   }
   if (next.length) {
-    const { ticket, path } = next[0];
+    const { ticket, path, role } = next[0];
     if (next.some((entry, i) => i > 0 && entry.ticket === ticket)) {
       if (q.unattended) {
         const dup = { ticket, path, role: 'imp' as const };
@@ -1174,8 +1167,7 @@ function tickTicketQueue(
       state.problem = { kind: 'queue', ticket, reason: `${ticket}: ambiguous ticket number` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
-    const frontend = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im.test(ticketHeader(path));
-    item = { ticket, path, role: frontend ? 'frontend-imp' : 'imp' };
+    item = { ticket, path, role };
     q.tickets.push(item); // Intent committed by the driver before dispatch so the request key is recoverable.
     changed = true;
   }
@@ -1497,32 +1489,18 @@ function tickHandbackStep(
             return;
           }
           if (parsed.decision === 'repair') {
-            if ((cur.repair_rounds ?? 0) >= MAX_REPAIR_ROUNDS) {
-              const msg = `max repair rounds (${MAX_REPAIR_ROUNDS}) reached${parsed.reason ? `: ${parsed.reason}` : ''}`;
+            const repair = prepareTicketQueueRepair(cur, stepKeys, () => {
+              if (!cur.unattended) return ticketReadiness(cur.root, jobCache, cur.feature, { home: hudHome });
+              const { tickets } = objectiveWorkset(hudHome, cur);
+              const fresh = tickets.filter(t => !cur.tickets.some(own => own.ticket === t.ticket));
+              const invalid = new Set(checkTicketPaths(cur.root, fresh).map(g => g.ticket));
+              return { tickets: fresh.filter(t => !invalid.has(t.ticket)) };
+            }, parsed.reason);
+            if (repair.kind !== 'ready') {
+              const msg = repair.kind === 'cap' ? repair.reason
+                : `lead requested repair with no ready tickets${parsed.reason ? `: ${parsed.reason}` : ''}`;
               if (cur.unattended) holdRun(cur, msg, 'escalate');
               state.problem = { kind: 'escalate', step: key, job: leadJob.job, reason: msg };
-            } else {
-              let hasNewWork = false;
-              if (cur.unattended) {
-                const ws = objectiveWorkset(hudHome, cur);
-                const fresh = ws.tickets.filter(t => !cur.tickets.some(own => own.ticket === t.ticket));
-                const invalid = new Set(checkTicketPaths(cur.root, fresh).map(g => g.ticket));
-                hasNewWork = fresh.some(t => !invalid.has(t.ticket));
-              } else {
-                const { tickets: ready, queued } = ticketReadiness(cur.root, jobCache, cur.feature, { home: hudHome });
-                hasNewWork = ready.some(t => !cur.tickets.some(own => own.ticket === t.ticket)) || queued.length > 0;
-              }
-              if (!hasNewWork) {
-                const msg = `lead requested repair with no ready tickets${parsed.reason ? `: ${parsed.reason}` : ''}`;
-                if (cur.unattended) holdRun(cur, msg, 'escalate');
-                state.problem = { kind: 'escalate', step: key, job: leadJob.job, reason: msg };
-              } else {
-                cur.repair_rounds = (cur.repair_rounds ?? 0) + 1;
-                cur.repair_admitted_base = cur.tickets.length;
-                delete cur.review_job;
-                cur.steps ??= {};
-                for (const s of stepKeys) cur.steps[s] = { state: 'waiting' };
-              }
             }
           } else if (parsed.decision === 'escalate' || !parsed.decision) {
             const msg = parsed.decision === 'escalate'
