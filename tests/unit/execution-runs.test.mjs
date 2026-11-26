@@ -11,6 +11,7 @@ import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../di
 import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
+import { roleIcon } from '../../dist/render/model-glyphs.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 
@@ -199,7 +200,7 @@ test('Execution collects paused, working, and recently ended runs (including pan
   assert.equal(f.fork.requests.length, 0);
 });
 
-test('Runs section renders EN/ZH, no-colour, coloured, sidebar role icons, ASCII text mode, and exact widths down to narrow columns', async (t) => {
+test('Runs section renders EN/ZH, no-colour, coloured, role icons (unicode/nerd/text), and exact widths down to narrow columns', async (t) => {
   const f = await setupWithRuns(t);
   const view = f.execution.view(f.project);
 
@@ -226,7 +227,8 @@ test('Runs section renders EN/ZH, no-colour, coloured, sidebar role icons, ASCII
   const wideEn = text(render(view, { width: 120, lang: 'en', theme: 'none', icons: 'unicode' }));
   for (const needle of [
     'Runs', 'exec-runs', 'q1a2b3c4', 'obj-unattended', 'q2b3c4d5', 'recent-done', 'q3c4d5e6',
-    '◆', '◎', '★', 'tickets', 'review', 'accept', 'finish',
+    roleIcon('imp', 'unicode'), roleIcon('frontend-imp', 'unicode'), roleIcon('reviewer', 'unicode'), roleIcon('lead', 'unicode'),
+    'tickets', 'review', 'accept', 'finish',
     'landed', 'land gate', 'working', 'settled', 'held (spec change)', 'held (feature deletion)', 'held (assumption)', 'failed', 'queued · blocked by 03', 'blocked by 05',
     'todo 2 · decisions 1 · held 1 · repairs 1',
     'todo 1 · decisions 1 · held 0',
@@ -246,10 +248,22 @@ test('Runs section renders EN/ZH, no-colour, coloured, sidebar role icons, ASCII
     assert.ok(wideZh.includes(needle), `ZH 120 missing: ${needle}\n${wideZh}`);
   }
 
-  // Text icon mode emits ASCII only.
-  const asciiFrame = render(view, { width: 80, lang: 'en', theme: 'none', icons: 'text' });
-  for (const line of asciiFrame.lines) assert.equal(visualLength(line), 80);
-  assert.doesNotMatch(text(asciiFrame), /[◆◈◎★┌┐└┘├┤▸◉○→✓✗]/);
+  // Text icon mode emits ASCII only and honours ROLE_GLYPHS ASCII icons.
+  const asciiFrame = render(view, { width: 120, lang: 'en', theme: 'none', icons: 'text' });
+  const asciiText = text(asciiFrame);
+  for (const line of asciiFrame.lines) assert.equal(visualLength(line), 120);
+  assert.doesNotMatch(asciiText, /[⚒✎⚖•✦◈⚡┌┐└┘├┤▸◉○→✓✗]/);
+  for (const needle of [`${roleIcon('imp', 'text')} tickets`, `${roleIcon('reviewer', 'text')} review`, `${roleIcon('lead', 'text')} accept`]) {
+    assert.ok(asciiText.includes(needle), `ASCII missing: ${needle}\n${asciiText}`);
+  }
+
+  // Nerd icon mode honours ROLE_GLYPHS nerd icons.
+  const nerdFrame = render(view, { width: 120, lang: 'en', theme: 'none', icons: 'nerd' });
+  const nerdText = text(nerdFrame);
+  for (const line of nerdFrame.lines) assert.equal(visualLength(line), 120);
+  for (const needle of [roleIcon('imp', 'nerd'), roleIcon('frontend-imp', 'nerd'), roleIcon('reviewer', 'nerd'), roleIcon('lead', 'nerd')]) {
+    assert.ok(nerdText.includes(needle), `nerd missing: ${needle}\n${nerdText}`);
+  }
 });
 
 test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Detail with decisions, todo, and review summary', async (t) => {
@@ -281,6 +295,11 @@ test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Det
       assert.ok(joined.includes('Keep compact summary ordering'), `${lang} ${width} todo text`);
       assert.ok(joined.includes('Two-axis synthetic review'), `${lang} ${width} review summary`);
       assert.ok(joined.includes('Unattended landing would change docs/spec.md'), `${lang} ${width} held reason`);
+      if (width === 100) {
+        for (const role of ['imp', 'frontend-imp', 'reviewer', 'lead']) {
+          assert.ok(shown.includes(roleIcon(role, 'unicode')), `detail ${lang} missing ${role} icon`);
+        }
+      }
       assert.ok(shown.includes(lang === 'zh' ? 'Esc 返回' : 'Esc back'));
     }
   }

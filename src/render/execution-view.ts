@@ -8,7 +8,7 @@ import { workState } from '../collectors/work-job.js';
 import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { fit, monitorText, pair } from './monitor-text.js';
-import { sidebarRoleIcon } from './model-glyphs.js';
+import { roleIcon } from './model-glyphs.js';
 import { formatRunSteps, runElapsed, runRoleInk, runStateView, ticketStageView } from './execution-run-detail.js';
 import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
 import { jobTitle, roleInk } from './work-job-row.js';
@@ -121,7 +121,7 @@ function runTicketRow(run: ExecutionRun, ticket: ExecutionRunTicket, selected: s
   const marker = item && selected === item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
   const stage = ticketStageView(ticket);
   const leftHead = `  ${marker}${stage.ink(stage.glyph)} ${monitorText(ticket.ticket)}  `;
-  const roleIconStr = ticket.role ? runRoleInk(ticket.role)(sidebarRoleIcon(ticket.role)) : '';
+  const roleIconStr = ticket.role ? runRoleInk(ticket.role)(roleIcon(ticket.role)) : '';
   const roleWord = ticket.role ? runRoleInk(ticket.role)(monitorText(ticket.role)) : '';
   const shortJob = ticket.jobId ? muted(shortId(ticket.jobId)) : '';
   const rightChoices = [

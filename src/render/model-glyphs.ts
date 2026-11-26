@@ -35,24 +35,6 @@ export function roleIcon(role: string, set: IconMode = iconSet()): string {
   return set === 'text' ? ascii : set === 'nerd' ? nerd : unicode;
 }
 
-/** The HUD role icons used in the herdr sidebar (with ASCII fallbacks for text icon mode). */
-export const SIDEBAR_ROLE_ICONS: Readonly<Record<string, readonly [unicode: string, ascii: string]>> = {
-  imp: ['◆', 'I'],
-  'frontend-imp': ['◈', 'F'],
-  reviewer: ['◎', 'R'],
-  lead: ['★', 'L'],
-  sonic: ['»', '>'],
-  oracle: ['◇', 'O'],
-  general: ['○', 'G'],
-  council: ['✦', 'C'],
-  other: ['·', '.'],
-};
-
-export function sidebarRoleIcon(role: string, set: IconMode = iconSet()): string {
-  const [unicode, ascii] = SIDEBAR_ROLE_ICONS[Object.hasOwn(SIDEBAR_ROLE_ICONS, role) ? role : 'other']!;
-  return set === 'text' ? ascii : unicode;
-}
-
 export type ModelFamily = ModelFamilyId;
 
 export function classifyModelFamily(model?: string | null): ModelFamily | null {

@@ -3,7 +3,7 @@ import type { ExecutionRun, ExecutionRunStep, ExecutionRunTicket, RunStepKey, Ru
 import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { fit, monitorText, pair } from './monitor-text.js';
-import { sidebarRoleIcon } from './model-glyphs.js';
+import { roleIcon } from './model-glyphs.js';
 import { flowStepDetail, stemLines } from './work-job-detail.js';
 import { roleInk } from './work-job-row.js';
 import { ageText, boardRow, kvRows, mark, section, stateMark } from './workboard-rows.js';
@@ -41,13 +41,13 @@ export function stepStateView(state: RunStepState): { glyph: string; ink: Ink } 
   return { glyph: stateMark.queued(), ink: muted };
 }
 
-/** `tickets → review → accept` with state marks, optional herdr sidebar role icons, and accept verdict. */
+/** `tickets → review → accept` with state marks, optional role icons, and accept verdict. */
 export function formatRunSteps(steps: readonly ExecutionRunStep[], withIcons: boolean): string {
   const sep = muted(mark(' → ', ' -> '));
   return steps.map((step) => {
     const { glyph, ink } = stepStateView(step.state);
     const role = STEP_ROLE[step.key];
-    const icon = withIcons ? `${runRoleInk(role)(sidebarRoleIcon(role))} ` : '';
+    const icon = withIcons ? `${runRoleInk(role)(roleIcon(role))} ` : '';
     const quiet = step.state === 'waiting' || step.state === 'skipped' || step.state === 'cancelled';
     const label = (quiet ? muted : theme.board.text)(t(step.key));
     const verdict = step.verdict ? ink(`: ${monitorText(t(step.verdict))}`) : '';
@@ -59,7 +59,7 @@ function formatRunStepsPlain(steps: readonly ExecutionRunStep[]): string {
   const sep = mark(' → ', ' -> ');
   return steps.map((step) => {
     const { glyph } = stepStateView(step.state);
-    const icon = sidebarRoleIcon(STEP_ROLE[step.key]);
+    const icon = roleIcon(STEP_ROLE[step.key]);
     const verdict = step.verdict ? `: ${monitorText(t(step.verdict))}` : '';
     return `${glyph} ${icon} ${t(step.key)}${verdict}`;
   }).join(sep);
@@ -135,7 +135,7 @@ export function runDetailRows(run: ExecutionRun, width: number, now: number): Mo
   } else {
     for (const tk of run.tickets) {
       const stage = ticketStageView(tk);
-      const rolePart = tk.role ? `${runRoleInk(tk.role)(sidebarRoleIcon(tk.role))} ${runRoleInk(tk.role)(monitorText(tk.role))}` : '';
+      const rolePart = tk.role ? `${runRoleInk(tk.role)(roleIcon(tk.role))} ${runRoleInk(tk.role)(monitorText(tk.role))}` : '';
       const jobPart = tk.jobId ? muted(tk.jobId.slice(0, 8)) : '';
       const rightChoices = [[rolePart, jobPart].filter(Boolean).join(' '), rolePart, ''];
       const leftHead = `  ${stage.ink(stage.glyph)} ${monitorText(tk.ticket)}  `;
@@ -154,7 +154,7 @@ export function runDetailRows(run: ExecutionRun, width: number, now: number): Mo
     rows.push(plain(`  ${muted(t('none'))}`));
   } else {
     for (const review of run.reviews) {
-      const head = `  ${runRoleInk('reviewer')(sidebarRoleIcon('reviewer'))} ${t('round {n}', { n: review.round })}`;
+      const head = `  ${runRoleInk('reviewer')(roleIcon('reviewer'))} ${t('round {n}', { n: review.round })}`;
       const findings = review.findings
         ? [
           review.findings.blocker ? `${review.findings.blocker} ${t('blocker')}` : '',
@@ -177,7 +177,7 @@ export function runDetailRows(run: ExecutionRun, width: number, now: number): Mo
     rows.push(plain(`  ${muted(t('none'))}`));
   } else {
     for (const decision of run.decisions) {
-      const lead = `  ${sidebarRoleIcon('lead')} ${t(decision.step)} · ${monitorText(t(decision.decision))}${decision.ticket ? ` · ${monitorText(decision.ticket)}` : ''}`;
+      const lead = `  ${roleIcon('lead')} ${t(decision.step)} · ${monitorText(t(decision.decision))}${decision.ticket ? ` · ${monitorText(decision.ticket)}` : ''}`;
       const right = decision.job ? muted(decision.job.slice(0, 8)) : '';
       rows.push(plain(pair(lead, right, width)));
       if (decision.question) rows.push(...stemLines(`${t('question')}: ${decision.question}`, width, muted).map((line) => boardRow(line)));
