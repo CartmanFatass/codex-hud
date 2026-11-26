@@ -55,7 +55,7 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 const stat = fs.statSync;
 fs.statSync = (path, ...args) => {
-  if (String(path).endsWith('/${job}/STATUS.json') && new Error().stack.includes('at repairLand ')) {
+  if (String(path).endsWith('/${job}/STATUS.json') && new Error().stack.includes('at repairSettled ')) {
     fs.appendFileSync(process.env.HOME + '/repair-polls', 'poll\\n');
   }
   return stat(path, ...args);

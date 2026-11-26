@@ -1,6 +1,7 @@
 /** The batch executor stages one manifest admission per tick. Capacity is checked again
  * inside dispatchJob's concurrency lock; a manifest waiter is never an ordinary queued job. */
 import { join } from 'node:path';
+import { failedAttempt, settledJobReport } from '../collectors/thin-jobs.js';
 import { readReportMeta } from '../roles/report-meta.js';
 import { isProcAlive } from '../utils/proc.js';
 import type { Breaker, Step } from '../workflows/graph.js';
@@ -9,23 +10,28 @@ import { batchIndex, batchLock, readBatch, saveBatch, settleItem, type Batch, ty
 import { batchHasRoom, dispatchJob } from './dispatch/orchestrator.js';
 import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/job-store.js';
 import { jobFiles } from './paths.js';
+import type { Job } from './job-contracts.js';
 
+export function batchJobOutcome(job: Job, pilot: boolean): { at: number; failure?: string; stall?: string; report?: boolean } | undefined {
+  const { row, status } = readRow(job, false, null);
+  let failure: string | undefined;
+  if (failedAttempt(row)) failure = status?.exit_reason || row.reason || row.display_state;
+  else if (row.display_state === 'done') {
+    if (!settledJobReport(row, status)) failure = 'settled without report';
+  } else if (!status && job.launcher && !isProcAlive(job.launcher.pid, job.launcher.start)) failure = 'dispatch interrupted before worker status';
+  else if (pilot && !row.open_questions && (row.blocked || (row.state === 'waiting_orchestrator' && !jobCache.readQa(directory(job.job)).allQuestionFiles.length))) return { at: 0, stall: row.reason || 'worker needs input' };
+  else return;
+  return { at: Date.parse(status?.ended_at ?? status?.settled_at ?? '') || 0, failure, report: row.report_present };
+}
 function outcome(i: ItemResult) {
   const job = findJob(i.job!);
   if (!job) return { at: 0, failure: 'job receipt missing' };
-  const { row, status } = readRow(job, false, null);
-  let failure: string | undefined;
-  if (row.display_state === 'failed' || row.display_state === 'stopped') failure = status?.exit_reason || row.reason || row.display_state;
-  else if (row.display_state === 'done') {
-    if (!row.report_present || status?.output_written === false) failure = 'settled without report';
-  } else if (!status && job.launcher && !isProcAlive(job.launcher.pid, job.launcher.start)) failure = 'dispatch interrupted before worker status';
-  else if (i.pilot && !row.open_questions && (row.blocked || (row.state === 'waiting_orchestrator' && !jobCache.readQa(directory(job.job)).allQuestionFiles.length))) return { at: 0, stall: row.reason || 'worker needs input' };
-  else return;
-  if (row.report_present) {
+  const result = batchJobOutcome(job, i.pilot);
+  if (result?.report) {
     i.report_path = join(directory(job.job), jobFiles.report);
     i.files = readReportMeta(directory(job.job))?.files ?? [];
   }
-  return { at: Date.parse(status?.ended_at ?? status?.settled_at ?? '') || 0, failure };
+  return result;
 }
 const requestKey = (id: string, i: ItemResult) => `batch:${id}:${i.item}:${i.previous?.length ?? 0}`;
 export function recoverBatch(b: Batch, items: ItemResult[], breaker: Breaker) {
@@ -71,7 +77,7 @@ export function tickBatch(b: Batch, items: ItemResult[], step: Extract<Step, { k
       if ('job' in result) job = result.job;
       else if ('code' in result) {
         deferred = result.code === 'batch_wait' || result.code === 'queue_stopped';
-        failure = ('reason' in result && result.reason) || ('error' in result && result.error) || result.code;
+        failure = ('reason' in result && typeof result.reason === 'string' && result.reason) || ('error' in result && result.error) || result.code;
       }
     } catch (error) { failure = String(error); }
     await batchLock(hudHome, id, () => {

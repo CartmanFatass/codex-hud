@@ -139,14 +139,15 @@ export async function callWorkflow(home: string, pane: string | null, args: Args
       const action = args.action as Control;
       if (!['pause', 'resume', 'stop', 'retry_failed'].includes(action)) throw Error('invalid_arguments: workflow action');
       if ((action === 'resume' || action === 'retry_failed') && run.handback?.request_id) return { value: { ok: false, code: 'handback_answer_required' } };
-      const failed = Object.entries(run.steps).filter(([, c]) => c.state === 'failed');
+      const failed = Object.entries(run.steps).filter(([, c]) => c.state === 'failed' ||
+        (c.state === 'running' && c.items?.some(i => i.state === 'failed')));
       const retryable = failed.length > 0 && ['paused', 'completed'].includes(run.state);
       if (action === 'retry_failed' && retryable && failed.some(([key]) => graph.steps[key].kind === 'land'))
         return { value: { ok: false, code: 'sealed_land_not_replayable' } };
       if (controlRun(run, action, retryable)) {
         if (action === 'retry_failed') for (const [key, c] of failed) {
           run.steps[key] = { state: 'waiting', attempt: (c.attempt ?? 0) + 1, ...(c.repairs && { repairs: c.repairs }),
-            ...(c.items && { items: c.items.map(i => i.state === 'done' ? i : { state: 'waiting', attempt: i.attempt + 1 }) }) };
+            ...(c.items && { items: c.items.map(i => i.state === 'failed' ? { state: 'waiting', attempt: i.attempt + 1 } : i) }) };
         }
         if (run.state === 'stopped') {
           const stoppedAt = new Date().toISOString();

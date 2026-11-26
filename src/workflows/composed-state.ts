@@ -4,6 +4,8 @@ import { runGrantStore, type OwnerGrant } from '../roles/run-grant.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
 import type { Cursor, Run } from './engine.js';
 import type { Graph } from './graph.js';
+import type { failuresByReason } from './policy.js';
+import type { repairBaseline } from '../mcp/land-repair.js';
 import type { RunScope } from './scope.js';
 import { runDir, runLock } from './store.js';
 import type { Job } from '../mcp/job-contracts.js';
@@ -11,13 +13,14 @@ import type { Job } from '../mcp/job-contracts.js';
 export const isComposedId = (id: unknown): id is `w${string}` => typeof id === 'string' && /^w[a-f0-9]{16}$/.test(id);
 export const workflowGrants = runGrantStore('workflow-grant');
 export type CheckResult = { exit_code: number | null; tail: string; error?: string };
-export type Item = { job?: string; state: 'waiting' | 'running' | 'done' | 'failed'; attempt: number; reason?: string };
+export type Item = { job?: string; state: 'waiting' | 'running' | 'done' | 'failed'; attempt: number; reason?: string; stall?: string };
 export type ComposedCursor = Cursor & { attempt?: number; job?: string; land?: string; items?: Item[];
-  check?: CheckResult; repairs?: number; repair_pending?: boolean; lead_closed?: true; decision_reason?: string };
+  failure_groups?: ReturnType<typeof failuresByReason>;
+  check?: CheckResult; repairs?: number; repair_pending?: boolean; repair_baseline?: ReturnType<typeof repairBaseline>; lead_closed?: true; decision_reason?: string };
 export type Handback = { request_id: string; step: string; ask: string; choices: string[]; refs: string[] };
 export interface ComposedRun extends Run, RunScope {
   template: 'composed'; cwd: string; hash: string; created_at: string; dispatcher?: Job['dispatcher']; workspace?: string; pid?: number; start?: string;
-  cost: Graph['cost']; grant?: OwnerGrant; input_admitted?: true;
+  cost: Graph['cost']; grant?: OwnerGrant; input_admitted?: true; sonic_input_bytes?: number;
   steps: Record<string, ComposedCursor>; answers: Record<string, string>;
   handback?: Run['handback'] & Partial<Handback>;
 }

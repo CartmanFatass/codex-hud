@@ -1,21 +1,25 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { failedAttempt } from '../collectors/thin-jobs.js';
+import { failedAttempt, settledJobReport } from '../collectors/thin-jobs.js';
 import { CHECK_TIMEOUT_MS } from '../roles/job-checks.js';
 import { readFileBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { isProcAlive } from '../utils/proc.js';
 import { driveWorkflow } from '../workflows/driver.js';
 import { hashComposedGraph, readComposed, readComposedGraph, workflowGrants, type CheckResult, type ComposedCursor, type ComposedRun } from '../workflows/composed-state.js';
-import type { Tick } from '../workflows/engine.js';
-import type { Step } from '../workflows/graph.js';
+import { pauseRun, type Tick } from '../workflows/engine.js';
+import { SONIC_BYTES_LIMIT, type Graph, type Step } from '../workflows/graph.js';
+import { failuresByReason, settleBatchItem } from '../workflows/policy.js';
 import { directRecipient } from '../workflows/scope.js';
 import { runDir, runLock, saveHeader } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
+import { inputBytes } from './batch.js';
+import { batchJobOutcome } from './batch-step.js';
 import type { Args } from './dispatch/context.js';
 import { batchHasRoom, dispatchJob, dispatchLandRepair, releaseLandTurn } from './dispatch/orchestrator.js';
 import type { Job } from './job-contracts.js';
 import { startLand } from './land.js';
+import { repairBaseline, repairSettled } from './land-repair.js';
 import { activeLand, landAttempt, readLand } from './land-state.js';
 import { jobFiles } from './paths.js';
 import { directory, findJob, hudHome, jobs, readRow } from './store/job-store.js';
@@ -41,13 +45,42 @@ function effect(run: ComposedRun, fn: () => Promise<number>): Tick {
   return { state: 'running', changed: true, effect: fn };
 }
 
+function admitSonicInput(run: ComposedRun, key: string, steps: Graph['steps'], index?: number): number | Tick {
+  if (run.cost !== 'cheap') return 0;
+  let admitted = 0, pending = 0;
+  const charge = (id: string, task: string, i?: number) => {
+    const bytes = inputBytes(run.cwd, task, undefined, []).input_bytes;
+    if (id === key && i === index) admitted = bytes;
+    pending += bytes;
+  };
+  // Do not give back bytes when a previously dispatched file shrinks, or
+  // forget earlier attempts when retry_failed resets a cursor.
+  for (const [id, step] of Object.entries(steps)) {
+    if ((step.kind !== 'job' && step.kind !== 'batch') || step.role !== 'sonic') continue;
+    const c = run.steps[id];
+    if (!['waiting', 'ready', 'running'].includes(c.state)) continue;
+    if (step.kind === 'job') {
+      if (!c.admitted) charge(id, step.task!);
+    } else step.items!.forEach((item, i) => {
+      if (!c.items || c.items[i].state === 'waiting') charge(id, item.task!, i);
+    });
+  }
+  const used = run.sonic_input_bytes ?? 0, total = used + pending;
+  if (total > SONIC_BYTES_LIMIT) {
+    pauseRun(run, key, `${total} Sonic input bytes across the run (limit ${SONIC_BYTES_LIMIT}); re-plan or reduce inputs`);
+    run.notices[`pause-${run.epoch}`] = `${run.flow} paused at ${key}: ${run.reason}`;
+    return { ...wait(), changed: true };
+  }
+  run.sonic_input_bytes = used + admitted;
+  return admitted;
+}
+
 /** A job output means a settled report, not a successful launch. */
 function observeJob(job: Job): Tick {
   const { row, status } = readRow(job, false, null);
-  if (failedAttempt(row) || row.state === 'stopped' || job.dispatch_exit_code && !status)
-    return fail(row.reason || job.stderr_tail || row.state || 'dispatch failed');
-  if (['idle_grace', 'closed', 'done'].includes(row.state ?? ''))
-    return row.report_present && status?.output_written !== false ? { state: 'done' } : fail('settled without a report');
+  if (failedAttempt(row)) return fail(row.reason || job.stderr_tail || row.display_state);
+  if (row.display_state === 'done')
+    return settledJobReport(row, status) ? { state: 'done' } : fail('settled without a report');
   if (!status && job.launcher && !isProcAlive(job.launcher.pid, job.launcher.start)) return fail('dispatch interrupted without worker status');
   if (job.role === 'council' && !fs.existsSync(`${runDir(hudHome, job.job)}.json`)) return fail('council admission interrupted');
   return wait(!status ? 1_000 : undefined);
@@ -85,7 +118,7 @@ async function create(run: ComposedRun, request: string, role: string, task: str
   return { job, code, error: error ? reason(error) : undefined };
 }
 
-function tickJob(run: ComposedRun, key: string, cursor: ComposedCursor, role: string, task: string, from: string[], options: DispatchOptions = {}): Tick {
+function tickJob(run: ComposedRun, key: string, cursor: ComposedCursor, role: string, task: string, from: string[], steps: Graph['steps'], options: DispatchOptions = {}): Tick {
   const request = `workflow:${run.flow}:${key}:${cursor.attempt ?? 0}`;
   const job = cursor.job ? findJob(cursor.job) : cursor.admitted ? receipt(run, request) : undefined;
   if (job) {
@@ -94,49 +127,80 @@ function tickJob(run: ComposedRun, key: string, cursor: ComposedCursor, role: st
   }
   if (cursor.admitted) return fail(cursor.reason || 'dispatch interrupted without a job receipt');
   if (run.state !== 'working') return wait();
+  const bytes = role === 'sonic' ? admitSonicInput(run, key, steps) : 0;
+  if (typeof bytes !== 'number') return bytes;
   cursor.admitted = true;
   return effect(run, async () => {
     let result: Awaited<ReturnType<typeof create>>;
     try { result = await create(run, request, role, task, from, options); }
     catch (error) { result = { job: undefined, code: undefined, error: reason(error) }; }
-    await update(run, key, c => {
-      if (result.code === 'queue_stopped') delete c.admitted;
-      else { c.job = result.job; c.reason = result.error; }
+    await update(run, key, (c, latest) => {
+      if (result.code === 'queue_stopped') {
+        delete c.admitted;
+        if (bytes) latest.sonic_input_bytes! -= bytes;
+      } else { c.job = result.job; c.reason = result.error; }
     });
     return 0;
   });
 }
 
-function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'batch' }>, cursor: ComposedCursor): Tick {
+function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'batch' }>, cursor: ComposedCursor, graph: Pick<Graph, 'steps' | 'policy'>): Tick {
   let changed = !cursor.items;
   const items = cursor.items ??= step.items!.map(() => ({ state: 'waiting', attempt: 0 }));
   const request = (i: number) => `workflow:${run.flow}:${key}:${i}:${items[i].attempt}`;
-  for (const [i, item] of items.entries()) {
-    if (item.state !== 'running') continue;
+  const settled = items.flatMap((item, i) => {
+    if (item.state !== 'running') return [];
     const job = item.job ? findJob(item.job) : receipt(run, request(i));
-    const tick = job ? observeJob(job) : fail(item.reason || 'dispatch interrupted without a job receipt');
     if (job && item.job !== job.job) { item.job = job.job; changed = true; }
-    if (tick.state === 'done' || tick.state === 'failed') { item.state = tick.state; item.reason = tick.reason; changed = true; }
+    const result = job ? batchJobOutcome(job, i === 0) : { at: 0, failure: item.reason || 'dispatch interrupted without a job receipt' };
+    return result ? [{ item, i, ...result }] : [];
+  }).sort((a, b) => a.at - b.at || a.i - b.i);
+  const evidence = () => items.map((item, i) => ({ ...item, item: i + 1 }));
+  const pause = (why: string) => {
+    pauseRun(run, key, why);
+    run.notices[`pause-${run.epoch}`] = `${run.flow} paused at ${key}: ${why}`;
+  };
+  for (const { item, i, failure, stall } of settled) {
+    if (stall) {
+      if (graph.policy.breaker === 'none' || run.state !== 'working' || item.stall === stall) continue;
+      item.stall = stall;
+      pause(`pilot ${i + 1} (${item.job}) stalled: ${reason(stall)}`);
+    } else {
+      delete item.stall;
+      const { action, groups } = settleBatchItem(run, item, evidence, graph.policy.breaker, i === 0, failure);
+      if (groups) cursor.failure_groups = groups;
+      if (action === 'pause') pause(`${i === 0 ? 'pilot failed' : 'failure circuit breaker'} — ${item.reason}`);
+      else if (action === 'failure') run.notices[`failure-${run.epoch}-${run.settled}`] = `${run.flow} ${key} item ${i + 1}: ${item.reason}`;
+    }
+    changed = true;
   }
-  if (changed) writeJsonPrivate(indexPath(run, key), items.map((item, i) => ({ item: i + 1, ...item, ...(item.state === 'done' && item.job && { report_path: reportPath(item.job) }) })));
-  // The first item is always a pilot; a failure pauses before admitting the tail.
-  if (items[0].state === 'failed') return fail(`pilot: ${items[0].reason}`);
+  if (changed) writeJsonPrivate(indexPath(run, key), evidence().map(item => ({ ...item, ...(item.state === 'done' && item.job && { report_path: reportPath(item.job) }) })));
   const running = items.filter(i => i.state === 'running').length;
   const next = items.findIndex(i => i.state === 'waiting');
-  if (!running && next < 0) return items.some(i => i.state === 'failed') ? fail('batch items failed; see step index') : { state: 'done' };
-  if (run.state !== 'working' || (items[0].state !== 'done' && next !== 0) || next < 0 || running >= step.max_parallel!)
-    return { ...wait(running ? 1_000 : undefined), changed };
-  if (!batchHasRoom(step.role)) return { ...wait(1_000), changed };
+  if (run.state !== 'working') return { ...wait(), changed };
+  if (!running && next < 0) {
+    if (!items.some(item => item.state === 'failed')) return { state: 'done' };
+    cursor.failure_groups ??= failuresByReason(evidence());
+    const why = 'batch items failed; see step index';
+    if (!step.optional) pause(why);
+    return { ...fail(why), itemsSettled: true };
+  }
+  // While a pilot is pending, no other item may be admitted.
+  if (items[0].state === 'running' || next < 0 || running >= step.max_parallel! || !batchHasRoom(step.role)) return { ...wait(1_000), changed };
+  const bytes = step.role === 'sonic' ? admitSonicInput(run, key, graph.steps, next) : 0;
+  if (typeof bytes !== 'number') return bytes;
   items[next].state = 'running';
   return effect(run, async () => {
     const task = `${step.items![next].task}\n\n${step.ask === true ? WORKFLOW_WORKER_RULE : WORKFLOW_WORKER_RULE_NO_ASK}`;
     let result: Awaited<ReturnType<typeof create>>;
     try { result = await create(run, request(next), step.role, task, step.from, { member: true, isolation: ['imp', 'frontend-imp'].includes(step.role) ? 'worktree' : 'none' }); }
     catch (error) { result = { job: undefined, code: undefined, error: reason(error) }; }
-    await update(run, key, c => {
+    await update(run, key, (c, latest) => {
       const item = c.items![next];
-      if (result.code === 'batch_wait' || result.code === 'queue_stopped') item.state = 'waiting';
-      else { item.job = result.job; item.reason = result.error; }
+      if (result.code === 'batch_wait' || result.code === 'queue_stopped') {
+        item.state = 'waiting';
+        if (bytes) latest.sonic_input_bytes! -= bytes;
+      } else { item.job = result.job; item.reason = result.error; }
     });
     return result.code === 'batch_wait' ? 1_000 : 0;
   });
@@ -162,11 +226,22 @@ function tickCheck(run: ComposedRun, key: string, step: Extract<Step, { kind: 'c
     const same = source.send_outcomes?.find(x => x.key === request);
     const job = cursor.job ? findJob(cursor.job) : same?.exit_code === 0 ? source : receipt(run, request);
     if (!job) return fail(cursor.reason || 'check repair outcome unknown');
-    const settled = observeJob(job);
-    if (settled.state !== 'done') return { ...settled, recheckMs: settled.recheckMs ?? 1_000 };
+    try {
+      if (job.job === source.job) {
+        if (!cursor.repair_baseline || same?.exit_code !== 0) throw Error('check repair outcome unknown');
+        if (!repairSettled(directory(job.job), job, request, true, cursor.repair_baseline)) return wait(1_000);
+      } else {
+        const settled = observeJob(job);
+        if (settled.state === 'failed') throw Error(settled.reason);
+        if (settled.state !== 'done') return { ...settled, recheckMs: settled.recheckMs ?? 1_000 };
+      }
+    } catch (error) {
+      releaseLandTurn(job.job, request);
+      return fail(reason(error));
+    }
     if (run.state !== 'working') return wait();
     releaseLandTurn(job.job, request);
-    cursor.repair_pending = false; delete cursor.check; delete cursor.admitted; delete cursor.reason;
+    cursor.repair_pending = false; delete cursor.repair_baseline; delete cursor.check; delete cursor.admitted; delete cursor.reason;
   }
   if (cursor.check?.exit_code === 0) {
     writeJsonPrivate(checkPath(run, key), cursor.check);
@@ -177,6 +252,7 @@ function tickCheck(run: ComposedRun, key: string, step: Extract<Step, { kind: 'c
     const why = cursor.check.error ?? `check exited ${cursor.check.exit_code}`;
     if (cursor.check.exit_code === null || (cursor.repairs ?? 0) >= step.repair) return fail(why);
     if (run.state !== 'working') return wait();
+    cursor.repair_baseline = repairBaseline(directory(source.job));
     cursor.repairs = (cursor.repairs ?? 0) + 1; cursor.repair_pending = true; delete cursor.job;
     const request = `workflow:${run.flow}:${key}:repair:${cursor.repairs}`;
     const task = `Repair failed workflow check ${key} (${why}). Work in the existing checkout, commit your repair and report.\n\nLast output lines:\n${cursor.check.tail}`;
@@ -221,14 +297,14 @@ function tickLand(run: ComposedRun, key: string, step: Extract<Step, { kind: 'la
   });
 }
 
-function tickHandback(run: ComposedRun, key: string, step: Extract<Step, { kind: 'handback' }>, cursor: ComposedCursor): Tick {
+function tickHandback(run: ComposedRun, key: string, step: Extract<Step, { kind: 'handback' }>, cursor: ComposedCursor, steps: Graph['steps']): Tick {
   const ref = references(run, step.from), refs = [...ref.ids, ...ref.paths];
   let why: string | undefined;
   if (step.to !== 'main') {
     const choiceList = step.options.join(' | ');
     const task = `Make one workflow decision for ${run.flow}/${key}: ${step.ask}\nChoices: ${choiceList}.\n${step.escalation_rule ?? DEFAULT_ESCALATION_RULE}\n` +
       'Use the referenced evidence. Do not land or change the source. Report `Decision: <choice>` and `Reason: <why>`, or `Decision: escalate` with the blocker.';
-    const tick = tickJob(run, key, cursor, 'lead', task, step.from, { preset: step.preset });
+    const tick = tickJob(run, key, cursor, 'lead', task, step.from, steps, { preset: step.preset });
     if (tick.state !== 'done' && tick.state !== 'failed') return tick;
     const lead = cursor.job && findJob(cursor.job);
     if (lead && !cursor.lead_closed) return effect(run, async () => {
@@ -265,14 +341,14 @@ export async function driveComposed(id: string) {
       if (hashComposedGraph(run.cwd, graph) !== run.hash || graph.cost !== run.cost) throw Error('workflow_plan_changed');
       return graph;
     },
-    tick: (run, key, step) => {
+    tick: (run, key, step, graph) => {
       const cursor = run.steps[key];
       switch (step.kind) {
-        case 'job': return tickJob(run, key, cursor, step.role, `${step.task}\n\n${step.ask === true ? WORKFLOW_WORKER_RULE : WORKFLOW_WORKER_RULE_NO_ASK}`, step.from, step);
-        case 'council': return tickJob(run, key, cursor, 'council', step.task!, step.from, step);
-        case 'batch': return tickBatch(run, key, step, cursor);
+        case 'job': return tickJob(run, key, cursor, step.role, `${step.task}\n\n${step.ask === true ? WORKFLOW_WORKER_RULE : WORKFLOW_WORKER_RULE_NO_ASK}`, step.from, graph.steps, step);
+        case 'council': return tickJob(run, key, cursor, 'council', step.task!, step.from, graph.steps, step);
+        case 'batch': return tickBatch(run, key, step, cursor, graph);
         case 'check': return tickCheck(run, key, step, cursor);
-        case 'handback': return tickHandback(run, key, step, cursor);
+        case 'handback': return tickHandback(run, key, step, cursor, graph.steps);
         case 'land': return tickLand(run, key, step, cursor);
       }
     },

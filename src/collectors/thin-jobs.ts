@@ -365,6 +365,8 @@ export function failureUnobserved(dir: string, observedAt: unknown, statusAt?: n
 }
 
 export const failedAttempt = (row: JobRow) => row.display_state === 'failed' || row.display_state === 'stopped';
+export const settledJobReport = (row: JobRow, status: Pick<JobStatus, 'output_written'> | null) =>
+  row.display_state === 'done' && row.report_present && status?.output_written !== false;
 const evidenceText = (store: ArtifactStore | null, seenSet?: Set<string>) => (path: string) => {
   const snap = readArtifact(path, 65536, store, seenSet);
   return snap?.whole ? snap.text : undefined; // A truncated list of checked boxes does not prove a ticket landed.

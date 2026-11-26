@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { Job, JobStatus } from './job-contracts.js';
 import { jobFiles } from './paths.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
-import { jobRow } from '../collectors/thin-jobs.js';
+import { jobRow, settledJobReport } from '../collectors/thin-jobs.js';
 import { cachedReportSignature } from '../roles/report-meta.js';
 import { setLandStep, writeLand, type LandFlow } from './land-state.js';
 import { dispatchLandRepair, releaseLandTurn } from './thin-main.js';
@@ -13,10 +13,40 @@ function questions(dir: string) {
   try { return fs.readdirSync(join(dir, jobFiles.qa)).filter(file => /^q\d+\.md$/.test(file)); }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []; throw e; }
 }
+export function repairBaseline(dir: string) {
+  return { seen: questions(dir), before: cachedReportSignature(dir), started: Date.now() };
+}
+
+/** Delivery isn't settlement. Require evidence from this keyed turn, not the report it inherited. */
+export function repairSettled(root: string, receipt: Job, key: string, inPlace: boolean, baseline: ReturnType<typeof repairBaseline>) {
+  const id = receipt.job, send = receipt.send_outcomes?.at(-1);
+  if ((send?.key ?? receipt.request_key) !== key) throw Error(`${id} repair turn superseded`);
+  // A new question is evidence even before the worker publishes a new status.
+  const question = questions(root).find(file => !inPlace || !baseline.seen.includes(file));
+  if (question) throw Error(`${id} needs the main session: ${question.slice(0, -3)}`);
+  const statusFile = join(root, jobFiles.status);
+  // Stat before reading so an atomic replacement can't date an old row with a newer mtime.
+  const statusAt = fs.statSync(statusFile, { throwIfNoEntry: false })?.mtimeMs;
+  const sentAt = send?.recorded_at ? Date.parse(send.recorded_at) : baseline.started;
+  if (inPlace && statusAt !== undefined && Math.ceil(statusAt) < sentAt) return false;
+  const status = statusAt === undefined ? null : readJsonFile(statusFile) as JobStatus;
+  const row = jobRow(receipt, status, { dir: root });
+  if (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')
+    throw Error(`${id} needs the main session`);
+  if (row.display_state === 'failed' || row.display_state === 'stopped') throw Error(`${id}: ${row.reason ?? row.state}`);
+  if (row.display_state === 'done') {
+    const sig = settledJobReport(row, status) && cachedReportSignature(root);
+    const settled = status!.settled_at ? Date.parse(status!.settled_at) : statusAt!;
+    if (sig && (!inPlace || sig !== baseline.before) && Math.ceil(settled) >= sentAt) return true;
+    if (row.state !== 'idle_grace') throw Error(`${id} closed without a fresh repair report`);
+  }
+  return false;
+}
+
 export async function repairLand(home: string, f: LandFlow, checkCancel: () => void) {
   const repairs = f.repairs ??= [], source = repairs.at(-1)?.job ?? f.job;
   const dir = (id: string) => join(home, 'jobs', id);
-  const seen = questions(dir(source)), before = cachedReportSignature(dir(source));
+  const baseline = repairBaseline(dir(source));
   const now = new Date().toISOString();
   const attempt: NonNullable<LandFlow['repairs']>[number] = { step: f.step, outcome: 'dispatching', started_at: now, changed_at: now };
   repairs.push(attempt);
@@ -25,36 +55,13 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
   setLandStep(f, `repair ${repairs.length}`); writeLand(home, f);
   try {
     checkCancel();
-    const started = Date.now();
+    baseline.started = Date.now();
     const id = await dispatchLandRepair(source, f.wt.root, task, key, f.pane, f.ticket_queue);
     attempt.job = id; attempt.outcome = 'waiting for worker'; attempt.changed_at = new Date().toISOString(); writeLand(home, f);
     for (;;) {
       checkCancel();
       const root = dir(id), receipt = readJsonFile(join(root, jobFiles.job)) as Job;
-      const send = receipt.send_outcomes?.at(-1);
-      if ((send?.key ?? receipt.request_key) !== key) throw Error(`${id} repair turn superseded`);
-      // A new question is evidence even before the worker publishes a new status.
-      const question = questions(root).find(file => source !== id || !seen.includes(file));
-      if (question) throw Error(`${id} needs the main session: ${question.slice(0, -3)}`);
-      const statusFile = join(root, jobFiles.status);
-      // Stat before reading so an atomic replacement can't date an old row with a newer mtime.
-      const statusAt = fs.statSync(statusFile, { throwIfNoEntry: false })?.mtimeMs;
-      const sentAt = send?.recorded_at ? Date.parse(send.recorded_at) : started;
-      if (source === id && statusAt !== undefined && Math.ceil(statusAt) < sentAt) {
-        await delay(250);
-        continue;
-      }
-      const status = statusAt === undefined ? null : readJsonFile(statusFile) as JobStatus;
-      const row = jobRow(receipt, status);
-      if (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')
-        throw Error(`${id} needs the main session`);
-      if (row.display_state === 'failed' || row.display_state === 'stopped') throw Error(`${id}: ${row.reason ?? row.state}`);
-      if (row.display_state === 'done') {
-        const sig = cachedReportSignature(root);
-        const settled = status!.settled_at ? Date.parse(status!.settled_at) : statusAt!;
-        if (sig && (source !== id || sig !== before) && Math.ceil(settled) >= sentAt) break;
-        if (row.state !== 'idle_grace') throw Error(`${id} closed without a fresh repair report`);
-      }
+      if (repairSettled(root, receipt, key, source === id, baseline)) break;
       await delay(250);
     }
     attempt.outcome = 'settled; retrying gate';

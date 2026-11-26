@@ -30,7 +30,7 @@ export function controlRun(run: Omit<Run, 'steps'> & { steps?: Run['steps'] }, a
   } else return;
   return action;
 }
-export interface Tick { state: 'waiting' | 'running' | 'asking' | 'done' | 'failed' | 'cancelled'; reason?: string; changed?: boolean; recheckMs?: number; effect?: () => Promise<number> }
+export interface Tick { state: 'waiting' | 'running' | 'asking' | 'done' | 'failed' | 'cancelled'; reason?: string; changed?: boolean; recheckMs?: number; effect?: () => Promise<number>; itemsSettled?: true }
 
 export const SEALED_REPAIR_LIMIT = 2;
 export const canRepairSealedStep = (attempts: number) => attempts < SEALED_REPAIR_LIMIT;
@@ -68,7 +68,7 @@ export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: 
     if (result.state === 'done' && step.kind !== 'batch' && run.state === 'working') settlement(run, graph.policy.breaker);
     if (result.state === 'failed') {
       cursor.reason = failureReason(result.reason || 'failed');
-      if (run.state === 'working') {
+      if (run.state === 'working' && !result.itemsSettled) {
         const groups = failuresByReason(Object.entries(run.steps).map(([item, c]) => ({ item, ...c })));
         const action = settlement(run, step.optional ? 'none' : graph.policy.breaker, cursor.reason, groups.find(g => g.reason === cursor.reason)?.count, false, !step.optional);
         if (action === 'pause') {

@@ -4,9 +4,13 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
+import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
+import { panelDelivery } from '../../dist/mcp/panel-delivery.js';
+import { taskNoticeSource } from '../../dist/workflows/events.js';
+import { saveHeader } from '../../dist/workflows/store.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
-import { enableOptionalRoles, fixture, until } from '../helpers/thin-mcp-harness.mjs';
+import { enableOptionalRoles, fixture, sonicTask, until } from '../helpers/thin-mcp-harness.mjs';
 import { setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 import { writeFixtureFile as put } from '../helpers/thin-mcp-files.mjs';
 
@@ -236,6 +240,144 @@ test('a failed check repairs the source checkout at most twice and retains bound
   assert.deepEqual(failed.check.tail.split('\n'), Array.from({ length: 40 }, (_, i) => String(i + 10)));
   assert.equal(run().steps.publish.state, 'waiting');
   assert.equal((await call(f, 'control', { run: p.run, action: 'stop' })).state, 'stopped');
+});
+
+test('an in-place repair waits for the new report before rerunning the check, handing back and landing', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  put(join(f.env.HOME, 'defer-pi-report'), '');
+  const count = join(f.env.HOME, 'check-count');
+  const p = await call(f, 'plan', { graph: graph({
+    build: sample.steps.build,
+    verify: { kind: 'check', job: 'build', needs: ['build'], repair: 1, run: ['node', '-e',
+      'const fs = require("node:fs"); fs.appendFileSync(process.argv[1], "check\\n"); process.exit(+!fs.existsSync("repair.txt"));', count] },
+    accept: { ...sample.steps.accept, needs: ['verify'], from: ['build', 'verify'] },
+    publish: sample.steps.publish,
+  }) });
+  assert.equal(p.cost, 'cheap');
+  assert.equal((await start(f, p)).state, 'working');
+  const run = () => f.flow(p.run), status = () => call(f, 'status', { run: p.run });
+  await until(() => run().steps.build.job, t.signal);
+  const id = run().steps.build.job, dir = f.dir(id), statusFile = join(dir, 'STATUS.json');
+  const cwd = f.job(id).cwd;
+  put(join(cwd, 'feature.txt'), 'Synthetic implementation');
+  f.git(cwd, 'add', 'feature.txt'); f.git(cwd, 'commit', '-qm', 'Synthetic build');
+  // Live grace with a prior settled report (the fake worker has not closed itself).
+  put(join(dir, 'report.md'), 'Synthetic build report');
+  put(statusFile, JSON.stringify({ state: 'idle_grace', output_written: true }));
+  await until(() => run().steps.verify.job || run().state !== 'working', t.signal);
+  assert.equal(run().steps.verify.job, id, JSON.stringify(run()));
+  const send = f.job(id).send_outcomes.at(-1);
+  assert.equal(send.key, `workflow:${p.run}:verify:repair:1`);
+  assert.equal(send.exit_code, 0);
+  // Leave the old report in place even when an updated status looks settled.
+  put(statusFile, JSON.stringify({ state: 'idle_grace', output_written: true, settled_at: new Date().toISOString() }));
+  await delay(1_250, undefined, { signal: t.signal });
+  assert.equal(fs.readFileSync(count, 'utf8'), 'check\n');
+  assert.equal((await status()).steps.verify.repair_pending, true);
+  await f.settle(id, { file: 'repair.txt', report: 'Synthetic fresh repair report' });
+  await until(() => run().handback?.request_id === 'h-accept', t.signal);
+  assert.equal((await status()).steps.verify.check.exit_code, 0);
+  assert.equal(fs.readFileSync(count, 'utf8'), 'check\ncheck\n');
+  assert.equal((await reply(f, p.run, 'land')).written, true);
+  await until(() => run().state === 'completed' || run().state === 'paused', t.signal);
+  assert.equal((await status()).steps.publish.state, 'done', JSON.stringify(run()));
+  assert.match(f.git(f.root, 'show', 'HEAD:repair.txt'), /Synthetic implementation/);
+});
+
+test('a composed batch settles the pilot and applies the first breaker before admitting the tail', { timeout: 30_000 }, async t => {
+  const f = await fixture(t, { failedRetentionMs: 60_000 });
+  sonicTask(f);
+  const p = await call(f, 'plan', { graph: { ...graph({ items: { ...batch('sonic', 3), max_parallel: 1 } }), policy: { breaker: 'first' } } });
+  assert.equal(p.cost, 'cheap');
+  assert.equal((await start(f, p)).state, 'working');
+  const dir = join(f.env.HUD_HOME, 'jobs');
+  const run = () => JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'flows', `${p.run}.json`), 'utf8'));
+  const items = () => run().steps.items.items;
+  await until(() => items()?.[0].job, t.signal);
+  put(join(dir, items()[0].job, 'release-sonic'), '');
+  await until(() => items()[1].job, t.signal);
+  const failed = items()[1].job;
+  put(join(dir, failed, 'fail-sonic'), '');
+  put(join(dir, failed, 'release-sonic'), '');
+  await until(() => run().state === 'paused', t.signal);
+  const value = await call(f, 'status', { run: p.run });
+  assert.match(value.reason, /failure circuit breaker/);
+  assert.deepEqual(value.steps.items.items.map(i => i.state), ['done', 'failed', 'waiting']);
+  assert.equal(value.steps.items.items[2].job, undefined);
+  const reason = value.steps.items.items[1].reason;
+  assert.match(reason, /exited/);
+  assert.deepEqual(value.steps.items.failure_groups, [{ reason, count: 1, example: failed }]);
+  assert.equal(run().settled, 2);
+  assert.equal(fs.readdirSync(dir).filter(name => /^j[0-9a-f]{16}$/.test(name)).length, 2);
+  assert.equal((await call(f, 'control', { run: p.run, action: 'retry_failed' })).state, 'working');
+  await until(() => items()[1].job && items()[1].job !== failed, t.signal);
+  const retried = items()[1].job;
+  assert.equal(items()[0].state, 'done');
+  assert.equal(items()[2].job, undefined);
+  put(join(dir, retried, 'release-sonic'), '');
+  await until(() => items()[2].job, t.signal);
+  put(join(dir, items()[2].job, 'release-sonic'), '');
+  await until(() => run().state === 'completed', t.signal);
+});
+
+test('a cheap workflow remeasures aggregate Sonic inputs when a later step is admitted', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  const a = join(f.root, 'a.txt'), b = join(f.root, 'b.txt');
+  put(a, Buffer.alloc(1024 * 1024)); put(b, 'Synthetic initial input');
+  const p = await call(f, 'plan', { graph: graph({
+    a: { ...task, task: 'Read `a.txt`' },
+    b: { ...batch('sonic', 1, 'Read `b.txt`'), needs: ['a'] },
+  }) });
+  assert.equal(p.cost, 'cheap');
+  assert.equal((await start(f, p)).state, 'working');
+  await until(() => f.flow(p.run).steps.a.job, t.signal);
+  const first = f.flow(p.run).steps.a.job;
+  // The second input is still below 2 MiB in isolation; shrinking the first
+  // file does not refund bytes already admitted for the first dispatch.
+  put(a, ''); put(b, Buffer.alloc(1024 * 1024));
+  put(join(f.dir(first), 'release-sonic'), '');
+  await until(() => f.flow(p.run).state !== 'working', t.signal);
+  const paused = await call(f, 'status', { run: p.run });
+  assert.equal(paused.state, 'paused');
+  assert.match(paused.reason, /Sonic input bytes across the run.*re-plan/);
+  assert.equal(paused.steps.b.items[0].state, 'waiting');
+  assert.equal(paused.steps.b.items[0].job, undefined);
+  assert.deepEqual(fs.readdirSync(join(f.home, 'jobs')).filter(name => /^j[0-9a-f]{16}$/.test(name)), [first]);
+});
+
+test('a stopped job with a written report completes its composed step', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  put(join(f.env.HOME, 'defer-pi-report'), '');
+  const p = await call(f, 'plan', { graph: graph({ build: sample.steps.build }) });
+  assert.equal((await start(f, p)).state, 'working');
+  await until(() => f.flow(p.run).steps.build.job, t.signal);
+  const dir = f.dir(f.flow(p.run).steps.build.job);
+  put(join(dir, 'report.md'), 'Synthetic completed work');
+  put(join(dir, 'STATUS.json'), JSON.stringify({ state: 'stopped', output_written: true }));
+  await until(() => f.flow(p.run).state !== 'working', t.signal);
+  const value = await call(f, 'status', { run: p.run });
+  assert.equal(value.state, 'completed', JSON.stringify(value));
+  assert.equal(value.steps.build.state, 'done');
+});
+
+for (const fails of [false, true]) test(`a composed hand-back push ${fails ? 'retries on the quiet timer' : 'is delivered once'}`, { timeout: 10_000 }, async t => {
+  const f = await fixture(t);
+  const home = f.env.HUD_HOME, pane = f.env.HERDR_PANE_ID;
+  const flow = 'w0000000000000001', line = `${flow} synthetic hand-back`;
+  fs.mkdirSync(join(home, 'flows', flow), { recursive: true });
+  saveHeader(home, { flow, template: 'composed', state: 'paused', pane, project_root: f.root, notices: { 'handback-accept': line } });
+  const calls = [];
+  const delivery = panelDelivery(home, pane, f.root, () => false, async text => {
+    calls.push(text);
+    return !fails || calls.length > 1;
+  }, taskNoticeSource(home, pane, f.root));
+  t.after(() => delivery.stop());
+  const expected = fails ? [line, line] : [line];
+  await until(() => calls.length >= expected.length, t.signal);
+  await delay(1_100, undefined, { signal: t.signal });
+  assert.deepEqual(calls, expected);
+  assert.ok(fs.existsSync(join(home, 'flows', flow, 'handback-accept.noticed')));
 });
 
 test('the default lead hand-back closes its decision session before selecting a branch', { timeout: 30_000 }, async t => {

@@ -2,6 +2,15 @@ import type { Breaker } from './graph.js';
 
 export interface FailureWindow { settled: number; streak: number; failures: number }
 export interface FailureEvidence { state: string; reason?: string; job?: string; item: number | string }
+export function settleBatchItem(
+  run: FailureWindow & { state: string }, item: { state: string; reason?: string }, evidence: () => FailureEvidence[], breaker: Breaker, pilot: boolean, failure?: string,
+) {
+  item.state = failure ? 'failed' : 'done';
+  item.reason = failure ? failureReason(failure) : undefined;
+  const groups = failure ? failuresByReason(evidence()) : undefined;
+  const action = run.state === 'working' ? settlement(run, breaker, item.reason, groups?.find(g => g.reason === item.reason)?.count, pilot) : undefined;
+  return { action, groups };
+}
 export const failureReason = (reason: string) => reason.slice(0, 300);
 export function failuresByReason(records: Iterable<FailureEvidence>) {
   const groups = new Map<string, { reason: string; count: number; example: string }>();

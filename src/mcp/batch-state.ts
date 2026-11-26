@@ -3,7 +3,7 @@
 import { pauseRun, type Cursor } from '../workflows/engine.js';
 import type { RunScope } from '../workflows/scope.js';
 import type { Breaker } from '../workflows/graph.js';
-import { failureReason, failuresByReason, settlement } from '../workflows/policy.js';
+import { failuresByReason, settleBatchItem } from '../workflows/policy.js';
 import { runDir as batchDir, runLock as batchLock, saveHeader } from '../workflows/store.js';
 export { batchDir, batchLock, failuresByReason };
 export { noticeEvents as batchEvents } from '../workflows/store.js';
@@ -47,14 +47,12 @@ function recount(b: Batch, items: ItemResult[]) {
 const groupsLine = (items: ItemResult[]) => failuresByReason(items).map(g => `${g.reason} ×${g.count} (${g.example})`).join('; ');
 export const totalsLine = (b: Batch) => Object.entries(b.totals).map(([state,n]) => `${n} ${state}`).join(', ');
 export function settleItem(b: Batch, items: ItemResult[], i: ItemResult, failure?: string, breaker: Breaker = 'rate') {
-  i.state = failure ? 'failed' : 'done'; i.reason = failure && failureReason(failure); delete i.stall;
+  const { action } = settleBatchItem(b, i, () => items, breaker, i.pilot, failure);
+  delete i.stall;
   const now = Date.now();
   b.updated_at = now;
   if (i.pilot) b.pilot_changed_at = now;
   else b.pool_changed_at = now;
-  if (b.state !== 'working') return;
-  const count = failure ? failuresByReason(items).find(g => g.reason === i.reason)?.count : 0;
-  const action = settlement(b, breaker, i.reason, count, i.pilot);
   if (action === 'pause') {
     pauseRun(b, 'items', i.pilot ? 'pilot failed' : 'failure circuit breaker');
     recount(b, items);
