@@ -416,6 +416,196 @@ test('configurable escalation_rule reaches lead packet; escalate wakes main once
   const readDirect = await f.call('hud_read', { job: directFlow });
   assert.equal(readDirect.changes.length, 1);
   assert.match(readDirect.changes[0], /hand-back at accept/);
+  assert.match(readDirect.changes[0], new RegExp(`hud_respond job=${directFlow} answer=<finish\\|repair\\|escalate>`));
+});
+
+test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, escalate) and rejects invalid choices or non-asking runs', { timeout: 60_000 }, async t => {
+  // 1. finish (colon reason) + invalid choice + wrong step + unknown run + already-completed run.
+  const f = await setupWorkflowProject(t, { tickets: { '01-finish.md': goodTicket(1) } });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
+
+  // Not paused yet -> no_pending_handback.
+  const whileWorking = await f.call('hud_respond', { job: flow, answer: 'finish' });
+  assert.equal(whileWorking.ok, false);
+  assert.equal(whileWorking.code, 'no_pending_handback');
+
+  const [first] = await f.jobs(flow, 1);
+  await f.settle(first);
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  await f.settleReview(f.flow(flow).review_job);
+  const paused = await f.end(flow);
+  assert.equal(paused.state, 'paused');
+  assert.equal(paused.steps.accept.state, 'asking');
+
+  // Unknown run ID -> flow_not_found.
+  const unknown = await f.call('hud_respond', { job: 'q0000000000000000', answer: 'finish' });
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.code, 'flow_not_found');
+
+  // Invalid choices and mismatched request_id leave the hand-back open.
+  for (const badAnswer of ['approve', 'finish without colon', '  ']) {
+    const bad = await f.call('hud_respond', { job: flow, answer: badAnswer });
+    assert.equal(bad.ok, false);
+    assert.equal(bad.code, 'invalid_choice');
+    assert.match(bad.error, /finish, repair, escalate/);
+  }
+  const wrongStep = await f.call('hud_respond', { job: flow, request_id: 'review', answer: 'finish' });
+  assert.equal(wrongStep.ok, false);
+  assert.equal(wrongStep.code, 'invalid_arguments');
+  assert.equal(f.flow(flow).steps.accept.state, 'asking');
+
+  // repair without adding tickets refuses clearly and keeps accept open.
+  const noRepair = await f.call('hud_respond', { job: flow, answer: 'repair: Need fix' });
+  assert.equal(noRepair.ok, false);
+  assert.equal(noRepair.code, 'no_repair_tickets');
+  assert.equal(f.flow(flow).steps.accept.state, 'asking');
+
+  // finish settles the asking step, records verdict & decision, and completes the run.
+  const finished = await f.call('hud_respond', { job: flow, answer: 'finish: Verified checks and review.' });
+  assert.equal(finished.ok, true);
+  assert.equal(finished.state, 'completed');
+  assert.equal(finished.verdict, 'finish: Verified checks and review.');
+  assert.deepEqual(finished.landed, ['sample/01']);
+  const doneRun = f.flow(flow);
+  assert.equal(doneRun.steps.accept.state, 'done');
+  assert.equal(doneRun.steps.accept.answer, 'finish');
+  assert.equal(doneRun.handback, undefined);
+  assert.equal(doneRun.decisions.length, 1);
+  assert.equal(doneRun.decisions[0].job, 'main');
+  assert.equal(doneRun.decisions[0].decision, 'finish');
+
+  // Answering again after completion returns no_pending_handback.
+  const afterDone = await f.call('hud_respond', { job: flow, answer: 'finish' });
+  assert.equal(afterDone.ok, false);
+  assert.equal(afterDone.code, 'no_pending_handback');
+
+  // 2. escalate (newline reason) pauses for the owner like a lead escalation.
+  const escIssues = join(f.root, '.scratch', 'esc', 'issues');
+  fs.mkdirSync(escIssues, { recursive: true });
+  fs.writeFileSync(join(escIssues, '01-esc.md'), goodTicket(1));
+  f.git(f.root, 'add', '.scratch');
+  f.git(f.root, 'commit', '-qm', 'escalate feature');
+  const { flow: escFlow } = await f.call('hud_tickets', { op: 'run', feature: 'esc', max_parallel: 1, cwd: f.root, handback_to: 'main' });
+  const [escJob] = await f.jobs(escFlow, 1);
+  await f.settle(escJob);
+  await until(() => Boolean(f.flow(escFlow).review_job), 15_000);
+  await f.settleReview(f.flow(escFlow).review_job);
+  await f.end(escFlow);
+
+  const escalated = await f.call('hud_respond', { job: escFlow, answer: 'escalate\nWould delete a user-visible option.' });
+  assert.equal(escalated.ok, true);
+  assert.equal(escalated.state, 'paused');
+  assert.equal(escalated.handback.kind, 'escalate');
+  assert.match(escalated.reason, /escalated: Would delete a user-visible option\./);
+  assert.equal(f.flow(escFlow).steps.accept.state, 'failed');
+  assert.equal(f.flow(escFlow).decisions[0].decision, 'escalate');
+
+  const afterEsc = await f.call('hud_respond', { job: escFlow, answer: 'finish' });
+  assert.equal(afterEsc.ok, false);
+  assert.equal(afterEsc.code, 'no_pending_handback');
+
+  // 3. repair loops tickets -> review -> accept in the SAME run, bounded to 2 repair rounds.
+  const repIssues = join(f.root, '.scratch', 'rep', 'issues');
+  fs.mkdirSync(repIssues, { recursive: true });
+  fs.writeFileSync(join(repIssues, '01-rep.md'), goodTicket(1));
+  f.git(f.root, 'add', '.scratch');
+  f.git(f.root, 'commit', '-qm', 'repair feature');
+  const { flow: repFlow } = await f.call('hud_tickets', { op: 'run', feature: 'rep', max_parallel: 1, cwd: f.root, handback_to: 'main' });
+  let prevReview;
+  for (let round = 0; round < 3; round++) {
+    const ticketJobs = await f.jobs(repFlow, round + 1);
+    await f.settle(ticketJobs[round]);
+    await until(() => f.flow(repFlow).review_job && f.flow(repFlow).review_job !== prevReview, 15_000);
+    prevReview = f.flow(repFlow).review_job;
+    await f.settleReview(prevReview);
+    const pausedRound = await f.end(repFlow);
+    assert.equal(pausedRound.state, 'paused');
+    assert.equal(pausedRound.steps.accept.state, 'asking');
+    const readPaused = await f.call('hud_read', { job: repFlow });
+    assert.ok(readPaused.changes?.some(line => line.includes(`hud_respond job=${repFlow} answer=<finish|repair|escalate>`)), JSON.stringify(readPaused));
+    if (round < 2) {
+      await f.call('hud_tickets', {
+        op: 'add', cwd: f.root, feature: 'rep',
+        tickets: [{ title: `Repair ${round + 1}`, blocked_by: [], what: `Fix round ${round + 1}.`, acceptance: ['Fixed'], live_try: 'none' }],
+      });
+      const sep = round === 0 ? ': ' : '\n';
+      const repaired = await f.call('hud_respond', { job: repFlow, answer: `repair${sep}Round ${round + 1} fix.` });
+      assert.equal(repaired.ok, true);
+      assert.equal(repaired.flow, repFlow);
+      assert.equal(repaired.state, 'working');
+      assert.equal(repaired.repair_rounds, round + 1);
+    } else {
+      // Round 2 already used both repair rounds: a 3rd repair escalates like a lead decision.
+      const bounded = await f.call('hud_respond', { job: repFlow, answer: 'repair: Still broken.' });
+      assert.equal(bounded.ok, true);
+      assert.equal(bounded.state, 'paused');
+      assert.equal(bounded.repair_rounds, 2);
+      assert.equal(bounded.handback.kind, 'escalate');
+      assert.match(bounded.reason, /max repair rounds \(2\) reached: Still broken\./);
+    }
+  }
+  assert.equal(f.flow(repFlow).reviews.length, 3);
+  assert.equal(f.flow(repFlow).decisions.length, 3);
+});
+
+test('hud_tickets run and unattended on refuse to start when a needed role is not enabled, naming hud setup before dispatching anything', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: { '01-rolecheck.md': goodTicket(1) } });
+  const projectJson = join(f.root, '.hud', 'project.json');
+  const baseConfig = JSON.parse(fs.readFileSync(projectJson, 'utf8'));
+
+  // 1. Project hides lead (only imp and reviewer enabled): default lead hand-back and unattended on refuse; handback_to: main allowed.
+  writeFixtureFile(projectJson, JSON.stringify({ ...baseConfig, roles: ['imp', 'reviewer'] }));
+  const runNoLead = await f.rpc('tools/call', {
+    name: 'hud_tickets', arguments: { op: 'run', feature: 'sample', cwd: f.root },
+  });
+  assert.equal(runNoLead.result.isError, true);
+  const noLeadError = JSON.parse(runNoLead.result.content[0].text).error;
+  assert.match(noLeadError, /lead/);
+  assert.match(noLeadError, /hud setup/);
+  assert.equal(fs.existsSync(join(f.home, 'flows')), false, 'no flow created when lead is disabled');
+  assert.equal(fs.existsSync(join(f.home, 'jobs')), false, 'no job dispatched when lead is disabled');
+
+  const unattNoLead = await new Promise(resolveDone => {
+    const child = spawn(process.execPath, [resolve('bin/hud'), 'unattended', 'on', '--objective', 'selected'], {
+      cwd: f.root, env: f.env, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('exit', code => resolveDone({ code, stderr }));
+  });
+  assert.equal(unattNoLead.code, 2);
+  assert.match(unattNoLead.stderr, /lead/);
+  assert.match(unattNoLead.stderr, /hud setup/);
+  assert.equal(fs.existsSync(join(f.home, 'unattended.json')), false, 'unattended control not written');
+
+  // 2. Project hides reviewer: even handback_to: main refuses before creating any flow or job.
+  writeFixtureFile(projectJson, JSON.stringify({ ...baseConfig, roles: ['imp', 'lead'] }));
+  const runNoReviewer = await f.rpc('tools/call', {
+    name: 'hud_tickets', arguments: { op: 'run', feature: 'sample', cwd: f.root, handback_to: 'main' },
+  });
+  assert.equal(runNoReviewer.result.isError, true);
+  const noReviewerError = JSON.parse(runNoReviewer.result.content[0].text).error;
+  assert.match(noReviewerError, /reviewer/);
+  assert.match(noReviewerError, /hud setup/);
+  assert.equal(fs.existsSync(join(f.home, 'flows')), false);
+
+  // 3. Project hides both imp and lead: error names both.
+  writeFixtureFile(projectJson, JSON.stringify({ ...baseConfig, roles: ['reviewer'] }));
+  const runMissingBoth = await f.rpc('tools/call', {
+    name: 'hud_tickets', arguments: { op: 'run', feature: 'sample', cwd: f.root },
+  });
+  assert.equal(runMissingBoth.result.isError, true);
+  const missingBothError = JSON.parse(runMissingBoth.result.content[0].text).error;
+  assert.match(missingBothError, /imp, lead/);
+  assert.match(missingBothError, /hud setup/);
+  assert.equal(fs.existsSync(join(f.home, 'flows')), false);
+
+  // 4. With imp and reviewer enabled (lead still hidden), handback_to: main starts normally.
+  writeFixtureFile(projectJson, JSON.stringify({ ...baseConfig, roles: ['imp', 'reviewer'] }));
+  const mainRun = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, handback_to: 'main' });
+  assert.match(mainRun.flow, /^q[0-9a-f]{16}$/);
+  assert.equal(mainRun.state, 'working');
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 });
 
 test('repair rounds are bounded to at most 2, then escalate and wake main once', { timeout: 60_000 }, async t => {

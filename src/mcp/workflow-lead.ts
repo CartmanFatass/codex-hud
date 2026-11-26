@@ -9,8 +9,10 @@ import type { AnswerResult } from '../collectors/panel-actions.js';
 import { parseRemovalList, ticketApprovedRemovals } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { directory, findJob, readCachedStatus, save } from './store/job-store.js';
-import type { RunDecision, RunTodoItem, TicketQueue } from './ticket-queue-state.js';
+import { MAX_REPAIR_ROUNDS, recordDecision, type RunTodoItem, type TicketQueue } from './ticket-queue-state.js';
 import type { OwnerApproval } from '../unattended/state.js';
+
+export { MAX_REPAIR_ROUNDS, recordDecision };
 
 const approvalFormat = 'For escalate, include `Owner approval: feature-deletion` or `Owner approval: spec-change` and explain the specific change in Reason. Do not use escalate for operational failures.';
 
@@ -23,10 +25,8 @@ export const WORKFLOW_WORKER_RULE =
 export const WORKFLOW_WORKER_RULE_NO_ASK =
   'Workflow run rule: proceed on the ticket, docs/spec.md and your own default; write each assumption on its own `Assumed:` line (mark scope assumptions with `scope`); do not call `hud_ask`; report owner matters (scope, value trade-off, visible deletion, irreversible act) as `Blockers:` lines; include a `Removes:` line (`Removes: none`, a comma-separated list of user-visible features removed, or `Removes: ambiguous: <detail>` if unsure).';
 
-export const MAX_REPAIR_ROUNDS = 2;
 export const MAX_ANSWER_RETRIES = 3;
 const MAX_RUN_TODOS = 200;
-const MAX_RUN_DECISIONS = 100;
 
 export type RemovalsDeclaration =
   | { kind: 'missing' }
@@ -138,12 +138,6 @@ export function appendTodos(q: TicketQueue, items: readonly RunTodoItem[]): bool
   }
   if (added) q.todo = existing;
   return added;
-}
-
-export function recordDecision(q: TicketQueue, entry: RunDecision): void {
-  const list = q.decisions ?? [];
-  list.push(entry);
-  q.decisions = list.length > MAX_RUN_DECISIONS ? list.slice(-MAX_RUN_DECISIONS) : list;
 }
 
 function ticketSummaryLines(path: string): { goal?: string; liveTry?: string } {

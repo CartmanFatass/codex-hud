@@ -4,7 +4,7 @@ import { isCliDirTrusted } from '../cli/trust.js';
 import { readObjectives } from '../collectors/objectives.js';
 import { validLandConfig } from '../mcp/land.js';
 import { binScript, BUNDLED_ROOT } from '../mcp/paths.js';
-import { cancelTicketQueueRun } from '../mcp/ticket-queue.js';
+import { cancelTicketQueueRun, requireTicketQueueRoles } from '../mcp/ticket-queue.js';
 import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { roleRegistry, routeTiers } from '../roles/roster.js';
 import { loadSettings } from '../settings.js';
@@ -60,6 +60,7 @@ export async function setUnattended(home: string, enabled: boolean,
     const available = readObjectives(root)?.objectives;
     for (const id of objectives) if (!available?.some(o => o.id === id)) throw Error(`Unknown Objective: ${id}`);
     validLandConfig(home, root);
+    requireTicketQueueRoles(home, root, ['imp', 'reviewer', 'lead'], env);
     requireProjectTrust(home, root, env);
     writeJsonPrivate(controlPath(home), { root, objectives, enabled: true });
     if (liveIdentity(home)) return;

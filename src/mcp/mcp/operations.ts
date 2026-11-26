@@ -41,7 +41,7 @@ import { startLand, landTask } from '../land.js';
 import { readyTickets, editTickets } from '../local-tickets.js';
 import { editObjectives, type RequestCaller } from '../local-objectives.js';
 import { callSchedule } from '../local-schedule.js';
-import { resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask } from '../ticket-queue.js';
+import { answerTicketQueueHandback, resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask } from '../ticket-queue.js';
 import { isTicketQueueId, readTicketQueue, ticketQueueView } from '../ticket-queue-state.js';
 import { gitSummary } from '../managed-worktree.js';
 import { panelDelivery } from '../panel-delivery.js';
@@ -606,7 +606,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
       const reqId = typeof item.request_id === 'string' ? item.request_id : undefined;
       try {
         const id = required(item, 'job');
-        const res = await keyLock(`job:${id}`, async () => respondJob(item, true));
+        const res = await keyLock(`job:${id}`, async () => isTicketQueueId(id) ? respondTicketQueue(item, true) : respondJob(item, true));
         return { job: id, ...(reqId ? { request_id: reqId } : {}), ...res };
       } catch (error) {
         return { ...(jobId ? { job: jobId } : {}), ...(reqId ? { request_id: reqId } : {}), ...itemError(error) };
@@ -616,7 +616,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     // As for a single answer: the answer to the question that stopped a ticket queue resumes it.
     const queues_resumed: string[] = [];
     for (const a of answers as { ok?: boolean; job?: string; request_id?: string }[]) {
-      if (a.ok === false || !a.job || !a.request_id) continue;
+      if (a.ok === false || !a.job || !a.request_id || isTicketQueueId(a.job)) continue;
       const flow = await resumeQueueAfterAnswer(hudHome, a.job, a.request_id, callerPane);
       if (flow) queues_resumed.push(flow);
     }
@@ -669,6 +669,9 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
     if (!flow || !runVisible(flow, callerPane)) return { ok: false, code: 'flow_not_found' };
     if (flow.state === 'working') { wakeWorkflow(hudHome, flow); ensureWatcher(); }
     return ticketQueueView(flow);
+  }
+  if (name === 'hud_respond' && isTicketQueueId(id)) {
+    return respondTicketQueue(args, false);
   }
   const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };
@@ -746,6 +749,29 @@ export async function answerWorkerQuestion(job: string, request_id: string, answ
   const result = await keyLock(`job:${job}`, () => respondJob({ job, request_id, answer }, false, undefined, 'orchestrator'));
   return 'code' in result && result.code ? { ok: false, reason: result.code } :
     { ok: true, written: 'written' in result ? result.written === true : true };
+}
+
+async function respondTicketQueue(args: Args, batch: boolean) {
+  const id = required(args, 'job');
+  const answer = required(args, 'answer');
+  if (args.by !== undefined && args.by !== 'owner') throw new Error('invalid_arguments: by');
+  let requestId: string | undefined;
+  if (args.request_id !== undefined) {
+    if (typeof args.request_id !== 'string' || !args.request_id.trim()) throw new Error('invalid_arguments: request_id');
+    requestId = args.request_id.trim();
+  }
+  const res = await answerTicketQueueHandback(hudHome, id, answer, { pane: callerPane, requestId });
+  if (!res.ok) return res;
+  if (res.resumed) {
+    ensureWatcher();
+    if (!batch && res.queue.task && session.taskCapable) {
+      rememberLandTask(landTasks, res.queue.flow, landActive);
+      saveTaskReceipt({ id: res.queue.flow, expiresAt: Date.parse(res.queue.created_at) + TASK_TTL });
+      return { resultType: 'task', ...ticketQueueTask(hudHome, res.queue) };
+    }
+    if (!res.queue.task && callerPane) void ensureQueueWatcher(callerPane, hudHome);
+  }
+  return { ok: true, ...ticketQueueView(res.queue) };
 }
 
 async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[], answeredBy: AnswerActor = 'orchestrator') {

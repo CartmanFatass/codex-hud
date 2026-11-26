@@ -1395,7 +1395,7 @@ function tickHandbackStep(
     q.handback = { step: key, choices: step.options };
     q.remaining = computeRemaining(q);
     q.notices = q.task ? {} : {
-      [`pause-${q.epoch ?? 0}`]: `${q.flow} (ticket queue ${q.feature}) — hand-back at ${key}: ${step.ask} (${step.options.join('/')})`,
+      [`pause-${q.epoch ?? 0}`]: `${q.flow} (ticket queue ${q.feature}) — hand-back at ${key}: ${step.ask} (${step.options.join('/')}) | reply: hud_respond job=${q.flow} answer=<${step.options.join('|')}>[: reason]`,
     };
     return { state: 'asking', changed: true };
   }

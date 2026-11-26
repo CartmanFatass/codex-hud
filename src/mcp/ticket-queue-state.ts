@@ -119,6 +119,15 @@ export function ticketQueueView(q: TicketQueue) {
     landed: q.tickets.filter(item => item.landed).map(item => item.ticket),
     jobs: q.tickets.map(({ ticket, job, land }) => ({ ticket, job, land })) };
 }
+export const MAX_REPAIR_ROUNDS = 2;
+const MAX_RUN_DECISIONS = 100;
+
+export function recordDecision(q: TicketQueue, entry: RunDecision): void {
+  const list = q.decisions ?? [];
+  list.push(entry);
+  q.decisions = list.length > MAX_RUN_DECISIONS ? list.slice(-MAX_RUN_DECISIONS) : list;
+}
+
 export function ticketQueueNotice(q: TicketQueue) {
   const landed = q.tickets.filter(item => item.landed).map(item => item.ticket);
   const base_moves = q.tickets.reduce((total, item) => total + (item.base_moves ?? 0), 0);
@@ -127,8 +136,11 @@ export function ticketQueueNotice(q: TicketQueue) {
   const todo = q.state === 'completed' && q.todo?.length ? ` Todo: ${q.todo.length}.` : '';
   const heldCount = q.tickets.filter(item => item.held).length;
   const held = heldCount ? ` Held: ${heldCount}.` : '';
+  const reply = q.state === 'paused' && q.handback && q.steps?.[q.handback.step]?.state === 'asking'
+    ? ` Reply: hud_respond job=${q.flow} answer=<${q.handback.choices.join('|')}>[: reason].` : '';
   return `${q.flow} (ticket queue ${q.feature}) — ${reason ?? q.state}. Landed: ${landed.join(', ') || 'none'}.` +
     verdict + todo + held +
     (base_moves ? ` Base moves absorbed: ${base_moves}.` : '') +
-    (q.state === 'completed' ? '' : ` Still running: ${q.remaining?.join(', ') || 'none'}.`);
+    (q.state === 'completed' ? '' : ` Still running: ${q.remaining?.join(', ') || 'none'}.`) +
+    reply;
 }

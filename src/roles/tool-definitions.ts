@@ -157,7 +157,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_respond',
-    'Answer once or batch; by:"owner" relays owner.',
+    'Answer a worker question or paused run hand-back (job=q...); batch with answers; by:"owner" relays owner.',
     {
       job: text,
       request_id: text,
@@ -169,7 +169,7 @@ export const ROLE_TOOLS = [
         items: {
           type: 'object',
           properties: { job: text, request_id: text, answer: text, by: { ...text, enum: ['owner'] } },
-          required: ['job', 'request_id', 'answer'],
+          required: ['job', 'answer'],
           additionalProperties: false,
         },
         description: 'Input order; per-item errors.',

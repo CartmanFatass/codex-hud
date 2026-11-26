@@ -6,7 +6,7 @@ import { herdrId } from '../roles/herdr-run.js';
 import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { roleRegistry } from '../roles/roster.js';
 import { ticketFileEvidence } from '../collectors/ticket-evidence.js';
-import { readFileBounded } from '../utils/atomic-fs.js';
+import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
 import { procStat } from '../utils/proc.js';
@@ -21,9 +21,57 @@ import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
 import { BUNDLED_ROOT } from './paths.js';
 import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
-import { cancelTicketQueue, isTicketQueueId, queueIds, readTicketQueue, ticketQueueNotice, ticketQueueView, writeTicketQueue, type TicketQueue } from './ticket-queue-state.js';
+import {
+  cancelTicketQueue, isTicketQueueId, MAX_REPAIR_ROUNDS, queueIds, readTicketQueue, recordDecision,
+  ticketQueueNotice, ticketQueueView, writeTicketQueue, type TicketQueue,
+} from './ticket-queue-state.js';
 
 let template: string | undefined;
+const FRONTEND_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im;
+
+/** Verify every role a ticket-queue or unattended run will need is enabled in the project before starting anything. */
+export function requireTicketQueueRoles(
+  home: string,
+  root: string,
+  needed: readonly string[],
+  env = process.env,
+  opts?: { allowMainFallback?: boolean },
+) {
+  const registry = roleRegistry(home, root, env, undefined, undefined, BUNDLED_ROOT);
+  const enabled = registry.roles();
+  const withOff = registry.roles(true);
+  const hidden: string[] = [];
+  const off: string[] = [];
+  const invalid: string[] = [];
+  for (const name of [...new Set(needed)]) {
+    if (enabled.has(name)) continue;
+    if (withOff.get(name)?.optionalEnabled === false) {
+      off.push(name);
+      continue;
+    }
+    const inv = registry.invalidRole(name);
+    if (inv) {
+      invalid.push(`${name} (${inv.path}: ${inv.reason})`);
+      continue;
+    }
+    hidden.push(name);
+  }
+  const problems: string[] = [];
+  if (hidden.length) {
+    const list = hidden.join(', ');
+    const mainHint = opts?.allowMainFallback && hidden.length === 1 && hidden[0] === 'lead'
+      ? ' (or pass handback_to: "main")' : '';
+    problems.push(`Required role(s) not enabled in this project: ${list}. Run \`hud setup\` to enable ${list} in .hud/project.json${mainHint}.`);
+  }
+  if (off.length) {
+    problems.push(`Optional role(s) turned off: ${off.join(', ')}. Enable in Control → Roles or $HUD_HOME/role-switches.json.`);
+  }
+  if (invalid.length) {
+    problems.push(`Invalid role configuration: ${invalid.join('; ')}. Fix the file or run \`hud setup\`.`);
+  }
+  if (problems.length) throw Error(problems.join(' '));
+  return enabled;
+}
 
 /** A pre-input launch failure did no work: a resumed queue drops that job and dispatches its ticket again. */
 function launchFailed(home: string, job: string | undefined) {
@@ -132,6 +180,9 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     }
     if (!registeredProject(home, root).registered) throw Error('hud_tickets run requires a registered project');
     validLandConfig(home, root);
+    const latest = queues.filter(q => !q.unattended).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    const resumed = !unattended && latest && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;
+    const effectiveHandbackTo = unattended ? 'lead' : handback_to ?? resumed?.handback_to;
     if (!unattended) {
       const ticketGaps = checkFeatureTickets(root, target);
       if (ticketGaps.length) {
@@ -141,17 +192,27 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       const bad = new Set(checkTicketPaths(root, unattended.ready).map(g => g.ticket));
       if (!unattended.ready.some(t => !bad.has(t.ticket))) return null;
     }
-    fs.mkdirSync(join(home, 'flows'), { mode: 0o700, recursive: true });
     const readiness = unattended ? undefined : ticketReadiness(root, jobCache, target, { home });
-    const latest = queues.filter(q => !q.unattended).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-    const resumed = !unattended && latest && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;
+    const readyPaths = unattended ? (unattended.ready ?? []).map(t => t.path) : (readiness?.tickets ?? []).map(t => t.path);
+    const needsFrontend = readyPaths.some(path => {
+      try {
+        const header = readFileBounded(path, 64 * 1024).bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
+        return FRONTEND_ROLE_RE.test(header);
+      } catch { return false; }
+    });
+    const neededRoles = [
+      'imp',
+      ...(needsFrontend ? ['frontend-imp'] : []),
+      'reviewer',
+      ...(effectiveHandbackTo === 'main' ? [] : ['lead']),
+    ];
+    const roles = requireTicketQueueRoles(home, root, neededRoles, process.env, { allowMainFallback: !unattended });
+    fs.mkdirSync(join(home, 'flows'), { mode: 0o700, recursive: true });
     const handback = resumed?.state === 'paused' && resumed.handback?.kind === 'assumption' ? resumed.handback : undefined;
     const limit = max_parallel ?? resumed?.max_parallel ?? capForRole(loadConcurrencySettings(), 'imp');
-    const effectiveHandbackTo = unattended ? 'lead' : handback_to ?? resumed?.handback_to;
     const effectiveRule = unattended ? ESCALATION_RULE : escalation_rule?.trim() ?? resumed?.escalation_rule;
     const workspace = resolvedWorkspace ?? resumed?.workspace;
     template ??= fs.readFileSync(join(BUNDLED_ROOT, 'workflows/ticket-queue.toml'), 'utf8');
-    const roles = roleRegistry(home, root, process.env, undefined, undefined, BUNDLED_ROOT).roles();
     const graph = loadGraph(template, 'toml', {
       roles, bindings: { feature: target, max_parallel: limit || undefined },
     });
@@ -197,6 +258,162 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     return q;
   });
 }
+export type HandbackAnswerResult =
+  | { ok: true; queue: TicketQueue; resumed: boolean }
+  | { ok: false; code: 'flow_not_found' | 'no_pending_handback' | 'invalid_arguments' | 'invalid_choice' | 'no_repair_tickets'; error: string };
+
+function parseHandbackAnswer(raw: string, allowedChoices: readonly string[]): { choice: string; reason?: string } | null {
+  const match = /^\s*([a-z][a-z0-9_-]*)(?:\s*(?::|\r?\n)\s*([\s\S]*))?\s*$/i.exec(raw);
+  if (!match) return null;
+  const choice = match[1].toLowerCase();
+  const matched = allowedChoices.find(c => c.toLowerCase() === choice);
+  if (!matched) return null;
+  const reason = match[2]?.trim() || undefined;
+  return { choice: matched, ...(reason && { reason }) };
+}
+
+function handbackStepKeys(home: string, q: TicketQueue): string[] {
+  try {
+    const graph = readJsonFile(join(runDir(home, q.flow), 'graph.json')) as { steps?: Record<string, unknown> };
+    if (graph?.steps && typeof graph.steps === 'object') return Object.keys(graph.steps);
+  } catch { /* Fall back to recorded cursors. */ }
+  return Object.keys(q.steps ?? {});
+}
+
+/** Answer a ticket-queue run paused at a main hand-back (e.g. accept with finish/repair/escalate). */
+export async function answerTicketQueueHandback(
+  home: string,
+  id: string,
+  answer: string,
+  opts: { pane: string | null; cwd?: string; requestId?: string },
+): Promise<HandbackAnswerResult> {
+  if (!isTicketQueueId(id)) return { ok: false, code: 'flow_not_found', error: `Ticket queue ${id} not found` };
+  const result = await runLock(home, id, (): HandbackAnswerResult => {
+    const cur = readTicketQueue(home, id);
+    if (!cur || !runVisible({ ...cur, project_root: cur.project_root ?? cur.root }, opts.pane, opts.cwd)) {
+      return { ok: false, code: 'flow_not_found', error: `Ticket queue ${id} not found` };
+    }
+    const step = cur.handback?.step;
+    if (cur.state !== 'paused' || !step || !cur.handback?.choices?.length || cur.steps?.[step]?.state !== 'asking') {
+      const detail = cur.state === 'paused' && cur.handback?.kind ? `paused for ${cur.handback.kind}` : `state: ${cur.state}`;
+      return { ok: false, code: 'no_pending_handback', error: `Ticket queue ${id} has no pending hand-back (${detail})` };
+    }
+    if (opts.requestId !== undefined && opts.requestId !== step) {
+      return { ok: false, code: 'invalid_arguments', error: `Ticket queue ${id} pending hand-back is at step ${step}, not ${opts.requestId}` };
+    }
+    const parsed = parseHandbackAnswer(answer, cur.handback.choices);
+    if (!parsed) {
+      return {
+        ok: false,
+        code: 'invalid_choice',
+        error: `Invalid choice for ${id} (${step}); expected one of: ${cur.handback.choices.join(', ')} (optional ": <reason>" or newline)`,
+      };
+    }
+    if (parsed.choice === 'repair') {
+      if ((cur.repair_rounds ?? 0) >= MAX_REPAIR_ROUNDS) {
+        const msg = `max repair rounds (${MAX_REPAIR_ROUNDS}) reached${parsed.reason ? `: ${parsed.reason}` : ''}`;
+        recordDecision(cur, {
+          step, kind: 'accept', job: 'main', decision: 'repair',
+          ...(parsed.reason && { reason: parsed.reason }),
+          at: new Date().toISOString(),
+        });
+        cur.epoch = (cur.epoch ?? 0) + 1;
+        cur.steps ??= {};
+        cur.steps[step] = { state: 'failed', reason: msg };
+        cur.reason = msg;
+        cur.queued = undefined;
+        cur.remaining = cur.remaining ?? [];
+        cur.handback = { step, choices: ['resume', 'stop'], kind: 'escalate' };
+        cur.state = 'paused';
+        cur.notices = cur.task ? {} : { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
+        writeTicketQueue(home, cur);
+        return { ok: true, queue: cur, resumed: false };
+      }
+      const { tickets: ready, queued } = ticketReadiness(cur.root, jobCache, cur.feature, { home });
+      const hasNewWork = ready.some(t => !cur.tickets.some(own => own.ticket === t.ticket)) || queued.length > 0;
+      if (!hasNewWork) {
+        return {
+          ok: false,
+          code: 'no_repair_tickets',
+          error: `No new ready repair tickets in feature ${cur.feature}; add repair ticket(s) via hud_tickets before answering repair`,
+        };
+      }
+      recordDecision(cur, {
+        step, kind: 'accept', job: 'main', decision: 'repair',
+        ...(parsed.reason && { reason: parsed.reason }),
+        at: new Date().toISOString(),
+      });
+      cur.repair_rounds = (cur.repair_rounds ?? 0) + 1;
+      cur.repair_admitted_base = cur.tickets.length;
+      delete cur.review_job;
+      delete cur.handback;
+      delete cur.reason;
+      delete cur.pid;
+      delete cur.start;
+      cur.epoch = (cur.epoch ?? 0) + 1;
+      cur.streak = 0; cur.settled = 0; cur.failures = 0;
+      cur.notices = {};
+      cur.steps = Object.fromEntries(handbackStepKeys(home, cur).map(s => [s, { state: 'waiting' as const }]));
+      cur.state = 'working';
+      writeTicketQueue(home, cur);
+      return { ok: true, queue: cur, resumed: true };
+    }
+    if (parsed.choice === 'escalate') {
+      const msg = parsed.reason ? `escalated: ${parsed.reason}` : 'escalated by main';
+      recordDecision(cur, {
+        step, kind: 'accept', job: 'main', decision: 'escalate',
+        ...(parsed.reason && { reason: parsed.reason }),
+        at: new Date().toISOString(),
+      });
+      cur.epoch = (cur.epoch ?? 0) + 1;
+      cur.steps ??= {};
+      cur.steps[step] = { state: 'failed', reason: msg };
+      cur.reason = msg;
+      cur.queued = undefined;
+      cur.remaining = cur.remaining ?? [];
+      cur.handback = { step, choices: ['resume', 'stop'], kind: 'escalate' };
+      cur.state = 'paused';
+      cur.notices = cur.task ? {} : { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
+      writeTicketQueue(home, cur);
+      return { ok: true, queue: cur, resumed: false };
+    }
+    const verdict = parsed.reason ? `${parsed.choice}: ${parsed.reason}` : parsed.choice;
+    recordDecision(cur, {
+      step, kind: 'accept', job: 'main', decision: parsed.choice,
+      ...(parsed.reason && { reason: parsed.reason }),
+      at: new Date().toISOString(),
+    });
+    cur.epoch = (cur.epoch ?? 0) + 1;
+    cur.steps ??= {};
+    cur.steps[step] = { state: 'done', answer: parsed.choice };
+    cur.verdict = verdict;
+    delete cur.handback;
+    delete cur.reason;
+    const allDone = Object.values(cur.steps).every(c => ['done', 'failed', 'skipped', 'cancelled'].includes(c.state));
+    if (allDone) {
+      cur.state = 'completed';
+      cur.queued = undefined;
+      cur.remaining = [];
+      cur.notices = cur.task ? {} : { [`end-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
+      writeTicketQueue(home, cur);
+      return { ok: true, queue: cur, resumed: false };
+    }
+    delete cur.pid;
+    delete cur.start;
+    cur.notices = {};
+    cur.state = 'working';
+    writeTicketQueue(home, cur);
+    return { ok: true, queue: cur, resumed: true };
+  });
+  if (result.ok && result.resumed) {
+    // Wait briefly if the exiting runner from the prior pause still holds the driver lock.
+    try { await withAbstractLock('flow-runner', `${home}\0${id}`, () => {}, { timeoutMs: 2_000 }); }
+    catch { /* Best-effort wait; watcher still recovers if busy. */ }
+    wakeWorkflow(home, result.queue);
+  }
+  return result;
+}
+
 /** Answering the question that stopped a queue is the main session's judgement, so that queue resumes. */
 export async function resumeQueueAfterAnswer(home: string, jobId: string, request: string, pane: string | null, cwd = process.cwd()) {
   const q = queueIds(home).map(id => readTicketQueue(home, id)).filter(q => q !== null)
