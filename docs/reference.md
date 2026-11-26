@@ -828,41 +828,33 @@ On a working or paused batch row, `X` opens one prompt above the list for the wh
 
 Project → **Working tree** includes the Git diagnostics formerly on the separate Changes page: branch and HEAD, ahead/behind, staged/unstaged/untracked counts, and each worktree's path, branch and observed dirty state. The worktree probe runs only on that page. Unknown, stale and incomplete readings are not treated as clean. The probe does not fetch or run repository filters.
 
-Project opens to the selected project's pinned requests (if any, below the project strip, replacing the old **Needs you** section; zero rows when empty), then stance, priority (if not normal) and activity age. **Objectives** follows; when there is no `.hud/objectives.md`, the overview instead shows the available STATE **Now** and **Next** notes (up to two lines each). Neither the Home roll-up bars nor pane load are repeated here.
+Project opens to the selected project's pinned requests below the project strip (zero rows when empty), then the header: declared stance, non-normal priority, update age, and links to **Tickets** (`t`), **Worktree** (`b`, only with Git facts), and **Docs** (`d`). Click a link or use its key; Esc or the crumb returns to the overview. Docs opens `STATE.md` when available. There is no separate Progress page or `p` shortcut on Project. Job rows are on **[Execution](#execution-page)**, not on the Project overview or Working tree.
 
-**Details** links to **Tickets** (if present), **Progress**, **Worktree** (when Git facts exist) and **Docs**. Its rows name the figures: completed/non-dropped tickets and feature count; milestone and ticket states; branch and changed paths; spec milestone and review age. When the ticket scan is bounded or a read fails, the Details heading names how many features the counts sampled. Job and ticket activity is diagnostic, not an owner request. Live execution moved to the **[Execution](#execution-page)** tab; exhausted roles are still shown in Control.
+In a registered project, main keeps `.hud/objectives.md` in Git. An optional header such as `**Stance:** active · **Priority:** high` declares stance (`active`, `paused`, `maintenance`; otherwise unknown) and priority (`high`, `normal`, `low`; otherwise `normal`). Each `## <id>: <title>` section has a unique lowercase slug (`[a-z0-9-]+`) and a `**State:** active|paused|done` line. Optional single-line fields are `**Next:**`, `**Result:**`, `**Features:**` (comma-separated `.scratch` feature slugs) and `**Evidence:**` (comma-separated repo paths, URLs or commit hashes). A linked request that work waits on marks the Objective as blocked in its detail without changing its declared state. When there is no Objective record, Project shows the available STATE **Now** and **Next** notes (up to two lines each).
 
-In a registered project, main keeps `.hud/objectives.md` in Git. An optional header such as `**Stance:** active · **Priority:** high` declares stance (`active`, `paused`, `maintenance`; otherwise unknown) and priority (`high`, `normal`, `low`; otherwise `normal`). Each `## <id>: <title>` section has a unique lowercase slug (`[a-z0-9-]+`) and a `**State:** active|paused|done` line. Optional single-line fields are `**Next:**`, `**Result:**`, `**Features:**` (comma-separated `.scratch` feature slugs) and `**Evidence:**` (comma-separated repo paths, URLs or commit hashes). Project shows blocked Objectives first, then active, paused and done. An open, linked request that work waits on marks an Objective as blocked on Home and in Project without changing its declared state. An open Objective shows its ID, state and done/non-dropped ticket count, then the title and next step (up to three lines each), one ticket bar per linked feature, and its result (up to two lines, with the age if a receipt dates that exact result). Features with unknown coverage do not get a bar or count. At 56 columns and wider, a known acceptance checklist count can appear as a muted, separate figure. Jobs appear under their linked features with ticket number, title and age; the remaining jobs have their own section. Enter on a job opens its report, or its brief if it has no report. A done Objective uses one row.
+Under **Objectives**, each open Objective shows its ID, an aggregate ticket bar, done/non-dropped ticket count, and an activity note. Ticketless Objectives have a dotted track; incomplete coverage has no count. The first tier that applies wins: live jobs or landing gates on linked tickets; a job or run that ended in the last 24 hours (newest first, with the observed result where known); an open request or pending owner try (requests first); then quiet work by latest activity. A muted one-line subtitle shows the title, or the result when recent work has a dated Objective result. Subtitles drop first when the viewport is short. The cursor starts on the first request, else the first Objective.
 
-An **Unlinked** section follows the Objectives when `.hud/objectives.md` exists and scanned features not listed by any Objective have an open ticket (not `done` or `wontfix`) or a live job: one ticket bar and done/total count per feature, with its linked live jobs beneath. It shows the first five; `N more` shows the rest. Enter on a feature opens its first unfinished ticket file (the latest ticket when all are finished).
+Done and paused Objectives, and Objectives whose linked tickets are all done or dropped, share one **Done/paused** fold. A live job, active landing gate or open request keeps an Objective out of the fold; the last landing folds it as soon as all its tickets are resolved. Enter expands the fold in place, newest first.
 
-The first three evidence entries are shown in the Objective block; Enter on a link opens it if possible. Press Enter on a Project Objective, a Home Objective row, or Home's recent Result to see its full details and all evidence. Use ↑/↓ to select evidence, Enter or `o` to open it, and Esc to return. Repo-relative files and reports written as `$HUD_HOME/jobs/<id>/report.md` (or the corresponding absolute report path) open in `$EDITOR`; commit hashes open `git show` in the Objective's project. The detail view marks missing files and displays URLs in full without launching them.
+One **Unlinked** row summarizes scanned features outside the Objectives that have open tickets or live jobs. Enter opens their list, and Enter on a feature opens its first unfinished ticket (or the latest ticket if all are finished).
+
+Press Enter on a Project Objective, a Home Objective row, or Home's recent Result to see its full details and all evidence. Use ↑/↓ to select evidence, Enter or `o` to open it, and Esc to return. Repo-relative files and reports written as `$HUD_HOME/jobs/<id>/report.md` (or the corresponding absolute report path) open in `$EDITOR`; commit hashes open `git show` in the Objective's project. The detail view marks missing files and displays URLs in full without launching them.
 
 Use `hud_objective` with `op: "set"`, `cwd`, `id` and any changed fields (`title` and `state` required on creation; `features` and `evidence` are arrays). Omitted fields are untouched; an empty string or array clears an optional field. Use `op: "project"` with `stance` and/or `priority` for the header. The tool writes atomically but does not commit. It appends one receipt per material call (creation, state, title, then result, in that order if several apply) to private `$HUD_HOME/events/YYYY-MM.jsonl`, separate from the job archive. These small monthly append-only files are not automatically pruned. A changed result includes a bounded excerpt and a digest of its full text, regardless of the primary change kind. Hand edits are visible but do not create receipts.
 
 Use `hud_objective` with `op: "request"`, `cwd`, `text` (one line), optional `objective` (an existing ID), and `waits: true` if work is waiting. It appends a dated `[rN]` bullet under `## Waiting for the owner`, with optional `(objective <id>)` and `(work waits)` markers. The request drill-down retains the request ID and current Objective title. Use `op: "resolve"`, `cwd`, `request` (e.g. `r3`), and optional `resolution` (`resolved` by default, or `withdrawn`) and `note` to remove it. Both operations append a request receipt to the same events archive with project, request ID, Objective if linked, whether work waited, change, time and known caller identity. Resolving does not mark tickets. Legacy hand edits to STATE still work without receipts.
 
-Enter or click a page row to open it; Esc or the crumb (`‹ Project › Page`) returns to that row.
-Each page keeps its own cursor and scroll, even across panel reloads.
+Each Project page keeps its own cursor and scroll, even across panel reloads. Esc or the crumb (`‹ Project › Page`) returns to the overview.
 Enter on `N more` reveals the remaining requests. Enter on a request opens its whole text, including continuation lines; Esc or the crumb returns to its row, and `o` opens STATE.md. Old accept records can still settle legacy slice IDs.
 
 Facts come from `docs/handoff/STATE.md` (root `STATE.md` fallback), `docs/spec.md`, reviews, roles/convention/instructions and Git/worktrees.
 No milestone or completion is guessed.
 Key rows contain names/presence only; Browser ✓ means Chrome and `jev-ask` exist on PATH, not a running/logged-in browser.
 
-**Progress page.**
-One row per ticket feature shows the most important state mark and counts by state, not a project completion percentage.
-Enter shows the member tickets, with `o` to open the ticket file.
-Next and the Now summary still come from STATE, which is not a slice ledger.
-A job's row can open its report or, if none, its brief.
-Worktrees without a linked ticket or managed job are listed on the Working tree page.
-The ordinary `/` filter matches the whole group when one member matches.
-The old Detail (`acceptance`) setting is ignored.
-
 Tickets use `.scratch/<feature>/issues/<NN>-<slug>.md`.
 The list shows scanned features with open tickets, then the newest finished features to fill 16 slots.
 The scan enumerates feature names, checks up to 256 for an `issues` directory, then reads up to 64 of those directories by recency, at most 64 files per feature and 512 total, up to 64 KiB per file.
-In the Tickets diagnostics, totals are marked `Partial` if a cap or a failed read leaves the scan incomplete; on the Project overview, Details reports the number of sampled features instead.
+In the Tickets diagnostics, totals are marked `Partial` if a cap or a failed read leaves the scan incomplete.
 Required: matching `# NN: title`, `**Blocked by:**`, `**Status:**`.
 `hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way into `.scratch/` via `gh` (open parent issues with sub-issues, plus already-mirrored parents so closed features receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files with a generated marker; it refuses if `.scratch/` holds non-generated ticket files.
 A recorded acceptance or done/closed/complete/resolved status completes a ticket, as does a fully checked nonempty checklist unless it awaits a try.
@@ -871,7 +863,7 @@ A ticket ID in the latest 64 commit subjects can show a ticket as landed and rel
 Local numbers/titles and `feature/NN` blockers resolve across the scanned project.
 Waiting only for ordinary predecessors or known cross-feature blockers is **Queued**. An unknown blocker or a stalled predecessor in the same feature is **Stalled**.
 Working jobs and managed worktrees are linked at read time, never written back to the tracker.
-The lookup of the newest 64 top-level jobs and up to 64 of their children is shared with Progress.
+Ticket claims use a bounded lookup of the newest 64 top-level jobs and up to 64 of their children. The Objective activity notes reuse Execution's bounded recent job and run evidence.
 **Tickets page**: one row per `.scratch` feature, with resolved/total (including dropped tickets as resolved) and the oldest open ticket's status.
 **Accept all** appears here when there are pending tries. Select it and press Enter (or click the selected row) to accept all observed pending tickets in the displayed project in one `$HUD_HOME/tries.jsonl` record. If the read is partial, only the tickets found are included. The action does not write to project files; `hud watch` and MCP `changes` receive one line. Old records remain readable.
 Open a feature to see its tickets in lanes by state, one row each (`◐ hp 06 Projects list  imp 12m  1/3`: state mark, the feature's code, number and title; on the right what matters for the lane, then checked/total).
@@ -1074,7 +1066,7 @@ Enter or one click opens the project (on the tab that opened the list); Esc retu
 On the root hub, Esc does nothing.
 The light per-project facts behind the strip marks and Projects list (STATE and tickets as Home reads them, cached by file signature, plus one pass over recent jobs for unsettled live work per root) refresh on every visible tab at most once every five seconds, off the paint path: Home reuses its portfolio reads, Help and Settings modals pause them, and opening the Projects list reads at once while pausing the shown project's full collection (no Git, no roles).
 The last-touched time reads `12m`, `3h`, `4d` (`12分`, `3小时`, `4天` in Chinese).
-A project without STATE.md says `no STATE.md` on Progress; its other pages work.
+A project without STATE.md has no STATE link in Docs; the other Project pages still work.
 
 On a page Enter folds a header, shows a ticket's detail or opens a row's file, and `o` opens it in `$EDITOR` (default vim), in a herdr tab that closes with the editor; failed workspace lookup falls back to a split.
 Home, Project, Execution and Control retain separate cursor/scroll state.
@@ -1208,7 +1200,8 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | `v` | Home: open Jobs |
 | `n` | Jobs or Inspector: show this session’s native subagents |
 | `w` | Home, Project, Execution, Control: write the shown project's [review board](#review-board) (HTML) and open it |
-| `/` | Filter Project Progress and Tickets by a case-insensitive substring. Backspace edits, Enter keeps the query, Esc stops editing then clears it. Leaving the view clears it; reload retains a kept query |
+| `t` / `b` / `d` | Project overview: open Tickets / Working tree (with Git facts) / Docs |
+| `/` | Filter Tickets by a case-insensitive substring. Backspace edits, Enter keeps the query, Esc stops editing then clears it. Leaving the view clears it; reload retains a kept query |
 | `,`, `?` | Settings, Help. From Settings, Help returns to the same draft and selection |
 | Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project, Execution or Control, Esc does nothing |
 | `q` | Close panel |

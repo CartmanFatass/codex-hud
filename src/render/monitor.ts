@@ -11,7 +11,7 @@ import type { ScheduleItem } from '../collectors/schedule.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
 import { initialHomeTab, initialProjectTab, initialExecutionTab, initialControlTab, type JobTarget, type MonitorState, type ObjectiveTarget } from './monitor-state.js';
-import type { ExecutionView } from '../collectors/execution.js';
+import type { ExecutionView, TicketActivity } from '../collectors/execution.js';
 export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
 import type { MainTab } from './main-tabs.js';
@@ -65,6 +65,7 @@ export interface MonitorRow {
   homeTarget?: { root: string; index?: number; request?: string };
   waitingTarget?: { index: number; request: string; root?: string };
   objectiveTarget?: ObjectiveTarget;
+  objectiveSubtitle?: true;
   objectiveEvidence?: { root: string; text: string };
   advisorCopy?: { root: string; session: string; skill: string; path: string };
   commit?: { cwd: string; hash: string };
@@ -96,6 +97,7 @@ export interface MonitorControl {
     | 'board-back'
     | 'board-jobs'
     | 'board-native'
+    | 'project-page'
     | 'project-strip-pick'
     | 'project-strip-more'
     | 'request-pick'
@@ -130,6 +132,7 @@ export interface MonitorFrame {
     targets: ReadonlyMap<string, WorkTarget>;
     rows: MonitorRow[];
     requests?: MonitorRow[];
+    projectLinks?: ReadonlyArray<(typeof import('./inbox-project.js').PROJECT_LINKS)[number]>;
   };
   lines: string[];
   panes: MonitorRect[];
@@ -171,6 +174,7 @@ export interface MonitorData {
   worktrees?: WorktreesSnapshot | null;
   /** Only while the Execution tab (or Run Detail opened from it) is open. */
   execution?: ExecutionView;
+  projectActivity?: readonly TicketActivity[];
   /** Current project's live jobs (running, waiting, queued) for the Execution tab count. */
   executionCount?: number;
   expData?: ExpData;

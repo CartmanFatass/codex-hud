@@ -1,7 +1,9 @@
 /** Pure Project overview and project switcher. Owner requests live in the pinned request area. */
+import type { TicketActivity } from '../collectors/execution.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
-import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
-import { PAGE_WORD, objectiveRows, pageSummary, projectOrder, sinceText } from './project-view.js';
+import type { MonitorRow, MonitorState, ProjectChoice, RowControl } from './monitor.js';
+import { objectiveRows, OBJECTIVE_FOLD } from './project-objectives.js';
+import { projectOrder, sinceText } from './project-view.js';
 import { boardRow, compactAge, mark, section } from './workboard-rows.js';
 import { cutWords, fit, monitorText, pair, sentenceRows } from './monitor-text.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
@@ -15,21 +17,33 @@ const cutId = (text: string, room: number) => {
   return cutText(body, room) || truncateAnsi(body, room);
 };
 
-function detailRows(data: ProjectSnapshot, width: number, now: number): MonitorRow[] {
-  const totals = data.ticketTotals, col = width < 56 ? 9 : 10;
-  const coverage = totals?.partial ? t(totals.totalFeatures === 1 ? '{n} feature sampled' : '{n} features sampled', { n: totals.totalFeatures }) : '';
-  const rows = [plain('', width), section(t('Details'), width, coverage)];
-  for (const page of ['tickets', 'progress', 'tree', 'docs'] as const) {
-    if ((page === 'tickets' && !(totals?.totalFeatures || totals?.partial || data.tickets.length)) || (page === 'tree' && !data.git)) continue;
-    const label = page === 'tree' ? 'Worktree' : PAGE_WORD[page], room = width - col - 1;
-    const summary = pageSummary(page, data, now);
-    // The Git branch is a token; let it give way to the whole change count.
-    if (page === 'tree' && data.git?.branch) summary[0] = truncateAnsi(summary[0], Math.max(0, room - visualLength(summary[1]) - 3));
-    const facts = summary.filter((fact) => fact && visualLength(fact) <= room);
-    while (facts.length > 1 && visualLength(facts.join(' · ')) > room) facts.pop();
-    rows.push({ ...plain(`${muted(fit(t(label), col))} ${facts.join(' · ') || muted(mark('—', '-'))}`, width), item: `project:page:${page}` });
+export const PROJECT_LINKS = [
+  { key: 't', page: 'tickets', label: 'Tickets', hint: 't tickets' },
+  { key: 'b', page: 'tree', label: 'Worktree', hint: 'b worktree' },
+  { key: 'd', page: 'docs', label: 'Docs', hint: 'd docs' },
+] as const;
+export const projectLinks = (data?: ProjectSnapshot) => data ? PROJECT_LINKS.filter((link) => link.page !== 'tree' || data.git) : [];
+
+export function projectHeaderRows(data: ProjectSnapshot, width: number, now: number, name: string, hasStrip: boolean): MonitorRow[] {
+  const controls: RowControl[] = [], links = projectLinks(data).map(({ page, label }) => ({ page, text: t(label) }));
+  const right = links.map(({ text }) => text).join('  ');
+  let x = width - visualLength(right);
+  for (const { page, text } of links) {
+    const span = visualLength(text);
+    if (x >= 0) controls.push({ kind: 'project-page', item: page, x, width: span });
+    x += span + 2;
   }
-  return rows;
+  const record = data.objectives, stance = record && record.stance !== 'unknown' ? t(record.stance) : '';
+  const priority = record && record.priority !== 'normal' ? t('{priority} priority', { priority: t(record.priority) }) : '';
+  const age = compactAge(Math.max(data.updatedAt ?? -Infinity, data.objectivesAt ?? -Infinity), now);
+  const shortAge = age && t('{age} ago', { age }), fullAge = age && t('updated {age} ago', { age });
+  const available = width - visualLength(right) - 2;
+  const identity = [[stance, priority, width < 50 ? shortAge : fullAge], ...(width >= 56 ? [[stance, priority, shortAge]] : []),
+    [stance, width < 50 ? shortAge : fullAge], [stance, shortAge], [stance], [shortAge]].map((fields) => fields.filter(Boolean).join(' · '))
+    .find((text) => text && visualLength(text) <= available) ?? '';
+  const title = truncateAnsi(monitorText(name), 24) || t('Project');
+  return [...(hasStrip ? [] : [section(theme.board.title(title), width)]),
+    { text: fit(pair(muted(identity), theme.board.active(right), width), width), controls }];
 }
 
 function stateNotes(data: ProjectSnapshot, width: number): MonitorRow[] {
@@ -39,24 +53,11 @@ function stateNotes(data: ProjectSnapshot, width: number): MonitorRow[] {
       ...(path && { item: `project:file:${path}:${label.toLowerCase()}`, files: [path] }) }))] : []);
 }
 
-/** Project landing: declared Objectives or STATE notes, then diagnostic links. */
+/** Project landing: declared Objectives or STATE handoff notes. */
 export function projectOverviewRows(
-  data: ProjectSnapshot, state: MonitorState, width: number, now: number, name: string, projects: ProjectChoice[],
+  data: ProjectSnapshot, state: MonitorState, width: number, now: number, activity?: readonly TicketActivity[],
 ): MonitorRow[] {
-  const many = projects.length > 1;
-  const record = data.objectives, stance = record && record.stance !== 'unknown' ? t(record.stance) : '';
-  const priority = record && record.priority !== 'normal' ? t('{priority} priority', { priority: t(record.priority) }) : '';
-  const age = compactAge(Math.max(data.updatedAt ?? -Infinity, data.objectivesAt ?? -Infinity), now);
-  const ageText = age && t(width < 50 ? '{age} ago' : 'updated {age} ago', { age });
-  const identity = [priority, ageText, stance].filter(Boolean);
-  while (visualLength(identity.join(' · ')) + 2 > width && identity.length) identity.shift();
-  if (stance && identity.includes(stance)) identity.unshift(identity.pop()!);
-  const title = truncateAnsi(monitorText(name), width < 50 ? 14 : width < 80 ? 18 : 24) || t('Project');
-  // With multiple projects, the resident project strip under the tabs replaces the folded picker header.
-  return [...(many ? [] : [plain('', width), section(theme.board.title(title), width)]),
-    ...(identity.length ? [plain(`  ${muted(identity.join(' · '))}`, width)] : []),
-    ...(!record ? stateNotes(data, width) : []), ...objectiveRows(data, width, now, state.project.folded.has('unlinked:more')),
-    ...detailRows(data, width, now)];
+  return data.objectives ? objectiveRows(data, width, now, state.project.folded.has(OBJECTIVE_FOLD), activity) : stateNotes(data, width);
 }
 
 /** Projects list: grouped into Needs you, Running and Quiet (a quiet project is one row). */

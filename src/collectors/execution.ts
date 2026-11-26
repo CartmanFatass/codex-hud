@@ -41,12 +41,18 @@ export interface EndedExecutionJob {
   readonly endedAt: number;
   readonly result?: 'failed' | 'stopped' | 'landed' | 'not landed' | 'done';
 }
+export type TicketActivity = { readonly ticket: string; readonly at?: number } & (
+  { readonly kind: 'live'; readonly jobId: string } | { readonly kind: 'gate'; readonly flow: string } |
+  { readonly kind: 'ended'; readonly at: number; readonly result?: EndedExecutionJob['result'] }
+);
 export interface ExecutionSnapshot {
   readonly root: string;
   /** Open workflows of this project, plus queues, batches and councils ended within the last 24 hours. */
   readonly runs?: readonly ExecutionRun[];
   /** Ended jobs not represented by a run, newest settlements first. */
   readonly endedJobs?: readonly EndedExecutionJob[];
+  /** The same bounded observations, by ticket, before Execution deduplicates jobs shown in workflow rows. */
+  readonly ticketActivity?: readonly TicketActivity[];
   /** Running and waiting jobs: those asking first, then running, then queued; the oldest first within each. */
   readonly jobs: readonly ExecutionJob[];
   readonly excerpts?: readonly SelectionExcerpt[];
@@ -96,7 +102,7 @@ function endedJobResult(worker: OwnerWorker, job: Partial<Job>): EndedExecutionJ
 }
 
 /** Uses the bounded, project-scoped job snapshot; reuses its workers for Inspector identity and land facts. */
-export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: { root: string; pane: string | null; env: NodeJS.ProcessEnv; complete: boolean }, now = Date.now()):
+export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: { root: string; pane: string | null; env: NodeJS.ProcessEnv; complete: boolean; activityOnly?: boolean }, now = Date.now()):
   { snapshot: ExecutionSnapshot; targets: ScreenTarget[] } {
   const cache = getJobIndexCache(home);
   const workers = new Map(board.workers.map((worker) => [jobIdOf(worker.id)!, worker]));
@@ -115,6 +121,50 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   };
   // A reaped job's worker is gone, whatever its last STATUS claims.
   const live = [...workers].filter(([id, w]) => w.settledAt === null && !receipt(id).reaped_at).map(([id]) => id);
+  const ticketOf = (id: string) => {
+    const job = receipt(id), ticket = text(job.ticket) ?? (typeof job.ticket === 'number' ? String(job.ticket) : text(job.slice));
+    return ticket && /^\d+$/.test(ticket) && text(job.package) ? `${job.package}/${ticket}` : ticket;
+  };
+  const ticketActivity: TicketActivity[] = [];
+  const recent = (at: number) => at >= now - ENDED_MS && at <= now;
+  for (const id of live) {
+    const ticket = ticketOf(id), worker = workers.get(id)!;
+    const progressAt = Date.parse(worker.latest_progress?.at ?? '');
+    if (ticket) ticketActivity.push({ ticket, kind: 'live', jobId: id, at: Number.isFinite(progressAt) ? progressAt : worker.startedAt ?? undefined });
+  }
+  for (const [id, worker] of workers) {
+    const ticket = ticketOf(id);
+    if (!ticket) continue;
+    const land = worker.flow?.kind === 'land' ? worker.flow : undefined;
+    const at = land?.landedSha ? land.updatedAt ?? worker.settledAt : worker.settledAt;
+    if (at !== null && recent(at)) ticketActivity.push({ ticket, kind: 'ended', at, result: endedJobResult(worker, receipt(id)) });
+  }
+  for (const run of runs) {
+    if (run.kind === 'land') {
+      const ticket = run.jobIds?.[0] && ticketOf(run.jobIds[0]);
+      if (ticket) ticketActivity.push({ ticket, kind: 'gate', flow: run.flow, at: run.updatedAt ?? run.createdAt ?? undefined });
+    }
+    for (const item of run.tickets) {
+      const ticket = run.feature && /^\d+$/.test(item.ticket) ? `${run.feature}/${item.ticket}` : item.ticket;
+      if (run.endedAt === undefined && item.stage === 'land-gate' && !item.landingUnknown)
+        ticketActivity.push({ ticket, kind: 'gate', flow: item.landFlow ?? `${run.flow}:${ticket}`, at: item.since });
+      if (run.endedAt !== undefined && recent(run.endedAt) && (item.jobId || item.stage === 'landed' || item.stage === 'failed')) {
+        const worker = item.jobId && workers.get(item.jobId);
+        const result = item.stage === 'landed' || item.stage === 'failed' ? item.stage
+          : item.stage === 'settled' && !item.landingUnknown && worker ? endedJobResult(worker, receipt(item.jobId!)) : undefined;
+        ticketActivity.push({ ticket, kind: 'ended', at: run.endedAt, result });
+      }
+    }
+    if (run.kind !== 'queue' && run.endedAt !== undefined && recent(run.endedAt)) {
+      for (const id of new Set(run.jobIds ?? [])) {
+        const ticket = ticketOf(id), worker = workers.get(id);
+        if (ticket) ticketActivity.push({ ticket, kind: 'ended', at: run.endedAt,
+          result: worker?.settledAt != null ? endedJobResult(worker, receipt(id)) : undefined });
+      }
+    }
+  }
+  const snapshot = { root: scope.root, ...(runs.length ? { runs } : {}), ticketActivity, complete };
+  if (scope.activityOnly) return { snapshot: { ...snapshot, jobs: [] }, targets: [] };
   const children = new Map<string, string[]>();
   for (const [id, worker] of workers) {
     const parent = jobIdOf(worker.parentJobId);
@@ -161,12 +211,12 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   const runJobs = new Set(runs.flatMap((run) => [
     ...run.jobIds ?? [], ...run.tickets.map((ticket) => ticket.jobId), ...run.reviews.map((review) => review.job), ...run.decisions.map((decision) => decision.job),
   ]));
-  const recent = [...workers].flatMap(([jobId, worker]) => {
+  const ended = [...workers].flatMap(([jobId, worker]) => {
     const endedAt = worker.settledAt;
-    return endedAt !== null && endedAt >= now - ENDED_MS && endedAt <= now && !runJobs.has(jobId) ? [{ jobId, worker, endedAt }] : [];
+    return endedAt !== null && recent(endedAt) && !runJobs.has(jobId) ? [{ jobId, worker, endedAt }] : [];
   }).sort((a, b) => b.endedAt - a.endedAt || a.jobId.localeCompare(b.jobId));
   const endedJobs: EndedExecutionJob[] = [];
-  for (const entry of recent) {
+  for (const entry of ended) {
     const { jobId, worker } = entry, job = receipt(jobId);
     if ([job.ticket_queue, job.workflow, job.batch_flow, job.council?.id, job.land_turn].some((id) => id && runIds.has(id))) continue;
     endedJobs.push({ ...entry, dir: join(home, 'jobs', jobId), result: endedJobResult(worker, job) });
@@ -177,6 +227,5 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   const rank = new Map(ordered.map((job, i) => [job.jobId, i]));
   targets.sort((a, b) => rank.get(a.jobId)! - rank.get(b.jobId)!);
   const excerpts = readSelectionExcerpts(home, cache, { project: scope.root });
-  return { snapshot: { root: scope.root, ...(runs.length ? { runs } : {}), endedJobs, jobs: ordered, complete,
-    ...(excerpts.length && { excerpts }) }, targets };
+  return { snapshot: { ...snapshot, endedJobs, jobs: ordered, ...(excerpts.length && { excerpts }) }, targets };
 }

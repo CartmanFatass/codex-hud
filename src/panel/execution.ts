@@ -1,4 +1,4 @@
-/** What the panel collects for the Project Execution page, and only while it or an Inspector opened from it is up. */
+/** Bounded project job activity; worker outputs and screens belong to Execution. */
 import { executionSnapshot, type ExecutionSnapshot, type ExecutionView } from '../collectors/execution.js';
 import { ScreenSampler } from '../collectors/execution-screens.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
@@ -10,6 +10,7 @@ export class PanelExecution {
   private readonly screens: ScreenSampler;
   private open?: { root: string; jobs: PanelJobPipeline };
   private snapshot?: ExecutionSnapshot;
+  private ticketActivity?: ExecutionSnapshot['ticketActivity'];
 
   constructor(private readonly home: string, private readonly pane: string | null, private readonly env: NodeJS.ProcessEnv, changed: () => void) {
     this.screens = new ScreenSampler(env, changed);
@@ -25,13 +26,20 @@ export class PanelExecution {
     else this.screens.stop();
   }
 
-  async refresh(inspecting?: string, now = Date.now()): Promise<void> {
+  async refresh(inspecting?: string, now = Date.now(), activityOnly = false): Promise<void> {
     const open = this.open;
     if (!open || !(await open.jobs.refresh(inspecting)) || this.open !== open) return;
     const { snapshot, targets } = executionSnapshot(this.home, open.jobs.workboard(this.noAgents),
-      { root: open.root, pane: this.pane, env: this.env, complete: open.jobs.jobsObserved }, now);
-    this.snapshot = snapshot;
-    this.screens.watch(targets);
+      { root: open.root, pane: this.pane, env: this.env, complete: open.jobs.jobsObserved, activityOnly }, now);
+    this.ticketActivity = snapshot.ticketActivity;
+    if (!activityOnly) {
+      this.snapshot = snapshot;
+      this.screens.watch(targets);
+    }
+  }
+
+  activity(root: string) {
+    return this.open?.root === root ? this.ticketActivity : undefined;
   }
 
   /** Collected facts for paint; undefined until the project's first read. */
@@ -52,5 +60,6 @@ export class PanelExecution {
     this.open?.jobs.dispose();
     this.open = undefined;
     this.snapshot = undefined;
+    this.ticketActivity = undefined;
   }
 }

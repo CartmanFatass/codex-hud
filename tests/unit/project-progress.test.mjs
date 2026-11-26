@@ -1,4 +1,4 @@
-import { withState, sliceState } from '../fixtures/state-helpers.mjs';
+import { sliceState } from '../fixtures/state-helpers.mjs';
 import { projectPageOf } from '../../dist/render/project-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +10,6 @@ import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { projectFixture, plain, onPage, PROJECTS, NOW, TREE } from '../fixtures/project-page.mjs';
-import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { ProjectVisits } from '../../dist/collectors/project-visits.js';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
@@ -31,100 +30,16 @@ const send = (frame, raw) => handleMonitorInput(frame.state, key(raw), { tree: T
 const text = (frame) => plain(frame).join('\n');
 const extra = { projects: PROJECTS };
 
-test('Progress folds through real input: a task shows slice details; Next shows the rest and a long bullet expands', async (t) => {
-  const f = await fixture(t), height = 90;
-  let frame = f.render(40, 'en', 'progress', height, f.rich);
-  const at = (item) => { frame.state.project.nav.cursor = item; return frame; };
-  const milestone = 'project:fold:task:milestone:0.1.3';
-  frame = f.render(40, 'en', send(at(milestone), '\r').state, height, f.rich);
-  assert.match(text(frame), /0\.1\.3 · d0e1f2a · 11-11/m);
-  frame = f.render(40, 'en', send(at(milestone), '\r').state, height, f.rich);
-  assert.doesNotMatch(text(frame), /d0e1f2a/);
-  assert.deepEqual(send(at(milestone), 'o').action, { type: 'open-files', files: [f.data.statePath] }, 'o opens STATE where Enter folds');
-  // Next: the row for the rest shows all four bullets and `fewer`, and Enter again folds them.
-  assert.doesNotMatch(text(frame), /Another short bullet/);
-  frame = f.render(40, 'en', send(at('project:fold:next'), '\r').state, height, f.rich);
-  assert.match(text(frame), /→ Another short bullet/);
-  assert.match(text(frame), /^ {2}▾ fewer$/m);
-  frame = f.render(40, 'en', send(at('project:fold:next'), '\r').state, height, f.rich);
-  assert.doesNotMatch(text(frame), /Another short bullet/);
-  // Enter on a long bullet shows all of it, again folds it; a short one has nothing to show and opens STATE.md.
-  const long = frame.workboard.rows.find((r) => r.item === 'project:fold:next:1');
-  frame = f.render(40, 'en', send(at(long.item), '\r').state, height, f.rich);
-  assert.match(text(frame), /the end of it all\n/);
-  frame = f.render(40, 'en', send(at(long.item), '\r').state, height, f.rich);
-  assert.doesNotMatch(text(frame), /the end of it all/);
-  assert.deepEqual(send(at(long.item), 'o').action, { type: 'open-files', files: [f.data.statePath] }, 'o opens the file where Enter folds');
-  const short = frame.workboard.rows.find((r) => /:next:0$/.test(r.item ?? ''));
-  for (const raw of ['\r', 'o']) assert.deepEqual(send(at(short.item), raw).action, { type: 'open-files', files: [f.data.statePath] });
-});
-test('a project without tickets gets an empty Progress message; its live jobs still show', async (t) => {
-  const f = await fixture(t), bare = join(f.root, 'bare');
-  fs.mkdirSync(bare);
-  const collector = new ProjectCollector(bare, f.hud, f.env, f.home);
-  const data = await collector.collect(true, { ...f.board, workers: [] }, NOW);
-  assert.equal(data.statePath, undefined);
-  const withJob = { ...data, active: f.rich.active };
-  for (const width of [40, 120]) for (const lang of ['en', 'zh']) {
-    const progress = f.render(width, lang, 'progress', 40, withJob);
-    for (const line of progress.lines) assert.equal(visualLength(line), width);
-    assert.match(text(progress), lang === 'en' ? /No tickets/ : /无工单/);
-    assert.match(text(progress), /◉ imp/);
-    assert.doesNotMatch(text(progress), /\(0\.1\.3\)|[█▒░]|● working|Next|To try/);
-    assert.match(text(f.render(width, lang, undefined, 24, data)), lang === 'en' ? /Progress +No tickets/ : /进度 +无工单/);
-    for (const page of ['tickets', 'tree', 'docs', 'control']) for (const line of f.render(width, lang, page, 40, data).lines)
-      assert.equal(visualLength(line), width);
+test('Project without Objectives keeps STATE handoff notes but no job rows', async (t) => {
+  const f = await fixture(t);
+  for (const lang of ['en', 'zh']) for (const width of [40, 62]) {
+    const hub = f.render(width, lang, undefined, 24, f.rich);
+    assert.ok(hub.lines.every((line) => visualLength(line) === width));
+    assert.match(text(hub), /Synthetic hub work/);
+    assert.match(text(hub), /A short bullet/);
+    assert.doesNotMatch(text(hub), /Tidy the synthetic docs|进度|Progress/);
+    assert.ok(!hub.workboard.rows.some((r) => r.item?.startsWith('project:job:')));
   }
-  assert.doesNotMatch(text(f.render(40, 'en', 'progress', 40, data)), /◉|Now/, 'no STATE and no job: only the one line');
-});
-test('a job of another pane is titled from its brief on Progress, in EN and ZH, and is a stop whose Enter and o open that brief', async (t) => {
-  const f = await fixture(t), id = 'j0000000000000001';
-  // Started by another main pane, as an ordinary MCP job: no title, no task, no package, and the panel's workboard lacks it.
-  f.put(join(f.job, 'job.json'), { job: id, role: 'imp', cwd: f.cwd, herdr_pane: 'w4E:p9', created_at: new Date(NOW - 20 * 60000).toISOString() });
-  const data = await f.collector.collect(true, { ...f.board, workers: [] }, NOW + 1);
-  assert.equal(data.active.find((a) => a.jobId === id).title, 'Build the Project tab');
-  for (const lang of ['en', 'zh']) for (const width of [40, 120]) {
-    const frame = f.render(width, lang, 'progress', 56, data);
-    for (const line of frame.lines) assert.equal(visualLength(line), width, stripAnsi(line));
-    assert.match(text(frame), /◉ imp +Build the Project tab +20(m|分)$/m);
-  }
-  let frame = f.render(40, 'en', 'progress', 56, data);
-  const rows = frame.workboard.rows.filter((r) => r.item === `project:job:${id}`);
-  assert.ok(rows.length >= 1);
-  assert.ok(rows.every((r) => r.files?.[0] === join(f.job, 'brief.md')));
-  frame = f.render(40, 'en', withState(frame.state, { project: { nav: { cursor: `project:job:${id}` } } }), 56, data);
-  for (const raw of ['\r', 'o']) assert.deepEqual(send(frame, raw).action, { type: 'open-files', files: [join(f.job, 'brief.md')] });
-  // Once it reports, the row opens the report, and the cursor stays on the same row.
-  f.put(join(f.job, 'report.md'), '# Report');
-  const reported = await f.collector.collect(true, { ...f.board, workers: [] }, NOW + 2);
-  frame = f.render(40, 'en', frame.state, 56, reported);
-  assert.equal(frame.state.project.nav.cursor, `project:job:${id}`);
-  assert.deepEqual(send(frame, '\r').action, { type: 'open-files', files: [join(f.job, 'report.md')] });
-});
-test('a Progress page of jobs alone pages by keyboard: Down, PgDn and End move the cursor and the view', async (t) => {
-  const f = await fixture(t), height = 12;
-  const job = (i) => ({ jobId: `j${String(i).padStart(16, '0')}`, role: 'imp', state: 'working', title: `Task ${i + 1}`, at: NOW, asking: false });
-  const active = Array.from({ length: 12 }, (_, i) => ({ ...job(i), ...(i === 11 ? {} : { path: join(f.job, 'brief.md') }) }));
-  // A project with no STATE.md and more jobs than rows (a panel this short cannot show them all).
-  const data = { ...f.data, statePath: undefined, waiting: [], slices: [], next: [], ledger: [], active };
-  const page = (state) => f.render(40, 'en', state, height, data);
-  let frame = page('progress');
-  const first = plain(frame);
-  assert.doesNotMatch(first.join('\n'), /Task 12/, 'the last job is below the fold');
-  assert.equal(frame.state.project.nav.cursor, active[0] && `project:job:${active[0].jobId}`, 'the first job holds the cursor');
-  frame = page(send(frame, '\x1b[6~').state);
-  assert.ok(frame.state.project.nav.scroll > 0 || frame.state.project.nav.cursor !== `project:job:${active[0].jobId}`, 'PgDn moves');
-  frame = page(send(frame, '\x1b[B').state);
-  frame = page(send(frame, 'G').state);
-  assert.equal(frame.state.project.nav.cursor, `project:job:${active[11].jobId}`, 'End lands on the last job');
-  assert.ok(frame.state.project.nav.scroll > 0, 'and the view followed it');
-  assert.match(plain(frame).join('\n'), /Task 12/);
-  // A job with neither report nor brief is still a stop, and Enter on it does nothing.
-  assert.equal(send(frame, '\r').action, undefined);
-  frame = page(send(frame, '\x1b[H').state);
-  assert.equal(frame.state.project.nav.cursor, `project:job:${active[0].jobId}`);
-  assert.match(plain(frame).join('\n'), /Task 1\b/, 'the view came back to the first job');
-  assert.deepEqual(send(frame, '\r').action, { type: 'open-files', files: [join(f.job, 'brief.md')] });
 });
 test('hub: with several projects the resident strip switches projects and +N opens the Projects list; [ ] step through them, wrapping; a page keeps its page', async (t) => {
   const f = await fixture(t), height = 24;
@@ -133,10 +48,10 @@ test('hub: with several projects the resident strip switches projects and +N ope
   assert.match(plain(frame)[1], /^ demo-project  second-project  third ─+$/);
   assert.doesNotMatch(text(frame), /▾ (project|项目) \d+\/\d+/);
   assert.deepEqual(frame.projects, PROJECTS);
-  assert.match(plain(frame).at(-1), /\[ \] project/);
+  assert.match(plain(hub(onPage(), PROJECTS)).at(-1), /t tickets/);
   assert.equal(f.render(40, 'en').projects, undefined, 'one project: no switch, no hint');
   assert.doesNotMatch(text(f.render(40, 'en')), /▾ (project )?\d\/\d|\[ \]/);
-  assert.equal(f.render(40, 'en').workboard.rows.find((r) => /^demo-project/.test(stripAnsi(r.text))).item, undefined);
+  assert.match(text(f.render(40, 'en')), /^demo-project ─/m);
   // Keys: next, next, wraps to the panel's own (stored as none), previous goes round the other way.
   const roots = [];
   for (const raw of [']', ']', ']', '[']) { frame = hub(send(frame, raw).state); roots.push(frame.state.selectedProject); }
@@ -161,13 +76,13 @@ test('hub: with several projects the resident strip switches projects and +N ope
   assert.equal(hub(send(frame, ']').state, many).state.selectedProject, many[1].root, 'the cursor on +N does not stop [ ] from stepping');
   // A page: its crumb names the project, the page stays open, and the page's cursor, scroll and folds start fresh.
   const page = (state) => f.render(40, 'en', state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'second-project' });
-  assert.match(plain(f.render(40, 'en', 'progress'))[0], /^‹ Project › Progress/, 'one project: the crumb says Project');
-  frame = page(onPage('progress', { project: { nav: { cursor: 'project:file:x:slice:1', scroll: 4 }, savedPages: { docs: { cursor: 'project:file:y:0', scroll: 2 } }, folded: new Set(['agents', 'inbox:done']) } }));
+  assert.match(plain(f.render(40, 'en', 'tickets'))[0], /^‹ Project › Tickets/, 'one project: the crumb says Project');
+  frame = page(onPage('tickets', { project: { nav: { cursor: 'project:file:x:slice:1', scroll: 4 }, savedPages: { docs: { cursor: 'project:file:y:0', scroll: 2 } }, folded: new Set(['agents', 'inbox:done']) } }));
   frame = page(send(frame, ']').state);
-  assert.equal(projectPageOf(frame.state), 'progress');
+  assert.equal(projectPageOf(frame.state), 'tickets');
   assert.equal(frame.state.selectedProject, PROJECTS[1].root);
   assert.deepEqual([frame.state.project.nav.scroll, frame.state.project.folded, frame.state.project.savedPages], [0, new Set(), {}]);
-  assert.match(plain(frame)[0], /^‹ second-project › Progress/);
+  assert.match(plain(frame)[0], /^‹ second-project › Tickets/);
   // Home is not the tab: nothing happens there, and the choice is kept for when Project is open again.
   const home = f.render(80, 'en', { ...sliceState(), selectedProject: PROJECTS[1].root }, 56, f.data, true, 'unicode', 'none', { projects: PROJECTS });
   assert.equal(send(home, ']').state.selectedProject, PROJECTS[1].root);

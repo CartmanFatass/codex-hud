@@ -105,7 +105,7 @@ test('resident project strip: 7 synthetic projects at 40 and 62 columns, EN/ZH, 
   const absentCases = [
     ['home', initialMonitorState()],
     ['control', onControl()],
-    ['project-progress', onPage('progress')],
+    ['project-docs', onPage('docs')],
     ['help', withState(onPage(), { help: {} })],
   ];
   for (const [label, state] of absentCases) {

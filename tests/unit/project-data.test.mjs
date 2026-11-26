@@ -10,10 +10,8 @@ import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { ProjectOverviews } from '../../dist/collectors/project-visits.js';
 import { clearJobIndexCaches } from '../../dist/roles/job-index-cache.js';
 import { acceptAll, appendTry, TryLog } from '../../dist/collectors/try-records.js';
-import { currentRows, landedNewest, pageRows } from '../../dist/render/project-view.js';
+import { currentRows, landedNewest } from '../../dist/render/project-view.js';
 import { renderHtmlBoard } from '../../dist/render/html-board.js';
-import { initialMonitorState } from '../../dist/render/monitor.js';
-import { stripAnsi } from '../../dist/render/colors.js';
 import { projectList } from '../../dist/roles/projects.js';
 
 const NOW = Date.parse('2026-11-14T10:00:00Z');
@@ -515,7 +513,7 @@ test('docs and ticket mentions leave a live ticket working until Git records its
   ]);
 });
 
-test('Progress, Home, HTML board and TryLog use ticket landings, not legacy STATE rows', async (t) => {
+test('Project collector, Home, HTML board and TryLog use ticket landings, not legacy STATE rows', async (t) => {
   const f = makeTemp(t);
   const git = (args, date) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
     cwd: f.cwd, stdio: 'pipe', encoding: 'utf8',
@@ -569,11 +567,6 @@ test('Progress, Home, HTML board and TryLog use ticket landings, not legacy STAT
   assert.equal(full.slices.length, 0, 'landed ticket slices do not pollute in-flight Now slices');
 
   const home = await collector.collect('home', EMPTY_BOARD, NOW);
-  const state = initialMonitorState();
-  state.project.folded = new Set(['task:milestone:orch-lean-2']);
-  const progress = pageRows('progress', full, state, 80, NOW, EMPTY_BOARD).map((r) => stripAnsi(r.text)).join('\n');
-  assert.match(progress, /ORCH-LEAN-2-02/);
-  assert.match(progress, /ORCH-LEAN-2-01/);
   const html = renderHtmlBoard({ projectName: 'Synthetic', root: f.cwd, project: full, workboard: EMPTY_BOARD, generatedAt: NOW, lang: 'en' });
   assert.match(html, /ORCH-LEAN-2-02/);
   assert.match(html, /panel works/, 'HTML board links ticket checklist from ticketPath');

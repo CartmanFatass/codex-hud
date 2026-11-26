@@ -94,18 +94,17 @@ export async function projectFixture(root, { progressTickets = true } = {}) {
   board.workers = board.lanes.flatMap((l) => l.workers);
   const collector = new ProjectCollector(cwd, hud, env, home);
   const data = await collector.collect(true, board, NOW);
-  // `state` may be a page name ('progress', 'tickets', 'tree', 'docs', 'control') or a full state; none is the hub.
+  // `state` may be a page name ('tickets', 'tree', 'docs', 'control') or a full state; none is the hub.
   const render = (width, lang = 'en', state = undefined, height = 56, snapshot = data, modelEnabled = true, icons = 'unicode', theme = 'none', extra = {}) => {
     state = typeof state === 'string' ? state === 'control' ? onControl() : onPage(state) : state ?? onPage();
     const display = setDisplayConfig({ theme, icons }), previous = setLanguage(lang);
     try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state: state, width, height, nowMs: NOW, modelEnabled, ...extra }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
-  return { cwd, hud, home, env, put, issue, board, collector, data, rich: richProgress(data), render, job, linked, sliceJob };
+  return { cwd, hud, home, env, put, issue, board, collector, data, rich: richNotes(data), render, job, linked, sliceJob };
 }
-/** Progress material the base fixture has too little of, all synthetic: a ledger across milestones in ledger order (one row
- *  with no milestone, one with its commit first, one with no commit), long Next bullets, a job no slice shows. */
-export function richProgress(data) {
+/** Longer synthetic notes with a live job that must not appear in the Project overview. */
+export function richNotes(data) {
   const day = 864e5, path = data.statePath;
   const row = (id, state, milestone, text, age, commit) => ({ id, state, milestone, text, ...(commit ? { commit } : {}), ...(age === undefined ? {} : { at: NOW - age * day }) });
   const ledger = [
@@ -185,22 +184,18 @@ export const chainOverlay = (role, at = 0) => ({ kind: 'control-chain', role, at
 export const withChainPicker = (state, patch) => ({ ...state, overlay: { ...state.overlay,
   mode: { ...state.overlay.mode, picker: { ...state.overlay.mode.picker, ...patch } } } });
 export const plain = (frame) => frame.lines.map((s) => stripAnsi(s).trimEnd());
-export const PAGES = ['progress', 'tickets', 'tree', 'docs', 'control'];
-/** The hub and Progress at 40/80/120 EN/ZH (and text icons at 40); other pages at 40/120. */
+export const PAGES = ['tickets', 'tree', 'docs', 'control'];
+/** The hub at 40/80/120 EN/ZH (and text icons at 40); other pages at 40/120. */
 export function projectFrames(f) {
   const frames = {}, baseline = { ...f.data, radar: undefined }; // Keep the no-radar baseline despite synthetic jobs from today.
   for (const lang of ['en', 'zh']) {
     for (const width of [40, 80, 120]) frames[`hub-${width}-${lang}`] = plain(f.render(width, lang, undefined, 24));
-    for (const page of PAGES.filter((p) => p !== 'tickets')) for (const width of page === 'progress' ? [40, 80, 120] : [40, 120])
+    for (const page of PAGES.filter((p) => p !== 'tickets')) for (const width of [40, 120])
       frames[`${page}-${width}-${lang}`] = plain(f.render(width, lang, page, 40, baseline));
   }
-  const open = onPage('progress', { project: { folded: new Set(['inbox:done', 'hist:DATA-ONE', 'next', 'next:1']) } });
-  for (const lang of ['en', 'zh']) for (const width of [40, 120]) frames[`progress-rich-${width}-${lang}`] = plain(f.render(width, lang, 'progress', 64, f.rich));
-  frames['progress-rich-open-40-en'] = plain(f.render(40, 'en', open, 80, f.rich));
-  frames['progress-rich-40-text'] = plain(f.render(40, 'en', 'progress', 64, f.rich, true, 'text'));
   const second = { projects: PROJECTS, projectName: PROJECTS[1].name };
   for (const lang of ['en', 'zh']) frames[`hub-switch-40-${lang}`] = plain(f.render(40, lang, onPage(undefined, { selectedProject: PROJECTS[1].root }), 24, f.data, true, 'unicode', 'none', second));
-  frames['progress-switch-40-en'] = plain(f.render(40, 'en', onPage('progress', { selectedProject: PROJECTS[1].root }), 12, f.data, true, 'unicode', 'none', second));
+  frames['docs-switch-40-en'] = plain(f.render(40, 'en', onPage('docs', { selectedProject: PROJECTS[1].root }), 12, f.data, true, 'unicode', 'none', second));
   const control = richControl(baseline);
   // The hub on a tall panel and on shorter ones: keep ranked Needs-you rows ahead of optional facts.
   for (const [height, lang] of [[40, 'en'], [40, 'zh'], [20, 'en'], [16, 'en'], [12, 'en']]) frames[`hub-rich-40-${height}-${lang}`] = plain(f.render(40, lang, undefined, height, f.rich));
@@ -218,7 +213,6 @@ export function projectFrames(f) {
   frames['control-rich-40-text'] = plain(f.render(40, 'en', 'control', 48, control, true, 'text'));
   Object.assign(frames, pickerFrames(f, control), pickerOrderFrames(f), flatPickerFrames(f), presetFrames(f, control), quickModelFrames(f, control));
   frames['hub-40-text'] = plain(f.render(40, 'en', undefined, 24, f.data, true, 'text'));
-  frames['progress-40-text'] = plain(f.render(40, 'en', 'progress', 40, f.data, true, 'text'));
   return frames;
 }
 

@@ -10,7 +10,7 @@ import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { ticketFixture } from './project-tickets.mjs';
-import { NOW, TREE, plain, onControl, richProgress, richControl } from './project-page.mjs';
+import { NOW, TREE, plain, onControl, richNotes, richControl } from './project-page.mjs';
 
 export const panelState = (extra) => (withState(initialMonitorState(), extra));
 
@@ -63,7 +63,7 @@ export async function panelProjectFixture(root, { idle = false } = {}) {
   lanes.push({ ...lanes[0], id: 'native-session', identity: { kind: 'native' }, label: 'this session', workers: idle ? [] : [native], decisions: [] });
   const board = { ...f.board, lanes, workers: lanes.flatMap((l) => l.workers), decisions: lanes.flatMap((l) => l.decisions) };
   const data = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect(true, board, NOW);
-  const rich = { ...richProgress(data), tickets: data.tickets, waiting: data.waiting };
+  const rich = { ...richNotes(data), tickets: data.tickets, waiting: data.waiting };
   const render = (width, lang = 'en', height = 40, state = panelState(), snapshot = data, { icons = 'unicode', ...extras } = {}) => {
     const display = setDisplayConfig({ theme: 'none', icons }), previous = setLanguage(lang);
     try { return renderMonitor({ tree: TREE, workboard: board, project: snapshot, projectName: 'demo-project', state: state, width, height, nowMs: NOW, modelEnabled: false, ...extras }); }

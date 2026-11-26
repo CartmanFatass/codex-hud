@@ -41,7 +41,7 @@ test('old Detail and Split settings are ignored without rewriting the preference
   assert.equal(fs.readFileSync(path, 'utf8'), saved);
 });
 
-test('task pages group actual features and mixed ledger states; drilling in and filtering preserve all members without try actions', async (t) => {
+test('Tickets shows and filters actual features and retains the Accept all action off the hub', async (t) => {
   const cwd = temp(t), board = { revision: 'synthetic', workers: [], lanes: [], decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: cwd } };
   const put = (parts, text) => {
     const path = join(cwd, ...parts);
@@ -66,7 +66,7 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     try { return renderMonitor({ state: onPage(page, state), tree: TREE, workboard: board, project, width, height: 23, nowMs: NOW }); }
     finally { setDisplayConfig(display); setLanguage(previous); }
   };
-  const feature = 'project:fold:feature:export', milestone = 'project:fold:task:milestone:export';
+  const feature = 'project:fold:feature:export';
   const frames = [];
   const record = (label, frame, width, lang) => {
     assert.ok(frame.lines.every((line) => visualLength(line) === width));
@@ -89,22 +89,12 @@ test('task pages group actual features and mixed ledger states; drilling in and 
     assert.doesNotMatch(text(filteredTickets), /search/);
     record('Tickets', tickets, width, lang);
 
-    const progress = render('progress', milestone);
-    assert.match(text(progress), /◆ export\s+◆ 1  ◇ 1  ✓ 1/);
-    assert.match(text(progress), /✓ search\s+✓ 1  – 1/);
-    const progressDetail = draw('progress', press(progress, 'enter').state, width, lang);
-    for (const id of ['EXPORT-01', 'EXPORT-02', 'EXPORT-03']) assert.match(text(progressDetail), new RegExp(id));
-    for (const key of ['space', 'y', 'n', 'm', 't']) assert.equal(press(progress, '', key).action, undefined);
-    const filtered = render('progress', milestone, { project: { filter: { query: 'choose columns', editing: false } } });
-    const filteredDetail = draw('progress', press(filtered, 'enter').state, width, lang);
-    assert.match(text(filteredDetail), /Download CSV/);
     const hub = render(undefined);
     assert.doesNotMatch(text(hub), /Accept all|全部验收/);
-    assert.match(text(hub), lang === 'en' ? /Tickets\s+2\/4 done · 2 features/ : /工单\s+2\/4 完成 · 2 个功能/);
+    assert.match(text(hub), lang === 'en' ? /Tickets +Docs/ : /工单 +文档/);
     const accept = render('tickets', 'project:accept-all');
     assert.match(text(accept), lang === 'en' ? /Accept all\s+1 to try/ : /全部验收\s+1 待试用/);
     assert.deepEqual(press(accept, 'enter').action, { type: 'accept-all' });
-    record('Progress', progress, width, lang);
   }
   if (process.env.OWNER_VIEW_TASK_FRAMES) fs.writeFileSync(process.env.OWNER_VIEW_TASK_FRAMES, frames.join('\n'));
 });

@@ -73,18 +73,17 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: projectTab.x, y: projectTab.y }).state);
   assert.equal(frame.state.activeTab, 'project');
   const pane = () => frame.panes[0];
-  const progressPageRow = pane().rows
-    .map((r, i) => ({ item: r.item, y: pane().y + i - pane().offset }))
-    .find((d) => d.item === 'project:page:progress');
-  assert.ok(progressPageRow, 'need Progress hub link');
-  frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: progressPageRow.y }).state);
-  assert.equal(projectPageOf(frame.state), 'progress', 'hub link opens subpage in one click');
+  const ticketsLink = frame.controls.find((c) => c.kind === 'project-page' && c.item === 'tickets');
+  assert.ok(ticketsLink, 'need Tickets header link');
+  const openTickets = { type: 'mouse', button: 'left', x: ticketsLink.x, y: ticketsLink.y };
+  frame = draw(send(frame, openTickets).state);
+  assert.equal(projectPageOf(frame.state), 'tickets', 'hub link opens subpage in one click');
   // Crumb click on row 0 returns to the Project hub
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: 0 }).state);
   assert.equal(projectPageOf(frame.state), undefined);
-  // A task row on Progress selects on the first click, and only then toggles on a second click.
-  frame = draw(send(frame, { type: 'key', key: 'enter' }).state);
-  assert.equal(projectPageOf(frame.state), 'progress');
+  // A feature row on Tickets selects on the first click, and only then toggles on a second click.
+  frame = draw(send(frame, openTickets).state);
+  assert.equal(projectPageOf(frame.state), 'tickets');
   const foldRow = pane().rows
     .map((r, i) => ({ item: r.item, y: pane().y + i - pane().offset }))
     .find((d) => d.item?.startsWith('project:fold:') && d.item !== frame.state.project.nav.cursor);

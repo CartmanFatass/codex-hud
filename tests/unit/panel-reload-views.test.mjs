@@ -55,8 +55,8 @@ test('the 40-column Tickets page restores the selected Accept all row without ru
 const LIVE_INPUT_BLOCK_WINDOW_MS = QUIET_MS + 1200;
 
 test('live input: a batched / query and later keys survive a build until Enter keeps the filter', async (t) => {
-  const f = live(t, (state) => ({ state: { ...state, activeTab: 'project', project: { ...state.project, view: { kind: 'progress' } } }, settings: null }));
-  await until(() => f.output().includes('Progress'), 'Progress did not render');
+  const f = live(t, (state) => ({ state: { ...state, activeTab: 'project', project: { ...state.project, view: { kind: 'tickets' } } }, settings: null }));
+  await until(() => f.output().includes('Tickets'), 'Tickets did not render');
   f.child.stdin.write('/relo');
   await until(() => stripAnsi(f.output()).includes('/ relo▌'), 'the batched slash and query did not reach the filter');
   f.appendBuild('\n// build during a filter edit');

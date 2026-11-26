@@ -1,6 +1,5 @@
-/** The Project Progress and Tickets filter. Typing owns printable keys. */
+/** The Project Tickets filter. Typing owns printable keys. */
 import type { ProjectSnapshot } from '../collectors/project-board.js';
-import { ledgerTasks } from '../collectors/acceptance-tasks.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
 import { activeFilter, projectPage, type ViewFilter } from './monitor-state.js';
@@ -13,7 +12,7 @@ const FILTER_MAX = 48;
 export function filterScope(state: MonitorState): string | undefined {
   if (state.help || state.subpage || state.activeTab !== 'project') return undefined;
   const page = projectPage(state.project.view);
-  return page === 'progress' || page === 'tickets' ? `${page}|${state.selectedProject ?? ''}` : undefined;
+  return page === 'tickets' ? `${page}|${state.selectedProject ?? ''}` : undefined;
 }
 export function clearFilter(state: MonitorState): MonitorState {
   if (state.project.filter) return { ...state, project: { ...state.project, filter: undefined } };
@@ -21,25 +20,10 @@ export function clearFilter(state: MonitorState): MonitorState {
 }
 const has = (needle: string, ...fields: (string | null | undefined)[]) => fields.some((f) => !!f && f.toLowerCase().includes(needle));
 
-/** Progress: ledger slices by id, milestone, text and state, worktree slices and loose jobs by their label, role and state. Tickets: by feature, number, title, status and blocker. */
-export function filterProject(data: ProjectSnapshot, page: 'progress' | 'tickets', needle: string): { data: ProjectSnapshot; count: number } {
-  if (page === 'tickets') {
-    const match = (f: ProjectSnapshot['tickets'][number], r: ProjectSnapshot['tickets'][number]['tickets'][number]) => has(needle, f.slug, r.number, r.title, r.status, ...r.blockers);
-    const tickets = data.tickets.filter((f) => f.tickets.some((r) => match(f, r)));
-    return { data: { ...data, tickets }, count: tickets.length };
-  }
-  // A worktree slice and its ledger row match together; jobs outside any slice are matched alone.
-  const matchedLabels = new Set(data.slices.filter((s) => has(needle, s.label, s.value, s.role, s.ledgerState, s.drift, s.ledgerState && t(s.ledgerState))).map((s) => s.label));
-  const matching = data.ledger.filter((r) => matchedLabels.has(r.id) || has(needle, r.id, r.milestone, r.text, r.state, t(r.state === 'try' ? 'to try' : r.state)));
-  // A matching member reveals its whole task.
-  const matched = new Set(matching), tasks = ledgerTasks(data.ledger).filter((task) => task.slices.some((r) => matched.has(r)));
-  for (const task of tasks) for (const r of task.slices) matched.add(r);
-  const ledger = data.ledger.filter((r) => matched.has(r));
-  const ledgerIds = new Set(ledger.map((r) => r.id));
-  const slices = data.slices.filter((s) => matchedLabels.has(s.label) || ledgerIds.has(s.label));
-  const loose = data.active.filter((a) => !data.slices.some((s) => s.jobId === a.jobId) && has(needle, a.role, a.title, a.package, a.state));
-  const count = tasks.length + loose.length;
-  return { data: { ...data, ledger, slices, active: loose, next: [], summary: '' }, count };
+/** Match a whole feature by its slug or a ticket's number, title, status or blocker. */
+export function filterProject(data: ProjectSnapshot, needle: string): { data: ProjectSnapshot; count: number } {
+  const tickets = data.tickets.filter((f) => f.tickets.some((r) => has(needle, f.slug, r.number, r.title, r.status, ...r.blockers)));
+  return { data: { ...data, tickets }, count: tickets.length };
 }
 
 /** The bar: `/ query▌` and how many rows match (not before something is typed). */

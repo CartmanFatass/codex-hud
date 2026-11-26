@@ -7,6 +7,8 @@ import { collectObjectiveEvidence, objectivePath, readObjectives } from '../../d
 import { STATE_BYTES } from '../../dist/collectors/state-ledger.js';
 import { visualLength } from '../../dist/render/colors.js';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
+import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
+import { onPage, PROJECTS } from '../fixtures/project-page.mjs';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
 import { NOW, plain, projectFixture } from '../fixtures/project-page.mjs';
@@ -57,38 +59,109 @@ test('bounded Objective reader skips malformed sections and ignores unknown fiel
   assert.match(readObjectives(root).diagnostics[0], /exceeds/);
 });
 
-test('Project hub renders Objective details and a linked checklist at 120 columns in English and Chinese', async (t) => {
+test('Project overview: activity tiers, first-met priority, subtitles, folds and header keys at 40 and 62 in EN/ZH', async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'project-objective-render-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const f = await projectFixture(root);
-  f.put(join(f.cwd, '.scratch/native-tree/issues/01-sample.md'), '# 01: Sample\n**Status:** ready-for-agent\n**Blocked by:** none\n- [x] Observe\n- [ ] Repeat\n');
-  f.put(objectivePath(f.cwd), sample);
-  const withObjectives = await f.collector.collect(true, f.board, NOW);
-  const words = {
-    en: ['? Try the Project tab', 'Objectives', 'active', 'paused', 'checks'],
-    zh: ['? Try the Project tab', '目标', '进行中', '已暂停', '检查项'],
+  const at = (min) => NOW - min * 60_000, old = at(6 * 1440);
+  const feature = (slug, states) => ({ slug, at: old, tickets: states.map((state, i) => ({ number: `0${i + 1}`,
+    title: 'Synthetic ticket, not a hub job row', path: `/synthetic/${slug}/${i}.md`, state, at: old,
+    checked: 0, total: 1, blockers: [], status: state, items: [] })) });
+  const specs = [
+    ['quiet', 'active', ['ready']], ['pi-worker', 'done', ['done']], ['recent', 'active', ['done', 'ready']],
+    ['needs-try', 'active', ['try']], ['waiting', 'paused', ['done']], ['hot', 'done', ['working', 'working']],
+    ['failed', 'active', ['ready']], ['unlanded', 'active', ['ready']], ['parked', 'paused', ['ready']],
+    ['last-land', 'active', ['done', 'dropped']], ['study', 'active', []], ['partial', 'active', ['done']],
+  ];
+  const objectives = specs.map(([id, state, tickets]) => ({ id, state, title: `Title of ${id}`, features: tickets.length ? [id] : [], evidence: [],
+    ...(id === 'recent' ? { result: 'New result from the ledger' } : id === 'failed' ? { result: 'Undated result' } : {}) }));
+  const tickets = specs.filter((spec) => spec[2].length).map(([id, , states]) => ({ ...feature(id, states), ...(id === 'partial' ? { partial: true } : {}) }));
+  tickets.find((f) => f.slug === 'hot').tickets[0].job = { id: 'job-one', state: 'working', role: 'imp', at: at(10) };
+  const data = { ...f.data, updatedAt: at(3), objectivesAt: old, ledger: [], tickets, objectiveTickets: tickets,
+    objectives: { path: objectivePath(f.cwd), stance: 'active', priority: 'high', objectives, diagnostics: ['bad section'], resultDates: { recent: at(3) }, acceptance: {} },
+    waiting: [{ label: '', objective: 'waiting', request: 'r1', value: 'Choose a synthetic option' }],
+    unlinked: [feature('spare', ['ready']), feature('other', ['done', 'ready'])],
+    editing: [{ label: 'editing', value: 'Job edit must not appear', path: '/synthetic/job.md' }] };
+  const projectActivity = [
+    { ticket: 'hot/01', kind: 'live', jobId: 'job-one', at: at(8) },
+    { ticket: 'HOT-02', kind: 'live', jobId: 'job-two', at: at(4) },
+    { ticket: 'hot/02', kind: 'gate', flow: 'gate-one', at: at(2) },
+    { ticket: 'recent/01', kind: 'ended', result: 'landed', at: at(3) },
+    { ticket: 'failed/01', kind: 'ended', result: 'failed', at: at(20) },
+    { ticket: 'unlanded/01', kind: 'ended', result: 'not landed', at: at(40) },
+    { ticket: 'last-land/01', kind: 'ended', result: 'landed', at: at(1) },
+    { ticket: 'quiet/01', kind: 'ended', result: 'failed', at: old },
+  ];
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const act = (frame, input) => handleMonitorInput(frame.state, input, { frame });
+  const press = (frame, raw) => {
+    const [input] = decoder.push(Buffer.from(raw));
+    assert.ok(acceptsMonitorInput(frame.state, input), raw);
+    return act(frame, input);
   };
-  for (const [lang, [needs, heading, active, paused, checks]] of Object.entries(words)) {
-    const baseline = plain(f.render(120, lang));
-    assert.ok(!baseline.some((line) => line.startsWith(heading)));
-    const frame = f.render(120, lang, undefined, 56, withObjectives), lines = plain(frame);
-    for (const line of frame.lines) assert.equal(visualLength(line), 120);
-    assert.doesNotMatch(lines.join('\n'), /^(?:Needs you|需要你处理) ─/m);
-    const order = [needs, heading, '● measure', 'Measure the sample', 'Repeat the sample.', 'Recorded a baseline.', '‖ hold', '✓ finish Publish the guide']
-      .map((word) => lines.findIndex((line) => line.includes(word)));
-    assert.ok(order.every((n, i) => n > (order[i - 1] ?? -1)), lines.join('\n'));
-    assert.ok(lines[order[2]].endsWith(active));
-    assert.ok(lines[order[6]].endsWith(paused));
-    const text = lines.join('\n');
-    assert.match(text, new RegExp(`native-tree +[█▒░]+ +0/2 (tickets|工单) · 1/2 ${checks}`));
-    assert.match(text, /^    missing +—$/m);
-    assert.ok(!plain(f.render(55, lang, undefined, 56, withObjectives)).join('\n').includes(checks));
-    assert.ok(plain(f.render(56, lang, undefined, 56, withObjectives)).join('\n').includes(checks));
-    assert.doesNotMatch(text, /Published a synthetic guide/);
-    const row = frame.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'finish');
-    frame.state.project.nav.cursor = row.item;
-    const { state } = handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { frame });
-    assert.match(plain(f.render(120, lang, state, 56, withObjectives)).join('\n'), /Published a synthetic guide/);
+  const esc = (frame) => act(frame, { type: 'key', key: 'escape' }).state;
+  for (const lang of ['en', 'zh']) for (const width of [40, 62]) {
+    const zh = lang === 'zh';
+    const draw = (state, height = 35, project = data) => f.render(width, lang, state, height, project, true, 'unicode', 'none', { projectActivity, projects: PROJECTS });
+    const hub = draw(), rows = hub.workboard.rows, text = plain(hub).join('\n');
+    const ids = (frame) => frame.workboard.rows.flatMap((r) => r.objectiveTarget ? [r.objectiveTarget.objective.id] : []);
+    assert.deepEqual(ids(hub), ['hot', 'recent', 'failed', 'unlanded', 'waiting', 'needs-try', 'quiet', 'study', 'partial']);
+    assert.equal(hub.state.project.nav.cursor, 'project:wait:0');
+    assert.match(draw(undefined, 35, { ...data, waiting: [] }).state.project.nav.cursor, /:hot$/);
+    assert.ok([...hub.lines, ...rows.map((r) => r.text)].every((line) => visualLength(line) === width && !line.includes('\x1b')));
+    assert.match(text, zh ? /工单 +工作区 +文档/ : /Tickets +Worktree +Docs/);
+    assert.match(text, zh ? /进行中.*3分前/ : /active.*3m ago/);
+    if (width === 62) assert.match(text, zh ? /高优先级/ : /high priority/);
+    assert.match(text, zh ? /^目标 ─+ 完成\/工单$/m : /^Objectives ─+ done\/tickets$/m);
+    assert.match(text, zh ? /● 2 在跑 · 1 门禁/ : /● 2 live · 1 (?:at )?gate/);
+    assert.match(text, zh ? /✓ 刚落地/ : /✓ Just landed/);
+    if (width === 62) assert.match(text, zh ? /刚落地 recent/ : /Just landed recent/);
+    assert.match(text, zh ? /✗ 20分前失败/ : /✗ 20m ago: failed/);
+    assert.match(text, zh ? /◒ 40分前(?:结束·)?未落地/ : /◒ 40m (?:unlanded|ago: ended · not landed)/);
+    assert.match(text, zh ? /\? 在等你[ \n]/ : /\? Waiting on you[ \n]/);
+    assert.match(text, zh ? /◇ 等你试用/ : /◇ Your try/);
+    assert.match(text, zh ? /空闲 6天/ : /Idle 6d/);
+    assert.match(text, /study +╌+/);
+    assert.match(text, /partial +—/);
+    assert.match(text, zh ? /▸ 已完成\/搁置 3/ : /▸ Done\/paused 3/);
+    assert.doesNotMatch(text, /Details ─|详情 ─|Progress|进度|pi-worker|parked|last-land|Job edit|Undated result|not a hub job row/);
+    assert.match(text, /◌ (?:Unlinked|未归入目标): spare 0\/1 · other 1\/2/);
+    assert.equal(rows.filter((r) => r.objectiveSubtitle).length, ids(hub).length);
+    assert.match(text, /✓ New result from the ledger/);
+    assert.match(text, /Title of failed/);
+    assert.ok(!draw(undefined, 12).workboard.rows.some((r) => r.objectiveSubtitle), 'subtitles drop before objective rows');
+    assert.deepEqual(ids(draw(undefined, 12)), ids(hub));
+    const beforeLanding = { ...data, objectiveTickets: tickets.map((f) => f.slug === 'last-land' ? feature(f.slug, ['ready', 'dropped']) : f) };
+    assert.ok(ids(draw(undefined, 35, beforeLanding)).includes('last-land'), 'an unfinished ticket keeps the Objective out of the fold');
+    assert.ok(!ids(hub).includes('last-land'), 'the same Objective folds on the first frame with all tickets resolved');
+
+    hub.state.project.nav.cursor = rows.find((r) => r.item === 'project:fold:objectives:closed').item;
+    const expanded = draw(press(hub, '\r').state);
+    assert.deepEqual(ids(expanded).slice(-3), ['last-land', 'pi-worker', 'parked'], 'last landing folded immediately, newest in fold');
+    assert.equal(expanded.state.project.nav.cursor, hub.state.project.nav.cursor);
+    assert.deepEqual(ids(draw(press(expanded, '\r').state)), ids(hub));
+    const ticketLinks = hub.controls.filter((c) => c.kind === 'project-page');
+    assert.deepEqual(ticketLinks.map((c) => c.item), ['tickets', 'tree', 'docs']);
+    for (const [i, [raw, page]] of [['t', 'tickets'], ['b', 'tree'], ['d', 'docs']].entries()) {
+      const hot = rows.find((r) => r.objectiveTarget?.objective.id === 'hot');
+      hub.state.project.nav.cursor = hot.item;
+      const next = draw(press(hub, raw).state);
+      assert.equal(next.state.project.view.kind, page);
+      assert.match(plain(next)[0], /^‹ /);
+      assert.doesNotMatch(plain(next).join('\n'), /Job edit|project:job:/);
+      assert.equal(draw(esc(next)).state.project.nav.cursor, hot.item);
+      const { x, y } = ticketLinks[i];
+      assert.equal(act(hub, { type: 'mouse', button: 'left', x, y }).state.project.view.kind, page);
+      if (page === 'docs') assert.deepEqual(press(next, 'o').action, { type: 'open-files', files: [data.statePath] });
+    }
+    assert.equal(press(hub, 'p').state.project.view.kind, 'hub');
+    const noGit = draw(undefined, 35, { ...data, git: undefined });
+    assert.ok(!noGit.controls.some((c) => c.kind === 'project-page' && c.item === 'tree'));
+    assert.equal(press(noGit, 'b').state.project.view.kind, 'hub');
+    const unlinked = draw(onPage(undefined, { project: { nav: { cursor: 'project:page:unlinked' } } }));
+    const detail = draw(press(unlinked, '\r').state);
+    assert.equal(detail.state.project.view.kind, 'unlinked');
+    assert.deepEqual(detail.workboard.rows.flatMap((r) => r.files ?? []), ['/synthetic/spare/0.md', '/synthetic/other/1.md']);
   }
 });
 
@@ -113,15 +186,14 @@ test('Home and Project open an Objective detail and route only its openable evid
     const draw = (state, lang = 'en') => f.render(120, lang, state, 24, data, true, 'unicode', 'none', { homePortfolio });
     const list = draw({ ...draw().state, activeTab });
     const entry = list.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'measure');
-    if (activeTab === 'project') assert.match(entry.text, /blocked/);
-    else assert.equal(entry.objectiveTarget.blocked, true);
+    assert.equal(entry.objectiveTarget.blocked, true);
     assert.ok(!list.workboard.rows.some((r) => r.objectiveTarget?.objective.id === 'hold' && r.objectiveTarget.blocked));
     if (activeTab === 'home') {
       assert.ok(!list.workboard.rows.some((r) => r.item?.startsWith('home:result:')), 'undated results stay off Home');
       list.state.home.cursor = entry.item;
     } else {
-      assert.equal(list.workboard.rows.filter((r) => r.objectiveEvidence).length, 3);
-      assert.match(plain(list).join('\n'), /^ {6}3 more$/m);
+      assert.match(entry.text, /Waiting on you/);
+      assert.ok(!list.workboard.rows.some((r) => r.objectiveEvidence), 'the overview links to evidence through the Objective detail');
       list.state.project.nav.cursor = entry.item;
     }
     const { state, action } = key(list, 'enter');
@@ -152,5 +224,5 @@ test('Home and Project open an Objective detail and route only its openable evid
   f.put(statePath, remaining);
   const refreshed = await f.collector.collect(true, f.board, NOW);
   const fresh = f.render(120, 'en', undefined, 24, refreshed);
-  assert.doesNotMatch(fresh.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'measure').text, /blocked/);
+  assert.equal(fresh.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'measure').objectiveTarget.blocked, false);
 });

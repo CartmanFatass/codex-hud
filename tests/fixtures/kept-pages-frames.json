@@ -378,13 +378,13 @@
     "",
     "Project ──────────────────────────────",
     "[ ]     previous / next project",
+    "t       open Tickets",
+    "b       open Working tree (with Git",
+    "        facts)",
+    "d       open Docs",
     "⏎       Accept all: record all pending",
     "        slices",
     "",
-    "Execution ────────────────────────────",
-    "[ ]     previous / next project",
-    "g P H   Execution: peek/focus, pin",
-    "        visible, or hide the job’s",
     "                                                                        Esc back"
   ],
   "home-120-en": [
@@ -761,6 +761,9 @@
     "",
     "Project ──────────────────────────────────────────────────",
     "[ ]     previous / next project",
+    "t       open Tickets",
+    "b       open Working tree (with Git facts)",
+    "d       open Docs",
     "⏎       Accept all: record all pending slices",
     "",
     "Execution ────────────────────────────────────────────────",
@@ -770,9 +773,6 @@
     "X       Execution batch: pause/resume/stop",
     "",
     "Control ──────────────────────────────────────────────────",
-    "c C     role: next / previous preset",
-    "p       role: choose a preset by name",
-    "N I     role: new draft, copied or empty",
     "                                                                                                                Esc back"
   ],
   "settings-40-en": [

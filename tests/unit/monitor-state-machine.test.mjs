@@ -43,8 +43,8 @@ test('painting twice gives the same frame without modifying the supplied state',
     onControl({}, { exp: { detail: 'codex-help', scroll: 2 } }, { subTab: 'resources' }),
     onControl({}, { overlay: { kind: 'exp-edit', entryId: 'binding', draft: { text: '', pick: 0 } } }, { subTab: 'resources' }),
     withState(initial, { subpage: { kind: 'inspector', scroll: 0, target } }), withState(initial, { subpage: { kind: 'native-inspector', scroll: 0 } }),
-    onPage('progress', { help: {} }), onPage('progress', { project: { filter: { query: 'try', editing: false } } }),
-    ...[undefined, 'progress', 'tickets', 'tree', 'docs', 'waiting'].map((page) => onPage(page)),
+    onPage('tickets', { help: {} }), onPage('tickets', { project: { filter: { query: 'try', editing: false } } }),
+    ...[undefined, 'tickets', 'tree', 'docs', 'unlinked', 'waiting'].map((page) => onPage(page)),
   ];
   for (const panelLayout of ['classic', 'split']) for (const candidate of cases) {
     const state = structuredClone(withState(candidate, { prefs: { panelLayout } })), before = structuredClone(state);
@@ -60,7 +60,7 @@ test('painting twice gives the same frame without modifying the supplied state',
 test('Classic Home and Project keep their selected rows across tab changes', async (t) => {
   const f = await fixture(t), draw = (state) => f.render(40, 'en', 24, state, f.rich);
   const key = (frame, key) => draw(handleMonitorInput(frame.state, { type: 'key', key }, { tree: TREE, frame, nowMs: NOW }).state);
-  const initial = onPage('progress');
+  const initial = onPage('tickets');
   const project = key(draw(initial), 'end');
   const home = key(key(project, 'shift-tab'), 'down');
   const returnedProject = key(home, 'tab');
@@ -102,7 +102,7 @@ test('overlay policy distinguishes a reload blocker from a draft and a raw-text 
   }
   const help = { ...initial, overlay: chain(places, { run: [] }), help: {} };
   assert.deepEqual([blocksReload(help), acceptsRawText(help)], [true, false]);
-  const kept = onPage('progress', { project: { filter: { query: 'sonic', editing: false } } }), typing = withState(kept, { project: { filter: { editing: true } } });
+  const kept = onPage('tickets', { project: { filter: { query: 'sonic', editing: false } } }), typing = withState(kept, { project: { filter: { editing: true } } });
   assert.deepEqual([blocksReload(kept), acceptsRawText(kept)], [false, false]);
   assert.deepEqual([blocksReload(typing), acceptsRawText(typing)], [true, true]);
 });

@@ -27,15 +27,14 @@ interface HomeTabState extends RowNav { othersExpanded?: boolean; requestsExpand
 export const initialHomeTab = (): HomeTabState => ({ scroll: 0 });
 export const initialExecutionTab = (): RowNav => ({ scroll: 0 });
 
-export type ProjectSubPage = 'progress' | 'tickets' | 'tree' | 'docs';
+export type ProjectSubPage = 'tickets' | 'tree' | 'docs' | 'unlinked';
 export type ProjectView = { kind: 'projects-list'; from?: 'execution' } | { kind: 'hub' }
-  | { kind: 'progress' }
-  | { kind: 'tickets' } | { kind: 'tree' } | { kind: 'docs' } | { kind: 'waiting'; index: number; request: string };
+  | { kind: ProjectSubPage } | { kind: 'waiting'; index: number; request: string };
 export interface ProjectTabState {
   view: ProjectView;
   fromProjectsList: boolean;
   nav: RowNav;
-  savedPages: Readonly<Partial<Record<ProjectSubPage, { cursor?: string; scroll: number }>>>;
+  savedPages: Readonly<Partial<Record<ProjectSubPage | 'hub', { cursor?: string; scroll: number }>>>;
   folded: ReadonlySet<string>;
   filter?: ViewFilter;
 }
@@ -44,7 +43,7 @@ export const initialProjectTab = (): ProjectTabState => ({ view: { kind: 'hub' }
 export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | undefined => {
   switch (view.kind) {
     case 'hub': case 'projects-list': return undefined;
-    case 'progress': case 'tickets': case 'tree': case 'docs': case 'waiting': return view.kind;
+    case 'tickets': case 'tree': case 'docs': case 'unlinked': case 'waiting': return view.kind;
     default: return assertNever(view);
   }
 };
@@ -189,9 +188,11 @@ export function switchProject(state: MonitorState, selectedProject?: string): Mo
 export function transitionProjectView(state: MonitorState, view: ProjectView, options: { cursor?: string; fromProjectsList?: boolean } = {}): MonitorState {
   const project = state.project, from = projectPage(project.view), saved = { ...project.savedPages };
   if (from && from !== 'waiting') saved[from] = { cursor: project.nav.cursor, scroll: project.nav.scroll };
-  const page = projectPage(view), kept = page && page !== 'waiting' && !options.cursor ? saved[page] : undefined;
-  const cursor = options.cursor ?? kept?.cursor ?? (view.kind === 'hub' && from
-    ? project.view.kind === 'waiting' ? `project:wait:${project.view.index}` : `project:page:${from}` : undefined);
+  const page = projectPage(view);
+  if (page && project.view.kind === 'hub') saved.hub = { cursor: project.nav.cursor, scroll: project.nav.scroll };
+  const place = page ?? (view.kind === 'hub' && from ? 'hub' : undefined);
+  const kept = place && place !== 'waiting' && !options.cursor ? saved[place] : undefined;
+  const cursor = options.cursor ?? (view.kind === 'hub' && project.view.kind === 'waiting' ? `project:wait:${project.view.index}` : kept?.cursor);
   return { ...state, project: { ...project, view, savedPages: saved,
     filter: project.view.kind === view.kind ? project.filter : undefined,
     fromProjectsList: options.fromProjectsList ?? project.fromProjectsList,
@@ -252,6 +253,7 @@ export function acceptsMonitorInput(state: MonitorState | undefined, input: Work
   if (acceptsRawText(state)) return true;
   if (state.overlay) return false;
   if (input.text === '/') return filterScope(state) !== undefined;
+  if ((input.text === 't' || input.text === 'b') && state.activeTab === 'project' && !state.subpage && !projectPage(state.project.view)) return true;
   return (input.text === 'g' || input.text === 'P' || input.text === 'H') && (state.subpage?.kind === 'inspector' || executionPageOpen(state));
 }
 /** The Execution tab itself, with no Inspector or Run Detail over it. */

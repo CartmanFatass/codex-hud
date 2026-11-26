@@ -24,16 +24,15 @@ function rowPlace(value: unknown) {
 function projectView(value: unknown): ProjectView {
   const { kind, index, request } = fields(value);
   switch (kind) {
-    case 'progress': return { kind };
     case 'waiting': return typeof request === 'string' ? { kind, index: offset(index) ?? -1, request } : { kind: 'hub' };
     case 'projects-list': return fields(value).from === 'execution' ? { kind, from: 'execution' } : { kind };
-    case 'tickets': case 'tree': case 'docs': return { kind };
+    case 'tickets': case 'tree': case 'docs': case 'unlinked': return { kind };
     default: return { kind: 'hub' };
   }
 }
 function savedPages(value: unknown) {
   const pages = fields(value);
-  return Object.fromEntries(['progress', 'tickets', 'tree', 'docs'].flatMap((key) =>
+  return Object.fromEntries(['hub', 'tickets', 'tree', 'docs', 'unlinked'].flatMap((key) =>
     object(pages[key]) ? [[key, rowPlace(pages[key])]] : []));
 }
 function inspectorPlace(value: unknown): InspectorState | undefined {
@@ -61,13 +60,15 @@ function projectReloadState(value: unknown) {
   const modelPrevious: Record<string, string> = Object.fromEntries(Object.entries(fields(control.modelPrevious))
     .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
   const oldExecutionPage = raw.activeTab === 'project' && fields(project.view).kind === 'execution';
+  const view = projectView(project.view);
   const activeTab = oldExecutionPage ? 'execution' as const : mainTab(raw.activeTab);
   return {
     activeTab, selectedProject: text(raw.selectedProject), subpage: activeTab === 'home' ? subpagePlace(raw.subpage) : undefined,
     help: help && { scroll: offset(help.scroll) }, home: { scroll: rowPlace(raw.home).scroll }, jobs: rowPlace(raw.jobs),
-    project: { view: projectView(project.view), fromProjectsList: !oldExecutionPage && project.fromProjectsList === true,
+    project: { view, fromProjectsList: !oldExecutionPage && project.fromProjectsList === true,
       nav: oldExecutionPage ? rowPlace(undefined) : rowPlace(project.nav),
-      savedPages: savedPages(project.savedPages), folded: strings(project.folded) ?? [], filterQuery: text(project.filterQuery) || undefined },
+      savedPages: savedPages(project.savedPages), folded: strings(project.folded) ?? [],
+      filterQuery: view.kind === 'tickets' ? text(project.filterQuery) || undefined : undefined },
     execution: rowPlace(oldExecutionPage ? project.nav : raw.execution),
     control: { subTab: raw.activeTab === 'exp' || control.subTab === 'resources' ? 'resources' as const
       : control.subTab === 'harnesses' ? 'harnesses' as const : 'roles' as const,

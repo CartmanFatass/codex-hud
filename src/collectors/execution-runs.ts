@@ -89,6 +89,8 @@ export interface ExecutionRun {
   readonly flow: string;
   readonly kind: 'queue' | 'batch' | 'council' | 'prewalk' | 'land' | 'graph';
   readonly label: string;
+  /** Authoritative queue feature for legacy bare ticket numbers, not the display label. */
+  readonly feature?: string;
   readonly unattended: boolean;
   readonly state: TicketQueue['state'];
   readonly createdAt: number | null;
@@ -512,6 +514,7 @@ export function readExecutionRuns(
           state: workerStepState(cache, q.active_lead.job, 'running', workers.get(q.active_lead.job)),
           execJob: jobTargetFor(home, workers.get(q.active_lead.job), q.active_lead.job), since: workers.get(q.active_lead.job)?.startedAt ?? undefined } : undefined,
         label: q.unattended?.objective || q.feature || q.flow.slice(0, 8),
+        ...(q.feature ? { feature: q.feature } : {}),
         unattended: Boolean(q.unattended),
         state: q.state,
         createdAt,

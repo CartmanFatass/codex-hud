@@ -26,12 +26,12 @@ const block = (lines, header) => {
   return lines.slice(start, end < 0 ? undefined : end);
 };
 
-test('the Working tree row counts unlinked worktrees and its page lists them', async (t) => {
+test('the Working tree header links to the page that lists unlinked worktrees', async (t) => {
   const f = await fixture(t);
   const rows = (lang, state) => plain(f.render(38, lang, state, 46));
-  assert.ok(rows('en').some((line) => /^Worktree +synthetic-proje… · \d+ changed$/.test(line)));
-  assert.ok(plain(f.render(80, 'en', undefined, 46)).some((line) => /^Worktree +.* · 3 unlisted worktrees/.test(line)));
-  assert.ok(plain(f.render(80, 'zh', undefined, 46)).some((line) => /^工作区 +.* · 3 个未登记工作树/.test(line)));
+  assert.ok(rows('en').some((line) => /Tickets +Worktree +Docs$/.test(line)));
+  assert.ok(rows('zh').some((line) => /工单 +工作区 +文档$/.test(line)));
+  assert.doesNotMatch(rows('en').join('\n'), /unlisted worktree/i);
   const listed = block(rows('en', 'tree'), /^Unlisted worktrees/);
   assert.match(listed[0], /^Unlisted worktrees ─+ 3$/);
   assert.deepEqual(listed.slice(1).map(l => l.trim().replace(/ +/g, ' ')),

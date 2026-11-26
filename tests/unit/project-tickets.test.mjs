@@ -95,7 +95,7 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
   for (const width of [32, 56, 80, 120]) for (const lang of ['en', 'zh']) {
     const frame = f.render(width, lang, featurePage()), hub = f.render(width, lang), text = plain(frame).join('\n');
     for (const line of [...frame.lines, ...hub.lines]) assert.equal(visualLength(line), width, stripAnsi(line));
-    assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +3\/13 done/ : /工单 +3\/13 完成/);
+    assert.match(plain(hub).join('\n'), lang === 'en' ? /Tickets +Worktree +Docs/ : /工单 +工作区 +文档/);
     if (width >= 80) {
       assert.match(text, lang === 'en' ? /2 features/ : /2 个功能/);
       assert.match(text, lang === 'en' ? /imp 12m/ : /imp 12分/);
@@ -106,8 +106,7 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
       assert.match(text, /retired-tools +2\/2/);
       assert.doesNotMatch(text, /Claude collector|Legacy cleanup|Not a ticket/);
       const entries = plain(hub).join('\n'), at = (word) => entries.indexOf(word);
-      const [tickets, progress, tree, docs] = (lang === 'en' ? ['Tickets', 'Progress', 'Worktree', 'Docs'] : ['工单', '进度', '工作区', '文档']).map(at);
-      assert.ok(tickets >= 0 && tickets < progress && progress < tree && tree < docs, 'Details lists Tickets, Progress, Worktree, Docs');
+      assert.equal(at(lang === 'en' ? 'Progress' : '进度'), -1);
       assert.equal(at(lang === 'en' ? 'Control plane' : '控制面'), -1);
     }
   }
@@ -117,7 +116,9 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
   fs.rmSync(join(f.cwd, '.scratch'), { recursive: true });
   const data = await f.collector.collect(true, f.board, NOW + 3);
   assert.deepEqual(data.tickets, []);
-  assert.doesNotMatch(plain(f.render(80, 'en', undefined, data)).join('\n'), /Tickets|native-tree|retired-tools/, 'no Tickets entry on the hub');
+  const hub = plain(f.render(80, 'en', undefined, data)).join('\n');
+  assert.match(hub, /Tickets +Worktree +Docs/);
+  assert.doesNotMatch(hub, /retired-tools|No tickets/);
   assert.match(plain(f.render(80, 'en', 'tickets', data)).join('\n'), /Project › Tickets\n\? Try the Project tab\n\? Choose the browser profile after trying the synthetic setup\n\n  none/);
 });
 test('open features list tickets by state and keep queued tickets folded', async (t) => {
@@ -288,7 +289,7 @@ test('the 64-feature scan marks partial meters without opening omitted tickets',
       if (page) assert.match(text, new RegExp(word));
       else {
         assert.doesNotMatch(text, /Partial|不完整/);
-        assert.match(text, lang === 'en' ? /^Details ─+ 64 features sampled$/m : /^详情 ─+ 从 64 个功能抽样$/m);
+        assert.doesNotMatch(text, /^Details ─|^详情 ─/m);
       }
       assert.ok(frame.lines.every((line) => visualLength(line) === 40));
     }

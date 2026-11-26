@@ -118,6 +118,12 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   const tab = clickKind(input, ctx);
+  if (main && next.activeTab === 'project' && !listed && !projectPageOf(next)) {
+    const hit = input.type === 'mouse' && input.button === 'left' ? frame.controls.find((c) => c.kind === 'project-page' &&
+      c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.item : undefined;
+    const link = boardFrame.projectLinks?.find(({ page, key }) => page === hit || (input.type === 'key' && key === input.text));
+    if (link) { goProject(link.page); return result(); }
+  }
   const control = controlShown(next);
   const viewKey = input.type === 'key' && input.text === 'h';
   const controlView = CONTROL_VIEWS.find((id) => tab === `control-${id}`);
@@ -288,7 +294,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if (row?.item) {
           const again = row.item === cursor;
           select(row.item);
-          // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
+          // A link opens directly. Elsewhere a click selects and a second one acts.
           return result(again || row.waitingTarget || /^project:(page:|list:)/.test(row.item) ? activate(row) : undefined);
         }
       }

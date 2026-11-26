@@ -1,4 +1,3 @@
-import { withState } from '../fixtures/state-helpers.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -122,27 +121,14 @@ test('bounded safe numstat for working tree and newest 12 tries, with native pat
   assert.deepEqual(diffStatRows(emptyDiff, 40), []);
   setLanguage('en');
 
-  const r = project.ledger.at(-2), item = 'diff:' + file;
-  const task = `task:milestone:${r.milestone}`;
-  const render = (state) => renderMonitor({ tree: TREE, project, state, width: 40, height: 48, nowMs: NOW });
-  for (const panelLayout of ['classic']) {
-    for (const page of ['tree', 'progress']) {
-      const state = onPage(page, withState({ prefs: { panelLayout } }, (panelLayout === 'split'
-          ? { project: { nav: { cursor: page === 'tree' ? 'project:row:0' : `project:fold:${task}` } } }
-          : { project: { nav: { cursor: item }, folded: new Set([task]) } })));
-      let frame = render(state);
-      const rows = frame.workboard.rows;
-      const shown = rows.findIndex((row) => row.item === item);
-      assert.ok(shown > 0, `${panelLayout} ${page} shows the diff`);
-      assert.ok(rows.slice(0, shown).some((row) => row.text.includes(page === 'progress' ? 'Synthetic slice' : 'changed')));
-      if (panelLayout === 'split') frame = render(enter(frame).state);
-      // The preview may show several slices in the milestone; move through their diff rows.
-      for (let i = 0; i < rows.length && frame.state.project.nav.cursor !== item; i++)
-        frame = render(action(frame, { type: 'key', key: 'down' }).state);
-      assert.equal(frame.state.project.nav.cursor, item);
-      assertOpens(frame, file);
-    }
-  }
+  const item = 'diff:' + file;
+  const state = onPage('tree', { project: { nav: { cursor: item } } });
+  const frame = renderMonitor({ tree: TREE, project, state, width: 40, height: 48, nowMs: NOW });
+  const rows = frame.workboard.rows, shown = rows.findIndex((row) => row.item === item);
+  assert.ok(shown > 0, 'Working tree shows the diff');
+  assert.ok(rows.slice(0, shown).some((row) => row.text.includes('changed')));
+  assert.equal(frame.state.project.nav.cursor, item);
+  assertOpens(frame, file);
 });
 
 test('thin-job Inspector uses a linked worktree BASE, gates active probes, and freezes a settlement', async (t) => {

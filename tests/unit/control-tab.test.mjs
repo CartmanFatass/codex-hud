@@ -35,7 +35,7 @@ test('Control is the fourth whole tab at 40 columns, with arrows, Tab, click and
   const f = await fixture(t), data = richControl(f.data);
   for (const lang of ['en', 'zh']) {
     const draw = (state) => f.render(40, lang, state, 36, data, true, 'unicode', 'none', { projects: PROJECTS });
-    let frame = draw(onPage(undefined, { selectedProject: PROJECTS[1].root, project: { nav: { cursor: 'project:page:docs' } } }));
+    let frame = draw(onPage(undefined, { selectedProject: PROJECTS[1].root, project: { nav: { cursor: 'project:wait:1' } } }));
     const keys = ['home', 'project', 'execution', 'control'];
     assert.deepEqual(frame.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).map((c) => c.kind), keys.map((key) => `board-${key}`));
     frame = draw(send(frame, 'tab').state);
@@ -55,7 +55,7 @@ test('Control is the fourth whole tab at 40 columns, with arrows, Tab, click and
     const exec = draw(send(ctrl, 'left').state);
     assert.equal(exec.state.activeTab, 'execution');
     const project = draw(send(exec, 'left').state);
-    assert.equal(project.state.project.nav.cursor, 'project:page:docs');
+    assert.equal(project.state.project.nav.cursor, 'project:wait:1');
     const again = draw(send(project, tabClick(project, 'control')).state);
     assert.deepEqual(again.state.control.roles, ctrl.state.control.roles);
     const saved = draw({ ...again.state, control: { ...again.state.control, notice: { kind: 'preset', role: 'imp', name: 'daily' } } });

@@ -194,6 +194,8 @@ test('Execution collects paused, working, and recently ended runs (including pan
   assert.deepEqual(working.tickets[7].blockers, ['07', '05']);
   assert.equal(working.heldCount, 1);
   assert.equal(working.repairRounds, 1);
+  assert.deepEqual(f.execution.activity(f.project).filter(({ kind }) => kind === 'gate').map(({ ticket, flow }) => [ticket, flow]),
+    [['exec-runs/02', LAND_FLOW]], 'an active queue landing is one gate for its linked ticket');
 
   const paused = view.runs.find((r) => r.flow === FLOWS.paused);
   assert.equal(paused.unattended, true);
@@ -366,15 +368,15 @@ test('idle Execution shows only recent project rows, ordered together by end tim
     return flow;
   };
 
-  const failed = job(1, 'Build broke', 4, { state: 'failed', worktree: true });
-  const landed = job(2, 'Committed changes', 12, { worktree: true });
+  const failed = job(1, 'Build broke', 4, { state: 'failed', worktree: true, ticket: 'compile/01' });
+  const landed = job(2, 'Committed changes', 12, { worktree: true, package: 'compile', ticket: '02' });
   const retried = land(landed, 'failed');
   // A later attempt landed even though its post-landing step failed; neither flow resets the job age.
   putJson(join(flows, `${retried}-2.json`), { flow: `${retried}-2`, job: landed, state: 'failed', step: 'after[1]', landed_sha: 'a'.repeat(40), updated_at: ago(1) });
   const queueJob = job(3, 'Run member title', 13);
   const landedRun = run(1, 'ingest', 15, [{ job: queueJob, landed: true }, { landed: true }]);
   job(4, 'Run attempt title', 7, { ticket_queue: landedRun });
-  const unlanded = job(5, 'Worktree without land', 29, { worktree: true });
+  const unlanded = job(5, 'Worktree without land', 29, { worktree: true, ticket: 'compile/03' });
   const unreadable = job(6, 'Unknown evidence', 40, { worktree: true });
   const badLand = land(unreadable, 'completed');
   fs.writeFileSync(join(flows, `${badLand}.json`), '{broken');
@@ -385,14 +387,28 @@ test('idle Execution shows only recent project rows, ordered together by end tim
   const unlandedRun = run(3, 'unfinished', 120, [{ job: noCommit, land: land(noCommit, 'completed') }], 'stopped');
   const unknownRun = run(4, 'record unavailable', 125, [{ job: unreadable, land: badLand }]);
   // Use a different job for the unreadable standalone row so it is not hidden as a run member.
-  const unknown = job(10, 'Unknown standalone evidence', 40, { worktree: true });
+  const unknown = job(10, 'Unknown standalone evidence', 40, { worktree: true, ticket: 'compile/04' });
   fs.writeFileSync(join(flows, `f${unknown.slice(1)}.json`), '{broken');
-  job(11, 'Stale job title', 1441);
-  job(12, 'Foreign job title', 2, { cwd: join(root, 'foreign') });
+  job(11, 'Stale job title', 1441, { ticket: 'compile/05' });
+  job(12, 'Foreign job title', 2, { cwd: join(root, 'foreign'), ticket: 'compile/06' });
   run(5, 'stale queue', 1441, [{ landed: true }]);
 
   const execution = new PanelExecution(hud, PANE, {}, () => {});
   t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, NOW, true);
+  assert.equal(execution.view(project), undefined, 'activity-only collection does not publish a worker view');
+  const outcomes = execution.activity(project).filter((entry) => entry.kind === 'ended');
+  const actual = Object.fromEntries(outcomes.map(({ ticket, at, result }) => [ticket, [at, result]]));
+  assert.deepEqual(actual['compile/01'], [Date.parse(ago(4)), 'failed']);
+  assert.deepEqual(actual['compile/02'], [Date.parse(ago(1)), 'landed']);
+  assert.deepEqual(actual['compile/03'], [Date.parse(ago(29)), 'not landed']);
+  assert.deepEqual(actual['compile/04'], [Date.parse(ago(40)), undefined]);
+  assert.equal(actual['compile/05'], undefined);
+  assert.equal(actual['compile/06'], undefined);
+  assert.deepEqual(actual['ingest/01'], [Date.parse(ago(15)), 'landed']);
+  assert.deepEqual(actual['broken/02'], [Date.parse(ago(90)), 'failed']);
+  assert.equal(execution.activity(join(root, 'foreign')), undefined);
   execution.sync(project, true);
   await execution.refresh(undefined, NOW);
   const view = execution.view(project);

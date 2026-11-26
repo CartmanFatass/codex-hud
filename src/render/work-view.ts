@@ -13,6 +13,7 @@ import { workflowDetailRows } from './execution-workflow.js';
 import { activeFilter, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
 import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
+import { projectHeaderRows, projectLinks } from './inbox-project.js';
 import { PROJECT_STRIP_MORE, projectStripRow } from './project-strip.js';
 import { isRequestMoreItem, requestAreaRows, type ScopedRequest } from './request-area.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, footerLayout, mark, type FooterHints } from './workboard-rows.js';
@@ -63,6 +64,9 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   ];
   const project = [
     ['[ ]', 'previous / next project'],
+    ['t', 'open Tickets'],
+    ['b', 'open Working tree (with Git facts)'],
+    ['d', 'open Docs'],
     ['⏎', 'Accept all: record all pending slices'],
   ];
   const execution = [
@@ -178,11 +182,13 @@ export function renderWorkboardFrame(
   const home = !sub && !project && !execution && !control;
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
-  // The Project filter narrows the snapshots for Progress and Tickets.
+  const hub = project && !page && !list;
+  const links = hub ? projectLinks(input.project) : [];
+  // The Project filter narrows the snapshot for Tickets.
   const filter = filterScope(state) ? activeFilter(state) : undefined, needle = filter?.query.toLowerCase() ?? '';
   let matches: number | undefined;
-  if (needle && input.project && (page === 'progress' || page === 'tickets')) {
-    const found = filterProject(input.project, page, needle);
+  if (needle && input.project && page === 'tickets') {
+    const found = filterProject(input.project, needle);
     input = { ...input, project: found.data };
     matches = found.count;
   }
@@ -229,7 +235,9 @@ export function renderWorkboardFrame(
   const unattendedLine = home && input.homePortfolio?.unattended
     ? unattendedRow(input.homePortfolio.unattended, width).text : undefined;
   const truncatedFiles = project && !list && [input.project?.stateTruncated && 'STATE.md', input.project?.specTruncated && 'spec.md'].filter(Boolean).join(', ');
-  const headers = [...(unattendedLine ? [unattendedLine] : []), ...(strip ? [''] : []), ...reqRows.map(() => ''), ...controlTop.map((r) => r.text), ...(bar ? [bar.text] : []),
+  const projectTop = hub && input.project ? projectHeaderRows(input.project, width, now, input.projectName ?? '', !!strip) : [];
+  const pinned = [...controlTop, ...projectTop];
+  const headers = [...(unattendedLine ? [unattendedLine] : []), ...(strip ? [''] : []), ...reqRows.map(() => ''), ...pinned.map((r) => r.text), ...(bar ? [bar.text] : []),
     ...(inspector ? stopPromptRows(state, width).map((r) => r.text) : []),
     ...(jobs || execution ? batchPromptRows(state, width).map((r) => r.text) : []),
     ...(truncatedFiles ? [fit(theme.board.attention(t('Truncated: {files}', { files: truncatedFiles })), width)] : []),
@@ -244,7 +252,7 @@ export function renderWorkboardFrame(
   if (strip && stripTop) {
     for (const c of strip.controls) frame.controls.push({ ...c, y: 1 + unattendedTop });
   }
-  controlTop.slice(0, Math.max(0, top - reqStart - reqVisible)).forEach((row, i) => {
+  pinned.slice(0, Math.max(0, top - reqStart - reqVisible)).forEach((row, i) => {
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: 1 + reqStart + reqVisible + i });
   });
   const target = inspector?.target;
@@ -256,7 +264,7 @@ export function renderWorkboardFrame(
   const schedule = scheduleView(input.openSchedule, now);
   if (sub || page || list) {
     // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
-    const at = page && projectCrumb(page, input.project, width, now, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
+    const at = page && projectCrumb(page, input.project, width, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
     frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
@@ -334,7 +342,7 @@ export function renderWorkboardFrame(
   const helpContent = help ? helpRows(input, state, width) : undefined;
   const harnessAdd = addingHarness && input.project ? harnessAddRows(input.project, addingHarness, width) : undefined;
   if (harnessAdd && addingHarness) state = { ...state, overlay: { ...addingHarness, pick: harnessAdd.pick } };
-  const rows: MonitorRow[] = helpContent
+  let rows: MonitorRow[] = helpContent
     ? helpContent.rows
     : objective ? objectiveDetailRows(objective, width)
     : runDetail ? activeRun ? runDetailRows(activeRun, width, now, activeRun.kind === 'queue' ? undefined : workflowDetailRows(activeRun, width, now)) : [boardRow(fit(t('Run not available'), width))]
@@ -343,7 +351,7 @@ export function renderWorkboardFrame(
         : [boardRow(t('Job not available'))]
         : jobs ? jobsRows(source.workers, width, !!input.jobsObserved, source.batches)
         : project
-          ? projectRows(input.project, state, width, now, source, input.projectName, input.projects, input.worktrees)
+          ? projectRows(input.project, state, width, now, input.projects, input.worktrees, input.projectActivity)
           : execution ? executionRows(input.execution, state.execution.cursor === PROJECT_STRIP_MORE && !strip?.hasMore ? undefined : state.execution.cursor, width, now)
           : resourcePage ? expRows(resourcePage, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.publicationNotice)))
           : control ? harnesses && input.project ? harnessAdd
@@ -353,6 +361,10 @@ export function renderWorkboardFrame(
               state.home.othersExpanded, input.homeToday, schedule, false);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
+  if (hub && rows.length > room) {
+    let spare = room - rows.filter((row) => !row.objectiveSubtitle).length;
+    rows = rows.filter((row) => !row.objectiveSubtitle || spare-- > 0);
+  }
   const actions = rows.filter((r) => r.item);
   const reqItems = visibleReqRows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i);
   const hasReq = (c?: string) => !!c && reqItems.some((r) => r.item === c);
@@ -371,8 +383,8 @@ export function renderWorkboardFrame(
   const hasCursor = (cursor?: string) => (stripMore && cursor === PROJECT_STRIP_MORE) || hasReq(cursor) || rows.some((r) => r.item && r.item === cursor);
   // Home and Project hub start on the first request, else the first body item (ahead of the strip's +N);
   // Project sub-pages start on their first body item so Up reaches the last request row.
-  const navDefault = project && !page && !list
-    ? (reqItems[0]?.item ?? rows.find((r) => r.item)?.item ?? (stripMore ? PROJECT_STRIP_MORE : undefined))
+  const navDefault = hub
+    ? (reqItems[0]?.item ?? rows.find((r) => r.objectiveTarget)?.item ?? rows.find((r) => r.item)?.item ?? (stripMore ? PROJECT_STRIP_MORE : undefined))
     : (rows.find((r) => r.item)?.item ?? reqItems[0]?.item ?? (stripMore ? PROJECT_STRIP_MORE : undefined));
   const cursor = nav && !hasCursor(nav.cursor) && (project || execution || (!addingHarness && !sheet && input.project))
     ? navDefault : nav?.cursor;
@@ -456,11 +468,13 @@ export function renderWorkboardFrame(
              ...(selected?.batch ? batchKeys(selected.batch) : []), ...projectSwitch,
              ...(selected?.execJob?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : [])]
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
-          : selectedReq ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open', ...(page ? ['Esc back'] : projectSwitch)]
           : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
-          : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
+          : selectedReq && page ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open', 'Esc back']
+          : page === 'tickets' ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']
-          : [selected?.objectiveTarget ? '⏎ details' : '⏎ open', ...projectSwitch])
+          : [...(isRequestMoreItem(selectedReq?.item) ? [reqFoldHint] : selected?.objectiveTarget ? ['⏎ details'] : cursor?.startsWith('project:fold:')
+            ? [state.project.folded.has(cursor.slice(13)) ? '⏎ fold' : '⏎ expand'] : cursor ? ['⏎ open'] : []),
+            ...links.map((link) => link.hint), ...projectSwitch])
         : [...(listCursor ? selected?.item === OTHER_PROJECTS
           ? [otherProjectsHint(state.home.othersExpanded), state.home.othersExpanded ? '⏎ fold' : '⏎ expand']
           : selectedReq ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open']
@@ -490,6 +504,7 @@ export function renderWorkboardFrame(
     edge: 0,
     visible: room,
   });
-  frame.workboard = { snapshot: source, targets, rows, ...(visibleReqRows.length ? { requests: visibleReqRows } : {}) };
+  frame.workboard = { snapshot: source, targets, rows, ...(links.length ? { projectLinks: links } : {}),
+    ...(visibleReqRows.length ? { requests: visibleReqRows } : {}) };
   return frame;
 }

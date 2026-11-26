@@ -116,7 +116,6 @@ export interface ProjectSnapshot {
   idle?: true;
   last?: { text: string; at: number };
   next: ProjectItem[];
-  editing: ProjectItem[];
 }
 const waitRefs = (text: string) => [...text.matchAll(/[（(]waits on ([^()（）]+)[）)]/gi)].at(-1)?.[1]
   .split(/,|\s+and\s+/i).map((r) => r.trim()).filter(Boolean) ?? [];
@@ -612,7 +611,7 @@ export class ProjectCollector {
     if (!shown) return;
     this.seen.clear();
     const out: ProjectSnapshot = {
-      waiting: [], docs: [], control: [], roles: [], harnesses: [], models: { pi: [], cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0, editing: [],
+      waiting: [], docs: [], control: [], roles: [], harnesses: [], models: { pi: [], cli: {}, bro: {} }, agents: [], keys: [], browser: false, roleCount: 0,
       ladder: { ids: [] }, slices: [], ledger: [], active: [], next: [], summary: '', tickets: [],
       counts: { working: 0, blocked: 0, try: 0, todo: 0, accepted: 0, dropped: 0 },
     };
@@ -686,7 +685,7 @@ export class ProjectCollector {
     if (specFile?.truncated) out.specTruncated = true;
     const spec = specFile?.text.split(/^## 5\. Milestones[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
     out.ladder.ids = [...spec.matchAll(/^[-*] \*\*(M\d+[a-z]?|\d+\.\d+\.\d+),/gm)].map((m) => m[1]);
-    const refreshedGit = !home ? await this.fullDetails(out, board, now, specPath, milestone) : false;
+    const refreshedGit = !home ? await this.fullDetails(out, now, specPath, milestone) : false;
     const rollup = new TicketRollup(out.tickets);
     if (shown !== 'overview') this.joinJobs(out, board, home, shown === 'export', rollup, jobsProbe?.jobs);
     if (jobsProbe?.complete && !out.active.some(({ state }) => state !== 'queued')) out.idle = true;
@@ -749,7 +748,7 @@ export class ProjectCollector {
     return out;
   }
 
-  private async fullDetails(out: ProjectSnapshot, board: WorkboardSnapshot, now: number, specPath: string, milestone?: string): Promise<boolean> {
+  private async fullDetails(out: ProjectSnapshot, now: number, specPath: string, milestone?: string): Promise<boolean> {
     if (milestone) out.docs.push({ label: 'spec', value: milestone, path: specPath });
     const reviews = join(this.cwd, 'docs/reviews');
     const review = (this.orderedNames(reviews, 12, (entry) => entry.isFile() && /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(entry.name), true) ?? [])
@@ -762,23 +761,6 @@ export class ProjectCollector {
       }).sort((a, b) => b.at - a.at)[0];
     if (review) out.docs.push({ label: 'review', value: basename(review.path), ...review });
     this.collectControl(out, now);
-    const jobCache = getJobIndexCache(this.hudHome);
-    for (const w of board.workers.filter((w) => w.state === 'working')) {
-      const id = w.evidence[0]?.sourceId;
-      if (!id || !JOB_ID_RE.test(id)) continue;
-      try {
-        const res = jobCache.readJob<JobReceipt>(id);
-        const record = res.status === 'ok' ? res.value : null;
-        const target = record?.worktree?.main_root ?? record?.cwd;
-        if (typeof target === 'string' && resolve(target) === resolve(this.cwd)) {
-          const label = board.lanes.find((l) => l.id === w.laneId)?.label ?? '';
-          out.editing.push({
-            label: 'editing', value: `${w.role ?? ''} · ${label}  ${w.task}`,
-            path: join(this.hudHome, 'jobs', id, 'brief.md'), at: w.startedAt ?? undefined,
-          });
-        }
-      } catch { /* invalid job */ }
-    }
     let refreshedGit = false;
     if (now - this.gitAt >= 5000) {
       refreshedGit = true;

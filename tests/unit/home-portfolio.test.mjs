@@ -386,9 +386,13 @@ test('Home ranks idle Objectives by the latest snapshot activity and excludes co
     assert.ok(one.some((r) => r.item === `home:result:${root}:complete`));
     assert.deepEqual(calls, [], 'painting from the collected snapshot does not touch disk');
   } finally { Object.assign(fs, originals); syncBuiltinESMExports(); }
-  const projectFrame = renderMonitor({ state: { ...initialMonitorState(), activeTab: 'project' }, width: 80, height: 40, nowMs,
-    project: await new ProjectCollector(root, f.home).collect(true, board, nowMs) });
-  assert.ok(projectFrame.workboard.rows.some((r) => r.item === `project:objective:${root}:complete`));
+  const projectData = await new ProjectCollector(root, f.home).collect(true, board, nowMs);
+  const draw = (state) => renderMonitor({ state, width: 80, height: 40, nowMs, project: projectData });
+  const projectFrame = draw({ ...initialMonitorState(), activeTab: 'project' });
+  assert.ok(!projectFrame.workboard.rows.some((r) => r.item === `project:objective:${root}:complete`));
+  projectFrame.state.project.nav.cursor = 'project:fold:objectives:closed';
+  const expanded = draw(handleMonitorInput(projectFrame.state, { type: 'key', key: 'enter' }, { frame: projectFrame }).state);
+  assert.ok(expanded.workboard.rows.some((r) => r.item === `project:objective:${root}:complete`));
 });
 
 test('Home shows newest fresh done Objective as one goal + result line, excluding expired or undated ones', async (t) => {
@@ -522,7 +526,7 @@ test('Home places the unattended status line above pinned requests and projects'
   }
 });
 
-test('Project lists the unlinked features after the Objectives, with their jobs and a five-row preview', async (t) => {
+test('Project summarizes unlinked features in one row and opens a list, without job rows', async (t) => {
   const f = await unlinkedWork(t), { root } = f;
   const collector = new ProjectCollector(root, f.home);
   const draw = (data, width, state = { ...initialMonitorState(), activeTab: 'project' }) =>
@@ -536,24 +540,24 @@ test('Project lists the unlinked features after the Objectives, with their jobs 
       try {
         const frame = draw(data, width), text = plain(frame);
         assert.ok(frame.lines.every((line) => visualLength(line) === width));
-        const head = lang === 'en' ? 'Unlinked' : '未归入目标', jobs = lang === 'en' ? 'Jobs in Project' : '任务';
-        assert.match(text, new RegExp(`${head} .*4\\n  council +█+ +1/1.*\\n {6}\\S+ 01 Sample 1.*\\n  advisor +█+ +1/1.*\\n  workflow .*1/7.*\\n  pi-worker .*1/5`));
-        assert.ok(text.indexOf(head) < text.indexOf(`${jobs} `), 'a job no ticket claims stays in the jobs list');
+        const head = lang === 'en' ? 'Unlinked' : '未归入目标';
+        const [summary] = frame.workboard.rows.filter((r) => r.item === 'project:page:unlinked');
+        assert.match(summary.text, new RegExp(`^◌ ${head}: council 1/1`));
+        if (width === 80) assert.match(summary.text, /advisor 1\/1 · workflow 1\/7 · pi-worker 1\/5/);
+        assert.doesNotMatch(text, /Jobs in Project|^任务 ─|01 Sample 1/m);
       } finally { setLanguage(prevLang); }
     }
-    const frame = draw(data, 80), row = frame.workboard.rows.find((r) => /^  workflow /.test(r.text));
-    frame.state.project.nav.cursor = row.item;
-    assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { frame }).action,
-      { type: 'open-files', files: [join(root, '.scratch/workflow/issues/02-demo.md')] });
     f.feature('fifth', ['ready-for-agent'], 3);
     f.feature('sixth', ['ready-for-agent'], 4);
-    const more = await collector.collect(true, board, NOW), folded = draw(more, 80);
-    assert.doesNotMatch(plain(folded), /^  sixth /m);
-    const toggle = folded.workboard.rows.find((r) => r.item === 'project:fold:unlinked:more');
-    assert.match(toggle.text, /1 more/);
-    folded.state.project.nav.cursor = toggle.item;
-    const { state } = handleMonitorInput(folded.state, { type: 'key', key: 'enter' }, { frame: folded });
-    assert.match(plain(draw(more, 80, state)), /^  sixth [\s\S]*fewer/m);
+    const more = await collector.collect(true, board, NOW), hub = draw(more, 80);
+    hub.state.project.nav.cursor = 'project:page:unlinked';
+    const enter = (frame) => handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { frame });
+    const page = draw(more, 80, enter(hub).state);
+    assert.match(plain(page), /^‹ Project › Unlinked/m);
+    assert.match(plain(page), /^  sixth /m);
+    assert.doesNotMatch(plain(page), /01 Sample 1/);
+    page.state.project.nav.cursor = page.workboard.rows.find((r) => /^  workflow /.test(r.text)).item;
+    assert.deepEqual(enter(page).action, { type: 'open-files', files: [join(root, '.scratch/workflow/issues/02-demo.md')] });
   } finally { setDisplayConfig(prev); }
 });
 

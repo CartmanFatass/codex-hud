@@ -863,7 +863,7 @@ test('Control plane keys: decoded names, scoped to Control, Settings letters unc
   assert.deepEqual(decoded('\x1b[B'), [{ type: 'key', key: 'down' }]);
   assert.deepEqual(decoded('Z', 'monitor'), []);
   // Elsewhere they do nothing: the hub, another page, a row of the Control plane that is not a place.
-  for (const state of [onPage(), onPage('progress'), onControl({ cursor: 'project:fold:healthy' })]) {
+  for (const state of [onPage(), onPage('docs'), onControl({ cursor: 'project:fold:healthy' })]) {
     s.session.state = state;
     for (const raw of ['p', 'm', 'x', 'i']) assert.equal((await s.press(raw)).action, undefined);
   }

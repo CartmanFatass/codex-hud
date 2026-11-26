@@ -85,9 +85,8 @@ test('Projects list through real input: strip +N opens it, Enter opens a hub, Es
   assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], [false, byName('waiting-project')]);
   // A page: Esc goes up to the hub, then (the hub being reached from the list) to the list.
   frame = view(send(view(onPage(undefined, { project: { view: { kind: 'projects-list' } } })), '\r').state);
-  frame.state.project.nav.cursor = 'project:page:progress';
-  frame = view(send(frame, '\r').state);
-  assert.equal(projectPageOf(frame.state), 'progress');
+  frame = view(send(frame, 'd').state);
+  assert.equal(projectPageOf(frame.state), 'docs');
   frame = view(esc(frame).state);
   assert.equal(projectPageOf(frame.state), undefined);
   frame = view(esc(frame).state);
@@ -116,13 +115,12 @@ test('one project shows no list: no `▾ i/n`, no list, Esc and [ ] as before', 
   const forced = view(onPage(undefined, { project: { fromProjectsList: true, view: { kind: 'projects-list' } } }));
   assert.equal(forced.projects, undefined);
   assert.doesNotMatch(text(forced), /▾|‹ Projects|\[ \]/);
-  assert.match(text(forced), /^Progress /m);
+  assert.match(text(forced), /Tickets +(?:Worktree +)?Docs$/m);
   assert.equal((esc(forced).state.project.view.kind === 'projects-list'), true, 'a stale flag is left alone, never acted on');
   assert.doesNotMatch(plain(view(esc(forced).state))[0], /Projects/);
   assert.equal(send(forced, ']').state.selectedProject, undefined);
   // A stale list flag does not stop hub links from opening pages.
-  forced.state.project.nav.cursor = 'project:page:progress';
-  assert.equal(projectPageOf(send(forced, '\r').state), 'progress');
+  assert.equal(projectPageOf(send(forced, 'd').state), 'docs');
   assert.deepEqual(plain(view(onPage())), plain(l.render(40, 'en', onPage(), 24, l.data, true, 'unicode', 'none', { projectName: 'demo-project' })));
 });
 test('the list reads no Git and re-reads only the files that changed', async (t) => {

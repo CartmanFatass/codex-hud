@@ -78,13 +78,13 @@ test('v1 migrates the Project view, cursor, saved pages and nested Control nav',
   const { activeTab, selectedProject, project, control, prefs, home } = place.state;
   assert.equal(activeTab, 'project');
   assert.equal(selectedProject, state.projectRoot);
-  assert.deepEqual(project.view, { kind: 'progress' }, 'obsolete try-only mode is not restored');
+  assert.deepEqual(project.view, { kind: 'hub' }, 'the retired Progress page is not restored');
   assert.equal(project.fromProjectsList, true);
   assert.equal(project.nav.cursor, state.projectCursor);
   assert.equal(project.nav.scroll, state.projectScroll);
   assert.deepEqual(project.savedPages, state.projectSaved);
   assert.deepEqual(project.folded, state.projectFolded);
-  assert.deepEqual(project.filter, { query: 'slice', editing: false });
+  assert.equal(project.filter, undefined);
   assert.equal(control.roles.nav.cursor, split.previewCursor);
   assert.deepEqual(control.roles.folded, new Set(['usage']));
   assert.deepEqual(control.harnesses.folded, new Set(['harness-off']));
@@ -130,7 +130,7 @@ test('v2 keeps independent Home and Project places and restores only whitelisted
   Object.assign(state.home, { cursor: { kind: 'work', target }, scroll: 6, showAll: true, split: homeSplit,
     expanded: new Set(['worker']), toggled: new Set(['card']), foldedLanes: new Set(['other']), expandedTasks: new Set(['task:home']),
     filter: { query: 'worker', editing: false }, trySelection: new Map([['discarded-mark', rawArgs]]), newestCard: secret, revealed: secret });
-  Object.assign(state.project, { view: { kind: 'progress', onlyTry: { cursor: 'slice:try', scroll: 7, raw: rawArgs } },
+  Object.assign(state.project, { view: { kind: 'tickets', onlyTry: { cursor: 'slice:try', scroll: 7, raw: rawArgs } },
     nav: { cursor: 'project:file:synthetic', scroll: 4, split: projectSplit }, folded: new Set(['task:project']),
     savedPages: { docs: { cursor: 'doc', scroll: 1, raw: rawArgs }, retired: rawArgs }, filter: { query: 'project', editing: false } });
   state.control.roles.folded = new Set([]);
