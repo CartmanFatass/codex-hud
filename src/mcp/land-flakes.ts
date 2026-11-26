@@ -84,6 +84,7 @@ const MAX_FLOW_BYTES = 128 * 1024;
 const DISPATCH_CASE_THRESHOLD = 4;
 const WAITING_DISPATCH_ERROR = 'waiting for active flake job';
 const BLOCKED_DISPATCH_ERROR = 'ticket is blocked';
+const UNAVAILABLE_DISPATCH_ERROR = 'ticket readiness unavailable';
 const FEATURE_CHANGED_DISPATCH_ERROR = 'waiting for configured flakes feature';
 
 const nn = (n: number) => String(n).padStart(2, '0');
@@ -300,8 +301,7 @@ function parseTicketRef(ticket: string): { feature: string; number: number; key:
 
 type TicketDispatchState =
   | { state: 'ready'; ticket: string; path: string }
-  | { state: 'blocked'; ticket: string; path: string }
-  | { state: 'resolved'; ticket: string };
+  | { state: 'blocked' | 'unavailable' | 'unpromoted' | 'resolved'; ticket: string };
 
 function inspectRunningListEntry(
   feature: string,
@@ -314,22 +314,23 @@ function inspectRunningListEntry(
   if (claimedTickets.has(key)) return { state: 'resolved', ticket: canonical };
   try {
     const { bytes, truncated } = readFileBounded(item.path, MAX_TICKET_BYTES);
-    if (truncated) return { state: 'resolved', ticket: canonical };
+    if (truncated) return { state: 'unavailable', ticket: canonical };
     const text = bytes.toString('utf8');
-    if (!isRunningListTicket(text)) return { state: 'resolved', ticket: canonical };
     const evidence = ticketFileEvidence(text);
-    if (evidence.landed !== undefined) return { state: 'resolved', ticket: canonical };
-    if (!/^ready-for-agent$/i.test(evidence.status ?? '')) return { state: 'resolved', ticket: canonical };
+    if (evidence.landed !== undefined || /^claimed$/i.test(evidence.status ?? '')) {
+      return { state: 'resolved', ticket: canonical };
+    }
+    if (!isRunningListTicket(text)) return { state: 'unavailable', ticket: canonical };
+    if (/^(needs-triage|needs-info)$/i.test(evidence.status ?? '')) return { state: 'unpromoted', ticket: canonical };
+    if (!/^ready-for-agent$/i.test(evidence.status ?? '')) return { state: 'unavailable', ticket: canonical };
     if (getBlockers) {
       const blockers = getBlockers().get(key);
-      if (blockers ? blockers.length > 0 : evidence.blocked !== undefined) {
-        return { state: 'blocked', ticket: canonical, path: item.path };
-      }
+      if (!blockers) return { state: 'unavailable', ticket: canonical };
+      if (blockers.length > 0) return { state: 'blocked', ticket: canonical };
     }
     return { state: 'ready', ticket: canonical, path: item.path };
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return { state: 'resolved', ticket: canonical };
-    return { state: 'blocked', ticket: canonical, path: item.path };
+  } catch {
+    return { state: 'unavailable', ticket: canonical };
   }
 }
 
@@ -340,12 +341,14 @@ function inspectRunningListTicket(
   getBlockers?: () => ReadonlyMap<string, readonly string[]>,
 ): TicketDispatchState {
   const ref = parseTicketRef(ticket);
-  if (!ref) return { state: 'resolved', ticket };
-  if (claimedTickets.has(ref.key)) return { state: 'resolved', ticket };
-  const scratch = join(mainRoot, '.scratch');
-  const item = listFeatureTickets(scratch, ref.feature).find(t => t.number === ref.number);
-  if (!item) return { state: 'resolved', ticket };
-  return inspectRunningListEntry(ref.feature, item, claimedTickets, getBlockers);
+  if (ref) {
+    if (claimedTickets.has(ref.key)) return { state: 'resolved', ticket };
+    try {
+      const item = listFeatureTickets(join(mainRoot, '.scratch'), ref.feature).find(t => t.number === ref.number);
+      if (item) return inspectRunningListEntry(ref.feature, item, claimedTickets, getBlockers);
+    } catch { /* The ticket directory could not be read. */ }
+  }
+  return { state: 'unavailable', ticket };
 }
 
 function findReadyRunningListTicket(
@@ -524,14 +527,8 @@ export async function collectGateFlakes(
       const targetClaimed = targetRef
         ? runningListAdmission(home, mainRoot, targetRef.feature, undefined, false).claimedTickets
         : EMPTY_CLAIMED;
-      let blockerMap: ReadonlyMap<string, readonly string[]> | undefined;
-      const getBlockers = () => (blockerMap ??= ticketBlockersByKey(mainRoot));
-      const inspected = inspectRunningListTicket(mainRoot, mustDispatchTicket, targetClaimed, getBlockers);
-      if (inspected.state === 'blocked') {
-        result.pending = { stage: 'dispatch', error: BLOCKED_DISPATCH_ERROR, ticket: inspected.ticket };
-        return result;
-      }
-      if (inspected.state === 'ready') {
+      const inspected = inspectRunningListTicket(mainRoot, mustDispatchTicket, targetClaimed);
+      if (inspected.state !== 'resolved') {
         result.pending = { stage: 'dispatch', error: FEATURE_CHANGED_DISPATCH_ERROR, ticket: inspected.ticket };
         return result;
       }
@@ -545,10 +542,16 @@ export async function collectGateFlakes(
       const inspected = mustDispatchTicket && targetRef?.feature === feature
         ? inspectRunningListTicket(mainRoot, mustDispatchTicket, claimedTickets, getBlockers)
         : undefined;
-      if (inspected?.state === 'blocked') {
-        return { pending: { stage: 'dispatch' as const, error: BLOCKED_DISPATCH_ERROR, ticket: inspected.ticket } };
+      if (inspected && inspected.state !== 'ready') {
+        // Replaying a recorded edit on an unpromoted list never required dispatch.
+        const noDispatchNeeded = inspected.state === 'resolved' ||
+          (inspected.state === 'unpromoted' && alreadyRecorded && !options?.retryDispatch);
+        if (!noDispatchNeeded) {
+          const error = inspected.state === 'blocked' ? BLOCKED_DISPATCH_ERROR : UNAVAILABLE_DISPATCH_ERROR;
+          return { pending: { stage: 'dispatch' as const, error, ticket: inspected.ticket } };
+        }
+        if (!landedFlake || options?.retryDispatch) return {};
       }
-      if (inspected?.state === 'resolved' && (!landedFlake || options?.retryDispatch)) return {};
       const candidate = inspected?.state === 'ready'
         ? inspected
         : findReadyRunningListTicket(mainRoot, feature, claimedTickets, getBlockers);
@@ -679,7 +682,7 @@ export function hasPendingFlakeCollection(
   const mainRoot = flow.wt?.main_root;
   if (typeof mainRoot !== 'string' || !mainRoot) return true;
   const ref = parseTicketRef(fc.ticket);
-  if (!ref) return false;
+  if (!ref) return true;
   if (inspectRunningListTicket(mainRoot, fc.ticket, EMPTY_CLAIMED).state === 'resolved') return false;
   const { claimedTickets } = runningListAdmission(home, mainRoot, ref.feature, undefined, false);
   return !claimedTickets.has(ref.key);

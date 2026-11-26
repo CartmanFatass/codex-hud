@@ -718,6 +718,7 @@ test('refused ticket edit and refused dispatch are recorded on the land receipt 
   const again = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID);
   assert.deepEqual(again, { retried: 0, resolved: 0, pending: 0 });
   await collectAndRecordLandFlakes(f.home, f.main, f.flowState(flow1));
+  assert.equal(f.flowState(flow1).flake_collection.state, 'done', 'replaying an unpromoted list does not create a pending dispatch');
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), headBeforeIdemp, 'idempotent retry makes no extra commit');
   assert.equal(fs.readFileSync(t01Path, 'utf8').split(flow1).length - 1, 2, 'flow1 appears once in flow id and once in log path');
 
@@ -1212,8 +1213,8 @@ test('retention keeps expired pending flake receipt and gate log after source jo
   }
 });
 
-test('changing flakes.feature preserves waiting old-feature receipt and evidence; removing config starts no worker yet lets resolved tickets prune', { timeout: 30_000 }, async t => {
-  const f = await checkout(t, ['true'], { after: [] });
+test('changing flakes.feature preserves waiting old-feature receipt and evidence; removing config prunes only resolved tickets', { timeout: 30_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [], crossProject: true });
   setFlakesConfig(f, { feature: 'flakes-a' });
 
   const oldIssues = join(f.main, '.scratch', 'flakes-a', 'issues');
@@ -1253,8 +1254,9 @@ test('changing flakes.feature preserves waiting old-feature receipt and evidence
     return { receiptPath, logPath };
   };
 
-  // Part A: change flakes.feature from flakes-a to flakes-b while flakes-a/02 is waiting.
+  // Part A: the configured feature takes precedence over the old ticket's blockers.
   const t02Path = seedReady('02');
+  fs.writeFileSync(t02Path, fs.readFileSync(t02Path, 'utf8').replace('**Blocked by:** none', '**Blocked by:** flakes-a/01'));
   f.git(f.main, 'add', '.scratch');
   f.git(f.main, 'commit', '-qm', 'seed flakes-a/02');
   const flowA = 'f0000000000000f02';
@@ -1267,15 +1269,16 @@ test('changing flakes.feature preserves waiting old-feature receipt and evidence
   });
   assert.deepEqual(retryChanged, { retried: 1, resolved: 0, pending: 1 });
   assert.deepEqual(dispatched, [], 'must not dispatch old-feature ticket under a different configured feature');
-  assert.equal(f.flowState(flowA).flake_collection?.state, 'pending', 'must not mark still-ready old-feature ticket done without a job');
+  assert.equal(f.flowState(flowA).flake_collection?.state, 'pending', 'must not acknowledge unresolved old-feature ticket');
   assert.equal(f.flowState(flowA).flake_collection?.ticket, 'flakes-a/02');
+  assert.equal(f.flowState(flowA).flake_collection?.error, 'waiting for configured flakes feature');
 
   // Re-age after retry's receipt update and run retention: evidence must survive.
   fs.utimesSync(receiptA, expiredSec, expiredSec);
   fs.utimesSync(logA, expiredSec, expiredSec);
   pruneLandFlows(f.home, now);
-  assert.equal(fs.existsSync(receiptA), true, 'old-feature pending receipt must survive retention while ready');
-  assert.equal(fs.existsSync(logA), true, 'old-feature gate log must survive retention while ready');
+  assert.equal(fs.existsSync(receiptA), true, 'old-feature pending receipt must survive retention while unresolved');
+  assert.equal(fs.existsSync(logA), true, 'old-feature gate log must survive retention while unresolved');
 
   // Independently resolving flakes-a/02 while configured for flakes-b acknowledges the receipt and lets it prune.
   fs.writeFileSync(t02Path, fs.readFileSync(t02Path, 'utf8').replace('**Status:** ready-for-agent', '**Status:** wontfix'));
@@ -1310,11 +1313,59 @@ test('changing flakes.feature preserves waiting old-feature receipt and evidence
     assert.equal(fs.existsSync(receiptPath), true, `ready ticket kept with config removed (${resolution})`);
     assert.equal(fs.existsSync(logPath), true, `ready ticket gate log kept with config removed (${resolution})`);
 
+    if (resolution === 'wontfix') {
+      for (const [label, path] of [['checkout', f.main], ['issues directory', oldIssues], ['ticket file', ticketPath]]) {
+        const hidden = `${path}.offline`;
+        fs.renameSync(path, hidden);
+        try {
+          pruneLandFlows(f.home, now);
+          assert.equal(fs.existsSync(receiptPath), true, `pending receipt kept with missing ${label}`);
+          assert.equal(fs.existsSync(logPath), true, `pending gate log kept with missing ${label}`);
+        } finally {
+          fs.renameSync(hidden, path);
+        }
+      }
+    }
+
     fs.writeFileSync(ticketPath, fs.readFileSync(ticketPath, 'utf8').replace('**Status:** ready-for-agent', `**Status:** ${resolution}`));
     pruneLandFlows(f.home, now);
     assert.equal(fs.existsSync(receiptPath), false, `receipt prunes with config removed after ${resolution}`);
     assert.equal(fs.existsSync(logPath), false, `gate log prunes with config removed after ${resolution}`);
   }
+});
+
+test('a pending dispatch waits for the ticket and its dependency rollup entry', { timeout: 30_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
+  fs.mkdirSync(issuesDir, { recursive: true });
+  const path = join(issuesDir, '01-gate-flakes-running-list.md');
+  const ticket = 'test-flakes/01';
+  const dispatched = [];
+  const retry = () => collectGateFlakes(f.home, f.main, [], f.env.HERDR_PANE_ID, {
+    retryDispatch: true,
+    pendingTicket: ticket,
+    dispatch: async (input) => { dispatched.push(input.ticket); return { job: 'j0000000000000f99' }; },
+  });
+
+  // Without the Blocked by field the file is readable but isn't in the dependency rollup.
+  const text = '# 01: Gate flakes running list\n\n**Status:** ready-for-agent\n';
+  fs.writeFileSync(path, text);
+  const withoutRollup = await retry();
+  assert.equal(withoutRollup.pending?.ticket, ticket);
+  assert.deepEqual(dispatched, [], 'missing readiness evidence must not dispatch');
+
+  fs.renameSync(path, `${path}.offline`);
+  const withoutTicket = await retry();
+  assert.equal(withoutTicket.pending?.ticket, ticket);
+  assert.deepEqual(dispatched, [], 'missing ticket must keep the dispatch pending');
+
+  fs.renameSync(`${path}.offline`, path);
+  fs.writeFileSync(path, text + '**Blocked by:** none\n');
+  const ready = await retry();
+  assert.equal(ready.pending, undefined);
+  assert.equal(ready.dispatchedJob, 'j0000000000000f99');
+  assert.deepEqual(dispatched, [ticket]);
 });
 
 test('running list whose Blocked by names a landed ticket (reference left in place) dispatches exactly one imp', { timeout: 30_000 }, async t => {
