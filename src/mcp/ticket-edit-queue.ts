@@ -2,12 +2,16 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { worktreeGit } from '../collectors/worktrees.js';
 import { takeLease } from '../roles/lease.js';
 import { sharedRoot } from '../roles/projects.js';
 import { tryAbstractLock, withAbstractLock } from '../utils/abstract-lock.js';
+import { waitUntilFs } from '../utils/fs-wait.js';
 import { workflowHeaders } from '../workflows/header-scan.js';
+import { stopRequested } from '../workflows/store.js';
+import { isFlowId, landOwnerGone, type LandFlow } from './land-state.js';
 import { editLocalTickets } from './local-tickets.js';
 import { binScript } from './paths.js';
 import { keyLock } from './store/key-lock.js';
@@ -35,7 +39,37 @@ function receipts(home: string) {
     .sort().flatMap(file => pass.header<TicketEdit>(file) ?? []);
 }
 
-const nextEdit = (home: string, project: string) => receipts(home).find(row => activeTicketEdit(row) && row.project === project);
+const pendingEdits = (home: string, project: string) =>
+  receipts(home).filter(row => activeTicketEdit(row) && row.project === project);
+const nextEdit = (home: string, project: string) => pendingEdits(home, project)[0];
+
+function hasWaitingLand(home: string, project: string): boolean {
+  const pass = workflowHeaders(home);
+  for (const file of pass.files) {
+    if (!file.endsWith('.json')) continue;
+    const id = file.slice(0, -5);
+    if (!isFlowId(id)) continue;
+    const row = pass.header<LandFlow>(file);
+    if (!row || row.state !== 'queued' || !row.wt?.main_root) continue;
+    if (sharedRoot(row.wt.main_root) !== project) continue;
+    if (stopRequested(home, row.flow) || landOwnerGone(row)) continue;
+    return true;
+  }
+  return false;
+}
+
+async function waitWhileLandWaits(home: string, project: string) {
+  await waitUntilFs<void>({
+    targets: [{ dir: join(home, 'flows') }],
+    timeoutMs: 300_000,
+    coalesceMs: 10,
+    fallbackIntervalMs: 750,
+    check: ({ timedOut }) =>
+      timedOut || !nextEdit(home, project) || !hasWaitingLand(home, project)
+        ? { done: true, value: undefined }
+        : { done: false },
+  });
+}
 
 async function launch(home: string, project: string, signal: AbortSignal) {
   // Apply under a helper's lease, not the MCP's. Reload or loss of the connection
@@ -139,29 +173,32 @@ export async function submitTicketEdit(cwd: string, args: Record<string, unknown
   const checkout = await ticketCheckout(cwd);
   if (!checkout) return keyLock(`tickets:${cwd}`, () => apply(cwd, false));
 
-  const project = sharedRoot(checkout), lease = ticketLease(checkout, home);
-  const quick = AbortSignal.timeout(250);
-  const grant = await takeLease({ name: leaseName, wait_s: 0 }, lease, quick).catch(async error => {
-    if (error !== quick.reason) throw error;
-    // A stale land custodian can take longer than an ordinary try. Let the
-    // helper wait for it. Release in case the timeout raced the lease publish.
-    await takeLease({ name: leaseName, release: true }, lease);
-  });
-  const acquired = grant && 'granted' in grant && grant.granted;
+  const canonicalHome = fs.realpathSync(home);
+  const project = sharedRoot(checkout), lease = ticketLease(checkout, canonicalHome);
+  let acquired = false;
+  if (!hasWaitingLand(canonicalHome, project)) {
+    const quick = AbortSignal.timeout(250);
+    const grant = await takeLease({ name: leaseName, wait_s: 0 }, lease, quick).catch(async error => {
+      if (error !== quick.reason) throw error;
+      // A stale land custodian can take longer than an ordinary try. Let the
+      // helper wait for it. Release in case the timeout raced the lease publish.
+      await takeLease({ name: leaseName, release: true }, lease);
+    });
+    acquired = !!(grant && 'granted' in grant && grant.granted);
+  }
   let row: TicketEdit | undefined;
   try {
-    const canonicalHome = fs.realpathSync(home);
     row = await withAbstractLock('ticket-edit-admit', canonicalHome, () => {
-      const rows = receipts(home), pending = rows.filter(activeTicketEdit);
-      if (acquired && !pending.some(row => row.project === project)) return;
+      const rows = receipts(canonicalHome), pending = rows.filter(activeTicketEdit);
+      if (acquired && !pending.some(row => row.project === project) && !hasWaitingLand(canonicalHome, project)) return;
       if (pending.length >= MAX_PENDING) throw Error('Ticket edit queue is full; try again after receipts settle');
       if (Buffer.byteLength(JSON.stringify(args)) > MAX_REQUEST_BYTES) throw Error('Ticket edit is too large to queue');
       const seq = rows.length ? BigInt(`0x${rows.at(-1)!.receipt.slice(2, 18)}`) + 1n : 1n;
       for (const old of rows.filter(row => !activeTicketEdit(row)).slice(0, Math.max(0, rows.length - MAX_RECEIPTS + 1)))
-        pruneTicketEdit(home, old.receipt);
+        pruneTicketEdit(canonicalHome, old.receipt);
       const queued: TicketEdit = { receipt: `te${seq.toString(16).padStart(16, '0')}${randomBytes(8).toString('hex')}`,
         cwd, checkout, project, pane, origin: process.cwd(), op, state: 'queued', args };
-      saveTicketEdit(home, queued);
+      saveTicketEdit(canonicalHome, queued);
       wake(canonicalHome, project);
       return queued;
     });
@@ -172,50 +209,74 @@ export async function submitTicketEdit(cwd: string, args: Record<string, unknown
   return ticketEditView(row);
 }
 
-async function settle(home: string, entry: TicketEdit, recovery?: { signal: AbortSignal; error: string }) {
-  if (entry.state !== 'queued' && entry.state !== 'applying') return;
+async function settleUnderLease(home: string, receiptId: string, recovery?: { signal: AbortSignal; error: string }) {
+  const entry = readTicketEdit(home, receiptId);
+  if (!entry || (entry.state !== 'queued' && entry.state !== 'applying')) return;
   const { state, receipt, cwd, checkout, project, pane, origin, op } = entry;
+  const header = { receipt, cwd, checkout, project, pane, origin, op };
+  let terminal: TicketEdit;
+  let plan = state === 'applying' ? entry.result : undefined;
+  const committed = async () => !!plan && !!(await worktreeGit(checkout, ['log', '-1', '--format=%H', '--fixed-strings',
+    `--grep=${ticketEditMarker(receipt)}`, 'HEAD']).catch(() => ''));
+  try {
+    recovery?.signal.throwIfAborted();
+    if (fs.realpathSync(cwd) !== cwd || await ticketCheckout(cwd) !== checkout || sharedRoot(checkout) !== project)
+      throw Error('Ticket checkout moved or changed while the edit was queued');
+    if (state === 'applying') {
+      if (!await committed()) throw Error('Ticket edit was interrupted; inspect the checkout before retrying');
+      terminal = { ...header, state: 'completed', result: entry.result };
+    } else {
+      const result = await applyTicketEdits(checkout, true, op, edits => editLocalTickets(cwd, entry.args, home, op, edits), {
+        id: receipt,
+        beforeWrite(result) {
+          saveTicketEdit(home, { ...header, state: 'applying', result });
+          plan = result;
+        },
+      });
+      terminal = { ...header, state: 'completed', result };
+    }
+  } catch (e) {
+    // If Git exited uncertainly after committing, keep the outcome, not a retry.
+    const reason = e instanceof Error ? e.message : String(e);
+    terminal = state === 'queued' && plan && await committed() ? { ...header, state: 'completed', result: plan }
+      : { ...header, state: 'failed', error: recovery ? `${recovery.error}; ${reason}` : reason };
+  }
+  recovery?.signal.throwIfAborted();
+  saveTicketEdit(home, terminal);
+}
+
+async function settle(home: string, entry: TicketEdit, recovery: { signal: AbortSignal; error: string }) {
+  if (entry.state !== 'queued' && entry.state !== 'applying') return;
+  const { receipt, cwd, checkout, project, pane, origin, op } = entry;
   const header = { receipt, cwd, checkout, project, pane, origin, op };
   const lease = ticketLease(project, home);
   let acquired = false;
   try {
-    let terminal: TicketEdit;
-    let plan = state === 'applying' ? entry.result : undefined;
-    const committed = async () => !!plan && !!(await worktreeGit(checkout, ['log', '-1', '--format=%H', '--fixed-strings',
-      `--grep=${ticketEditMarker(receipt)}`, 'HEAD']).catch(() => ''));
-    try {
-      while (!acquired) {
-        const grant = await takeLease({ name: leaseName, wait_s: 300 }, lease, recovery?.signal);
-        acquired = 'granted' in grant && grant.granted;
-      }
-      recovery?.signal.throwIfAborted();
-      if (fs.realpathSync(cwd) !== cwd || await ticketCheckout(cwd) !== checkout || sharedRoot(checkout) !== project)
-        throw Error('Ticket checkout moved or changed while the edit was queued');
-      if (state === 'applying') {
-        if (!await committed()) throw Error('Ticket edit was interrupted; inspect the checkout before retrying');
-        terminal = { ...header, state: 'completed', result: entry.result };
-      } else {
-        const result = await applyTicketEdits(checkout, true, op, edits => editLocalTickets(cwd, entry.args, home, op, edits), {
-          id: receipt,
-          beforeWrite(result) {
-            saveTicketEdit(home, { ...header, state: 'applying', result });
-            plan = result;
-          },
-        });
-        terminal = { ...header, state: 'completed', result };
-      }
-    } catch (e) {
-      // If Git exited uncertainly after committing, keep the outcome, not a retry.
-      const reason = e instanceof Error ? e.message : String(e);
-      terminal = state === 'queued' && acquired && plan && await committed() ? { ...header, state: 'completed', result: plan }
-        : { ...header, state: 'failed', error: recovery ? `${recovery.error}; ${reason}` : reason };
+    while (!acquired) {
+      const grant = await takeLease({ name: leaseName, wait_s: 300 }, lease, recovery.signal);
+      acquired = 'granted' in grant && grant.granted;
     }
-    recovery?.signal.throwIfAborted();
-    saveTicketEdit(home, terminal);
+    await settleUnderLease(home, receipt, recovery);
+  } catch (e) {
+    recovery.signal.throwIfAborted();
+    const reason = e instanceof Error ? e.message : String(e);
+    saveTicketEdit(home, { ...header, state: 'failed', error: `${recovery.error}; ${reason}` });
   } finally {
     // The abort may have won the race against reporting a published lease.
-    if (acquired || recovery?.signal.aborted) await takeLease({ name: leaseName, release: true }, lease);
+    if (acquired || recovery.signal.aborted) await takeLease({ name: leaseName, release: true }, lease);
   }
+}
+
+async function drainPendingBatch(home: string, project: string) {
+  // Snapshot the pending edits at handoff so newly arriving edits wait for the next turn.
+  const batch = pendingEdits(home, project);
+  for (const row of batch) await settleUnderLease(home, row.receipt);
+  return batch.length;
+}
+
+/** Caller already holds the main-checkout lease; drain only the batch pending at handoff. */
+export async function drainPendingTicketEdits(home: string, main: string) {
+  return drainPendingBatch(fs.realpathSync(home), sharedRoot(main));
 }
 
 /** One helper per project waits for the checkout; admission never waits for this mutex. */
@@ -226,7 +287,22 @@ export async function drainTicketEdits(home: string, project: string) {
     const release = await tryAbstractLock('ticket-edit-drain', `${home}\0${project}`);
     if (!release) return;
     try {
-      for (let row; (row = next());) await settle(home, row);
+      while (next()) {
+        if (hasWaitingLand(home, project)) {
+          await waitWhileLandWaits(home, project);
+          continue;
+        }
+        const lease = ticketLease(project, home);
+        let acquired = false;
+        try {
+          const grant = await takeLease({ name: leaseName, wait_s: 300 }, lease);
+          acquired = 'granted' in grant && grant.granted;
+          if (!acquired || hasWaitingLand(home, project)) continue;
+          await drainPendingBatch(home, project);
+        } finally {
+          if (acquired) await takeLease({ name: leaseName, release: true }, lease);
+        }
+      }
     } finally { await release(); }
     // An admission could have lost its wake while we were releasing the mutex.
   } while (next());

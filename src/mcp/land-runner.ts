@@ -22,6 +22,7 @@ import { repairLand } from './land-repair.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 import { LandOutput } from './land-evidence.js';
 import { collectAndRecordLandFlakes, retryPendingFlakeCollections } from './land-flakes.js';
+import { drainPendingTicketEdits } from './ticket-edit-queue.js';
 
 class CommandError extends Error {
   constructor(message: string, readonly evidence: ReturnType<LandOutput['evidence']>) { super(message); }
@@ -237,6 +238,12 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     for (const row of members) { row.tested_sha = sha; row.tested_tree = treeId; }
   }
   let acquired = false;
+  let custodianFailed = false;
+  let handoffDrained = true;
+  const drainHandoff = async () => {
+    handoffDrained = true;
+    await drainPendingTicketEdits(home, main).catch(() => {});
+  };
   const acquire = async () => {
     while (!acquired) {
       const r = await takeLease({ name: 'main-checkout', wait_s: 1 }, lease);
@@ -453,6 +460,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     }
     // Publish terminal state, final step, cleanup note and timing in one atomic flow write.
     endStep(true, false);
+    await drainHandoff();
     for (const row of members) row.state = 'completed';
     step('done');
   }
@@ -535,6 +543,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       }
     } catch (e) {
       cleanupBlocked = e instanceof CustodianError;
+      if (cleanupBlocked) custodianFailed = true;
       if (publishing) fail(e);
       else if (cleanupBlocked) throw e; // Do not touch a checkout whose group may still be running.
       // Nothing reached main: no train gate rerun or repair. Original helpers take the single path.
@@ -555,12 +564,14 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       }
     }
     if (publishing && members.some(row => row.flow === own.flow)) return true;
+    if (!cleanupBlocked) await drainPendingTicketEdits(home, main).catch(() => {});
     f = own; members = [own]; integration = scratch(own.flow); publishing = false;
     return false;
   }
   try {
     for (;;) {
       if (!await acquire()) return;
+      handoffDrained = false;
       if (await train()) break;
       checkCancel();
       let who: string[];
@@ -577,6 +588,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         f.error = e.message; f.tail = e.tail;
         // Only the helper-created scratch checkout is disposable, never the source or main.
         await git(main, ['worktree', 'remove', '--force', '--', integration], 120000);
+        await drainHandoff();
         await takeLease({ name: 'main-checkout', release: true }, lease); acquired = false;
         await repairLand(home, f, checkCancel);
         f.source_sha = await head(wt.root);
@@ -589,8 +601,15 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       await publish(who);
       break;
     }
-  } catch (e) { fail(e); }
-  finally { if (acquired) await takeLease({ name: 'main-checkout', release: true }, lease); }
+  } catch (e) {
+    if (e instanceof CustodianError) custodianFailed = true;
+    fail(e);
+  } finally {
+    if (acquired) {
+      if (!handoffDrained && !custodianFailed && !members.some(row => row.publish_pending)) await drainHandoff();
+      await takeLease({ name: 'main-checkout', release: true }, lease);
+    }
+  }
   const landedTickets = members.flatMap(row => {
     if (row.state !== 'completed') return [];
     try {

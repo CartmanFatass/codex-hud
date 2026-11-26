@@ -388,6 +388,7 @@ HUD uses the job's own main checkout, not the caller's. Configure `land` in that
 ```
 
 HUD queues behind the `main-checkout` lease and runs the gate in a fresh detached checkout.
+At every `main-checkout` lease handoff (including release for repair or red-train fallback), queued Markdown ticket edits have priority in a bounded batch: running land, then pending edits, then the next land. A land that is mid-gate is not interrupted, and edits arriving after the handoff snapshot wait for the next handoff so a steady stream of edits cannot starve lands.
 If the job is already based on the current tip, HUD tests the job's exact commit; otherwise it cherry-picks only commits not reachable from the base.
 Commands are shell strings; the optional wrapper is an executable relative to the main checkout, passed `sh -c <command>` in the target checkout.
 Each `gate` and `after` command, including an immediate rerun, has its own `timeout_s` deadline (default 900 seconds).
@@ -629,8 +630,8 @@ The default status is `ready-for-agent`; other allowed labels are `needs-triage`
 For `add` and `update`, `objective` sets the `**Objective:** <id>` header field. The ID must exist in the project's `.hud/objectives.md`; an unknown ID leaves the ticket unchanged. Only `add` also edits the Objective's `Features`.
 A new `hud_create` with an explicit ticket snapshots its Objective ID and current title. The Inspector and job archive show this snapshot; retries, repairs and Sonic children keep it, even after a rename. Jobs with no recorded link stay unattributed.
 This is a main-session tool.
-In Git, `add`, `update`, and unattended acceptance write only under the main-checkout lease. With no backlog and a free lease, `add` and `update` return their results immediately. Otherwise they return `state: queued` and a `receipt`, without assigned paths or item outcomes.
-Queued edits survive MCP restarts and run in admission order per project, rechecking the checkout when the lease is granted. A completion notice points to `hud_read({job: receipt})` for numbers and paths, per-item outcomes, or an error. If a write was interrupted and no commit can be confirmed, inspect the checkout before retrying.
+In Git, `add`, `update`, and unattended acceptance write only under the main-checkout lease. With no backlog, no waiting land, and a free lease, `add` and `update` return their results immediately. Otherwise they return `state: queued` and a `receipt`, without assigned paths or item outcomes.
+Queued edits survive MCP restarts and run in admission order per project, rechecking the checkout when the lease is granted. At every `main-checkout` lease handoff, edits pending at that moment drain in a bounded batch before the next waiting land takes the lease (order: running land, then pending edits, then the next land); edits arriving after the handoff wait for the following turn so edits cannot starve lands. A completion notice points to `hud_read({job: receipt})` for numbers and paths, per-item outcomes, or an error. If a write was interrupted and no commit can be confirmed, inspect the checkout before retrying.
 The queue holds up to 64 pending edits (128 KiB per request) and 128 receipts total, pruning the oldest finished receipts first.
 Each edit that changes tickets makes one local commit containing only those ticket files; a batch uses the first changed ticket in `tickets: <feature>/<NN> <op>`.
 Commit or resolve hand edits to a ticket before asking HUD to change it. Unrelated staged and unstaged changes are left alone.

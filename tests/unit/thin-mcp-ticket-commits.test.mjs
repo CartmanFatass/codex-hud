@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { assertLandingRecord, checkout, job, jobDir } from '../helpers/thin-mcp-land.mjs';
+import { assertLandingRecord, checkout, job, jobDir, settle } from '../helpers/thin-mcp-land.mjs';
 import { entry, rpcClient, resultValue, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { findFixtureProcesses, stopChild } from '../helpers/process-cleanup.mjs';
 import { setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
@@ -444,5 +444,132 @@ test('queue workflow runner re-drives a lead-admitted receipt after lead exit wi
     assert.equal(read(f, pending).state, 'queued');
   } finally {
     await takeLease({ name: 'main-checkout', release: true }, lease);
+  }
+});
+
+function addLandJob(f, id, name, start = f.base_head) {
+  const label = `${name}-${id.slice(-6)}`, root = join(`${f.main}-wt`, label), branch = `wt/${label}`;
+  f.git(f.main, 'worktree', 'add', '-qb', branch, root, start);
+  fs.writeFileSync(join(root, name), `${name}\n`);
+  f.git(root, 'add', name);
+  f.git(root, 'commit', '-qm', name);
+  const dir = jobDir(f, id);
+  fs.mkdirSync(dir, { recursive: true });
+  const receipt = JSON.parse(fs.readFileSync(join(jobDir(f), 'job.json'), 'utf8'));
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
+    ...receipt, job: id, cwd: root, worktree: { main_root: f.main, root, branch, base_head: start },
+  }));
+  settle(f, id, `Synthetic ${name} result.`);
+  return { id, root, branch };
+}
+
+test('back-to-back lands drain edits queued during the first gate between the two lands without a gate rerun', { timeout: 30000 }, async t => {
+  const f = await checkout(t, [`if test ! -f "$HOME/started"; then
+    touch "$HOME/started"; while test ! -f "$HOME/release"; do sleep .05; done
+  fi
+  git rev-parse HEAD >> "$HOME/gate-heads"`], { after: [] });
+  const call = tickets(f);
+  const second = addLandJob(f, 'j0000000000000456', 'beta');
+
+  const { flow: flow1 } = await f.call('hud_land', { job });
+  await until(() => fs.existsSync(join(f.env.HOME, 'started')), t.signal);
+  const { flow: flow2 } = await f.call('hud_land', { job: second.id });
+  assert.equal(f.flowState(flow2).state, 'queued');
+
+  const add = queued(await fast(call('add', { tickets: [draft('Between')] })));
+  const update = queued(await fast(call('update', { ticket: 1, status: 'claimed' })));
+  assert.equal(f.flowState(flow1).step.startsWith('gate[1]'), true, 'running land is not interrupted mid-gate');
+  assert.equal(read(f, add).state, 'queued');
+  assert.equal(read(f, update).state, 'queued');
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.base_head);
+
+  fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  await until(() => f.flowState(flow1).state === 'completed' && f.flowState(flow2).state === 'completed', t.signal);
+  const done1 = f.flowState(flow1), done2 = f.flowState(flow2);
+  assert.equal(read(f, add).state, 'completed');
+  assert.equal(read(f, update).state, 'completed');
+
+  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..base`).split('\n');
+  assert.deepEqual(subjects, ['first', 'second', 'tickets: sample/01 add', 'tickets: sample/01 update', 'beta']);
+  const editTip = f.git(f.main, 'rev-parse', `${done2.landed_sha}^`);
+  assert.equal(f.git(f.main, 'rev-parse', `${done2.landed_sha}~3`), done1.landed_sha);
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B', `${done2.landed_sha}~2`), new RegExp(`HUD-Ticket-Edit: ${add}`));
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B', editTip), new RegExp(`HUD-Ticket-Edit: ${update}`));
+
+  // The waiting land starts from the post-drain tip and runs its gate once, with no extra rerun or base-move replay.
+  assert.equal(done2.base_sha, editTip);
+  assert.equal(done2.base_moves, undefined);
+  assert.equal(done2.replayed_onto, undefined);
+  assert.equal(done2.reruns, undefined);
+  assert.equal(done2.timings.filter(e => e.step.startsWith('gate[')).length, 1);
+  const gateHeads = fs.readFileSync(join(f.env.HOME, 'gate-heads'), 'utf8').trim().split('\n');
+  assert.deepEqual(gateHeads, [done1.landed_sha, done2.landed_sha]);
+});
+
+test('handoff drain is bounded to edits pending at the handoff so a steady stream of edits cannot starve lands', { timeout: 30000 }, async t => {
+  const f = await checkout(t, [`if test ! -f "$HOME/started"; then
+    touch "$HOME/started"; while test ! -f "$HOME/release"; do sleep .05; done
+  fi
+  git rev-parse HEAD >> "$HOME/gate-heads"`], { after: [] });
+  const call = tickets(f);
+  const second = addLandJob(f, 'j0000000000000789', 'gamma');
+
+  const { flow: flow1 } = await f.call('hud_land', { job });
+  await until(() => fs.existsSync(join(f.env.HOME, 'started')), t.signal);
+  const { flow: flow2 } = await f.call('hud_land', { job: second.id });
+  assert.equal(f.flowState(flow2).state, 'queued');
+
+  const initial = [];
+  for (const title of ['Pending One', 'Pending Two', 'Pending Three']) {
+    initial.push(queued(await fast(call('add', { tickets: [draft(title)] }))));
+  }
+
+  // Trigger a steady stream of new edits the instant the first handoff batch starts applying.
+  const stream = [];
+  let streamStarted = false;
+  let streamLoop;
+  const startStream = () => {
+    if (streamStarted) return;
+    streamStarted = true;
+    streamLoop = (async () => {
+      for (let i = 1; i <= 12; i++) {
+        if (stream.length >= 2 && f.flowState(flow2).state === 'completed') break;
+        const reply = await call('add', { tickets: [draft(`Stream ${i}`)] });
+        if (reply.receipt) stream.push(reply.receipt);
+        else stream.push(null);
+        await delay(10);
+      }
+    })();
+  };
+  const watcher = fs.watch(join(f.home, 'flows'), () => {
+    if (read(f, initial[0]).state !== 'queued') startStream();
+  });
+  t.after(() => watcher.close());
+
+  fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  await until(() => f.flowState(flow2).state === 'completed', t.signal);
+  watcher.close();
+  assert.ok(streamStarted, 'stream should have started during handoff drain');
+  await streamLoop;
+
+  const queuedStream = stream.filter(Boolean);
+  assert.ok(queuedStream.length > 0, 'stream edits should queue behind the waiting land');
+  await until(() => queuedStream.every(id => read(f, id).state === 'completed'), t.signal);
+
+  const done1 = f.flowState(flow1), done2 = f.flowState(flow2);
+  assert.equal(done1.state, 'completed');
+  assert.equal(done2.state, 'completed');
+  assert.equal(done2.timings.filter(e => e.step.startsWith('gate[')).length, 1);
+
+  const between = f.git(f.main, 'log', '--reverse', '--format=%B', `${done1.landed_sha}..${done2.landed_sha}^`);
+  for (const id of initial) {
+    assert.match(between, new RegExp(`HUD-Ticket-Edit: ${id}`), 'pending batch drains between the two lands');
+  }
+  for (const id of queuedStream) {
+    assert.doesNotMatch(between, new RegExp(`HUD-Ticket-Edit: ${id}`), 'post-handoff stream edit must not jump ahead of the waiting land');
+  }
+  const afterSecond = f.git(f.main, 'log', '--reverse', '--format=%B', `${done2.landed_sha}..base`);
+  for (const id of queuedStream) {
+    assert.match(afterSecond, new RegExp(`HUD-Ticket-Edit: ${id}`), 'post-handoff stream edits drain after the waiting land');
   }
 });
