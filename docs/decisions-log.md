@@ -7,6 +7,15 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-26
 
+- **D-2026-11-26-05** (§1 display rule, §2.2): Owner asked for distinct emphasis per tab with state still traceable
+  (oracle j1d071a141ca7d3ba, `docs/design/tab-roles/README.md`). One grain per tab: Home = cross-project triage
+  (requests, today's active projects with one-line goal and ≤ 3-day result, today, schedule); Project = one project's
+  outcomes and scope (its own requests, Objectives by activity, drill Objective → Feature → ticket, no job rows);
+  Execution = one project's hot area (workflow diagram, live cards, 24 h recently ended). Owner approved: requests
+  scoped per tab (supersedes "every tab" in D-2026-11-26-04; `?N` badges stay), Home ticket bars and Unlinked row
+  removed, Execution thumbnails 6 → 3 rows and the delegation tree folded into a one-line child summary on cards, the
+  Project Progress page removed. No spec change.
+
 - **D-2026-11-26-04** (§1 display rule, §2.2 Project): Owner found the Project tab hard to read and the Execution
   page hard to reach (its link sat at the bottom of a ~100-row page, finished jobs vanished, Enter on an Objective
   showed only evidence, feature bars opened nothing). Redesign as element-to-element navigation: a resident project
