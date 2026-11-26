@@ -86,7 +86,14 @@ function wake(home: string, project: string, failure?: WakeFailure) {
           if (signal.aborted) return;
           if (row) {
             const reason = await launch(home, project, signal);
-            if (!signal.aborted) state.failure = { receipt: row.receipt, attempts: (state.failure?.attempts ?? 0) + 1, reason };
+            if (!signal.aborted) {
+              // If another live helper won the drain mutex, a zero exit is not a failure.
+              const free = reason === 'exited with code 0' ? await tryAbstractLock('ticket-edit-drain', key) : null;
+              if (free) await free();
+              if (reason !== 'exited with code 0' || free) {
+                state.failure = { receipt: row.receipt, attempts: (state.failure?.attempts ?? 0) + 1, reason };
+              }
+            }
           } else if (!nextEdit(home, project)) {
             return; // Recheck after unlocking: admission may have joined this wake in the meantime.
           }
@@ -103,11 +110,13 @@ export function ticketEditWakeFailures() {
   return new Map([...wakes].flatMap(([key, { failure }]) => failure ? [[key, failure] as const] : []));
 }
 
-export function resumeTicketEdits(home: string, failures?: ReadonlyMap<string, WakeFailure>) {
-  const projects = new Set(receipts(home).filter(activeTicketEdit).map(row => row.project));
-  if (!projects.size) return;
+export function resumeTicketEdits(home: string, failures?: ReadonlyMap<string, WakeFailure>, project?: string) {
+  const projects = project !== undefined
+    ? (nextEdit(home, project) ? [project] : [])
+    : [...new Set(receipts(home).filter(activeTicketEdit).map(row => row.project))];
+  if (!projects.length) return;
   home = fs.realpathSync(home);
-  for (const project of projects) wake(home, project, failures?.get(`${home}\0${project}`));
+  for (const item of projects) wake(home, item, failures?.get(`${home}\0${item}`));
 }
 
 export async function stopTicketEdits() {

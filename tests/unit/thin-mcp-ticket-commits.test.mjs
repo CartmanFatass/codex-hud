@@ -2,12 +2,18 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
-import { join, relative } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, relative, resolve } from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { assertLandingRecord, checkout, job, jobDir } from '../helpers/thin-mcp-land.mjs';
 import { entry, rpcClient, resultValue, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { findFixtureProcesses, stopChild } from '../helpers/process-cleanup.mjs';
+import { setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 import { takeLease } from '../../dist/roles/lease.js';
+import { cancelTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
+import { isProcAlive } from '../../dist/utils/proc.js';
+import { wakeWorkflow } from '../../dist/workflows/wake.js';
 
 const draft = title => ({ title, what: 'Change the sample.', acceptance: ['Check the sample.'], blocked_by: [] });
 const tickets = f => (op, args) => f.call('hud_tickets', { op, feature: 'sample', ...args });
@@ -267,4 +273,176 @@ test('MCP startup drains pending ticket receipts and reconciles a committed rece
   assert.deepEqual((await recovered.read(one)).tickets, firstResult.tickets);
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), head);
   assert.deepEqual(fs.readdirSync(join(f.main, '.scratch/sample/issues')).sort(), ['01-first.md', '02-second.md']);
+});
+
+function makeWorkerDir(f, id, role, cwd = f.main) {
+  const dir = join(f.home, 'jobs', id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
+    job: id, role, cwd, project_root: cwd, created_at: new Date().toISOString(),
+  }));
+  return dir;
+}
+
+async function startWorkerMcp(f, dir, { mcpEntry = entry, cwd = f.main } = {}) {
+  const child = spawn(process.execPath, [mcpEntry], {
+    cwd, env: { ...f.env, HUD_JOB_DIR: dir }, stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  const exited = once(child, 'exit');
+  const stop = () => stopChild(child, exited, { closeStdin: true });
+  f.onCleanup(stop);
+  const rpc = rpcClient(child);
+  assert.ok((await rpc('initialize')).result);
+  return {
+    pid: child.pid,
+    rpc,
+    stop,
+    call: async (name, args = {}) => (await rpc('tools/call', { name, arguments: args })).result,
+  };
+}
+
+test('lead MCP resumes ticket edit supervision across hot swap and cold start with admission parity', { timeout: 25000 }, async t => {
+  const copy = fs.mkdtempSync(join(tmpdir(), 'hud-lead-ticket-reload-'));
+  for (const name of ['dist', 'packages/hud-mcp', 'scripts/dist-lock.mjs', 'package.json'])
+    fs.cpSync(resolve(name), join(copy, name), { recursive: true });
+  fs.symlinkSync(resolve('node_modules'), join(copy, 'node_modules'));
+  t.after(() => fs.rmSync(copy, { recursive: true, force: true }));
+
+  const f = await checkout(t, ['true'], { inHerdr: false });
+  await f.stopMcp();
+  fs.chmodSync(f.home, 0o700);
+  const leadDir = makeWorkerDir(f, 'j00000000000001a1', 'lead');
+  const impDir = makeWorkerDir(f, 'j00000000000001b1', 'imp');
+  const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
+  const mcpEntry = join(copy, 'packages/hud-mcp/bin/hud-mcp.mjs');
+  const generation = pid => JSON.parse(fs.readFileSync(join(f.home, `generations/${pid}.json`), 'utf8')).stamp;
+
+  // 1. Hot swap preserves supervision for a lead-admitted receipt.
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  const lead = await startWorkerMcp(f, leadDir, { mcpEntry });
+  const initialStamp = generation(lead.pid);
+  const first = queued(resultValue(await lead.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('HotSwap')] })));
+  await until(() => helpers(f).length > 0, t.signal);
+
+  // Trigger a hot swap in the private copy before killing the detached helper.
+  const index = join(copy, 'dist/index.js');
+  const nextTime = new Date(Date.now() + 2000);
+  fs.utimesSync(index, nextTime, nextTime);
+  assert.ok((await lead.rpc('ping')).result);
+  await until(() => generation(lead.pid) !== initialStamp, t.signal);
+
+  for (const { pid } of helpers(f)) process.kill(pid, 'SIGKILL');
+  assert.equal(read(f, first).state, 'queued');
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+
+  await until(() => read(f, first).state === 'completed', t.signal);
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B'), new RegExp(`HUD-Ticket-Edit: ${first}`));
+  await lead.stop();
+  await until(() => helpers(f).length === 0, t.signal);
+
+  // 2. Cold start matches admission eligibility: imp workers do not resume; lead workers do.
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  const admitter = await startWorkerMcp(f, leadDir);
+  const second = queued(resultValue(await admitter.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('ColdStart')] })));
+  await admitter.stop();
+  for (const { pid } of helpers(f)) process.kill(pid, 'SIGKILL');
+  await until(() => helpers(f).length === 0, t.signal);
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+
+  const imp = await startWorkerMcp(f, impDir);
+  const denied = await imp.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('Denied')] });
+  assert.equal(denied.isError, true);
+  assert.match(denied.content[0].text, /worker_cannot_dispatch/);
+  await delay(300);
+  assert.equal(read(f, second).state, 'queued');
+  assert.equal(helpers(f).length, 0);
+  await imp.stop();
+
+  const coldLead = await startWorkerMcp(f, leadDir);
+  await until(() => read(f, second).state === 'completed', t.signal);
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B'), new RegExp(`HUD-Ticket-Edit: ${second}`));
+  const head = f.git(f.main, 'rev-parse', 'HEAD');
+  await coldLead.stop();
+  await until(() => helpers(f).length === 0, t.signal);
+
+  // 3. Cold-started lead reconciles a committed applying receipt without re-applying.
+  const committed = read(f, second);
+  fs.writeFileSync(fileOf(f, second), JSON.stringify({ ...committed, state: 'applying' }));
+  const reconcilingLead = await startWorkerMcp(f, leadDir);
+  await until(() => read(f, second).state === 'completed', t.signal);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), head);
+  await reconcilingLead.stop();
+});
+
+test('queue workflow runner re-drives a lead-admitted receipt after lead exit with no main MCP, then stops when the run ends', { timeout: 30000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
+  await f.jobs(flow, 1);
+  const runnerPid = f.flow(flow).pid;
+  const runnerStart = f.flow(flow).start;
+  assert.ok(runnerPid && isProcAlive(runnerPid, runnerStart), 'queue workflow runner must be alive');
+
+  // Stop the main MCP so only the detached queue workflow runner remains alive.
+  await f.stopMcp();
+
+  const leadDir = makeWorkerDir(f, 'j00000000000001e1', 'lead', f.root);
+  const lease = { cwd: f.root, home: f.home, holder: 'synthetic-land' };
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+
+  const lead = await startWorkerMcp(f, leadDir, { cwd: f.root });
+  const receipt = queued(resultValue(await lead.call('hud_tickets', {
+    op: 'add', feature: 'sample', tickets: [draft('LeadQueued')],
+  })));
+  await until(() => helpers(f).length > 0, t.signal);
+
+  // Lead reports and closes; its MCP exits, then the detached helper is killed.
+  await lead.stop();
+  for (const { pid } of helpers(f)) process.kill(pid, 'SIGKILL');
+  assert.equal(read(f, receipt).state, 'queued');
+
+  // Releasing the lease settles the receipt via the live queue runner with no further RPC.
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+  await until(() => read(f, receipt).state === 'completed', t.signal);
+  const settled = read(f, receipt);
+  assert.equal(settled.state, 'completed');
+  const addedPath = relative(f.root, settled.result.tickets[0].path);
+  assert.match(f.git(f.root, 'show', `HEAD:${addedPath}`), /LeadQueued/);
+  assert.match(f.git(f.root, 'log', '-1', '--format=%B'), new RegExp(`HUD-Ticket-Edit: ${receipt}`));
+  const head = f.git(f.root, 'rev-parse', 'HEAD');
+
+  // An applying receipt is still decided by the commit-marker check and never applied twice.
+  await until(() => helpers(f).length === 0, t.signal);
+  const tmp = `${fileOf(f, receipt)}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ ...settled, state: 'applying' }));
+  fs.renameSync(tmp, fileOf(f, receipt));
+  await until(() => read(f, receipt).state === 'completed', t.signal);
+  assert.equal(f.git(f.root, 'rev-parse', 'HEAD'), head);
+  await until(() => helpers(f).length === 0, t.signal);
+
+  // A receipt for another project is not touched by this queue runner.
+  const otherReceipt = 'te000000000000ffff0000000000000001';
+  fs.writeFileSync(fileOf(f, otherReceipt), JSON.stringify({
+    receipt: otherReceipt, cwd: '/nonexistent/other', checkout: '/nonexistent/other', project: '/nonexistent/other',
+    pane: null, origin: '/nonexistent/other', op: 'add', state: 'queued', args: { op: 'add', feature: 'sample', tickets: [] },
+  }));
+
+  // When the queue run ends while a ticket edit is active, the runner stops its supervisor and exits cleanly.
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  try {
+    const secondLead = await startWorkerMcp(f, leadDir, { cwd: f.root });
+    const pending = queued(resultValue(await secondLead.call('hud_tickets', {
+      op: 'add', feature: 'sample', tickets: [draft('AfterEnd')],
+    })));
+    await secondLead.stop();
+    await until(() => helpers(f).length > 0, t.signal);
+    const q = f.flow(flow);
+    cancelTicketQueue(f.home, q);
+    wakeWorkflow(f.home, q);
+    await until(() => f.flow(flow).state === 'cancelled', t.signal);
+    await until(() => !isProcAlive(runnerPid, runnerStart), t.signal);
+    assert.equal(read(f, otherReceipt).state, 'queued');
+    assert.equal(read(f, pending).state, 'queued');
+  } finally {
+    await takeLease({ name: 'main-checkout', release: true }, lease);
+  }
 });

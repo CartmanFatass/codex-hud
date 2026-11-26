@@ -34,6 +34,7 @@ function isLeadWorker(): boolean {
   if (!worker) return false;
   try { return worker.workerJob().job.role === 'lead'; } catch { return false; }
 }
+const canResumeTicketEdits = () => (!worker || isLeadWorker()) && !session.resumeRefusal;
 const leadWorkerTools = new Set(['hud_report', 'hud_progress']);
 const leadBlockedTools = new Set(['hud_land']);
 
@@ -296,9 +297,9 @@ export function openRuntime() {
         checkResume('claude', process.env.CLAUDE_CODE_SESSION_ID);
         if (!worker && !session.resumeRefusal) {
           session.cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
-          resumeTicketEdits(hudHome);
           void reportMainPaneGroup(process.cwd(), process.env, hudHome);
         }
+        if (canResumeTicketEdits()) resumeTicketEdits(hudHome);
         return;
       }
       if (state.version !== 1) throw new Error('incompatible MCP session handoff');
@@ -323,7 +324,7 @@ export function openRuntime() {
         resumeTaskReceipts();
       }
       await syncPanelDelivery();
-      if (!worker && !session.resumeRefusal) resumeTicketEdits(hudHome, state.ticketEditFailures);
+      if (canResumeTicketEdits()) resumeTicketEdits(hudHome, state.ticketEditFailures);
       return { toolsList: JSON.stringify(await toolsListResult()) };
     },
     async stop() {
