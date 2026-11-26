@@ -182,6 +182,16 @@ test('ordinary owner holds keep expired jobs, reports and worktrees until resolv
     return { job, dir, path, q };
   };
   const resolved = seed(1, true), stopped = seed(2, true), superseded = seed(3, true), ordinary = seed(4, false), missingTicket = seed(5, true);
+  const ordinaryLand = `f${ordinary.job.slice(1)}`, ordinaryReceipt = join(flows, `${ordinaryLand}.json`);
+  const ordinaryLog = `${ordinaryReceipt}.gate-1.log`;
+  writeFixtureFile(ordinary.path, '**Status:** done\n');
+  writeFixtureFile(ordinaryReceipt, JSON.stringify({ flow: ordinaryLand, job: ordinary.job, ticket_queue: ordinary.q.flow, state: 'completed', step: 'done' }));
+  writeFixtureFile(ordinaryLog, 'Synthetic gate output.\n');
+  for (const file of [ordinaryReceipt, ordinaryLog]) fs.utimesSync(file, oldDate, oldDate);
+  ordinary.q.tickets[0].land = ordinaryLand;
+  ordinary.q.tickets[0].landed = true;
+  putQueue({ ...ordinary.q, state: 'paused', handback_to: 'main', steps: { accept: { state: 'asking' } } });
+
   const attachWorktree = (entry) => {
     const name = `imp-${entry.job.slice(-6)}`, root = join(home, 'demo-wt', name), branch = `wt/${name}`;
     const base_head = git(main_root, 'rev-parse', 'HEAD');
@@ -221,7 +231,11 @@ test('ordinary owner holds keep expired jobs, reports and worktrees until resolv
   }
   assert.ok(fs.existsSync(resolvedWt), 'hold protects a checkout otherwise eligible for cleanup');
   assert.ok(fs.existsSync(missingWt), 'a temporarily missing ticket file keeps the ordinary hold and checkout pinned');
-  assert.equal(fs.existsSync(ordinary.dir), false, 'a completed job without a hold still ages out');
+  assert.equal(fs.existsSync(ordinary.dir), false, 'a normally landed job ages out even while its queue waits for acceptance');
+  const archive = fs.readFileSync(join(hud, 'archive', `${at.slice(0, 7)}.jsonl`), 'utf8');
+  assert.ok(archive.trim().split('\n').some(line => JSON.parse(line).job === ordinary.job), 'the landed job was archived');
+  for (const file of [ordinaryReceipt, ordinaryLog]) assert.equal(fs.existsSync(file), false, 'the normal land family also ages out');
+  assert.ok(fs.existsSync(join(flows, `${ordinary.q.flow}.json`)), 'the paused queue itself is kept');
   assert.equal(fs.existsSync(unattendedDir), false, 'unattended hold semantics for missing ticket files are unchanged');
 
   // Once a manual land completes while the paused queue still holds the item, release the checkout

@@ -665,6 +665,7 @@ A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("sup
 Settled directories, including reports and `hud_read` access, normally expire **one day after closure** on a later watcher scan, not a dedicated expiry timer.
 An unresolved owner hold in a current ordinary ticket queue keeps the source job, report and worktree until the hold is resolved or the run is stopped or superseded; a missing or unreadable ticket file does not clear the hold.
 To resolve it by landing manually, wait for `hud_land({job})` to succeed before resuming with `hud_tickets({op: "run", feature})`. Once that land succeeds, the checkout is released while the job report and completed land receipt stay until the resumed queue finishes, stops or is superseded; the successor includes the ticket in milestone review and acceptance using that job's completed land receipt, not the ticket's status.
+Lands that did not resolve a hold follow normal job and receipt retention even if the queue is still open.
 A headless pi job with a native session file stored only in its job directory stays for at least **seven days after settlement**.
 Before deleting a legacy pi job it moves real JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
 Invalid cwd, destination conflicts or failed moves retain the job.

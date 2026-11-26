@@ -244,6 +244,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
         if (land) {
           const at = land.landed_at ?? land.updated_at ?? now;
           next.land = land.flow;
+          next.held_land = land.flow;
           next.landed = true;
           next.landed_at = at;
           next.changed_at = at;

@@ -141,7 +141,7 @@ export function readOpenHolds(home: string, root?: string): UnattendedHandback[]
 export interface PinnedQueueJobs {
   /** Unresolved holds: keep worktree checkout, raw logs, job directory and land receipts. */
   held: Set<string>;
-  /** Resolved/landed items still owned by an open ordinary queue: keep job directory (report) and land receipts, not worktree/logs. */
+  /** Lands that resolve ordinary holds: keep the source report and land receipts, not the worktree or raw logs. */
   evidence: Set<string>;
 }
 
@@ -165,11 +165,11 @@ export function pinnedQueueJobs(home: string, pass = workflowHeaders(home)): Pin
       for (const item of q.tickets ?? []) {
         if (!item.job) continue;
         if (item.landed) {
-          evidence.add(item.job);
+          if (item.held_land && item.held_land === item.land) evidence.add(item.job);
           continue;
         }
         if (!item.held) continue;
-        // Keep manual-land evidence until a successor consumes it or the run stops/supersedes.
+        // Before adoption, only a completed receipt for the held job resolves its hold.
         let landed: boolean | 'error' = false;
         try { landed = !!completedLandForJob(home, item.job, pass); }
         catch { landed = 'error'; }
