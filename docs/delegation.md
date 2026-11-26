@@ -51,10 +51,18 @@ agent proposes.
    One fresh implementer fixes the findings in one pass. Findings block only if a real user would hit them or the
    spec is violated.
    When the work runs as a workflow (ticket queue or a composed graph), steps 4–6 run inside it: clean slices land
-   automatically, and the run ends with a project-lead acceptance session (role `lead`, Opus 5.5 high with the
-   HUD tools) that accepts as the orchestrator does today (reads reports and checks, tries it live, dispatches the
-   milestone `reviewer` from step 5 and acts on its findings), then finishes, repairs or continues the run; the orchestrator only starts it, reads the end
-   notice and handles what is escalated for the owner (D-2026-11-25-07).
+   automatically, an independent milestone `reviewer` step runs before acceptance (so the lead never waits on it), and
+   the run ends with a one-decision project-lead acceptance session (role `lead`, Claude Code on `claude-opus-5-5` at
+   thinking high with the HUD MCP tools). The lead reads the run packet (reports, checks, live try instructions, and
+   the milestone `reviewer` report), tries the result live where specified, judges findings, and declares `finish`,
+   `repair` (adding repair tickets and continuing, bounded to at most 2 repair rounds), or `escalate` — then the
+   runner closes the lead session immediately through herdr. Non-blocking doubts or follow-ups go to `Todo:` lines
+   stored on the run record (`hud_read({ job: <run> })` lists them; they never wake main). Worker `Assumed:` lines also
+   go to the run todo (more than three, or one about scope, pauses the run without waking main); `Blockers:` owner
+   matters pause without a wake; worker questions start a temporary one-decision `lead` that answers and closes. The
+   orchestrator starts the run, receives only the one end notice (with the verdict and todo count) or an escalation
+   under the run's configured escalation rule, and stays decoupled — runs keep going even if the dispatching main
+   session closes (D-2026-11-25-07, D-2026-11-26-02).
 6. **Accept.** The orchestrator accepts work after verification; there is no routine ticket-level owner acceptance.
    Ask the owner only for what they must judge themselves (milestone scope, a value trade-off, a visible deletion, an
    irreversible act, or behaviour only they can try) and record it as an owner request in STATE's
@@ -102,6 +110,7 @@ job and the land read the same requirement.
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
 | implementer | role `imp` (skill `hud-delegate`) | one slice each |
 | reviewer | role `reviewer`, one per review | milestone reviews and the risky cases above only |
+| lead | role `lead` (`claude-opus-5-5` high, HUD MCP tools) | one-decision workflow acceptance and question hand-backs; closed through herdr after answering |
 | sonic | role `sonic` | small chores and `scout` dossiers (where/what/how-many lookups); never test authoring, bug hunting, design, review or why/which/is-it-wrong questions (those stay with the deciding model) |
 | oracle | role `oracle` | the strongest-model seat: high-level judgement that never changes the repository (scratch builds and measurements allowed) of any kind (design, root cause, verification, review verdicts, synthesis); advice only. Method skills are named by path in the brief |
 | pro | role `pro` (`bro`) | a new product direction; research that needs outside sources (primary sources, each claim cited) |

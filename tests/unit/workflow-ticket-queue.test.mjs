@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { loadGraph } from '../../dist/workflows/graph.js';
 import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
@@ -29,7 +30,7 @@ async function project(t, { secondBlocker = '01', count = 2 } = {}) {
   fs.mkdirSync(join(f.root, issues), { recursive: true });
   const ticketPath = n => join(issues, `0${n}-synthetic.md`);
   for (let n = 1; n <= count; n++) fs.writeFileSync(join(f.root, ticketPath(n)),
-    `# 0${n}: Synthetic ${n}\n\n**Status:** ready-for-agent\n**Owner try:** no\n**Blocked by:** ${n === 2 ? secondBlocker : 'none'}\n\n**What to build:** Synthetic change ${n}\n\n- [ ] Checked\n\n## Comments\n`);
+    `# 0${n}: Synthetic ${n}\n\n**Status:** ready-for-agent\n**Owner try:** no\n**Live try:** none\n**Blocked by:** ${n === 2 ? secondBlocker : 'none'}\n\n**What to build:** Synthetic change ${n}\n\n- [ ] Checked\n\n## Comments\n`);
   git(f.root, 'add', '.scratch', '.hud');
   git(f.root, 'commit', '-qm', 'synthetic tickets');
   const home = f.env.HUD_HOME;
@@ -52,15 +53,45 @@ async function project(t, { secondBlocker = '01', count = 2 } = {}) {
     writeFixtureFile(join(dir(id), 'report.md'), report);
     writeFixtureFile(join(dir(id), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
   };
+  const settleCli = (id, report) => {
+    const jobDir = dir(id);
+    const turnPath = join(jobDir, 'turn.json');
+    if (!fs.existsSync(turnPath)) return false;
+    const turn = read(turnPath);
+    writeFixtureFile(join(jobDir, 'report.md'), report);
+    const sig = reportSignature(jobDir);
+    if (!sig) return false;
+    writeFixtureFile(join(jobDir, 'done.json'), JSON.stringify({ seq: turn.seq, sent_at: turn.sent_at, report_sig: sig, at: new Date().toISOString() }));
+    writeFixtureFile(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
+    return true;
+  };
+  const settleReview = async id => {
+    const receipt = job(id), jobDir = dir(id);
+    if (receipt.cli) {
+      await until(() => settleCli(id, 'Verdict: accept\n\nNo blocking findings.\n'), 10_000);
+      return;
+    }
+    await until(() => Date.now() > Date.parse(receipt.pi_sent_at ?? receipt.created_at) + 1, t.signal);
+    writeFixtureFile(join(jobDir, 'report.md'), 'Verdict: accept\n\nNo blocking findings.\n');
+    writeFixtureFile(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
+  };
+  const settleLead = async (id, report = 'Decision: finish\nReason: Accepted synthetic feature.\n') => {
+    await until(() => settleCli(id, report), 10_000);
+  };
   const end = async id => {
     await until(() => flow(id).state !== 'working', 20_000);
     return flow(id);
   };
-  return { ...f, dir, end, flow, git, home, job, jobs, settle, ticketPath };
+  return { ...f, dir, end, flow, git, home, job, jobs, settle, settleLead, settleReview, ticketPath };
 }
 
-test('ticket-queue template validates ticket source, each=[job,land], pilot=false, breaker=first, and rejects invalid shapes', () => {
-  const roles = new Map(['imp', 'sonic'].map(name => [name, { optionalEnabled: true, run: [{ harness: 'pi' }] }]));
+test('ticket-queue template validates tickets, review, and accept steps with cheap cost and rejects invalid shapes', () => {
+  const roles = new Map([
+    ['imp', { optionalEnabled: true, run: [{ harness: 'pi' }] }],
+    ['sonic', { optionalEnabled: true, run: [{ harness: 'pi' }] }],
+    ['reviewer', { optionalEnabled: true, run: [{ harness: 'pi' }] }],
+    ['lead', { optionalEnabled: true, run: [{ harness: 'cli' }] }],
+  ]);
   const source = fs.readFileSync(new URL('../../packages/hud-mcp/workflows/ticket-queue.toml', import.meta.url), 'utf8');
   const plan = loadGraph(source, 'toml', { roles, bindings: { feature: 'sample', max_parallel: 2 } });
   assert.equal(plan.name, 'ticket-queue');
@@ -70,6 +101,12 @@ test('ticket-queue template validates ticket source, each=[job,land], pilot=fals
     kind: 'batch', needs: [], from: [], optional: false, role: 'imp',
     tickets: 'sample', each: ['job', 'land'], pilot: false, max_parallel: 2,
   });
+  assert.equal(plan.steps.review.kind, 'job');
+  assert.equal(plan.steps.review.role, 'reviewer');
+  assert.deepEqual(plan.steps.review.needs, ['tickets']);
+  assert.equal(plan.steps.accept.kind, 'handback');
+  assert.deepEqual(plan.steps.accept.needs, ['review']);
+  assert.deepEqual(plan.steps.accept.options, ['finish', 'repair', 'escalate']);
   const uncapped = loadGraph(source, 'toml', { roles, bindings: { feature: 'sample', max_parallel: undefined } });
   assert.equal(uncapped.steps.tickets.max_parallel, undefined);
   for (const bad of [
@@ -81,15 +118,20 @@ test('ticket-queue template validates ticket source, each=[job,land], pilot=fals
     { tickets: 'sample', pilot: 'no' },
     { items: [{ task: 'x' }], each: ['job', 'land'] },
   ]) assert.throws(() => loadGraph({ version: 1, name: 'ticket-queue', steps: { t: { kind: 'batch', role: 'imp', ...bad } } }, 'json', { roles }), /invalid_workflow/);
+  assert.throws(() => loadGraph({
+    version: 1, name: 'bad-handback',
+    steps: { a: { kind: 'handback', ask: 'Go?', options: ['go', 'stop'], to: 'nobody' } },
+  }, 'json', { roles }), /invalid_workflow/);
 });
 
-test('ticket queue runs on workflow-runner, loses duplicate election, and finishes after origin MCP and pane exit', { timeout: 45_000 }, async t => {
+test('ticket queue keeps going after origin MCP and pane exit; lead opens in project workspace, closes, and delivers end notice to next main', { timeout: 45_000 }, async t => {
   const f = await project(t);
   const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
   const [first] = await f.jobs(flow, 1);
   const initial = f.flow(flow);
   assert.equal(initial.template, 'ticket-queue');
   assert.equal(initial.host, 'detached');
+  assert.equal(initial.workspace, 'w4E');
   assert.equal(initial.steps.tickets.state, 'running');
   assert.equal(f.job(first).workflow, flow);
   assert.equal(f.job(first).ticket_queue, flow);
@@ -99,7 +141,7 @@ test('ticket queue runs on workflow-runner, loses duplicate election, and finish
   execFileSync(process.execPath, [runner, flow], { env: f.env, cwd: f.root, timeout: 4000 });
   assert.equal(f.flow(flow).pid, initial.pid);
 
-  // Origin main session closes (pane gone, MCP killed). The run keeps going and lands all tickets.
+  // Origin main session closes (pane gone, MCP killed). The run keeps going, lands all tickets, reviews, and runs lead acceptance.
   const { pane, origin_mcp: { pid } } = initial;
   f.overrideBin('herdr', `#!/bin/sh\nif [ "$1 $2 $3" = 'pane get ${pane}' ]; then exit 1; fi\nexec node "$FAKE_BIN" herdr "$@"\n`);
   assert.ok(fs.readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0').includes(`HUD_HOME=${f.home}`));
@@ -110,11 +152,43 @@ test('ticket queue runs on workflow-runner, loses duplicate election, and finish
   const [, second] = await f.jobs(flow, 2);
   assert.equal(f.job(second).ticket, 'sample/02');
   await f.settle(second);
+
+  // Wait for milestone reviewer step and settle it.
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  const reviewJob = f.flow(flow).review_job;
+  assert.equal(f.job(reviewJob).role, 'reviewer');
+  assert.equal(f.job(reviewJob).herdr_pane, undefined);
+  await f.settleReview(reviewJob);
+
+  // Wait for lead acceptance step; verify lead opened in project workspace w4E, not the dead main pane.
+  await until(() => f.flow(flow).active_lead?.kind === 'accept', 15_000);
+  const leadId = f.flow(flow).active_lead.job;
+  const leadReceipt = f.job(leadId);
+  assert.equal(leadReceipt.role, 'lead');
+  assert.equal(leadReceipt.cli.agent, 'claude');
+  assert.equal(leadReceipt.herdr_pane, undefined);
+  assert.equal(leadReceipt.herdr_workspace, 'w4E');
+
+  const commands = fs.readFileSync(f.env.FAKE_LOG, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const leadTabCreate = commands.find(c => c.command === 'herdr' && c.args[0] === 'tab' && c.args[1] === 'create' &&
+    c.args.includes(`HUD_JOB_DIR=${f.dir(leadId)}`));
+  assert.ok(leadTabCreate, 'lead tab create logged');
+  const wsIdx = leadTabCreate.args.indexOf('--workspace');
+  assert.equal(leadTabCreate.args[wsIdx + 1], 'w4E');
+
+  await f.settleLead(leadId, 'Decision: finish\nReason: Verified checks and review.\nTodo: Revisit edge case later\n');
   const done = await f.end(flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.equal(done.steps.tickets.state, 'done');
+  assert.equal(done.steps.review.state, 'done');
+  assert.equal(done.steps.accept.state, 'done');
+  assert.equal(done.steps.accept.answer, 'finish');
+  assert.ok(f.job(leadId).reaped_at, 'lead job closed via normal HUD closure');
+  const afterLog = fs.readFileSync(f.env.FAKE_LOG, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.ok(afterLog.some(c => c.command === 'hud-reap' && c.args[0] === f.dir(leadId)), 'hud-reap closed lead');
+
   const line = done.notices['end-0'];
-  assert.equal(line, `${flow} (ticket queue sample) — completed. Landed: sample/01, sample/02.`);
+  assert.equal(line, `${flow} (ticket queue sample) — completed. Landed: sample/01, sample/02. Verdict: finish: Verified checks and review. Todo: 1.`);
   const marker = join(f.home, 'flows', `${flow}.json.noticed`);
   assert.ok(!fs.existsSync(marker));
 
@@ -134,14 +208,16 @@ test('ticket queue runs on workflow-runner, loses duplicate election, and finish
   assert.ok(!stranger.changes?.includes(line));
   assert.ok(!fs.existsSync(marker));
 
-  const read = nextMain(f.root), firstRead = await read();
+  const readMain = nextMain(f.root), firstRead = await readMain();
   assert.deepEqual(firstRead.landed, ['sample/01', 'sample/02']);
+  assert.equal(firstRead.verdict, 'finish: Verified checks and review.');
+  assert.deepEqual(firstRead.todo, [{ source: `lead (${leadId})`, kind: 'lead', text: 'Revisit edge case later' }]);
   assert.deepEqual(firstRead.changes.filter(l => l === line), [line]);
   assert.ok(fs.existsSync(marker));
-  assert.ok(!(await read()).changes?.includes(line));
+  assert.ok(!(await readMain()).changes?.includes(line));
 });
 
-test('pane-less unattended ticket queue dispatches, lands, and completes with no main pane', { timeout: 45_000 }, async t => {
+test('pane-less unattended ticket queue dispatches, lands, reviews, accepts, and completes with no main pane', { timeout: 45_000 }, async t => {
   const f = await project(t, { count: 1 });
   const env = { ...f.env }; delete env.HERDR_PANE_ID;
   const started = execFileSync(process.execPath, [
@@ -157,14 +233,18 @@ test('pane-less unattended ticket queue dispatches, lands, and completes with no
   const [first] = await f.jobs(flow, 1);
   assert.equal(f.job(first).ticket, 'sample/01');
   await f.settle(first);
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  await f.settleReview(f.flow(flow).review_job);
+  await until(() => f.flow(flow).active_lead?.kind === 'accept', 15_000);
+  await f.settleLead(f.flow(flow).active_lead.job);
   const done = await f.end(flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* done/);
 });
 
-test('hand-back seam records structured problem metadata and a fresh project main auto-resumes on hud_respond', { timeout: 45_000 }, async t => {
+test('to: main question hand-back auto-resumes on hud_respond and Blockers: pauses without waking main', { timeout: 45_000 }, async t => {
   const f = await project(t, { secondBlocker: 'none', count: 2 });
-  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   const [first] = await f.jobs(flow, 1);
   const qa = join(f.dir(first), 'qa');
   fs.mkdirSync(qa, { recursive: true });
@@ -191,13 +271,18 @@ test('hand-back seam records structured problem metadata and a fresh project mai
   assert.equal(f.flow(reply.queue_resumed).state, 'working');
   assert.deepEqual(f.flow(reply.queue_resumed).tickets.map(x => x.job), [first]);
 
-  // A Blockers: report records structured blocker hand-back metadata.
+  // A Blockers: report pauses the run with structured blocker metadata and NO wake to main.
   await f.settle(first, { report: 'Synthetic finished report.\n\nBlockers: requires spec change\n' });
   const blocked = await f.end(reply.queue_resumed);
-  assert.equal(blocked.state, 'failed');
+  assert.equal(blocked.state, 'paused');
+  assert.equal(blocked.no_wake, true);
+  assert.deepEqual(blocked.notices, {});
   assert.deepEqual(blocked.handback, {
     step: 'tickets', choices: ['resume', 'stop'], kind: 'blocker', ticket: 'sample/01', job: first,
   });
+  const readAfter = resultValue((await rpc('tools/call', { name: 'hud_read', arguments: { job: reply.queue_resumed } })).result);
+  assert.equal(readAfter.state, 'paused');
+  assert.equal(readAfter.changes, undefined);
 });
 
 test('workflow-runner adopts a pre-upgrade legacy q receipt without template or graph.json', { timeout: 30_000 }, async t => {

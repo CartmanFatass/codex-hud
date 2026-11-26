@@ -105,8 +105,8 @@ test('interactive roles share the unanswered-question policy; sonic reports bloc
   const dir = resolve('packages/hud-mcp/instructions');
   for (const file of fs.readdirSync(dir).filter((name) => name.endsWith('.md'))) {
     const body = fs.readFileSync(join(dir, file), 'utf8').replace(/\s+/g, ' ');
-    if (file === 'sonic.md') {
-      assert.doesNotMatch(body, /hud_ask/);
+    if (file === 'sonic.md' || file === 'lead.md') {
+      assert.doesNotMatch(body, /Ask the orchestrator with `hud_ask`/);
       assert.match(body, /name it as blocked in your report/);
       continue;
     }
@@ -118,9 +118,9 @@ test('pi role tools match the real MCP tools/list', async (t) => {
   const f = await fixture(t);
   const tools = (await f.rpc('tools/list')).result.tools.filter(({ name }) => name !== 'hud_statusline');
   assert.deepEqual(PI_ROLE_TOOLS, tools);
-  // Allow 200 bytes for experiment tags and 225 for ticket Objective links; bound Objective and schedule separately.
+  // Allow 200 bytes for experiment tags, 225 for ticket Objective links, and 160 for workflow/07 lead/live_try options; bound Objective and schedule separately.
   const bytes = (value) => Buffer.byteLength(JSON.stringify(value));
-  assert.ok(bytes(tools.filter(({ name }) => name !== 'hud_objective' && name !== 'hud_schedule')) <= 9708 + 200 + 225, 'existing role declarations stay within budget');
+  assert.ok(bytes(tools.filter(({ name }) => name !== 'hud_objective' && name !== 'hud_schedule')) <= 9708 + 200 + 225 + 160, 'existing role declarations stay within budget');
   assert.ok(bytes(tools.find(({ name }) => name === 'hud_objective')) <= 1350, 'Objective/request declaration fits its 1350-byte budget');
   assert.ok(bytes(tools.find(({ name }) => name === 'hud_schedule')) <= 1100, 'schedule declaration fits its 1100-byte budget');
   assert.match(tools.find(({ name }) => name === 'hud_read').description, /close at turn end with a declared report, read or not/);

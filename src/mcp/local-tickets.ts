@@ -82,6 +82,70 @@ export function readyTickets(cwd: string, jobs: JobIndexCache) {
   return { ok: true, tickets: ticketReadiness(cwd, jobs).tickets };
 }
 
+export interface TicketGap {
+  ticket: string;
+  path: string;
+  gaps: string[];
+}
+
+const liveTryField = /(?:^|·)[ \t]*(?:\*\*)?(?:Live try|How to try|Try)(?::\*\*|\*\*:|:)[ \t]*\S/im;
+const liveTryHeading = /^##[ \t]+(?:Live try|How to try|Try)\b[^\r\n]*\r?\n(?:[ \t]*\r?\n)*[ \t]*\S/im;
+
+/** Deterministic pre-start check: every ready-for-agent ticket needs a goal (What to build),
+ * acceptance items, valid Blocked by references, and a Live try / How to try line (or Live try: none). */
+export function checkFeatureTickets(cwd: string, feature: string): TicketGap[] {
+  const scratch = join(cwd, '.scratch');
+  if (!directoryExists(scratch)) return [];
+  const featureTickets = list(join(scratch, feature)).sort((a, b) => a.number - b.number);
+  const byFeature = new Map<string, Set<number>>();
+  byFeature.set(feature, new Set(featureTickets.map(t => t.number)));
+  const knownIn = (slug: string) => {
+    let set = byFeature.get(slug);
+    if (!set) {
+      set = new Set(list(join(scratch, slug)).map(t => t.number));
+      byFeature.set(slug, set);
+    }
+    return set;
+  };
+  const results: TicketGap[] = [];
+  for (const { number: num, path } of featureTickets) {
+    const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
+    if (truncated) continue;
+    const text = bytes.toString('utf8');
+    const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
+    const { status, blocked, items } = ticketFileEvidence(text);
+    if (!status || !/^ready-for-agent$/i.test(status)) continue;
+    const ticket = `${feature}/${nn(num)}`;
+    const gaps: string[] = [];
+    const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
+      ?.replace(/\s+/g, ' ').trim() ?? '';
+    if (!what) gaps.push('missing goal (What to build)');
+    if (items.length === 0) gaps.push('missing acceptance items');
+    if (blocked === undefined || !blocked.trim()) {
+      gaps.push('missing Blocked by');
+    } else if (!/^none\b/i.test(blocked.trim())) {
+      const parts = blocked.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+      if (!parts.length) gaps.push('invalid Blocked by');
+      for (const raw of parts) {
+        const clean = raw.replace(/\s*\([^)]*\)\s*$/, '').trim();
+        const cross = /^([a-z0-9-]+)\/(\d+)$/i.exec(clean);
+        if (cross) {
+          const slug = cross[1].toLowerCase(), n = Number(cross[2]);
+          if (!knownIn(slug).has(n)) gaps.push(`unknown blocked_by ticket: ${clean}`);
+        } else {
+          const local = /^#?(\d+)$/.exec(clean);
+          if (!local || !knownIn(feature).has(Number(local[1]))) gaps.push(`unknown blocked_by ticket: ${clean}`);
+        }
+      }
+    }
+    if (!liveTryField.test(body) && !liveTryHeading.test(body)) {
+      gaps.push('missing Live try (add how to try or Live try: none)');
+    }
+    if (gaps.length) results.push({ ticket, path, gaps });
+  }
+  return results;
+}
+
 export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: string) {
   const scratch = join(cwd, '.scratch');
   if (!directoryExists(scratch)) return { tickets: [], queued: [] };
@@ -221,6 +285,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
         what = line(ticket.what, 'what');
       const label = ticket.status === undefined ? 'ready-for-agent' : status(ticket.status);
       const tryLine = ticket.owner_try === undefined ? [] : [`**Owner try:** ${ownerTry(ticket.owner_try)}`];
+      const liveTryLine = ticket.live_try === undefined ? [] : [`**Live try:** ${line(ticket.live_try, 'live_try')}`];
       const blocked = resolveBlockers(ticket.blocked_by, feature, known);
       if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');
       const items = ticket.acceptance.map((item) => `- [ ] ${line(item, 'acceptance')}`);
@@ -230,6 +295,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
         '',
         `**Status:** ${label}`,
         ...tryLine,
+        ...liveTryLine,
         `**Blocked by:** ${blocked}`,
         ...(objective === undefined ? [] : [`**Objective:** ${objective}`]),
         '',

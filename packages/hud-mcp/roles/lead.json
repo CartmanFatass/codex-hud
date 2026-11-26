@@ -1,0 +1,27 @@
+{
+  "role": "lead",
+  "instructions": "lead",
+  "prewalk": "off",
+  "can_continue": false,
+  "run": [
+    {
+      "harness": "cli",
+      "agent": "claude",
+      "model": "claude-opus-5-5",
+      "thinking": "high"
+    }
+  ],
+  "presets": [
+    {
+      "name": "default",
+      "run": [
+        {
+          "harness": "cli",
+          "agent": "claude",
+          "model": "claude-opus-5-5",
+          "thinking": "high"
+        }
+      ]
+    }
+  ]
+}

@@ -25,7 +25,7 @@ export function controlRun(run: Omit<Run, 'steps'> & { steps?: Run['steps'] }, a
   } else return;
   return action;
 }
-export interface Tick { state: 'running' | 'done' | 'failed' | 'cancelled'; reason?: string; changed?: boolean; recheckMs?: number; effect?: () => Promise<number> }
+export interface Tick { state: 'waiting' | 'running' | 'asking' | 'done' | 'failed' | 'cancelled'; reason?: string; changed?: boolean; recheckMs?: number; effect?: () => Promise<number> }
 
 export const canRepairSealedStep = (attempts: number) => attempts < 2;
 /** A sealed effect can contain its own transaction and repair loop. The durable

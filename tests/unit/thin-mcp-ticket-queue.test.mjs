@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { fixture, fallbackRole, taskCall, taskRpc, until, resultValue } from '../helpers/thin-mcp-harness.mjs';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -11,7 +12,13 @@ const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 async function project(t, { thirdBlocker = 'none', frontend = false, crossProject = false, done = [], upstream = [] } = {}) {
   const caller = await fixture(t, { failedRetentionMs: 30_000 });
   const f = crossProject ? { ...caller, root: join(caller.root, 'project') } : caller;
-  if (crossProject) fs.mkdirSync(f.root);
+  if (crossProject) {
+    fs.mkdirSync(f.root);
+    const claudeCfg = join(f.env.CLAUDE_CONFIG_DIR, '.claude.json');
+    const cfg = JSON.parse(fs.readFileSync(claudeCfg, 'utf8'));
+    cfg.projects[fs.realpathSync(f.root)] = { hasTrustDialogAccepted: true };
+    fs.writeFileSync(claudeCfg, JSON.stringify(cfg));
+  }
   cleanupFixture(t, { root: `${f.root}-wt` });
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env: f.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(f.root, 'init', '-qb', 'base');
@@ -26,14 +33,14 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
   fs.mkdirSync(join(f.root, issues), { recursive: true });
   const ticketPath = n => join(issues, `0${n}-synthetic.md`);
   for (const n of [1, 2, 3]) fs.writeFileSync(join(f.root, ticketPath(n)),
-    `# 0${n}: Synthetic ${n}\n\n**Status:** ${done.includes(n) ? 'done' : 'ready-for-agent'}\n**Owner try:** no\n**Blocked by:** ${n === 3 ? thirdBlocker : 'none'}\n` +
+    `# 0${n}: Synthetic ${n}\n\n**Status:** ${done.includes(n) ? 'done' : 'ready-for-agent'}\n**Owner try:** no\n**Live try:** none\n**Blocked by:** ${n === 3 ? thirdBlocker : 'none'}\n` +
     (n === 2 && frontend ? '**Role:** frontend-imp\n' : '') +
     `\n**What to build:** Synthetic change ${n}\n\n- [ ] Checked\n\n## Comments\n`);
   if (upstream.length) {
     const dir = join(f.root, '.scratch', 'upstream', 'issues');
     fs.mkdirSync(dir, { recursive: true });
     upstream.forEach((status, i) => fs.writeFileSync(join(dir, `0${i + 1}-synthetic.md`),
-      `# 0${i + 1}: Upstream ${i + 1}\n\n**Status:** ${status}\n**Blocked by:** none\n\n**What to build:** Synthetic upstream change.\n`));
+      `# 0${i + 1}: Upstream ${i + 1}\n\n**Status:** ${status}\n**Live try:** none\n**Blocked by:** none\n\n**What to build:** Synthetic upstream change.\n\n- [ ] Checked\n`));
   }
   git(f.root, 'add', '.scratch', '.hud');
   git(f.root, 'commit', '-qm', 'synthetic tickets');
@@ -42,7 +49,7 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
   const dir = id => join(home, 'jobs', id);
   const job = id => read(join(dir(id), 'job.json'));
   const status = id => read(join(dir(id), 'STATUS.json'));
-  const start = (max_parallel, feature = 'sample') => f.call('hud_tickets', { op: 'run', feature, max_parallel, cwd: f.root });
+  const start = (max_parallel, feature = 'sample', extra = {}) => f.call('hud_tickets', { op: 'run', feature, max_parallel, cwd: f.root, ...extra });
   const jobs = async (id, count) => {
     await until(() => {
       const q = flow(id);
@@ -60,8 +67,39 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
     writeFixtureFile(join(dir(id), 'report.md'), report);
     writeFixtureFile(join(dir(id), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
   };
+  const settleCli = (id, report) => {
+    const jobDir = dir(id);
+    const turnPath = join(jobDir, 'turn.json');
+    if (!fs.existsSync(turnPath)) return false;
+    const turn = read(turnPath);
+    writeFixtureFile(join(jobDir, 'report.md'), report);
+    const sig = reportSignature(jobDir);
+    if (!sig) return false;
+    writeFixtureFile(join(jobDir, 'done.json'), JSON.stringify({ seq: turn.seq, sent_at: turn.sent_at, report_sig: sig, at: new Date().toISOString() }));
+    writeFixtureFile(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
+    return true;
+  };
+  const settleReview = (id) => {
+    const receipt = job(id), jobDir = dir(id);
+    if (receipt.cli) return settleCli(id, 'Verdict: accept\n\nNo blocking findings.\n');
+    if (Date.now() <= Date.parse(receipt.pi_sent_at ?? receipt.created_at) + 1) return false;
+    writeFixtureFile(join(jobDir, 'report.md'), 'Verdict: accept\n\nNo blocking findings.\n');
+    writeFixtureFile(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
+    return true;
+  };
+  const settledAux = new Set();
   const end = async id => {
-    await until(() => flow(id).state !== 'working', 20_000);
+    await until(() => {
+      const q = flow(id);
+      if (q.state !== 'working') return true;
+      if (q.review_job && !settledAux.has(q.review_job) && fs.existsSync(join(dir(q.review_job), 'job.json'))) {
+        if (settleReview(q.review_job)) settledAux.add(q.review_job);
+      }
+      if (q.active_lead?.job && !settledAux.has(q.active_lead.job) && fs.existsSync(join(dir(q.active_lead.job), 'turn.json'))) {
+        if (settleCli(q.active_lead.job, 'Decision: finish\nReason: Accepted synthetic feature.\n')) settledAux.add(q.active_lead.job);
+      }
+      return false;
+    }, 20_000);
     return flow(id);
   };
   return { ...f, dir, end, flow, git, job, jobs, settle, start, status, ticketPath };
@@ -96,7 +134,7 @@ test('ticket queue lands two ready tickets, resumes after a runner crash, and re
   for (const n of [1, 2, 3]) assert.match(f.git(f.root, 'show', `base:${f.ticketPath(n)}`), /\*\*Status:\*\* done/);
   const result = await f.call('hud_read', { job: flow });
   assert.deepEqual(result.landed, ['sample/01', 'sample/02', 'sample/03']);
-  assert.deepEqual(result.changes, [`${flow} (ticket queue sample) — completed. Landed: sample/01, sample/02, sample/03.`]);
+  assert.deepEqual(result.changes, [`${flow} (ticket queue sample) — completed. Landed: sample/01, sample/02, sample/03. Verdict: finish: Accepted synthetic feature.`]);
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
 });
 
@@ -155,7 +193,8 @@ test('run rejects a missing cross-feature blocker before creating a queue', { ti
   });
   assert.equal(result.isError, true);
   assert.match(JSON.parse(result.content[0].text).error, /sample\/03: unknown blocked_by ticket: upstream\/99/);
-  assert.ok(fs.readdirSync(join(f.env.HUD_HOME, 'flows')).every(file => !/^q[a-f0-9]{16}\.json$/.test(file)));
+  const flowsDir = join(f.env.HUD_HOME, 'flows');
+  assert.ok(!fs.existsSync(flowsDir) || fs.readdirSync(flowsDir).every(file => !/^q[a-f0-9]{16}\.json$/.test(file)));
 });
 
 test('running a failed queue in another project retries only the land, keeping the settled worker and original receipts', { timeout: 45_000 }, async t => {
@@ -189,12 +228,12 @@ test('running a failed queue in another project retries only the land, keeping t
   await f.settle(third);
   assert.equal((await f.end(resumed)).state, 'completed');
   const all = fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id));
-  assert.deepEqual(all.sort(), [first, second, third].sort());
+  assert.deepEqual(all.filter(id => f.job(id).role === 'imp').sort(), [first, second, third].sort());
 });
 
 test('ticket queue hands back on a worker question without stopping its peer', { timeout: 30_000 }, async t => {
   const f = await project(t);
-  const { flow } = await f.start(2);
+  const { flow } = await f.start(2, 'sample', { handback_to: 'main' });
   const [first, peer] = await f.jobs(flow, 2);
   const qa = join(f.dir(first), 'qa');
   fs.mkdirSync(qa, { recursive: true });

@@ -65,6 +65,7 @@ export interface Job extends PiOptions {
   cwd: string;
   project_root?: string;
   herdr_pane?: string; // Caller for tabbed jobs and older headless receipts.
+  herdr_workspace?: string; // Project workspace fallback when caller pane is absent or exited.
   caller_pane?: string; // Headless workers have no pane of their own.
   created_at: string;
   queued_at?: string;

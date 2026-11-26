@@ -50,7 +50,9 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
       const q = pass.header<TicketQueue>(file);
       if (!q || q.task || (!all && !runVisible(q, pane, cwd))) continue;
       if (q.state === 'working') { pending = true; continue; }
-      const outbox = q.notices && Object.keys(q.notices).length ? { flow: id, notices: q.notices }
+      const outbox = q.template && q.notices !== undefined
+        ? { flow: id, notices: q.notices }
+        : q.notices && Object.keys(q.notices).length ? { flow: id, notices: q.notices }
         : { flow: id, notices: { 'end-0': ticketQueueNotice(q).replace(/\r?\n/g, ' | ') } };
       lines.push(...noticeEvents(home, outbox, all, path).map(e => e.line));
     }

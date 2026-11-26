@@ -222,6 +222,9 @@ export const ROLE_TOOLS = [
       feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Run/add/update: slug.' },
       max_parallel: { type: 'integer', minimum: 1, description: 'Run: max in-flight; default imp cap.' },
       cancel: { type: 'boolean', description: 'Run: cancel; keeps jobs/lands.' },
+      escalation_rule: text,
+      handback_to: { ...text, enum: ['lead', 'main'] },
+      lead_preset: text,
       tickets: {
         type: 'array',
         minItems: 1,
@@ -235,6 +238,7 @@ export const ROLE_TOOLS = [
             acceptance: { type: 'array', items: text },
             status: { ...ticketStatus, default: 'ready-for-agent' },
             owner_try: { type: 'boolean', description: 'Owner try post-land (default no).' },
+            live_try: text,
             objective: ticketObjective,
           },
           required: ['title', 'blocked_by', 'what', 'acceptance'],

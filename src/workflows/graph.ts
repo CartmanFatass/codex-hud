@@ -5,12 +5,12 @@ export type Breaker = 'rate' | 'first' | 'none';
 type Common = { needs: string[]; from: string[]; optional: boolean; when?: { step: string; is: string } };
 type Brief = { task?: string; brief_file?: string };
 type Work =
-  | ({ kind: 'job'; role: string; isolation?: 'none' | 'worktree' } & Brief)
-  | { kind: 'batch'; role: string; items?: Brief[]; manifest?: string; tickets?: string; each?: ('job' | 'land')[]; pilot?: boolean; max_parallel?: number }
+  | ({ kind: 'job'; role: string; isolation?: 'none' | 'worktree'; ask?: boolean } & Brief)
+  | { kind: 'batch'; role: string; items?: Brief[]; manifest?: string; tickets?: string; each?: ('job' | 'land')[]; pilot?: boolean; max_parallel?: number; ask?: boolean }
   | ({ kind: 'council' } & Brief)
   | { kind: 'land'; job: string }
   | { kind: 'check'; run?: string[]; use?: string }
-  | { kind: 'handback'; ask: string; options: string[] };
+  | { kind: 'handback'; ask: string; options: string[]; to?: 'lead' | 'main'; preset?: string; escalation_rule?: string };
 export type Step = Common & Work;
 export interface Graph { version: 1; name: string; policy: { breaker: Breaker }; steps: Record<string, Step>; cost: 'cheap' | 'costly'; cost_reasons: string[] }
 interface Inputs {
@@ -45,8 +45,8 @@ function brief(row: Record<string, unknown>): Brief {
   if (Buffer.byteLength(task) > 256 * 1024) invalid('task exceeds 256 KiB');
   return { task };
 }
-const fields = { job: ['role','task','brief_file','isolation'], batch: ['role','manifest','items','tickets','each','pilot','max_parallel'], council: ['task','brief_file'],
-  land: ['job'], check: ['run','use'], handback: ['ask','options'] };
+const fields = { job: ['role','task','brief_file','isolation','ask'], batch: ['role','manifest','items','tickets','each','pilot','max_parallel','ask'], council: ['task','brief_file'],
+  land: ['job'], check: ['run','use'], handback: ['ask','options','to','preset','escalation_rule'] };
 const identifier = /^[a-z][a-z0-9_-]{0,47}$/;
 /** Only whole, typed parameter slots are substituted. Task prose and argv are never interpolated. */
 export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inputs): Graph {
@@ -84,10 +84,11 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
       if (role === 'pro' || role === 'flow') reasons.push(`${id}: ${role} role`);
       const browser = kind === 'batch' && row.manifest ? inputs.manifest?.browser : undefined;
       if (browser ?? chain.run.some(p => p.harness === 'bro')) reasons.push(`${id}: browser place`);
+      const ask = row.ask === undefined ? undefined : typeof row.ask === 'boolean' ? row.ask : invalid('ask must be boolean');
       if (kind === 'job') {
         const isolation = row.isolation;
         if (isolation !== undefined && isolation !== 'none' && isolation !== 'worktree') return invalid('job isolation');
-        work = { kind, role, ...brief(row), isolation };
+        work = { kind, role, ...brief(row), isolation, ...(ask !== undefined && { ask }) };
       } else {
         const max = row.max_parallel;
         if (max !== undefined && (typeof max !== 'number' || !Number.isSafeInteger(max) || max < 1)) invalid('max_parallel');
@@ -101,7 +102,7 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
         }
         const cap = row.tickets !== undefined ? undefined : row.manifest === undefined ? inputs.caps?.[role] : inputs.manifest?.cap;
         if (cap && (cap < 3 || (max !== undefined && Number(max) > cap - 2))) invalid('reserved slots');
-        const batch: Extract<Work, { kind: 'batch' }> = { kind, role, max_parallel: max as number | undefined, ...(each && { each }), ...(pilot !== undefined && { pilot }) };
+        const batch: Extract<Work, { kind: 'batch' }> = { kind, role, max_parallel: max as number | undefined, ...(each && { each }), ...(pilot !== undefined && { pilot }), ...(ask !== undefined && { ask }) };
         let count: number, bytes: number;
         if (row.tickets !== undefined) {
           if (row.manifest !== undefined || row.items !== undefined) return invalid('batch takes one source');
@@ -141,7 +142,15 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
     else {
       const options = list(row.options, 6), ask = text(row.ask);
       if (options.length < 2 || options.some(o => !identifier.test(o)) || ask.length > 300) invalid('handback question/options');
-      work = { kind: 'handback', ask, options };
+      const to = row.to === undefined ? 'lead' : row.to === 'lead' || row.to === 'main' ? row.to : invalid('handback to must be lead or main');
+      if (to === 'lead') {
+        const lead = inputs.roles.get('lead');
+        if (lead?.optionalEnabled === false || (row.to === 'lead' && !lead)) invalid('unknown or disabled lead role');
+      }
+      const preset = row.preset === undefined ? undefined : text(row.preset);
+      const rule = row.escalation_rule === undefined ? undefined : text(row.escalation_rule);
+      if (rule && rule.length > 500) invalid('handback escalation_rule exceeds 500 chars');
+      work = { kind: 'handback', ask, options, ...(row.to !== undefined && { to }), ...(preset && { preset }), ...(rule && { escalation_rule: rule }) };
     }
     steps[id] = { ...common, ...work };
   }

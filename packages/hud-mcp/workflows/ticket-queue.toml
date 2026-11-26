@@ -11,3 +11,17 @@ tickets = "{feature}"
 each = ["job", "land"]
 pilot = false
 max_parallel = "{max_parallel}"
+
+[steps.review]
+kind = "job"
+role = "reviewer"
+needs = ["tickets"]
+from = ["tickets"]
+task = "Milestone two-axis review (spec; simplicity and quality) of the landed feature tickets per docs/delegation.md step 5."
+
+[steps.accept]
+kind = "handback"
+needs = ["review"]
+from = ["tickets", "review"]
+ask = "Accept the landed feature against the tickets, checks, live try, and milestone review report; choose finish, repair, or escalate."
+options = ["finish", "repair", "escalate"]

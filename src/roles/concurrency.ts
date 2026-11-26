@@ -40,10 +40,10 @@ export function capForRole(settings: Pick<HudSettings, 'roleCaps'>, role: string
   return typeof cap === 'number' && Number.isInteger(cap) && cap > 0 ? cap : 0;
 }
 
-/** Helpers and already-reaped jobs do not consume a role slot. */
+/** Helpers, workflow leads and already-reaped jobs do not consume a role slot. */
 export function isCountedJob(job: Partial<Job> | null | undefined): boolean {
   if (!job || typeof job !== 'object') return false;
-  if (job.parent_job || job.scout_only === true || job.reaped_at) return false;
+  if (job.parent_job || job.scout_only === true || job.role === 'lead' || job.reaped_at) return false;
   return typeof job.role === 'string' && job.role.length > 0;
 }
 

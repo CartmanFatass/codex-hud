@@ -80,18 +80,36 @@ export async function dispatchBase(cwd: string): Promise<string> {
   const git = await run('git', ['rev-parse', 'HEAD'], cwd);
   return git.exit_code === 0 ? git.stdout.trim() : 'HEAD';
 }
+export function workspaceFromPaneId(pane: string | null | undefined): string | undefined {
+  if (!pane) return undefined;
+  const ws = pane.split(':', 1)[0];
+  return ws && ws !== pane && herdrId(ws) ? ws : undefined;
+}
+export async function resolveWorkspace(pane: string | null | undefined): Promise<string | undefined> {
+  if (!pane || !herdrId(pane)) return undefined;
+  const result = await run('herdr', ['pane', 'get', pane]);
+  if (result.exit_code === 0) {
+    try {
+      const ws = JSON.parse(result.stdout).result?.pane?.workspace_id;
+      if (herdrId(ws)) return ws;
+    } catch { /* Fall back to pane prefix when pane lookup is malformed. */ }
+  }
+  return workspaceFromPaneId(pane);
+}
 export async function workspaceArgs(job: Job): Promise<string[]> {
   const owner = jobCallerPane(job);
-  if (!owner) return [];
-  const result = await run('herdr', ['pane', 'get', owner]);
-  if (result.exit_code !== 0) return [];
-  try {
-    const pane = JSON.parse(result.stdout).result.pane;
-    if (owner === callerPane) rememberCallerHarness(pane.agent);
-    return herdrId(pane.workspace_id) ? ['--workspace', pane.workspace_id] : [];
-  } catch {
-    return [];
-  } // An unavailable caller lookup keeps herdr's default workspace.
+  if (owner) {
+    const result = await run('herdr', ['pane', 'get', owner]);
+    if (result.exit_code === 0) {
+      try {
+        const pane = JSON.parse(result.stdout).result.pane;
+        if (owner === callerPane) rememberCallerHarness(pane.agent);
+        if (herdrId(pane.workspace_id)) return ['--workspace', pane.workspace_id];
+      } catch { /* Fall through to recorded workspace fallback. */ }
+    }
+  }
+  const fallback = (herdrId(job.herdr_workspace) ? job.herdr_workspace : undefined) ?? workspaceFromPaneId(owner);
+  return fallback ? ['--workspace', fallback] : [];
 }
 export function ensureWatcher(): void {
   ensureJobWatcher(hudHome);

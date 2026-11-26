@@ -20,6 +20,11 @@ import {
 } from './tasks.js';
 
 const worker = isWorker ? workerTools : undefined;
+function isLeadWorker(): boolean {
+  if (!worker) return false;
+  try { return worker.workerJob().job.role === 'lead'; } catch { return false; }
+}
+const leadWorkerTools = new Set(['hud_report', 'hud_progress']);
 
 const TASK_EXTENSION = 'io.modelcontextprotocol/tasks';
 
@@ -27,12 +32,19 @@ const privateCache = { ttlMs: 0, cacheScope: 'private' } as const;
 const resultText = process.env.HUD_MCP_JSON === '1' ? JSON.stringify : compactResult;
 
 async function toolsListResult() {
+  if (session.resumeRefusal) return { ...(session.discovered ? privateCache : {}), tools: [] };
+  if (worker) {
+    const own = await worker.listWorkerTools(true);
+    return {
+      ...(session.discovered ? privateCache : {}),
+      tools: isLeadWorker() ? [...tools, ...own.filter((tool) => leadWorkerTools.has(tool.name))] : own,
+    };
+  }
   return {
     ...(session.discovered ? privateCache : {}),
-    tools: session.resumeRefusal ? [] : worker ? await worker.listWorkerTools(true) :
-      [...tools, statuslineTool].filter((tool) => !session.taskClient || tool.name !== 'hud_wait').map((tool) =>
-        session.taskClient && ['hud_create', 'hud_send', 'hud_respond', 'hud_land', 'hud_tickets'].includes(tool.name)
-          ? { ...tool, execution: { taskSupport: 'optional' } } : tool),
+    tools: [...tools, statuslineTool].filter((tool) => !session.taskClient || tool.name !== 'hud_wait').map((tool) =>
+      session.taskClient && ['hud_create', 'hud_send', 'hud_respond', 'hud_land', 'hud_tickets'].includes(tool.name)
+        ? { ...tool, execution: { taskSupport: 'optional' } } : tool),
   };
 }
 function dispatchIdentity(thread: unknown): Job['dispatcher'] {
@@ -163,7 +175,25 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         return;
       }
       if (worker) {
-        if (!(await worker.workerTools(true)).some((tool: { name: string }) => tool.name === name)) {
+        const isLead = isLeadWorker();
+        if (isLead && !leadWorkerTools.has(name) && tools.some((tool) => tool.name === name)) {
+          const scan = scanForCall();
+          try {
+            const invoke = () => writeScan.run(scan, () => call(name, args, scan, undefined, dispatchIdentity(thread)));
+            const key = mutationKey(name, args);
+            if (key !== null && locks.has(key)) scan.invalidateSummary();
+            const value = key === null ? await invoke() : await keyLock(key, invoke);
+            result = { content: [{ type: 'text', text: typeof value === 'string' ? value : resultText(value) }] };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            result = { content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'tool_error', error: message }) }], isError: true };
+          } finally {
+            scan.clear();
+          }
+          break;
+        }
+        const allowed = isLead ? leadWorkerTools.has(name) : (await worker.workerTools(true)).some((tool: { name: string }) => tool.name === name);
+        if (!allowed) {
           result = { content: [{ type: 'text', text: JSON.stringify({ ok: false, code: 'worker_cannot_dispatch' }) }], isError: true };
         } else {
           try {

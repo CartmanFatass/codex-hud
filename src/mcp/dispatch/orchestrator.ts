@@ -191,9 +191,10 @@ function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): 
 type BatchMember = { flow: string; route: JobRoute; canAdmit: () => boolean };
 type SlotGate = { wait: Promise<void>; release: () => void };
 
-export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher }: {
+export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote }: {
   parent?: SonicParent; repair?: { source: Job; derived: boolean }; batch?: boolean; slotGate?: SlotGate;
   queue?: { id: string; canAdmit: () => boolean }; member?: BatchMember; dispatcher?: Job['dispatcher'];
+  workspace?: string; runNote?: string;
 } = {}) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
@@ -208,7 +209,8 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   const role = input.role === undefined && source ? source.role : required(input, 'role');
   // Check caller input, not inherited retry options or internal repair placement.
   if (!repair && role !== 'general') {
-    const fields: string[] = parent ? [] : placementOverrides.filter(key => input[key] !== undefined);
+    const allowedOverrides = role === 'lead' && queue ? ['preset'] : [];
+    const fields: string[] = parent ? [] : placementOverrides.filter(key => input[key] !== undefined && !allowedOverrides.includes(key));
     if (hasPiPlacement(input.pi_args)) fields.push('pi_args');
     const borrowsInstructions = input.instructions !== undefined;
     if (fields.length || borrowsInstructions) {
@@ -249,6 +251,9 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
     const { brief_file: _unused, ...rest } = args;
     args = { ...rest, task: loaded.task };
   }
+  if (runNote && typeof args.task === 'string') {
+    args = { ...args, task: `${args.task.trimEnd()}\n\n${runNote}\n` };
+  }
   // An explicit key can retrieve a prior job even when other arguments in the retry differ.
   const requestKey = args.request_key === undefined
     ? derivedKey(retryOf ? 'retry' : 'create', pane, role, cwd, required(args, 'task'), retryOf,
@@ -257,7 +262,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
     dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, {
-      worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: member?.canAdmit ?? queue?.canAdmit, dispatcher,
+      worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace,
     }));
 }
 
@@ -414,10 +419,10 @@ export async function dispatchCouncilSeat(parent: Job, seat: CouncilSeat, part: 
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<Job, 'job' | 'objective'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, member, canAdmit, dispatcher, seat, council, memberStarted }: {
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, member, canAdmit, dispatcher, seat, council, memberStarted, workspace }: {
     seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
-    ticketQueue?: string; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher'];
+    ticketQueue?: string; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
   } = {}) {
   const { experiment, arm, preview } = args;
   if (preview !== undefined && !validPreviewPath(preview)) {
@@ -664,7 +669,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     ? [...(pool ? [pool.entry] : []), ...scoutSpecs.map(({ kind, source, ask }) => ({ kind, source, ...(ask ? { ask } : {}), result: state, ms: 0 }))]
     : undefined;
 
-  const enforceCap = !parentJob && !scoutContextCwd && !landCwd;
+  const enforceCap = !parentJob && !scoutContextCwd && !landCwd && role !== 'lead';
   let overflowFrom = fromImp ? 'imp' : undefined;
   let inline = false;
   let context: Exclude<Awaited<ReturnType<typeof assembleContext>>, { ok: false }> | undefined;
@@ -719,6 +724,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         ...(preview && { preview }),
         ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
         ...(pane && { caller_pane: pane }),
+        ...(workspace && herdrId(workspace) && { herdr_workspace: workspace }),
         created_at: nowIso,
         queued_at: nowIso,
         dispatcher,
@@ -791,6 +797,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(preview && { preview }),
       ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
       ...(pane && { caller_pane: pane }),
+      ...(workspace && herdrId(workspace) && { herdr_workspace: workspace }),
       created_at: new Date().toISOString(),
       dispatcher,
       task_length: task.length,

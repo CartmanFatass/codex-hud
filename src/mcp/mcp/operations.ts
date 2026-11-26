@@ -741,6 +741,11 @@ export async function resumePanelAnswer(home: string, job: string, request_id: s
   return 'code' in result && result.code ? { ok: false, reason: result.code } :
     { ok: true, written: 'written' in result ? result.written === true : true };
 }
+export async function answerWorkerQuestion(job: string, request_id: string, answer: string): Promise<AnswerResult> {
+  const result = await keyLock(`job:${job}`, () => respondJob({ job, request_id, answer }, false, undefined, 'orchestrator'));
+  return 'code' in result && result.code ? { ok: false, reason: result.code } :
+    { ok: true, written: 'written' in result ? result.written === true : true };
+}
 
 async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[], answeredBy: AnswerActor = 'orchestrator') {
   const id = required(args, 'job');
