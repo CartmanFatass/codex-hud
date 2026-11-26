@@ -76,7 +76,7 @@ test('a rebuild drains overlapping calls and a broken candidate leaves the old s
 // Publish only in a private copy; other running clients (including other tests) must not reload.
 test('one connection and watcher keep their work across two published generations', { timeout: 20000 }, async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-reload-'));
-  for (const name of ['dist', 'packages/hud-mcp', 'scripts/dist-lock.mjs', 'package.json'])
+  for (const name of ['dist', 'packages/hud-mcp', 'integrations/pi/worker', 'scripts/dist-lock.mjs', 'package.json'])
     fs.cpSync(resolve(name), join(root, name), { recursive: true });
   fs.symlinkSync(resolve('node_modules'), join(root, 'node_modules'));
   const bin = join(root, 'packages/hud-mcp/bin');
@@ -124,7 +124,7 @@ test('one connection and watcher keep their work across two published generation
 
 function reloadCopy(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-reload-tools-'));
-  for (const name of ['dist', 'packages/hud-mcp', 'scripts/dist-lock.mjs', 'package.json'])
+  for (const name of ['dist', 'packages/hud-mcp', 'integrations/pi/worker', 'scripts/dist-lock.mjs', 'package.json'])
     fs.cpSync(resolve(name), join(root, name), { recursive: true });
   fs.symlinkSync(resolve('node_modules'), join(root, 'node_modules'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

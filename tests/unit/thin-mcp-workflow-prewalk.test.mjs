@@ -42,7 +42,7 @@ test('watcher adopts the killed inline prewalk, binds the live scout and launche
   assert.deepEqual(receipt.from_jobs, [scout.job]); assert.equal(receipt.scout_state, 'done');
   assert.equal(receipt.dispatch_exit_code, 0); assert.equal(receipt.attempts.length, 1);
   assert.deepEqual(fs.readdirSync(join(home, 'jobs')).sort(), [scout.job, target.job].sort());
-  assert.equal(f.commands().filter(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start' && c.args.includes(target.task_dir)).length, 1);
+  assert.equal(f.commands().filter(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start' && c.args[2] === `${target.job}-primary`).length, 1);
 });
 
 test('closing MCP stdin leaves the live scout adoptable across restart', { timeout: 30000 }, async t => {
@@ -71,7 +71,7 @@ test('closing MCP stdin leaves the live scout adoptable across restart', { timeo
   const receipt = read(join(target.task_dir, 'job.json'));
   assert.deepEqual(receipt.from_jobs, [scout.job]);
   assert.equal(receipt.attempts.length, 1);
-  assert.equal(f.commands().filter(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start' && c.args.includes(target.task_dir)).length, 1);
+  assert.equal(f.commands().filter(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start' && c.args[2] === `${target.job}-primary`).length, 1);
   assert.deepEqual(fs.readdirSync(join(home, 'jobs')).sort(), [scout.job, target.job].sort());
 });
 
