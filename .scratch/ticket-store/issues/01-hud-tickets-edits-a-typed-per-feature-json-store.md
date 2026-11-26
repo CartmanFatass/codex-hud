@@ -1,6 +1,6 @@
 # 01: hud_tickets edits a typed per-feature JSON store without the land lease
 
-**Status:** ready-for-agent
+**Status:** wontfix
 **Owner try:** no
 **Live try:** During a running hud_land, call hud_tickets add on a scratch feature and see it return the new ticket number in under a second.
 **Blocked by:** chores/13, chores/14, chores/15
