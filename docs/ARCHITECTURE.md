@@ -305,12 +305,12 @@ Retired style values load as `line`.
 
 `renderMonitor` uses `renderWorkboardFrame` for Home, Project, Control, Jobs, Inspector and Help. Frames use exact-width rows and whole footer hints; `footerLayout` translates hint by hint.
 Home Waiting links open the corresponding Project detail. `v` opens Jobs; Enter opens Inspector there, and `n` opens Native Inspector from Jobs or Inspector.
-The owner's Inspector actions (`render/job-actions.ts`, spec §2.2) are pure input: `g` becomes `focus-job-tab`; `1`–`4` and `d` pick an option or the worker's default and become `answer-job`; `X` opens the stop-confirmation overlay, whose `y`/Enter becomes `stop-job`.
+The owner's Inspector actions (`render/job-actions.ts`, spec §2.2) are pure input: `g` becomes `focus-job-tab`, `P` becomes `pin-job-tab`, `H` becomes `hide-job-tab`; `1`–`4` and `d` pick an option or the worker's default and become `answer-job`; `X` opens the stop-confirmation overlay, whose `y`/Enter becomes `stop-job`.
 Any other input cancels the stop prompt.
-The Execution page (`render/execution-view.ts`) paints only collected facts and screens; its rows carry the job (`execJob`), so `g` and `H` emit the same `focus-job-tab` / `hide-job-tab` actions for a tab worker's row, and Enter opens an Inspector marked `from: 'execution'`, whose Esc returns to the page.
+The Execution page (`render/execution-view.ts`) paints only collected facts and screens; its rows carry the job (`execJob`), so `g`, `P` and `H` emit the same `focus-job-tab` / `pin-job-tab` / `hide-job-tab` actions for a tab worker's row, and Enter opens an Inspector marked `from: 'execution'`, whose Esc returns to the page.
 On a Jobs batch row `X` opens the batch prompt (`confirm-batch`); `p` / `r` / `s` become `batch-control`, any other input cancels.
 The panel and `hud act stop|pause|resume <batch>` both call `controlBatchAsOwner` (`mcp/batch.ts`): `controlBatch`, the control behind `hud_create({batch, action})`, without its session visibility check, then `wakeWorkflow`. There is no second control path.
-`tree-page.ts` does the I/O: `focusJobTab` and `stopJob` (`cli/panel-pane.ts`: `herdr tab focus`, HUD reaper) and `answerJobQuestion` (`collectors/panel-actions.ts`), which writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
+`tree-page.ts` does the I/O: `focusJobTab`, `pinJobTab`, `hideJobTab` and `stopJob` (`cli/panel-pane.ts`: `tab.focus`, `tab.set_hidden`, HUD reaper) and `answerJobQuestion` (`collectors/panel-actions.ts`), which writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
 `PanelActionLog` turns those records into `[role@job] ANSWERED qN from panel: …` lines for `hud watch` and the MCP `changes`, as the try log does: only answers made while the reader runs.
 The `/` filter (`render/filter.ts`) owns the keyboard while editing and provides a filtered snapshot for Project Progress and Tickets. Leaving the view clears it; a kept query survives reload. The filter bar is pinned under the header.
 Always retain `frame.state`: reconciliation preserves selection and separate scroll/fold state.
@@ -327,7 +327,7 @@ The panel polls its own installed entry signature per collection.
 A change must be quiet for two seconds and pass a bounded child import before reload.
 Dirty Settings, an open filter, a stop or batch confirmation and Control/EXP editors delay replacement.
 The transient `MonitorState.overlay` is never sent to the next process; a clean chain view returns to its role row.
-`render/monitor-state.ts` holds these reload rules and the input rule for unnamed keys (`/` where a filter applies; `g` and `H` in the Inspector and on the Execution page).
+`render/monitor-state.ts` holds these reload rules and the input rule for unnamed keys (`/` where a filter applies; `g`, `P` and `H` in the Inspector and on the Execution page).
 A bad generation leaves the old panel running.
 Restart preserves argv/env, view/selection/scroll/expansion, Settings cursor, opening time and width override.
 `process.execve` replaces the process when available; otherwise one signal-forwarding supervisor handles restart-exit handoffs without nested parents.

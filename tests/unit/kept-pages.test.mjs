@@ -344,7 +344,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
   const body = plainFrame(help).join('\n');
   assert.match(body, /route\s+- light\s+= standard\s+# hard/);
   assert.match(body, /h headless: no herdr tab/);
-  assert.match(body, /g H\s+Inspector: reveal\/focus or\s+hide the job tab;/);
+  assert.match(body, /g P H\s+Inspector: peek\/focus, pin\s+visible, or hide the job tab;/);
   assert.doesNotMatch(body, /click|Codex's own panel|Timeline|press .* first/);
   assert.match(body, /switch tab/);
   assert.equal(help.state.subpage?.cursor, cursor);

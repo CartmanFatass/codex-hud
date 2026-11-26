@@ -9,7 +9,7 @@ import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { isHudHerdrFork, isHudHerdrVersion, probeHerdrTarget } from '../../dist/runtime/herdr-socket.js';
 import { directExecEnv } from '../../dist/mcp/dispatch/proc.js';
-import { focusJobTab, hideJobTab } from '../../dist/cli/panel-pane.js';
+import { focusJobTab, hideJobTab, pinJobTab } from '../../dist/cli/panel-pane.js';
 import { codexPromptReady, DIRECT_PRE_SPAWN_ERROR_CODES, parseDirectStartReply, waitDirectReady } from '../../dist/mcp/dispatch/direct-exec.js';
 import { REPORT_SETTLED_EXIT, terminalFact } from '../../dist/mcp/cli-judge.js';
 import { reapWorkerTree, rememberWorkerTree, tabTreeGrant } from '../../dist/roles/worker-tree.js';
@@ -221,6 +221,7 @@ async function startForkHerdr(t, f, opts = {}) {
     paneReadText = '',
     crashOnStart = false,
     hiddenTabs = false,
+    hiddenTabsPeek = false,
   } = opts;
   const startRequests = [];
   const socketRequests = [];
@@ -249,8 +250,9 @@ async function startForkHerdr(t, f, opts = {}) {
       const reply = (result) => conn.write(JSON.stringify({ id: req.id, result }) + '\n');
       const err = (code, message = code) => conn.write(JSON.stringify({ id: req.id, error: { code, message } }) + '\n');
       if (req.method === 'ping') {
+        const capabilities = { ...(hiddenTabs ? { hidden_tabs: true } : {}), ...(hiddenTabsPeek ? { hidden_tabs_peek: true } : {}) };
         reply({ type: 'pong', version: '0.9.5-hud.3027f8dd', protocol: 22,
-          ...(hiddenTabs ? { capabilities: { hidden_tabs: true } } : {}) });
+          ...(Object.keys(capabilities).length ? { capabilities } : {}) });
         return;
       }
       if (req.method === 'events.subscribe') {
@@ -288,6 +290,7 @@ async function startForkHerdr(t, f, opts = {}) {
           pane_read_text: typeof paneReadText === 'function' ? paneReadText(req.params) : paneReadText,
           closed: false,
           hidden: req.params.hidden === true,
+          peek: false,
           agent_session: { kind: 'id', value: `synthetic-${req.params.kind}-session-${seq}`, source: 'synthetic', agent: req.params.kind },
         };
         tabs.set(launch_id, entry);
@@ -343,10 +346,16 @@ async function startForkHerdr(t, f, opts = {}) {
         if (req.method === 'tab.set_hidden' && !hiddenTabs) { err('unknown_method'); return; }
         const entry = [...tabs.values()].reverse().find((e) => !e.closed && e.tab_id === req.params.tab_id);
         if (!entry) { err('tab_not_found'); return; }
-        if (req.method === 'tab.focus') entry.hidden = false;
-        if (req.method === 'tab.set_hidden') entry.hidden = req.params.hidden;
+        if (req.method === 'tab.focus') {
+          if (hiddenTabsPeek) {
+            if (entry.hidden) { entry.hidden = false; entry.peek = true; }
+          } else {
+            entry.hidden = false;
+          }
+        }
+        if (req.method === 'tab.set_hidden') { entry.hidden = req.params.hidden; entry.peek = false; }
         reply({ type: 'tab_info', tab: { tab_id: entry.tab_id, launch_id: entry.launch_id, terminal_id: entry.terminal_id,
-          workspace_id: 'w4E', label: entry.label, ...(hiddenTabs ? { hidden: entry.hidden } : {}) } });
+          workspace_id: 'w4E', label: entry.label, ...(hiddenTabs ? { hidden: entry.hidden } : {}), ...(hiddenTabsPeek ? { peek: entry.peek } : {}) } });
         return;
       }
       if (req.method === 'pane.get') {
@@ -444,7 +453,7 @@ async function startForkHerdr(t, f, opts = {}) {
 
 test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling exit ignored, pane.exited clean & crash', { timeout: 60000 }, async (t) => {
   const f = await fixture(t, { failedRetentionMs: 250 });
-  const fork = await startForkHerdr(t, f, { reusedTabId: true, hiddenTabs: true });
+  const fork = await startForkHerdr(t, f, { reusedTabId: true, hiddenTabs: true, hiddenTabsPeek: true });
   writeCliRole(f, 'forkcli', 60, true, 'claude');
 
   const first = await f.call('hud_create', { role: 'forkcli', task: 'Synthetic fork CLI task 1.' });
@@ -483,11 +492,14 @@ test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling 
   assert.equal(entry1.hidden, true);
   assert.deepEqual(tabActions(), [], 'launch does not reveal the tab');
   assert.deepEqual(await focusJobTab(dir1, f.env), { ok: true });
-  assert.equal(entry1.hidden, false);
+  assert.deepEqual([entry1.hidden, entry1.peek], [false, true]);
+  assert.deepEqual(await pinJobTab(dir1, f.env), { ok: true });
+  assert.deepEqual([entry1.hidden, entry1.peek], [false, false]);
   assert.deepEqual(await hideJobTab(dir1, f.env), { ok: true });
-  assert.equal(entry1.hidden, true);
+  assert.deepEqual([entry1.hidden, entry1.peek], [true, false]);
   const expectedActions = [
     ['tab.focus', { tab_id: entry1.tab_id }],
+    ['tab.set_hidden', { tab_id: entry1.tab_id, hidden: false }],
     ['tab.set_hidden', { tab_id: entry1.tab_id, hidden: true }],
   ];
   assert.deepEqual(tabActions(), expectedActions);
@@ -519,6 +531,7 @@ test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling 
   assert.equal(entry2.tab_id, entry1.tab_id, 'test reuses public tab_id');
   assert.notEqual(entry2.launch_id, entry1.launch_id);
   assert.deepEqual(await focusJobTab(dir1, f.env), { ok: false, reason: 'tab closed' });
+  assert.deepEqual(await pinJobTab(dir1, f.env), { ok: false, reason: 'tab closed' });
   assert.deepEqual(await hideJobTab(dir1, f.env), { ok: false, reason: 'tab closed' });
   assert.deepEqual(tabActions(), expectedActions, 'a stale receipt cannot change the replacement tab');
   await until(() => cliState(dir2)?.supervisor_pid && cliState(dir2)?.pid === entry2.pid && fork.hasWatcher(), t.signal);
@@ -541,7 +554,7 @@ test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling 
 
 test('fork Pi tab worker: native pi worker extension, sibling exit ignored, clean exit & crash retention', { timeout: 60000 }, async (t) => {
   const f = await fixture(t, { failedRetentionMs: 250 });
-  const fork = await startForkHerdr(t, f, { reusedTabId: true, hiddenTabs: true });
+  const fork = await startForkHerdr(t, f, { reusedTabId: true, hiddenTabs: true, hiddenTabsPeek: true });
 
   const first = await f.call('hud_create', { role: 'imp', task: 'Synthetic fork Pi task.' });
   const dir1 = first.task_dir;
@@ -919,6 +932,7 @@ test('direct-exec CLI and Pi wait for interactive_ready before sending exactly o
     assert.equal(startingStatus.supervisor_pid, undefined);
     assert.equal(Object.hasOwn(fork.startRequests[0], 'hidden'), false, 'older forks start visible');
     assert.deepEqual(await focusJobTab(dir, f.env), { ok: true });
+    assert.deepEqual(await pinJobTab(dir, f.env), { ok: false, reason: 'tab pinning unavailable' });
     assert.deepEqual(await hideJobTab(dir, f.env), { ok: false, reason: 'hidden tabs unavailable' });
     assert.equal(fork.socketRequests.some((r) => r.method === 'tab.set_hidden'), false);
     await until(() => cliState(dir)?.supervisor_pid, t.signal);

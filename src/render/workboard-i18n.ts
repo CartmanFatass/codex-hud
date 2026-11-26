@@ -434,5 +434,5 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'screen is blank': '画面为空',
   'no screen yet': '尚无画面',
   'No progress yet': '尚无进展记录',
-  'Execution: show or hide the job’s tab; ⏎ opens it': '执行页：显示或隐藏任务标签页；⏎ 查看任务',
+  'Execution: peek/focus, pin visible, or hide the job’s tab; ⏎ opens it': '执行页：预览、固定或隐藏任务标签页；⏎ 查看任务',
 };

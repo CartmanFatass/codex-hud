@@ -32,7 +32,7 @@ export interface HerdrReply {
     version?: string;
     protocol?: number;
     shown?: boolean;
-    capabilities?: { hidden_tabs?: boolean; pane_strip?: boolean; guarded_prompt?: boolean };
+    capabilities?: { hidden_tabs?: boolean; hidden_tabs_peek?: boolean; pane_strip?: boolean; guarded_prompt?: boolean };
     strip?: PaneStripInfo;
     pane?: {
       pane_id: string;
@@ -60,7 +60,7 @@ export interface HerdrReply {
       agent_status?: string;
       agent_session?: { kind?: string; value?: string };
     }>;
-    tab?: { tab_id: string; launch_id?: string; terminal_id?: string; label?: string; hidden?: boolean };
+    tab?: { tab_id: string; launch_id?: string; terminal_id?: string; label?: string; hidden?: boolean; peek?: boolean };
     root_pane?: { pane_id: string; tab_id?: string; launch_id?: string; terminal_id?: string };
     argv?: string[];
     pid?: number;
@@ -110,6 +110,11 @@ export async function isHudHerdrFork(signal?: AbortSignal, env: NodeJS.ProcessEn
 export async function hasHerdrHiddenTabs(env = process.env): Promise<boolean> {
   const reply = await request('ping', {}, { timeoutMs: 500, env }).catch(() => null);
   return !reply?.error && reply?.result?.capabilities?.hidden_tabs === true;
+}
+
+export async function hasHerdrHiddenTabsPeek(env = process.env): Promise<boolean> {
+  const reply = await request('ping', {}, { timeoutMs: 500, env }).catch(() => null);
+  return !reply?.error && reply?.result?.capabilities?.hidden_tabs_peek === true;
 }
 
 export async function probeHerdrPaneStrip(env = process.env): Promise<{

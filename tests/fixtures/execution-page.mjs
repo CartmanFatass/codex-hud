@@ -16,7 +16,7 @@ const CLAUDE = { harness: 'claude', id: '5e55a0de-0000-4000-8000-000000000001' }
 const CODEX = { harness: 'codex', id: 'c0de0000-0000-4000-8000-000000000002' };
 const ago = (minutes) => new Date(NOW - minutes * 60000).toISOString();
 /** A tab worker's pane as the fork knows it; its tab starts hidden. */
-export const tabPane = (n, name, text) => ({ pane_id: `w4E:p${n}`, tab_id: `w4E:t${n}`, launch_id: `launch_${name}`, terminal_id: `term_${name}`, text, hidden: true });
+export const tabPane = (n, name, text) => ({ pane_id: `w4E:p${n}`, tab_id: `w4E:t${n}`, launch_id: `launch_${name}`, terminal_id: `term_${name}`, text, hidden: true, peek: false });
 export const panes = () => [
   tabPane(3, 'imp', ['$ npm run build', '', '────────────────────────', '• Edited src/render/execution-view.ts', '• Running the build',
     '\ttsc finished with 0 errors', `  ${'a very long synthetic line that cannot fit '.repeat(5)}`, '合成的中文屏幕内容，宽字符必须按列计算'.repeat(4),
@@ -25,9 +25,15 @@ export const panes = () => [
 ];
 
 /** A herdr fork that knows `list` and records every request. */
-export async function fakeFork(t, socket, list = panes()) {
+export async function fakeFork(t, socket, list = panes(), { hiddenTabs = true, hiddenTabsPeek = true } = {}) {
   const known = new Map(list.map((pane) => [pane.pane_id, pane]));
   const requests = [], open = new Set();
+  const leaveFocus = () => {
+    if (!hiddenTabsPeek) return;
+    for (const pane of known.values()) {
+      if (pane.peek) { pane.hidden = true; pane.peek = false; }
+    }
+  };
   const server = createServer((conn) => {
     open.add(conn);
     conn.on('close', () => open.delete(conn));
@@ -37,19 +43,34 @@ export async function fakeFork(t, socket, list = panes()) {
       requests.push(req);
       const send = (body) => conn.write(JSON.stringify({ id: req.id, ...body }) + '\n');
       const missing = (code) => send({ error: { code, message: code } });
-      if (req.method === 'ping') return send({ result: { type: 'pong', version: '0.9.5-hud.synthetic', capabilities: { hidden_tabs: true } } });
+      if (req.method === 'ping') {
+        const capabilities = { ...(hiddenTabs ? { hidden_tabs: true } : {}), ...(hiddenTabsPeek ? { hidden_tabs_peek: true } : {}) };
+        return send({ result: { type: 'pong', version: '0.9.5-hud.synthetic', ...(Object.keys(capabilities).length ? { capabilities } : {}) } });
+      }
       if (req.method === 'pane.read' || req.method === 'pane.get') {
         const pane = known.get(req.params.pane_id);
         if (!pane) return missing('pane_not_found');
-        const { text, hidden, ...info } = pane;
+        const { text, hidden, peek, ...info } = pane;
         return send({ result: req.method === 'pane.read' ? { type: 'pane_read', read: { pane_id: pane.pane_id, text } } : { type: 'pane_info', pane: info } });
       }
       if (['tab.get', 'tab.focus', 'tab.set_hidden'].includes(req.method)) {
+        if (req.method === 'tab.set_hidden' && !hiddenTabs) return missing('unknown_method');
         const pane = [...known.values()].find((p) => p.tab_id === req.params.tab_id);
         if (!pane) return missing('tab_not_found');
-        if (req.method === 'tab.focus') pane.hidden = false;
-        if (req.method === 'tab.set_hidden') pane.hidden = req.params.hidden;
-        return send({ result: { type: 'tab_info', tab: { tab_id: pane.tab_id, launch_id: pane.launch_id, terminal_id: pane.terminal_id, hidden: pane.hidden } } });
+        if (req.method === 'tab.focus') {
+          if (hiddenTabsPeek) {
+            for (const other of known.values()) if (other !== pane && other.peek) { other.hidden = true; other.peek = false; }
+            if (pane.hidden) { pane.hidden = false; pane.peek = true; }
+          } else {
+            pane.hidden = false;
+          }
+        }
+        if (req.method === 'tab.set_hidden') {
+          pane.hidden = req.params.hidden;
+          pane.peek = false;
+        }
+        return send({ result: { type: 'tab_info', tab: { tab_id: pane.tab_id, launch_id: pane.launch_id, terminal_id: pane.terminal_id,
+          ...(hiddenTabs ? { hidden: pane.hidden } : {}), ...(hiddenTabsPeek ? { peek: pane.peek } : {}) } } });
       }
       // Anything else (the panel's own housekeeping) is not part of this fork.
       return missing('unknown_method');
@@ -60,7 +81,7 @@ export async function fakeFork(t, socket, list = panes()) {
     for (const conn of open) conn.destroy();
     server.close();
   });
-  return { panes: known, requests, calls: (...methods) => requests.filter((r) => methods.includes(r.method)) };
+  return { panes: known, requests, leaveFocus, calls: (...methods) => requests.filter((r) => methods.includes(r.method)) };
 }
 
 /** Nine jobs under `root`: a worktree imp with a Sonic child and a scout, a reviewer asking, a second session's queued and quiet jobs, and three the page must leave out. */

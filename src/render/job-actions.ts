@@ -36,7 +36,7 @@ export function answerKeys(worker: OwnerWorker): string[] {
 }
 export function inspectorKeys(worker?: OwnerWorker): string[] {
   return ['Esc back', 'n subagents', ...(worker?.settledAt === null ? ['X stop'] : []),
-    '⏎ open', ...(worker && worker.state !== 'queued' && !isHeadless(worker) ? ['g job tab', 'H hide tab'] : []),
+    '⏎ open', ...(worker && worker.state !== 'queued' && !isHeadless(worker) ? ['g job tab', 'P pin tab', 'H hide tab'] : []),
     ...(worker?.state === 'failed' ? ['r request retry'] : [])];
 }
 /** The one-row prompt above the page while a stop waits for its answer. */
@@ -65,7 +65,7 @@ export function batchPromptRows(state: MonitorState, width: number): MonitorRow[
 export function openJobAction(next: MonitorState, input: WorkbenchInput, key: string, board: WorkboardSnapshot | undefined, result: (action?: MonitorOutcome['action']) => MonitorOutcome): MonitorOutcome | undefined {
   if (input.type !== 'key') return undefined;
   const digit = /^[1-4]$/.exec(input.text ?? '')?.[0], answering = digit !== undefined || key === 'answer-default';
-  const tabAction = input.text === 'g' ? 'focus-job-tab' : input.text === 'H' ? 'hide-job-tab' : undefined;
+  const tabAction = input.text === 'g' ? 'focus-job-tab' : input.text === 'P' ? 'pin-job-tab' : input.text === 'H' ? 'hide-job-tab' : undefined;
   if (!answering && !(key === 'stop-job' || tabAction || input.text === 'r')) return undefined;
   const job = jobUnderCursor(next, board);
   if (!job) return undefined;

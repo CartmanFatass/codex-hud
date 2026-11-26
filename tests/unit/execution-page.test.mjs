@@ -9,7 +9,7 @@ import { executionJobs, fakeFork, tabPane, IDS, NOW, PANE } from '../fixtures/ex
 import { viewFor, withState } from '../fixtures/state-helpers.mjs';
 import { PanelExecution } from '../../dist/panel/execution.js';
 import { ScreenSampler, thumbnailLines } from '../../dist/collectors/execution-screens.js';
-import { focusJobTab, hideJobTab } from '../../dist/cli/panel-pane.js';
+import { focusJobTab, hideJobTab, pinJobTab } from '../../dist/cli/panel-pane.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -25,11 +25,11 @@ async function until(what, probe, ms = 10000) {
     await pause(20);
   }
 }
-async function setup(t) {
+async function setup(t, forkOpts) {
   const root = fs.mkdtempSync(join(tmpdir(), 'exec-page-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const socket = join(root, 'h.sock');
-  const fork = await fakeFork(t, socket);
+  const fork = await fakeFork(t, socket, undefined, forkOpts);
   return { root, socket, fork, ...executionJobs(root, socket) };
 }
 /** Collect as the panel does with the page up, and wait for both tab workers' screens. */
@@ -170,7 +170,7 @@ test('a thumbnail keeps the last six lines that say something', () => {
   assert.deepEqual(thumbnailLines(screen), ['two', 'three', 'four', '    five', 'six', 'seven']);
 });
 
-test('Enter opens the job’s Inspector and Esc returns; g and H reveal and hide that job’s own tab only', async (t) => {
+test('Enter opens the job’s Inspector and Esc returns; g, P and H peek, pin and hide that job’s own tab only', async (t) => {
   const f = await setup(t), execution = await opened(t, f), view = execution.view(f.project);
   const decoder = new WorkbenchInputDecoder('workboard');
   /** Draw, pass one key through the panel's own filter, and handle it. */
@@ -181,32 +181,56 @@ test('Enter opens the job’s Inspector and Esc returns; g and H reveal and hide
     return handleMonitorInput(frame.state, input, { frame, nowMs: NOW });
   };
   const tabCalls = () => f.fork.calls('tab.get', 'tab.focus', 'tab.set_hidden').map((r) => [r.method, r.params.tab_id, r.params.hidden].filter((v) => v !== undefined));
+  const expectedType = { g: 'focus-job-tab', P: 'pin-job-tab', H: 'hide-job-tab' };
   const act = async (state, bytes, name, run) => {
     const { action } = press(state, bytes);
-    assert.deepEqual(action, { type: bytes === 'g' ? 'focus-job-tab' : 'hide-job-tab', dir: f.dir(name) });
+    assert.deepEqual(action, { type: expectedType[bytes], dir: f.dir(name) });
     const before = tabCalls().length;
     assert.deepEqual(await run(action.dir, f.env), { ok: true });
     return tabCalls().slice(before);
   };
 
   let state = render(view).state;
-  assert.match(text(render(view, { state })), /Esc back {2}g job tab {2}H hide tab {2}⏎ details/);
+  assert.match(text(render(view, { state })), /Esc back {2}g job tab {2}P pin tab {2}H hide tab {2}⏎ details/);
+  assert.match(text(render(view, { state, lang: 'zh' })), /Esc 返回 {2}g 任务页 {2}P 固定页 {2}H 隐藏页 {2}⏎ 详情/);
+  // g sends focus only: the hidden tab peeks and re-hides once focus leaves.
   assert.deepEqual(await act(state, 'g', 'reviewer', focusJobTab), [['tab.get', 'w4E:t4'], ['tab.focus', 'w4E:t4']]);
-  assert.equal(f.fork.panes.get('w4E:p4').hidden, false);
+  assert.deepEqual([f.fork.panes.get('w4E:p4').hidden, f.fork.panes.get('w4E:p4').peek], [false, true]);
+  f.fork.leaveFocus();
+  assert.deepEqual([f.fork.panes.get('w4E:p4').hidden, f.fork.panes.get('w4E:p4').peek], [true, false]);
+  // g then P: P sends set_hidden false only, pinning the tab visible after focus leaves.
+  assert.deepEqual(await act(state, 'g', 'reviewer', focusJobTab), [['tab.get', 'w4E:t4'], ['tab.focus', 'w4E:t4']]);
+  assert.deepEqual(await act(state, 'P', 'reviewer', pinJobTab), [['tab.get', 'w4E:t4'], ['tab.set_hidden', 'w4E:t4', false]]);
+  assert.deepEqual([f.fork.panes.get('w4E:p4').hidden, f.fork.panes.get('w4E:p4').peek], [false, false]);
+  f.fork.leaveFocus();
+  assert.deepEqual([f.fork.panes.get('w4E:p4').hidden, f.fork.panes.get('w4E:p4').peek], [false, false]);
+  // H sends set_hidden true only.
   assert.deepEqual(await act(state, 'H', 'reviewer', hideJobTab), [['tab.get', 'w4E:t4'], ['tab.set_hidden', 'w4E:t4', true]]);
-  assert.equal(f.fork.panes.get('w4E:p4').hidden, true);
+  assert.deepEqual([f.fork.panes.get('w4E:p4').hidden, f.fork.panes.get('w4E:p4').peek], [true, false]);
 
   state = press(state, 'j').state;
   assert.equal(state.project.nav.cursor, cards('imp')[0]);
   assert.deepEqual(await act(state, 'g', 'imp', focusJobTab), [['tab.get', 'w4E:t3'], ['tab.focus', 'w4E:t3']]);
-  assert.equal(f.fork.panes.get('w4E:p3').hidden, false);
+  assert.deepEqual([f.fork.panes.get('w4E:p3').hidden, f.fork.panes.get('w4E:p3').peek], [false, true]);
   assert.equal(f.fork.panes.get('w4E:p4').hidden, true, 'no other job’s tab moved');
+  assert.deepEqual(await act(state, 'P', 'imp', pinJobTab), [['tab.get', 'w4E:t3'], ['tab.set_hidden', 'w4E:t3', false]]);
+  assert.equal(f.fork.panes.get('w4E:p4').hidden, true, 'pin touches only the selected job’s tab');
 
-  // Enter: that job's Inspector, with the same two actions, then back to the same card.
+  // Reused public tab_id with another launch_id: g, P and H all refuse without mutating the replacement tab.
+  f.fork.panes.get('w4E:p4').launch_id = 'launch_replacement';
+  const beforeStale = f.fork.calls('tab.focus', 'tab.set_hidden').length;
+  for (const run of [focusJobTab, pinJobTab, hideJobTab]) {
+    assert.deepEqual(await run(f.dir('reviewer'), f.env), { ok: false, reason: 'tab closed' });
+  }
+  assert.equal(f.fork.calls('tab.focus', 'tab.set_hidden').length, beforeStale);
+
+  // Enter: that job's Inspector, with the same three actions, then back to the same card.
   const inspector = press(state, '\r').state;
   assert.deepEqual([inspector.subpage.kind, inspector.subpage.from, inspector.subpage.target.workerId], ['inspector', 'execution', `thin-job:${IDS.imp}`]);
   assert.match(text(render(view, { state: inspector, workboard: execution.board() })), /EXEC-01|synthetic page/);
   assert.deepEqual(press(inspector, 'g').action, { type: 'focus-job-tab', dir: f.dir('imp') });
+  assert.deepEqual(press(inspector, 'P').action, { type: 'pin-job-tab', dir: f.dir('imp') });
+  assert.deepEqual(press(inspector, 'H').action, { type: 'hide-job-tab', dir: f.dir('imp') });
   const back = press(inspector, '\x1b').state;
   assert.equal(back.subpage, undefined);
   assert.equal(back.project.view.kind, 'execution');
@@ -215,14 +239,41 @@ test('Enter opens the job’s Inspector and Esc returns; g and H reveal and hide
   // A headless or queued job has no tab: the keys do nothing and the footer does not offer them.
   for (const name of ['sonic', 'queued']) {
     const on = onExecution({ cursor: cards(name)[0] });
-    assert.doesNotMatch(text(render(view, { state: on })), /job tab|hide tab/);
+    assert.doesNotMatch(text(render(view, { state: on })), /job tab|pin tab|hide tab/);
     assert.equal(press(on, 'g').action, undefined);
+    assert.equal(press(on, 'P').action, undefined);
     assert.equal(press(on, 'H').action, undefined);
   }
   // A tree row stands for its job.
   assert.deepEqual(press(onExecution({ cursor: `project:exec-tree:${IDS.reviewer}` }), 'g').action, { type: 'focus-job-tab', dir: f.dir('reviewer') });
+  assert.deepEqual(press(onExecution({ cursor: `project:exec-tree:${IDS.reviewer}` }), 'P').action, { type: 'pin-job-tab', dir: f.dir('reviewer') });
+  assert.deepEqual(press(onExecution({ cursor: `project:exec-tree:${IDS.reviewer}` }), 'H').action, { type: 'hide-job-tab', dir: f.dir('reviewer') });
   // Elsewhere in the panel the letters stay inert.
+  assert.equal(acceptsMonitorInput(initialMonitorState(), { type: 'key', text: 'P' }), false);
   assert.equal(acceptsMonitorInput(initialMonitorState(), { type: 'key', text: 'H' }), false);
+});
+
+test('older forks without hidden_tabs_peek keep today’s g/H behaviour and refuse P without calling tab.set_hidden', async (t) => {
+  // Fork with hidden_tabs only (no hidden_tabs_peek).
+  {
+    const f = await setup(t, { hiddenTabs: true, hiddenTabsPeek: false });
+    assert.deepEqual(await focusJobTab(f.dir('reviewer'), f.env), { ok: true });
+    assert.equal(f.fork.panes.get('w4E:p4').hidden, false);
+    assert.deepEqual(await pinJobTab(f.dir('reviewer'), f.env), { ok: false, reason: 'tab pinning unavailable' });
+    assert.equal(f.fork.calls('tab.set_hidden').length, 0);
+    assert.deepEqual(await hideJobTab(f.dir('reviewer'), f.env), { ok: true });
+    assert.equal(f.fork.panes.get('w4E:p4').hidden, true);
+    assert.deepEqual(f.fork.calls('tab.focus', 'tab.set_hidden').map((r) => [r.method, r.params]),
+      [['tab.focus', { tab_id: 'w4E:t4' }], ['tab.set_hidden', { tab_id: 'w4E:t4', hidden: true }]]);
+  }
+  // Older fork without hidden_tabs at all.
+  {
+    const f = await setup(t, { hiddenTabs: false, hiddenTabsPeek: false });
+    assert.deepEqual(await focusJobTab(f.dir('reviewer'), f.env), { ok: true });
+    assert.deepEqual(await pinJobTab(f.dir('reviewer'), f.env), { ok: false, reason: 'tab pinning unavailable' });
+    assert.deepEqual(await hideJobTab(f.dir('reviewer'), f.env), { ok: false, reason: 'hidden tabs unavailable' });
+    assert.equal(f.fork.calls('tab.set_hidden').length, 0);
+  }
 });
 
 test('the live panel reads screens only with the page up, and its keys reach the fork', { timeout: 60000 }, async (t) => {
@@ -252,9 +303,12 @@ test('the live panel reads screens only with the page up, and its keys reach the
   await until('the first screen on the page', () => stripAnsi(stdout).includes('Reading three files'));
   child.stdin.write('g');
   await until('the tab to come forward', () => f.fork.calls('tab.focus').length === 1);
+  child.stdin.write('P');
+  await until('the tab to pin', () => f.fork.calls('tab.set_hidden').length === 1);
   child.stdin.write('H');
-  await until('the tab to hide', () => f.fork.calls('tab.set_hidden').length === 1);
-  assert.deepEqual([...f.fork.calls('tab.focus', 'tab.set_hidden')].map((r) => r.params), [{ tab_id: 'w4E:t4' }, { tab_id: 'w4E:t4', hidden: true }]);
+  await until('the tab to hide', () => f.fork.calls('tab.set_hidden').length === 2);
+  assert.deepEqual([...f.fork.calls('tab.focus', 'tab.set_hidden')].map((r) => r.params),
+    [{ tab_id: 'w4E:t4' }, { tab_id: 'w4E:t4', hidden: false }, { tab_id: 'w4E:t4', hidden: true }]);
 
   child.stdin.write('\r');
   await quiet('no screens are read under an Inspector');

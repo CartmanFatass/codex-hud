@@ -194,8 +194,8 @@ export interface MonitorOutcome {
     | { type: 'request-retry'; home: string; jobId: string }
     | { type: 'copy-advisor'; root: string; session: string; skill: string; path: string }
     | { type: 'refresh-models' }
-    /** Owner micro-actions on a HUD job (spec §2.2): focus/hide its herdr tab, answer its open question, stop it. */
-    | { type: 'focus-job-tab' | 'hide-job-tab'; dir: string }
+    /** Owner micro-actions on a HUD job (spec §2.2): focus/pin/hide its herdr tab, answer its open question, stop it. */
+    | { type: 'focus-job-tab' | 'pin-job-tab' | 'hide-job-tab'; dir: string }
     | { type: 'answer-job'; home: string; jobId: string; qid: string; answer: string; role: string | null }
     | { type: 'stop-job'; dir: string }
     | { type: 'batch-control'; flow: string; control: 'pause' | 'resume' | 'stop' }

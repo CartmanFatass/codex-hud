@@ -249,7 +249,7 @@ export function acceptsMonitorInput(state: MonitorState | undefined, input: Work
   if (acceptsRawText(state)) return true;
   if (state.overlay) return false;
   if (input.text === '/') return filterScope(state) !== undefined;
-  return (input.text === 'g' || input.text === 'H') && (state.subpage?.kind === 'inspector' || executionPageOpen(state));
+  return (input.text === 'g' || input.text === 'P' || input.text === 'H') && (state.subpage?.kind === 'inspector' || executionPageOpen(state));
 }
 /** The Execution page itself, with no Inspector over it. */
 export const executionPageOpen = (state: MonitorState) =>

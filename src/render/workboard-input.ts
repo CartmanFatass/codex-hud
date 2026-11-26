@@ -252,9 +252,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       }
       return result();
     }
-    if (input.type === 'key' && (input.text === 'g' || input.text === 'H') && !control && projectPageOf(next) === 'execution') {
+    if (input.type === 'key' && (input.text === 'g' || input.text === 'P' || input.text === 'H') && !control && projectPageOf(next) === 'execution') {
       const job = rows[at]?.execJob;
-      return result(job?.tab ? { type: input.text === 'g' ? 'focus-job-tab' : 'hide-job-tab', dir: job.dir } : undefined);
+      const type = input.text === 'g' ? 'focus-job-tab' : input.text === 'P' ? 'pin-job-tab' : 'hide-job-tab';
+      return result(job?.tab ? { type, dir: job.dir } : undefined);
     }
     if (['enter', 'activate', 'open-session'].includes(key)) return result(activate(undefined, key === 'open-session'));
     if ((key === 'project-prev' || key === 'project-next') && !listed) {

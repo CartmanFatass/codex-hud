@@ -207,7 +207,7 @@
     "",
     "",
     "",
-    "            Esc back  n subagents  X stop  ⏎ open  g job tab  H hide tab  ? help"
+    " Esc back  n subagents  X stop  ⏎ open  g job tab  P pin tab  H hide tab  ? help"
   ],
   "asking-80-en": [
     "‹ Inspector · j0000000000000004",
@@ -249,7 +249,7 @@
     "",
     "",
     "",
-    "            Esc back  n subagents  X stop  ⏎ open  g job tab  H hide tab  ? help"
+    " Esc back  n subagents  X stop  ⏎ open  g job tab  P pin tab  H hide tab  ? help"
   ],
   "settings-80-en": [
     "‹ Settings                                                               unsaved",
@@ -368,9 +368,9 @@
     "        Inspector for the selected job",
     "n       Jobs or Inspector: show this",
     "        session’s native subagents",
-    "g H     Inspector: reveal/focus or",
-    "        hide the job tab; headless",
-    "        output is shown here",
+    "g P H   Inspector: peek/focus, pin",
+    "        visible, or hide the job tab;",
+    "        headless output is shown here",
     "1-4 d   job: answer its open question",
     "X       job: stop (y confirms); Jobs",
     "        batch: pause/resume/stop",
@@ -380,11 +380,11 @@
     "[ ]     previous / next project",
     "⏎       Accept all: record all pending",
     "        slices",
-    "g H     Execution: show or hide the",
-    "        job’s tab; ⏎ opens it",
+    "g P H   Execution: peek/focus, pin",
+    "        visible, or hide the job’s",
+    "        tab; ⏎ opens it",
     "",
     "Control ──────────────────────────────",
-    "c C     role: next / previous preset",
     "                                                                        Esc back"
   ],
   "home-120-en": [
@@ -595,7 +595,7 @@
     "",
     "",
     "",
-    "                                                    Esc back  n subagents  X stop  ⏎ open  g job tab  H hide tab  ? help"
+    "                                         Esc back  n subagents  X stop  ⏎ open  g job tab  P pin tab  H hide tab  ? help"
   ],
   "asking-120-en": [
     "‹ Inspector · j0000000000000004",
@@ -637,7 +637,7 @@
     "",
     "",
     "",
-    "                                                    Esc back  n subagents  X stop  ⏎ open  g job tab  H hide tab  ? help"
+    "                                         Esc back  n subagents  X stop  ⏎ open  g job tab  P pin tab  H hide tab  ? help"
   ],
   "settings-120-en": [
     "‹ Settings                                                                                                       unsaved",
@@ -752,8 +752,8 @@
     "        job",
     "n       Jobs or Inspector: show this session’s native",
     "        subagents",
-    "g H     Inspector: reveal/focus or hide the job tab;",
-    "        headless output is shown here",
+    "g P H   Inspector: peek/focus, pin visible, or hide the",
+    "        job tab; headless output is shown here",
     "1-4 d   job: answer its open question",
     "X       job: stop (y confirms); Jobs batch:",
     "        pause/resume/stop",
@@ -762,7 +762,8 @@
     "Project ──────────────────────────────────────────────────",
     "[ ]     previous / next project",
     "⏎       Accept all: record all pending slices",
-    "g H     Execution: show or hide the job’s tab; ⏎ opens it",
+    "g P H   Execution: peek/focus, pin visible, or hide the",
+    "        job’s tab; ⏎ opens it",
     "",
     "Control ──────────────────────────────────────────────────",
     "c C     role: next / previous preset",
@@ -772,7 +773,6 @@
     "i Del   place: add / remove; harness: add back / off",
     "K J     place: move up / down",
     "m       role/place: picker in this pane; one click or",
-    "        Enter sets. In a draft, fill only; else save.",
     "                                                                                                                Esc back"
   ],
   "settings-40-en": [

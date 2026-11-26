@@ -1071,7 +1071,7 @@ Execution shows one project's running and waiting work, from every session and p
 - **Headless jobs** show their last three progress lines, or the newest lines of their output while they have reported none.
 - **Delegation:** a tree per main session (this pane's first): its jobs, then the Sonic children and prewalk scouts each started. Settled jobs appear here while they are part of a live job's family.
 
-Enter (or a second click) opens the selected job's Inspector; Esc returns to the same card. `g` reveals and focuses that tab worker's herdr tab and `H` hides it again, from a card, a tree row or the Inspector, with the same conditions as in [Inspector](#inspector). Headless and queued jobs have no tab.
+Enter (or a second click) opens the selected job's Inspector; Esc returns to the same card. `g` peeks/focuses that tab worker's herdr tab, `P` pins it visible, and `H` hides it again, from a card, a tree row or the Inspector, with the same conditions as in [Inspector](#inspector). Headless and queued jobs have no tab.
 
 Screens are read from herdr (`pane.read`, then `pane.get` to confirm the pane is still the job's) only while this page is on screen: at most one round every two seconds, eight panes a round (more take turns), and the panel repaints only when a screen changed. Help, Settings, an Inspector or any other page stops the reads. Nothing read from a screen is stored or sent anywhere.
 
@@ -1158,7 +1158,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
 | `m` | Control role or place: choose a model directly (or click `[model ▾]`). Type to filter, ↑↓ to pick, Enter to save (or fill an open draft). In the picker, one click sets, Esc clears then closes, and Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
-| `g` / `H` | Execution page or Inspector: `g` reveals and focuses the job's herdr tab; `H` hides it on a fork with hidden-tab support. Headless jobs have no tab |
+| `g` / `P` / `H` | Execution page or Inspector: `g` focuses the job's herdr tab (as a temporary peek that re-hides when focus leaves on a fork with `hidden_tabs_peek`, or revealing it on older forks); `P` pins it visible (`tab.set_hidden` `false`, requires `hidden_tabs_peek`); `H` hides it (`tab.set_hidden` `true`, requires `hidden_tabs`). Headless jobs have no tab |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) in Inspector, where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | Jobs, on a working or paused batch row: the one prompt for the whole batch (`p` pause or `r` resume, `s` stop; any other key cancels). Inspector, on an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then the bundled `hud-reap` runs and the panel reads again); any other key cancels |
 | Enter | Home: open the project or the request in its Project tab; Jobs and the Execution page: open Inspector; Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
@@ -1179,7 +1179,7 @@ The model picker is an exception: one click sets a model and scrolling keeps the
 Press `?` for shortcuts grouped by where they work.
 From Project or Control, Help opens at that tab’s section; from Home or Settings it opens at Everywhere.
 Marks are grouped by route (the tier bars `▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places.
-`g` brings forward the job's herdr tab; `H` hides it again. Headless jobs show Output instead.
+`g` peeks/focuses the job's herdr tab; `P` pins it visible; `H` hides it again. Headless jobs show Output instead.
 At 80 columns and wider, Marks sit to the right of the shortcuts.
 Scroll with ↑↓, PgUp/PgDn or the wheel; Esc, `?` or Enter returns to the previous page.
 
@@ -1190,7 +1190,7 @@ Ask the main session to read one when needed.
 
 A job's Inspector shows the original open question and report text (up to 4 KiB; open the report file for the rest), the worker's signature-checked declared summary, role/harness, model/effort, package, state, checks, flow, local timestamps and recorded progress. **Files** includes the brief, questions and answers, reviews and report. Tab selects a file or a Sonic child job; Enter opens it. With no file selected, `o` opens the report or another collected job file. With no Git diff, **Reported files** shows up to 12 worker-listed paths, not verified changes. A headless job's **Output** follows the newest displayable lines of `stdout.jsonl`.
 
-When the running herdr fork advertises `hidden_tabs`, interactive CLI and pi worker tabs start hidden unless the role sets `"tab_visible": true`. The workspace tab bar shows a hidden-tab count instead of their labels. Press `g` in Inspector to reveal and focus the job's tab. Return to Inspector and press `H` to hide the same tab without stopping the worker. A crash does not reveal a hidden tab: it stays available through Inspector until the usual failure retention ends. On an older fork, tabs start visible and `g` still focuses them; hiding is unavailable.
+When the running herdr fork advertises `hidden_tabs`, interactive CLI and pi worker tabs start hidden unless the role sets `"tab_visible": true`. The workspace tab bar shows a hidden-tab count instead of their labels. On a fork that also advertises `hidden_tabs_peek`, pressing `g` in Inspector or Execution focuses the job's tab as a temporary peek (it hides again when focus leaves), pressing `P` pins it visible (`tab.set_hidden` `false`) so it stays in the tab bar after focus leaves, and pressing `H` hides the same tab without stopping the worker. Without `hidden_tabs_peek`, `g` keeps today's behaviour (revealing and focusing on a `hidden_tabs` fork, or focusing visible tabs on an older fork) and `P` reports that pinning is unavailable; without `hidden_tabs`, tabs start visible and hiding is also unavailable. A crash does not reveal a hidden tab: it stays available through Inspector until the usual failure retention ends.
 
 Press `n` or click **subagents** from Jobs or a job Inspector to inspect the calling session's native Claude or Codex tree. It is scanned only while that view is open; incomplete coverage is marked. The tree shows the role and started, activity and ended times when observed. Tab selects a native transcript; Enter or `o` opens it. Esc returns to Jobs or the job Inspector.
 

@@ -50,7 +50,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['a', 'expand / fold other projects'],
     ['v', 'open Jobs; Enter opens Inspector for the selected job'],
     ['n', 'Jobs or Inspector: show this session’s native subagents'],
-    ['g H', 'Inspector: reveal/focus or hide the job tab; headless output is shown here'],
+    ['g P H', 'Inspector: peek/focus, pin visible, or hide the job tab; headless output is shown here'],
     ['1-4 d', 'job: answer its open question'],
     ['X', 'job: stop (y confirms); Jobs batch: pause/resume/stop'],
     ['r', 'failed job: request a retry'],
@@ -58,7 +58,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   const project = [
     ['[ ]', 'previous / next project'],
     ['⏎', 'Accept all: record all pending slices'],
-    ['g H', 'Execution: show or hide the job’s tab; ⏎ opens it'],
+    ['g P H', 'Execution: peek/focus, pin visible, or hide the job’s tab; ⏎ opens it'],
   ];
   const control = [
     ['c C', 'role: next / previous preset'],
@@ -338,7 +338,7 @@ export function renderWorkboardFrame(
         : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
-        : project ? (page === 'execution' ? ['Esc back', ...(selected?.execJob?.tab ? ['g job tab', 'H hide tab'] : []), ...(selected ? ['⏎ details'] : [])]
+        : project ? (page === 'execution' ? ['Esc back', ...(selected?.execJob?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : []), ...(selected ? ['⏎ details'] : [])]
           : page === 'waiting' ? ['o file', 'Esc back']
           : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
