@@ -1,4 +1,4 @@
-/** `hud select-send`: plugin action, minimal popup composer, and detached guarded retry. */
+/** `hud select-send`: plugin action and minimal popup composer. */
 import { StringDecoder } from 'node:string_decoder';
 import { getHudHome } from '../hud-home.js';
 import { setDisplayConfig } from '../render/hud-config.js';
@@ -21,7 +21,7 @@ import {
   readAndRemoveSelectionHandoff,
   refreshSelectionExcerpt,
   resolveSelectionTarget,
-  runDetachedRetryFile,
+  waitAndRetryGuardedPrompt,
   type PluginSelectionContext,
 } from '../roles/select-send.js';
 import { loadSettings } from '../settings.js';
@@ -30,8 +30,7 @@ import { CliError } from './private-home.js';
 
 export const SELECT_SEND_HELP =
   'Usage: hud select-send --action             Invoked by the herdr selection plugin action\n' +
-  '       hud select-send --composer [--file PATH]  Open the selection composer in the current terminal\n' +
-  '       hud select-send --retry PATH         Deliver a pending guarded selection when prompt is idle\n';
+  '       hud select-send --composer [--file PATH]  Open the selection composer in the current terminal\n';
 
 const PASTE_START = '\x1b[200~';
 const PASTE_END = '\x1b[201~';
@@ -128,7 +127,6 @@ export interface ComposerSessionOptions {
   stdin: NodeJS.ReadableStream & { isTTY?: boolean; setRawMode?: (mode: boolean) => void };
   stdout: NodeJS.WritableStream & { isTTY?: boolean; columns?: number; rows?: number };
   now?: () => Date;
-  retryMode?: 'detach' | 'inline' | 'none';
   onFrame?: (lines: string[], state: ComposerState) => void;
 }
 
@@ -192,7 +190,7 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
   opts.stdin.resume();
 
   const decoder = new ComposerKeyDecoder();
-  let busy = false;
+  let submission: AbortController | undefined;
 
   return new Promise((resolve) => {
     let finished = false;
@@ -200,6 +198,7 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
     const done = (result: { code: number; sent: boolean; message?: string; targetPane?: string | null }) => {
       if (finished) return;
       finished = true;
+      submission?.abort();
       opts.stdin.off('data', onData);
       opts.stdin.off('end', onEnd);
       if (isTty && 'off' in opts.stdout) opts.stdout.off('resize', onResize);
@@ -212,18 +211,20 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
     };
 
     const submit = async () => {
-      if (busy || finished) return;
+      if (submission || finished) return;
       const targetPane = state.targetPane;
       if (!targetPane) {
         state = { ...state, error: t('No main session found for this project.') };
         paint();
         return;
       }
-      busy = true;
-      state = { ...state, sending: true, error: null };
+      submission = new AbortController();
+      const { signal } = submission;
+      state = { ...state, phase: 'sending', error: null };
       paint();
       try {
         const refreshed = await refreshSelectionExcerpt(ctx, state.excerpt, baseline, opts.env);
+        if (finished) return;
         if (refreshed.baseline !== undefined) baseline = refreshed.baseline;
         if (refreshed.stale && refreshed.changed) {
           ctx = {
@@ -234,7 +235,7 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           };
           state = {
             ...state,
-            sending: false,
+            phase: 'editing',
             stale: true,
             excerpt: refreshed.excerpt,
             scroll: 0,
@@ -246,7 +247,7 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           return;
         }
         if (state.excerpt.empty) {
-          state = { ...state, sending: false, notice: t('Selection is empty; nothing to send.') };
+          state = { ...state, phase: 'editing', notice: t('Selection is empty; nothing to send.') };
           paint();
           return;
         }
@@ -255,24 +256,29 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           source: { ...state.source, time: now().toISOString() },
           question: state.question,
         });
-        const delivery = await deliverSelection(targetPane, message, opts.hudHome, opts.env, {
-          retry: opts.retryMode ?? 'detach',
-        });
+        let delivery = await deliverSelection(targetPane, message, opts.hudHome, opts.env, signal);
+        if (finished) return;
+        if (delivery.retryPrompt) {
+          state = { ...state, phase: 'waiting' };
+          paint();
+          delivery = await waitAndRetryGuardedPrompt(targetPane, message, opts.hudHome, delivery.retryPrompt, opts.env, signal);
+          if (finished) return;
+        }
         if (!delivery.ok) {
-          state = { ...state, sending: false, error: delivery.error ?? 'delivery failed' };
+          state = { ...state, phase: 'editing', error: t(delivery.error ?? 'Delivery failed.') };
           paint();
           return;
         }
         done({ code: 0, sent: true, message, targetPane });
       } finally {
-        busy = false;
+        submission = undefined;
       }
     };
 
     const onData = (chunk: Buffer | string) => {
       if (finished) return;
       const { width, height } = size();
-      const bannerRows = state.error || state.sending || state.notice || state.stale ? 1 : 0;
+      const bannerRows = state.error || state.phase !== 'editing' || state.notice || state.stale ? 1 : 0;
       const viewportRows = Math.max(1, height - bannerRows - 4);
       const maxScroll = Math.max(0, excerptDisplayLines(state.excerpt, Math.max(1, width - 2)).length - viewportRows);
       for (const key of decoder.push(chunk)) {
@@ -282,12 +288,9 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           done({ code: 0, sent: false });
           return;
         }
-        if (next.intent === 'submit') {
-          void submit();
-          return;
-        }
+        if (next.intent === 'submit') void submit();
       }
-      paint();
+      if (!submission) paint();
     };
 
     const onEnd = () => done({ code: 0, sent: false });
@@ -335,9 +338,6 @@ export async function selectSendCommand(args: readonly string[], io: HudIO): Pro
   }
   if (args[0] === '--composer' && (args.length === 1 || (args.length === 3 && args[1] === '--file' && args[2]))) {
     return runSelectSendComposer(io.env, args[2]);
-  }
-  if (args.length === 2 && args[0] === '--retry' && args[1]) {
-    return runDetachedRetryFile(args[1], io.env);
   }
   throw new CliError(SELECT_SEND_HELP.trimEnd());
 }

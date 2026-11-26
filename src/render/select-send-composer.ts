@@ -19,7 +19,7 @@ export interface ComposerState {
   readonly scroll: number;
   readonly notice: string | null;
   readonly error: string | null;
-  readonly sending: boolean;
+  readonly phase: 'editing' | 'sending' | 'waiting';
 }
 
 export type ComposerKey =
@@ -55,7 +55,7 @@ export function createComposerState(input: {
     scroll: 0,
     notice: input.notice ?? null,
     error: input.error ?? null,
-    sending: false,
+    phase: 'editing',
   };
 }
 
@@ -131,6 +131,11 @@ function sliceQuestionWindow(text: string, cursor: number, maxCols: number): { b
   };
 }
 
+function guardedWaitText(width: number): string {
+  const full = t("Waiting for the main session's prompt to be empty · Esc cancels");
+  return visualLength(full) <= width ? full : t('Waiting · Esc cancel');
+}
+
 export function renderSelectSendComposer(
   state: ComposerState,
   opts: { width: number; height: number; nowMs: number }
@@ -156,8 +161,8 @@ export function renderSelectSendComposer(
   // 2. Optional banner (error, notice, or stale alert).
   const banner = state.error
     ? { text: state.error, paint: theme.error }
-    : state.sending
-      ? { text: t('Sending…'), paint: theme.info }
+    : state.phase !== 'editing'
+      ? { text: state.phase === 'waiting' ? guardedWaitText(width) : t('Sending…'), paint: theme.info }
       : state.notice
         ? { text: state.notice, paint: state.stale ? theme.warning : theme.info }
         : state.stale
@@ -204,16 +209,17 @@ export function renderSelectSendComposer(
   // 5. Question input line.
   const promptLabel = t('Question: ');
   const promptStyled = theme.accent(promptLabel);
-  const cursorMark = state.sending ? '' : theme.selected('▏');
-  const inputBudget = Math.max(1, width - visualLength(promptLabel) - (state.sending ? 0 : 1));
+  const editing = state.phase === 'editing';
+  const cursorMark = editing ? theme.selected('▏') : '';
+  const inputBudget = Math.max(1, width - visualLength(promptLabel) - (editing ? 1 : 0));
   const { before, after } = sliceQuestionWindow(state.question, state.cursor, inputBudget);
   rows.push(fit(promptStyled + theme.value(before) + cursorMark + theme.value(after), width));
 
   // 6. Footer hints (kept whole when fitted).
   const hints = [
-    ...(state.targetPane && !state.excerpt.empty ? [t('Enter send')] : []),
-    t('Esc cancel'),
-    ...(overflow ? [t('↑↓ scroll')] : []),
+    ...(editing && state.targetPane && !state.excerpt.empty ? [t('Enter send')] : []),
+    ...(state.phase !== 'waiting' ? [t('Esc cancel')] : []),
+    ...(editing && overflow ? [t('↑↓ scroll')] : []),
   ];
   rows.push(fit(theme.dim(fitWholeHints(hints, width)), width));
 
@@ -228,7 +234,7 @@ export function applyComposerKey(
   key: ComposerKey,
   maxScroll = Infinity
 ): { state: ComposerState; intent: 'none' | 'submit' | 'cancel' } {
-  if (state.sending) {
+  if (state.phase !== 'editing') {
     return key.type === 'cancel' ? { state, intent: 'cancel' } : { state, intent: 'none' };
   }
   const chars = [...state.question];

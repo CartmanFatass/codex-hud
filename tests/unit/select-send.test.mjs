@@ -21,7 +21,7 @@ import {
   createComposerState,
   renderSelectSendComposer,
 } from '../../dist/render/select-send-composer.js';
-import { ComposerKeyDecoder, runComposerSession } from '../../dist/cli/select-send.js';
+import { ComposerKeyDecoder, runComposerSession, selectSendCommand } from '../../dist/cli/select-send.js';
 import { panelActionLine } from '../../dist/collectors/panel-actions.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
@@ -194,7 +194,6 @@ test('worker pane selection delivers excerpt, job source, and question once to j
     stdin,
     stdout,
     now: () => fixedNow,
-    retryMode: 'none',
     onFrame: (lines) => frames.push(lines),
   });
 
@@ -260,7 +259,7 @@ test('non-worker pane routes to its own project main session (not another projec
     source: resolved.source,
     question: 'why did this fail?',
   });
-  const delivery = await deliverSelection(resolved.targetPane, msg, f.home, f.env, { retry: 'none' });
+  const delivery = await deliverSelection(resolved.targetPane, msg, f.home, f.env);
   assert.equal(delivery.ok, true);
   assert.equal(prompts.length, 1);
   assert.equal(prompts[0].target, 'w2:p1');
@@ -271,40 +270,95 @@ test('non-worker pane routes to its own project main session (not another projec
   assert.ok(prompts[0].text.includes('Question: why did this fail?'));
 });
 
-test('guarded delivery waits on draft_present and delivers once after prompt clears', async (t) => {
-  const panes = [{ pane_id: 'w1:p1', workspace_id: 'w1', cwd: '/tmp', agent: 'claude', agent_status: 'idle' }];
-  let draft = true;
-  let subscribed;
+async function fakeDraftFork(t) {
+  const pane = { pane_id: 'w1:p1', workspace_id: 'w1', agent: 'claude', agent_status: 'idle' };
   const attempts = [];
+  const subscriptions = [];
+  const subscribed = Promise.withResolvers();
+  let draft = true;
   const f = await fakeFork(t, (method, params, socket) => {
     if (method === 'ping') return guardedPong;
-    if (method === 'pane.get') return { result: { type: 'pane_info', pane: panes[0] } };
+    if (method === 'pane.list') return { result: { type: 'pane_list', panes: [pane] } };
+    if (method === 'pane.get') return { result: { type: 'pane_info', pane } };
     if (method === 'events.subscribe') {
-      subscribed = socket;
+      subscriptions.push(socket);
+      subscribed.resolve(socket);
       return { result: { type: 'subscription_started' } };
     }
     if (method === 'agent.prompt') {
-      assert.equal(params.guarded, true);
-      attempts.push(params.text);
+      attempts.push(params);
       return draft ? { error: { code: 'draft_present' } } : prompted;
     }
     return { error: { code: 'unsupported' } };
   });
+  return {
+    ...f, attempts, subscriptions, subscribed: subscribed.promise,
+    clearDraft(socket) {
+      draft = false;
+      socket.write(JSON.stringify({ event: 'pane.updated', data: { pane } }) + '\n');
+    },
+  };
+}
 
-  const ac = new AbortController();
-  t.after(() => ac.abort());
-  const delivering = deliverSelection('w1:p1', '[HUD selection]\nSource: pane=w1:p2 | time=2026-11-26T12:00:00.000Z\n```\nline 1\n```', f.home, f.env, {
-    retry: 'inline',
-    signal: ac.signal,
+test('one-shot selection delivery returns a guarded refusal without starting a retry', async (t) => {
+  const f = await fakeDraftFork(t);
+  const result = await deliverSelection('w1:p1', '[HUD selection]\nexample excerpt', f.home, f.env);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /Selection not sent/);
+  assert.equal(typeof result.retryPrompt, 'function');
+  assert.deepEqual(f.attempts.map((p) => p.guarded), [true]);
+  assert.equal(f.subscriptions.length, 0);
+  assert.equal(fs.existsSync(join(f.home, 'select-send')), false);
+});
+
+for (const cancel of [false, true]) {
+  test(cancel ? 'Esc cancels a guarded wait without sending' : 'composer waits on draft_present and sends once after the draft clears', { timeout: 5000 }, async (t) => {
+    const f = await fakeDraftFork(t);
+    const { stdin, stdout } = fakeTtyStreams();
+    const ready = Promise.withResolvers();
+    const frames = [];
+    const session = runComposerSession({
+      context: { workspace_id: 'w1', focused_pane_id: 'w1:p2', selected_text: 'example excerpt' },
+      hudHome: f.home,
+      env: { ...f.env, LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' },
+      stdin, stdout,
+      onFrame(lines) { frames.push(lines); ready.resolve(); },
+    });
+    t.after(() => stdin.end());
+    await ready.promise;
+    stdin.write('what changed?\r');
+    const socket = await f.subscribed;
+    assert.equal(f.attempts.length, 1);
+    assert.equal(f.attempts[0].guarded, true);
+    assert.equal(fs.existsSync(join(f.home, 'select-send')), false, 'pending retry must not persist a file');
+    const frame = frames.at(-1);
+    assert.deepEqual(frame.filter((line) => line.includes('Esc cancel')).map((line) => line.trim()), [
+      "Waiting for the main session's prompt to be empty · Esc cancels",
+    ]);
+    assert.ok(frame.some((line) => line.includes('Question: what changed?')));
+
+    // Escape may close the socket before the queued pane event is read.
+    const closed = new Promise((resolve) => socket.once('close', resolve));
+    socket.on('error', (err) => {
+      if (!cancel || err.code !== 'ECONNRESET') throw err;
+    });
+    f.clearDraft(socket);
+    if (cancel) stdin.write('\x1b');
+    const result = await session;
+    await closed;
+    assert.equal(result.code, 0);
+    assert.equal(result.sent, !cancel);
+    assert.equal(f.attempts.length, cancel ? 1 : 2);
+    if (!cancel) assert.deepEqual(f.attempts[1], f.attempts[0]);
   });
+}
 
-  await until(() => subscribed && attempts.length === 1);
-  draft = false;
-  subscribed.write(JSON.stringify({ event: 'pane.updated', data: { pane: { pane_id: 'w1:p1' } } }) + '\n');
-  const res = await delivering;
-  assert.equal(res.ok, true);
-  assert.equal(res.delivered, 'direct');
-  assert.equal(attempts.length, 2);
+test('select-send rejects the removed retry CLI', async () => {
+  await assert.rejects(selectSendCommand(['--retry', 'unused.json'], {}), (error) => {
+    assert.match(error.message, /^Usage: hud select-send/);
+    assert.doesNotMatch(error.message, /--retry/);
+    return true;
+  });
 });
 
 test('active pane watcher delivers selection once via panel-actions.jsonl without duplicate typing or cross-pane leak', async (t) => {
@@ -409,7 +463,6 @@ test('stale_content refreshes composer to show latest text before sending', asyn
     stdin,
     stdout,
     now: () => new Date('2026-11-26T12:45:00.000Z'),
-    retryMode: 'none',
     onFrame: (lines, state) => frames.push({ lines, state }),
   });
 
@@ -470,7 +523,6 @@ test('stale_content flag on open immediately shows latest pane text before sendi
     stdin,
     stdout,
     now: () => new Date('2026-11-26T12:46:00.000Z'),
-    retryMode: 'none',
     onFrame: (lines) => frames.push(lines),
   });
 
@@ -522,7 +574,6 @@ test('pane content changing while composer is open refreshes excerpt before send
     stdin,
     stdout,
     now: () => new Date('2026-11-26T12:47:00.000Z'),
-    retryMode: 'none',
     onFrame: (lines) => frames.push(lines),
   });
 
@@ -623,7 +674,14 @@ test('composer renderer keeps exact columns, escapes external text once, respect
       }
     }
 
+    const waiting = { ...state, phase: 'waiting' };
+    const narrowWait = renderSelectSendComposer(waiting, { width: 20, height: 6, nowMs: 0 });
+    assert.ok(narrowWait.includes('Waiting · Esc cancel'));
+    assert.ok(narrowWait.every((line) => visualLength(line) === 20));
+
     setLanguage('zh');
+    const zhWait = renderSelectSendComposer(waiting, { width: 80, height: 14, nowMs: 0 });
+    assert.match(zhWait[1], /正在等待主会话清空输入行 · Esc 取消/);
     const zhLines = renderSelectSendComposer(state, { width: 80, height: 14, nowMs: 1_700_000_000_000 });
     assert.equal(zhLines.length, 14);
     for (const line of zhLines) assert.equal(visualLength(line), 80);

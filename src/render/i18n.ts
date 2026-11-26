@@ -799,7 +799,11 @@ const ZH: Record<string, string> = {
   'Enter send': '回车 发送',
   '↑↓ scroll': '↑↓ 滚动',
   'Sending…': '发送中…',
-  'Target busy or draft present — queued until prompt is idle and empty.': '目标繁忙或有草稿 — 已排队，待空闲且输入行空时发送。',
+  "Waiting for the main session's prompt to be empty · Esc cancels": '正在等待主会话清空输入行 · Esc 取消',
+  'Waiting · Esc cancel': '等待中 · Esc 取消',
+  'Timed out waiting for the main session. Selection not sent.': '等待主会话超时。未发送选中内容。',
+  'The main session pane closed. Selection not sent.': '主会话窗格已关闭。未发送选中内容。',
+  'Delivery failed.': '发送失败。',
 };
 
 const EN_OVERRIDES: Record<string, string> = {

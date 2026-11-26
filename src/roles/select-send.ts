@@ -6,11 +6,9 @@
  * Delivery uses HUD's normal path: active pane watcher via panel-actions.jsonl,
  * otherwise notify() (Antigravity mailbox, Codex queue, or herdr guarded prompt).
  */
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { appendPanelAction } from '../collectors/panel-actions.js';
 import type { Job } from '../mcp/job-contracts.js';
 import { herdrEndpoint, request as herdrRequest, watchHerdrPane, type HerdrReply } from '../runtime/herdr-socket.js';
@@ -19,7 +17,6 @@ import { herdrId, herdrResult, isRecord, runCommand, runHerdr } from './herdr-ru
 import { getJobIndexCache } from './job-index-cache.js';
 import { jobCallerPane } from './job-pane.js';
 import {
-  ensureQueueWatcher,
   notify,
   PROMPT_QUIET_MS,
   PROMPT_RETRY_TTL_MS,
@@ -122,23 +119,16 @@ export interface RefreshResult {
 
 export interface DeliverSelectionResult {
   ok: boolean;
-  delivered?: 'watcher' | 'direct' | 'pending';
+  delivered?: 'watcher' | 'direct';
   detail?: string;
   error?: string;
+  retryPrompt?: NotifyResult['retryPrompt'];
 }
 
 export interface SelectionHandoff {
   version: 1;
   created_at: string;
   context: PluginSelectionContext;
-}
-
-export interface PendingRetryPayload {
-  version: 1;
-  created_at: string;
-  pane: string;
-  message: string;
-  hud_home: string;
 }
 
 const stripUnsafeControl = (s: string, keepNewlines: boolean): string =>
@@ -700,16 +690,6 @@ export function readAndRemoveSelectionHandoff(file: string): PluginSelectionCont
   }
 }
 
-function writePendingRetryFile(hudHome: string, pane: string, message: string): string {
-  const dir = handoffDir(hudHome);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  pruneHandoffDir(dir);
-  const file = join(dir, `retry-${randomUUID()}.json`);
-  const payload: PendingRetryPayload = { version: 1, created_at: new Date().toISOString(), pane, message, hud_home: hudHome };
-  writePrivateFile(file, JSON.stringify(payload) + '\n', { mkdir: false });
-  return file;
-}
-
 export async function waitAndRetryGuardedPrompt(
   pane: string,
   message: string,
@@ -718,6 +698,7 @@ export async function waitAndRetryGuardedPrompt(
   env: NodeJS.ProcessEnv = process.env,
   signal?: AbortSignal
 ): Promise<DeliverSelectionResult> {
+  if (signal?.aborted) return { ok: false, error: 'aborted' };
   const until = performance.now() + PROMPT_RETRY_TTL_MS;
   let retry = initialRetry;
   return new Promise<DeliverSelectionResult>((resolve) => {
@@ -742,7 +723,7 @@ export async function waitAndRetryGuardedPrompt(
       if (settled || sending) return;
       if (performance.now() >= until) {
         recordPromptExpiry(hudHome);
-        finish({ ok: false, error: 'pending typed selection expired' });
+        finish({ ok: false, error: 'Timed out waiting for the main session. Selection not sent.' });
         return;
       }
       sending = true;
@@ -750,40 +731,34 @@ export async function waitAndRetryGuardedPrompt(
       sending = false;
       if (settled) return;
       if (result && !result.retryPrompt) {
-        finish(result.status === 0 || result.uncertain ? { ok: true, delivered: 'direct' } : { ok: false, error: result.error?.message ?? 'delivery failed' });
+        finish(result.status === 0 || result.uncertain
+          ? { ok: true, delivered: 'direct' }
+          : { ok: false, error: result.error?.message ?? 'Delivery failed.' });
         return;
       }
       if (result?.retryPrompt) retry = result.retryPrompt;
       schedule(PROMPT_QUIET_MS);
     };
     signal?.addEventListener('abort', onAbort, { once: true });
-    const stopWatch = watchHerdrPane(pane, env, () => schedule(50), () => finish({ ok: false, error: 'pane closed' }));
+    const stopWatch = watchHerdrPane(pane, env, () => schedule(50), () => {
+      finish({ ok: false, error: 'The main session pane closed. Selection not sent.' });
+    });
     schedule(PROMPT_QUIET_MS);
   });
 }
 
-function spawnDetachedRetry(retryFile: string, env: NodeJS.ProcessEnv): void {
-  const hud = fileURLToPath(new URL('../../bin/hud', import.meta.url));
-  const child = spawn(process.execPath, [hud, 'select-send', '--retry', retryFile], {
-    env,
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
-}
-
 /**
- * Deliver the formatted selection message ONCE via HUD's normal delivery path:
- * - Active pane watcher (claude-mod, pi, hud watch --queue) -> panel-actions.jsonl
- * - Otherwise -> notify() (Antigravity mailbox, Codex queue, or herdr guarded prompt)
+ * Try HUD's normal delivery path once: an active pane watcher, or notify().
+ * Return a guarded refusal to the caller; do not start a retry sender.
  */
 export async function deliverSelection(
   targetPane: string,
   message: string,
   hudHome: string,
   env: NodeJS.ProcessEnv = process.env,
-  options: { retry?: 'detach' | 'inline' | 'none'; signal?: AbortSignal } = {}
+  signal?: AbortSignal
 ): Promise<DeliverSelectionResult> {
+  if (signal?.aborted) return { ok: false, error: 'aborted' };
   if (!herdrId(targetPane)) return { ok: false, error: 'invalid target pane' };
   if (!message.trim()) return { ok: false, error: 'empty selection message' };
 
@@ -792,49 +767,17 @@ export async function deliverSelection(
     return { ok: true, delivered: 'watcher', detail: 'queued for active session watcher' };
   }
 
-  const sent = await notify(targetPane, message, hudHome, { env, signal: options.signal });
+  const sent = await notify(targetPane, message, hudHome, { env, signal });
   if (sent.retryPrompt) {
-    const mode = options.retry ?? 'detach';
-    if (mode === 'inline') {
-      return waitAndRetryGuardedPrompt(targetPane, message, hudHome, sent.retryPrompt, env, options.signal);
-    }
-    if (mode === 'detach') {
-      const retryFile = writePendingRetryFile(hudHome, targetPane, message);
-      spawnDetachedRetry(retryFile, env);
-    }
-    return { ok: true, delivered: 'pending', detail: 'waiting for idle empty prompt' };
+    return { ok: false, error: 'Main session not ready for guarded typing. Selection not sent.', retryPrompt: sent.retryPrompt };
   }
   if (sent.status === 0 || sent.uncertain) {
-    // For Antigravity pending mailbox writes without a watcher, wake the queue watcher when available.
-    if (sent.detail?.includes('pending for Antigravity')) {
-      void ensureQueueWatcher(targetPane, hudHome);
-    }
     return { ok: true, delivered: 'direct', detail: sent.detail };
   }
   return {
     ok: false,
     error: sent.error?.message || sent.stderr?.trim() || sent.detail || `delivery failed (exit ${sent.status})`,
   };
-}
-
-export async function runDetachedRetryFile(file: string, env: NodeJS.ProcessEnv = process.env, signal?: AbortSignal): Promise<number> {
-  let payload: PendingRetryPayload;
-  try {
-    const parsed = readJsonFile(file) as Partial<PendingRetryPayload>;
-    try {
-      fs.unlinkSync(file);
-    } catch {
-      /* Already removed. */
-    }
-    if (parsed?.version !== 1 || !herdrId(parsed.pane) || typeof parsed.message !== 'string' || typeof parsed.hud_home !== 'string') {
-      return 1;
-    }
-    payload = parsed as PendingRetryPayload;
-  } catch {
-    return 1;
-  }
-  const result = await deliverSelection(payload.pane, payload.message, payload.hud_home, env, { retry: 'inline', signal });
-  return result.ok ? 0 : 1;
 }
 
 export async function openComposerPopup(handoffFile: string, env: NodeJS.ProcessEnv = process.env): Promise<{ ok: boolean; error?: string }> {

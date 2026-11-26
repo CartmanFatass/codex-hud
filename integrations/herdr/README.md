@@ -13,6 +13,10 @@ Tests use fake Herdr responses, never the owner's running session.
 
 `integrations/herdr/plugin/` is the `hud.select-send` herdr plugin linked by
 `./install --with herdr`. Its `hud.select-send.send` action opens a small modal
-composer popup showing the exact excerpt and one question line, then delivers the
-excerpt with its source (`project`, `pane`, `job` if a worker pane, `time`) to the
-responsible main session through HUD's normal delivery path.
+composer popup showing the exact excerpt and one question line. Press Enter in
+the composer to send the excerpt with its source (`project`, `pane`, `job` if
+a worker pane, `time`) to the responsible main session through HUD's normal
+delivery path. If herdr refuses direct guarded typing, the composer shows a
+waiting status and retries there within a 10-minute window. Press Esc while
+waiting to cancel without sending. The action never sends without confirmation,
+and no detached retry helper or retry file is created.
