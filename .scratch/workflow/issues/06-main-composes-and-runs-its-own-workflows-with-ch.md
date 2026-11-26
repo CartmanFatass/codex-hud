@@ -2,6 +2,7 @@
 
 **Status:** ready-for-agent
 **Owner try:** no
+**Live try:** Ask main to compose a small workflow (build -> check -> review -> hand-back -> land) on a scratch ticket: hud_workflow plan shows the frozen plan and cost class, start runs it, the hand-back appears as one wake line and answering it picks the branch; a costly plan is refused without a fresh owner grant.
 **Blocked by:** none
 
 **What to build:** `.scratch/workflow/spec.md` slice 6. Add `check` (argv or a named project command, no shell interpolation, cwd from a job step, exit code decides, optional repair to the source worker ≤ 2) and `handback` (pause with `{request_id, step, ask, choices, refs}`, one wake line, answered with `hud_respond({job: <run>, request_id, answer})`, written once, `when` edges select the branch). New `hud_workflow` MCP tool: plan (validate, scale, cost class, frozen hash; launches nothing) / start (main confirmation; costly runs need a fresh owner grant bound to the proposed run, the unbound `/council` grant covers only a standalone council) / status / control (pause, resume, stop, retry_failed). Templates from `$HUD_HOME/workflows/` and registered projects' `.hud/workflows/` (shipped names reserved). Cost: council, `pro`/`flow`, any `bro` place incl. fallbacks, large fan-out (Sonic > 50 items or > 2 MiB, other roles > 12). Update docs/reference.md and ARCHITECTURE.
