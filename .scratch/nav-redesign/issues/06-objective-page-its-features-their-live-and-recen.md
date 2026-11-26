@@ -1,6 +1,6 @@
 # 06: Objective page: its features, their live and recently ended jobs, evidence
 
-**Status:** ready-for-agent
+**Status:** needs-info
 **Owner try:** no
 **Live try:** on 项目, Enter on the interaction Objective: its features show with bars and the nav-redesign jobs under nav-redesign; Enter on one opens its Inspector; Esc twice returns to the overview row
 **Blocked by:** 05

@@ -1,6 +1,6 @@
 # 05: Project overview: Objectives by activity, done and paused folded, Details as header links
 
-**Status:** ready-for-agent
+**Status:** needs-info
 **Owner try:** no
 **Live try:** open 项目 on MyHUD: Objectives with running work are on top, pi-worker (done) sits in the folded row, the whole overview fits one screen at the panel's height; t opens Tickets and Esc returns
 **Approved removals:** The Project Details list rows (Tickets, Progress, Worktree, Docs summaries; owner asked for header links instead) and the Project tab's section of jobs not linked to any Objective (moved to 执行).

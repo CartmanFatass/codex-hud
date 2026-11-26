@@ -1,6 +1,6 @@
 # 07: Feature page: tickets by state and the feature's jobs
 
-**Status:** ready-for-agent
+**Status:** needs-info
 **Owner try:** no
 **Live try:** from 项目 → interaction → nav-redesign, see the nav-redesign tickets with their states and the jobs that built them under 刚结束; Enter on a ticket opens the file
 **Blocked by:** 06

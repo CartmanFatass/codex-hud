@@ -1,6 +1,6 @@
 # 04: Owner requests in one area at the top of every tab, no rows when empty
 
-**Status:** ready-for-agent
+**Status:** needs-info
 **Owner try:** no
 **Live try:** with no open requests the Project tab starts with the Objectives right under the strip; add a synthetic request in a scratch project via hud_objective op request, see it on every tab, resolve it and see the row disappear
 **Approved removals:** The separate 等你处理 section on Home and 需要你处理 section on Project (merged into the shared request area with the same requests).
