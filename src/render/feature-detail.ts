@@ -206,6 +206,7 @@ export function featureDetailRows(
   now: number,
   project?: ProjectSnapshot,
   activity: readonly TicketActivity[] = [],
+  landings?: ReadonlyMap<string, number>,
 ): MonitorRow[] {
   const ink = theme.board;
   if (!project) return [boardRow(fit(`  ${ink.muted(t('Loading…'))}`, width))];
@@ -232,8 +233,13 @@ export function featureDetailRows(
 
   const enriched = feature.tickets.map((ticket) => {
     const key = targetKey(`${feature.slug}/${ticket.number}`);
-    const evidence = ticketJobEvidence(ticket, byTicket.get(key) ?? [], now);
-    const doneAt = Math.max(evidence.endedAt ?? -Infinity, ledgerAt.get(key) ?? -Infinity, ticket.at);
+    const entries = byTicket.get(key) ?? [];
+    const evidence = ticketJobEvidence(ticket, entries, now);
+    const latest = (result: 'landed' | 'done') => entries.reduce<number | undefined>((at, entry) =>
+      entry.kind === 'ended' && entry.result === result && entry.at <= now && (at === undefined || entry.at > at) ? entry.at : at, undefined);
+    const doneAt = ticket.state === 'done'
+      ? landings?.get(key) ?? latest('landed') ?? ledgerAt.get(key) ?? latest('done') ?? ticket.job?.completedAt ?? ticket.at
+      : Math.max(evidence.endedAt ?? -Infinity, ledgerAt.get(key) ?? -Infinity, ticket.at);
     return { ticket, evidence, doneAt };
   });
 
@@ -265,16 +271,13 @@ export function featureDetailRows(
     const blockers = ticket.blockers.length
       ? ink.muted(`${mark('←', '<')} ${monitorText(ticket.blockers.join(', '))}`)
       : '';
-    const rightCandidates = evidence.statusText
-      ? [
-          ...(ticket.state === 'try' ? [`${word}  ${evidence.statusText}`] : []),
-          ...(blockers ? [`${blockers}  ${evidence.statusText}`] : []),
-          evidence.statusText,
-        ]
-      : [
-          ...(blockers ? [`${word} ${blockers}`, blockers] : []),
-          word,
-        ];
+    const status = evidence.statusText;
+    const stateAndStatus = status ? `${word}  ${status}` : word;
+    const rightCandidates = [
+      ...(blockers ? [`${word} ${blockers}${status ? `  ${status}` : ''}`] : []),
+      stateAndStatus,
+      ...(status ? [status] : []),
+    ];
     const right = rightCandidates.find((cand) => visualLength(prefix) + minTitle + 1 + visualLength(cand) <= width)
       ?? rightCandidates.at(-1) ?? '';
     const titleRoom = Math.max(0, width - visualLength(prefix) - (right ? visualLength(right) + 1 : 0));

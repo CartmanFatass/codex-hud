@@ -6,7 +6,8 @@ import test from 'node:test';
 import { executionSnapshot } from '../../dist/collectors/execution.js';
 import { objectivePath } from '../../dist/collectors/objectives.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
-import { stripAnsi, visualLength } from '../../dist/render/colors.js';
+import { PanelExecution } from '../../dist/panel/execution.js';
+import { visualLength } from '../../dist/render/colors.js';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -27,7 +28,7 @@ function makeWorker(base, id, role, overrides = {}) {
   };
 }
 
-test('Feature page: every ticket state, order, bar/legend, job status on ticket row, Inspector/inline/o/g/P/H, and Esc at 40/62 EN/ZH no-colour', async (t) => {
+test('Feature page: ticket states, completion order, status fitting, Inspector/inline/o/g/P/H, and Esc at 40/62/120 EN/ZH no-colour', async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-render-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const f = await projectFixture(root, { progressTickets: false });
@@ -44,7 +45,7 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
     tickets: [
       {
         number: '01', title: 'Queue schema and migration', path: ticketPath('nav-redesign', '01'),
-        state: 'done', at: at(3 * 1440), status: 'done', checked: 2, total: 2, blockers: [],
+        state: 'done', at: NOW, status: 'done', checked: 2, total: 2, blockers: [],
         items: [{ done: true, text: 'Create migration script' }, { done: true, text: 'Verify schema rollback' }],
         comment: 'Landed in abc1234',
       },
@@ -83,7 +84,7 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
       },
       {
         number: '08', title: 'External webhook contract', path: ticketPath('nav-redesign', '08'),
-        state: 'blocked', at: old, status: 'needs-info', checked: 0, total: 1, blockers: ['03'],
+        state: 'blocked', at: old, status: 'needs-info', checked: 0, total: 1, blockers: ['03', '13', '14', '15'],
         items: [{ done: false, text: 'Confirm synthetic payload' }],
         comment: 'Waiting on payload shape',
       },
@@ -99,8 +100,9 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
       },
       {
         number: '11', title: 'Earlier landed note without job', path: ticketPath('nav-redesign', '11'),
-        state: 'done', at: at(2 * 60), status: 'done', checked: 1, total: 1, blockers: [],
+        state: 'done', at: old, status: 'done', checked: 1, total: 1, blockers: [],
         items: [{ done: true, text: 'Document feature flag' }],
+        job: { role: 'imp', state: 'done', created: at(180), completedAt: at(120) },
         comment: 'Landed in 4455667',
       },
       {
@@ -149,6 +151,7 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
     { ticket: 'nav-redesign/03', kind: 'live', jobId: liveJobId, at: at(2), startedAt: at(14), state: 'working', execJob: targetFor(liveJobId, true) },
     { ticket: 'nav-redesign/09', kind: 'gate', flow: 'f0000000000000109', jobId: gateJobId, at: at(3), progress: { kind: 'gate', index: 2, total: 3 }, execJob: targetFor(gateJobId, false) },
     { ticket: 'nav-redesign/06', kind: 'ended', jobId: unlandedJobId, at: at(40), result: 'not landed', execJob: targetFor(unlandedJobId, false) },
+    { ticket: 'nav-redesign/08', kind: 'ended', at: at(30), result: 'failed' },
     { ticket: 'nav-redesign/02', kind: 'ended', jobId: landedJobId, at: at(30), result: 'landed', execJob: targetFor(landedJobId, false) },
   ];
 
@@ -163,7 +166,8 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
     ...f.data,
     updatedAt: at(3),
     objectivesAt: old,
-    ledger: [],
+    // The older landing was edited most recently; the ledger date comes from its Landed commit.
+    ledger: [{ id: 'NAV-REDESIGN-01', state: 'accepted', at: at(3 * 1440), landed: true }],
     tickets: [feature, unlinkedFeature],
     objectiveTickets: [feature],
     unlinked: [unlinkedFeature],
@@ -192,7 +196,7 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
   };
   const key = (frame, k) => handleMonitorInput(frame.state, { type: 'key', key: k }, { frame, nowMs: NOW });
 
-  for (const lang of ['en', 'zh']) for (const width of [40, 62]) {
+  for (const lang of ['en', 'zh']) for (const width of [40, 62, 120]) {
     const zh = lang === 'zh';
     const draw = (state, height = 36, themeName = 'none') => f.render(width, lang, state, height, data, true, 'unicode', themeName, {
       workboard: board,
@@ -220,8 +224,8 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
     const lines = plain(featFrame);
     const text = lines.join('\n');
 
-    // Crumb ends in slug; project name shown at 62 and omitted below 56 (40).
-    if (width === 62) {
+    // Crumb ends in slug; project name shown at 62/120 and omitted below 56 (40).
+    if (width >= 56) {
       assert.match(lines[0], zh ? /^‹ orchard › interaction › nav-redesign\s+3\/11 工单$/ : /^‹ orchard › interaction › nav-redesign\s+3\/11 tickets$/);
     } else {
       assert.match(lines[0], /^‹ interaction › nav-redesign\s+3\/11$/);
@@ -256,8 +260,14 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
     assert.match(rowOf('04'), zh ? /^  ◇ 04 .*待试用/ : /^  ◇ 04 .*to try/);
     assert.match(rowOf('03'), zh ? /^  ◐ 03 .*◐ 工作中 14分/ : /^  ◐ 03 .*◐ working 14m/);
     assert.match(rowOf('09'), zh ? /^  ◐ 09 .*门禁 2\/3/ : /^  ◐ 09 .*Gate 2\/3/);
-    assert.match(rowOf('08'), zh ? /^  ◆ 08 .*受阻 ← 03/ : /^  ◆ 08 .*blocked ← 03/);
-    assert.match(rowOf('06'), zh ? /^  ● 06 .*◒ 未落地 40分/ : /^  ● 06 .*◒ not landed 40m/);
+    assert.match(rowOf('08'), zh ? /^  ◆ 08 External.*受阻 .*✗ 失败 30分/ : /^  ◆ 08 External.*blocked .*✗ failed 30m/);
+    assert.match(rowOf('06'), zh ? /^  ● 06 Queue depth.*◒ 未落地 40分/ : /^  ● 06 Queue depth.*◒ not landed 40m/);
+    if (width === 120) {
+      assert.match(rowOf('08'), zh ? /受阻 ← 03, 13, 14, 15  ✗ 失败 30分/ : /blocked ← 03, 13, 14, 15  ✗ failed 30m/);
+      assert.match(rowOf('06'), zh ? /就绪  ◒ 未落地 40分/ : /ready  ◒ not landed 40m/);
+    } else if (width === 40) {
+      assert.doesNotMatch(rowOf('08'), /←/); // Keep the state word and full job status, cut the blockers first.
+    }
     assert.match(rowOf('10'), zh ? /^  ● 10 .*就绪/ : /^  ● 10 .*ready/);
     assert.match(rowOf('05'), zh ? /^  · 05 .*待前序 ← 03/ : /^  · 05 .*Queued ← 03/);
     assert.match(rowOf('07'), /^  · 07 .*← 03, 05/);
@@ -336,7 +346,7 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
     assert.equal(fromUnlinked.state.subpage?.kind, 'feature');
     assert.equal(fromUnlinked.state.subpage?.target.slug, 'spare-cli');
     const unlinkedFeatFrame = draw(fromUnlinked.state, 24);
-    assert.match(plain(unlinkedFeatFrame)[0], width === 62 ? /^‹ orchard › spare-cli\s+0\/1/ : /^‹ spare-cli\s+0\/1/);
+    assert.match(plain(unlinkedFeatFrame)[0], width >= 56 ? /^‹ orchard › spare-cli\s+0\/1/ : /^‹ spare-cli\s+0\/1/);
     assert.match(plain(unlinkedFeatFrame).join('\n'), /● 01 Add dry-run flag/);
     const backUnlinked = key(unlinkedFeatFrame, 'escape');
     assert.equal(backUnlinked.state.subpage, undefined);
@@ -349,7 +359,7 @@ test('Feature page: every ticket state, order, bar/legend, job status on ticket 
     assert.equal(fromTickets.state.subpage?.kind, 'feature');
     assert.equal(fromTickets.state.subpage?.target.slug, 'nav-redesign');
     const ticketsFeatFrame = draw(fromTickets.state, 24);
-    assert.match(plain(ticketsFeatFrame)[0], width === 62 ? /^‹ orchard › nav-redesign\s+3\/11/ : /^‹ nav-redesign\s+3\/11/);
+    assert.match(plain(ticketsFeatFrame)[0], width >= 56 ? /^‹ orchard › nav-redesign\s+3\/11/ : /^‹ nav-redesign\s+3\/11/);
     const backTickets = key(ticketsFeatFrame, 'escape');
     assert.equal(backTickets.state.subpage, undefined);
     assert.equal(backTickets.state.project.view.kind, 'tickets');
@@ -430,4 +440,91 @@ test('executionSnapshot populates live, gate, unlanded and landed TicketActivity
   assert.ok(gateEntry);
   assert.deepEqual(gateEntry.progress, { kind: 'gate', index: 2, total: 3, passed: 1, since: NOW - 2 * 60_000 });
   assert.equal(gateEntry.execJob?.target.workerId, `thin-job:${gateId}`);
+});
+
+test('Feature and Objective use individual queue landing times, not the queue end', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-queue-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const slug = 'nav-redesign', flow = 'q0000000000000010', job = 'j0000000000000013';
+  const at = (min) => NOW - min * 60_000, iso = (min) => new Date(at(min)).toISOString();
+  const path = (no) => join(f.cwd, '.scratch', slug, 'issues', `${no}-sample.md`);
+  for (const n of ['01', '02', '03', '04']) f.issue(slug, n, `Queue ticket ${n}`, 'done', undefined, 'none', n === '04' ? 720 : 0);
+  // An old landing must not come back as a recent job outcome when the source worker settles later.
+  f.put(join(f.hud, 'jobs', job, 'job.json'), { job, role: 'imp', cwd: f.cwd, ticket: `${slug}/03`, created_at: iso(1800) });
+  f.put(join(f.hud, 'jobs', job, 'STATUS.json'), { state: 'done', settled_at: iso(10) });
+  f.put(join(f.hud, 'flows', `${flow}.json`), {
+    flow, root: f.cwd, feature: slug, state: 'completed', created_at: iso(1800), updated_at: iso(5),
+    tickets: [
+      { ticket: '01', path: path('01'), role: 'imp', landed: true, landed_at: iso(480), changed_at: iso(7) },
+      { ticket: '02', path: path('02'), role: 'imp', landed: true, changed_at: iso(120) },
+      { ticket: '03', path: path('03'), role: 'imp', landed: true, landed_at: iso(1500), job },
+      { ticket: '04', path: path('04'), role: 'imp', landed: true }, // Undated legacy item: no fabricated age.
+    ],
+  }, 5);
+  const execution = new PanelExecution(f.hud, null);
+  t.after(() => execution.dispose());
+  execution.sync(f.cwd);
+  const project = await f.collector.collect(true, f.board, NOW);
+  await execution.refresh(undefined, NOW, false, project);
+  assert.equal(execution.view(f.cwd).runs.find((run) => run.flow === flow).endedAt, at(5));
+  const projectActivity = execution.activity(f.cwd);
+  assert.deepEqual(projectActivity.map(({ ticket, kind, result, at }) => [ticket, kind, result, at]), [
+    [`${slug}/01`, 'ended', 'landed', at(480)], [`${slug}/02`, 'ended', 'landed', at(120)],
+  ]);
+  const draw = (subpage) => f.render(120, 'en', { ...onPage(), subpage }, 24, project, true, 'unicode', 'none', {
+    projectActivity, projectLandings: execution.landings(f.cwd),
+  });
+  const feature = draw({ kind: 'feature', target: { root: f.cwd, slug } });
+  const lines = plain(feature).join('\n');
+  assert.match(lines, /Queue ticket 01.*✓ landed 8h/);
+  assert.match(lines, /Queue ticket 02.*✓ landed 2h/);
+  assert.match(lines, /Queue ticket 03\s+done\s*$/m);
+  assert.deepEqual([...lines.matchAll(/Queue ticket (\d+)/g)].map((m) => m[1]), ['02', '01', '04', '03']);
+  const objective = { id: 'interaction', state: 'active', title: 'Synthetic project navigation', features: [slug], evidence: [] };
+  const detail = draw({ kind: 'objective', target: { root: f.cwd, objective, blocked: false } });
+  assert.match(detail.workboard.rows.find((row) => row.item === `objective:feature:${slug}`).text, /✓ landed 2h ago/);
+});
+
+test('Project-resolved target hints and filenames supply the live Feature Inspector and tab actions', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-linked-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const slug = 'nav-redesign', pane = 'w4E:p2'; // Different pane from the calling Project board.
+  const jobs = [
+    ['01', 'j0000000000000301', { target_hint: `${slug}/01` }],
+    ['02', 'j0000000000000302', { package: slug, task: 'Implement the checklist in 02-sample.md' }],
+  ];
+  for (const [number, job, hint] of jobs) {
+    f.issue(slug, number, `Synthetic task ${number}`, 'ready-for-agent');
+    const dir = join(f.hud, 'jobs', job);
+    f.put(join(dir, 'job.json'), { job, role: 'imp', cwd: f.cwd, herdr_pane: pane, created_at: new Date(NOW - 60000).toISOString(), ...hint });
+    f.put(join(dir, 'STATUS.json'), { state: 'working', started_at: new Date(NOW - 60000).toISOString() });
+  }
+  const project = await f.collector.collect(true, f.board, NOW);
+  const execution = new PanelExecution(f.hud, 'w4E:p1');
+  t.after(() => execution.dispose());
+  execution.sync(f.cwd);
+  await execution.refresh(undefined, NOW, true, project);
+  for (const [number, job] of jobs) {
+    const ticket = project.tickets.find((feature) => feature.slug === slug).tickets.find((ticket) => ticket.number === number);
+    assert.equal(ticket.job.id, job);
+    assert.equal(ticket.state, 'working');
+    const item = `feature:ticket:${slug}:${number}-sample.md`;
+    const state = { ...onPage(), subpage: { kind: 'feature', target: { root: f.cwd, slug }, cursor: item } };
+    const frame = f.render(80, 'en', state, 20, project, true, 'unicode', 'none', {
+      projectActivity: execution.activity(f.cwd),
+    });
+    const row = frame.workboard.rows.find((r) => r.item === item);
+    const dir = join(f.hud, 'jobs', job), worker = execution.board().workers.find((w) => w.id === `thin-job:${job}`);
+    assert.deepEqual(row.execJob, { target: { kind: 'worker', laneId: worker.laneId, workerId: worker.id }, dir, tab: true });
+    const send = (input) => handleMonitorInput(frame.state, { type: 'key', ...input }, { frame, nowMs: NOW });
+    const entered = send({ key: 'enter' }).state.subpage;
+    assert.equal(entered.kind, 'inspector');
+    assert.equal(entered.from, 'feature');
+    assert.equal(entered.target.workerId, worker.id);
+    for (const [text, type] of [['g', 'focus-job-tab'], ['P', 'pin-job-tab'], ['H', 'hide-job-tab']]) {
+      assert.deepEqual(send({ text }).action, { type, dir });
+    }
+  }
 });

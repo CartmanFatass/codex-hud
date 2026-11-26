@@ -408,7 +408,7 @@ export function renderWorkboardFrame(
   if (harnessAdd && addingHarness) state = { ...state, overlay: { ...addingHarness, pick: harnessAdd.pick } };
   let rows: MonitorRow[] = helpContent
     ? helpContent.rows
-    : feat ? featureDetailRows(feat, width, now, featProject, input.projectActivity)
+    : feat ? featureDetailRows(feat, width, now, featProject, input.projectActivity, input.projectLandings)
     : objDetail ? objectiveDetailRows(objDetail, width, now, objProject, input.projectActivity, objResultAt)
     : runDetail ? activeRun ? runDetailRows(activeRun, width, now, activeRun.kind === 'queue' ? undefined : workflowDetailRows(activeRun, width, now)) : [boardRow(fit(t('Run not available'), width))]
     : native ? nativeInspectorRows(input.tree, width, now)

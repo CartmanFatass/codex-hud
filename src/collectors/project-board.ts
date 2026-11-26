@@ -66,7 +66,7 @@ export interface ProjectTicket {
   checked: number; total: number; items: TicketItem[]; comment?: string; landedComment?: string; commit?: string; recordedLanding?: boolean;
   blockers: string[]; ownerTry?: boolean;
   state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
-  job?: { id?: string; role: string; state: string; at?: number; created: number };
+  job?: { id?: string; role: string; state: string; at?: number; completedAt?: number; created: number };
 }
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[]; partial?: true }
 export interface ProjectSnapshot {
@@ -879,9 +879,10 @@ export class ProjectCollector {
       if (linked) {
         const brief = join(dir, 'brief.md');
         const material = job.ticket || job.slice ? '' : job.task ?? job.brief_path ?? this.read(brief, 4096)?.text.slice(0, typeof job.task_length === 'number' ? job.task_length : 4096) ?? worker?.task ?? '';
+        const completedAt = state === 'done' || state === 'complete' || state === 'closed' ? jobSettledAt(s) : undefined;
         rollup.link(job, String(material), { id, role: typeof job.role === 'string' ? job.role : '',
           state: job.reaped_at && !SETTLED_JOB_STATES.has(state) ? 'closed' : state,
-          created, ...(Number.isFinite(at) ? { at } : {}) });
+          created, ...(Number.isFinite(at) ? { at } : {}), ...(completedAt !== undefined ? { completedAt } : {}) });
       }
     }
     out.active = active.sort((a, b) => b.created - a.created || a.entry.jobId.localeCompare(b.entry.jobId)).map((a) => a.entry);

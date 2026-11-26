@@ -47,6 +47,7 @@ export interface WorkFlow {
   readonly steps: readonly WorkFlowStep[];
   readonly step?: string;
   readonly landedSha?: string;
+  readonly landedAt?: number;
   readonly error?: string;
   /** A queued land's lease holder, as its ticket id (else its title), when that job is on this board. */
   readonly waitsOn?: string;

@@ -658,13 +658,14 @@ function readLandFlow(idx: JobIndexCache, home: string, id: string, parse: (text
             : 'pending',
   }));
   if (!sha && v.publish_pending) onIncomplete();
-  const error = word(v.error);
+  const error = word(v.error), landedAt = sha ? when(v.landed_at) : null;
   return {
     kind: 'land',
     state,
     steps,
     step,
     ...(sha ? { landedSha: sha.slice(0, 7) } : {}),
+    ...(landedAt != null ? { landedAt } : {}),
     ...(error ? { error } : {}),
     updatedAt: when(v.updated_at) ?? res.at,
   };

@@ -250,6 +250,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         execution: executing && (!painted.subpage || painted.subpage.kind === 'run-detail') ? execution.view(chosen) : undefined,
         projectActivity: detailRoot ? execution.activity(detailRoot)
           : projectHub() && shown.root === chosen ? execution.activity(chosen) : undefined,
+        projectLandings: featOpen && detailRoot ? execution.landings(detailRoot) : undefined,
         executionCount: liveJobs,
         jobsObserved: jobPipeline.jobsObserved,
         homeWaiting: visits.snapshot(HUD_CWD_REAL)?.waiting,
@@ -313,8 +314,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       await jobPipeline.refresh(inspect?.workerId);
       if (isClosed()) return;
       syncExecution();
-      const inspectProject = state.activeTab === 'execution' || inspector()?.from === 'feature';
-      await execution.refresh(inspectProject ? inspect?.workerId : undefined, Date.now(), activityOnly());
+      if (!activityOnly()) await execution.refresh(state.activeTab === 'execution' ? inspect?.workerId : undefined);
       if (isClosed()) return;
       stage = 'rollout';
       parser.setRolloutPath(session?.path ?? null);
@@ -429,6 +429,15 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         const facts = await visit.collector.collect(true, board, now);
         visit.snapshot = facts;
         if (facts) overview.set(targetRoot, overviewOf(facts, facts.active.length));
+      }
+      // Join Execution's workers to the ticket jobs resolved by this tick's Project scan.
+      const activityRoot = activityOnly() ? executionTargetRoot() : undefined;
+      if (activityRoot) {
+        execution.sync(activityRoot);
+        const snapshot = visits.snapshot(activityRoot) ?? portfolio?.projects.find((p) => p.root === activityRoot)?.snapshot;
+        const detail = inspector();
+        await execution.refresh(detail?.from === 'feature' ? detail.target.workerId : undefined, Date.now(), true, snapshot);
+        if (isClosed()) return;
       }
       const currentOverview = overview.get(countRoot);
       if (currentOverview) overview.set(countRoot, { ...currentOverview, running: executionCount.count });

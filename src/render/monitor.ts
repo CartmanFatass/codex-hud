@@ -190,6 +190,7 @@ export interface MonitorData {
   /** Only while the Execution tab (or Run Detail opened from it) is open. */
   execution?: ExecutionView;
   projectActivity?: readonly TicketActivity[];
+  projectLandings?: ReadonlyMap<string, number>;
   /** Current project's live jobs (running, waiting, queued) for the Execution tab count. */
   executionCount?: number;
   expData?: ExpData;

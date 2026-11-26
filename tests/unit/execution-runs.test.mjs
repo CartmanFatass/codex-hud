@@ -369,9 +369,9 @@ test('idle Execution shows only recent project rows, ordered together by end tim
   const failed = job(1, 'Build broke', 4, { state: 'failed', worktree: true, ticket: 'compile/01' });
   const landed = job(2, 'Committed changes', 12, { worktree: true, package: 'compile', ticket: '02' });
   const retried = land(landed, 'failed');
-  // A later attempt landed even though its post-landing step failed; neither flow resets the job age.
-  putJson(join(flows, `${retried}-2.json`), { flow: `${retried}-2`, job: landed, state: 'failed', step: 'after[1]', landed_sha: 'a'.repeat(40), updated_at: ago(1) });
-  const queueJob = job(3, 'Run member title', 13);
+  // Post-landing failure doesn't reset the landing age on Project or the settlement age on Execution.
+  putJson(join(flows, `${retried}-2.json`), { flow: `${retried}-2`, job: landed, state: 'failed', step: 'after[1]', landed_sha: 'a'.repeat(40), landed_at: ago(10), updated_at: ago(1) });
+  const queueJob = job(3, 'Run member title', 23);
   const landedRun = run(1, 'ingest', 15, [{ job: queueJob, landed: true }, { landed: true }]);
   job(4, 'Run attempt title', 7, { ticket_queue: landedRun });
   const unlanded = job(5, 'Worktree without land', 29, { worktree: true, ticket: 'compile/03' });
@@ -399,12 +399,13 @@ test('idle Execution shows only recent project rows, ordered together by end tim
   const outcomes = execution.activity(project).filter((entry) => entry.kind === 'ended');
   const actual = Object.fromEntries(outcomes.map(({ ticket, at, result }) => [ticket, [at, result]]));
   assert.deepEqual(actual['compile/01'], [Date.parse(ago(4)), 'failed']);
-  assert.deepEqual(actual['compile/02'], [Date.parse(ago(1)), 'landed']);
+  assert.deepEqual(actual['compile/02'], [Date.parse(ago(10)), 'landed']);
   assert.deepEqual(actual['compile/03'], [Date.parse(ago(29)), 'not landed']);
   assert.deepEqual(actual['compile/04'], [Date.parse(ago(40)), undefined]);
   assert.equal(actual['compile/05'], undefined);
   assert.equal(actual['compile/06'], undefined);
-  assert.deepEqual(actual['ingest/01'], [Date.parse(ago(15)), 'landed']);
+  assert.deepEqual(actual['ingest/01'], [Date.parse(ago(23)), 'landed']);
+  assert.equal(actual['ingest/02'], undefined, 'an undated landing does not inherit the run end');
   assert.deepEqual(actual['broken/02'], [Date.parse(ago(90)), 'failed']);
   assert.equal(execution.activity(join(root, 'foreign')), undefined);
   execution.sync(project, true);

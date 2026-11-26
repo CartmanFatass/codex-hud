@@ -388,7 +388,8 @@ function projectTicketItem(
     return { ...base, stage: 'failed', ...(changedAt !== undefined ? { changedAt } : {}), ...(item.failed.reason ? { reason: item.failed.reason } : {}) };
   }
   if (item.landed === true) {
-    const changedAt = parseTime(item.landed_at) ?? itemChangedAt ?? (worker?.flow?.kind === 'land' ? worker.flow.updatedAt : null) ?? worker?.settledAt ?? worker?.startedAt ?? undefined;
+    const land = worker?.flow?.kind === 'land' && worker.flow.landedSha ? worker.flow : undefined;
+    const changedAt = parseTime(item.landed_at) ?? itemChangedAt ?? land?.landedAt ?? land?.updatedAt ?? worker?.settledAt ?? undefined;
     return { ...base, stage: 'landed', ...(changedAt !== undefined ? { changedAt } : {}) };
   }
   if (item.held) {
@@ -443,7 +444,10 @@ function projectTicketItem(
     const changedAt = worker.flow.updatedAt ?? worker.settledAt ?? worker.startedAt ?? undefined;
     if (worker.flow.state === 'failed') return { ...base, stage: 'failed', ...(changedAt !== undefined ? { changedAt } : {}), ...(worker.flow.error ? { reason: worker.flow.error } : {}) };
     if (worker.flow.state === 'cancelled') return { ...base, stage: 'failed', ...(changedAt !== undefined ? { changedAt } : {}), reason: 'cancelled' };
-    if (worker.flow.landedSha) return { ...base, stage: 'landed', ...(changedAt !== undefined ? { changedAt } : {}) };
+    if (worker.flow.landedSha) {
+      const landedAt = worker.flow.landedAt ?? worker.flow.updatedAt ?? worker.settledAt ?? undefined;
+      return { ...base, stage: 'landed', ...(landedAt !== undefined ? { changedAt: landedAt } : {}) };
+    }
     if (worker.flow.state === 'completed') return { ...base, stage: 'settled', ...(changedAt !== undefined ? { changedAt } : {}) };
     return { ...base, stage: 'land-gate', ...(worker.flow.step ? { landStep: worker.flow.step } : {}), ...(changedAt !== undefined ? { changedAt } : {}) };
   }

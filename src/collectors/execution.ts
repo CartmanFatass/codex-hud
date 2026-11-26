@@ -7,6 +7,8 @@ import { jobCallerPane } from '../roles/job-pane.js';
 import { readSelectionExcerpts, type SelectionExcerpt } from '../roles/selection-excerpts.js';
 import { ENDED_MS, jobTargetFor, readExecutionRuns, type ExecutionRun, type ExecutionRunJobTarget, type LandProgress } from './execution-runs.js';
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
+import type { ProjectSnapshot } from './project-board.js';
+import { targetKey } from './ticket-evidence.js';
 import { executionJobDirs, jobRow, worksWithin } from './thin-jobs.js';
 import { workState } from './work-job.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
@@ -79,6 +81,8 @@ export interface ExecutionSnapshot {
   readonly endedJobs?: readonly EndedExecutionJob[];
   /** The same bounded observations, by ticket, before Execution deduplicates jobs shown in workflow rows. */
   readonly ticketActivity?: readonly TicketActivity[];
+  /** Landing dates in the bounded inputs, even outside the activity window, for ordering done tickets. */
+  readonly ticketLandings?: ReadonlyMap<string, number>;
   /** Running and waiting jobs: those asking first, then running, then queued; the oldest first within each. */
   readonly jobs: readonly ExecutionJob[];
   readonly excerpts?: readonly SelectionExcerpt[];
@@ -128,8 +132,9 @@ function endedJobResult(worker: OwnerWorker, job: Partial<Job>): EndedExecutionJ
 }
 
 /** Uses the bounded, project-scoped job snapshot; reuses its workers for Inspector identity and land facts. */
-export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: { root: string; pane: string | null; complete: boolean; activityOnly?: boolean }, now = Date.now()):
-  ExecutionSnapshot {
+export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: {
+  root: string; pane: string | null; complete: boolean; activityOnly?: boolean; project?: ProjectSnapshot;
+}, now = Date.now()): ExecutionSnapshot {
   const cache = getJobIndexCache(home);
   const workers = new Map(board.workers.map((worker) => [jobIdOf(worker.id)!, worker]));
   let complete = scope.complete, runs: ExecutionRun[] = [];
@@ -147,14 +152,33 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   };
   // A reaped job's worker is gone, whatever its last STATUS claims.
   const live = [...workers].filter(([id, w]) => w.settledAt === null && !receipt(id).reaped_at).map(([id]) => id);
-  const ticketOf = (id: string) => {
+  // The project scan already resolved hints and task/filename references. Join by job ID, not by re-parsing them.
+  const linkedTickets = new Map<string, Set<string>>();
+  const project = scope.project;
+  for (const { slug, tickets } of [...(project?.tickets ?? []), ...(project?.objectiveTickets ?? []), ...(project?.unlinked ?? [])]) {
+    for (const { number, job } of tickets) {
+      if (!job?.id) continue;
+      let keys = linkedTickets.get(job.id);
+      if (!keys) linkedTickets.set(job.id, keys = new Set());
+      keys.add(`${slug}/${number}`);
+    }
+  }
+  const ticketsOf = (id: string) => {
     const job = receipt(id), ticket = text(job.ticket) ?? (typeof job.ticket === 'number' ? String(job.ticket) : text(job.slice));
-    return ticket && /^\d+$/.test(ticket) && text(job.package) ? `${job.package}/${ticket}` : ticket;
+    if (!ticket) return linkedTickets.get(id) ?? [];
+    return [/^\d+$/.test(ticket) && text(job.package) ? `${job.package}/${ticket}` : ticket];
   };
   const ticketActivity: TicketActivity[] = [];
+  const ticketLandings = new Map<string, number>();
+  const recordLanding = (ticket: string, at: number) => {
+    const key = targetKey(ticket);
+    if (at <= now && at > (ticketLandings.get(key) ?? -Infinity)) ticketLandings.set(key, at);
+  };
   const recent = (at: number) => at >= now - ENDED_MS && at <= now;
   for (const id of live) {
-    const ticket = ticketOf(id), worker = workers.get(id)!;
+    const tickets = [...ticketsOf(id)];
+    if (!tickets.length) continue;
+    const worker = workers.get(id)!;
     const progressAt = Date.parse(worker.latest_progress?.at ?? '');
     const statusRes = cache.readStatus<{ state?: unknown }>(id);
     const rawState = statusRes.status === 'ok' ? statusRes.value.state : undefined;
@@ -164,7 +188,7 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
       : workState(worker, now) === 'stalled' ? 'stalled'
       : 'working';
     const execJob = jobTargetFor(home, worker, id);
-    if (ticket) ticketActivity.push({
+    for (const ticket of tickets) ticketActivity.push({
       ticket, kind: 'live', jobId: id,
       at: Number.isFinite(progressAt) ? progressAt : worker.startedAt ?? undefined,
       ...(worker.startedAt != null ? { startedAt: worker.startedAt } : {}),
@@ -172,25 +196,14 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
       ...(execJob ? { execJob } : {}),
     });
   }
-  for (const [id, worker] of workers) {
-    const ticket = ticketOf(id);
-    if (!ticket) continue;
-    const land = worker.flow?.kind === 'land' ? worker.flow : undefined;
-    const at = land?.landedSha ? land.updatedAt ?? worker.settledAt : worker.settledAt;
-    const execJob = jobTargetFor(home, worker, id);
-    if (at !== null && recent(at)) ticketActivity.push({
-      ticket, kind: 'ended', at, result: endedJobResult(worker, receipt(id)), jobId: id,
-      ...(execJob ? { execJob } : {}),
-    });
-  }
+  const queueLandings = new Set<string>();
   for (const run of runs) {
     if (run.kind === 'land') {
       const jobId = run.jobIds?.[0];
-      const ticket = jobId && ticketOf(jobId);
       const activeNode = run.nodes?.flat().find((n) => n.state === 'running') ?? run.nodes?.flat().find((n) => n.progress);
       const progress = activeNode?.progress;
       const execJob = activeNode?.execJob ?? jobTargetFor(home, jobId ? workers.get(jobId) : undefined, jobId);
-      if (ticket) ticketActivity.push({
+      for (const ticket of jobId ? ticketsOf(jobId) : []) ticketActivity.push({
         ticket, kind: 'gate', flow: run.flow, at: run.updatedAt ?? run.createdAt ?? undefined,
         ...(activeNode?.jobId || jobId ? { jobId: activeNode?.jobId ?? jobId } : {}),
         ...(progress ? { progress } : {}),
@@ -206,13 +219,20 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
           ...(item.landProgress ? { progress: item.landProgress } : {}),
           ...(item.execJob ? { execJob: item.execJob } : {}),
         });
-      if (run.endedAt !== undefined && recent(run.endedAt) && (item.jobId || item.stage === 'landed' || item.stage === 'failed')) {
+      const at = item.changedAt;
+      // A dated landing wins over the worker's settlement, even if the landing is outside the window.
+      if (item.stage === 'landed' && at !== undefined) {
+        recordLanding(ticket, at);
+        if (item.jobId) queueLandings.add(`${item.jobId}:${targetKey(ticket)}`);
+      }
+      if (at !== undefined && recent(at) && (item.stage === 'landed' || item.stage === 'failed'
+        || (run.endedAt !== undefined && (item.stage === 'settled' || (item.stage === 'held' && item.jobId))))) {
         const worker = item.jobId ? workers.get(item.jobId) : undefined;
         const result = item.stage === 'landed' || item.stage === 'failed' ? item.stage
           : item.stage === 'settled' && !item.landingUnknown && worker ? endedJobResult(worker, receipt(item.jobId!)) : undefined;
         const execJob = item.execJob ?? jobTargetFor(home, worker, item.jobId);
         ticketActivity.push({
-          ticket, kind: 'ended', at: run.endedAt, result,
+          ticket, kind: 'ended', at, result,
           ...(item.jobId ? { jobId: item.jobId } : {}),
           ...(execJob ? { execJob } : {}),
         });
@@ -220,9 +240,9 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     }
     if (run.kind !== 'queue' && run.endedAt !== undefined && recent(run.endedAt)) {
       for (const id of new Set(run.jobIds ?? [])) {
-        const ticket = ticketOf(id), worker = workers.get(id);
+        const worker = workers.get(id);
         const execJob = jobTargetFor(home, worker, id);
-        if (ticket) ticketActivity.push({
+        for (const ticket of ticketsOf(id)) ticketActivity.push({
           ticket, kind: 'ended', at: run.endedAt, jobId: id,
           result: worker?.settledAt != null ? endedJobResult(worker, receipt(id)) : undefined,
           ...(execJob ? { execJob } : {}),
@@ -230,7 +250,21 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
       }
     }
   }
-  const snapshot = { root: scope.root, ...(runs.length ? { runs } : {}), ticketActivity, complete };
+  for (const [id, worker] of workers) {
+    const land = worker.flow?.kind === 'land' ? worker.flow : undefined;
+    const at = land?.landedSha ? land.landedAt ?? land.updatedAt ?? worker.settledAt : worker.settledAt;
+    if (at === null || (!land?.landedSha && !recent(at))) continue;
+    const execJob = jobTargetFor(home, worker, id);
+    for (const ticket of ticketsOf(id)) {
+      if (queueLandings.has(`${id}:${targetKey(ticket)}`)) continue;
+      if (land?.landedSha) recordLanding(ticket, at);
+      if (recent(at)) ticketActivity.push({
+        ticket, kind: 'ended', at, result: endedJobResult(worker, receipt(id)), jobId: id,
+        ...(execJob ? { execJob } : {}),
+      });
+    }
+  }
+  const snapshot = { root: scope.root, ...(runs.length ? { runs } : {}), ticketActivity, ticketLandings, complete };
   if (scope.activityOnly) return { ...snapshot, jobs: [] };
   const children = new Map<string, string[]>();
   for (const [id, worker] of workers) {
