@@ -16,12 +16,15 @@ import {
   handleSelectionAction,
   normalizePaneExcerpt,
   normalizeSelectionExcerpt,
+  openAdvisorPopup,
+  retrySelectionAction,
   readAndRemoveSelectionHandoff,
   resolveSelectionTarget,
 } from '../../dist/roles/select-send.js';
 import {
   applyComposerKey,
   createComposerState,
+  renderAdvisorConversation,
   renderSelectSendComposer,
 } from '../../dist/render/select-send-composer.js';
 import { ComposerKeyDecoder, runComposerSession, selectSendCommand } from '../../dist/cli/select-send.js';
@@ -800,6 +803,27 @@ test('plugin action toasts a popup failure, removes the handoff and does not sen
   assert.equal(fs.existsSync(join(f.home, 'panel-actions.jsonl')), false);
 });
 
+test('ui_busy keeps a private selection draft for retry and preserves the advisor reopen binding', async t => {
+  const opens = [];
+  let busy = true;
+  const f = await fakeFork(t, (method, params) => {
+    assert.equal(method, 'plugin.pane.open');
+    opens.push(params);
+    return busy ? { error: { code: 'ui_busy', message: 'Another popup is open' } } : { result: { type: 'ok' } };
+  });
+  const env = { ...f.env, HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ selected_text: '+ synthetic guard', focused_pane_id: 'w1:p2' }) };
+  const first = await handleSelectionAction(f.home, env);
+  assert.equal(first.reason, 'ui_busy');
+  assert.equal(fs.statSync(first.handoffFile).mode & 0o777, 0o600);
+  assert.deepEqual(await retrySelectionAction(f.home, f.env), { opened: false, reason: 'ui_busy' });
+  assert.equal((await openAdvisorPopup('excerpt-id', f.env)).error, 'ui_busy');
+  busy = false;
+  assert.equal(await selectSendCommand(['--recover-draft'], { env: f.env }), 0);
+  assert.equal(readAndRemoveSelectionHandoff(opens.at(-1).env.HUD_SELECT_SEND_FILE).selected_text, '+ synthetic guard');
+  assert.equal((await openAdvisorPopup('excerpt-id', f.env)).ok, true);
+  assert.deepEqual(opens.at(-1).env, opens[2].env);
+});
+
 test('empty selection makes no handoff and Esc cancels without sending', async (t) => {
   const calls = [];
   const f = await fakeFork(t, (method, params) => {
@@ -898,6 +922,12 @@ test('composer renderer keeps exact columns, escapes external text once, respect
     assert.ok(zhLines.join('\n').includes('发送选中内容'));
     assert.ok(zhLines.join('\n').includes('摘录'));
     assert.ok(zhLines.join('\n').includes('问题：'));
+
+    const advisor = { ...state, excerpt: '示例摘录', answer: { text: '因为有保护条件。\x1b[31m', at: state.source.time } };
+    const conversation = renderAdvisorConversation(advisor, state, 'ready', 29, 8).lines;
+    assert.equal(conversation.length, 8);
+    assert.ok(conversation.every(line => visualLength(line) === 29 && !line.includes('\x1b')));
+    assert.match(conversation.join('\n'), /摘录顾问[\s\S]*因为有保护条件/);
 
     // Key decoding and state editing.
     const dec = new ComposerKeyDecoder();
@@ -1277,13 +1307,16 @@ test('investigate composer renderer keeps exact columns, NO_COLOR, EN/ZH, picker
         assert.equal(line.includes('\x1b'), false);
       }
       assert.ok(pickerLines.join('\n').includes('Choose working job'));
-      assert.equal(pickerLines.join('\n').includes('Main:'), false);
+      assert.doesNotMatch(pickerLines.join('\n'), /Main:|Ask an advisor/);
     }
 
     // Choose job -> editor shows Investigate pane, Tab reopens picker, Esc returns to editor.
-    const picked = applyComposerKey(state, { type: 'enter' }).state;
+    const last = applyComposerKey(state, { type: 'end' }).state;
+    assert.equal(last.picker, 0, 'the only target in Investigate is the working job');
+    const picked = applyComposerKey(last, { type: 'enter' }).state;
     assert.equal(picked.picker, null);
     assert.equal(picked.targetJob, job);
+    assert.equal(picked.targetAdvisor, false);
     const editorLines = renderSelectSendComposer(picked, { width: 80, height: 14, nowMs: 0 });
     for (const line of editorLines) assert.equal(visualLength(line), 80);
     assert.ok(editorLines.join('\n').includes('Investigate pane ->'));

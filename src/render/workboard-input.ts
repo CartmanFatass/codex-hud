@@ -247,6 +247,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if (harnesses) return;
       }
       if (harnesses && harnessId(row?.item)) return switchAction(row);
+      if (row?.selectionAdvisor) return { type: 'open-selection-advisor' as const, id: row.selectionAdvisor };
       if (row?.execRun) {
         next.subpage = { kind: 'run-detail', flow: row.execRun, scroll: 0 };
         return;

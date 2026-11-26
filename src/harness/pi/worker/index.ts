@@ -21,8 +21,8 @@ export async function installWorker(pi: WorkerPi) {
     throw Error(`Expected the matching ${isTab ? 'tab' : 'headless'} pi job`);
   }
   if (contract.guard) installGuard(pi, contract.guard, dir, job.project_root);
-  webSearch(pi, dirname(dirname(dir)));
-  roleRuntime(pi, contract);
+  if (!job.selection_advisor) webSearch(pi, dirname(dirname(dir)));
+  roleRuntime(pi, contract, undefined, Boolean(job.selection_advisor));
   mistralBudget(pi, dir);
   if (contract.tps) trackTps(pi);
   if (isTab && contract.tab) {

@@ -29,16 +29,19 @@ export function selectionExcerptRows(records: readonly SelectionExcerpt[], width
   for (const [i, excerpt] of records.entries()) {
     if (i) rows.push(row(''));
     const start = rows.length, item = excerptItem(excerpt);
-    const status = t(excerpt.answer ? 'answered' : excerpt.delivery);
+    const status = t(excerpt.advisor?.ended ? 'Advisor ended' : excerpt.answer ? 'answered' : excerpt.delivery);
     const target = compact ? ` · ${monitorText(excerpt.role)} ${monitorText(excerpt.target)}` : '';
     const marker = item === cursor ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
-    rows.push(row(marker + theme.board.title(status + target)));
+    rows.push(row(marker + theme.board.title((excerpt.advisor ? `${t('Selection advisor')} · ` : '') + status + target)));
     const from = [excerpt.source.job, excerpt.source.pane].filter(Boolean).join(' · ');
     if (from) rows.push(row(`  ${theme.board.muted(t('Source: {source}', { source: monitorText(from) }))}`));
     prose('Excerpt', excerpt.excerpt);
     if (excerpt.question) prose('Question', excerpt.question);
     if (excerpt.answer) prose('Answer', excerpt.answer.text);
-    if (compact) for (let i = start; i < rows.length; i++) rows[i].item = item;
+    if (compact) for (let i = start; i < rows.length; i++) {
+      rows[i].item = item;
+      if (excerpt.advisor) rows[i].selectionAdvisor = excerpt.id;
+    }
   }
   return rows;
 }

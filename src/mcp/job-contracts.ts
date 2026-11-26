@@ -77,6 +77,7 @@ export interface Job extends PiOptions {
   scout_question?: string; // Legacy queued jobs only.
   queued_scouts?: { kind: PrewalkScoutKind; ask: string }[]; // Retained until queued launch starts scouts.
   headless?: boolean; // Older sonic receipts may own a herdr tab.
+  selection_advisor?: string; // Excerpt receipt ID for a temporary advisor.
   headless_task_fence?: string; // Automatic follow-ups are part of the caller's existing task.
   package?: string;
   title?: string;

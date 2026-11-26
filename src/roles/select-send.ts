@@ -841,17 +841,26 @@ export async function deliverSelection(
   };
 }
 
-export async function openComposerPopup(handoffFile: string, env: NodeJS.ProcessEnv = process.env): Promise<{ ok: boolean; error?: string }> {
+export function openComposerPopup(handoffFile: string, env: NodeJS.ProcessEnv = process.env) {
+  return openSelectionPopup(`HUD_SELECT_SEND_FILE=${handoffFile}`, env);
+}
+
+export function openAdvisorPopup(id: string, env: NodeJS.ProcessEnv = process.env) {
+  return openSelectionPopup(`HUD_SELECTION_ADVISOR_ID=${id}`, env);
+}
+
+async function openSelectionPopup(binding: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; error?: string }> {
+  const at = binding.indexOf('=');
   const params = {
     plugin_id: SELECT_SEND_PLUGIN_ID,
     entrypoint: SELECT_SEND_COMPOSER_ENTRYPOINT,
     placement: 'popup',
-    env: { HUD_SELECT_SEND_FILE: handoffFile },
+    env: { [binding.slice(0, at)]: binding.slice(at + 1) },
   };
   if (herdrEndpoint(env)) {
     const reply = await herdrRequest('plugin.pane.open', params, { env, timeoutMs: 2000 }).catch(() => null);
     if (reply && !reply.error) return { ok: true };
-    if (reply?.error) return { ok: false, error: `${reply.error.code}: ${reply.error.message ?? ''}`.trim() };
+    if (reply?.error) return { ok: false, error: reply.error.code === 'ui_busy' ? 'ui_busy' : `${reply.error.code}: ${reply.error.message ?? ''}`.trim() };
   }
   const bin = env.HERDR_BIN_PATH || 'herdr';
   const cli = await runCommand(
@@ -867,12 +876,12 @@ export async function openComposerPopup(handoffFile: string, env: NodeJS.Process
       '--placement',
       'popup',
       '--env',
-      `HUD_SELECT_SEND_FILE=${handoffFile}`,
+      binding,
     ],
     env,
     { budgetMs: 3000 }
   );
-  return cli.ok ? { ok: true } : { ok: false, error: cli.stderr.trim() || cli.reason };
+  return cli.ok ? { ok: true } : { ok: false, error: /\bui_busy\b/.test(cli.stderr) ? 'ui_busy' : cli.stderr.trim() || cli.reason };
 }
 
 /**
@@ -897,6 +906,11 @@ export async function handleSelectionAction(
 
   const handoffFile = writeSelectionHandoff(hudHome, contextToStore);
   const opened = await openComposerPopup(handoffFile, env);
+  if (opened.error === 'ui_busy') {
+    const draft = handoffFile.replace(/\.json$/, '.busy.json');
+    fs.renameSync(handoffFile, draft);
+    return { opened: false, reason: 'ui_busy', handoffFile: draft };
+  }
   if (!opened.ok) {
     try {
       fs.unlinkSync(handoffFile);
@@ -944,4 +958,19 @@ export async function handleInvestigatePaneAction(
     return { opened: false, reason: opened.error ?? 'popup_open_failed' };
   }
   return { opened: true, handoffFile };
+}
+
+export async function retrySelectionAction(hudHome: string, env: NodeJS.ProcessEnv): Promise<{ opened: boolean; reason?: string }> {
+  const dir = handoffDir(hudHome);
+  pruneHandoffDir(dir);
+  let draft: string | undefined;
+  try {
+    draft = fs.readdirSync(dir).filter(name => /^[0-9a-f-]{36}\.busy\.json$/.test(name))
+      .map(name => { const file = join(dir, name); return { file, stat: fs.lstatSync(file) }; })
+      .filter(({ stat }) => stat.isFile())
+      .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs)[0]?.file;
+  } catch { /* A draft may already have been consumed. */ }
+  if (!draft) return { opened: false, reason: 'empty_selection' };
+  const opened = await openComposerPopup(draft, env);
+  return { opened: opened.ok, reason: opened.error };
 }

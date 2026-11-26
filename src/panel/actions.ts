@@ -16,6 +16,7 @@ import { rememberModel } from '../render/model-input.js';
 import { controlRoleItem } from '../render/monitor-state.js';
 import type { MonitorOutcome, MonitorState } from '../render/monitor.js';
 import { allowCouncil } from '../roles/council-grant.js';
+import { openAdvisorPopup } from '../roles/select-send.js';
 import { HarnessSwitchError, setHarnessDisabled } from '../roles/harness-switches.js';
 import { editPlaces, editPreset } from '../roles/role-control.js';
 import { roleRegistry } from '../roles/roster.js';
@@ -116,6 +117,13 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
           host.notice(copied ? t('Copied: {name}', { name: action.skill }) : t('Could not copy path'));
           break;
         }
+        case 'open-selection-advisor':
+          void openAdvisorPopup(action.id).then(result => {
+            if (result.ok) return;
+            host.notice(t(result.error === 'ui_busy' ? 'Popup busy. Try opening the advisor again.' : 'Could not open advisor window'));
+            host.repaint();
+          });
+          break;
         case 'focus-job-tab':
         case 'pin-job-tab':
         case 'hide-job-tab': {

@@ -68,7 +68,7 @@ function claudeServers(names: Set<string>): [string, unknown][] {
 }
 
 export function cliWorkerStartup(place: RolePlace, cwd: string, dir: string, instructions: string,
-  entry: string, allowed: readonly string[], standingBrief?: StandingBriefRef): { args: string[]; prompt: string; warning?: string } {
+  entry: string, allowed: readonly string[], standingBrief?: StandingBriefRef, advisor = false): { args: string[]; prompt: string; warning?: string } {
   const briefPath = join(dir, jobFiles.brief);
   if (place.agent === 'agy') return { args: [], prompt: firstPromptWithRole(briefPath, instructions, standingBrief) };
   if (place.agent === 'grok') {
@@ -90,6 +90,7 @@ export function cliWorkerStartup(place: RolePlace, cwd: string, dir: string, ins
     // https://code.claude.com/docs/en/mcp#exempt-a-server-from-deferral
     writePrivateFile(file, JSON.stringify({ mcpServers: Object.fromEntries([['hud', { ...hud, alwaysLoad: true }], ...claudeServers(names)]) }));
     const args = ['--strict-mcp-config', '--mcp-config', file];
+    if (advisor) return { args: [...args, '--tools', '', '--setting-sources', ''], prompt };
     return isHerdrAgentArg(instructions)
       ? { args: [...args, '--append-system-prompt-file', instructions], prompt }
       : { args, prompt: firstPromptWithRole(briefPath, instructions) };

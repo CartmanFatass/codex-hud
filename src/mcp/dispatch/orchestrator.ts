@@ -22,7 +22,7 @@ import { recordQuestionAnswer } from '../../roles/job-archive.js';
 import { withAbstractLock } from '../../utils/abstract-lock.js';
 import { watching, ensureQueueWatcher } from '../../roles/notify.js';
 import { sharedRoot } from '../../roles/projects.js';
-import { excerptTargetEnded, excerptTargetSupported, jobProjectRoot } from '../../roles/selection-excerpts.js';
+import { excerptTargetEnded, excerptTargetSupported, jobProjectRoot, recordSelectionExcerpt, type SelectionExcerpt } from '../../roles/selection-excerpts.js';
 import { readReportMeta, validPreviewPath } from '../../roles/report-meta.js';
 import { EXPERIMENT_TAG_MAX_LENGTH } from '../../roles/tool-definitions.js';
 import {
@@ -227,10 +227,12 @@ export async function dispatchTicketJob(
   );
 }
 
-export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote, ticketAdmission, workflow }: {
+type AdvisorInput = Pick<SelectionExcerpt, 'id' | 'excerpt' | 'source' | 'question'>;
+
+export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote, ticketAdmission, workflow, advisor }: {
   parent?: SonicParent; repair?: { source: Job; derived: boolean }; batch?: boolean; slotGate?: SlotGate;
   queue?: { id: string; canAdmit: () => boolean }; member?: BatchMember; dispatcher?: Job['dispatcher']; workflow?: WorkflowDispatch;
-  workspace?: string; runNote?: string; ticketAdmission?: boolean;
+  workspace?: string; runNote?: string; ticketAdmission?: boolean; advisor?: AdvisorInput;
 } = {}) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
@@ -242,6 +244,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   const retryOf = input.retry_of === undefined ? undefined : required(input, 'retry_of');
   const source = retryOf ? findJob(retryOf) : null;
   if (retryOf && !source) return { ok: false, code: 'job_not_found' };
+  if (source?.selection_advisor) return { ok: false, code: 'not_retryable', reason: 'Selection advisors cannot be retried into another session' };
   const role = input.role === undefined && source ? source.role : required(input, 'role');
   // Check caller input, not inherited retry options or internal repair placement.
   if (!repair && role !== 'general') {
@@ -299,7 +302,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
     dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, {
       worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source,
       ticketQueue: queue?.id, ticketAdmission: Boolean(ticketAdmission || queue?.id),
-      canAdmit: workflow?.canAdmit ?? member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace, workflow,
+      canAdmit: workflow?.canAdmit ?? member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace, workflow, advisor,
     }));
 }
 
@@ -456,8 +459,8 @@ export async function dispatchCouncilSeat(parent: Job, seat: CouncilSeat, part: 
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<SonicParent, 'job' | 'objective' | 'headless'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, member, canAdmit, dispatcher, seat, council, memberStarted, workspace, workflow }: {
-    seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void; workflow?: WorkflowDispatch;
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, member, canAdmit, dispatcher, seat, council, memberStarted, workspace, workflow, advisor }: {
+    seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void; workflow?: WorkflowDispatch; advisor?: AdvisorInput;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
     ticketQueue?: string; ticketAdmission?: boolean; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
   } = {}) {
@@ -509,6 +512,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     return { ok: false, code: 'invalid_arguments', error: `scouts reserve ${scoutsArg.length} of the 16 from_jobs entries` };
   }
   let role = requestedRole;
+  if (advisor && ['sonic', 'council', 'lead'].includes(role))
+    return { ok: false, code: 'role_unavailable', reason: `Role ${role} cannot run a selection advisor` };
   if ((args.members !== undefined || args.synthesizer !== undefined) && role !== 'council')
     return { ok: false, code: 'invalid_arguments', error: 'members and synthesizer are council-only' };
   // An internal seat is the resolved council preset, not the general/pro role’s launch chain.
@@ -557,7 +562,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   // uses general's public placement overrides to request a different place.
   const fromImp = role === 'general' && sourceJob?.overflow_from === 'imp' &&
     !placementOverrides.some(key => retryInput?.[key] !== undefined) && !hasPiPlacement(retryInput?.pi_args);
-  const chain = fromImp ? configured.get('imp') : definition;
+  const chain = advisor ? { ...definition, can_continue: true } : fromImp ? configured.get('imp') : definition;
   if (!chain || chain.optionalEnabled === false)
     return { ok: false, code: 'role_unavailable', reason: 'Role imp is not configured or is hidden in this project' };
   const mode = args.mode;
@@ -603,7 +608,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const modelOverride = args.model === undefined ? undefined : required(args, 'model');
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
   // Sonic is headless and can belong to a headless worker without a caller pane.
-  if (!workflow && !(seat && workspace) && !isTicketAdmission && !(parent?.headless && role === 'sonic') && !herdrId(pane))
+  if (!advisor && !workflow && !(seat && workspace) && !isTicketAdmission && !(parent?.headless && role === 'sonic') && !herdrId(pane))
     return { ok: false, code: 'herdr_required' };
 
   const id = 'j' + randomBytes(8).toString('hex');
@@ -615,7 +620,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const objective = lineage ? objectiveLink(lineage.objective) : ticketObjective(cwd, args.ticket, projectRoot);
   const contextCwd = scoutContextCwd ?? cwd;
   let pool: Awaited<ReturnType<typeof pickRolePool>> | undefined;
-  const contextFor = (targetArgs: Args, inline: boolean) => assembleContext(targetArgs, contextCwd, inline, project, repairOf, pool?.pool_files);
+  const contextFor = (targetArgs: Args, inline: boolean): ReturnType<typeof assembleContext> => advisor
+    ? Promise.resolve({ block: '', metadata: {}, contextInputs: [], standing: undefined })
+    : assembleContext(targetArgs, contextCwd, inline, project, repairOf, pool?.pool_files);
   if (role === 'council') {
     const allowed = ['role', 'task', 'cwd', 'request_key', 'members', 'synthesizer', 'context_files', 'from_jobs', 'retry_of'];
     const extra = Object.keys(args).find(k => args[k] !== undefined && !allowed.includes(k));
@@ -657,7 +664,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
   }
   if (workflow?.cheap && roleHasBrowser(chain)) return { ok: false, code: 'workflow_cost_changed', reason: `Role ${role} now has a browser place; re-plan` };
-  const imp = requestedRole === 'imp' || fromImp;
+  const imp = !advisor && (requestedRole === 'imp' || fromImp);
   const sonic = requestedRole === 'sonic';
   const settings = !member && (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
   const even = imp && settings?.impPlacement === 'even' ? evenPlanner(found, chain, args, routing, 'imp', settings.impEvenPool)
@@ -681,6 +688,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }));
   }
   const plan = await even?.() ?? launchPlan(found, chain, now, args, routing, onEntry, retryInput, route, !!landCwd);
+  if (advisor) plan.candidates = plan.candidates.filter(({ candidate: { place } }) =>
+    place.harness === 'pi' || (place.harness === 'cli' && place.agent === 'claude'));
   let worktree: ManagedWorktree | undefined;
   let reusedWorktree: ManagedWorktree | undefined;
   if (isolation === 'worktree') {
@@ -743,11 +752,12 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (cap > 0 && (workingByRole.get(role) ?? 0) >= cap) {
         const generalCap = capForRole(concurrency, 'general');
         const generalHasRoom = generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap;
-        if (!isTicketAdmission && role === 'imp' && concurrency.impOverflow && generalHasRoom && found.roles().has('general')) {
+        if (!advisor && !isTicketAdmission && role === 'imp' && concurrency.impOverflow && generalHasRoom && found.roles().has('general')) {
           // Overflow borrows a concurrency slot, not the imp role's launch chain or mode.
           overflowFrom = 'imp';
           role = 'general';
-        } else shouldQueue = true;
+        } else if (advisor) return { ok: false as const, code: 'role_busy' as const, reason: `Role ${role} is at capacity` };
+        else shouldQueue = true;
       }
     }
 
@@ -863,6 +873,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(workflow && { workflow: workflow.id, workflow_cheap: workflow.cheap }),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),
+      ...(advisor && { selection_advisor: advisor.id }),
       ...(council && seat && { workflow: council.id, council, preset: seat.preset }),
       ...(first.route && { route: first.route }),
       ...(role === 'sonic' || first.route?.mode === 'headless' || args.mode === 'headless' ? { headless: true } : {}),
@@ -904,7 +915,13 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     const { job, result, reason } = await launchAttempts(base, { cwd: landCwd ?? cwd, args, retryInput, chain, plan, worktree }, {
       even, modelSource: modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSourceFor(onName) : undefined,
       async prepare(job, browser, first) {
-        if (first) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        if (first) {
+          fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+          if (advisor) {
+            const { id: excerptId, ...excerpt } = advisor;
+            await recordSelectionExcerpt(hudHome, { ...excerpt, target: job.job, launchId: '', role: job.role, advisor: { followups: [] } }, excerptId);
+          }
+        }
         const briefContext = inline === browser ? context! : await contextFor(args, browser);
         if (!('code' in briefContext)) {
           Object.assign(job, briefContext.metadata);
@@ -919,8 +936,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           const children = join(directory(parentJob), jobFiles.sonic);
           fs.mkdirSync(children, { recursive: true, mode: 0o700 });
           fs.writeFileSync(join(children, id), '', { mode: 0o600, flag: 'wx' });
-        } else if (!parentJob) trackCreatedJob(id);
+        } else if (!parentJob && !advisor) trackCreatedJob(id);
         ensureWatcher();
+        if (advisor) return;
         if (session.taskClient && !parentJob) taskEntry = beginTask(job);
         else if (!job.scout_only && !job.council) void ensureQueueWatcher(pane, hudHome);
       },
@@ -1521,8 +1539,8 @@ const blockedSend = {
 } as const;
 
 export async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean,
-  { land = false, batch = false, dispatcher, selection }: {
-    land?: boolean; batch?: boolean; dispatcher?: Job['dispatcher']; selection?: { project: string; launchId: string };
+  { land = false, batch = false, dispatcher, selection, advisor }: {
+    land?: boolean; batch?: boolean; dispatcher?: Job['dispatcher']; selection?: { project: string; launchId: string }; advisor?: string;
   } = {}) {
   // Owner selections use the hud_send path without ever enrolling in a resume/repair or headless follow-up.
   if (selection) workingOnly = true;
@@ -1544,6 +1562,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
     if (code) return { ok: false, code };
   }
   if (!current) return { ok: false, code: 'job_not_found' };
+  if (current.selection_advisor !== advisor) return { ok: false, code: 'not_continuable' };
   if (current.role === 'sonic' || current.role === 'council' || current.council) return { ok: false, code: 'not_continuable' };
   if (!current.headless && isShellLaunchedWorker(jobCache.readSession(id, { throwOnError: true })?.fields))
     return { ok: false, code: 'shell_worker_unsupported', error: SHELL_WORKER_UNSUPPORTED };
@@ -1561,7 +1580,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
           ...(outcome && { key: outcome.key, exit_code: outcome.exit_code, stderr_tail: outcome.stderr_tail }) };
   }
   let { row, status, statusAt } = readRow(current);
-  if (!land && current.headless && status?.state === 'working') {
+  if (!advisor && !land && current.headless && status?.state === 'working') {
     const job = current;
     const queued = await withReopenLock(dir, () => {
       const fresh = readCachedStatus(id).status;
@@ -1602,7 +1621,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   const state = row.state ?? '';
   const repairKey = derivedKey('repair', id, matchKey);
   if (!workingOnly && !row.open_questions && closedReport(current, status)) {
-    if (!land) {
+    if (!land && !advisor) {
       const prior = jobs().find((job) => job.request_key === repairKey &&
         (explicitKey !== undefined || withinRetryWindow(job.created_at, now)));
       if (prior) {
@@ -1616,6 +1635,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
     }
     if (land) return { ok: false, code: 'not_continuable' };
   }
+  if (advisor) return { ok: false, code: 'not_continuable' }; // Never repair an advisor into a different conversation.
   if (!workingOnly && !land && !row.open_questions && (closedReport(current, status) ||
       (state === 'closed' && status?.exit_reason === REPORT_READ_EXIT) ||
       (current.resume_s === undefined && (state === 'idle_grace' || (state === 'closed' && status?.exit_reason === 'settled')) &&

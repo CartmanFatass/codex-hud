@@ -7,8 +7,8 @@ const readOnlyTools = /^(read|bash|write|grep|find|ls|deepseek_search|deepseek_f
 const disallowed = /^(ask_orchestrator|ask_user_question|ask_user|question|questionnaire|askuserquestion|call_reviewer|call_sonic|rate_helper)$/i;
 function fail(reason: string): never { console.error(`[hud-worker] ${reason}`); process.exit(2); }
 
-export function roleRuntime(pi: WorkerPi, contract: WorkerContract, fatal = fail) {
-  const sonic = contract.role === 'sonic', protocol = sonic ? sonicProtocolTools : sessionProtocolTools;
+export function roleRuntime(pi: WorkerPi, contract: WorkerContract, fatal = fail, advisor = false) {
+  const sonic = contract.role === 'sonic', protocol = advisor ? ['hud_report'] : sonic ? sonicProtocolTools : sessionProtocolTools;
   const instructions = readFileSync(new URL(`../../../../packages/hud-mcp/instructions/${contract.instructions}.md`, import.meta.url), 'utf8').trim();
   pi.on('session_start', (_event, ctx) => {
     const resumeId = process.env.HUD_RESUME_SESSION_ID;
@@ -20,7 +20,7 @@ export function roleRuntime(pi: WorkerPi, contract: WorkerContract, fatal = fail
     if (contract.thinking && contract.thinking !== pi.getThinkingLevel()) fatal(`Requested thinking ${contract.thinking}, active level ${pi.getThinkingLevel()}`);
     const all = pi.getAllTools().map(tool => tool.name);
     const tools = contract.guard ? readOnlyTools : workerTools;
-    const ordinary = contract.explicitTools ? pi.getActiveTools() : all.filter(name => tools.test(name));
+    const ordinary = advisor ? [] : contract.explicitTools ? pi.getActiveTools() : all.filter(name => tools.test(name));
     pi.setActiveTools([...new Set([...ordinary, ...protocol])].filter(name =>
       !disallowed.test(name) && !(sonic && (name === 'hud_sonic' || name === 'hud_ask'))));
     if (!protocol.every(name => pi.getActiveTools().includes(name))) fatal('Missing required HUD worker protocol tools');
@@ -30,7 +30,7 @@ export function roleRuntime(pi: WorkerPi, contract: WorkerContract, fatal = fail
   });
   pi.on('before_agent_start', ({ systemPromptOptions }) => {
     if (!systemPromptOptions) return;
-    systemPromptOptions.sections.role = instructions;
+    if (!advisor) systemPromptOptions.sections.role = instructions;
     systemPromptOptions.skills = systemPromptOptions.skills.filter(skill => skill.name !== 'helper-pane');
   });
 }

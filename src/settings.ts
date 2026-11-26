@@ -35,6 +35,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   poolPick: boolean;
   /** Recommend skills and check owner rules in main sessions (shown only, never injected). */
   advisorShadow: boolean;
+  selectionAdvisorRole: string;
   /** Absolute directories scanned for SKILL.md files when advisorShadow is on. */
   advisorSkillDirs: string[];
   /** Absolute Markdown rules file, or empty to disable rule checks. */
@@ -84,6 +85,7 @@ export function defaultSettings(): HudSettings {
     autoPrewalk: true,
     poolPick: true,
     advisorShadow: false,
+    selectionAdvisorRole: 'oracle',
     advisorSkillDirs: [],
     advisorRulesFile: '',
     impPlacement: 'fixed',
@@ -133,6 +135,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   autoPrewalk: isBoolean,
   poolPick: isBoolean,
   advisorShadow: isBoolean,
+  selectionAdvisorRole: (value) => typeof value === 'string' && /^[\w.-]{1,64}$/.test(value),
   advisorSkillDirs: (value) =>
     Array.isArray(value) &&
     value.length <= 64 &&

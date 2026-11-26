@@ -3,6 +3,7 @@
  * Follows ARCHITECTURE §8: exact width columns, pure paint (nowMs), single monitorText pass,
  * t() EN/ZH labels, theme roles (zero ANSI under theme=none / NO_COLOR), whole footer hints.
  */
+import type { SelectionExcerpt } from '../roles/selection-excerpts.js';
 import type { NormalizedExcerpt, SelectSendMode, SelectionJobTarget, SelectionSource } from '../roles/select-send.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
@@ -15,6 +16,7 @@ export interface ComposerState {
   readonly targetAgent: string | null;
   readonly jobs: readonly SelectionJobTarget[];
   readonly targetJob?: SelectionJobTarget;
+  readonly targetAdvisor?: boolean;
   readonly picker: number | null;
   readonly excerpt: NormalizedExcerpt;
   readonly stale: boolean;
@@ -150,6 +152,10 @@ function guardedWaitText(width: number): string {
   return visualLength(full) <= width ? full : t('Waiting · Esc cancel');
 }
 
+function offersAdvisor(state: ComposerState): boolean {
+  return state.mode === 'selection' && Boolean(state.source.projectRoot && state.source.pane);
+}
+
 function targetJobLabel(job: SelectionJobTarget): string {
   return [monitorText(job.role), t('working'), job.ticket && monitorText(job.ticket),
     job.package && job.package !== job.ticket && monitorText(job.package), job.job].filter(Boolean).join(' · ');
@@ -174,7 +180,7 @@ export function renderSelectSendComposer(
       const job = investigate ? state.jobs[i] : state.jobs[i - 1];
       const label = !investigate && i === 0
         ? (main ? t('Main: {target}', { target: main }) : t('Main unavailable'))
-        : job ? targetJobLabel(job) : '';
+        : job ? targetJobLabel(job) : i === state.jobs.length + 1 && offersAdvisor(state) ? t('Ask an advisor') : '';
       rows.push(i === state.picker ? theme.selected(`› ${label}`) : label ? `  ${label}` : '');
     }
     rows.push(theme.dim(fitWholeHints([
@@ -187,7 +193,7 @@ export function renderSelectSendComposer(
 
   // 1. Header: target on left, optional source metadata dropped before cutting on right.
   const targetDesc = state.targetJob ? targetJobLabel(state.targetJob) : investigate ? null : main;
-  const leftTitle = targetDesc
+  const leftTitle = state.targetAdvisor ? t('Ask an advisor') : targetDesc
     ? t(investigate ? 'Investigate pane -> {target}' : 'Send selection -> {target}', { target: targetDesc })
     : t(investigate ? 'Investigate pane' : 'Send selection');
   const rightBudget = Math.max(0, width - visualLength(leftTitle) - 2);
@@ -252,10 +258,10 @@ export function renderSelectSendComposer(
   rows.push(fit(promptStyled + theme.value(before) + cursorMark + theme.value(after), width));
 
   // 6. Footer hints (kept whole when fitted).
-  const canSend = investigate ? Boolean(state.targetJob) : Boolean(state.targetPane || state.targetJob);
+  const canSend = investigate ? Boolean(state.targetJob) : Boolean(state.targetPane || state.targetJob || state.targetAdvisor);
   const hints = [
-    ...(editing && state.jobs.length ? [t('Tab targets')] : []),
-    ...(editing && canSend && !state.excerpt.empty ? [t('Enter send')] : []),
+    ...(editing && (state.jobs.length || offersAdvisor(state)) ? [t('Tab targets')] : []),
+    ...(editing && canSend && !state.excerpt.empty ? [t(state.targetAdvisor ? 'Enter ask' : 'Enter send')] : []),
     ...(state.phase !== 'waiting' ? [t('Esc cancel')] : []),
     ...(editing && overflow ? [t('↑↓ scroll')] : []),
   ];
@@ -265,6 +271,38 @@ export function renderSelectSendComposer(
     const clipped = truncateAnsi(line, width);
     return clipped + ' '.repeat(Math.max(0, width - visualLength(clipped)));
   });
+}
+
+export function renderAdvisorConversation(
+  row: SelectionExcerpt, state: ComposerState, phase: 'waiting' | 'ready' | 'ended' | 'unavailable', width: number, height: number,
+): { lines: string[]; maxScroll: number } {
+  const innerWidth = width - 2;
+  const body: string[] = [];
+  const add = (label: string, text: string) => {
+    body.push(theme.label(t(label)));
+    for (const raw of text.split('\n')) {
+      for (const line of wrapVisual(monitorText(raw), innerWidth)) body.push(`  ${theme.value(line)}`);
+    }
+  };
+  add('Excerpt', row.excerpt);
+  for (const turn of [row, ...(row.advisor?.followups ?? [])]) {
+    if (turn.question) add('Question', turn.question);
+    if (turn.answer) add('Answer', turn.answer.text);
+  }
+  const status = state.error ?? t(phase === 'ready' ? 'Advisor ready for a follow-up' : phase === 'waiting'
+    ? 'Advisor working…' : phase === 'ended' ? 'Advisor ended' : 'Advisor session unavailable');
+  const viewport = height - 4;
+  const maxScroll = Math.max(0, body.length - viewport);
+  const start = Math.max(0, maxScroll - state.scroll);
+  const rows = [pair(theme.strong(t('Selection advisor')), theme.dim(headerMeta(row.source, Math.max(0, width - visualLength(t('Selection advisor')) - 2))), width),
+    state.error ? theme.error(status) : theme.info(status)];
+  for (let i = 0; i < viewport; i++) rows.push(body[start + i] ?? '');
+  const label = t('Follow-up: ');
+  const { before, after } = sliceQuestionWindow(state.question, state.cursor, width - visualLength(label) - 1);
+  rows.push(phase === 'ended' ? '' : theme.accent(label) + theme.value(before) + theme.selected('▏') + theme.value(after));
+  rows.push(theme.dim(fitWholeHints([t('Esc hide'), ...(phase === 'ended' ? [] : [t('/end close advisor')]),
+    ...(phase === 'ready' ? [t('Enter ask')] : []), ...(maxScroll ? [t('↑↓ scroll')] : [])], width)));
+  return { lines: rows.map(line => fit(line, width)), maxScroll };
 }
 
 export function applyComposerKey(
@@ -286,7 +324,7 @@ export function applyComposerKey(
       return { state: { ...state, picker: null }, intent: 'none' };
     }
     if (key.type === 'scroll' || key.type === 'home' || key.type === 'end') {
-      const maxIndex = investigate ? Math.max(0, state.jobs.length - 1) : state.jobs.length;
+      const maxIndex = investigate ? Math.max(0, state.jobs.length - 1) : state.jobs.length + Number(offersAdvisor(state));
       const picker = key.type === 'home' ? 0 : key.type === 'end' ? maxIndex
         : Math.max(0, Math.min(maxIndex, state.picker + key.delta));
       return { state: { ...state, picker }, intent: 'none' };
@@ -294,7 +332,8 @@ export function applyComposerKey(
     if (key.type === 'enter') {
       const picked = investigate ? state.jobs[state.picker] : state.jobs[state.picker - 1];
       if (investigate && !picked) return { state, intent: 'none' };
-      return { state: { ...state, targetJob: picked, picker: null, error: null }, intent: 'none' };
+      return { state: { ...state, targetJob: picked,
+        targetAdvisor: offersAdvisor(state) && state.picker === state.jobs.length + 1, picker: null, error: null }, intent: 'none' };
     }
     return { state, intent: 'none' };
   }
@@ -306,9 +345,9 @@ export function applyComposerKey(
     case 'enter':
       return { state, intent: 'submit' };
     case 'targets': {
-      if (!state.jobs.length) return { state, intent: 'none' };
+      if (!state.jobs.length && !offersAdvisor(state)) return { state, intent: 'none' };
       const idx = state.targetJob ? state.jobs.indexOf(state.targetJob) : -1;
-      const picker = state.mode === 'investigate' ? Math.max(0, idx) : idx >= 0 ? idx + 1 : 0;
+      const picker = state.mode === 'investigate' ? Math.max(0, idx) : state.targetAdvisor ? state.jobs.length + 1 : idx + 1;
       return { state: { ...state, picker }, intent: 'none' };
     }
     case 'text': {

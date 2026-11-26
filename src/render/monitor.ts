@@ -90,6 +90,7 @@ export interface MonitorRow {
   execJob?: { target: JobTarget; dir: string; tab: boolean };
   /** A ticket-queue run on the Execution page: Enter opens its Run Detail view. */
   execRun?: string;
+  selectionAdvisor?: string;
 }
 export interface MonitorRect {
   id: MonitorPane;
@@ -229,6 +230,7 @@ export interface MonitorOutcome {
     | { type: 'focus-job-tab' | 'pin-job-tab' | 'hide-job-tab'; dir: string }
     | { type: 'answer-job'; home: string; jobId: string; qid: string; answer: string; role: string | null }
     | { type: 'stop-job'; dir: string }
+    | { type: 'open-selection-advisor'; id: string }
     | { type: 'batch-control'; flow: string; control: 'pause' | 'resume' | 'stop' }
     /** `w` on Home or Project: the panel writes the shown project's HTML review board and opens it. */
     | { type: 'export-board' };

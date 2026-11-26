@@ -125,12 +125,14 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     if (!isCliDirTrusted(place.agent!, job.cwd, process.env)) {
       return rollback({ ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' });
     }
-    const startup = cliWorkerStartup(place, job.cwd, dir, instructions, binScript('hud-mcp.mjs'), servers, standingBrief);
+    const advisor = Boolean(job.selection_advisor);
+    const startup = cliWorkerStartup(advisor ? { ...place, args: undefined } : place,
+      job.cwd, dir, instructions, binScript('hud-mcp.mjs'), advisor ? [] : servers, standingBrief, advisor);
     const nativeArgs = [
       ...(place.model ? kind.model(place.model) : []),
       ...(place.thinking ? kind.effort(place.thinking) : []),
       ...kind.bypass,
-      ...(place.args ?? []),
+      ...(advisor ? [] : place.args ?? []),
       ...startup.args,
     ];
     // An arbitrary CLI option has no equivalent prompt fallback. Let the next
@@ -139,7 +141,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     if (job.cli && startup.warning) job.cli.mcp_scope_warning = startup.warning;
     if (job.headless) {
       const turn = writeTurn(dir, { restarted: !!resume, callerToken });
-      const prompt = withDonePrompt(resume?.message ?? startup.prompt, bundled, dir, turn, place.agent!);
+      const prompt = withDonePrompt(resume?.message ?? (advisor ? task : startup.prompt), bundled, dir, turn, place.agent!);
       const initialId = !resume && place.agent === 'claude' ? randomUUID() : undefined;
       startHeadlessProcess(dir, job, [...nativeArgs, ...kind.headless!(prompt, resume?.id, initialId)], { id: resume?.id, initialId });
       return { exit_code: 0, stdout: '', stderr: '' };

@@ -1,7 +1,8 @@
 /** `hud select-send`: plugin action and minimal popup composer. */
 import { StringDecoder } from 'node:string_decoder';
 import { resolve as resolvePath } from 'node:path';
-import { recordSelectionExcerpt, setExcerptDelivery, type ExcerptDelivery } from '../roles/selection-excerpts.js';
+import { MAX_ADVISOR_FOLLOWUPS, readSelectionAdvisor, recordSelectionExcerpt, setExcerptDelivery, type ExcerptDelivery } from '../roles/selection-excerpts.js';
+import { advisorPhase, continueSelectionAdvisor, endSelectionAdvisor, startSelectionAdvisor } from '../roles/selection-advisor.js';
 import { getHudHome } from '../hud-home.js';
 import { setDisplayConfig } from '../render/hud-config.js';
 import { resolveLanguage, setLanguage, t } from '../render/i18n.js';
@@ -10,6 +11,7 @@ import {
   applyComposerKey,
   createComposerState,
   excerptDisplayLines,
+  renderAdvisorConversation,
   renderSelectSendComposer,
   type ComposerKey,
   type ComposerState,
@@ -26,6 +28,7 @@ import {
   normalizeSelectionExcerpt,
   normalizeQuestion,
   parsePluginContext,
+  retrySelectionAction,
   readAndRemoveSelectionHandoff,
   readPaneVisibleText,
   refreshSelectionExcerpt,
@@ -41,7 +44,8 @@ import { CliError } from './private-home.js';
 export const SELECT_SEND_HELP =
   'Usage: hud select-send --action             Invoked by the herdr selection plugin action\n' +
   '       hud select-send --investigate        Invoked by the herdr pane investigate plugin action\n' +
-  '       hud select-send --composer [--file PATH]  Open the selection composer in the current terminal\n';
+  '       hud select-send --composer [--file PATH]  Open the selection composer in the current terminal\n' +
+  '       hud select-send --recover-draft      Open the last selection held because the popup was busy\n';
 
 const PASTE_START = '\x1b[200~';
 const PASTE_END = '\x1b[201~';
@@ -133,7 +137,8 @@ function configureDisplay(env: NodeJS.ProcessEnv): void {
 }
 
 export interface ComposerSessionOptions {
-  context: PluginSelectionContext;
+  context?: PluginSelectionContext;
+  advisorId?: string;
   hudHome: string;
   env: NodeJS.ProcessEnv;
   stdin: NodeJS.ReadableStream & { isTTY?: boolean; setRawMode?: (mode: boolean) => void };
@@ -150,10 +155,13 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
 }> {
   configureDisplay(opts.env);
   const now = opts.now ?? (() => new Date());
-  let ctx = opts.context;
+  let advisorId = opts.advisorId;
+  let advisor = advisorId ? readSelectionAdvisor(opts.hudHome, advisorId) : undefined;
+  if (advisorId && !advisor) return { code: 1, sent: false };
+  let ctx = advisor ? {} : opts.context ?? {};
   const mode = ctx.mode ?? 'selection';
   const investigate = mode === 'investigate';
-  let excerpt = investigate ? normalizePaneExcerpt(ctx.selected_text) : normalizeSelectionExcerpt(ctx.selected_text);
+  let excerpt = investigate ? normalizePaneExcerpt(ctx.selected_text) : normalizeSelectionExcerpt(advisor?.excerpt ?? ctx.selected_text);
   let stale = Boolean(ctx.stale_content);
 
   if (investigate && excerpt.empty) {
@@ -179,8 +187,9 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
 
   if (excerpt.empty) return { code: 0, sent: false };
 
-  let baseline = await captureSelectionBaseline(ctx, excerpt, opts.env);
-  const resolved = await resolveSelectionTarget(ctx, opts.hudHome, opts.env, now());
+  let baseline = advisor ? null : await captureSelectionBaseline(ctx, excerpt, opts.env);
+  const resolved = advisor ? { source: advisor.source, targetPane: null, targetAgent: null, jobs: [] }
+    : await resolveSelectionTarget(ctx, opts.hudHome, opts.env, now());
 
   let state = createComposerState({
     mode,
@@ -193,7 +202,7 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
     stale,
     error: investigate
       ? (resolved.jobs.length ? null : t('No working jobs found for this project.'))
-      : (resolved.targetPane ? null : t('No main session found for this project.')),
+      : (advisor || resolved.targetPane ? null : t('No main session found for this project.')),
   });
 
   const isTty = Boolean(opts.stdin.isTTY && opts.stdout.isTTY);
@@ -202,9 +211,14 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
     height: Math.max(6, opts.stdout.rows ?? (Number(opts.env.LINES) || 18)),
   });
 
-  const paint = () => {
+  const conversation = () => {
+    if (!advisor) return;
     const { width, height } = size();
-    const lines = renderSelectSendComposer(state, { width, height, nowMs: now().getTime() });
+    const phase = advisorPhase(opts.hudHome, advisor, now().getTime());
+    return renderAdvisorConversation(advisor, state, phase, width, height);
+  };
+  const paint = () => {
+    const lines = conversation()?.lines ?? renderSelectSendComposer(state, { ...size(), nowMs: now().getTime() });
     opts.onFrame?.(lines, state);
     if (isTty) {
       opts.stdout.write('\x1b[H' + lines.join('\r\n'));
@@ -222,10 +236,20 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
 
   return new Promise((resolve) => {
     let finished = false;
+    const refreshAdvisor = () => {
+      if (advisorId) advisor = readSelectionAdvisor(opts.hudHome, advisorId) ?? advisor;
+    };
+    const poll = setInterval(() => {
+      if (!advisorId || finished) return;
+      refreshAdvisor();
+      paint();
+    }, 750);
+    poll.unref();
     const onResize = () => { if (!finished) paint(); };
     const done = (result: { code: number; sent: boolean; message?: string; targetPane?: string | null }) => {
       if (finished) return;
       finished = true;
+      clearInterval(poll);
       submission?.abort();
       opts.stdin.off('data', onData);
       opts.stdin.off('end', onEnd);
@@ -242,7 +266,8 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
       if (submission || finished) return;
       const targetPane = state.targetPane;
       const targetJob = state.targetJob;
-      if (state.mode === 'investigate') {
+      const askAdvisor = state.targetAdvisor;
+      if (investigate) {
         if (!targetJob) {
           state = { ...state, error: t(state.jobs.length ? 'Choose a working job first.' : 'No working jobs found for this project.') };
           paint();
@@ -253,7 +278,7 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           paint();
           return;
         }
-      } else if (!targetPane && !targetJob) {
+      } else if (!advisorId && !targetPane && !targetJob && !askAdvisor) {
         state = { ...state, error: t('No main session found for this project.') };
         paint();
         return;
@@ -263,6 +288,18 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
       state = { ...state, phase: 'sending', error: null };
       paint();
       try {
+        if (advisorId && advisor) {
+          const question = normalizeQuestion(state.question);
+          const ending = question === '/end';
+          const limit = (advisor.advisor?.followups.length ?? 0) >= MAX_ADVISOR_FOLLOWUPS;
+          const ok = ending ? await endSelectionAdvisor(opts.hudHome, advisorId)
+            : !limit && !!question && await continueSelectionAdvisor(opts.hudHome, advisorId, question);
+          refreshAdvisor();
+          state = { ...state, phase: 'editing', ...(ok ? { question: '', cursor: 0, scroll: 0 }
+            : { error: t(ending ? 'Could not end advisor' : limit ? 'Advisor follow-up limit reached' : 'Follow-up not sent. Draft kept.') }) };
+          if (!finished) paint();
+          return;
+        }
         const refreshed = await refreshSelectionExcerpt(ctx, state.excerpt, baseline, opts.env);
         if (finished) return;
         if (refreshed.baseline !== undefined) baseline = refreshed.baseline;
@@ -295,6 +332,14 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           return;
         }
         const source = { ...state.source, time: now().toISOString() };
+        if (askAdvisor) {
+          advisor = await startSelectionAdvisor(opts.hudHome, { excerpt: state.excerpt.text, source, question: state.question }, opts.env);
+          advisorId = advisor?.id;
+          state = { ...state, phase: 'editing', ...(advisor ? { question: '', cursor: 0, scroll: 0 }
+            : { error: t('Could not start advisor. Draft kept.') }) };
+          if (!finished) paint();
+          return;
+        }
         if (targetJob && source.projectRoot) {
           const record = await recordSelectionExcerpt(opts.hudHome, {
             excerpt: state.excerpt.text, source: { ...source, project: source.project?.slice(0, 256) ?? null },
@@ -348,7 +393,8 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
         done({ code: 0, sent: true, message, targetPane });
       } catch {
         if (!finished) {
-          state = { ...state, phase: 'editing', error: t(targetJob ? 'Selection delivery unknown.' : 'Delivery failed.') };
+          state = { ...state, phase: 'editing', error: t(advisorId ? 'Advisor action failed. Draft kept.'
+            : askAdvisor ? 'Could not start advisor. Draft kept.' : targetJob ? 'Selection delivery unknown.' : 'Delivery failed.') };
           paint();
         }
       } finally {
@@ -361,9 +407,10 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
       const { width, height } = size();
       const bannerRows = state.error || state.phase !== 'editing' || state.notice || state.stale ? 1 : 0;
       const viewportRows = Math.max(1, height - bannerRows - 4);
-      const maxScroll = Math.max(0, excerptDisplayLines(state.excerpt, Math.max(1, width - 2)).length - viewportRows);
+      const maxScroll = conversation()?.maxScroll ?? Math.max(0, excerptDisplayLines(state.excerpt, Math.max(1, width - 2)).length - viewportRows);
       for (const key of decoder.push(chunk)) {
-        const next = applyComposerKey(state, key, maxScroll);
+        if (advisor && (key.type === 'targets' || (advisor.advisor?.ended && key.type !== 'cancel' && key.type !== 'scroll'))) continue;
+        const next = applyComposerKey(state, advisor && key.type === 'scroll' ? { ...key, delta: -key.delta } : key, maxScroll);
         state = next.state;
         if (next.intent === 'cancel') {
           done({ code: 0, sent: false });
@@ -385,16 +432,18 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
   });
 }
 
-export async function runSelectSendAction(env: NodeJS.ProcessEnv = process.env): Promise<number> {
-  const result = await handleSelectionAction(getHudHome(env), env);
+export async function runSelectSendAction(env: NodeJS.ProcessEnv = process.env, retry = false): Promise<number> {
+  const home = getHudHome(env);
+  const result = retry ? await retrySelectionAction(home, env) : await handleSelectionAction(home, env);
   if (result.opened) return 0;
 
   configureDisplay(env);
   const empty = result.reason === 'empty_selection';
+  const busy = result.reason === 'ui_busy';
   const title = empty
     ? t('No selection to send — select text with the mouse first.')
-    : t('Could not open the selection composer.');
-  const body = !empty && result.reason && result.reason !== 'popup_open_failed' ? monitorText(result.reason) : '';
+    : busy ? t('Popup busy. Draft kept. Run hud select-send --recover-draft.') : t('Could not open the selection composer.');
+  const body = !empty && !busy && result.reason && result.reason !== 'popup_open_failed' ? monitorText(result.reason) : '';
   const reply = herdrEndpoint(env)
     ? await herdrRequest('notification.show', { title, ...(body ? { body } : {}) }, { env }).catch(() => null)
     : null;
@@ -431,15 +480,18 @@ export async function runInvestigatePaneAction(env: NodeJS.ProcessEnv = process.
 export async function runSelectSendComposer(env: NodeJS.ProcessEnv = process.env, file?: string): Promise<number> {
   const hudHome = getHudHome(env);
   const handoffPath = file || env.HUD_SELECT_SEND_FILE;
-  const context = handoffPath ? readAndRemoveSelectionHandoff(handoffPath) : parsePluginContext(env);
-  if (!context) return 0;
+  const advisorId = handoffPath ? undefined : env.HUD_SELECTION_ADVISOR_ID;
+  const context = advisorId ? undefined : handoffPath ? readAndRemoveSelectionHandoff(handoffPath) ?? undefined : parsePluginContext(env);
+  if (!context && !advisorId) return 0;
   const outcome = await runComposerSession({
     context,
+    advisorId,
     hudHome,
     env,
     stdin: process.stdin,
     stdout: process.stdout,
   });
+  process.stdin.unref?.();
   return outcome.code;
 }
 
@@ -454,6 +506,7 @@ export async function selectSendCommand(args: readonly string[], io: HudIO): Pro
   if (args.length === 1 && args[0] === '--investigate') {
     return runInvestigatePaneAction(io.env);
   }
+  if (args.length === 1 && args[0] === '--recover-draft') return runSelectSendAction(io.env, true);
   if (args[0] === '--composer' && (args.length === 1 || (args.length === 3 && args[1] === '--file' && args[2]))) {
     return runSelectSendComposer(io.env, args[2]);
   }

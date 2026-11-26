@@ -72,10 +72,12 @@ export function piWorkerArgv(
     const herdrState = herdrAgentStatePath();
     if (herdrState) args.push('-e', herdrState);
   }
-  const extra = [...(job.pi_args ?? [])];
+  const advisor = Boolean(job.selection_advisor);
+  if (advisor) args.push('--no-context-files', '--no-skills', '--no-tools');
+  const extra = advisor ? [] : [...(job.pi_args ?? [])];
   // R2: MCP never auto-loads from ambient MCP config files; only on explicit mcp: true, role mcp_servers, or --mcp-config.
   const mcp = job.mcp ?? (Boolean(role.mcp_servers?.length) || extra.some(arg => /^--mcp-config(?:=|$)/.test(arg)));
-  for (const pkg of [...(mcp ? ['pi-mcp-adapter'] : []), ...(job.lens ? ['pi-lens'] : [])]) {
+  for (const pkg of advisor ? [] : [...(mcp ? ['pi-mcp-adapter'] : []), ...(job.lens ? ['pi-lens'] : [])]) {
     args.push('-e', resolveOptionalAttachment(home, pkg));
   }
   const excluded = sonic ? ['hud_ask', 'ask_orchestrator', 'hud_sonic'] : ['ask_orchestrator'];

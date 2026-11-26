@@ -105,7 +105,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     return Promise.resolve({ ...result, preInput: true, cleanupFailed: false });
   };
   try {
-    const resources = piSkillArgs(job, role, place);
+    const resources = job.selection_advisor ? [] : piSkillArgs(job, role, place);
     const piBin = executablePath('pi');
     if (!piBin) throw new Error('pi not found on PATH');
     const sessionFile = job.headless && job.role !== 'sonic' ? resume?.file ?? join(dir, 'sessions', `${job.job}.jsonl`) : undefined;
@@ -114,7 +114,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       const source = findJob(job.retry_of);
       if (source?.role === 'sonic') continuation = prepareSonicRetry(dir, job.cwd, source, directory(source.job), readCachedStatus(source.job).status);
     }
-    const prompt = continuation ?? briefPrompt(join(dir, jobFiles.brief));
+    const prompt = continuation ?? (job.selection_advisor ? task : briefPrompt(join(dir, jobFiles.brief)));
     const profile = place.pi_role ?? implicitPiProfile(role.instructions);
     if (job.headless) {
       const args = piWorkerArgv(hudHome, dir, job, role, profile, resources, prompt, sessionFile);

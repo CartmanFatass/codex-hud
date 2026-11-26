@@ -25,7 +25,10 @@ export interface SelectionExcerpt {
   role: string;
   delivery: ExcerptDelivery;
   answer?: { text: string; at: string };
+  advisor?: { ended?: boolean; followups: { question: string; answer?: SelectionExcerpt['answer'] }[] };
 }
+
+export const MAX_ADVISOR_FOLLOWUPS = 8;
 
 export function jobProjectRoot(job: Partial<Job>): string | null {
   if (typeof job.project_root === 'string' && job.project_root) return job.project_root;
@@ -65,7 +68,10 @@ export function readSelectionExcerpts(home: string, cache: JobIndexCache, scope:
     return readStore(storeFile(home)).filter(row => 'job' in scope ? row.target === scope.job : row.source.projectRoot === scope.project)
       .map(row => {
         if (row.answer || row.delivery === 'target ended') return row;
-        const job = cache.readJob<Job>(row.target), status = cache.readStatus<JobStatus>(row.target);
+        const status = cache.readStatus<JobStatus>(row.target);
+        if (row.advisor) return row.advisor.ended || (status.status === 'ok' && ['closed', 'failed', 'stopped'].includes(status.value.state))
+          ? { ...row, delivery: 'target ended' } : row;
+        const job = cache.readJob<Job>(row.target);
         const launch = cache.readSession(row.target)?.fields.launchId;
         const ended = job.status === 'ok' && excerptTargetEnded(job.value, status.status === 'ok' ? status.value : null);
         return ended || (launch && launch !== row.launchId) ? { ...row, delivery: 'target ended' } : row;
@@ -73,13 +79,38 @@ export function readSelectionExcerpts(home: string, cache: JobIndexCache, scope:
   } catch { return []; } // An unavailable receipt must not hide the rest of the view.
 }
 
-export async function recordSelectionExcerpt(home: string, input: Omit<SelectionExcerpt, 'id' | 'delivery' | 'answer'>): Promise<SelectionExcerpt> {
+export async function recordSelectionExcerpt(home: string, input: Omit<SelectionExcerpt, 'id' | 'delivery' | 'answer'>, id = randomUUID() as string): Promise<SelectionExcerpt> {
   const file = storeFile(home);
-  const row: SelectionExcerpt = { ...input, id: randomUUID(), delivery: 'delivery unknown' };
+  const row: SelectionExcerpt = { ...input, id, delivery: input.advisor ? 'queued' : 'delivery unknown' };
   await withAbstractLock('selection-excerpts', file, () => {
     writeJsonPrivate(file, [row, ...readStore(file).slice(0, MAX_RECORDS - 1)]);
   });
   return row;
+}
+
+export function readSelectionAdvisor(home: string, id: string): SelectionExcerpt | undefined {
+  try { return readStore(storeFile(home)).find(row => row.id === id && row.advisor); }
+  catch { return undefined; }
+}
+
+export function updateSelectionAdvisor(home: string, id: string, target: string,
+  update: (row: SelectionExcerpt, advisor: NonNullable<SelectionExcerpt['advisor']>) => boolean): Promise<boolean> {
+  const file = storeFile(home);
+  return withAbstractLock('selection-excerpts', file, () => {
+    const rows = readStore(file), row = rows.find(item => item.id === id && item.target === target);
+    if (!row?.advisor || !update(row, row.advisor)) return false;
+    writeJsonPrivate(file, rows);
+    return true;
+  });
+}
+
+export async function recordAdvisorAnswer(home: string, id: string, target: string, text: string): Promise<void> {
+  await updateSelectionAdvisor(home, id, target, (row, advisor) => {
+    const turn = advisor.followups.at(-1) ?? row;
+    if (turn.answer) return false;
+    turn.answer = { text: text.trim().replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '').slice(0, MAX_EXCERPT_REPLY), at: new Date().toISOString() };
+    return true;
+  });
 }
 
 export function setExcerptDelivery(home: string, id: string, delivery: ExcerptDelivery): Promise<void> {
@@ -98,7 +129,7 @@ export function replyToExcerpt(home: string, target: string, id: string, message
   const file = storeFile(home);
   return withAbstractLock('selection-excerpts', file, () => {
     const rows = readStore(file), row = rows.find(item => item.id === id && item.target === target);
-    if (!row || row.delivery === 'target ended') return { ok: false, code: 'excerpt_not_found' };
+    if (!row || row.advisor || row.delivery === 'target ended') return { ok: false, code: 'excerpt_not_found' };
     if (!row.answer) {
       row.answer = { text, at: new Date().toISOString() };
       writeJsonPrivate(file, rows);

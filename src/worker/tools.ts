@@ -16,7 +16,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
 import { jobCallerPane } from '../roles/job-pane.js';
-import { MAX_EXCERPT_REPLY, replyToExcerpt } from '../roles/selection-excerpts.js';
+import { MAX_EXCERPT_REPLY, recordAdvisorAnswer, replyToExcerpt } from '../roles/selection-excerpts.js';
 import { readJobProgress } from '../collectors/thin-jobs.js';
 import { worktreeGit as git } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
@@ -123,6 +123,8 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
     const source = job.preview ?? requestedPreview ?? previous?.source;
     if (validPreviewPath(source)) fields.preview = await publishPreview(dir, job, source, previous, opener);
     writeReportMeta(dir, sig, fields);
+    if (job.selection_advisor && text !== undefined)
+      await recordAdvisorAnswer(dirname(dirname(dir)), job.selection_advisor, job.job, text);
     for (const message of review.warnings) console.error(message);
     if (job.role === 'reviewer') {
       const current = readJob(dir);
@@ -391,15 +393,18 @@ const strings = { type: 'array', items: string };
 // MCP checks calls against workerTools and advertises listWorkerTools; use the same role-aware list.
 export { workerTools as listWorkerTools };
 export async function workerTools(cli = false) {
-  let role: string | undefined, headless = false;
+  let role: string | undefined, headless = false, advisor = false;
   try {
     const { job } = workerJob();
     role = job.role;
     cli = cli && Boolean(job.cli);
     headless = job.headless === true;
+    advisor = Boolean(job.selection_advisor);
   } catch { /* Keep the caller's schema when no job receipt is available. */ }
   const tool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({ name, description,
     inputSchema: { type: 'object', properties, required, additionalProperties: false } });
+  if (advisor) return [tool('hud_report', 'Publish your answer and finish this turn.',
+    { text: string, ...(cli && { turn: string }) }, cli ? ['text', 'turn'] : ['text'])];
   const nonNegativeInt = { type: 'integer', minimum: 0 };
   const sha40 = { type: 'string', pattern: '^[0-9a-f]{40}$' };
   const reviewerFields = role === 'reviewer' ? {

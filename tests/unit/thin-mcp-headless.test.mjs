@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -7,6 +8,10 @@ import { fixture, rolePlacesFixture, cliState, resultValue, taskCall, taskJob, t
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 import { isProcAlive } from '../../dist/utils/proc.js';
 import { readContract } from '../../dist/harness/pi/worker/contract.js';
+import { readSelectionExcerpts } from '../../dist/roles/selection-excerpts.js';
+import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
+import { executionRows } from '../../dist/render/execution-view.js';
+import { initialMonitorState, renderMonitor, handleMonitorInput } from '../../dist/render/monitor.js';
 
 const moduleUrl = path => new URL(path, import.meta.url).href;
 const read = path => JSON.parse(fs.readFileSync(path));
@@ -50,10 +55,15 @@ await extension({ on: (name, fn) => hooks.set(name, [...hooks.get(name) ?? [], f
   setActiveTools: names => { active = names; }, getThinkingLevel: () => option('--thinking') ?? 'off' });
 const emit = (key, event, context = ctx) => { for (const fn of hooks.get(key) ?? []) fn(event, context); };
 emit('session_start', {});
-assert.deepEqual([...active].sort(), ['hud_ask', 'hud_lease', 'hud_progress', 'hud_report', 'hud_sonic']);
+const advisor = Boolean(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).selection_advisor);
+assert.deepEqual([...active].sort(), advisor ? ['hud_report'] : ['hud_ask', 'hud_lease', 'hud_progress', 'hud_report', 'hud_sonic']);
 const opts = { sections: {}, skills: [] };
 emit('before_agent_start', { systemPromptOptions: opts });
-fs.writeFileSync(join(dir, 'role-section'), opts.sections.role);
+if (advisor) {
+  assert.equal(opts.sections.role, undefined);
+  assert.ok(args.includes('--no-context-files'));
+  assert.ok(!args.includes('--skill') && !args.includes('--append-system-prompt'));
+} else fs.writeFileSync(join(dir, 'role-section'), opts.sections.role);
 const prompt = args.at(-1);
 fs.appendFileSync(file, JSON.stringify({ prompt }) + '\\n');
 console.log(JSON.stringify({ id, prompt }));
@@ -64,6 +74,11 @@ if (fs.existsSync(join(home, 'hold-' + gate))) {
     const value = fs.existsSync(join(home, 'release-' + gate));
     return value || timedOut ? { done: true, value } : { done: false };
   } }));
+}
+if (advisor) {
+  await tools.hud_report.execute('report', { text: fresh ? 'The hunk removes the duplicate.' : 'The guard still runs once.' });
+  emit('session_shutdown', {});
+  process.exit(0);
 }
 await tools.hud_progress.execute('progress', { message: 'Synthetic progress.' });
 if (fresh && fs.existsSync(join(process.env.HOME, 'ask'))) {
@@ -151,6 +166,97 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.notEqual(cliState(repair.task_dir).session_id, paused.session_id);
   assert.equal((await f.call('hud_close', { job: repair.job })).exit_code, 0);
   assert.equal(cliState(repair.task_dir).state, 'stopped');
+  assert.ok(noTab(f));
+});
+
+test('selection advisor popup hides and reopens one native conversation, with independent jobs and explicit end', { timeout: 30000 }, async t => {
+  const f = await fixture(t);
+  f.overrideBin('pi', fakePi);
+  const home = f.env.HUD_HOME, roles = join(home, 'roles');
+  fs.mkdirSync(roles, { recursive: true });
+  for (const role of ['oracle', 'general']) write(join(roles, `${role}.json`), JSON.stringify({ role,
+    instructions: role, run: [{ harness: 'pi', pi_role: 'architect' }], prewalk: 'on', can_continue: false }));
+  write(join(home, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: f.root }] }));
+  fs.mkdirSync(join(f.root, '.hud', 'agents'), { recursive: true });
+  write(join(f.root, '.hud', 'brief.md'), 'Standing brief must not travel.');
+  write(join(f.root, '.hud', 'agents', 'oracle.md'), 'Project agent prompt must not travel.');
+  write(join(f.env.HOME, 'hold-first'), '');
+
+  const excerpts = () => readSelectionExcerpts(home, getJobIndexCache(home), { project: f.root });
+  const popup = (input) => {
+    const cmd = `import { runComposerSession } from ${JSON.stringify(moduleUrl('../../dist/cli/select-send.js'))};
+      const result = await runComposerSession({ ...${JSON.stringify(input)}, env: process.env, hudHome: process.env.HUD_HOME,
+        stdin: process.stdin, stdout: process.stdout, onFrame: frame => console.log(JSON.stringify(frame)) });
+      process.exitCode = result.code;`;
+    const child = spawn(process.execPath, ['--input-type=module', '-e', cmd], {
+      env: { ...f.env, NO_COLOR: '1', LC_ALL: 'C' }, cwd: f.root, stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    f.onCleanup(() => { child.stdin.destroy(); child.kill(); });
+    let buffer = '', err = '';
+    child.stdout.setEncoding('utf8').on('data', chunk => { buffer += chunk; });
+    child.stderr.setEncoding('utf8').on('data', chunk => { err += chunk; });
+    const exited = once(child, 'exit');
+    return { send: keys => child.stdin.write(keys), see: async text => {
+      try { await until(() => buffer.includes(text), 6000); }
+      catch { assert.fail(`popup did not show ${text}: ${err}\n${buffer.slice(-1600)}`); }
+    }, hide: async () => { child.stdin.end('\x1b'); assert.deepEqual(await exited, [0, null], err); } };
+  };
+  const select = async text => {
+    const ui = popup({ context: { selected_text: text, focused_pane_id: 'w4E:p1', focused_pane_cwd: f.root } });
+    await ui.see(text);
+    ui.send('\t\x1b[F');
+    await ui.see('Ask an advisor');
+    ui.send('\rWhy is this needed?\r');
+    await ui.see('Advisor working');
+    return ui;
+  };
+
+  const first = await select('- duplicate()');
+  const [original] = excerpts(), dir = join(home, 'jobs', original.target);
+  assert.equal(original.role, 'oracle');
+  assert.equal(original.question, 'Why is this needed?');
+  await first.hide();
+  assert.equal(cliState(dir).state, 'working');
+  write(join(f.env.HOME, 'release-first'), '');
+  await closed({ task_dir: dir }, t.signal);
+  const nativeId = cliState(dir).session_id;
+  const prompt = JSON.parse(fs.readFileSync(join(dir, 'stdout.jsonl'), 'utf8').trim()).prompt;
+  assert.match(prompt, /pane=w4E:p1/);
+  assert.match(prompt, /- duplicate\(\)[\s\S]*Question: Why is this needed\?/);
+  assert.doesNotMatch(prompt, /Standing brief|Project agent prompt/);
+  assert.match(executionRows({ complete: true, jobs: [], excerpts: excerpts() }, undefined, 70, Date.now()).map(x => x.text).join('\n'), /The hunk removes the duplicate/);
+  const cursor = `project:excerpt:${original.id}`;
+  const state = { ...initialMonitorState(), activeTab: 'execution' };
+  state.execution.cursor = cursor;
+  const frame = renderMonitor({ state, width: 70, height: 25, execution: { complete: true, jobs: [], excerpts: excerpts() } });
+  assert.deepEqual(handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { frame, nowMs: Date.now() }).action, { type: 'open-selection-advisor', id: original.id });
+
+  const follow = popup({ advisorId: original.id });
+  await follow.see('The hunk removes the duplicate.');
+  await follow.see('Advisor ready for a follow-up');
+  follow.send('Does the guard still run?\r');
+  await follow.see('The guard still runs once.');
+  await closed({ task_dir: dir }, t.signal);
+  assert.equal(cliState(dir).session_id, nativeId);
+  assert.equal(excerpts()[0].advisor.followups[0].question, 'Does the guard still run?');
+  await follow.hide();
+  const reopened = popup({ advisorId: original.id });
+  await reopened.see('Does the guard still run?');
+  await reopened.see('The guard still runs once.');
+  await reopened.hide();
+
+  write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ selectionAdvisorRole: 'general' }));
+  fs.unlinkSync(join(f.env.HOME, 'release-first'));
+  const second = await select('+ guard()');
+  const [other] = excerpts(), otherDir = join(home, 'jobs', other.target);
+  assert.notEqual(other.target, original.target);
+  assert.equal(other.role, 'general');
+  second.send('/end\r');
+  await second.see('Advisor ended');
+  assert.equal(cliState(otherDir).state, 'stopped');
+  assert.equal(excerpts()[0].advisor.ended, true);
+  assert.equal(excerpts()[1].answer.text, 'The hunk removes the duplicate.');
+  await second.hide();
   assert.ok(noTab(f));
 });
 

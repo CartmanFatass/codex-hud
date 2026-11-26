@@ -548,7 +548,7 @@ export function renderWorkboardFrame(
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
         : execution ? [
-            ...(key === PROJECT_STRIP_MORE ? ['⏎ open'] : selectedStation ? [...(selectedStation.execJob ? ['⏎ details'] : []), '←→ station'] : selected ? ['⏎ details'] : []),
+            ...(key === PROJECT_STRIP_MORE ? ['⏎ open'] : selectedStation ? [...(selectedStation.execJob ? ['⏎ details'] : []), '←→ station'] : selected?.selectionAdvisor ? ['⏎ advisor'] : selected ? ['⏎ details'] : []),
             ...(selected?.batch ? batchKeys(selected.batch) : []), ...projectSwitch,
             ...((selectedStation?.execJob ?? selected?.execJob)?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : []),
           ]

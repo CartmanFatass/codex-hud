@@ -19,6 +19,7 @@ import { rpcClient, until } from ${JSON.stringify(url('../helpers/thin-mcp-harne
 const agent = ${JSON.stringify(agent)}, dir = process.env.HUD_JOB_DIR;
 const args = process.argv.slice(2), value = flag => args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
 const prompt = args.at(-1), resumed = value(agent === 'claude' ? '--resume' : '--conversation');
+const advisor = Boolean(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).selection_advisor);
 assert.equal(process.env.HERDR_PANE_ID, undefined);
 assert.equal(value('--output-format'), 'stream-json');
 assert.ok(args.includes('-p'));
@@ -32,6 +33,11 @@ if (agent === 'claude') {
   file = value('--mcp-config');
   assert.equal(file, join(dir, 'worker-mcp.json'));
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  if (advisor) {
+    assert.equal(value('--tools'), '');
+    assert.equal(value('--setting-sources'), '');
+    assert.ok(!args.includes('--append-system-prompt-file'));
+  }
 } else {
   assert.equal(args.at(-2), '-p');
   assert.equal(value('--mcp-config'), undefined);
@@ -54,7 +60,7 @@ const exited = once(child, 'exit');
 const rpc = rpcClient(child);
 try {
   const { result } = await rpc('tools/list');
-  assert.deepEqual(result.tools.map(tool => tool.name), ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
+  assert.deepEqual(result.tools.map(tool => tool.name), advisor ? ['hud_report'] : ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
   assert.deepEqual(result.tools[0].inputSchema.required, ['text', 'turn']);
   const call = async (name, args) => {
     const { result, error } = await rpc('tools/call', { name, arguments: args });
@@ -62,8 +68,9 @@ try {
     assert.equal(result.isError, undefined, JSON.stringify(result));
     return result.content[0].text;
   };
-  await call('hud_progress', { message: 'Synthetic headless CLI progress.' });
-  if (!resumed) {
+  if (!advisor) await call('hud_progress', { message: 'Synthetic headless CLI progress.' });
+  if (advisor) await call('hud_report', { turn: /turn: (\\S+)/.exec(prompt)[1], text: 'Synthetic advisor answer.' });
+  else if (!resumed) {
     await call('hud_sonic', { task: 'Read a synthetic fact.' });
     if (prompt.includes('Synthetic plain turn.')) await until(() => fs.existsSync(join(dir, 'release-first')), Infinity); // Released or reaped by the test.
     else {
@@ -88,6 +95,25 @@ try {
 } finally { child.stdin.end(); }
 assert.deepEqual(await exited, [0, null]);
 `;
+
+test('default selection advisor runs a report-only Claude Code turn', { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  f.overrideBin('claude', fakeCli('claude'));
+  const code = `import { startSelectionAdvisor } from ${JSON.stringify(url('../../dist/roles/selection-advisor.js'))};
+    const row = await startSelectionAdvisor(process.env.HUD_HOME, { excerpt: '+ synthetic guard', question: 'Why?',
+      source: { project: 'fixture', projectRoot: process.cwd(), pane: 'w4E:p1', job: null, role: null, time: new Date().toISOString() } }, process.env);
+    console.log(JSON.stringify(row));`;
+  const row = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code], { cwd: f.root, env: f.env, encoding: 'utf8' }));
+  const dir = join(f.env.HUD_HOME, 'jobs', row.target);
+  assert.equal(row.role, 'oracle');
+  assert.equal(read(join(dir, 'job.json')).cli.agent, 'claude');
+  await until(() => {
+    const status = cliState(dir);
+    if (status?.state === 'failed') assert.fail(fs.readFileSync(join(dir, 'stderr.log'), 'utf8'));
+    return status?.state === 'closed';
+  }, t.signal);
+  assert.equal(read(join(f.env.HUD_HOME, 'selection-excerpts.json'))[0].answer.text, 'Synthetic advisor answer.');
+});
 
 test('working headless Claude resumes queued input after a plain turn end', { timeout: 60000 }, async t => {
   const f = await fixture(t), rpc = taskRpc(f.rpc);
