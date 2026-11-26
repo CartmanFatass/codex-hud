@@ -31,6 +31,7 @@ export interface HerdrReply {
     type?: string;
     version?: string;
     protocol?: number;
+    shown?: boolean;
     capabilities?: { hidden_tabs?: boolean; pane_strip?: boolean; guarded_prompt?: boolean };
     strip?: PaneStripInfo;
     pane?: {

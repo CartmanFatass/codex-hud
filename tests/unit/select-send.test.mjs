@@ -94,6 +94,7 @@ c.on('error', () => process.exit(1));
     ...process.env,
     HOME: join(dir, 'home'),
     HUD_HOME: home,
+    HUD_SETTINGS_PATH: join(home, 'hud-settings.json'),
     HERDR_SOCKET_PATH: socketPath,
     HERDR_BIN_PATH: join(bin, 'herdr'),
     PATH: `${bin}:${process.env.PATH ?? ''}`,
@@ -592,7 +593,65 @@ test('pane content changing while composer is open refreshes excerpt before send
   assert.ok(!prompts[0].text.includes('initial error line'));
 });
 
-test('empty selection does nothing and Esc cancels without sending', async (t) => {
+for (const [language, context, title] of [
+  ['en', {}, 'No selection to send — select text with the mouse first.'],
+  ['zh', { selected_text: ' \n\t ' }, '没有可发送的选中内容，请先用鼠标选中文本。'],
+]) {
+  test(`plugin action shows an empty-selection toast in ${language} without sending`, async (t) => {
+    const calls = [];
+    const f = await fakeFork(t, (method, params) => {
+      calls.push({ method, params });
+      return { result: { type: 'notification_show', shown: true, reason: 'shown' } };
+    });
+    fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ language }));
+    const action = spawn(process.execPath, [join(root, 'integrations/herdr/plugin/action.mjs')], {
+      env: {
+        ...f.env,
+        LC_ALL: language === 'en' ? 'zh_CN.UTF-8' : 'C',
+        HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify(context),
+      },
+    });
+    assert.deepEqual(await once(action, 'close'), [0, null]);
+    assert.deepEqual(calls, [{ method: 'notification.show', params: { title } }]);
+    assert.equal(fs.existsSync(join(f.home, 'select-send')), false);
+    assert.equal(fs.existsSync(join(f.home, 'panel-actions.jsonl')), false);
+  });
+}
+
+test('plugin action logs the empty-selection hint when herdr does not show the toast', async (t) => {
+  const f = await fakeFork(t, () => ({ result: { type: 'notification_show', shown: false, reason: 'disabled' } }));
+  const action = spawn(process.execPath, [join(root, 'integrations/herdr/plugin/action.mjs')], {
+    env: { ...f.env, LC_ALL: 'C', HERDR_PLUGIN_CONTEXT_JSON: '{}' },
+  });
+  let stderr = '';
+  action.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+  assert.deepEqual(await once(action, 'close'), [0, null]);
+  assert.match(stderr, /No selection to send/);
+});
+
+test('plugin action toasts a popup failure, removes the handoff and does not send', async (t) => {
+  const calls = [];
+  const f = await fakeFork(t, (method, params) => {
+    calls.push({ method, params });
+    if (method === 'plugin.pane.open') {
+      return { error: { code: 'popup_open_denied', message: 'Popup unavailable' } };
+    }
+    return { result: { type: 'notification_show', shown: true, reason: 'shown' } };
+  });
+  const action = spawn(process.execPath, [join(root, 'integrations/herdr/plugin/action.mjs')], {
+    env: { ...f.env, LC_ALL: 'C', HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ selected_text: 'example excerpt' }) },
+  });
+  assert.deepEqual(await once(action, 'close'), [1, null]);
+  assert.deepEqual(calls.map(({ method }) => method), ['plugin.pane.open', 'notification.show']);
+  assert.deepEqual(calls[1].params, {
+    title: 'Could not open the selection composer.',
+    body: 'popup_open_denied: Popup unavailable',
+  });
+  assert.equal(fs.existsSync(calls[0].params.env.HUD_SELECT_SEND_FILE), false);
+  assert.equal(fs.existsSync(join(f.home, 'panel-actions.jsonl')), false);
+});
+
+test('empty selection makes no handoff and Esc cancels without sending', async (t) => {
   const calls = [];
   const f = await fakeFork(t, (method, params) => {
     calls.push({ method, params });
@@ -612,11 +671,13 @@ test('empty selection does nothing and Esc cancels without sending', async (t) =
   assert.equal(fs.existsSync(join(f.home, 'select-send')), false);
 
   // Non-empty selection opens popup with private 0600 handoff file.
-  const opened = await handleSelectionAction(f.home, {
-    ...f.env,
-    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: 'w1:p2', selected_text: 'failing line' }),
+  const action = spawn(process.execPath, [join(root, 'integrations/herdr/plugin/action.mjs')], {
+    env: {
+      ...f.env,
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: 'w1:p2', selected_text: 'failing line' }),
+    },
   });
-  assert.equal(opened.opened, true);
+  assert.deepEqual(await once(action, 'close'), [0, null]);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, 'plugin.pane.open');
   assert.equal(calls[0].params.plugin_id, 'hud.select-send');

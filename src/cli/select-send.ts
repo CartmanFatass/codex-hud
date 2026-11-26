@@ -3,6 +3,7 @@ import { StringDecoder } from 'node:string_decoder';
 import { getHudHome } from '../hud-home.js';
 import { setDisplayConfig } from '../render/hud-config.js';
 import { resolveLanguage, setLanguage, t } from '../render/i18n.js';
+import { monitorText } from '../render/monitor-text.js';
 import {
   applyComposerKey,
   createComposerState,
@@ -24,6 +25,7 @@ import {
   waitAndRetryGuardedPrompt,
   type PluginSelectionContext,
 } from '../roles/select-send.js';
+import { herdrEndpoint, request as herdrRequest } from '../runtime/herdr-socket.js';
 import { loadSettings } from '../settings.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
@@ -306,11 +308,22 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
 
 export async function runSelectSendAction(env: NodeJS.ProcessEnv = process.env): Promise<number> {
   const result = await handleSelectionAction(getHudHome(env), env);
-  if (!result.opened && result.reason !== 'empty_selection') {
-    process.stderr.write(`select-send: ${result.reason}\n`);
-    return 1;
+  if (result.opened) return 0;
+
+  configureDisplay(env);
+  const empty = result.reason === 'empty_selection';
+  const title = empty
+    ? t('No selection to send — select text with the mouse first.')
+    : t('Could not open the selection composer.');
+  const body = !empty && result.reason && result.reason !== 'popup_open_failed' ? monitorText(result.reason) : '';
+  const reply = herdrEndpoint(env)
+    ? await herdrRequest('notification.show', { title, ...(body ? { body } : {}) }, { env }).catch(() => null)
+    : null;
+  // Herdr captures action stderr in its plugin logs; it is not itself a toast.
+  if (!empty || reply?.result?.shown !== true) {
+    process.stderr.write(`select-send: ${title}${body ? ` ${body}` : ''}\n`);
   }
-  return 0;
+  return empty ? 0 : 1;
 }
 
 export async function runSelectSendComposer(env: NodeJS.ProcessEnv = process.env, file?: string): Promise<number> {

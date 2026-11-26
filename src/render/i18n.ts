@@ -795,6 +795,8 @@ const ZH: Record<string, string> = {
   'Content changed — showing latest excerpt. Press Enter to send.': '内容已变化 — 已显示最新摘录，按回车发送。',
   'Content changed — review latest excerpt and press Enter to send.': '内容已变化 — 请确认最新摘录后再按回车发送。',
   'Selection is empty; nothing to send.': '选中内容为空；未发送。',
+  'No selection to send — select text with the mouse first.': '没有可发送的选中内容，请先用鼠标选中文本。',
+  'Could not open the selection composer.': '无法打开选中内容的发送窗口。',
   'No main session found for this project.': '未找到该项目的主会话。',
   'Enter send': '回车 发送',
   '↑↓ scroll': '↑↓ 滚动',
