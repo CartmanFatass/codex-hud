@@ -9,6 +9,7 @@ Source: oracle j66f7c7b4cf976c21 (2026-11-25), herdr upstream `github.com/herdrd
 - **Self-update off.** `herdr update` and `herdr channel set` refuse in the fork; `version_check` defaults false; build as `0.9.5-hud.<sha>` (`HERDR_BUILD_CHANNEL=hud`).
 - **Repository.** Local git repo `~/projects/herdr-hud` (full clone of upstream, branch `hud`), no remote push until the owner asks.
 - **Install is the main session's step, with owner confirmation.** Back up `~/.local/bin/herdr` as `herdr-0.9.5-upstream`, atomic `mv` of the built binary, `herdr server live-handoff` (transfers live PTYs to the new binary). Everything, including the main session, runs inside herdr.
+  After the binary is replaced, the running server's own exe is "(deleted)": run `herdr server live-handoff --import-exe ~/.local/bin/herdr --expected-version <new version>`.
 
 ## Primitives (fork side, LoC are oracle guesses)
 
