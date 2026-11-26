@@ -235,3 +235,164 @@ test('disabled council, browser switch, bad count, unknown or unavailable seat s
   assert.deepEqual(json(grantFile(f)), grant);
   assert.ok(!fs.existsSync(join(f.env.HUD_HOME, 'jobs')));
 });
+
+function writeSyntheticCouncil(f, id, { members: specs, readAt, status = { state: 'working', reason: 'Council in progress' } }) {
+  const now = new Date().toISOString();
+  const councilMembers = specs.map(({ preset, job, digest }) => ({ preset, job, ...(digest !== undefined ? { digest } : {}) }));
+  for (const m of specs) {
+    fs.mkdirSync(dir(f, m.job), { recursive: true });
+    put(join(dir(f, m.job), 'job.json'), JSON.stringify({
+      job: m.job, role: 'general', cwd: f.root, project_root: f.root, herdr_pane: f.env.HERDR_PANE_ID,
+      parent_job: id, request_key: `council:${id}:${m.preset}`, created_at: now, dispatch_exit_code: 0, stderr_tail: '',
+      council: { id, part: 'member' }, ...(m.readAt ? { read_at: m.readAt } : {}),
+    }));
+    put(join(dir(f, m.job), 'STATUS.json'), JSON.stringify({
+      state: m.state ?? 'closed', output_written: m.report !== undefined,
+      ...(m.state === 'working' ? {} : { settled_at: now, ended_at: now }),
+    }));
+    if (m.report !== undefined) put(join(dir(f, m.job), 'report.md'), m.report);
+  }
+  const task = 'Compare synthetic plans.';
+  fs.mkdirSync(dir(f, id), { recursive: true });
+  put(join(dir(f, id), 'brief.md'), `${task}\n\nExtra context.`);
+  put(join(dir(f, id), 'job.json'), JSON.stringify({
+    job: id, role: 'council', cwd: f.root, project_root: f.root, herdr_pane: f.env.HERDR_PANE_ID,
+    request_key: `create:${id}`, created_at: now, task_length: task.length, dispatch_exit_code: 0, stderr_tail: '',
+    council_members: councilMembers, synthesizer: 'main',
+    create_options: { members: specs.map(m => m.preset), synthesizer: 'main' },
+    ...(readAt ? { read_at: readAt } : {}),
+  }));
+  put(join(dir(f, id), 'STATUS.json'), JSON.stringify(status));
+}
+
+test('synthesizer:main council closes after main hud_read once every member has settled', async t => {
+  const f = await fixture(t);
+  const id = 'j0000000000000101';
+  const m1 = 'j0000000000000102', m2 = 'j0000000000000103', m3 = 'j0000000000000104';
+  writeSyntheticCouncil(f, id, {
+    members: [
+      { preset: 'fable', job: m1, report: 'Synthetic fable plan.' },
+      { preset: 'astra', job: m2, report: 'Synthetic astra plan.', digest: 'Synthetic astra plan.' },
+      { preset: 'carbon', job: m3, state: 'working' },
+    ],
+  });
+
+  // Still working while any member has not settled.
+  const mid = await f.call('hud_read', { job: id });
+  assert.equal(mid.state, 'working');
+  assert.equal(mid.synthesis_template, undefined);
+  assert.equal(states(f, id).state, 'working');
+  assert.equal(receipt(f, id).read_at, undefined);
+  assert.ok((await f.call('hud_read', {})).jobs.some(j => j.job === id && j.state === 'working'));
+
+  // Settle the last member; main's hud_read collects digests and closes the council.
+  finish(f, { job: m3 }, 'Synthetic carbon plan.');
+  const done = await f.call('hud_read', { job: id });
+  assert.equal(done.state, 'closed');
+  assert.equal(done.reason, 'members collected by main');
+  assert.deepEqual(done.members.map(m => m.digest), ['Synthetic fable plan.', 'Synthetic astra plan.', 'Synthetic carbon plan.']);
+  assert.match(done.synthesis_template, /table of disagreements/);
+  assert.equal(done.report_exists, true);
+  assert.equal(states(f, id).state, 'closed');
+  assert.equal(states(f, id).reason, 'members collected by main');
+  assert.ok(receipt(f, id).read_at);
+  assert.ok(!(await f.call('hud_read', {})).jobs.some(j => j.job === id));
+});
+
+test('hud_close on a council parent closes it and still-running members without a SESSION.txt error', async t => {
+  const f = await setup(t);
+  enableOptionalRoles(f, 'council');
+
+  // 1. Pre-existing flowless stuck council parent with already-closed members and no SESSION.txt.
+  const stuckId = 'j0000000000000201';
+  writeSyntheticCouncil(f, stuckId, {
+    members: [
+      { preset: 'fable', job: 'j0000000000000202', report: 'Member one.' },
+      { preset: 'astra', job: 'j0000000000000203', report: 'Member two.' },
+    ],
+  });
+  const closedStuck = await f.call('hud_close', { job: stuckId });
+  assert.equal(closedStuck.exit_code, 0, JSON.stringify(closedStuck));
+  assert.doesNotMatch(closedStuck.last_line, /SESSION\.txt/);
+  assert.equal(states(f, stuckId).state, 'stopped');
+  assert.equal(receipt(f, stuckId).stop_origin.actor, 'mcp');
+  const closedAgain = await f.call('hud_close', { job: stuckId });
+  assert.equal(closedAgain.exit_code, 0, JSON.stringify(closedAgain));
+  assert.doesNotMatch(closedAgain.last_line, /SESSION\.txt/);
+
+  // 2. Live council parent with still-running members closes both parent and members cleanly.
+  const { job } = await f.call('hud_create', { role: 'council', task: 'Close live council.', members: ['astra', 'astra'], synthesizer: 'main' });
+  const seats = await members(f, job);
+  const closedLive = await f.call('hud_close', { job });
+  assert.equal(closedLive.exit_code, 0, JSON.stringify(closedLive));
+  assert.doesNotMatch(closedLive.last_line, /SESSION\.txt/);
+  assert.equal(states(f, job).state, 'stopped');
+  assert.ok(!f.commands().some(c => c.command === 'hud-reap' && c.args[0] === dir(f, job)));
+  for (const seat of seats) {
+    assert.ok(f.commands().some(c => c.command === 'hud-reap' && c.args[0] === dir(f, seat.job)),
+      `expected normal hud-reap closure for running member ${seat.job}`);
+    assert.equal(receipt(f, seat.job).stop_origin.actor, 'mcp');
+    assert.ok(fs.existsSync(join(dir(f, seat.job), 'STATUS.json.stop-requested')));
+  }
+  assert.ok(!(await f.call('hud_read', {})).jobs.some(j => j.job === job));
+});
+
+test('stuck pre-existing council records with settled members and a prior read settle on the next watcher pass', async t => {
+  const f = await fixture(t);
+  const prior = new Date(Date.now() - 60_000).toISOString();
+  const parentReadId = 'j0000000000000301';
+  const membersReadId = 'j0000000000000311';
+  const unreadId = 'j0000000000000321';
+
+  // Prior read recorded on the parent council receipt.
+  writeSyntheticCouncil(f, parentReadId, {
+    readAt: prior,
+    members: [
+      { preset: 'fable', job: 'j0000000000000302', report: 'Parent-read member 1.' },
+      { preset: 'astra', job: 'j0000000000000303', report: 'Parent-read member 2.' },
+    ],
+  });
+  // No read_at on parent, but all settled members were read by main (matches legacy stuck records).
+  writeSyntheticCouncil(f, membersReadId, {
+    members: [
+      { preset: 'fable', job: 'j0000000000000312', report: 'Members-read plan 1.', readAt: prior },
+      { preset: 'astra', job: 'j0000000000000313', report: 'Members-read plan 2.', digest: 'Members-read plan 2.', readAt: prior },
+      { preset: 'carbon', job: 'j0000000000000314', report: 'Members-read plan 3.', readAt: prior },
+    ],
+  });
+  // Settled members with no prior read stay working until main reads them.
+  writeSyntheticCouncil(f, unreadId, {
+    members: [
+      { preset: 'fable', job: 'j0000000000000322', report: 'Unread member 1.' },
+      { preset: 'astra', job: 'j0000000000000323', report: 'Unread member 2.' },
+    ],
+  });
+
+  // Trigger the watcher via hud_read list.
+  await f.call('hud_read', {});
+  await until(() => states(f, parentReadId).state === 'closed' && states(f, membersReadId).state === 'closed', 15000);
+
+  for (const id of [parentReadId, membersReadId]) {
+    assert.equal(states(f, id).state, 'closed');
+    assert.equal(states(f, id).reason, 'members collected by main');
+    assert.ok(fs.existsSync(join(dir(f, id), 'report.md')));
+    assert.ok(receipt(f, id).read_at);
+    assert.ok(receipt(f, id).read_report_stamp);
+  }
+  assert.deepEqual(receipt(f, membersReadId).council_members.map(m => m.digest), [
+    'Members-read plan 1.', 'Members-read plan 2.', 'Members-read plan 3.',
+  ]);
+  assert.equal(states(f, unreadId).state, 'working');
+
+  const list = await f.call('hud_read', {});
+  assert.deepEqual(list.jobs.map(j => j.job), [unreadId]);
+  const summaryFile = join(f.env.HUD_HOME, 'display', 'work-summary.v1.json');
+  await until(() => fs.existsSync(summaryFile) && json(summaryFile).global.running === 1, 15000);
+  assert.equal(json(summaryFile).global.running, 1);
+
+  // Reading the unread council settles it as well.
+  const collected = await f.call('hud_read', { job: unreadId });
+  assert.equal(collected.state, 'closed');
+  assert.equal(collected.reason, 'members collected by main');
+  assert.deepEqual((await f.call('hud_read', {})).jobs, []);
+});

@@ -7,6 +7,7 @@ import type { AnswerResult } from '../../collectors/panel-actions.js';
 import { readJobProgress, jobRowReportMeta, jobChanges, failedAttempt, type JobRow } from '../../collectors/thin-jobs.js';
 import type { ReportMetaFields } from '../../roles/report-meta.js';
 import { removeQueuedJob } from '../../roles/concurrency.js';
+import { councilGrants } from '../../roles/council-grant.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
 import { herdrId, runHerdr, runCommand } from '../../roles/herdr-run.js';
 import { isShellLaunchedWorker, SHELL_WORKER_UNSUPPORTED } from '../../runtime/herdr-socket.js';
@@ -24,6 +25,7 @@ import { waitUntilFs, type WatchTarget } from '../../utils/fs-wait.js';
 import { reportReadHint } from '../../utils/report-summary.js';
 import { required, jobCwd, type Args } from '../dispatch/context.js';
 import { prepareCouncil, synthesisTemplate } from '../dispatch/council.js';
+import { settleMainCouncil } from '../council-settle.js';
 import { requestPrewalkStop } from '../prewalk-flow.js';
 import { sendJob, dispatchJob, resumeJob } from '../dispatch/orchestrator.js';
 import { registry, harnessSwitchFailure, compactAssignment } from '../dispatch/places.js';
@@ -49,8 +51,8 @@ import { binScript, jobFiles } from '../paths.js';
 import { settleStoppedPi } from '../pi-stop-settlement.js';
 import { stopSonic } from '../sonic-process.js';
 import {
-  directory, readRow, jobCache, isWorker, findJob, settled, jobsRoot, slice, digestLine, fallbackResultLine,
-  openQuestions, hudHome, bundled, writeScan, publishWorkSummary, findJobMutable, save, readCachedStatus,
+  directory, readRow, jobCache, isWorker, findJob, settled, jobs, jobsRoot, slice, digestLine, fallbackResultLine,
+  openQuestions, hudHome, bundled, writeScan, publishWorkSummary, findJobMutable, save, readCachedStatus, writeCreateStatus,
   type JobScan,
 } from '../store/job-store.js';
 import { keyLock } from '../store/key-lock.js';
@@ -698,6 +700,14 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
         const polledJob = firstCheck ? job : (findJob(job.job) ?? job);
         firstCheck = false;
         let polled = readRow(polledJob, !isWorker, null);
+        if (!isWorker && polled.job.role === 'council' && polled.job.synthesizer === 'main' && !settled(polled.row.state)) {
+          const settledCouncil = settleMainCouncil(hudHome, jobCache, polled.job.job, { trigger: 'read' });
+          if (settledCouncil) {
+            scan.record(settledCouncil.job);
+            publishWorkSummary();
+            polled = readRow(settledCouncil.job, !isWorker, null);
+          }
+        }
         initial ??= polled.row;
         if (!timedOut && !isReady(polled.row)) return { done: false };
         const obsJob = polled.job;
@@ -896,11 +906,57 @@ export async function closeJob(job: Job, stop = false) {
     return { exit_code: 0, last_line: 'stopping scouted dispatch' };
   }
   let { row, status } = readRow(job);
-  if (job.role === 'council' && row.state === 'working' && fs.existsSync(join(hudHome, 'flows', `${job.job}.json`))) {
-    recordStopOrigin(dir, 'mcp', status?.state, undefined, jobCache);
-    writePrivateFile(join(dir, jobFiles.stopRequested), '');
-    ensureWatcher();
-    return { exit_code: 0, last_line: 'stopping council' };
+  if (job.role === 'council') {
+    const terminal = (state: string | null | undefined) => ['closed', 'done', 'failed', 'stopped'].includes(state ?? '');
+    const latestJob = findJob(job.job) ?? job;
+    const hasFlow = fs.existsSync(join(hudHome, 'flows', `${job.job}.json`));
+    if (!terminal(row.state)) {
+      recordStopOrigin(dir, 'mcp', status?.state, undefined, jobCache);
+      writePrivateFile(join(dir, jobFiles.stopRequested), '');
+    }
+    const childIds = new Set<string>();
+    for (const member of latestJob.council_members ?? []) if (member.job) childIds.add(member.job);
+    if (latestJob.synthesis_job) childIds.add(latestJob.synthesis_job);
+    for (const other of jobs()) if (other.council?.id === job.job) childIds.add(other.job);
+    const childFailures: string[] = [];
+    await Promise.all([...childIds].map(async (childId) => {
+      const child = findJob(childId);
+      if (!child || child.role === 'council') return;
+      if (terminal(readRow(child, false).row.state)) return;
+      const res = await keyLock(`job:${child.job}`, async () => {
+        const fresh = findJob(child.job);
+        if (!fresh) return { exit_code: 0, last_line: 'missing' };
+        if (terminal(readRow(fresh, false).row.state)) return { exit_code: 0, last_line: 'already settled' };
+        return closeJob(fresh, true);
+      });
+      if (res.exit_code !== 0) childFailures.push(`${child.job}: ${res.last_line}`);
+    }));
+    const latestStatus = readCachedStatus(job.job).status;
+    if (!terminal(latestStatus?.state)) {
+      const now = new Date().toISOString();
+      writeCreateStatus(dir, {
+        ...latestStatus,
+        state: 'stopped',
+        reason: null,
+        exit_reason: 'Council stopped',
+        ended_at: latestStatus?.ended_at ?? now,
+      });
+      if (!latestJob.grant && !hasFlow) await councilGrants.releaseUnused(hudHome, job.job);
+      if (!isWorker) {
+        const current = findJobMutable(job.job);
+        if (current) save({ ...current, observed_at: now });
+      }
+    } else {
+      publishWorkSummary();
+    }
+    if (hasFlow) ensureWatcher();
+    const finalState = readCachedStatus(job.job).status?.state ?? row.state;
+    return {
+      exit_code: childFailures.length ? 1 : 0,
+      last_line: childFailures.length
+        ? `council closed; member close failed: ${childFailures.join('; ')}`
+        : finalState === 'stopped' ? 'council closed' : `council already ${finalState}`,
+    };
   }
   const outcome = cancelQueued(job.job, row.state);
   if (outcome === 'cancelled' || outcome === 'missing') return { exit_code: 0, last_line: cancelledLine, removed: true };

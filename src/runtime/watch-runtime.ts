@@ -15,6 +15,7 @@ import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/s
 import { collectSonicReadFacts, shouldRecordSonicReads } from '../roles/sonic-reads.js';
 import { landAttempt, activeLand, isFlowId, readLand } from '../mcp/land-state.js';
 import type { CouncilRun } from '../mcp/council-state.js';
+import { settleMainCouncil } from '../mcp/council-settle.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import type { PrewalkRun } from '../mcp/prewalk-flow.js';
 import { workflowHeaders } from '../workflows/header-scan.js';
@@ -834,7 +835,18 @@ function scan(retryWatch = false) {
       if (!['done', 'closed', 'failed', 'stopped'].includes(status?.state ?? '')) {
         let update: JobStatus | undefined;
         const now = new Date().toISOString();
-        if (job?.cli) {
+        if (job?.role === 'council') {
+          const councilFlow = flows.files.includes(`${id}.json`) ? flows.header<CouncilRun>(`${id}.json`) : null;
+          const activeCouncilFlow = councilFlow?.template === 'council' && councilFlow.state === 'working';
+          const settledCouncil = settleMainCouncil(home, jobCache, id, { trigger: 'watcher', activeFlow: activeCouncilFlow, now });
+          if (settledCouncil) {
+            job = settledCouncil.job;
+            status = settledCouncil.status;
+            statusAt = null;
+          } else if (!activeCouncilFlow && fs.existsSync(`${statusFile}.stop-requested`)) {
+            update = { state: 'stopped', reason: null, exit_reason: 'Council stopped', ended_at: now };
+          }
+        } else if (job?.cli) {
           const pid = supervisorPid(dir, status);
           const liveSupervisor = pid && isProcAlive(pid);
           if (pid && liveSupervisor) watch(dir, pid);

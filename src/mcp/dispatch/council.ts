@@ -8,7 +8,9 @@ import type { Role, RolePlace } from '../../roles/roster.js';
 import { readReportMeta } from '../../roles/report-meta.js';
 import type { Job } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
-import { bundled, directory, digestLine, fallbackResultLine, RESULT_HEAD_BYTES, save, writeCreateStatus } from '../store/job-store.js';
+import { bundled, directory, digestLine, fallbackResultLine, readCachedStatus, RESULT_HEAD_BYTES, save, writeCreateStatus } from '../store/job-store.js';
+import { synthesisTemplate } from '../council-settle.js';
+export { synthesisTemplate };
 import { waitChildReport } from './child-report.js';
 import { councilIndex } from './council-index.js';
 import type { Args } from './context.js';
@@ -53,7 +55,6 @@ export function prepareCouncil(args: Args, role: Role, found: Registry, configur
   return { members: chosen, synthesizer: synthesizer === 'main' ? 'main' : seats.get(synthesizer as string)!, instructions, browserInstructions };
 }
 
-export const synthesisTemplate = 'Write one converged plan for the original brief using the independent member reports. Include a table of disagreements: point; each member’s position; the choice; why. List open questions for the owner. Where members disagree on a fact the original attachments would settle, list it under open questions for the main session to check, naming the file if a member cited one. Do no new work beyond the plan.';
 const memberInstruction = 'Write an independent plan for the original brief. Do not implement changes or delegate. Put open questions in your report.';
 type Start = (seat: CouncilSeat, part: 'member' | 'synthesizer', args: Args, slot: string) => Promise<{ job?: string; failure?: string }>;
 
@@ -119,7 +120,9 @@ export async function runCouncil(parent: Job, plan: CouncilPlan, task: string, s
     }
     signal.throwIfAborted();
     const now = new Date().toISOString();
-    writeCreateStatus(dir, { state: 'closed', output_written: true, settled_at: now, ended_at: now });
+    if (readCachedStatus(parent.job).status?.state !== 'closed') {
+      writeCreateStatus(dir, { state: 'closed', output_written: true, settled_at: now, ended_at: now });
+    }
     return { state: 'closed' as const };
   } catch (error) {
     if (!parent.grant) await releaseUnused();
