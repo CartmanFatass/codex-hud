@@ -1,4 +1,4 @@
-/** Read-only display selection, resolved in the caller before any panel split. */
+/** Read-only display selection, resolved in the caller before a dock launch. */
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { opendirSync, realpathSync, statSync } from 'node:fs';

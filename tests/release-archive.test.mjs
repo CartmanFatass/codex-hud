@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { syntheticProc } from './fixtures/local-load.mjs';
+import { listenDock } from './fakes/herdr-dock.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'))).version;
@@ -213,8 +215,9 @@ test('release archive: isolated offline install, all extensions, stdio MCP and b
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.CLIENT_LOG, JSON.stringify(['herdr', ...args]) + '\\n');
-if (args[0] !== 'pane' || !['current', 'split', 'rename', 'run'].includes(args[1])) process.exit(99);
-console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 'synthetic-panel' } } : {} }));
+if (args[0] === 'plugin' && ['link', 'uninstall'].includes(args[1]) && args.length === 3) process.exit(0);
+if (args.join(' ') !== 'pane current') process.exit(99);
+console.log(JSON.stringify({ result: { pane: { pane_id: 'synthetic-caller' } } }));
 `, { mode: 0o755 });
   for (const name of ['google-chrome', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
     fs.writeFileSync(path.join(tools, name), '#!/bin/bash\necho "Prerequisite stand-in must not be executed" >&2\nexit 99\n', { mode: 0o755 });
@@ -265,10 +268,12 @@ console.log(JSON.stringify({ result: args[1] === 'split' ? { pane: { pane_id: 's
     for (const entry of [...manifest.pi.extensions, ...(manifest.pi.skills ?? [])]) assert.ok(fs.existsSync(path.join(pkg, entry)));
   }
   for (const file of files(home)) if (fs.lstatSync(file).isSymbolicLink()) assert.ok(fs.existsSync(file), `dangling installed link: ${file}`);
-  assert.equal(run('hud', ['panel'], { override: { HERDR_PANE_ID: 'synthetic-caller', COLUMNS: '120' } }).trim(), 'synthetic-panel');
-  const panelCalls = fs.readFileSync(env.CLIENT_LOG, 'utf8').trim().split('\n').map(JSON.parse);
-  assert.ok(panelCalls.some(call => call[0] === 'herdr' && call[2] === 'run' && call[3] === 'synthetic-panel' &&
-    call[4].includes(path.join(tree, 'bin/hud')) && call[4].includes("'panel' '--here'")));
+  const dock = await listenDock(t, env.HERDR_SOCKET_PATH);
+  const panel = await promisify(execFile)('hud', ['panel'], { cwd: tree, env: { ...env, HERDR_PANE_ID: 'synthetic-caller' }, timeout: 10000 });
+  assert.equal(panel.stdout.trim(), 'HUD panel opened');
+  assert.deepEqual(dock.operations().map(({ method }) => method), ['dock.toggle']);
+  assert.deepEqual(dock.operations()[0].params.argv, [path.join(tree, 'bin/hud'), 'panel', '--here']);
+  assert.equal(dock.operations()[0].params.env.HUD_DOCK_CALLER_PANE, 'synthetic-caller');
   run('hud', ['statusline', '--help']);
   const requests = [
     { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'archive-rehearsal', version: '1' } } },

@@ -15,7 +15,6 @@ export function herdrState(seed = {}) {
     agents: [],
     labels: {},
     env: {},
-    receipts: [],
     counts: {},
     ...seed,
   };
@@ -41,7 +40,7 @@ const commands = new Set([
   'agent prompt',
   'agent wait',
 ]);
-const profiles = new Set(['role', 'panel', 'owned']);
+const profiles = new Set(['role', 'owned']);
 const ownedUnsupported = new Set(['pane run', 'agent rename', 'tab rename']);
 export const supportsCommand = (profile, command) =>
   commands.has(command) && !(profile === 'owned' && ownedUnsupported.has(command));

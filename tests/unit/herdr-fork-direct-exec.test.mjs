@@ -137,6 +137,8 @@ test('directExecEnv forwards auth/toolchain vars and strips job, session, contro
       HERDR_PANE_ID: 'w4E:p1',
       HERDR_TAB_ID: 'w4E:t1',
       HERDR_WORKSPACE_ID: 'w4E',
+      HERDR_DOCK: '1',
+      HUD_DOCK_CALLER_PANE: 'w4E:p1',
       TMUX: '/tmp/tmux-1000/default,123,0',
       TMUX_PANE: '%1',
       ZELLIJ: '0',
@@ -155,8 +157,8 @@ test('directExecEnv forwards auth/toolchain vars and strips job, session, contro
   for (const stripped of [
     'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'OMPCODE',
     'HUD_MCP_SURFACE', 'HUD_MCP_PI_SESSION_ID', 'HUD_TAB_LAUNCH', 'HUD_INVOCATION_TOKEN',
-    'HUD_RESUME_SESSION_ID',
-    'HERDR_PANE_ID', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID',
+    'HUD_RESUME_SESSION_ID', 'HUD_DOCK_CALLER_PANE',
+    'HERDR_PANE_ID', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID', 'HERDR_DOCK',
     'TMUX', 'TMUX_PANE', 'ZELLIJ', 'WEZTERM_PANE', 'KITTY_WINDOW_ID',
   ]) {
     assert.equal(Object.hasOwn(env, stripped), false, `expected ${stripped} stripped`);

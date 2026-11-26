@@ -4,7 +4,7 @@ import { CliError } from './private-home.js';
 import { getHudHome } from '../hud-home.js';
 import { allowCouncil } from '../roles/council-grant.js';
 import { codexCommand } from './compat.js';
-import { panelCommand, PANEL_HELP } from './panel.js';
+import { panelCommand } from './panel.js';
 import { trustCommand } from './trust.js';
 import { setupCommand } from './setup.js';
 import { ticketsCommand } from './tickets.js';
@@ -19,13 +19,7 @@ import { selectSendCommand } from './select-send.js';
 export async function main(args: readonly string[], io: HudIO): Promise<number> {
   try {
     if (args[0] === 'statusline') return await statuslineCommand(args.slice(1), io);
-    if (args[0] === 'panel') {
-      if (args.length === 2 && args[1] === '--help') {
-        await io.stdout(PANEL_HELP);
-        return 0;
-      }
-      return await panelCommand(io, args.slice(1));
-    }
+    if (args[0] === 'panel') return await panelCommand(io, args.slice(1));
     if (args[0] === 'codex' || args[0] === 'codex-hud') return await codexCommand(args.slice(1), io);
     if (args[0] === 'trust') return await trustCommand(args.slice(1), io);
     if (args[0] === 'setup') return await setupCommand(args.slice(1), io);

@@ -301,12 +301,11 @@ import fs from 'node:fs';
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.EDITOR_LOG, JSON.stringify(args) + '\\n');
 const operation = args.slice(0, 2).join(' ');
-if (operation === 'pane get' && process.env.EDITOR_LOOKUP === 'fail') process.exit(1);
 const result = operation === 'pane get'
-  ? {pane: {pane_id: 'w4E:p2', workspace_id: process.env.EDITOR_LOOKUP === 'missing' ? undefined : 'w4E'}}
+  ? {pane: {pane_id: 'w4E:p2', workspace_id: 'w4E'}}
   : operation === 'tab create'
     ? {type: 'tab_created', tab: {tab_id: 'w4E:t2'}, root_pane: {pane_id: 'w4E:p3'}}
-    : {pane: {pane_id: 'w4E:p4'}};
+    : {ok: true};
 console.log(JSON.stringify({result}));
 `,
     { mode: 0o700 }
@@ -353,13 +352,14 @@ test('Enter and o open the exact Project file in its own focused workspace tab; 
     ],
   ]);
 });
-test('Commit evidence opens git show in the Objective project’s focused tab', async (t) => {
+test('From the dock, Commit evidence opens git show in a focused tab at the Objective project', async (t) => {
   const f = await fixture(t), { env, calls } = editorHerdr(f);
+  delete env.HERDR_PANE_ID;
+  env.HERDR_DOCK = '1';
   await assert.rejects(openGitShowPane(f.cwd, '123abcd; exit', env), /invalid_commit_hash/);
   await openGitShowPane(f.cwd, '123abcd', env);
   assert.deepEqual(calls().slice(0, 2), [
-    ['pane', 'get', 'w4E:p2'],
-    ['tab', 'create', '--workspace', 'w4E', '--cwd', f.cwd, '--label', '123abcd', '--focus'],
+    ['tab', 'create', '--cwd', f.cwd, '--label', '123abcd'], ['tab', 'focus', 'w4E:t2'],
   ]);
   assert.deepEqual(calls()[2].slice(0, 3), ['pane', 'run', 'w4E:p3']);
   assert.match(calls()[2][3], /git .* show --no-ext-diff --no-textconv 123abcd --$/);
@@ -380,17 +380,18 @@ test('Editor tab label is the first basename, capped at 24 display cells', async
     assert.ok(visualLength(label) <= 24);
   }
 });
-for (const mode of ['fail', 'missing'])
-  test(`Editor falls back to a split when workspace lookup is ${mode}`, async (t) => {
-    const f = await fixture(t),
-      { env, calls } = editorHerdr(f);
-    await openEditorPane([join(f.root, 'report.md')], { ...env, EDITOR_LOOKUP: mode });
-    assert.deepEqual(calls(), [
-      ['pane', 'get', 'w4E:p2'],
-      ['pane', 'split', 'w4E:p2', '--direction', 'right', '--focus', '--cwd', process.cwd()],
-      ['pane', 'run', 'w4E:p4', `vim '${f.root}/report.md'; exit`],
-    ]);
+test('From the dock, the editor opens a focused tab in the active workspace without a pane ID', async (t) => {
+  const f = await fixture(t), { env, calls } = editorHerdr(f);
+  delete env.HERDR_PANE_ID;
+  await openEditorPane([join(f.root, 'report.md')], {
+    ...env, HERDR_DOCK: '1', HERDR_BIN_PATH: join(f.root, 'bin/herdr'), PATH: dirname(process.execPath),
   });
+  assert.deepEqual(calls(), [
+    ['tab', 'create', '--cwd', process.cwd(), '--label', 'report.md'],
+    ['tab', 'focus', 'w4E:t2'],
+    ['pane', 'run', 'w4E:p3', `vim '${f.root}/report.md'; exit`],
+  ]);
+});
 test('Home and overlays collect nothing; warm Project uses signatures and git waits five seconds', async (t) => {
   const f = await fixture(t),
     originals = Object.fromEntries(['readSync', 'lstatSync', 'opendirSync'].map((k) => [k, fs[k]]));

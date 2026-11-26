@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Match the retired prompt verbatim for cleanup; the installed hud skill now toggles the dock.
 hud_codex_prompt_line='Run `hud panel` with Bash and report the pane id it prints.'
 
 hud_codex_mcp() {

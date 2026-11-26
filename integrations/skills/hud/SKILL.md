@@ -1,7 +1,7 @@
 ---
 name: hud
-description: Open the interactive HUD sidebar beside this session. Use when the user invokes /hud.
+description: Toggle the shared interactive HUD dock. Use when the user invokes /hud.
 disable-model-invocation: true
 ---
 
-Run `hud panel` with Bash and report the pane id it prints.
+Run `hud panel` once with Bash to toggle the HUD dock. Report whether it opened or closed, or report the error without retrying.

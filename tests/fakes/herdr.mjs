@@ -2,7 +2,6 @@
 /** CLI/socket front end over the shared inventory; safe to import in unit tests. */
 import * as fs from 'node:fs';
 import * as net from 'node:net';
-import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -167,48 +166,6 @@ export async function roleCall(argv, env = process.env) {
     else unlock();
   }
 }
-async function panelCall(argv, env) {
-  if (env.PANEL_FAKE_LOG) {
-    fs.appendFileSync(env.PANEL_FAKE_LOG, JSON.stringify(argv) + '\n');
-    if (argv[0] === '--version') return { stdout: 'herdr 0.9.5\n', exit: 0 };
-    if (argv[0] === 'api') return { stdout: fs.readFileSync(env.PANEL_FAKE_SCHEMA_FILE, 'utf8'), exit: 0 };
-    if (argv[0] === 'pane' && argv[1] === 'run' && argv[2] === '--help')
-      return { stdout: 'Run a command in a pane\nUsage: herdr pane run <PANE_ID> <COMMAND>...\n', exit: 0 };
-    const state = load(env.PANEL_FAKE_LOG + '.state');
-    if (!state.panes.length) {
-      state.tabs.push({ tab_id: 'w4E:t1' });
-      state.panes.push({ pane_id: 'w4E:p1', tab_id: 'w4E:t1', workspace_id: 'w4E' });
-    }
-    return createHerdr({ profile: 'panel', state, save: (s) => persist(env.PANEL_FAKE_LOG + '.state', s) }).invoke(
-      argv
-    );
-  }
-  const [log, operation, ...args] = argv;
-  fs.appendFileSync(log, JSON.stringify({ operation, args }) + '\n');
-  if (operation === 'leak') {
-    const child = spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 10000)'], {
-      stdio: ['ignore', 'inherit', 'inherit'],
-    });
-    fs.writeFileSync(log + '.pid', String(child.pid));
-    return { stdout: '', exit: 0 };
-  }
-  if (!['preflight', 'split', 'start', 'close'].includes(operation)) return refused('unknown_command');
-  const state = load(log + '.state');
-  if (!state.tabs.length) {
-    state.tabs.push({ tab_id: 'w4E:t1' });
-    state.panes.push({ pane_id: 'w4E:p1', tab_id: 'w4E:t1', workspace_id: 'w4E' });
-  }
-  const model = createHerdr({ profile: 'panel', state, save: (s) => persist(log + '.state', s) });
-  if (operation === 'preflight') return { stdout: '{}', exit: 0 };
-  if (operation === 'split') {
-    const receipt = JSON.parse(fs.readFileSync(args[0], 'utf8'));
-    if (receipt.phase !== 'opening') return refused('intent_missing');
-    state.receipts.push(receipt);
-    const out = await model.invoke(['pane', 'split', 'w4E:p1', '--env', args[1] ?? '{}']);
-    return out.exit ? out : { stdout: JSON.stringify({ pane: JSON.parse(out.stdout).result.pane.pane_id }), exit: 0 };
-  }
-  return model.invoke(['pane', operation === 'start' ? 'run' : 'close', ...args]);
-}
 function socketCall(argv, env) {
   return new Promise((resolve) => {
     const socket = net.createConnection(env.HERDR_SOCKET_PATH);
@@ -235,12 +192,7 @@ export async function runHerdr(profile = 'role', argv = process.argv.slice(2), e
     const { serveOwned } = await import('./herdr-owned.mjs');
     return serveOwned(argv.slice(1));
   }
-  const reply =
-    profile === 'owned'
-      ? await socketCall(argv, env)
-      : profile === 'panel'
-        ? await panelCall(argv, env)
-        : await roleCall(argv, env);
+  const reply = profile === 'owned' ? await socketCall(argv, env) : await roleCall(argv, env);
   process.stdout.write(reply.stdout ?? '');
   process.stderr.write(reply.stderr ?? '');
   process.exitCode = reply.exit ?? 0;

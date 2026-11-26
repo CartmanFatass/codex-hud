@@ -122,7 +122,7 @@ Earlier Node versions are not supported, even if individual APIs or dependencies
 When the running `herdr-hud` fork advertises `capabilities.pane_strip`, it reserves the pane's bottom strip, spawns Codex directly in the pane with forwarded arguments and `CODEX_HOME` (no tmux), and runs the bar sidecar pushing rendered lines at the exact width from `pane.resized` events while renewing the 15 s lease.
 The bar reloads automatically after `npm run build` without restarting Codex or clearing the strip, and clears the bottom strip on exit.
 Without `pane_strip` support (unless `CODEX_HUD_STATUSLINE=0`), it refuses with an error naming `herdr-hud`.
-`/hud` opens the standalone herdr sidebar panel (`hud panel`).
+`/hud` (`hud panel`) toggles the shared right-edge panel over the herdr socket when the running fork advertises `dock`. Herdr owns the display lifetime and geometry; the panel sends `dock.configure` when its saved mode or width changes. `hud panel --here` runs in the current terminal.
 
 ## 4. Collecting data
 

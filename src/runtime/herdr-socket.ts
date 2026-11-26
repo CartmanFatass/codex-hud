@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { clearTimeout, setTimeout } from 'node:timers';
 
 export type PaneStripPosition = 'top' | 'bottom';
+export type DockMode = 'overlay' | 'push';
 
 export interface PaneStripReservation {
   position: PaneStripPosition;
@@ -32,7 +33,8 @@ export interface HerdrReply {
     version?: string;
     protocol?: number;
     shown?: boolean;
-    capabilities?: { hidden_tabs?: boolean; hidden_tabs_peek?: boolean; pane_strip?: boolean; guarded_prompt?: boolean; agy_background_work?: boolean };
+    action?: 'opened' | 'closed' | 'unchanged';
+    capabilities?: { hidden_tabs?: boolean; hidden_tabs_peek?: boolean; pane_strip?: boolean; guarded_prompt?: boolean; agy_background_work?: boolean; dock?: boolean };
     strip?: PaneStripInfo;
     pane?: {
       pane_id: string;
@@ -128,6 +130,11 @@ export async function hasHerdrHiddenTabs(env = process.env): Promise<boolean> {
 export async function hasHerdrHiddenTabsPeek(env = process.env): Promise<boolean> {
   const reply = await request('ping', {}, { env }).catch(() => null);
   return !reply?.error && reply?.result?.capabilities?.hidden_tabs_peek === true;
+}
+
+export async function hasHerdrDock(env = process.env): Promise<boolean> {
+  const reply = await request('ping', {}, { timeoutMs: 500, env });
+  return !reply?.error && reply?.result?.capabilities?.dock === true;
 }
 
 export async function probeHerdrPaneStrip(env = process.env): Promise<{

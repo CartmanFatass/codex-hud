@@ -39,10 +39,9 @@ codexH() { hud codex "$@"; }
 `codexH` launches Codex directly inside the current herdr pane with a bottom pane strip
 and leaves `CODEX_HOME` to the caller.
 
-The panel never opens by itself: Claude, Codex and pi all use `/hud`.
-Claude gets a `/hud` command file (one line: run `hud panel` with Bash and report the pane id);
-Codex gets a `/hud` skill (`hud`) with the same instruction;
-pi gets the `/hud` command from the display package.
+The panel never opens by itself: `/hud` in Claude, Codex and pi toggles the same right-edge dock on a herdr fork with the `dock` capability.
+Claude gets a `/hud` command file and Codex gets a `/hud` skill (`hud`); both run `hud panel` and report whether the dock opened or closed.
+Pi gets `/hud` from the display package. In a shell, use `hud panel` to toggle or `hud panel --here` to run in the current terminal.
 
 ## What each extension changes
 
@@ -73,7 +72,7 @@ Claude, Codex and pi get the ticket method through `hud_tickets`. Installing a n
   Before MCP edits, the resolved `config.toml` gets a one-time plain `.hud-backup`.
   The official Codex commands may drop comments; a warning names that retained
   backup if the number of comment lines falls. No comments are reinserted.
-  `hud codex` is the HUD launch (herdr pane-strip bar, no tmux); `/hud` opens the standalone panel.
+  `hud codex` is the HUD launch (herdr pane-strip bar, no tmux); `/hud` toggles the shared herdr dock.
 - **agy**: requires `agy` on PATH. Stages the official `agy mcp remove/add` commands in an
   isolated home and copies only `mcpServers.hud` into `~/.gemini/config/mcp_config.json`,
   without rewriting foreign entries. Adds `mcp(hud/*)` to `permissions.allow` in

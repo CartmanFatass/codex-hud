@@ -6,11 +6,13 @@ import { pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createFooterHost } from '../fakes/pi.mjs';
+import { listenDock } from '../fakes/herdr-dock.mjs';
+import { main } from '../../dist/cli/hud.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { expProxyPath, readExpConfig, readExpGrantBalance, saveExpEdit } from '../../dist/collectors/exp-store.js';
 import { PI_ROLE_TOOLS } from '../../dist/harness/pi/role-client.js';
 const root = process.env.R6A_PI_EMITTED_ROOT ?? path.resolve('dist');
-const { displayTarget } = await import(pathToFileURL(path.join(root, 'integrations/panel/receipt.js')));
+const { displayTarget } = await import(pathToFileURL(path.join(root, 'cli/panel.js')));
 const { visualWidth, truncateAnsi, stripAnsi } = await import(pathToFileURL(path.join(root, 'render/colors.js')));
 const footerHost = createFooterHost({ visibleWidth: visualWidth, truncateToWidth: truncateAnsi });
 const node = fs.realpathSync(process.execPath);
@@ -196,17 +198,7 @@ function context(f, h, id = 'session-a', mode = 'tui') {
 function ports(f) {
   let time = Date.now();
   const timers = new Set();
-  const bin = path.join(f.home, 'bin');
-  fs.mkdirSync(bin, { recursive: true });
-  fs.writeFileSync(
-    path.join(bin, 'herdr'),
-    `#!${node}\nimport(${JSON.stringify(pathToFileURL(path.resolve('tests/fakes/panel-herdr.mjs')).href)});\n`,
-    { mode: 0o700 }
-  );
-  const log = path.join(f.home, 'herdr.jsonl');
-  fs.writeFileSync(log, '');
-  Object.assign(f.env, { PATH: `${bin}:${path.dirname(node)}`, HERDR_PANE_ID: 'w4E:p1', PANEL_FAKE_LOG: log });
-  const calls = () => fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+  Object.assign(f.env, { HERDR_PANE_ID: 'w4E:p1', HERDR_SOCKET_PATH: path.join(f.home, 'dock.sock') });
   const options = {
     env: f.env,
     footerHost: async () => footerHost,
@@ -222,7 +214,6 @@ function ports(f) {
   };
   return {
     options,
-    calls,
     timers,
     advance(ms) {
       time += ms;
@@ -230,10 +221,6 @@ function ports(f) {
       timers.clear();
       for (const x of todo) x.cb();
     },
-    counts: () => ({
-      splits: calls().filter((argv) => argv[1] === 'split').length,
-      closes: calls().filter((argv) => argv[1] === 'close').length,
-    }),
     now: () => time,
   };
 }
@@ -250,53 +237,54 @@ async function load(f, h, p, extension = 'hud.mjs') {
   }
 }
 
-test('pi on/off/toggle/status uses the caller pane without native ancestry and reopens a missing pane', async (t) => {
-  const f = setup(t),
-    h = host(),
-    c = context(f, h),
-    p = ports(f, h, c);
+test('pi /hud controls the same session-bound dock as hud panel without closing it on shutdown', async (t) => {
+  const f = setup(t), h = host(), c = context(f, h), p = ports(f);
+  const dock = await listenDock(t, f.env.HERDR_SOCKET_PATH);
+  fs.writeFileSync(path.join(f.binding.hudHome, 'hud-settings.json'), JSON.stringify({ treeWidth: 80, dockMode: 'push' }));
   await load(f, h, p, 'hud-display.mjs');
   await h.emit('session_start', c.ctx);
-  assert.equal(p.counts().splits, 0, 'session_start opens no panel');
-  await h.commands.get('hud').handler('on', c.ctx);
-  assert.equal(p.counts().splits, 1);
-  const run = p.calls().find((argv) => argv[1] === 'run');
-  const pane = run[2];
-  assert.deepEqual(p.calls()[0], ['pane', 'layout', '--pane', 'w4E:p1']);
-  assert.equal(
-    p.calls()[1].join('|'),
-    `pane|split|w4E:p1|--direction|right|--ratio|${1 - 56 / 120}|--no-focus|--cwd|${f.cwd}|--env|HUD_PANEL_CALLER_PANE=w4E:p1|--env|HUD_PANEL_WIDTH=56`
-  );
-  assert.ok(run[3].includes(`'${f.binding.release}/bin/hud' 'panel' '--here' '--harness' 'pi'`));
-  assert.ok(run[3].endsWith(`'--session' 'session-a' '--source' '${c.source}'`));
-  await h.commands.get('hud').handler('status', c.ctx);
-  assert.equal(h.calls.notices.at(-1), `HUD: open (${pane})`);
-  await h.commands.get('hud').handler('on', c.ctx);
-  assert.equal(p.counts().splits, 1, 'on reuses the remembered live pane');
-  const stateFile = f.env.PANEL_FAKE_LOG + '.state';
-  const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-  state.panes = state.panes.filter((p) => p.pane_id !== pane);
-  fs.writeFileSync(stateFile, JSON.stringify(state));
-  await h.commands.get('hud').handler('on', c.ctx);
-  assert.equal(p.counts().splits, 2, 'on replaces a pane closed outside pi');
-  const replacement = p
-    .calls()
-    .filter((argv) => argv[1] === 'run')
-    .at(-1)[2];
-  await h.commands.get('hud').handler('off', c.ctx);
-  assert.deepEqual(p.calls().at(-1), ['pane', 'close', replacement]);
-  await h.commands.get('hud').handler('status', c.ctx);
-  assert.equal(h.calls.notices.at(-1), 'HUD: closed');
-  await h.commands.get('hud').handler('toggle', c.ctx);
-  assert.equal(p.counts().splits, 3);
-  await h.commands.get('hud').handler('toggle', c.ctx);
-  assert.equal(h.calls.notices.at(-1), 'HUD: closed');
-  await h.commands.get('hud').handler('', c.ctx);
-  assert.equal(p.counts().splits, 4, 'bare /hud toggles the panel open');
-  await h.commands.get('hud').handler('', c.ctx);
-  assert.equal(h.calls.notices.at(-1), 'HUD: closed', 'bare /hud toggles the panel closed');
-  assert.equal(h.calls.messages, 0);
+  assert.deepEqual(dock.calls, [], 'session_start does not touch the dock');
+  const command = async (verb, ctx = c.ctx) => {
+    await h.commands.get('hud').handler(verb, ctx);
+    return h.calls.notices.at(-1);
+  };
+  assert.equal(await command('on'), 'HUD: opened');
+  assert.deepEqual(dock.operations()[0], { method: 'dock.open', params: {
+    executable: f.binding.node,
+    argv: [path.join(f.binding.release, 'bin/hud'), 'panel', '--here', '--harness', 'pi', '--session', 'session-a', '--source', c.source],
+    cwd: f.cwd, env: { HUD_HOME: f.binding.hudHome, HUD_SETTINGS_PATH: path.join(f.binding.hudHome, 'hud-settings.json'),
+      HUD_DOCK_CALLER_PANE: 'w4E:p1', CODEX_HOME: f.env.CODEX_HOME, CLAUDE_CONFIG_DIR: f.env.CLAUDE_CONFIG_DIR,
+      PI_CODING_AGENT_DIR: f.env.PI_CODING_AGENT_DIR }, mode: 'push', width: 80,
+  }});
+  assert.equal(await command('status'), 'HUD: open');
+  assert.equal(await command('on'), 'HUD: open');
+  assert.equal(await command('off'), 'HUD: closed');
+  assert.equal(await command('toggle'), 'HUD: opened');
+  const output = [];
+  assert.equal(await main(['panel', '--root', 'synthetic/session'], { env: f.env,
+    stdout: (text) => { output.push(text); }, stderr: assert.fail }), 0);
+  assert.deepEqual(output, ['HUD panel closed\n'], 'the shell toggles the dock that pi opened');
+  assert.equal(await command(''), 'HUD: opened');
+  assert.equal(await command('off', context(f, h, 'other').ctx), 'HUD: session_unbound; use /hud reconnect');
   await h.emit('session_shutdown', c.ctx);
+  assert.equal(dock.state().shown, true);
+  assert.deepEqual(dock.operations().map(({ method }) => method), [
+    'dock.open', 'dock.status', 'dock.open', 'dock.close', 'dock.toggle', 'dock.toggle', 'dock.toggle',
+  ]);
+  assert.equal(h.calls.messages, 0);
+});
+
+test('pi display refuses /hud in a worker and in a noninteractive session', async (t) => {
+  for (const [mode, worker, expected] of [['tui', true, 'panel_worker_forbidden'], ['rpc', false, 'panel_noninteractive; role_tools_available']]) {
+    const f = setup(t), h = host(), c = context(f, h, 'session-a', mode), p = ports(f);
+    const dock = await listenDock(t, f.env.HERDR_SOCKET_PATH);
+    if (worker) f.env.HUD_JOB_DIR = '';
+    await load(f, h, p, 'hud-display.mjs');
+    await h.emit('session_start', c.ctx);
+    await h.commands.get('hud').handler('', c.ctx);
+    assert.equal(h.calls.notices.at(-1), `HUD: ${expected}`);
+    assert.deepEqual(dock.calls, []);
+  }
 });
 
 test('pi owner /council grants once and submits the following text, without a grant tool', async t => {
@@ -320,6 +308,7 @@ test('combined pi packages retain delegation after canceled navigation and displ
     h = host(),
     c = context(f, h),
     p = ports(f);
+  const dock = await listenDock(t, f.env.HERDR_SOCKET_PATH);
   await load(f, h, p);
   await load(f, h, p, 'hud-display.mjs');
   await h.emit('session_start', c.ctx);
@@ -329,12 +318,12 @@ test('combined pi packages retain delegation after canceled navigation and displ
   for (const event of ['session_before_switch', 'session_before_fork', 'session_before_tree']) {
     await h.emit(event, c.ctx); // No successful transition follows: navigation was canceled.
     await h.commands.get('hud').handler('reconnect', c.ctx);
-    assert.equal(h.calls.notices.at(-1), 'HUD: reconnected; panel_not_open');
+    assert.equal(h.calls.notices.at(-1), 'HUD: reconnected');
     assert.match((await roster()).content[0].text, /^roles: \[\{/);
   }
   assert.equal(h.tools.size, toolCount);
   assert.deepEqual([...h.commands.keys()].sort(), ['council', 'hud']);
-  assert.equal(p.counts().splits, 0);
+  assert.deepEqual(dock.calls, []);
 });
 
 test('delegation collects live oapi requests, using request-time prices and persisted fallback IDs without a footer', async (t) => {
@@ -737,6 +726,7 @@ test('the delegation-only package registers the tools but no footer, no /hud and
     h = host(),
     c = context(f, h),
     p = ports(f, h, c);
+  const dock = await listenDock(t, f.env.HERDR_SOCKET_PATH);
   await load(f, h, p, 'hud.mjs');
   assert.deepEqual([...h.tools.keys()].sort(), [
     'hud_close',
@@ -760,7 +750,7 @@ test('the delegation-only package registers the tools but no footer, no /hud and
   await h.emit('session_start', c.ctx);
   const guide = await h.tools.get('hud_tickets').execute('synthetic', { op: 'guide' }, undefined, undefined, c.ctx);
   assert.match(guide.content[0].text, /^# Ticket method/);
-  assert.equal(p.counts().splits, 0, 'the settings-registered package a worker could load opens no panel');
+  assert.deepEqual(dock.calls, [], 'the settings-registered package a worker could load does not touch the dock');
   assert.equal(h.calls.footer, 0, 'no footer');
   assert.equal(h.calls.status.length, 0, 'no Work segment');
   assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false, 'no native sendMessage API');
@@ -776,6 +766,7 @@ async function until(check, failure = 'timed out waiting for the native watcher'
 
 test('pi watches at the next model boundary or wakes when idle, and drops stale deliveries', async (t) => {
   const f = setup(t), h = host(), c = context(f, h), p = ports(f);
+  const dock = await listenDock(t, f.env.HERDR_SOCKET_PATH);
   const home = f.binding.hudHome, pane = f.env.HERDR_PANE_ID;
   const marker = path.join(home, 'watchers', `${pane}.pid`);
   const id = 'j0000000000000001', dir = path.join(home, 'jobs', id);
@@ -850,7 +841,7 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   ].map(JSON.stringify).join('\n') + '\n');
   await until(() => messages.length === 4);
   assert.deepEqual(messages[3], notice('try accepted workspace M1: demo'));
-  assert.deepEqual(p.calls(), [], 'native delivery never calls herdr');
+  assert.ok(dock.calls.every(({ method }) => ['ping', 'events.subscribe'].includes(method)), 'native delivery never types through herdr');
   assert.equal(h.calls.messages, 0, 'native delivery never sends as user input');
   assert.equal(draft, 'Unsent draft');
 
@@ -886,6 +877,7 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
 
 test('pi refuses delegation in a resumed worker before starting its main-session watcher', async (t) => {
   const f = setup(t), h = host(), p = ports(f);
+  const dock = await listenDock(t, f.env.HERDR_SOCKET_PATH);
   const job = 'j0000000000000001', worker = context(f, h, 'synthetic-worker-session');
   const dir = path.join(f.binding.hudHome, 'jobs', job);
   fs.mkdirSync(dir, { recursive: true });
@@ -902,7 +894,7 @@ test('pi refuses delegation in a resumed worker before starting its main-session
   for (const tool of h.tools.values())
     await assert.rejects(tool.execute('synthetic', {}, undefined, undefined, worker.ctx), recovery);
   assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false);
-  assert.deepEqual(p.calls(), []);
+  assert.deepEqual(dock.calls, []);
 });
 
 test('the interactive pi delegation extension has no worker branch', async (t) => {

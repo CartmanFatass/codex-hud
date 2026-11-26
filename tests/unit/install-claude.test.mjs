@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const commandLine = 'Run `hud panel` with Bash and report the pane id it prints.\n';
+const commandLine = 'Run `hud panel` once with Bash to toggle the HUD dock. Report whether it opened or closed, or report the error without retrying.\n';
+const legacyCommandLine = 'Run `hud panel` with Bash and report the pane id it prints.\n';
 
 test('Claude install maintains the global statusline and reverses only its changes', (t) => {
   const inheritedMask = process.umask(0o022);
@@ -97,6 +98,8 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       added: 42,
     };
     fs.writeFileSync(settings, JSON.stringify(earlier, null, 2) + '\n');
+    const commandFile = path.join(config, 'commands/hud.md');
+    fs.writeFileSync(commandFile, legacyCommandLine);
     fs.mkdirSync(retired);
     process.umask(0o077); // The installer must retain the existing mode, not its own creation mode.
     assert.match(run('--skip-build').stderr, /keeping existing skill not owned by HUD: .*to-tickets/);
@@ -107,6 +110,7 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
       'the global HUD statusLine is refreshed'
     );
     assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes, 'reinstall keeps the original backup');
+    assert.equal(fs.readFileSync(commandFile, 'utf8'), commandLine, 'reinstall upgrades only the known legacy command');
 
     fs.writeFileSync(legacy, JSON.stringify({ statusLine: hudLine }));
     assert.match(run('--uninstall').stderr, /keeping existing skill not owned by HUD: .*to-tickets/);
@@ -127,12 +131,14 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     assert.equal(fs.existsSync(pluginConfig), true, 'claude-hud stays installed');
     fs.renameSync(pluginConfig, pluginConfig + '.saved'); // Next scenario has no old plugin to import.
     fs.writeFileSync(settings, JSON.stringify({ unrelated: true }));
-    run('--skip-build');
+    fs.writeFileSync(commandFile, 'Synthetic owner command.\n');
+    assert.match(run('--skip-build').stderr, /keeping existing command file/);
     assert.deepEqual(json(settings), { unrelated: true, statusLine: hudLine });
     fs.writeFileSync(legacy, JSON.stringify({ statusLine: { command: 'owner-command' } }));
     run('--uninstall');
     assert.deepEqual(json(settings), { unrelated: true });
     assert.deepEqual(json(legacy), { statusLine: { command: 'owner-command' } });
+    assert.equal(fs.readFileSync(commandFile, 'utf8'), 'Synthetic owner command.\n');
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

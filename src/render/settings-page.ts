@@ -66,8 +66,12 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     group: 'Panel',
     label: 'Width',
     values: PANEL_WIDTHS,
-    help: 'Panel columns for every client; the agent pane keeps 41',
+    help: 'Requested width of the herdr dock',
     format: (value) => (Number(value) === 0 ? 'auto' : t('{n} cols', { n: Number(value) })),
+  },
+  {
+    key: 'dockMode', group: 'Panel', label: 'Dock mode', values: ['overlay', 'push'],
+    help: 'Overlay keeps the main pane width; Push makes room for the dock',
   },
   {
     key: 'notify',
@@ -226,7 +230,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['treeWidth', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'openPreviews'],
+  Panel: ['treeWidth', 'dockMode', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'openPreviews'],
   Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'autoPrewalk', 'poolPick', 'advisorShadow', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],

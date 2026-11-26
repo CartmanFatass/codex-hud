@@ -50,7 +50,7 @@ codexH() { hud codex "$@"; }
 codexH
 ```
 
-Only the panel is opt-in: `/hud` opens it in Claude, Codex and pi; it never opens at launch.
+The panel is opt-in: `/hud` toggles the same right-edge herdr dock in Claude, Codex and pi; it never opens at launch.
 Uninstall with `hud uninstall` or `./install --uninstall`; `--with names` removes only those extensions, leaving core commands intact.
 HUD data and unrelated owner settings remain.
 Claude settings follow symlinks with a one-time plain backup; Codex backs up resolved `config.toml` before official MCP commands and warns if comments are dropped.
@@ -69,9 +69,10 @@ See [installer extensions](../install.d/README.md) for backups and multiple Code
 hud --help
 hud --version             # print the version, build commit and build time
 hud panel --help
-hud panel                 # beside the caller in herdr, otherwise in this terminal
-hud panel --here          # no split
-hud panel --width 64      # this open only, until a changed Width is saved
+hud panel                 # toggle the shared herdr dock; outside herdr, run here
+hud panel --here          # run in this terminal without touching the dock
+hud panel --width 64      # override the width if this toggle opens the dock
+hud panel status          # report whether the shared dock is open
 hud statusline --help
 hud import --help
 hud trust <dir>           # add the directory to grok, agy and claude trust lists
@@ -690,7 +691,7 @@ Run `./install --with claude,claude-mod` to install it alongside the Claude inte
 The `claude-mod` extension registers this checkout as the `myhud-local` marketplace and installs `hud-mod@myhud-local` in Claude's user scope.
 Selecting `claude` alone does not install the mod.
 To try it, run `claude --plugin-dir integrations/claude-mod`.
-The panel remains the herdr panel.
+The panel uses the shared herdr dock.
 
 - **Event wake.**
   In an interactive herdr main session the mod starts `hud watch --mod` in a HUD project or on the first HUD tool call.
@@ -713,7 +714,7 @@ The panel remains the herdr panel.
   Rows that are not HUD lines are untouched.
 - **Owner band.**
   Above the prompt the mod shows one row for explicit owner waiting items, cut to the band's width in the panel's language, and nothing otherwise.
-  `? N waiting for you · <first item> [Open]` counts the same open STATE requests as the Project overview; Open shows the panel beside the pane.
+  `? N waiting for you · <first item> [Open]` counts the same open STATE requests as the Project overview; Open shows the dock without toggling it closed.
   A press answers with a toast, never a model turn.
   Running workers, failures and worker questions are not shown in the band; main still receives job events.
   The watch sends a `band` record after `ready` and again only when it changes; the band is drawn from the session's state with no I/O and stays empty while a survey holds it.
@@ -722,7 +723,7 @@ The panel remains the herdr panel.
 - **Owner commands.**
   In an owner session (not a worker's) the mod declares slash commands that run at once, even mid-turn, and print for the owner only: their output is shown and goes in no model request, and no MCP schema is added.
   The exception is `/council <request>`: it authorizes one council and submits the request to the main session.
-  `/hud` opens the panel (in a herdr pane; elsewhere the skill answers).
+  `/hud` toggles the dock and reports whether it opened or closed (in herdr; elsewhere the command handles it). `/hud on`, `/hud off` and `/hud status` open, close or report its state.
   `/jobs` lists running jobs and unread reports and `/jobs <id>` peeks one, without marking a report read.
   `/answer <job> <qN> <answer>`, `/try` (Accept all), `/retry <job>` and `/stop <job>` run `hud act`, so they do what the panel does: an answer writes `qa/qN.answer.md` once, resumes a headless job and tells the main session (`ANSWERED qN from panel`); a retry records the request for the main session to decide; `/stop` asks first unless the job is finished.
   `/land <job>` starts the land flow itself with `hud_land` on the session's HUD connection, asking first when the job's report is unread.
@@ -1118,6 +1119,10 @@ In the panel `w` (Home or Project, not in a picker or Settings) does the same fo
 
 ## The panel
 
+In herdr, the running HUD fork must advertise the `dock` capability. `/hud` or `hud panel` toggles one shared right-edge panel for the whole herdr session, not one per pane or harness. `hud panel open`, `close` and `status` act on that same dock. If the running fork has no dock, upgrade it or run `hud panel --here`; outside herdr `hud panel` already uses the current terminal. HUD-managed workers cannot run the panel (`panel_worker_forbidden`).
+
+The dock stays open across tab and workspace changes. Session-specific views use the caller that opened it; switching clients doesn't rebind the running panel. Close and reopen it from another session to change that binding. Opening a file or commit from within the dock creates a regular tab in the active workspace.
+
 ### Control resources
 
 Open **Control → Resources** for Codex native status-line tracking, the pi subscription proxy and API grants. Press `h` in Control to cycle Roles → Harnesses → Resources, or click a heading.
@@ -1173,8 +1178,8 @@ The bar (including the pi footer), Home and the herdr sidebar share these one-ce
 
 The panel's job state icons also follow the saved setting. `nerd` uses U+F059 (asking: question circle, amber), U+F057 (failed: times circle, red), U+F0E0 (unread report: envelope, green), U+F058 (done: check circle), U+F252 (queued: hourglass half), U+F186 (stalled: moon) and U+F04D (stopped: stop); `unicode` uses `? ✗ ✓● ✓ ○ ◷ −` and `text` uses ASCII letters and words.
 
-After a new installed entry is stable for two seconds, a bounded child import validates it before the panel restarts in the same pane.
-Selection, scroll, diagnostic folds, Settings cursor, opening time and width override survive.
+After a new installed entry is stable for two seconds, a bounded child import validates it before the panel restarts in the same terminal.
+Selection, scroll, diagnostic folds, Settings cursor and opening time survive; herdr keeps the dock's width and mode.
 A saved Skills tab from an older build falls back to Home; a saved Project/Control page reopens on Control and a saved Project/Execution page reopens on Execution.
 Unsaved Settings delay reload; a bad build leaves the old panel and a dim notice.
 Bars are separate and need restarting for new code.
@@ -1236,7 +1241,7 @@ Press `n` or click **subagents** from Jobs or a job Inspector to inspect the cal
 | Group | Rows |
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
-| Panel | Width, Notifications, Open previews; in **Advanced**: Refresh, Mouse |
+| Panel | Width, Dock mode, Notifications, Open previews; in **Advanced**: Refresh, Mouse |
 | Models | Decision API, Quiet job, Sonic auto-thinking, Auto prewalk, Pool pick, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter) |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
@@ -1248,9 +1253,8 @@ Dirty leave asks Save and leave / Discard changes / Continue editing (default); 
 Theme and Icons preview in the draft itself.
 No Reset all or picture.
 
-Width presets: 40/48/56(default)/64/80/100; saved 16–200 load, 0 means default.
-Saving a changed width resizes every client's panel, preserving 41 columns for the agent where possible.
-Window resizing reapplies it; border drags and unrelated saves do not.
+Width presets: 40/48/56(default)/64/80/100; saved 16–200 load, 0 means default. Herdr clamps the requested width to the available space.
+**Dock mode** (`dockMode`) defaults to `overlay`: the panel covers the right edge without resizing the main pane or reflowing its text. `push` makes room by shrinking the main pane. Saving either a changed mode or width applies both to the open dock immediately. Neither setting resizes a terminal running `hud panel --here`.
 
 **Open previews** (`openPreviews`, on by default) opens copied report previews in the default browser with `explorer.exe` and `wslpath -w` on WSL, or `xdg-open` elsewhere.
 Off still copies the file and gives its path in the notice.
@@ -1378,7 +1382,7 @@ On a narrow footer, Codex cuts the right end with `…`; `codexH`'s pane-strip b
 
 ### pi controls
 
-These controls affect the current pi session, not saved panel preferences:
+Panel controls affect the shared herdr dock; footer controls affect the current pi session. Neither changes saved panel preferences:
 
 | Command | Action |
 |---|---|

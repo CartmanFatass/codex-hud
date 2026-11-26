@@ -1,135 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, dirname } from 'node:path';
-import { spawn } from 'node:child_process';
-import { setTimeout as delay } from 'node:timers/promises';
-import { panelWidth, treeWidthKeeper, TreeWidthKeeper } from '../../dist/utils/pane-width.js';
+import { join } from 'node:path';
+import { panelWidth } from '../../dist/utils/pane-width.js';
 import { defaultSettings, loadSettings, saveSettings } from '../../dist/settings.js';
-import { openPanelPane } from '../../dist/cli/panel-pane.js';
 import { SETTING_ROWS, resetSettingsGroup } from '../../dist/render/settings-page.js';
 
 function fixture(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'panel-width-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const bin = join(dir, 'bin'), log = join(dir, 'calls'), geometry = join(dir, 'geometry');
-  mkdirSync(bin);
-  writeFileSync(join(bin, 'herdr'), `#!${process.execPath}
-const fs = require('node:fs'), args = process.argv.slice(2);
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
-const {total, width} = JSON.parse(fs.readFileSync(${JSON.stringify(geometry)}, 'utf8'));
-const rect = (x, width) => ({x, y: 0, width, height: 40});
-console.log(JSON.stringify({result: args[1] === 'split' ? {pane: {pane_id: 'w4E:p3'}} : args[1] === 'get' ? {pane: {pane_id: args[2]}} : {layout: {
-  panes: [{pane_id: 'w4E:p1', rect: rect(0, total - width)}, {pane_id: 'w4E:p2', rect: rect(total - width, width)},
-    {pane_id: 'w4E:p9', rect: {x: 0, y: 40, width: total, height: 40}}],
-  splits: [{direction: 'right', ratio: 1 - width / total, rect: rect(0, total)}]
-}}}));
-`, { mode: 0o700 });
-  const setGeometry = (total, width) => writeFileSync(geometry, JSON.stringify({ total, width }));
-  setGeometry(160, 56);
-  writeFileSync(join(bin, 'tmux'), `#!${process.execPath}
-const fs = require('node:fs'), args = process.argv.slice(2);
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(['tmux', ...args]) + '\\n');
-if (args[0] === 'display-message') console.log('160');
-`, { mode: 0o700 });
-  const env = {
-    HOME: join(dir, 'home'), HUD_HOME: join(dir, 'hud'), CODEX_HOME: join(dir, 'codex'),
-    CLAUDE_CONFIG_DIR: join(dir, 'claude'), PI_CODING_AGENT_DIR: join(dir, 'pi'),
-    PATH: `${bin}:${dirname(process.execPath)}`, HERDR_SOCKET_PATH: join(dir, 'synthetic.sock'),
-    HERDR_PANE_ID: 'w4E:p2', HUD_PANEL_CALLER_PANE: 'w4E:p1',
-    CODEX_HUD_STANDALONE_PANEL: '1', HUD_PANEL_WIDTH: '56',
-  };
-  const calls = () => existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
-  return { dir, env, calls, setGeometry };
+  const home = mkdtempSync(join(tmpdir(), 'panel-width-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  return { HUD_HOME: home, HUD_SETTINGS_PATH: join(home, 'hud-settings.json') };
 }
-
-async function until(check, message) {
-  for (let i = 0; i < 150; i++) {
-    if (check()) return;
-    await delay(50);
-  }
-  assert.fail(message);
-}
-
-for (const [herdr, override, tmuxHere] of [[true, false], [false, false], [true, true], [false, false, true]])
-  test(`saving Width through the real panel input ${herdr ? 'resizes only its own herdr pane' : tmuxHere ? 'does not resize a --here terminal with inherited tmux markers' : 'runs no pane commands outside herdr/tmux'}${override ? ', after an explicit opening override' : ''}`, { timeout: 20000 }, async (t) => {
-    const f = fixture(t), env = { ...f.env };
-    if (!herdr) { delete env.HERDR_PANE_ID; delete env.HUD_PANEL_CALLER_PANE; }
-    if (tmuxHere) Object.assign(env, { TMUX_PANE: '%2', CODEX_HUD_MAIN_PANE: '%1' });
-    if (override) {
-      f.setGeometry(160, 40);
-      env.HUD_PANEL_WIDTH = '40';
-      mkdirSync(env.HUD_HOME);
-      writeFileSync(join(env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ treeWidth: 80 }));
-    }
-    const child = spawn(process.execPath, [resolve('dist/tree-page.js')], { cwd: f.dir, env, stdio: ['pipe', 'pipe', 'pipe'] });
-    t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
-    let output = '', stderr = '';
-    child.stdout.on('data', (data) => { output += data; });
-    child.stderr.on('data', (data) => { stderr += data; });
-    await until(() => output.includes('Home'), 'panel did not paint: ' + stderr);
-    child.stdin.write(',');
-    await until(() => output.includes('Settings'), 'settings did not open: ' + stderr);
-    if (herdr) {
-      await until(() => f.calls().some((a) => a[1] === 'layout'), 'no initial width read');
-      assert.equal(f.calls().filter((a) => a[1] === 'resize').length, 0, 'opening width was retained');
-    }
-    const index = SETTING_ROWS.filter((r) => !r.advanced).findIndex((r) => r.key === 'treeWidth');
-    child.stdin.write('\x1b[H' + '\x1b[B'.repeat(index) + '\x1b[Cs');
-    const file = join(f.dir, 'hud', 'hud-settings.json');
-    const expectedWidth = override ? 100 : 64;
-    await until(() => existsSync(file) && JSON.parse(readFileSync(file, 'utf8')).treeWidth === expectedWidth, 'settings were not saved: ' + stderr);
-    if (herdr) await until(() => f.calls().some((a) => a[1] === 'resize'), 'no resize: ' + stderr);
-    await delay(300);
-    const resizes = f.calls().filter((a) => a[1] === 'resize');
-    assert.equal(resizes.length, herdr ? 1 : 0);
-    if (herdr) {
-      assert.deepEqual(resizes[0].slice(0, 7), ['pane', 'resize', '--pane', 'w4E:p2', '--direction', 'left', '--amount']);
-      assert.ok(Math.abs(Number(resizes[0][7]) - (override ? 60 : 8) / 160) < 1e-9);
-      f.setGeometry(160, 70); // owner drags after saving, then changes only the theme
-      child.stdin.write('\x1b[H\x1b[Cs');
-      await until(() => JSON.parse(readFileSync(file, 'utf8')).theme === 'titanium', 'theme was not saved');
-      await delay(300);
-      assert.equal(f.calls().filter((a) => a[1] === 'resize').length, 1, 'unrelated save leaves the border alone');
-    } else assert.deepEqual(f.calls().filter((a) => a[0] === 'pane' || a[0] === 'tmux'), []);
-  });
-
-for (const [label, opts] of [
-  ['settings, config and credentials', { brokenSettings: true, configBytes: '{ broken JSON', looseCreds: true }],
-  ['decisions', { brokenSettings: false, configBytes: '{"decisions":{"primary":"invalid","fallback":42}}', looseCreds: false }],
-])
-  test(`panel width, opening Settings and saving survive malformed ${label}`, { timeout: 20000 }, async (t) => {
-    const f = fixture(t), env = { ...f.env, COLUMNS: '160' };
-    mkdirSync(env.HUD_HOME);
-    const config = join(env.HUD_HOME, 'config.json');
-    const bytes = opts.configBytes;
-    writeFileSync(config, bytes);
-    if (opts.brokenSettings) writeFileSync(join(env.HUD_HOME, 'hud-settings.json'), '{ broken');
-    if (opts.looseCreds) writeFileSync(join(env.HUD_HOME, 'credentials.env'), 'OPENAI_API_KEY=synthetic\n', { mode: 0o644 });
-    await openPanelPane(['synthetic-panel'], f.dir, env);
-    const split = f.calls().find((a) => a[1] === 'split');
-    assert.ok(split.includes('HUD_PANEL_WIDTH=56'));
-    const child = spawn(process.execPath, [resolve('dist/tree-page.js')], { cwd: f.dir, env, stdio: ['pipe', 'pipe', 'pipe'] });
-    t.after(() => { if (child.exitCode === null) child.kill('SIGKILL'); });
-    let output = '', stderr = '';
-    child.stdout.on('data', (s) => { output += s; }); child.stderr.on('data', (s) => { stderr += s; });
-    await until(() => output.includes('Home'), 'panel did not paint: ' + stderr);
-    child.stdin.write(',');
-    await until(() => output.includes('Settings'), 'settings did not open: ' + stderr);
-    child.stdin.write('\x1b[Cs'); // Change the theme; saving a clean draft does not write.
-    const file = join(env.HUD_HOME, 'hud-settings.json');
-    await until(() => { try { return JSON.parse(readFileSync(file, 'utf8')).theme === 'titanium'; } catch { return false; } }, 'settings not saved: ' + stderr);
-    assert.equal(loadSettings(f.env).treeWidth, 56);
-    assert.equal(child.exitCode, null);
-    assert.equal(readFileSync(config, 'utf8'), bytes, 'unrelated save preserves even broken config bytes');
-  });
 
 test('only a changed Decision API rewrites config; malformed config is never destroyed', (t) => {
-  const f = fixture(t), old = process.env; process.env = { ...old, ...f.env };
+  const env = fixture(t), old = process.env;
+  process.env = { ...old, ...env };
   t.after(() => { process.env = old; });
-  mkdirSync(f.env.HUD_HOME);
-  const file = join(f.env.HUD_HOME, 'config.json'), bytes = '{ "decisions": { "primary": "gemini" }, "jev": {} }\n';
+  const file = join(env.HUD_HOME, 'config.json'), bytes = '{ "decisions": { "primary": "gemini" }, "jev": {} }\n';
   writeFileSync(file, bytes);
   saveSettings({ ...loadSettings(), theme: 'titanium' });
   assert.equal(readFileSync(file, 'utf8'), bytes);
@@ -140,59 +28,23 @@ test('only a changed Decision API rewrites config; malformed config is never des
   assert.equal(readFileSync(file, 'utf8'), '{ broken');
 });
 
-test('keeper follows containing width, leaves manual drags alone and clamps with panelWidth', async (t) => {
-  const f = fixture(t), saved = { ...process.env };
-  t.after(() => { process.env = saved; });
-  process.env = { ...f.env };
-  let requested = 80;
-  const keeper = treeWidthKeeper(() => requested);
-  assert.ok(keeper);
-  await keeper.apply();
-  assert.equal(f.calls().filter((a) => a[1] === 'resize').length, 1);
-  f.setGeometry(160, 70); // manual border drag: containing width is unchanged
-  await keeper.follow();
-  assert.equal(f.calls().filter((a) => a[1] === 'resize').length, 1);
-  f.setGeometry(180, 70);
-  await keeper.follow();
-  let resize = f.calls().filter((a) => a[1] === 'resize').at(-1);
-  assert.equal(resize[5], 'left');
-  assert.ok(Math.abs(Number(resize[7]) - 10 / 180) < 1e-9);
-  requested = 100;
-  f.setGeometry(100, 70);
-  await keeper.apply();
-  resize = f.calls().filter((a) => a[1] === 'resize').at(-1);
-  assert.equal(resize[5], 'right');
-  assert.ok(Math.abs(Number(resize[7]) - 11 / 100) < 1e-9);
-  assert.ok(f.calls().filter((a) => a[1] === 'resize').every((a) => a[3] === 'w4E:p2'));
+test('Width and Dock mode belong to Panel; legacy widths still load', (t) => {
+  const env = fixture(t);
+  const width = SETTING_ROWS.find((r) => r.key === 'treeWidth'), dock = SETTING_ROWS.find((r) => r.key === 'dockMode');
+  assert.equal(width.group, 'Panel');
+  assert.deepEqual(width.values, [40, 48, 56, 64, 80, 100]);
+  assert.equal(dock.group, 'Panel');
+  assert.deepEqual(dock.values, ['overlay', 'push']);
+  assert.deepEqual([defaultSettings().treeWidth, defaultSettings().dockMode], [56, 'overlay']);
+  const edited = { ...defaultSettings(), treeWidth: 80, dockMode: 'push' };
+  const reset = resetSettingsGroup(edited, 'Panel');
+  assert.deepEqual([reset.treeWidth, reset.dockMode], [56, 'overlay']);
+  assert.deepEqual(resetSettingsGroup(edited, 'Codex'), edited);
+  for (const width of [32, 0, 16, 200, 201]) {
+    writeFileSync(env.HUD_SETTINGS_PATH, JSON.stringify({ treeWidth: width }));
+    assert.equal(loadSettings(env).treeWidth, width === 201 ? 56 : width);
+  }
   assert.equal(panelWidth(0, 160), 56);
   assert.equal(panelWidth(100, 100), 59);
   assert.equal(panelWidth(100, 40), 13);
-});
-
-test('a settings save supersedes an in-flight startup width read without a duplicate resize', async () => {
-  let release, requested = 56;
-  const geometry = new Promise((resolve) => { release = resolve; }), resized = [];
-  const keeper = new TreeWidthKeeper(() => geometry, async (width) => { resized.push(width); }, () => requested);
-  const startup = keeper.apply();
-  requested = 64;
-  const save = keeper.apply();
-  release(160);
-  await Promise.all([startup, save]);
-  assert.deepEqual(resized, [64], 'only the latest apply may resize after the geometry read');
-});
-
-test('Width belongs to Panel with Home presets, default 56, and legacy saved widths still load', (t) => {
-  const f = fixture(t);
-  const row = SETTING_ROWS.find((r) => r.key === 'treeWidth');
-  assert.equal(row.group, 'Panel');
-  assert.deepEqual(row.values, [40, 48, 56, 64, 80, 100]);
-  assert.equal(row.help, 'Panel columns for every client; the agent pane keeps 41');
-  assert.equal(defaultSettings().treeWidth, 56);
-  assert.equal(resetSettingsGroup({ ...defaultSettings(), treeWidth: 80 }, 'Panel').treeWidth, 56);
-  assert.equal(resetSettingsGroup({ ...defaultSettings(), treeWidth: 80 }, 'Codex').treeWidth, 80);
-  mkdirSync(f.env.HUD_HOME);
-  for (const width of [32, 0, 16, 200, 201]) {
-    writeFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ treeWidth: width }));
-    assert.equal(loadSettings(f.env).treeWidth, width === 201 ? 56 : width);
-  }
 });

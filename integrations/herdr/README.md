@@ -1,9 +1,9 @@
 # Herdr integration
 
-The HUD uses the installed `herdr` CLI for panel splits and editor panes
-(`src/cli/panel-pane.ts`). Panels default to 56 columns and are named `hud panel`.
-The split ratio sizes the original pane; HUD requests `1 - width / callerColumns`,
-clamped to 0.1–0.9, or 0.7 when the caller's terminal width is unknown.
+`hud panel` uses the running fork's `dock` capability over the herdr socket. The
+session-wide right-edge dock defaults to a 56-column overlay; Settings → Panel
+can set its width or switch to push mode. The installed `herdr` CLI still handles
+editor and commit-view tabs opened from the dock (`src/cli/panel-pane.ts`).
 
 `src/integrations/herdr/transport.ts` remains the low-level transport for existing
 integrations. There is no version pin or capability manifest in this directory.

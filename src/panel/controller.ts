@@ -90,7 +90,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     settingsFailure = err;
   }
   const place = readPanelPlace(), openedAt = place?.openedAt ?? Date.now();
-  const callerPane = process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null;
+  const callerPane = (process.env.HERDR_DOCK === '1' ? process.env.HUD_DOCK_CALLER_PANE : process.env.HERDR_PANE_ID) || null;
   const jobPipeline = new PanelJobPipeline(getHudHome(), { project: HUD_CWD_REAL, pane: callerPane });
   const execution = new PanelExecution(jobPipeline.home, callerPane, process.env, () => render());
   let boundJobRoot = '';
@@ -145,7 +145,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   // Painting derives a place for the rows it drew. Only input and collection adopt it as live state.
   const framePlace = (source: MonitorState): MonitorState => frame && frameSource === source ? frame.state : source;
   let lastPaint: string[] | null = null;
-  const lifecycle = createPanelLifecycle(reload, place?.widthOverride, () => settings.treeWidth);
+  const lifecycle = createPanelLifecycle(reload);
   const isClosed = () => lifecycle.closed;
   const agentContext = createAgentContext(isClosed);
   const discovery = createPanelModelDiscovery(jobPipeline.home, isClosed);
@@ -163,9 +163,8 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const snapshotWriter = new SnapshotWriter();
   const settingsFlow = createSettingsFlow(settings, place?.settings, {
     current: () => settings,
-    apply(saved, widthChanged) {
+    apply(saved) {
       settings = saved;
-      if (widthChanged) lifecycle.clearWidthOverride();
       settingsError = '';
       error = null;
       applyDisplaySettings(settings);
@@ -177,9 +176,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       notifier.configure(resolveNotifierOptions(process.env, settings));
     },
     setMouseTracking: lifecycle.setMouseTracking,
-    applyWidth: lifecycle.applyWidth,
     repaint: () => render(),
-    repaintAll: () => repaintAll(),
   }, (role) => roleRegistry(jobPipeline.home, shownRoot()).roles().get(role)?.presets?.map(p => p.name) ?? []);
   const projectControlShown = (state: MonitorState, modal = false) => controlShown(state, modal) && state.control.subTab !== 'resources';
   const syncModelListDiscovery = () => discovery.sync(projectControlShown(state, settingsFlow.open));
@@ -443,7 +440,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const scheduler = createCollectionScheduler(settings.refreshMs, {
     isClosed,
     pollReload: () => lifecycle.pollReload(() => settingsFlow.isDirty() || blocksReload(framePlace(state))),
-    restart: () => lifecycle.restart({ state: framePlace(state), openedAt, widthOverride: lifecycle.widthOverride ?? null, settings: settingsFlow.place() }),
+    restart: () => lifecycle.restart({ state: framePlace(state), openedAt, settings: settingsFlow.place() }),
     collectStep,
     observation() {
       const data = currentHud();

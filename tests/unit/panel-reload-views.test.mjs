@@ -1,7 +1,10 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, statSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { request as herdrRequest } from '../../dist/runtime/herdr-socket.js';
+import { listenDock } from '../fakes/herdr-dock.mjs';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { initialMonitorState } from '../../dist/render/monitor.js';
 import { SETTING_ROWS } from '../../dist/render/settings-page.js';
@@ -153,19 +156,31 @@ test('Jobs and Inspector never rewrite hud-settings.json, even when it contains 
   }
 });
 
-test('saving Width 64 from opening width 56 keeps 64 across real panel replacements', async (t) => {
-  const f = live(t, (state) => ({ state, settings: { selected: SETTING_ROWS.findIndex((r) => r.key === 'treeWidth'), offset: 0 } }), { width: true });
+test('saving Width and Dock mode configures the live dock; reload leaves its size alone', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'panel-reload-dock-'));
+  const env = { HERDR_DOCK: '1', HERDR_PANE_ID: undefined, HUD_DOCK_CALLER_PANE: 'w4E:p1', HERDR_SOCKET_PATH: join(dir, 'dock.sock') };
+  const dock = await listenDock(t, env.HERDR_SOCKET_PATH);
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  await herdrRequest('dock.open', { mode: 'overlay', width: 40 }, { env }); // an opening width override
+  const f = live(t, (state) => ({ state, settings: { selected: SETTING_ROWS.findIndex((r) => r.key === 'treeWidth'), offset: 0 } }), { env });
   await until(() => f.output().includes('Settings'), 'Settings did not open');
+  const configs = () => dock.operations().filter(({ method }) => method === 'dock.configure').map(({ params }) => params);
+  assert.deepEqual(configs(), [], 'opening the panel leaves the override in place');
   f.child.stdin.write('\x1b[Cs');
-  await until(() => Math.abs(f.geometry().width - 64) < 0.01, 'saved width was not applied: ' + f.stderr());
-  assert.equal(JSON.parse(readFileSync(join(f.env.HUD_HOME, 'hud-settings.json'), 'utf8')).treeWidth, 64);
-  for (let generation = 1; generation <= 2; generation++) {
-    f.appendBuild(`\n// saved width build ${generation}`);
-    await until(() => f.events().filter((e) => e.start).length === generation + 1, 'panel did not replace itself');
-    await delay(350);
-    assert.ok(Math.abs(f.geometry().width - 64) < 0.01, JSON.stringify(f.geometry()));
-    assert.equal(f.geometry().resizes.length, 1, 'no reload-time shrink to opening width');
-  }
+  await until(() => configs().length === 1, 'saved width was not applied: ' + f.stderr());
+  f.child.stdin.write('\x1b[B\x1b[Cs');
+  await until(() => configs().length === 2, 'push was not applied: ' + f.stderr());
+  f.child.stdin.write('\x1b[Ds');
+  await until(() => configs().length === 3, 'overlay was not applied: ' + f.stderr());
+  const expected = [{ mode: 'overlay', width: 64 }, { mode: 'push', width: 64 }, { mode: 'overlay', width: 64 }];
+  assert.deepEqual(configs(), expected);
+  assert.deepEqual(dock.state(), { shown: true, mode: 'overlay', width: 64 });
+  const saved = loadSettings(f.env);
+  assert.deepEqual([saved.dockMode, saved.treeWidth], ['overlay', 64]);
+  f.appendBuild('\n// saved dock settings build');
+  await until(() => f.events().filter((e) => e.start).length === 2 &&
+    f.output().match(/\x1b\[\?1049h/g)?.length === 2, 'panel did not replace itself');
+  assert.deepEqual(configs(), expected, 'the replacement does not reconfigure the dock');
 });
 
 for (const action of ['save', 'discard']) test(`the live panel waits for Settings ${action} before restarting`, async (t) => {

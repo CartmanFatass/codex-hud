@@ -1,10 +1,8 @@
-/** Simple local herdr pane operations shared by the CLI and pi package. */
+/** Herdr tabs for panel commands and explicit worker actions. */
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
 import { binScript, jobFiles } from '../mcp/paths.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
-import { loadSettings } from '../settings.js';
-import { panelWidth, DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { truncateAnsi } from '../render/colors.js';
 import { runHerdr, runCommand, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
 import { stopSonic } from '../mcp/sonic-process.js';
@@ -16,28 +14,29 @@ import { OBJECTIVE_HASH } from '../collectors/objectives.js';
 import { hasHerdrHiddenTabs, hasHerdrHiddenTabsPeek, herdrEndpoint, request as herdrRequest } from '../runtime/herdr-socket.js';
 
 async function command(argv: string[], env: NodeJS.ProcessEnv) {
-  const result = await runHerdr(argv, env);
+  const result = env.HERDR_DOCK === '1' && env.HERDR_BIN_PATH
+    ? await runCommand(env.HERDR_BIN_PATH, argv, env) : await runHerdr(argv, env);
   if (!result.ok) throw Error(`herdr_${result.reason}`);
   return herdrResult(result.stdout);
 }
 
 async function openCommandPane(cwd: string, label: string, shell: string, env: NodeJS.ProcessEnv): Promise<void> {
-  if (!herdrId(env.HERDR_PANE_ID)) throw Error('panel_requires_herdr');
-  const panel = await command(['pane', 'get', env.HERDR_PANE_ID], env).catch(() => null);
+  const docked = env.HERDR_DOCK === '1';
+  const ownPane = env.HERDR_PANE_ID;
+  if (!docked && !herdrId(ownPane)) throw Error('panel_requires_herdr');
+  // The dock has no workspace identity. An unscoped tab.create uses the active workspace.
+  const panel = !docked && ownPane ? await command(['pane', 'get', ownPane], env).catch(() => null) : null;
   const workspace = isRecord(panel?.pane) ? panel.pane.workspace_id : undefined;
-  const inTab = herdrId(workspace);
-  const result = await command(
-    inTab
-      ? [
-          'tab', 'create', '--workspace', workspace, '--cwd', cwd,
-          '--label', truncateAnsi(label, 24), '--focus',
-        ]
-      : ['pane', 'split', env.HERDR_PANE_ID, '--direction', 'right', '--focus', '--cwd', cwd],
-    env
-  );
-  const root = inTab ? result?.root_pane : result?.pane;
-  const pane = isRecord(root) ? root.pane_id : undefined;
-  if (!herdrId(pane)) throw Error(inTab ? 'panel_tab_unknown' : 'panel_split_unknown');
+  const result = await command(['tab', 'create', ...(herdrId(workspace) ? ['--workspace', workspace] : []),
+    '--cwd', cwd, '--label', truncateAnsi(label, 24), ...(docked ? [] : ['--focus'])], env);
+  const pane = isRecord(result?.root_pane) ? result.root_pane.pane_id : undefined;
+  if (!herdrId(pane)) throw Error('panel_tab_unknown');
+  if (docked) {
+    // tab.create --focus switches the active tab but leaves keyboard focus in the dock.
+    const tab = isRecord(result?.tab) ? result.tab.tab_id : undefined;
+    if (!herdrId(tab)) throw Error('panel_tab_unknown');
+    await command(['tab', 'focus', tab], env);
+  }
   await command(['pane', 'run', pane, shell], env);
 }
 
@@ -133,91 +132,4 @@ export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{
     }, (run) => run.ok, { treeGrant: tabTreeGrant });
     return complete ? { ok: true } : { ok: false, reason: issue ?? (result.reason === 'unavailable' ? 'hud-reap missing' : 'reap failed') };
   } catch { return { ok: false, reason: 'reap failed' }; }
-}
-
-export async function closePanelPane(pane: string, env: NodeJS.ProcessEnv): Promise<void> {
-  await command(['pane', 'close', pane], env);
-}
-
-export async function panelPaneExists(pane: string, env: NodeJS.ProcessEnv): Promise<boolean> {
-  const result = await runHerdr(['pane', 'get', pane], env);
-  return result.ok && isRecord(herdrResult(result.stdout)?.pane);
-}
-
-/** Only an authoritative missing-pane reply ends the panel, not a failed transport. */
-export function watchPanelCaller(env: NodeJS.ProcessEnv, onMissing: () => void): () => void {
-  const caller = env.HUD_PANEL_CALLER_PANE;
-  if (!herdrId(caller) || !herdrId(env.HERDR_PANE_ID) || caller === env.HERDR_PANE_ID) return () => {};
-  const abort = new AbortController();
-  // Test-only caller probe interval override.
-  const ms = Number(env.HUD_PANEL_CALLER_POLL_MS);
-  let busy = false;
-  const timer = setInterval(() => {
-    if (busy) return;
-    busy = true;
-    void runHerdr(['pane', 'get', caller], env, { budgetMs: 1000, signal: abort.signal })
-      .then((result) => {
-        if (abort.signal.aborted) return;
-        if (result.reason === 'unavailable') clearInterval(timer);
-        const error = herdrResult(result.stderr)?.error;
-        if (result.reason === 'failed' && isRecord(error) && error.code === 'not_found') {
-          clearInterval(timer);
-          onMissing();
-        }
-      })
-      .finally(() => { busy = false; });
-  }, Number.isInteger(ms) && ms > 0 ? ms : 3000);
-  return () => {
-    clearInterval(timer);
-    abort.abort();
-  };
-}
-
-export async function openPanelPane(
-  argv: string[],
-  cwd: string,
-  env: NodeJS.ProcessEnv,
-  width = (() => { try { return loadSettings(env).treeWidth; } catch { return DEFAULT_WIDTH; } })(),
-  columns = process.stdout.isTTY ? process.stdout.columns : Number(env.COLUMNS)
-): Promise<string> {
-  if (!herdrId(env.HERDR_PANE_ID)) throw Error('panel_requires_herdr');
-  if (!Number.isFinite(columns) || columns <= 0) {
-    const layout = await command(['pane', 'layout', '--pane', env.HERDR_PANE_ID], env).catch(() => null);
-    const panes = isRecord(layout?.layout) ? layout.layout.panes : null;
-    const caller = Array.isArray(panes) ? panes.find((p) => p.pane_id === env.HERDR_PANE_ID) : null;
-    columns = isRecord(caller?.rect) ? Number(caller.rect.width) : NaN;
-    if (!Number.isFinite(columns) || columns <= 0) columns = 120;
-  }
-  const requested = width;
-  width = panelWidth(width, columns);
-  const result = await command(
-    [
-      'pane',
-      'split',
-      env.HERDR_PANE_ID,
-      '--direction',
-      'right',
-      '--ratio',
-      String(Math.max(0.1, Math.min(0.9, 1 - width / columns))),
-      '--no-focus',
-      '--cwd',
-      cwd,
-      '--env',
-      `HUD_PANEL_CALLER_PANE=${env.HERDR_PANE_ID}`,
-      '--env',
-      `HUD_PANEL_WIDTH=${requested}`,
-    ],
-    env
-  );
-  const pane = isRecord(result?.pane) ? result.pane.pane_id : undefined;
-  if (!herdrId(pane)) throw Error('panel_split_unknown');
-  try {
-    await command(['pane', 'rename', pane, 'hud panel'], env);
-    const text = argv.map((value) => `'${value.replaceAll("'", "'\\''")}'`).join(' ');
-    await command(['pane', 'run', pane, text], env);
-    return pane;
-  } catch (error) {
-    await closePanelPane(pane, env).catch(() => {});
-    throw error;
-  }
 }

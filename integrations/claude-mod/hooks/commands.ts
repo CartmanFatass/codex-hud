@@ -25,11 +25,16 @@ export async function act($: EngineInterface, ...argv: string[]): Promise<string
   return (done && (done.exitCode === 0 ? done.stdout : done.stderr || done.stdout).trim()) || 'hud act failed';
 }
 
-/** Opens the panel beside this pane (`hud panel` prints the pane it made). Only in a herdr pane: elsewhere it would take the terminal. */
-export async function openPanel($: EngineInterface): Promise<string | undefined> {
-  if (!(await $.env.get('HERDR_PANE_ID'))) return undefined;
-  const done = await $.process.run(['hud', 'panel'], { cwd: await $.session.cwd(), timeoutMs: 15_000 }).catch(() => undefined);
-  return done?.exitCode === 0 ? `HUD panel ${done.stdout.trim()}`.trim() : undefined;
+/** Control the dock only in herdr; elsewhere `hud panel` would take the terminal. */
+async function panel($: EngineInterface, operation?: 'open' | 'close' | 'status'): Promise<string | undefined> {
+  if (await $.env.get('HUD_JOB_DIR') !== undefined) return 'panel_worker_forbidden';
+  if (!(await $.env.get('HERDR_PANE_ID')) && !(await $.env.get('HERDR_SOCKET_PATH'))) return undefined;
+  const done = await $.process.run(['hud', 'panel', ...(operation ? [operation] : [])], { cwd: await $.session.cwd(), timeoutMs: 15_000 }).catch(() => undefined);
+  // Don't fall through to a skill after attempting a toggle (the server may have acted without a reply).
+  return (done && (done.exitCode === 0 ? done.stdout : done.stderr).trim()) || 'HUD panel request failed';
+}
+export function openPanel($: EngineInterface) {
+  return panel($, 'open');
 }
 
 /**
@@ -75,8 +80,10 @@ export function registerCommands(on: On) {
     return next(e);
   });
   on('command.run', { command: 'hud' }, async ($, e, next) => {
-    const opened = e.args.trim() ? undefined : await openPanel($);
-    return opened ? show(opened) : next(e);
+    const verb = e.args.trim();
+    if (verb && !['on', 'off', 'toggle', 'status'].includes(verb)) return next(e);
+    const state = await panel($, verb === 'on' ? 'open' : verb === 'off' ? 'close' : verb === 'status' ? 'status' : undefined);
+    return state ? show(state) : next(e);
   });
   // command.register exposes a local command, not a Skill. Only a composer-origin run can grant.
   on('command.run', { command: 'council', origin: { kind: 'composer' } }, async ($, e) => {

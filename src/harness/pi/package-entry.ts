@@ -3,13 +3,13 @@ import { PiRoleClient, PI_ROLE_TOOLS } from './role-client.js';
 import { createPiSegment, isPiTui } from './segment.js';
 import type { PiPackageBinding, PiPackageContext } from './package-context.js';
 export type { PiPackageBinding, PiPackageContext } from './package-context.js';
-import { closePanelPane, panelPaneExists } from '../../cli/panel-pane.js';
+import { controlPanelDock, type PanelOperation } from '../../cli/panel.js';
 import { startSessionWatch } from '../../cli/watch.js';
 import { allowCouncil } from '../../roles/council-grant.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { reportMainPaneGroup } from '../../runtime/pane-group.js';
 import { collectResumeRefusal } from '../../collectors/job-snapshot.js';
-import { openPiPanel } from './package-native.js';
+import { herdrEndpoint } from '../../runtime/herdr-socket.js';
 import { createP10kFooter } from './p10k-footer.js';
 import { piExpUsage } from './exp-usage.js';
 import { adviseOnMessage, adviseOnReply, resolveAdvisorProjectRoot, scrubSecrets } from '../../collectors/advisor-shadow.js';
@@ -42,7 +42,6 @@ export interface PiPackageAPI extends FooterAPI {
 }
 const reason = (error: unknown) =>
   error instanceof Error && /^[a-z_]{1,120}$/.test(error.message) ? error.message : 'local_operation_failed';
-type PanelOperation = 'open' | 'close' | 'toggle' | 'status';
 /** Delegation always loads; the display entry (footer, Work segment, /hud) only loads through `pi -e`. */
 export type PiPackageMode = 'delegate' | 'display';
 export function installPiPackage(
@@ -65,9 +64,6 @@ export function installPiPackage(
     source: string;
     client: PiRoleClient;
     stopWatch?: () => void;
-    pane?: string;
-    panelWork: Promise<void>;
-    diagnostic: string;
     footerOn: boolean;
   };
   let active: State | null = null;
@@ -89,23 +85,12 @@ export function installPiPackage(
       return false;
     }
   };
-  async function panel(s: State, operation: PanelOperation) {
-    // Keep an off/shutdown queued behind an in-flight open.
-    const work = s.panelWork.then(async () => {
-      if (operation !== 'close' && !current(s)) throw Error('stale_context');
-      if (s.pane && !(await panelPaneExists(s.pane, env))) s.pane = undefined;
-      if (operation === 'close' || (operation === 'toggle' && s.pane)) {
-        if (s.pane) await closePanelPane(s.pane, env);
-        s.pane = undefined;
-      } else if (operation !== 'status' && !s.pane) {
-        s.pane = await openPiPanel(binding, s.ctx, env);
-      }
-      s.diagnostic = s.pane ? `open (${s.pane})` : 'closed';
+  function panel(s: State, operation: PanelOperation) {
+    return controlPanelDock(operation, env, {
+      node: binding.node, release: binding.release, cwd: s.ctx.cwd,
+      selection: ['--harness', 'pi', '--session', s.id, '--source', s.source],
+      isCurrent: () => current(s),
     });
-    s.panelWork = work.catch((error) => {
-      s.diagnostic = reason(error);
-    });
-    await s.panelWork;
   }
   function fence() {
     ++epoch;
@@ -117,10 +102,8 @@ export function installPiPackage(
       segment.stop();
       footer?.stop();
     }
-    // Stop tool calls before asynchronous panel cleanup or live observation.
-    const stopped = old?.client.stop();
-    const closing = mode === 'display' && old ? panel(old, 'close') : undefined;
-    cleanup = Promise.all([cleanup, stopped, closing]).then(() => {});
+    // The dock belongs to herdr, not to the retiring pi session.
+    cleanup = Promise.all([cleanup, old?.client.stop()]).then(() => {});
     return cleanup;
   }
   async function start(ctx: PiPackageContext) {
@@ -152,8 +135,6 @@ export function installPiPackage(
       id,
       source,
       client: new PiRoleClient(binding, env, ctx.cwd, id),
-      panelWork: Promise.resolve(),
-      diagnostic: 'panel_not_open',
       footerOn: footerChoice.on,
     };
     active = s;
@@ -284,18 +265,17 @@ export function installPiPackage(
           message = 'unknown_subcommand; use on|off|toggle|status|reconnect|help';
         else if (command === 'help')
           message =
-            'Panel: bare /hud toggles; on|off|toggle|status|reconnect|help. Footer: footer on|off restores/hides the HUD frame independently; footer <segment options>. off is session-local; reconnect rebinds a canceled transition.';
+            'Panel: bare /hud toggles the shared herdr dock; on|off|toggle|status|reconnect|help. Footer: footer on|off restores/hides the HUD frame independently; footer <segment options>. Reconnect rebinds a canceled transition.';
         else if (command === 'reconnect') {
           await start(ctx);
-          message = active ? 'reconnected; ' + active.diagnostic : 'session_unbound';
+          message = active ? 'reconnected' : 'session_unbound';
         } else {
           const s = active;
-          if (!s || !current(s)) message = 'session_unbound; use /hud reconnect';
+          if (env.HUD_JOB_DIR !== undefined) message = 'panel_worker_forbidden';
+          else if (!s || !current(s) || ctx.sessionManager !== s.ctx.sessionManager) message = 'session_unbound; use /hud reconnect';
           else if (!isPiTui(ctx)) message = 'panel_noninteractive; role_tools_available';
-          else {
-            await panel(s, command === 'on' ? 'open' : command === 'off' ? 'close' : (command as PanelOperation));
-            message = s.diagnostic;
-          }
+          else if (!herdrEndpoint(env)) message = 'panel_dock_unavailable; use hud panel --here';
+          else message = await panel(s, command === 'on' ? 'open' : command === 'off' ? 'close' : (command as PanelOperation));
         }
       } catch (error) {
         message = reason(error);

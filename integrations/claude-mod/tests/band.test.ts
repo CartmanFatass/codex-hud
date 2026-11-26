@@ -50,7 +50,7 @@ function presses(on: On, pane: string | undefined, surface: (typeof surfaces)[nu
   on('session.cwd', () => ({ value: '/demo' }));
   on('process.run', (_, e) => {
     runs.push([...e.argv]);
-    return { value: { exitCode: 0, stdout: 'w4E:p9\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
+    return { value: { exitCode: 0, stdout: 'HUD panel opened\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
   });
   on('ui.toast', (_, e) => { toasts.push(e.text); return { value: undefined }; });
   return async ($: Engine, key: string) => {
@@ -62,8 +62,8 @@ function presses(on: On, pane: string | undefined, surface: (typeof surfaces)[nu
 }
 
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`Open shows the panel beside the pane, and only in a herdr pane, on ${surface}`, async ($, on) => {
-    expect(await presses(on, 'w4E:p1', surface)($, 'open')).toEqual({ runs: [['hud', 'panel']], toasts: ['HUD panel w4E:p9'] });
+  test(`Open shows the dock without toggling an open panel closed, and only in herdr, on ${surface}`, async ($, on) => {
+    expect(await presses(on, 'w4E:p1', surface)($, 'open')).toEqual({ runs: [['hud', 'panel', 'open']], toasts: ['HUD panel opened'] });
   });
 
   test(`Open outside a herdr pane starts nothing, on ${surface}`, async ($, on) => {

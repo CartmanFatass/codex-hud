@@ -14,6 +14,7 @@ import {
 } from './render/hud-config.js';
 import { getHudHome } from './hud-home.js';
 import { DEFAULT_WIDTH } from './utils/pane-width.js';
+import type { DockMode } from './runtime/herdr-socket.js';
 
 export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'> {
   statusline: boolean;
@@ -24,6 +25,7 @@ export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs'
   details: boolean;
   refreshMs: number;
   treeWidth: number;
+  dockMode: DockMode;
   worktreeRoot: string;
   /** Draft-only; persisted solely as config.json decisions.primary. */
   decisionApi: DecisionProviderId;
@@ -73,6 +75,7 @@ export function defaultSettings(): HudSettings {
     details: true,
     refreshMs: 1000,
     treeWidth: DEFAULT_WIDTH,
+    dockMode: 'overlay',
     worktreeRoot: '',
     language: 'auto',
     decisionApi: 'openai',
@@ -122,6 +125,7 @@ const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   details: isBoolean,
   refreshMs: (value) => isIntegerBetween(value, 100, 60_000),
   treeWidth: (value) => value === 0 || isIntegerBetween(value, 16, 200),
+  dockMode: oneOf('overlay', 'push'),
   worktreeRoot: (value) => typeof value === 'string' && value.length <= 4096 && !value.includes('\0'),
   decisionApi: oneOf('gemini', 'openai', 'anthropic', 'typesafe'),
   quietJobDecision: isBoolean,

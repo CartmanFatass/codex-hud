@@ -12,7 +12,6 @@ const object = (value: unknown): Record<string, unknown> | undefined =>
     ? value as Record<string, unknown> : undefined;
 const fields = (value: unknown) => object(value) ?? {};
 const text = (value: unknown) => typeof value === 'string' ? value : undefined;
-const finite = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 const offset = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 const strings = (value: unknown): string[] | undefined => {
   const list = value instanceof Set ? [...value] : value;
@@ -148,23 +147,16 @@ function migrateV1ToV2(old: Record<string, unknown>): MonitorState {
 export type PanelPlace = {
   state: MonitorState;
   settings: { selected: number; offset: number } | null;
-  widthOverride?: number | null;
   openedAt?: number;
 };
 function settingsPlace(value: unknown): PanelPlace['settings'] {
   const view = fields(value), selected = offset(view.selected), at = offset(view.offset);
   return selected === undefined || at === undefined ? null : { selected, offset: at };
 }
-function width(value: unknown) {
-  if (value === null) return null;
-  const size = finite(value);
-  return size !== undefined && size > 0 ? size : undefined;
-}
-
 export function serializePanelPlace(place: PanelPlace): string {
   // Do not reuse the old `state`/`settings` keys: old builds would hydrate incompatible state or open Settings on rollback.
   return JSON.stringify({ schemaVersion: RELOAD_SCHEMA_VERSION, stateV2: serializeReloadState(place.state),
-    settingsView: settingsPlace(place.settings), openedAt: offset(place.openedAt), widthOverride: width(place.widthOverride) });
+    settingsView: settingsPlace(place.settings), openedAt: offset(place.openedAt) });
 }
 
 export function deserializePanelPlace(json: string): (Omit<PanelPlace, 'state'> & { state?: MonitorState }) | undefined {
@@ -176,5 +168,5 @@ export function deserializePanelPlace(json: string): (Omit<PanelPlace, 'state'> 
   const state = object(current ? raw.stateV2 : old ? raw.state : undefined);
   if (!state) return openedAt === undefined ? undefined : { openedAt, settings: null };
   return { state: current ? hydrate(projectReloadState(state)) : migrateV1ToV2(state),
-    settings: settingsPlace(current ? raw.settingsView : raw.settings), openedAt, widthOverride: width(raw.widthOverride) };
+    settings: settingsPlace(current ? raw.settingsView : raw.settings), openedAt };
 }

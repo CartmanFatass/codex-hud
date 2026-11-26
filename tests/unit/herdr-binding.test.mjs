@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { herdrId, tabIds, listedTabs, tabInfo, listedPanes, listedAgents } from '../../dist/roles/herdr-run.js';
-import { validPane, validStamp } from '../../dist/integrations/panel/receipt.js';
 
 for (const id of ['w4E:p1', 'workspace / unicode 窗:tab?', ' '.repeat(300)])
   test(`herdr identities are opaque, not filename or format constrained: ${JSON.stringify(id.slice(0, 40))}`, () => {
@@ -16,9 +15,6 @@ for (const id of ['w4E:p1', 'workspace / unicode 窗:tab?', ' '.repeat(300)])
     assert.deepEqual(listedAgents(encode({ agents: [{ name: 'owned-agent', pane_id: id, tab_id: id }] })), [
       { name: 'owned-agent', paneId: id, tabId: id, status: null },
     ]);
-    const process = { pid: 42, proc_start: '123', boot_id: 'synthetic', pid_domain: 'synthetic' };
-    assert.equal(validStamp(process), true);
-    assert.equal(validPane({ pane: id, tab: id, terminal: id, workspace: id, process }), true);
   });
 
 test('empty and control-bearing herdr identities are refused, without changing a legal id', () => {

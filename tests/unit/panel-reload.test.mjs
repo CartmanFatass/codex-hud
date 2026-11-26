@@ -74,7 +74,7 @@ test('v1 migrates the Project view, cursor, saved pages and nested Control nav',
       notice: { kind: 'preset', role: 'imp', name: 'not restored' } },
     focus: 'agents', filterQuery: 'slice', filterOpen: false,
     panelLayout: 'classic', cardHideMinutes: 30, splitRatio: 0.4 };
-  const place = readPlace(encode({ state, settings: { selected: 2, offset: 1 }, openedAt: 42, widthOverride: 56 }));
+  const place = readPlace(encode({ state, settings: { selected: 2, offset: 1 }, openedAt: 42 }));
   const { activeTab, selectedProject, project, control, prefs, home } = place.state;
   assert.equal(activeTab, 'project');
   assert.equal(selectedProject, state.projectRoot);
@@ -90,7 +90,7 @@ test('v1 migrates the Project view, cursor, saved pages and nested Control nav',
   assert.deepEqual(control.harnesses.folded, new Set(['harness-off']));
   assert.deepEqual(control.modelPrevious, { imp: 'synthetic/old' });
   assert.equal(control.notice, undefined);
-  assert.deepEqual([place.openedAt, place.widthOverride, place.settings], [42, 56, { selected: 2, offset: 1 }]);
+  assert.deepEqual([place.openedAt, place.settings], [42, { selected: 2, offset: 1 }]);
 });
 
 test('v1 drops Home card, Split and Changes state but restores Inspector, Help and Project filters', () => {
@@ -143,14 +143,14 @@ test('v2 keeps independent Home and Project places and restores only whitelisted
   state.overlay = { kind: 'control-chain', role: { instructions: 'SYNTHETIC_ROLE_FACT', editor: { places: [{ raw: rawArgs }] } },
     draft: { run: [{ raw: rawArgs }] }, mode: { kind: 'confirm-leave' } };
   const settings = { selected: 1, offset: 2, draft: rawArgs };
-  const raw = encodePanelPlace({ state, settings, widthOverride: null, openedAt: 42, extra: rawArgs });
+  const raw = encodePanelPlace({ state, settings, openedAt: 42, extra: rawArgs });
   assert.doesNotMatch(raw, /overlay|confirm-leave|discarded-mark|trySelection|expandedTasks|onlyTry|SYNTHETIC_|synthetic-secret-flag|revealed|draft|panelSet|notice|retired/);
   assert.doesNotMatch(encodePanelPlace({ state: { ...state, overlay: { kind: 'confirm-stop', dir: secret } }, settings: null }), /confirm-stop|SYNTHETIC_/);
   const place = readPlace(raw);
   assert.equal(JSON.parse(raw).schemaVersion, 2);
   assert.equal(JSON.parse(raw).state, undefined, 'a rollback reader must not see a legacy state slot');
   assert.equal(JSON.parse(raw).settings, undefined, 'a rollback reader must not reopen Settings');
-  assert.deepEqual([place.openedAt, place.widthOverride, place.settings], [42, null, { selected: 1, offset: 2 }]);
+  assert.deepEqual([place.openedAt, place.settings], [42, { selected: 1, offset: 2 }]);
   const { home, project, prefs, subpage, control, exp } = place.state;
   assert.equal(place.state.activeTab, 'project');
   assert.equal(place.state.selectedProject, state.selectedProject);

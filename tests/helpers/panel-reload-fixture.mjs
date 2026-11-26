@@ -28,7 +28,7 @@ export function fixture(t, settings = {}) {
   const env = { PATH: process.env.PATH, HOME: join(root, 'home'), HUD_HOME: hudHome, TMPDIR: root,
     CODEX_HOME: join(root, 'codex'), CLAUDE_CONFIG_DIR: join(root, 'claude'), PI_CODING_AGENT_DIR: join(root, 'pi'),
     CODEX_HUD_CWD: join(root, 'project'), HERDR_SOCKET_PATH: join(root, 'absent.sock'), TZ: 'UTC',
-    CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', HUD_PANEL_CALLER_PANE: 'w4E:p1' };
+    CODEX_HUD_STANDALONE_PANEL: '1', CODEX_HUD_PANEL_ALL_DELEGATIONS: '1', HERDR_PANE_ID: 'w4E:p1' };
   for (const key of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'CODEX_HUD_CWD'])
     mkdirSync(env[key], { recursive: true });
   writeFixtureFile(join(root, 'package.json'), '{"type":"module"}');
@@ -57,33 +57,15 @@ function stagePanel(from, to, localFile, nested) {
   }
 }
 
-export function live(t, initialPlace, { bound = false, width = false, columns = 100, settings } = {}) {
+export function live(t, initialPlace, { bound = false, columns = 100, settings, env } = {}) {
   const f = fixture(t, settings);
-  f.env.HUD_PANEL_RELOAD_QUIET_MS = String(QUIET_MS);
+  Object.assign(f.env, env, { HUD_PANEL_RELOAD_QUIET_MS: String(QUIET_MS) });
   if (bound) {
     const source = join(f.env.CLAUDE_CONFIG_DIR, 'projects', 'synthetic');
     mkdirSync(join(source, 'synthetic-session', 'subagents'), { recursive: true });
     writeFixtureFile(join(source, 'synthetic-session.jsonl'), JSON.stringify({ type: 'user', message: { content: 'Synthetic root' } }) + '\n');
     Object.assign(f.env, { CODEX_HUD_PANEL_ROOT: `${makeSourceId('claude', source)}/synthetic-session`,
       CODEX_HUD_PANEL_HARNESS: 'claude', CODEX_HUD_PANEL_SOURCE: source });
-  }
-  const geometry = join(f.root, 'geometry.json');
-  if (width) {
-    const bin = join(f.root, 'bin'); mkdirSync(bin);
-    writeFixtureFile(geometry, JSON.stringify({ total: 160, width: 56, resizes: [] }));
-    writeFixtureFile(join(bin, 'herdr'), `#!${process.execPath}
-import fs from 'node:fs';
-import {writeFixtureFile} from ${JSON.stringify(atomicWriter)};
-const file=${JSON.stringify(geometry)}, args=process.argv.slice(2), g=JSON.parse(fs.readFileSync(file));
-if(args[1]==='resize') { const amount=Number(args[args.indexOf('--amount')+1]);
-  g.width+=g.total*amount*(args.includes('left')?1:-1);g.resizes.push(args);writeFixtureFile(file,JSON.stringify(g)); }
-const rect=(x,width)=>({x,y:0,width,height:40});
-console.log(JSON.stringify({result:args[1]==='layout'?{layout:{
-  panes:[{pane_id:'w4E:p1',rect:rect(0,g.total-g.width)},{pane_id:'w4E:p2',rect:rect(g.total-g.width,g.width)}],
-  splits:[{direction:'right',ratio:1-g.width/g.total,rect:rect(0,g.total)}]
-}}:{pane:{pane_id:args[2]}}}));
-`, { mode: 0o700 });
-    Object.assign(f.env, { PATH: `${bin}:${f.env.PATH}`, HERDR_PANE_ID: 'w4E:p2', HUD_PANEL_WIDTH: '56' });
   }
   // Keep the entry and its reload probe local: the probe finds the entry relative to import.meta.url.
   stagePanel(resolve('dist'), join(f.root, 'dist'), 'tree-page.js', true);
@@ -120,7 +102,7 @@ await runLivePage();process.exit(process.exitCode??0);`);
   const run = launch(f, runner, ['same argv'], { SYNTHETIC: 'same env',
     HUD_PANEL_RELOAD_PLACE: typeof place === 'string' ? place : encodePanelPlace(place), CODEX_HUD_INITIAL_COMMAND: 'help' });
   const events = () => readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-  return { ...f, ...run, entry, events, state, target, geometry: () => JSON.parse(readFileSync(geometry, 'utf8')),
+  return { ...f, ...run, entry, events, state, target,
     baseline: readFileSync(entry, 'utf8'), restarts: () => events().filter((e) => e.restart),
     appendBuild: (suffix) => writeFixtureFile(entry, readFileSync(entry, 'utf8') + suffix) };
 }

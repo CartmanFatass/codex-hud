@@ -15,6 +15,8 @@ import {
 } from '../render/settings-confirmation.js';
 import { withDisplaySettings } from '../settings-runtime.js';
 import { loadSettings, saveSettings, settingsPatch, type HudSettings } from '../settings.js';
+import { herdrEndpoint, request as herdrRequest } from '../runtime/herdr-socket.js';
+import { DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { setUnattended } from '../unattended/control.js';
 import { readControl, unattendedOn } from '../unattended/state.js';
 import type { PanelPlace } from '../render/monitor-reload-codec.js';
@@ -45,11 +47,9 @@ function wakeWatcherIfQueued() {
 
 type SettingsEffects = {
   current(): HudSettings;
-  apply(saved: HudSettings, widthChanged: boolean): void;
+  apply(saved: HudSettings): void;
   setMouseTracking(enabled: boolean): void;
-  applyWidth(): Promise<unknown> | undefined;
   repaint(): void;
-  repaintAll(): void;
 };
 
 type SettingsFacts = NonNullable<Parameters<typeof renderSettingsPage>[3]>;
@@ -101,23 +101,27 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
     }
     try {
       const previous = effects.current();
-      const previousWidth = previous.treeWidth;
       const settings = saveSettings(patch, draftPage.original);
-      const widthChanged = settings.treeWidth !== previousWidth;
+      const dockChanged = settings.treeWidth !== previous.treeWidth || settings.dockMode !== previous.dockMode;
       if (settings.impOverflow !== previous.impOverflow || JSON.stringify(settings.roleCaps) !== JSON.stringify(previous.roleCaps)) {
         wakeWatcherIfQueued();
       }
-      effects.apply(settings, widthChanged);
+      effects.apply(settings);
       draftPage.message = t('Saved');
       draftPage.draft = settings;
       draftPage.original = settings;
       effects.setMouseTracking(settings.mouse);
-      void (widthChanged ? effects.applyWidth() : undefined)
-        ?.then(() => effects.repaintAll())
-        .catch((err) => {
-          if (page) page.message = String(err);
-          effects.repaint();
-        });
+      if (dockChanged && process.env.HERDR_DOCK === '1' && herdrEndpoint()) {
+        // A PTY resize repaints through the normal terminal resize event.
+        void herdrRequest('dock.configure', { mode: settings.dockMode, width: settings.treeWidth || DEFAULT_WIDTH })
+          .then((reply) => {
+            if (reply?.result?.type === 'dock' && reply.result.shown) return;
+            if (page?.original === settings) {
+              page.message = t('Saved; could not update the dock');
+              effects.repaint();
+            }
+          });
+      }
       return true;
     } catch (err) {
       draftPage.message = t('Save failed: {reason}', { reason: String(err) });

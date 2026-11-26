@@ -16,6 +16,7 @@ import { collectionObservation, jobPanelObservation } from '../../dist/utils/col
 import { recordAdaptivePoll, createAdaptivePollState } from '../../dist/collectors/adaptive-poll.js';
 import { callerSession, claudeCallerSession } from '../../dist/collectors/claude-caller-session.js';
 import { panelCommand, panelSelection } from '../../dist/cli/panel.js';
+import { listenDock } from '../fakes/herdr-dock.mjs';
 const nativePage = () => ({ ...initialMonitorState(), subpage: { kind: 'native-inspector', scroll: 0 } });
 function fixture(t) {
   const home = fs.mkdtempSync(join(tmpdir(), 'native-tree-'));
@@ -257,7 +258,7 @@ if (args[1] === 'current') {
   if (reply.fail) process.exit(1);
   else if (reply.hang) setInterval(() => {}, 10000);
   else console.log(JSON.stringify(reply));
-} else console.log(JSON.stringify({result: {pane: {pane_id: 'w4E:p2'}}}));
+} else process.exit(2);
 `, { mode: 0o700 });
   const pane = { agent: 'claude', agent_session: { agent: 'claude', kind: 'id', source: 'herdr:claude', value: session }, cwd, pane_id: 'w4E:p1' };
   const setReply = (value = { result: { type: 'pane_current', pane } }) => fs.writeFileSync(reply, JSON.stringify(value));
@@ -266,7 +267,8 @@ if (args[1] === 'current') {
     CLAUDE_CONFIG_DIR: config, CODEX_HOME: join(f.home, 'codex'), PI_CODING_AGENT_DIR: join(f.home, 'pi'),
     PATH: `${bin}:${process.env.PATH}`, COLUMNS: '120', HUD_SETTINGS_PATH: join(f.home, 'settings.json') };
   const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse) : [];
-  return { ...f, session, source, projects, env, pane, setReply, calls };
+  const dock = () => listenDock(t, env.HERDR_SOCKET_PATH = join(f.home, 'dock.sock'));
+  return { ...f, session, source, projects, env, pane, setReply, calls, dock };
 }
 async function foregroundCaller(t, f, args = ['--here'], ready = 'Native tree unavailable') {
   const runner = join(f.home, 'runner.mjs');
@@ -297,7 +299,7 @@ ClaudeNativeTree.prototype.refresh=function(...args){appendFileSync(${JSON.strin
   assert.equal(await exited, 0, errors);
   return stripAnsi(output);
 }
-test('current w4E:p1 binds before splitting; real foreground panel scans the Claude tree on demand; statusline writes no binding', async t => {
+test('current w4E:p1 binds the dock; real foreground panel scans the Claude tree on demand; statusline writes no binding', async t => {
   const f = callerFixture(t);
   const input = { session_id: f.session, transcript_path: join(f.source, f.session + '.jsonl'), cwd: f.home };
   for (const pane of ['w4E:p1', 'old-valid-pane']) {
@@ -311,12 +313,13 @@ test('current w4E:p1 binds before splitting; real foreground panel scans the Cla
   assert.deepEqual(bound, { session: f.session, source: f.source });
   assert.equal(panelSelection(['--harness', 'claude', '--session', bound.session, '--source', bound.source]).source, f.source);
   assert.match(await foregroundCaller(t, f, ['--here'], 'Repair parser'), /Repair parser/);
+  const dock = await f.dock();
   await panelCommand({ env: f.env, stdout: () => {}, stderr: () => {} });
-  const calls = f.calls(), split = calls.findIndex(c => c[1] === 'split');
-  assert.deepEqual(calls[split - 1], ['pane', 'current']);
-  assert.equal(calls[split][2], 'w4E:p1');
-  assert.match(calls.at(-1)[3], new RegExp(`'--session' '${f.session}'`));
-  assert.ok(calls.at(-1)[3].includes(`'--source' '${f.source}'`));
+  assert.deepEqual(f.calls().at(-1), ['pane', 'current']);
+  const { method, params } = dock.operations()[0];
+  assert.equal(method, 'dock.toggle');
+  assert.equal(params.env.HUD_DOCK_CALLER_PANE, 'w4E:p1');
+  assert.deepEqual(params.argv.slice(1), ['panel', '--here', '--harness', 'claude', '--session', f.session, '--source', f.source]);
 });
 test('slug miss scans only 256 immediate projects; default HOME config is supported', async t => {
   const f = callerFixture(t);
@@ -348,11 +351,12 @@ for (const reason of ['other agent', 'no agent', 'path session', 'invalid uuid',
   });
 test('explicit --root and harness/session/source win without querying current pane', async t => {
   const f = callerFixture(t);
+  const dock = await f.dock();
   for (const selection of [['--root', 'synthetic/explicit'], ['--harness', 'claude', '--session', f.session, '--source', f.source]]) {
     await panelCommand({ env: f.env, stdout: () => {}, stderr: () => {} }, selection);
-    assert.ok(f.calls().at(-1)[3].includes(selection.map(s => `'${s}'`).join(' ')));
+    assert.deepEqual(dock.operations().at(-1).params.argv.slice(3), selection);
   }
-  assert.equal(f.calls().some(c => c[1] === 'current'), false);
+  assert.deepEqual(f.calls(), []);
 });
 
 test('Codex caller binds via herdr pane current or CODEX_THREAD_ID, passes --harness codex --session --source, and renders Codex in panel', async t => {
@@ -396,11 +400,9 @@ test('Codex caller binds via herdr pane current or CODEX_THREAD_ID, passes --har
   assert.equal(selected.source, codexHome);
   assert.ok(selected.root?.endsWith('/' + codexSession), selected.root);
 
+  const dock = await f.dock();
   await panelCommand({ env: f.env, stdout: () => {}, stderr: () => {} });
-  const runCmd = f.calls().findLast(c => c[1] === 'run')[3];
-  assert.ok(runCmd.includes("'--harness' 'codex'"), runCmd);
-  assert.ok(runCmd.includes(`'--session' '${codexSession}'`), runCmd);
-  assert.ok(runCmd.includes(`'--source' '${codexHome}'`), runCmd);
+  assert.deepEqual(dock.operations()[0].params.argv.slice(3), ['--harness', 'codex', '--session', codexSession, '--source', codexHome]);
 
   // Pin only the child clock so the parent's foreground wait still has a real timeout.
   for (const [day, hour] of [[17, 23], [18, 0]]) {

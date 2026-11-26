@@ -19,15 +19,13 @@ function fixture(t, initial, row, extraEnv) {
     rmSync(home, { recursive: true, force: true });
   });
   if (initial !== null) writeFileSync(file, JSON.stringify(initial));
-  let current = initial === null ? runtimeSettings() : loadSettings(), applied = 0, widthResizes = 0, lastWidthChanged;
+  let current = initial === null ? runtimeSettings() : loadSettings(), applied = 0;
   const position = row && { selected: SETTING_ROWS.findIndex(row), offset: 0 };
   const flow = createSettingsFlow(current, position, {
     current: () => current,
-    apply(saved, widthChanged) { current = saved; applied++; lastWidthChanged = widthChanged; },
+    apply(saved) { current = saved; applied++; },
     setMouseTracking() {},
-    applyWidth() { widthResizes++; },
     repaint() {},
-    repaintAll() {},
   }, () => ['first']);
   if (!position) flow.show(current);
   const input = (key) => {
@@ -40,8 +38,6 @@ function fixture(t, initial, row, extraEnv) {
     input,
     current: () => current,
     applied: () => applied,
-    widthResizes: () => widthResizes,
-    lastWidthChanged: () => lastWidthChanged,
   };
 }
 
@@ -105,8 +101,6 @@ test('first save with no settings file keeps effective opening width and display
     assert.deepEqual(actual.barFields, ['model', 'context']);
   }
   assert.equal(f.applied(), 1);
-  assert.equal(f.lastWidthChanged(), false);
-  assert.equal(f.widthResizes(), 0);
   assert.equal(f.flow.isDirty(), false);
 });
 
@@ -127,7 +121,5 @@ test('first save merges onto a settings file created by another writer between o
   assert.equal(saved.barStyle, 'line');
   assert.equal(saved.treeWidth, 56);
   assert.equal(f.current().treeWidth, 56);
-  assert.equal(f.lastWidthChanged(), true);
-  assert.equal(f.widthResizes(), 1);
   assert.equal(f.flow.isDirty(), false);
 });

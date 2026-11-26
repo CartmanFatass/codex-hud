@@ -37,7 +37,7 @@ function fixture(t, count = 1, refreshMs = 1000) {
     TZ: 'UTC',
     CODEX_HUD_CWD: join(root, 'project'),
     CODEX_HUD_STANDALONE_PANEL: '1',
-    HUD_PANEL_CALLER_PANE: 'w4E:p1',
+    HERDR_PANE_ID: 'w4E:p1',
   };
   for (const k of ['HOME', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'CODEX_HUD_CWD'])
     mkdirSync(env[k], { recursive: true });
