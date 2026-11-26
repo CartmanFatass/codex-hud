@@ -1,6 +1,6 @@
 # 01: Project gains an Execution page: running workers, live thumbnails, delegation tree
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** herdr-fork/12
 **Objective:** interaction
@@ -14,3 +14,5 @@
 ## Comments
 
 - Landed in this commit (replay base b8ba3b2e7fb2788039a0e8ce96461d73e8e2a7ae); gate 5/5 passed.
+
+- 2026-11-26 main: landed b5c5e7f3. Live on fork a26432a7 in the owner panel: Project > Execution showed the running imp card with a live 6-line screen that refreshed within seconds and the delegation tree (main pane -> imp); g revealed and focused the worker tab, H hid it and focus returned to the main tab.
