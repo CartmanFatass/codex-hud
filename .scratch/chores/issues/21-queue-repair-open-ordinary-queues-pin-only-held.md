@@ -1,6 +1,6 @@
 # 21: Queue repair: open ordinary queues pin only held items' jobs, not every landed item
 
-**Status:** ready-for-agent
+**Status:** wontfix
 **Owner try:** no
 **Live try:** none
 **Blocked by:** none
