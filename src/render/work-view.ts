@@ -7,6 +7,7 @@ import { homeRows, OTHER_PROJECTS, otherProjectsHint } from './home-view.js';
 import { scheduleBadge, scheduleView } from './home-cards.js';
 import { objectiveDetailRows } from './objective-detail.js';
 import { runDetailRows } from './execution-run-detail.js';
+import { executionRows } from './execution-view.js';
 import { activeFilter, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
 import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
@@ -17,7 +18,7 @@ import { fit, monitorText } from './monitor-text.js';
 import { t } from './i18n.js';
 import { batchKeys, batchPromptRows, inspectorKeys, stopPromptRows } from './job-actions.js';
 import { filterHints, filterProject, filterRow, filterScope } from './filter.js';
-import { controlShown, resourcesShown, MAIN_TABS } from './main-tabs.js';
+import { controlShown, executionShown, resourcesShown, MAIN_TABS } from './main-tabs.js';
 import { controlHeader, controlHints, controlRows, presetFooterControls, roleRows } from './control-page.js';
 import { presetSheet } from './preset-input.js';
 import { chainSheet } from './chain-input.js';
@@ -59,6 +60,9 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   const project = [
     ['[ ]', 'previous / next project'],
     ['⏎', 'Accept all: record all pending slices'],
+  ];
+  const execution = [
+    ['[ ]', 'previous / next project'],
     ['g P H', 'Execution: peek/focus, pin visible, or hide the job’s tab; ⏎ opens it'],
   ];
   const control = [
@@ -90,6 +94,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   add('Everywhere', everywhere);
   add('Home', home);
   const projectStart = add('Project', project);
+  const executionStart = add('Execution', execution);
   const controlStart = add('Control', control);
   const legend = (label: string, ...groups: string[][]) => groups.map((group, i) =>
     boardRow(`${theme.board.muted(fit(i ? '' : t(label).toLowerCase(), 7))} ${group.join('  ')}`));
@@ -108,7 +113,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   const rows = width < 80 ? [...keys, boardRow(''), ...marks]
     : Array.from({ length: Math.max(keys.length, marks.length) }, (_, i) =>
         boardRow(fit(keys[i]?.text ?? '', half) + '    ' + fit(marks[i]?.text ?? '', width - half - 4)));
-  const start = state.activeTab === 'project' ? projectStart : state.activeTab === 'control' ? controlStart : undefined;
+  const start = state.activeTab === 'project' ? projectStart : state.activeTab === 'execution' ? executionStart : state.activeTab === 'control' ? controlStart : undefined;
   return { rows: [boardRow(''), ...rows], anchor: start === undefined ? undefined : rows[start] };
 }
 export function renderWorkboardFrame(
@@ -136,6 +141,7 @@ export function renderWorkboardFrame(
   const runDetail = subpage?.kind === 'run-detail' ? subpage : undefined;
   const sub = subpage || help;
   const project = !sub && state.activeTab === 'project';
+  const execution = executionShown(state);
   const control = controlShown(state), resources = resourcesShown(state);
   const controlView = control && state.control.subTab !== 'resources' ? state.control[state.control.subTab] : undefined;
   const withControlNav = (nav: RowNav) => ({ ...state.control, [state.control.subTab]: { ...controlView!, nav } });
@@ -164,7 +170,7 @@ export function renderWorkboardFrame(
   const resourcePage = resources ? state.exp : undefined;
   const expEdit = resources && overlay?.kind === 'exp-edit' ? overlay : undefined;
   if (resources) frame.expData = input.expData;
-  const home = !sub && !project && !control;
+  const home = !sub && !project && !execution && !control;
   const page = project ? projectPageOf(state) : undefined;
   const list = project && projectListOpen(state, input.projects);
   // The Project filter narrows the snapshots for Progress and Tickets.
@@ -206,14 +212,17 @@ export function renderWorkboardFrame(
     const count = input.homeWaiting?.length ?? (home ? input.project?.waiting.length ?? 0 : 0);
     // A count is a `?` and its number, the mark of what waits for the owner everywhere else: a bare number beside a tab reads as its key.
     const badge = (n: number) => (n ? ' ' + theme.board.attention(`?${n}`) : '');
-    const counts = { home: count, project: input.projectWaiting ?? input.project?.waiting.length ?? 0, control: 0 };
+    const counts = { home: count, project: input.projectWaiting ?? input.project?.waiting.length ?? 0, execution: 0, control: 0 };
+    const liveJobs = input.executionCount ?? input.execution?.jobs.length ?? input.project?.active.length ?? 0;
+    const liveBadge = (active: boolean) => (liveJobs > 0 ? `·${active ? String(liveJobs) : theme.board.active(String(liveJobs))}` : '');
     const tabs = MAIN_TABS, calendar = scheduleBadge(schedule);
-    const labels = (requests: boolean, due: boolean) => tabs.map((tab) =>
-      ` ${t(tab.label)}${requests ? badge(counts[tab.id]) : ''}${due && tab.id === 'home' ? calendar : ''} `);
-    let titles = labels(true, true);
-    if (visualLength(titles.join('')) > width) titles = labels(true, false);
-    if (visualLength(titles.join('')) > width) titles = labels(false, true);
-    if (visualLength(titles.join('')) > width) titles = labels(false, false);
+    const labels = (requests: boolean, due: boolean, live: boolean) => tabs.map((tab) =>
+      ` ${t(tab.label)}${live && tab.id === 'execution' ? liveBadge(state.activeTab === 'execution') : ''}${requests ? badge(counts[tab.id]) : ''}${due && tab.id === 'home' ? calendar : ''} `);
+    let titles = labels(true, true, true);
+    if (visualLength(titles.join('')) > width) titles = labels(true, false, true);
+    if (visualLength(titles.join('')) > width) titles = labels(false, true, true);
+    if (visualLength(titles.join('')) > width) titles = labels(false, false, true);
+    if (visualLength(titles.join('')) > width) titles = labels(false, false, false);
     frame.lines[0] = fit(titles.map((label, i) => (state.activeTab === tabs[i].id ? theme.board.title : theme.board.muted)(label)).join(''), width);
     let x = 0;
     for (const [i, label] of titles.entries()) {
@@ -266,7 +275,8 @@ export function renderWorkboardFrame(
         : [boardRow(t('Job not available'))]
         : jobs ? jobsRows(source.workers, width, !!input.jobsObserved, source.batches)
         : project
-          ? projectRows(input.project, state, width, now, source, input.projectName, input.projects, input.worktrees, input.execution)
+          ? projectRows(input.project, state, width, now, source, input.projectName, input.projects, input.worktrees)
+          : execution ? executionRows(input.execution, state.execution.cursor, width, now)
           : resourcePage ? expRows(resourcePage, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.publicationNotice)))
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
@@ -282,10 +292,10 @@ export function renderWorkboardFrame(
   const inspectCursor = inspect?.cursor && actions.some((r) => r.item === inspect.cursor) ? inspect.cursor : undefined;
   const listNav = jobs ?? objective ?? (home ? state.home : undefined);
   const listCursor = listNav && (actions.some((r) => r.item === listNav.cursor) ? listNav.cursor : actions[0]?.item);
-  const nav = controlView?.nav ?? (project ? state.project.nav : undefined);
+  const nav = controlView?.nav ?? (project ? state.project.nav : execution ? state.execution : undefined);
   const hasCursor = (cursor?: string) => rows.some((r) => r.item && r.item === cursor);
   // A new hub starts on its first destination, ahead of the project switch.
-  const cursor = nav && !hasCursor(nav.cursor) && (project || (!addingHarness && !sheet && input.project))
+  const cursor = nav && !hasCursor(nav.cursor) && (project || execution || (!addingHarness && !sheet && input.project))
     ? ((project && !page && !list ? rows.find((r) => r.item && r.item !== 'project:switch') : undefined)
       ?? rows.find((r) => r.item))?.item : nav?.cursor;
   const expCursor = resourcePage && !expEdit && !hasCursor(resourcePage.cursor) ? rows.find((r) => r.item)?.item : resourcePage?.cursor;
@@ -302,8 +312,8 @@ export function renderWorkboardFrame(
   let revealed = nav ? nav.revealed : inspect ? inspect.revealed : resourcePage ? resourcePage.revealed : listNav?.revealed;
   if (!help && !sheet && key && (addingHarness || revealed !== key) && room) {
     // An Execution card is several rows of one job: bring all of it into view, and the page's head with the first.
-    const last = page === 'execution' ? rows.map((r) => r.item).lastIndexOf(key) : cursorAt;
-    if (page === 'execution' && cursorAt === rows.findIndex((r) => r.item) && last < room) offset = 0;
+    const last = execution ? rows.map((r) => r.item).lastIndexOf(key) : cursorAt;
+    if (execution && cursorAt === rows.findIndex((r) => r.item) && last < room) offset = 0;
     else if (cursorAt < offset) offset = cursorAt;
     else if (last >= offset + room) offset = Math.min(cursorAt, last - room + 1);
     if (!addingHarness) revealed = key;
@@ -318,6 +328,7 @@ export function renderWorkboardFrame(
     state = { ...state, jobs: place, subpage: { kind: 'jobs', ...place } };
   }
   else if (nav && project) state = { ...state, project: { ...state.project, nav: { ...nav, cursor, scroll: offset, revealed } } };
+  else if (nav && execution) state = { ...state, execution: { ...nav, cursor, scroll: offset, revealed } };
   else if (nav && !addingHarness && !sheet && input.project) state = { ...state, control: withControlNav({ ...nav, cursor, scroll: offset, revealed }) };
   else if (resourcePage) state = { ...state, exp: { ...resourcePage, cursor: expCursor, scroll: offset, revealed: expEdit ? undefined : revealed } };
   else if (home) state = { ...state, home: { ...state.home, cursor: listCursor, scroll: offset, revealed } };
@@ -343,8 +354,8 @@ export function renderWorkboardFrame(
         : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
-        : project ? (page === 'execution' ? ['Esc back', ...(selected?.execJob?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : []), ...(selected ? ['⏎ details'] : [])]
-          : page === 'waiting' ? ['o file', 'Esc back']
+        : execution ? [...(selected ? ['⏎ details'] : []), ...projectSwitch, ...(selected?.execJob?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : [])]
+        : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']

@@ -19,6 +19,7 @@ export function withState(...parts) {
         ...(nav.split ? { split: { ...base.project?.nav?.split, ...nav.split } } : {}) };
       if (filter) next.project.filter = { query: '', editing: false, ...base.project?.filter, ...filter };
     }
+    if (patch.execution) next.execution = { ...base.execution, ...patch.execution };
     if (patch.subpage && patch.subpage.kind === base.subpage?.kind) next.subpage = { ...base.subpage, ...patch.subpage };
     return next;
   }, {});

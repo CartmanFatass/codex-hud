@@ -1,5 +1,6 @@
-/** The Project Execution page's facts, derived from one project's job records: the live jobs, who started whom, and the panes to read. */
-import { join } from 'node:path';
+/** The Execution tab's facts, derived from one project's job records: the live jobs, who started whom, and the panes to read. */
+import * as fs from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { Job, PrewalkScoutKind } from '../mcp/job-contracts.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
@@ -8,6 +9,7 @@ import { herdrEndpoint } from '../runtime/herdr-socket.js';
 import type { ScreenTarget, ExecutionScreen } from './execution-screens.js';
 import { readExecutionRuns, type ExecutionRun } from './execution-runs.js';
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
+import { jobRow, worksWithin } from './thin-jobs.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
 
 export type { ExecutionRun, ExecutionRunStep, ExecutionRunTicket, RunStepKey, RunStepState, TicketRunStage } from './execution-runs.js';
@@ -54,6 +56,34 @@ const text = (value: unknown) => typeof value === 'string' && value ? value : un
 const jobIdOf = (id: string | undefined) => id?.replace(/^thin-job:/, '');
 const byStart = (a: ExecutionJob, b: ExecutionJob) =>
   (a.worker.startedAt ?? 0) - (b.worker.startedAt ?? 0) || a.jobId.localeCompare(b.jobId);
+
+/** Count live (running, waiting, queued) jobs belonging to `projectRoot`, using the same membership and settlement rules as Execution. */
+export function countProjectLiveJobs(home: string, projectRoot: string): number {
+  const cache = getJobIndexCache(home);
+  const canonicals = new Map<string, string>();
+  const canonical = (p: string) => {
+    let known = canonicals.get(p);
+    if (known === undefined) {
+      try { known = fs.realpathSync(p); } catch { known = resolve(p); }
+      canonicals.set(p, known);
+    }
+    return known;
+  };
+  const root = canonical(projectRoot);
+  const { dirs } = cache.listJobDirsByMtime();
+  let count = 0;
+  for (const { id } of cache.recentJobFamilies(dirs, 200)) {
+    const jobRes = cache.readJob<Job & Record<string, unknown>>(id);
+    if (jobRes.status !== 'ok') continue;
+    const job = jobRes.value;
+    if (job.job !== id || typeof job.role !== 'string' || job.reaped_at) continue;
+    if (!worksWithin(root, job, canonical)) continue;
+    const statusRes = cache.readStatus<Parameters<typeof jobRow>[1]>(id);
+    const state = jobRow(job, statusRes.status === 'ok' ? statusRes.value : null).display_state;
+    if (state === 'working' || state === 'queued') count++;
+  }
+  return count;
+}
 
 /** Reads receipts (cached by signature) only for the jobs the page shows. */
 export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: { root: string; pane: string | null; env: NodeJS.ProcessEnv; complete: boolean }, now = Date.now()):

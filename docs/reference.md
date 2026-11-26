@@ -824,7 +824,7 @@ Project → **Working tree** includes the Git diagnostics formerly on the separa
 
 Project opens to the selected project's stance, priority (if not normal) and activity age. **Needs you** shows only explicit owner requests, with up to four lines of the request itself and any linked Objective ID, age and work-waits flag. **Objectives** follows; when there is no `.hud/objectives.md`, the overview instead shows the available STATE **Now** and **Next** notes (up to two lines each). Neither the Home roll-up bars nor pane load are repeated here.
 
-**Details** links to **[Execution](#execution-page)** (while the project has running or waiting jobs), **Tickets** (if present), **Progress**, **Worktree** (when Git facts exist) and **Docs**. Its rows name the figures: live jobs, and how many of them wait or are queued; completed/non-dropped tickets and feature count; milestone and ticket states; branch and changed paths; spec milestone and review age. When the ticket scan is bounded or a read fails, the Details heading names how many features the counts sampled. Job and ticket activity is diagnostic, not an owner request. Exhausted roles are still shown in Control.
+**Details** links to **Tickets** (if present), **Progress**, **Worktree** (when Git facts exist) and **Docs**. Its rows name the figures: completed/non-dropped tickets and feature count; milestone and ticket states; branch and changed paths; spec milestone and review age. When the ticket scan is bounded or a read fails, the Details heading names how many features the counts sampled. Job and ticket activity is diagnostic, not an owner request. Live execution moved to the **[Execution](#execution-page)** tab; exhausted roles are still shown in Control.
 
 In a registered project, main keeps `.hud/objectives.md` in Git. An optional header such as `**Stance:** active · **Priority:** high` declares stance (`active`, `paused`, `maintenance`; otherwise unknown) and priority (`high`, `normal`, `low`; otherwise `normal`). Each `## <id>: <title>` section has a unique lowercase slug (`[a-z0-9-]+`) and a `**State:** active|paused|done` line. Optional single-line fields are `**Next:**`, `**Result:**`, `**Features:**` (comma-separated `.scratch` feature slugs) and `**Evidence:**` (comma-separated repo paths, URLs or commit hashes). Project shows blocked Objectives first, then active, paused and done. An open, linked request that work waits on marks an Objective as blocked on Home and in Project without changing its declared state. An open Objective shows its ID, state and done/non-dropped ticket count, then the title and next step (up to three lines each), one ticket bar per linked feature, and its result (up to two lines, with the age if a receipt dates that exact result). Features with unknown coverage do not get a bar or count. At 56 columns and wider, a known acceptance checklist count can appear as a muted, separate figure. Jobs appear under their linked features with ticket number, title and age; the remaining jobs have their own section. Enter on a job opens its report, or its brief if it has no report. A done Objective uses one row.
 
@@ -1069,14 +1069,14 @@ The last-touched time reads `12m`, `3h`, `4d` (`12分`, `3小时`, `4天` in Chi
 A project without STATE.md says `no STATE.md` on Progress; its other pages work.
 
 On a page Enter folds a header, shows a ticket's detail or opens a row's file, and `o` opens it in `$EDITOR` (default vim), in a herdr tab that closes with the editor; failed workspace lookup falls back to a split.
-Home, Project and Control retain separate cursor/scroll state.
+Home, Project, Execution and Control retain separate cursor/scroll state.
 Full Project collection runs while the hub or a page is visible, not behind modals; Home reuses only cached STATE/ticket reads.
 Git is gated to at most once per five seconds.
 Reads do not start a browser or MCP.
 
 ### Execution page
 
-Execution shows one project's running and waiting work, from every session and pane. It is the only place with execution detail: Home and the Projects list do not show it. A job belongs to the project when it works inside the project directory, in a worktree HUD manages for it, or its record names the project (a Sonic child working in its parent's worktree).
+Execution is its own top tab (`Execution·N` / `执行·N`, where `N` is the current project's live running, waiting and queued jobs, omitted at 0). It shows the panel's current project (the same project as the Project tab; `[` and `]` switch project on both tabs) and its running and waiting work from every session and pane. It is the only place with execution detail: Home and the Projects list do not show it. A job belongs to the project when it works inside the project directory, in a worktree HUD manages for it, or its record names the project (a Sonic child working in its parent's worktree).
 
 - **Readout:** how many jobs are running, waiting and queued. `screens every 2s` says how old a thumbnail can be; `Partial` that some job records were not read.
 - **Workers:** one framed card per job, those asking for an answer or waiting for the main session first, then running (oldest first), then queued. The top edge has the state mark, role, model, preset (when the record names one), state and time since the job started. The bottom edge says who started it, and whether it is a `tab`, `headless` or `queued` job. An open question shows under the title.
@@ -1134,7 +1134,7 @@ Turning off an API grant stops collection for that account and preserves its led
 
 ### Frame and reload
 
-Home, Project and Control are the main tabs.
+Home, Project, Execution and Control are the main tabs.
 The panel keeps footer hints whole: the selected row's actions take priority, then Enter with its verb, `Esc back` where applicable, and page actions.
 Hints drop from the right to make room, but `? help` stays last.
 Movement, tab switching and the Settings shortcut remain available without taking footer space.
@@ -1162,7 +1162,7 @@ The panel's job state icons also follow the saved setting. `nerd` uses U+F059 (a
 
 After a new installed entry is stable for two seconds, a bounded child import validates it before the panel restarts in the same pane.
 Selection, scroll, diagnostic folds, Settings cursor, opening time and width override survive.
-A saved Skills tab from an older build falls back to Home; a saved Project/Control page reopens on Control.
+A saved Skills tab from an older build falls back to Home; a saved Project/Control page reopens on Control and a saved Project/Execution page reopens on Execution.
 Unsaved Settings delay reload; a bad build leaves the old panel and a dim notice.
 Bars are separate and need restarting for new code.
 Quiet, positively idle observations can back off to five-second collection; input/redraw remain independent.
@@ -1173,8 +1173,8 @@ Standalone panels consume their own keys and SGR mouse events directly.
 
 | Key | Action |
 |---|---|
-| Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Control. Digits switch no tab. `?N` names what waits for you; Home's separate calendar badge counts due and overdue schedule items |
-| `[`, `]` | Project or Control: previous/next project (not on the Projects list) |
+| Tab/Shift-Tab, Left/Right, a click on the tab | Cycle Home → Project → Execution → Control. Digits switch no tab. `Execution·N` (`执行·N`) counts the current project's live jobs (running, waiting, queued), omitted at 0; `?N` names what waits for you; Home's separate calendar badge counts due and overdue schedule items |
+| `[`, `]` | Project, Execution or Control: previous/next project (not on the Projects list) |
 | Enter, `i` `Del` `K` `J`, `s`, `x`, `r` | Control: focus the chain / edit the place; add / remove / move up / move down; save the draft; clear the saved place's quota mark; refresh model lists |
 | `c` / `C`, `p` | Control role row: next / previous named preset, or filter presets and choose a name or Custom |
 | `N`, `I`, `R`, `D` | Control role row: start a copied or empty draft, rename the selected preset, or preview and confirm deletion |
@@ -1182,17 +1182,17 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
 | `m` | Control role or place: choose a model directly (or click `[model ▾]`). Type to filter, ↑↓ to pick, Enter to save (or fill an open draft). In the picker, one click sets, Esc clears then closes, and Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
-| `g` / `P` / `H` | Execution page or Inspector: `g` focuses the job's herdr tab (as a temporary peek that re-hides when focus leaves on a fork with `hidden_tabs_peek`, or revealing it on older forks); `P` pins it visible (`tab.set_hidden` `false`, requires `hidden_tabs_peek`); `H` hides it (`tab.set_hidden` `true`, requires `hidden_tabs`). Headless jobs have no tab |
+| `g` / `P` / `H` | Execution tab or Inspector: `g` focuses the job's herdr tab (as a temporary peek that re-hides when focus leaves on a fork with `hidden_tabs_peek`, or revealing it on older forks); `P` pins it visible (`tab.set_hidden` `false`, requires `hidden_tabs_peek`); `H` hides it (`tab.set_hidden` `true`, requires `hidden_tabs`). Headless jobs have no tab |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) in Inspector, where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | Jobs, on a working or paused batch row: the one prompt for the whole batch (`p` pause or `r` resume, `s` stop; any other key cancels). Inspector, on an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then the bundled `hud-reap` runs and the panel reads again); any other key cancels |
-| Enter | Home: open the project or the request in its Project tab; Jobs and the Execution page: open Inspector; Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
+| Enter | Home: open the project or the request in its Project tab; Jobs and the Execution tab: open Inspector (or Run Detail on a ticket-queue run); Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
 | `o` | Inspector or Project diagnostics: open the file |
 | `v` | Home: open Jobs |
 | `n` | Jobs or Inspector: show this session’s native subagents |
-| `w` | Home, Project: write the shown project's [review board](#review-board) (HTML) and open it |
+| `w` | Home, Project, Execution, Control: write the shown project's [review board](#review-board) (HTML) and open it |
 | `/` | Filter Project Progress and Tickets by a case-insensitive substring. Backspace edits, Enter keeps the query, Esc stops editing then clears it. Leaving the view clears it; reload retains a kept query |
 | `,`, `?` | Settings, Help. From Settings, Help returns to the same draft and selection |
-| Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project or Control, Esc does nothing |
+| Esc | With a `/` filter, first stops typing, then clears it; then back (a Project page returns to the hub, the Projects list to the hub, a hub opened from the list to the list); dirty Settings ask save/discard/continue. At the root of Home, Project, Execution or Control, Esc does nothing |
 | `q` | Close panel |
 
 Mouse clicks select a row/button, a second click on the selected item runs Enter's action (Home requests and projects, Project hub links, job rows and Inspector file links open on one click), clicking the top crumb goes back, clicking a tab switches tabs, and wheel scrolling moves the viewport without moving the selection.
@@ -1201,7 +1201,7 @@ The model picker is an exception: one click sets a model and scrolling keeps the
 ### Help
 
 Press `?` for shortcuts grouped by where they work.
-From Project or Control, Help opens at that tab’s section; from Home or Settings it opens at Everywhere.
+From Project, Execution or Control, Help opens at that tab’s section; from Home or Settings it opens at Everywhere.
 Marks are grouped by route (the tier bars `▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places.
 `g` peeks/focuses the job's herdr tab; `P` pins it visible; `H` hides it again. Headless jobs show Output instead.
 At 80 columns and wider, Marks sit to the right of the shortcuts.

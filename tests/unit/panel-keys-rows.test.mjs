@@ -60,7 +60,7 @@ test('a printable key is one decoder name, and Help covers the decoder with each
     Tab: '\t', 'Shift+Tab': '\x1b[Z', Home: '\x1b[H', End: '\x1b[F', PgUp: '\x1b[5~', PgDn: '\x1b[6~',
     '⏎': '\r', Esc: '\x1b', Space: ' ', Del: '\x1b[3~', Backspace: '\x7f', '^R': '\x12',
   };
-  const headings = { en: ['Everywhere', 'Home', 'Project', 'Control'], zh: ['通用', '首页', '项目', '控制'] };
+  const headings = { en: ['Everywhere', 'Home', 'Project', 'Execution', 'Control'], zh: ['通用', '首页', '项目', '执行', '控制'] };
   const display = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   try {
     for (const panelLayout of ['split', 'classic']) for (const lang of ['en', 'zh']) {
@@ -106,16 +106,16 @@ test('Help opens at the source tab, scrolls back to Everywhere, and closes to th
   const display = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   try {
     for (const panelLayout of ['classic', 'split']) for (const width of [40, 120]) for (const height of [24, 160]) {
-      for (const [lang, titles] of [['en', ['Everywhere', 'Project', 'Control']], ['zh', ['通用', '项目', '控制']]]) {
+      for (const [lang, titles] of [['en', ['Everywhere', 'Project', 'Execution', 'Control']], ['zh', ['通用', '项目', '执行', '控制']]]) {
         const previous = setLanguage(lang);
         try {
-          for (const [i, mainTab] of ['home', 'project', 'control'].entries()) {
+          for (const [i, mainTab] of ['home', 'project', 'execution', 'control'].entries()) {
             const draw = (state) => renderMonitor({ tree: TREE, width, height, state, nowMs: NOW });
             const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW }).state;
             const from = draw(withState(initialMonitorState(), { activeTab: mainTab, prefs: { panelLayout } }));
             const help = draw(press(from, '?'));
             assert.equal(help.state.activeTab, mainTab);
-            const anchored = i === 1 || i === 2;
+            const anchored = i >= 1;
             assert.match(help.lines[anchored ? 1 : 2], new RegExp(`^${titles[i]} ─`));
             if (!anchored) assert.equal(help.lines[1].trim(), '');
             const top = draw(press(help, '\x1b[H'));
@@ -186,7 +186,7 @@ test('Help scrolls over a Control draft and closes back to the same place withou
 });
 
 test('top row names each tab once without a model-text switch', () => {
-  for (const [lang, tabs] of [['en', 'Home Project Control'], ['zh', '首页 项目 控制']]) {
+  for (const [lang, tabs] of [['en', 'Home Project Execution Control'], ['zh', '首页 项目 执行 控制']]) {
     const previous = setLanguage(lang);
     try {
       for (const width of [40, 80, 120]) {
@@ -205,14 +205,14 @@ test('top row names each tab once without a model-text switch', () => {
     } finally { setLanguage(previous); }
   }
   const narrow = renderMonitor({ tree: TREE, state: initialMonitorState(),
-    projectWaiting: 2, width: 34, height: 16, nowMs: NOW });
-  assert.equal(stripAnsi(narrow.lines[0]).trim(), 'Home  Project ?2  Control');
+    projectWaiting: 2, width: 40, height: 16, nowMs: NOW });
+  assert.equal(stripAnsi(narrow.lines[0]).trim(), 'Home  Project ?2  Execution  Control');
   assert.equal(narrow.controls.some((c) => c.kind === 'brief'), false);
 });
 
 test('Esc at every tab root leaves the cursor and tab unchanged; q closes the panel', () => {
   const expData = { config: defaultExpConfig(), profiles: [] };
-  for (const view of ['home', 'project', 'control', 'resources']) {
+  for (const view of ['home', 'project', 'execution', 'control', 'resources']) {
     const render = (state) => busy.render(40, 'en', 40, state, busy.control, { expData });
     const press = (frame, raw) => handleMonitorInput(frame.state, decode(raw)[0], { tree: TREE, frame, nowMs: NOW, standalone: true });
     const root = render(view === 'resources'
@@ -220,8 +220,8 @@ test('Esc at every tab root leaves the cursor and tab unchanged; q closes the pa
       : withState(initialMonitorState(), { activeTab: view }));
     const moved = render(press(root, '\x1b[B').state);
     const cursor = ({ home: (s) => s.home.scroll,
-      project: (s) => s.project.nav.cursor, control: (s) => s.control.roles.nav.cursor, resources: (s) => s.exp.cursor })[view];
-    if (view !== 'home') {
+      project: (s) => s.project.nav.cursor, execution: (s) => s.execution.cursor, control: (s) => s.control.roles.nav.cursor, resources: (s) => s.exp.cursor })[view];
+    if (view !== 'home' && view !== 'execution') {
       assert.ok(cursor(moved.state), `${view} has a cursor`);
       assert.notDeepEqual(cursor(moved.state), cursor(root.state), `${view} moved off its first row`);
     }

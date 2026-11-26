@@ -26,8 +26,8 @@ const LAND_FLOW = 'f0a01000000000000';
 const ago = (minutes) => new Date(NOW - minutes * 60_000).toISOString();
 
 const onExecution = (nav) => withState(initialMonitorState(), {
-  activeTab: 'project',
-  project: { view: viewFor('execution'), ...(nav && { nav }) },
+  activeTab: 'execution',
+  ...(nav && { execution: nav }),
 });
 
 function render(view, { state = onExecution(), width = 100, height = 80, lang = 'en', theme = 'none', icons = 'unicode', workboard, homePortfolio } = {}) {
@@ -310,8 +310,8 @@ test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Det
   assert.ok(scrolled.subpage.scroll > 0);
   const backFromRun = press(scrolled, '\x1b').state;
   assert.equal(backFromRun.subpage, undefined);
-  assert.equal(backFromRun.project.view.kind, 'execution');
-  assert.equal(backFromRun.project.nav.cursor, `project:exec-run:${FLOWS.working}`);
+  assert.equal(backFromRun.activeTab, 'execution');
+  assert.equal(backFromRun.execution.cursor, `project:exec-run:${FLOWS.working}`);
 
   // Enter on a ticket line opens that job's Inspector, and Esc returns to Execution.
   const onTicket = onExecution({ cursor: `project:exec-run:${FLOWS.working}:ticket:03` });
@@ -322,8 +322,8 @@ test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Det
   assert.match(inspText, /EXEC-01|synthetic page/);
   const backFromJob = press(inspected, '\x1b').state;
   assert.equal(backFromJob.subpage, undefined);
-  assert.equal(backFromJob.project.view.kind, 'execution');
-  assert.equal(backFromJob.project.nav.cursor, `project:exec-run:${FLOWS.working}:ticket:03`);
+  assert.equal(backFromJob.activeTab, 'execution');
+  assert.equal(backFromJob.execution.cursor, `project:exec-run:${FLOWS.working}:ticket:03`);
 });
 
 test('Runs section still renders when there are no live workers, while Home stays unchanged', async (t) => {

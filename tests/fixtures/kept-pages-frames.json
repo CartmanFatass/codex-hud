@@ -1,6 +1,6 @@
 {
   "home-80-en": [
-    " Home  Project  Control",
+    " Home  Project  Execution  Control",
     "Loading…",
     "",
     "",
@@ -42,7 +42,7 @@
     "                                                                  v Jobs  ? help"
   ],
   "home-80-zh": [
-    " 首页  项目  控制",
+    " 首页  项目  执行  控制",
     "正在加载…",
     "",
     "",
@@ -380,15 +380,15 @@
     "[ ]     previous / next project",
     "⏎       Accept all: record all pending",
     "        slices",
+    "",
+    "Execution ────────────────────────────",
+    "[ ]     previous / next project",
     "g P H   Execution: peek/focus, pin",
     "        visible, or hide the job’s",
-    "        tab; ⏎ opens it",
-    "",
-    "Control ──────────────────────────────",
     "                                                                        Esc back"
   ],
   "home-120-en": [
-    " Home  Project  Control",
+    " Home  Project  Execution  Control",
     "Loading…",
     "",
     "",
@@ -430,7 +430,7 @@
     "                                                                                                          v Jobs  ? help"
   ],
   "home-120-zh": [
-    " 首页  项目  控制",
+    " 首页  项目  执行  控制",
     "正在加载…",
     "",
     "",
@@ -762,6 +762,9 @@
     "Project ──────────────────────────────────────────────────",
     "[ ]     previous / next project",
     "⏎       Accept all: record all pending slices",
+    "",
+    "Execution ────────────────────────────────────────────────",
+    "[ ]     previous / next project",
     "g P H   Execution: peek/focus, pin visible, or hide the",
     "        job’s tab; ⏎ opens it",
     "",
@@ -770,9 +773,6 @@
     "p       role: choose a preset by name",
     "N I     role: new draft, copied or empty",
     "R D     role: rename / delete the preset",
-    "i Del   place: add / remove; harness: add back / off",
-    "K J     place: move up / down",
-    "m       role/place: picker in this pane; one click or",
     "                                                                                                                Esc back"
   ],
   "settings-40-en": [

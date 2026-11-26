@@ -73,7 +73,7 @@ for (const lang of ['en', 'zh']) test(`Home cards: busy, quiet and short frames 
         assert.equal(cards.length, nCards);
         assert.deepEqual(todayLines(short, lang), spare >= 3 ? [summary] : []);
         assert.equal(scheduleItems(short).length, spare === 7 ? 3 : 0);
-        assert.match(stripAnsi(short.lines[0]), /\?1 ◉2/);
+        assert.match(stripAnsi(short.lines[0]), width === 40 && !zh ? /\?1/ : /\?1 ◉2/);
         if (spare === 1) assert.ok(plain(cards[0]).endsWith(zh ? '逾期 1 · 今天 1' : 'overdue 1 · today 1'));
       }
       const squeezed = busy.draw(busyData, width, fullPortfolio - 1);
@@ -89,25 +89,26 @@ test('due badge and row inks follow the shared calendar; done items disappear on
   const prev = setDisplayConfig({ theme: 'mocha', icons: 'nerd' }), prevLang = setLanguage('en');
   try {
     const data = await f.tick();
-    const frame = f.draw(data, 40);
+    const frame = f.draw(data, 50);
+    exact(f.draw(data, 40), 40);
     const find = (frame, id) => scheduleItems(frame).find(row => row.item.endsWith(`:${id}`));
     assert.ok(find(frame, 's1').text.includes(theme.board.attention('\uF06A')));
     assert.ok(find(frame, 's1').text.includes(theme.board.attention('2d late')));
     assert.ok(find(frame, 's2').text.includes(theme.board.active('\uF073')));
     assert.ok(frame.lines[0].includes(theme.board.attention('\uF0732')));
     assert.deepEqual(data.homePortfolio.requests.map(r => r.item.request), ['r1']);
-    const projectTab = f.draw(data, 40, 48, { ...initialMonitorState(), activeTab: 'project' });
+    const projectTab = f.draw(data, 50, 48, { ...initialMonitorState(), activeTab: 'project' });
     assert.ok(projectTab.lines[0].includes(theme.board.attention('\uF0732')));
     const doc = JSON.parse(fs.readFileSync(f.schedulePath, 'utf8'));
     doc.items[0].done_at = stamp();
     const moved = f.schedulePath + '.new';
     fs.writeFileSync(moved, JSON.stringify(doc));
     fs.renameSync(moved, f.schedulePath);
-    const changedData = await f.tick(), after = f.draw(changedData, 40);
+    const changedData = await f.tick(), after = f.draw(changedData, 50);
     assert.ok(after.lines[0].includes(theme.board.active('\uF0731')));
     assert.equal(find(after, 's1'), undefined);
     assert.ok(changedData.openSchedule.some(item => item.date === '2026-12'));
-    const monthEnd = f.draw(changedData, 40, 48, initialMonitorState(), Date.parse('2026-12-31T12:00:00Z'));
+    const monthEnd = f.draw(changedData, 50, 48, initialMonitorState(), Date.parse('2026-12-31T12:00:00Z'));
     assert.match(stripAnsi(monthEnd.lines[0]), /\uF0735/);
     assert.match(plain(find(monthEnd, 's4')), /12-\?\?.+today$/);
     assert.deepEqual(todayLines(monthEnd), ['Today 2 running'], 'a repaint on a new day omits stale history but still shows observed running jobs');
@@ -116,7 +117,7 @@ test('due badge and row inks follow the shared calendar; done items disappear on
     fs.writeFileSync(f.schedulePath, '{bad');
     const invalid = await f.tick();
     assert.equal(invalid.openSchedule, undefined);
-    assert.doesNotMatch(stripAnsi(f.draw(invalid, 40).lines[0]), /\uF073/);
+    assert.doesNotMatch(stripAnsi(f.draw(invalid, 50).lines[0]), /\uF073/);
   } finally { setDisplayConfig(prev); setLanguage(prevLang); }
 });
 

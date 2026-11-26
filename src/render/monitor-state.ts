@@ -19,15 +19,16 @@ export type JobTarget = Extract<WorkTarget, { kind: 'worker' }>;
 export interface InspectorState extends RowNav {
   kind: 'inspector';
   target: JobTarget;
-  /** Opened from the Project Execution page: it reads that project's jobs, and back returns there. */
+  /** Opened from the Execution tab: it reads that project's jobs, and back returns there. */
   from?: 'execution';
 }
 export interface JobsState extends RowNav { kind: 'jobs' }
 interface HomeTabState extends RowNav { othersExpanded?: boolean }
 export const initialHomeTab = (): HomeTabState => ({ scroll: 0 });
+export const initialExecutionTab = (): RowNav => ({ scroll: 0 });
 
-export type ProjectSubPage = 'execution' | 'progress' | 'tickets' | 'tree' | 'docs';
-export type ProjectView = { kind: 'projects-list' } | { kind: 'hub' } | { kind: 'execution' }
+export type ProjectSubPage = 'progress' | 'tickets' | 'tree' | 'docs';
+export type ProjectView = { kind: 'projects-list' } | { kind: 'hub' }
   | { kind: 'progress' }
   | { kind: 'tickets' } | { kind: 'tree' } | { kind: 'docs' } | { kind: 'waiting'; index: number; request: string };
 export interface ProjectTabState {
@@ -43,7 +44,7 @@ export const initialProjectTab = (): ProjectTabState => ({ view: { kind: 'hub' }
 export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | undefined => {
   switch (view.kind) {
     case 'hub': case 'projects-list': return undefined;
-    case 'execution': case 'progress': case 'tickets': case 'tree': case 'docs': case 'waiting': return view.kind;
+    case 'progress': case 'tickets': case 'tree': case 'docs': case 'waiting': return view.kind;
     default: return assertNever(view);
   }
 };
@@ -59,6 +60,7 @@ export interface MonitorState {
   home: HomeTabState;
   jobs: RowNav;
   project: ProjectTabState;
+  execution: RowNav;
   control: ControlTabState;
   exp: ExpFormState;
   overlay?: OverlayState;
@@ -180,6 +182,7 @@ export function switchProject(state: MonitorState, selectedProject?: string): Mo
   return { ...state, selectedProject, overlay: state.overlay?.kind === 'control-harness-add' ? state.overlay : undefined,
     project: { ...initialProjectTab(), view,
       nav: emptyNav(nav.cursor === 'project:switch' ? nav.cursor : undefined) },
+    execution: emptyNav(),
     control: { ...state.control, roles: initialControlView('roles'), notice: undefined } };
 }
 
@@ -252,9 +255,9 @@ export function acceptsMonitorInput(state: MonitorState | undefined, input: Work
   if (input.text === '/') return filterScope(state) !== undefined;
   return (input.text === 'g' || input.text === 'P' || input.text === 'H') && (state.subpage?.kind === 'inspector' || executionPageOpen(state));
 }
-/** The Execution page itself, with no Inspector over it. */
+/** The Execution tab itself, with no Inspector or Run Detail over it. */
 export const executionPageOpen = (state: MonitorState) =>
-  !state.subpage && state.activeTab === 'project' && state.project.view.kind === 'execution';
+  !state.subpage && state.activeTab === 'execution';
 
 /** Drop inert leading text. An admitted event can change the view or open an editor;
  * check the rest of the batch against each new state as it is applied. */

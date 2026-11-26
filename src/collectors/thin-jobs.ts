@@ -49,7 +49,7 @@ const artifactStoreFor = (idx: JobIndexCache, stores = artifactStores) => {
  * Whether the job works inside `root`: its own directory, the main checkout of the worktree HUD manages for it, or the
  * checkout its receipt names as the project (a Sonic child working in its parent's worktree has only that link).
  */
-function worksWithin(root: string, job: Record<string, unknown>, canonical: (path: string) => string): boolean {
+export function worksWithin(root: string, job: Record<string, unknown>, canonical: (path: string) => string): boolean {
   if (typeof job.cwd !== 'string') return false;
   const inside = (path: string) => {
     const rel = relative(root, canonical(path));

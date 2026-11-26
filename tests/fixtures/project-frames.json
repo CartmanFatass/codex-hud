@@ -1,6 +1,6 @@
 {
   "hub-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "",
     "demo-project ───────────────────────────",
     "  1m ago",
@@ -19,14 +19,14 @@
     "  ⚒ Build the Project tab            20m",
     "",
     "Details ────────────────────────────────",
-    "Execution 2 jobs",
     "Tickets   1/6 done · 3 features",
     "Progress  M3b · 2 working · 1 to do",
     "Worktree  synthetic-project · 6 changed",
+    "Docs      spec M3b · AI-THIN",
     "                          ⏎ open  ? help"
   ],
   "hub-80-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────",
     "  updated 1m ago",
@@ -43,16 +43,16 @@
     "  ⚒ Build the Project tab                                                    20m",
     "",
     "Details ────────────────────────────────────────────────────────────────────────",
-    "Execution  2 jobs",
     "Tickets    1/6 done · 3 features",
     "Progress   M3b · 2 working · 1 to do · 1 blocked",
     "Worktree   synthetic-project · 6 changed · 1 unlisted worktree · 2 worktrees",
     "Docs       spec M3b · AI-THIN · review 30m ago",
     "",
+    "",
     "                                                                  ⏎ open  ? help"
   ],
   "hub-120-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  updated 1m ago",
@@ -69,11 +69,11 @@
     "  ⚒ Build the Project tab                                                                                            20m",
     "",
     "Details ────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    "Execution  2 jobs",
     "Tickets    1/6 done · 3 features",
     "Progress   M3b · 2 working · 1 to do · 1 blocked",
     "Worktree   synthetic-project · 6 changed · 1 unlisted worktree · 2 worktrees",
     "Docs       spec M3b · AI-THIN · review 30m ago",
+    "",
     "",
     "                                                                                                          ⏎ open  ? help"
   ],
@@ -372,7 +372,7 @@
     "                                                                                                ⏎ open  Esc back  ? help"
   ],
   "control-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "demo-project ───────────────────────────",
     " Roles  Harnesses  Resources",
     "",
@@ -414,7 +414,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "control-120-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses  Resources",
     "",
@@ -456,7 +456,7 @@
     "    m model  c C preset  p presets  ⏎ chain  N copy  I empty  R rename  D delete  h harnesses  o file  r refresh  ? help"
   ],
   "hub-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "",
     "demo-project ───────────────────────────",
     "  1分前",
@@ -475,14 +475,14 @@
     "  ⚒ Build the Project tab           20分",
     "",
     "详情 ───────────────────────────────────",
-    "执行      2 个任务",
     "工单      1/6 完成 · 3 个功能",
     "进度      M3b · 2 进行中 · 1 待办",
     "工作区    synthetic-project · 6 项修改",
+    "文档      规范 M3b · AI-THIN",
     "                          ⏎ 打开  ? 帮助"
   ],
   "hub-80-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────",
     "  1分前更新",
@@ -499,16 +499,16 @@
     "  ⚒ Build the Project tab                                                   20分",
     "",
     "详情 ───────────────────────────────────────────────────────────────────────────",
-    "执行       2 个任务",
     "工单       1/6 完成 · 3 个功能",
     "进度       M3b · 2 进行中 · 1 待办 · 1 受阻",
     "工作区     synthetic-project · 6 项修改 · 1 个未登记工作树 · 2 个工作树",
     "文档       规范 M3b · AI-THIN · 复审 30分前",
     "",
+    "",
     "                                                                  ⏎ 打开  ? 帮助"
   ],
   "hub-120-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  1分前更新",
@@ -525,11 +525,11 @@
     "  ⚒ Build the Project tab                                                                                           20分",
     "",
     "详情 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    "执行       2 个任务",
     "工单       1/6 完成 · 3 个功能",
     "进度       M3b · 2 进行中 · 1 待办 · 1 受阻",
     "工作区     synthetic-project · 6 项修改 · 1 个未登记工作树 · 2 个工作树",
     "文档       规范 M3b · AI-THIN · 复审 30分前",
+    "",
     "",
     "                                                                                                          ⏎ 打开  ? 帮助"
   ],
@@ -828,7 +828,7 @@
     "                                                                                                ⏎ 打开  Esc 返回  ? 帮助"
   ],
   "control-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "demo-project ───────────────────────────",
     " 角色  宿主  资源",
     "",
@@ -870,7 +870,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "control-120-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主  资源",
     "",
@@ -1324,7 +1324,7 @@
     "      ⏎ open  Esc back  / filter  ? help"
   ],
   "hub-switch-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "",
     "second-project ─────────── ▾ project 2/3",
     "  1m ago",
@@ -1343,14 +1343,14 @@
     "  ⚒ Build the Project tab            20m",
     "",
     "Details ────────────────────────────────",
-    "Execution 2 jobs",
     "Tickets   1/6 done · 3 features",
     "Progress  M3b · 2 working · 1 to do",
     "Worktree  synthetic-project · 6 changed",
+    "Docs      spec M3b · AI-THIN",
     "             ⏎ open  [ ] project  ? help"
   ],
   "hub-switch-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "",
     "second-project ────────────── ▾ 项目 2/3",
     "  1分前",
@@ -1369,10 +1369,10 @@
     "  ⚒ Build the Project tab           20分",
     "",
     "详情 ───────────────────────────────────",
-    "执行      2 个任务",
     "工单      1/6 完成 · 3 个功能",
     "进度      M3b · 2 进行中 · 1 待办",
     "工作区    synthetic-project · 6 项修改",
+    "文档      规范 M3b · AI-THIN",
     "                ⏎ 打开  [ ] 项目  ? 帮助"
   ],
   "progress-switch-40-en": [
@@ -1390,7 +1390,7 @@
     "      ⏎ open  Esc back  / filter  ? help"
   ],
   "hub-rich-40-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·1  Control",
     "",
     "demo-project ───────────────────────────",
     "  1m ago",
@@ -1407,7 +1407,6 @@
     "  ⚒ Tidy the synthetic docs in the…   5m",
     "",
     "Details ────────────────────────────────",
-    "Execution 1 job",
     "Tickets   5/13 done · 3 features",
     "Progress  0.1.3 · 1 working · 1 to do",
     "Worktree  synthetic-project · 6 changed",
@@ -1429,10 +1428,11 @@
     "",
     "",
     "",
+    "",
     "                          ⏎ open  ? help"
   ],
   "hub-rich-40-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·1  控制",
     "",
     "demo-project ───────────────────────────",
     "  1分前",
@@ -1449,7 +1449,6 @@
     "  ⚒ Tidy the synthetic docs in the…  5分",
     "",
     "详情 ───────────────────────────────────",
-    "执行      1 个任务",
     "工单      5/13 完成 · 3 个功能",
     "进度      0.1.3 · 1 进行中 · 1 待办",
     "工作区    synthetic-project · 6 项修改",
@@ -1471,10 +1470,11 @@
     "",
     "",
     "",
+    "",
     "                          ⏎ 打开  ? 帮助"
   ],
   "hub-rich-40-20-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·1  Control",
     "",
     "demo-project ───────────────────────────",
     "  1m ago",
@@ -1491,12 +1491,12 @@
     "  ⚒ Tidy the synthetic docs in the…   5m",
     "",
     "Details ────────────────────────────────",
-    "Execution 1 job",
     "Tickets   5/13 done · 3 features",
+    "Progress  0.1.3 · 1 working · 1 to do",
     "                          ⏎ open  ? help"
   ],
   "hub-rich-40-16-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·1  Control",
     "",
     "demo-project ───────────────────────────",
     "  1m ago",
@@ -1514,7 +1514,7 @@
     "                          ⏎ open  ? help"
   ],
   "hub-rich-40-12-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·1  Control",
     "",
     "demo-project ───────────────────────────",
     "  1m ago",
@@ -1528,7 +1528,7 @@
     "                          ⏎ open  ? help"
   ],
   "hub-rich-120-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·1  Control",
     "",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  updated 1m ago",
@@ -1544,7 +1544,6 @@
     "  ⚒ Tidy the synthetic docs in the main checkout                                                                      5m",
     "",
     "Details ────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
-    "Execution  1 job",
     "Tickets    5/13 done · 3 features",
     "Progress   0.1.3 · 1 working · 1 to do · 1 blocked",
     "Worktree   synthetic-project · 6 changed · 2 worktrees",
@@ -1567,10 +1566,11 @@
     "",
     "",
     "",
+    "",
     "                                                                                                          ⏎ open  ? help"
   ],
   "control-rich-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "demo-project ───────────────────────────",
     " Roles  Harnesses  Resources",
     "",
@@ -1620,7 +1620,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "control-rich-120-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses  Resources",
     "",
@@ -1670,7 +1670,7 @@
     "                        m model  c C preset  p presets  ⏎ chain  N copy  I empty  h harnesses  o file  r refresh  ? help"
   ],
   "control-rich-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "demo-project ───────────────────────────",
     " 角色  宿主  资源",
     "",
@@ -1720,7 +1720,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "control-rich-120-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主  资源",
     "",
@@ -1770,7 +1770,7 @@
     "                                    m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "control-rich-open-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "demo-project ───────────────────────────",
     " Roles  Harnesses  Resources",
     "",
@@ -1828,7 +1828,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "control-chain-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "demo-project ───────────────────────────",
     " Roles  Harnesses  Resources",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1856,7 +1856,7 @@
     "        m model  x clear  ⏎ edit  ? help"
   ],
   "control-rich-open-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "demo-project ───────────────────────────",
     " 角色  宿主  资源",
     "",
@@ -1914,7 +1914,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "control-chain-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "demo-project ───────────────────────────",
     " 角色  宿主  资源",
     "  ✗ imp → agy gemini-4-hydrogen-high",
@@ -1942,7 +1942,7 @@
     "m 模型  x 清除  ⏎ 编辑  Esc 返回  ? 帮助"
   ],
   "control-rich-open-120-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses  Resources",
     "",
@@ -2000,7 +2000,7 @@
     "                        m model  c C preset  p presets  ⏎ chain  N copy  I empty  h harnesses  o file  r refresh  ? help"
   ],
   "control-rich-40-text": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "demo-project ---------------------------",
     " Roles  Harnesses  Resources",
     "",
@@ -2050,7 +2050,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "pick-grouped-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ pi's model (gpt-6.1-sol)",
@@ -2076,7 +2076,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-filter-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ grok▌                                5",
     "  ◉ xai/grok-4.7",
@@ -2098,7 +2098,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-long-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ maverick▌                            2",
     "    arena/meta-llama/llam…-128e-instruct",
@@ -2116,7 +2116,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-exhausted-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ openai/gpt-6.1-sol▌                  1",
     "›   openai/gpt-6.1-sol             ✗ 42m",
@@ -2134,7 +2134,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-unknown-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ grok-4.7                           ?",
@@ -2152,7 +2152,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-off-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   28",
     "› ◉ xai/grok-4.7                       ⊘",
@@ -2170,7 +2170,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-grouped-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ pi 自带模型（gpt-6.1-sol）",
@@ -2196,7 +2196,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-filter-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ grok▌                                5",
     "  ◉ xai/grok-4.7",
@@ -2218,7 +2218,7 @@
     "               ⏎ 设为  esc 清除  ^R 刷新"
   ],
   "pick-long-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ maverick▌                            2",
     "    arena/meta-llama/llam…-128e-instruct",
@@ -2236,7 +2236,7 @@
     "               ⏎ 设为  esc 清除  ^R 刷新"
   ],
   "pick-exhausted-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ openai/gpt-6.1-sol▌                  1",
     "›   openai/gpt-6.1-sol            ✗ 42分",
@@ -2254,7 +2254,7 @@
     "               ⏎ 设为  esc 清除  ^R 刷新"
   ],
   "pick-unknown-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ grok-4.7                           ?",
@@ -2272,7 +2272,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-off-40-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   28",
     "› ◉ xai/grok-4.7                       ⊘",
@@ -2290,7 +2290,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-no-match-40-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "imp #1 ──────────────────── [daily] · pi",
     "/ zz-new▌                              0",
     "No matching models",
@@ -2308,7 +2308,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-order-browse-40-en": [
-    " Home  Project ?2  Control              ",
+    " Home  Project ?2  Execution·2  Control ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   88",
     "› ◉ xai/grok-4.7                        ",
@@ -2334,7 +2334,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-order-filter-40-en": [
-    " Home  Project ?2  Control              ",
+    " Home  Project ?2  Execution·2  Control ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ grok▌                                8",
     "›   xai/grok-4.5                        ",
@@ -2360,7 +2360,7 @@
     "            ⏎ set  esc clear  ^R refresh"
   ],
   "pick-order-browse-40-zh": [
-    " 首页  项目 ?2  控制                    ",
+    " 首页  项目 ?2  执行·2  控制            ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   88",
     "› ◉ xai/grok-4.7                        ",
@@ -2386,7 +2386,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-order-filter-40-zh": [
-    " 首页  项目 ?2  控制                    ",
+    " 首页  项目 ?2  执行·2  控制            ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ grok▌                                8",
     "›   xai/grok-4.5                        ",
@@ -2412,7 +2412,7 @@
     "               ⏎ 设为  esc 清除  ^R 刷新"
   ],
   "pick-order-browse-120-en": [
-    " Home  Project ?2  Control                                                                                              ",
+    " Home  Project ?2  Execution·2  Control                                                                                 ",
     " Model · imp [daily] place #1 · pi                                                              88 models · list 2h old ",
     "/ ▌                                                                 88│ xai/grok-4.7                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -2438,7 +2438,7 @@
     "                                                                           ⏎ set  esc cancel  ^R refresh  type to filter"
   ],
   "pick-order-filter-120-en": [
-    " Home  Project ?2  Control                                                                                              ",
+    " Home  Project ?2  Execution·2  Control                                                                                 ",
     " Model · imp [daily] place #1 · pi                                                              88 models · list 2h old ",
     "/ grok▌                                                              8│ xai/grok-4.5                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -2464,7 +2464,7 @@
     "                                                                            ⏎ set  esc clear  ^R refresh  type to filter"
   ],
   "pick-order-browse-120-zh": [
-    " 首页  项目 ?2  控制                                                                                                    ",
+    " 首页  项目 ?2  执行·2  控制                                                                                            ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               88 个模型 · 列表 2小时前 ",
     "/ ▌                                                                 88│ xai/grok-4.7                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -2490,7 +2490,7 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "pick-order-filter-120-zh": [
-    " 首页  项目 ?2  控制                                                                                                    ",
+    " 首页  项目 ?2  执行·2  控制                                                                                            ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               88 个模型 · 列表 2小时前 ",
     "/ grok▌                                                              8│ xai/grok-4.5                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -2516,7 +2516,7 @@
     "                                                                                     ⏎ 设为  esc 清除  ^R 刷新  输入筛选"
   ],
   "pick-flat-claude-40-en": [
-    " Home  Project ?2  Control              ",
+    " Home  Project ?2  Execution·2  Control ",
     "oracle #1 ───────────── [fable] · claude",
     "/ ▌                                    4",
     "› ◉ fable                               ",
@@ -2542,7 +2542,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "pick-flat-claude-40-zh": [
-    " 首页  项目 ?2  控制                    ",
+    " 首页  项目 ?2  执行·2  控制            ",
     "oracle 第 1 位 ──────── [fable] · claude",
     "/ ▌                                    4",
     "› ◉ fable                               ",
@@ -2568,7 +2568,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "pick-flat-claude-120-en": [
-    " Home  Project ?2  Control                                                                                              ",
+    " Home  Project ?2  Execution·2  Control                                                                                 ",
     "oracle #1 ───────────────────────────────────────────────────────────────────────────────────────────── [fable] · claude",
     "/ ▌                                                                                                                    4",
     "› ◉ fable                                                                                                               ",
@@ -2594,7 +2594,7 @@
     "                                                                           ⏎ set  esc cancel  ^R refresh  type to filter"
   ],
   "pick-flat-claude-120-zh": [
-    " 首页  项目 ?2  控制                                                                                                    ",
+    " 首页  项目 ?2  执行·2  控制                                                                                            ",
     "oracle 第 1 位 ──────────────────────────────────────────────────────────────────────────────────────── [fable] · claude",
     "/ ▌                                                                                                                    4",
     "› ◉ fable                                                                                                               ",
@@ -2620,7 +2620,7 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "preset-row-40-split-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses  Resources",
     "",
@@ -2656,7 +2656,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "preset-list-40-split-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses  Resources",
     "imp ────────────────────── choose preset",
@@ -2681,7 +2681,7 @@
     "     type to filter  ⏎ apply  Esc cancel"
   ],
   "preset-delete-40-split-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses  Resources",
     "imp ────────────────────── delete preset",
@@ -2706,7 +2706,7 @@
     "                    ⏎ delete  Esc cancel"
   ],
   "preset-row-40-split-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "harbor-api ─────────────────────────────",
     " 角色  宿主  资源",
     "",
@@ -2742,7 +2742,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "preset-list-40-split-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "harbor-api ─────────────────────────────",
     " 角色  宿主  资源",
     "imp ─────────────────────────── 选择预设",
@@ -2767,7 +2767,7 @@
     "              输入筛选  ⏎ 应用  Esc 取消"
   ],
   "preset-delete-40-split-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "harbor-api ─────────────────────────────",
     " 角色  宿主  资源",
     "imp ─────────────────────────── 删除预设",
@@ -2792,7 +2792,7 @@
     "                        ⏎ 删除  Esc 取消"
   ],
   "preset-row-40-classic-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses  Resources",
     "",
@@ -2828,7 +2828,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "preset-list-40-classic-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses  Resources",
     "imp ────────────────────── choose preset",
@@ -2853,7 +2853,7 @@
     "     type to filter  ⏎ apply  Esc cancel"
   ],
   "preset-delete-40-classic-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses  Resources",
     "imp ────────────────────── delete preset",
@@ -2878,7 +2878,7 @@
     "                    ⏎ delete  Esc cancel"
   ],
   "preset-row-40-classic-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "harbor-api ─────────────────────────────",
     " 角色  宿主  资源",
     "",
@@ -2914,7 +2914,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "preset-list-40-classic-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "harbor-api ─────────────────────────────",
     " 角色  宿主  资源",
     "imp ─────────────────────────── 选择预设",
@@ -2939,7 +2939,7 @@
     "              输入筛选  ⏎ 应用  Esc 取消"
   ],
   "preset-delete-40-classic-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "harbor-api ─────────────────────────────",
     " 角色  宿主  资源",
     "imp ─────────────────────────── 删除预设",
@@ -2964,7 +2964,7 @@
     "                        ⏎ 删除  Esc 取消"
   ],
   "preset-switched-40-split-en": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "harbor-api ─────────────────────────────",
     " Roles  Harnesses  Resources",
     "✓ imp · preset applied",
@@ -3000,7 +3000,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "preset-switched-40-split-zh": [
-    " 首页  项目 ?2  控制",
+    " 首页  项目 ?2  执行·2  控制",
     "harbor-api ─────────────────────────────",
     " 角色  宿主  资源",
     "✓ imp · 已应用预设",
@@ -3036,7 +3036,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-row-40-split-en": [
-    " Home  Project ?2  Control              ",
+    " Home  Project ?2  Execution·2  Control ",
     "demo-project ───────────────────────────",
     " Roles  Harnesses  Resources            ",
     "                                        ",
@@ -3066,7 +3066,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "quick-model-picker-40-split-en": [
-    " Home  Project ?2  Control              ",
+    " Home  Project ?2  Execution·2  Control ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ xai/grok-4.7                        ",
@@ -3092,7 +3092,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "quick-model-saved-40-split-en": [
-    " Home  Project ?2  Control              ",
+    " Home  Project ?2  Execution·2  Control ",
     "demo-project ───────────────────────────",
     " Roles  Harnesses  Resources            ",
     "✓ imp #1 → xai/grok-4.7-fast            ",
@@ -3122,7 +3122,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "quick-model-row-40-split-zh": [
-    " 首页  项目 ?2  控制                    ",
+    " 首页  项目 ?2  执行·2  控制            ",
     "demo-project ───────────────────────────",
     " 角色  宿主  资源                       ",
     "                                        ",
@@ -3152,7 +3152,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-picker-40-split-zh": [
-    " 首页  项目 ?2  控制                    ",
+    " 首页  项目 ?2  执行·2  控制            ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ xai/grok-4.7                        ",
@@ -3178,7 +3178,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "quick-model-saved-40-split-zh": [
-    " 首页  项目 ?2  控制                    ",
+    " 首页  项目 ?2  执行·2  控制            ",
     "demo-project ───────────────────────────",
     " 角色  宿主  资源                       ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast       ",
@@ -3208,7 +3208,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-row-40-classic-en": [
-    " Home  Project ?2  Control              ",
+    " Home  Project ?2  Execution·2  Control ",
     "demo-project ───────────────────────────",
     " Roles  Harnesses  Resources            ",
     "                                        ",
@@ -3238,7 +3238,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "quick-model-picker-40-classic-en": [
-    " Home  Project ?2  Control              ",
+    " Home  Project ?2  Execution·2  Control ",
     "imp #1 ──────────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ xai/grok-4.7                        ",
@@ -3264,7 +3264,7 @@
     "           ⏎ set  esc cancel  ^R refresh"
   ],
   "quick-model-saved-40-classic-en": [
-    " Home  Project ?2  Control              ",
+    " Home  Project ?2  Execution·2  Control ",
     "demo-project ───────────────────────────",
     " Roles  Harnesses  Resources            ",
     "✓ imp #1 → xai/grok-4.7-fast            ",
@@ -3294,7 +3294,7 @@
     "  m model  c C preset  p presets  ? help"
   ],
   "quick-model-row-40-classic-zh": [
-    " 首页  项目 ?2  控制                    ",
+    " 首页  项目 ?2  执行·2  控制            ",
     "demo-project ───────────────────────────",
     " 角色  宿主  资源                       ",
     "                                        ",
@@ -3324,7 +3324,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-picker-40-classic-zh": [
-    " 首页  项目 ?2  控制                    ",
+    " 首页  项目 ?2  执行·2  控制            ",
     "imp 第 1 位 ─────────────── [daily] · pi",
     "/ ▌                                   31",
     "› ◉ xai/grok-4.7                        ",
@@ -3350,7 +3350,7 @@
     "               ⏎ 设为  esc 取消  ^R 刷新"
   ],
   "quick-model-saved-40-classic-zh": [
-    " 首页  项目 ?2  控制                    ",
+    " 首页  项目 ?2  执行·2  控制            ",
     "demo-project ───────────────────────────",
     " 角色  宿主  资源                       ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast       ",
@@ -3380,7 +3380,7 @@
     "      m 模型  c C 预设  p 选预设  ? 帮助"
   ],
   "quick-model-row-120-split-en": [
-    " Home  Project ?2  Control                                                                                              ",
+    " Home  Project ?2  Execution·2  Control                                                                                 ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses  Resources                                                                                            ",
     "                                                                                                                        ",
@@ -3410,7 +3410,7 @@
     "    m model  c C preset  p presets  ⏎ chain  N copy  I empty  R rename  D delete  h harnesses  o file  r refresh  ? help"
   ],
   "quick-model-picker-120-split-en": [
-    " Home  Project ?2  Control                                                                                              ",
+    " Home  Project ?2  Execution·2  Control                                                                                 ",
     " Model · imp [daily] place #1 · pi                                                              31 models · list 2h old ",
     "/ ▌                                                                 31│ xai/grok-4.7                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -3436,7 +3436,7 @@
     "                                                                           ⏎ set  esc cancel  ^R refresh  type to filter"
   ],
   "quick-model-saved-120-split-en": [
-    " Home  Project ?2  Control                                                                                              ",
+    " Home  Project ?2  Execution·2  Control                                                                                 ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses  Resources                                                                                            ",
     "✓ imp #1 → xai/grok-4.7-fast                                                                                            ",
@@ -3466,7 +3466,7 @@
     "    m model  c C preset  p presets  ⏎ chain  N copy  I empty  R rename  D delete  h harnesses  o file  r refresh  ? help"
   ],
   "quick-model-row-120-split-zh": [
-    " 首页  项目 ?2  控制                                                                                                    ",
+    " 首页  项目 ?2  执行·2  控制                                                                                            ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主  资源                                                                                                       ",
     "                                                                                                                        ",
@@ -3496,7 +3496,7 @@
     "                  m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  R 重命名  D 删除  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "quick-model-picker-120-split-zh": [
-    " 首页  项目 ?2  控制                                                                                                    ",
+    " 首页  项目 ?2  执行·2  控制                                                                                            ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               31 个模型 · 列表 2小时前 ",
     "/ ▌                                                                 31│ xai/grok-4.7                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -3522,7 +3522,7 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "quick-model-saved-120-split-zh": [
-    " 首页  项目 ?2  控制                                                                                                    ",
+    " 首页  项目 ?2  执行·2  控制                                                                                            ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主  资源                                                                                                       ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast                                                                                       ",
@@ -3552,7 +3552,7 @@
     "                  m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  R 重命名  D 删除  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "quick-model-row-120-classic-en": [
-    " Home  Project ?2  Control                                                                                              ",
+    " Home  Project ?2  Execution·2  Control                                                                                 ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses  Resources                                                                                            ",
     "                                                                                                                        ",
@@ -3582,7 +3582,7 @@
     "    m model  c C preset  p presets  ⏎ chain  N copy  I empty  R rename  D delete  h harnesses  o file  r refresh  ? help"
   ],
   "quick-model-picker-120-classic-en": [
-    " Home  Project ?2  Control                                                                                              ",
+    " Home  Project ?2  Execution·2  Control                                                                                 ",
     " Model · imp [daily] place #1 · pi                                                              31 models · list 2h old ",
     "/ ▌                                                                 31│ xai/grok-4.7                                    ",
     "    Model                               ctx   out think img  note     │ ─────────────────────────────────────────────── ",
@@ -3608,7 +3608,7 @@
     "                                                                           ⏎ set  esc cancel  ^R refresh  type to filter"
   ],
   "quick-model-saved-120-classic-en": [
-    " Home  Project ?2  Control                                                                                              ",
+    " Home  Project ?2  Execution·2  Control                                                                                 ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " Roles  Harnesses  Resources                                                                                            ",
     "✓ imp #1 → xai/grok-4.7-fast                                                                                            ",
@@ -3638,7 +3638,7 @@
     "    m model  c C preset  p presets  ⏎ chain  N copy  I empty  R rename  D delete  h harnesses  o file  r refresh  ? help"
   ],
   "quick-model-row-120-classic-zh": [
-    " 首页  项目 ?2  控制                                                                                                    ",
+    " 首页  项目 ?2  执行·2  控制                                                                                            ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主  资源                                                                                                       ",
     "                                                                                                                        ",
@@ -3668,7 +3668,7 @@
     "                  m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  R 重命名  D 删除  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "quick-model-picker-120-classic-zh": [
-    " 首页  项目 ?2  控制                                                                                                    ",
+    " 首页  项目 ?2  执行·2  控制                                                                                            ",
     " 模型 · imp [daily] 第 1 位 · pi                                                               31 个模型 · 列表 2小时前 ",
     "/ ▌                                                                 31│ xai/grok-4.7                                    ",
     "    模型                             上下文  输出 思考  图片 备注     │ ─────────────────────────────────────────────── ",
@@ -3694,7 +3694,7 @@
     "                                                                                     ⏎ 设为  esc 取消  ^R 刷新  输入筛选"
   ],
   "quick-model-saved-120-classic-zh": [
-    " 首页  项目 ?2  控制                                                                                                    ",
+    " 首页  项目 ?2  执行·2  控制                                                                                            ",
     "demo-project ───────────────────────────────────────────────────────────────────────────────────────────────────────────",
     " 角色  宿主  资源                                                                                                       ",
     "✓ imp 第 1 位 → xai/grok-4.7-fast                                                                                       ",
@@ -3724,7 +3724,7 @@
     "                  m 模型  c C 预设  p 选预设  ⏎ 备选链  N 复制  I 空白  R 重命名  D 删除  h 宿主  o 文件  r 刷新  ? 帮助"
   ],
   "hub-40-text": [
-    " Home  Project ?2  Control",
+    " Home  Project ?2  Execution·2  Control",
     "",
     "demo-project ---------------------------",
     "  1m ago",
@@ -3743,10 +3743,10 @@
     "  I Build the Project tab            20m",
     "",
     "Details --------------------------------",
-    "Execution 2 jobs",
     "Tickets   1/6 done · 3 features",
     "Progress  M3b · 2 working · 1 to do",
     "Worktree  synthetic-project · 6 changed",
+    "Docs      spec M3b · AI-THIN",
     "                          ⏎ open  ? help"
   ],
   "progress-40-text": [

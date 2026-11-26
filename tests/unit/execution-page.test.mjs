@@ -8,15 +8,16 @@ import { join, resolve } from 'node:path';
 import { executionJobs, fakeFork, tabPane, IDS, NOW, PANE } from '../fixtures/execution-page.mjs';
 import { viewFor, withState } from '../fixtures/state-helpers.mjs';
 import { PanelExecution } from '../../dist/panel/execution.js';
+import { countProjectLiveJobs } from '../../dist/collectors/execution.js';
 import { ScreenSampler, thumbnailLines } from '../../dist/collectors/execution-screens.js';
 import { focusJobTab, hideJobTab, pinJobTab } from '../../dist/cli/panel-pane.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
-import { stripAnsi, visualLength } from '../../dist/render/colors.js';
+import { stripAnsi, theme, visualLength } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
-import { encodePanelPlace } from '../../dist/utils/panel-reload.js';
+import { encodePanelPlace, readPanelPlace } from '../../dist/utils/panel-reload.js';
 
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 async function until(what, probe, ms = 10000) {
@@ -41,10 +42,10 @@ async function opened(t, f) {
   await until('both screens', () => execution.view(f.project)?.screens.size === 2);
   return execution;
 }
-const onExecution = (nav) => withState(initialMonitorState(), { activeTab: 'project', project: { view: viewFor('execution'), ...(nav && { nav }) } });
-function render(view, { state = onExecution(), width = 100, height = 80, lang = 'en', theme = 'none', icons = 'unicode', workboard } = {}) {
+const onExecution = (nav) => withState(initialMonitorState(), { activeTab: 'execution', ...(nav && { execution: nav }) });
+function render(view, { state = onExecution(), width = 100, height = 80, lang = 'en', theme = 'none', icons = 'unicode', workboard, projects, executionCount, homeWaiting, projectWaiting } = {}) {
   const display = setDisplayConfig({ theme, icons }), language = setLanguage(lang);
-  try { return renderMonitor({ state, width, height, nowMs: NOW, execution: view, workboard, projectName: 'demo-project' }); }
+  try { return renderMonitor({ state, width, height, nowMs: NOW, execution: view, executionCount, workboard, projects, homeWaiting, projectWaiting, projectName: 'demo-project' }); }
   finally { setDisplayConfig(display); setLanguage(language); }
 }
 const text = (frame) => frame.lines.map(stripAnsi).join('\n');
@@ -191,8 +192,8 @@ test('Enter opens the job’s Inspector and Esc returns; g, P and H peek, pin an
   };
 
   let state = render(view).state;
-  assert.match(text(render(view, { state })), /Esc back {2}g job tab {2}P pin tab {2}H hide tab {2}⏎ details/);
-  assert.match(text(render(view, { state, lang: 'zh' })), /Esc 返回 {2}g 任务页 {2}P 固定页 {2}H 隐藏页 {2}⏎ 详情/);
+  assert.match(text(render(view, { state })), /⏎ details {2}g job tab {2}P pin tab {2}H hide tab {2}\? help/);
+  assert.match(text(render(view, { state, lang: 'zh' })), /⏎ 详情 {2}g 任务页 {2}P 固定页 {2}H 隐藏页 {2}\? 帮助/);
   // g sends focus only: the hidden tab peeks and re-hides once focus leaves.
   assert.deepEqual(await act(state, 'g', 'reviewer', focusJobTab), [['tab.get', 'w4E:t4'], ['tab.focus', 'w4E:t4']]);
   assert.deepEqual([f.fork.panes.get('w4E:p4').hidden, f.fork.panes.get('w4E:p4').peek], [false, true]);
@@ -209,7 +210,7 @@ test('Enter opens the job’s Inspector and Esc returns; g, P and H peek, pin an
   assert.deepEqual([f.fork.panes.get('w4E:p4').hidden, f.fork.panes.get('w4E:p4').peek], [true, false]);
 
   state = press(state, 'j').state;
-  assert.equal(state.project.nav.cursor, cards('imp')[0]);
+  assert.equal(state.execution.cursor, cards('imp')[0]);
   assert.deepEqual(await act(state, 'g', 'imp', focusJobTab), [['tab.get', 'w4E:t3'], ['tab.focus', 'w4E:t3']]);
   assert.deepEqual([f.fork.panes.get('w4E:p3').hidden, f.fork.panes.get('w4E:p3').peek], [false, true]);
   assert.equal(f.fork.panes.get('w4E:p4').hidden, true, 'no other job’s tab moved');
@@ -233,8 +234,8 @@ test('Enter opens the job’s Inspector and Esc returns; g, P and H peek, pin an
   assert.deepEqual(press(inspector, 'H').action, { type: 'hide-job-tab', dir: f.dir('imp') });
   const back = press(inspector, '\x1b').state;
   assert.equal(back.subpage, undefined);
-  assert.equal(back.project.view.kind, 'execution');
-  assert.equal(back.project.nav.cursor, cards('imp')[0]);
+  assert.equal(back.activeTab, 'execution');
+  assert.equal(back.execution.cursor, cards('imp')[0]);
 
   // A headless or queued job has no tab: the keys do nothing and the footer does not offer them.
   for (const name of ['sonic', 'queued']) {
@@ -316,7 +317,131 @@ test('the live panel reads screens only with the page up, and its keys reach the
   child.stdin.write('\x1b');
   await until('sampling back on the page', () => reads() > before);
   await pause(100);
-  child.stdin.write('\x1b');
-  await quiet('no screens are read once the page is closed');
+  child.stdin.write('\t');
+  await quiet('no screens are read once the Execution tab is left');
   assert.equal(stderr, '');
+});
+
+test('Execution top tab shows live count at 40 and 62 columns (EN/ZH, no-colour & mocha), omits 0, keeps ?N badges, cycles 4 tabs and follows [ ] with Project', async (t) => {
+  const f = await setup(t), execution = await opened(t, f), view = execution.view(f.project);
+  const projects = [{ root: f.project, name: 'orchard' }, { root: '/synthetic/other', name: 'kiln' }];
+  const empty = { root: f.project, jobs: [], sessions: [], complete: true, screens: new Map() };
+  assert.equal(countProjectLiveJobs(f.hud, f.project), view.jobs.length, 'countProjectLiveJobs matches Execution live jobs');
+  assert.equal(countProjectLiveJobs(f.hud, '/synthetic/other'), 0);
+
+  for (const width of [40, 62]) for (const lang of ['en', 'zh']) {
+    const busy = render(view, { width, height: 30, lang, theme: 'none', projects });
+    for (const line of busy.lines) {
+      assert.equal(visualLength(line), width, `busy ${width} ${lang}: ${line}`);
+      assert.equal(line, stripAnsi(line), 'no-colour emits no ANSI');
+    }
+    assert.equal(
+      stripAnsi(busy.lines[0]).trim().replace(/ +/g, ' '),
+      lang === 'zh' ? '首页 项目 执行·5 控制' : 'Home Project Execution·5 Control',
+    );
+    assert.deepEqual(
+      busy.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).map((c) => c.kind),
+      ['board-home', 'board-project', 'board-execution', 'board-control'],
+    );
+    const foot = stripAnsi(busy.lines.at(-1)).trim();
+    if (width === 62) {
+      assert.equal(foot, lang === 'zh'
+        ? '⏎ 详情  [ ] 项目  g 任务页  P 固定页  H 隐藏页  ? 帮助'
+        : '⏎ details  [ ] project  g job tab  P pin tab  ? help');
+    } else {
+      assert.ok(foot.includes(lang === 'zh' ? '[ ] 项目' : '[ ] project'), `40-col footer has project switch: ${foot}`);
+      assert.ok(foot.endsWith(lang === 'zh' ? '? 帮助' : '? help'));
+    }
+
+    const idle = render(empty, { width, height: 20, lang, theme: 'none', projects });
+    for (const line of idle.lines) {
+      assert.equal(visualLength(line), width, `idle ${width} ${lang}: ${line}`);
+      assert.equal(line, stripAnsi(line));
+    }
+    assert.equal(
+      stripAnsi(idle.lines[0]).trim().replace(/ +/g, ' '),
+      lang === 'zh' ? '首页 项目 执行 控制' : 'Home Project Execution Control',
+    );
+
+    const coloured = render(view, { width, height: 20, lang, theme: 'mocha', projects });
+    for (const line of coloured.lines) assert.equal(visualLength(line), width, `mocha ${width} ${lang}`);
+  }
+
+  // Keep ?N request badges on Home and Project alongside Execution·N; inactive Execution paints N with board.active.
+  const prevDisplay = setDisplayConfig({ theme: 'mocha', icons: 'unicode' });
+  const prevLang = setLanguage('zh');
+  try {
+    const onProject = renderMonitor({
+      state: withState(initialMonitorState(), { activeTab: 'project' }),
+      width: 62, height: 20, nowMs: NOW, executionCount: 3, homeWaiting: [{ label: '', value: 'r1' }], projectWaiting: 2,
+    });
+    assert.equal(visualLength(onProject.lines[0]), 62);
+    assert.equal(stripAnsi(onProject.lines[0]).trim().replace(/ +/g, ' '), '首页 ?1 项目 ?2 执行·3 控制');
+    assert.ok(onProject.lines[0].includes(theme.board.active('3')));
+    setLanguage('en');
+    const onProjectEn = renderMonitor({
+      state: withState(initialMonitorState(), { activeTab: 'project' }),
+      width: 62, height: 20, nowMs: NOW, executionCount: 3, homeWaiting: [{ label: '', value: 'r1' }], projectWaiting: 2,
+    });
+    assert.equal(visualLength(onProjectEn.lines[0]), 62);
+    assert.equal(stripAnsi(onProjectEn.lines[0]).trim().replace(/ +/g, ' '), 'Home ?1 Project ?2 Execution·3 Control');
+    assert.ok(onProjectEn.lines[0].includes(theme.board.active('3')));
+  } finally {
+    setDisplayConfig(prevDisplay);
+    setLanguage(prevLang);
+  }
+
+  // [ ] switches project on both Execution and Project, keeping both tabs in step; Tab/arrows/click cycle 4 tabs.
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const step = (state, raw) => {
+    const frame = render(view, { state, width: 62, height: 24, projects });
+    const input = typeof raw === 'string' ? decoder.push(Buffer.from(raw))[0] : raw;
+    return handleMonitorInput(frame.state, input, { frame, nowMs: NOW }).state;
+  };
+  let state = step(onExecution(), 'j');
+  assert.equal(state.execution.cursor, cards('imp')[0]);
+  state = step(state, ']');
+  assert.equal(state.selectedProject, '/synthetic/other');
+  assert.equal(state.activeTab, 'execution');
+  assert.equal(state.execution.cursor, undefined, 'switching project resets Execution cursor');
+  // Shift-Tab to Project sees the same switched project.
+  state = step(state, '\x1b[Z');
+  assert.equal(state.activeTab, 'project');
+  assert.equal(state.selectedProject, '/synthetic/other');
+  // [ on Project switches back to the first project (undefined), and Tab to Execution stays in step.
+  state = step(state, '[');
+  assert.equal(state.selectedProject, undefined);
+  state = step(state, '\t');
+  assert.equal(state.activeTab, 'execution');
+  assert.equal(state.selectedProject, undefined);
+  // Click board-control, then board-execution.
+  const execFrame = render(view, { state, width: 62, height: 24, projects });
+  const ctrlBtn = execFrame.controls.find((c) => c.kind === 'board-control');
+  state = step(state, { type: 'mouse', button: 'left', x: ctrlBtn.x, y: ctrlBtn.y });
+  assert.equal(state.activeTab, 'control');
+  const execBtn = execFrame.controls.find((c) => c.kind === 'board-execution');
+  state = step(state, { type: 'mouse', button: 'left', x: execBtn.x, y: execBtn.y });
+  assert.equal(state.activeTab, 'execution');
+
+  // Reload preserves Execution tab + cursor and migrates legacy Project/execution to the Execution tab.
+  const prevReload = process.env.HUD_PANEL_RELOAD_PLACE;
+  t.after(() => {
+    if (prevReload === undefined) delete process.env.HUD_PANEL_RELOAD_PLACE;
+    else process.env.HUD_PANEL_RELOAD_PLACE = prevReload;
+  });
+  const saved = onExecution({ cursor: cards('imp')[0], scroll: 2 });
+  saved.selectedProject = '/synthetic/other';
+  process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: saved, settings: null });
+  const restored = readPanelPlace().state;
+  assert.equal(restored.activeTab, 'execution');
+  assert.equal(restored.selectedProject, '/synthetic/other');
+  assert.deepEqual([restored.execution.cursor, restored.execution.scroll], [cards('imp')[0], 2]);
+  process.env.HUD_PANEL_RELOAD_PLACE = JSON.stringify({
+    schemaVersion: 2,
+    stateV2: { activeTab: 'project', project: { view: { kind: 'execution' }, nav: { cursor: cards('imp')[0], scroll: 3 } } },
+  });
+  const migrated = readPanelPlace().state;
+  assert.equal(migrated.activeTab, 'execution');
+  assert.equal(migrated.project.view.kind, 'hub');
+  assert.deepEqual([migrated.execution.cursor, migrated.execution.scroll], [cards('imp')[0], 3]);
 });

@@ -57,7 +57,7 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
   const tries = new TryLog(home);
   const exportBoard = () => {
     const state = host.state;
-    const root = state.activeTab === 'project' || state.activeTab === 'control' ? host.shownRoot() : cwd;
+    const root = state.activeTab === 'project' || state.activeTab === 'execution' || state.activeTab === 'control' ? host.shownRoot() : cwd;
     void writeBoard({ cwd: root, hudHome: home, env: process.env, now: Date.now(), lang: language(), ...host.boardInput() })
       .then((file) => {
         openBoard(file, process.env);

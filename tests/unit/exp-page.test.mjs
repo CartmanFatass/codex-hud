@@ -83,9 +83,9 @@ test('Control Resources returns to its detail and cursor after visiting another 
   const f = fixture(t), expData = readExpData(f.env.HUD_HOME, f.env, NOW);
   const state = onResources({ exp: { detail: 'openai-api', cursor: 'calibration', scroll: 0 } });
   const before = draw(state, expData);
-  const project = draw(send(before, key('shift-tab')).state, expData);
-  assert.equal(project.state.activeTab, 'project');
-  const after = draw(send(project, key('tab')).state, expData);
+  const execution = draw(send(before, key('shift-tab')).state, expData);
+  assert.equal(execution.state.activeTab, 'execution');
+  const after = draw(send(execution, key('tab')).state, expData);
   assert.deepEqual(after.state.exp, before.state.exp);
   assert.deepEqual(after.lines, before.lines);
   const edit = send(after, key('enter'));
@@ -107,7 +107,7 @@ test('legacy Experiments settings add no tab; keyboard and mouse open Control Re
   const go = (input) => { frame = draw(send(frame, input).state, expData); };
   const press = (name) => go(key(name));
   assert.deepEqual(frame.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).map((c) => c.kind),
-    ['board-home', 'board-project', 'board-control']);
+    ['board-home', 'board-project', 'board-execution', 'board-control']);
   assert.equal(frame.expData, undefined);
   press('shift-tab');
   assert.equal(frame.state.activeTab, 'control');
@@ -377,7 +377,7 @@ test('40 columns in EN and ZH: Resources shows whole control labels, both ledger
         return plain(frame);
       };
       const overview = exact();
-      assert.match(overview, lang === 'en' ? /Home\s+Project\s+Control.*\n Roles\s+Harnesses\s+Resources/ : /首页\s+项目\s+控制.*\n 角色\s+宿主\s+资源/);
+      assert.match(overview, lang === 'en' ? /Home\s+Project\s+Execution\s+Control.*\n Roles\s+Harnesses\s+Resources/ : /首页\s+项目\s+执行\s+控制.*\n 角色\s+宿主\s+资源/);
       assert.match(overview, /^  Secondary wor?…[^…]+\) +(?:bar not seen yet|尚未见到原生栏)$/m);
       assert.match(overview, /anthropic-api\s+(on|开) · ≈\$7\.65\s+openai-api\s+(on|开) · ≈\$12\.75/);
       p.select('proxy-status');

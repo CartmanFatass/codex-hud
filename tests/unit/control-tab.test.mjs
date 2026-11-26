@@ -31,26 +31,30 @@ const tabClick = (frame, id) => {
   return { type: 'mouse', button: 'left', x: tab.x + tab.width - 1, y: tab.y };
 };
 
-test('Control is the third whole tab at 40 columns, with arrows, Tab, click and separate navigation', async (t) => {
+test('Control is the fourth whole tab at 40 columns, with arrows, Tab, click and separate navigation', async (t) => {
   const f = await fixture(t), data = richControl(f.data);
   for (const lang of ['en', 'zh']) {
     const draw = (state) => f.render(40, lang, state, 36, data, true, 'unicode', 'none', { projects: PROJECTS });
     let frame = draw(onPage(undefined, { selectedProject: PROJECTS[1].root, project: { nav: { cursor: 'project:page:docs' } } }));
-    const keys = ['home', 'project', 'control'];
+    const keys = ['home', 'project', 'execution', 'control'];
     assert.deepEqual(frame.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).map((c) => c.kind), keys.map((key) => `board-${key}`));
+    frame = draw(send(frame, 'tab').state);
+    assert.equal(frame.state.activeTab, 'execution');
     frame = draw(send(frame, 'tab').state);
     assert.equal(frame.state.activeTab, 'control');
     assert.equal(frame.state.selectedProject, PROJECTS[1].root);
-    assert.match(plain(frame)[0], lang === 'zh' ? /首页.*项目.*控制/ : /Home.*Project.*Control/);
+    assert.match(plain(frame)[0], lang === 'zh' ? /首页.*项目.*执行.*控制/ : /Home.*Project.*Execution.*Control/);
     const decoder = new WorkbenchInputDecoder('workboard');
     for (const input of decoder.push(Buffer.from('1234567890'))) assert.equal(send(frame, input).state.activeTab, 'control');
     assert.equal(tabState(send(frame, 'filter').state)?.filter?.editing, undefined, 'the Home filter is not a Control view');
     assert.deepEqual(send(frame, 'export-board').action, { type: 'export-board' });
     assert.ok(frame.lines.every((line) => visualLength(line) === 40));
     assert.equal(send(frame, 'right').state.activeTab, 'home');
-    assert.equal(send(frame, 'shift-tab').state.activeTab, 'project');
+    assert.equal(send(frame, 'shift-tab').state.activeTab, 'execution');
     const ctrl = draw(send(frame, 'end').state);
-    const project = draw(send(ctrl, 'left').state);
+    const exec = draw(send(ctrl, 'left').state);
+    assert.equal(exec.state.activeTab, 'execution');
+    const project = draw(send(exec, 'left').state);
     assert.equal(project.state.project.nav.cursor, 'project:page:docs');
     const again = draw(send(project, tabClick(project, 'control')).state);
     assert.deepEqual(again.state.control.roles, ctrl.state.control.roles);
@@ -418,7 +422,7 @@ test('live panel: no discovery on Home or Project, Control reads only the displa
   await wait(() => calls().some(([mode, root]) => mode === true && root === other), 'other Project collected');
   assert.equal(count(), 0);
   const before = stdout.length;
-  child.stdin.write('\t'); // Control follows that Project root; the narrow read is held back
+  child.stdin.write('\t\t'); // Project -> Execution -> Control; Control follows that Project root; the narrow read is held back
   await wait(() => /Loading/.test(stripAnsi(stdout.slice(before))) && count() === 1, 'Control loading (discovery started)');
   assert.doesNotMatch(stripAnsi(stdout.slice(before)), /own-role|other-role/);
   f.put(gate, 'go');

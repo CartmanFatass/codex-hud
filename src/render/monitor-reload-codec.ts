@@ -27,13 +27,13 @@ function projectView(value: unknown): ProjectView {
   switch (kind) {
     case 'progress': return { kind };
     case 'waiting': return typeof request === 'string' ? { kind, index: offset(index) ?? -1, request } : { kind: 'hub' };
-    case 'projects-list': case 'execution': case 'tickets': case 'tree': case 'docs': return { kind };
+    case 'projects-list': case 'tickets': case 'tree': case 'docs': return { kind };
     default: return { kind: 'hub' };
   }
 }
 function savedPages(value: unknown) {
   const pages = fields(value);
-  return Object.fromEntries(['execution', 'progress', 'tickets', 'tree', 'docs'].flatMap((key) =>
+  return Object.fromEntries(['progress', 'tickets', 'tree', 'docs'].flatMap((key) =>
     object(pages[key]) ? [[key, rowPlace(pages[key])]] : []));
 }
 function inspectorPlace(value: unknown): InspectorState | undefined {
@@ -51,7 +51,7 @@ function expDetail(value: unknown): ExpDetail | undefined {
   if (value === 'anthropic-api' || value === 'openai-api' || value === 'codex-help' || value === 'proxy-status') return value;
 }
 function mainTab(value: unknown): MainTab {
-  return value === 'exp' ? 'control' : value === 'project' || value === 'control' ? value : 'home';
+  return value === 'exp' ? 'control' : value === 'project' || value === 'execution' || value === 'control' ? value : 'home';
 }
 
 /** Project only the live fields; old Split and card state is not restored. */
@@ -60,12 +60,15 @@ function projectReloadState(value: unknown) {
   const roles = fields(control.roles), harnesses = fields(control.harnesses), exp = fields(raw.exp), help = object(raw.help);
   const modelPrevious: Record<string, string> = Object.fromEntries(Object.entries(fields(control.modelPrevious))
     .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
-  const activeTab = mainTab(raw.activeTab);
+  const oldExecutionPage = raw.activeTab === 'project' && fields(project.view).kind === 'execution';
+  const activeTab = oldExecutionPage ? 'execution' as const : mainTab(raw.activeTab);
   return {
     activeTab, selectedProject: text(raw.selectedProject), subpage: activeTab === 'home' ? subpagePlace(raw.subpage) : undefined,
     help: help && { scroll: offset(help.scroll) }, home: { scroll: rowPlace(raw.home).scroll }, jobs: rowPlace(raw.jobs),
-    project: { view: projectView(project.view), fromProjectsList: project.fromProjectsList === true, nav: rowPlace(project.nav),
+    project: { view: projectView(project.view), fromProjectsList: !oldExecutionPage && project.fromProjectsList === true,
+      nav: oldExecutionPage ? rowPlace(undefined) : rowPlace(project.nav),
       savedPages: savedPages(project.savedPages), folded: strings(project.folded) ?? [], filterQuery: text(project.filterQuery) || undefined },
+    execution: rowPlace(oldExecutionPage ? project.nav : raw.execution),
     control: { subTab: raw.activeTab === 'exp' || control.subTab === 'resources' ? 'resources' as const
       : control.subTab === 'harnesses' ? 'harnesses' as const : 'roles' as const,
       roles: { nav: rowPlace(roles.nav), folded: strings(roles.folded) ?? [...CONTROL_FOLDS] },
@@ -80,12 +83,13 @@ export function serializeReloadState(state: MonitorState): ReloadStateV2 {
   return projectReloadState({ ...state, project: { ...state.project, filterQuery: filter?.editing === false ? filter.query : undefined } });
 }
 function hydrate(raw: ReloadStateV2): MonitorState {
-  const { project, control, exp, subpage } = raw;
+  const { project, execution, control, exp, subpage } = raw;
   const { filterQuery, ...projectPlace } = project;
   const nav = <P extends { cursor?: string }>(place: P) => ({ ...place, revealed: place.cursor });
   return { activeTab: raw.activeTab, selectedProject: raw.selectedProject,
     subpage: subpage && nav(subpage), help: raw.help, home: raw.home, jobs: nav(raw.jobs),
     project: { ...projectPlace, nav: nav(project.nav), folded: new Set(project.folded), filter: filterQuery ? { query: filterQuery, editing: false } : undefined },
+    execution: nav(execution),
     control: { subTab: control.subTab, modelPrevious: control.modelPrevious,
       roles: { nav: nav(control.roles.nav), folded: new Set(control.roles.folded) },
       harnesses: { nav: nav(control.harnesses.nav), folded: new Set(control.harnesses.folded) } },

@@ -13,8 +13,6 @@ import { boardRow, compactAge, itemRow, section, mark, minuteAge, pack, stateMar
 import { roleIcon } from './model-glyphs.js';
 import { projectOverviewRows, projectListRows } from './inbox-project.js';
 import { diffStatRows } from './diff-stat-rows.js';
-import { executionRows } from './execution-view.js';
-import type { ExecutionView } from '../collectors/execution.js';
 import { worktreeRows } from './monitor-panes.js';
 import type { WorktreesSnapshot } from '../collectors/worktrees.js';
 import { monitorText, fit, pair, flowLines, cutWords, clampClean, cutSentence, sentenceRows, tokenColumn } from './monitor-text.js';
@@ -25,11 +23,11 @@ export { barText, progressSegments, sliceInk } from './progress-bar.js';
 export { clampClean } from './monitor-text.js';
 const ticketTotalText = (data: ProjectSnapshot, text: string) =>
   data.ticketTotals?.partial ? `${t('Partial')} · ${text}` : text;
-export const PROJECT_PAGES = ['execution', 'progress', 'tickets', 'tree', 'docs'] as const;
+export const PROJECT_PAGES = ['progress', 'tickets', 'tree', 'docs'] as const;
 /** The hub's pages, and the page of one waiting item (`ProjectView.waiting`), which a row opens and the hub does not list. */
 export type ProjectPage = (typeof PROJECT_PAGES)[number] | 'waiting';
 export const PAGE_WORD: Record<ProjectPage, string> = {
-  execution: 'Execution', progress: 'Progress', tickets: 'Tickets', tree: 'Working tree', docs: 'Docs', waiting: 'Waiting',
+  progress: 'Progress', tickets: 'Tickets', tree: 'Working tree', docs: 'Docs', waiting: 'Waiting',
 };
 /** The open page; none, or a name this build does not know, is the hub. */
 export const projectPageOf = (state: MonitorState) => projectPage(state.project.view);
@@ -60,12 +58,6 @@ export function projectCrumb(page: ProjectPage, data: ProjectSnapshot | undefine
 }
 /** Details facts, most important first: callers drop whole facts that do not fit. */
 export function pageSummary(page: ProjectPage, data: ProjectSnapshot, now: number): string[] {
-  if (page === 'execution') {
-    const n = data.active.length;
-    const queued = data.active.filter((job) => job.state === 'queued').length, waiting = data.active.filter((job) => job.asking).length;
-    return parts(n && t(n === 1 ? '{n} job' : '{n} jobs', { n }), waiting && `${waiting} ${t('waiting')}`,
-      queued && `${queued} ${t('queued')}`);
-  }
   if (page === 'tickets') {
     const { accepted: done, dropped } = data.counts, total = data.ledger.length - dropped;
     return parts(total && t('{done}/{total} done', { done, total }),
@@ -524,14 +516,11 @@ export function objectiveRows(data: ProjectSnapshot, width: number, now: number,
 /** The Project tab: a hub of one summary row per page, or the page the panel has open. */
 export function projectRows(
   data: ProjectSnapshot | undefined, state: MonitorState, width: number, now: number,
-  board?: WorkboardSnapshot, name = '', projects: ProjectChoice[] = [], worktrees?: WorktreesSnapshot | null,
-  execution?: ExecutionView
+  board?: WorkboardSnapshot, name = '', projects: ProjectChoice[] = [], worktrees?: WorktreesSnapshot | null
 ): MonitorRow[] {
   const page = projectPageOf(state);
   // The list reads each project's own overview; the shown project's full snapshot is not needed for it.
   if (projectListOpen(state, projects)) return projectListRows(projects, width, now);
-  // Execution reads the project's job records, not its snapshot.
-  if (page === 'execution') return executionRows(execution, state.project.nav.cursor, width, now);
   if (!data) return [];
   return page ? pageRows(page, data, state, width, now, board, worktrees) : projectOverviewRows(data, state, width, now, name, projects);
 }

@@ -54,6 +54,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   switch (state.activeTab) {
     case 'home': break;
     case 'project': next.project = { ...state.project, nav: { ...state.project.nav } }; break;
+    case 'execution': next.execution = { ...state.execution }; break;
     case 'control': next.control = copyControlTab(state.control); break;
   }
   const result = (action?: MonitorOutcome['action']): MonitorOutcome => ({ state: next, close: false, action });
@@ -129,10 +130,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     cycleProject(key === 'project-next' ? 1 : -1);
     return result();
   }
-  // Project and Control share list navigation, but own their views and actions.
-  if (control || (main && next.activeTab === 'project')) {
+  // Project, Execution and Control share list navigation, but own their views and actions.
+  const execution = main && next.activeTab === 'execution';
+  if (control || execution || (main && next.activeTab === 'project')) {
     const view = control && next.control.subTab !== 'resources' ? next.control[next.control.subTab] : undefined;
-    const nav = view?.nav ?? next.project.nav, cursor = nav.cursor;
+    const nav = view?.nav ?? (execution ? next.execution : next.project.nav), cursor = nav.cursor;
     const select = (item?: string) => { nav.cursor = item; };
     const toggleFold = (id: string) => {
       const folded = new Set(view?.folded ?? next.project.folded);
@@ -256,13 +258,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       }
       return result();
     }
-    if (input.type === 'key' && (input.text === 'g' || input.text === 'P' || input.text === 'H') && !control && projectPageOf(next) === 'execution') {
+    if (input.type === 'key' && (input.text === 'g' || input.text === 'P' || input.text === 'H') && execution) {
       const job = rows[at]?.execJob;
       const type = input.text === 'g' ? 'focus-job-tab' : input.text === 'P' ? 'pin-job-tab' : 'hide-job-tab';
       return result(job?.tab ? { type, dir: job.dir } : undefined);
     }
     if (['enter', 'activate', 'open-session'].includes(key)) return result(activate(undefined, key === 'open-session'));
-    if ((key === 'project-prev' || key === 'project-next') && !listed) {
+    if ((key === 'project-prev' || key === 'project-next') && (execution || !listed)) {
       cycleProject(key === 'project-next' ? 1 : -1);
       return result();
     }
@@ -275,7 +277,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       if (key === 'reset') return result({ type: 'refresh-models' });
       return ['help', 'settings'].includes(key) ? null : result();
     }
-    if (key === 'escape' && (projectPageOf(next) || listed || (next.project.fromProjectsList && frame?.projects))) {
+    if (!execution && key === 'escape' && (projectPageOf(next) || listed || (next.project.fromProjectsList && frame?.projects))) {
       if (listed) showList(false);
       else if (projectPageOf(next)) goProject();
       else showList(true);

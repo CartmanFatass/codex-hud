@@ -10,7 +10,7 @@ import type { TodayFacts } from '../collectors/home-cards.js';
 import type { ScheduleItem } from '../collectors/schedule.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
-import { initialHomeTab, initialProjectTab, initialControlTab, type JobTarget, type MonitorState, type ObjectiveTarget } from './monitor-state.js';
+import { initialHomeTab, initialProjectTab, initialExecutionTab, initialControlTab, type JobTarget, type MonitorState, type ObjectiveTarget } from './monitor-state.js';
 import type { ExecutionView } from '../collectors/execution.js';
 export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
@@ -162,8 +162,10 @@ export interface MonitorData {
   width: number;
   height: number;
   worktrees?: WorktreesSnapshot | null;
-  /** Only while the Project Execution page is open. */
+  /** Only while the Execution tab (or Run Detail opened from it) is open. */
   execution?: ExecutionView;
+  /** Current project's live jobs (running, waiting, queued) for the Execution tab count. */
+  executionCount?: number;
   expData?: ExpData;
   nowMs?: number;
   error?: string | null;
@@ -205,7 +207,7 @@ export interface MonitorOutcome {
     | { type: 'export-board' };
 }
 export function initialMonitorState(): MonitorState {
-  return { activeTab: 'home', home: initialHomeTab(), project: initialProjectTab(), control: initialControlTab(),
+  return { activeTab: 'home', home: initialHomeTab(), project: initialProjectTab(), execution: initialExecutionTab(), control: initialControlTab(),
     jobs: { scroll: 0 }, exp: { scroll: 0 } };
 }
 export function renderMonitor(input: MonitorData): MonitorFrame {

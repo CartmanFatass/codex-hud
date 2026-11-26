@@ -9,10 +9,10 @@ const render = (state, extra = {}) => renderMonitor({ tree, state, width: 160, h
 const send = (frame, input) => handleMonitorInput(frame.state, input, { tree, frame, nowMs: 0, standalone: true });
 const key = (frame, key) => send(frame, { type: 'key', key });
 
-test('main tabs cycle Home → Project → Control; 5 does not switch and old Skills reloads onto Home', (t) => {
+test('main tabs cycle Home → Project → Execution → Control; 5 does not switch and old Skills reloads onto Home', (t) => {
   for (const [direction, order] of [
-    ['right', ['project', 'control', 'home']], ['tab', ['project', 'control', 'home']],
-    ['left', ['control', 'project', 'home']], ['shift-tab', ['control', 'project', 'home']],
+    ['right', ['project', 'execution', 'control', 'home']], ['tab', ['project', 'execution', 'control', 'home']],
+    ['left', ['control', 'execution', 'project', 'home']], ['shift-tab', ['control', 'execution', 'project', 'home']],
   ]) {
     let frame = render(initialMonitorState());
     for (const tab of order) {
@@ -21,7 +21,7 @@ test('main tabs cycle Home → Project → Control; 5 does not switch and old Sk
     }
   }
   const frame = render(initialMonitorState(), { width: 40 });
-  assert.deepEqual(frame.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).map((c) => c.kind), ['board-home', 'board-project', 'board-control']);
+  assert.deepEqual(frame.controls.filter((c) => c.y === 0 && c.kind.startsWith('board-')).map((c) => c.kind), ['board-home', 'board-project', 'board-execution', 'board-control']);
   const decoder = new WorkbenchInputDecoder('workboard');
   const five = send(frame, decoder.push(Buffer.from('5'))[0]);
   assert.equal(five.state.activeTab, 'home');
@@ -35,7 +35,7 @@ test('main tabs cycle Home → Project → Control; 5 does not switch and old Sk
   assert.equal(readPanelPlace().state.activeTab, 'home');
   const before = setLanguage('en');
   try {
-    const narrow = render(initialMonitorState(), { width: 24 });
-    assert.deepEqual(narrow.controls.filter((c) => c.y === 0).map((c) => c.kind), ['board-home', 'board-project', 'board-control']);
+    const narrow = render(initialMonitorState(), { width: 35 });
+    assert.deepEqual(narrow.controls.filter((c) => c.y === 0).map((c) => c.kind), ['board-home', 'board-project', 'board-execution', 'board-control']);
   } finally { setLanguage(before); }
 });
