@@ -138,3 +138,20 @@ export function projectList(hudHome: string, panelRoot: string): ListedProject[]
   }
   return out;
 }
+
+/** Registered project name matching `dir` (exact or enclosing registered root), else undefined. */
+export function registeredProjectName(hudHome: string, dir: string): string | undefined {
+  if (!dir) return undefined;
+  const projects = projectList(hudHome, dir);
+  if (!projects.length) return undefined;
+  const root = sharedRoot(dir);
+  const target = realDir(root) ?? resolve(root);
+  const exact = projects.find((p) => p.root === target);
+  if (exact) return exact.name;
+  let best: ListedProject | undefined;
+  for (const p of projects) {
+    const prefix = p.root.endsWith(sep) ? p.root : p.root + sep;
+    if (target.startsWith(prefix) && (!best || p.root.length > best.root.length)) best = p;
+  }
+  return best?.name;
+}

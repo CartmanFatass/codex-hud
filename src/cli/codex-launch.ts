@@ -11,6 +11,7 @@ import {
   probeHerdrPaneStrip,
   setPaneStrip,
 } from '../runtime/herdr-socket.js';
+import { reportMainPaneGroup } from '../runtime/pane-group.js';
 import { loadSettings } from '../settings.js';
 import { snapshotPath } from '../snapshot.js';
 import { BAR_RELOAD_EXIT_CODE, STRIP_LEASE_MS } from '../strip-bar.js';
@@ -328,6 +329,7 @@ export async function runCodexLaunch(
     }
   }
 
+  void reportMainPaneGroup(cwd, childEnv, effectiveHudHome);
   const command = buildCodexCommand(codexPath, codexArgs, childEnv);
   const sessionStartSec = Math.floor(Date.now() / 1000);
   const codexChild = spawn(command[0], command.slice(1), {

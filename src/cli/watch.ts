@@ -12,6 +12,7 @@ import { collectSessionJobRows, watchJobsInBackground } from '../collectors/job-
 import { workflowEvents } from '../workflows/events.js';
 import { PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, recordPromptExpiry, registerWatcher, type NotifyResult } from '../roles/notify.js';
 import { watchHerdrPane } from '../runtime/herdr-socket.js';
+import { reportMainPaneGroup } from '../runtime/pane-group.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import type { HudIO } from './hud.js';
@@ -295,6 +296,7 @@ export async function watchCommand(
     return 1;
   }
   const home = getHudHome(io.env), tries = new TryLog(home), answers = new PanelActionLog(home);
+  if (callerPane) void reportMainPaneGroup(process.cwd(), io.env, home);
   // A sleeping mod resumes its two log readers at the last completed scan, not the new EOF.
   const modHandshake = mod && io.env.HUD_MOD_CURSOR !== undefined;
   let freshMod = mod;

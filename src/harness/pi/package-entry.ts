@@ -7,6 +7,7 @@ import { closePanelPane, panelPaneExists } from '../../cli/panel-pane.js';
 import { startSessionWatch } from '../../cli/watch.js';
 import { allowCouncil } from '../../roles/council-grant.js';
 import { herdrId } from '../../roles/herdr-run.js';
+import { reportMainPaneGroup } from '../../runtime/pane-group.js';
 import { collectResumeRefusal } from '../../collectors/job-snapshot.js';
 import { openPiPanel } from './package-native.js';
 import { createP10kFooter } from './p10k-footer.js';
@@ -158,6 +159,9 @@ export function installPiPackage(
     active = s;
     if (!current(s) || ticket !== epoch) return;
     const pane = env.HERDR_PANE_ID;
+    if (herdrId(pane) && env.HUD_JOB_DIR === undefined) {
+      void reportMainPaneGroup(ctx.cwd, env, binding.hudHome);
+    }
     if (mode === 'delegate' && herdrId(pane) && !env.HUD_JOB_DIR && typeof pi.sendMessage === 'function') {
       const { registerPiWatcher } = await import(new URL('../../../packages/hud-mcp/bin/hud-notify.mjs', import.meta.url).href);
       if (!current(s)) return;

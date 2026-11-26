@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { isHudHerdrFork, isHudHerdrVersion, probeHerdrTarget } from '../../dist/runtime/herdr-socket.js';
@@ -508,7 +508,13 @@ test('direct starts report sidebar titles and role tokens once, without touching
     assert.equal(entry.kind, kind);
     assert.equal(entry.name, `${res.job}-primary`);
     expected.push({ pane_id: entry.pane_id, source: 'hud', display_agent: title,
-      tokens: { hud_role: role, hud_ticket: ticket ?? null, hud_icon: icon } });
+      tokens: {
+        hud_role: role,
+        hud_ticket: ticket ?? null,
+        hud_icon: icon,
+        hud_group: basename(f.root),
+        ...(ticket ? { hud_subgroup: ticket.split('/')[0] } : pkg ? { hud_subgroup: pkg } : {}),
+      } });
   }
   await until(() => metadataTimedOut && reports().length >= expected.length, t.signal);
   assert.deepEqual(reports(), expected, 'one report per launched worker root; none to the main pane');

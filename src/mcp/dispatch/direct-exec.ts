@@ -1,6 +1,6 @@
 /** Shared herdr-hud direct-exec helpers for CLI and Pi tab launches. */
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setImmediate as defer, setTimeout as sleep } from 'node:timers/promises';
 import { readBarSettings } from '../../bar-settings.js';
@@ -10,13 +10,14 @@ import { resolveDisplayConfig } from '../../render/hud-config.js';
 import { roleIcon } from '../../render/model-glyphs.js';
 import { monitorText } from '../../render/monitor-text.js';
 import { herdrId, runHerdr } from '../../roles/herdr-run.js';
+import { registeredProjectName, sharedRoot } from '../../roles/projects.js';
 import { hasHerdrHiddenTabs, isHudHerdrFork, request as herdrRequest, type HerdrReply } from '../../runtime/herdr-socket.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { isValidPid } from '../../utils/proc.js';
 import { workerAlive } from '../cli-judge.js';
 import type { Job, JobStatus, SessionReceipt } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
-import { jobCache, readCachedStatus, slice, writeCreateStatus } from '../store/job-store.js';
+import { findJob, hudHome, jobCache, readCachedStatus, slice, writeCreateStatus } from '../store/job-store.js';
 import { ensureWatcher, launchError, launchFailure, type DispatchResult } from './proc.js';
 
 export interface DirectStartIdentity {
@@ -134,6 +135,60 @@ export async function startDirectAgent(
   return { ok: true, identity };
 }
 
+type SubgroupJob = Pick<Job, 'job' | 'role' | 'ticket' | 'package' | 'parent_job' | 'scout_only' | 'prewalk_kind'>;
+type GroupJob = SubgroupJob & Pick<Job, 'project_root' | 'worktree' | 'cwd'>;
+
+function cleanToken(value: string | undefined): string | undefined {
+  const text = value ? monitorText(value.replace(/\s+/g, ' ')).trim() : '';
+  return text || undefined;
+}
+
+/** Extract the `feature` slug from a `feature/NN` ticket reference. */
+export function ticketFeatureSlug(ticket: string | undefined): string | undefined {
+  return ticket ? /^([a-z0-9]+(?:-[a-z0-9]+)*)\/\d+$/.exec(ticket.trim())?.[1] : undefined;
+}
+
+/** Task subgroup for the herdr sidebar: ticket feature slug, else package label, else parent's subgroup for Sonic children and prewalk scouts. */
+export function workerSubgroup(
+  job: SubgroupJob,
+  findParent: (id: string) => SubgroupJob | null = findJob,
+  seen = new Set<string>()
+): string | undefined {
+  const feature = ticketFeatureSlug(job.ticket);
+  if (feature) return feature;
+  const pkg = cleanToken(job.package);
+  if (pkg) return pkg;
+  if (job.parent_job && (job.role === 'sonic' || job.scout_only === true || job.prewalk_kind !== undefined)) {
+    if (seen.has(job.parent_job) || seen.size >= 4) return undefined;
+    if (job.job) seen.add(job.job);
+    seen.add(job.parent_job);
+    const parent = findParent(job.parent_job);
+    if (parent) return workerSubgroup(parent, findParent, seen);
+  }
+  return undefined;
+}
+
+/** Sidebar tokens reported for a worker pane: role, ticket, icon, project group, and optional task subgroup. */
+export function workerMetadataTokens(
+  job: GroupJob,
+  icon: string,
+  opts: { hudHome?: string; findParent?: (id: string) => SubgroupJob | null } = {}
+): Record<string, string | null> {
+  const home = opts.hudHome ?? hudHome;
+  const root = job.project_root ?? job.worktree?.main_root ?? job.cwd;
+  const registered = root ? registeredProjectName(home, root) : undefined;
+  const fallbackRoot = !registered && root ? (job.project_root ?? job.worktree?.main_root ?? sharedRoot(root)) : undefined;
+  const group = cleanToken(registered ?? (fallbackRoot ? basename(fallbackRoot) || fallbackRoot : undefined));
+  const subgroup = workerSubgroup(job, opts.findParent ?? findJob);
+  return {
+    hud_role: job.role,
+    hud_ticket: job.ticket ?? null,
+    hud_icon: icon,
+    ...(group ? { hud_group: group } : {}),
+    ...(subgroup ? { hud_subgroup: subgroup } : {}),
+  };
+}
+
 /** Best-effort sidebar presentation, independent of the managed agent name and readiness. */
 export async function reportDirectWorkerMetadata(paneId: string, job: Job, dir: string): Promise<void> {
   const warn = (reason: unknown) => console.warn(`hud: pane.report_metadata failed for ${paneId}: ${reason}`);
@@ -151,7 +206,7 @@ export async function reportDirectWorkerMetadata(paneId: string, job: Job, dir: 
       pane_id: paneId,
       source: 'hud',
       display_agent: title ? truncateAnsi(monitorText(title.replace(/\s+/g, ' ')), 28) : undefined,
-      tokens: { hud_role: job.role, hud_ticket: job.ticket ?? null, hud_icon: icon },
+      tokens: workerMetadataTokens(job, icon),
     }, { timeoutMs: 500 });
     if (!reply?.result || reply.error) warn(reply?.error?.code ?? 'no response');
   } catch (error) {

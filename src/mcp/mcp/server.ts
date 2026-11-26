@@ -14,6 +14,7 @@ import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ow
 import { compactResult } from './result-text.js';
 import { resumeTicketEdits, stopTicketEdits, ticketEditWakeFailures } from '../ticket-edit-queue.js';
 import { ownStatuslineStrip } from '../../statusline-parity/strip.js';
+import { reportMainPaneGroup } from '../../runtime/pane-group.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
 import {
   resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, flowReceipt, tasks,
@@ -296,6 +297,7 @@ export function openRuntime() {
         if (!worker && !session.resumeRefusal) {
           session.cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
           resumeTicketEdits(hudHome);
+          void reportMainPaneGroup(process.cwd(), process.env, hudHome);
         }
         return;
       }
