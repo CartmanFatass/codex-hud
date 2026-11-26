@@ -1045,7 +1045,7 @@ test('hud-progress --done accepts a summary and repeated file paths without chan
 function runAsk(env, args) {
   return new Promise((done, reject) => {
     const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-ask.mjs'), ...args], {
-      env: { ...process.env, PATH: env.PATH, FAKE_LOG: env.FAKE_LOG, HOME: env.HOME, HUD_HOME: env.HUD_HOME },
+      env: { ...process.env, PATH: env.PATH, FAKE_LOG: env.FAKE_LOG, HOME: env.HOME, HUD_HOME: env.HUD_HOME, HERDR_SOCKET_PATH: env.HERDR_SOCKET_PATH },
     });
     let stdout = '',
       stderr = '';
@@ -1125,6 +1125,7 @@ test(
 
 test('hud-ask prints the default when no answer arrives', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
+  await f.startCliSocket();
   const id = 'j00000000000000a2',
     dir = join(f.env.HUD_HOME, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });

@@ -101,7 +101,7 @@ export async function workerTools(
             });
             const timeoutMs = parseAskTimeoutSeconds() * 1000;
             const requestId = tab.trackQuestion(ctx, published, Number.isSafeInteger(timeoutMs) ? timeoutMs : 1_200_000);
-            void notifyQuestion(dir, job, published, signal).catch(error => {
+            void notifyQuestion(dir, job, published, signal, true).catch(error => {
               console.error(`[hud-worker] ${requestId} notify failed: ${error}`);
             });
             return {

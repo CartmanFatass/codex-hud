@@ -185,7 +185,10 @@ A pane-scoped watch records `$HUD_HOME/watchers/<pane>.pid` while active.
 `hud_roster` and the first `hud_create` result in a session give a delivery hint for the caller's harness (or general guidance when the harness is unknown).
 Without an active MCP task or live watch, CLI and pi worker questions go directly to the Codex thread queue; other main sessions receive typed questions and can use `hud_wait` for settlement.
 Queue delivery uses the pane's Codex process `CODEX_HOME` (default `~/.codex`), not the MCP account.
-A missing thread id or any queue failure falls back to typing that line, which can touch a draft or fire prompt hooks.
+A missing thread id or a queue failure falls back to typing. When herdr advertises guarded prompts, typed notices require an idle agent, an empty prompt, the pane at the bottom of scrollback and a brief pause in keyboard input.
+A refusal writes nothing; the existing sender can retry without rerunning the Codex queue.
+Standalone `hud-ask` and `hud-notify` do not start a retry process, so a refused notice remains available through HUD reads.
+Older herdr servers that do not advertise the guard still use legacy typing, which can touch a draft or fire prompt hooks.
 Stale PIDs never suppress delivery.
 MCP `changes` stays the fuller, query-only stream; a `report` token always means unread.
 With live events, keep working until notified instead of polling or waiting.

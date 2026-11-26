@@ -53,7 +53,7 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
         if (!profile.readerNotices && Object.keys(run.notices).length && directRecipient(run) && !watching(run.pane, home)) for (const { line, marker } of noticeEvents(home, run)) {
           try {
             const sent = await notify(run.pane, line, home);
-            if (!sent.skipped && sent.status === 0) continue;
+            if (!sent.skipped && (sent.status === 0 || sent.uncertain)) continue;
           } catch { /* The watcher/MCP can still deliver this notice. */ }
           fs.rmSync(marker, { force: true });
         }

@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
+import { createServer } from 'node:net';
+import { createInterface } from 'node:readline';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { promisify } from 'node:util';
 import { main } from '../../dist/cli/hud-main.js';
 import { reapStubOptions } from '../helpers/reap-stub.mjs';
 import { watchingMod } from '../../dist/roles/notify.js';
@@ -13,6 +16,7 @@ import { appendPanelAction } from '../../dist/collectors/panel-actions.js';
 import { appendTry } from '../../dist/collectors/try-records.js';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { procStat } from '../../dist/mcp/cli-judge.js';
+import { notifyQuestion, publishQuestion } from '../../dist/worker/qa.js';
 import { archiveJob } from '../../dist/roles/job-archive.js';
 import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
 import { notify, watching } from '../../packages/hud-mcp/bin/hud-notify.mjs';
@@ -748,12 +752,16 @@ test('hud watch --all watches every pane and exits cleanly on help, usage errors
 
 test('CLI and pi question pushes use only watch while live, and fall back with missing or stale watcher PIDs', { timeout: 60000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-push-'));
-  let child, childExited;
-  cleanupFixture(t, { root: home }, () => child && stopChild(child, childExited, { killMs: 300 }));
+  let child, childExited, closeFork;
+  cleanupFixture(t, { root: home }, async () => {
+    if (child) await stopChild(child, childExited, { killMs: 300 });
+    await closeFork?.();
+  });
   const bin = join(home, 'bin'), log = join(home, 'pushes');
   fs.mkdirSync(bin);
   fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}\nimport fs from 'node:fs'; if (process.argv[2] === 'agent') fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`, { mode: 0o700 });
   const env = { ...process.env, HOME: home, HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1', PATH: `${bin}:${process.env.PATH}` };
+  await promptFork({ home, env, onCleanup: fn => { closeFork = fn; } }, () => legacyPong);
   const id = 'j0000000000000001';
   const dir = writeJob(home, id, 'w4E:p1', 'push', { state: 'working' });
   fs.writeFileSync(join(dir, 'SESSION.txt'), 'ORCH=w4E:p1\n');
@@ -762,28 +770,25 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
   const pidFile = join(home, 'watchers', 'w4E:p1.pid');
   await until(() => fs.existsSync(pidFile), t.signal);
   assert.equal(Number(fs.readFileSync(pidFile)), child.pid);
-  const pushBoth = () => {
-    const ask = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-ask.mjs'), '--dir', dir, '--question', 'Which layout?', '--default', 'rows', '--timeout', '0'], { env, encoding: 'utf8' });
-    assert.equal(ask.status, 0, ask.stderr);
-    const pi = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-notify.mjs'), home, 'w4E:p1', id, '[imp@demo] QUESTION q99: Which layout? | reply: write /synthetic/q99.answer.md'], { env, encoding: 'utf8' });
-    assert.equal(pi.status, 0, pi.stderr);
+  const pushBoth = async () => {
+    await runCli('hud-ask', ['--dir', dir, '--question', 'Which layout?', '--default', 'rows', '--timeout', '0'], env);
+    await runCli('hud-notify', [home, 'w4E:p1', id, '[imp@demo] QUESTION q99: Which layout? | reply: write /synthetic/q99.answer.md'], env);
   };
-  pushBoth();
+  await pushBoth();
   assert.equal(fs.existsSync(log), false);
   child.kill('SIGTERM');
   await childExited;
   assert.equal(fs.existsSync(pidFile), false);
   for (const pid of [null, 99999999, process.pid]) {
     if (pid !== null) fs.writeFileSync(pidFile, String(pid));
-    pushBoth();
+    await pushBoth();
   }
   const pushes = fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(pushes.length, 6);
   assert.ok(pushes.every((args) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === 'w4E:p1'));
   assert.match(pushes[1][3], /reply: hud_respond job=j0000000000000001 request_id=q99$/);
   writeJob(home, id, 'w4E:p1', 'push', { state: 'closed' }, true, 'j0000000000000002');
-  const done = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-notify.mjs'), home, 'w4E:p1', id, '[sonic@demo] DONE /synthetic/report.md'], { env, encoding: 'utf8' });
-  assert.equal(done.status, 0, done.stderr);
+  await runCli('hud-notify', [home, 'w4E:p1', id, '[sonic@demo] DONE /synthetic/report.md'], env);
   assert.equal(fs.readFileSync(log, 'utf8').trim().split('\n').length, 6, 'opt-in child DONE is also quiet');
 });
 
@@ -811,6 +816,7 @@ if (args[0] === 'pane' && args[1] === 'get') {
 `;
   for (const name of ['herdr', 'codex']) fs.writeFileSync(join(bin, name), fake, { mode: 0o700 });
   const env = { ...process.env, HOME: home, HUD_HOME: home, CODEX_HOME: join(home, 'wrong-account'), HERDR_PANE_ID: 'w4E:p1', PATH: `${bin}:${process.env.PATH}` };
+  delete env.HERDR_SOCKET_PATH; // This CLI-only fixture has no server unless the test starts one.
   const deliveries = () => {
     if (!fs.existsSync(log)) return [];
     const text = fs.readFileSync(log, 'utf8');
@@ -1153,6 +1159,7 @@ test('a live pi watcher suppresses fallback, but dead, reused and mismatched PID
   child.kill('SIGKILL');
   await exited;
   assert.equal(watching(pane, f.home), false);
+  await promptFork(f, () => legacyPong);
   assert.equal((await notify(pane, 'Synthetic question', f.home, { env: f.env })).status, 0);
   assert.deepEqual(f.deliveries().map((d) => d.args), [['agent', 'prompt', pane, 'Synthetic question']]);
 });
@@ -1162,15 +1169,14 @@ for (const [label, agent, thread, fail] of [
   ['queue failure types', 'codex', '00000000-0000-4000-8000-000000000001', true],
   ['no thread types', 'codex', null, false],
   ['other agents type', 'claude', null, false],
-]) test(`CLI and pi questions: ${label}`, (t) => {
+]) test(`CLI and pi questions: ${label}`, async (t) => {
   const f = queueFixture(t, agent, thread, fail), id = 'j0000000000000001';
+  await promptFork(f, () => legacyPong);
   const dir = writeJob(f.home, id, 'w4E:p1', 'queue', { state: 'working' });
   fs.writeFileSync(join(dir, 'SESSION.txt'), 'ORCH=w4E:p1\n');
-  const ask = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-ask.mjs'), '--dir', dir, '--question', 'Which layout?', '--default', 'rows', '--timeout', '0'], { env: f.env, encoding: 'utf8' });
-  assert.equal(ask.status, 0, ask.stderr);
+  const ask = await runCli('hud-ask', ['--dir', dir, '--question', 'Which layout?', '--default', 'rows', '--timeout', '0'], f.env);
   if (fail) assert.match(ask.stdout, /codex queue failed.*fell back to typing/);
-  const pi = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-notify.mjs'), f.home, 'w4E:p1', id, '[imp@demo] QUESTION q99: Which layout? | reply: write /synthetic/q99.answer.md'], { env: f.env, encoding: 'utf8' });
-  assert.equal(pi.status, 0, pi.stderr);
+  await runCli('hud-notify', [f.home, 'w4E:p1', id, '[imp@demo] QUESTION q99: Which layout? | reply: write /synthetic/q99.answer.md'], f.env);
   const all = f.deliveries(), queued = all.filter((d) => d.args[0] === 'queue'), typed = all.filter((d) => d.args[0] === 'agent');
   const usesQueue = agent === 'codex' && thread !== null;
   assert.equal(queued.length, usesQueue ? 2 : 0);
@@ -1245,6 +1251,7 @@ await setTimeout(3000);
 
 test('hud watch --queue typed fallback keeps running and exits after injectable empty idle interval', async (t) => {
   const f = queueFixture(t, 'codex', 'synthetic-thread', true);
+  await promptFork(f, () => legacyPong);
   const dir = writeJob(f.home, 'j0000000000000001', 'w4E:p1', 'fallback', { state: 'closed' }, true);
   const ac = new AbortController(), stdout = [], stderr = [];
   t.after(() => ac.abort());
@@ -1268,6 +1275,176 @@ test('hud watch --queue typed fallback keeps running and exits after injectable 
   assert.match(stderr.join(''), /codex queue failed.*fell back to typing/);
 });
 
+async function promptFork(f, respond) {
+  f.env.HERDR_SOCKET_PATH = join(f.home, 'fork.sock');
+  const sockets = new Set();
+  const server = createServer(socket => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+    const lines = createInterface({ input: socket });
+    lines.on('line', line => {
+      const { id, method, params } = JSON.parse(line);
+      const payload = respond(method, params, socket);
+      if (payload) socket.write(JSON.stringify({ id, ...payload }) + '\n');
+    });
+  });
+  server.listen(f.env.HERDR_SOCKET_PATH);
+  await once(server, 'listening');
+  f.onCleanup(async () => {
+    for (const socket of sockets) socket.destroy();
+    server.close();
+    await once(server, 'close');
+  });
+}
+
+const runCli = (name, args, env) => promisify(execFile)(process.execPath, [resolve(`packages/hud-mcp/bin/${name}.mjs`), ...args], { env });
+const legacyPong = { result: { type: 'pong', capabilities: {} } };
+const guardedPong = { result: { type: 'pong', capabilities: { guarded_prompt: true } } };
+const prompted = { result: { type: 'agent_prompted' } };
+
+test('advertised guard is required, but an older pong preserves the unguarded path', async (t) => {
+  const f = queueFixture(t, 'claude'), pane = f.env.HERDR_PANE_ID;
+  let ping = legacyPong;
+  let dropPrompt = false;
+  const prompts = [];
+  await promptFork(f, (method, params, socket) => {
+    if (method === 'ping') return ping;
+    assert.equal(method, 'agent.prompt');
+    prompts.push(params);
+    if (dropPrompt) { socket.end(); return; }
+    return prompted;
+  });
+  assert.equal((await notify(pane, 'Legacy notice', f.home, { env: f.env })).status, 0);
+  ping = guardedPong;
+  assert.equal((await notify(pane, 'Guarded notice', f.home, { env: f.env })).status, 0);
+  dropPrompt = true;
+  const lost = await notify(pane, 'Uncertain notice', f.home, { env: f.env });
+  assert.equal(lost.uncertain, true);
+  assert.equal(lost.retryPrompt, undefined);
+  ping = { error: { code: 'unavailable' } };
+  assert.ok((await notify(pane, 'Pending notice', f.home, { env: f.env })).retryPrompt);
+  assert.ok((await notify(pane, 'No socket', f.home, { env: { ...f.env, HERDR_SOCKET_PATH: '' } })).retryPrompt);
+  assert.deepEqual(f.deliveries().map(d => d.args), [['agent', 'prompt', pane, 'Legacy notice']]);
+  assert.deepEqual(prompts, [
+    { target: pane, text: 'Guarded notice', guarded: true },
+    { target: pane, text: 'Uncertain notice', guarded: true },
+  ]);
+});
+
+for (const [agent, refusal] of [
+  ['agy', 'not_ready'], ['codex', 'scrolled_back'], ['codex', 'recent_input'],
+  ['agy', 'draft_present'], ['codex', 'prompt_unknown'],
+]) test(`guarded ${agent} watch retries ${refusal} without a duplicate wake`, async (t) => {
+  const f = queueFixture(t, agent, 'synthetic-thread', true), pane = f.env.HERDR_PANE_ID;
+  const dir = writeJob(f.home, 'j0000000000000001', pane, 'guard', { state: 'working' });
+  fs.mkdirSync(join(dir, 'qa'));
+  fs.writeFileSync(join(dir, 'qa/q1.md'), 'Synthetic question.');
+  const sent = [], attempts = [], stderr = [], ac = new AbortController();
+  let subscribed, ready = false;
+  await promptFork(f, (method, params, socket) => {
+    if (method === 'ping') return guardedPong;
+    if (method === 'events.subscribe') { subscribed = socket; return { result: { type: 'subscription_started' } }; }
+    assert.equal(method, 'agent.prompt');
+    assert.deepEqual(params, { target: pane, text: params.text, guarded: true });
+    attempts.push(params.text);
+    if (!ready) return { error: { code: refusal } };
+    sent.push(params.text);
+    return prompted;
+  });
+  f.onCleanup(() => ac.abort());
+  const scans = observeStats(t, join(dir, 'STATUS.json'));
+  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => assert.fail(s), stderr: (s) => stderr.push(s) },
+    { signal: ac.signal, rescanMs: 30_000 });
+  await until(() => subscribed, t.signal);
+  assert.equal(attempts.length, 1);
+  assert.deepEqual(sent, []);
+  if (agent === 'agy') assert.equal(fs.existsSync(agyPending(f)), true);
+  ready = true;
+  if (refusal === 'prompt_unknown') writeFixtureFile(join(dir, 'qa/q2.md'), 'A second synthetic question.');
+  else if (refusal !== 'recent_input') subscribed.write(JSON.stringify({ event: 'pane.updated', data: { pane: { pane_id: pane } } }) + '\n');
+  await until(() => sent.length === 1 && subscribed.destroyed, t.signal);
+  const before = scans();
+  writeFixtureFile(join(f.home, 'tries.jsonl'), '');
+  await until(() => scans() > before, t.signal);
+  ac.abort();
+  assert.equal(await running, 0);
+  assert.deepEqual(attempts, [sent[0].split('\n')[0], sent[0]]);
+  assert.match(sent[0], /Synthetic question/);
+  if (refusal === 'prompt_unknown') assert.match(sent[0], /A second synthetic question/);
+  assert.deepEqual(f.deliveries().map(d => d.args[0]), agent === 'codex' ? ['queue'] : []);
+  assert.deepEqual(stderr, []);
+  if (agent === 'agy') assert.deepEqual(runAgyHook(f.env), {});
+});
+
+for (const end of ['timeout', 'pane exit']) test(`a pending Codex fallback stops on ${end}`, async (t) => {
+  const f = queueFixture(t, 'codex', 'synthetic-thread', true), pane = f.env.HERDR_PANE_ID;
+  const dir = writeJob(f.home, 'j0000000000000001', pane, 'guard', { state: 'working' });
+  fs.mkdirSync(join(dir, 'qa'));
+  fs.writeFileSync(join(dir, 'qa/q1.md'), 'Synthetic question.');
+  let subscription, attempts = 0;
+  const ac = new AbortController();
+  await promptFork(f, (method, _params, socket) => {
+    if (method === 'ping') return guardedPong;
+    if (method === 'events.subscribe') { subscription = socket; return { result: { type: 'subscription_started' } }; }
+    assert.equal(method, 'agent.prompt');
+    attempts++;
+    return { error: { code: 'draft_present' } };
+  });
+  f.onCleanup(() => ac.abort());
+  const now = performance.now.bind(performance);
+  let advance = 0;
+  t.mock.method(performance, 'now', () => now() + advance);
+  const running = watchCommand(['--queue'], { env: f.env, stdout: (s) => assert.fail(s), stderr: (s) => assert.fail(s) },
+    { signal: ac.signal, rescanMs: 30_000 });
+  await until(() => subscription, t.signal);
+  if (end === 'timeout') advance = 10 * 60_000;
+  const event = end === 'timeout' ? 'pane.scroll_changed' : 'pane.exited';
+  subscription.write(JSON.stringify({ event, data: { pane_id: pane } }) + '\n');
+  await until(() => subscription.destroyed, t.signal);
+  const log = join(f.home, 'watchers/typed-expiry.log');
+  if (end === 'timeout') {
+    assert.match(fs.readFileSync(log, 'utf8'), /pending typed notice expired/);
+    assert.equal(fs.statSync(log).mode & 0o777, 0o600);
+    ac.abort();
+  } else assert.equal(fs.existsSync(log), false);
+  assert.equal(await running, 0);
+  assert.equal(attempts, 1);
+  assert.deepEqual(f.deliveries().map(d => d.args[0]), ['queue']);
+});
+
+test('resident question sender coalesces notices while a guarded refusal is pending', async (t) => {
+  const f = queueFixture(t, 'pi'), pane = f.env.HERDR_PANE_ID;
+  const id = 'j0000000000000001', dir = writeJob(f.home, id, pane, 'question', { state: 'working' });
+  const job = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
+  const make = question => publishQuestion(join(dir, 'qa'), { question, default: 'Synthetic default.', tag: 'imp@demo' });
+  let subscription, ready = false;
+  const prompts = [];
+  await promptFork(f, (method, params, socket) => {
+    if (method === 'ping') return guardedPong;
+    if (method === 'events.subscribe') { subscription = socket; return { result: { type: 'subscription_started' } }; }
+    assert.equal(method, 'agent.prompt');
+    assert.equal(params.guarded, true);
+    prompts.push(params.text);
+    return ready ? prompted : { error: { code: 'draft_present' } };
+  });
+  for (const key of ['HERDR_SOCKET_PATH', 'PATH']) {
+    const original = process.env[key];
+    process.env[key] = f.env[key];
+    t.after(() => { if (original === undefined) delete process.env[key]; else process.env[key] = original; });
+  }
+  assert.equal(await notifyQuestion(dir, job, make('One-shot question.')), 'recorded for HUD reads');
+  assert.equal(await notifyQuestion(dir, job, make('First resident question.'), undefined, true), 'pending for guarded typing');
+  assert.equal(await notifyQuestion(dir, job, make('Latest resident question.'), undefined, true), 'pending for guarded typing');
+  await until(() => subscription, t.signal);
+  assert.equal(prompts.length, 2);
+  ready = true;
+  subscription.write(JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: pane, agent_status: 'idle' } }) + '\n');
+  await until(() => subscription.destroyed, t.signal);
+  assert.equal(prompts.length, 3);
+  assert.match(prompts[2], /Latest resident question/);
+  assert.deepEqual(f.deliveries(), []);
+});
+
 const agyHook = resolve('integrations/agy/pre-invocation.sh');
 const agyPayload = JSON.stringify({ conversationId: 'synthetic-main', cwd: '/synthetic', hookEventName: 'PreInvocation',
   invocationNum: 3, transcriptPath: '/synthetic/transcript', modelName: 'synthetic-model' });
@@ -1288,6 +1465,7 @@ function runAgyHook(env) {
 
 test('agy watcher types when idle, injects while working, and flushes pending on the idle rescan', async (t) => {
   const f = queueFixture(t, 'agy'), pane = f.env.HERDR_PANE_ID, file = agyPending(f);
+  await promptFork(f, () => legacyPong);
   const create = (n, name) => writeJob(f.home, `j${String(n).padStart(16, '0')}`, pane, name, { state: 'idle_grace' }, true);
   const ac = new AbortController(), stderr = [];
   t.after(() => ac.abort());
@@ -1322,6 +1500,7 @@ test('agy watcher types when idle, injects while working, and flushes pending on
 
 test('agy hook processes and the watcher racing an idle flush deliver each event once', async (t) => {
   const f = queueFixture(t, 'agy'), pane = f.env.HERDR_PANE_ID, file = agyPending(f);
+  await promptFork(f, () => legacyPong);
   const create = (n) => writeJob(f.home, `j${String(n).padStart(16, '0')}`, pane, `race-${n}`, { state: 'idle_grace' }, true);
   writeFixtureFile(f.statusFile, 'working');
   create(1);

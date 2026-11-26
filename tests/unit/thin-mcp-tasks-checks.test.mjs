@@ -161,6 +161,7 @@ test('mod-negotiated connection with no live watcher exposes hud_wait and per-ca
 
 test('MCP tasks: scoped panel decisions wake the pane without a worker task; a reconnect collects offline intents once', async (t) => {
   const f = await fixture(t), rpc = taskRpc(f.rpc), home = f.env.HUD_HOME;
+  await f.startCliSocket();
   const job = 'j1234567890abcdef', other = 'j1234567890abcdee';
   for (const [id, pane] of [[job, f.env.HERDR_PANE_ID], [other, 'other:p1']]) {
     const dir = join(home, 'jobs', id);

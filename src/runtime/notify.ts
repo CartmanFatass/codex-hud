@@ -26,5 +26,6 @@ export async function runNotifyCli() {
   const line = message.replace(/ \| reply: write .*$/, ` | reply: hud_respond job=${job} request_id=${message.match(/QUESTION (q\d+):/)?.[1] ?? ''}`);
   const result = await notify(pane, line);
   if (result.error) process.stderr.write(`${result.error.message}\n`);
-  process.exitCode = result.status ?? 1;
+  // A refusal leaves the published notice available through the ordinary HUD reads.
+  process.exitCode = result.retryPrompt ? 0 : (result.status ?? 1);
 }

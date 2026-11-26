@@ -309,9 +309,10 @@ async function pushBatchNotices() {
     for (const [id, item] of [...batchPending.entries()]) {
       if (!session.taskClient || session.resumeRefusal) break;
       try {
-        if ((await notify(callerPane, item.text, hudHome)).status === 0) {
+        const sent = await notify(callerPane, item.text, hudHome);
+        if (sent.status === 0 || sent.uncertain) {
           batchPending.delete(id);
-          recordBatchNotice(item, id, 'push');
+          if (!sent.uncertain) recordBatchNotice(item, id, 'push');
         }
       } catch { /* Retry on next tick or deliver via withChanges. */ }
     }

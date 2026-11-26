@@ -358,6 +358,7 @@ async function answerInitialQuestions(rpc, jobs) {
 
 test('MCP tasks: batch responses deliver per-job compact notices with check-wait, changes fallback and disconnect fallback', { timeout: 25000 }, async (t) => {
   const f = await fixture(t, true, '', 200);
+  await f.startCliSocket();
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
 
   const checkCmd = 'touch batch-check-started; while [[ ! -f release-batch-check ]]; do sleep .05; done';
@@ -427,6 +428,7 @@ test('MCP tasks: batch responses deliver per-job compact notices with check-wait
 
 test('MCP tasks: batch follow-up sends and answers carry on live batch tasks with one terminal notice', { timeout: 15000 }, async (t) => {
   const f = await fixture(t, true, '', 200);
+  await f.startCliSocket();
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
   const { jobs: [chain, asking] } = await f.call('hud_create', {
     jobs: [

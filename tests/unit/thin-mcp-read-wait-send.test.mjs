@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { constants } from 'node:os';
@@ -470,12 +470,13 @@ test('MCP adopts same-project orphan jobs in one scan and pushes questions to th
   assert.equal(ownerOf(live), 'wOTHER:p1');
   assert.equal(ownerOf(foreign), 'w4E:p8');
 
+  await f.startCliSocket();
   const ask = workerClient(t, f, adopted[0].dir, '0');
   const answer = await ask('hud_ask', { question: 'Which synthetic layout?', default: 'Rows.' });
   assert.equal(answer.isError, undefined, JSON.stringify(answer));
-  const pi = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-notify.mjs'), f.env.HUD_HOME, 'w4E:p8',
-    adopted[0].job, '[imp@demo] QUESTION q99: Another question'], { env: f.env, encoding: 'utf8' });
-  assert.equal(pi.status, 0, pi.stderr);
+  const pi = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-notify.mjs'), f.env.HUD_HOME, 'w4E:p8',
+    adopted[0].job, '[imp@demo] QUESTION q99: Another question'], { env: f.env, stdio: 'inherit' });
+  assert.deepEqual(await once(pi, 'close'), [0, null]);
   assert.deepEqual(f.commands().filter(({ args }) => args[0] === 'agent' && args[1] === 'prompt')
     .map(({ args }) => args[2]), ['w4E:p1', 'w4E:p1']);
 });

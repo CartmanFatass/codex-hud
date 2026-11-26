@@ -9,7 +9,7 @@ export interface HerdrReply {
     type?: string;
     version?: string;
     protocol?: number;
-    capabilities?: { hidden_tabs?: boolean };
+    capabilities?: { hidden_tabs?: boolean; guarded_prompt?: boolean };
     pane?: { pane_id: string; tab_id?: string; launch_id?: string; terminal_id?: string; label?: string };
     tab?: { tab_id: string; launch_id?: string; terminal_id?: string; label?: string; hidden?: boolean };
     root_pane?: { pane_id: string; tab_id?: string; launch_id?: string; terminal_id?: string };
@@ -102,6 +102,34 @@ export async function probeHerdrTarget(target: HerdrTarget, signal?: AbortSignal
   if (reply?.error) return reply.error.code === (left ? 'pane_not_found' : 'tab_not_found') ? 'absent' : 'unknown';
   const idMatched = left ? reply?.result?.pane?.pane_id : reply?.result?.tab?.tab_id;
   return idMatched === (left || tab) ? 'present' : 'unknown';
+}
+
+/** Change hints only, while a guarded notice is pending. Never read or retain the prompt contents. */
+export function watchHerdrPane(pane: string, env: NodeJS.ProcessEnv, changed: () => void, ended: () => void): () => void {
+  const path = env.HERDR_SOCKET_PATH;
+  if (!path) return () => {};
+  const socket = createConnection(path).unref();
+  const lines = createInterface({ input: socket });
+  const stop = () => { lines.close(); socket.destroy(); };
+  const subscriptions = [
+    { type: 'pane.agent_status_changed', pane_id: pane }, { type: 'pane.scroll_changed', pane_id: pane },
+    ...['pane.updated', 'pane.resized', 'pane.exited', 'pane.closed'].map(type => ({ type })),
+  ];
+  socket.on('connect', () => socket.write(JSON.stringify({ id: 'hud-prompt-retry', method: 'events.subscribe', params: { subscriptions } }) + '\n'));
+  lines.on('line', line => {
+    try {
+      const { event, data, error } = JSON.parse(line);
+      if (error?.code === 'pane_not_found') { ended(); return; }
+      if ((data?.pane_id ?? data?.pane?.pane_id) !== pane) return;
+      const kind = String(event).replaceAll('.', '_');
+      if (kind === 'pane_closed' || kind === 'pane_exited') ended();
+      else changed();
+    } catch { stop(); }
+  });
+  lines.on('error', stop);
+  socket.on('error', stop);
+  socket.on('close', stop);
+  return stop;
 }
 
 // Herdr subscription sockets cannot carry requests; each query gets its own connection.

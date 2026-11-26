@@ -10,7 +10,8 @@ import { getHudHome } from '../hud-home.js';
 import { watchJobChanges } from '../collectors/job-changes.js';
 import { collectSessionJobRows, watchJobsInBackground } from '../collectors/job-snapshot.js';
 import { workflowEvents } from '../workflows/events.js';
-import { registerWatcher } from '../roles/notify.js';
+import { PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, recordPromptExpiry, registerWatcher, type NotifyResult } from '../roles/notify.js';
+import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import type { HudIO } from './hud.js';
@@ -37,6 +38,11 @@ const NOTICE_MTIME_SLOP_MS = 10;
 function settlementWindow(env: NodeJS.ProcessEnv): number {
   const ms = Number(env.HUD_WATCH_SETTLEMENT_MS);
   return Number.isInteger(ms) && ms > 0 ? ms : SETTLEMENT_WINDOW_MS;
+}
+
+function joinPendingNotices(pending: string, incoming: string): string {
+  // If the coalesced notice would grow unbounded, keep the latest batch. The original records stay readable.
+  return Buffer.byteLength(pending) + Buffer.byteLength(incoming) < 16 * 1024 ? `${pending}\n${incoming}` : incoming;
 }
 
 const isBrokenPipe = (error: unknown): boolean => {
@@ -310,13 +316,25 @@ export async function watchCommand(
   const controller = new AbortController(), { signal } = controller;
   let idleSince: number | null = null;
   const notices = watchNotices(options.settlementWindowMs ?? settlementWindow(io.env));
-  const inputs = watchInputs(home, () => {
+  const inputs = watchInputs(home, changed);
+  function changed() {
     // A change during a scan is kept for the next wait, never lost until the rescan.
     dirty = true;
     if (wakeWait === undefined) return;
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(fire, Math.min(DEBOUNCE_MS, notices.delay));
-  });
+  }
+  let stopPaneWatch: (() => void) | undefined;
+  let retryAt = Infinity;
+  const waitForPrompt = () => {
+    retryAt = performance.now() + PROMPT_QUIET_MS;
+    stopPaneWatch ??= watchHerdrPane(callerPane!, io.env, changed, stop);
+  };
+  const noPendingPrompt = () => {
+    retryAt = Infinity;
+    stopPaneWatch?.();
+    stopPaneWatch = undefined;
+  };
 
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -355,7 +373,7 @@ export async function watchCommand(
       if (stopped) return resolve();
       wakeWait = resolve;
       inputs.attach();
-      timer = setTimeout(fire, Math.min(dirty ? DEBOUNCE_MS : rescanMs, notices.delay));
+      timer = setTimeout(fire, Math.min(dirty ? DEBOUNCE_MS : rescanMs, notices.delay, Math.max(0, retryAt - performance.now())));
     });
 
   const pidFile = !all && callerPane ? join(home, 'watchers', `${callerPane}.pid`) : null;
@@ -380,6 +398,8 @@ export async function watchCommand(
     let first = true, lastScanAt = -Infinity;
     let queueAgent: 'codex' | 'agy' | undefined;
     const agyBacklog: string[] = [];
+    let agyGuardUntil: number | undefined;
+    let typedPending: { retry: NonNullable<NotifyResult['retryPrompt']>; text: string; until: number } | undefined;
     while (!stopped) {
       if (!first) await wait();
       if (stopped) break;
@@ -408,7 +428,7 @@ export async function watchCommand(
       const band = readBand && await readBand(scanAt);
       if (band) await io.stdout(JSON.stringify(band) + '\n');
       if (queue || mod) {
-        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running')))) ||
+        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || typedPending !== undefined || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running')))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
@@ -429,13 +449,43 @@ export async function watchCommand(
         for (const batch of lines) for (const line of batch.split('\n')) agyBacklog.push(line);
         // A regular filesystem wake or safety rescan also flushes old events
         // when the caller returns to its prompt without any new job events.
+        if (!agyPending) agyGuardUntil = undefined;
+        if (agyGuardUntil && performance.now() >= agyGuardUntil) {
+          recordPromptExpiry(home);
+          agyGuardUntil = 0;
+        }
         if (!stopped && (agyBacklog.length || agyPending)) {
-          const sent = await delivery!.notifyAgy(callerPane, agyBacklog, home, io.env, pane, { signal });
+          // After expiry the ordinary PreInvocation hook can still claim the mailbox.
+          const sent = await delivery!.notifyAgy(callerPane, agyBacklog, home, io.env, agyGuardUntil === 0 ? null : pane, { signal });
           if (stopped) break;
           agyBacklog.splice(0, sent.accepted);
+          if (sent.guardPending) {
+            agyGuardUntil ??= performance.now() + PROMPT_RETRY_TTL_MS;
+            waitForPrompt();
+          } else noPendingPrompt();
           if (sent.status !== 0) io.stderr(`${sent.detail || sent.error?.message || 'Antigravity event delivery failed; will retry'}\n`);
-        }
+        } else noPendingPrompt();
         continue;
+      }
+      // One pending Codex fallback per pane. Never run the native queue again for it.
+      if (typedPending) {
+        if (performance.now() >= typedPending.until) {
+          recordPromptExpiry(home);
+          typedPending = undefined;
+          noPendingPrompt();
+        } else {
+          const incoming = lines.join('\n');
+          if (incoming) typedPending.text = joinPendingNotices(typedPending.text, incoming);
+          const sent = await typedPending.retry(typedPending.text, signal);
+          if (sent.retryPrompt) {
+            typedPending.retry = sent.retryPrompt;
+            waitForPrompt();
+          } else {
+            typedPending = undefined;
+            noPendingPrompt();
+          }
+          continue;
+        }
       }
       const batches = first && mod && lines.length ? [lines.join('\n')] : lines;
       for (const [i, line] of batches.entries()) {
@@ -444,6 +494,12 @@ export async function watchCommand(
           if (queue) {
             const sent = await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
             if (stopped) break;
+            if (sent.retryPrompt) {
+              const rest = batches.slice(i + 1).join('\n');
+              typedPending = { retry: sent.retryPrompt, text: rest ? joinPendingNotices(line, rest) : line, until: performance.now() + PROMPT_RETRY_TTL_MS };
+              waitForPrompt();
+              break;
+            }
             if (sent.detail?.includes('failed') || sent.status !== 0) io.stderr(`${sent.detail || 'event delivery failed'}\n`);
           } else if (mod) {
             // Checkpoint only after the whole scan's batch, and leave changes racing the scan eligible on reload.
@@ -464,6 +520,7 @@ export async function watchCommand(
     if (isBrokenPipe(error)) return 0;
     throw error;
   } finally {
+    noPendingPrompt();
     cleanup();
     process.off('exit', cleanup);
     process.off('SIGTERM', stop);

@@ -4,6 +4,7 @@ import { isProcAlive, isValidPid, procStat, readProcCmdline, readProcEnviron } f
 import { runHerdr, runCommand, type HerdrOutcome } from './herdr-run.js';
 import type { McpTaskMarker } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
+import { request } from '../runtime/herdr-socket.js';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -13,7 +14,11 @@ import { pushAgyEvents, type Delivery } from '../../packages/hud-mcp/bin/agy-eve
 
 export { hasAgyEvents } from '../../packages/hud-mcp/bin/agy-events.mjs';
 
-type NotifyResult = Delivery & { stdout?: string; stderr?: string; skipped?: boolean };
+export type NotifyResult = Delivery & {
+  stdout?: string; stderr?: string; skipped?: boolean;
+  retryPrompt?: (text: string, signal?: AbortSignal) => Promise<NotifyResult>;
+  uncertain?: true;
+};
 type Pane = { agent?: string; agent_status?: string; agent_session?: { kind?: string; value?: string } };
 type Options = { signal?: AbortSignal };
 
@@ -88,6 +93,40 @@ export async function paneInfo(pane: string | null, env = process.env, { signal 
 // blocked panes are not safe to type into.
 const agyIdle = (info: Pane | null) => info?.agent === 'agy' && (info.agent_status === 'idle' || info.agent_status === 'done');
 
+const guardRefusals = new Set(['not_ready', 'scrolled_back', 'recent_input', 'draft_present', 'prompt_unknown']);
+export const PROMPT_QUIET_MS = 3000; // Also the fork's default input_quiet_ms.
+export const PROMPT_RETRY_TTL_MS = 10 * 60_000;
+
+export function recordPromptExpiry(home: string) {
+  // Detached queue watchers have no stderr reader. Keep just the latest diagnostic, without notice text.
+  try { writePrivateFile(join(home, 'watchers', 'typed-expiry.log'), `${new Date().toISOString()} pending typed notice expired\n`); }
+  catch { /* Diagnostics must not prevent expiry. */ }
+}
+
+async function typeMainNotice(pane: string | null, text: string, env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<NotifyResult> {
+  const pending = (retryPrompt: NonNullable<NotifyResult['retryPrompt']>): NotifyResult => ({ status: 1, retry: true, retryPrompt });
+  const guarded = async (message: string, attemptSignal?: AbortSignal): Promise<NotifyResult> => {
+    const reply = await request('agent.prompt', { target: pane, text: message, guarded: true }, { env, signal: attemptSignal, timeoutMs: 20_000 });
+    if (reply?.error && guardRefusals.has(reply.error.code)) return pending(guarded);
+    if (!reply?.error && reply?.result?.type === 'agent_prompted') return { status: 0 };
+    // A lost/failed reply after submission does not prove that zero bytes were written.
+    return { status: 1, uncertain: true };
+  };
+  const reply = await request('ping', {}, { env, signal, timeoutMs: 500 });
+  if (reply?.error || reply?.result?.type !== 'pong') return pending((message, attemptSignal) => typeMainNotice(pane, message, env, attemptSignal));
+  if (reply.result.capabilities?.guarded_prompt === true) return guarded(text, signal);
+  const outcome = await runHerdr(['agent', 'prompt', pane!, text], env, { budgetMs: 20_000, killGraceMs: 500, signal });
+  const sent = deliveryResult(outcome);
+  if (sent.status !== 0) {
+    // Legacy Antigravity mailbox retries only failures known to precede input.
+    let code;
+    try { code = JSON.parse(sent.stdout!)?.error?.code; } catch { /* May be printed on stderr. */ }
+    code ??= /^(?:Error:\s*)?(agent_not_ready|agent_not_found)(?=[:\s]|$)/.exec(sent.stderr?.trim() ?? '')?.[1];
+    sent.retry = outcome.reason === 'unavailable' || code === 'agent_not_ready' || code === 'agent_not_found';
+  }
+  return sent;
+}
+
 export function notifyAgy(pane: string, messages: string[], home: string, env: NodeJS.ProcessEnv, info: Pane | null, { signal }: Options = {}) {
   return pushAgyEvents(pane, home, messages, env, writePrivateFile, agyIdle(info) ? async (text) => {
     // Another prompt may have started while this batch waited for the mailbox.
@@ -95,16 +134,8 @@ export function notifyAgy(pane: string, messages: string[], home: string, env: N
       return { status: 0, retry: true, detail: 'pending for Antigravity delivery' };
     }
 
-    const outcome = await runHerdr(['agent', 'prompt', pane, text], env, { budgetMs: 20_000, killGraceMs: 500, signal });
-    const sent = deliveryResult(outcome);
-    if (sent.status !== 0) {
-      // As with worker launch, retry only failures known to precede input.
-      let code;
-      try { code = JSON.parse(sent.stdout!)?.error?.code; } catch { /* May be printed on stderr. */ }
-      code ??= /^(?:Error:\s*)?(agent_not_ready|agent_not_found)(?=[:\s]|$)/.exec(sent.stderr?.trim() ?? '')?.[1];
-      sent.retry = outcome.reason === 'unavailable' || code === 'agent_not_ready' || code === 'agent_not_found';
-    }
-    return sent;
+    const sent = await typeMainNotice(pane, text, env, signal);
+    return sent.retryPrompt ? { status: 0, retry: true, guardPending: true, detail: 'pending for Antigravity delivery' } : sent;
   } : null);
 }
 
@@ -141,8 +172,8 @@ export async function notify(pane: string | null, message: string, home?: string
       detail = `codex queue failed (${String((error as Error).message).trim().slice(0, 200)}); fell back to typing`;
     }
   }
-  const typed = await runHerdr(['agent', 'prompt', pane!, message], env, { budgetMs: 20_000, killGraceMs: 500, signal });
-  return { ...deliveryResult(typed), ...(detail ? { detail } : {}) };
+  const typed = await typeMainNotice(pane, message, env, signal);
+  return { ...typed, ...(detail && !typed.retryPrompt ? { detail } : {}) };
 }
 
 export async function ensureQueueWatcher(pane: string | undefined, home: string) {

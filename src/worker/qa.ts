@@ -5,7 +5,8 @@ import type { Job } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { recordQuestionTimeout } from '../roles/job-archive.js';
 import { jobCallerPane } from '../roles/job-pane.js';
-import { notify, taskDelivery } from '../roles/notify.js';
+import { notify, recordPromptExpiry, taskDelivery, watching, PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, type NotifyResult } from '../roles/notify.js';
+import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
 
@@ -115,12 +116,54 @@ function readReceipt(dir: string, fallback: Job): Job {
   return fallback;
 }
 
+// Resident senders only. A newer question may replace a deferred notice; both
+// questions remain available in their job artifacts. No retry survives this process.
+type QuestionNotice = { text: string; needed: () => boolean };
+const pendingQuestions = new Map<string, { notice: QuestionNotice }>();
+
+function deferQuestion(pane: string, home: string, notice: QuestionNotice, retry: NonNullable<NotifyResult['retryPrompt']>) {
+  const pending = { notice };
+  pendingQuestions.set(pane, pending);
+  const until = performance.now() + PROMPT_RETRY_TTL_MS;
+  let timer: ReturnType<typeof setTimeout>;
+  let stopped = false, sending = false;
+  const stop = () => {
+    stopped = true;
+    clearTimeout(timer);
+    stopWatch();
+    pendingQuestions.delete(pane);
+  };
+  const schedule = (ms: number) => {
+    if (stopped || sending) return;
+    clearTimeout(timer);
+    timer = setTimeout(attempt, Math.min(ms, Math.max(0, until - performance.now()))).unref();
+  };
+  async function attempt() {
+    if (watching(pane, home) || !pending.notice.needed()) return stop();
+    if (performance.now() >= until) {
+      recordPromptExpiry(home);
+      return stop();
+    }
+    sending = true;
+    const current = pending.notice;
+    const result = await retry(current.text).catch(() => null);
+    sending = false;
+    if (stopped) return;
+    if (!result?.retryPrompt && pending.notice === current) return stop();
+    if (result?.retryPrompt) retry = result.retryPrompt;
+    schedule(PROMPT_QUIET_MS);
+  }
+  const stopWatch = watchHerdrPane(pane, process.env, () => schedule(50), stop);
+  schedule(PROMPT_QUIET_MS);
+}
+
 /** Deliver the question notice in-process (no shell/hud-notify spawn). */
 export async function notifyQuestion(
   dir: string,
   job: Job,
   published: PublishedQuestion,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  resident = false,
 ): Promise<string> {
   let pushed = 'not pushed (no --notify / --orchestrator)';
   // SESSION.txt describes the launch. The receipt can name a new main session after a handoff.
@@ -130,8 +173,23 @@ export async function notifyQuestion(
   else if (receipt.ticket_queue) pushed = 'handled by the ticket queue';
   else if (taskDelivery(dir, orch)) pushed = 'delivered by MCP task';
   else if (typeof orch === 'string' && orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
-    const ran = await notify(orch, questionLine(published, job), dirname(dirname(resolve(dir))), { signal });
+    const home = dirname(dirname(resolve(dir)));
+    const notice = { text: questionLine(published, job), needed: () => fs.existsSync(published.qfile) &&
+      readQuestionAnswer(published) === undefined && !taskDelivery(dir, orch) };
+    const pending = resident && pendingQuestions.get(orch);
+    if (pending) {
+      pending.notice = notice;
+      return 'pending for guarded typing';
+    }
+    const ran = await notify(orch, notice.text, home, { signal });
     signal?.throwIfAborted();
+    if (ran.retryPrompt) {
+      if (!resident) return 'recorded for HUD reads';
+      const existing = pendingQuestions.get(orch);
+      if (existing) existing.notice = notice;
+      else deferQuestion(orch, home, notice, ran.retryPrompt);
+      return 'pending for guarded typing';
+    }
     const detail = ran.error?.message ?? ((ran.stderr || ran.stdout || '').trim().slice(0, 200) || `exit ${ran.status}`);
     pushed = ran.skipped
       ? 'delivered by hud watch'

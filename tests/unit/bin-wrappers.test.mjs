@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
@@ -38,9 +40,14 @@ test('notify exports its library without running; CLI forwards the prompt and he
   for (const name of ['ensureQueueWatcher', 'hasAgyEvents', 'notify', 'notifyAgy', 'paneInfo', 'registerPiWatcher', 'taskDelivery', 'watching'])
     assert.equal(typeof api[name], 'function', name);
   fs.writeFileSync(join(root, 'herdr'), '#!/bin/sh\nif [ "$1" = agent ]; then printf "%s\\n" "$@" > "$CAPTURE"; fi\nexit 19\n', { mode: 0o700 });
-  const cli = spawnSync(process.execPath, [join(bin, 'hud-notify.mjs'), root, 'pane-1', 'synthetic', 'hello world'],
-    { env: { ...process.env, CAPTURE: capture, PATH: root }, encoding: 'utf8' });
-  assert.equal(cli.status, 19, cli.stderr);
+  const socket = join(root, 'herdr.sock');
+  const server = createServer(conn => conn.once('data', () => conn.end('{"result":{"type":"pong"}}\n')));
+  server.listen(socket);
+  await once(server, 'listening');
+  t.after(() => new Promise(done => server.close(done)));
+  const cli = spawn(process.execPath, [join(bin, 'hud-notify.mjs'), root, 'pane-1', 'synthetic', 'hello world'],
+    { env: { ...process.env, CAPTURE: capture, PATH: root, HERDR_SOCKET_PATH: socket }, stdio: 'inherit' });
+  assert.deepEqual(await once(cli, 'close'), [19, null]);
   assert.equal(fs.readFileSync(capture, 'utf8'), 'agent\nprompt\npane-1\nhello world\n');
 });
 

@@ -946,7 +946,10 @@ export async function syncPanelDelivery() {
       ownerDelivery = panelDelivery(hudHome, callerPane, cwd, id => {
         const job = findJob(id);
         return !!job && ownsJob(job) && matches(job);
-      }, async message => (await notify(callerPane, message, hudHome)).status === 0);
+      }, async message => {
+        const sent = await notify(callerPane, message, hudHome);
+        return sent.status === 0 || sent.uncertain === true;
+      });
     }
     ensureBatchTimer();
   } else {

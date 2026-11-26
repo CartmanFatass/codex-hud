@@ -1,6 +1,7 @@
 export interface Delivery {
   status: number | null;
   retry?: boolean;
+  guardPending?: boolean;
   detail?: string;
   error?: Error;
 }

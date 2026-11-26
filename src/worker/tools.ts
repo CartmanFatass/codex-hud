@@ -364,7 +364,7 @@ export async function callWorkerTool(name: string, args: Record<string, unknown>
     case 'hud_progress': return progress(context, string('message'));
     case 'hud_lease': return workerLease(context, args, signal);
     case 'hud_ask': return ask(context, { question: string('question'), default: string('default'), options: strings('options'),
-      context: args.context === undefined ? undefined : string('context') }, undefined, signal);
+      context: args.context === undefined ? undefined : string('context') }, undefined, signal, true);
     case 'hud_sonic':
       for (const key of ['preset', 'on', 'model', 'thinking'])
         if (args[key] !== undefined) throw new Error(`invalid_arguments: unexpected ${key}`);
@@ -436,13 +436,13 @@ export async function workerTools(cli = false) {
   ].filter(({ name }) => role !== 'sonic' || (name !== 'hud_sonic' && name !== 'hud_ask'));
 }
 
-export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: QuestionInput, timeoutRaw = process.env.HUD_ASK_TIMEOUT, signal?: AbortSignal) {
+export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: QuestionInput, timeoutRaw = process.env.HUD_ASK_TIMEOUT, signal?: AbortSignal, resident = false) {
   if (job.council) throw new Error('list open questions in your council report');
   if (job.role === 'sonic') throw new Error('sonic cannot ask questions');
   signal?.throwIfAborted();
   const qa = join(dir, jobFiles.qa);
   const published = publishQuestion(qa, { ...input, tag: questionTag(dir, job) });
-  const pushed = await notifyQuestion(dir, job, published, signal);
+  const pushed = await notifyQuestion(dir, job, published, signal, resident);
   if (job.headless) {
     if (job.cli) {
       capturePiTree(dir);
