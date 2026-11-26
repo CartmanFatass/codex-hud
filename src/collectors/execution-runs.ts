@@ -1,4 +1,4 @@
-/** Ticket-queue runs shown on the Project Execution page, read from flow headers alone. Off the paint path. */
+/** Ticket-queue runs shown on Execution, collected from flow headers and job state off the paint path. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { isFlowId, type LandFlow } from '../mcp/land-state.js';
@@ -18,8 +18,8 @@ import { headerScanner, type HeaderPass } from '../workflows/header-scan.js';
 import { runVisible } from '../workflows/scope.js';
 import type { OwnerWorker, WorkTarget } from './workboard-types.js';
 
-/** Ended runs stay listed for one hour, matching fixed-batch rows. */
-const ENDED_MS = 60 * 60_000;
+/** The retention window for Execution's Recently ended section (jobs and runs). */
+export const ENDED_MS = 24 * 60 * 60_000;
 const STEP_KEYS = ['tickets', 'review', 'accept'] as const;
 const STEP_STATES = new Set<RunStepState>(['waiting', 'running', 'asking', 'done', 'failed', 'skipped', 'cancelled']);
 const CLEAN_STATUS_STATES = new Set(['idle_grace', 'done', 'closed']);
@@ -51,6 +51,7 @@ export interface ExecutionRunTicket {
   readonly asking?: boolean;
   readonly holdTag?: string;
   readonly reason?: string;
+  readonly landingUnknown?: true;
   readonly execJob?: ExecutionRunJobTarget;
 }
 
@@ -61,6 +62,8 @@ export interface ExecutionRun {
   readonly state: TicketQueue['state'];
   readonly createdAt: number | null;
   readonly updatedAt: number | null;
+  readonly endedAt?: number;
+  readonly result?: 'failed' | 'landed' | 'not landed';
   readonly steps: readonly ExecutionRunStep[];
   readonly verdict?: string;
   readonly reason?: string;
@@ -132,37 +135,47 @@ function projectTicketItem(
     ...(execJob ? { execJob } : {}),
   };
 
+  if (item.failed) {
+    return { ...base, stage: 'failed', ...(item.failed.reason ? { reason: item.failed.reason } : {}) };
+  }
+  if (item.landed === true) return { ...base, stage: 'landed' };
   if (item.held) {
     const holdTag = holdTagOf(item.held);
     return { ...base, stage: 'held', ...(holdTag ? { holdTag } : {}), ...(item.held.reason ? { reason: item.held.reason } : {}) };
   }
-  if (item.failed) {
-    return { ...base, stage: 'failed', ...(item.failed.reason ? { reason: item.failed.reason } : {}) };
-  }
-  if (item.landed) return { ...base, stage: 'landed' };
 
-  // Inspect land flow header read-only via the same header scan pass (never mutate or trigger recovery).
-  const land = item.land && isFlowId(item.land) ? pass.header<LandFlow>(`${item.land}.json`) : null;
-  if (land) {
-    if (land.state === 'completed') return { ...base, stage: 'landed' };
-    if (land.state === 'failed') return { ...base, stage: 'failed', ...(land.error ? { reason: land.error } : {}) };
-    if (land.state === 'cancelled') return { ...base, stage: 'failed', reason: 'cancelled' };
-    return { ...base, stage: 'land-gate', ...(land.step ? { landStep: land.step } : {}) };
+  // Read the referenced land header, never the recovery-aware land API. A bad land record must not hide its run.
+  if (item.land) {
+    try {
+      const land = isFlowId(item.land) ? pass.header<LandFlow>(`${item.land}.json`) : null;
+      if (land?.flow === item.land && land.job === item.job && typeof land.step === 'string' && land.step.trim() &&
+          (land.landed_sha === undefined || (typeof land.landed_sha === 'string' && /^[\da-f]{7,64}$/i.test(land.landed_sha)))) {
+        if (land.state === 'failed') return { ...base, stage: 'failed', ...(typeof land.error === 'string' ? { reason: land.error } : {}) };
+        if (land.state === 'cancelled') return { ...base, stage: 'failed', reason: 'cancelled' };
+        if (land.state === 'completed' || land.state === 'queued' || land.state === 'running') {
+          if (land.landed_sha) return { ...base, stage: 'landed' };
+          if (land.publish_pending) return { ...base, stage: 'land-gate', landingUnknown: true };
+          if (land.state === 'completed') return { ...base, stage: 'settled' };
+          return { ...base, stage: 'land-gate', landStep: land.step };
+        }
+      }
+    } catch { /* The ticket is still known, but its land record is not. */ }
+    return { ...base, stage: 'land-gate', landingUnknown: true };
   }
-  if (worker?.flow?.kind === 'land') {
-    if (worker.flow.state === 'completed') return { ...base, stage: 'landed' };
+  if (!worker?.landingUnknown && worker?.flow?.kind === 'land') {
     if (worker.flow.state === 'failed') return { ...base, stage: 'failed', ...(worker.flow.error ? { reason: worker.flow.error } : {}) };
     if (worker.flow.state === 'cancelled') return { ...base, stage: 'failed', reason: 'cancelled' };
+    if (worker.flow.landedSha) return { ...base, stage: 'landed' };
+    if (worker.flow.state === 'completed') return { ...base, stage: 'settled' };
     return { ...base, stage: 'land-gate', ...(worker.flow.step ? { landStep: worker.flow.step } : {}) };
   }
-  if (item.land) return { ...base, stage: 'land-gate' };
 
   if (item.job) {
     if (worker) {
-      if (worker.state === 'failed' || worker.state === 'error' || worker.work?.failed) {
+      if (worker.state === 'failed' || worker.state === 'stopped' || worker.state === 'error' || worker.work?.failed) {
         return { ...base, stage: 'failed', ...(worker.work?.reason ? { reason: worker.work.reason } : {}) };
       }
-      if (worker.settledAt !== null) return { ...base, stage: 'settled' };
+      if (worker.settledAt !== null) return { ...base, stage: 'settled', ...(worker.landingUnknown ? { landingUnknown: true } : {}) };
       if (worker.state === 'queued') return { ...base, stage: 'queued' };
       const status = cache.readStatus<{ state?: unknown }>(item.job);
       const statusState = status.status === 'ok' ? status.value.state : undefined;
@@ -220,7 +233,13 @@ const STATE_RANK: Record<TicketQueue['state'], number> = {
   stopped: 2,
 };
 
-/** Paused runs first, then working, then recently ended (last hour), newest first within each. */
+function endedResult(tickets: readonly ExecutionRunTicket[]): ExecutionRun['result'] {
+  if (tickets.some((ticket) => ticket.stage === 'failed')) return 'failed';
+  if (tickets.some((ticket) => ticket.landingUnknown)) return undefined;
+  return tickets.length && tickets.every((ticket) => ticket.stage === 'landed') ? 'landed' : 'not landed';
+}
+
+/** Paused runs first, then working (newest starts first), then runs ended in the last 24 hours. */
 export function readExecutionRuns(
   home: string,
   scope: { root: string; pane: string | null },
@@ -233,19 +252,21 @@ export function readExecutionRuns(
     if (!file.endsWith('.json') || !isTicketQueueId(file.slice(0, -5))) return [];
     try {
       const q = pass.header<TicketQueue>(file);
-      if (!q || typeof q.flow !== 'string' || typeof q.state !== 'string') return [];
+      if (!q || `${q.flow}.json` !== file || !Object.hasOwn(STATE_RANK, q.state)) return [];
       const projectRoot = q.project_root ?? q.root;
       // Scope strictly to this project: pane-less unattended runs show for their project, foreign runs stay out.
       if (!projectRoot || !runVisible({ ...q, project_root: projectRoot }, null, scope.root)) return [];
       const open = isOpenTicketRun(q);
       const createdAt = parseTime(q.created_at);
       const updatedAt = parseTime(q.updated_at);
+      let endedAt: number | undefined;
       if (!open) {
         const mtime = fs.statSync(join(home, 'flows', file)).mtimeMs;
-        const endedAt = updatedAt !== null ? Math.min(updatedAt, mtime) : mtime;
-        if (now - endedAt > ENDED_MS) return [];
+        endedAt = updatedAt !== null ? Math.min(updatedAt, mtime) : mtime;
+        if (endedAt < now - ENDED_MS || endedAt > now) return [];
       }
       const tickets = projectTickets(home, q, pass, workers, cache);
+      const result = open ? undefined : endedResult(tickets);
       const heldCount = (q.tickets ?? []).filter((item) => item?.held).length + (q.held ? 1 : 0);
       const run: ExecutionRun = {
         flow: q.flow,
@@ -254,6 +275,8 @@ export function readExecutionRuns(
         state: q.state,
         createdAt,
         updatedAt,
+        ...(endedAt !== undefined ? { endedAt } : {}),
+        ...(result ? { result } : {}),
         steps: readSteps(q),
         ...(q.verdict ? { verdict: q.verdict } : {}),
         ...(q.reason ? { reason: q.reason } : {}),
@@ -271,6 +294,6 @@ export function readExecutionRuns(
   });
   return runs.sort((a, b) =>
     (STATE_RANK[a.state] ?? 2) - (STATE_RANK[b.state] ?? 2)
-    || (b.createdAt ?? 0) - (a.createdAt ?? 0)
+    || (b.endedAt ?? b.createdAt ?? 0) - (a.endedAt ?? a.createdAt ?? 0)
     || a.flow.localeCompare(b.flow));
 }

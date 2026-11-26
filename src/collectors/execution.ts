@@ -1,4 +1,4 @@
-/** The Execution tab's facts, derived from one project's job records: the live jobs, who started whom, and the panes to read. */
+/** The Execution tab's facts: live and recently ended work, delegation, and the panes to sample. */
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Job, PrewalkScoutKind } from '../mcp/job-contracts.js';
@@ -7,7 +7,7 @@ import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { herdrEndpoint } from '../runtime/herdr-socket.js';
 import type { ScreenTarget, ExecutionScreen } from './execution-screens.js';
-import { readExecutionRuns, type ExecutionRun } from './execution-runs.js';
+import { ENDED_MS, readExecutionRuns, type ExecutionRun } from './execution-runs.js';
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
 import { jobRow, worksWithin } from './thin-jobs.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
@@ -31,6 +31,13 @@ export interface ExecutionJob {
   /** A live headless job that has reported no progress: the newest lines of its output log. */
   readonly output?: HeadlessOutput;
 }
+export interface EndedExecutionJob {
+  readonly jobId: string;
+  readonly worker: OwnerWorker;
+  readonly dir: string;
+  readonly endedAt: number;
+  readonly result?: 'failed' | 'stopped' | 'landed' | 'not landed' | 'done';
+}
 export interface ExecutionNode { readonly job: ExecutionJob; readonly children: readonly ExecutionNode[] }
 export interface ExecutionSession {
   readonly harness?: string;
@@ -42,8 +49,10 @@ export interface ExecutionSession {
 }
 export interface ExecutionSnapshot {
   readonly root: string;
-  /** Ticket-queue runs of this project: paused and working, plus runs ended within the last hour. */
+  /** Ticket-queue runs of this project: paused and working, plus runs ended within the last 24 hours. */
   readonly runs?: readonly ExecutionRun[];
+  /** Ended jobs not represented by a run, newest settlements first. */
+  readonly endedJobs?: readonly EndedExecutionJob[];
   /** Running and waiting jobs: those asking first, then running, then queued; the oldest first within each. */
   readonly jobs: readonly ExecutionJob[];
   readonly sessions: readonly ExecutionSession[];
@@ -51,6 +60,7 @@ export interface ExecutionSnapshot {
 }
 export type ExecutionView = ExecutionSnapshot & { readonly screens: ReadonlyMap<string, ExecutionScreen> };
 
+const MAX_ENDED_JOBS = 200;
 const PHASE_ORDER: Record<ExecutionPhase, number> = { waiting: 0, running: 1, queued: 2, settled: 3 };
 const text = (value: unknown) => typeof value === 'string' && value ? value : undefined;
 const jobIdOf = (id: string | undefined) => id?.replace(/^thin-job:/, '');
@@ -85,12 +95,22 @@ export function countProjectLiveJobs(home: string, projectRoot: string): number 
   return count;
 }
 
-/** Reads receipts (cached by signature) only for the jobs the page shows. */
+function endedJobResult(worker: OwnerWorker, job: Partial<Job>): EndedExecutionJob['result'] {
+  if (worker.state === 'failed' || worker.state === 'stopped') return worker.state;
+  if (worker.landingUnknown || !job.job) return undefined;
+  if (worker.flow?.kind === 'land' && worker.flow.landedSha) return 'landed';
+  return job.worktree ? 'not landed' : 'done';
+}
+
+/** Uses the bounded, project-scoped job snapshot; reuses its workers for Inspector identity and land facts. */
 export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: { root: string; pane: string | null; env: NodeJS.ProcessEnv; complete: boolean }, now = Date.now()):
   { snapshot: ExecutionSnapshot; targets: ScreenTarget[] } {
   const cache = getJobIndexCache(home);
   const workers = new Map(board.workers.map((worker) => [jobIdOf(worker.id)!, worker]));
-  const runs = readExecutionRuns(home, { root: scope.root, pane: scope.pane }, workers, now);
+  let complete = scope.complete, runs: ExecutionRun[] = [];
+  try { runs = readExecutionRuns(home, { root: scope.root, pane: scope.pane }, workers, now); }
+  catch { complete = false; } // An unreadable flows directory does not hide the jobs we could read.
+  if (runs.some((run) => run.tickets.some((ticket) => ticket.landingUnknown))) complete = false;
   const receipts = new Map<string, Partial<Job>>();
   const receipt = (id: string) => {
     let job = receipts.get(id);
@@ -154,11 +174,27 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
       ...(output ? { output } : {}),
     }];
   }));
+  const runIds = new Set(runs.map((run) => run.flow));
+  const runJobs = new Set(runs.flatMap((run) => [
+    ...run.tickets.map((ticket) => ticket.jobId), ...run.reviews.map((review) => review.job), ...run.decisions.map((decision) => decision.job),
+  ]));
+  const recent = [...workers].flatMap(([jobId, worker]) => {
+    const endedAt = worker.settledAt;
+    return endedAt !== null && endedAt >= now - ENDED_MS && endedAt <= now && !runJobs.has(jobId) ? [{ jobId, worker, endedAt }] : [];
+  }).sort((a, b) => b.endedAt - a.endedAt || a.jobId.localeCompare(b.jobId));
+  const endedJobs: EndedExecutionJob[] = [];
+  for (const entry of recent) {
+    const { jobId, worker } = entry, job = receipt(jobId);
+    if ((job.ticket_queue && runIds.has(job.ticket_queue)) || (job.workflow && runIds.has(job.workflow))) continue;
+    if (endedJobs.length === MAX_ENDED_JOBS) { complete = false; break; }
+    endedJobs.push({ ...entry, dir: join(home, 'jobs', jobId), result: endedJobResult(worker, job) });
+  }
   const ordered = live.map((id) => jobs.get(id)!).sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase] || byStart(a, b));
   // Thumbnails follow the card order.
   const rank = new Map(ordered.map((job, i) => [job.jobId, i]));
   targets.sort((a, b) => rank.get(a.jobId)! - rank.get(b.jobId)!);
-  return { snapshot: { root: scope.root, ...(runs.length ? { runs } : {}), jobs: ordered, sessions: delegationTree(jobs, children, scope.pane), complete: scope.complete }, targets };
+  return { snapshot: { root: scope.root, ...(runs.length ? { runs } : {}), endedJobs, jobs: ordered,
+    sessions: delegationTree(jobs, children, scope.pane), complete }, targets };
 }
 
 /** Roots are the shown jobs with no shown parent, grouped by the main session that dispatched them. */

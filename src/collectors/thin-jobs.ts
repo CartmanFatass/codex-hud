@@ -599,7 +599,7 @@ function readLandFlow(idx: JobIndexCache, home: string, id: string, parse: (text
   const base = join(home, 'flows', `f${id.slice(1)}`);
   const read = (suffix: string) => {
     const row = idx.readJson(`${base}${suffix}.json`, { parse });
-    if (row.status === 'truncated' || row.status === 'error') onIncomplete();
+    if (row.status !== 'ok' && row.status !== 'missing') onIncomplete();
     return row;
   };
   let res = read('');
@@ -614,8 +614,11 @@ function readLandFlow(idx: JobIndexCache, home: string, id: string, parse: (text
   }
   const v = res.value;
   const state = typeof v.state === 'string' && LAND_STATES.has(v.state as WorkFlow['state']) ? (v.state as WorkFlow['state']) : null;
-  const step = word(v.step);
-  if (v.job !== id || !state || !step) return null;
+  const step = word(v.step), sha = word(v.landed_sha);
+  if (v.job !== id || !state || !step || (v.landed_sha !== undefined && (!sha || !/^[\da-f]{7,64}$/i.test(sha)))) {
+    onIncomplete();
+    return null;
+  }
   const config = v.config && typeof v.config === 'object' ? (v.config as Record<string, unknown>) : null;
   const push = config?.push === true;
   const keys: WorkFlowStep['key'][] = push ? ['gate', 'merge', 'push'] : ['gate', 'merge'];
@@ -641,7 +644,7 @@ function readLandFlow(idx: JobIndexCache, home: string, id: string, parse: (text
                 : 'active'
             : 'pending',
   }));
-  const sha = word(v.landed_sha);
+  if (!sha && v.publish_pending) onIncomplete();
   const error = word(v.error);
   return {
     kind: 'land',
@@ -731,8 +734,12 @@ export function readThinJobs(
   const candidates = idx.recentJobFamilies(dirs, 200, parse);
   if (totalValid > candidates.length) complete = false;
   const landFlows = new Map<string, WorkFlow | null>();
+  const unreadableLanding = new Set<string>();
   const landFor = (id: string) => {
-    if (!landFlows.has(id)) landFlows.set(id, readLandFlow(idx, home, id, parse, markIncomplete));
+    if (!landFlows.has(id)) landFlows.set(id, readLandFlow(idx, home, id, parse, () => {
+      markIncomplete();
+      unreadableLanding.add(id);
+    }));
     return landFlows.get(id)!;
   };
   const receipts: Receipt[] = [], outsideTimeWindow: string[] = [];
@@ -986,6 +993,7 @@ export function readThinJobs(
     const worker: OwnerWorker = {
       files,
       ...(flow ? { flow } : {}),
+      ...(within !== undefined && unreadableLanding.has(id) ? { landingUnknown: true as const } : {}),
       ...(reportMeta ? { reportMeta } : {}),
       sessionFile,
       progress: row.progress,

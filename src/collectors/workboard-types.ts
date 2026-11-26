@@ -54,6 +54,8 @@ export interface WorkFlow {
 }
 export interface OwnerWorker extends Partial<JobProgress> {
   readonly flow?: WorkFlow;
+  /** A project's job has an unreadable or inconclusive land record. */
+  readonly landingUnknown?: true;
   readonly checks?: Pick<import('../roles/job-checks.js').CheckSummary, 'state' | 'stale' | 'passed' | 'total'>;
   readonly diffStat?: import('./diff-stat.js').DiffStatSummary;
   /** Display-only metadata bound to this settled thin job's current report. */

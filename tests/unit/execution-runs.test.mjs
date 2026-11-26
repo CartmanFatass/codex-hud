@@ -22,7 +22,7 @@ const FLOWS = {
   old: 'q4d5e6f7000000004',
   foreign: 'q5e6f7a8000000005',
 };
-const LAND_FLOW = 'f0a01000000000000';
+const LAND_FLOW = 'f0b01000000000000';
 const ago = (minutes) => new Date(NOW - minutes * 60_000).toISOString();
 
 const onExecution = (nav) => withState(initialMonitorState(), {
@@ -118,10 +118,10 @@ async function setupWithRuns(t) {
     reviews: [],
   });
 
-  // 3. Recently ended (< 1h) run with accept verdict.
+  // 3. Recently ended (> 1h, < 24h) run with accept verdict.
   putJson(join(flows, `${FLOWS.ended}.json`), {
     flow: FLOWS.ended, root: base.project, project_root: base.project, feature: 'recent-done',
-    pane: PANE, task: false, max_parallel: 2, created_at: ago(55), updated_at: ago(20),
+    pane: PANE, task: false, max_parallel: 2, created_at: ago(164), updated_at: ago(124),
     state: 'completed', verdict: 'finish: all synthetic checks passed',
     steps: { tickets: { state: 'done' }, review: { state: 'done' }, accept: { state: 'done', answer: 'finish' } },
     tickets: [
@@ -132,16 +132,16 @@ async function setupWithRuns(t) {
     reviews: [{ round: 0, job: 'jrev0002000000000', summary: 'All checks green.' }],
   });
 
-  // 4. Ended > 1h ago: must be excluded.
+  // 4. Ended > 24h ago: must be excluded.
   const oldFile = join(flows, `${FLOWS.old}.json`);
   putJson(oldFile, {
     flow: FLOWS.old, root: base.project, project_root: base.project, feature: 'stale-run',
-    pane: PANE, task: false, max_parallel: 1, created_at: ago(180), updated_at: ago(95),
+    pane: PANE, task: false, max_parallel: 1, created_at: ago(1500), updated_at: ago(1441),
     state: 'completed',
     steps: { tickets: { state: 'done' }, review: { state: 'done' }, accept: { state: 'done', answer: 'finish' } },
     tickets: [],
   });
-  const oldTime = new Date(NOW - 95 * 60_000);
+  const oldTime = new Date(ago(1441));
   fs.utimesSync(oldFile, oldTime, oldTime);
 
   // 5. Foreign project run with same pane: must be excluded from this project's Execution page.
@@ -213,10 +213,9 @@ test('Runs section renders EN/ZH, no-colour, coloured, role icons (unicode/nerd/
         assert.equal(line, stripAnsi(line), 'none theme must emit no ANSI');
       }
       assert.doesNotMatch(shown, /stale-run|foreign-run|q4d5e6f7|q5e6f7a8/);
-      // Runs section comes before Workers.
-      const runsPos = shown.indexOf(lang === 'zh' ? '运行' : 'Runs');
-      const workersPos = shown.indexOf(lang === 'zh' ? '工作者' : 'Workers');
-      assert.ok(runsPos >= 0 && workersPos > runsPos, `${lang} ${width}: Runs before Workers`);
+      const headings = lang === 'zh' ? ['工作者', '运行', '刚结束', '派工关系'] : ['Workers', 'Runs', 'Recently ended', 'Delegation'];
+      const positions = headings.map((head) => frame.lines.findIndex((line) => line.startsWith(`${head} `)));
+      assert.ok(positions.every((at, i) => at > (positions[i - 1] ?? -1)), `${lang} ${width}: ${positions}`);
       // Coloured theme stays width-exact too.
       const coloured = render(view, { width, lang, theme: 'mocha', icons: 'unicode' });
       for (const line of coloured.lines) assert.equal(visualLength(line), width, `mocha ${lang} ${width}`);
@@ -226,22 +225,21 @@ test('Runs section renders EN/ZH, no-colour, coloured, role icons (unicode/nerd/
   // Verify full content at standard wide width in EN.
   const wideEn = text(render(view, { width: 120, lang: 'en', theme: 'none', icons: 'unicode' }));
   for (const needle of [
-    'Runs', 'exec-runs', 'q1a2b3c4', 'obj-unattended', 'q2b3c4d5', 'recent-done', 'q3c4d5e6',
+    'Runs', 'exec-runs', 'q1a2b3c4', 'obj-unattended', 'q2b3c4d5', 'Queue recent-done · 1 ticket',
     roleIcon('imp', 'unicode'), roleIcon('frontend-imp', 'unicode'), roleIcon('reviewer', 'unicode'), roleIcon('lead', 'unicode'),
-    'tickets', 'review', 'accept', 'finish',
+    'tickets', 'review', 'accept',
     'landed', 'land gate', 'working', 'settled', 'held (spec change)', 'held (feature deletion)', 'held (assumption)', 'failed', 'queued · blocked by 03', 'blocked by 05',
     'todo 2 · decisions 1 · held 1 · repairs 1',
-    'todo 1 · decisions 1 · held 0',
   ]) {
     assert.ok(wideEn.includes(needle), `EN 120 missing: ${needle}\n${wideEn}`);
   }
-  // Repairs omitted when zero on recent-done.
-  assert.doesNotMatch(wideEn, /todo 1 · decisions 1 · held 0 · repairs/);
+  assert.doesNotMatch(wideEn, /q3c4d5e6|Finished earlier|land gate synthetic ticket/, 'ended run and members are not repeated');
+  assert.equal(wideEn.split('\n').filter((line) => line.includes('recent-done')).length, 1);
 
   // Verify full content in ZH.
   const wideZh = text(render(view, { width: 120, lang: 'zh', theme: 'none', icons: 'unicode' }));
   for (const needle of [
-    '运行', '工单', '评审', '通过', '完成',
+    '运行', '工单', '评审', '通过', '刚结束',
     '已落地', '落地门禁', '工作中', '已结束', '挂起 (规范变更)', '挂起 (功能删除)', '挂起 (假设)', '失败', '受 03 阻塞', '受 05 阻塞',
     '待办 2 · 决定 1 · 挂起 1 · 修复 1',
   ]) {
@@ -277,7 +275,7 @@ test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Det
     return handleMonitorInput(frame.state, input, { frame, nowMs: NOW });
   };
 
-  // Initial cursor starts on the first run (paused). Move to working run and open Run Detail.
+  // Move to the working run and open Run Detail.
   const onWorkingRun = onExecution({ cursor: `project:exec-run:${FLOWS.working}` });
   const detailState = press(onWorkingRun, '\r').state;
   assert.deepEqual(detailState.subpage, { kind: 'run-detail', flow: FLOWS.working, scroll: 0 });
@@ -326,6 +324,147 @@ test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Det
   assert.equal(backFromJob.execution.cursor, `project:exec-run:${FLOWS.working}:ticket:03`);
 });
 
+test('idle Execution shows only recent project rows, ordered together by end time with observed results', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-recent-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const project = join(root, 'project'), hud = join(root, 'hud'), flows = join(hud, 'flows');
+  const job = (n, title, minutes, { state = 'done', worktree, ...receipt } = {}) => {
+    const id = `j${n.toString(16).padStart(16, '0')}`, dir = join(hud, 'jobs', id);
+    putJson(join(dir, 'job.json'), {
+      job: id, role: worktree ? 'imp' : 'sonic', cwd: project, created_at: ago(minutes + 8),
+      ...(worktree && { worktree: { root: join(root, 'wt'), main_root: project, branch: 'wt/demo' } }), ...receipt,
+    });
+    putJson(join(dir, 'STATUS.json'), { state, settled_at: ago(minutes), ended_at: ago(1) });
+    fs.writeFileSync(join(dir, 'brief.md'), `# ${title}\n`);
+    return id;
+  };
+  const run = (n, feature, minutes, tickets, state = 'completed') => {
+    const flow = `q${n.toString(16).padStart(16, '0')}`;
+    putJson(join(flows, `${flow}.json`), {
+      flow, root: project, feature, pane: PANE, created_at: ago(minutes + 80), updated_at: ago(minutes), state,
+      tickets: tickets.map((ticket, i) => ({ ticket: `0${i + 1}`, role: 'imp', ...ticket })),
+    });
+    return flow;
+  };
+  const land = (id, state, extra) => {
+    const flow = `f${id.slice(1)}`;
+    putJson(join(flows, `${flow}.json`), { flow, job: id, state, step: 'done', updated_at: ago(1), ...extra });
+    return flow;
+  };
+
+  const failed = job(1, 'Build broke', 4, { state: 'failed', worktree: true });
+  const landed = job(2, 'Committed changes', 12, { worktree: true });
+  const retried = land(landed, 'failed');
+  // A later attempt landed even though its post-landing step failed; neither flow resets the job age.
+  putJson(join(flows, `${retried}-2.json`), { flow: `${retried}-2`, job: landed, state: 'failed', step: 'after[1]', landed_sha: 'a'.repeat(40), updated_at: ago(1) });
+  const queueJob = job(3, 'Run member title', 13);
+  const landedRun = run(1, 'ingest', 15, [{ job: queueJob, landed: true }, { landed: true }]);
+  job(4, 'Run attempt title', 7, { ticket_queue: landedRun });
+  const unlanded = job(5, 'Worktree without land', 29, { worktree: true });
+  const unreadable = job(6, 'Unknown evidence', 40, { worktree: true });
+  const badLand = land(unreadable, 'completed');
+  fs.writeFileSync(join(flows, `${badLand}.json`), '{broken');
+  const complete = job(7, 'Read-only study', 58);
+  const stopped = job(8, 'Stopped before report', 78, { state: 'stopped' });
+  const failedRun = run(2, 'broken', 90, [{ landed: true }, { failed: { at: ago(90), reason: 'failed check' } }], 'failed');
+  const noCommit = job(9, 'Run member no commit', 124, { worktree: true });
+  const unlandedRun = run(3, 'unfinished', 120, [{ job: noCommit, land: land(noCommit, 'completed') }], 'stopped');
+  const unknownRun = run(4, 'record unavailable', 125, [{ job: unreadable, land: badLand }]);
+  // Use a different job for the unreadable standalone row so it is not hidden as a run member.
+  const unknown = job(10, 'Unknown standalone evidence', 40, { worktree: true });
+  fs.writeFileSync(join(flows, `f${unknown.slice(1)}.json`), '{broken');
+  job(11, 'Stale job title', 1441);
+  job(12, 'Foreign job title', 2, { cwd: join(root, 'foreign') });
+  run(5, 'stale queue', 1441, [{ landed: true }]);
+
+  const execution = new PanelExecution(hud, PANE, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, true);
+  await execution.refresh(undefined, NOW);
+  const view = execution.view(project);
+  assert.equal(view.jobs.length, 0);
+  assert.equal(view.complete, false, 'unreadable job landing leaves coverage partial');
+  const jobItem = (id) => `project:exec:${id}`, runItem = (id) => `project:exec-run:${id}`;
+  const expected = [
+    [jobItem(failed), 'failed', '失败', '4m', '4分'],
+    [jobItem(landed), 'landed', '已落地', '12m', '12分'],
+    [runItem(landedRun), 'landed', '已落地', '15m', '15分'],
+    [jobItem(unlanded), 'not landed', '未落地', '29m', '29分'],
+    [jobItem(unknown), '', '', '40m', '40分'],
+    [jobItem(complete), 'done', '完成', '58m', '58分'],
+    [jobItem(stopped), 'stopped', '已停止', '1h', '1时'],
+    [runItem(failedRun), 'failed', '失败', '1h', '1时'],
+    [runItem(unlandedRun), 'not landed', '未落地', '2h', '2时'],
+    [runItem(unknownRun), '', '', '2h', '2时'],
+  ];
+  for (const lang of ['en', 'zh']) for (const width of [40, 62]) {
+    const frame = render(view, { lang, width }), headings = frame.workboard.rows.filter((row) => !row.item);
+    assert.equal(headings.length, 1, 'no idle readout or empty sections');
+    assert.match(headings[0].text, lang === 'zh' ? /^刚结束 .*不完整/ : /^Recently ended .*Partial/);
+    assert.equal(frame.state.execution.cursor, jobItem(failed));
+    const rows = frame.workboard.rows.filter((row) => row.item);
+    assert.deepEqual(rows.map((row) => row.item), expected.map(([item]) => item));
+    for (const [i, [, en, zh, enAge, zhAge]] of expected.entries()) {
+      const line = rows[i].text.trimEnd(), [word, age] = lang === 'zh' ? [zh, zhAge] : [en, enAge];
+      assert.ok(line.endsWith(word ? ` ${word} ${age}` : ` ${age}`), `${lang} ${width}: ${line}`);
+      if (!word) assert.doesNotMatch(line, /\b(?:failed|stopped|landed|done)\b|失败|已停止|落地|完成/);
+    }
+    for (const line of frame.lines) {
+      assert.equal(visualLength(line), width);
+      assert.equal(line, stripAnsi(line));
+    }
+    assert.match(text(frame), lang === 'zh' ? /队列 ingest · 2 张工单/ : width === 62 ? /Queue ingest · 2 tickets/ : /Queue ingest · 2/);
+    assert.doesNotMatch(text(frame), /Run member|Run attempt|Stale job|Foreign job|stale queue|No running or waiting jobs/);
+  }
+
+  // Enter uses the existing subpages, retaining the Execution cursor and scroll on Esc.
+  const press = (state, key) => {
+    const frame = render(view, { state, width: 40, height: 8, workboard: state.subpage && execution.board() });
+    return handleMonitorInput(frame.state, { type: 'key', key }, { frame, nowMs: NOW }).state;
+  };
+  const onJob = onExecution({ cursor: jobItem(stopped), scroll: 4 });
+  const inspector = press(onJob, 'enter');
+  assert.equal(inspector.subpage.target.workerId, `thin-job:${stopped}`);
+  assert.match(text(render(view, { state: inspector, workboard: execution.board() })), /Stopped before report/);
+  const backFromJob = press(inspector, 'escape');
+  assert.equal(backFromJob.subpage, undefined);
+  assert.deepEqual(backFromJob.execution, inspector.execution);
+  const onRun = onExecution({ cursor: runItem(unlandedRun), scroll: 5 });
+  const detail = press(onRun, 'enter');
+  assert.deepEqual(detail.subpage, { kind: 'run-detail', flow: unlandedRun, scroll: 0 });
+  const backFromRun = press(detail, 'escape');
+  assert.equal(backFromRun.subpage, undefined);
+  assert.deepEqual(backFromRun.execution, detail.execution);
+
+  await execution.refresh(undefined, NOW + 24 * 60 * 60_000);
+  const empty = render(execution.view(project));
+  assert.match(text(empty), /No running or waiting jobs/);
+  assert.doesNotMatch(text(empty), /Recently ended/);
+});
+
+test('the recent job list caps an observed family window at the 200 newest settlements', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-recent-cap-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hud = join(root, 'hud'), project = join(root, 'project');
+  const id = (n) => `j${n.toString(16).padStart(16, '0')}`;
+  for (let n = 1; n <= 202; n++) {
+    const dir = join(hud, 'jobs', id(n));
+    putJson(join(dir, 'job.json'), { job: id(n), role: 'sonic', cwd: project, created_at: ago(240),
+      ...(n > 200 && { parent_job: id(200) }) });
+    putJson(join(dir, 'STATUS.json'), { state: 'done', settled_at: ago(203 - n) });
+    // Keep both children inside the bounded family scan without letting directory mtimes stand for end times.
+    const mtime = new Date(ago(n > 200 ? n - 200 : 240));
+    fs.utimesSync(dir, mtime, mtime);
+  }
+  const execution = new PanelExecution(hud, PANE, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, NOW);
+  const view = execution.view(project);
+  assert.equal(view.complete, false);
+  assert.deepEqual(view.endedJobs.map((job) => job.jobId), Array.from({ length: 200 }, (_, i) => id(202 - i)));
+});
+
 test('Runs section still renders when there are no live workers, while Home stays unchanged', async (t) => {
   const f = await setupWithRuns(t);
   const view = f.execution.view(f.project);
@@ -333,7 +472,8 @@ test('Runs section still renders when there are no live workers, while Home stay
   const shown = text(render(runsOnly, { width: 100, height: 40 }));
   assert.match(shown, /Runs/);
   assert.match(shown, /exec-runs/);
-  assert.match(shown, /No running or waiting jobs/);
+  assert.match(shown, /Recently ended/);
+  assert.doesNotMatch(shown, /Workers|No running or waiting jobs/);
 
   // Home and multi-project views do not render ticket-queue run rows.
   const homeFrame = render(undefined, { state: initialMonitorState(), width: 100, height: 30, workboard: f.execution.board() });

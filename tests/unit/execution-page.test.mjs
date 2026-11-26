@@ -63,12 +63,13 @@ test('every running and waiting job of the project has a card and a place in the
       assert.equal(line, stripAnsi(line), 'the none theme paints no colour');
     }
     assert.deepEqual(itemsOf(frame).slice(0, 5), cards('reviewer', 'imp', 'sonic', 'quiet', 'queued'));
-    assert.equal(itemsOf(frame).length, 11, 'five cards and six tree rows: the settled scout is in the tree only');
+    assert.equal(itemsOf(frame).length, 13, 'five cards, two recent jobs and six tree rows');
     // Tab workers show their last screen lines; headless ones their progress, else their output.
     for (const part of ['Review of the synthetic diff', 'One question for the main session', '• Running the build', '    tsc finished with 0 errors',
       '合成的中文屏幕内容', 'Keep the synthetic shim', 'Build passes; writing', 'Found three callers', 'read docs/synthetic.md'])
       assert.ok(shown.includes(part), `${width} ${lang} shows ${part}`);
-    assert.doesNotMatch(shown, /Finished earlier|Reaped long ago|Another project/);
+    assert.match(shown, /Finished earlier/);
+    assert.doesNotMatch(shown, /Reaped long ago|Another project/);
     const words = lang === 'zh' ? ['工作者', '派工关系', '画面', '无界面 · 进度', '无界面 · 输出', '提问中', '工作中', '排队 #1', '本窗格', '侦察']
       : ['Workers', 'Delegation', '├─ screen', 'headless · progress', 'headless · output', 'asking', 'working', 'queued #1', 'this pane', 'code scout'];
     for (const word of words) assert.ok(shown.includes(word), `${width} ${lang} shows ${word}`);
