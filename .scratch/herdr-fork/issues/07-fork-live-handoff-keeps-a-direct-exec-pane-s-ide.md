@@ -12,3 +12,7 @@
 - [ ] cargo build --release and live_handoff/restore suites pass; full suite no new failures vs 0409f9fa; merged on `hud`; nothing pushed or installed
 
 ## Comments
+
+## Comments
+
+- 2026-11-26 main: general j35006739391c691b (imp overflow), hud-07 f45b14fb merged on `hud` at 76b187b0; live_handoff 25/25, restore 26/26, full suite no new failures (pre-existing client_mode sigwinch palette). Limitation: after a handoff the new server cannot waitpid the child, so a handed-off direct-exec pane under close_on_zero closes on PTY EOF even after a nonzero exit (documented in HUD-FORK.md). Install: owner chose to wait until no tab worker runs (the exporting server is still 0409f9fa, which does not carry the new fields).
