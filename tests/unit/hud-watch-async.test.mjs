@@ -11,6 +11,7 @@ import { runCommand } from '../../dist/roles/herdr-run.js';
 import { WATCH_TAB_FACTS_LIMIT } from '../../dist/runtime/watch-runtime.js';
 import { workSummaryPath } from '../../dist/collectors/work-summary-snapshot.js';
 import { procStat } from '../../dist/roles/worker-tree.js';
+import { waitUntilFs } from '../../dist/utils/fs-wait.js';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { expired, fixture, hour, until } from '../helpers/job-retention-fixture.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -488,7 +489,23 @@ registerHooks({
 });`;
   const runs = [f.start(preload), f.start(preload)];
   const starts = () => text(join(f.home, 'watch.log')).match(/start pid=/g)?.length ?? 0;
-  await until(() => runs.some(({ child }) => child.exitCode !== null) || starts() > 1, t.signal);
+  // The loser exits after the winner has published. If both start, neither
+  // exits with the job open, so also wake on a duplicate start in the log.
+  const observe = new AbortController();
+  try {
+    await Promise.race([
+      ...runs.map(({ exited }) => exited),
+      waitUntilFs({
+        targets: [{ dir: f.home, filter: (file) => !file || file === 'watch.log' }],
+        timeoutMs: Infinity,
+        signal: AbortSignal.any([t.signal, observe.signal]),
+        check: () => starts() > 1 ? { done: true } : { done: false },
+      }),
+    ]);
+  } finally {
+    observe.abort();
+  }
+  assert.equal(peers.length, 2, 'both processes reached the startup gate');
   assert.equal(starts(), 1, 'only one process starts the watcher');
   const pid = Number(text(join(f.home, 'watch.pid')));
   const live = runs.find(({ child }) => child.pid === pid);
