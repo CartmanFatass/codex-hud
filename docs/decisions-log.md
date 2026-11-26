@@ -7,6 +7,12 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-26
 
+- **D-2026-11-26-09** (§1 display rule): Owner on the live Execution page: drop the 画面 screen thumbnails on worker
+  cards (and the periodic screen reads), and draw the workflow as a metro map: stations are workers, lines are the
+  order and dependency logic, state by mark and colour, no per-node text; one detail line for the station under the
+  cursor. Replaces the vertical-wave rows of `docs/design/tab-roles/README.md` §3 (now §3a). Visible removal
+  approved by the owner's request.
+
 - **D-2026-11-26-08** (§2.1 runs): Owner: runs must not stall on permission-style waits. Three queue runs paused
   because workers listed "owner live try remains" as `Blockers:`. A pending live/owner try is a hint recorded in the
   run todo, never a blocking reason; other Blockers go to the lead like scope assumptions; an escalated owner matter

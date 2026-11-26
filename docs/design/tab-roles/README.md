@@ -92,6 +92,34 @@ Fixed flows at 62 columns:
 
 At 40 columns the same queue keeps one node per row, titles cut first, `▼` waves split one per row when needed.
 
+### 3a. Subway map (owner 2026-11-26, D-2026-11-26-09; replaces the vertical-wave rows above)
+
+The owner wants progress readable at a glance, like a metro line map: **points are workers, lines are the logic
+(order and dependencies)**, no per-node text rows. One map per open flow, under a one-line flow header:
+
+```text
+工作流 ───────────────────────────────────────────────────── 1
+▸ ◉ 队列 retry-queue                                运行中 52分
+  ●━━●━━┳━◉━━┳━○━━○━━⚖━━★
+        ┗━◉━━┛
+  ◉ 03 Retry queue survives restarts           ⚒ 工作中 14分
+```
+
+- Stations left to right in dependency order (waves); tickets of one wave that run in parallel sit on stacked branch
+  lines that split (`┳`/`┗`) and merge (`┛`) back. A ticket's repair worker is a further station on its own line
+  (`↻` mark only if colour is off). Review `⚖` and lead acceptance `★` close the line.
+- Station marks and colour carry the state: `●` done/landed, `◉` working (colour by phase: working, gate, lease
+  wait), `?` waiting for an answer, `!` held for the owner, `✗` failed, `○` not started. Line segments already
+  travelled are drawn solid/coloured, the rest dim. No-colour mode keeps the marks.
+- No title, number or timer on the map. The only text is one detail line for the station under the cursor
+  (number, title, state, elapsed); `←/→` (and `↑/↓` across branches) move between stations, Enter opens the
+  Inspector, Enter on the flow header opens Run Detail. With no cursor on the map, the detail line shows the
+  station that changed last.
+- Too wide: settled stations collapse into `●×6━━` at the left; a batch pool shows `●×12 ◉×3 ○×5` as one station
+  group. Council: member stations on parallel branches merging into the synthesis station.
+- Worker cards (工作者) lose the 画面 screen rows entirely (and the "画面每 2 秒读取一次" note); HUD stops the
+  periodic screen reads for Execution.
+
 ## 4. Home and Project frames (62 columns)
 
 ```text
