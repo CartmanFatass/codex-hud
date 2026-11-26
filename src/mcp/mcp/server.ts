@@ -12,7 +12,7 @@ import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js'
 import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
 import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
 import { compactResult } from './result-text.js';
-import { resumeTicketEdits } from '../ticket-edit-queue.js';
+import { resumeTicketEdits, stopTicketEdits, ticketEditWakeFailures } from '../ticket-edit-queue.js';
 import { ownStatuslineStrip } from '../../statusline-parity/strip.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
 import {
@@ -284,7 +284,7 @@ async function snapshot() {
   pruneCreatedJobs(session.createdJobs, (id) => !!findJob(id));
   pruneLandTasks(landTasks, landActive);
   pruneTasks(tasks, Date.now(), evictTask);
-  return { version: 1, scoutedCreatePending: inlinePending(), toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
+  return { version: 1, scoutedCreatePending: inlinePending(), ticketEditFailures: ticketEditWakeFailures(), toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
     callerHarness: session.callerHarness, sentConventionVersion: session.sentConventionVersion, sentCreateHint: session.sentCreateHint, createdJobs: session.createdJobs, cursor: session.cursor, modLive: session.modLive, triesAt: tries.delivered, answersAt: answers.offset };
 }
 export function openRuntime() {
@@ -321,10 +321,12 @@ export function openRuntime() {
         resumeTaskReceipts();
       }
       await syncPanelDelivery();
+      if (!worker && !session.resumeRefusal) resumeTicketEdits(hudHome, state.ticketEditFailures);
       return { toolsList: JSON.stringify(await toolsListResult()) };
     },
     async stop() {
       const stripClosed = strip?.stop();
+      await stopTicketEdits();
       strip = undefined;
       clearTaskSweep();
       await ownerDelivery?.stop();

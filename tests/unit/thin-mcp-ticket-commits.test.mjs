@@ -13,6 +13,8 @@ const draft = title => ({ title, what: 'Change the sample.', acceptance: ['Check
 const tickets = f => (op, args) => f.call('hud_tickets', { op, feature: 'sample', ...args });
 const fileOf = (f, receipt) => join(f.home, 'flows', `${receipt}.json`);
 const read = (f, receipt) => JSON.parse(fs.readFileSync(fileOf(f, receipt), 'utf8'));
+const helpers = f => findFixtureProcesses({ root: f.root, hudHome: f.home })
+  .filter(p => p.cmdline.includes('workflow-runner.mjs --ticket-edits'));
 async function fast(promise) {
   const start = performance.now();
   const value = await promise;
@@ -151,6 +153,79 @@ test('a task-capable caller receives a queued edit completion without polling', 
   assert.equal(notices().length, 1);
 });
 
+test('the MCP re-drives a helper killed during land without another submission or read', { timeout: 20000 }, async t => {
+  const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done'], { after: [] });
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
+  const receipt = queued(await tickets(f)('add', { tickets: [draft('First')] }));
+  const helper = () => helpers(f)[0];
+  await until(helper, t.signal);
+  process.kill(helper().pid, 'SIGKILL');
+  assert.equal(read(f, receipt).state, 'queued');
+  fs.writeFileSync(join(f.env.HOME, 'release'), '');
+
+  await until(() => read(f, receipt).state === 'completed', t.signal);
+  const result = await f.call('hud_read', { job: receipt });
+  assert.equal(result.state, 'completed');
+  assert.equal(f.flowState(flow).state, 'completed');
+  const path = relative(f.main, result.tickets[0].path);
+  assert.match(f.git(f.main, 'show', `HEAD:${path}`), /First/);
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B'), new RegExp(`HUD-Ticket-Edit: ${receipt}`));
+});
+
+for (const committed of [false, true]) test(committed
+  ? 'after the retry bound, a committed applying receipt is reconciled without rewriting tickets'
+  : 'after the retry bound, a queued edit fails with the helper error and sends its completion notice', { timeout: 15000 }, async t => {
+  // Inject failures only into the detached helper, before it imports dist. In the
+  // applying case let the first helper commit, then lose its terminal receipt write.
+  const preload = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+if (process.argv[2] === '--ticket-edits') {
+  const log = process.env.HOME + '/ticket-helper-attempts';
+  const first = !fs.existsSync(log);
+  fs.appendFileSync(log, 'attempt\\n');
+  if (${committed} && first) {
+    const rename = fs.renameSync;
+    fs.renameSync = (from, to) => {
+      if (/\\/te[0-9a-f]{32}\\.json$/.test(to) && JSON.parse(fs.readFileSync(from)).state === 'completed') process.exit(74);
+      return rename(from, to);
+    };
+    syncBuiltinESMExports();
+  } else {
+    process.stderr.write('Synthetic helper import failure\\n', () => process.exit(73));
+  }
+}`;
+  const f = await checkout(t, ['true'], {
+    probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(preload))};`,
+  });
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  const receipt = queued(resultValue(await taskCall(rpc, 'hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('First')] })));
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+
+  const notices = () => f.commands().filter(({ command, args }) => command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt'
+    && args[2] === f.env.HERDR_PANE_ID && args[3].includes(receipt));
+  await until(() => notices().length > 0, t.signal);
+  const result = resultValue(await taskCall(rpc, 'hud_read', { job: receipt }));
+  const state = committed ? 'completed' : 'failed';
+  assert.equal(result.state, state);
+  assert.match(notices()[0].args[3], new RegExp(`Ticket add ${state}`));
+  assert.equal(notices().length, 1);
+  assert.equal(result.changes, undefined);
+  assert.equal(fs.readFileSync(join(f.env.HOME, 'ticket-helper-attempts'), 'utf8'), 'attempt\n'.repeat(3));
+  assert.equal(f.git(f.main, 'rev-list', '--count', `${f.base_head}..HEAD`), committed ? '1' : '0');
+  if (committed) {
+    assert.match(f.git(f.main, 'log', '-1', '--format=%B'), new RegExp(`HUD-Ticket-Edit: ${receipt}`));
+    assert.deepEqual(fs.readdirSync(join(f.main, '.scratch/sample/issues')), ['01-first.md']);
+  } else {
+    assert.match(result.error, /after 3 attempts: exited with code 73: Synthetic helper import failure/);
+    assert.equal(fs.existsSync(join(f.main, '.scratch/sample/issues')), false);
+  }
+});
+
 test('MCP startup drains pending ticket receipts and reconciles a committed receipt without a duplicate', { timeout: 20000 }, async t => {
   const f = await checkout(t, ['true'], { inHerdr: false }), call = tickets(f);
   const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
@@ -158,10 +233,8 @@ test('MCP startup drains pending ticket receipts and reconciles a committed rece
   const one = queued(await call('add', { tickets: [draft('First')] }));
   const two = queued(await call('add', { tickets: [{ ...draft('Second'), blocked_by: [1] }] }));
   await f.stopMcp();
-  const helpers = () => findFixtureProcesses({ root: f.root, hudHome: f.home })
-    .filter(p => p.cmdline.includes('workflow-runner.mjs --ticket-edits'));
-  for (const { pid } of helpers()) process.kill(pid, 'SIGKILL');
-  await until(() => helpers().length === 0, t.signal);
+  for (const { pid } of helpers(f)) process.kill(pid, 'SIGKILL');
+  await until(() => helpers(f).length === 0, t.signal);
   assert.equal(read(f, one).state, 'queued');
   assert.equal(read(f, two).state, 'queued');
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.base_head);
@@ -184,7 +257,7 @@ test('MCP startup drains pending ticket receipts and reconciles a committed rece
   assert.equal(f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..HEAD`), 'tickets: sample/01 add\ntickets: sample/02 add');
   const head = f.git(f.main, 'rev-parse', 'HEAD');
   await first.stop();
-  await until(() => helpers().length === 0, t.signal);
+  await until(() => helpers(f).length === 0, t.signal);
 
   // Recreate the last durable receipt state if the helper died just after the commit.
   const written = read(f, one);
