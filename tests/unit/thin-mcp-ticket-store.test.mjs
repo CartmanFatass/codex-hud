@@ -91,6 +91,46 @@ test('ticket add, update, get and mixed ready work from a linked checkout with t
   assert.deepEqual(readTicketWrites(f.home, f.main), { sample: sha256(bytes) }, 'no-op edit does not claim a hand edit');
 });
 
+test('a synced GitHub JSON mirror is visible to the collector, hud board and hud_tickets ready', async t => {
+  const f = await checkout(t, ['true']);
+  assert.ok((await f.rpc('initialize')).result);
+  const repo = 'example/sample', api = `repos/${repo}/issues`;
+  const replies = {
+    [`${api}?state=open&per_page=100`]: [{ number: 20, title: 'Mirror sample', state: 'open' }],
+    [`${api}/20/sub_issues?per_page=100`]: [{ number: 21, title: 'Mirrored ready ticket', state: 'open',
+      labels: [{ name: 'ready-for-agent' }], body: 'Keep this visible.\n\n- [ ] Verify it', comments: 0 }],
+    [`${api}/21/dependencies/blocked_by?per_page=100`]: [],
+  };
+  f.overrideBin('gh', `#!${process.execPath}\nconst args = process.argv.slice(2);\n` +
+    `const reply = args[0] === 'repo' ? { nameWithOwner: ${JSON.stringify(repo)} } : ${JSON.stringify(replies)}[args.at(-1)];\n` +
+    `if (reply === undefined) process.exit(1);\nconsole.log(JSON.stringify(reply));\n`);
+  const sync = await f.call('hud_tickets', { op: 'sync', cwd: f.main });
+  assert.equal(sync.ok, true, JSON.stringify(sync));
+  const rel = '.hud/tickets/mirror-sample.json', path = join(f.main, rel);
+  assert.equal(f.git(f.main, 'check-ignore', rel), rel);
+  assert.equal(fs.existsSync(join(f.main, '.scratch/mirror-sample/issues')), false);
+  const scan = scanTicketStore(f.main);
+  assert.equal(scan.sources.get('mirror-sample')?.doc?.mirror?.kind, 'github');
+  assert.equal(scan.lookup('mirror-sample/21')?.title, 'Mirrored ready ticket');
+
+  const board = join(f.root, 'sample-board.html');
+  let stderr = '';
+  assert.equal(await main(['board', '--cwd', f.main, '--out', board], {
+    env: f.env, stdout: () => {}, stderr: text => { stderr += text; },
+  }), 0, stderr);
+  assert.match(fs.readFileSync(board, 'utf8'), /Mirrored ready ticket/);
+
+  const ready = await f.call('hud_tickets', { op: 'ready', cwd: f.main });
+  assert.deepEqual(ready, { ok: true, tickets: [{ ticket: 'mirror-sample/21', path,
+    title: 'Mirrored ready ticket', what: 'Keep this visible.' }] });
+  const edit = await f.rpc('tools/call', { name: 'hud_tickets', arguments: {
+    op: 'add', cwd: f.main, feature: 'local', tickets: [draft('Local ticket')],
+  } });
+  assert.equal(edit.result.isError, true);
+  assert.match(edit.result.content[0].text, /refusing local ticket edits.*GitHub mirror/);
+  assert.equal(fs.existsSync(join(f.main, '.hud/tickets/local.json')), false);
+});
+
 test('an add returns its JSON ticket number while the land gate is still running', { timeout: 20_000 }, async t => {
   const release = 'release-gate';
   const f = await checkout(t, [`while test ! -f "$HOME/${release}"; do sleep .05; done`], { after: [] });

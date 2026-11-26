@@ -90,7 +90,8 @@ hud setup --detect        # print this project's worker setup as JSON
 hud setup --apply PLAN    # write .hud/ from a plan
 hud setup --remove        # drop project registration; leave .hud/
 hud tickets show <feature>[/<NN>]  # print one ticket or all tickets in a feature as Markdown
-hud tickets sync [--cwd DIR]  # mirror GitHub parent/sub-issues into .scratch/
+hud tickets sync [--cwd DIR]  # mirror GitHub parent/sub-issues into .hud/tickets/
+hud tickets migrate [--cwd DIR] [--delete-legacy]  # convert .scratch/*/issues/*.md into .hud/tickets/
 hud board [--cwd DIR] [--out FILE] [--open]  # write the project's HTML review board, print its path
 hud codex --model gpt-5    # Codex arguments pass through; bar runs on the herdr pane strip
 ```
@@ -888,7 +889,8 @@ The panel and `hud board` read `.hud/tickets/<feature>.json`; where no JSON file
 The list shows all scanned features. The scan covers up to 256 features, gives JSON precedence and reads at most 64 KiB per file. Only files whose stat signature changed are read again. The legacy fallback reads at most 64 issue files per feature and 512 total.
 In the Tickets diagnostics, totals are marked `Partial` if a cap or a failed read leaves the scan incomplete.
 Run `hud tickets show <feature>` from the project root to print the whole feature as Markdown, or add `/NN` for one ticket.
-`hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way into `.scratch/` via `gh` (open parent issues with sub-issues, plus already-mirrored parents so closed features receive their final state), writing `.gitignore` (`*`), `spec.md` and numbered ticket files with a generated marker; it refuses if `.scratch/` holds non-generated ticket files.
+`hud tickets sync [--cwd DIR]` mirrors GitHub Issues one way via `gh` (open parent issues with sub-issues, plus already-mirrored parents so closed features receive their final state). It writes git-ignored `.hud/tickets/<slug>.json` with a `mirror` block and keeps the generated `.scratch/<slug>/spec.md`. It refuses if `.hud/tickets/` or `.scratch/` holds local ticket files; local ticket edits refuse on a mirrored tracker.
+`hud tickets migrate [--cwd DIR] [--delete-legacy]` converts `.scratch/*/issues/*.md` into `.hud/tickets/<feature>.json`, preserving `spec.md` and other prose. It re-renders JSON as Markdown and checks the round trip before writing JSON or deleting any legacy ticket. It reports mismatches and features that exceed 64 KiB. Without `--delete-legacy` it leaves legacy tickets in place, and rerunning on the same facts is a no-op.
 In JSON, a recorded acceptance or `done` status completes a ticket. A landing with `owner_try` stays **to try** until accepted or marked done, and a landing with unfinished acceptance and status `ready-for-agent` stays open for further work. The panel dates the landing from `landing.at`, not the file's edit time or Git history. A commit subject alone is not a record of a landing.
 Dropped tickets count as resolved on the Tickets page. Legacy pending records, status aliases and fully checked nonempty checklists remain readable.
 Local numbers/titles and `feature/NN` blockers resolve across the scanned project.

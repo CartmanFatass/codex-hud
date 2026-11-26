@@ -121,36 +121,32 @@ export function formatFlakeLine(flake: GateFlake): string {
     : `- ${subject} — flow \`${flow}\``;
 }
 
-function parseStructuredLine(line: string): FlakeCase | null {
-  const splitIdx = line.lastIndexOf(' — flow ');
-  if (splitIdx < 0) return null;
-  const left = line.slice(0, splitIdx).replace(/^[ \t]*-[ \t]+/, '').trim();
-  const right = line.slice(splitIdx + ' — flow '.length).trim();
-  const flowMatch = /^`([^`\r\n]+)`(?:,[ \t]+log[ \t]+`([^`\r\n]+)`)?$/.exec(right);
-  if (!flowMatch) return null;
+export function parseFlakeCaseLine(line: string): FlakeCase | null {
+  const bullet = /^[ \t]*[-*][ \t]+(.+)$/.exec(line);
+  if (!bullet) return null;
+  const text = bullet[1].trim();
+  const match = / — (?:flow `([^`]+)`(?:,[ \t]+log `([^`]+)`)?|log `([^`]+)`)$/.exec(text);
+  const subject = match ? text.slice(0, match.index) : text;
   let name: string | undefined;
   let file: string | undefined;
   let unidentified = false;
-  const unidMatch = /^unidentified(?: gate)? failure \(`([^`\r\n]+)`(?:,[ \t]+([^)\r\n]+))?\)$/i.exec(left);
+  const unidMatch = /^unidentified(?: gate)? failure \(`([^`\r\n]+)`(?:,[ \t]+([^)\r\n]+))?\)$/i.exec(subject);
   if (unidMatch) {
     name = unidMatch[1].trim();
     file = unidMatch[2]?.trim() || undefined;
     unidentified = true;
-  } else if (left.startsWith('`') && left.endsWith('`') && left.length >= 2) {
-    name = left.slice(1, -1).trim();
-  } else if (left.startsWith('`') && left.endsWith(')')) {
-    const fileStart = left.lastIndexOf('` (');
-    if (fileStart > 1) {
-      name = left.slice(1, fileStart).trim();
-      file = left.slice(fileStart + 3, -1).trim();
-    }
+  } else {
+    const named = /^`(.+)`(?: \((.+)\))?$/.exec(subject);
+    name = named?.[1].trim();
+    file = named?.[2]?.trim();
   }
   if (!name) return null;
+  const flow = match?.[1]?.trim(), log = (match?.[2] ?? match?.[3])?.trim();
   return {
     name,
     ...(file ? { file } : {}),
-    flow: flowMatch[1].trim(),
-    ...(flowMatch[2] ? { log: flowMatch[2].trim() } : {}),
+    ...(flow ? { flow } : {}),
+    ...(log ? { log } : {}),
     ...(unidentified ? { unidentified: true } : {}),
   };
 }
@@ -159,8 +155,8 @@ export function parseFlakeCases(text: string): FlakeCase[] {
   const body = text.split(COMMENTS_HEADING, 1)[0];
   const cases: FlakeCase[] = [];
   for (const line of body.split(/\r?\n/)) {
-    const parsed = parseStructuredLine(line);
-    if (parsed) cases.push(parsed);
+    const parsed = parseFlakeCaseLine(line);
+    if (parsed?.flow) cases.push(parsed);
   }
   // Also recognize legacy hand-written running-list prose (`Cases: ...`) before `### Cases` or acceptance items.
   const prosePart = body.split(CASES_HEADING, 1)[0].split(CHECKBOX_LINE, 1)[0];

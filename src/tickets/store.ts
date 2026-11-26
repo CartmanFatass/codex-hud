@@ -366,7 +366,8 @@ export function renderTicketBrief(ticket: TicketRecord, feature: Pick<TicketFeat
     ...(ticket.kind && ticket.kind !== 'impl' ? [`**Kind:** ${ticket.kind}`] : []),
     ...(ticket.role ? [`**Role:** ${ticket.role}`] : []),
     ...(ticket.main_review ? ['**Main review:** yes'] : []),
-    `**Owner try:** ${ticket.owner_try ? 'yes' : 'no'}`, `**Live try:** ${ticket.live_try}`,
+    `**Owner try:** ${ticket.owner_try ? 'yes' : 'no'}`,
+    ...(!ticket.live_try.includes('\n') ? [`**Live try:** ${ticket.live_try}`] : []),
     ...(ticket.approved_removals.length ? [`**Approved removals:** ${ticket.approved_removals.join(', ')}`] : []),
     `**Blocked by:** ${ticket.blocked_by.join(', ') || 'none'}`,
     ...(ticket.repairs?.length ? [`**Repairs:** ${ticket.repairs.join(', ')}`] : []),
@@ -383,8 +384,18 @@ export function renderTicketBrief(ticket: TicketRecord, feature: Pick<TicketFeat
         return meta ? `- ${subject} — ${meta}` : `- ${subject}`;
       }), '',
     ] : []),
+    ...(ticket.live_try.includes('\n') ? ['## Live try', '', ticket.live_try, ''] : []),
     ...ticket.acceptance.map(item => `- [${item.done ? 'x' : ' '}] ${item.text}`),
     ...(ticket.acceptance.length ? [''] : []), '## Comments', '',
-    ...(ticket.comments.length ? [...ticket.comments.map(comment => `- ${comment.at} ${comment.author}: ${comment.text}`), ''] : []),
+    ...(ticket.landing ? [
+      `- ${ticket.landing.at} Landed ${ticket.landing.commit ?? `in this commit (replay base ${ticket.landing.replay_base})`}`
+        + (ticket.landing.gates ? `; gate ${ticket.landing.gates}/${ticket.landing.gates} passed.` : ''),
+    ] : []),
+    ...(ticket.accepted ? [
+      `- ${ticket.accepted.at} Accepted by ${ticket.accepted.by}${ticket.accepted.flow ? ` (${ticket.accepted.flow})` : ''}:`
+        + (ticket.accepted.verdict ? ` ${ticket.accepted.verdict.replace(/\n/g, '\n  ')}` : ''),
+    ] : []),
+    ...ticket.comments.map(comment => `- ${comment.at} ${comment.author}: ${comment.text.replace(/\n/g, '\n  ')}`),
+    ...(ticket.landing || ticket.accepted || ticket.comments.length ? [''] : []),
   ].join('\n');
 }
