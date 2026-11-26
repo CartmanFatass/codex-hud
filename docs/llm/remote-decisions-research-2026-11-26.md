@@ -40,5 +40,10 @@ watch, self-hosted, and record the single answer; no answer = only that item wai
 4. Spec impact if built: a narrow §3 carve-out from "cross-machine control is a later TODO" and a §4 sentence on the
    loopback listener, device auth and revision-bound answers.
 
-Open owner questions when reopened: phone/watch platform, exposure (Tailscale recommended), reminder delay (2 h
-suggested), and the spec carve-out.
+Owner answers so far (2026-11-26): Android phone. The phone side may be richer, including more complex remote
+interaction; the simple form (recommendation + a few one-tap choices) is for the watch. With Android + Wear OS the
+survey's path is the HUD page/Web Push for the phone plus self-hosted ntfy `http` actions for 1-tap wrist answers.
+
+Still open when reopened: watch model (Wear OS assumed), how far "more complex remote" goes on the phone (decisions
+only, or also viewing runs and steering work), exposure (Tailscale recommended), reminder delay (2 h suggested), and
+the spec carve-out.
