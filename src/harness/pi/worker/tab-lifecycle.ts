@@ -5,6 +5,9 @@ import { performance } from 'node:perf_hooks';
 import type { JobStatus } from '../../../mcp/job-contracts.js';
 import { jobFiles } from '../../../mcp/paths.js';
 import { recordQuestionTimeout } from '../../../roles/job-archive.js';
+import { getJobIndexCache } from '../../../roles/job-index-cache.js';
+import { formatSelectionMessage } from '../../../roles/select-send.js';
+import { markSelectionNotesDelivered, pendingSelectionNotes } from '../../../roles/selection-excerpts.js';
 import { writeJsonPrivate } from '../../../utils/atomic-fs.js';
 import { procStat } from '../../../utils/proc.js';
 import { readQuestionAnswer, watchQaDir, type PublishedQuestion } from '../../../worker/qa.js';
@@ -13,6 +16,7 @@ import type { WorkerContext, WorkerPi } from './host.js';
 import { DEFAULT_WARM_CAP_USD, exitDecision, idleGraceMs, lifecycle, warming } from './tab-policy.js';
 
 export const ASYNC_ANSWER_TYPE = 'hud-orchestrator-answer';
+const SELECTION_NOTE_TYPE = 'hud-selection-note';
 const ASYNC_DELIVERY_TIMEOUT_MS = 20_000;
 const ASYNC_FALLBACK_POLL_MS = 2_000;
 const SONIC_RETRY_MS = 2_000;
@@ -117,6 +121,8 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
   let settledAt: string | null = null;
   let lastSnapshot = '';
   let linkedSession: string | undefined;
+  let stagedNotes: string[] = [];
+  const deliveredNotes = new Set<string>(); // If receipt I/O fails, don't inject the same notes again in this worker.
 
   const active = () => enabled && !disabled;
   const stopRequested = () => existsSync(`${statusFile}.stop-requested`);
@@ -477,7 +483,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     }
   });
 
-  pi.on('before_agent_start', (_event, ctx) => {
+  pi.on('before_agent_start', (event, ctx) => {
     if (!active() || closing) return;
     cancelTimer();
     generation++;
@@ -490,6 +496,21 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     settledAt = null;
     state = 'working';
     publish(ctx);
+    stagedNotes = [];
+    if (event?.messageType !== 'user' || stopRequested() || existsSync(join(taskDir, jobFiles.closeRequested))) return;
+    // Only a fresh user prompt consumes notes, never a tool step or a queued steer.
+    const home = dirname(dirname(taskDir)), target = basename(taskDir);
+    const fields = getJobIndexCache(home).readSession(target)?.fields;
+    if (!fields?.launchId || fields.pid !== String(process.pid) || fields.pidStart !== pidStartTime) return;
+    try {
+      const pending = pendingSelectionNotes(home, target, fields.launchId);
+      // Receipt failures shouldn't accumulate IDs after their records are no longer pending.
+      for (const id of deliveredNotes) if (!pending.some(note => note.id === id)) deliveredNotes.delete(id);
+      const notes = pending.filter(row => !deliveredNotes.has(row.id));
+      if (!notes.length) return;
+      stagedNotes = notes.map(row => row.id);
+      return { message: { customType: SELECTION_NOTE_TYPE, content: notes.map(row => formatSelectionMessage(row)).join('\n\n'), display: true } };
+    } catch { /* An unavailable note store must not prevent a worker prompt. */ }
   });
 
   pi.on('message_start', ({ message }, ctx) => {
@@ -506,7 +527,16 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     publish(ctx);
   });
 
-  pi.on('message_end', ({ message }) => {
+  pi.on('message_end', async ({ message }) => {
+    if (message.role === 'custom' && message.customType === SELECTION_NOTE_TYPE && stagedNotes.length) {
+      for (const id of stagedNotes) deliveredNotes.add(id);
+      stagedNotes = [];
+      try {
+        await markSelectionNotesDelivered(dirname(dirname(taskDir)), deliveredNotes);
+        deliveredNotes.clear();
+      } catch { /* Keep the in-process fence even if the receipt cannot be written. */ }
+      return;
+    }
     if (message.role !== 'assistant') return;
     if (message.stopReason === 'error') runError = message.errorMessage?.trim() || 'error';
     else if (message.stopReason === 'aborted') runError = 'aborted';

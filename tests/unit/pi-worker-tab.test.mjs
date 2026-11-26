@@ -23,6 +23,8 @@ import { installWorkerUi } from '../../dist/harness/pi/worker/tab-ui.js';
 import { trackTps } from '../../dist/harness/pi/worker/tps.js';
 import { piWorkerArgv } from '../../dist/mcp/dispatch/pi-worker-argv.js';
 import { stripAnsi } from '../../dist/render/colors.js';
+import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
+import { readSelectionExcerpts, recordSelectionNote } from '../../dist/roles/selection-excerpts.js';
 import { nextQuestionNumber, publishQuestion, readQuestionAnswer } from '../../dist/worker/qa.js';
 import { waitSonic } from '../../dist/worker/tools.js';
 import { createFooterHost, piPackage } from '../fakes/pi.mjs';
@@ -296,6 +298,43 @@ test('tab-lifecycle: session link (lazy, idempotent, no self-link, preserves his
   assert.equal(fs.lstatSync(regular).isFile(), true);
   assert.equal(messages.length, 1);
   assert.match(messages[0], /session link failed \(ignored\)/);
+});
+
+test('a selection note waits for the next new user prompt and is delivered once', async (t) => {
+  const clock = makeFakeClock();
+  const f = makeLifecycleFixture(t, { role: 'imp', timing: clock.timing });
+  const target = 'j1111111111111111', launchId = 'launch-test-a', endpoint = join(f.root, 'herdr.sock');
+  const userPrompt = { messageType: 'user' };
+  await f.emit('session_start');
+  fs.appendFileSync(join(f.dir, 'SESSION.txt'), `DIRECT_EXEC=1\nLAUNCH_ID=${launchId}\nHERDR_SOCKET_PATH=${endpoint}\nPID=${process.pid}\nPID_START=${f.status().pid_start_time}\n`);
+  assert.equal(await f.emit('before_agent_start', userPrompt), undefined);
+
+  const owner = { project: 'project', projectRoot: f.root, pane: 'w4E:p9', job: null, role: null, time: '2026-11-26T12:00:00.000Z' };
+  const excerpt = 'Original log: check failed';
+  const note = 'Check the expected output';
+  const record = await recordSelectionNote(f.root, { target, launchId, role: 'imp', source: owner, excerpt, note }, endpoint);
+  const current = () => readSelectionExcerpts(f.root, getJobIndexCache(f.root), { job: target })[0];
+  assert.equal(current().id, record.id);
+  await f.emit('message_start', { message: { role: 'user' } }); // A queued steer can arrive mid-run.
+  await f.emit('turn_end');
+  await f.emit('turn_start');
+  assert.deepEqual(f.sentMessages, []);
+  assert.deepEqual(f.sentUsers, []);
+  assert.equal(current().delivery, 'pending');
+
+  assert.equal(await f.emit('before_agent_start', { messageType: 'custom' }), undefined);
+  f.writeReport();
+  await f.emit('agent_settled');
+  assert.equal(f.status().state, 'idle_grace');
+  assert.equal(current().delivery, 'pending');
+
+  const { message } = await f.emit('before_agent_start', userPrompt);
+  assert.match(message.content, /\[HUD selection note\][\s\S]*pane=w4E:p9[\s\S]*Original log: check failed[\s\S]*Note: Check the expected output/);
+  assert.equal(current().delivery, 'pending', 'a prepared prompt does not yet acknowledge the note');
+  await f.emit('message_end', { message: { role: 'custom', ...message } });
+  assert.equal(current().delivery, 'delivered');
+  assert.equal(await f.emit('before_agent_start', userPrompt), undefined);
+  assert.equal(current().delivery, 'delivered');
 });
 
 test('tab-lifecycle: one-shot closes cleanly after settled and defers/rechecks queued-message guard', async (t) => {

@@ -101,6 +101,7 @@ export interface SelectionJobTarget {
   job: string;
   launchId: string;
   role: string;
+  nextTurnNote?: boolean;
   ticket?: string;
   package?: string;
 }
@@ -199,6 +200,7 @@ export function formatSelectionMessage(input: {
   excerpt: string;
   source: SelectionSource;
   question?: string;
+  note?: string;
   excerptId?: string;
 }): string {
   const meta: string[] = [];
@@ -212,13 +214,14 @@ export function formatSelectionMessage(input: {
   const fence = chooseFence(input.excerpt);
   const question = normalizeQuestion(input.question);
   const lines = [
-    '[HUD selection]',
+    input.note !== undefined ? '[HUD selection note]' : '[HUD selection]',
     ...(input.excerptId ? [`Excerpt ID: ${input.excerptId}`, 'Answer this selection with hud_progress: pass the answer as message and this exact Excerpt ID as reply_to.'] : []),
     `Source: ${meta.join(' | ')}`,
     fence,
     input.excerpt,
     fence,
     ...(question ? [`Question: ${question}`] : []),
+    ...(input.note !== undefined ? [`Note: ${normalizeQuestion(input.note)}`] : []),
   ];
   return lines.join('\n');
 }
@@ -398,7 +401,7 @@ export async function resolveSelectionTarget(
       const status = cache.readStatus<JobStatus>(id);
       if (status.status === 'ok' && status.value.state === 'working') {
         const targets = jobTargets.get(root) ?? [];
-        targets.push({ job: id, launchId: fields.launchId, role: job.role, ticket: job.ticket, package: job.package });
+        targets.push({ job: id, launchId: fields.launchId, role: job.role, ticket: job.ticket, package: job.package, nextTurnNote: !job.cli });
         jobTargets.set(root, targets);
       }
     }

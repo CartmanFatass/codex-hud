@@ -30,7 +30,7 @@ interface Events {
   agent_start: unknown;
   agent_end: unknown;
   tool_call: { toolName: string; input: Record<string, unknown> };
-  before_agent_start: { systemPromptOptions?: { sections: Record<string, string>; skills: { name: string }[] } };
+  before_agent_start: { messageType?: 'user' | 'custom'; systemPromptOptions?: { sections: Record<string, string>; skills: { name: string }[] } };
   before_provider_request: { payload: unknown };
   after_provider_response: unknown;
   provider_stream_event: unknown;

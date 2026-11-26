@@ -37,6 +37,7 @@ export function selectionExcerptRows(records: readonly SelectionExcerpt[], width
     if (from) rows.push(row(`  ${theme.board.muted(t('Source: {source}', { source: monitorText(from) }))}`));
     prose('Excerpt', excerpt.excerpt);
     if (excerpt.question) prose('Question', excerpt.question);
+    if (excerpt.note) prose('Note', excerpt.note);
     if (excerpt.answer) prose('Answer', excerpt.answer.text);
     if (compact) for (let i = start; i < rows.length; i++) {
       rows[i].item = item;

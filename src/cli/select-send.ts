@@ -1,7 +1,7 @@
 /** `hud select-send`: plugin action and minimal popup composer. */
 import { StringDecoder } from 'node:string_decoder';
 import { resolve as resolvePath } from 'node:path';
-import { MAX_ADVISOR_FOLLOWUPS, readSelectionAdvisor, recordSelectionExcerpt, setExcerptDelivery, type ExcerptDelivery } from '../roles/selection-excerpts.js';
+import { MAX_ADVISOR_FOLLOWUPS, readSelectionAdvisor, recordSelectionExcerpt, recordSelectionNote, setExcerptDelivery, type ExcerptDelivery } from '../roles/selection-excerpts.js';
 import { advisorPhase, continueSelectionAdvisor, endSelectionAdvisor, startSelectionAdvisor } from '../roles/selection-advisor.js';
 import { getHudHome } from '../hud-home.js';
 import { setDisplayConfig } from '../render/hud-config.js';
@@ -267,6 +267,12 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
       const targetPane = state.targetPane;
       const targetJob = state.targetJob;
       const askAdvisor = state.targetAdvisor;
+      const note = state.noteForNextTurn ? normalizeQuestion(state.question) : undefined;
+      if (note === '') {
+        state = { ...state, error: t('Enter a note before saving.') };
+        paint();
+        return;
+      }
       if (investigate) {
         if (!targetJob) {
           state = { ...state, error: t(state.jobs.length ? 'Choose a working job first.' : 'No working jobs found for this project.') };
@@ -300,13 +306,14 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           if (!finished) paint();
           return;
         }
-        const refreshed = await refreshSelectionExcerpt(ctx, state.excerpt, baseline, opts.env);
+        // An annotation keeps the displayed snapshot, even if the log scrolls during editing.
+        const refreshed = note === undefined ? await refreshSelectionExcerpt(ctx, state.excerpt, baseline, opts.env) : null;
         if (finished) return;
-        if (refreshed.baseline !== undefined) baseline = refreshed.baseline;
+        if (refreshed?.baseline !== undefined) baseline = refreshed.baseline;
         const emptyNotice = state.mode === 'investigate'
           ? t('Pane has no visible output; nothing to send.')
           : t('Selection is empty; nothing to send.');
-        if (refreshed.stale && refreshed.changed) {
+        if (refreshed?.stale && refreshed.changed) {
           ctx = {
             ...ctx,
             selected_text: refreshed.excerpt.text,
@@ -340,11 +347,19 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           if (!finished) paint();
           return;
         }
-        if (targetJob && source.projectRoot) {
-          const record = await recordSelectionExcerpt(opts.hudHome, {
+        if (note !== undefined || (targetJob && source.projectRoot)) {
+          if (!targetJob || !source.projectRoot) throw new Error('missing selection target');
+          const input = {
             excerpt: state.excerpt.text, source: { ...source, project: source.project?.slice(0, 256) ?? null },
-            question: normalizeQuestion(state.question), target: targetJob.job, launchId: targetJob.launchId, role: targetJob.role.slice(0, 256),
-          });
+            target: targetJob.job, launchId: targetJob.launchId, role: targetJob.role.slice(0, 256),
+          };
+          if (note !== undefined) {
+            const record = await recordSelectionNote(opts.hudHome, { ...input, note }, herdrEndpoint(opts.env), signal);
+            if (!record) throw new Error('unavailable note target');
+            done({ code: 0, sent: record.delivery === 'pending' });
+            return;
+          }
+          const record = await recordSelectionExcerpt(opts.hudHome, { ...input, question: normalizeQuestion(state.question) });
           const message = formatSelectionMessage({ ...record, excerptId: record.id });
           let delivery: ExcerptDelivery = 'delivery unknown';
           const { hudHome } = await import('../mcp/store/job-store.js');
@@ -394,7 +409,8 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
       } catch {
         if (!finished) {
           state = { ...state, phase: 'editing', error: t(advisorId ? 'Advisor action failed. Draft kept.'
-            : askAdvisor ? 'Could not start advisor. Draft kept.' : targetJob ? 'Selection delivery unknown.' : 'Delivery failed.') };
+            : askAdvisor ? 'Could not start advisor. Draft kept.' : note !== undefined ? 'Note could not be saved.'
+              : targetJob ? 'Selection delivery unknown.' : 'Delivery failed.') };
           paint();
         }
       } finally {

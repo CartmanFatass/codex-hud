@@ -1,20 +1,22 @@
-/** Private, bounded receipts for excerpt/reply pairs, independent of the source pane. */
+/** Private, bounded receipts for selection replies, advisors and next-turn notes, independent of the source pane. */
 import { randomUUID } from 'node:crypto';
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
+import { jobFiles } from '../mcp/paths.js';
 import { isShellLaunchedWorker } from '../runtime/herdr-socket.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { herdrId } from './herdr-run.js';
 import { sharedRoot } from './projects.js';
 import type { SelectionSource } from './select-send.js';
-import type { JobIndexCache } from './job-index-cache.js';
+import { getJobIndexCache, type JobIndexCache } from './job-index-cache.js';
 
 const MAX_RECORDS = 64;
 const MAX_BYTES = 8 * 1024 * 1024;
 export const MAX_EXCERPT_REPLY = 4000;
 export type ExcerptDelivery = 'queued' | 'target ended' | 'delivery unknown';
+type NoteDelivery = 'pending' | 'delivered' | 'undelivered';
 export interface SelectionExcerpt {
   id: string;
   excerpt: string;
@@ -23,7 +25,8 @@ export interface SelectionExcerpt {
   target: string;
   launchId: string;
   role: string;
-  delivery: ExcerptDelivery;
+  delivery: ExcerptDelivery | NoteDelivery;
+  note?: string;
   answer?: { text: string; at: string };
   advisor?: { ended?: boolean; followups: { question: string; answer?: SelectionExcerpt['answer'] }[] };
 }
@@ -63,10 +66,21 @@ function readStore(file: string): SelectionExcerpt[] {
   }
 }
 
+function noteUndelivered(home: string, cache: JobIndexCache, row: SelectionExcerpt): boolean {
+  const job = cache.readJob<Job>(row.target), status = cache.readStatus<JobStatus>(row.target);
+  const launch = cache.readSession(row.target)?.fields.launchId;
+  // Idle grace can still take another native prompt without changing launches.
+  return job.status === 'missing' || (job.status === 'ok' && Boolean(job.value.reaped_at)) ||
+    (status.status === 'ok' && ['done', 'closed', 'failed', 'stopped'].includes(status.value.state)) ||
+    Boolean(launch && launch !== row.launchId) || existsSync(join(home, 'jobs', row.target, jobFiles.stopRequested));
+}
+
 export function readSelectionExcerpts(home: string, cache: JobIndexCache, scope: { job: string } | { project: string }): SelectionExcerpt[] {
   try {
     return readStore(storeFile(home)).filter(row => 'job' in scope ? row.target === scope.job : row.source.projectRoot === scope.project)
       .map(row => {
+        if (row.note !== undefined) return row.delivery === 'pending' && noteUndelivered(home, cache, row)
+          ? { ...row, delivery: 'undelivered' } : row;
         if (row.answer || row.delivery === 'target ended') return row;
         const status = cache.readStatus<JobStatus>(row.target);
         if (row.advisor) return row.advisor.ended || (status.status === 'ok' && ['closed', 'failed', 'stopped'].includes(status.value.state))
@@ -77,15 +91,6 @@ export function readSelectionExcerpts(home: string, cache: JobIndexCache, scope:
         return ended || (launch && launch !== row.launchId) ? { ...row, delivery: 'target ended' } : row;
       });
   } catch { return []; } // An unavailable receipt must not hide the rest of the view.
-}
-
-export async function recordSelectionExcerpt(home: string, input: Omit<SelectionExcerpt, 'id' | 'delivery' | 'answer'>, id = randomUUID() as string): Promise<SelectionExcerpt> {
-  const file = storeFile(home);
-  const row: SelectionExcerpt = { ...input, id, delivery: input.advisor ? 'queued' : 'delivery unknown' };
-  await withAbstractLock('selection-excerpts', file, () => {
-    writeJsonPrivate(file, [row, ...readStore(file).slice(0, MAX_RECORDS - 1)]);
-  });
-  return row;
 }
 
 export function readSelectionAdvisor(home: string, id: string): SelectionExcerpt | undefined {
@@ -113,6 +118,62 @@ export async function recordAdvisorAnswer(home: string, id: string, target: stri
   });
 }
 
+type ExcerptInput = Omit<SelectionExcerpt, 'id' | 'delivery' | 'answer' | 'note'>;
+
+function appendExcerpt(home: string, file: string, row: SelectionExcerpt): void {
+  const rows = readStore(file);
+  if (rows.length >= MAX_RECORDS) {
+    const cache = getJobIndexCache(home);
+    let evict = rows.length - 1;
+    while (evict >= 0 && rows[evict].delivery === 'pending' && !noteUndelivered(home, cache, rows[evict])) evict--;
+    if (evict < 0) throw new Error('selection excerpt store full');
+    rows.splice(evict, 1);
+  }
+  writeJsonPrivate(file, [row, ...rows]);
+}
+
+export async function recordSelectionExcerpt(home: string, input: ExcerptInput, id = randomUUID() as string): Promise<SelectionExcerpt> {
+  const file = storeFile(home);
+  const row: SelectionExcerpt = { ...input, id, delivery: input.advisor ? 'queued' : 'delivery unknown' };
+  await withAbstractLock('selection-excerpts', file, () => appendExcerpt(home, file, row));
+  return row;
+}
+
+export function recordSelectionNote(home: string, input: Omit<ExcerptInput, 'question' | 'advisor'> & { note: string },
+  endpoint: string | undefined, signal?: AbortSignal) {
+  const file = storeFile(home), cache = getJobIndexCache(home);
+  return withAbstractLock('selection-excerpts', file, () => {
+    const row: SelectionExcerpt = { ...input, question: '', id: randomUUID(), delivery: 'pending' };
+    if (noteUndelivered(home, cache, row)) row.delivery = 'undelivered';
+    else {
+      const job = cache.readJob<Job>(input.target), status = cache.readStatus<JobStatus>(input.target);
+      const fields = cache.readSession(input.target)?.fields;
+      if (job.status !== 'ok' || job.value.cli || jobProjectRoot(job.value) !== input.source.projectRoot ||
+          status.status !== 'ok' || !['working', 'idle_grace'].includes(status.value.state) ||
+          !excerptTargetSupported(job.value, fields, endpoint) || fields.launchId !== input.launchId) return null;
+    }
+    appendExcerpt(home, file, row);
+    return row;
+  }, { signal });
+}
+
+export function pendingSelectionNotes(home: string, target: string, launchId: string): SelectionExcerpt[] {
+  return readStore(storeFile(home)).filter(row => row.target === target && row.launchId === launchId && row.delivery === 'pending').reverse();
+}
+
+export function markSelectionNotesDelivered(home: string, ids: ReadonlySet<string>): Promise<void> {
+  const file = storeFile(home);
+  return withAbstractLock('selection-excerpts', file, () => {
+    const rows = readStore(file);
+    let changed = false;
+    for (const row of rows) if (row.delivery === 'pending' && ids.has(row.id)) {
+      row.delivery = 'delivered';
+      changed = true;
+    }
+    if (changed) writeJsonPrivate(file, rows);
+  });
+}
+
 export function setExcerptDelivery(home: string, id: string, delivery: ExcerptDelivery): Promise<void> {
   const file = storeFile(home);
   return withAbstractLock('selection-excerpts', file, () => {
@@ -129,7 +190,7 @@ export function replyToExcerpt(home: string, target: string, id: string, message
   const file = storeFile(home);
   return withAbstractLock('selection-excerpts', file, () => {
     const rows = readStore(file), row = rows.find(item => item.id === id && item.target === target);
-    if (!row || row.advisor || row.delivery === 'target ended') return { ok: false, code: 'excerpt_not_found' };
+    if (!row || row.advisor || row.note !== undefined || row.delivery === 'target ended') return { ok: false, code: 'excerpt_not_found' };
     if (!row.answer) {
       row.answer = { text, at: new Date().toISOString() };
       writeJsonPrivate(file, rows);

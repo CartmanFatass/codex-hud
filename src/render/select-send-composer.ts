@@ -17,6 +17,7 @@ export interface ComposerState {
   readonly jobs: readonly SelectionJobTarget[];
   readonly targetJob?: SelectionJobTarget;
   readonly targetAdvisor?: boolean;
+  readonly noteForNextTurn?: boolean;
   readonly picker: number | null;
   readonly excerpt: NormalizedExcerpt;
   readonly stale: boolean;
@@ -161,6 +162,16 @@ function targetJobLabel(job: SelectionJobTarget): string {
     job.package && job.package !== job.ticket && monitorText(job.package), job.job].filter(Boolean).join(' · ');
 }
 
+type ComposerTarget = { kind: 'main' } | { kind: 'advisor' } | { kind: 'job' | 'note'; job: SelectionJobTarget };
+
+function pickerTargets(state: ComposerState): ComposerTarget[] {
+  const jobs = state.jobs.map(job => ({ kind: 'job' as const, job }));
+  if (state.mode === 'investigate') return jobs;
+  return [{ kind: 'main' }, ...jobs,
+    ...state.jobs.filter(job => job.nextTurnNote).map(job => ({ kind: 'note' as const, job })),
+    ...(offersAdvisor(state) ? [{ kind: 'advisor' as const }] : [])];
+}
+
 export function renderSelectSendComposer(
   state: ComposerState,
   opts: { width: number; height: number; nowMs: number }
@@ -176,11 +187,12 @@ export function renderSelectSendComposer(
     const available = height - 2;
     const start = Math.max(0, state.picker - available + 1);
     rows.push(theme.strong(t(investigate ? 'Choose working job' : 'Selection target')));
+    const targets = pickerTargets(state);
     for (let i = start; i < start + available; i++) {
-      const job = investigate ? state.jobs[i] : state.jobs[i - 1];
-      const label = !investigate && i === 0
-        ? (main ? t('Main: {target}', { target: main }) : t('Main unavailable'))
-        : job ? targetJobLabel(job) : i === state.jobs.length + 1 && offersAdvisor(state) ? t('Ask an advisor') : '';
+      const target = targets[i];
+      const label = !target ? '' : target.kind === 'main' ? (main ? t('Main: {target}', { target: main }) : t('Main unavailable'))
+        : target.kind === 'advisor' ? t('Ask an advisor')
+          : target.kind === 'note' ? t('Note for next turn -> {target}', { target: targetJobLabel(target.job) }) : targetJobLabel(target.job);
       rows.push(i === state.picker ? theme.selected(`› ${label}`) : label ? `  ${label}` : '');
     }
     rows.push(theme.dim(fitWholeHints([
@@ -194,7 +206,7 @@ export function renderSelectSendComposer(
   // 1. Header: target on left, optional source metadata dropped before cutting on right.
   const targetDesc = state.targetJob ? targetJobLabel(state.targetJob) : investigate ? null : main;
   const leftTitle = state.targetAdvisor ? t('Ask an advisor') : targetDesc
-    ? t(investigate ? 'Investigate pane -> {target}' : 'Send selection -> {target}', { target: targetDesc })
+    ? t(state.noteForNextTurn ? 'Note for next turn -> {target}' : investigate ? 'Investigate pane -> {target}' : 'Send selection -> {target}', { target: targetDesc })
     : t(investigate ? 'Investigate pane' : 'Send selection');
   const rightBudget = Math.max(0, width - visualLength(leftTitle) - 2);
   const meta = headerMeta(state.source, rightBudget);
@@ -204,11 +216,11 @@ export function renderSelectSendComposer(
   const banner = state.error
     ? { text: state.error, paint: theme.error }
     : state.phase !== 'editing'
-      ? { text: state.phase === 'waiting' ? guardedWaitText(width) : t('Sending…'), paint: theme.info }
+      ? { text: state.phase === 'waiting' ? guardedWaitText(width) : t(state.noteForNextTurn ? 'Saving note…' : 'Sending…'), paint: theme.info }
       : state.notice
         ? { text: state.notice, paint: state.stale ? theme.warning : theme.info }
         : state.stale
-          ? { text: t('Content changed — showing latest excerpt. Press Enter to send.'), paint: theme.warning }
+          ? { text: t(state.noteForNextTurn ? 'Content changed — review latest excerpt.' : 'Content changed — showing latest excerpt. Press Enter to send.'), paint: theme.warning }
           : null;
   if (banner) {
     rows.push(fit(banner.paint(monitorText(banner.text)), width));
@@ -223,7 +235,7 @@ export function renderSelectSendComposer(
   const overflow = wrappedLines.length > viewportRows;
 
   // 3. Excerpt label row.
-  const labelLeft = theme.label(t(investigate ? 'Pane output (visible region to send)' : 'Excerpt (exact text to send)'));
+  const labelLeft = theme.label(t(state.noteForNextTurn ? 'Excerpt' : investigate ? 'Pane output (visible region to send)' : 'Excerpt (exact text to send)'));
   const labelRight = overflow
     ? theme.dim(
         t('lines {start}-{end}/{total}', {
@@ -248,8 +260,8 @@ export function renderSelectSendComposer(
     }
   }
 
-  // 5. Question input line.
-  const promptLabel = t('Question: ');
+  // 5. Question or note input line.
+  const promptLabel = t(state.noteForNextTurn ? 'Note: ' : 'Question: ');
   const promptStyled = theme.accent(promptLabel);
   const editing = state.phase === 'editing';
   const cursorMark = editing ? theme.selected('▏') : '';
@@ -261,7 +273,7 @@ export function renderSelectSendComposer(
   const canSend = investigate ? Boolean(state.targetJob) : Boolean(state.targetPane || state.targetJob || state.targetAdvisor);
   const hints = [
     ...(editing && (state.jobs.length || offersAdvisor(state)) ? [t('Tab targets')] : []),
-    ...(editing && canSend && !state.excerpt.empty ? [t(state.targetAdvisor ? 'Enter ask' : 'Enter send')] : []),
+    ...(editing && canSend && !state.excerpt.empty ? [t(state.noteForNextTurn ? 'Enter save note' : state.targetAdvisor ? 'Enter ask' : 'Enter send')] : []),
     ...(state.phase !== 'waiting' ? [t('Esc cancel')] : []),
     ...(editing && overflow ? [t('↑↓ scroll')] : []),
   ];
@@ -314,26 +326,22 @@ export function applyComposerKey(
     return key.type === 'cancel' ? { state, intent: 'cancel' } : { state, intent: 'none' };
   }
   if (state.picker !== null) {
-    const investigate = state.mode === 'investigate';
-    if (key.type === 'cancel') {
-      if (investigate && !state.targetJob) return { state, intent: 'cancel' };
+    if (key.type === 'cancel' || key.type === 'targets') {
+      if (state.mode === 'investigate' && !state.targetJob) return { state, intent: key.type === 'cancel' ? 'cancel' : 'none' };
       return { state: { ...state, picker: null }, intent: 'none' };
     }
-    if (key.type === 'targets') {
-      if (investigate && !state.targetJob) return { state, intent: 'none' };
-      return { state: { ...state, picker: null }, intent: 'none' };
-    }
+    const targets = pickerTargets(state);
     if (key.type === 'scroll' || key.type === 'home' || key.type === 'end') {
-      const maxIndex = investigate ? Math.max(0, state.jobs.length - 1) : state.jobs.length + Number(offersAdvisor(state));
-      const picker = key.type === 'home' ? 0 : key.type === 'end' ? maxIndex
-        : Math.max(0, Math.min(maxIndex, state.picker + key.delta));
+      const last = Math.max(0, targets.length - 1);
+      const picker = key.type === 'home' ? 0 : key.type === 'end' ? last
+        : Math.max(0, Math.min(last, state.picker + key.delta));
       return { state: { ...state, picker }, intent: 'none' };
     }
     if (key.type === 'enter') {
-      const picked = investigate ? state.jobs[state.picker] : state.jobs[state.picker - 1];
-      if (investigate && !picked) return { state, intent: 'none' };
-      return { state: { ...state, targetJob: picked,
-        targetAdvisor: offersAdvisor(state) && state.picker === state.jobs.length + 1, picker: null, error: null }, intent: 'none' };
+      const picked = targets[state.picker];
+      if (!picked) return { state, intent: 'none' };
+      return { state: { ...state, targetJob: 'job' in picked ? picked.job : undefined,
+        targetAdvisor: picked.kind === 'advisor', noteForNextTurn: picked.kind === 'note', picker: null, error: null }, intent: 'none' };
     }
     return { state, intent: 'none' };
   }
@@ -346,8 +354,9 @@ export function applyComposerKey(
       return { state, intent: 'submit' };
     case 'targets': {
       if (!state.jobs.length && !offersAdvisor(state)) return { state, intent: 'none' };
-      const idx = state.targetJob ? state.jobs.indexOf(state.targetJob) : -1;
-      const picker = state.mode === 'investigate' ? Math.max(0, idx) : state.targetAdvisor ? state.jobs.length + 1 : idx + 1;
+      const kind = state.targetAdvisor ? 'advisor' : state.noteForNextTurn ? 'note' : state.targetJob ? 'job' : 'main';
+      const picker = Math.max(0, pickerTargets(state).findIndex(target =>
+        target.kind === kind && (!('job' in target) || target.job === state.targetJob)));
       return { state: { ...state, picker }, intent: 'none' };
     }
     case 'text': {

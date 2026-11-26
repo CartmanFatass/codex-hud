@@ -36,6 +36,7 @@ import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { readSelectionExcerpts } from '../../dist/roles/selection-excerpts.js';
 import { PanelExecution } from '../../dist/panel/execution.js';
 import { executionRows } from '../../dist/render/execution-view.js';
+import { selectionExcerptRows } from '../../dist/render/selection-excerpts.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
 
 const root = resolve(new URL('../..', import.meta.url).pathname);
@@ -239,6 +240,53 @@ test('worker pane selection delivers excerpt, job source, and question once to j
   assert.match(prompts[0].text, /time=2026-11-26T12:00:00\.000Z/);
   assert.ok(prompts[0].text.includes('FAIL test/foo.test.mjs\nExpected 2 to equal 3'));
   assert.ok(prompts[0].text.includes('Question: is this from your last change?'));
+});
+
+test('composer saves a note without sending and a closed job shows it as undelivered', { timeout: 10_000 }, async (t) => {
+  const target = 'j000000000000000a', pane = 'w1:p2';
+  let panes = [], paneText = 'Synthetic log line';
+  const prompts = [];
+  const f = await fakeFork(t, (method, params) => {
+    if (method === 'pane.list') return { result: { panes } };
+    if (method === 'pane.read') return { result: { read: { text: paneText } } };
+    if (method === 'agent.prompt') { prompts.push(params); return prompted; }
+    return { error: { code: 'unsupported' } };
+  });
+  const project = join(f.dir, 'project');
+  fs.mkdirSync(project);
+  panes = [{ pane_id: pane, cwd: project, workspace_id: 'w1', agent: 'pi', agent_status: 'working' }];
+  const dir = writeJob(f.home, target, { leftPane: pane, primary: 'agent-a', projectRoot: project, socketPath: f.socketPath });
+  const status = join(dir, 'STATUS.json');
+  fs.writeFileSync(status, JSON.stringify({ state: 'working' }));
+  const { stdin, stdout } = fakeTtyStreams();
+  const input = text => queueMicrotask(() => stdin.write(text));
+  const onFrame = (lines, state) => {
+    const screen = lines.join('\n');
+    if (step === 0) { step++; input('\t'); }
+    else if (step === 1) {
+      assert.match(screen, /Note for next turn -> imp[\s\S]*Ask an advisor/);
+      step++; input('\x1b[F\x1b[A\r'); // The note entry is just above Ask an advisor.
+    } else if (step === 2 && state.noteForNextTurn) {
+      assert.match(screen, /Note: /);
+      assert.match(screen, /Enter save note/);
+      paneText = 'New log output scrolls the selection away';
+      step++; input('Check this assertion\r');
+    }
+  };
+  let step = 0;
+  const outcome = await runComposerSession({
+    context: { workspace_id: 'w1', focused_pane_id: pane, focused_pane_cwd: project, selected_text: 'Synthetic log line' },
+    hudHome: f.home, env: f.env, stdin, stdout, onFrame,
+  });
+  assert.equal(step, 3);
+  assert.equal(outcome.sent, true);
+  assert.deepEqual(prompts, []);
+  const cache = getJobIndexCache(f.home);
+  const card = () => selectionExcerptRows(readSelectionExcerpts(f.home, cache, { project }), 80, true).map(row => row.text).join('\n');
+  assert.match(card(), /pending[\s\S]*Synthetic log line[\s\S]*Note[\s\S]*Check this assertion/);
+  panes = [];
+  fs.writeFileSync(status, JSON.stringify({ state: 'closed' }));
+  assert.match(card(), /undelivered[\s\S]*Synthetic log line[\s\S]*Check this assertion/);
 });
 
 test('working jobs cross-send selections, bind reverse-order replies, and offer main if a picked job ended', { timeout: 15_000 }, async (t) => {
@@ -1275,7 +1323,7 @@ test('investigate composer renderer keeps exact columns, NO_COLOR, EN/ZH, picker
   const prevLang = setLanguage('en');
   try {
     setDisplayConfig({ theme: 'none' });
-    const job = { job: 'j0000000000000009', launchId: 'launch-9', role: 'imp', ticket: 'fine-interact/02' };
+    const job = { job: 'j0000000000000009', launchId: 'launch-9', role: 'imp', ticket: 'fine-interact/02', nextTurnNote: true };
     const state = createComposerState({
       mode: 'investigate',
       source: {
@@ -1307,7 +1355,7 @@ test('investigate composer renderer keeps exact columns, NO_COLOR, EN/ZH, picker
         assert.equal(line.includes('\x1b'), false);
       }
       assert.ok(pickerLines.join('\n').includes('Choose working job'));
-      assert.doesNotMatch(pickerLines.join('\n'), /Main:|Ask an advisor/);
+      assert.doesNotMatch(pickerLines.join('\n'), /Main:|Ask an advisor|Note for next turn/);
     }
 
     // Choose job -> editor shows Investigate pane, Tab reopens picker, Esc returns to editor.
@@ -1317,6 +1365,7 @@ test('investigate composer renderer keeps exact columns, NO_COLOR, EN/ZH, picker
     assert.equal(picked.picker, null);
     assert.equal(picked.targetJob, job);
     assert.equal(picked.targetAdvisor, false);
+    assert.equal(picked.noteForNextTurn, false);
     const editorLines = renderSelectSendComposer(picked, { width: 80, height: 14, nowMs: 0 });
     for (const line of editorLines) assert.equal(visualLength(line), 80);
     assert.ok(editorLines.join('\n').includes('Investigate pane ->'));
