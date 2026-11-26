@@ -11,6 +11,7 @@
 
 - `land publishes completed and done in one atomic flow write (clean worktree)` (tests/unit/thin-mcp-land-publish.test.mjs) — flow `fb91cb6d28dbf6c54`, log `~/.hud/flows/fb91cb6d28dbf6c54.json.gate-1.log`
 - `hud_send messages sends distinct texts and repairs in input order while keeping jobs fan-out` (tests/unit/thin-mcp-batch.test.mjs) — flow `fb91cb6d28dbf6c54`, log `~/.hud/flows/fb91cb6d28dbf6c54.json.gate-1.log`
+- `hud_report during a pending CLI prompt belongs to the old turn (delivered)` (tests/unit/thin-mcp-worker-tools.test.mjs) — flow `fb62c3b381dcb8d27`, log `~/.hud/flows/fb62c3b381dcb8d27.json.gate-1.log`
 
 - [ ] Each listed case passes 20 consecutive runs under parallel load
 - [ ] No assertion or product bound weakened
