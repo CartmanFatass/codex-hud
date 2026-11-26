@@ -12,6 +12,7 @@ import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js'
 import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
 import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
 import { compactResult } from './result-text.js';
+import { ownStatuslineStrip } from '../../statusline-parity/strip.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
 import {
   resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, flowReceipt, tasks,
@@ -20,6 +21,13 @@ import {
 } from './tasks.js';
 
 const worker = isWorker ? workerTools : undefined;
+let strip: ReturnType<typeof ownStatuslineStrip>;
+function startStatuslineStrip() {
+  const client = session.callerHarness ?? (process.env.CLAUDE_CODE_SESSION_ID ? 'claude' : undefined);
+  if (!strip && !worker && !session.resumeRefusal && (client === 'claude' || client === 'agy')) {
+    strip = ownStatuslineStrip(client, { ...process.env, HUD_HOME: hudHome }, () => !session.resumeRefusal);
+  }
+}
 function isLeadWorker(): boolean {
   if (!worker) return false;
   try { return worker.workerJob().job.role === 'lead'; } catch { return false; }
@@ -112,6 +120,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       session.agyClient = clientName === 'antigravity-client';
       if (session.agyClient) session.callerHarness = 'agy';
       if (clientName === 'hud-pi') session.callerHarness = 'pi';
+      if (clientName === 'claude-code' || clientName === 'claude') session.callerHarness = 'claude';
       result = {
         protocolVersion: request.params?.protocolVersion ?? '2024-11-05',
         capabilities: { tools: { listChanged: true }, resources: {} },
@@ -260,6 +269,8 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       rpcError(request.id, -32601, 'Method not found');
       return;
   }
+  // On hot reload, this first request arrives after the old generation released the row.
+  startStatuslineStrip();
   write({ jsonrpc: '2.0', id: request.id, result: session.discovered ? { resultType: 'complete', ...result as object } : result });
 }
 // Private live-connection handoff preserves state that disk recovery cannot, including cancellation authority.
@@ -306,8 +317,11 @@ export function openRuntime() {
       return { toolsList: JSON.stringify(await toolsListResult()) };
     },
     async stop() {
+      const stripClosed = strip?.stop();
+      strip = undefined;
       clearTaskSweep();
       await ownerDelivery?.stop();
+      await stripClosed;
       await stopBatchDelivery(!handedOff);
       await retireInline();
       clearTaskMaps();

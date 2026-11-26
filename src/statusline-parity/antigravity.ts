@@ -1,5 +1,5 @@
-import { renderBar, type BarQuotaWindow } from '../render/layout/bar-fields.js';
-import { displayConfig } from '../render/hud-config.js';
+import type { BarFacts, BarQuotaWindow } from '../render/layout/bar-fields.js';
+import { renderCompactStatusline } from './render.js';
 import type { MachineWorkSignal } from '../collectors/work-summary-snapshot.js';
 import { fitMachineWork } from '../render/work-summary.js';
 import type { LocalLoad } from '../collectors/local-load.js';
@@ -16,16 +16,15 @@ const percent = (value: unknown) =>
 const label = (value: unknown) =>
   typeof value === 'string' ? monitorText(value.slice(0, 256)).replace(/[\u2028\u2029]/g, ' ').trim() : '';
 
-export function renderAntigravity(
+export function prepareAntigravity(
   input: unknown,
-  width: number,
   options: StatuslineSessionOptions,
   work?: MachineWorkSignal,
   localLoad?: LocalLoad,
   now = Date.now(),
   evenQuota?: EvenQuotaNotice[],
   advisor?: { skill: string; at: number }
-): string {
+): { render(width: number): string; facts?: BarFacts } {
   const value = record(input), model = record(value.model), context = record(value.context_window);
   const id = label(model.id), displayName = label(model.display_name);
   const name = displayName || id;
@@ -48,24 +47,24 @@ export function renderAntigravity(
   const workspace = record(value.workspace);
   if (options.details) {
     const language = options.language ?? 'en';
-    const native = renderStatuslineDetails({
-      model: { display_name: modelName },
-      cwd: label(workspace.current_dir) || label(value.cwd),
-      context_window: {
-        used_percentage: used,
-        remaining_percentage: left,
-        context_window_size: window,
-        total_input_tokens: context.total_input_tokens,
-        total_output_tokens: context.total_output_tokens,
-      },
-    }, width, language, windows.map((w) => `${w.label} ${w.shown}`));
-    return [native, fitMachineWork(work, width, now), fitLocalLoad(localLoad, width)]
-      .filter(Boolean).join('\n');
+    return { render(width) {
+      const native = renderStatuslineDetails({
+        model: { display_name: modelName },
+        cwd: label(workspace.current_dir) || label(value.cwd),
+        context_window: {
+          used_percentage: used,
+          remaining_percentage: left,
+          context_window_size: window,
+          total_input_tokens: context.total_input_tokens,
+          total_output_tokens: context.total_output_tokens,
+        },
+      }, width, language, windows.map((w) => `${w.label} ${w.shown}`));
+      return [native, fitMachineWork(work, width, now), fitLocalLoad(localLoad, width)].filter(Boolean).join('\n');
+    } };
   }
   const cwd = label(workspace.project_dir) || label(value.cwd);
   const project = cwd.split(/[/\\]/).filter(Boolean).at(-1) || (cwd.startsWith('/') ? '/' : '');
-  const reset = displayConfig().theme === 'none' ? '' : '\x1b[0m';
-  return reset + renderBar({
+  const facts: BarFacts = {
     model: { name: modelName, id: id || undefined },
     context: used === undefined ? undefined : { percent: used, shown: `${used}%`, window },
     project: project ? { name: project, branch: null } : undefined,
@@ -74,5 +73,6 @@ export function renderAntigravity(
     advisor,
     work,
     localLoad,
-  }, width, now).line;
+  };
+  return { facts, render: (width) => renderCompactStatusline(facts, width, now) };
 }

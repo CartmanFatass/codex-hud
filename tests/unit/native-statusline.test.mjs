@@ -56,6 +56,21 @@ test('native build is present when Cargo and the Linux x64 target are available'
   assert.ok(hasNative, 'run npm run build before the differential gate');
 });
 
+test('the opt-in Claude main-session launcher shares compact facts without changing its native-facing line', { skip: !hasNative }, (t) => {
+  const env = { ...environment(receipt(t)), HERDR_ENV: '1', HERDR_PANE_ID: 'synth:p1', HERDR_SOCKET_PATH: '/synthetic/fork.sock' };
+  setup(env.HUD_HOME);
+  const input = { ...base, email: syntheticEmail };
+  const width = ['--width', '80'];
+  const reference = rust(env, input, width);
+  const mailbox = join(env.HUD_HOME, 'display/pane-strip-v1');
+  assert.equal(fs.existsSync(mailbox), false);
+  fs.writeFileSync(join(env.HUD_HOME, 'hud-settings.json'), JSON.stringify({ claudePaneStrip: true }));
+  assert.equal(rust(env, input, width, 75).length, 0);
+  assert.deepEqual(run(launcher, width, env, input), reference);
+  assert.equal(fs.readdirSync(mailbox).length, 1);
+  assert.deepEqual(rust({ ...env, HUD_JOB_DIR: '/synthetic/worker' }, input, width), reference);
+});
+
 test('Claude launcher uses TypeScript for a live even quota notice and native can render again after expiry', { skip: !hasNative }, (t) => {
   const env = { ...environment(receipt(t)), HUD_ICONS: 'unicode', NO_COLOR: '1' };
   setup(env.HUD_HOME);

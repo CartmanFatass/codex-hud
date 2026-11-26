@@ -70,16 +70,15 @@ export interface ParityEvidence {
   advisor?: bar.BarFacts['advisor'];
   advisorRules?: bar.BarFacts['advisorRules'];
 }
-export function renderParity(
+export function parityFacts(
   input: unknown,
-  width: number,
   settings: ParitySettings,
   evidence: ParityEvidence,
   now: number,
-  env: NodeJS.ProcessEnv = {},
+  env: NodeJS.ProcessEnv,
   work?: MachineWorkSignal,
   localLoad?: LocalLoad
-): string {
+): bar.BarFacts {
   const v = record(input),
     m = record(v.model),
     t = evidence.transcript,
@@ -102,7 +101,7 @@ export function renderParity(
     env.CLAUDE_CODE_USE_BEDROCK === '1' || safe(m.id).toLowerCase().includes('anthropic.claude-')
       ? []
       : usageWindows(v, now);
-  const facts: bar.BarFacts = {
+  return {
     model: {
       name: shortModel(safe(m.id)) || model,
       id: safe(m.id) || model,
@@ -132,6 +131,22 @@ export function renderParity(
       ],
     },
   };
+}
+
+export function renderCompactStatusline(facts: bar.BarFacts, width: number, now: number): string {
   const reset = displayConfig().theme === 'none' ? '' : RESET;
   return reset + bar.renderBar(facts, width, now).line;
+}
+
+export function renderParity(
+  input: unknown,
+  width: number,
+  settings: ParitySettings,
+  evidence: ParityEvidence,
+  now: number,
+  env: NodeJS.ProcessEnv = {},
+  work?: MachineWorkSignal,
+  localLoad?: LocalLoad
+): string {
+  return renderCompactStatusline(parityFacts(input, settings, evidence, now, env, work, localLoad), width, now);
 }

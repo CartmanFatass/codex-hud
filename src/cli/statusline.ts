@@ -17,7 +17,8 @@ import { forwardInput } from '../statusline-parity/forward.js';
 import { recordClaudeQuota } from '../statusline-parity/quota-cache.js';
 import { importStatusline } from '../statusline-parity/import.js';
 import { statuslineSettings } from '../statusline-settings.js';
-import { renderAntigravity } from '../statusline-parity/antigravity.js';
+import { prepareAntigravity } from '../statusline-parity/antigravity.js';
+import { publishStripFacts } from '../statusline-parity/strip.js';
 import { record } from '../statusline-parity/storage.js';
 
 function isClaude(value: Record<string, unknown>): boolean {
@@ -164,7 +165,9 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, agyM
         const advisor = !options.details
           ? readAdvisorNotice(home, { projectRoot: typeof dir === 'string' ? dir : undefined }, now, io.env)
           : undefined;
-        const frame = renderAntigravity(input, width, options, work, localLoad, now, evenQuota, advisor);
+        const statusline = prepareAntigravity(input, options, work, localLoad, now, evenQuota, advisor);
+        const frame = statusline.render(width);
+        if (statusline.facts) publishStripFacts('agy', io.env, statusline.facts, now);
         return agyMode === 'cache' ? `hud-statusline-v1:${frame}` : frame;
       }
       if (agyMode || !isClaude(input)) throw new Error('unrecognized_statusline_payload');
@@ -173,7 +176,8 @@ export async function statuslineCommand(args: readonly string[], io: HudIO, agyM
       const home = getHudHome(io.env);
       const work = readMachineWork(home, now), localLoad = collectLocalLoad(home, now, io.env);
       applyBarSettings(io.env);
-      if (!options.details) return collectAndRenderParity(value, width, parity, io.env, now, work, localLoad);
+      if (!options.details) return collectAndRenderParity(value, width, parity, io.env, now, work, localLoad,
+        (facts) => publishStripFacts('claude', io.env, facts, now));
       const first = renderStatuslineSession(value, width, options);
       return [first, fitMachineWork(work, width, now), fitLocalLoad(localLoad, width)]
         .filter(Boolean).join('\n');

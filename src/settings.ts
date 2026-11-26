@@ -16,6 +16,9 @@ import { DEFAULT_WIDTH } from './utils/pane-width.js';
 
 export interface HudSettings extends Omit<HudDisplayConfig, 'density' | 'glyphs' | 'motion' | 'context' | 'look'> {
   statusline: boolean;
+  claudePaneStrip: boolean;
+  piPaneStrip: boolean;
+  agyPaneStrip: boolean;
   mouse: boolean;
   details: boolean;
   refreshMs: number;
@@ -62,6 +65,9 @@ export function defaultSettings(): HudSettings {
     barStyle: 'line',
     barFields: [...DEFAULT_BAR_FIELDS],
     statusline: true,
+    claudePaneStrip: false,
+    piPaneStrip: false,
+    agyPaneStrip: false,
     mouse: true,
     details: true,
     refreshMs: 1000,
@@ -104,6 +110,9 @@ const validEvenPool = (value: unknown): boolean =>
 
 const validators: Record<keyof HudSettings, (value: unknown) => boolean> = {
   statusline: isBoolean,
+  claudePaneStrip: isBoolean,
+  piPaneStrip: isBoolean,
+  agyPaneStrip: isBoolean,
   theme: oneOf(...THEMES),
   barStyle: oneOf(...BAR_STYLES),
   barFields: (value) =>
@@ -200,6 +209,13 @@ function decisionApi(env = process.env): DecisionProviderId {
   try { return resolveDecisions(readHudConfig(path.join(getHudHome(env), 'config.json'))).primary; }
   catch { return 'openai'; }
 }
+const STRIP_PREFERENCES = { claude: 'claudePaneStrip', pi: 'piPaneStrip', agy: 'agyPaneStrip' } as const;
+export type StripClient = keyof typeof STRIP_PREFERENCES;
+export function paneStripEnabled(client: StripClient, env = process.env): boolean {
+  try { return readSettings(settingsPath(env))[STRIP_PREFERENCES[client]]; }
+  catch { return false; }
+}
+
 /** Missing files use defaults. Malformed preference JSON and I/O failures belong to the caller. */
 export function loadSettings(env = process.env): HudSettings {
   return { ...readSettings(settingsPath(env)), decisionApi: decisionApi(env) };

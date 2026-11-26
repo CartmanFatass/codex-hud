@@ -46,6 +46,8 @@ export class PaneStripClient {
   private readonly onPaneGone?: () => void;
 
   private currentWidth: number;
+  private widthObserved = false;
+  private widthEvent = 0;
   private lastSentLine: string | null = null;
   private lastPushAt = -Infinity;
   private inFlight: Promise<void> | null = null;
@@ -74,6 +76,20 @@ export class PaneStripClient {
     return this.currentWidth;
   }
 
+  /** The server's inner width, which can differ from the launching process's PTY columns. */
+  get measuredWidth(): number | null {
+    return this.widthObserved ? this.currentWidth : null;
+  }
+
+  private observeWidth(raw: unknown): void {
+    const width = Number(raw);
+    if (!Number.isInteger(width) || width <= 0) return;
+    this.widthObserved = true;
+    if (width === this.currentWidth) return;
+    this.currentWidth = width;
+    this.onWidthChange?.(width);
+  }
+
   /** Open the `pane.resized` subscription socket (reconnecting automatically on disconnect). */
   start(): void {
     if (this.stopped || this.socket || this.reconnectTimer) return;
@@ -86,7 +102,7 @@ export class PaneStripClient {
     if (!endpoint) return;
     const peer = (this.socket = createConnection(endpoint));
     const lines = createInterface({ input: peer });
-    const subId = `codex-hud-strip-${process.pid}`;
+    const subId = `hud-pane-strip-${process.pid}`;
 
     const drop = () => {
       if (this.socket !== peer) return;
@@ -140,11 +156,10 @@ export class PaneStripClient {
       if (kind !== 'pane_resized') return;
       const data = message.data as Record<string, unknown> | undefined;
       if (!data || data.pane_id !== this.paneId) return;
-      const nextWidth = Number(data.width);
-      if (Number.isInteger(nextWidth) && nextWidth > 0 && nextWidth !== this.currentWidth) {
-        this.currentWidth = nextWidth;
-        this.onWidthChange?.(nextWidth);
-      }
+      const width = Number(data.width);
+      if (!Number.isInteger(width) || width <= 0) return;
+      this.widthEvent++;
+      this.observeWidth(width);
     });
 
     lines.on('error', drop);
@@ -183,6 +198,7 @@ export class PaneStripClient {
         continue;
       }
       const controller = new AbortController();
+      const widthEvent = this.widthEvent;
       this.activeAbort = controller;
       const reply = await setPaneStrip(
         this.paneId,
@@ -201,11 +217,8 @@ export class PaneStripClient {
       }
       this.lastSentLine = next.line;
       this.lastPushAt = this.now();
-      const reportedWidth = Number(reply.result?.strip?.width);
-      if (Number.isInteger(reportedWidth) && reportedWidth > 0 && reportedWidth !== this.currentWidth) {
-        this.currentWidth = reportedWidth;
-        this.onWidthChange?.(reportedWidth);
-      }
+      // RPC and subscription use separate sockets. An older set reply must not undo a resize event received in flight.
+      if (this.widthEvent === widthEvent) this.observeWidth(reply.result?.strip?.width);
     }
   }
 

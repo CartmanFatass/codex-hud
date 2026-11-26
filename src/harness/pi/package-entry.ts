@@ -208,10 +208,10 @@ export function installPiPackage(
   });
   on('session_shutdown', () => {
     const result = fence();
-    footer?.dispose();
+    const stripClosed = footer?.dispose();
     footer = undefined;
     for (const remove of removers.splice(0)) remove();
-    return result;
+    return Promise.all([result, stripClosed]).then(() => {});
   });
   for (const event of [
     'thinking_level_select',

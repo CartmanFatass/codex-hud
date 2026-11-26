@@ -26,6 +26,7 @@ import { applyBarSettings } from '../../bar-settings.js';
 import { readExpFooterGrant } from '../../collectors/exp-store.js';
 import { expApproxUsd, type ExpAccount } from '../../exp-config.js';
 import { getHudHome } from '../../hud-home.js';
+import { ownMainPaneStrip } from '../../main-pane-strip.js';
 import { footerConfigPath, loadFooterSettings, saveFooterSettings } from './footer-settings.js';
 import { HUD_STATUS_KEY } from './segment.js';
 import type { FooterAPI, FooterContext, FooterHost } from './footer-host.js';
@@ -503,6 +504,8 @@ export function createP10kFooter(
   }
 
   let current: FooterContext | null = null;
+  let strip: ReturnType<typeof ownMainPaneStrip>;
+  let stripPaint: ((width: number) => string) | undefined;
   let view: FooterContext | null = null;
   let stats: Stats | undefined;
   let capturedViz: string | undefined;
@@ -603,9 +606,9 @@ export function createP10kFooter(
     });
     repaint?.();
   }
-  /** The one line, fitted to `width`; pi's own width measure has the last word, so the host never gets a wider row. */
-  function line(width: number, ctx: FooterContext): string {
-    if (!view || !stats || !mounted || width <= 0) return '';
+  /** Capture once; strip resizes must not start any additional subscription observation or refresh. */
+  function prepareLine(ctx: FooterContext) {
+    if (!view || !stats || !mounted) return;
     const subscriptionQuota = subscription.draw(ctx);
     const now = Date.now();
     const quota =
@@ -615,11 +618,13 @@ export function createP10kFooter(
           ? { windows: subscriptionQuota, trailing: true }
           : undefined;
     const facts = buildFacts(view, pi, quota);
-    const style = noColor() ? 'line' : activeBarStyle();
-    return renderPiBar(facts, width, now, style)
+    const plainText = noColor();
+    const style = plainText ? 'line' : activeBarStyle();
+    // Pi's width measure has the last word, so the host never gets a wider row.
+    return (width: number) => renderPiBar(facts, width, now, style)
       .split('\n')
       .map((row) => {
-        const plain = noColor() ? stripAnsi(row) : row;
+        const plain = plainText ? stripAnsi(row) : row;
         return host.visibleWidth(plain) > width ? host.truncateToWidth(plain, width, '') : plain;
       })
       .join('\n');
@@ -712,6 +717,7 @@ export function createP10kFooter(
     current = null;
     view = null;
     repaint = null;
+    stripPaint = undefined;
     stats = undefined;
     apiQuota = undefined;
     turnStartedAt = null;
@@ -733,12 +739,15 @@ export function createP10kFooter(
     lensFiles.clear();
     lensAnalyzed = false;
     update();
+    strip ??= ownMainPaneStrip('pi', env, () => stripPaint);
     ctx.ui.setFooter((tui, _theme, data) => {
       repaint = () => tui.requestRender();
       footerStatuses = () => data.getExtensionStatuses();
       return {
         render(width) {
-          const text = current === ctx ? line(width, ctx) : '';
+          if (current !== ctx || width <= 0) return [];
+          stripPaint = prepareLine(ctx);
+          const text = stripPaint?.(width);
           return text ? text.split('\n') : [];
         },
         invalidate() {},
@@ -837,6 +846,7 @@ export function createP10kFooter(
       stop();
       live = false;
       for (const remove of removers.splice(0)) remove();
+      return strip?.stop();
     },
   };
 }

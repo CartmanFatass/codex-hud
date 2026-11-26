@@ -1298,6 +1298,19 @@ Machine load drops land elapsed time, then the land step, keeping its icon and c
 pi keeps the same editor ribbon in both styles, and other extensions' statuses remain visible.
 The bars stay English-only apart from a subagent's own description.
 
+### Herdr pane strips for Claude Code, pi and Antigravity
+
+With a herdr fork that advertises `pane_strip`, open **Settings → Herdr pane strips**, turn on a client, and save.
+Each switch is off by default and affects only that client's main sessions, not HUD workers or the Codex bar.
+The strip mirrors the compact HUD statusline on an extra bottom row, fitted to the pane's inner width on resize.
+The native line and pi's editor ribbon stay in place. Turning the switch off and saving returns the row to the PTY.
+
+In pi, the existing HUD display extension (`hud-display`) owns the strip while its footer is shown.
+In Claude and Antigravity, the existing `hud` MCP connection owns it; connect the MCP server if your client starts it lazily.
+These two clients need the HUD `hud-statusline` configured, and the strip appears after its next compact refresh.
+Opted-in Claude uses the TypeScript renderer for both copies, so they share the same readings; Antigravity keeps its native launcher's refresh cache.
+Only compact render facts, not statusline stdin, are shared in bounded private local files. No new service runs.
+
 ### Codex native status line
 
 In ordinary Codex with the `hud` MCP server registered, open `/experimental`, turn on **Custom status line**, then restart Codex.

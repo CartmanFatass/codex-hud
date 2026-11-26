@@ -514,6 +514,8 @@ const ZH: Record<string, string> = {
   Context: '上下文',
   'Bar on launch': '启动时显示状态栏',
   'Next launch: one-line bar': '下次启动时显示单行状态栏',
+  'Herdr pane strips': 'Herdr 窗格状态栏',
+  'Mirror the main session’s HUD statusline on an extra row; keep the native line': '在额外一行显示主会话的 HUD 状态栏，并保留原生状态栏',
   Notifications: '通知',
   'Open previews': '打开预览',
   'Open report HTML previews in the default browser': '在默认浏览器中打开报告的 HTML 预览',

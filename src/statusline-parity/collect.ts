@@ -12,7 +12,8 @@ import { loadSettings } from '../settings.js';
 import { collectTranscript } from './transcript.js';
 import { collectConfigCounts } from './config-counts.js';
 import { collectParityGit } from './git.js';
-import { renderParity } from './render.js';
+import type { BarFacts } from '../render/layout/bar-fields.js';
+import { parityFacts, renderCompactStatusline } from './render.js';
 import type { ParitySettings } from './settings.js';
 import { cachePath, cached, record, saveJson, signature } from './storage.js';
 interface ContextCache {
@@ -65,7 +66,8 @@ export async function collectAndRenderParity(
   env: NodeJS.ProcessEnv,
   now = Date.now(),
   work?: MachineWorkSignal,
-  localLoad?: LocalLoad
+  localLoad?: LocalLoad,
+  publish?: (facts: BarFacts) => void
 ): Promise<string> {
   const value = record(input),
     file =
@@ -149,5 +151,8 @@ export async function collectAndRenderParity(
       /* Missing/invalid settings: skip advisor silently. */
     }
   }
-  return renderParity(native, width, settings, { transcript, counts, git, compact, evenQuota, advisor, advisorRules }, now, env, work, localLoad);
+  const facts = parityFacts(native, settings, { transcript, counts, git, compact, evenQuota, advisor, advisorRules }, now, env, work, localLoad);
+  const line = renderCompactStatusline(facts, width, now);
+  publish?.(facts);
+  return line;
 }

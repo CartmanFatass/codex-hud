@@ -133,6 +133,16 @@ impl Display {
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("hud-settings.json"));
         if let Some(v) = state::read(&file, 65_536, false, false)? {
+            // The opt-in strip mirrors the same prepared facts as the native-facing line.
+            // Let the existing TS fallback render and publish them together, without replaying stdin.
+            if v.get("claudePaneStrip").bool() == Some(true)
+                && state::env("HERDR_ENV").as_deref() == Some("1")
+                && state::env("HERDR_PANE_ID").is_some_and(|pane| !pane.is_empty())
+                && state::env("HERDR_SOCKET_PATH").is_some_and(|p| Path::new(&p).is_absolute())
+                && std::env::var_os("HUD_JOB_DIR").is_none()
+            {
+                return None;
+            }
             if v.get("advisorShadow").bool() == Some(true) {
                 let rules_enabled = v.get("advisorRulesFile").str().is_some_and(|p| {
                     Path::new(p).is_absolute() && !p.contains('\0') && p.encode_utf16().count() <= 4096

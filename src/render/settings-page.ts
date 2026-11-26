@@ -17,7 +17,7 @@ const CALL_FEATURES: Record<string, string> = {
   'advisor-shadow': 'Advisor shadow',
 };
 export type SettingKey = keyof HudSettings | 'unattended';
-export type SettingGroup = 'Display' | 'Panel' | 'Models' | 'Workers' | 'Codex';
+export type SettingGroup = 'Display' | 'Panel' | 'Models' | 'Workers' | 'Codex' | 'Herdr pane strips';
 export type SettingsAction = 'back' | 'save' | 'reset' | 'unattended';
 export interface SettingRow {
   key: SettingKey;
@@ -156,6 +156,14 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     values: [true, false],
     help: 'Next launch: one-line bar',
   },
+  ...([
+    ['claudePaneStrip', 'Claude Code'],
+    ['piPaneStrip', 'pi'],
+    ['agyPaneStrip', 'Antigravity'],
+  ] as const).map(([key, label]): SettingRow => ({
+    key, label, group: 'Herdr pane strips', values: [false, true],
+    help: 'Mirror the main session’s HUD statusline on an extra row; keep the native line',
+  })),
 ];
 export const ADVANCED = SETTING_ROWS.length;
 const MAIN_INDICES = SETTING_ROWS.flatMap((row, i) => (row.advanced ? [] : [i]));
@@ -229,6 +237,7 @@ const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'autoPrewalk', 'poolPick', 'advisorShadow', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
+  'Herdr pane strips': ['claudePaneStrip', 'piPaneStrip', 'agyPaneStrip'],
 };
 export function resetSettingsGroup(draft: HudSettings, group: string): HudSettings {
   if (!Object.hasOwn(RESET_FIELDS, group)) return draft;

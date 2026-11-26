@@ -47,11 +47,12 @@ test('Settings folds the 8 rarely changed rows under Advanced by default and sho
     assert.doesNotMatch(narrowText, /Model text|Call cap/);
     assert.match(narrowText, /Sonic auto-thinking/);
 
-    // At 40x30 and 100x30, Advanced (8) is visible and exact width.
+    // At 40x36 and 100x36, both the pane strips and Advanced (8) are visible and exact width.
     for (const width of [40, 100]) {
-      const tall = renderSettingsPage(state, width, 30);
+      const tall = renderSettingsPage(state, width, 36);
       for (const line of tall.lines) assert.equal(visualLength(line), width, `${width}: ${stripAnsi(line)}`);
       const text = plain(tall);
+      assert.match(text, /Herdr pane strips ─+.*\n.*Claude Code\s+off\n.*pi\s+off\n.*Antigravity\s+off/);
       assert.match(text, /Advanced \(8\)/);
       assert.match(text, /Models ─+/);
       for (const row of advancedRows) assert.doesNotMatch(text, new RegExp(`\\b${row.label}\\b`), `${width}:${row.label}`);
@@ -164,7 +165,7 @@ test('Collapsed navigation walks only visible rows plus ADVANCED; PageDown/PageU
   state = handleSettingsInput(state, { type: 'key', key: 'end' }, renderSettingsPage(state, 80, 40)).state;
   assert.equal(state.selected, ADVANCED);
 
-  // PageDown jumps Display -> Panel -> Models -> Codex -> Advanced.
+  // PageDown jumps Display -> Panel -> Models -> Codex -> Herdr pane strips -> Advanced.
   state = { ...state, selected: 0 };
   const jumped = [state.selected];
   for (let i = 0; i < 6; i++) {
@@ -177,6 +178,7 @@ test('Collapsed navigation walks only visible rows plus ADVANCED; PageDown/PageU
     SETTING_ROWS.findIndex((r) => r.key === 'treeWidth'),
     SETTING_ROWS.findIndex((r) => r.key === 'decisionApi'),
     SETTING_ROWS.findIndex((r) => r.key === 'statusline'),
+    SETTING_ROWS.findIndex((r) => r.key === 'claudePaneStrip'),
     ADVANCED,
   ]);
 });
