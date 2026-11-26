@@ -659,8 +659,12 @@ export function writeCliRole(f, role, idle_grace_s = 1, can_continue = true, age
 }
 
 export function cliState(dir) {
-  const file = join(dir, 'STATUS.json');
-  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
+  try {
+    return JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
 }
 
 export function graceArmed(env, dir) {

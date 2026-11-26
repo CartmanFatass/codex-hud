@@ -1,6 +1,7 @@
 /** Share jobs/ file events without making lifecycle or notification consumers own each other's state. */
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
+import { clearTimeout, setTimeout } from 'node:timers';
 import { watcherReady } from '../mcp/watch-pid.js';
 import { binScript } from '../mcp/paths.js';
 import { JOB_ID_RE } from '../roles/job-index-cache.js';

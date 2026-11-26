@@ -473,11 +473,11 @@ test('watcher exits without expiry timers and deletes tabless and already-reaped
     f.job({ state: 'failed', ended_at: ago(100) }, { reaped_at: ago(23) }, true),
   ];
   for (const elapsed of [0, hour, hour + 1]) {
-    const { child, exited } = f.start(`
+    const { child, exited, stderr } = f.start(`
 Date.now = () => ${now + elapsed};
 globalThis.setTimeout = () => { throw Error('unexpected expiry timer'); };`);
     await exited;
-    assert.equal(child.exitCode, 0);
+    assert.equal(child.exitCode, 0, stderr());
     assert.ok(dirs.every((dir) => fs.existsSync(dir) === (elapsed <= hour)), 'delete only when strictly over 24 hours');
     assert.equal(fs.existsSync(join(f.home, 'reaps')), false);
     assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);

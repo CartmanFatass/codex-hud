@@ -121,20 +121,29 @@ globalThis.setTimeout = (callback, delay, ...args) => {
   fs.appendFileSync(process.env.HUD_HOME + '/timers', delay + '\\n');
   return timeout(callback, delay, ...args);
 };`);
-  await until(() => child.exitCode !== null || fs.existsSync(join(f.home, 'timers')), t.signal);
+  const timers = join(f.home, 'timers');
+  const readTimers = () => {
+    if (!fs.existsSync(timers)) return [];
+    const text = fs.readFileSync(timers, 'utf8');
+    const end = text.lastIndexOf('\n');
+    return end < 0 ? [] : text.slice(0, end).split('\n').map(Number);
+  };
+  await until(() => child.exitCode !== null || readTimers().length >= 1, t.signal);
   assert.equal(child.exitCode, null, stderr());
-  assert.equal(fs.readFileSync(join(f.home, 'timers'), 'utf8').split('\n')[0], '1000', 'unconfigured degraded interval');
+  assert.equal(readTimers()[0], 1000, 'unconfigured degraded interval');
   const second = f.job({ state: 'working' }, {}, true);
   writeFixtureFile(join(second, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
-  const settled = Date.now();
   await until(() => child.exitCode !== null || JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at, t.signal);
   assert.equal(child.exitCode, null, 'the first failed deadline is still pending');
-  assert.ok(Date.now() - settled <= 4000, 'new job reaped within a few fallback intervals');
+  // Bound the scheduled fallback intervals, not OS time to deliver them and run the reaper.
+  const scheduled = readTimers();
+  assert.ok(scheduled.length >= 2 && scheduled.every((ms) => ms > 0 && ms <= 1000),
+    `expected degraded fallback intervals <= 1000ms, got ${JSON.stringify(scheduled)}`);
   assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), second + '\n');
   assert.equal(JSON.parse(fs.readFileSync(join(failed, 'job.json'), 'utf8')).reaped_at, undefined);
   writeFixtureFile(join(failed, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
   await exited;
-  assert.equal(child.exitCode, 0);
+  assert.equal(child.exitCode, 0, stderr());
   assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), second + '\n' + failed + '\n');
   assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
 });

@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import { createConnection, createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
+import { clearTimeout, setTimeout } from 'node:timers';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const releaseRoot = new URL('..', import.meta.url);

@@ -1,6 +1,6 @@
 # 15: Gate flakes collected after test-flakes/14
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Live try:** none
 **Blocked by:** none
@@ -14,7 +14,9 @@
 - `watcher exits without expiry timers and deletes tabless and already-reaped jobs on next catch-up` (tests/unit/job-retention.test.mjs) — flow `f61bccbe5970196ac`, log `~/.hud/flows/f61bccbe5970196ac.json.gate-2.log`
 - `degraded watching polls for new jobs while a failed tab deadline keeps it alive` (tests/unit/job-retention-watch-faults.test.mjs) — flow `f61bccbe5970196ac`, log `~/.hud/flows/f61bccbe5970196ac.json.gate-2.log`
 
-- [ ] Each listed case passes 20 consecutive runs under parallel load
-- [ ] No assertion or product bound weakened
+- [x] Each listed case passes 20 consecutive runs under parallel load
+- [x] No assertion or product bound weakened
 
 ## Comments
+
+- Landed in this commit (replay base 6d113fdc41511dccb5ce4e4929b63a8a92f073df); gate 5/5 passed.
