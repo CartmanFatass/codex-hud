@@ -220,7 +220,8 @@ await callWorkerTool('hud_report', { text: ${JSON.stringify(reportBody)} });
 
 test('tab-mode sonic fixture records reads from its session file, and missing session records reads null', async (t) => {
   const f = await fixture(t);
-  const ended = '2026-11-25T13:00:00.000Z';
+  // The real watcher applies retention against wall time; keep these receipts fresh.
+  const ended = new Date().toISOString();
 
   // Tab-mode sonic with a readable session file.
   const tabId = 'j1111111111111111';
@@ -360,7 +361,7 @@ test('tab-mode sonic fixture records reads from its session file, and missing se
   archiveJob(f.env.HUD_HOME, impDir, impId, readJson(join(impDir, 'job.json')), cliState(impDir), Date.parse(ended), (m) => logs.push(m));
   assert.deepEqual(logs, []);
 
-  const archived = fs.readFileSync(join(f.env.HUD_HOME, 'archive', '2026-11.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  const archived = fs.readFileSync(join(f.env.HUD_HOME, 'archive', `${ended.slice(0, 7)}.jsonl`), 'utf8').trim().split('\n').map(JSON.parse);
   const tabArchive = archived.find((row) => row.job === tabId);
   assert.deepEqual(tabArchive.reads, expectedTabReads);
   assert.equal(tabArchive.brief_bytes, Buffer.byteLength(tabBrief, 'utf8'));
