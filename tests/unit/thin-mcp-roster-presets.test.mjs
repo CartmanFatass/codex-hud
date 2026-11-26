@@ -117,11 +117,13 @@ test('pi role tools match the real MCP tools/list', async (t) => {
   const f = await fixture(t);
   const tools = (await f.rpc('tools/list')).result.tools.filter(({ name }) => name !== 'hud_statusline');
   assert.deepEqual(PI_ROLE_TOOLS, tools);
-  // Allow 200 bytes for experiment tags, 225 for ticket Objective links, 160 for workflow/07 lead/live_try options, and 110 for unattended/03 cancel run ID; bound Objective and schedule separately.
+  // Allow 200 bytes for experiment tags, 225 for ticket Objective links, 160 for workflow/07 lead/live_try options, and 110 for unattended/03 cancel run ID.
   const bytes = (value) => Buffer.byteLength(JSON.stringify(value));
-  assert.ok(bytes(tools.filter(({ name }) => name !== 'hud_objective' && name !== 'hud_schedule')) <= 9708 + 200 + 225 + 160 + 110, 'existing role declarations stay within budget');
-  assert.ok(bytes(tools.find(({ name }) => name === 'hud_objective')) <= 1350, 'Objective/request declaration fits its 1350-byte budget');
-  assert.ok(bytes(tools.find(({ name }) => name === 'hud_schedule')) <= 1100, 'schedule declaration fits its 1100-byte budget');
+  const separateBudgets = { hud_objective: 1350, hud_schedule: 1100, hud_workflow: 850 };
+  assert.ok(bytes(tools.filter(({ name }) => !Object.hasOwn(separateBudgets, name))) <= 9708 + 200 + 225 + 160 + 110, 'existing role declarations stay within budget');
+  for (const [name, budget] of Object.entries(separateBudgets)) {
+    assert.ok(bytes(tools.find((tool) => tool.name === name)) <= budget, `${name} declaration fits its ${budget}-byte budget`);
+  }
   assert.match(tools.find(({ name }) => name === 'hud_read').description, /close at turn end with a declared report, read or not/);
   assert.match(tools.find(({ name }) => name === 'hud_create').inputSchema.properties.mode.description, /Imp routing may select it/);
 });

@@ -742,6 +742,7 @@ test('the delegation-only package registers the tools but no footer, no /hud and
     'hud_send',
     'hud_tickets',
     'hud_wait',
+    'hud_workflow',
   ]);
   assert.deepEqual([...h.tools.values()].map(({ name, description, parameters }) => ({
     name, description, inputSchema: parameters,
