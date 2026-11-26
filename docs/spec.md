@@ -204,7 +204,12 @@ as a linked feature's acceptance items. File syntax: D-2026-11-23-04. (new)
 
 - Keep joinable live job/STATUS, flow receipts and monthly job archive rows, including native session IDs and land
   repair causes. Preserve observed role/model/effort, lineage, ticket/package, times, checks, usage and reasons;
-  no full brief, report or transcript in the archive. (22.16, 23.01)
+  the monthly fact rows stay prose-free. (22.16, 23.01)
+- Pruning moves instead of deletes: a pruned job's text (brief, report, Q&A, job and status records, its flow and
+  land records, gate logs) goes compressed into a cold archive under `$HUD_HOME` and is never expired; HUD's raw
+  transcripts (stdout/stderr, sonic and other session copies) go there too, separately, and only they are dropped,
+  oldest first, past a configurable cap (default 20 GB). Live directories keep today's short retention; reading
+  an old job's report still works. (26.11)
 - For associated work, link the ticket to the project-scoped Objective ID and stamp ID and title at attribution time
   into job and archive facts. Keep the link through retries, repairs and child work; don't guess from a title or
   package. Unattributed and older jobs stay unattributed. (new)

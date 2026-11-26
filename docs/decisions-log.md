@@ -7,6 +7,11 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-26
 
+- **D-2026-11-26-11** (§2.3): Owner: HUD's data is valuable, keep it. Pruned jobs move into a compressed cold archive
+  instead of being deleted: text (brief, report, Q&A, records, flow/land records, gate logs) forever, raw transcripts
+  capped (default 20 GB, oldest raw dropped first). Measured: text about 10-15 MB a day, raw about 180 MB a day,
+  598 GB free. Supersedes the "no brief or report text" part of 22.16 for the cold archive (fact rows stay
+  prose-free). Claude Code keeps its own 30-day transcript cleanup (owner's choice).
 - **D-2026-11-26-10** (§2.1): Owner, after a frontend-imp Claude pane waited on a permission prompt to remove its
   own scratchpad files: low-risk worker permission prompts are answered for the worker (command confined to the
   job's worktree, task dir, scratchpad or temp, reversible, no network write, secrets, push or install); anything
