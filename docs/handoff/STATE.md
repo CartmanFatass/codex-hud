@@ -40,6 +40,10 @@ Older handoffs: [2026-11-03 to 11-14](archive/STATE-2026-11-03-to-11-14.md), [20
 ## Waiting for the owner
 
 See [PENDING.md](PENDING.md): advisor injection scope, gate concurrency, `docs/neon-proposal/`.
+- Remote owner decisions (phone/watch prompts with a recommendation and options, self-hosted; only owner-reserved
+  decisions; no answer = only that item waits): research only, parked by the owner 2026-11-26. Oracle
+  jc101d434509e9be0 surveys open-source options; file its summary, build nothing until the owner reopens it.
+- Advisor Objective paused by the owner (D-2026-11-26-07).
 
 ## Next
 
