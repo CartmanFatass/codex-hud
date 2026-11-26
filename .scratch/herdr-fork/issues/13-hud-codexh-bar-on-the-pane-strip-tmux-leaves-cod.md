@@ -1,6 +1,6 @@
 # 13: HUD: codexH bar on the pane strip; tmux leaves Codex panes
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** herdr-fork/10
 **Objective:** herdr-fork
@@ -16,3 +16,5 @@
 - 2026-11-26 main: implemented on wt/herdr-fork-13-d3083e (15a80f5e). Owner accepted (2026-11-26) that codexH now runs only inside herdr-hud (refuses in other terminals or an older fork, naming herdr-hud; CODEX_HUD_STATUSLINE=0 launches Codex without the bar) and that the tmux session flags --attach/--new-session/--kill/--list go with tmux. Land after the fork with pane_strip is installed, then live-check.
 
 - Landed in this commit (replay base 06030559a2a32afaadc528e0a3ad13c80a08f833); gate 5/5 passed.
+
+- 2026-11-26 main: landed 2e78b5f0. Live on fork a26432a7 with codex2 (CODEX_HOME=~/.codex): one strip row reserved (viewport 48 -> 47), codex-launch -> codex + bar sidecar, no tmux, pane.strip.set ok about once a second; owner confirmed the bar looks the same as before. Opening the panel is unchanged (`$hud` skill or `hud panel`).
