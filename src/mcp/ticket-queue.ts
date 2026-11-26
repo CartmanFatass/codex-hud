@@ -242,8 +242,11 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
         // A manual land can close the ticket before the successor has observed the receipt.
         const land = item.held && item.job ? completedLandForJob(home, item.job) : null;
         if (land) {
+          const at = land.landed_at ?? land.updated_at ?? now;
           next.land = land.flow;
           next.landed = true;
+          next.landed_at = at;
+          next.changed_at = at;
           next.base_moves = land.base_moves;
           delete next.held;
         } else if (!item.landed && (launchFailed(home, item.job) || ticketClosed(item.path))) {
@@ -346,15 +349,16 @@ export async function answerTicketQueueHandback(
           error: `No new ready repair tickets in feature ${cur.feature}; add repair ticket(s) via hud_tickets before answering repair`,
         };
       }
+      const at = new Date().toISOString();
       recordDecision(cur, {
         step, kind: 'accept', job: 'main', decision: 'repair',
         ...(parsed.reason && { reason: parsed.reason }),
-        at: new Date().toISOString(),
+        at,
       });
       cur.epoch = (cur.epoch ?? 0) + 1;
       if (repair.kind === 'cap') {
         cur.steps ??= {};
-        cur.steps[step] = { state: 'failed', reason: repair.reason };
+        cur.steps[step] = { state: 'failed', reason: repair.reason, changed_at: at };
         cur.reason = repair.reason;
         cur.queued = undefined;
         cur.remaining = cur.remaining ?? [];
@@ -375,14 +379,15 @@ export async function answerTicketQueueHandback(
     }
     if (parsed.choice === 'escalate') {
       const msg = parsed.reason ? `escalated: ${parsed.reason}` : 'escalated by main';
+      const at = new Date().toISOString();
       recordDecision(cur, {
         step, kind: 'accept', job: 'main', decision: 'escalate',
         ...(parsed.reason && { reason: parsed.reason }),
-        at: new Date().toISOString(),
+        at,
       });
       cur.epoch = (cur.epoch ?? 0) + 1;
       cur.steps ??= {};
-      cur.steps[step] = { state: 'failed', reason: msg };
+      cur.steps[step] = { state: 'failed', reason: msg, changed_at: at };
       cur.reason = msg;
       cur.queued = undefined;
       cur.remaining = cur.remaining ?? [];
@@ -401,14 +406,15 @@ export async function answerTicketQueueHandback(
       };
     }
     const verdict = parsed.reason ? `${parsed.choice}: ${parsed.reason}` : parsed.choice;
+    const at = new Date().toISOString();
     recordDecision(cur, {
       step, kind: 'accept', job: 'main', decision: parsed.choice,
       ...(parsed.reason && { reason: parsed.reason }),
-      at: new Date().toISOString(),
+      at,
     });
     cur.epoch = (cur.epoch ?? 0) + 1;
     cur.steps ??= {};
-    cur.steps[step] = { state: 'done', answer: parsed.choice };
+    cur.steps[step] = { state: 'done', answer: parsed.choice, changed_at: at };
     cur.verdict = verdict;
     delete cur.handback;
     delete cur.reason;

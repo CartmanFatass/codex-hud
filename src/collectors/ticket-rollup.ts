@@ -18,6 +18,7 @@ export function ticketIds(text: string): string[] {
 }
 export class TicketRollup {
   private index = new Map<string, ProjectTicket>();
+  private slugs = new Map<ProjectTicket, string>();
   private linkedSlices = new Map<ProjectTicket, string>();
   private trees = new Set<ProjectTicket>();
   hasTicket(label: string) { return ticketIds(label).some(id => this.index.has(id)); }
@@ -25,7 +26,10 @@ export class TicketRollup {
     for (const id of ticketIds(label)) { const t = this.index.get(id); if (t) this.trees.add(t); }
   }
   constructor(private features: TicketFeature[]) {
-    for (const { slug, tickets } of features) for (const t of tickets) this.index.set(key(slug, t.number), t);
+    for (const { slug, tickets } of features) for (const t of tickets) {
+      this.index.set(key(slug, t.number), t);
+      this.slugs.set(t, slug);
+    }
   }
   link(job: { ticket?: string | number; slice?: string; package?: string; target_hint?: string }, material: string, receipt: NonNullable<ProjectTicket['job']>) {
     const pkg = typeof job.package === 'string' ? job.package : '';
@@ -83,16 +87,21 @@ export class TicketRollup {
       if (ticket.state === 'try' && (marks.get(row.id) === 'accept' || (alias && marks.get(alias) === 'accept'))) ticket.state = 'done';
     }
     const dependencies = new Map<ProjectTicket, (ProjectTicket | undefined)[]>();
+    const declaredBlockers = new Map<ProjectTicket, string[]>();
     const crossBlockers = new Map<ProjectTicket, string[]>(), missingCrossBlockers = new Map<ProjectTicket, string>();
     for (const { slug, tickets } of this.features) for (const t of tickets) {
       const raw = t.blockers[0] ?? '', title = (ref: string) => tickets.find(x => x.title.toLowerCase() === ref.trim().toLowerCase());
       const refs = title(raw) ? [raw] : raw.replace(/\([^()]*\)/g, '').split(/[,;]|\s+and\s+/i);
       t.blockers = [];
       const deps = [];
+      const declared: string[] = [];
       for (const ref of refs.map(s => s.trim()).filter(Boolean)) {
         const m = /^(?:([\w.-]+)\/|#?)(\d+)\b/.exec(ref);
         const target = m ? this.index.get(key(m[1] ?? slug, m[2])) : title(ref);
         const cross = m?.[1] && m[1].toLowerCase() !== slug.toLowerCase() ? `${m[1]}/${m[2]}` : undefined;
+        const targetSlug = target ? this.slugs.get(target) : undefined;
+        const canonical = target && targetSlug ? `${targetSlug}/${target.number}` : cross ?? ref;
+        if (!declared.includes(canonical)) declared.push(canonical);
         if (target && (target.state === 'done' || target.state === 'dropped' || (!cross && target.state === 'try'))) continue;
         if (cross && target && !blockedTickets?.has(key(m![1]!, m![2]!))) {
           // A known external dependency is a queue wait, not a local stall (unless held/failed).
@@ -105,6 +114,7 @@ export class TicketRollup {
         }
         t.blockers.push(m?.[1] ? ref : target?.number ?? ref);
       }
+      if (declared.length) declaredBlockers.set(t, declared);
       if (t.state === 'ready' && (deps.length || crossBlockers.has(t))) dependencies.set(t, deps);
     }
     // Resolve after every feature has been indexed. A missing predecessor or dependency cycle cannot start by itself.
@@ -124,6 +134,6 @@ export class TicketRollup {
       doneFeatures, totalFeatures: this.features.length };
     let room = 16 - (totals.totalFeatures - doneFeatures);
     const rows = entries.map(({ ticket, row }) => ({ ...row, state: sliceState(ticket) }));
-    return { totals, rows, marks, crossBlockers, missingCrossBlockers, visible: this.features.filter(f => open(f) || room-- > 0) };
+    return { totals, rows, marks, declaredBlockers, crossBlockers, missingCrossBlockers, visible: this.features.filter(f => open(f) || room-- > 0) };
   }
 }

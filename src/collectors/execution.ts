@@ -10,7 +10,29 @@ import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
 import { executionJobDirs, jobRow, worksWithin } from './thin-jobs.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
 
-export type { ExecutionRun, ExecutionRunStep, ExecutionRunTicket, RunStepKey, RunStepState, TicketRunStage } from './execution-runs.js';
+export type {
+  ExecutionRun,
+  ExecutionRunStep,
+  ExecutionRunTicket,
+  LandProgress,
+  MetroEdge,
+  MetroFlow,
+  MetroGate,
+  MetroJunction,
+  MetroLaneEdge,
+  MetroLaneStation,
+  MetroPoolCounts,
+  MetroRepair,
+  MetroStation,
+  MetroStationKind,
+  MetroStationState,
+  ReducedMetroMap,
+  RunStepKey,
+  RunStepState,
+  TicketRunStage,
+  WorkflowNode,
+} from './execution-runs.js';
+export { lastChangedStationId, reduceMetroLanes } from './execution-runs.js';
 
 export type ExecutionPhase = 'waiting' | 'running' | 'queued' | 'settled';
 export interface ExecutionJob {

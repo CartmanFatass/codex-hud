@@ -18,7 +18,7 @@ export interface BatchScale {
   presets: (string | null)[]; cap: number; max_parallel: number;
 }
 export interface Batch extends RunScope {
-  flow: string; cwd: string; dispatcher?: Job['dispatcher']; key: string; created_at: number;
+  flow: string; cwd: string; dispatcher?: Job['dispatcher']; key: string; created_at: number; updated_at?: number; pilot_changed_at?: number;
   state: 'working' | 'paused' | 'stopped' | 'completed'; scale: BatchScale; pid?: number; start?: string;
   template?: 'batch'; host?: 'detached'; cost?: 'cheap' | 'costly'; cost_reasons?: string[]; steps?: Record<string, Cursor>;
   handback?: { step: string; choices: string[] };
@@ -48,6 +48,9 @@ const groupsLine = (items: ItemResult[]) => failuresByReason(items).map(g => `${
 export const totalsLine = (b: Batch) => Object.entries(b.totals).map(([state,n]) => `${n} ${state}`).join(', ');
 export function settleItem(b: Batch, items: ItemResult[], i: ItemResult, failure?: string, breaker: Breaker = 'rate') {
   i.state = failure ? 'failed' : 'done'; i.reason = failure && failureReason(failure); delete i.stall;
+  const now = Date.now();
+  b.updated_at = now;
+  if (i.pilot) b.pilot_changed_at = now;
   if (b.state !== 'working') return;
   const count = failure ? failuresByReason(items).find(g => g.reason === i.reason)?.count : 0;
   const action = settlement(b, breaker, i.reason, count, i.pilot);
@@ -61,6 +64,7 @@ export function settleItem(b: Batch, items: ItemResult[], i: ItemResult, failure
 }
 export function saveBatch(home: string, b: Batch, items: ItemResult[]) {
   recount(b, items);
+  b.updated_at = Date.now();
   if (!b.steps && b.state === 'working' && !b.totals.waiting && !b.totals.running) b.state = 'completed'; // legacy index
   if (b.state === 'stopped' && !b.totals.running && b.steps?.items) b.steps.items.state = 'cancelled';
   if (b.state === 'completed' || (b.state === 'stopped' && !b.totals.running)) b.notices[`end-${b.epoch}`] = `${b.flow} batch: ${totalsLine(b)}${b.totals.failed ? `; failures: ${groupsLine(items)}` : ''} — final; list unread reports: hud_read view:compact`;

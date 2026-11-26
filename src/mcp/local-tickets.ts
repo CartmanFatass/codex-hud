@@ -355,7 +355,7 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
   if (options?.excludeTickets) {
     for (const ticket of options.excludeTickets) blockedSet.add(targetKey(ticket));
   }
-  const { crossBlockers, missingCrossBlockers } = rollup.derive(
+  const { declaredBlockers, crossBlockers, missingCrossBlockers } = rollup.derive(
     Date.now(), undefined, undefined, undefined, blockedSet.size ? blockedSet : undefined,
   );
   const candidates = features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) =>
@@ -371,7 +371,8 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
       if (t.state !== 'ready') return [];
       if (flakeFeature && t.runningList && ticket.startsWith(`${flakeFeature}/`) &&
           !(flakes ??= runningListAdmission(home, root, flakeFeature, jobs)).eligible(ticket)) return [];
-      return [{ ticket, path: t.path, title: t.title, what: t.what, role: t.role, ...(t.objective && { objective: t.objective }) }];
+      const blockers = declaredBlockers.get(t) ?? [];
+      return [{ ticket, path: t.path, title: t.title, what: t.what, role: t.role, blockers, ...(t.objective && { objective: t.objective }) }];
     }),
     queued: candidates.flatMap(({ t, ticket }) => {
       const blockers = crossBlockers.get(t);

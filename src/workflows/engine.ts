@@ -1,11 +1,15 @@
 import type { Graph, Step } from './graph.js';
 import { failureReason, failuresByReason, settlement, type FailureWindow } from './policy.js';
 
-export interface Cursor { state: 'waiting' | 'ready' | 'running' | 'asking' | 'done' | 'failed' | 'skipped' | 'cancelled'; answer?: string; reason?: string; admitted?: true }
+export interface Cursor { state: 'waiting' | 'ready' | 'running' | 'asking' | 'done' | 'failed' | 'skipped' | 'cancelled'; answer?: string; reason?: string; admitted?: true; changed_at?: string }
 export interface Run extends FailureWindow {
   flow: string; state: 'proposed' | 'working' | 'paused' | 'stopped' | 'completed' | 'failed'; epoch: number; reason?: string;
   handback?: { step: string; choices: string[] };
   steps: Record<string, Cursor>; notices: Record<string, string>;
+}
+function setCursorState(cursor: Cursor, state: Cursor['state'], at = new Date().toISOString()) {
+  if (cursor.state !== state) cursor.changed_at = at;
+  cursor.state = state;
 }
 export function pauseRun(run: Pick<Run, 'state' | 'reason' | 'handback'>, step: string, reason: string) {
   run.state = 'paused'; run.reason = reason;
@@ -13,14 +17,15 @@ export function pauseRun(run: Pick<Run, 'state' | 'reason' | 'handback'>, step: 
 }
 export type Control = 'resume' | 'pause' | 'retry_failed' | 'stop';
 export function controlRun(run: Omit<Run, 'steps'> & { steps?: Run['steps'] }, action: Control, retryable: boolean) {
+  const at = new Date().toISOString();
   if (action === 'stop' && run.state !== 'completed') {
     run.state = 'stopped'; delete run.handback;
-    for (const c of Object.values(run.steps ?? {})) if (c.state === 'waiting' || c.state === 'ready') c.state = 'cancelled';
+    for (const c of Object.values(run.steps ?? {})) if (c.state === 'waiting' || c.state === 'ready') setCursorState(c, 'cancelled', at);
   } else if (action === 'pause' && run.state === 'working') {
     const step = Object.entries(run.steps ?? {}).find(([, c]) => c.state === 'running')?.[0];
     pauseRun(run, step ?? Object.keys(run.steps ?? {})[0] ?? 'run', 'paused by caller');
   } else if ((action === 'resume' && run.state === 'paused') || (action === 'retry_failed' && retryable)) {
-    for (const c of Object.values(run.steps ?? {})) if (c.state === 'failed') c.state = action === 'resume' ? 'skipped' : 'waiting';
+    for (const c of Object.values(run.steps ?? {})) if (c.state === 'failed') setCursorState(c, action === 'resume' ? 'skipped' : 'waiting', at);
     run.epoch++; run.streak = run.settled = run.failures = 0; run.state = 'working'; delete run.reason; delete run.handback;
   } else return;
   return action;
@@ -39,7 +44,7 @@ export function sealedEffect(cursor: Cursor, effect: () => Promise<number>): Tic
 /** Standalone sealed runs put the result, cursor and outbox in the same atomic header. */
 export function settleSealedRun(run: Run, step: string, state: 'completed' | 'failed' | 'stopped', notice?: string) {
   run.state = state;
-  run.steps[step].state = state === 'completed' ? 'done' : state === 'stopped' ? 'cancelled' : 'failed';
+  setCursorState(run.steps[step], state === 'completed' ? 'done' : state === 'stopped' ? 'cancelled' : 'failed');
   if (notice !== undefined) run.notices[`end-${run.epoch}`] = notice;
 }
 /** One deterministic pass under flow-state. Step adapters can inspect receipts or stage
@@ -51,15 +56,15 @@ export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: 
     if (cursor.state === 'waiting' && run.state === 'working') {
       if (!step.needs.every(n => ['done','skipped'].includes(run.steps[n].state) || (graph.steps[n].optional && run.steps[n].state === 'failed'))) continue;
       const blocked = propagateSkips && step.needs.some(n => run.steps[n].state === 'skipped' && !graph.steps[n].optional);
-      cursor.state = blocked || (step.when && run.steps[step.when.step].answer !== step.when.is) ? 'skipped' : 'ready'; changed = true;
+      setCursorState(cursor, blocked || (step.when && run.steps[step.when.step].answer !== step.when.is) ? 'skipped' : 'ready'); changed = true;
     }
-    if (cursor.state === 'ready' && run.state === 'working') { cursor.state = 'running'; changed = true; }
+    if (cursor.state === 'ready' && run.state === 'working') { setCursorState(cursor, 'running'); changed = true; }
     // Paused/stopped runs can reconcile already-admitted work, but cannot start another step.
     if (cursor.state !== 'running') continue;
     const result = tick(id, step);
     changed ||= !!result.changed || result.state !== cursor.state;
     if (result.recheckMs !== undefined) recheckMs = Math.min(recheckMs ?? result.recheckMs, result.recheckMs);
-    cursor.state = result.state;
+    setCursorState(cursor, result.state);
     if (result.state === 'done' && step.kind !== 'batch' && run.state === 'working') settlement(run, graph.policy.breaker);
     if (result.state === 'failed') {
       cursor.reason = failureReason(result.reason || 'failed');

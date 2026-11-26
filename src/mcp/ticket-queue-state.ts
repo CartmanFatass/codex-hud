@@ -49,6 +49,14 @@ export interface ReviewRecord {
 }
 export interface TicketQueueItem {
   ticket: string; path: string; role: 'imp' | 'frontend-imp'; job?: string; land?: string; landed?: true; base_moves?: number;
+  /** Declared dependency refs recorded at admission (empty array = root; absent on legacy records). */
+  blockers?: string[];
+  /** ISO timestamp when this ticket landed. */
+  landed_at?: string;
+  /** ISO timestamp when a worker question for this ticket was answered. */
+  answered_at?: string;
+  /** ISO timestamp of the latest station transition (landed, failed, held, unheld, answered). */
+  changed_at?: string;
   dispatch_queue?: string; // Keep the original worker request key across explicit resumes.
   approved_head?: string;
   approved_report_sig?: string;

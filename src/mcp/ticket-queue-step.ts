@@ -192,13 +192,15 @@ function holdItem(
 ) {
   delete item.approved_assumptions_head;
   delete item.approved_assumptions_sig;
+  const at = new Date().toISOString();
   item.held = {
-    reason, at: new Date().toISOString(),
+    reason, at,
     ...(kind && { kind }),
     ...(ownerApproval && { owner_approval: ownerApproval }),
     ...(evidence?.head && { head: evidence.head }),
     ...(evidence?.report_sig && { report_sig: evidence.report_sig }),
   };
+  item.changed_at = at;
 }
 
 function heldResolutionReason(item: TicketQueueItem) {
@@ -235,7 +237,9 @@ function heldBlockProblem(q: TicketQueue, step: string): TicketProblem | undefin
 }
 
 function failItem(item: TicketQueueItem, reason: string, kind?: TicketHandbackKind) {
-  item.failed = { reason, at: new Date().toISOString(), ...(kind && { kind }) };
+  const at = new Date().toISOString();
+  item.failed = { reason, at, ...(kind && { kind }) };
+  item.changed_at = at;
 }
 
 function holdRun(q: TicketQueue, reason: string, kind?: TicketHandbackKind, ownerApproval?: OwnerApproval) {
@@ -356,12 +360,17 @@ function tickPendingAnswer(q: TicketQueue, state: { problem?: TicketProblem }): 
       const cur = readTicketQueue(hudHome, flowId);
       if (!cur || cur.state !== 'working') return;
       if (delivery.ok) {
+        const at = new Date().toISOString();
         recordDecision(cur, {
           step: pending.step, kind: 'question', job: pending.lead_job,
-          decision: 'answer', at: new Date().toISOString(),
+          decision: 'answer', at,
           ...(pending.ticket && { ticket: pending.ticket }),
           question: pending.question,
         });
+        if (pending.ticket) {
+          const entry = cur.tickets.find(t => t.ticket === pending.ticket);
+          if (entry) { entry.answered_at = at; entry.changed_at = at; }
+        }
         delete cur.pending_answer;
         writeTicketQueue(hudHome, cur);
         return;
@@ -517,14 +526,19 @@ function tickQuestionLead(q: TicketQueue, state: { problem?: TicketProblem }): T
         appendTodos(cur, parsed.todos.map(text => ({ source: `lead (${leadJob.job})`, kind: 'lead' as const, text })));
         delete cur.active_lead;
         if (delivery?.ok) {
+          const at = new Date().toISOString();
           recordDecision(cur, {
             step: active.step, kind: 'question', job: leadJob.job,
             decision: 'answer',
             ...(parsed.reason && { reason: parsed.reason }),
-            at: new Date().toISOString(),
+            at,
             ...(active.ticket && { ticket: active.ticket }),
             ...(active.question && { question: active.question }),
           });
+          if (active.ticket) {
+            const entry = cur.tickets.find(t => t.ticket === active.ticket);
+            if (entry) { entry.answered_at = at; entry.changed_at = at; }
+          }
         } else if (delivery && !delivery.ok) {
           if (!isTerminalDeliveryError(delivery.reason) && MAX_ANSWER_RETRIES > 1 && parsed.answer && active.worker_job && active.question) {
             cur.pending_answer = {
@@ -1010,9 +1024,11 @@ function tickTicketQueue(
       const heldLand = item.job ? landAttempt(hudHome, item.job).prior : null;
       if (heldLand && heldLand.job === item.job && (heldLand.state === 'completed' || activeLand(heldLand))) {
         delete item.held;
+        item.changed_at = new Date().toISOString();
         changed = true;
       } else if (heldItemChanged(item)) {
         delete item.held;
+        item.changed_at = new Date().toISOString();
         changed = true;
       } else {
         note({
@@ -1034,7 +1050,8 @@ function tickTicketQueue(
     if (land?.job === item.job) {
       if (item.land !== land.flow) { item.land = land.flow; changed = true; }
       if (land.state === 'completed') {
-        item.landed = true; item.base_moves = land.base_moves; changed = true;
+        const at = land.landed_at ?? land.updated_at ?? new Date().toISOString();
+        item.landed = true; item.landed_at = at; item.changed_at = at; item.base_moves = land.base_moves; changed = true;
       } else if (!activeLand(land)) {
         if (item.dispatch_queue && land.ticket_queue !== q.flow && retryableLand(land)) retry = land.flow;
         else if (q.unattended && land.error === SPEC_CHANGE_REFUSAL) {
@@ -1125,7 +1142,7 @@ function tickTicketQueue(
           changed = true;
         }
         if (landEach) clean.push({ item, job, state: status.state, retry });
-        else { item.landed = true; changed = true; }
+        else { const at = new Date().toISOString(); item.landed = true; item.landed_at = at; item.changed_at = at; changed = true; }
       } else if ('waitMs' in verdict) {
         recheck = Math.min(recheck ?? verdict.waitMs, verdict.waitMs);
       } else {
@@ -1226,10 +1243,10 @@ function tickTicketQueue(
     next = freshCandidates.filter(t => !invalid.has(t.ticket));
   }
   if (next.length) {
-    const { ticket, path, role } = next[0];
+    const { ticket, path, role, blockers } = next[0];
     if (next.some((entry, i) => i > 0 && entry.ticket === ticket)) {
       if (q.unattended) {
-        const dup = { ticket, path, role: 'imp' as const };
+        const dup: TicketQueueItem = { ticket, path, role: 'imp', blockers: blockers ? [...blockers] : [] };
         failItem(dup, `${ticket}: ambiguous ticket number`, 'queue');
         q.tickets.push(dup);
         return { state: 'running', changed: true };
@@ -1237,7 +1254,7 @@ function tickTicketQueue(
       state.problem = { kind: 'queue', ticket, reason: `${ticket}: ambiguous ticket number` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
-    item = { ticket, path, role };
+    item = { ticket, path, role, blockers: blockers ? [...blockers] : [] };
     q.tickets.push(item); // Intent committed by the driver before dispatch so the request key is recoverable.
     changed = true;
   }
@@ -1607,7 +1624,7 @@ function tickHandbackStep(
               state.problem = heldProblem;
             } else {
               cur.steps ??= {};
-              cur.steps[key] = { state: 'done', answer: parsed.decision };
+              cur.steps[key] = { state: 'done', answer: parsed.decision, changed_at: new Date().toISOString() };
               cur.verdict = verdict;
             }
           }
