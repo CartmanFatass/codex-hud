@@ -44,6 +44,9 @@ export async function prepareMain(
     } else if (args[0] === 'unattended') {
       const { unattendedCommand } = await import('./unattended.js');
       run = () => unattendedCommand(args.slice(1), io);
+    } else if (args[0] === 'archive') {
+      const { archiveCommand } = await import('./archive.js');
+      run = () => archiveCommand(args.slice(1), io);
     } else if (args[0] === 'doctor' || (args.length === 1 && args[0] === '--version')) {
       // Keep the preflight out of the panel and other unrelated CLI import graphs.
       const { doctorCommand, versionCommand } = await import('./doctor.js');

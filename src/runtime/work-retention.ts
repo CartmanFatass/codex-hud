@@ -1,9 +1,18 @@
 /** On-demand cleanup of raw job logs, land flows and explicitly configured project scratch. */
 import * as fs from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { projectRegistryRoots } from '../roles/projects.js';
 import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
+import type { TarEntry } from '../utils/tar-zst.js';
+import {
+  archiveFlowCold,
+  archiveJobFlowsCold,
+  archiveJobRawEntries,
+  COLD_ID_RE,
+  enforceColdRawCap,
+} from '../roles/cold-archive.js';
+import { epoch } from '../roles/job-usage.js';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { hasPendingFlakeCollection } from '../mcp/land-flakes.js';
 import type { LandFlow } from '../mcp/land-state.js';
@@ -39,22 +48,65 @@ function inAbsoluteDir<T>(path: string, use: (dir: string, fd: number) => T): T 
   return inDirectory(sep, (dir, fd) => parts.length ? descend(dir, parts, use) : use(dir, fd));
 }
 
-export function pruneJobLogs(dir: string, job: Job, status: Partial<JobStatus>, now: number): void {
-  if (status.state !== 'done' && (status.state !== 'closed' || status.output_written === false)) return;
+function readPinnedRegular(path: string): { data: Buffer; stat: fs.Stats } | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ELOOP') return null;
+    throw error;
+  }
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return null;
+    return { data: fs.readFileSync(fd), stat };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+export function pruneJobLogs(dir: string, job: Job, status: Partial<JobStatus>, now: number, home = dirname(dirname(dir))): boolean {
+  if (status.state !== 'done' && (status.state !== 'closed' || status.output_written === false)) return false;
   // Headless and legacy jobs have no native resume receipt. Give their logs the default window.
   const seconds = job.resume_s ?? DEFAULT_RESUME_S;
   const ended = Date.parse(status.ended_at ?? status.settled_at ?? '');
-  if (!Number.isFinite(ended) || !Number.isFinite(seconds) || seconds < 0 || now < ended + seconds * 1000) return;
+  if (!Number.isFinite(ended) || !Number.isFinite(seconds) || seconds < 0 || now < ended + seconds * 1000) return false;
+  const id = typeof job.job === 'string' && COLD_ID_RE.test(job.job) ? job.job : basename(dir);
+  if (!COLD_ID_RE.test(id)) return false;
   try {
+    let wrote = false;
     inAbsoluteDir(dir, (jobDir) => {
       const stat = (name: string) => fs.lstatSync(join(jobDir, name), { throwIfNoEntry: false });
       if (stat(jobFiles.stopRequested) || (status.state === 'closed' && !stat(jobFiles.report)?.isFile())) return;
+      const targets: { name: string; stat: fs.Stats; entry: TarEntry }[] = [];
       for (const name of [jobFiles.sonicStdout, jobFiles.sonicStderr]) {
-        try { if (stat(name)?.isFile()) fs.unlinkSync(join(jobDir, name)); }
-        catch { /* Missing or inaccessible log; continue with the other one. */ }
+        const read = readPinnedRegular(join(jobDir, name));
+        if (!read) continue;
+        targets.push({
+          name,
+          stat: read.stat,
+          entry: { name, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) },
+        });
+      }
+      if (!targets.length) return;
+      // Move-then-delete: a failed archive write keeps the raw logs for the next sweep.
+      const res = archiveJobRawEntries(home, id, targets.map((t) => t.entry), ended);
+      wrote = res.written;
+      for (const { name, stat: before } of targets) {
+        try {
+          const current = stat(name);
+          if (current?.isFile() && sameInode(before, current) && current.size === before.size && current.mtimeMs === before.mtimeMs) {
+            fs.unlinkSync(join(jobDir, name));
+          }
+        } catch { /* Missing or replaced log; leave for next sweep. */ }
       }
     });
-  } catch { /* Missing or redirected job directory; leave it alone. */ }
+    if (wrote) {
+      try { enforceColdRawCap(home); } catch { /* Best-effort cap trim; retry next raw archive write. */ }
+    }
+    return wrote;
+  } catch { /* Missing, redirected job directory, or archive write failure; keep source logs. */ return false; }
 }
 
 function sameInode(a: fs.Stats, b: fs.Stats | undefined): boolean {
@@ -69,7 +121,7 @@ async function pruneExpiredWorkflow(home: string, id: string, cutoff: number) {
     inAbsoluteDir(join(home, 'flows'), dir => {
       const receipt = join(dir, `${id}.json`), stat = fs.lstatSync(receipt);
       if (!stat.isFile() || stat.mtimeMs >= cutoff) return;
-      const b = readJsonBounded(receipt, stat.size) as { template?: string; state: string; totals?: { running: number } };
+      const b = readJsonBounded(receipt, stat.size) as { template?: string; state: string; totals?: { running: number }; updated_at?: string; created_at?: string };
       const composed = isComposedId(id);
       if (composed ? b.template !== 'composed' || !['proposed', 'completed', 'stopped', 'failed'].includes(b.state)
         : id.startsWith('j') ? (b.template !== 'council' && b.template !== 'prewalk') || !['completed', 'stopped', 'failed'].includes(b.state)
@@ -79,6 +131,19 @@ async function pruneExpiredWorkflow(home: string, id: string, cutoff: number) {
         const composedFile = /^(?:[a-z][a-z0-9_-]{0,47}\.(?:index|check)\.json|(?:handback-[a-z][a-z0-9_-]{0,47}|failure-\d+-[a-z][a-z0-9_-]{0,47})\.(?:noticed|observed))$/;
         if (!files.every(f => (/^(?:graph|index|manifest)\.json$|^(?:failure-\d+-\d+|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f) ||
           (composed && composedFile.test(f))) && fs.lstatSync(join(batch, f)).isFile())) return;
+        const prefix = id.startsWith('j') ? 'flows/' : '';
+        const entries: TarEntry[] = [];
+        const receiptRead = readPinnedRegular(receipt);
+        if (!receiptRead) return;
+        entries.push({ name: `${prefix}${id}.json`, data: receiptRead.data, mode: 0o600, mtime: Math.floor(receiptRead.stat.mtimeMs / 1000) });
+        for (const f of files) {
+          const read = readPinnedRegular(join(batch, f));
+          if (!read) return;
+          entries.push({ name: `${prefix}${id}/${f}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+        }
+        const ts = epoch(b.updated_at) ?? epoch(b.created_at) ?? stat.mtimeMs;
+        if (id.startsWith('j')) archiveJobFlowsCold(home, id, entries, ts);
+        else archiveFlowCold(home, id, entries, ts);
         for (const f of files) fs.unlinkSync(join(batch, f));
         fs.rmdirSync(join(dir, id)); fs.unlinkSync(receipt);
       });
@@ -99,14 +164,39 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
         }
         if (/^q[a-f0-9]{16}\.json$/.test(name)) {
           try {
+            const flowId = name.slice(0, -5);
             const path = join(dir, name), stat = fs.lstatSync(path);
             if (stat.isFile() && stat.mtimeMs < cutoff) {
-              // Terminal queue IDs are never reused. Remove sidecars and workflow dir with their receipt.
+              // Terminal queue IDs are never reused. Archive to cold store before removing sidecars and workflow dir.
               const receipt = readJsonBounded(path, stat.size) as TicketQueue | null;
-              if (!unattended.has(name.slice(0, -5)) && !hasOpenHold(receipt) && (receipt?.state === 'completed' || receipt?.state === 'failed' ||
+              if (!unattended.has(flowId) && !hasOpenHold(receipt) && (receipt?.state === 'completed' || receipt?.state === 'failed' ||
                   receipt?.state === 'cancelled' || (receipt?.state === 'paused' && 'unattended' in receipt))) {
-                const sub = join(dir, name.slice(0, -5)), subStat = fs.lstatSync(sub, { throwIfNoEntry: false });
+                const entries: TarEntry[] = [];
+                const receiptRead = readPinnedRegular(path);
+                if (!receiptRead) continue;
+                entries.push({ name, data: receiptRead.data, mode: 0o600, mtime: Math.floor(receiptRead.stat.mtimeMs / 1000) });
+                const sidecarSuffixes = ['cancel', 'noticed', 'observed'] as const;
+                for (const suffix of sidecarSuffixes) {
+                  const read = readPinnedRegular(`${path}.${suffix}`);
+                  if (read) entries.push({ name: `${name}.${suffix}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+                }
+                const sub = join(dir, flowId), subStat = fs.lstatSync(sub, { throwIfNoEntry: false });
+                let subFiles: string[] | null = null;
                 if (subStat?.isDirectory()) {
+                  inDirectory(sub, run => {
+                    const files = fs.readdirSync(run);
+                    if (!files.every(f => (f === 'graph.json' || /^(?:handback-j[a-f0-9]{16}|failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f)) && fs.lstatSync(join(run, f)).isFile())) return;
+                    for (const f of files) {
+                      const read = readPinnedRegular(join(run, f));
+                      if (!read) return;
+                      entries.push({ name: `${flowId}/${f}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+                    }
+                    subFiles = files;
+                  });
+                }
+                const ts = epoch(receipt?.updated_at) ?? epoch(receipt?.created_at) ?? stat.mtimeMs;
+                archiveFlowCold(home, flowId, entries, ts);
+                if (subFiles !== null) {
                   let cleaned = false;
                   inDirectory(sub, run => {
                     const files = fs.readdirSync(run);
@@ -117,10 +207,10 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
                   if (cleaned) fs.rmdirSync(sub);
                 }
                 fs.unlinkSync(path);
-                for (const suffix of ['cancel', 'noticed', 'observed']) fs.rmSync(`${path}.${suffix}`, { force: true });
+                for (const suffix of sidecarSuffixes) fs.rmSync(`${path}.${suffix}`, { force: true });
               }
             }
-          } catch { /* Missing or unreadable queue receipt: leave it alone. */ }
+          } catch { /* Missing, unreadable queue receipt or cold archive failure: leave it alone. */ }
           continue;
         }
         const match = /^f([a-f0-9]{16})(?:-[1-9]\d*)?(?:\.json(?:\.(?:cancel|noticed|observed|gate-[1-9]\d*(?:-rerun)?\.log))?)?$/.exec(name);
@@ -136,32 +226,56 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
           if (fs.lstatSync(join(home, 'jobs', job), { throwIfNoEntry: false })) continue;
           const files = names.map(name => {
             const path = join(dir, name);
-            return { path, graphDir: !name.includes('.'), stat: fs.lstatSync(path) };
+            return { name, path, graphDir: !name.includes('.'), stat: fs.lstatSync(path) };
           });
           if (files.some(({ graphDir, stat }) => stat.mtimeMs >= cutoff || (graphDir ? !stat.isDirectory() : !stat.isFile()))) continue;
+          let latestReceiptTs: number | undefined;
           if (files.some(({ path }) => {
             if (!path.endsWith('.json')) return false;
             const receipt = readJsonBounded(path, 128 * 1024) as Partial<LandFlow> | null;
+            const ts = epoch(receipt?.landed_at) ?? epoch(receipt?.updated_at) ?? epoch(receipt?.created_at);
+            if (ts !== undefined && (latestReceiptTs === undefined || ts > latestReceiptTs)) latestReceiptTs = ts;
             return (receipt?.state !== 'completed' && receipt?.state !== 'failed' && receipt?.state !== 'cancelled') ||
               hasPendingFlakeCollection(home, receipt);
           })) continue;
+          const entries: TarEntry[] = [];
+          let maxMtime = 0;
+          for (const { name, path, stat } of files) {
+            if (stat.mtimeMs > maxMtime) maxMtime = stat.mtimeMs;
+            if (stat.isFile()) {
+              const read = readPinnedRegular(path);
+              if (read) entries.push({ name: `flows/${name}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+            } else {
+              inDirectory(path, graph => {
+                const graphNames = fs.readdirSync(graph);
+                if (!graphNames.every(f => f === 'graph.json' && fs.lstatSync(join(graph, f)).isFile())) return;
+                for (const f of graphNames) {
+                  const read = readPinnedRegular(join(graph, f));
+                  if (read) entries.push({ name: `flows/${name}/${f}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+                }
+              });
+            }
+          }
+          if (entries.length) {
+            archiveJobFlowsCold(home, job, entries, latestReceiptTs ?? (maxMtime || now));
+          }
           for (const { path, stat } of files) {
             try {
               const current = fs.lstatSync(path, { throwIfNoEntry: false });
               if (!sameInode(stat, current) || current?.ctimeMs !== stat.ctimeMs) continue;
-            if (stat.isFile()) fs.unlinkSync(path);
-            else {
-              const empty = inDirectory(path, graph => {
-                const names = fs.readdirSync(graph);
-                if (!names.every(name => name === 'graph.json' && fs.lstatSync(join(graph, name)).isFile())) return false;
-                for (const name of names) fs.unlinkSync(join(graph, name));
-                return true;
-              });
-              if (empty) fs.rmdirSync(path);
-            }
+              if (stat.isFile()) fs.unlinkSync(path);
+              else {
+                const empty = inDirectory(path, graph => {
+                  const graphNames = fs.readdirSync(graph);
+                  if (!graphNames.every(name => name === 'graph.json' && fs.lstatSync(join(graph, name)).isFile())) return false;
+                  for (const name of graphNames) fs.unlinkSync(join(graph, name));
+                  return true;
+                });
+                if (empty) fs.rmdirSync(path);
+              }
             } catch { /* Missing, replaced or inaccessible artifact; retry next pass. */ }
           }
-        } catch { /* Unreadable receipt or job state: keep this flow family. */ }
+        } catch { /* Unreadable receipt, job state, or cold archive failure: keep this flow family. */ }
       }
     });
   } catch { /* Missing, unreadable or redirected flows directory. */ }

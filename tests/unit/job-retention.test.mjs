@@ -336,7 +336,7 @@ for (const oversized of [false, true]) {
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { syncBuiltinESMExports } from 'node:module';
-const source = ${JSON.stringify(source)}, readFile = fs.readFileSync, open = fs.openSync, read = fs.readSync;
+const source = ${JSON.stringify(source)}, readFile = fs.readFileSync, open = fs.openSync, read = fs.readSync, close = fs.closeSync;
 let sessionFd, total = 0;
 fs.readFileSync = (file, ...args) => {
   if (${!oversized}) assert.notEqual(file, source, 'must not read the whole session file');
@@ -346,6 +346,10 @@ fs.openSync = (file, ...args) => {
   const fd = open(file, ...args);
   if (file === source) sessionFd = fd;
   return fd;
+};
+fs.closeSync = (fd) => {
+  if (fd === sessionFd) sessionFd = undefined;
+  return close(fd);
 };
 fs.readSync = (fd, buffer, offset, length, position) => {
   if (fd === sessionFd) {
@@ -452,7 +456,7 @@ syncBuiltinESMExports();`);
     assert.equal(fs.existsSync(join(dir, '.archived')), false);
   }
   const archive = join(f.home, 'archive');
-  const ids = fs.readdirSync(archive).flatMap(name => fs.readFileSync(join(archive, name), 'utf8').trimEnd().split('\n').map(line => JSON.parse(line).job));
+  const ids = fs.readdirSync(archive).filter(name => name.endsWith('.jsonl')).flatMap(name => fs.readFileSync(join(archive, name), 'utf8').trimEnd().split('\n').map(line => JSON.parse(line).job));
   assert.deepEqual(ids.sort(), deleted.map(dir => dir.split('/').at(-1)).sort());
   assert.ok(fs.lstatSync(symlink).isSymbolicLink());
   assert.ok(fs.existsSync(join(outside, 'STATUS.json')));

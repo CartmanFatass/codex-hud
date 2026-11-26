@@ -9,6 +9,7 @@ import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.
 import { archivedClosedJobs, mainHead, reapWorktree, sweepArchivedWorktrees, type ArchivedClosedJob } from '../mcp/managed-worktree.js';
 import { runCommand } from '../roles/herdr-run.js';
 import { archiveJob, recordStopOrigin } from '../roles/job-archive.js';
+import { archiveJobCold, enforceColdRawCap } from '../roles/cold-archive.js';
 import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sessions.js';
 import { recordJobUsage } from '../roles/job-usage.js';
 import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/sonic-citations.js';
@@ -1083,7 +1084,7 @@ function scan(retryWatch = false) {
         continue;
       }
       const readClose = Boolean(resumeReadReap || readInGrace);
-      if (job && !held && (status.state === 'done' || !tab || job.reaped_at)) pruneJobLogs(dir, job, status, Date.now());
+      if (job && !held && (status.state === 'done' || !tab || job.reaped_at)) pruneJobLogs(dir, job, status, Date.now(), home);
       if (!readClose && !['closed', 'failed', 'stopped'].includes(status.state ?? '')) continue;
       if (status.state === 'failed' && job && !job.exhaustion_marked) {
         const text = String(status.exit_reason ?? status.error ?? '');
@@ -1127,8 +1128,18 @@ function scan(retryWatch = false) {
         if (job && now <= closedAt + 7 * JOB_RETENTION_MS && hasLocalPiSession(dir, job, status, piLocalFiles)) continue;
         // Preserve legacy Pi history. CLI and browser keep theirs in their own stores.
         if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
+        let cold: { wroteText: boolean; wroteRaw: boolean };
+        try { cold = archiveJobCold(home, dir, id, job, status, now); }
+        catch (error) {
+          warn(`keep ${id} cold archive`, `keep ${id} cold archive: ${(error as Error).message}`);
+          continue;
+        }
         archiveJob(home, dir, id, job, status, now, log);
         fs.rmSync(dir, { recursive: true, force: true });
+        if (cold.wroteRaw) {
+          try { enforceColdRawCap(home); }
+          catch (error) { warn('cold raw cap', `cold raw cap: ${(error as Error).message}`); }
+        }
         jobCache.evictJob(id);
         reapRetries.delete(id);
         log(`delete ${id} state=${status.state}`);

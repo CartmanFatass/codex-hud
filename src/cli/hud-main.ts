@@ -13,6 +13,7 @@ import { watchCommand } from './watch.js';
 import { boardCommand } from './board.js';
 import { doctorCommand, versionCommand } from './doctor.js';
 import { jobStatsCommand } from './job-stats.js';
+import { archiveCommand } from './archive.js';
 import { adviseCommand } from './advise.js';
 import { selectSendCommand } from './select-send.js';
 
@@ -47,6 +48,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
     if (args[0] === 'doctor') return await doctorCommand(args.slice(1), io);
     if (args.length === 1 && args[0] === '--version') return await versionCommand(io);
     if (args[0] === 'stats' || args[0] === 'day') return await jobStatsCommand(args[0], args.slice(1), io);
+    if (args[0] === 'archive') return await archiveCommand(args.slice(1), io);
     if (args.length === 1 && (args[0] === '--help' || args[0] === 'help')) {
       await io.stdout(
         'Usage: hud panel --help          Open the interactive panel\n' +
@@ -68,13 +70,14 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud --version            Print version, build commit and build time\n' +
           '       hud stats [--days N] [--by role|model|route|feature]  Report job usage and outcomes\n' +
           '       hud day [--project]       Summarize today\'s jobs and landings\n' +
+          '       hud archive list|extract  List or extract compressed cold job/flow archives\n' +
           '       hud board [--html] [--cwd DIR] [--out FILE] [--open]  Write the HTML review board\n' +
           '       hud codex [ARG ...]        Launch Codex with the HUD pane-strip bar (alias: codex-hud)\n' +
           '       hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n'
       );
       return 0;
     }
-    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|unattended|watch|act|select-send|council|workflow|board|doctor|stats|day|codex|codex-hud|uninstall\n');
+    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|unattended|watch|act|select-send|council|workflow|board|doctor|stats|day|archive|codex|codex-hud|uninstall\n');
     return 2;
   } catch (error) {
     if (error instanceof CliError) {

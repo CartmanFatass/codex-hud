@@ -669,7 +669,7 @@ The watcher learns of a HUD runner's exit through a socket close, not a periodic
 Pi tab workers have no such runner; their liveness and pending stop/read-close checks use `HUD_WATCH_CLI_CHECK_MS` (default 30000).
 A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited; worker still running"); the watcher rechecks this unsupervised worker with exponential backoff.
 `hud_send` to it starts a new supervisor.
-Settled directories, including reports and `hud_read` access, normally expire **one day after closure** on a later watcher scan, not a dedicated expiry timer.
+Settled directories normally expire from live `$HUD_HOME/jobs/` **one day after closure** on a later watcher scan, not a dedicated expiry timer; pruning moves their data into the compressed cold archive before removal so `hud_read` can still read old reports.
 An unresolved owner hold in a current ordinary ticket queue keeps the source job, report and worktree until the hold is resolved or the run is stopped or superseded; a missing or unreadable ticket file does not clear the hold.
 To resolve it by landing manually, wait for `hud_land({job})` to succeed before resuming with `hud_tickets({op: "run", feature})`. Once that land succeeds, the checkout is released while the job report and completed land receipt stay until the resumed queue finishes, stops or is superseded; the successor includes the ticket in milestone review and acceptance using that job's completed land receipt, not the ticket's status.
 Lands that did not resolve a hold follow normal job and receipt retention even if the queue is still open.
@@ -677,12 +677,19 @@ A headless pi job with a native session file stored only in its job directory st
 Before deleting a legacy pi job it moves real JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
 Invalid cwd, destination conflicts or failed moves retain the job.
 Removing session links never removes their targets.
-On a scan after `resume_s` expires, the watcher removes `stdout.jsonl` and `stderr.log` from cleanly settled jobs (`done` or closed with a report).
+On a scan after `resume_s` expires, the watcher moves `stdout.jsonl` and `stderr.log` from cleanly settled jobs (`done` or closed with a report) into the job's cold raw archive before unlinking the live copies.
 Sonic and older jobs without `resume_s` get the default 1620 seconds.
-Failed or stopped jobs keep their raw logs until their directories expire.
+Failed or stopped jobs keep their raw logs in the live job directory until directory expiry.
 At settlement the watcher saves a bounded, best-effort snapshot of native usage in the job directory before raw logs can be pruned.
 It reads pi session entries, CLI result streams, or native transcript usage records; it never prices missing tokens or treats a truncated per-request transcript as a total.
-Before deletion it appends job facts to `$HUD_HOME/archive/YYYY-MM.jsonl`, including ticket, route, question count, land outcome, available usage and the worker's bounded declared summary with home paths removed.
+Before deleting an expired job directory, the watcher writes its compressed cold archive under `$HUD_HOME/archive/cold/YYYY-MM/` (zstd-compressed POSIX tar, directories `0700`, files `0600`, atomic temp-file + rename, idempotent on re-run sweeps):
+- `<job>.text.tar.zst`: text records and artifacts (`job.json`, `STATUS.json`, `usage.json`, `brief.md`, `report.md`, `report-meta.json`, `checks.json`, `qa/*`, `worker-tree.json`, progress/permission receipts, and the job's `flows/f*` and `flows/j*` receipts and gate logs). Text members are never deleted.
+- `<job>.raw.tar.zst`: raw transcripts (`stdout.jsonl`, `stderr.log`, `sonic-session.jsonl`, and any remaining local session copies), merged with any logs moved early after `resume_s`.
+- `<flow>.text.tar.zst`: standalone flow runs not owned by one job (`q*` ticket queues, `b*` batches, `w*` composed workflows, including their `flows/<flow>/` files and sidecars).
+
+If any cold-archive write fails, the watcher keeps the source files in place and retries on a later sweep; repeated sweeps merge without duplicating or truncating entries. Raw archive size is capped by `$HUD_HOME/config.json` → `retention.coldRawCapGB` (default `20`, measured in GiB, enforced when a raw member is written): oldest `.raw.tar.zst` members are deleted first, and `.text.tar.zst` members are never deleted. Neither watcher refresh scans nor panel reads scan `$HUD_HOME/archive/cold/`. `hud_read({job})` falls back to `<job>.text.tar.zst` when the live job directory is gone, returning the report digest or paginated full report (including `offset`). Use `hud archive list [--month YYYY-MM] [--json]` and `hud archive extract <id> [--out DIR] [--part all|text|raw] [--force] [--json]` to inspect or extract archived jobs and flows.
+
+Before deletion it also appends prose-free job facts to `$HUD_HOME/archive/YYYY-MM.jsonl`, including ticket, route, question count, land outcome, available usage and the worker's bounded declared summary with home paths removed.
 The line includes `sessions`, `retry_of`, `dispatcher: {harness, id}` and the status flag `output_written` when recorded.
 Session paths are recorded as observed; the underlying files may later move or disappear.
 `questions: [{id, asked_at, answered_at?, answered_by?, used_default?}]` records the modification times of question and answer files, who answered (`orchestrator` via `hud_respond`, or `owner` from the panel or `hud_respond` with `by: "owner"`), and whether the answer matched the question's default or the question timed out onto it, without their text.
@@ -694,8 +701,8 @@ When present, archive lines also record placement, worktree and stop facts: `mod
 For reviewer jobs that declare them, `job.json` and the archive line also keep `findings: {blocker, major, minor}` and `reviewed: {base, head}` unchanged (omitted when undeclared or dropped).
 For settled sonic jobs, `job.json` and the archive line also keep `reads` (or `null` when the session was missing or unreadable), `brief_bytes`, and `report_bytes` when recorded.
 Older archive lines may omit the new fields.
-It stores neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the archive.
-In the same housekeeping pass, once a job directory is gone, the watcher prunes its settled land receipts and sidecars in `$HUD_HOME/flows/` after a day without changes.
+The monthly fact rows store neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the fact archive.
+In the same housekeeping pass, once a job directory is gone, the watcher archives settled land receipts, gate logs and sidecars in `$HUD_HOME/flows/` into the job's `<job>.text.tar.zst` (and standalone expired `q*`/`b*`/`w*` flows into `<flow>.text.tar.zst`) before unlinking them after a day without changes.
 
 ### Unattended service
 

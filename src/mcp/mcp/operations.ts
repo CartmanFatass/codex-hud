@@ -5,7 +5,8 @@ import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { AnswerResult } from '../../collectors/panel-actions.js';
 import { readJobProgress, jobRowReportMeta, jobChanges, failedAttempt, type JobRow } from '../../collectors/thin-jobs.js';
-import type { ReportMetaFields } from '../../roles/report-meta.js';
+import { normalizeReportMeta, validPreviewPath, type ReportMeta, type ReportMetaFields } from '../../roles/report-meta.js';
+import { readColdJobText } from '../../roles/cold-archive.js';
 import { removeQueuedJob } from '../../roles/concurrency.js';
 import { councilGrants } from '../../roles/council-grant.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
@@ -31,7 +32,7 @@ import { sendJob, dispatchJob, resumeJob } from '../dispatch/orchestrator.js';
 import { registry, harnessSwitchFailure, compactAssignment } from '../dispatch/places.js';
 import { paneText, ensureWatcher } from '../dispatch/proc.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
-import type { AnswerActor, Job } from '../job-contracts.js';
+import type { AnswerActor, Job, JobStatus } from '../job-contracts.js';
 import { wakeWorkflow } from '../../workflows/wake.js';
 import { batchView, controlBatch, startBatch } from '../batch.js';
 import { runVisible } from '../../workflows/scope.js';
@@ -321,36 +322,118 @@ function fullRead({ mode, full }: Args) {
   return mode === 'full' || (mode === undefined && full === true);
 }
 
+function paginateReportSlice(bytes: Buffer, totalBytes: number, offset: number) {
+  const boundary = (end: number) => {
+    const min = Math.max(0, end - 3);
+    while (end > min && (bytes[end]! & 0xc0) === 0x80) end--;
+    return end;
+  };
+  let high = Math.min(bytes.length, REPORT_PAGE_BYTES);
+  let end = boundary(high);
+  let text = bytes.toString('utf8', 0, end);
+  // Newlines, quotes and other escapes must also fit in the client's JSON tool result.
+  const fits = (value: string) => Buffer.byteLength(JSON.stringify(value)) - 2 <= REPORT_PAGE_BYTES;
+  if (!fits(text)) {
+    let low = 0;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (fits(bytes.toString('utf8', 0, boundary(mid)))) low = mid;
+      else high = mid - 1;
+    }
+    end = boundary(low);
+    text = bytes.toString('utf8', 0, end);
+  }
+  const truncated = end < bytes.length;
+  return { text, bytes: totalBytes, truncated, next_offset: truncated ? offset + end : undefined };
+}
+
 function readReportPage(path: string, offset: number) {
   try {
     // One lookahead byte tells us if the page edge splits a UTF-8 character or reaches EOF.
     const { bytes, stat } = readFileBounded(path, REPORT_PAGE_BYTES + 1, { followSymlinks: true, offset });
-    const boundary = (end: number) => {
-      const min = Math.max(0, end - 3);
-      while (end > min && (bytes[end] & 0xc0) === 0x80) end--;
-      return end;
-    };
-    let high = Math.min(bytes.length, REPORT_PAGE_BYTES);
-    let end = boundary(high);
-    let text = bytes.toString('utf8', 0, end);
-    // Newlines, quotes and other escapes must also fit in the client's JSON tool result.
-    const fits = (value: string) => Buffer.byteLength(JSON.stringify(value)) - 2 <= REPORT_PAGE_BYTES;
-    if (!fits(text)) {
-      let low = 0;
-      while (low < high) {
-        const mid = Math.ceil((low + high) / 2);
-        if (fits(bytes.toString('utf8', 0, boundary(mid)))) low = mid;
-        else high = mid - 1;
-      }
-      end = boundary(low);
-      text = bytes.toString('utf8', 0, end);
-    }
-    const truncated = end < bytes.length;
-    return { text, bytes: stat.size, truncated, next_offset: truncated ? offset + end : undefined };
+    return paginateReportSlice(bytes, stat.size, offset);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
+}
+
+function parseColdJson<T>(buf: Buffer | undefined): T | null {
+  if (!buf) return null;
+  try {
+    const parsed = JSON.parse(buf.toString('utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as T) : null;
+  } catch { return null; }
+}
+
+function parseColdReportMeta(metaBuf: Buffer | undefined, reportBuf: Buffer | undefined): ReportMeta | undefined {
+  if (!metaBuf || !reportBuf || metaBuf.length > 16 * 1024) return undefined;
+  try {
+    const meta = JSON.parse(metaBuf.toString('utf8'));
+    if (
+      meta?.v !== 1 ||
+      typeof meta.at !== 'string' ||
+      typeof meta.report_sig !== 'string' ||
+      (meta.summary !== undefined && typeof meta.summary !== 'string') ||
+      (meta.skip_checks_reason !== undefined && typeof meta.skip_checks_reason !== 'string') ||
+      (meta.files !== undefined && (!Array.isArray(meta.files) || !meta.files.every((p: unknown) => typeof p === 'string')))
+    ) return undefined;
+    const hash = createHash('sha256').update(reportBuf).digest('hex');
+    if (!meta.report_sig.endsWith(`:${reportBuf.length}:${hash}`)) return undefined;
+    const fields = normalizeReportMeta(meta);
+    const { at, report_sig, preview } = meta;
+    if (validPreviewPath(preview?.source) && [preview.path, preview.stamp, preview.error].every((v: unknown) => v === undefined || typeof v === 'string')) {
+      fields.preview = preview;
+    }
+    return fields.summary || fields.files || fields.skip_checks_reason || fields.preview ? { v: 1, at, report_sig, ...fields } : undefined;
+  } catch { return undefined; }
+}
+
+function readColdJobObservation(id: string, full: boolean, detail: boolean, offset: number) {
+  let cold: ReturnType<typeof readColdJobText>;
+  try { cold = readColdJobText(hudHome, id); }
+  catch { return null; }
+  if (!cold) return null;
+  const archivedJob = parseColdJson<Job>(cold.entries.get(jobFiles.job));
+  const archivedStatus = parseColdJson<Partial<JobStatus>>(cold.entries.get(jobFiles.status));
+  const reportBuf = cold.entries.get(jobFiles.report) ?? null;
+  const reportMeta = reportBuf ? parseColdReportMeta(cold.entries.get(jobFiles.reportMeta), reportBuf) : undefined;
+  const state = typeof archivedStatus?.state === 'string' ? archivedStatus.state : null;
+  const reason = typeof archivedStatus?.reason === 'string' ? archivedStatus.reason : null;
+  const exit_reason = typeof archivedStatus?.exit_reason === 'string' ? archivedStatus.exit_reason : null;
+  const page = full && reportBuf
+    ? paginateReportSlice(reportBuf.subarray(Math.min(offset, reportBuf.length), Math.min(offset + REPORT_PAGE_BYTES + 1, reportBuf.length)), reportBuf.length, offset)
+    : null;
+  const head = !full && reportBuf
+    ? { text: reportBuf.subarray(0, 65536).toString('utf8'), truncated: reportBuf.length > 65536, bytes: reportBuf.length }
+    : null;
+  return {
+    job: id,
+    archived: true,
+    archive_path: cold.path,
+    role: archivedJob?.role ?? archivedStatus?.role ?? null,
+    ...(archivedJob?.overflow_from ? { overflow_from: archivedJob.overflow_from } : {}),
+    ...(archivedJob?.council && { council: archivedJob.council }),
+    ...(archivedJob?.instructions_from && { instructions_from: archivedJob.instructions_from }),
+    ...(archivedJob?.route && { route: archivedJob.route }),
+    state,
+    ...(detail || reason ? { reason } : {}),
+    ...(detail || exit_reason ? { exit_reason } : {}),
+    ...(detail && archivedJob ? jobDiagnostics(archivedJob) : {}),
+    report_exists: reportBuf !== null,
+    ...(full && reportMeta ? { report_meta: reportMeta } : {}),
+    ...(head ? {
+      digest: reportDigest(head, id, state, reportMeta, undefined),
+    } : {
+      ...(page ? {
+        report_path: `${cold.path}#${jobFiles.report}`,
+        ...(page.truncated || offset > 0 ? { report_bytes: page.bytes } : {}),
+        ...(page.truncated ? { next_offset: page.next_offset } : {}),
+      } : {}),
+      ...(detail || page ? { report: page?.text ?? null } : {}),
+      ...(detail || page?.truncated ? { report_truncated: page?.truncated ?? false } : {}),
+    }),
+  };
 }
 
 function observation(
@@ -698,7 +781,13 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
     return respondTicketQueue(args, false);
   }
   const job = findJob(id);
-  if (!job) return { ok: false, code: 'job_not_found' };
+  if (!job) {
+    if (name === 'hud_read' && JOB_ID_RE.test(id)) {
+      const archived = readColdJobObservation(id, fullRead(args), detail, (args.offset as number | undefined) ?? 0);
+      if (archived) return archived;
+    }
+    return { ok: false, code: 'job_not_found' };
+  }
   if (name === 'hud_peek') return job.job === id ? peekJob(job, args, scan) : { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
   if (name === 'hud_read') {

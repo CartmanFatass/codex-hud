@@ -389,7 +389,7 @@ process.exitCode = 1;`);
 
   assert.deepEqual(await f.start(`Date.now = () => ${Date.parse(stamp) + 25 * hour};`).exited, [0, null]);
   assert.equal(fs.existsSync(dir), false);
-  const [archive] = fs.readdirSync(join(f.home, 'archive'));
+  const [archive] = fs.readdirSync(join(f.home, 'archive')).filter(name => name.endsWith('.jsonl'));
   assert.equal(json(join(f.home, 'archive'), archive).reaped_at, stamp);
   assert.equal(attempts(f, dir), 1);
   assert.equal(f.log().match(/worker-tree snapshot unresolved/g)?.length, 1);
