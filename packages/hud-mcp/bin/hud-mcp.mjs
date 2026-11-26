@@ -30,9 +30,8 @@ try {
   await current.call('start');
   publishGeneration('mcp', stamp);
   const calls = new Set();
-  let switching;
+  let switching, closing = false;
   async function reload(seen) {
-    await Promise.all([...calls]); // Never move a mutation, long wait or its response across the boundary.
     let next, toolsChanged = false;
     try {
       const state = await current.call('snapshot');
@@ -54,6 +53,12 @@ try {
     stamp = seen;
     if (toolsChanged) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }) + '\n');
   }
+  function reloadIfIdle() {
+    // Keep admitting requests to the current generation until all of its calls have finished.
+    if (closing || switching || calls.size) return;
+    const seen = buildStamp();
+    if (seen && seen !== stamp) switching = reload(seen).finally(() => { switching = undefined; });
+  }
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   function dispatch(line) {
     const call = current.call('request', line).catch((error) => {
@@ -66,16 +71,17 @@ try {
       if (reply !== undefined) process.stdout.write(JSON.stringify(reply) + '\n');
     });
     calls.add(call);
-    void call.finally(() => calls.delete(call));
+    void call.finally(() => {
+      calls.delete(call);
+      reloadIfIdle();
+    });
   }
   input.on('line', (line) => {
-    if (!switching) {
-      const seen = buildStamp();
-      if (seen && seen !== stamp) switching = reload(seen).finally(() => { switching = undefined; });
-    }
+    reloadIfIdle();
     if (switching) void switching.then(() => dispatch(line)); else dispatch(line);
   });
   input.on('close', async () => {
+    closing = true;
     await switching;
     await Promise.all(calls);
     await current.call('stop');

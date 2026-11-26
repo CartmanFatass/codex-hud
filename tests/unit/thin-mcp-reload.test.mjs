@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { openGeneration } from '../../packages/hud-mcp/bin/generation.mjs';
 import { fixture, legacyFixture, publishPiGrace, rpcClient, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
@@ -16,8 +17,8 @@ const buildStamp = (root) => {
   return `${ino}:${ctimeNs}`;
 };
 
-test('a rebuild drains overlapping calls and a broken candidate leaves the old server connected', { timeout: 10000 }, async (t) => {
-  const root = fs.mkdtempSync(join(tmpdir(), 'hud-reload-drain-'));
+test('a rebuild waits for idle without blocking overlapping calls and survives a broken candidate', { timeout: 10000 }, async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'hud-reload-idle-'));
   const untrack = trackFixture({ root });
   const bin = join(root, 'packages/hud-mcp/bin'), dist = join(root, 'dist');
   fs.mkdirSync(join(dist, 'mcp'), { recursive: true });
@@ -30,7 +31,10 @@ test('a rebuild drains overlapping calls and a broken candidate leaves the old s
       export function openRuntime() { let calls = 0;
         return {start(n = 0) { calls = n; }, snapshot() { return calls; }, stop() {}, async request(line) {
           const {id, method} = JSON.parse(line);
-          if (method === 'hold') { fs.writeFileSync('entered', ''); while (!fs.existsSync('release')) await delay(5); }
+          if (method === 'hold') {
+            fs.appendFileSync('entered', id + '\\n');
+            while (!fs.existsSync('release')) await delay(5);
+          }
           return {jsonrpc:'2.0', id, result: [${JSON.stringify(version)}, ++calls]};
         }};
       }`);
@@ -53,23 +57,43 @@ test('a rebuild drains overlapping calls and a broken candidate leaves the old s
     assert.equal(survivors.length, 0);
   });
   const rpc = rpcClient(child), held = rpc('hold');
-  await until(() => fs.existsSync(join(root, 'entered')), t.signal);
-  assert.equal(generation(home, child.pid).stamp, buildStamp(root));
+  const entered = join(root, 'entered');
+  await until(() => fs.existsSync(entered), t.signal);
+  const old = generation(home, child.pid);
+  assert.equal(old.stamp, buildStamp(root));
   publish('new');
-  const a = rpc('next'), b = rpc('next');
+  const sent = performance.now();
+  const replies = await Promise.race([
+    Promise.all([
+      rpc('tools/call', { name: 'hud_tickets', arguments: { op: 'guide' } }),
+      rpc('tools/call', { name: 'hud_peek' }),
+      rpc('ping'),
+    ]),
+    delay(50, undefined, { ref: false }).then(() => assert.fail('guide, peek and ping did not reply within 50 ms')),
+  ]);
+  const elapsed = performance.now() - sent;
+  assert.ok(elapsed < 50, `guide, peek and ping took ${elapsed.toFixed(1)} ms`);
+  assert.deepEqual(replies.map(r => r.result), [['old', 1], ['old', 2], ['old', 3]]);
+  assert.deepEqual(generation(home, child.pid), old);
+
   fs.writeFileSync(join(root, 'release'), '');
-  assert.deepEqual((await Promise.all([held, a, b])).map(r => r.result), [['old', 1], ['new', 2], ['new', 3]]);
-  const current = generation(home, child.pid);
-  assert.equal(current.stamp, buildStamp(root));
-  publish('broken');
-  assert.deepEqual((await rpc('next')).result, ['new', 4]);
+  const heldReply = await held;
+  assert.deepEqual(heldReply.result, ['old', 4]);
+  const published = buildStamp(root);
+  // The idle handoff must finish without another line prompting it.
+  await until(() => generation(home, child.pid).stamp === published, t.signal);
   assert.deepEqual((await rpc('next')).result, ['new', 5]);
+  const current = generation(home, child.pid);
+  publish('broken');
+  assert.deepEqual((await rpc('next')).result, ['new', 6]);
+  assert.deepEqual((await rpc('next')).result, ['new', 7]);
   assert.deepEqual(generation(home, child.pid), current);
   publish('fixed');
-  assert.deepEqual((await rpc('next')).result, ['fixed', 6]);
+  assert.deepEqual((await rpc('next')).result, ['fixed', 8]);
   assert.equal(generation(home, child.pid).stamp, buildStamp(root));
   child.stdin.end();
   assert.deepEqual(await exit, [0, null]);
+  assert.equal(fs.readFileSync(entered, 'utf8'), `${heldReply.id}\n`, 'the held mutation ran exactly once');
   assert.equal(stderr.match(/keeping previous build/g)?.length, 1);
 });
 

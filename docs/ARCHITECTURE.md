@@ -88,9 +88,11 @@ Runtime launchers and the panel reload probe hold a per-checkout lock while load
 The builder takes that lock only to publish or clean `dist/`, not to compile.
 A timed-out launcher fails rather than importing a partial build.
 
-The MCP stdio owner checks `dist/index.js` once per incoming line; the watcher checks it once per 30 s without scanning jobs.
+The MCP stdio owner checks `dist/index.js` before dispatching from idle and when its last in-flight call finishes;
+the watcher checks it once per 30 s without scanning jobs.
 A successful main build publishes or touches this stamp, including script-only builds.
-At a change the MCP drains admitted calls; the watcher drains checks, reaps and worktree operations.
+While busy, the MCP keeps dispatching to the current generation. It starts the handoff only when idle and never
+moves or replays in-flight calls. The watcher drains checks, reaps and worktree operations.
 Each loads the replacement in a fresh worker thread under the dist lock; a bad import leaves the previous runtime in use.
 When a swapped MCP runtime changes the connection's `tools/list` payload, the owner emits `notifications/tools/list_changed`.
 The transport PID stays put (including the watcher's tab-close subscription).
