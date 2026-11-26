@@ -10,8 +10,10 @@ import { createInterface } from 'node:readline';
 import { isDeepStrictEqual } from 'node:util';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
-import { takeLease } from '../roles/lease.js';
+import type { LeaseCommandGroup } from '../collectors/thin-jobs.js';
+import { callerProtection, setLeaseCommandGroup, takeLease } from '../roles/lease.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
+import { isActiveProcState, isValidPid, listProcPids, readBootId, readProcStat, readProcUid } from '../utils/proc.js';
 import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, landOwnerGone, readLand, setLandStep, writeLand, type LandFlow, type LandRerun } from './land-state.js';
 import { canRepairSealedStep } from '../workflows/engine.js';
 import { runLock, stopRequested } from '../workflows/store.js';
@@ -28,9 +30,38 @@ class CommandError extends Error {
 class CommandTimeout extends CommandError {}
 const MAX_BASE_MOVES = 2; // Independent of the engine's worker repair bound.
 const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
-function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, env = process.env) {
+function hasOwnedGroupMember(pgid: number, leaderStart: string, myUid: number | undefined, protectedPids: Set<number>): boolean {
+  const startTicks = BigInt(leaderStart);
+  let found = false;
+  for (const id of listProcPids()) {
+    if (!isValidPid(id)) continue;
+    if (myUid !== undefined && readProcUid(id) !== myUid) continue;
+    const stat = readProcStat(id);
+    if (!stat || !isActiveProcState(stat.state)) continue;
+    if (stat.pgrp !== pgid || stat.session !== pgid || BigInt(stat.start) < startTicks) continue;
+    if (protectedPids.has(id)) return false;
+    found = true;
+  }
+  return found;
+}
+function command(
+  cwd: string,
+  bin: string,
+  argv: string[],
+  deadlineMs?: number,
+  env = process.env,
+  trackGroup?: (group: LeaseCommandGroup | undefined, expected?: LeaseCommandGroup) => void,
+) {
   return new Promise<string[]>((ok, fail) => {
     const child = spawn(bin, argv, { cwd, env: safeGitEnv(env), detached: deadlineMs !== undefined, stdio: ['ignore', 'pipe', 'pipe'] });
+    const bootId = deadlineMs !== undefined ? readBootId() : null;
+    const stat = deadlineMs !== undefined && child.pid ? readProcStat(child.pid) : null;
+    const group: LeaseCommandGroup | undefined =
+      child.pid && bootId && stat && stat.pgrp === child.pid && stat.session === child.pid
+        ? { pid: child.pid, start: stat.start, boot_id: bootId }
+        : undefined;
+    if (group) trackGroup?.(group);
+    const clearGroup = () => { if (group) trackGroup?.(undefined, group); };
     const output = new LandOutput(cwd);
     const streams = [child.stdout, child.stderr].map(input => {
       const stream = output.stream();
@@ -42,15 +73,31 @@ function command(cwd: string, bin: string, argv: string[], deadlineMs?: number, 
       return output.evidence();
     };
     const timer = deadlineMs === undefined ? undefined : setTimeout(() => {
-      try { if (child.pid) process.kill(-child.pid, 'SIGKILL'); }
-      catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') streams[1].line((e as Error).message); }
+      if (group) {
+        try {
+          const { pids: protectedPids, pgrps: protectedPgrps } = callerProtection();
+          const myUid = process.getuid?.();
+          if (!protectedPids.has(group.pid) && !protectedPgrps.has(group.pid)) {
+            const current = readProcStat(group.pid, { strict: true });
+            const ownedLeader = current && current.start === group.start && current.pgrp === group.pid && current.session === group.pid &&
+              (myUid === undefined || readProcUid(group.pid) === myUid);
+            const ownedOrphanGroup = !current && hasOwnedGroupMember(group.pid, group.start, myUid, protectedPids);
+            if (ownedLeader || ownedOrphanGroup) {
+              try { process.kill(-group.pid, 'SIGKILL'); }
+              catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') streams[1].line((e as Error).message); }
+            }
+          }
+        } catch (e) { streams[1].line((e as Error).message); }
+      }
       // Don't wait for inherited stdio to close. A child can outlive the shell that opened it.
       child.stdout.destroy(); child.stderr.destroy(); child.unref();
+      clearGroup();
       fail(new CommandTimeout('timeout', evidence()));
     }, deadlineMs);
-    child.once('error', (e) => { clearTimeout(timer); fail(e); });
+    child.once('error', (e) => { clearTimeout(timer); clearGroup(); fail(e); });
     child.once('close', (code, signal) => {
       clearTimeout(timer);
+      clearGroup();
       if (code === 0) ok(output.tail());
       else fail(new CommandError(`exit ${code ?? signal}`, evidence()));
     });
@@ -151,9 +198,11 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         CARGO_HOME: process.env.CARGO_HOME || join(homedir(), '.cargo'),
         HUD_NATIVE_REUSE_DIR: join(kind === 'gate' ? main : integration, 'dist/native'),
       } : process.env;
+      const trackGroup = (group: LeaseCommandGroup | undefined, expected?: LeaseCommandGroup) =>
+        setLeaseCommandGroup('main-checkout', lease, group, expected);
       const invoke = (script: string) => c.wrapper
-        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, env)
-        : command(cwd, 'sh', ['-c', script], deadlineMs, env);
+        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, env, trackGroup)
+        : command(cwd, 'sh', ['-c', script], deadlineMs, env, trackGroup);
       const t0 = performance.now();
       try {
         const output = await invoke(script);
