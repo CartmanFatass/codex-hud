@@ -323,7 +323,8 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   };
 
   // Hub opens first: wait across several refreshMs=60ms ticks -> 0 spawns.
-  await until(() => stripAnsi(out).includes('Progress'), 'Project hub rendered');
+  const hubLinks = /Tickets {2}(?:Worktree {2})?Docs/;
+  await until(() => hubLinks.test(stripAnsi(out)), 'Project hub rendered');
   await new Promise((r) => setTimeout(r, 300));
   assert.deepEqual(spawns(), []);
 
@@ -339,7 +340,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
   // Leave Control and open it again within 1 day -> cache hit, 0 extra spawns.
   const left = out.length;
   child.stdin.write('\x1b[D\x1b[D');
-  await until(() => stripAnsi(out.slice(left)).includes('Progress'), 'back to hub');
+  await until(() => hubLinks.test(stripAnsi(out.slice(left))), 'back to hub');
   const back = out.length;
   child.stdin.write('\t\t');
   await until(() => /◉ imp → /.test(stripAnsi(out.slice(back))), 'Control re-opened');

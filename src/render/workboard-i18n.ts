@@ -298,7 +298,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Active & ready': '进行与就绪',
   '{n} ask': '{n} 待决定',
   '{n} asks': '{n} 待决定',
-  '{n} live': '{n} 工作中',
   '{n} try': '{n} 待试用',
   'Accept all': '全部验收',
   'Could not accept all': '无法全部验收',

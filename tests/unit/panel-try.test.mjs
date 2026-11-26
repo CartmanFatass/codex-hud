@@ -87,10 +87,11 @@ for (const layout of ['classic', 'split']) test(`${layout} Accept all records ev
   const { key, frame, painted, close, modelLog } = panel(f, layout);
   await painted(/Choose the sample filename/);
   key('\x1b[C');
-  await painted(/Tickets +0\/3 done · 1 feature/m);
+  await painted(/Tickets {2}Docs$/m);
   assert.doesNotMatch(frame(), /Accept all|3 to try/);
-  key('Gkk\r'); // Docs → Progress → Tickets, then open its diagnostics.
+  key('t'); // Open the Tickets page from the Project header.
   await painted(/^Accept all +3 to try/m);
+  assert.match(frame(), /\bdemo +0\/3 +to try$/m);
   key('G');
   await painted(/⏎ accept all/);
   key('yntm ');
@@ -98,7 +99,7 @@ for (const layout of ['classic', 'split']) test(`${layout} Accept all records ev
   key('\r\r');
   await until(() => f.records().length > 0 && !/Accept all/.test(frame()), frame);
   key('\x1b');
-  await painted(/Choose the sample filename/);
+  await painted(/Tickets {2}Docs$/m);
   await close();
   assert.doesNotMatch(frame(), /Only to try|How to try|Space mark|m request land/);
   assert.match(frame(), /Choose the sample filename/);
