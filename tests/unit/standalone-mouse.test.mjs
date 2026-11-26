@@ -81,21 +81,24 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
   // Crumb click on row 0 returns to the Project hub
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: 0 }).state);
   assert.equal(projectPageOf(frame.state), undefined);
-  // A feature row on Tickets selects on the first click, and only then toggles on a second click.
+  // A feature row on Tickets selects on the first click, and only then opens its Feature page on a second click.
   frame = draw(send(frame, openTickets).state);
   assert.equal(projectPageOf(frame.state), 'tickets');
-  const foldRow = pane().rows
-    .map((r, i) => ({ item: r.item, y: pane().y + i - pane().offset }))
-    .find((d) => d.item?.startsWith('project:fold:') && d.item !== frame.state.project.nav.cursor);
-  assert.ok(foldRow, 'need an unselected fold row');
-  const foldId = foldRow.item.slice('project:fold:'.length);
-  const foldedBefore = frame.state.project.folded?.has(foldId) ?? false;
-  frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: foldRow.y }).state);
-  assert.equal(frame.state.project.nav.cursor, foldRow.item);
-  assert.equal(frame.state.project.folded?.has(foldId) ?? false, foldedBefore, 'first click selects without toggling fold');
-  const sameIndex = pane().rows.findIndex((r) => r.item === foldRow.item);
+  const featureRow = pane().rows
+    .map((r, i) => ({ item: r.item, slug: r.featureTarget?.slug, y: pane().y + i - pane().offset }))
+    .find((d) => d.slug && d.item !== frame.state.project.nav.cursor);
+  assert.ok(featureRow, 'need an unselected feature row');
+  frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: featureRow.y }).state);
+  assert.equal(frame.state.project.nav.cursor, featureRow.item);
+  assert.equal(frame.state.subpage, undefined, 'first click selects without opening Feature page');
+  const sameIndex = pane().rows.findIndex((r) => r.item === featureRow.item);
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: pane().y + sameIndex - pane().offset }).state);
-  assert.equal(frame.state.project.folded?.has(foldId) ?? false, !foldedBefore, 'second click performs Enter action');
+  assert.equal(frame.state.subpage?.kind, 'feature', 'second click performs Enter action');
+  assert.equal(frame.state.subpage?.target.slug, featureRow.slug);
+  // Crumb click on row 0 returns from Feature page to Tickets, then to Project hub.
+  frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: 0 }).state);
+  assert.equal(frame.state.subpage, undefined);
+  assert.equal(projectPageOf(frame.state), 'tickets');
 
   // 4. Wheel scroll on Home scrolls viewport without moving selection
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: 0 }).state);

@@ -557,7 +557,12 @@ test('Project summarizes unlinked features in one row and opens a list, without 
     assert.match(plain(page), /^  sixth /m);
     assert.doesNotMatch(plain(page), /01 Sample 1/);
     page.state.project.nav.cursor = page.workboard.rows.find((r) => /^  workflow /.test(r.text)).item;
-    assert.deepEqual(enter(page).action, { type: 'open-files', files: [join(root, '.scratch/workflow/issues/02-demo.md')] });
+    const opened = enter(page);
+    assert.equal(opened.action, undefined);
+    assert.equal(opened.state.subpage?.kind, 'feature');
+    assert.equal(opened.state.subpage?.target.slug, 'workflow');
+    const openFile = handleMonitorInput(page.state, { type: 'key', key: 'open-session' }, { frame: page });
+    assert.deepEqual(openFile.action, { type: 'open-files', files: [join(root, '.scratch/workflow/issues/02-demo.md')] });
   } finally { setDisplayConfig(prev); }
 });
 
