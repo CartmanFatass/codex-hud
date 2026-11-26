@@ -12,7 +12,8 @@ One HUD for Claude Code, Codex, pi and Antigravity, for one owner on one Linux/W
 HUD runs on an owner-maintained fork of herdr (Apache-2.0, personal use): no upstream contributions; upstream changes
 are taken selectively or not at all. The fork provides what HUD would otherwise infer from outside herdr (the agent
 process's identity and exit, launch-scoped tab identity, caller-declared agent kind, closing a tab when its agent
-exits), and HUD stops inferring those once the fork provides them. (25.09)
+exits), and HUD stops inferring those once the fork provides them. It also provides small display and input
+primitives (hidden tabs, a reserved pane row, a docked surface, guarded typing); HUD decides what they show. (25.09, 26.01)
 
 MyHUD is an operational workbench: it answers *what should happen now*. With the panel closed, the owner sees
 current load. With it open, they can tell what each project is trying to achieve, what has changed and what needs
@@ -32,7 +33,7 @@ execution detail; when space runs out, execution detail is not shown. (new)
 
 - One local MCP across supported main sessions: roster, create, read, peek, send, respond, close, wait or receive
   tasks, lease, manage tickets, land, and serve the supported statusline. Thin adapters use herdr, installed role
-  runners, CLIs and the shared `bro` browser. Interactive workers have tabs; headless workers do not. (10.01, 14.01, 17.02, 21.07, 22.04)
+  runners, CLIs and the shared `bro` browser. Interactive workers have tabs, hidden from the tab bar by default (a role may keep them visible) and brought forward from the Inspector; headless workers do not. (10.01, 14.01, 17.02, 21.07, 22.04)
 - Ask for a role, not a vendor. The owner controls ordered places, model, effort, presets and enabled harnesses.
   Check trust and capabilities before launch; skip unavailable places, respect quota resets and report the actual
   choice or failure. Only `general` takes one-job `on`/`preset`/`model`/`thinking` or borrows role instructions.
@@ -46,7 +47,7 @@ execution detail; when space runs out, execution detail is not shown. (new)
   start children. `oracle` advises without changing tracked files or owner state. Keep named exclusive leases for shared resources. (17.06, 18.03, 21.07, 21.10, 22.19, 23.02)
 - Worker questions, reports and progress work without a panel. Questions reach main immediately; an answer is written
   once and resumes a waiting headless turn. Keep negotiated MCP tasks, mod-owned wake, native client delivery and
-  watch/`changes` fallbacks without duplicate wakes. Owner actions reach the responsible session too. A completion
+  watch/`changes` fallbacks without duplicate wakes. Owner actions reach the responsible session too, including a pane selection sent with its source. Typed delivery into a main session happens only when it is idle and its prompt line is empty (26.01). A completion
   notice is not a read. `hud_read` returns a digest or the full report; signature-bound summary, files and checks
   need no display model. Keep idempotent create/send and batch tools. (14.03, 18.06, 21.06, 21.08, 22.01, 22.09, 22.15, 22.25)
 - Successful completion requires a matching current-turn report receipt and a finished turn, or native pi settlement
@@ -119,7 +120,7 @@ for tool contracts, role defaults, launches, wake, checks, trains, repairs and c
 ### 2.2 What the owner sees
 
 **Statusline.** Keep the compact client line, `line` and `p10k`, pi's editor ribbon and other extensions' statuses,
-the `codexH` bar and supported native statuslines. (11.04, 12.01, 17.09, 22.12, 22.27)
+the `codexH` bar (drawn by herdr in a reserved pane row, without tmux) and supported native statuslines. (11.04, 12.01, 17.09, 22.12, 22.27)
 
 - Distinguish **this session** (model, effort, context, project/branch, available quota and reset, output tokens/s or
   client-specific usage) from **this machine** (local CPU utilization, RAM used/total, running and queued HUD jobs).
@@ -130,7 +131,10 @@ the `codexH` bar and supported native statuslines. (11.04, 12.01, 17.09, 22.12, 
 - Sample outside paint. No sleep, project scan, model call or resident service to draw a line. Omit or qualify
   stale/partial readings; an absent watcher is not proof of zero. (new)
 
-**Home.** `/hud` opens the same standalone herdr sidebar across clients; delegation stays installed when closed.
+**Home.** `/hud` opens the same herdr panel docked to the right edge across clients (overlay by default, push as a
+setting); delegation stays installed when closed. Main sessions without the Claude mod show the first open owner
+request, its project and the count in a one-line band. An owner request that asks for a try opens its prepared scene
+in one key and runs only preview actions the owner configured. (26.01)
 Keep keyboard and mouse navigation, Settings and Help. (11.04, 17.09, 19.03, 20.10)
 
 - Show explicit owner requests first, then the registered projects **active today** (activity today, running jobs
@@ -319,3 +323,6 @@ purging owner data. (new)
 - [x] Routine ticket-level human acceptance and the default Project/Claude band “N to try / Accept all” prompt. Keep explicit diagnostic Accept all, `/try`, `hud act try` and old records.
 - [x] Standalone Changes entry. Merge its Git/worktree facts into project diagnostics.
 - [x] Standalone EXP tab. Move controls without deleting ledgers or disabling configured features.
+- [x] tmux inside Codex panes: its prefix keys, copy mode, `codex-hud-paste`, `codex-hud-resize`, tmux height and scrollback settings. The bar stays (D-2026-11-26-01).
+- [x] Worker tabs in the tab bar by default (D-2026-11-26-01).
+- [x] The panel as an ordinary pane that can be moved or resized (D-2026-11-26-01).

@@ -7,6 +7,15 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-26-01** (§1, §2.1, §2.2, Removed): Next stage on the herdr fork, adopted from the converged plan
+  `docs/fable-proposal/01-herdr-fork-final-plan.md` (Fable, Astra, Carbon proposals). Owner (2026-11-26): adopt all
+  three steps as the `herdr-fork` objective, with draft-safe typing (plan 2c) moved into the first fork install;
+  remove tmux from Codex panes; worker tabs hidden by default with a per-role visible setting; docked panel overlays
+  by default, push as a setting. Defaults taken from the plan: a selection goes to main only; guarded typing replaces
+  typed delivery per client after its live check. Rule: mechanism in the fork, content in HUD. First: housekeeping
+  (herdr-fork/08 stock-path deletion, workflow/09, pi-worker and herdr-fork milestone reviews); the docked surface
+  gets a feasibility check before its slice.
+
 - **D-2026-11-25-09** (§1): HUD runs on an owner-maintained herdr fork. Owner: HUD already depends deeply on herdr and
   the direction makes it a deep herdr customization; herdr upstream is stable and its recent work is mostly GUI; this
   is personal use, so no upstream contributions, and upstream changes are taken selectively or the fork goes
