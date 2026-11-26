@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Execution workflow: metro map</title>
+<style>
+*{box-sizing:border-box}
+html{background:#0a0d12}
+body{margin:0;font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;color:#d5dbe6}
+.page{max-width:1660px;margin:0 auto;padding:28px 28px 80px}
+h1{font-size:23px;margin:0 0 8px}
+h2{font-size:18px;margin:38px 0 4px;padding-top:18px;border-top:1px solid #232b38}
+h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9aa5b8;margin:16px 0 8px}
+p{margin:0 0 8px;max-width:980px}.lede,.note{color:#9aa5b8;max-width:1100px}
+nav a{color:#6fa8ff;margin-right:14px;text-decoration:none}
+code{font:12px ui-monospace,"DejaVu Sans Mono",monospace;background:#161c26;padding:0 4px;border-radius:3px}
+.row{display:flex;flex-wrap:wrap;gap:18px 22px;align-items:flex-start}
+figure{margin:0}
+figcaption{font-size:12.5px;color:#9aa5b8;margin:0 0 5px}figcaption b{color:#d5dbe6;margin-right:6px}
+figcaption em{font-style:normal;color:#efc15a;margin-left:6px}
+.term{display:inline-block;padding:9px 10px;background:#0f131a;color:#d5dbe6;border:1px solid #232b38;border-radius:8px;
+  font:13px/18px "MesloLGS Nerd Font Mono","MesloLGS NF","Cascadia Mono","DejaVu Sans Mono",Menlo,Consolas,"Noto Sans Mono CJK SC","Sarasa Mono SC","Microsoft YaHei",monospace}
+.r{display:flex;height:18px;white-space:pre}
+.r i{font-style:normal;display:block;flex:none;width:8px;height:18px;line-height:18px;text-align:center;overflow:visible}
+.r i.w{width:16px;font-size:15px}
+.r i.b{font-weight:700}
+.r svg{display:block;overflow:visible}
+.err{color:#f4727e;font-weight:700}
+ul{margin:0 0 10px;padding-left:18px}li b{color:#d5dbe6}
+</style>
+</head>
+<body>
+<div class="page">
+<h1>Execution workflow as a metro map: three variants</h1>
+<p class="lede">Design sample for D-2026-11-26-09 (<code>docs/design/tab-roles/README.md</code> §3a); nothing is built.
+Every frame is a terminal cell grid at 62 or 40 columns, composed by the layout script in this file (the same function
+for every variant, width, language and mode), in the panel's default theme. Box, half-block and braille cells are drawn
+as cell-filling shapes, as terminals with built-in glyphs draw them. Synthetic data. Glyph tables, tokens, rules and the
+recommendation: <a href="./README.md" style="color:#6fa8ff">README.md</a>.</p>
+<ul id="key" class="note"></ul>
+<nav id="nav"></nav>
+<div id="root"></div>
+</div>
+<script id="metro">
+'use strict';
+(() => {
+/* ───────────────────────── 1. widths, theme tokens, words ───────────────────────── */
+// Same wide ranges as src/render/colors.ts (visualWidth); everything else is one cell.
+const WIDE = [[0x1100,0x115f],[0x26a1,0x26a1],[0x2e80,0x303e],[0x3041,0x33ff],[0x3400,0x4dbf],[0x4e00,0x9fff],
+  [0xa000,0xa4cf],[0xa960,0xa97f],[0xac00,0xd7a3],[0xf900,0xfaff],[0xfe10,0xfe19],[0xfe30,0xfe6f],[0xff00,0xff60],
+  [0xffe0,0xffe6],[0x1f300,0x1f64f],[0x1f900,0x1f9ff],[0x20000,0x2fffd],[0x30000,0x3fffd]];
+const charWidth = (cp) => (cp >= 0x1100 && WIDE.some(([a, b]) => cp >= a && cp <= b) ? 2 : 1);
+const textWidth = (s) => [...s].reduce((n, c) => n + charWidth(c.codePointAt(0)), 0);
+
+// The panel's default board (palette.ts BOARD_SPECS.terminal; askTitle for badges) plus the proposed `board.lines`.
+// `ground` stands in for the terminal's own background.
+const T = {
+  ground: '#0f131a', text: '#d5dbe6', muted: '#9aa5b8', frame: '#3b4556', attention: '#efc15a', danger: '#f4727e',
+  active: '#6fa8ff', stalled: '#f29958', info: '#52c7f0', selected: '#303a4b', title: '#1e2531',
+  ask: '#ffc13a', askInk: '#19150d', lines: ['#a993f0', '#35c9b9', '#ec83c6', '#9ccfe8'],
+};
+
+const WORDS = {
+  zh: { section: '工作流', queue: '队列', batch: '批次', council: '评议', land: '落地', running: '运行中', paused: '已暂停',
+    done: '完成', landed: '已落地', working: '工作中', asking: '提问中', held: '挂起·等你', failed: '失败',
+    waiting: '未开始', lease: '等锁', stalled: '停滞', gate: '门禁', repair: '修复', review: '评审', accept: '验收',
+    synth: '综合', summary: '汇总', pool: '并发池', pilot: '探路', slots: '槽位', member: '成员',
+    kAsk: '提问', kHeld: '等你定', kFail: '失败', kRepair: '修复', kGate: '门禁', kLease: '等锁', kStall: '停滞',
+    kReview: '评审', kAccept: '验收', kWork: '进行', kDone: '完成', kWait: '未开始', kFold: '折叠', kStop: '已停止', kUnknown: '未知' },
+  en: { section: 'Workflow', queue: 'Queue', batch: 'Batch', council: 'Council', land: 'Land', running: 'running',
+    paused: 'paused', done: 'done', landed: 'landed', working: 'working', asking: 'asking', held: 'held for you',
+    failed: 'failed', waiting: 'not started', lease: 'lease wait', stalled: 'stalled', gate: 'gate', repair: 'repair',
+    review: 'review', accept: 'acceptance', synth: 'synthesis', summary: 'summary', pool: 'pool', pilot: 'pilot',
+    slots: 'slots', member: 'member',
+    kAsk: 'asking', kHeld: 'held', kFail: 'failed', kRepair: 'repair', kGate: 'gate', kLease: 'lease', kStall: 'stalled',
+    kReview: 'review', kAccept: 'accept', kWork: 'working', kDone: 'done', kWait: 'to do', kFold: 'folded', kStop: 'stopped',
+    kUnknown: 'unknown' },
+};
+const age = (m, lang) => (m < 60 ? (lang === 'zh' ? `${m}分` : `${m}m`)
+  : lang === 'zh' ? `${Math.floor(m / 60)}时${String(m % 60).padStart(2, '0')}分` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`);
+
+/* ───────────────────────── 2. glyphs ───────────────────────── */
+// Station families: [not started, working, done]. Asking, held and failed are the same mark for every family.
+const FAMILY = {
+  worker: ['○', '◉', '●'], summary: ['○', '◉', '●'], review: ['◇', '◈', '◆'], accept: ['☆', '✪', '★'], synth: ['☆', '✪', '★'],
+};
+const ASCII_FAMILY = {
+  worker: ['o', '@', '+'], summary: ['o', '@', '+'], review: ['r', 'R', '+'], accept: ['a', 'A', '+'], synth: ['a', 'A', '+'],
+};
+const SPECIAL = { asking: ['?', '?'], held: ['!', '!'], failed: ['✗', 'x'], lease: ['◷', '~'], stalled: ['◍', 'z'],
+  stopped: ['⊘', '/'], unknown: ['◌', 'u'] };
+const stationChar = (kind, state, ascii) => {
+  if (SPECIAL[state]) return SPECIAL[state][ascii ? 1 : 0];
+  return (ascii ? ASCII_FAMILY : FAMILY)[kind][state === 'done' ? 2 : state === 'working' ? 1 : 0];
+};
+// Box drawing by arm weight, key = Left Right Up Down, 1 light / 2 heavy (U+2500–U+257F, all 80 combinations).
+const BOX = Object.fromEntries(('0001╷,0002╻,0010╵,0011│,0012╽,0020╹,0021╿,0022┃,0100╶,0101┌,0102┎,0110└,0111├,0112┟,'
+  + '0120┖,0121┞,0122┠,0200╺,0201┍,0202┏,0210┕,0211┝,0212┢,0220┗,0221┡,0222┣,1000╴,1001┐,1002┒,1010┘,1011┤,1012┧,'
+  + '1020┚,1021┦,1022┨,1100─,1101┬,1102┰,1110┴,1111┼,1112╁,1120┸,1121╀,1122╂,1200╼,1201┮,1202┲,1210┶,1211┾,1212╆,'
+  + '1220┺,1221╄,1222╊,2000╸,2001┑,2002┓,2010┙,2011┥,2012┪,2020┛,2021┩,2022┫,2100╾,2101┭,2102┱,2110┵,2111┽,2112╅,'
+  + '2120┹,2121╃,2122╉,2200━,2201┯,2202┳,2210┷,2211┿,2212╈,2220┻,2221╇,2222╋').split(',').map((e) => [e.slice(0, 4), e.slice(4)]));
+const ROUND = { '0101': '╭', '1001': '╮', '1010': '╯', '0110': '╰' };
+
+/* ───────────────────────── 3. cell canvas ───────────────────────── */
+class Canvas {
+  constructor(width) { this.width = width; this.rows = []; }
+  row() { const r = Array.from({ length: this.width }, () => ({ ch: ' ' })); this.rows.push(r); return r; }
+  put(r, x, ch, style = {}) {
+    if (x < 0 || x >= this.width) throw new Error(`cell ${x} outside ${this.width}: ${ch}`);
+    const w = charWidth(ch.codePointAt(0));
+    r[x] = { ch, ...style };
+    if (w === 2) r[x + 1] = { ch: '', ...style };
+    return x + w;
+  }
+  text(r, x, s, style) { for (const c of s) x = this.put(r, x, c, style); return x; }
+}
+const cut = (s, max) => {
+  if (textWidth(s) <= max) return s;
+  let out = '';
+  for (const c of s) { if (textWidth(out + c) > max - 1) break; out += c; }
+  return `${out}…`;
+};
+
+/* ───────────────────────── 4. layout: waves, lanes, folding, routes ───────────────────────── */
+const LANES = 3;
+const gateSegments = (gate) => {
+  const shown = Math.min(gate.n, 5);
+  const at = gate.n <= 5 ? gate.k - 1 : Math.min(shown - 1, Math.floor(((gate.k - 1) / gate.n) * shown));
+  return Array.from({ length: shown }, (_, i) => (i < at ? 'passed' : i === at ? gate.state : 'pending'));
+};
+const poolParts = (c) => ['done', 'working', 'asking', 'failed', 'waiting', 'stopped'].map((state) => [state, c[state]]).filter(([, n]) => n);
+
+function nodeWidth(node, opts) {
+  if (node.kind === 'group') return textWidth(`●${opts.ascii ? '' : '×'}${node.count}`);
+  if (node.kind === 'pool') {
+    return 2 + poolParts(node.counts).reduce((n, [, c], i) => n + (i ? 1 : 0) + 1 + (opts.ascii ? 0 : 1) + String(c).length, 0);
+  }
+  if (node.gate) return gateSegments(node.gate).length + (node.compact ? 0 : 2);
+  return 1;
+}
+
+/** Fold the settled prefix into one `●×K` station, and not-started waves past `keep` into `○×M`. */
+function fold(nodes, step) {
+  let out = nodes.map((n) => ({ ...n, compact: step.compact }));
+  const columns = () => {
+    const d = depthsOf(out), cols = [];
+    for (const n of out) (cols[d.get(n.id)] ??= []).push(n);
+    return cols;
+  };
+  const replace = (gone, group) => {
+    const ids = new Set(gone.map((n) => n.id));
+    group.deps = [...new Set(gone.flatMap((n) => n.deps).filter((d) => !ids.has(d)))];
+    const at = out.findIndex((n) => ids.has(n.id));
+    out = out.filter((n) => !ids.has(n.id)).map((n) => n.deps.some((d) => ids.has(d))
+      ? { ...n, deps: [...new Set(n.deps.map((d) => (ids.has(d) ? group.id : d)))] } : n);
+    out.splice(at, 0, group);
+  };
+  const plain = (n) => n.kind === 'worker' && !n.gate && !n.repair;
+  if (step.done) {
+    const gone = [];
+    for (const col of columns()) {
+      if (!col.every((n) => plain(n) && n.state === 'done')) break;
+      gone.push(...col);
+    }
+    if (gone.length > 1) replace(gone, { id: 'done×', kind: 'group', state: 'done', count: gone.length });
+  }
+  if (step.keep !== undefined) {
+    const ahead = columns().filter((col) => col.some((n) => plain(n) && n.state === 'waiting')
+      && col.every((n) => n.state === 'waiting'));
+    const gone = ahead.slice(step.keep).flat().filter(plain);
+    if (gone.length > 1) replace(gone, { id: 'wait×', kind: 'group', state: 'waiting', count: gone.length });
+  }
+  return out;
+}
+
+function depthsOf(nodes) {
+  const by = new Map(nodes.map((n) => [n.id, n])), memo = new Map();
+  const depth = (id) => {
+    if (!memo.has(id)) memo.set(id, Math.max(-1, ...by.get(id).deps.filter((d) => by.has(d)).map(depth)) + 1);
+    return memo.get(id);
+  };
+  nodes.forEach((n) => depth(n.id));
+  return memo;
+}
+
+/** More than three side by side: the two that need a look keep a lane, the rest share a counted lane. */
+function limitWave(nodes) {
+  const d = depthsOf(nodes), cols = [];
+  for (const n of nodes) (cols[d.get(n.id)] ??= []).push(n);
+  let out = nodes;
+  const rank = { asking: 0, held: 0, failed: 1, stalled: 2, working: 3, lease: 3, waiting: 4, done: 5 };
+  for (const col of cols) {
+    if (col.length <= LANES) continue;
+    const gone = [...col].sort((a, b) => rank[a.state] - rank[b.state]).slice(LANES - 1);
+    const counts = {};
+    for (const n of gone) counts[n.state] = (counts[n.state] ?? 0) + 1;
+    const ids = new Set(gone.map((n) => n.id));
+    const group = { id: 'rest', kind: 'pool', state: gone.some((n) => n.state === 'working') ? 'working' : gone[0].state,
+      counts, deps: [...new Set(gone.flatMap((n) => n.deps))], title: { zh: `另 ${gone.length} 项`, en: `${gone.length} more` } };
+    out = out.filter((n) => !ids.has(n.id)).map((n) => n.deps.some((x) => ids.has(x))
+      ? { ...n, deps: [...new Set(n.deps.map((x) => (ids.has(x) ? 'rest' : x)))] } : n);
+    out.splice(out.findLastIndex((n) => d.get(n.id) === d.get(col[0].id)) + 1, 0, group);
+  }
+  return out;
+}
+
+/** Every increasing choice of `k` lanes out of `h`. */
+const picks = (k, h, from = 0) => k === 0 ? [[]]
+  : Array.from({ length: h - from }, (_, i) => from + i).flatMap((l) => picks(k - 1, h, l + 1).map((rest) => [l, ...rest]));
+
+function build(flow, step, gap, opts) {
+  let nodes = limitWave(fold(flow.nodes, step));
+  for (;;) {
+    const d = depthsOf(nodes), cols = [];
+    for (const n of nodes) (cols[d.get(n.id)] ??= []).push({ ...n });
+    const height = Math.min(LANES, Math.max(...cols.map((c) => c.length)));
+    const trunk = Math.floor((height - 1) / 2), by = new Map();
+    for (const col of cols) {
+      // A station keeps its only parent's lane; merges and roots go to the trunk. A repair lane sits lowest.
+      for (const n of col) n.pref = n.deps.length === 1 && by.has(n.deps[0]) ? by.get(n.deps[0]).lane : trunk;
+      col.sort((a, b) => !!a.repair - !!b.repair || a.pref - b.pref);
+      const cost = (p) => p.reduce((sum, l, i) => sum + Math.abs(l - col[i].pref), 0);
+      const best = picks(col.length, height).sort((a, b) => cost(a) - cost(b))[0];
+      col.forEach((n, i) => { n.lane = best[i]; by.set(n.id, n); });
+    }
+    // Columns left to right, `gap` line cells between them, every station centred in its column.
+    let x = 2;
+    for (const col of cols) {
+      const w = Math.max(...col.map((n) => nodeWidth(n, opts)));
+      for (const n of col) { n.w = nodeWidth(n, opts); n.x = x + Math.floor((w - n.w) / 2); }
+      x += w + gap;
+    }
+    let width = x - gap + 1; // one spare cell for the cursor bracket
+    const edges = [];
+    for (const n of by.values()) for (const id of n.deps) {
+      const u = by.get(id);
+      if (!u) continue;
+      const sx = u.x + u.w, ex = n.x - 1;
+      const merge = n.deps.length > 1;
+      const bend = u.lane === n.lane ? null : merge ? Math.max(sx, ex - 1) : Math.min(ex, sx + 1);
+      edges.push({ id: `${id}>${n.id}`, from: u.lane, to: n.lane, sx, ex, bend, merge, lit: u.state === 'done',
+        spur: !!n.inlineRepair });
+    }
+    // A repair round loops off its gate onto a free neighbouring lane; with none free it becomes the next station.
+    let lanes = height, inline = null;
+    const spurs = [];
+    for (const n of by.values()) {
+      if (!n.repair) continue;
+      const a = n.x - 2, b = n.x + n.w + 1;
+      const free = (lane) => lane >= 0 && lane < LANES
+        && ![...by.values()].some((m) => m.lane === lane && m.x <= b && m.x + m.w > a)
+        && !edges.some((e) => (e.from === lane && e.sx <= b && (e.bend ?? e.ex) >= a)
+          || (e.to === lane && e.ex >= a && (e.bend ?? e.sx) <= b));
+      const lane = [n.lane + 1, n.lane - 1].find(free);
+      if (lane === undefined || a < 2) { inline = n; break; }
+      const mid = Math.floor((a + b) / 2);
+      spurs.push({ host: n, lane, a, b, node: { ...n.repair, id: `${n.id}↻`, kind: 'worker', lane, x: mid, w: 1, spur: true } });
+      lanes = Math.max(lanes, lane + 1);
+      width = Math.max(width, b + 1);
+    }
+    if (inline) {
+      const r = { ...inline.repair, id: `${inline.id}↻`, kind: 'worker', deps: [inline.id], inlineRepair: true };
+      nodes = nodes.map((n) => n.id === inline.id ? { ...n, repair: undefined, state: 'done' }
+        : { ...n, deps: n.deps.map((x) => (x === inline.id ? r.id : x)) });
+      nodes.splice(nodes.findIndex((n) => n.id === inline.id) + 1, 0, r);
+      continue;
+    }
+    return { nodes: [...by.values()], edges, spurs, lanes, width };
+  }
+}
+
+/** First fit wins: generous spacing, then the folds in order, then tighter spacing. */
+function layout(flow, width, opts) {
+  const min = opts.variant === 'B' ? 4 : 3;
+  // [what to fold, widest gap, narrowest gap]
+  const steps = [[{}, 7, 4], [{ done: true }, 6, 4], [{ done: true, keep: 1 }, 6, 4], [{ done: true, keep: 0 }, 5, 4],
+    [{ done: true, keep: 0, compact: true }, 4, min]];
+  for (const [step, widest, narrowest] of steps) for (let gap = widest; gap >= narrowest; gap--) {
+    const m = build(flow, step, gap, opts);
+    if (m.width <= width) return m;
+  }
+  return build(flow, steps.at(-1)[0], min, opts);
+}
+
+/* ───────────────────────── 5. variants ───────────────────────── */
+const VARIANTS = {
+  A: { name: 'A · Trunk', tag: 'heavy line, one colour per flow, square junctions' },
+  B: { name: 'B · Braille 45°', tag: 'braille dots, true 45° branches, one colour per flow' },
+  C: { name: 'C · Hairline', tag: 'thin neutral line, rounded junctions, colour only for state' },
+};
+
+/** The ink of a state mark. `badge` marks (the owner is needed) are filled. */
+function stateInk(state, line, variant) {
+  if (state === 'asking' || state === 'held') return { fg: T.askInk, bg: T.ask, bold: true };
+  if (state === 'failed') return { fg: T.danger, bold: true };
+  if (state === 'working') return { fg: T.active, bold: true };
+  if (state === 'stalled') return { fg: T.stalled, bold: true };
+  if (state === 'lease') return { fg: T.text, bold: true };
+  if (state === 'done') return { fg: variant === 'C' ? T.text : line };
+  return { fg: T.muted };
+}
+
+function drawBoxLines(cv, rows, m, line, opts) {
+  const cells = new Map();
+  const add = (lane, x, arms, edge) => {
+    const key = `${lane},${x}`;
+    const cell = cells.get(key) ?? { lane, x, arms: {} };
+    for (const a of arms) (cell.arms[a] ??= []).push(edge);
+    cells.set(key, cell);
+  };
+  const route = (e) => {
+    if (e.bend === null) { for (let x = e.sx; x <= e.ex; x++) add(e.from, x, 'LR', e); return; }
+    const down = e.to > e.from;
+    for (let x = e.sx; x < e.bend; x++) add(e.from, x, 'LR', e);
+    add(e.from, e.bend, ['L', down ? 'D' : 'U'], e);
+    for (let l = Math.min(e.from, e.to) + 1; l < Math.max(e.from, e.to); l++) add(l, e.bend, 'UD', e);
+    add(e.to, e.bend, [down ? 'U' : 'D', 'R'], e);
+    for (let x = e.bend + 1; x <= e.ex; x++) add(e.to, x, 'LR', e);
+  };
+  m.edges.forEach(route);
+  for (const s of m.spurs) {
+    const down = s.lane > s.host.lane, away = down ? 'D' : 'U', back = down ? 'U' : 'D';
+    const out = { spur: true, lit: true }, ret = { spur: true, lit: s.node.state === 'done' };
+    add(s.host.lane, s.a, [away], out); add(s.lane, s.a, [back, 'R'], out);
+    for (let x = s.a + 1; x < s.node.x; x++) add(s.lane, x, 'LR', out);
+    for (let x = s.node.x + 1; x < s.b; x++) add(s.lane, x, 'LR', ret);
+    add(s.lane, s.b, ['L', back], ret); add(s.host.lane, s.b, [away], ret);
+  }
+  for (const cell of cells.values()) {
+    const all = Object.values(cell.arms).flat();
+    // An arm is travelled only when every line through it has left a finished station.
+    const lit = Object.fromEntries(Object.entries(cell.arms).map(([a, es]) => [a, es.every((e) => e.lit)]));
+    const anyLit = Object.values(lit).some(Boolean), spur = all.every((e) => e.spur);
+    const has = (a) => !!cell.arms[a];
+    let ch;
+    if (opts.ascii) {
+      const vertical = has('U') || has('D');
+      ch = !vertical ? (anyLit ? '=' : '-') : !has('L') && !has('R') ? (anyLit ? '|' : ':')
+        : has('U') && has('D') ? '|' : has('D') ? '.' : '\'';
+    } else {
+      const key = ['L', 'R', 'U', 'D'].map((a) => (!has(a) ? 0 : opts.variant === 'A' && lit[a] ? 2 : 1)).join('');
+      ch = /^[01]+$/.test(key) && ROUND[key] ? ROUND[key] : BOX[key];
+      if (opts.variant === 'C' && !anyLit) ch = key === '1100' ? '╌' : key === '0011' ? '╎' : ch;
+    }
+    const ink = spur ? (anyLit ? T.stalled : T.frame)
+      : anyLit ? (opts.variant === 'C' ? T.muted : line) : T.frame;
+    cv.put(rows[cell.lane], cell.x, ch, { fg: ink });
+  }
+}
+
+function drawBraille(cv, rows, m, line) {
+  const dots = new Map();
+  const BIT = [[0x01, 0x02, 0x04, 0x40], [0x08, 0x10, 0x20, 0x80]];
+  const set = (px, py, edge) => {
+    const x = px >> 1, lane = py >> 2, key = `${lane},${x}`;
+    const cell = dots.get(key) ?? { lane, x, bits: 0, lit: false, spur: true };
+    cell.bits |= BIT[px & 1][py & 3];
+    cell.lit ||= edge.lit;
+    cell.spur &&= !!edge.spur;
+    dots.set(key, cell);
+  };
+  const cover = new Map(); // dot -> the lines over it
+  const dot = (px, py, edge) => {
+    const key = `${px},${py}`;
+    cover.set(key, [...(cover.get(key) ?? []), edge]);
+  };
+  const flat = (lane, from, to, edge) => { for (let px = from; px < to; px++) dot(px, lane * 4 + 1, edge); };
+  const ramp = (a, b, from, to, edge) => {
+    const y0 = a * 4 + 1, y1 = b * 4 + 1, n = to - from;
+    for (let i = 0; i < n; i++) dot(from + i, Math.round(y0 + ((y1 - y0) * (i + 0.5)) / n), edge);
+  };
+  for (const e of m.edges) {
+    const start = e.sx * 2, end = (e.ex + 1) * 2;
+    if (e.bend === null) { flat(e.from, start, end, e); continue; }
+    const need = Math.abs(e.to - e.from) * 4, room = end - start - 4, n = Math.min(need, room);
+    // 45°: as many dots across as down. A split leaves at once, a merge arrives late.
+    const from = e.merge ? end - 2 - n : start + 2;
+    flat(e.from, start, from, e); ramp(e.from, e.to, from, from + n, e); flat(e.to, from + n, end, e);
+  }
+  for (const s of m.spurs) {
+    const out = { spur: true, lit: true }, ret = { spur: true, lit: s.node.state === 'done' };
+    const from = s.a * 2, to = (s.b + 1) * 2;
+    ramp(s.host.lane, s.lane, from, from + 4, out); flat(s.lane, from + 4, s.node.x * 2, out);
+    flat(s.lane, s.node.x * 2 + 2, to - 4, ret); ramp(s.lane, s.host.lane, to - 4, to, ret);
+  }
+  // A travelled stretch is two dots thick on the middle rows; the rest is one dot in two.
+  for (const [key, edges] of cover) {
+    const [px, py] = key.split(',').map(Number);
+    const edge = { lit: edges.every((e) => e.lit), spur: edges.every((e) => e.spur) };
+    if (edge.lit) { set(px, py, edge); set(px, py + 1, edge); } else if (px % 2 === 0) set(px, py, edge);
+  }
+  for (const c of dots.values()) {
+    const under = rows[c.lane][c.x];
+    if (under.ch !== ' ') continue;
+    cv.put(rows[c.lane], c.x, String.fromCodePoint(0x2800 + c.bits),
+      { fg: c.lit ? (c.spur ? T.stalled : line) : T.frame });
+  }
+}
+
+function drawStation(cv, rows, node, line, opts, lit, selected) {
+  const r = rows[node.lane];
+  const ink = stateInk(node.state, line, opts.variant);
+  let x = node.x;
+  if (node.kind === 'group') {
+    cv.text(r, x, `${stationChar('worker', node.state, opts.ascii)}${opts.ascii ? '' : '×'}${node.count}`, ink);
+  } else if (node.kind === 'pool') {
+    // The pool is its own pill: the cursor lights the pill itself rather than the cells beside it.
+    const face = selected ? T.selected : T.title, pill = { bg: face };
+    const plain = opts.mode === 'none' || opts.ascii;
+    x = cv.put(r, x, plain ? '(' : '▐', plain ? {} : { fg: face });
+    poolParts(node.counts).forEach(([state, n], i) => {
+      if (i) x = cv.put(r, x, ' ', pill);
+      const own = stateInk(state, line, opts.variant);
+      x = cv.put(r, x, stationChar('worker', state, opts.ascii), { ...pill, ...own });
+      x = cv.text(r, x, `${opts.ascii ? '' : '×'}${n}`, { ...pill, fg: state === 'waiting' ? T.muted : T.text });
+    });
+    cv.put(r, x, plain ? ')' : '▌', plain ? {} : { fg: face });
+  } else if (node.gate) {
+    const barInk = (on) => ({ fg: on ? (opts.variant === 'C' ? T.muted : line) : T.muted });
+    const inLit = lit.in(node), outLit = node.state === 'done';
+    if (!node.compact) x = cv.put(r, x, opts.ascii ? '{' : '‹', barInk(inLit));
+    for (const seg of gateSegments(node.gate)) {
+      if (seg === 'passed') x = cv.put(r, x, opts.ascii ? '#' : '▮', { fg: opts.variant === 'C' ? T.text : line });
+      else if (seg === 'pending') x = cv.put(r, x, opts.ascii ? '.' : '▯', { fg: T.muted });
+      else x = cv.put(r, x, stationChar('worker', seg, opts.ascii),
+        seg === 'working' ? { fg: T.info, bold: true } : stateInk(seg, line, opts.variant));
+    }
+    if (!node.compact) cv.put(r, x, opts.ascii ? '}' : '›', barInk(outLit));
+  } else {
+    cv.put(r, x, stationChar(node.kind, node.state, opts.ascii), ink);
+  }
+}
+
+/* ───────────────────────── 6. rows: header, map, detail, legend ───────────────────────── */
+const runGlyph = (flow, ascii) => flow.state === 'paused' ? [ascii ? '=' : '‖', T.attention] : [ascii ? '@' : '◉', T.active];
+
+function headerRow(cv, flow, opts) {
+  const r = cv.row(), W = WORDS[opts.lang], line = T.lines[flow.line];
+  const [glyph, ink] = runGlyph(flow, opts.ascii);
+  let x = cv.put(r, 2, glyph, { fg: ink, bold: true });
+  x += 1;
+  const word = W[flow.kind];
+  if (opts.variant === 'A' && !opts.ascii && opts.mode !== 'none') x = cv.text(r, x, ` ${word} `, { fg: T.ground, bg: line, bold: true });
+  else if (opts.variant === 'B' && !opts.ascii) {
+    x = cv.text(r, x, '⠶⠶', { fg: line });
+    x = cv.text(r, x + 1, word, { fg: line, bold: true });
+  } else x = cv.text(r, x, word, { fg: opts.variant === 'C' ? T.muted : line, bold: true });
+  const status = flow.slots ? `${W.slots} ${flow.slots}` : W[flow.state];
+  const name = typeof flow.name === 'string' ? flow.name : flow.name[opts.lang];
+  const since = age(flow.age, opts.lang);
+  // The run glyph already says running or paused: its words leave before the name is cut (a pause keeps its word).
+  const forms = [`${status} ${since}`, flow.state === 'paused' ? status : since];
+  const right = forms.find((f) => x + 1 + textWidth(name) + 1 + textWidth(f) <= cv.width) ?? forms[1];
+  cv.text(r, x + 1, cut(name, cv.width - x - 1 - textWidth(right) - 1), { fg: T.text, bold: true });
+  cv.text(r, cv.width - textWidth(right), right, { fg: T.muted });
+}
+
+function mapRows(cv, flow, opts) {
+  const m = layout(flow, cv.width, opts);
+  if (m.width > cv.width) throw new Error(`${flow.id}: map needs ${m.width} > ${cv.width}`);
+  const rows = Array.from({ length: m.lanes }, () => cv.row());
+  const line = T.lines[flow.line];
+  const lit = { in: (n) => m.edges.filter((e) => e.id.endsWith(`>${n.id}`)).every((e) => e.lit) };
+  const braille = opts.variant === 'B' && !opts.ascii;
+  if (!braille) drawBoxLines(cv, rows, m, line, opts);
+  const stations = [...m.nodes, ...m.spurs.map((s) => s.node)];
+  const cursor = opts.noCursor ? undefined : stations.find((n) => n.id === flow.cursor);
+  for (const n of stations) drawStation(cv, rows, n, line, opts, lit, n === cursor);
+  if (braille) drawBraille(cv, rows, m, line);
+  // Without colour (and in ASCII) a repair round says so in words of its own: the mark before its station.
+  if (opts.mode === 'none' || opts.ascii) {
+    for (const n of stations) {
+      if (!n.spur && !n.inlineRepair) continue;
+      const at = n.x - (cursor === n ? 2 : 1);
+      cv.put(rows[n.lane], at, opts.ascii ? '%' : '↻', { fg: T.stalled });
+    }
+  }
+  if (cursor) {
+    const r = rows[cursor.lane];
+    if (opts.mode === 'none') {
+      cv.put(r, cursor.x - 1, opts.ascii ? '>' : '▸');
+      cv.put(r, cursor.x + cursor.w, opts.ascii ? '<' : '◂');
+    } else if (cursor.kind !== 'pool') {
+      for (let x = cursor.x - 1; x <= cursor.x + cursor.w; x++) if (!r[x].bg) r[x] = { ...r[x], bg: T.selected };
+    }
+  }
+  return m;
+}
+
+/** The one line of text: the station under the cursor, or the one that changed last. */
+function detailRow(cv, flow, opts) {
+  const r = cv.row(), W = WORDS[opts.lang], ascii = opts.ascii;
+  const all = flow.nodes.flatMap((n) => [n, ...(n.repair ? [{ ...n.repair, id: `${n.id}↻`, kind: 'worker', of: n }] : [])]);
+  const id = opts.noCursor ? flow.changed : flow.cursor;
+  const node = all.find((n) => n.id === id);
+  if (!node) throw new Error(`${flow.id}: no station ${id}`);
+  const of = node.of ?? node;
+  let state = node.gate ? node.gate.state : node.state;
+  const glyph = node.kind === 'pool' ? stationChar('worker', node.state, ascii) : stationChar(node.kind, state, ascii);
+  const ink = state === 'working' && node.gate ? { fg: T.info, bold: true } : stateInk(state, T.lines[flow.line], opts.variant);
+  let word = W[state];
+  if (node.gate) word = state === 'lease' ? W.lease : `${W.gate}${state === 'failed' ? ` ${W.failed}` : ''} ${node.gate.k}/${node.gate.n}`;
+  if (node.of) word = `${W.repair} ${node.round}`;
+  if (node.kind === 'worker' && state === 'done' && flow.kind === 'queue' && !node.of) word = W.landed;
+  if (node.kind === 'pool') word = W[node.state];
+  const label = (node.title ?? of.title)?.[opts.lang] ?? W[node.kind];
+  const num = of.num ? `${of.num} ` : '';
+  const waits = state === 'waiting' && node.waits ? `${ascii ? '<-' : '←'}${node.waits}` : '';
+  const since = node.age ? age(node.age, opts.lang) : '';
+  const icon = node.role && !ascii ? node.role : '';
+  let x = cv.put(r, 2, glyph, ink) + 1;
+  const room = cv.width - x;
+  // Role icon, then blockers, leave before the title is cut; age leaves only when the title would drop below 12 cells.
+  const join = (parts) => parts.filter(Boolean).join(' ');
+  const whole = [join([icon, word, waits, since]), join([word, waits, since]), join([word, since])]
+    .find((f) => textWidth(f) + textWidth(num + label) + 2 <= room);
+  const right = whole ?? (textWidth(join([word, since])) + textWidth(num) + 14 <= room ? join([word, since]) : word);
+  cv.text(r, x, cut(num + label, room - textWidth(right) - 2), { fg: T.text });
+  const attention = state === 'asking' || state === 'held';
+  cv.text(r, cv.width - textWidth(right), right,
+    { fg: attention ? T.attention : state === 'failed' ? T.danger : T.muted });
+}
+
+/** Only the marks on screen that are not self-evident, most urgent first, on at most `max` rows. */
+function legendRows(cv, flows, opts, max = 2) {
+  const W = WORDS[opts.lang], a = opts.ascii;
+  const nodes = flows.flatMap((f) => f.nodes.flatMap((n) => [n, ...(n.repair ? [{ ...n.repair, kind: 'worker', repairMark: true }] : [])]));
+  const has = (fn) => opts.all || nodes.some(fn);
+  const attention = { fg: T.askInk, bg: T.ask, bold: true };
+  const items = [
+    [has((n) => n.state === 'asking'), a ? '?' : '?', attention, W.kAsk],
+    [has((n) => n.state === 'held'), '!', attention, W.kHeld],
+    [has((n) => n.state === 'failed' || n.gate?.state === 'failed'), a ? 'x' : '✗', { fg: T.danger, bold: true }, W.kFail],
+    [has((n) => n.repairMark), a ? '%' : opts.mode === 'none' ? '↻' : { A: '━━', B: '⠶⠶', C: '──' }[opts.variant], { fg: T.stalled }, W.kRepair],
+    [has((n) => n.gate), a ? '{#@.}' : '‹▮◉▯›', { fg: T.info }, W.kGate],
+    [has((n) => n.state === 'lease' || n.gate?.state === 'lease'), a ? '~' : '◷', { fg: T.text }, W.kLease],
+    [has((n) => n.state === 'stalled'), a ? 'z' : '◍', { fg: T.stalled }, W.kStall],
+    [has((n) => n.state === 'stopped'), a ? '/' : '⊘', { fg: T.muted }, W.kStop],
+    [has((n) => n.state === 'unknown'), a ? 'u' : '◌', { fg: T.muted }, W.kUnknown],
+    [has((n) => n.kind === 'review'), a ? 'r R' : '◇◈◆', { fg: T.muted }, W.kReview],
+    [has((n) => n.kind === 'accept' || n.kind === 'synth'), a ? 'a A' : '☆✪★', { fg: T.muted },
+      flows.some((f) => f.kind === 'council') && !flows.some((f) => f.kind === 'queue') ? W.synth : W.kAccept],
+    [opts.all || a, a ? '@' : '◉', { fg: T.active, bold: true }, W.kWork],
+    [opts.all || a, a ? '+' : '●', { fg: opts.variant === 'C' ? T.text : T.muted }, W.kDone],
+    [opts.all || a, a ? 'o' : '○', { fg: T.muted }, W.kWait],
+    [opts.all, a ? '+6 o4' : '●×6 ○×4', { fg: T.muted }, W.kFold],
+  ].filter((i) => i[0]);
+  let r = null, x = 0, used = 0;
+  for (const [, glyph, ink, word] of items) {
+    const need = textWidth(glyph) + 1 + textWidth(word);
+    if (!r || x + need > cv.width) {
+      if (used === max) return;
+      r = cv.row(); x = 2; used += 1;
+    }
+    x = cv.text(r, x, glyph, ink);
+    x = cv.text(r, x + 1, word, { fg: T.muted }) + 2;
+  }
+}
+
+function frame({ flows, width, section, legend, all, ...opts }) {
+  const cv = new Canvas(width);
+  const W = WORDS[opts.lang];
+  if (section) {
+    const r = cv.row(), tail = String(flows.length);
+    let x = cv.text(r, 0, W.section, { fg: T.text, bold: true }) + 1;
+    x = cv.text(r, x, (opts.ascii ? '-' : '─').repeat(width - x - tail.length - 1), { fg: T.frame });
+    cv.text(r, width - tail.length, tail, { fg: T.muted });
+  }
+  for (const [i, flow] of flows.entries()) {
+    const own = i ? { ...opts, noCursor: true } : opts;
+    headerRow(cv, flow, own);
+    mapRows(cv, flow, own);
+    detailRow(cv, flow, own);
+  }
+  if (legend) legendRows(cv, flows, { ...opts, all }, all ? 6 : 2);
+  if (opts.mode === 'none') for (const r of cv.rows) for (let i = 0; i < r.length; i++) r[i] = { ch: r[i].ch };
+  for (const [i, r] of cv.rows.entries()) {
+    const got = textWidth(r.map((c) => c.ch).join(''));
+    if (r.length !== width || got !== width) throw new Error(`row ${i}: ${got} cells, panel is ${width}`);
+  }
+  return cv.rows;
+}
+
+/* ───────────────────────── 7. synthetic scenarios ───────────────────────── */
+const n = (id, deps, state, zh, en, more = {}) => ({ id, num: id, kind: 'worker', deps, state, title: { zh, en }, role: '⚒', ...more });
+const review = (deps, state = 'waiting') => ({ id: 'rv', kind: 'review', deps, state, title: { zh: '队列评审', en: 'Run review' } });
+const accept = (state = 'waiting') => ({ id: 'ac', kind: 'accept', deps: ['rv'], state, title: { zh: '负责人验收', en: 'Lead acceptance' } });
+
+const retry = {
+  id: 'retry', kind: 'queue', name: 'retry-queue', line: 0, state: 'running', age: 72, cursor: '04', changed: '05',
+  nodes: [
+    n('01', [], 'done', '重试队列落盘格式', 'Retry queue file format'),
+    n('02', ['01'], 'done', '重启后按序恢复', 'Restore order on restart'),
+    n('03', ['02'], 'working', '死信视图', 'Dead-letter view', { age: 14 }),
+    n('04', ['02'], 'asking', '退避参数放哪里', 'Where backoff settings live', { age: 6 }),
+    n('05', ['02'], 'lease', '指标计数器', 'Metrics counters', { age: 3 }),
+    n('06', ['03', '04', '05'], 'waiting', '端到端回放测试', 'End-to-end replay test', { waits: '03,04,05' }),
+    review(['06']), accept(),
+  ],
+};
+const quota = {
+  id: 'quota', kind: 'queue', name: 'quota-core', line: 1, state: 'running', age: 47, cursor: '02↻', changed: '02↻',
+  nodes: [
+    n('01', [], 'done', '账本读写接口', 'Ledger read/write API'),
+    n('02', ['01'], 'working', '并发扣减', 'Concurrent debit',
+      { gate: { n: 3, k: 2, state: 'failed' }, repair: { state: 'working', round: '1/2', age: 4, role: '⚒', title: { zh: '并发扣减', en: 'Concurrent debit' } } }),
+    n('03', ['01'], 'working', '超额告警', 'Over-quota alert', { gate: { n: 3, k: 3, state: 'working' }, age: 2 }),
+    n('04', ['02', '03'], 'waiting', '迁移旧账本', 'Migrate the old ledger', { waits: '02,03' }),
+    review(['04']), accept(),
+  ],
+};
+const offline = {
+  id: 'offline', kind: 'queue', name: 'offline-sync', line: 2, state: 'running', age: 126, cursor: '02', changed: '02',
+  nodes: [
+    n('01', [], 'done', '本地变更日志', 'Local change log'),
+    n('02', ['01'], 'held', '冲突裁决改规格', 'Conflict rule changes spec', { age: 38 }),
+    n('03', ['01'], 'done', '增量上传', 'Incremental upload'),
+    n('05', ['02'], 'waiting', '冲突界面', 'Conflict screen', { waits: '02' }),
+    n('04', ['03'], 'working', '重连回放', 'Replay after reconnect', { age: 11 }),
+    review(['05', '04']), accept(),
+  ],
+};
+const batch = {
+  id: 'batch', kind: 'batch', name: 'sonic ×40', line: 3, state: 'running', age: 8, slots: '7/7', cursor: 'pool', changed: 'pool',
+  nodes: [
+    { id: 'pilot', kind: 'worker', deps: [], state: 'done', title: { zh: '探路 1/1', en: 'Pilot 1/1' } },
+    { id: 'pool', kind: 'pool', deps: ['pilot'], state: 'working', counts: { done: 22, working: 7, failed: 1, waiting: 10 },
+      title: { zh: '并发池 40 项 · 链接检查', en: 'Pool of 40 · link check' }, age: 8, role: 'ϟ' },
+    { id: 'sum', kind: 'summary', deps: ['pool'], state: 'waiting', title: { zh: '汇总', en: 'Summary' } },
+  ],
+};
+const member = (id, state, name, minutes) => ({ id, kind: 'worker', deps: [], state, role: '◈', age: minutes,
+  title: { zh: `成员 ${name}`, en: `Member ${name}` } });
+const council = {
+  id: 'council', kind: 'council', name: { zh: '跨机状态同步边界', en: 'Cross-machine sync boundary' }, line: 2, state: 'running', age: 6,
+  cursor: 'm2', changed: 'm3',
+  nodes: [member('m1', 'done', 'fable'), member('m2', 'working', 'astra', 6), member('m3', 'done', 'carbon'),
+    { id: 'syn', kind: 'synth', deps: ['m1', 'm2', 'm3'], state: 'waiting', title: { zh: '综合 (main)', en: 'Synthesis (main)' } }],
+};
+const council5 = {
+  ...council, id: 'council5', cursor: 'm4',
+  nodes: [member('m1', 'done', 'fable'), member('m2', 'working', 'astra', 6), member('m3', 'done', 'carbon'),
+    member('m4', 'failed', 'neon'), member('m5', 'done', 'sol'),
+    { id: 'syn', kind: 'synth', deps: ['m1', 'm2', 'm3', 'm4', 'm5'], state: 'waiting', title: { zh: '综合 (main)', en: 'Synthesis (main)' } }],
+};
+const done = (id, deps) => n(id, deps, 'done', '账本分片搬迁', 'Move a ledger shard');
+const long = {
+  id: 'long', kind: 'queue', name: 'ledger-migration', line: 1, state: 'running', age: 248, cursor: '09', changed: '09',
+  nodes: [
+    done('01', []), done('02', ['01']), done('03', ['02']), done('04', ['02']), done('05', ['03', '04']), done('06', ['05']),
+    done('07', ['06']),
+    n('08', ['07'], 'working', '归档读路径', 'Archive read path', { age: 22 }),
+    n('09', ['07'], 'working', '双写校验', 'Verify dual writes', { gate: { n: 4, k: 2, state: 'working' }, age: 5 }),
+    n('10', ['08', '09'], 'waiting', '切换写入', 'Switch writes', { waits: '08,09' }),
+    n('11', ['10'], 'waiting', '回填历史', 'Backfill history', { waits: '10' }),
+    n('12', ['11'], 'waiting', '删除旧表', 'Drop old tables', { waits: '11' }),
+    n('13', ['12'], 'waiting', '更新文档', 'Update docs', { waits: '12' }),
+    n('14', ['13'], 'waiting', '发布检查', 'Release check', { waits: '13' }),
+    review(['14']), accept(),
+  ],
+};
+const land = {
+  id: 'land', kind: 'land', name: '04 Service worker cache', line: 1, state: 'paused', age: 9, cursor: 'gate', changed: 'gate',
+  nodes: [
+    { id: 'pick', kind: 'worker', deps: [], state: 'done', title: { zh: '拣选提交', en: 'Cherry-pick' } },
+    { id: 'gate', kind: 'worker', deps: ['pick'], state: 'failed', gate: { n: 3, k: 2, state: 'failed' }, age: 9,
+      title: { zh: 'npm 测试', en: 'npm test' },
+      repair: { state: 'asking', round: '1/2', age: 2, role: '⚒', title: { zh: '缓存键冲突', en: 'Cache key clash' } } },
+    { id: 'merge', kind: 'worker', deps: ['gate'], state: 'waiting', title: { zh: '合入', en: 'Merge' } },
+  ],
+};
+
+/* ───────────────────────── 8. page ───────────────────────── */
+const SCENARIOS = [
+  ['s1', 'Queue: three tickets in parallel, mid-run', 'Tickets 03, 04, 05 run side by side after 02: working, asking (filled badge) and waiting for the land lease. Cursor on 04.', [retry]],
+  ['s2', 'Failed gate, repair round, a second gate running', '02 failed gate step 2 of 3: its repair worker loops off the gate on its own line (cursor there). 03 is in gate step 3 of 3.', [quota]],
+  ['s3', 'A station held for the owner', '02 is held (spec change): its branch stays dim up to the review, the other branch keeps running.', [offline]],
+  ['s4', 'Batch pool', 'Pilot, the pool as one station group, summary. One lane: three rows in all.', [batch]],
+  ['s5', 'Council', 'Members on parallel lines merging into the synthesis station. A merge lights only when every line into it has arrived.', [council]],
+  ['s6', 'Long run, folded', '14 tickets, review and acceptance. Settled stations fold into ●×K first, then not-started ones into ○×M; live stations never fold.', [long]],
+  ['s7', 'Two flows under 工作流, with the legend', 'Each flow keeps its own line colour (A, B). The legend lists only the non-obvious marks on screen, urgent first, two rows at most.', [retry, land], true],
+];
+const frames = [];
+const figure = (caption, spec, note = '') => {
+  frames.push(spec);
+  return { caption, note, spec };
+};
+const REC = 'A';
+const PAGE = [];
+for (const [id, title, note, flows, stacked] of SCENARIOS) {
+  const groups = [62, 40].map((width) => [`${width} columns`, Object.keys(VARIANTS).map((v) => figure(
+    `${VARIANTS[v].name}`, { flows, width, variant: v, lang: 'zh', mode: 'color', section: stacked, legend: stacked },
+    v === REC ? 'recommended' : ''))]);
+  PAGE.push({ id, title, note, groups });
+}
+const rec = (flows, width, more = {}) => ({ flows, width, variant: REC, lang: 'zh', mode: 'color', ...more });
+PAGE.push({ id: 'nocolour', title: 'No colour (theme none): variant A',
+  note: 'No escapes at all. Heavy line = travelled, light = ahead; ▸◂ mark the cursor; a repair line carries ↻.',
+  groups: [62, 40].map((width) => [`${width} columns`, [
+    ...SCENARIOS.slice(0, 6).map(([, title, , flows]) => figure(title, rec(flows, width, { mode: 'none' }))),
+    figure('Two flows and the legend', rec([retry, land], width, { mode: 'none', section: true, legend: true })),
+  ]]) });
+PAGE.push({ id: 'ascii', title: 'ASCII icon set (icons = text): variant A',
+  note: '= travelled, - ahead, . and \' turn corners, >< mark the cursor, % marks a repair line, {#@.} is the gate.',
+  groups: [['62 columns, no colour', [
+    figure('Two flows and the legend', rec([retry, land], 62, { mode: 'none', ascii: true, section: true, legend: true })),
+    figure('Repair and gate', rec([quota], 62, { mode: 'none', ascii: true })),
+    figure('Council', rec([council], 62, { mode: 'none', ascii: true })),
+    figure('Batch', rec([batch], 62, { mode: 'none', ascii: true })),
+  ]], ['40 columns, no colour', [
+    figure('Long run', rec([long], 40, { mode: 'none', ascii: true })),
+    figure('Held', rec([offline], 40, { mode: 'none', ascii: true })),
+  ]]] });
+PAGE.push({ id: 'english', title: 'English and the rules at the edges: variant A', note: '',
+  groups: [['62 and 40 columns', [
+    figure('Two flows, English', rec([retry, land], 62, { lang: 'en', section: true, legend: true })),
+    figure('Two flows, English, 40', rec([retry, land], 40, { lang: 'en', section: true, legend: true })),
+    figure('No cursor on the map: the detail line shows what changed last', rec([retry], 62, { noCursor: true })),
+    figure('Five council members: two keep a lane, the rest are counted', rec([council5], 40)),
+    figure('Every mark (the ? help legend)', rec([retry, land], 62, { legend: true, all: true })),
+  ]]] });
+
+/* ───────────── DOM: one element per cell; box, half-block and braille cells as shapes ───────────── */
+const ARMS = Object.fromEntries(Object.entries(BOX).map(([k, c]) => [c, k]));
+Object.assign(ARMS, { '╭': '0101', '╮': '1001', '╯': '1010', '╰': '0110' });
+function shape(ch) {
+  const cp = ch.codePointAt(0);
+  const path = (d, w, dash) => `<path d="${d}" fill="none" stroke="currentColor" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
+  if ('╭╮╯╰'.includes(ch)) {
+    return path({ '╭': 'M4 18V14Q4 9 8 9', '╮': 'M4 18V14Q4 9 0 9', '╯': 'M4 0V4Q4 9 0 9', '╰': 'M4 0V4Q4 9 8 9' }[ch], 1.2);
+  }
+  if (ch === '╌') return path('M0.5 9H3.2M4.8 9H7.5', 1.2);
+  if (ch === '╎') return path('M4 1V7M4 11V17', 1.2);
+  if (ARMS[ch]) {
+    const ends = [[0, 9], [8, 9], [4, 0], [4, 18]];
+    return [...ARMS[ch]].map((w, i) => {
+      if (w === '0') return '';
+      const width = w === '2' ? 3.2 : 1.2, over = width / 2;
+      const from = [[4 + over, 9], [4 - over, 9], [4, 9 + over], [4, 9 - over]][i];
+      return path(`M${from[0]} ${from[1]}L${ends[i][0]} ${ends[i][1]}`, width);
+    }).join('');
+  }
+  if (ch === '▐') return '<rect x="4" y="0" width="4" height="18" fill="currentColor"/>';
+  if (ch === '▌') return '<rect x="0" y="0" width="4" height="18" fill="currentColor"/>';
+  if (cp >= 0x2800 && cp <= 0x28ff) {
+    const at = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [0, 3], [1, 3]];
+    return at.map(([x, y], i) => ((cp - 0x2800) & (1 << i)
+      ? `<circle cx="${2 + 4 * x}" cy="${2.25 + 4.5 * y}" r="1.55" fill="currentColor"/>` : '')).join('');
+  }
+  return null;
+}
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+function terminal(rows) {
+  return `<div class="term">${rows.map((r) => `<div class="r">${r.map((c) => {
+    if (c.ch === '') return '';
+    const css = `${c.fg ? `color:${c.fg};` : ''}${c.bg ? `background:${c.bg};` : ''}`;
+    const cls = [charWidth(c.ch.codePointAt(0)) === 2 ? 'w' : '', c.bold ? 'b' : ''].filter(Boolean).join(' ');
+    const drawn = shape(c.ch);
+    const body = drawn === null ? esc(c.ch) : `<svg width="8" height="18" viewBox="0 0 8 18">${drawn}</svg>`;
+    return `<i${cls ? ` class="${cls}"` : ''}${css ? ` style="${css}"` : ''}>${body}</i>`;
+  }).join('')}</div>`).join('')}</div>`;
+}
+
+globalThis.metro = { frames, frame, textWidth };
+if (typeof document === 'undefined') return;
+const only = new URLSearchParams(location.search).get('only');
+const pages = only ? PAGE.filter((p) => only.split(',').includes(p.id)) : PAGE;
+document.getElementById('key').innerHTML = Object.values(VARIANTS).map((v) => `<li><b>${v.name}</b>: ${v.tag}</li>`).join('');
+document.getElementById('nav').innerHTML = PAGE.map((p) => `<a href="#${p.id}">${esc(p.title)}</a>`).join(' ');
+document.getElementById('root').innerHTML = pages.map((p) => `<section id="${p.id}"><h2>${esc(p.title)}</h2>`
+  + `<p class="note">${esc(p.note)}</p>${p.groups.map(([head, figs]) => `<h3>${head}</h3><div class="row">${figs.map((f) => {
+    let body, used = '';
+    try { const rows = frame(f.spec); used = `${rows.length} rows`; body = terminal(rows); } catch (e) { body = `<div class="term err">${esc(e.message)}</div>`; }
+    return `<figure><figcaption><b>${esc(f.caption)}</b>${used}${f.note ? `<em>${f.note}</em>` : ''}</figcaption>${body}</figure>`;
+  }).join('')}</div>`).join('')}</section>`).join('');
+})();
+</script>
+</body>
+</html>
