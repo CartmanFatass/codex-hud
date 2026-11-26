@@ -78,7 +78,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.control.find((r) => r.label === 'convention').path, join(f.cwd, 'hud-convention.md'));
   // Roles live on `roles` now, grouped for the page: browser tasks apart, the project's own files marked.
   assert.deepEqual(f.data.roles.map((r) => [r.role, r.group]), [['imp', 'roles'], ['reviewer', 'roles'], ['sonic', 'roles'],
-    ['oracle', 'roles'], ['pro', 'browser'], ['flow', 'browser'], ['council', 'roles'], ['general', 'roles']]);
+    ['oracle', 'roles'], ['pro', 'browser'], ['flow', 'browser'], ['council', 'roles'], ['general', 'roles'], ['lead', 'roles']]);
   assert.deepEqual(first('oracle').places.map((p) => [p.label, p.model, p.state]),
     [['claude', 'fable', 'missing'], ['pi', 'openai/gpt-6.2-astra', 'active']]);
   for (const name of ['pro', 'flow', 'council']) {
@@ -86,7 +86,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
     assert.deepEqual(first(name).places, []);
   }
   assert.deepEqual([first('imp').path, first('imp').source, first('sonic').source], [join(f.hud, 'roles/imp.json'), 'yours', 'default']);
-  assert.equal(f.data.roleCount, 5);
+  assert.equal(f.data.roleCount, 6);
   assert.deepEqual(f.data.harnesses.map((h) => [h.name, h.ok]), [['pi', true], ['agy', false], ['claude', false], ['codex', false],
     ['grok', false], ['jev-ask', true], ['jev-aistudio', false], ['jev-flow', false]]);
   assert.ok(!f.data.control.some((r) => r.label === 'pi role'));
@@ -183,7 +183,8 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   let frame = render('control');
   let text = plain(frame).join('\n');
   // Intentionally off roles have their own section, not an alert alongside bad.json.
-  assert.match(text, /^Needs attention ─+ 1$/m);
+  assert.match(text, /^Needs attention ─+ 2$/m);
+  assert.match(text, /^ {2}− lead → none$/m);
   assert.match(text, /^ {2}! bad\.json +unparseable JSON$/m);
   assert.match(text, /^▸ Healthy ─+ 5$/m);
   assert.match(text, /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general$/m);
