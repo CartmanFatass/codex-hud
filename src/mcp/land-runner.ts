@@ -21,7 +21,7 @@ import { recordLanding } from './land-records.js';
 import { repairLand } from './land-repair.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 import { LandOutput } from './land-evidence.js';
-import { collectGateFlakes, type GateFlake } from './land-flakes.js';
+import { collectAndRecordLandFlakes, retryPendingFlakeCollections } from './land-flakes.js';
 
 class CommandError extends Error {
   constructor(message: string, readonly evidence: ReturnType<LandOutput['evidence']>) { super(message); }
@@ -117,7 +117,6 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
   const { wt, config: c } = own, main = wt.main_root;
   const scratch = (id: string) => join(dirname(wt.root), `land-${id}`);
   let f = own, members = [own], integration = scratch(own.flow), publishing = false;
-  const passedFlakes: GateFlake[] = [];
   const ref = `refs/heads/${c.base}`, lease = { home, cwd: main, holder: own.flow };
   // A queued helper can update its receipt without the checkout lease; serialize that with boarding.
   const queueLock = <T>(run: () => T) => withAbstractLock('land-queue', `${home}\0${main}`, run);
@@ -212,7 +211,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
           return path;
         };
         const { tests, files, cases } = e.evidence;
-        const entry: LandRerun = { step: label, tests, output_path: saveExcerpt(e) };
+        const entry: LandRerun = { step: label, tests, ...(cases.length && { cases }), output_path: saveExcerpt(e) };
         reruns.push(entry);
         recordTiming(label, t0, false);
         // A command deadline can leave tests unrun; a red test (including a node:test timeout) identifies a safe rerun.
@@ -229,14 +228,6 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         }
         entry.rerun_ok = true;
         recordTiming(label, r0, true, { rerun: true });
-        for (const item of cases.length ? cases : [{ name: label }]) {
-          passedFlakes.push({
-            name: item.name ?? item.file ?? label,
-            ...(item.file && { file: item.file }),
-            flow: f.flow,
-            ...(entry.output_path && { log: entry.output_path }),
-          });
-        }
       }
     }
   }
@@ -607,7 +598,6 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       return typeof receipt.ticket === 'string' && receipt.ticket ? [receipt.ticket] : [];
     } catch { return []; }
   });
-  if (passedFlakes.length || landedTickets.length) {
-    await collectGateFlakes(home, main, passedFlakes, f.pane, { landedTickets }).catch(() => {});
-  }
+  await retryPendingFlakeCollections(home, main, f.pane, { excludeFlow: f.flow }).catch(() => {});
+  await collectAndRecordLandFlakes(home, main, f, { landedTickets }).catch(() => {});
 }

@@ -395,7 +395,9 @@ A red gate command, including one reporting a Node.js per-test timeout, gets one
 If the output has Node.js `test at <file>:…` failure locations, HUD reruns only those files with `node --test` through the same wrapper; otherwise it reruns the whole command.
 If the rerun passes, HUD continues and names the flaky tests in the notice when available.
 When the main checkout's `.hud/project.json` configures `"flakes": {"feature": "test-flakes"}` (absent = off), after releasing the `main-checkout` lease the land flow appends each rerun-pass case (test name, file, flow id and log path) to that feature's newest open running-list ticket—creating a new one when the newest is done, claimed or already ready—and commits only that ticket path under the `main-checkout` lease.
-When a test repeats or the list reaches four cases, the ticket becomes `ready-for-agent` and HUD dispatches one `imp` job at a time through the normal ticket path.
+Unidentified gate failures (no parsed test case) are recorded with the command, flow and log but do not trigger the repeat rule; only named tests repeat.
+When a named test repeats or the list reaches four cases, the ticket becomes `ready-for-agent` and HUD dispatches one `imp` job at a time through the queue-capable ticket admission path (with project- and attempt-scoped request keys).
+A refused ticket edit (such as a hand edit on the running list) or a dispatch refusal leaves the land green and the edit intact, records `flake_collection` as pending on the land receipt, and retries idempotently from the recorded rerun on the next land or unattended service wake without rerunning the gate.
 On a persistent red gate or a cherry-pick conflict, HUD sends the failing step and up to 40 lines (8 KiB) of its failure output to the source worker with instructions to rebase onto the current base, fix and commit.
 It uses the same native-resume window as `hud_send`; if it cannot continue the source worker, it creates a local job of the same role with `retry_of`, in the source checkout.
 The checkout lease is released during repair.

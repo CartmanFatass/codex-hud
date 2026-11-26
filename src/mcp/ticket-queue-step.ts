@@ -16,7 +16,7 @@ import type { Run, Tick } from '../workflows/engine.js';
 import type { Graph, Step } from '../workflows/graph.js';
 import { directRecipient } from '../workflows/scope.js';
 import { freezeGraph, runDir, runLock, stopRequested } from '../workflows/store.js';
-import { dispatchJob } from './dispatch/orchestrator.js';
+import { dispatchJob, dispatchTicketJob } from './dispatch/orchestrator.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import { activeLand, landAttempt, landOutcome, readLand, retryableLand, SPEC_CHANGE_REFUSAL } from './land-state.js';
 import { startLand, validLandConfig } from './land.js';
@@ -1199,9 +1199,11 @@ function tickTicketQueue(
       return cur?.state === 'working' && !stopRequested(hudHome, flowId);
     };
     try {
-      const result = await dispatchJob({ role: launching.role, cwd: root, isolation: 'worktree', ticket: launching.ticket,
-        brief_file: launching.path, request_key: reqKey }, pane,
-        { queue: { id: queueId, canAdmit }, dispatcher, workspace, runNote });
+      const result = await dispatchTicketJob(
+        { role: launching.role, cwd: root, ticket: launching.ticket, brief_file: launching.path, request_key: reqKey },
+        pane,
+        { queue: { id: queueId, canAdmit }, dispatcher, workspace, runNote },
+      );
       if ('job' in result && typeof result.job === 'string') job = result.job;
       if (!job || ('ok' in result && result.ok === false)) {
         const code = 'code' in result ? result.code : undefined;

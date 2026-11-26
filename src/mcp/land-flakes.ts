@@ -1,17 +1,24 @@
 /** Collect rerun-pass land gate flakes into the project's running-list ticket and dispatch one imp job when ready. */
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { scanScratch, slugify } from '../cli/tickets.js';
 import { targetKey, ticketFileEvidence } from '../collectors/ticket-evidence.js';
 import { SETTLED_JOB_STATES, ticketJobState } from '../collectors/ticket-rollup.js';
+import { herdrId } from '../roles/herdr-run.js';
 import { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
+import { sharedRoot } from '../roles/projects.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
-import { readFileBounded, readJsonBounded } from '../utils/atomic-fs.js';
-import { dispatchJob } from './dispatch/orchestrator.js';
+import { readDirSafe, readFileBounded, readJsonBounded, readJsonFile } from '../utils/atomic-fs.js';
+import { dispatchTicketJob } from './dispatch/orchestrator.js';
 import type { Job } from './job-contracts.js';
-import { activeLand, landAttempt } from './land-state.js';
+import {
+  activeLand, isFlowId, landAttempt, landFile, updateLandFlakeCollection,
+  type LandFlakeCollection, type LandFlow,
+} from './land-state.js';
+import { jobFiles } from './paths.js';
 import { withTicketEdits } from './ticket-commits.js';
 import { ensureJobWatcher } from './watch-pid.js';
 
@@ -24,6 +31,7 @@ export interface GateFlake {
   file?: string;
   flow: string;
   log?: string;
+  unidentified?: boolean;
 }
 
 export interface FlakeCase {
@@ -31,10 +39,12 @@ export interface FlakeCase {
   file?: string;
   flow?: string;
   log?: string;
+  unidentified?: boolean;
 }
 
 export interface CollectFlakesOptions {
   landedTickets?: readonly string[];
+  retryDispatch?: boolean;
   dispatch?: (input: {
     role: 'imp';
     cwd: string;
@@ -42,7 +52,21 @@ export interface CollectFlakesOptions {
     ticket: string;
     brief_file: string;
     request_key: string;
-  }, pane: string | undefined) => Promise<{ job?: string } | Record<string, unknown>>;
+  }, pane: string | undefined) => Promise<{
+    job?: string;
+    ok?: boolean;
+    state?: string;
+    display_state?: string;
+    reason?: string;
+    error?: string;
+    code?: string;
+  } | Record<string, unknown>>;
+}
+
+export interface CollectFlakesPending {
+  stage: 'edit' | 'dispatch';
+  error: string;
+  ticket?: string;
 }
 
 export interface CollectFlakesResult {
@@ -51,6 +75,7 @@ export interface CollectFlakesResult {
   created?: boolean;
   promoted?: boolean;
   dispatchedJob?: string;
+  pending?: CollectFlakesPending;
 }
 
 const FEATURE_RE = /^[a-z0-9-]+$/;
@@ -59,11 +84,20 @@ const COMMENTS_HEADING = /^## Comments[ \t]*\r?$/m;
 const CASES_HEADING = /^###[ \t]+Cases[ \t]*\r?$/m;
 const CHECKBOX_LINE = /^[ \t]*[-*] \[[ xX]\]/m;
 const MAX_TICKET_BYTES = 256 * 1024;
+const MAX_FLOW_BYTES = 128 * 1024;
 const DISPATCH_CASE_THRESHOLD = 4;
 
 const nn = (n: number) => String(n).padStart(2, '0');
 const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim();
 const norm = (text: string) => oneLine(text).toLowerCase();
+
+export function flakeProjectId(mainRoot: string): string {
+  return createHash('sha256').update(sharedRoot(mainRoot)).digest('hex').slice(0, 16);
+}
+
+export function flakeDispatchKey(mainRoot: string, ticket: string, attempt: number): string {
+  return `flakes:${flakeProjectId(mainRoot)}:${ticket}:${attempt}`;
+}
 
 export function readFlakesConfig(mainRoot: string): FlakesConfig | null {
   try {
@@ -96,7 +130,9 @@ export function formatFlakeLine(flake: GateFlake): string {
   const file = flake.file ? oneLine(flake.file) : undefined;
   const flow = oneLine(flake.flow);
   const log = formatLogPath(flake.log);
-  const subject = file ? `\`${name}\` (${file})` : `\`${name}\``;
+  const subject = flake.unidentified
+    ? (file ? `unidentified failure (\`${name}\`, ${file})` : `unidentified failure (\`${name}\`)`)
+    : (file ? `\`${name}\` (${file})` : `\`${name}\``);
   return log
     ? `- ${subject} — flow \`${flow}\`, log \`${log}\``
     : `- ${subject} — flow \`${flow}\``;
@@ -111,7 +147,13 @@ function parseStructuredLine(line: string): FlakeCase | null {
   if (!flowMatch) return null;
   let name: string | undefined;
   let file: string | undefined;
-  if (left.startsWith('`') && left.endsWith('`') && left.length >= 2) {
+  let unidentified = false;
+  const unidMatch = /^unidentified(?: gate)? failure \(`([^`\r\n]+)`(?:,[ \t]+([^)\r\n]+))?\)$/i.exec(left);
+  if (unidMatch) {
+    name = unidMatch[1].trim();
+    file = unidMatch[2]?.trim() || undefined;
+    unidentified = true;
+  } else if (left.startsWith('`') && left.endsWith('`') && left.length >= 2) {
     name = left.slice(1, -1).trim();
   } else if (left.startsWith('`') && left.endsWith(')')) {
     const fileStart = left.lastIndexOf('` (');
@@ -126,6 +168,7 @@ function parseStructuredLine(line: string): FlakeCase | null {
     ...(file ? { file } : {}),
     flow: flowMatch[1].trim(),
     ...(flowMatch[2] ? { log: flowMatch[2].trim() } : {}),
+    ...(unidentified ? { unidentified: true } : {}),
   };
 }
 
@@ -156,7 +199,8 @@ export function parseFlakeCases(text: string): FlakeCase[] {
   return cases;
 }
 
-function sameTest(a: Pick<FlakeCase, 'name' | 'file'>, b: Pick<FlakeCase, 'name' | 'file'>): boolean {
+function sameTest(a: Pick<FlakeCase, 'name' | 'file' | 'unidentified'>, b: Pick<FlakeCase, 'name' | 'file' | 'unidentified'>): boolean {
+  if (a.unidentified || b.unidentified) return false;
   if (norm(a.name) !== norm(b.name)) return false;
   if (a.file && b.file) return norm(a.file) === norm(b.file);
   return true;
@@ -164,7 +208,9 @@ function sameTest(a: Pick<FlakeCase, 'name' | 'file'>, b: Pick<FlakeCase, 'name'
 
 function sameRecordedEntry(existing: FlakeCase, incoming: GateFlake): boolean {
   if (!existing.flow || norm(existing.flow) !== norm(incoming.flow)) return false;
-  if (!sameTest(existing, incoming)) return false;
+  if (Boolean(existing.unidentified) !== Boolean(incoming.unidentified)) return false;
+  if (norm(existing.name) !== norm(incoming.name)) return false;
+  if ((existing.file ? norm(existing.file) : '') !== (incoming.file ? norm(incoming.file) : '')) return false;
   const inLog = formatLogPath(incoming.log);
   if (existing.log && inLog && norm(existing.log) !== norm(inLog)) return false;
   return true;
@@ -193,23 +239,46 @@ function listFeatureTickets(scratchDir: string, feature: string): { number: numb
 function loadFeatureJobs(home: string, mainRoot: string, feature: string) {
   const cache = new JobIndexCache(home);
   const matchesProject = projectJobFilter(mainRoot);
+  const projectId = flakeProjectId(mainRoot);
   const prefix = `${feature.toLowerCase()}/`;
+  const keyPrefix = `flakes:${projectId}:`;
   const claimedTickets = new Set<string>();
+  const failedCounts = new Map<string, number>();
+  const maxKeyAttempts = new Map<string, number>();
   let hasActiveFlakeJob = false;
   let ids: readonly string[];
   try {
     ids = cache.listJobIds();
   } catch {
-    return { claimedTickets, hasActiveFlakeJob };
+    return { claimedTickets, nextAttempt: (_key: string) => 1, hasActiveFlakeJob };
   }
   for (const id of ids) {
     const receipt = cache.readJob<Job>(id);
-    if (receipt.status !== 'ok' || !receipt.value.ticket || !matchesProject(receipt.value)) continue;
-    const key = targetKey(receipt.value.ticket);
-    if (!key.startsWith(prefix)) continue;
+    if (receipt.status !== 'ok' || !matchesProject(receipt.value)) continue;
+    let key: string | undefined;
+    if (receipt.value.ticket) {
+      const tk = targetKey(receipt.value.ticket);
+      if (tk.startsWith(prefix)) key = tk;
+    }
+    let keyAttempt = 0;
+    if (typeof receipt.value.request_key === 'string' && receipt.value.request_key.startsWith(keyPrefix)) {
+      const rest = receipt.value.request_key.slice(keyPrefix.length);
+      const m = /^(.+):(\d+)$/.exec(rest);
+      if (m) {
+        const rkTicket = targetKey(m[1]);
+        if (rkTicket.startsWith(prefix)) {
+          key ??= rkTicket;
+          keyAttempt = Number(m[2]);
+        }
+      }
+    }
+    if (!key) continue;
     const statusRes = cache.readStatus(id);
     const state = ticketJobState(receipt.value, statusRes.status === 'ok' ? statusRes.value : {});
-    if (state !== 'failed' && state !== 'stopped') {
+    if (state === 'failed' || state === 'stopped') {
+      failedCounts.set(key, (failedCounts.get(key) ?? 0) + 1);
+      if (keyAttempt > (maxKeyAttempts.get(key) ?? 0)) maxKeyAttempts.set(key, keyAttempt);
+    } else {
       claimedTickets.add(key);
     }
     if (!receipt.value.reaped_at && (!SETTLED_JOB_STATES.has(state) || state === 'idle_grace')) {
@@ -219,7 +288,11 @@ function loadFeatureJobs(home: string, mainRoot: string, feature: string) {
       if (prior && activeLand(prior)) hasActiveFlakeJob = true;
     }
   }
-  return { claimedTickets, hasActiveFlakeJob };
+  const nextAttempt = (ticket: string) => {
+    const k = targetKey(ticket);
+    return Math.max(failedCounts.get(k) ?? 0, maxKeyAttempts.get(k) ?? 0) + 1;
+  };
+  return { claimedTickets, nextAttempt, hasActiveFlakeJob };
 }
 
 function appendCaseLines(original: string, lines: readonly string[], promote: boolean): string {
@@ -283,7 +356,7 @@ function buildRunningListTicket(
     '**Live try:** none',
     '**Blocked by:** none',
     '',
-    '**What to build:** Running list of gate flakes that passed on immediate rerun; dispatches when a test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).',
+    '**What to build:** Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).',
     '',
     '### Cases',
     '',
@@ -323,6 +396,51 @@ function findReadyRunningListTicket(
   return null;
 }
 
+function dispatchAdmissionError(res: unknown): string | null {
+  if (!res || typeof res !== 'object') return 'dispatch returned no result';
+  const r = res as Record<string, unknown>;
+  const job = typeof r.job === 'string' && r.job ? r.job : undefined;
+  const failed = r.ok === false || r.state === 'failed' || r.state === 'stopped' ||
+    r.display_state === 'failed' || r.display_state === 'stopped';
+  if (!job || failed) {
+    const why = (typeof r.reason === 'string' && r.reason) ||
+      (typeof r.error === 'string' && r.error) ||
+      (typeof r.code === 'string' && r.code) ||
+      (failed && job ? `job ${job} is ${String(r.state ?? r.display_state ?? 'failed')}` : 'dispatch refused');
+    return oneLine(why).slice(0, 300);
+  }
+  return null;
+}
+
+export function flakesFromLandFlow(flow: Pick<LandFlow, 'flow' | 'reruns'>): GateFlake[] {
+  const out: GateFlake[] = [];
+  for (const r of flow.reruns ?? []) {
+    if (typeof r === 'string') continue;
+    const passed = r.rerun_ok === true || !r.output_path;
+    if (!passed) continue;
+    if (r.cases?.length) {
+      for (const item of r.cases) {
+        const named = Boolean(item.name);
+        out.push({
+          name: item.name ?? item.file ?? r.step,
+          ...(item.file ? { file: item.file } : {}),
+          flow: flow.flow,
+          ...(r.output_path ? { log: r.output_path } : {}),
+          ...(!named ? { unidentified: true } : {}),
+        });
+      }
+    } else {
+      out.push({
+        name: r.step,
+        flow: flow.flow,
+        ...(r.output_path ? { log: r.output_path } : {}),
+        unidentified: true,
+      });
+    }
+  }
+  return out;
+}
+
 export async function collectGateFlakes(
   home: string,
   mainRoot: string,
@@ -334,101 +452,235 @@ export async function collectGateFlakes(
   if (!config) return {};
   const { feature } = config;
   const landedFlake = (options?.landedTickets ?? []).some(t => targetKey(t).startsWith(`${feature.toLowerCase()}/`));
-  if (!flakes.length && !landedFlake) return {};
+  if (!flakes.length && !landedFlake && !options?.retryDispatch) return {};
 
   let result: CollectFlakesResult = {};
+  let alreadyRecorded = false;
 
   if (flakes.length) {
-    result = await withTicketEdits(mainRoot, home, 'flake', async (edits) => {
-      const scratch = join(mainRoot, '.scratch');
-      scanScratch(scratch, true);
-      const existing = listFeatureTickets(scratch, feature).sort((a, b) => b.number - a.number);
-      const maxNum = existing[0]?.number ?? 0;
-      const { claimedTickets } = loadFeatureJobs(home, mainRoot, feature);
+    try {
+      const editRes = await withTicketEdits(mainRoot, home, 'flake', async (edits) => {
+        const scratch = join(mainRoot, '.scratch');
+        scanScratch(scratch, true);
+        const existing = listFeatureTickets(scratch, feature).sort((a, b) => b.number - a.number);
+        const maxNum = existing[0]?.number ?? 0;
+        const { claimedTickets } = loadFeatureJobs(home, mainRoot, feature);
 
-      // Find the newest running-list ticket and check if it is still open for collection.
-      let newestRunning: { number: number; path: string; text: string } | undefined;
-      for (const item of existing) {
-        try {
-          const text = edits.read(item.path);
-          if (isRunningListTicket(text)) {
-            newestRunning = { ...item, text };
-            break;
-          }
-        } catch { /* Ignore unreadable file. */ }
-      }
-
-      let openTarget: { number: number; path: string; text: string } | undefined;
-      if (newestRunning) {
-        const evidence = ticketFileEvidence(newestRunning.text);
-        const status = (evidence.status ?? '').trim().toLowerCase();
-        const key = targetKey(`${feature}/${nn(newestRunning.number)}`);
-        if ((status === 'needs-triage' || status === 'needs-info') && evidence.landed === undefined && !claimedTickets.has(key)) {
-          openTarget = newestRunning;
+        // Scan running-list tickets: find the newest one and collect recorded cases for idempotent retry.
+        const recordedCases: FlakeCase[] = [];
+        let newestRunning: { number: number; path: string; text: string } | undefined;
+        for (const item of existing) {
+          try {
+            const text = edits.read(item.path);
+            if (!isRunningListTicket(text)) continue;
+            if (!newestRunning) newestRunning = { ...item, text };
+            recordedCases.push(...parseFlakeCases(text));
+          } catch { /* Ignore unreadable file. */ }
         }
-      }
 
-      if (openTarget) {
-        const ticket = `${feature}/${nn(openTarget.number)}`;
-        const existingCases = parseFlakeCases(openTarget.text);
+        let openTarget: { number: number; path: string; text: string } | undefined;
+        if (newestRunning) {
+          const evidence = ticketFileEvidence(newestRunning.text);
+          const status = (evidence.status ?? '').trim().toLowerCase();
+          const key = targetKey(`${feature}/${nn(newestRunning.number)}`);
+          if ((status === 'needs-triage' || status === 'needs-info') && evidence.landed === undefined && !claimedTickets.has(key)) {
+            openTarget = newestRunning;
+          }
+        }
+
+        const targetCases = openTarget ? parseFlakeCases(openTarget.text) : [];
+        const seenCases: FlakeCase[] = [...recordedCases];
         const toAdd: GateFlake[] = [];
         for (const flake of flakes) {
-          const allSoFar: FlakeCase[] = [...existingCases, ...toAdd.map(f => ({ ...f, log: formatLogPath(f.log) }))];
-          if (allSoFar.some(c => sameRecordedEntry(c, flake))) continue;
+          if (seenCases.some(c => sameRecordedEntry(c, flake))) continue;
           toAdd.push(flake);
+          seenCases.push({ ...flake, log: formatLogPath(flake.log) });
         }
-        if (!toAdd.length) return { ticket, path: openTarget.path, created: false, promoted: false };
-        const allCases: FlakeCase[] = [...existingCases, ...toAdd.map(f => ({ ...f, log: formatLogPath(f.log) }))];
+        if (!toAdd.length) {
+          return {
+            alreadyRecorded: true,
+            res: openTarget
+              ? { ticket: `${feature}/${nn(openTarget.number)}`, path: openTarget.path, created: false, promoted: false }
+              : newestRunning
+                ? { ticket: `${feature}/${nn(newestRunning.number)}`, path: newestRunning.path, created: false, promoted: false }
+                : {},
+          };
+        }
+
+        const allCases: FlakeCase[] = [...targetCases, ...toAdd.map(f => ({ ...f, log: formatLogPath(f.log) }))];
         const promoted = shouldTriggerDispatch(allCases);
-        const updated = appendCaseLines(openTarget.text, toAdd.map(formatFlakeLine), promoted);
-        const mode = fs.statSync(openTarget.path).mode & 0o777;
-        await edits.stage({ ticket, path: openTarget.path, before: openTarget.text, after: updated, mode });
-        return { ticket, path: openTarget.path, created: false, promoted };
-      }
+        const lines = toAdd.map(formatFlakeLine);
 
-      const toAdd: GateFlake[] = [];
-      for (const flake of flakes) {
-        const soFar: FlakeCase[] = toAdd.map(f => ({ ...f, log: formatLogPath(f.log) }));
-        if (soFar.some(c => sameRecordedEntry(c, flake))) continue;
-        toAdd.push(flake);
-      }
-      if (!toAdd.length) return {};
+        if (openTarget) {
+          const ticket = `${feature}/${nn(openTarget.number)}`;
+          const updated = appendCaseLines(openTarget.text, lines, promoted);
+          const mode = fs.statSync(openTarget.path).mode & 0o777;
+          await edits.stage({ ticket, path: openTarget.path, before: openTarget.text, after: updated, mode });
+          return { alreadyRecorded: false, res: { ticket, path: openTarget.path, created: false, promoted } };
+        }
 
-      const nextNum = maxNum + 1;
-      const ticket = `${feature}/${nn(nextNum)}`;
-      const promoted = shouldTriggerDispatch(toAdd.map(f => ({ ...f, log: formatLogPath(f.log) })));
-      const { title, body } = buildRunningListTicket(feature, nextNum, maxNum, toAdd.map(formatFlakeLine), promoted);
-      const path = join(scratch, feature, 'issues', `${nn(nextNum)}-${slugify(title, nextNum)}.md`);
-      await edits.stage({ ticket, path, after: body });
-      return { ticket, path, created: true, promoted };
-    });
+        const nextNum = maxNum + 1;
+        const ticket = `${feature}/${nn(nextNum)}`;
+        const { title, body } = buildRunningListTicket(feature, nextNum, maxNum, lines, promoted);
+        const path = join(scratch, feature, 'issues', `${nn(nextNum)}-${slugify(title, nextNum)}.md`);
+        await edits.stage({ ticket, path, after: body });
+        return { alreadyRecorded: false, res: { ticket, path, created: true, promoted } };
+      });
+      alreadyRecorded = editRes.alreadyRecorded;
+      result = editRes.res;
+    } catch (err) {
+      const error = oneLine(err instanceof Error ? err.message : String(err)).slice(0, 300) || 'ticket edit refused';
+      return { pending: { stage: 'edit', error } };
+    }
   }
 
-  if (result.promoted || landedFlake) {
-    const dispatchedJob = await withAbstractLock('land-flakes-dispatch', `${home}\0${mainRoot}\0${feature}`, async () => {
-      const { claimedTickets, hasActiveFlakeJob } = loadFeatureJobs(home, mainRoot, feature);
-      if (hasActiveFlakeJob) return undefined;
+  if (result.promoted || landedFlake || options?.retryDispatch || alreadyRecorded) {
+    const dispatchOutcome = await withAbstractLock('land-flakes-dispatch', `${home}\0${sharedRoot(mainRoot)}\0${feature}`, async () => {
+      const { claimedTickets, nextAttempt, hasActiveFlakeJob } = loadFeatureJobs(home, mainRoot, feature);
+      if (hasActiveFlakeJob) return {};
       const candidate = findReadyRunningListTicket(mainRoot, feature, claimedTickets);
-      if (!candidate) return undefined;
+      if (!candidate) return {};
+      const validPane = pane && herdrId(pane) ? pane : undefined;
       const input = {
         role: 'imp' as const,
         cwd: mainRoot,
         isolation: 'worktree' as const,
         ticket: candidate.ticket,
         brief_file: candidate.path,
-        request_key: `flakes:${candidate.ticket}`,
+        request_key: flakeDispatchKey(mainRoot, candidate.ticket, nextAttempt(candidate.ticket)),
       };
-      const res = options?.dispatch
-        ? await options.dispatch(input, pane || undefined)
-        : await dispatchJob(input, pane || undefined);
-      if (res && 'job' in res && typeof res.job === 'string') {
+      try {
+        const res = options?.dispatch
+          ? await options.dispatch(input, validPane)
+          : await dispatchTicketJob(
+              { role: input.role, cwd: input.cwd, ticket: input.ticket, brief_file: input.brief_file, request_key: input.request_key },
+              validPane,
+            );
+        const error = dispatchAdmissionError(res);
+        if (error) return { pending: { stage: 'dispatch' as const, error, ticket: candidate.ticket } };
         if (!options?.dispatch) ensureJobWatcher(home);
-        return res.job;
+        return { job: (res as { job: string }).job, ticket: candidate.ticket };
+      } catch (err) {
+        const error = oneLine(err instanceof Error ? err.message : String(err)).slice(0, 300) || 'dispatch threw';
+        return { pending: { stage: 'dispatch' as const, error, ticket: candidate.ticket } };
       }
-      return undefined;
     });
-    if (dispatchedJob) result.dispatchedJob = dispatchedJob;
+    if (dispatchOutcome.job) {
+      result.dispatchedJob = dispatchOutcome.job;
+      result.ticket ??= dispatchOutcome.ticket;
+    } else if (dispatchOutcome.pending) {
+      result.pending = dispatchOutcome.pending;
+    }
   }
 
   return result;
+}
+
+function landedTicketsForFlow(home: string, flow: LandFlow): string[] {
+  if (flow.state !== 'completed') return [];
+  try {
+    const receipt = readJsonFile(join(home, 'jobs', flow.job, jobFiles.job)) as Job;
+    return typeof receipt.ticket === 'string' && receipt.ticket ? [receipt.ticket] : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function collectAndRecordLandFlakes(
+  home: string,
+  mainRoot: string,
+  flow: LandFlow,
+  options?: { landedTickets?: readonly string[]; pane?: string | null; dispatch?: CollectFlakesOptions['dispatch'] },
+): Promise<CollectFlakesResult> {
+  const config = readFlakesConfig(mainRoot);
+  if (!config) return {};
+  const flakes = flakesFromLandFlow(flow);
+  const landedTickets = options?.landedTickets ?? landedTicketsForFlow(home, flow);
+  const landedFlake = landedTickets.some(t => targetKey(t).startsWith(`${config.feature.toLowerCase()}/`));
+  const wasPending = flow.flake_collection?.state === 'pending';
+  if (!flakes.length && !landedFlake && !wasPending) return {};
+
+  const retryDispatch = wasPending && flow.flake_collection?.stage === 'dispatch';
+  const effectivePane = options?.pane !== undefined ? options.pane : flow.pane;
+  const res = await collectGateFlakes(
+    home,
+    mainRoot,
+    retryDispatch ? [] : flakes,
+    effectivePane,
+    { landedTickets, retryDispatch, dispatch: options?.dispatch },
+  );
+
+  const attempts = (flow.flake_collection?.attempts ?? 0) + 1;
+  const updated_at = new Date().toISOString();
+  if (res.pending) {
+    const collection: LandFlakeCollection = {
+      state: 'pending',
+      stage: res.pending.stage,
+      error: res.pending.error,
+      ...(res.pending.ticket ?? res.ticket ? { ticket: res.pending.ticket ?? res.ticket } : {}),
+      attempts,
+      updated_at,
+    };
+    await updateLandFlakeCollection(home, flow.flow, collection);
+  } else if (res.ticket || res.dispatchedJob || wasPending) {
+    const ticket = res.ticket ?? flow.flake_collection?.ticket;
+    const collection: LandFlakeCollection = {
+      state: 'done',
+      ...(ticket ? { ticket } : {}),
+      ...(res.dispatchedJob ? { job: res.dispatchedJob } : {}),
+      attempts,
+      updated_at,
+    };
+    await updateLandFlakeCollection(home, flow.flow, collection);
+  }
+  return res;
+}
+
+export function listPendingFlakeFlows(home: string, mainRoot: string, excludeFlow?: string): LandFlow[] {
+  const dir = join(home, 'flows');
+  const names = readDirSafe(dir);
+  if (!names.length) return [];
+  const targetRoot = sharedRoot(mainRoot);
+  const pending: LandFlow[] = [];
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    const id = name.slice(0, -5);
+    if (id === excludeFlow || !isFlowId(id)) continue;
+    try {
+      const f = readJsonBounded(landFile(home, id), MAX_FLOW_BYTES) as LandFlow | null;
+      if (!f || activeLand(f) || f.flake_collection?.state !== 'pending') continue;
+      const flowMain = f.wt?.main_root;
+      if (!flowMain || (flowMain !== mainRoot && sharedRoot(flowMain) !== targetRoot)) continue;
+      pending.push(f);
+    } catch { /* Skip unreadable flow receipt. */ }
+  }
+  return pending.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.flow.localeCompare(b.flow));
+}
+
+export async function retryPendingFlakeCollections(
+  home: string,
+  mainRoot: string,
+  pane: string | null,
+  options?: { excludeFlow?: string; dispatch?: CollectFlakesOptions['dispatch'] },
+): Promise<{ retried: number; resolved: number; pending: number }> {
+  if (!readFlakesConfig(mainRoot)) return { retried: 0, resolved: 0, pending: 0 };
+  if (!listPendingFlakeFlows(home, mainRoot, options?.excludeFlow).length) {
+    return { retried: 0, resolved: 0, pending: 0 };
+  }
+  return withAbstractLock('land-flakes-retry', `${home}\0${sharedRoot(mainRoot)}`, async () => {
+    const flows = listPendingFlakeFlows(home, mainRoot, options?.excludeFlow);
+    let retried = 0;
+    let resolved = 0;
+    let pending = 0;
+    for (const flow of flows) {
+      retried++;
+      const res = await collectAndRecordLandFlakes(home, mainRoot, flow, {
+        pane: pane ?? flow.pane,
+        dispatch: options?.dispatch,
+      });
+      if (res.pending) pending++;
+      else resolved++;
+    }
+    return { retried, resolved, pending };
+  });
 }

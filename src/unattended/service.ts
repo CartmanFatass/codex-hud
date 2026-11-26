@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
 import { readObjectives } from '../collectors/objectives.js';
 import { getHudHome } from '../hud-home.js';
+import { retryPendingFlakeCollections } from '../mcp/land-flakes.js';
 import { checkTicketPaths, ticketReadiness } from '../mcp/local-tickets.js';
 import { jobCache } from '../mcp/store/job-store.js';
 import { startTicketQueue } from '../mcp/ticket-queue.js';
@@ -111,6 +112,8 @@ async function scan(home: string, control: UnattendedControl, state: ScanState, 
   });
 
   if (!registeredProject(home, control.root).registered) throw Error('Unattended project is no longer registered');
+
+  await retryPendingFlakeCollections(home, control.root, null).catch(() => {});
 
   const stamp = computeInputStamp(home, control, ids, state.liveJobIds);
   if (!forceRecheck && state.lastStamp === stamp) {

@@ -10,6 +10,7 @@ import type { HeaderPass } from '../workflows/header-scan.js';
 import type { RunScope } from '../workflows/scope.js';
 import { runLock, saveHeader } from '../workflows/store.js';
 import type { Job } from './job-contracts.js';
+import type { LandEvidenceCase } from './land-evidence.js';
 import { jobFiles } from './paths.js';
 
 export const DEFAULT_LAND_TIMEOUT_S = 900;
@@ -17,7 +18,16 @@ export const SPEC_CHANGE_REFUSAL = 'Unattended landing would change docs/spec.md
 export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string; timeout_s?: number }
 export interface LandTiming { step: string; ms: number; ok: boolean; rerun?: true; skipped?: true; train?: string }
 export interface LandRerun {
-  step: string; tests: string[]; output_path?: string; rerun_output_path?: string; rerun_ok?: boolean;
+  step: string; tests: string[]; cases?: LandEvidenceCase[]; output_path?: string; rerun_output_path?: string; rerun_ok?: boolean;
+}
+export interface LandFlakeCollection {
+  state: 'pending' | 'done';
+  stage?: 'edit' | 'dispatch';
+  error?: string;
+  ticket?: string;
+  job?: string;
+  attempts: number;
+  updated_at: string;
 }
 export interface LandFlow {
   flow: string; job: string; pane: string | null; task: boolean; wt: ManagedWorktree; config: LandConfig;
@@ -37,6 +47,7 @@ export interface LandFlow {
   workflow?: Run & RunScope;
   repairs?: { step: string; job?: string; outcome: string }[];
   reruns?: (string | LandRerun)[];
+  flake_collection?: LandFlakeCollection;
   timings?: LandTiming[];
 }
 export const isFlowId = (id: unknown): id is string => typeof id === 'string' && /^f[a-f0-9]{16}(?:-[1-9]\d*)?$/.test(id);
@@ -143,9 +154,19 @@ export function landAttempt(home: string, job: string, pass?: HeaderPass) {
   }
   return { flow, prior, cleanup };
 }
+export async function updateLandFlakeCollection(home: string, flowId: string, collection: LandFlakeCollection): Promise<LandFlow | null> {
+  if (!isFlowId(flowId)) return null;
+  return runLock(home, flowId, () => {
+    const f = landHeader(home, flowId);
+    if (!f) return null;
+    f.flake_collection = collection;
+    saveHeader(home, f, false);
+    return f;
+  });
+}
 export function landView(f: LandFlow) {
-  const { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, base_moves, after_note, cleanup_note, repairs, reruns, timings, error, tail } = f;
-  return { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, base_moves, after_note, cleanup_note, repairs, reruns, timings, error, tail };
+  const { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, base_moves, after_note, cleanup_note, repairs, reruns, flake_collection, timings, error, tail } = f;
+  return { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, base_moves, after_note, cleanup_note, repairs, reruns, flake_collection, timings, error, tail };
 }
 const one = (text: string) => text.replace(/\s+/g, ' ').trim();
 export function landOutcome(f: LandFlow) {
@@ -162,6 +183,9 @@ export function landNotice(f: LandFlow) {
     ...(f.base_moves ? [`Base moves absorbed: ${f.base_moves}`] : []),
     ...(f.after_note ? [`After note: ${one(f.after_note)}`] : []),
     ...(f.cleanup_note ? [`Cleanup note: ${one(f.cleanup_note)}`] : []),
+    ...(f.flake_collection?.state === 'pending'
+      ? [`Flake collection pending (${f.flake_collection.stage ?? 'retry'}): ${one(f.flake_collection.error ?? 'pending retry')}`]
+      : []),
     ...(f.repairs ?? []).map((r, i) => `Repair ${i + 1}: ${one(r.step)} → ${r.job ?? 'dispatch'}: ${one(r.outcome)}`),
     ...(f.reruns ?? []).map(r => {
       if (typeof r === 'string') return `${one(r)} passed on immediate rerun`;

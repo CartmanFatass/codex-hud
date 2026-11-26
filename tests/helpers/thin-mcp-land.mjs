@@ -35,8 +35,8 @@ export async function repair(f, flow, index) {
   }, 20000);
   return f.flowState(flow).repairs[index].job;
 }
-export async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s, mcpEntry, probe, crossProject = false } = {}) {
-  const f = await fixture(t, { mcpEntry, probe });
+export async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s, mcpEntry, probe, crossProject = false, inHerdr = true, autoPrewalk = false } = {}) {
+  const f = await fixture(t, { mcpEntry, probe, inHerdr, autoPrewalk });
   const home = f.env.HUD_HOME, main = crossProject ? join(f.root, 'project') : f.root;
   const root = join(`${main}-wt`, 'sample-000123'), branch = 'wt/sample-000123';
   if (crossProject) fs.mkdirSync(main);

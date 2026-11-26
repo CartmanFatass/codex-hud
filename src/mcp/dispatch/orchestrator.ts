@@ -74,7 +74,7 @@ import {
   piOptionKeys, placementOverrides, hasPiPlacement, roleCwd, registry, launchPlan, evenPlanner, harnessSwitchFailure,
   replayOptions, harnessesSourceFor, argsForPlace,
 } from './places.js';
-import { ensureWatcher, launchError, launchFailure, canTryNext, rejectLaunch, run, refusedBeforeInput, type DispatchResult } from './proc.js';
+import { ensureWatcher, launchError, launchFailure, canTryNext, rejectLaunch, resolveWorkspace, run, refusedBeforeInput, type DispatchResult } from './proc.js';
 import { HERDR_FORK_REQUIRED, SHELL_WORKER_UNSUPPORTED, isHudHerdrFork, isShellLaunchedWorker } from '../../runtime/herdr-socket.js';
 
 function derivedKey(kind: string, ...parts: unknown[]): string {
@@ -192,10 +192,39 @@ function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): 
 type BatchMember = { flow: string; route: JobRoute; canAdmit: () => boolean };
 type SlotGate = { wait: Promise<void>; release: () => void };
 
-export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote }: {
+export interface TicketDispatchInput {
+  role: 'imp' | 'frontend-imp';
+  cwd: string;
+  ticket: string;
+  brief_file: string;
+  request_key: string;
+}
+
+export interface TicketDispatchOptions {
+  queue?: { id: string; canAdmit: () => boolean };
+  dispatcher?: Job['dispatcher'];
+  workspace?: string;
+  runNote?: string;
+}
+
+/** Queue-capable ticket admission shared by ticket queues (`hud_tickets run`) and automated ticket dispatch. */
+export async function dispatchTicketJob(
+  input: TicketDispatchInput,
+  pane: string | undefined,
+  options: TicketDispatchOptions = {},
+) {
+  const workspace = options.workspace ?? (pane ? await resolveWorkspace(pane) : undefined);
+  return dispatchJob(
+    { ...input, isolation: 'worktree' },
+    pane,
+    { ...options, workspace, ticketAdmission: true },
+  );
+}
+
+export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote, ticketAdmission }: {
   parent?: SonicParent; repair?: { source: Job; derived: boolean }; batch?: boolean; slotGate?: SlotGate;
   queue?: { id: string; canAdmit: () => boolean }; member?: BatchMember; dispatcher?: Job['dispatcher'];
-  workspace?: string; runNote?: string;
+  workspace?: string; runNote?: string; ticketAdmission?: boolean;
 } = {}) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
@@ -262,7 +291,9 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   const windowedKey = args.request_key === undefined || repair?.derived === true;
   return keyLock(`request:${requestKey}`, () =>
     dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, {
-      worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source, ticketQueue: queue?.id, canAdmit: member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace,
+      worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source,
+      ticketQueue: queue?.id, ticketAdmission: Boolean(ticketAdmission || queue?.id),
+      canAdmit: member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace,
     }));
 }
 
@@ -419,11 +450,12 @@ export async function dispatchCouncilSeat(parent: Job, seat: CouncilSeat, part: 
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<SonicParent, 'job' | 'objective' | 'headless'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, member, canAdmit, dispatcher, seat, council, memberStarted, workspace }: {
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, member, canAdmit, dispatcher, seat, council, memberStarted, workspace }: {
     seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
-    ticketQueue?: string; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
+    ticketQueue?: string; ticketAdmission?: boolean; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
   } = {}) {
+  const isTicketAdmission = Boolean(ticketAdmission || ticketQueue);
   const { experiment, arm, preview } = args;
   if (preview !== undefined && !validPreviewPath(preview)) {
     return { ok: false, code: 'invalid_arguments', error: 'preview must be a relative HTML path inside cwd' };
@@ -487,7 +519,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   let prewalkSettings;
   try { prewalkSettings = loadSettings({ ...process.env, HUD_HOME: hudHome }); } catch { /* Missing handled by loadSettings; malformed skips auto prewalk. */ }
-  const requireScouts = Boolean(prewalkSettings?.autoPrewalk) && args.prewalk !== false && !landCwd && !repairOf && !retryInput && !ticketQueue
+  const requireScouts = Boolean(prewalkSettings?.autoPrewalk) && args.prewalk !== false && !landCwd && !repairOf && !retryInput && !isTicketAdmission
     && definition.prewalk === 'on' && role !== 'sonic' && role !== 'council';
   if (requireScouts && scoutsArg === undefined) {
     return {
@@ -564,7 +596,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const modelOverride = args.model === undefined ? undefined : required(args, 'model');
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
   // Sonic is headless and can belong to a headless worker without a caller pane.
-  if (!ticketQueue && !(parent?.headless && role === 'sonic') && !herdrId(pane))
+  if (!isTicketAdmission && !(parent?.headless && role === 'sonic') && !herdrId(pane))
     return { ok: false, code: 'herdr_required' };
 
   const id = 'j' + randomBytes(8).toString('hex');
@@ -580,7 +612,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (role === 'council') {
     const allowed = ['role', 'task', 'cwd', 'request_key', 'members', 'synthesizer', 'context_files', 'from_jobs', 'retry_of'];
     const extra = Object.keys(args).find(k => args[k] !== undefined && !allowed.includes(k));
-    if (extra || parent || repairOf || ticketQueue) return { ok: false, code: 'invalid_arguments', error: `Council is a standalone fixed flow; unsupported: ${extra ?? 'nested dispatch'}` };
+    if (extra || parent || repairOf || isTicketAdmission) return { ok: false, code: 'invalid_arguments', error: `Council is a standalone fixed flow; unsupported: ${extra ?? 'nested dispatch'}` };
     const askOwner = { ok: false, code: 'owner_grant_required', reason: 'Ask the owner to authorize one council before starting it.' };
     if (!councilGrants.available(hudHome)) return askOwner;
     const councilPlan = prepareCouncil(args, definition, found, configured, routing);
@@ -693,7 +725,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       if (cap > 0 && (workingByRole.get(role) ?? 0) >= cap) {
         const generalCap = capForRole(concurrency, 'general');
         const generalHasRoom = generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap;
-        if (!ticketQueue && role === 'imp' && concurrency.impOverflow && generalHasRoom && found.roles().has('general')) {
+        if (!isTicketAdmission && role === 'imp' && concurrency.impOverflow && generalHasRoom && found.roles().has('general')) {
           // Overflow borrows a concurrency slot, not the imp role's launch chain or mode.
           overflowFrom = 'imp';
           role = 'general';
