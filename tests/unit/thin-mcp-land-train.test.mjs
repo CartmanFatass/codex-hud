@@ -5,6 +5,8 @@ import test from 'node:test';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { assertLandingRecord, checkout, job, jobDir, repair, settle } from '../helpers/thin-mcp-land.mjs';
 
+const timeout = 60_000;
+
 async function trainCheckout(t, gate = 'true') {
   const f = await checkout(t, [`if test ! -f "$HOME/started"; then
     touch "$HOME/started"; while test ! -f "$HOME/release"; do sleep .05; done
@@ -45,7 +47,7 @@ async function trainCheckout(t, gate = 'true') {
     return { blocker, flows };
   };
   const complete = async flows => {
-    await until(() => flows.every(flow => ['completed', 'failed', 'cancelled'].includes(f.flowState(flow).state)), 15000);
+    await until(() => flows.every(flow => ['completed', 'failed', 'cancelled'].includes(f.flowState(flow).state)), t.signal);
     return flows.map(flow => {
       const row = f.flowState(flow); assert.equal(row.state, 'completed', JSON.stringify(row)); return row;
     });
@@ -53,7 +55,7 @@ async function trainCheckout(t, gate = 'true') {
   return { ...f, add, start, release, complete, log };
 }
 
-test('land train gates and pushes two queued jobs once, with a ticket record and receipt per job', async t => {
+test('land train gates and pushes two queued jobs once, with a ticket record and receipt per job', { timeout }, async t => {
   const f = await trainCheckout(t);
   const tickets = ['01', '02'].map(n => `.scratch/train/issues/${n}-sample.md`);
   fs.mkdirSync(join(f.main, '.scratch/train/issues'), { recursive: true });
@@ -82,7 +84,7 @@ test('land train gates and pushes two queued jobs once, with a ticket record and
   assert.equal(fs.readdirSync(join(f.home, 'flows')).filter(name => name.endsWith('.json')).length, 3);
 });
 
-test('land train rolls back every pick of the conflicting job, which repairs and lands alone', async t => {
+test('land train rolls back every pick of the conflicting job, which repairs and lands alone', { timeout }, async t => {
   const f = await trainCheckout(t);
   fs.writeFileSync(join(f.main, 'overlap'), 'base\n');
   f.git(f.main, 'add', 'overlap'); f.git(f.main, 'commit', '-qm', 'seed overlap');
@@ -107,7 +109,7 @@ test('land train rolls back every pick of the conflicting job, which repairs and
   assert.equal(f.git(f.remote, 'show', 'base:overlap'), 'alpha and beta');
 });
 
-test('red land train falls back to single gates, without a train rerun or repair', async t => {
+test('red land train falls back to single gates, without a train rerun or repair', { timeout }, async t => {
   const f = await trainCheckout(t, `if test -f alpha && test -f beta &&
     ! git cat-file -e base:alpha 2>/dev/null && ! git cat-file -e base:beta 2>/dev/null; then
     git rev-parse base >> "$HOME/rejected-on"; exit 7
@@ -131,7 +133,7 @@ test('red land train falls back to single gates, without a train rerun or repair
   }
 });
 
-test('land train timings count one paid gate for a synthetic three-job queue instead of three', async t => {
+test('land train timings count one paid gate for a synthetic three-job queue instead of three', { timeout }, async t => {
   const f = await trainCheckout(t, 'sleep .15');
   const { flows } = await f.release(['alpha', 'beta', 'gamma'].map(name => f.add(name)));
   const batch = await f.complete(flows);

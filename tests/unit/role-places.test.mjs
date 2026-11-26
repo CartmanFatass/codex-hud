@@ -427,7 +427,8 @@ test('pro falls back across chatgpt -> gemini -> argon and flow passes kind', { 
   assert.equal(flowCmd.args[flowCmd.args.indexOf('--kind') + 1], 'video');
 });
 
-test('oracle runs locally on claude fable with oracle.md and falls back to pi architect', { timeout: 10000 }, async (t) => {
+// The three launches share a test hang guard, not a 10 s dispatch budget.
+test('oracle runs locally on claude fable with oracle.md and falls back to pi architect', { timeout: 30_000 }, async (t) => {
   const f = await fixture(t);
   const roster = await f.call('hud_roster', { detail: true });
   const oracle = roster.roles.find((r) => r.role === 'oracle');

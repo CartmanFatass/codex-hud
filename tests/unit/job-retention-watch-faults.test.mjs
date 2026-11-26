@@ -142,26 +142,43 @@ globalThis.setTimeout = (callback, delay, ...args) => {
 for (const fault of ['permanent startup failure', 'later error']) {
   test(`watcher polls after ${fault}, handles a newly settled job and exits`, { timeout }, async (t) => {
     const f = fixture(t, DEGRADED_MS), dir = f.job({ state: 'working' }, {}, true);
-    const probe = fault === 'permanent startup failure' ? permanentWatchFailure : `
+    const poll = join(f.home, 'poll-delay');
+    const { child, exited, stderr } = f.start(`
 import fs from 'node:fs';
+import { writeFixtureFile } from ${JSON.stringify(atomicWriter)};
 import { syncBuiltinESMExports } from 'node:module';
-const watch = fs.watch;
+const watch = fs.watch, timer = globalThis.setTimeout;
+let faulted = false, recorded = false;
+globalThis.setTimeout = (fn, ms, ...args) => {
+  if (faulted && !recorded) {
+    writeFixtureFile(${JSON.stringify(poll)}, String(ms));
+    recorded = true;
+  }
+  return timer(fn, ms, ...args);
+};
 fs.watch = (...args) => {
+  if (${fault === 'permanent startup failure'}) {
+    if (args[1]?.recursive) faulted = true;
+    throw Error('synthetic permanent watch failure');
+  }
   const watcher = watch(...args);
-  if (args[1]?.recursive) setTimeout(() => watcher.emit('error', Error('synthetic later watch error')), 100);
+  if (args[1]?.recursive) timer(() => {
+    faulted = true;
+    watcher.emit('error', Error('synthetic later watch error'));
+  }, 100);
   return watcher;
 };
-syncBuiltinESMExports();`;
-    const { child, exited, stderr } = f.start(probe);
-    await until(() => child.exitCode !== null || (fs.existsSync(join(f.home, 'watch.log')) &&
+syncBuiltinESMExports();`);
+    await until(() => child.exitCode !== null || (fs.existsSync(poll) &&
       f.log().includes(fault === 'later error' ? 'synthetic later watch error' : 'using file events only')), t.signal);
     assert.equal(child.exitCode, null, f.log() + stderr());
-    const settled = Date.now();
+    // Bound the scheduled fallback, not the OS time to deliver it and start the reaper.
+    const ms = Number(fs.readFileSync(poll, 'utf8'));
+    assert.ok(ms > 0 && ms <= DEGRADED_MS, `expected a fallback poll within ${DEGRADED_MS}ms, got ${ms}`);
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify(expired()));
     await until(() => child.exitCode !== null, t.signal);
     await exited;
     assert.equal(child.exitCode, 0);
-    assert.ok(Date.now() - settled <= 800, 'settlement handled within the scaled fallback interval and reap overhead');
     assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), dir + '\n');
     assert.ok(JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')).reaped_at);
     assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
