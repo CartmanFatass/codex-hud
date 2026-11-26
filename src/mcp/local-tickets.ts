@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { join, relative, isAbsolute, resolve } from 'node:path';
-import { scanScratch, slugify, ticketsCommand, writeFileAtomic } from '../cli/tickets.js';
+import { scanScratch, slugify, ticketsCommand } from '../cli/tickets.js';
 import { OBJECTIVE_SLUG, objectiveLink, readObjectives } from '../collectors/objectives.js';
 import type { ProjectTicket } from '../collectors/project-board.js';
 import { STATE_BYTES } from '../collectors/state-ledger.js';
@@ -15,6 +15,7 @@ import { readOpenHolds } from '../unattended/state.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
 import { linkFeature } from './local-objectives.js';
+import { withTicketEdits, type TicketEdits } from './ticket-commits.js';
 
 const number = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
@@ -371,27 +372,34 @@ export function landedTicket(original: string, ticket: number, comment: string) 
   return (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n`;
 }
 
-/** Record durable unattended lead acceptance on a landed ticket: status done + run/verdict comment. */
-export function recordUnattendedAcceptance(root: string, ticketPath: string, ticketRef: string, flowId: string, verdict: string): boolean {
-  const scratch = join(root, '.scratch');
-  if (!directoryExists(scratch)) return false;
-  const rel = relative(resolve(scratch), resolve(ticketPath));
-  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return false;
-  scanScratch(scratch, true);
-  const st = fs.lstatSync(ticketPath, { throwIfNoEntry: false });
-  if (!st || !st.isFile() || fs.realpathSync(ticketPath) !== resolve(ticketPath)) return false;
-  const original = fs.readFileSync(ticketPath, 'utf8');
-  const marker = `- Accepted by unattended lead (${flowId}):`;
-  if (original.includes(marker)) return false;
-  const start = original.search(/^## Comments[ \t]*\r?$/m);
-  const before = start < 0 ? original : original.slice(0, start);
-  const num = Number(ticketRef.split('/')[1] ?? 0);
-  const currentStatus = ticketFileEvidence(original).status ?? '';
-  const body = /^wontfix$/i.test(currentStatus) ? before : withStatus(before, 'done', num);
-  const summary = verdict.replace(/\s+/g, ' ').trim().slice(0, 400);
-  const updated = (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n${marker} ${summary}\n`;
-  writeFileAtomic(ticketPath, updated, st.mode & 0o777);
-  return true;
+/** Record unattended lead acceptance: status done + run/verdict comment, one commit for the batch. */
+export async function recordUnattendedAcceptance(root: string, home: string, landed: () => readonly { path: string; ticket: string }[], flowId: string, verdict: string) {
+  await withTicketEdits(root, home, 'accept', async (edits) => {
+    const tickets = landed();
+    if (!tickets.length) return;
+    const scratch = join(root, '.scratch');
+    if (!directoryExists(scratch)) return;
+    scanScratch(scratch, true);
+    const marker = `- Accepted by unattended lead (${flowId}):`;
+    const summary = verdict.replace(/\s+/g, ' ').trim().slice(0, 400);
+    for (const { path, ticket } of tickets) {
+      try {
+        const rel = relative(resolve(scratch), resolve(path));
+        if (!rel || rel.startsWith('..') || isAbsolute(rel)) continue;
+        const st = fs.lstatSync(path, { throwIfNoEntry: false });
+        if (!st || !st.isFile() || fs.realpathSync(path) !== resolve(path)) continue;
+        const original = edits.read(path);
+        if (original.includes(marker)) continue;
+        const start = original.search(/^## Comments[ \t]*\r?$/m);
+        const before = start < 0 ? original : original.slice(0, start);
+        const num = Number(ticket.split('/')[1] ?? 0);
+        const currentStatus = ticketFileEvidence(original).status ?? '';
+        const body = /^wontfix$/i.test(currentStatus) ? before : withStatus(before, 'done', num);
+        const updated = (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n${marker} ${summary}\n`;
+        await edits.stage({ path, ticket, before: original, after: updated, mode: st.mode & 0o777 });
+      } catch { /* Best effort: a ticket may have moved or been edited by main. */ }
+    }
+  });
 }
 
 /** The panel groups work by an Objective's Features; no record, no warning. */
@@ -403,7 +411,7 @@ function unlinkedWarning(root: string, feature: string): string | undefined {
 }
 
 export async function editTickets(cwd: string, args: Record<string, unknown>, home: string) {
-  const { op, feature } = args;
+  const { op } = args;
   if (op === 'sync') {
     const output: string[] = [];
     const capture = (text: string) => {
@@ -413,6 +421,12 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     return { ok: true, output };
   }
   if (op !== 'add' && op !== 'update') return invalid('op');
+  const root = fs.realpathSync(cwd);
+  return withTicketEdits(root, home, op, edits => editLocalTickets(root, args, home, op, edits));
+}
+
+async function editLocalTickets(cwd: string, args: Record<string, unknown>, home: string, op: 'add' | 'update', edits: TicketEdits) {
+  const { feature } = args;
   const scratch = join(cwd, '.scratch');
   scanScratch(scratch, true);
   let objectiveIds: Set<string> | undefined;
@@ -478,19 +492,16 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       known.add(next);
       return { number: next, path: join(issues, `${nn(next)}-${slugify(title, next)}.md`), body, objective };
     });
+    for (const { number, path, body } of plans) await edits.stage({ ticket: `${feature}/${nn(number)}`, path, after: body });
     // Link first: if the record cannot be edited, no ticket is written.
     const linked = [...new Set(plans.flatMap(({ objective }) => objective ?? []))];
     if (linked.length) await linkFeature(sharedRoot(cwd), home, linked, feature);
-    fs.mkdirSync(issues, { recursive: true });
-    const tickets = plans.map(({ number, path, body }) => {
-      fs.writeFileSync(path, body, { flag: 'wx' });
-      return { number, path };
-    });
+    const tickets = plans.map(({ number, path }) => ({ number, path }));
     const warning = unlinkedWarning(sharedRoot(cwd), feature);
     return { ok: true, tickets, ...(warning && { warning }) };
   }
 
-  const updateOne = (feat: unknown, item: Record<string, unknown>) => {
+  const updateOne = async (feat: unknown, item: Record<string, unknown>) => {
     if (typeof feat !== 'string' || !/^[a-z0-9-]+$/.test(feat)) return invalid('feature');
     if (!number(item.ticket)) return invalid('ticket');
     if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined && item.owner_try === undefined && item.objective === undefined)
@@ -501,7 +512,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     if (!matches.length) throw new Error(`unknown ticket: ${item.ticket}`);
     if (matches.length > 1) throw new Error(`ambiguous ticket: ${item.ticket}`);
     const [ticket] = matches;
-    const original = fs.readFileSync(ticket.path, 'utf8');
+    const original = edits.read(ticket.path);
     const comments = original.search(/^## Comments[ \t]*\r?$/m);
     let body = comments < 0 ? original : original.slice(0, comments);
     if (item.tick !== undefined) {
@@ -526,7 +537,8 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     }
     if (item.objective !== undefined) body = withObjective(body, objectiveId(item.objective), item.ticket);
     const updated = body + (comments < 0 ? '' : original.slice(comments));
-    if (updated !== original) writeFileAtomic(ticket.path, updated, fs.statSync(ticket.path).mode & 0o777);
+    await edits.stage({ path: ticket.path, ticket: `${feat}/${nn(ticket.number)}`, before: original, after: updated,
+      mode: fs.statSync(ticket.path).mode & 0o777 });
     return { ok: true, ...ticket };
   };
 
@@ -535,25 +547,27 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       return invalid('updates');
     if (!Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
     if (feature !== undefined && (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature))) return invalid('feature');
-    const updates = args.updates.map((raw) => {
+    const updates = [];
+    for (const raw of args.updates) {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        return { ok: false, code: 'invalid_arguments', error: 'invalid_arguments: updates' };
+        updates.push({ ok: false, code: 'invalid_arguments', error: 'invalid_arguments: updates' });
+        continue;
       }
       const item = raw as Record<string, unknown>;
       const feat = item.feature ?? feature;
       try {
-        return { feature: feat as string, ...updateOne(feat, item) };
+        updates.push({ feature: feat as string, ...await updateOne(feat, item) });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        return {
+        updates.push({
           ...(typeof feat === 'string' ? { feature: feat } : {}),
           ...(number(item.ticket) ? { ticket: item.ticket } : {}),
           ok: false,
           code: message.startsWith('invalid_arguments') ? 'invalid_arguments' : 'tool_error',
           error: message,
-        };
+        });
       }
-    });
+    }
     return { updates };
   }
 

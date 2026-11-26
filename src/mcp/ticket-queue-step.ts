@@ -1448,6 +1448,17 @@ function tickHandbackStep(
       const stepKeys = Object.keys(graph.steps);
       return { state: 'running', changed: false, effect: async () => {
         const closeRes = await closeLeadJob(leadJob);
+        const verdict = parsed.reason ? `${parsed.decision}: ${parsed.reason}` : parsed.decision;
+        if (q.unattended && closeRes.ok && parsed.decision === 'finish' && verdict) {
+          // Do not hold the flow-state lock while an unrelated land owns the checkout.
+          try {
+            await recordUnattendedAcceptance(q.root, hudHome, () => {
+              const cur = readTicketQueue(hudHome, flowId);
+              return cur?.state === 'working' && !stopRequested(hudHome, flowId)
+                ? cur.tickets.filter(item => item.landed) : [];
+            }, flowId, verdict);
+          } catch { /* Best-effort acceptance record. */ }
+        }
         await runLock(hudHome, flowId, () => {
           const cur = readTicketQueue(hudHome, flowId);
           if (!cur || cur.state !== 'working') return;
@@ -1505,14 +1516,6 @@ function tickHandbackStep(
               kind: 'escalate', step: key, job: leadJob.job, ownerApproval: parsed.ownerApproval, reason: msg,
             };
           } else {
-            const verdict = parsed.reason ? `${parsed.decision}: ${parsed.reason}` : parsed.decision;
-            if (cur.unattended && parsed.decision === 'finish') {
-              for (const item of cur.tickets) {
-                if (!item.landed) continue;
-                try { recordUnattendedAcceptance(cur.root, item.path, item.ticket, cur.flow, verdict); }
-                catch { /* Best-effort acceptance record; ticket may have moved. */ }
-              }
-            }
             cur.steps ??= {};
             cur.steps[key] = { state: 'done', answer: parsed.decision };
             cur.verdict = verdict;

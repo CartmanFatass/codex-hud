@@ -326,7 +326,12 @@ test('hud_create stamps the linked checkout ticket against its Objective record,
   };
   const path = join(cwd, '.hud/objectives.md');
   put(join(main, '.hud/objectives.md'), goal('main-goal', 'Main goal') + goal('branch-goal', 'Fallback goal'));
-  for (const root of [main, cwd]) put(join(root, '.scratch/sample/issues/01-demo.md'), ticket('main-goal'));
+  const ticketPath = '.scratch/sample/issues/01-demo.md';
+  for (const root of [main, cwd]) {
+    put(join(root, ticketPath), ticket('main-goal'));
+    git(root, 'add', '--', ticketPath);
+    git(root, 'commit', '-qm', 'Track sample ticket');
+  }
   put(path, goal('branch-goal', 'Checkout goal'));
   const { updates } = await f.call('hud_tickets', { op: 'update', cwd, feature: 'sample', updates: [{ ticket: 1, objective: 'branch-goal' }] });
   assert.equal(updates[0].ok, true);

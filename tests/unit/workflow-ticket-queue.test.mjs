@@ -227,6 +227,7 @@ test('unattended Objective run lands tickets in one run (N + 2 sessions), record
   const u = unattended(f);
   f.onCleanup(() => u.cmd('off'));
   assert.equal(u.status().on, false);
+  assert.equal(fs.existsSync(join(f.home, 'flows')), false, 'first admission creates the flow directory after watch startup');
   const firstOn = u.cmd('on', '--objective', 'other');
   assert.equal(firstOn.on, true);
   assert.equal(firstOn.start, procStat(firstOn.pid)?.start);
@@ -289,6 +290,9 @@ test('unattended Objective run lands tickets in one run (N + 2 sessions), record
   const acceptedText = fs.readFileSync(join(f.root, f.ticketPath(1)), 'utf8');
   assert.match(acceptedText, /\*\*Status:\*\* done/);
   assert.match(acceptedText, new RegExp(`Accepted by unattended lead \\(${flow1}\\): finish: Verified both slices cleanly\\.`));
+  assert.equal(f.git(f.root, 'log', '-1', '--format=%s'), 'tickets: sample/01 accept');
+  assert.deepEqual(f.git(f.root, 'show', '--format=', '--name-only', 'HEAD').split('\n'), [f.ticketPath(1), f.ticketPath(2)]);
+  assert.equal(f.git(f.root, 'status', '--porcelain', '--', '.scratch'), '');
 
   // Board (ProjectCollector) reads the durable acceptance as done, not try.
   const snap = await new ProjectCollector(f.root, f.home, f.env).collect(true, { workers: [], lanes: [] }, Date.now());

@@ -605,6 +605,9 @@ The default status is `ready-for-agent`; other allowed labels are `needs-triage`
 For `add` and `update`, `objective` sets the `**Objective:** <id>` header field. The ID must exist in the project's `.hud/objectives.md`; an unknown ID leaves the ticket unchanged. Only `add` also edits the Objective's `Features`.
 A new `hud_create` with an explicit ticket snapshots its Objective ID and current title. The Inspector and job archive show this snapshot; retries, repairs and Sonic children keep it, even after a rename. Jobs with no recorded link stay unattributed.
 This is a main-session tool.
+In a Git checkout, `add`, `update`, and unattended acceptance wait for the main-checkout lease before writing.
+Each call that changes tickets makes one local commit containing only those ticket files; a batch uses the first changed ticket in `tickets: <feature>/<NN> <op>`.
+Commit or resolve hand edits to a ticket before asking HUD to change it. Unrelated staged and unstaged changes are left alone.
 For GitHub-mirrored `.scratch/`, `add` and `update` refuse: edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
 
 Jobs are plain files in `$HUD_HOME/jobs/<job>/`.

@@ -171,12 +171,13 @@ async function publishDiagnostics(home: string, control: UnattendedControl, issu
 }
 
 function watchTargets(home: string, control: UnattendedControl | undefined): WatchTarget[] {
-  const controlName = basename(controlPath(home));
+  const controlName = basename(controlPath(home)), flows = join(home, 'flows');
   const targets: WatchTarget[] = [
-    { dir: home, filter: file => !file || file === controlName || file === basename(indexPath(home)) },
-    { dir: join(home, 'flows'), filter: file => !file || /^[qf][a-f0-9]{16}(?:-\d+)?\.json$/.test(file) },
+    { dir: home, filter: file => !file || file === controlName || file === basename(indexPath(home)) || file === 'flows' },
     { dir: join(home, 'jobs'), recursive: true, filter: file => !file || /(?:^|\/)(?:job|STATUS)\.json$/.test(file) },
   ];
+  // First admission creates flows/. Watch its creation in home rather than leave a failed watcher until fallback.
+  if (fs.existsSync(flows)) targets.push({ dir: flows, filter: file => !file || /^[qf][a-f0-9]{16}(?:-\d+)?\.json$/.test(file) });
   if (control?.root) {
     targets.push(
       { dir: join(control.root, '.hud'), filter: file => !file || file === 'objectives.md' },
