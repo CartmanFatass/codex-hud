@@ -14,3 +14,17 @@
 - [ ] fmt, clippy, isolated sidebar/client tests, release build pass
 
 ## Comments
+
+- Owner 2026-11-26 (clarification, binding): draw the hierarchy as a tree so belonging is visible at a glance, e.g.
+  ```
+  ▾ MyHUD            3
+  ├─▾ nav-redesign   2
+  │ ├ ● imp  Execution tab
+  │ └ ◐ imp  Recently ended
+  └─▸ herdr-fork     1
+  ▸ herdr-hud        1
+  ```
+  Box-drawing connectors (`├─ └─ │`) tie each row to its parent; `▾`/`▸` mark open/folded; folded nodes show their
+  count and strongest state colour. Keep the agent row's icon and title as today after the connector prefix; at narrow
+  widths connectors take at most 4 cells and the title truncates first. With `ui.ascii`/no box-drawing glyphs, fall back
+  to `|- \- |`.
