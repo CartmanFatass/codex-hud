@@ -330,7 +330,7 @@ test('Help is one contextual page, preserves Inspector selection, and marks have
     setLanguage(lang);
   });
   const draw = (state, options = {}) =>
-    renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 58, nowMs: NOW, ...options });
+    renderMonitor({ tree: TREE, workboard: f.board, state, width: 80, height: 66, nowMs: NOW, ...options });
   const home = draw(f.states.home),
     text = plainFrame(home).join('\n');
   assert.match(text, /Loading…/);

@@ -17,7 +17,13 @@ export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRo
   return line >= 0 ? pane.rows[line] : undefined;
 }
 export function monitorItemAt(pane: MonitorRect, x: number, y: number): string | undefined {
-  return monitorRowAt(pane, x, y)?.item || undefined;
+  const row = monitorRowAt(pane, x, y);
+  if (!row) return undefined;
+  if (row.metroStations) {
+    const col = x - pane.x;
+    return row.metroStations.find((s) => col >= s.x && col < s.x + s.width)?.item;
+  }
+  return row.item || undefined;
 }
 export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   // A harness switch acknowledgement lasts until the next input, in the live panel and in pure routing.

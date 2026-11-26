@@ -232,50 +232,43 @@ test('queue waves render EN/ZH, no-colour, coloured, role icons (unicode/nerd/te
     }
   }
 
-  // Verify full content at standard wide width in EN.
+  // Verify Hairline metro map content at standard wide width in EN (no flow IDs, no old vertical waves, no ⚖/★ wait glyphs).
   const wideEn = text(render(view, { width: 120, lang: 'en', theme: 'none', icons: 'unicode' }));
   for (const needle of [
-    'Workflow', 'Queue exec-runs', 'q1a2b3c4', 'obj-unattended', 'q2b3c4d5', 'Queue recent-done · 1 ticket',
-    roleIcon('imp', 'unicode'), roleIcon('reviewer', 'unicode'), roleIcon('lead', 'unicode'),
-    'review', '? ★ Acceptance(lead)', '✓ landed 1: 01', 'Gate 1/1', 'working 12m', 'settled', 'held', 'failed',
-    '○ 07(←03) ─▶ ○ 08(←07,05) ─▶ ○ 09(←08)', 'todo 2 · held 1 · repairs 1',
+    'Workflow', 'Queue exec-runs', 'Queue obj-unattended', 'Queue recent-done · 1 ticket',
+    'paused 45m', 'running 22m', 'held for you', 'Lead acceptance', 'asking 3m',
+    '◇◈◆ review', '☆✪★ accept',
   ]) {
     assert.ok(wideEn.includes(needle), `EN 120 missing: ${needle}\n${wideEn}`);
   }
+  assert.doesNotMatch(wideEn.split('Workers')[0], /⚖|▼|─▶|○ ★|q1a2b3c4|q2b3c4d5|Assumed|blocked by|owner approval|Build passes/);
   assert.doesNotMatch(wideEn.split('Recently ended')[1], /q3c4d5e6|Finished earlier|land gate synthetic ticket/, 'ended run members are not repeated');
-  assert.match(wideEn, /02 land gate synthetic ticket.*Gate 1\/1/);
-  assert.doesNotMatch(wideEn.split('Workers')[0], /Assumed|blocked by|owner approval|Build passes/);
-  const waves = (width) => render(view, { width }).workboard.rows.filter((row) => /▼ *○ 0[789]/.test(row.text));
-  assert.equal(waves(62).length, 1);
-  assert.ok(waves(40).length > 1);
   assert.equal(wideEn.split('\n').filter((line) => line.includes('recent-done')).length, 1);
 
-  // Verify full content in ZH.
+  // Verify Hairline metro map content in ZH.
   const wideZh = text(render(view, { width: 120, lang: 'zh', theme: 'none', icons: 'unicode' }));
   for (const needle of [
-    '工作流', '队列', '评审', '验收(lead)', '刚结束',
-    '✓ 已落地 1: 01', '门禁 1/1', '工作中 12分', '已结束', '挂起', '失败', '○ 07(←03)', '○ 08(←07,05)',
-    '待办 2 · 挂起 1 · 修复 1',
+    '工作流', '队列 exec-runs', '队列 obj-unattended', '已暂停 45分', '运行中 22分',
+    '挂起·等你', '负责人验收', '提问中 3分', '◇◈◆ 评审', '☆✪★ 验收', '刚结束',
   ]) {
     assert.ok(wideZh.includes(needle), `ZH 120 missing: ${needle}\n${wideZh}`);
   }
+  assert.doesNotMatch(wideZh.split('工作者')[0], /⚖|▼|─▶|○ ★/);
 
-  // Text icon mode emits ASCII only and honours ROLE_GLYPHS ASCII icons.
+  // Text icon mode emits ASCII only on the Workflow metro map.
   const asciiFrame = render(view, { width: 120, lang: 'en', theme: 'none', icons: 'text' });
   const asciiText = text(asciiFrame);
   for (const line of asciiFrame.lines) assert.equal(visualLength(line), 120);
-  assert.doesNotMatch(asciiText, /[⚒✎⚖•✦◈⚡┌┐└┘├┤▸◉○→✓✗]/);
-  for (const needle of [`${roleIcon('imp', 'text')} working`, `${roleIcon('reviewer', 'text')} review`, `${roleIcon('lead', 'text')} Acceptance`]) {
+  assert.doesNotMatch(asciiText, /[⚒✎⚖•✦◈⚡┌┐└┘├┤▸◉○→✓✗╭╮╰╯╌╎◇☆●]/);
+  for (const needle of ['r R review', 'a A accept', '= Queue obj-unattended', '@ Queue exec-runs']) {
     assert.ok(asciiText.includes(needle), `ASCII missing: ${needle}\n${asciiText}`);
   }
 
-  // Nerd icon mode honours ROLE_GLYPHS nerd icons.
+  // Nerd icon mode keeps Unicode metro marks while honouring ROLE_GLYPHS nerd icons on detail/cards.
   const nerdFrame = render(view, { width: 120, lang: 'en', theme: 'none', icons: 'nerd' });
   const nerdText = text(nerdFrame);
   for (const line of nerdFrame.lines) assert.equal(visualLength(line), 120);
-  for (const needle of [roleIcon('imp', 'nerd'), roleIcon('reviewer', 'nerd'), roleIcon('lead', 'nerd')]) {
-    assert.ok(nerdText.includes(needle), `nerd missing: ${needle}\n${nerdText}`);
-  }
+  assert.ok(nerdText.includes(roleIcon('imp', 'nerd')), `nerd missing imp icon\n${nerdText}`);
 });
 
 test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Detail with decisions, todo, and review summary', async (t) => {
@@ -325,19 +318,24 @@ test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Det
   assert.equal(backFromRun.activeTab, 'execution');
   assert.equal(backFromRun.execution.cursor, `project:exec-run:${FLOWS.working}`);
 
-  // Enter on a ticket line opens that job's Inspector, and Esc returns to Execution.
-  const onTicket = onExecution({ cursor: `project:exec-run:${FLOWS.working}:ticket:03` });
-  const lead = press(onExecution({ cursor: `project:exec-run:${FLOWS.working}:accept` }), '\r').state;
-  assert.equal(lead.subpage.target.workerId, `thin-job:${LEAD}`);
-  const inspected = press(onTicket, '\r').state;
+  // Enter on a map station with a retained job opens its Inspector, and Esc returns to the same station.
+  const onAccept = onExecution({ cursor: `project:exec-run:${FLOWS.working}:accept` });
+  const lead = press(onAccept, '\r').state;
+  assert.deepEqual([lead.subpage.kind, lead.subpage.from, lead.subpage.target.workerId],
+    ['inspector', 'execution', `thin-job:${LEAD}`]);
+  const backFromLead = press(lead, '\x1b').state;
+  assert.equal(backFromLead.subpage, undefined);
+  assert.equal(backFromLead.activeTab, 'execution');
+  assert.equal(backFromLead.execution.cursor, `project:exec-run:${FLOWS.working}:accept`);
+  // Enter on a landed ticket station opens its retained job Inspector too.
+  const onLandedTicket = onExecution({ cursor: `project:exec-run:${FLOWS.working}:ticket:01` });
+  const inspected = press(onLandedTicket, '\r').state;
   assert.deepEqual([inspected.subpage.kind, inspected.subpage.from, inspected.subpage.target.workerId],
-    ['inspector', 'execution', `thin-job:${IDS.imp}`]);
-  const inspText = text(render(view, { state: inspected, workboard: f.execution.board() }));
-  assert.match(inspText, /EXEC-01|synthetic page/);
+    ['inspector', 'execution', `thin-job:${IDS.settled}`]);
   const backFromJob = press(inspected, '\x1b').state;
   assert.equal(backFromJob.subpage, undefined);
   assert.equal(backFromJob.activeTab, 'execution');
-  assert.equal(backFromJob.execution.cursor, `project:exec-run:${FLOWS.working}:ticket:03`);
+  assert.equal(backFromJob.execution.cursor, `project:exec-run:${FLOWS.working}:ticket:01`);
 });
 
 test('idle Execution shows only recent project rows, ordered together by end time with observed results', async (t) => {
@@ -563,16 +561,21 @@ test('fixed and graph workflows render from cached records; Enter and batch cont
   assert.deepEqual(view.endedJobs, []);
   const rendered = render(view, { width: 62, lang: 'zh' });
   const shown = rendered.workboard.rows.map((row) => row.text).join('\n');
-  for (const fragment of ['工作流', '评议 Console contract', '✗ ◈ fable · ◉ ◈ astra · ○ ◈ carbon', '★ 综合(main)',
-    '◉ code 探路', '○ docs 探路', '✓ 拣选 ─▶ ✗ 门禁 2/2 ─▶ ◉ ↻ 修复 1/2', '◷ 等锁 9分', '✓ 完成 1: first',
-    '○ check(←proceed,alternate)', '槽位 7/7', '✓ 探路 1/1 ─▶ ◉ 并发池 22✓ · 7◉ · 10○ · 1✗ ─▶ ○ 汇总', '刚结束']) assert.ok(shown.includes(fragment), fragment + '\n' + shown);
+  for (const fragment of ['工作流', '评议 Console contract', '◉ 成员 astra', '探路 Reserve target', '◉ code 探路',
+    '落地 Repair the synthetic gate', '●─────┬─‹▮✗›╌┬╌╌╌╌╌○', '╰─↻◉╌╌╌╯', '门禁 失败 2/2',
+    '落地 Land after the lease', '◷ 等锁', '等锁 9分', '流程图 console-graph', '◉ proceed',
+    '槽位 7/7', '(●×22 ◉×7 ✗×1 ○×10)', '◉ 并发池 40 项', '✗ 失败  ↻ 修复  ‹▮◉▯› 门禁  ◷ 等锁  ☆✪★ 综合', '刚结束']) {
+    assert.ok(shown.includes(fragment), fragment + '\n' + shown);
+  }
+  assert.doesNotMatch(shown.split('工作者')[0], /⚖|▼|─▶|○ ★/);
   for (const flow of [recentCouncil, recentBatch]) assert.equal(rendered.workboard.rows.filter((row) => row.execRun === flow).length, 1);
   assert.doesNotMatch(shown, /Hidden member row|Hidden council seat/);
   for (const width of [40, 62]) for (const lang of ['en', 'zh']) for (const line of render(view, { width, lang }).lines) {
     assert.equal(visualLength(line), width);
     assert.equal(line, stripAnsi(line));
   }
-  assert.equal(rendered.workboard.rows.filter((row) => row.item?.startsWith('project:exec-run:') && row.execJob?.target.workerId === `thin-job:${member}`).length, 1);
+  const memberStations = rendered.workboard.rows.flatMap((row) => row.metroStations ?? []).filter((s) => s.execJob?.target.workerId === `thin-job:${member}`);
+  assert.equal(memberStations.length, 1);
   const item = (flow, node = '') => `project:exec-run:${flow}${node ? `:${node}` : ''}`;
   const decoder = new WorkbenchInputDecoder('workboard');
   const press = (state, bytes) => {

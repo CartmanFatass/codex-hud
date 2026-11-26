@@ -860,6 +860,12 @@ const EN_OVERRIDES: Record<string, string> = {
   '{n} more items': '{n} more',
   // Chinese words a batch's unstarted items apart from requests that wait for the owner.
   'batch: {n} waiting': '{n} waiting',
+  // Metro map legend short labels whose Chinese words differ from detail-line/verdict words.
+  'metro: asking': 'asking',
+  'metro: held': 'held',
+  'metro: accept': 'accept',
+  'metro: working': 'working',
+  'metro: summary': 'Summary',
 };
 
 export function t(text: string, vars?: Record<string, string | number>): string {

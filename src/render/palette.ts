@@ -510,6 +510,7 @@ function makeBoard(s: BoardSpec, roleInk: RoleInk) {
     muted, frame: rgb(s.frame), stalled: rgb(s.stalled), identifier: rgb(s.identifier),
     opinion: rgb(s.info), roleInk, providerInk,
     selected: face(s.selected), title: face(s.title), body: face(s.body),
+    selectedEdge: rgb(s.selected), titleEdge: rgb(s.title),
     failedBody: tint(s.danger, 0.12), slab: tint(s.ask, 0.3), askTitle: surface(s.ask, ASK_INK),
   };
 }

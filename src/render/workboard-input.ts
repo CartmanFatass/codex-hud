@@ -14,6 +14,7 @@ import { controlShown, resourcesShown, MAIN_TABS, type MainTab } from './main-ta
 import { expInput } from './exp-view.js';
 import { harnessId, restoreId } from './harness-page.js';
 import { OTHER_PROJECTS } from './home-view.js';
+import { findMetroStation, metroStationAt, navigateExecutionMetro } from './execution-metro.js';
 
 const clickKind = (input: WorkbenchInput, ctx: MonitorContext) => input.type === 'mouse' && input.button === 'left'
   ? ctx.frame?.controls.find((c) => c.y === input.y && input.x >= c.x && input.x < c.x + c.width)?.kind : undefined;
@@ -132,8 +133,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.control.notice = undefined;
     return result();
   }
+  const execution = main && next.activeTab === 'execution';
+  const onMetroMap = execution && Boolean(findMetroStation(boardFrame.rows, next.execution.cursor));
   const tabs = MAIN_TABS, clicked = tabs.find(({ id }) => tab === `board-${id}`);
-  if (clicked || (main && ['left', 'right', 'tab', 'shift-tab'].includes(key))) {
+  if (clicked || (main && (['tab', 'shift-tab'].includes(key) || (!onMetroMap && ['left', 'right'].includes(key))))) {
     const at = tabs.findIndex(({ id }) => id === next.activeTab);
     const step = key === 'left' || key === 'shift-tab' ? -1 : 1;
     goTab(clicked?.id ?? tabs[(at + step + tabs.length) % tabs.length].id);
@@ -148,7 +151,6 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   }
   // Project, Execution and Control share list navigation, but own their views and actions.
-  const execution = main && next.activeTab === 'execution';
   if (control || execution || (main && next.activeTab === 'project')) {
     const view = control && next.control.subTab !== 'resources' ? next.control[next.control.subTab] : undefined;
     const nav = view?.nav ?? (execution ? next.execution : next.project.nav), cursor = nav.cursor;
@@ -263,6 +265,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       else if (row?.item?.startsWith('project:fold:')) toggleFold(row.item.slice(13));
       else if (row?.files) return { type: 'open-files' as const, files: row.files };
     };
+    const selectedStation = execution ? findMetroStation(boardFrame.rows, cursor) : undefined;
+    const activateStation = (station: NonNullable<typeof selectedStation>) => {
+      if (station.execJob) next.subpage = { kind: 'inspector', target: station.execJob.target, scroll: 0, from: 'execution' };
+    };
     if (input.type === 'mouse') {
       const pane = frame?.panes.find((p) => p.id === 'agents');
       if (input.button !== 'left') {
@@ -291,6 +297,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           }
         }
         const row = pane && monitorRowAt(pane, input.x, input.y);
+        if (execution && row?.metroStations) {
+          const hit = metroStationAt(row, input.x - pane!.x);
+          if (hit) {
+            const again = hit.item === cursor;
+            select(hit.item);
+            if (again) activateStation(hit);
+          }
+          return result();
+        }
         if (row?.item) {
           const again = row.item === cursor;
           select(row.item);
@@ -306,13 +321,24 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       return result();
     }
     if (input.type === 'key' && (input.text === 'g' || input.text === 'P' || input.text === 'H') && execution) {
-      const job = rows[at]?.execJob;
+      const job = selectedStation?.execJob ?? rows[at]?.execJob;
       const type = input.text === 'g' ? 'focus-job-tab' : input.text === 'P' ? 'pin-job-tab' : 'hide-job-tab';
       return result(job?.tab ? { type, dir: job.dir } : undefined);
     }
-    if (['enter', 'activate', 'open-session'].includes(key)) return result(activate(undefined, key === 'open-session'));
+    if (['enter', 'activate', 'open-session'].includes(key)) {
+      if (execution && selectedStation) {
+        if (key !== 'open-session') activateStation(selectedStation);
+        return result();
+      }
+      return result(activate(undefined, key === 'open-session'));
+    }
     if ((key === 'project-prev' || key === 'project-next') && (execution || !listed)) {
       cycleProject(key === 'project-next' ? 1 : -1);
+      return result();
+    }
+    if (execution && ['left', 'right', 'up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {
+      const moved = navigateExecutionMetro(boardFrame.rows, cursor, key as Parameters<typeof navigateExecutionMetro>[2], hasStripMore);
+      if (moved.handled) select(moved.cursor);
       return result();
     }
     if (['up', 'down', 'page-up', 'page-down', 'home', 'end'].includes(key)) {

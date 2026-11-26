@@ -10,6 +10,7 @@ import { objectiveCrumb, objectiveDetailRows } from './objective-detail.js';
 import { runDetailRows } from './execution-run-detail.js';
 import { executionRows } from './execution-view.js';
 import { workflowDetailRows } from './execution-workflow.js';
+import { findMetroStation, renderMetroLegend } from './execution-metro.js';
 import { activeFilter, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
 import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
@@ -70,6 +71,9 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['⏎', 'Accept all: record all pending slices'],
   ];
   const execution = [
+    ['← →', 'Workflow map: previous / next station (Tab / Shift+Tab switch tabs)'],
+    ['↑ ↓', 'Workflow map: move across lanes, then leave the map'],
+    ['⏎', 'Workflow map: Inspector on a station, Run Detail on a flow header'],
     ['[ ]', 'previous / next project'],
     ['g P H', 'Execution: peek/focus, pin visible, or hide the job’s tab; ⏎ opens it'],
     ['X', 'Execution batch: pause/resume/stop'],
@@ -118,6 +122,9 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ...legend('Answers', [entry(attention(mark('◆', '*')), 'differs from the default')], [entry(muted(mark('◇', 'o')), 'as proposed')]),
     ...legend('Places', [entry(glyph('active'), 'next'), entry(glyph('standby'), 'standby'), entry(glyph('exhausted'), 'exhausted')],
       [entry(glyph('off'), 'Off'), entry(glyph('missing'), 'not installed')]),
+    boardRow(''),
+    section(t('Workflow'), half),
+    ...renderMetroLegend([], half, { all: true, maxRows: 8 }),
   ];
   const rows = width < 80 ? [...keys, boardRow(''), ...marks]
     : Array.from({ length: Math.max(keys.length, marks.length) }, (_, i) =>
@@ -421,7 +428,8 @@ export function renderWorkboardFrame(
   );
   const nav = controlView?.nav ?? (project ? state.project.nav : execution ? state.execution : undefined);
   const stripMore = !!(strip && stripTop && strip.hasMore);
-  const hasCursor = (cursor?: string) => (stripMore && cursor === PROJECT_STRIP_MORE) || hasReq(cursor) || rows.some((r) => r.item && r.item === cursor);
+  const rowMatches = (r: MonitorRow, item?: string) => Boolean(item) && (r.item === item || Boolean(r.metroStations?.some((s) => s.item === item)));
+  const hasCursor = (cursor?: string) => (stripMore && cursor === PROJECT_STRIP_MORE) || hasReq(cursor) || rows.some((r) => rowMatches(r, cursor));
   // Home and Project hub start on the first request, else the first body item (ahead of the strip's +N);
   // Project sub-pages start on their first body item so Up reaches the last request row.
   const navDefault = hub
@@ -433,7 +441,7 @@ export function renderWorkboardFrame(
   const key = addingHarness ? harnessAdd?.pick : sheet ? sheet.cursor : nav ? cursor : inspect ? inspectCursor
     : resourcePage ? expEdit ? undefined : expCursor : listCursor;
   const helpStart = helpContent?.anchor ? rows.indexOf(helpContent.anchor) : 0;
-  const cursorAt = rows.findIndex((r) => r.item === key), max = Math.max(helpStart, rows.length - room);
+  const cursorAt = rows.findIndex((r) => rowMatches(r, key)), max = Math.max(helpStart, rows.length - room);
   const scroll = help
     ? (help.scroll ?? helpStart)
     : sheet ? chainTop + Number(!!input.publicationNotice && !!anchor)
@@ -446,8 +454,16 @@ export function renderWorkboardFrame(
       offset = 0;
       if (!addingHarness) revealed = key;
     } else {
-      // An Execution card is several rows of one job: bring all of it into view, and the page's head with the first.
-      const last = execution ? rows.map((r) => r.item).lastIndexOf(key) : cursorAt;
+      // An Execution card is several rows of one job; a metro map brings its detail line into view too.
+      let last = cursorAt;
+      if (execution) {
+        if (rows[cursorAt]?.metroStations) {
+          while (last + 1 < rows.length && rows[last + 1]?.metroStations) last++;
+          if (last + 1 < rows.length && !rows[last + 1]?.item) last++;
+        } else {
+          last = rows.map((r) => r.item).lastIndexOf(key);
+        }
+      }
       if (execution && cursorAt === rows.findIndex((r) => r.item) && last < room) offset = 0;
       else if (cursorAt < offset) offset = cursorAt;
       else if (last >= offset + room) offset = Math.min(cursorAt, last - room + 1);
@@ -485,14 +501,15 @@ export function renderWorkboardFrame(
     const row = rows[offset + i];
     if (!row) continue;
     const text = fit(row.paint?.() ?? row.text, width);
-    // The cursor marks every row of the selected Projects list entry.
-    const marked = offset + i === cursorAt || ((list || control) && !!key && row.item === key);
+    // The cursor marks every row of the selected Projects list entry; metro map rows paint their own per-station cursor.
+    const marked = !row.metroStations && (offset + i === cursorAt || ((list || control) && !!key && row.item === key));
     frame.lines[i + 1 + top] = !help && marked ? boardCursor(text) : text;
     for (const control of row.controls ?? []) frame.controls.push({ ...control, y: i + 1 + top });
   }
   const projectSwitch = frame.projects ? ['[ ] project'] : [];
   const selectedReq = visibleReqRows.find((r) => r.item === key);
   const selected = selectedReq ?? actions.find((r) => r.item === key);
+  const selectedStation = execution ? findMetroStation(rows, key) : undefined;
   const reqFoldHint = requestsExpanded ? '⏎ fold' : '⏎ expand';
   const hints: FooterHints = help
     ? { modal: ['Esc back'] }
@@ -505,9 +522,11 @@ export function renderWorkboardFrame(
         : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
-        : execution ? [...(key === PROJECT_STRIP_MORE ? ['⏎ open'] : selected ? ['⏎ details'] : []),
-             ...(selected?.batch ? batchKeys(selected.batch) : []), ...projectSwitch,
-             ...(selected?.execJob?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : [])]
+        : execution ? [
+            ...(key === PROJECT_STRIP_MORE ? ['⏎ open'] : selectedStation ? [...(selectedStation.execJob ? ['⏎ details'] : []), '←→ station'] : selected ? ['⏎ details'] : []),
+            ...(selected?.batch ? batchKeys(selected.batch) : []), ...projectSwitch,
+            ...((selectedStation?.execJob ?? selected?.execJob)?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : []),
+          ]
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
           : selectedReq && page ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open', 'Esc back']

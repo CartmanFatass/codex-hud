@@ -49,12 +49,26 @@ export interface RowControl {
   x: number;
   width: number;
 }
+/** One selectable station on a Hairline metro-map row: carries cell span, lane/column coords and optional Inspector target. */
+export interface MetroStationTarget {
+  readonly item: string;
+  readonly flow: string;
+  readonly x: number;
+  readonly width: number;
+  readonly lane: number;
+  readonly col: number;
+  /** True for the station that changed last (or its closest column fallback) for vertical entry into the map. */
+  readonly defaultEntry?: true;
+  readonly execJob?: { target: JobTarget; dir: string; tab: boolean };
+}
 export interface MonitorRow {
   text: string;
   paint?: () => string;
   item?: string;
   key?: string;
   controls?: RowControl[];
+  /** Metro-map stations on this row: multiple per-cell hit targets and custom per-station cursor rendering. */
+  metroStations?: readonly MetroStationTarget[];
   files?: string[];
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;

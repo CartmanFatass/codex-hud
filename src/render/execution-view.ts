@@ -7,7 +7,7 @@ import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { fit, monitorText, pair } from './monitor-text.js';
 import { roleIcon } from './model-glyphs.js';
-import { runItem, workflowLabel, workflowRows } from './execution-workflow.js';
+import { runItem, workflowLabel, workflowSectionRows } from './execution-workflow.js';
 import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
 import { jobTitle, roleInk } from './work-job-row.js';
 import { jobTarget } from './work-jobs.js';
@@ -157,7 +157,7 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
     : 'flow' in recent[0] ? runItem(recent[0].flow) : cardItem(recent[0]);
   const seen = new Set<string>();
   const selected = cursor === PROJECT_STRIP_MORE ? undefined : cursor ?? first;
-  const workflows = runs.flatMap((run, i) => [...(i ? [plain('')] : []), ...workflowRows(run, selected, seen, width, now)]);
+  const workflows = workflowSectionRows(runs, selected, seen, width, now);
   const from = (job: ExecutionJob) => job.parentId
     ? [job.parentRole && monitorText(job.parentRole), shortId(job.parentId)].filter(Boolean).join(' ') : sessionLabel(job.session);
 
@@ -195,5 +195,7 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
     rows.push(...recent.map((entry) => endedRow(entry, selected, width, now)));
   }
   if (view.excerpts) rows.push(...selectionExcerptRows(view.excerpts, width, true, selected));
-  return cursor && cursor !== PROJECT_STRIP_MORE && !rows.some((row) => row.item === cursor) ? executionRows(view, undefined, width, now) : rows;
+  return cursor && cursor !== PROJECT_STRIP_MORE
+    && !rows.some((row) => row.item === cursor || row.metroStations?.some((s) => s.item === cursor))
+    ? executionRows(view, undefined, width, now) : rows;
 }
