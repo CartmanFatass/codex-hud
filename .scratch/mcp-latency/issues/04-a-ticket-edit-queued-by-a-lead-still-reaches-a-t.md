@@ -1,6 +1,7 @@
 # 04: A ticket edit queued by a lead still reaches a terminal outcome after the lead's MCP swaps or exits
 
 **Status:** ready-for-agent
+**Live try:** While a hud_land of a MyHUD job runs, have a lead in a queue run call hud_tickets add for a scratch feature in a temp project (gets `state: queued`), let the lead report and close, then kill the spawned `workflow-runner --ticket-edits` helper; with no main MCP restart and no further submission, hud_read on the receipt shows completed (ticket file and commit present) or failed with a reason, never stuck queued
 **Blocked by:** none
 **Objective:** unattended
 
