@@ -206,11 +206,13 @@ test('Home and Project open an Objective detail and route only its openable evid
       const frame = draw(state, lang);
       assert.ok(frame.lines.every((line) => visualLength(line) === 120));
       const text = plain(frame).join('\n');
-      assert.match(text, lang === 'en' ? /Evidence[\s\S]*missing · docs\/missing\.md/ : /依据[\s\S]*缺 · docs\/missing\.md/);
-      assert.match(text, lang === 'en' ? /State\s+active · blocked/ : /状态\s+进行中 · 受阻/);
-      assert.match(text, /https:\/\/example\.org\/notes\n\s+123abcd/);
+      assert.match(plain(frame)[0], lang === 'en' ? /^‹ Study › measure\s+active · blocked$/ : /^‹ Study › measure\s+进行中 · 受阻$/);
+      assert.match(text, lang === 'en' ? /Evidence ─+ 6[\s\S]*missing · docs\/missing\.md/ : /依据 ─+ 6[\s\S]*缺 · docs\/missing\.md/);
+      assert.match(text, /› Repeat the sample\./);
+      assert.match(text, /✓ Recorded a baseline\./);
+      assert.match(text, /https:\/\/example\.org\/notes\n\s+· 123abcd/);
     }
-    for (const expected of [{ type: 'open-files', files: [path] }, undefined,
+    for (const expected of [undefined, undefined, { type: 'open-files', files: [path] }, undefined,
       { type: 'git-show', cwd: f.cwd, hash: '123abcd' }, undefined,
       { type: 'open-files', files: [report] }, { type: 'open-files', files: [report] }]) {
       assert.deepEqual(handleMonitorInput(detail.state, openKey, { frame: detail }).action, expected);
@@ -225,4 +227,341 @@ test('Home and Project open an Objective detail and route only its openable evid
   const refreshed = await f.collector.collect(true, f.board, NOW);
   const fresh = f.render(120, 'en', undefined, 24, refreshed);
   assert.equal(fresh.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'measure').objectiveTarget.blocked, false);
+});
+
+test('Objective page: crumb, prose with result age, features in every activity state, Enter/Esc with scroll, and Inspector link at 40/62 EN/ZH', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'project-objective-page-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const at = (min) => NOW - min * 60_000, old = at(6 * 1440);
+  const docFile = join(f.cwd, 'docs/ingest/runbook.md');
+  f.put(docFile, '# Synthetic runbook\n');
+  const feature = (slug, states) => ({
+    slug,
+    at: old,
+    tickets: states.map((state, i) => ({
+      number: String(i + 1).padStart(2, '0'),
+      title: `Synthetic ticket ${slug}/${i + 1}`,
+      path: `/synthetic/${slug}/${String(i + 1).padStart(2, '0')}.md`,
+      state,
+      at: old,
+      checked: state === 'done' ? 1 : 0,
+      total: 1,
+      blockers: [],
+      status: state,
+      items: [],
+    })),
+  });
+  const linkedFeatures = [
+    feature('retry-queue', ['done', 'done', 'working', 'ready', 'ready', 'ready']),
+    feature('land-fast', ['done', 'done', 'ready']),
+    feature('land-older', ['done', 'done', 'ready']),
+    feature('unlanded-q', ['done', 'ready', 'ready']),
+    feature('fail-q', ['ready', 'ready']),
+    feature('try-ui', ['done', 'try', 'ready']),
+    feature('gate-q', ['done', 'working']),
+    feature('quiet-docs', ['done', 'done']),
+  ];
+  const longTitle = 'Keep nightly batch imports running end to end without manual restarts across every synthetic shard, checkpoint boundary, retry backoff window, dead-letter queue and recovery path in this test fixture';
+  const mainObjective = {
+    id: 'ingest',
+    state: 'active',
+    title: longTitle,
+    next: 'Run a full synthetic batch after retry-queue lands.',
+    result: 'Checkpoint reader resumes mid-batch without re-reading earlier segments.',
+    features: [...linkedFeatures.map((x) => x.slug), 'missing-feat'],
+    evidence: ['docs/ingest/runbook.md', '4f2c9a1', 'https://example.org/ingest', 'docs/absent.md'],
+  };
+  const padFeatures = Array.from({ length: 6 }, (_, i) => feature(`pad-${i + 1}`, ['working']));
+  const padObjectives = Array.from({ length: 8 }, (_, i) => ({
+    id: `pad-${i + 1}`,
+    state: 'active',
+    title: `Padding objective ${i + 1} for scroll preservation`,
+    features: i < 6 ? [`pad-${i + 1}`] : [],
+    evidence: [],
+  }));
+  const allTickets = [...padFeatures, ...linkedFeatures];
+  const data = {
+    ...f.data,
+    updatedAt: at(3),
+    objectivesAt: old,
+    ledger: [],
+    tickets: allTickets,
+    objectiveTickets: allTickets,
+    objectives: {
+      path: objectivePath(f.cwd),
+      stance: 'active',
+      priority: 'high',
+      objectives: [...padObjectives, mainObjective],
+      diagnostics: [],
+      resultDates: { ingest: at(5 * 60) },
+      acceptance: {},
+    },
+    waiting: [
+      { label: '', objective: 'ingest', request: 'r1', value: 'Confirm retry cap', sentence: 'Confirm retry cap', at: at(180), waitedOn: true },
+    ],
+  };
+  const projectActivity = [
+    ...Array.from({ length: 6 }, (_, i) => ({ ticket: `pad-${i + 1}/01`, kind: 'live', jobId: `job-pad-${i + 1}`, at: at(1 + i) })),
+    { ticket: 'retry-queue/03', kind: 'live', jobId: 'job-live-1', at: at(14) },
+    { ticket: 'land-fast/02', kind: 'ended', result: 'landed', at: at(25) },
+    { ticket: 'land-older/01', kind: 'ended', result: 'landed', at: at(5 * 60) },
+    { ticket: 'unlanded-q/02', kind: 'ended', result: 'not landed', at: at(40) },
+    { ticket: 'fail-q/01', kind: 'ended', result: 'failed', at: at(20) },
+    { ticket: 'gate-q/02', kind: 'gate', flow: 'f-gate-1', at: at(2) },
+  ];
+  const otherRoot = '/synthetic/other-project';
+  const choices = [
+    { root: f.cwd, name: 'orchard' },
+    { root: otherRoot, name: 'tide-lab' },
+  ];
+  const homePortfolio = {
+    projects: [
+      ...Array.from({ length: 2 }, (_, i) => ({
+        root: `/synthetic/pad-proj-${i}`,
+        name: `pad-proj-${i}`,
+        registrationIndex: i,
+        activeToday: true,
+        snapshot: {
+          ...f.data,
+          waiting: [],
+          active: [],
+          tickets: [],
+          ledger: [],
+          objectives: {
+            path: `/synthetic/pad-proj-${i}/.hud/objectives.md`,
+            stance: 'active',
+            priority: 'normal',
+            objectives: [{ id: `goal-${i}`, state: 'active', title: `Goal ${i}`, features: [], evidence: [] }],
+            diagnostics: [],
+            acceptance: {},
+          },
+        },
+      })),
+      { root: f.cwd, name: 'orchard', registrationIndex: 2, activeToday: true, snapshot: data, resultDates: new Map([['ingest', at(5 * 60)]]) },
+    ],
+    requests: [
+      { project: { root: f.cwd, name: 'orchard', registrationIndex: 2 }, item: data.waiting[0], index: 0 },
+      { project: { root: otherRoot, name: 'tide-lab', registrationIndex: 9 }, item: { label: '', objective: 'other', request: 'r9', value: 'Other project request', sentence: 'Other project request', at: at(60), waitedOn: true }, index: 0 },
+    ],
+  };
+  const openSchedule = Array.from({ length: 6 }, (_, i) => ({
+    id: `s${i + 1}`,
+    date: `2026-11-${13 + i}`,
+    text: `Synthetic schedule item ${i + 1}`,
+    project: f.cwd,
+    created_at: '2026-11-12T00:00:00Z',
+  }));
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const sendKey = (frame, raw) => {
+    const [input] = decoder.push(Buffer.from(raw));
+    return handleMonitorInput(frame.state, input, { frame, nowMs: NOW });
+  };
+  const key = (frame, k) => handleMonitorInput(frame.state, { type: 'key', key: k }, { frame, nowMs: NOW });
+
+  for (const lang of ['en', 'zh']) for (const width of [40, 62]) {
+    const zh = lang === 'zh';
+    const draw = (state, height = 34, extra = {}) => f.render(width, lang, state, height, data, true, 'unicode', 'none', {
+      projectDisplayRoot: f.cwd,
+      projectName: 'orchard',
+      projects: choices,
+      projectActivity,
+      homePortfolio,
+      ...extra,
+    });
+
+    // 1. Open from Project overview with non-zero scroll; check layout, every feature state, evidence, [ ] off, and Esc return.
+    const objItem = `project:objective:${f.cwd}:ingest`;
+    const scrolledHub = draw(onPage(undefined, { project: { nav: { cursor: objItem, scroll: 3, revealed: objItem } } }), 12);
+    assert.equal(scrolledHub.state.project.nav.scroll, 3);
+    const openedFromProject = key(scrolledHub, 'enter');
+    assert.equal(openedFromProject.state.subpage?.kind, 'objective');
+    openedFromProject.state.subpage.evidence = collectObjectiveEvidence(mainObjective, f.cwd, f.hud);
+    const objFrame = draw(openedFromProject.state, 34);
+    assert.ok([...objFrame.lines, ...objFrame.workboard.rows.map((r) => r.text)]
+      .every((line) => visualLength(line) === width && !line.includes('\x1b')));
+    const lines = plain(objFrame);
+    const body = lines.join('\n');
+
+    // Crumb replaces tabs and strip; right side shows state and done/total tickets (9/22 across the 8 scanned features, missing-feat omits ratio).
+    assert.match(lines[0], zh ? /^‹ orchard › ingest\s+进行中 · 受阻$/ : /^‹ orchard › ingest\s+active · blocked$/);
+    // Request row stays pinned on top without project name; other project's request stays absent.
+    assert.match(lines[1], /^\? ingest\b/);
+    assert.doesNotMatch(lines[1], /orchard/);
+    assert.doesNotMatch(body, /Other project request|tide-lab/);
+    // `[ ]` project switch is off on the Objective page.
+    assert.equal(sendKey(objFrame, ']').state.selectedProject, undefined);
+    assert.equal(sendKey(objFrame, '[').state.selectedProject, undefined);
+
+    // Title <= 3 rows (clamped with ellipsis), Next with ›, Result with ✓ and age.
+    const nextIdx = objFrame.workboard.rows.findIndex((r) => r.text.includes('›'));
+    assert.ok(nextIdx >= 1 && nextIdx <= 3, `title clamped to <= 3 rows (got ${nextIdx})`);
+    assert.match(body, /…/);
+    assert.match(body, /› Run a full synthetic batch/);
+    assert.match(body, zh ? /✓ Checkpoint reader[\s\S]*5时/ : /✓ Checkpoint reader[\s\S]*5h/);
+
+    // Features section: one row per linked feature, bars <= 24, every activity state, NO nested job rows.
+    assert.match(body, zh ? /^功能 ─+ 完成\/工单$/m : /^Features ─+ done\/tickets$/m);
+    assert.match(body, zh ? /retry-queue.*2\/6\s+● 1 在跑/ : /retry-queue.*2\/6\s+● 1 live/);
+    assert.match(body, zh ? /land-fast.*2\/3\s+✓ 刚落地 02/ : /land-fast.*2\/3\s+✓ Just landed 02/);
+    assert.match(body, zh ? /land-older.*2\/3\s+✓ 5时前落地/ : /land-older.*2\/3\s+✓ landed 5h ago/);
+    assert.match(body, zh ? /unlanded-q.*1\/3\s+◒ 1 未落地/ : /unlanded-q.*1\/3\s+◒ 1 unlanded/);
+    assert.match(body, zh ? /fail-q.*0\/2\s+✗ 1 失败/ : /fail-q.*0\/2\s+✗ 1 failed/);
+    assert.match(body, zh ? /try-ui.*1\/3\s+◇ 1 待试用/ : /try-ui.*1\/3\s+◇ 1 to try/);
+    assert.match(body, zh ? /gate-q.*1\/2\s+● 1 门禁/ : /gate-q.*1\/2\s+● 1 at gate/);
+    assert.match(body, /quiet-docs.*2\/2\s*$/m);
+    assert.match(body, /missing-fe.*—/);
+    assert.doesNotMatch(body, /◉|Synthetic ticket/);
+    for (const row of objFrame.workboard.rows.filter((r) => r.item?.startsWith('objective:feature:'))) {
+      const bars = row.text.match(/[█▒░╌]+/g) ?? [];
+      assert.ok(bars.every((seg) => visualLength(seg) <= 24), `bar <= 24: ${row.text}`);
+    }
+
+    // Evidence section: every entry shown.
+    assert.match(body, zh ? /^依据 ─+ 4$/m : /^Evidence ─+ 4$/m);
+    assert.match(body, /docs\/ingest\/runbook\.md/);
+    assert.match(body, /4f2c9a1/);
+    assert.match(body, /https:\/\/example\.org\/ingest/);
+    assert.match(body, zh ? /缺 · docs\/absent\.md/ : /missing · docs\/absent\.md/);
+
+    // Enter on retry-queue opens its first unfinished ticket (03.md); on quiet-docs (all done) opens latest (02.md); on missing-feat is a no-op.
+    assert.equal(objFrame.state.subpage.cursor, 'objective:feature:retry-queue');
+    assert.deepEqual(key(objFrame, 'enter').action, { type: 'open-files', files: ['/synthetic/retry-queue/03.md'] });
+    const quietSelected = draw({ ...objFrame.state, subpage: { ...objFrame.state.subpage, cursor: 'objective:feature:quiet-docs' } }, 34);
+    assert.deepEqual(key(quietSelected, 'enter').action, { type: 'open-files', files: ['/synthetic/quiet-docs/02.md'] });
+    const missingSelected = draw({ ...objFrame.state, subpage: { ...objFrame.state.subpage, cursor: 'objective:feature:missing-feat' } }, 34);
+    assert.equal(key(missingSelected, 'enter').action, undefined);
+
+    // Enter on file and commit evidence opens them.
+    const fileEv = draw({ ...objFrame.state, subpage: { ...objFrame.state.subpage, cursor: 'objective:evidence:0' } }, 34);
+    assert.deepEqual(key(fileEv, 'enter').action, { type: 'open-files', files: [docFile] });
+    const commitEv = draw({ ...objFrame.state, subpage: { ...objFrame.state.subpage, cursor: 'objective:evidence:1' } }, 34);
+    assert.deepEqual(key(commitEv, 'enter').action, { type: 'git-show', cwd: f.cwd, hash: '4f2c9a1' });
+
+    // Esc returns to the exact Project overview row AND scroll.
+    const returnedProject = draw(key(objFrame, 'escape').state, 12);
+    assert.equal(returnedProject.state.subpage, undefined);
+    assert.equal(returnedProject.state.project.nav.cursor, objItem);
+    assert.equal(returnedProject.state.project.nav.scroll, 3);
+
+    // Crumb with all linked features present shows state + done/total tickets (11/24 tickets at 62, 11/24 at 40).
+    const allScannedObj = { ...mainObjective, features: linkedFeatures.map((x) => x.slug) };
+    const allScannedData = { ...data, waiting: [], objectives: { ...data.objectives, objectives: [allScannedObj] } };
+    const allScannedFrame = f.render(width, lang, {
+      ...openedFromProject.state,
+      subpage: { kind: 'objective', scroll: 0, target: { root: f.cwd, objective: allScannedObj, blocked: false } },
+    }, 24, allScannedData, true, 'unicode', 'none', {
+      projectDisplayRoot: f.cwd, projectName: 'orchard', projects: choices, projectActivity,
+    });
+    assert.match(
+      plain(allScannedFrame)[0],
+      width === 62
+        ? (zh ? /^‹ orchard › ingest\s+进行中 · 11\/24 工单$/ : /^‹ orchard › ingest\s+active · 11\/24 tickets$/)
+        : (zh ? /^‹ orchard › ingest\s+进行中 · 11\/24$/ : /^‹ orchard › ingest\s+active · 11\/24$/),
+    );
+    if (width === 62) {
+      const blockedWithRatio = f.render(width, lang, {
+        ...openedFromProject.state,
+        subpage: { kind: 'objective', scroll: 0, target: { root: f.cwd, objective: allScannedObj, blocked: true } },
+      }, 24, { ...allScannedData, waiting: data.waiting }, true, 'unicode', 'none', {
+        projectDisplayRoot: f.cwd, projectName: 'orchard', projects: choices, projectActivity,
+      });
+      assert.match(
+        plain(blockedWithRatio)[0],
+        zh ? /^‹ orchard › ingest\s+进行中 · 受阻 · 11\/24 工单$/ : /^‹ orchard › ingest\s+active · blocked · 11\/24 tickets$/,
+      );
+    }
+  }
+
+  // 2. Open from Home goal row AND Home result row; Esc returns to the exact row and scroll.
+  for (const kind of ['objective', 'result']) {
+    const homeItem = `home:${kind}:${f.cwd}:ingest`;
+    const homeState = {
+      ...onPage(),
+      activeTab: 'home',
+      home: { cursor: homeItem, scroll: 0, revealed: homeItem },
+    };
+    const homeFrame = f.render(62, 'en', homeState, 16, data, true, 'unicode', 'none', {
+      projectDisplayRoot: f.cwd, projectName: 'orchard', projects: choices, homePortfolio, openSchedule,
+    });
+    assert.ok(homeFrame.workboard.rows.some((r) => r.item === homeItem), `${homeItem} present on Home`);
+    const opened = key(homeFrame, 'enter');
+    assert.equal(opened.state.subpage?.kind, 'objective');
+    assert.equal(opened.state.subpage.target.objective.id, 'ingest');
+    const objFrame = f.render(62, 'en', opened.state, 34, data, true, 'unicode', 'none', {
+      projectDisplayRoot: f.cwd, projectName: 'orchard', projects: choices, projectActivity, homePortfolio,
+    });
+    assert.match(plain(objFrame)[0], /^‹ orchard › ingest\s+active · blocked$/);
+    assert.match(plain(objFrame).join('\n'), /✓ Checkpoint reader[\s\S]*5h/);
+    const back = f.render(62, 'en', key(objFrame, 'escape').state, 16, data, true, 'unicode', 'none', {
+      projectDisplayRoot: f.cwd, projectName: 'orchard', projects: choices, homePortfolio, openSchedule,
+    });
+    assert.equal(back.state.subpage, undefined);
+    assert.equal(back.state.activeTab, 'home');
+    assert.equal(back.state.home.cursor, homeItem);
+    assert.equal(back.state.home.scroll, homeFrame.state.home.scroll);
+  }
+
+  // 3. Inspector's Objective fact row is selectable and Enter opens the Objective page; Esc returns to Inspector at the same row and scroll.
+  const baseWorker = f.board.workers[0];
+  const workerWithObj = {
+    ...baseWorker,
+    projectRoot: f.cwd,
+    objective: { id: 'ingest', title: mainObjective.title },
+  };
+  const boardWithObj = {
+    ...f.board,
+    lanes: f.board.lanes.map((l) => l.id === baseWorker.laneId ? { ...l, workers: l.workers.map((w) => w.id === baseWorker.id ? workerWithObj : w) } : l),
+    workers: f.board.workers.map((w) => w.id === baseWorker.id ? workerWithObj : w),
+  };
+  const inspectorState = {
+    ...onPage(),
+    activeTab: 'execution',
+    subpage: {
+      kind: 'inspector',
+      target: { kind: 'worker', laneId: baseWorker.laneId, workerId: baseWorker.id },
+      from: 'execution',
+      cursor: 'inspector:objective',
+      scroll: 3,
+      revealed: 'inspector:objective',
+    },
+  };
+  for (const width of [40, 62, 100]) {
+    const drawInspect = (state) => f.render(width, 'en', state, 14, data, true, 'unicode', 'none', {
+      workboard: boardWithObj,
+      projectDisplayRoot: f.cwd,
+      projectName: 'orchard',
+      projects: choices,
+      projectActivity,
+    });
+    const inspFrame = drawInspect(inspectorState);
+    assert.ok(inspFrame.lines.every((line) => visualLength(line) === width && !line.includes('\x1b')));
+    const objFact = inspFrame.workboard.rows.find((r) => r.item === 'inspector:objective');
+    assert.ok(objFact?.objectiveTarget, 'Inspector Objective row is selectable with objectiveTarget');
+    assert.equal(objFact.objectiveTarget.objective.id, 'ingest');
+    assert.equal(objFact.objectiveTarget.objective.features.length, mainObjective.features.length);
+
+    // Tab in Inspector reaches inspector:objective (even when starting with cursor undefined).
+    const tabStart = drawInspect({ ...inspectorState, subpage: { ...inspectorState.subpage, cursor: undefined, revealed: undefined, scroll: 0 } });
+    const tabbed = key(tabStart, 'tab');
+    assert.equal(tabbed.state.subpage.cursor, 'inspector:objective');
+
+    // Pressing Enter on Inspector's Objective row opens the Objective page.
+    const openedObj = key(inspFrame, 'enter');
+    assert.equal(openedObj.state.subpage?.kind, 'objective');
+    assert.equal(openedObj.state.subpage.back?.kind, 'inspector');
+    const objFrame = drawInspect(openedObj.state);
+    assert.match(plain(objFrame)[0], /^‹ orchard › ingest\b/);
+    assert.match(plain(objFrame).join('\n'), /retry-queue/);
+
+    // Esc returns to Inspector at inspector:objective with the exact same scroll; second Esc returns to Execution.
+    const backToInsp = drawInspect(key(objFrame, 'escape').state);
+    assert.equal(backToInsp.state.subpage?.kind, 'inspector');
+    assert.equal(backToInsp.state.subpage.cursor, 'inspector:objective');
+    assert.equal(backToInsp.state.subpage.scroll, 3);
+    assert.equal(backToInsp.state.subpage.from, 'execution');
+    const backToExec = key(backToInsp, 'escape').state;
+    assert.equal(backToExec.subpage, undefined);
+    assert.equal(backToExec.activeTab, 'execution');
+  }
 });

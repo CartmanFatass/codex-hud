@@ -4,6 +4,7 @@ import type { OwnerWorker } from '../collectors/workboard-types.js';
 import { projectWorkJob } from '../collectors/work-job.js';
 import type { SubagentTree } from '../types.js';
 import type { MonitorRow } from './monitor.js';
+import type { ObjectiveTarget } from './monitor-state.js';
 import { flowSummary, jobDetailRows, requestLines, stemLines, workPhaseText, quietDecisionSummary } from './work-job-detail.js';
 import { failed, renderJobRow } from './work-job-row.js';
 import { jobRows } from './work-jobs.js';
@@ -35,16 +36,31 @@ export function localTime(at: number | null, now: number): string {
       : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ') + date.toTimeString().slice(0, 5)
   );
 }
-function facts(entries: [string, string][], width: number): MonitorRow[] {
-  const parts = entries
-    .filter(([, value]) => value)
-    .map(([label, value]) => kvRows(label, value, width >= 80 ? Math.floor(width / 2) - 1 : width));
-  if (width < 80) return parts.flat();
-  const rows: MonitorRow[] = [],
-    half = Math.floor(width / 2);
-  for (let i = 0; i < parts.length; i += 2)
-    for (let j = 0; j < Math.max(parts[i].length, parts[i + 1]?.length ?? 0); j++)
-      rows.push(boardRow(fit(parts[i][j]?.text ?? '', half) + fit(parts[i + 1]?.[j]?.text ?? '', width - half)));
+type FactEntry = [string, string] | [string, string, Pick<MonitorRow, 'item' | 'objectiveTarget'>];
+function facts(entries: FactEntry[], width: number): MonitorRow[] {
+  const present = entries.filter(([, value]) => value);
+  if (width < 80) {
+    return present.flatMap(([label, value, extra]) =>
+      kvRows(label, value, width).map((row) => (extra ? { ...row, ...extra } : row)));
+  }
+  const rows: MonitorRow[] = [], half = Math.floor(width / 2);
+  let pending: MonitorRow[] | undefined;
+  const flush = (left: MonitorRow[], right: MonitorRow[] = []) => {
+    for (let j = 0; j < Math.max(left.length, right.length); j++)
+      rows.push(boardRow(fit(left[j]?.text ?? '', half) + fit(right[j]?.text ?? '', width - half)));
+  };
+  for (const [label, value, extra] of present) {
+    if (extra) {
+      if (pending) { flush(pending); pending = undefined; }
+      rows.push(...kvRows(label, value, width).map((row) => ({ ...row, ...extra })));
+    } else if (!pending) {
+      pending = kvRows(label, value, half - 1);
+    } else {
+      flush(pending, kvRows(label, value, half - 1));
+      pending = undefined;
+    }
+  }
+  if (pending) flush(pending);
   return rows;
 }
 /** A headless job has no tab to look at: show its newest output, one row per line. */
@@ -64,6 +80,7 @@ export function workInspectorRows(
   width: number,
   now: number,
   children: readonly OwnerWorker[] = [],
+  objectiveTarget?: ObjectiveTarget,
 ): MonitorRow[] {
   const job = projectWorkJob(worker, now);
   const rows = [boardRow(theme.board.title(renderJobRow(job, width)))];
@@ -115,7 +132,20 @@ export function workInspectorRows(
             : worker.laneId.replace(/^thin-job:package:/, ''),
         ],
         ['state', [t(worker.state), worker.queuePosition !== undefined ? `#${worker.queuePosition}` : '', worker.phase && worker.phase !== worker.state ? workPhaseText(worker.phase) : ''].filter(Boolean).join(' · ')],
-        ['Objective', worker.objective ? `${worker.objective.id} · ${worker.objective.title}` : ''],
+        worker.objective
+          ? [
+              'Objective',
+              `${worker.objective.id} · ${worker.objective.title}`,
+              {
+                item: 'inspector:objective',
+                objectiveTarget: objectiveTarget ?? {
+                  root: worker.projectRoot ?? '',
+                  objective: { id: worker.objective.id, title: worker.objective.title, state: 'active', features: [], evidence: [] },
+                  blocked: false,
+                },
+              },
+            ]
+          : ['Objective', ''],
         ['flow', worker.flow ? flowSummary(worker.flow) : ''],
         [
           'resources',

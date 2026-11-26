@@ -654,7 +654,7 @@ export class ProjectCollector {
       if (!home) out.objectiveTickets = objectiveTickets;
       const acceptance = Object.fromEntries(objectiveTickets.filter((f) => !f.partial)
         .map(({ slug, tickets }) => [slug, tickets.reduce((n, t) => ({ checked: n.checked + t.checked, total: n.total + t.total }), { checked: 0, total: 0 })]));
-      const results = shown === true ? objectives.objectives.filter((o) => o.state !== 'done' && o.result) : [];
+      const results = shown === true ? objectives.objectives.filter((o) => o.result) : [];
       const receipts = results.length ? this.resultReceipts.read() : undefined;
       const resultDates = receipts && Object.fromEntries(results.flatMap(({ id, result }) => {
         const at = resultDate(receipts, this.cwd, id, result!);

@@ -367,7 +367,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   };
   const objective = sub?.kind === 'objective';
   const reqRows = (boardFrame.requests ?? []).filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i);
-  const bodyActions = boardFrame.rows.filter((r, i, all) => r.item && ((sub && !objective) || r.item !== all[i - 1]?.item));
+  const bodyActions = boardFrame.rows.filter((r, i, all) => r.item && r.item !== all[i - 1]?.item);
   const actions = [...reqRows, ...bodyActions];
   const cursor = nav.cursor;
   const select = (item?: string) => {
@@ -411,9 +411,18 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       select(row.item);
       return result({ type: 'copy-advisor', ...row.advisorCopy });
     }
-    if (!sub && !fileOnly && row?.objectiveTarget) {
-      select(row.item);
-      openObjective(row.objectiveTarget);
+    if ((!sub || sub.kind === 'inspector') && !fileOnly && row?.objectiveTarget) {
+      if (sub?.kind === 'inspector') {
+        next.subpage = {
+          kind: 'objective',
+          target: row.objectiveTarget,
+          scroll: 0,
+          back: { ...sub, cursor: row.item, revealed: row.item === sub.cursor ? sub.revealed : undefined },
+        };
+      } else {
+        next.home = { ...frame.state.home, cursor: row.item, revealed: row.item === cursor ? frame.state.home.revealed : undefined };
+        openObjective(row.objectiveTarget);
+      }
       return result();
     }
     if (!sub && !fileOnly && row?.homeTarget) {

@@ -49,7 +49,12 @@ export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | und
 };
 
 export interface ObjectiveTarget { root: string; objective: Objective; blocked: boolean }
-export interface ObjectiveDetail extends RowNav { kind: 'objective'; target: ObjectiveTarget; evidence?: ObjectiveEvidence[] }
+export interface ObjectiveDetail extends RowNav {
+  kind: 'objective';
+  target: ObjectiveTarget;
+  evidence?: ObjectiveEvidence[];
+  back?: InspectorState;
+}
 export interface RunDetailState extends RowNav { kind: 'run-detail'; flow: string }
 export type SubpageState = JobsState | InspectorState | ObjectiveDetail | RunDetailState | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
 export interface HelpOverlay { scroll?: number }
@@ -163,6 +168,7 @@ export const jobsPage = (state: MonitorState): JobsState => ({ ...state.jobs, ki
 export function backFromSubpage(state: MonitorState): MonitorState {
   const sub = state.subpage;
   return { ...state, subpage: sub?.kind === 'native-inspector' ? sub.back ?? jobsPage(state)
+    : sub?.kind === 'objective' ? sub.back
     : sub?.kind === 'inspector' && sub.from !== 'execution' ? jobsPage(state) : undefined };
 }
 export function transitionTab(state: MonitorState, activeTab: MainTab): MonitorState {

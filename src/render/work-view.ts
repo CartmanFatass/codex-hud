@@ -1,12 +1,12 @@
 /** One frame grammar for Home and the kept passive pages. */
-import type { ProjectItem } from '../collectors/project-board.js';
+import { blockedObjectives, type ProjectItem } from '../collectors/project-board.js';
 import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-types.js';
 import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { nativeInspectorRows, workInspectorRows } from './work-inspector.js';
 import { homeRows, OTHER_PROJECTS, otherProjectsHint, unattendedRow } from './home-view.js';
 import { scheduleBadge, scheduleView } from './home-cards.js';
-import { objectiveDetailRows } from './objective-detail.js';
+import { objectiveCrumb, objectiveDetailRows } from './objective-detail.js';
 import { runDetailRows } from './execution-run-detail.js';
 import { executionRows } from './execution-view.js';
 import { workflowDetailRows } from './execution-workflow.js';
@@ -258,13 +258,54 @@ export function renderWorkboardFrame(
   const target = inspector?.target;
   const lane = target && source.lanes.find((l) => l.id === target.laneId);
   const worker = target && lane?.workers.find((w) => w.id === target.workerId);
+  const objRoot = objective?.target.root ?? '';
+  const objPortfolio = objRoot ? input.homePortfolio?.projects.find((p) => p.root === objRoot) : undefined;
+  const objProject = objective
+    ? (input.project && (!input.projectDisplayRoot || !objRoot || input.projectDisplayRoot === objRoot)
+        ? input.project
+        : objPortfolio?.snapshot ?? (!objRoot ? input.project : undefined))
+    : undefined;
+  const liveObj = objective && objProject?.objectives?.objectives.find((o) => o.id === objective.target.objective.id);
+  const objDetail = objective && objProject && liveObj
+    ? {
+        ...objective,
+        target: {
+          root: objective.target.root,
+          objective: liveObj,
+          blocked: liveObj.state !== 'done' && blockedObjectives(objProject.waiting).has(liveObj.id),
+        },
+      }
+    : objective;
+  const objProjectName = objective
+    ? (objRoot ? input.projects?.find((p) => p.root === objRoot)?.name : undefined)
+      ?? objPortfolio?.name
+      ?? (!objRoot || !input.projectDisplayRoot || input.projectDisplayRoot === objRoot ? input.projectName : undefined)
+    : undefined;
+  const objResultAt = objDetail
+    ? objProject?.objectives?.resultDates?.[objDetail.target.objective.id]
+      ?? objPortfolio?.resultDates?.get(objDetail.target.objective.id)
+    : undefined;
+  const workerObjectiveTarget = (() => {
+    if (!worker?.objective) return undefined;
+    const root = worker.projectRoot ?? input.projectDisplayRoot ?? selectedRoot;
+    const snap = (input.project && (!input.projectDisplayRoot || !root || input.projectDisplayRoot === root) ? input.project : undefined)
+      ?? (root ? input.homePortfolio?.projects.find((p) => p.root === root)?.snapshot : undefined);
+    const found = snap?.objectives?.objectives.find((o) => o.id === worker.objective!.id);
+    return found
+      ? { root, objective: found, blocked: found.state !== 'done' && blockedObjectives(snap!.waiting).has(found.id) }
+      : { root, objective: { id: worker.objective.id, title: worker.objective.title, state: 'active' as const, features: [], evidence: [] }, blocked: false };
+  })();
   const activeRun = runDetail ? input.execution?.runs?.find((r) => r.flow === runDetail.flow) : undefined;
   const crumb = help ? t('Help') : objective ? t('Objective') : runDetail ? `${t('Run')} · ${monitorText(activeRun ? `${activeRun.label} ${activeRun.flow.slice(0, 8)}` : runDetail.flow.slice(0, 8))}` : native ? t('Native subagents') : jobs ? t('Jobs')
     : t('Inspector') + (worker ? ` · ${monitorText(worker.displayId || worker.id.replace(/^thin-job:/, ''))}` : '');
   const schedule = scheduleView(input.openSchedule, now);
   if (sub || page || list) {
     // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
-    const at = page && projectCrumb(page, input.project, width, (input.projects?.length ?? 0) > 1 ? input.projectName : '');
+    const at = page
+      ? projectCrumb(page, input.project, width, (input.projects?.length ?? 0) > 1 ? input.projectName : '')
+      : objDetail
+        ? objectiveCrumb(objDetail, objProject, objProjectName, width)
+        : undefined;
     frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
@@ -344,10 +385,10 @@ export function renderWorkboardFrame(
   if (harnessAdd && addingHarness) state = { ...state, overlay: { ...addingHarness, pick: harnessAdd.pick } };
   let rows: MonitorRow[] = helpContent
     ? helpContent.rows
-    : objective ? objectiveDetailRows(objective, width)
+    : objDetail ? objectiveDetailRows(objDetail, width, now, objProject, input.projectActivity, objResultAt)
     : runDetail ? activeRun ? runDetailRows(activeRun, width, now, activeRun.kind === 'queue' ? undefined : workflowDetailRows(activeRun, width, now)) : [boardRow(fit(t('Run not available'), width))]
     : native ? nativeInspectorRows(input.tree, width, now)
-      : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id))
+      : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id), workerObjectiveTarget)
         : [boardRow(t('Job not available'))]
         : jobs ? jobsRows(source.workers, width, !!input.jobsObserved, source.batches)
         : project
@@ -457,7 +498,7 @@ export function renderWorkboardFrame(
     ? { modal: ['Esc back'] }
     : objective ? (selectedReq
         ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open', ...(!isRequestMoreItem(selectedReq.item) && selectedReq.files ? ['o file'] : []), 'Esc back']
-        : [...(selected?.files ? ['o file'] : selected?.commit ? ['o commit'] : []), 'Esc back'])
+        : [...(selected?.files || selected?.commit ? ['⏎ open'] : []), 'Esc back'])
     : runDetail ? ['Esc back']
     : inspector ? inspectorKeys(worker)
       : native ? ['Esc back'] : jobs ? [...(selected?.batch ? batchKeys(selected.batch) : listCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']

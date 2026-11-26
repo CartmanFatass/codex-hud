@@ -997,7 +997,10 @@ export function readThinJobs(
             ...(typeof qd.reason === 'string' && qd.reason.trim() ? { reason: qd.reason.trim() } : {}),
           }
         : undefined;
-    const ticketHeading = ticketTitle(word(job.project_root) ?? scope.project, word(job.ticket) ?? word(job.slice), word(job.package) ?? '');
+    const worktreeRoot = typeof (job.worktree as { main_root?: unknown } | undefined)?.main_root === 'string'
+      ? (job.worktree as { main_root: string }).main_root : undefined;
+    const projectRoot = word(job.project_root) ?? worktreeRoot ?? scope.project;
+    const ticketHeading = ticketTitle(projectRoot, word(job.ticket) ?? word(job.slice), word(job.package) ?? '');
     const worker: OwnerWorker = {
       files,
       ...(flow ? { flow } : {}),
@@ -1016,6 +1019,7 @@ export function readThinJobs(
       displayId,
       ...(briefTitle ? { briefTitle } : {}),
       ...(ticketHeading ? { ticketTitle: ticketHeading } : {}),
+      ...(projectRoot ? { projectRoot } : {}),
       objective: objectiveLink(job.objective),
       ...(quietDecision ? { quietDecision } : {}),
       ...(row.report_unread ? { reportUnread: true as const } : {}),

@@ -14,10 +14,40 @@ import { compactAge, mark, section } from './workboard-rows.js';
 export const OBJECTIVE_FOLD = 'objectives:closed';
 export const UNLINKED_ITEM = 'project:page:unlinked';
 
-const resolved = ({ state }: TicketFeature['tickets'][number]) => state === 'done' || state === 'dropped';
-const progressText = (p: ReturnType<typeof linkedTicketProgress>) => p?.total ? `${p.counts.accepted}/${p.total}` : '';
-const track = (p: ReturnType<typeof linkedTicketProgress>, cells: number, dim: boolean) => !p ? theme.board.muted(mark('—', '-'))
+export const resolvedTicket = ({ state }: TicketFeature['tickets'][number]) => state === 'done' || state === 'dropped';
+export const ticketProgressText = (p: ReturnType<typeof linkedTicketProgress>) => p?.total ? `${p.counts.accepted}/${p.total}` : '';
+export const ticketTrack = (p: ReturnType<typeof linkedTicketProgress>, cells: number, dim: boolean) => !p ? theme.board.muted(mark('—', '-'))
   : p.total ? barText(p, cells, TICKET_BAR_ORDER, dim) : theme.board.frame(mark('╌', '.').repeat(cells));
+
+/** Group live, gate and recent-24h ended ticket activity by feature slug, merging ticket-scan claims and Git landings. */
+export function collectFeatureActivity(
+  scanned: ReadonlyMap<string, TicketFeature>,
+  ledger: ProjectSnapshot['ledger'],
+  activity: readonly TicketActivity[],
+  now: number,
+): Map<string, TicketActivity[]> {
+  const jobTickets = new Map([...scanned.values()].flatMap(({ slug, tickets }) => tickets.flatMap(({ number, job }) =>
+    job?.id ? [[job.id, targetKey(`${slug}/${number}`)] as const] : [])));
+  const byFeature = new Map<string, TicketActivity[]>();
+  const recent = (at: number) => at <= now && now - at <= ENDED_MS;
+  const add = (entry: TicketActivity) => {
+    const ticket = (entry.kind === 'live' ? jobTickets.get(entry.jobId) : undefined) ?? targetKey(entry.ticket);
+    const slug = /^([a-z0-9_-]+)\/\d+$/.exec(ticket)?.[1];
+    if (!slug || (entry.kind === 'ended' && !recent(entry.at))) return;
+    const list = byFeature.get(slug);
+    if (list) list.push({ ...entry, ticket });
+    else byFeature.set(slug, [{ ...entry, ticket }]);
+  };
+  for (const entry of activity) add(entry);
+  // The project ticket scan also has live claims and dated Git landings, even outside the execution job window.
+  for (const { slug, tickets } of scanned.values()) for (const { number, job } of tickets) {
+    if (job?.id && !SETTLED_JOB_STATES.has(job.state)) add({ ticket: `${slug}/${number}`, kind: 'live', jobId: job.id, at: job.at });
+  }
+  for (const { id, landed, at } of ledger) {
+    if (landed && at !== undefined) add({ ticket: id, kind: 'ended', at, result: 'landed' });
+  }
+  return byFeature;
+}
 
 function recentNote(end: Extract<TicketActivity, { kind: 'ended' }>, now: number, wide: boolean) {
   const age = compactAge(end.at, now), ink = theme.board;
@@ -41,18 +71,18 @@ function recentNote(end: Extract<TicketActivity, { kind: 'ended' }>, now: number
 export function unlinkedFeatureRows(features: readonly TicketFeature[], width: number): MonitorRow[] {
   const scanned = new Map(features.map((feature) => [feature.slug, feature]));
   return features.flatMap(({ slug, tickets }) => {
-    const ticket = tickets.find((r) => !resolved(r)) ?? tickets.at(-1);
+    const ticket = tickets.find((r) => !resolvedTicket(r)) ?? tickets.at(-1);
     if (!ticket) return [];
-    const p = linkedTicketProgress(scanned, [slug]), ratio = progressText(p);
+    const p = linkedTicketProgress(scanned, [slug]), ratio = ticketProgressText(p);
     const id = tokenColumn(monitorText(slug), Math.min(24, Math.floor(width / 2)));
     return [{ item: `project:file:${ticket.path}:unlinked`, files: [ticket.path],
-      text: fit(pair(`  ${id} ${track(p, Math.min(24, Math.max(0, width - visualLength(id + ratio) - 5)), false)}`, ratio, width), width) }];
+      text: fit(pair(`  ${id} ${ticketTrack(p, Math.min(24, Math.max(0, width - visualLength(id + ratio) - 5)), false)}`, ratio, width), width) }];
   });
 }
 
 function unlinkedRow(features: readonly TicketFeature[], width: number): MonitorRow {
   const head = `${mark('◌', 'o')} ${t('Unlinked')}:`, scanned = new Map(features.map((feature) => [feature.slug, feature]));
-  const entries = features.map(({ slug }) => ({ name: monitorText(slug), ratio: progressText(linkedTicketProgress(scanned, [slug])) }));
+  const entries = features.map(({ slug }) => ({ name: monitorText(slug), ratio: ticketProgressText(linkedTicketProgress(scanned, [slug])) }));
   const more = (n: number) => n ? ` +${n}` : '';
   let shown = 0, text = head;
   for (const { name, ratio } of entries) {
@@ -74,26 +104,7 @@ export function objectiveRows(data: ProjectSnapshot, width: number, now: number,
   if (!record) return [];
   const ink = theme.board, rows = [section(t('Objectives'), width, t('done/tickets'))];
   const scanned = new Map((data.objectiveTickets ?? data.tickets).map((feature) => [feature.slug, feature]));
-  const jobTickets = new Map([...scanned.values()].flatMap(({ slug, tickets }) => tickets.flatMap(({ number, job }) =>
-    job?.id ? [[job.id, targetKey(`${slug}/${number}`)] as const] : [])));
-  const byFeature = new Map<string, TicketActivity[]>();
-  const recent = (at: number) => at <= now && now - at <= ENDED_MS;
-  const add = (entry: TicketActivity) => {
-    const ticket = (entry.kind === 'live' ? jobTickets.get(entry.jobId) : undefined) ?? targetKey(entry.ticket);
-    const slug = /^([a-z0-9-]+)\/\d+$/.exec(ticket)?.[1];
-    if (!slug || (entry.kind === 'ended' && !recent(entry.at))) return;
-    const list = byFeature.get(slug);
-    if (list) list.push({ ...entry, ticket });
-    else byFeature.set(slug, [{ ...entry, ticket }]);
-  };
-  for (const entry of activity) add(entry);
-  // The project ticket scan also has live claims and dated Git landings, even outside the execution job window.
-  for (const { slug, tickets } of scanned.values()) for (const { number, job } of tickets) {
-    if (job?.id && !SETTLED_JOB_STATES.has(job.state)) add({ ticket: `${slug}/${number}`, kind: 'live', jobId: job.id, at: job.at });
-  }
-  for (const { id, landed, at } of data.ledger) {
-    if (landed && at !== undefined) add({ ticket: id, kind: 'ended', at, result: 'landed' });
-  }
+  const byFeature = collectFeatureActivity(scanned, data.ledger, activity, now);
 
   const requests = new Map(data.waiting.flatMap((request, i) => request.objective ? [[request.objective, i] as const] : []).reverse());
   const blocked = blockedObjectives(data.waiting), root = dirname(dirname(record.path));
@@ -109,7 +120,7 @@ export function objectiveRows(data: ProjectSnapshot, width: number, now: number,
       request === undefined ? -Infinity : data.waiting[request].at ?? -Infinity,
       ...features.map((f) => f.at), ...evidence.map((e) => e.at ?? -Infinity));
     const at = Number.isFinite(latest) ? latest : data.objectivesAt ?? -Infinity;
-    const allResolved = tickets.length > 0 && features.length === slugs.length && features.every((f) => !f.partial) && tickets.every(resolved);
+    const allResolved = tickets.length > 0 && features.length === slugs.length && features.every((f) => !f.partial) && tickets.every(resolvedTicket);
     const folded = !live && !gate && request === undefined && (objective.state !== 'active' || allResolved);
     return { objective, tier, at, live, gate, ended, request, folded };
   });
@@ -119,7 +130,7 @@ export function objectiveRows(data: ProjectSnapshot, width: number, now: number,
   const wide = width >= 56, idCol = wide ? 13 : 11, noteCol = wide ? 22 : 13;
   const paint = (entry: (typeof open)[number], folded = false) => {
     const { objective, live, gate, ended, request, tier, at } = entry, { id, title, result, state, features } = objective;
-    const age = compactAge(at, now), fields = linkedTicketProgress(scanned, features), ratio = progressText(fields);
+    const age = compactAge(at, now), fields = linkedTicketProgress(scanned, features), ratio = ticketProgressText(fields);
     let note = '';
     if (folded) note = ink.muted(`${state === 'paused' ? `${mark('‖', '=')} ${t('paused')}` : `${mark('✓', '+')} ${t('Done')}`}${age ? ` ${age}` : ''}`);
     else if (tier === 1) note = ink.active([live ? `${mark('●', '*')} ${t('{n} live', { n: live })}` : '',
@@ -131,7 +142,7 @@ export function objectiveRows(data: ProjectSnapshot, width: number, now: number,
     const countCol = Math.max(5, visualLength(ratio)), noteWidth = Math.max(noteCol, visualLength(note));
     const labelCells = Math.max(0, Math.min(idCol, width - countCol - noteWidth - 7));
     const cells = Math.min(24, Math.max(0, width - labelCells - countCol - noteWidth - 6));
-    const bar = track(fields, cells, folded), label = tokenColumn(monitorText(id), labelCells);
+    const bar = ticketTrack(fields, cells, folded), label = tokenColumn(monitorText(id), labelCells);
     const item = `project:objective:${root}:${id}`;
     rows.push({ item, files: [record.path], objectiveTarget: { root, objective, blocked: blocked.has(id) },
       text: fit(` ${mark('▸', '>')} ${folded ? ink.muted(label) : label} ${fit(bar, cells)} ${' '.repeat(countCol - visualLength(ratio))}${ratio} ${note}`, width) });
