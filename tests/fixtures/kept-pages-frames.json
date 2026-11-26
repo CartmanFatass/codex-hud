@@ -767,12 +767,12 @@
     "[ ]     previous / next project",
     "g P H   Execution: peek/focus, pin visible, or hide the",
     "        job’s tab; ⏎ opens it",
+    "X       Execution batch: pause/resume/stop",
     "",
     "Control ──────────────────────────────────────────────────",
     "c C     role: next / previous preset",
     "p       role: choose a preset by name",
     "N I     role: new draft, copied or empty",
-    "R D     role: rename / delete the preset",
     "                                                                                                                Esc back"
   ],
   "settings-40-en": [
