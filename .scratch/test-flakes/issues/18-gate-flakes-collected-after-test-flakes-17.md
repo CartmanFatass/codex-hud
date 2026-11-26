@@ -1,6 +1,6 @@
 # 18: Gate flakes collected after test-flakes/17
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Live try:** none
 **Blocked by:** none
@@ -12,7 +12,9 @@
 - `overlapping watcher startups publish only one ready PID` (tests/unit/hud-watch-async.test.mjs) — flow `f5b4fc7306a2f3dd8`, log `~/.hud/flows/f5b4fc7306a2f3dd8.json.gate-1.log`
 - `overlapping watcher startups publish only one ready PID` (tests/unit/hud-watch-async.test.mjs) — flow `f5b4fc7306a2f3dd8`, log `~/.hud/flows/f5b4fc7306a2f3dd8.json.gate-2.log`
 
-- [ ] Each listed case passes 20 consecutive runs under parallel load
-- [ ] No assertion or product bound weakened
+- [x] Each listed case passes 20 consecutive runs under parallel load
+- [x] No assertion or product bound weakened
 
 ## Comments
+
+- Landed in this commit (replay base 66c7689cb61621054e5292b1b43538bbb8fbc764); gate 5/5 passed.

@@ -185,26 +185,26 @@ export async function openWatcher(probe: boolean) {
   const alreadyRunning = () => watcherReady(pidFile, binScript('hud-watch'));
   if (alreadyRunning()) return;
   const { openRuntime } = await import('./watch-runtime.js');
-  // The dist lock is shared by readers. Recheck and publish under a per-home startup mutex.
-  const state = await withAbstractLock('watch-start', fs.realpathSync(home), () => {
-    if (alreadyRunning()) return;
-    const state = reloaded ? readHandoff(handoffFile) : (unlinkIfPresent(handoffFile), null);
-    runtime = openRuntime(event);
-    stamp = buildStamp();
-    if (!reloaded) {
-      const oldLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
-      fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), { mode: 0o600 });
-    }
-    process.on('SIGTERM', () => void finish('signal=SIGTERM'));
-    process.on('SIGINT', () => void finish('signal=SIGINT'));
-    if (!reloaded || !ownsPid()) writePrivateFile(pidFile, `${process.pid}\n`, { mkdir: false });
-    publishGeneration('watcher', stamp);
-    if (process.connected) process.send?.('ready', () => {});
-    log(`${reloaded ? 'reloaded' : 'start'} pid=${process.pid}`);
-    return state;
-  }, { timeoutMs: 15_000 });
-  if (state === undefined) return;
+  stamp = buildStamp();
   return async () => {
+    // The dist lock is shared by readers; release it before taking the per-home startup mutex.
+    const state = await withAbstractLock('watch-start', fs.realpathSync(home), () => {
+      if (alreadyRunning()) return;
+      const state = reloaded ? readHandoff(handoffFile) : (unlinkIfPresent(handoffFile), null);
+      runtime = openRuntime(event);
+      if (!reloaded) {
+        const oldLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
+        fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), { mode: 0o600 });
+      }
+      process.on('SIGTERM', () => void finish('signal=SIGTERM'));
+      process.on('SIGINT', () => void finish('signal=SIGINT'));
+      if (!reloaded || !ownsPid()) writePrivateFile(pidFile, `${process.pid}\n`, { mkdir: false });
+      publishGeneration('watcher', stamp);
+      if (process.connected) process.send?.('ready', () => {});
+      log(`${reloaded ? 'reloaded' : 'start'} pid=${process.pid}`);
+      return state;
+    }, { timeoutMs: 15_000 });
+    if (state === undefined) return;
     function checkBuild() {
       if (switching || stopping) return;
       const seen = buildStamp();
