@@ -14,3 +14,7 @@
 ## Comments
 
 - Landed in this commit (replay base dd5e7f7c2991d130ff20e363c1e824cdc13bd986); gate 5/5 passed.
+
+## Comments
+
+- 2026-11-25 main: imp jccf1741554084dd1 (bd691d02), landed 55342479 (flow fccf1741554084dd1). Live on fork 0.9.5-hud.0409f9fa: claude ja8bc91fa5633311c, agy j3bd0fe6f652e0a76, pi j2cf11dfaff239fbf each ran the first prompt without manual input, reported, and their tabs closed on the first reap (exit=0). Two agy imps dispatched next reported `agent: agy, interactive_ready: true`. Tabs started before the handoff keep a stale terminal_id → herdr-fork/07.
