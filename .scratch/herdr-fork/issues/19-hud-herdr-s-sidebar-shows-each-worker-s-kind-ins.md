@@ -11,3 +11,5 @@
 - [ ] Live try: start an agy and a pi worker: the sidebar's second row reads `agy · neon` / `pi · fast`
 
 ## Comments
+
+- 2026-11-26 main: owner: the vendor is not useful. Revised scope sent to j8e70a0deace0fa65: display_agent = short task title; tokens hud_role, hud_ticket, hud_icon (one glyph per HUD role: imp ◆, frontend-imp ◈, reviewer ◎, lead ★, sonic », oracle ◇, general ○, council ✦, other ·). herdr-fork/20 draws hud_icon in the state slot.
