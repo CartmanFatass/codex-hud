@@ -1,4 +1,4 @@
-/** Ticket-queue Runs section and Run Detail on the Project Execution page. Synthetic records only. */
+/** Workflow diagrams, Run Detail and recent outcomes on Execution. Synthetic records only. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
@@ -23,6 +23,7 @@ const FLOWS = {
   foreign: 'q5e6f7a8000000005',
 };
 const LAND_FLOW = 'f0b01000000000000';
+const LEAD = 'j0b02000000000000';
 const ago = (minutes) => new Date(NOW - minutes * 60_000).toISOString();
 
 const onExecution = (nav) => withState(initialMonitorState(), {
@@ -73,6 +74,11 @@ async function setupWithRuns(t) {
     pid: process.pid, start: '1', created_at: ago(18), updated_at: ago(1), source_sha: 'a'.repeat(40),
   });
 
+  putJson(join(base.hud, 'jobs', LEAD, 'job.json'), { job: LEAD, role: 'lead', headless: true, cwd: base.project,
+    dispatch_exit_code: 0, created_at: ago(4), ticket_queue: FLOWS.working });
+  putJson(join(base.hud, 'jobs', LEAD, 'STATUS.json'), { state: 'waiting_orchestrator', started_at: ago(3) });
+  fs.writeFileSync(join(base.hud, 'jobs', LEAD, 'brief.md'), '# Check ticket assumptions\n');
+
   // 1. Working ticket-queue run with all ticket stages.
   putJson(join(flows, `${FLOWS.working}.json`), {
     flow: FLOWS.working, root: base.project, project_root: base.project, feature: 'exec-runs',
@@ -80,6 +86,7 @@ async function setupWithRuns(t) {
     state: 'working',
     steps: { tickets: { state: 'running' }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
     repair_rounds: 1,
+    active_lead: { job: LEAD, kind: 'assumption', step: 'tickets', round: 1, ticket: '03' },
     tickets: [
       { ticket: '01', path: join(base.project, '.scratch/exec-runs/01.md'), role: 'imp', job: IDS.settled, landed: true },
       { ticket: '02', path: join(base.project, '.scratch/exec-runs/02.md'), role: 'imp', job: landJobId, land: LAND_FLOW },
@@ -89,7 +96,7 @@ async function setupWithRuns(t) {
       { ticket: '06', path: join(base.project, '.scratch/exec-runs/06.md'), role: 'imp', failed: { reason: 'gate failed on synthetic test', at: ago(4), kind: 'land' } },
     ],
     queued: [{ ticket: '07', blockers: ['03'] }],
-    blocked: [{ ticket: '08', blockers: ['05'] }],
+    blocked: [{ ticket: '08', blockers: ['07', '05'] }, { ticket: '09', blockers: ['08'] }],
     todo: [
       { source: '01 (j0a07000)', kind: 'assumed', text: 'Keep compact summary ordering across narrow columns' },
       { source: 'lead (jlead001)', kind: 'lead', text: 'Verify ZH strings after milestone translation' },
@@ -180,10 +187,11 @@ test('Execution collects paused, working, and recently ended runs (including pan
     ['06', 'failed'],
     ['07', 'queued'],
     ['08', 'blocked'],
+    ['09', 'blocked'],
   ]);
   assert.equal(working.tickets[4].holdTag, 'spec change');
   assert.deepEqual(working.tickets[6].blockers, ['03']);
-  assert.deepEqual(working.tickets[7].blockers, ['05']);
+  assert.deepEqual(working.tickets[7].blockers, ['07', '05']);
   assert.equal(working.heldCount, 1);
   assert.equal(working.repairRounds, 1);
 
@@ -200,11 +208,11 @@ test('Execution collects paused, working, and recently ended runs (including pan
   assert.equal(f.fork.requests.length, 0);
 });
 
-test('Runs section renders EN/ZH, no-colour, coloured, role icons (unicode/nerd/text), and exact widths down to narrow columns', async (t) => {
+test('queue waves render EN/ZH, no-colour, coloured, role icons (unicode/nerd/text), and exact widths down to narrow columns', async (t) => {
   const f = await setupWithRuns(t);
   const view = f.execution.view(f.project);
 
-  for (const width of [36, 40, 56, 60, 100, 140]) {
+  for (const width of [36, 40, 62, 100, 140]) {
     for (const lang of ['en', 'zh']) {
       const frame = render(view, { width, lang, theme: 'none', icons: 'unicode' });
       const shown = text(frame);
@@ -213,7 +221,7 @@ test('Runs section renders EN/ZH, no-colour, coloured, role icons (unicode/nerd/
         assert.equal(line, stripAnsi(line), 'none theme must emit no ANSI');
       }
       assert.doesNotMatch(shown, /stale-run|foreign-run|q4d5e6f7|q5e6f7a8/);
-      const headings = lang === 'zh' ? ['工作者', '运行', '刚结束', '派工关系'] : ['Workers', 'Runs', 'Recently ended', 'Delegation'];
+      const headings = lang === 'zh' ? ['工作流', '工作者', '刚结束'] : ['Workflow', 'Workers', 'Recently ended'];
       const positions = headings.map((head) => frame.lines.findIndex((line) => line.startsWith(`${head} `)));
       assert.ok(positions.every((at, i) => at > (positions[i - 1] ?? -1)), `${lang} ${width}: ${positions}`);
       // Coloured theme stays width-exact too.
@@ -225,23 +233,27 @@ test('Runs section renders EN/ZH, no-colour, coloured, role icons (unicode/nerd/
   // Verify full content at standard wide width in EN.
   const wideEn = text(render(view, { width: 120, lang: 'en', theme: 'none', icons: 'unicode' }));
   for (const needle of [
-    'Runs', 'exec-runs', 'q1a2b3c4', 'obj-unattended', 'q2b3c4d5', 'Queue recent-done · 1 ticket',
-    roleIcon('imp', 'unicode'), roleIcon('frontend-imp', 'unicode'), roleIcon('reviewer', 'unicode'), roleIcon('lead', 'unicode'),
-    'tickets', 'review', 'accept',
-    'landed', 'land gate', 'working', 'settled', 'held (spec change)', 'held (feature deletion)', 'held (assumption)', 'failed', 'queued · blocked by 03', 'blocked by 05',
-    'todo 2 · decisions 1 · held 1 · repairs 1',
+    'Workflow', 'Queue exec-runs', 'q1a2b3c4', 'obj-unattended', 'q2b3c4d5', 'Queue recent-done · 1 ticket',
+    roleIcon('imp', 'unicode'), roleIcon('reviewer', 'unicode'), roleIcon('lead', 'unicode'),
+    'review', '? ★ Acceptance(lead)', '✓ landed 1: 01', 'Gate 1/1', 'working 12m', 'settled', 'held', 'failed',
+    '○ 07(←03) ─▶ ○ 08(←07,05) ─▶ ○ 09(←08)', 'todo 2 · held 1 · repairs 1',
   ]) {
     assert.ok(wideEn.includes(needle), `EN 120 missing: ${needle}\n${wideEn}`);
   }
-  assert.doesNotMatch(wideEn, /q3c4d5e6|Finished earlier|land gate synthetic ticket/, 'ended run and members are not repeated');
+  assert.doesNotMatch(wideEn.split('Recently ended')[1], /q3c4d5e6|Finished earlier|land gate synthetic ticket/, 'ended run members are not repeated');
+  assert.match(wideEn, /02 land gate synthetic ticket.*Gate 1\/1/);
+  assert.doesNotMatch(wideEn.split('Workers')[0], /Assumed|blocked by|owner approval|Build passes/);
+  const waves = (width) => render(view, { width }).workboard.rows.filter((row) => /▼ *○ 0[789]/.test(row.text));
+  assert.equal(waves(62).length, 1);
+  assert.ok(waves(40).length > 1);
   assert.equal(wideEn.split('\n').filter((line) => line.includes('recent-done')).length, 1);
 
   // Verify full content in ZH.
   const wideZh = text(render(view, { width: 120, lang: 'zh', theme: 'none', icons: 'unicode' }));
   for (const needle of [
-    '运行', '工单', '评审', '通过', '刚结束',
-    '已落地', '落地门禁', '工作中', '已结束', '挂起 (规范变更)', '挂起 (功能删除)', '挂起 (假设)', '失败', '受 03 阻塞', '受 05 阻塞',
-    '待办 2 · 决定 1 · 挂起 1 · 修复 1',
+    '工作流', '队列', '评审', '验收(lead)', '刚结束',
+    '✓ 已落地 1: 01', '门禁 1/1', '工作中 12分', '已结束', '挂起', '失败', '○ 07(←03)', '○ 08(←07,05)',
+    '待办 2 · 挂起 1 · 修复 1',
   ]) {
     assert.ok(wideZh.includes(needle), `ZH 120 missing: ${needle}\n${wideZh}`);
   }
@@ -251,7 +263,7 @@ test('Runs section renders EN/ZH, no-colour, coloured, role icons (unicode/nerd/
   const asciiText = text(asciiFrame);
   for (const line of asciiFrame.lines) assert.equal(visualLength(line), 120);
   assert.doesNotMatch(asciiText, /[⚒✎⚖•✦◈⚡┌┐└┘├┤▸◉○→✓✗]/);
-  for (const needle of [`${roleIcon('imp', 'text')} tickets`, `${roleIcon('reviewer', 'text')} review`, `${roleIcon('lead', 'text')} accept`]) {
+  for (const needle of [`${roleIcon('imp', 'text')} working`, `${roleIcon('reviewer', 'text')} review`, `${roleIcon('lead', 'text')} Acceptance`]) {
     assert.ok(asciiText.includes(needle), `ASCII missing: ${needle}\n${asciiText}`);
   }
 
@@ -259,7 +271,7 @@ test('Runs section renders EN/ZH, no-colour, coloured, role icons (unicode/nerd/
   const nerdFrame = render(view, { width: 120, lang: 'en', theme: 'none', icons: 'nerd' });
   const nerdText = text(nerdFrame);
   for (const line of nerdFrame.lines) assert.equal(visualLength(line), 120);
-  for (const needle of [roleIcon('imp', 'nerd'), roleIcon('frontend-imp', 'nerd'), roleIcon('reviewer', 'nerd'), roleIcon('lead', 'nerd')]) {
+  for (const needle of [roleIcon('imp', 'nerd'), roleIcon('reviewer', 'nerd'), roleIcon('lead', 'nerd')]) {
     assert.ok(nerdText.includes(needle), `nerd missing: ${needle}\n${nerdText}`);
   }
 });
@@ -313,6 +325,8 @@ test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Det
 
   // Enter on a ticket line opens that job's Inspector, and Esc returns to Execution.
   const onTicket = onExecution({ cursor: `project:exec-run:${FLOWS.working}:ticket:03` });
+  const lead = press(onExecution({ cursor: `project:exec-run:${FLOWS.working}:accept` }), '\r').state;
+  assert.equal(lead.subpage.target.workerId, `thin-job:${LEAD}`);
   const inspected = press(onTicket, '\r').state;
   assert.deepEqual([inspected.subpage.kind, inspected.subpage.from, inspected.subpage.target.workerId],
     ['inspector', 'execution', `thin-job:${IDS.imp}`]);
@@ -442,7 +456,7 @@ test('idle Execution shows only recent project rows, ordered together by end tim
   assert.doesNotMatch(text(empty), /Recently ended/);
 });
 
-test('the recent job list caps an observed family window at the 200 newest settlements', async (t) => {
+test('the recent job list includes every settlement within 24 hours even past the family window', async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'exec-recent-cap-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const hud = join(root, 'hud'), project = join(root, 'project');
@@ -451,8 +465,8 @@ test('the recent job list caps an observed family window at the 200 newest settl
     const dir = join(hud, 'jobs', id(n));
     putJson(join(dir, 'job.json'), { job: id(n), role: 'sonic', cwd: project, created_at: ago(240),
       ...(n > 200 && { parent_job: id(200) }) });
-    putJson(join(dir, 'STATUS.json'), { state: 'done', settled_at: ago(203 - n) });
-    // Keep both children inside the bounded family scan without letting directory mtimes stand for end times.
+    putJson(join(dir, 'STATUS.json'), { state: 'done', settled_at: ago(n === 1 ? 1441 : n === 2 ? 1440 : 203 - n) });
+    // The job directory is touched on atomic STATUS replacement; order it differently from the settlements.
     const mtime = new Date(ago(n > 200 ? n - 200 : 240));
     fs.utimesSync(dir, mtime, mtime);
   }
@@ -461,16 +475,129 @@ test('the recent job list caps an observed family window at the 200 newest settl
   execution.sync(project, false);
   await execution.refresh(undefined, NOW);
   const view = execution.view(project);
-  assert.equal(view.complete, false);
-  assert.deepEqual(view.endedJobs.map((job) => job.jobId), Array.from({ length: 200 }, (_, i) => id(202 - i)));
+  assert.equal(view.complete, true);
+  assert.deepEqual(view.endedJobs.map((job) => job.jobId), Array.from({ length: 201 }, (_, i) => id(202 - i)));
 });
 
-test('Runs section still renders when there are no live workers, while Home stays unchanged', async (t) => {
+test('fixed and graph workflows render from cached records; Enter and batch control use the selected row', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-fixed-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hud = join(root, 'hud'), project = join(root, 'project'), flows = join(hud, 'flows');
+  const id = (prefix, n) => `${prefix}${n.toString(16).padStart(16, '0')}`;
+  const job = (n, title, state, receipt = {}) => {
+    const job = id('j', n), dir = join(hud, 'jobs', job);
+    putJson(join(dir, 'job.json'), { job, cwd: project, project_root: project, role: 'sonic', headless: true, dispatch_exit_code: 0, created_at: ago(30 - n), ...receipt });
+    putJson(join(dir, 'STATUS.json'), { state, started_at: ago(29 - n), ...(state === 'closed' && { settled_at: ago(1300) }) });
+    fs.writeFileSync(join(dir, 'brief.md'), `# ${title}\n`);
+    return job;
+  };
+  const save = (flow, data, mtime = 1, cwd = project) => {
+    const file = join(flows, `${flow}.json`);
+    putJson(file, { flow, cwd, project_root: cwd, pane: PANE, ...data });
+    const time = new Date(ago(mtime));
+    fs.utimesSync(file, time, time);
+  };
+  const member = job(1, 'Read the interface', 'working', { council: { id: id('j', 2), part: 'member' } });
+  const council = job(2, 'Console contract', 'working', { role: 'council', synthesizer: 'main', council_members: [
+    { preset: 'fable', failure: 'synthetic failure' }, { preset: 'astra', job: member }, { preset: 'carbon' },
+  ] });
+  save(council, { template: 'council', state: 'working', steps: { council: { state: 'running' } } });
+  const prewalk = job(3, 'Reserve target', 'queued', { role: 'imp' });
+  const scout = job(4, 'Find the callers', 'working', { parent_job: prewalk, prewalk_kind: 'code' });
+  save(prewalk, { template: 'prewalk', state: 'working', steps: { scouts: { state: 'running' }, target: { state: 'waiting' } } });
+  putJson(join(flows, prewalk, 'manifest.json'), { scouts: [{ kind: 'code' }, { kind: 'docs' }] });
+  const repair = job(5, 'Repair the synthetic gate', 'working', { role: 'imp' });
+  const land = id('f', 5), leased = id('f', 6);
+  const gate = { gate: ['unit', 'lint'] };
+  save(land, { job: repair, wt: { main_root: project }, state: 'running', step: 'repair 1', config: gate,
+    created_at: ago(25), repairs: [{ step: 'gate[2]: lint', outcome: 'waiting for worker', job: repair }],
+    timings: [{ step: 'cherry-pick', ok: true }, { step: 'gate[2]: lint', ok: false }] });
+  const leaseJob = job(6, 'Land after the lease', 'closed', { role: 'imp' });
+  save(leased, { job: leaseJob, wt: { main_root: project }, state: 'queued', step: 'main-checkout lease', config: gate,
+    created_at: ago(22), step_started_at: ago(9) });
+  const batch = id('b', 9), paused = id('b', 10);
+  const scale = { role: 'sonic', count: 40, max_parallel: 7 };
+  const totals = { done: 22, failed: 1, running: 7, waiting: 10 };
+  save(batch, { state: 'working', created_at: NOW - 8 * 60_000, scale, totals });
+  save(paused, { state: 'paused', created_at: NOW - 4 * 60_000, scale, totals });
+  putJson(join(flows, batch, 'index.json'), { items: [{ item: 1, pilot: true, state: 'done' }] });
+  const graph = id('g', 11), graphJob = job(9, 'Run the graph step', 'working');
+  save(graph, { state: 'working', created_at: ago(16), steps: { first: { state: 'done' }, proceed: { state: 'running', job: graphJob },
+    alternate: { state: 'running', job: member }, check: { state: 'waiting' } } });
+  putJson(join(flows, graph, 'graph.json'), { version: 1, name: 'console-graph', steps: {
+    first: { kind: 'check', needs: [] }, proceed: { kind: 'job', role: 'sonic', needs: ['first'] },
+    alternate: { kind: 'job', role: 'sonic', needs: ['first'] }, check: { kind: 'check', needs: ['proceed', 'alternate'] },
+  } });
+  const recentBatch = id('b', 12), recentCouncil = id('j', 13);
+  const endedMember = job(12, 'Hidden member row', 'closed', { batch_flow: recentBatch });
+  const councilSeat = job(14, 'Hidden council seat', 'closed', { council: { id: recentCouncil, part: 'member' } });
+  job(13, 'Finished console review', 'closed', { role: 'council', synthesizer: 'main', council_members: [{ preset: 'fable', job: councilSeat }] });
+  save(recentBatch, { state: 'completed', created_at: Date.parse(ago(1400)), scale, totals: { done: 40, failed: 0, running: 0, waiting: 0 } }, 1320);
+  putJson(join(flows, recentBatch, 'index.json'), { items: [{ item: 1, pilot: true, state: 'done', job: endedMember }] });
+  save(recentCouncil, { template: 'council', state: 'completed', steps: { council: { state: 'done' } } }, 1300);
+  save(id('b', 15), { state: 'completed', scale, totals: { done: 40, failed: 0, running: 0, waiting: 0 } }, 1441);
+  save(id('b', 16), { state: 'working', scale, totals }, 1, join(root, 'foreign'));
+
+  const execution = new PanelExecution(hud, PANE, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, NOW);
+  const view = execution.view(project);
+  assert.deepEqual(view.runs.map(({ flow }) => flow), [paused, council, prewalk, land, leased, graph, batch, recentCouncil, recentBatch]);
+  assert.deepEqual(view.endedJobs, []);
+  const rendered = render(view, { width: 62, lang: 'zh' });
+  const shown = rendered.workboard.rows.map((row) => row.text).join('\n');
+  for (const fragment of ['工作流', '评议 Console contract', '✗ ◈ fable · ◉ ◈ astra · ○ ◈ carbon', '★ 综合(main)',
+    '◉ code 探路', '○ docs 探路', '✓ 拣选 ─▶ ✗ 门禁 2/2 ─▶ ◉ ↻ 修复 1/2', '◷ 等锁 9分', '✓ 完成 1: first',
+    '○ check(←proceed,alternate)', '槽位 7/7', '✓ 探路 1/1 ─▶ ◉ 并发池 22✓ · 7◉ · 10○ · 1✗ ─▶ ○ 汇总', '刚结束']) assert.ok(shown.includes(fragment), fragment + '\n' + shown);
+  for (const flow of [recentCouncil, recentBatch]) assert.equal(rendered.workboard.rows.filter((row) => row.execRun === flow).length, 1);
+  assert.doesNotMatch(shown, /Hidden member row|Hidden council seat/);
+  for (const width of [40, 62]) for (const lang of ['en', 'zh']) for (const line of render(view, { width, lang }).lines) {
+    assert.equal(visualLength(line), width);
+    assert.equal(line, stripAnsi(line));
+  }
+  assert.equal(rendered.workboard.rows.filter((row) => row.item?.startsWith('project:exec-run:') && row.execJob?.target.workerId === `thin-job:${member}`).length, 1);
+  const item = (flow, node = '') => `project:exec-run:${flow}${node ? `:${node}` : ''}`;
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const press = (state, bytes) => {
+    const frame = render(view, { state, width: 62, height: 24 });
+    const input = decoder.push(Buffer.from(bytes))[0];
+    assert.equal(acceptsMonitorInput(frame.state, input), true);
+    return handleMonitorInput(frame.state, input, { frame, nowMs: NOW });
+  };
+  for (const [flow, node, jobId] of [[council, 'member-1', member], [prewalk, 'code', scout], [land, 'repair', repair], [leased, 'lease', leaseJob], [graph, 'proceed', graphJob]]) {
+    assert.equal(press(onExecution({ cursor: item(flow, node) }), '\r').state.subpage.target.workerId, `thin-job:${jobId}`);
+  }
+  for (const flow of [batch, council, prewalk, land, graph, recentBatch, recentCouncil]) {
+    const detail = press(onExecution({ cursor: item(flow) }), '\r').state;
+    assert.equal(detail.subpage.flow, flow);
+    assert.match(text(render(view, { state: detail })), /Steps/);
+  }
+  for (const [flow, key, control] of [[batch, 'p', 'pause'], [paused, 'r', 'resume'], [paused, 's', 'stop']]) {
+    const state = onExecution({ cursor: item(flow) });
+    assert.match(text(render(view, { state })), /X (pause|resume)\/stop/);
+    const prompt = press(state, 'X').state;
+    assert.match(text(render(view, { state: prompt })), /stop cancels 10 waiting/);
+    assert.deepEqual(press(prompt, key).action, { type: 'batch-control', flow, control });
+  }
+  assert.equal(press(onExecution({ cursor: item(recentBatch) }), 'X').state.overlay, undefined);
+
+  // Atomic replacement invalidates the cache on refresh, not during paint.
+  const graphFile = join(flows, graph, 'graph.json');
+  const changed = JSON.parse(fs.readFileSync(graphFile, 'utf8'));
+  putJson(`${graphFile}.new`, { ...changed, name: 'revised-graph' });
+  fs.renameSync(`${graphFile}.new`, graphFile);
+  assert.match(text(render(view)), /console-graph/);
+  await execution.refresh(undefined, NOW);
+  assert.match(text(render(execution.view(project))), /revised-graph/);
+});
+
+test('Workflow still renders when there are no live workers, while Home stays unchanged', async (t) => {
   const f = await setupWithRuns(t);
   const view = f.execution.view(f.project);
-  const runsOnly = { ...view, jobs: [], sessions: [] };
+  const runsOnly = { ...view, jobs: [] };
   const shown = text(render(runsOnly, { width: 100, height: 40 }));
-  assert.match(shown, /Runs/);
+  assert.match(shown, /Workflow/);
   assert.match(shown, /exec-runs/);
   assert.match(shown, /Recently ended/);
   assert.doesNotMatch(shown, /Workers|No running or waiting jobs/);

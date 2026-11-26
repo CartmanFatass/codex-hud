@@ -6,7 +6,7 @@ import { request as herdrRequest, type HerdrReply } from '../runtime/herdr-socke
 
 export const SCREEN_INTERVAL_MS = 2000;
 export const SCREEN_BATCH = 8;
-export const SCREEN_ROWS = 6;
+export const SCREEN_ROWS = 3;
 const TIMEOUT_MS = 1000;
 const MAX_LINE = 512;
 
@@ -18,7 +18,7 @@ export type ExecutionScreen =
   | { readonly state: 'closed' }
   | { readonly state: 'unavailable' };
 
-/** Blank lines and bare rules (box drawing, dashes) say nothing in six rows. */
+/** Blank lines and bare rules (box drawing, dashes) say nothing in three rows. */
 const RULE = /^[\s─-▟|_=-]*$/;
 export const thumbnailLines = (screen: string): string[] => screen.split('\n')
   .map((line) => line.replace(/\r$/, '').replace(/\t/g, '    ').trimEnd())

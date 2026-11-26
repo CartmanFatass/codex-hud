@@ -11,10 +11,14 @@ export function headerScanner() {
     const dir = join(home, 'flows'), files = readDirSafe(dir);
     if (root !== dir) { root = dir; cache.clear(); }
     const present = new Set(files);
-    for (const file of cache.keys()) if (!present.has(file)) cache.delete(file);
+    for (const file of cache.keys()) if (!present.has(file.split('/', 1)[0])) cache.delete(file);
     function header<T>(file: string): T | null {
+      const parent = file.includes('/') ? file.split('/', 1)[0] : undefined;
+      if (parent && !fs.lstatSync(join(dir, parent), { throwIfNoEntry: false })?.isDirectory()) {
+        cache.delete(file); return null;
+      }
       const path = join(dir, file), st = fs.lstatSync(path, { throwIfNoEntry: false });
-      if (!st?.isFile()) return null;
+      if (!st?.isFile()) { cache.delete(file); return null; }
       const hit = cache.get(file);
       if (hit && hit.mtime === st.mtimeMs && hit.ino === st.ino) return hit.value as T;
       try {

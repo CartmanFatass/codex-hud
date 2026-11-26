@@ -153,7 +153,8 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       else next.project.folded = folded;
     };
     // A selectable entry may span multiple rows; the cursor visits it once.
-    const bodyRows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i);
+    const seen = new Set<string>();
+    const bodyRows = boardFrame.rows.filter((r) => r.item && !seen.has(r.item) && seen.add(r.item));
     const hasStripMore = !control && frame.controls.some((c) => c.kind === 'project-strip-more');
     const rows = hasStripMore ? [{ item: PROJECT_STRIP_MORE, text: '' }, ...bodyRows] : bodyRows;
     const at = rows.findIndex((r) => r.item === cursor);
@@ -279,6 +280,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           return result(again || row.waitingTarget || /^project:(page:|list:)/.test(row.item) ? activate(row) : undefined);
         }
       }
+      return result();
+    }
+    if (execution && key === 'stop-job') {
+      const batch = rows[at]?.batch;
+      if (batch) openBatchAction(next, batch);
       return result();
     }
     if (input.type === 'key' && (input.text === 'g' || input.text === 'P' || input.text === 'H') && execution) {

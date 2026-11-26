@@ -1,14 +1,14 @@
 /**
- * Execution: live worker cards, open runs, recently ended work and delegation. Pure: facts and screens are collected outside paint.
+ * Execution: workflow diagram, single worker cards and recent outcomes. Facts and screens are collected outside paint.
  */
-import type { EndedExecutionJob, ExecutionJob, ExecutionNode, ExecutionRun, ExecutionRunTicket, ExecutionSession, ExecutionView } from '../collectors/execution.js';
+import type { EndedExecutionJob, ExecutionJob, ExecutionRun, ExecutionView } from '../collectors/execution.js';
 import { SCREEN_INTERVAL_MS, SCREEN_ROWS } from '../collectors/execution-screens.js';
 import { workState } from '../collectors/work-job.js';
 import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { fit, monitorText, pair } from './monitor-text.js';
 import { roleIcon } from './model-glyphs.js';
-import { formatRunSteps, runElapsed, runRoleInk, runStateView, ticketStageView } from './execution-run-detail.js';
+import { runItem, workflowLabel, workflowRows } from './execution-workflow.js';
 import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
 import { jobTitle, roleInk } from './work-job-row.js';
 import { jobTarget } from './work-jobs.js';
@@ -45,9 +45,9 @@ function stateOf(job: ExecutionJob, now: number): { glyph: string; word: string;
   return { glyph: stateMark.done(), word: t('done'), ink: board.success };
 }
 
-function sessionLabel(session: Pick<ExecutionSession, 'harness' | 'id' | 'pane'>): string {
-  if (session.id) return `${monitorText(HARNESS_NAMES[session.harness ?? ''] ?? session.harness ?? '')} ${monitorText(session.id.slice(0, 8))}`.trim();
-  return session.pane ? t('pane {id}', { id: monitorText(session.pane) }) : t('unknown session');
+function sessionLabel(session: ExecutionJob['session']): string {
+  if (session?.id) return `${monitorText(HARNESS_NAMES[session.harness ?? ''] ?? session.harness ?? '')} ${monitorText(session.id.slice(0, 8))}`.trim();
+  return session?.pane ? t('pane {id}', { id: monitorText(session.pane) }) : t('unknown session');
 }
 
 /** A square frame's edge with its title set into it, and optionally a second fact near the far corner. */
@@ -66,23 +66,30 @@ function screenLines(job: ExecutionJob, view: ExecutionView): string[] {
   const screen = view.screens.get(job.jobId);
   const lines = !screen ? [muted(t('reading screen'))] : screen.state === 'closed' ? [muted(t('tab closed'))]
     : screen.state === 'unavailable' ? [muted(t('screen unavailable'))]
-      : screen.lines.length ? screen.lines.map((line) => theme.board.text(monitorText(line))) : [muted(t('screen is blank'))];
+      : screen.lines.length ? screen.lines.slice(-SCREEN_ROWS).map((line) => theme.board.text(monitorText(line))) : [muted(t('screen is blank'))];
   // A fixed height: a new sample never moves the cards below.
   return [...lines, ...Array<string>(Math.max(0, SCREEN_ROWS - lines.length)).fill('')];
 }
 
 /** A card's body: its title, an open question, then the worker's screen or the headless job's own record. */
-function cardBody(job: ExecutionJob, view: ExecutionView): ({ rule: string } | string)[] {
+function cardBody(job: ExecutionJob, view: ExecutionView, now: number): ({ rule: string } | string)[] {
   const { worker } = job, arrow = muted(mark('›', '>'));
   const body: ({ rule: string } | string)[] = [theme.board.text(titleOf(job))];
   if (job.phase === 'waiting' && worker.ask) body.push(theme.board.attention(`${stateMark.asking()} ${monitorText(worker.ask)}`));
-  if (job.phase === 'queued') return body;
   const progress = worker.progress?.length ? worker.progress : worker.latest_progress ? [worker.latest_progress] : [];
   const entry = (p: (typeof progress)[number]) => `${muted(clock(p.at))} ${monitorText(p.text)}`;
-  if (!isHeadless(worker)) {
-    const latest = progress.at(-1);
-    return [...body, ...(latest ? [`${arrow} ${entry(latest)}`] : []), { rule: t('screen') }, ...screenLines(job, view)];
+  const tab = !isHeadless(worker), latest = progress.at(-1);
+  if (tab && job.phase !== 'queued' && latest) body.push(`${arrow} ${entry(latest)}`);
+  if (job.children?.length) {
+    const children = job.children.map((child) => {
+      const state = stateOf(child, now);
+      const label = child.scout ? t('{kind} prewalk scout', { kind: monitorText(child.scout) }) : roleOf(child);
+      return `${label} ${state.ink(state.glyph)}`;
+    });
+    body.push(`${muted(mark('ϟ', '*'))} ${t('Children: {summary}', { summary: children.join(muted(' · ')) })}`);
   }
+  if (job.phase === 'queued') return body;
+  if (tab) return [...body, { rule: t('screen') }, ...screenLines(job, view)];
   const rule = (what?: string) => ({ rule: [t('headless'), what].filter(Boolean).join(' · ') });
   if (progress.length) return [...body, rule(t('progress')), ...progress.slice(-PROGRESS_ROWS).map(entry)];
   const output = job.output?.lines.slice(-PROGRESS_ROWS) ?? [];
@@ -99,7 +106,7 @@ function cardRows(job: ExecutionJob, view: ExecutionView, from: string, selected
   const name = (n: number) => `${marker}${state.ink(state.glyph)} ${names.slice(0, n).filter(Boolean).join(muted(' · '))}`;
   const facts = [state.ink(state.word), muted(age)].filter(Boolean).join(' ');
   if (width < FRAME_MIN) return [pair(name(1), state.ink(state.glyph), width),
-    ...cardBody(job, view).map((line) => typeof line === 'string' ? line : muted(line.rule))];
+    ...cardBody(job, view, now).map((line) => typeof line === 'string' ? line : muted(line.rule))];
   const ink: Ink = selected ? theme.board.active : theme.board.frame, side = ink(mark('│', '|'));
   // Preset, model and then the state word give way; the role and the elapsed time stay.
   const [head, right] = edgeChoice([[name(3), facts], [name(2), facts], [name(1), facts], [name(1), muted(age)]], width);
@@ -108,90 +115,13 @@ function cardRows(job: ExecutionJob, view: ExecutionView, from: string, selected
   const [parent, tail] = edgeChoice([[origin, `${muted(kind)} ${id}`], [origin, id], [origin, '']], width);
   return [
     edge(mark('┌', '+'), mark('┐', '+'), head, right, width, ink),
-    ...cardBody(job, view).map((line) => typeof line === 'string' ? `${side} ${fit(line, width - 4)} ${side}`
+    ...cardBody(job, view, now).map((line) => typeof line === 'string' ? `${side} ${fit(line, width - 4)} ${side}`
       : edge(mark('├', '+'), mark('┤', '+'), muted(line.rule), '', width, ink)),
     edge(mark('└', '+'), mark('┘', '+'), parent, tail, width, ink),
   ];
 }
 
-const runItem = (flow: string) => `project:exec-run:${flow}`;
-const runTicketItem = (flow: string, ticket: string) => `project:exec-run:${flow}:ticket:${ticket}`;
-
-function runTicketRow(run: ExecutionRun, ticket: ExecutionRunTicket, selected: string | undefined, width: number): MonitorRow {
-  const item = ticket.execJob ? runTicketItem(run.flow, ticket.ticket) : undefined;
-  const marker = item && selected === item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
-  const stage = ticketStageView(ticket);
-  const leftHead = `  ${marker}${stage.ink(stage.glyph)} ${monitorText(ticket.ticket)}  `;
-  const roleIconStr = ticket.role ? runRoleInk(ticket.role)(roleIcon(ticket.role)) : '';
-  const roleWord = ticket.role ? runRoleInk(ticket.role)(monitorText(ticket.role)) : '';
-  const shortJob = ticket.jobId ? muted(shortId(ticket.jobId)) : '';
-  const rightChoices = [
-    [roleIconStr, roleWord, shortJob].filter(Boolean).join(' '),
-    [roleIconStr, roleWord].filter(Boolean).join(' '),
-    roleIconStr,
-    '',
-  ];
-  const right = rightChoices.find((r) => visualLength(leftHead + stage.shortText) + (r ? visualLength(r) + 2 : 0) <= width) ?? '';
-  const room = Math.max(0, width - visualLength(leftHead) - (right ? visualLength(right) + 2 : 0));
-  const body = visualLength(stage.fullText) <= room
-    ? stage.fullText
-    : visualLength(stage.shortText) <= room
-      ? truncateAnsi(stage.fullText, room)
-      : truncateAnsi(stage.shortText, room);
-  const text = fit(pair(leftHead + stage.ink(body), right, width), width);
-  return item && ticket.execJob ? { text, item, execJob: ticket.execJob } : boardRow(text);
-}
-
-function runSummaryRow(run: ExecutionRun, width: number): MonitorRow {
-  const parts = [
-    muted(t('todo {n}', { n: run.todo.length })),
-    muted(t('decisions {n}', { n: run.decisions.length })),
-    (run.heldCount > 0 ? theme.board.attention : muted)(t('held {n}', { n: run.heldCount })),
-    ...(run.repairRounds > 0 ? [theme.board.attention(t('repairs {n}', { n: run.repairRounds }))] : []),
-  ];
-  const sep = muted(' · ');
-  let line = '    ' + parts[0];
-  for (const part of parts.slice(1)) {
-    if (visualLength(line + sep + part) > width) break;
-    line += sep + part;
-  }
-  return boardRow(fit(line, width));
-}
-
-function runBlockRows(run: ExecutionRun, selected: string | undefined, width: number, now: number): MonitorRow[] {
-  const item = runItem(run.flow);
-  const at = { item, execRun: run.flow };
-  const marker = selected === item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
-  const state = runStateView(run.state);
-  const elapsed = runElapsed(run, now);
-  const right = elapsed ? muted(elapsed) : '';
-  const label = monitorText(run.label);
-  const short = muted(shortId(run.flow));
-  const headFull = `${marker}${state.ink(state.glyph)} ${theme.board.text(label)}  ${short}`;
-  const headShort = `${marker}${state.ink(state.glyph)} ${theme.board.text(label)}`;
-  const stepsFull = formatRunSteps(run.steps, true);
-  const stepsNoIcons = formatRunSteps(run.steps, false);
-
-  const rows: MonitorRow[] = [];
-  const gap = right ? visualLength(right) + 2 : 0;
-  if (visualLength(headFull) + 3 + visualLength(stepsFull) + gap <= width) {
-    rows.push({ ...at, text: fit(pair(`${headFull}   ${stepsFull}`, right, width), width) });
-  } else if (visualLength(headFull) + 3 + visualLength(stepsNoIcons) + gap <= width) {
-    rows.push({ ...at, text: fit(pair(`${headFull}   ${stepsNoIcons}`, right, width), width) });
-  } else {
-    const head = visualLength(headFull) + gap <= width ? headFull : headShort;
-    rows.push({ ...at, text: fit(pair(head, right, width), width) });
-    const stepLine = visualLength(stepsFull) + 4 <= width ? stepsFull : stepsNoIcons;
-    rows.push({ ...at, text: fit(`    ${stepLine}`, width) });
-  }
-
-  for (const ticket of run.tickets) rows.push(runTicketRow(run, ticket, selected, width));
-  rows.push(runSummaryRow(run, width));
-  return rows;
-}
-
 const cardItem = (job: Pick<ExecutionJob, 'jobId'>) => `project:exec:${job.jobId}`;
-const treeItem = (job: ExecutionJob) => `project:exec-tree:${job.jobId}`;
 
 function endedState(result: EndedExecutionJob['result']): { glyph: string; ink: Ink } {
   const b = theme.board;
@@ -210,10 +140,9 @@ function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }
   const facts = entry.result ? `${state.ink(t(entry.result))} ${age}` : age;
   const at = 'flow' in entry ? { item: runItem(entry.flow), execRun: entry.flow }
     : { item: cardItem(entry), execJob: { target: jobTarget(entry.worker), dir: entry.dir, tab: false } };
-  const title = 'flow' in entry
+  const title = !('flow' in entry) ? titleOf(entry) : entry.kind === 'queue'
     ? t(entry.tickets.length === 1 ? 'Queue {label} · 1 ticket' : 'Queue {label} · {n} tickets',
-      { label: monitorText(entry.label), n: entry.tickets.length })
-    : titleOf(entry);
+      { label: monitorText(entry.label), n: entry.tickets.length }) : workflowLabel(entry);
   const icon = 'flow' in entry ? muted(mark('≡', '=', '\uF0C9')) : roleInk(entry.worker.role ?? '')(roleIcon(entry.worker.role ?? ''));
   const marker = selected === at.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
   const prefix = `${marker}${state.ink(state.glyph)} `;
@@ -225,32 +154,23 @@ function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }
 export function executionRows(view: ExecutionView | undefined, cursor: string | undefined, width: number, now: number): MonitorRow[] {
   const plain = (text: string) => boardRow(fit(text, width));
   if (!view) return [plain(''), plain(`  ${muted(t('Reading jobs…'))}`)];
-  const runs = (view.runs ?? []).filter((run) => run.state === 'paused' || run.state === 'working');
+  const runs = (view.runs ?? []).filter((run) => run.endedAt === undefined && (run.state === 'paused' || run.state === 'working'));
   const endedRuns = (view.runs ?? []).filter((run): run is ExecutionRun & { endedAt: number } => run.endedAt !== undefined);
   const recent = [...(view.endedJobs ?? []), ...endedRuns].sort((a, b) => b.endedAt - a.endedAt);
   const partial = view.complete ? '' : t('Partial');
   if (!runs.length && !view.jobs.length && !recent.length)
     return [plain(''), plain(pair(`  ${muted(t('No running or waiting jobs'))}`, muted(partial), width))];
-  const known = new Map<string, ExecutionJob>(), origin = new Map<string, string>();
-  const visit = (node: ExecutionNode, session: ExecutionSession) => {
-    known.set(node.job.jobId, node.job);
-    origin.set(node.job.jobId, sessionLabel(session));
-    for (const child of node.children) visit(child, session);
-  };
-  for (const session of view.sessions) for (const node of session.nodes) visit(node, session);
-  const runItems = runs.flatMap((run) => [runItem(run.flow), ...run.tickets.filter((tk) => tk.execJob).map((tk) => runTicketItem(run.flow, tk.ticket))]);
-  const items = [...view.jobs.map(cardItem), ...runItems, ...recent.map((entry) => 'flow' in entry ? runItem(entry.flow) : cardItem(entry)),
-    ...[...known.values()].map(treeItem)];
-  // The panel starts on the first row it can act on, and a vanished selection returns there.
-  const selected = cursor === PROJECT_STRIP_MORE ? undefined : cursor && items.includes(cursor) ? cursor : items[0];
-  const target = (job: ExecutionJob, item: string) => ({ item,
-    execJob: { target: jobTarget(job.worker), dir: job.dir, tab: !isHeadless(job.worker) && job.worker.state !== 'queued' } });
-  const from = (job: ExecutionJob) => {
-    const parent = job.parentId && known.get(job.parentId);
-    return parent ? `${roleOf(parent)} ${shortId(parent.jobId)}` : job.parentId ? shortId(job.parentId) : origin.get(job.jobId) ?? t('unknown session');
-  };
+  // The first actionable body row is the first open workflow, otherwise the first card or outcome.
+  const first = runs.length ? runItem(runs[0].flow) : view.jobs.length ? cardItem(view.jobs[0])
+    : 'flow' in recent[0] ? runItem(recent[0].flow) : cardItem(recent[0]);
+  const seen = new Set<string>();
+  const selected = cursor === PROJECT_STRIP_MORE ? undefined : cursor ?? first;
+  const workflows = runs.flatMap((run, i) => [...(i ? [plain('')] : []), ...workflowRows(run, selected, seen, width, now)]);
+  const from = (job: ExecutionJob) => job.parentId
+    ? [job.parentRole && monitorText(job.parentRole), shortId(job.parentId)].filter(Boolean).join(' ') : sessionLabel(job.session);
 
   const rows: MonitorRow[] = [];
+  let missingCoverage = partial;
   if (view.jobs.length) {
     const count = (phase: ExecutionJob['phase'], word: string, ink: Ink) => {
       const n = view.jobs.filter((job) => job.phase === phase).length;
@@ -261,20 +181,20 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
     const source = [partial, view.jobs.some((job) => job.hasScreen) ? t('screens every {n}s', { n: SCREEN_INTERVAL_MS / 1000 }) : '']
       .filter(Boolean).join(' · ');
     const right = [source, partial].find((text) => visualLength(readout) + 2 + visualLength(text) <= width) ?? '';
-    const workersTail = [String(view.jobs.length), !right && partial].filter(Boolean).join(' · ');
-    rows.push(plain(''), plain(pair(readout, right ? muted(right) : '', width)), plain(''), section(t('Workers'), width, workersTail));
-    for (const job of view.jobs) {
-      const at = target(job, cardItem(job));
-      rows.push(...cardRows(job, view, from(job), selected === at.item, width, now).map((text) => ({ ...at, text: fit(text, width) })));
-    }
+    rows.push(plain(''), plain(pair(readout, muted(right), width)));
+    if (right) missingCoverage = '';
   }
   if (runs.length) {
     if (rows.length) rows.push(plain(''));
-    rows.push(section(t('Runs'), width, [String(runs.length), !view.jobs.length && !recent.length && partial].filter(Boolean).join(' · ')));
-    runs.forEach((run, i) => {
-      if (i) rows.push(plain(''));
-      rows.push(...runBlockRows(run, selected, width, now));
-    });
+    rows.push(section(t('Workflow'), width, [String(runs.length), !view.jobs.length && !recent.length && partial].filter(Boolean).join(' · ')), ...workflows);
+  }
+  if (view.jobs.length) {
+    if (rows.length) rows.push(plain(''));
+    rows.push(section(t('Workers'), width, [String(view.jobs.length), missingCoverage].filter(Boolean).join(' · ')));
+    for (const job of view.jobs) {
+      const at = { item: cardItem(job), execJob: { target: jobTarget(job.worker), dir: job.dir, tab: !isHeadless(job.worker) && job.worker.state !== 'queued' } };
+      rows.push(...cardRows(job, view, from(job), selected === at.item, width, now).map((text) => ({ ...at, text: fit(text, width) })));
+    }
   }
   if (recent.length) {
     if (rows.length) rows.push(plain(''));
@@ -284,24 +204,5 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
     rows.push(section(heading, width, visualLength(heading + summary) + 2 <= width ? summary : compact));
     rows.push(...recent.map((entry) => endedRow(entry, selected, width, now)));
   }
-  if (!view.jobs.length || !view.sessions.length) return rows;
-  rows.push(plain(''), section(t('Delegation'), width));
-  const branch = (node: ExecutionNode, stem: string, last: boolean) => {
-    const { job } = node, state = stateOf(job, now), at = target(job, treeItem(job));
-    const marker = selected === at.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
-    const joint = `${stem}${last ? mark('└─', '`-') : mark('├─', '|-')} `;
-    const scout = job.scout ? muted(` · ${t('{kind} scout', { kind: monitorText(job.scout) })}`) : '';
-    const left = `${marker}${theme.board.frame(joint)}${state.ink(state.glyph)} ${roleInk(job.worker.role ?? '')(roleOf(job))}${scout}`;
-    const fact = job.phase === 'settled' ? state.ink(state.word) : muted(compactAge(job.worker.startedAt ?? undefined, now));
-    const room = width - visualLength(left) - visualLength(fact) - 3;
-    const title = room > 3 ? `  ${truncateAnsi(titleOf(job), room - 1)}` : '';
-    rows.push({ ...at, text: fit(pair(left + title, fact, width), width) });
-    const below = stem + (last ? '   ' : `${theme.board.frame(mark('│', '|'))}  `);
-    node.children.forEach((child, i) => branch(child, below, i === node.children.length - 1));
-  };
-  for (const session of view.sessions) {
-    rows.push(plain(`  ${theme.board.title(sessionLabel(session))}${session.here ? muted(` · ${t('this pane')}`) : ''}`));
-    session.nodes.forEach((node, i) => branch(node, '', i === session.nodes.length - 1));
-  }
-  return rows;
+  return cursor && cursor !== PROJECT_STRIP_MORE && !rows.some((row) => row.item === cursor) ? executionRows(view, undefined, width, now) : rows;
 }

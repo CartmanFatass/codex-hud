@@ -693,6 +693,14 @@ function scoutWorkFlow(
   };
 }
 
+/** STATUS writes replace their file atomically and touch the job directory. Keep the
+ * whole retention window plus the usual family sample for older, still-live jobs. */
+export function executionJobDirs(idx: JobIndexCache, dirs: readonly JobDirMeta[], now: number, parse = JSON.parse): readonly JobDirMeta[] {
+  const cutoff = now - 24 * 60 * 60_000;
+  const older = new Set(idx.recentJobFamilies(dirs, 200, parse).map(({ id }) => id));
+  return dirs.filter(({ id, mtimeMs }) => mtimeMs >= cutoff || older.has(id));
+}
+
 export type ThinJobInventory = { dirs: readonly JobDirMeta[]; totalValid: number; complete: boolean };
 
 export function readThinJobs(
@@ -731,7 +739,7 @@ export function readThinJobs(
   };
   const readArt = (path: string) => readArtifact(path, 65536, artifacts, seenArtifacts, markIncomplete);
   const { dirs, totalValid } = inventory ?? idx.listJobDirsByMtime({ onDirError: markIncomplete, onStatError: markIncomplete });
-  const candidates = idx.recentJobFamilies(dirs, 200, parse);
+  const candidates = within === undefined ? idx.recentJobFamilies(dirs, 200, parse) : executionJobDirs(idx, dirs, Date.now(), parse);
   if (totalValid > candidates.length) complete = false;
   const landFlows = new Map<string, WorkFlow | null>();
   const unreadableLanding = new Set<string>();

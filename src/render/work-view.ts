@@ -8,6 +8,7 @@ import { scheduleBadge, scheduleView } from './home-cards.js';
 import { objectiveDetailRows } from './objective-detail.js';
 import { runDetailRows } from './execution-run-detail.js';
 import { executionRows } from './execution-view.js';
+import { workflowDetailRows } from './execution-workflow.js';
 import { activeFilter, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
 import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
@@ -65,6 +66,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   const execution = [
     ['[ ]', 'previous / next project'],
     ['g P H', 'Execution: peek/focus, pin visible, or hide the job’s tab; ⏎ opens it'],
+    ['X', 'Execution batch: pause/resume/stop'],
   ];
   const control = [
     ['c C', 'role: next / previous preset'],
@@ -191,7 +193,7 @@ export function renderWorkboardFrame(
   const truncatedFiles = project && !list && [input.project?.stateTruncated && 'STATE.md', input.project?.specTruncated && 'spec.md'].filter(Boolean).join(', ');
   const headers = [...(strip ? [''] : []), ...controlTop.map((r) => r.text), ...(bar ? [bar.text] : []),
     ...(inspector ? stopPromptRows(state, width).map((r) => r.text) : []),
-    ...(jobs ? batchPromptRows(state, width).map((r) => r.text) : []),
+    ...(jobs || execution ? batchPromptRows(state, width).map((r) => r.text) : []),
     ...(truncatedFiles ? [fit(theme.board.attention(t('Truncated: {files}', { files: truncatedFiles })), width)] : []),
     ...(control && input.error ? [theme.error(monitorText(input.error))] : [])];
   const top = Math.min(headers.length, Math.max(0, height - 2));
@@ -276,7 +278,7 @@ export function renderWorkboardFrame(
   const rows: MonitorRow[] = helpContent
     ? helpContent.rows
     : objective ? objectiveDetailRows(objective, width)
-    : runDetail ? activeRun ? runDetailRows(activeRun, width, now) : [boardRow(fit(t('Run not available'), width))]
+    : runDetail ? activeRun ? runDetailRows(activeRun, width, now, activeRun.kind === 'queue' ? undefined : workflowDetailRows(activeRun, width, now)) : [boardRow(fit(t('Run not available'), width))]
     : native ? nativeInspectorRows(input.tree, width, now)
       : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id))
         : [boardRow(t('Job not available'))]
@@ -367,7 +369,9 @@ export function renderWorkboardFrame(
         : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
-        : execution ? [...(key === PROJECT_STRIP_MORE ? ['⏎ open'] : selected ? ['⏎ details'] : []), ...projectSwitch, ...(selected?.execJob?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : [])]
+        : execution ? [...(key === PROJECT_STRIP_MORE ? ['⏎ open'] : selected ? ['⏎ details'] : []),
+             ...(selected?.batch ? batchKeys(selected.batch) : []), ...projectSwitch,
+             ...(selected?.execJob?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : [])]
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']

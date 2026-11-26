@@ -1,4 +1,4 @@
-/** Shared ticket-queue run formatting and the Inspector-style Run Detail scroll view. Pure; no I/O. */
+/** Shared workflow state formatting and the Inspector-style Run Detail scroll view. Pure; no I/O. */
 import type { ExecutionRun, ExecutionRunStep, ExecutionRunTicket, RunStepKey, RunStepState } from '../collectors/execution-runs.js';
 import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
@@ -18,7 +18,7 @@ export const runRoleInk = (role: string): Ink => role === 'frontend-imp' ? roleI
 export function runElapsed(run: ExecutionRun, now: number): string {
   if (run.createdAt === null) return '';
   const open = run.state === 'working' || run.state === 'paused';
-  const end = open ? now : (run.updatedAt ?? now);
+  const end = open ? now : (run.endedAt ?? run.updatedAt ?? now);
   return ageText(Math.max(0, Math.floor((end - run.createdAt) / 60_000)));
 }
 
@@ -41,20 +41,7 @@ export function stepStateView(state: RunStepState): { glyph: string; ink: Ink } 
   return { glyph: stateMark.queued(), ink: muted };
 }
 
-/** `tickets → review → accept` with state marks, optional role icons, and accept verdict. */
-export function formatRunSteps(steps: readonly ExecutionRunStep[], withIcons: boolean): string {
-  const sep = muted(mark(' → ', ' -> '));
-  return steps.map((step) => {
-    const { glyph, ink } = stepStateView(step.state);
-    const role = STEP_ROLE[step.key];
-    const icon = withIcons ? `${runRoleInk(role)(roleIcon(role))} ` : '';
-    const quiet = step.state === 'waiting' || step.state === 'skipped' || step.state === 'cancelled';
-    const label = (quiet ? muted : theme.board.text)(t(step.key));
-    const verdict = step.verdict ? ink(`: ${monitorText(t(step.verdict))}`) : '';
-    return `${ink(glyph)} ${icon}${label}${verdict}`;
-  }).join(sep);
-}
-
+/** `tickets → review → accept` with state marks, role icons, and accept verdict. */
 function formatRunStepsPlain(steps: readonly ExecutionRunStep[]): string {
   const sep = mark(' → ', ' -> ');
   return steps.map((step) => {
@@ -80,14 +67,17 @@ export function ticketStageView(ticket: ExecutionRunTicket): TicketStagePresenta
     case 'land-gate': {
       const word = t('land gate');
       const step = ticket.landStep ? flowStepDetail(ticket.landStep) : '';
-      return { glyph: mark('◉', '@'), ink: b.active, shortText: word, fullText: step ? `${word} · ${step}` : word };
+      return { glyph: ticket.landingUnknown ? stateMark.asking() : mark('◉', '@'), ink: ticket.landingUnknown ? muted : b.active,
+        shortText: word, fullText: step ? `${word} · ${step}` : word };
     }
     case 'settled':
       return { glyph: stateMark.done(), ink: muted, shortText: t('settled'), fullText: t('settled') };
     case 'worker':
+      if (ticket.statusUnknown) return { glyph: stateMark.asking(), ink: muted, shortText: t('unknown'), fullText: t('unknown') };
       return ticket.asking
         ? { glyph: stateMark.asking(), ink: b.attention, shortText: t('asking'), fullText: t('asking') }
-        : { glyph: mark('◉', '@'), ink: b.active, shortText: t('working'), fullText: t('working') };
+        : ticket.stalled ? { glyph: '!', ink: b.stalled, shortText: t('stalled'), fullText: t('stalled') }
+          : { glyph: mark('◉', '@'), ink: b.active, shortText: t('working'), fullText: t('working') };
     case 'queued': {
       const word = t('queued');
       const by = ticket.blockers?.length ? t('blocked by {ids}', { ids: monitorText(ticket.blockers.join(', ')) }) : '';
@@ -111,8 +101,8 @@ export function ticketStageView(ticket: ExecutionRunTicket): TicketStagePresenta
   }
 }
 
-/** Inspector-style scroll view for one ticket-queue run: facts, tickets, review summary, decisions, todo. */
-export function runDetailRows(run: ExecutionRun, width: number, now: number): MonitorRow[] {
+/** Inspector-style scroll view for one workflow; queues retain full review/decision/todo detail. */
+export function runDetailRows(run: ExecutionRun, width: number, now: number, diagram?: MonitorRow[]): MonitorRow[] {
   const plain = (text: string) => boardRow(fit(text, width));
   const state = runStateView(run.state);
   const elapsed = runElapsed(run, now);
@@ -121,13 +111,15 @@ export function runDetailRows(run: ExecutionRun, width: number, now: number): Mo
     boardRow(theme.board.title(pair(titleLeft, muted(run.flow.slice(0, 8)), width))),
     ...kvRows('Run', run.flow, width),
     ...kvRows('State', [t(run.state), run.unattended ? t('Unattended') : ''].filter(Boolean).join(' · '), width),
-    ...kvRows('Steps', formatRunStepsPlain(run.steps), width),
+    ...(run.steps.length ? kvRows('Steps', formatRunStepsPlain(run.steps), width) : []),
     ...(elapsed ? kvRows('Elapsed', elapsed, width) : []),
     ...(run.verdict ? kvRows('Verdict', run.verdict, width) : []),
     ...(run.repairRounds > 0 ? kvRows('Repairs', String(run.repairRounds), width) : []),
     ...(run.reason ? kvRows('Reason', run.reason, width, theme.board.attention) : []),
     ...(run.held ? kvRows('Held', run.held.reason, width, theme.board.attention) : []),
   ];
+
+  if (diagram) return [...rows, plain(''), section(t('Steps'), width), ...diagram];
 
   rows.push(plain(''), section(t('Tickets'), width, String(run.tickets.length)));
   if (!run.tickets.length) {

@@ -1,4 +1,4 @@
-/** The Execution tab's facts: live and recently ended work, delegation, and the panes to sample. */
+/** The Execution tab's facts: workflows, workers and their children, recent outcomes, and panes to sample. */
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Job, PrewalkScoutKind } from '../mcp/job-contracts.js';
@@ -9,7 +9,7 @@ import { herdrEndpoint } from '../runtime/herdr-socket.js';
 import type { ScreenTarget, ExecutionScreen } from './execution-screens.js';
 import { ENDED_MS, readExecutionRuns, type ExecutionRun } from './execution-runs.js';
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
-import { jobRow, worksWithin } from './thin-jobs.js';
+import { executionJobDirs, jobRow, worksWithin } from './thin-jobs.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
 
 export type { ExecutionRun, ExecutionRunStep, ExecutionRunTicket, RunStepKey, RunStepState, TicketRunStage } from './execution-runs.js';
@@ -24,6 +24,8 @@ export interface ExecutionJob {
   /** A prewalk scout's kind; its parent is the job it scouted for. */
   readonly scout?: PrewalkScoutKind;
   readonly parentId?: string;
+  readonly parentRole?: string;
+  readonly children?: readonly ExecutionJob[];
   /** The main session that dispatched it, from the receipt; unknown stays absent. */
   readonly session?: { readonly harness?: string; readonly id?: string; readonly pane?: string };
   /** A live tab worker whose recorded pane can be read for a thumbnail. */
@@ -38,29 +40,18 @@ export interface EndedExecutionJob {
   readonly endedAt: number;
   readonly result?: 'failed' | 'stopped' | 'landed' | 'not landed' | 'done';
 }
-export interface ExecutionNode { readonly job: ExecutionJob; readonly children: readonly ExecutionNode[] }
-export interface ExecutionSession {
-  readonly harness?: string;
-  readonly id?: string;
-  readonly pane?: string;
-  /** Dispatched from the pane this panel serves. */
-  readonly here: boolean;
-  readonly nodes: readonly ExecutionNode[];
-}
 export interface ExecutionSnapshot {
   readonly root: string;
-  /** Ticket-queue runs of this project: paused and working, plus runs ended within the last 24 hours. */
+  /** Open workflows of this project, plus queues, batches and councils ended within the last 24 hours. */
   readonly runs?: readonly ExecutionRun[];
   /** Ended jobs not represented by a run, newest settlements first. */
   readonly endedJobs?: readonly EndedExecutionJob[];
   /** Running and waiting jobs: those asking first, then running, then queued; the oldest first within each. */
   readonly jobs: readonly ExecutionJob[];
-  readonly sessions: readonly ExecutionSession[];
   readonly complete: boolean;
 }
 export type ExecutionView = ExecutionSnapshot & { readonly screens: ReadonlyMap<string, ExecutionScreen> };
 
-const MAX_ENDED_JOBS = 200;
 const PHASE_ORDER: Record<ExecutionPhase, number> = { waiting: 0, running: 1, queued: 2, settled: 3 };
 const text = (value: unknown) => typeof value === 'string' && value ? value : undefined;
 const jobIdOf = (id: string | undefined) => id?.replace(/^thin-job:/, '');
@@ -82,7 +73,7 @@ export function countProjectLiveJobs(home: string, projectRoot: string): number 
   const root = canonical(projectRoot);
   const { dirs } = cache.listJobDirsByMtime();
   let count = 0;
-  for (const { id } of cache.recentJobFamilies(dirs, 200)) {
+  for (const { id } of executionJobDirs(cache, dirs, Date.now())) {
     const jobRes = cache.readJob<Job & Record<string, unknown>>(id);
     if (jobRes.status !== 'ok') continue;
     const job = jobRes.value;
@@ -125,23 +116,13 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   const children = new Map<string, string[]>();
   for (const [id, worker] of workers) {
     const parent = jobIdOf(worker.parentJobId);
-    if (parent && parent !== id && workers.has(parent)) children.set(parent, [...(children.get(parent) ?? []), id]);
-  }
-  // The tree is the live jobs, everything they started, and the chain that started them.
-  const shown = new Set<string>();
-  const below = [...live];
-  for (let id = below.pop(); id; id = below.pop()) {
-    if (shown.has(id)) continue;
-    shown.add(id);
-    below.push(...(children.get(id) ?? []));
-  }
-  for (const start of live) {
-    const seen = new Set<string>();
-    for (let id = jobIdOf(workers.get(start)!.parentJobId); id && workers.has(id) && !seen.has(id); id = jobIdOf(workers.get(id)!.parentJobId)) {
-      seen.add(id);
-      shown.add(id);
+    if (parent && parent !== id && workers.has(parent)) {
+      let siblings = children.get(parent);
+      if (!siblings) children.set(parent, siblings = []);
+      siblings.push(id);
     }
   }
+  const shown = new Set(live.flatMap((id) => [id, ...(children.get(id) ?? [])]));
   const endpoint = herdrEndpoint(scope.env), targets: ScreenTarget[] = [], liveSet = new Set(live);
   const jobs = new Map([...shown].map((jobId): [string, ExecutionJob] => {
     const worker = workers.get(jobId)!, job = receipt(jobId), dir = join(home, 'jobs', jobId);
@@ -169,14 +150,14 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
       jobId, worker, dir, phase, hasScreen: !!target,
       ...(preset ? { preset } : {}),
       ...(job.prewalk_kind ? { scout: job.prewalk_kind } : {}),
-      ...(parentId ? { parentId } : {}),
+      ...(parentId ? { parentId, parentRole: workers.get(parentId)?.role ?? undefined } : {}),
       ...(harness || id || pane ? { session: { harness, id, pane } } : {}),
       ...(output ? { output } : {}),
     }];
   }));
   const runIds = new Set(runs.map((run) => run.flow));
   const runJobs = new Set(runs.flatMap((run) => [
-    ...run.tickets.map((ticket) => ticket.jobId), ...run.reviews.map((review) => review.job), ...run.decisions.map((decision) => decision.job),
+    ...run.jobIds ?? [], ...run.tickets.map((ticket) => ticket.jobId), ...run.reviews.map((review) => review.job), ...run.decisions.map((decision) => decision.job),
   ]));
   const recent = [...workers].flatMap(([jobId, worker]) => {
     const endedAt = worker.settledAt;
@@ -185,37 +166,13 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   const endedJobs: EndedExecutionJob[] = [];
   for (const entry of recent) {
     const { jobId, worker } = entry, job = receipt(jobId);
-    if ((job.ticket_queue && runIds.has(job.ticket_queue)) || (job.workflow && runIds.has(job.workflow))) continue;
-    if (endedJobs.length === MAX_ENDED_JOBS) { complete = false; break; }
+    if ([job.ticket_queue, job.workflow, job.batch_flow, job.council?.id, job.land_turn].some((id) => id && runIds.has(id))) continue;
     endedJobs.push({ ...entry, dir: join(home, 'jobs', jobId), result: endedJobResult(worker, job) });
   }
-  const ordered = live.map((id) => jobs.get(id)!).sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase] || byStart(a, b));
+  const ordered = live.map((id) => ({ ...jobs.get(id)!, children: children.get(id)?.map((child) => jobs.get(child)!).sort(byStart) }))
+    .sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase] || byStart(a, b));
   // Thumbnails follow the card order.
   const rank = new Map(ordered.map((job, i) => [job.jobId, i]));
   targets.sort((a, b) => rank.get(a.jobId)! - rank.get(b.jobId)!);
-  return { snapshot: { root: scope.root, ...(runs.length ? { runs } : {}), endedJobs, jobs: ordered,
-    sessions: delegationTree(jobs, children, scope.pane), complete }, targets };
-}
-
-/** Roots are the shown jobs with no shown parent, grouped by the main session that dispatched them. */
-function delegationTree(jobs: ReadonlyMap<string, ExecutionJob>, children: ReadonlyMap<string, readonly string[]>, here: string | null): ExecutionSession[] {
-  const placed = new Set<string>();
-  const node = (job: ExecutionJob): ExecutionNode => {
-    placed.add(job.jobId);
-    return { job, children: (children.get(job.jobId) ?? []).flatMap((id) => jobs.get(id) ?? []).sort(byStart)
-      .flatMap((child) => placed.has(child.jobId) ? [] : [node(child)]) };
-  };
-  const sessions = new Map<string, { harness?: string; id?: string; pane?: string; here: boolean; nodes: ExecutionNode[] }>();
-  const ordered = [...jobs.values()].sort(byStart);
-  // Real roots first; a cycle in damaged records has none, so its oldest job stands in.
-  for (const job of [...ordered.filter((j) => !j.parentId || !jobs.has(j.parentId)), ...ordered]) {
-    if (placed.has(job.jobId)) continue;
-    const { harness, id, pane } = job.session ?? {};
-    const key = id ? `${harness}:${id}` : pane ? `pane:${pane}` : '';
-    let session = sessions.get(key);
-    if (!session) sessions.set(key, session = { harness, id, pane, here: false, nodes: [] });
-    session.here ||= !!here && pane === here;
-    session.nodes.push(node(job));
-  }
-  return [...sessions.values()].sort((a, b) => Number(b.here) - Number(a.here));
+  return { snapshot: { root: scope.root, ...(runs.length ? { runs } : {}), endedJobs, jobs: ordered, complete }, targets };
 }

@@ -52,46 +52,43 @@ const text = (frame) => frame.lines.map(stripAnsi).join('\n');
 const itemsOf = (frame) => [...new Set(frame.workboard.rows.map((row) => row.item).filter(Boolean))];
 const cards = (...names) => names.map((name) => `project:exec:${IDS[name]}`);
 
-test('every running and waiting job of the project has a card and a place in the delegation tree, at exact width in 60, 100 and 140 columns', async (t) => {
+test('each live job has one card; parent cards summarize children and each screen has three rows', async (t) => {
   const f = await setup(t), execution = await opened(t, f), view = execution.view(f.project);
   // Asking first, then running by age, then queued; another pane's jobs and a worktree's Sonic child belong to the project too.
   assert.deepEqual(view.jobs.map((job) => job.jobId), ['reviewer', 'imp', 'sonic', 'quiet', 'queued'].map((name) => IDS[name]));
-  for (const width of [60, 100, 140]) for (const lang of ['en', 'zh']) {
+  for (const width of [62, 100, 140]) for (const lang of ['en', 'zh']) {
     const frame = render(view, { width, lang }), shown = text(frame);
     for (const line of frame.lines) {
       assert.equal(visualLength(line), width, `${width} ${lang}: ${stripAnsi(line)}`);
       assert.equal(line, stripAnsi(line), 'the none theme paints no colour');
     }
     assert.deepEqual(itemsOf(frame).slice(0, 5), cards('reviewer', 'imp', 'sonic', 'quiet', 'queued'));
-    assert.equal(itemsOf(frame).length, 13, 'five cards, two recent jobs and six tree rows');
+    assert.equal(itemsOf(frame).length, 7, 'five cards and two recent jobs');
+    assert.equal(frame.workboard.rows.filter((row) => row.item === cards('imp')[0] && row.text.includes('┌')).length, 1);
+    assert.equal(view.screens.get(IDS.imp).lines.length, 3);
     // Tab workers show their last screen lines; headless ones their progress, else their output.
-    for (const part of ['Review of the synthetic diff', 'One question for the main session', '• Running the build', '    tsc finished with 0 errors',
+    for (const part of ['Review of the synthetic diff', 'One question for the main session',
       '合成的中文屏幕内容', 'Keep the synthetic shim', 'Build passes; writing', 'Found three callers', 'read docs/synthetic.md'])
       assert.ok(shown.includes(part), `${width} ${lang} shows ${part}`);
     assert.match(shown, /Finished earlier/);
-    assert.doesNotMatch(shown, /Reaped long ago|Another project/);
-    const words = lang === 'zh' ? ['工作者', '派工关系', '画面', '无界面 · 进度', '无界面 · 输出', '提问中', '工作中', '排队 #1', '本窗格', '侦察']
-      : ['Workers', 'Delegation', '├─ screen', 'headless · progress', 'headless · output', 'asking', 'working', 'queued #1', 'this pane', 'code scout'];
+    assert.doesNotMatch(shown, /Reaped long ago|Another project|Delegation|派工关系|Running the build|finished with 0 errors|Workflow|工作流/);
+    const words = lang === 'zh' ? ['工作者', '画面', '无界面 · 进度', '无界面 · 输出', '提问中', '工作中', '排队 #1', '子任务: code 探路 ✓ · sonic ◉']
+      : ['Workers', '├─ screen', 'headless · progress', 'headless · output', 'asking', 'working', 'queued #1', 'Children: code prewalk scout ✓ · sonic ◉'];
     for (const word of words) assert.ok(shown.includes(word), `${width} ${lang} shows ${word}`);
-    // Who started whom: the main sessions, their jobs, and what those started.
-    const tree = shown.slice(shown.indexOf(lang === 'zh' ? '派工关系' : 'Delegation')).split('\n').map((line) => line.trimEnd());
-    const at = (pattern) => tree.findIndex((line) => pattern.test(line));
-    const order = [/^ {2}Claude 5e55a0de/, /^ {2}├─ \S imp {2}EXEC-01/, /^ {2}│ {2}├─ \S sonic · code .*Scout/, /^ {2}│ {2}└─ \S sonic {2}Collect/,
-      /^ {2}└─ \? reviewer/, /^ {2}Codex c0de0000/, /^ {2}├─ \S imp {2}EXEC-02/, /^ {2}└─ \S sonic {2}Check/].map(at);
-    assert.deepEqual(order, [...order].sort((a, b) => a - b), tree.join('\n'));
-    assert.ok(order.every((row) => row > 0), tree.join('\n'));
+    assert.equal(shown.split('\n').filter((line) => /子任务:|Children:/.test(line)).length, 1);
+    assert.equal(shown.split('\n').filter((line) => line.includes('Collect the synthetic callers')).length, 1);
   }
   assert.match(text(render(view, { width: 60 })), /from imp j0a01000 .* headless j0a02000/);
   for (const line of render(view, { width: 100, theme: 'dark' }).lines) assert.equal(visualLength(line), 100);
   const plain = render(view, { width: 40, icons: 'text', lang: 'zh' });
   for (const line of plain.lines) assert.equal(visualLength(line), 40);
   assert.doesNotMatch(text(plain), /[┌┐└┘├┤▸◉○]/);
-  assert.match(text(plain), /\|- /);
+  assert.doesNotMatch(text(plain), /派工关系|工作流/);
 });
 
 test('before the first read the page says so, and a project with nothing live says that', () => {
   assert.match(text(render(undefined, { width: 60 })), /Reading jobs…/);
-  const empty = { root: '/synthetic', jobs: [], sessions: [], complete: false, screens: new Map() };
+  const empty = { root: '/synthetic', jobs: [], complete: false, screens: new Map() };
   const shown = text(render(empty, { width: 60 }));
   assert.match(shown, /No running or waiting jobs +Partial/);
   assert.match(text(render(empty, { width: 60, lang: 'zh' })), /没有运行中或等待中的任务/);
@@ -167,9 +164,9 @@ test('screen sampling is bounded: a batch per round, a rate that reopening canno
   assert.equal(fork.requests.length, once);
 });
 
-test('a thumbnail keeps the last six lines that say something', () => {
+test('a thumbnail keeps the last three lines that say something', () => {
   const screen = ['one', '', 'two\r', '──────', '|   |', 'three', 'four', '\tfive', 'six   ', 'seven', '╰────╯', '   '].join('\n');
-  assert.deepEqual(thumbnailLines(screen), ['two', 'three', 'four', '    five', 'six', 'seven']);
+  assert.deepEqual(thumbnailLines(screen), ['    five', 'six', 'seven']);
 });
 
 test('Enter opens the job’s Inspector and Esc returns; g, P and H peek, pin and hide that job’s own tab only', async (t) => {
@@ -229,7 +226,11 @@ test('Enter opens the job’s Inspector and Esc returns; g, P and H peek, pin an
   // Enter: that job's Inspector, with the same three actions, then back to the same card.
   const inspector = press(state, '\r').state;
   assert.deepEqual([inspector.subpage.kind, inspector.subpage.from, inspector.subpage.target.workerId], ['inspector', 'execution', `thin-job:${IDS.imp}`]);
-  assert.match(text(render(view, { state: inspector, workboard: execution.board() })), /EXEC-01|synthetic page/);
+  const detail = text(render(view, { state: inspector, workboard: execution.board() }));
+  assert.match(detail, /EXEC-01|synthetic page/);
+  assert.match(detail, /Sonic children/);
+  assert.match(detail, /Scout the synthetic code/);
+  assert.match(detail, /Collect the synthetic callers/);
   assert.deepEqual(press(inspector, 'g').action, { type: 'focus-job-tab', dir: f.dir('imp') });
   assert.deepEqual(press(inspector, 'P').action, { type: 'pin-job-tab', dir: f.dir('imp') });
   assert.deepEqual(press(inspector, 'H').action, { type: 'hide-job-tab', dir: f.dir('imp') });
@@ -246,10 +247,7 @@ test('Enter opens the job’s Inspector and Esc returns; g, P and H peek, pin an
     assert.equal(press(on, 'P').action, undefined);
     assert.equal(press(on, 'H').action, undefined);
   }
-  // A tree row stands for its job.
-  assert.deepEqual(press(onExecution({ cursor: `project:exec-tree:${IDS.reviewer}` }), 'g').action, { type: 'focus-job-tab', dir: f.dir('reviewer') });
-  assert.deepEqual(press(onExecution({ cursor: `project:exec-tree:${IDS.reviewer}` }), 'P').action, { type: 'pin-job-tab', dir: f.dir('reviewer') });
-  assert.deepEqual(press(onExecution({ cursor: `project:exec-tree:${IDS.reviewer}` }), 'H').action, { type: 'hide-job-tab', dir: f.dir('reviewer') });
+  assert.ok(itemsOf(render(view)).every((item) => !item.startsWith('project:exec-tree:')));
   // Elsewhere in the panel the letters stay inert.
   assert.equal(acceptsMonitorInput(initialMonitorState(), { type: 'key', text: 'P' }), false);
   assert.equal(acceptsMonitorInput(initialMonitorState(), { type: 'key', text: 'H' }), false);
@@ -326,7 +324,7 @@ test('the live panel reads screens only with the page up, and its keys reach the
 test('Execution top tab shows live count at 40 and 62 columns (EN/ZH, no-colour & mocha), omits 0, keeps ?N badges, cycles 4 tabs and follows [ ] with Project', async (t) => {
   const f = await setup(t), execution = await opened(t, f), view = execution.view(f.project);
   const projects = [{ root: f.project, name: 'orchard' }, { root: '/synthetic/other', name: 'kiln' }];
-  const empty = { root: f.project, jobs: [], sessions: [], complete: true, screens: new Map() };
+  const empty = { root: f.project, jobs: [], complete: true, screens: new Map() };
   assert.equal(countProjectLiveJobs(f.hud, f.project), view.jobs.length, 'countProjectLiveJobs matches Execution live jobs');
   assert.equal(countProjectLiveJobs(f.hud, '/synthetic/other'), 0);
 

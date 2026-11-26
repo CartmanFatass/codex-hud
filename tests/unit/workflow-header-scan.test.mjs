@@ -13,12 +13,17 @@ test('quiet passes reuse parsed headers, but not delivery claims; a replaced or 
   fs.mkdirSync(dir, { recursive: true });
   const row = { flow, state: 'completed', notices: { 'end-0': 'final' } };
   fs.writeFileSync(path, JSON.stringify(row));
-  const scan = headerScanner(), first = scan(home).header(file);
+  const graph = `${flow}/graph.json`;
+  fs.writeFileSync(join(dir, 'graph.json'), JSON.stringify({ name: 'fixed-batch' }));
+  const scan = headerScanner(), first = scan(home).header(file), firstGraph = scan(home).header(graph);
   assert.equal(first, scan(home).header(file));
+  assert.equal(firstGraph, scan(home).header(graph));
   const claim = noticeEvents(home, first)[0]; assert.deepEqual(noticeEvents(home, first), []);
   fs.unlinkSync(claim.marker); assert.deepEqual(noticeEvents(home, first), [claim]);
   fs.writeFileSync(path+'.tmp', JSON.stringify({ ...row, state: 'paused' })); fs.renameSync(path+'.tmp',path);
   assert.equal(scan(home).header(file).state, 'paused');
   fs.unlinkSync(path); const pass = scan(home);
   assert.ok(!pass.files.includes(file)); assert.equal(pass.header(file), null);
+  fs.unlinkSync(join(dir, 'graph.json'));
+  assert.equal(scan(home).header(graph), null);
 });

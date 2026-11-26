@@ -27,7 +27,8 @@ export function controlRun(run: Omit<Run, 'steps'> & { steps?: Run['steps'] }, a
 }
 export interface Tick { state: 'waiting' | 'running' | 'asking' | 'done' | 'failed' | 'cancelled'; reason?: string; changed?: boolean; recheckMs?: number; effect?: () => Promise<number> }
 
-export const canRepairSealedStep = (attempts: number) => attempts < 2;
+export const SEALED_REPAIR_LIMIT = 2;
+export const canRepairSealedStep = (attempts: number) => attempts < SEALED_REPAIR_LIMIT;
 /** A sealed effect can contain its own transaction and repair loop. The durable
  * admission is consumed even if the driver dies without an outcome. */
 export function sealedEffect(cursor: Cursor, effect: () => Promise<number>): Tick {
