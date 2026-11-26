@@ -59,4 +59,4 @@
 ## interaction: 单项目执行页、选中文字直达 job、通用状态栏和精细交互
 
 **State:** active
-**Features:** exec-page, select-send, universal-bar, fine-interact
+**Features:** exec-page, select-send, universal-bar, fine-interact, home-tidy
