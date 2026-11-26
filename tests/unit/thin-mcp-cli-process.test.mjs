@@ -176,13 +176,16 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'rest-events', 10);
   const job = await f.call('hud_create', { role: 'rest-events', request_key: 'rest-events', task: 'Synthetic rest.' });
-  // Wait for both supervisor startup queries and the watcher's one-time subscription before snapshotting baselines.
-  await until(() =>
-    cliState(job.task_dir)?.agent_session_id &&
-    cliState(job.task_dir)?.pid_start_time &&
-    f.socketRequests.some((r) => r.id === 'hud-cli-events') &&
-    f.socketRequests.some((r) => r.id === 'hud-watch'), t.signal
-  );
+  // Wait for supervisor startup queries and both subscribe-time pane.get reconciliations before snapshotting baselines.
+  await until(() => {
+    const cliSub = f.socketRequests.findIndex((r) => r.id === 'hud-cli-events');
+    const watchSub = f.socketRequests.findIndex((r) => r.id === 'hud-watch');
+    return cliState(job.task_dir)?.agent_session_id &&
+      cliState(job.task_dir)?.pid_start_time &&
+      cliSub >= 0 && watchSub >= 0 &&
+      f.socketRequests.slice(cliSub + 1).some((r) => r.id === 'hud-cli-probe' && r.method === 'pane.get') &&
+      f.socketRequests.slice(watchSub + 1).some((r) => r.id === 'hud-watch-probe' && r.method === 'pane.get');
+  }, t.signal);
   const writes = fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8');
   // The MCP can still be doing its asynchronous caller-pane delivery lookup.
   const supervisorCommands = () => withoutCallerLookups(f.commands());

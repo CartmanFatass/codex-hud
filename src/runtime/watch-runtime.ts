@@ -185,7 +185,7 @@ function probeTabs(checks: { id: string; session: SessionEntry }[]) {
         const start = Math.max(now, nextTabProbe);
         nextTabProbe = start + TAB_PROBE_INTERVAL_MS;
         if (start > now) await delay(Math.ceil(start - now), undefined, { signal });
-        const result = await probeHerdrTarget(session.fields, signal);
+        const result = await probeHerdrTarget(session.fields, signal, 'hud-watch-probe');
         if (signal.aborted || !sameSession(id, session) || !hasLocalHerdrTarget(session.fields)) continue;
         if (result === 'unknown') {
           const prior = tabRetries.get(id);

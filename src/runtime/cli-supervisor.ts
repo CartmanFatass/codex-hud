@@ -143,7 +143,7 @@ export async function main() {
     checkingTab = true;
     tabCheckPending = false;
     nextTabProbe = now + TAB_PROBE_INTERVAL_MS;
-    void probeHerdrTarget(session, lifecycle.signal).then(result => {
+    void probeHerdrTarget(session, lifecycle.signal, 'hud-cli-probe').then(result => {
       if (stopped) return;
       if (!sameSession()) { shutdown(); return; }
       if (result === 'unknown') {

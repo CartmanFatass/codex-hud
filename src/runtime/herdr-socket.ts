@@ -60,11 +60,11 @@ export function hasLocalHerdrTarget({ left, tab, herdrSocket }: HerdrTarget): bo
 
 /** Reconcile a direct-exec receipt against its exact root pane (launch_id + terminal_id).
  * On an endpoint without launch_id capability, identity is always 'unknown', never 'absent'. */
-export async function probeDirectRoot(target: HerdrTarget, signal?: AbortSignal): Promise<'present' | 'absent' | 'unknown'> {
+export async function probeDirectRoot(target: HerdrTarget, signal?: AbortSignal, id?: string): Promise<'present' | 'absent' | 'unknown'> {
   if (!hasLocalHerdrTarget(target)) return 'unknown';
   const { left, launchId, terminalId } = target;
   if (!left || !launchId || !terminalId) return 'unknown';
-  const reply = await request('pane.get', { pane_id: left }, { signal }).catch(() => null);
+  const reply = await request('pane.get', { pane_id: left }, { signal, id }).catch(() => null);
   if (!reply) return 'unknown';
   if (reply.error) {
     if (reply.error.code !== 'pane_not_found') return 'unknown';
@@ -78,19 +78,19 @@ export async function probeDirectRoot(target: HerdrTarget, signal?: AbortSignal)
 }
 
 /** A push is only a hint on stock herdr. On the fork, direct receipts reconcile against exact root (launch_id + terminal_id). */
-export async function probeHerdrTarget(target: HerdrTarget, signal?: AbortSignal): Promise<'present' | 'absent' | 'unknown'> {
+export async function probeHerdrTarget(target: HerdrTarget, signal?: AbortSignal, id?: string): Promise<'present' | 'absent' | 'unknown'> {
   if (!hasLocalHerdrTarget(target)) return 'unknown';
-  if (target.directExec === '1' || target.launchId || target.terminalId) return probeDirectRoot(target, signal);
+  if (target.directExec === '1' || target.launchId || target.terminalId) return probeDirectRoot(target, signal, id);
   const { left, tab } = target;
-  const reply = await (left ? request('pane.get', { pane_id: left }, { signal })
-    : request('tab.get', { tab_id: tab }, { signal })).catch(() => null);
+  const reply = await (left ? request('pane.get', { pane_id: left }, { signal, id })
+    : request('tab.get', { tab_id: tab }, { signal, id })).catch(() => null);
   if (reply?.error) return reply.error.code === (left ? 'pane_not_found' : 'tab_not_found') ? 'absent' : 'unknown';
-  const id = left ? reply?.result?.pane?.pane_id : reply?.result?.tab?.tab_id;
-  return id === (left || tab) ? 'present' : 'unknown';
+  const idMatched = left ? reply?.result?.pane?.pane_id : reply?.result?.tab?.tab_id;
+  return idMatched === (left || tab) ? 'present' : 'unknown';
 }
 
 // Herdr subscription sockets cannot carry requests; each query gets its own connection.
-export function request(method: string, params: Record<string, unknown>, { timeoutMs = 2000, signal }: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<HerdrReply | null> {
+export function request(method: string, params: Record<string, unknown>, { timeoutMs = 2000, signal, id = 'hud-request' }: { timeoutMs?: number; signal?: AbortSignal; id?: string } = {}): Promise<HerdrReply | null> {
   const path = process.env.HERDR_SOCKET_PATH;
   if (!path || signal?.aborted) return Promise.resolve(null);
   return new Promise((resolve) => {
@@ -109,7 +109,7 @@ export function request(method: string, params: Record<string, unknown>, { timeo
     const abort = () => done();
     const timer = setTimeout(done, timeoutMs);
     signal?.addEventListener('abort', abort, { once: true });
-    socket.on('connect', () => socket.write(JSON.stringify({ id: 'hud-request', method, params }) + '\n'));
+    socket.on('connect', () => socket.write(JSON.stringify({ id, method, params }) + '\n'));
     lines.once('line', (line) => { try { done(JSON.parse(line)); } catch { done(); } });
     lines.on('error', abort);
     socket.on('error', abort);
