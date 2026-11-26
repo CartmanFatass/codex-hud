@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import * as fs from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { basename, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -55,14 +55,15 @@ if (command === 'pi' && args.includes('--print')) {
   const model = JSON.parse(fs.readFileSync(caps, 'utf8'))[args[args.indexOf('--model') + 1]];
   if (!model) process.exit(1);
   process.stdin.once('data', () => console.log(JSON.stringify({ id: 'hud-thinking', data: { model } })));
-} else fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args }) + '\n');
+} else if (command !== 'direct-start') fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command, args }) + '\n');
 function waitToReply() {
   const end = Date.now() + 20000;
   while (Date.now() < end && !fs.existsSync(join(process.env.HOME, 'release-prompt-result'))) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
   }
 }
-if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
+if (command === 'direct-start') {
+  if (fs.existsSync(join(process.env.HOME, 'hold-direct-start'))) waitToReply();
   const pane = args[args.indexOf('--pane') + 1];
   const busyIdFile = join(process.env.HOME, 'busy-pane-id');
   const busyCountFile = join(process.env.HOME, 'busy-pane-count');
@@ -86,17 +87,6 @@ if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
     console.error('synthetic delayed start failed');
     process.exit(1);
   }
-  if (fs.existsSync(join(process.env.HOME, 'start-not-ready'))) {
-    console.log(
-      JSON.stringify({
-        error: {
-          code: 'agent_not_ready',
-          message: 'agent synthetic is blocked during startup and is not ready for prompts',
-        },
-      })
-    );
-    process.exit(1);
-  }
   const kind = args[args.indexOf('--kind') + 1];
   const quotaModel = join(process.env.HOME, 'quota-pi-model');
   if (kind === 'pi' && args.includes('--model') && fs.existsSync(quotaModel) &&
@@ -117,9 +107,9 @@ if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
   const piDir = kind === 'pi' ? join(process.env.HUD_HOME, 'jobs', args[2].replace(/-primary$/, '')) : null;
   if (!routingOnly && piDir && fs.existsSync(join(piDir, 'job.json'))) {
     const dir = piDir;
-    const holdPi = fs.existsSync(join(process.env.HOME, 'hold-pi-start'));
-    const stat = holdPi && fs.readFileSync('/proc/self/stat', 'utf8').split(') ').at(-1).split(' ');
-    const identity = holdPi ? { version: 1, task_dir: dir, slot: 'primary', pid: process.pid, pid_start_time: stat[19] } : {};
+    const pid = Number(process.env.FAKE_DIRECT_PID);
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ').at(-1).split(' ');
+    const identity = { version: 1, task_dir: dir, slot: 'primary', harness: 'pi', pid, pid_start_time: stat[19] };
     const resumeArg = args.lastIndexOf('--session');
     let session = {};
     if (resumeArg >= 0 && fs.existsSync(args[resumeArg + 1])) {
@@ -130,32 +120,6 @@ if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ ...identity, ...session, state: 'working', exit_reason: null }));
     if (!session.session_file && !fs.existsSync(join(process.env.HOME, 'defer-pi-report')))
       writeFixtureFile(join(dir, 'report.md'), 'Synthetic implementation report.');
-    // This stand-in for pi publishes working, then exits without a shutdown write.
-    if (holdPi) waitToReply();
-  }
-  if (
-    ['cli-exit', 'cli-unknown', 'cli-gone', 'grace-quiet-gone', 'blocked-quiet-gone', 'exit-after-done'].some((name) =>
-      fs.existsSync(join(process.env.HOME, name))
-    )
-  ) {
-    const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 15000)'], { detached: true, stdio: 'ignore' });
-    sleeper.unref();
-    writeFixtureFile(join(process.env.HOME, 'fake-agent-pid'), String(sleeper.pid));
-  }
-  if (kind !== 'pi') {
-    const dir = join(process.env.HUD_HOME, 'jobs', args[2].replace(/-primary$/, ''));
-    const launch = /^LAUNCH=(.+)$/m.exec(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8'))[1];
-    const tab = fs.readFileSync(process.env.FAKE_LOG, 'utf8').trimEnd().split('\n').map(line => JSON.parse(line))
-      .find(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create' && args.includes(`HUD_TAB_LAUNCH=${launch}`));
-    const token = tab?.args.find((arg, i) => tab.args[i - 1] === '--env' && arg.startsWith('HUD_INVOCATION_TOKEN='))?.split('=')[1];
-    const shims = join(dir, 'cli-invocations', launch);
-    if (!token || !fs.readFileSync(join(shims, kind), 'utf8').includes(token)) throw Error('wrong synthetic invocation token');
-    // This fake models a successful agent.start, not a later discovery query.
-    const p = ['cli-pid', 'fake-agent-pid'].map(n => join(process.env.HOME, n)).find(fs.existsSync);
-    if (p) {
-      const pid = Number(fs.readFileSync(p)), stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-      fs.writeFileSync(join(shims, 'witness.json'), JSON.stringify({ pid, start: stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)[19] }), { flag: 'wx', mode: 0o600 });
-    } else fs.writeFileSync(join(shims, 'synthetic-start'), '', { flag: 'wx' });
   }
 } else if (command === 'herdr' && args[0] === 'pane' && args[1] === 'read' && !routingOnly) {
   const paneFile = join(process.env.HOME, 'pane-read');

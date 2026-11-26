@@ -4,7 +4,7 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
   const fs = (await import('node:fs')).default;
   const { join } = await import('node:path');
   const { syncBuiltinESMExports } = await import('node:module');
-  const isCli = script.endsWith('/hud-cli.mjs') && process.argv[2] !== '--exec-witness';
+  const isCli = script.endsWith('/hud-cli.mjs');
   const isWatcher = script.endsWith('/hud-watch.mjs');
 
   // Accelerate deadlines, not observations: production still wakes from real socket/file events.
@@ -33,26 +33,6 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
         }
       }
       return value;
-    };
-    // These supervisor fixtures use stand-in foreground PIDs created outside a
-    // pane. Model the environment herdr actually injects into that one occupant.
-    const readFile = fs.readFileSync, dir = process.argv[2];
-    const launch = /^LAUNCH=(.+)$/m.exec(readFile(join(dir, 'SESSION.txt'), 'utf8'))?.[1];
-    const shims = launch && join(dir, 'cli-invocations', launch);
-    if (shims && fs.existsSync(join(shims, 'synthetic-start')) && !fs.existsSync(join(shims, 'witness.json'))) {
-      // The supervisor PID stands in for this fixture's original CLI when no disposable PID was supplied.
-      const start = readFile('/proc/self/stat', 'utf8').split(') ').at(-1).split(' ')[19];
-      fs.writeFileSync(join(shims, 'witness.json'), JSON.stringify({ pid: process.pid, start }), { flag: 'wx', mode: 0o600 });
-    }
-    fs.readFileSync = (file, ...args) => {
-      const pid = /^\/proc\/(\d+)\/environ$/.exec(String(file))?.[1];
-      if (pid && (pid === String(process.pid) || ['cli-pid', 'fake-agent-pid'].some(name => {
-        const path = join(process.env.HOME, name); return fs.existsSync(path) && readFile(path, 'utf8') === pid;
-      }))) {
-        const fields = Object.fromEntries(readFile(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map(l => l.split('=')));
-        return `HUD_JOB_DIR=${dir}\0HERDR_PANE_ID=${fields.LEFT}\0HERDR_TAB_ID=${fields.TAB}\0` + (fields.LAUNCH ? `HUD_TAB_LAUNCH=${fields.LAUNCH}\0` : '');
-      }
-      return readFile(file, ...args);
     };
     const opendir = fs.opendirSync;
     fs.opendirSync = (...args) => {

@@ -75,6 +75,7 @@ import {
   replayOptions, harnessesSourceFor, argsForPlace,
 } from './places.js';
 import { ensureWatcher, launchError, launchFailure, canTryNext, rejectLaunch, run, refusedBeforeInput, type DispatchResult } from './proc.js';
+import { HERDR_FORK_REQUIRED, SHELL_WORKER_UNSUPPORTED, isHudHerdrFork, isShellLaunchedWorker } from '../../runtime/herdr-socket.js';
 
 function derivedKey(kind: string, ...parts: unknown[]): string {
   return `${kind}:${createHash('sha256').update(JSON.stringify(parts)).digest('hex')}`;
@@ -1216,6 +1217,8 @@ async function prepareWorktree(job: Job, worktree: ManagedWorktree) {
 
 async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: string, task: string, worktree?: ManagedWorktree, standingBrief?: StandingBriefRef, options: { callerToken?: string; resume?: NativeResume } = {}): Promise<DispatchResult> {
   const { resume } = options;
+  if (!job.headless && (place.harness === 'cli' || place.harness === 'pi') && !(await isHudHerdrFork()))
+    return rejectLaunch(launchError(HERDR_FORK_REQUIRED, 'herdr_fork_required'));
   let instructionsPath = '';
   try {
     if (job.borrowed_instructions && place.harness === 'bro')
@@ -1320,6 +1323,8 @@ export async function resumeJob(current: Job, status: JobStatus, row: JobRow, me
     if (!latest || latest.reaped_at !== current.reaped_at || !fresh || fresh.ended_at !== status.ended_at ||
         fresh.state !== expected || fresh.pid !== status.pid)
       return { ok: false, code: 'worker_reopening' };
+    if (!latest.headless && isShellLaunchedWorker(jobCache.readSession(latest.job, { throwOnError: true })?.fields))
+      return { ok: false, code: 'shell_worker_unsupported', error: SHELL_WORKER_UNSUPPORTED };
     const pending = latest.headless ? readHeadlessSends(dir) : [];
     if (pending.length && !automatic && !answerRequest) return { ok: false, code: 'worker_reopening' };
     if (automatic && !pending.length) return;
@@ -1421,6 +1426,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
       jobCache.invalidateFile(pidFile);
     }
     if (taskEntry) releaseTask(taskEntry);
+    if (result.code === 'herdr_fork_required') return { ok: false, code: result.code, error: HERDR_FORK_REQUIRED };
     const cleaned = result.directRollback ? await cleanupDirectResume(result.directRollback) : !result.cleanupFailed;
     if (cleaned && !result.launchUnknown) return;
     if (carryTask && activeTasks.get(id) === carryTask && batchTasks.get(id) !== carryTask) sampleTask(carryTask);
@@ -1463,6 +1469,8 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   let current = findJobMutable(id);
   if (!current) return { ok: false, code: 'job_not_found' };
   if (current.role === 'sonic' || current.role === 'council' || current.council) return { ok: false, code: 'not_continuable' };
+  if (!current.headless && isShellLaunchedWorker(jobCache.readSession(id, { throwOnError: true })?.fields))
+    return { ok: false, code: 'shell_worker_unsupported', error: SHELL_WORKER_UNSUPPORTED };
   const dir = directory(current.job);
   const now = Date.now();
   const duplicate = explicitKey === undefined

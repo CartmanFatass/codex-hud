@@ -8,7 +8,8 @@ import { parseWorktreeList } from '../collectors/worktrees.js';
 import type { DoneReceipt, Job, JobStatus, Turn } from '../mcp/job-contracts.js';
 import { jobFiles as files, REPO_ROOT } from '../mcp/paths.js';
 import { receiptForTurn, turnToken } from '../roles/cli-turn.js';
-import { isRecord, listedPanes, runCommand } from '../roles/herdr-run.js';
+import { isRecord, runCommand } from '../roles/herdr-run.js';
+import { HERDR_FORK_REQUIRED, isHudHerdrFork } from '../runtime/herdr-socket.js';
 import { JobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
 import { readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { readFileBounded, readJsonBounded } from '../utils/atomic-fs.js';
@@ -431,7 +432,7 @@ async function installDoctor(io: HudIO): Promise<number> {
   const { env } = io, fallback = resolve(REPO_ROOT), installed = checkout(executable('hud', env), 'bin/hud');
   const root = installed ?? fallback, stamp = diskStamp(root);
   const herdr = executable('herdr', env);
-  const reachability = herdr ? runCommand('herdr', ['pane', 'list'], env, { budgetMs: 120 }) : null;
+  const fork = isHudHerdrFork(undefined, env);
   const checks = [check('Node', `${process.version} at ${quoted(process.execPath)}`,
     Number(process.versions.node.split('.')[0]) >= 24 ? undefined : 'Use Node >=24.0.0.')];
   const pi = executable('pi', env);
@@ -447,9 +448,8 @@ async function installDoctor(io: HudIO): Promise<number> {
     state = [...generationChecks(home, bindings.roots), ...bindings.results, projectTrust(projects, bindings),
       credentialsMode(home), stuckLeases(home), await trees];
   }
-  const reachable = await reachability;
-  checks.push(reachable?.ok && listedPanes(reachable.stdout) ? check('herdr', 'reachable') : check('herdr',
-    herdr ? 'not reachable within the preflight budget' : 'not on PATH', 'Run hud doctor inside a working herdr session.'),
+  checks.push(await fork && herdr ? check('herdr', 'reachable (herdr-hud)') : check('herdr',
+    herdr ? 'fork capability not confirmed' : 'not on PATH', `${HERDR_FORK_REQUIRED} Run hud doctor inside that session with herdr on PATH.`),
     check('pi', pi ? quoted(pi) : 'not on PATH', pi ? undefined : 'Install pi and put it on PATH.'), ...install, ...state);
   await io.stdout(checks.map(({ name, detail, fix }) => `${fix ? 'FAIL' : 'PASS'} ${name}: ${detail}${fix ? ` — Fix: ${fix}` : ''}\n`).join(''));
   return checks.some((row) => row.fix) ? 1 : 0;

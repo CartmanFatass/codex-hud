@@ -132,7 +132,7 @@ test('a scouted imp pilot reports quota refusal without rotating out of its froz
   const { items: [pilot, next] } = index();
   assert.equal(pilot.preset, 'alpha');
   assert.equal(pilot.state, 'failed');
-  assert.equal(pilot.reason, 'dispatch_failed');
+  assert.equal(pilot.reason, 'invalid_request');
   assert.equal(next.job, undefined);
 });
 

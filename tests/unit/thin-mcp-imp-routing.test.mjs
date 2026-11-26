@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -19,12 +20,12 @@ const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const receipt = job => read(join(job.task_dir, 'job.json'));
 const create = (f, task, options = {}) => f.call('hud_create', { role: 'imp', task, ...options });
 const settings = (f, patch) => write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: false, impPlacement: 'auto', roleCaps: { imp: 0 }, ...patch }));
-const landRepair = (f, source) => {
+const landRepair = async (f, source) => {
   const module = new URL('../../dist/mcp/thin-main.js', import.meta.url).href;
   const script = `import { dispatchLandRepair } from ${JSON.stringify(module)};
     console.log(await dispatchLandRepair(${JSON.stringify(source.job)}, process.cwd(), 'Synthetic repair.', 'land:test', null));`;
-  const id = execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: f.root, env: f.env, encoding: 'utf8' }).trim();
-  return read(join(f.env.HUD_HOME, 'jobs', id, 'job.json'));
+  const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { cwd: f.root, env: f.env, encoding: 'utf8' });
+  return read(join(f.env.HUD_HOME, 'jobs', stdout.trim(), 'job.json'));
 };
 function role(f, routing, small = pi('small')) {
   const dir = join(f.env.HUD_HOME, 'roles');
@@ -94,7 +95,7 @@ test('Even rotates in pool order, skips unavailable presets, wraps around and pi
   assert.equal(retry.route.preset, 'small');
   assert.equal(receipt(retry).model, 'synthetic/small');
   write(join(retry.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
-  const repair = landRepair(f, retry);
+  const repair = await landRepair(f, retry);
   assert.equal(repair.retry_of, retry.job);
   assert.equal(repair.route.preset, 'small');
   assert.equal(repair.model, 'synthetic/small');
@@ -126,7 +127,7 @@ test('Queued Imp even launch rotates from its pinned preset on quota refusal', a
   assert.equal(ran.job, queued.job);
   assert.equal(ran.overflow_from, 'imp');
   assert.equal(ran.route.preset, 'small');
-  assert.match(ran.route.fallback, /Skipped preset deep: HTTP 429/);
+  assert.match(ran.route.fallback, /Skipped preset deep: invalid_request: HTTP 429/);
   assert.equal(ran.model, 'synthetic/small');
   assert.equal(ran.attempts.length, 2);
 });
@@ -370,7 +371,7 @@ test('land repair of a light job in grace starts a standard replacement without 
   role(f, routing);
   const lightJob = await create(f, 'One-file synthetic repair source.', { experiment: 'synthetic-speed', arm: 'light' });
   write(join(lightJob.task_dir, 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
-  const job = landRepair(f, lightJob);
+  const job = await landRepair(f, lightJob);
   assert.notEqual(job.job, lightJob.job);
   assert.equal(job.retry_of, lightJob.job);
   assert.equal(job.experiment, 'synthetic-speed');

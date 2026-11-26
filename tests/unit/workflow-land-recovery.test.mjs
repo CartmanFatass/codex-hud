@@ -9,7 +9,7 @@ import { takeLease } from '../../dist/roles/lease.js';
 import { isProcAlive, procStat, readBootId } from '../../dist/utils/proc.js';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { stopChild } from '../helpers/process-cleanup.mjs';
-import { checkout, job, jobDir, settle } from '../helpers/thin-mcp-land.mjs';
+import { bindSourceTab, checkout, job, jobDir, settle } from '../helpers/thin-mcp-land.mjs';
 
 const interrupted = 'Land helper exited; inspect the checkout before retrying. No step was replayed.';
 function killRunner(f, flow) {
@@ -154,7 +154,7 @@ syncBuiltinESMExports();`;
   const f = await checkout(t, ['grep fixed tracked || { echo synthetic-repair-needed; exit 1; }'], {
     probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(preload))};`,
   });
-  fs.writeFileSync(join(jobDir(f), 'SESSION.txt'), 'PRIMARY=source-agent\n');
+  bindSourceTab(t, f);
   fs.writeFileSync(join(jobDir(f), 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   const { flow } = await f.call('hud_land', { job });
   await until(() => fs.existsSync(join(f.env.HOME, 'repair-dispatched')), t.signal);

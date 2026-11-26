@@ -7,7 +7,7 @@ import { withDistLock } from '../../scripts/dist-lock.mjs';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
-import { checkout, job, jobDir, repair, settle } from '../helpers/thin-mcp-land.mjs';
+import { bindSourceTab, checkout, job, jobDir, repair, settle } from '../helpers/thin-mcp-land.mjs';
 
 test('red gate continues the source in grace with clean assertion evidence; its rebased fix passes', async t => {
   const f = await checkout(t, [`grep fixed tracked || {
@@ -26,7 +26,7 @@ TAP
 seq 50
 exit 1
 }`]);
-  fs.writeFileSync(join(jobDir(f), 'SESSION.txt'), 'PRIMARY=source-agent\n');
+  bindSourceTab(t, f);
   fs.writeFileSync(join(jobDir(f), 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   fs.writeFileSync(join(f.main, 'upstream'), 'new base');
   f.git(f.main, 'add', 'upstream'); f.git(f.main, 'commit', '-qm', 'advance base');
@@ -67,7 +67,7 @@ syncBuiltinESMExports();`;
   const dir = jobDir(f), jobFile = join(dir, 'job.json'), statusFile = join(dir, 'STATUS.json');
   writeFixtureFile(jobFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(jobFile)),
     cli: { agent: 'claude', can_continue: true, idle_grace_s: 60 } }));
-  writeFixtureFile(join(dir, 'SESSION.txt'), 'PRIMARY=source-agent\n');
+  bindSourceTab(t, f);
   writeFixtureFile(join(dir, 'report.md'), 'Synthetic previous report.');
   const previous = new Date(Date.now() - 60000);
   writeFixtureFile(join(dir, 'turn.json'), JSON.stringify({ seq: 1, sent_at: previous.toISOString(), report_sig: null }));
@@ -131,7 +131,7 @@ async function isolatedLand(t, gate) {
 
 test('land repairs using its original modules after dist is rebuilt during the gate', async t => {
   const f = await isolatedLand(t, ['while test ! -f "$HOME/release"; do sleep .05; done; grep fixed tracked']);
-  fs.writeFileSync(join(jobDir(f), 'SESSION.txt'), 'PRIMARY=source-agent\n');
+  bindSourceTab(t, f);
   fs.writeFileSync(join(jobDir(f), 'STATUS.json'), JSON.stringify({ state: 'idle_grace' }));
   const { flow } = await f.call('hud_land', { job });
   await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
@@ -176,7 +176,7 @@ test('a red gate resumes the closed source session in its managed checkout', asy
   const source = JSON.parse(fs.readFileSync(jobFile));
   writeFixtureFile(jobFile, JSON.stringify({ ...source, reaped_at: now, resume_s: 1620,
     place: { harness: 'pi', pi_role: 'implementer' } }));
-  writeFixtureFile(join(dir, 'SESSION.txt'), 'TAB=w4E:t1\nLEFT=w4E:p1\nPRIMARY=source-agent\n');
+  await bindSourceTab(t, f).exit();
   writeFixtureFile(join(dir, 'report.md'), 'Synthetic original report.');
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true,
     exit_reason: 'closed after declared report', settled_at: now, ended_at: now, session_id: id, session_file: file }));

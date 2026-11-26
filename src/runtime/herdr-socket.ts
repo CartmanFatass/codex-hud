@@ -43,10 +43,19 @@ export function isHudHerdrVersion(version: unknown): boolean {
   return typeof version === 'string' && /-hud(?:$|[.-])/.test(version);
 }
 
-/** Detect the HUD herdr fork via `ping` version suffix `-hud`. Falls back to stock (`false`). */
-export async function isHudHerdrFork(signal?: AbortSignal): Promise<boolean> {
-  const reply = await request('ping', {}, { timeoutMs: 500, signal }).catch(() => null);
-  return isHudHerdrVersion(reply?.result?.version);
+export const HERDR_FORK_REQUIRED = 'Managed tab workers require the HUD herdr fork (herdr-hud; ping version must contain -hud).';
+export const SHELL_WORKER_UNSUPPORTED = 'Legacy shell-launched worker receipt; close the old worker manually before starting a new job.';
+
+/** Browser shell receipts have no managed PRIMARY; split Pi receipts carry DIRECT_EXEC. */
+export function isShellLaunchedWorker(fields?: { primary?: string; directExec?: string }): boolean {
+  return Boolean(fields?.primary && fields.directExec !== '1');
+}
+
+/** Capability must be confirmed by the running server, never by the binary on PATH. */
+export async function isHudHerdrFork(signal?: AbortSignal, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  if (!herdrEndpoint(env)) return false;
+  const reply = await request('ping', {}, { timeoutMs: 500, signal, env }).catch(() => null);
+  return !reply?.error && isHudHerdrVersion(reply?.result?.version);
 }
 
 export async function hasHerdrHiddenTabs(env = process.env): Promise<boolean> {

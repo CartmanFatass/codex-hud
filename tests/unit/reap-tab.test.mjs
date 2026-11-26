@@ -4,7 +4,6 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { createServer } from 'node:net';
 import { recordTabShells } from '../../dist/runtime/tab-shell.js';
-import { prepareCliInvocation } from '../../dist/runtime/cli-invocation.js';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -66,7 +65,7 @@ function fixture(t, { status = 'idle', orch = 'main-pane', label = 'synthetic', 
     tabs: [{ tab_id: 'worker-tab', label }], panes: [{ pane_id: 'worker-pane', tab_id: 'worker-tab', agent: status && 'pi' },
       { pane_id: 'main-pane', tab_id: 'main-tab', agent: 'pi' }], agents: status ? [agent] : [], replacement: replacement && { ...agent, ...replacement },
   }));
-  fs.writeFileSync(join(dir, 'SESSION.txt'), `LAUNCH=${launch}\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\nORCH=${orch}\nPRIMARY=worker\n`);
+  fs.writeFileSync(join(dir, 'SESSION.txt'), `LAUNCH=${launch}\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\nORCH=${orch}\n`);
   const env = { ...process.env, HOME: root, HUD_HOME: root, DIR: dir, STATE: state, PATH: root, PI_ROLES_LEDGER: join(root, 'ledger') };
   const put = (fields) => fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ version: 1, task_dir: dir, slot: 'primary', session_file: native, state: 'idle_grace', ...fields }));
   put({});
@@ -79,34 +78,6 @@ function worker(t, f) {
   t.after(() => { child.kill('SIGKILL'); });
   return child;
 }
-
-test('idle/done: one /quit, wait for inventory (not just pane detachment), verify tab closed; no ledger or stop marker', t => {
-  for (const status of ['idle', 'done']) {
-    const f = fixture(t, { status });
-    f.put({ session_id: 'synthetic-run', pid: f.occupant, pid_start_time: procStat(f.occupant).start });
-    const r = f.run(); assert.equal(r.status, 0, r.stderr);
-    const log = f.calls();
-    assert.deepEqual(log.filter(a => ['prompt','close'].includes(a[1])), [['agent','prompt','worker-pane','/quit'], ['tab','close','worker-tab']]);
-    assert.ok(log.filter(a => a.join(' ') === 'agent list').length >= 4);
-    assert.deepEqual(log.at(-1), ['tab','list']);
-    assert.equal(fs.existsSync(join(f.dir, 'STATUS.json.stop-requested')), false);
-    assert.equal(fs.existsSync(f.env.PI_ROLES_LEDGER), false);
-  }
-});
-
-test('missing or exited stamped Pi cannot quit a replacement on the identical transcript', async t => {
-  for (const dead of [false, true]) {
-    const f = fixture(t);
-    if (dead) {
-      const original = worker(t, f), start = procStat(original.pid).start, end = once(original, 'exit'); original.kill(); await end;
-      f.put({ pid: original.pid, pid_start_time: start });
-    }
-    const state = JSON.parse(fs.readFileSync(f.state)); state.foreground = f.occupant; fs.writeFileSync(f.state, JSON.stringify(state));
-    const r = f.run(); assert.equal(r.status, 1); assert.match(r.stderr, /idle agent launch identity unverified/);
-    assert.ok(!f.calls().some(a => ['prompt','close'].includes(a[1])));
-    assert.ok(!/^[XZ]$/.test(procStat(f.occupant).state));
-  }
-});
 
 test('launch-time shell capture permits the same otherwise-empty foreground shell, not a missing receipt', async t => {
   const f = fixture(t, { status: null }); fs.unlinkSync(join(f.dir, 'tab-shells.json'));
@@ -133,13 +104,11 @@ test('exec in the original shell keeps the tab even with identical PID, start, s
   assert.ok(!f.calls().some(a => a[1] === 'close'));
 });
 
-test('renamed tab, foreign occupant, changed occupant and orchestrator pane are never quit or closed', async t => {
+test('renamed tab, foreign occupant and orchestrator pane are never quit or closed', async t => {
   for (const [options, reason] of [
     [{ status: null, label: 'renamed' }, /: TAB worker-tab name changed or missing; not closing\n$/],
     [{ name: 'foreign' }, /foreign agent/], // Even though it reopened the recorded session.
     [{ status: null, foreignShell: true }, /pane launch ownership unverified/],
-    [{ replacement: { agent_session: { value: '/other' } } }, /agent changed/],
-    [{ replacement: { name: 'foreign' } }, /agent changed/],
     [{ orch: 'worker-pane' }, /orchestrator tab; not closing/],
   ]) {
     const f = fixture(t, options);
@@ -154,22 +123,20 @@ test('renamed tab, foreign occupant, changed occupant and orchestrator pane are 
   }
 });
 
-test('working CLI: publish stop before exact-PID SIGTERM; skip /quit and idle polling; occupied tab stays', async t => {
-  const f = fixture(t, { status: 'working' });
-  const marker = join(f.dir, 'STATUS.json.stop-requested');
-  const child = spawn(process.execPath, ['-e', `process.title = 'synthetic'; process.on('SIGTERM', () => process.exit(require('node:fs').existsSync(${JSON.stringify(marker)}) ? 0 : 1)); console.log('ready'); setInterval(()=>{}, 60000)`], { env: f.tags, stdio: ['ignore', 'pipe', 'ignore'] });
-  t.after(() => child.kill('SIGKILL'));
-  await once(child.stdout, 'data');
-  const end = once(child, 'exit');
-  const state = JSON.parse(fs.readFileSync(f.state)); state.panes[0].agent = 'codex'; fs.writeFileSync(f.state, JSON.stringify(state));
-  const proof = join(f.dir, 'cli-invocations', f.launch); fs.mkdirSync(proof, { recursive: true });
-  fs.writeFileSync(join(proof, 'witness.json'), JSON.stringify({ pid: child.pid, start: procStat(child.pid).start }));
-  f.put({ state: 'working', harness: 'cli', agent: 'codex', pid: child.pid, pid_start_time: procStat(child.pid).start });
-  const r = f.run(); assert.equal(r.status, 1, r.stderr); assert.match(r.stderr, /owned agent remains/);
-  assert.deepEqual(await end, [0, null]);
-  assert.deepEqual(f.calls().filter(a => a[1] === 'prompt' || a[1] === 'close'), []);
-  assert.equal(f.calls().filter(a => a.join(' ') === 'agent list').length, 2, 'no grace polls');
-  assert.equal(fs.statSync(marker).mode & 0o777, 0o600);
+test('old shell-launched CLI and Pi receipts are refused before any Herdr or process action', t => {
+  for (const harness of ['cli', 'pi']) {
+    const f = fixture(t, { status: 'working' });
+    fs.appendFileSync(join(f.dir, 'SESSION.txt'), 'PRIMARY=worker\n');
+    const start = procStat(f.occupant).start;
+    f.put({ state: 'working', harness, pid: f.occupant, pid_start_time: start });
+    const r = f.run();
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /Legacy shell-launched worker receipt/);
+    assert.deepEqual(f.calls(), []);
+    assert.equal(fs.existsSync(join(f.dir, 'STATUS.json.stop-requested')), false);
+    assert.equal(procStat(f.occupant)?.start, start);
+    assert.doesNotMatch(r.stdout, /tree-owner|tree-pane/);
+  }
 });
 
 test('reused PID is not signalled; live unstamped PID is incomplete and cannot close even an empty tab', t => {
@@ -200,7 +167,7 @@ test('recycled split or tab without its recorded pane is never closed; reaped jo
 
 for (const foreign of [true, false]) test(foreign ? 'refused replacement and its tree survive even a retry after root exit' :
   'verified worker waiting for its child: incomplete TERM explicitly authorizes captured child cleanup', async t => {
-  const f = fixture(t, { status: 'working', name: foreign ? 'replacement' : 'worker' });
+  const f = fixture(t, { status: foreign ? 'working' : null, name: 'replacement' });
   const root = spawn(process.execPath, ['-e', `const c=require('node:child_process').spawn('/bin/sleep',['600'],{stdio:'ignore'});
     process.on('SIGTERM',()=>{}); c.once('exit',()=>process.exit(0)); console.log(c.pid);`],
     { env: foreign ? { ...f.tags, HUD_JOB_DIR: f.root } : f.tags, stdio: ['ignore','pipe','ignore'] });
@@ -273,7 +240,7 @@ test('--after-pid: invalid or live caller takes no action; caller exit resumes t
   assert.ok(fs.existsSync(join(f.dir, 'STATUS.json.stop-requested')));
 });
 
-async function zshTabFixture(t, { harness, leaveBackground = false, precmdSleep = '0.35', stampCliStatus = true, liveIdlePi = false, omitSnapshot = false, splitPreWorkerBackground = false }) {
+async function zshTabFixture(t, { leaveBackground = false, precmdSleep = '0.35', omitSnapshot = false, splitPreWorkerBackground = false } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-reap-zsh-'));
   const dir = join(root, 'job'), ownerHome = join(root, 'home'), fakeBin = join(root, 'fake-bin'), herdrBin = join(root, 'herdr-bin');
   for (const d of [dir, ownerHome, fakeBin, herdrBin]) fs.mkdirSync(d, { recursive: true });
@@ -293,7 +260,7 @@ precmd() {
 PS1=''
 `);
 
-  const piSessionStart = harness === 'pi' && !omitSnapshot ? `
+  const snapshot = !omitSnapshot ? `
   const { recordStartupShellSession } = await import(${JSON.stringify(tabShell)});
   recordStartupShellSession(process.env.HUD_JOB_DIR, process.env.HUD_TAB_LAUNCH, process.env.HERDR_PANE_ID);
 ` : '';
@@ -302,7 +269,7 @@ PS1=''
   const { spawn } = require('node:child_process');
   const stat = fs.readFileSync('/proc/' + process.pid + '/stat', 'utf8');
   const start = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\\s+/)[19];
-  ${piSessionStart}
+  ${snapshot}
   fs.writeFileSync(${JSON.stringify(join(root, 'worker.json'))}, JSON.stringify({ pid: process.pid, start }));
   if (${JSON.stringify(leaveBackground)}) {
     // Reparented background child in the same shell session, using the exact same /bin/sleep binary as the startup daemon.
@@ -310,22 +277,13 @@ PS1=''
     fs.writeFileSync(${JSON.stringify(join(root, 'bg.pid'))}, String(bg.pid));
     bg.unref();
   }
-  if (${JSON.stringify(liveIdlePi)}) {
-    process.on('SIGTERM', () => process.exit(0));
-    setInterval(() => {}, 60000);
-  } else {
-    setTimeout(() => process.exit(0), 60);
-  }
+  setTimeout(() => process.exit(0), 60);
 })().catch(err => { console.error(err); process.exit(1); });
 `;
-  const workerPath = join(fakeBin, harness === 'cli' ? 'codex' : 'pi');
+  const workerPath = join(fakeBin, 'browser');
   fs.writeFileSync(workerPath, `#!${process.execPath}\n${workerBody}`, { mode: 0o700 });
 
-  let zshEnv = { ...process.env, ...tags, HOME: ownerHome, ZDOTDIR: ownerHome };
-  if (harness === 'cli') {
-    const cliInv = prepareCliInvocation(dir, launch, 'codex', workerPath);
-    zshEnv = { ...zshEnv, ...cliInv.env };
-  }
+  const zshEnv = { ...process.env, ...tags, HOME: ownerHome, ZDOTDIR: ownerHome };
 
   const sh = spawn('zsh', ['-i'], { detached: true, stdio: ['pipe', 'pipe', 'pipe'], env: zshEnv });
   const shStart = procStat(sh.pid)?.start;
@@ -388,11 +346,11 @@ PS1=''
   // Ensure the worker starts on a strictly later kernel tick than both the startup daemon and any split background job.
   await new Promise(r => setTimeout(r, 30));
 
-  sh.stdin.write(harness === 'cli' ? 'codex\n' : `${workerPath}\n`);
+  sh.stdin.write(`${workerPath}\n`);
   const workerFile = join(root, 'worker.json');
-  await until(() => fs.existsSync(workerFile) && (liveIdlePi || prompts >= 2), 10000);
+  await until(() => fs.existsSync(workerFile) && prompts >= 2, 10000);
   const workerInfo = JSON.parse(fs.readFileSync(workerFile, 'utf8'));
-  if (!liveIdlePi) {
+  {
     await until(() => {
       const st = procStat(workerInfo.pid);
       return !st || st.start !== workerInfo.start || !isActiveProcState(st.state);
@@ -401,7 +359,7 @@ PS1=''
 
   assert.ok(BigInt(daemonStat.start) < BigInt(workerInfo.start), `daemon (${daemonStat.start}) started before worker (${workerInfo.start})`);
   if (splitBgStart) assert.ok(BigInt(splitBgStart) < BigInt(workerInfo.start), 'owner split background job started strictly before worker');
-  if (!liveIdlePi) {
+  {
     const precmdPids = fs.readFileSync(precmdFile, 'utf8').trim().split('\n').map(Number);
     assert.ok(precmdPids.length >= 2, 'precmd helper spawned again after worker exit');
     if (Number(precmdSleep) >= 0.3) {
@@ -426,7 +384,7 @@ PS1=''
   const native = join(dir, 'pi.jsonl');
   const statePath = join(root, 'state'), logPath = `${statePath}.log`;
   const panes = [
-    { pane_id: 'worker-pane', tab_id: 'worker-tab', agent: liveIdlePi ? 'pi' : null },
+    { pane_id: 'worker-pane', tab_id: 'worker-tab', agent: null },
     ...(splitSh ? [{ pane_id: 'split-pane', tab_id: 'worker-tab', agent: null }] : []),
     { pane_id: 'main-pane', tab_id: 'main-tab', agent: 'pi' },
   ];
@@ -436,14 +394,11 @@ PS1=''
     occupant: workerInfo.pid,
     tabs: [{ tab_id: 'worker-tab', label: 'synthetic' }],
     panes,
-    agents: liveIdlePi ? [{ agent_session: { value: native }, pane_id: 'worker-pane', tab_id: 'worker-tab', name: 'worker', agent_status: 'idle' }] : [],
+    agents: [],
   }));
-  fs.writeFileSync(join(dir, 'SESSION.txt'), `LAUNCH=${launch}\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\n${splitSh ? 'RIGHT=split-pane\n' : ''}ORCH=main-pane\nPRIMARY=worker\n`);
-  const status = harness === 'cli'
-    ? { version: 1, task_dir: dir, slot: 'primary', harness: 'cli', agent: 'codex', state: 'closed',
-        pid: stampCliStatus ? workerInfo.pid : null, pid_start_time: stampCliStatus ? workerInfo.start : null }
-    : { version: 1, task_dir: dir, slot: 'primary', session_file: native, state: liveIdlePi ? 'idle_grace' : 'closed',
-        pid: workerInfo.pid, pid_start_time: workerInfo.start };
+  fs.writeFileSync(join(dir, 'SESSION.txt'), `LAUNCH=${launch}\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\n${splitSh ? 'RIGHT=split-pane\n' : ''}ORCH=main-pane\n`);
+  const status = { version: 1, task_dir: dir, slot: 'primary', harness: 'bro', state: 'closed',
+    pid: workerInfo.pid, pid_start_time: workerInfo.start };
   fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify(status));
 
   const env = { ...process.env, HOME: root, HUD_HOME: root, DIR: dir, STATE: statePath, PATH: herdrBin };
@@ -456,25 +411,19 @@ PS1=''
   };
 }
 
-for (const [label, opts] of [
-  ['finished pi job', { harness: 'pi' }],
-  ['live idle_grace pi job quit into precmd', { harness: 'pi', liveIdlePi: true }],
-  ['finished CLI job with stamped STATUS', { harness: 'cli', stampCliStatus: true }],
-  ['finished CLI job using witness alone', { harness: 'cli', stampCliStatus: false }],
-]) test(`real zsh with p10k-style startup daemon and precmd helper: ${label} closes`, { skip: noZsh }, async t => {
-  const f = await zshTabFixture(t, opts);
+test('real zsh browser job with a p10k-style daemon and precmd helper closes', { skip: noZsh }, async t => {
+  const f = await zshTabFixture(t);
   const snap = JSON.parse(fs.readFileSync(f.snapshotPath, 'utf8'));
   assert.ok(snap.members.some(m => m.pid === f.daemonPid && m.start === f.daemonStart), 'startup daemon recorded in session snapshot');
   const r = f.run();
   assert.equal(r.status, 0, r.stderr);
   assert.ok(f.calls().some(a => a[0] === 'tab' && a[1] === 'close' && a[2] === 'worker-tab'));
-  if (opts.liveIdlePi) assert.ok(f.precmdCount() >= 2, 'post-/quit precmd helper ran before tab closed');
   // Startup daemon was still running (exempted by exact PID+start in startup snapshot, never by name or age).
   assert.equal(procStat(f.daemonPid)?.start, f.daemonStart);
 });
 
-for (const harness of ['pi', 'cli']) test(`real zsh with p10k-style startup daemon: background child started by ${harness} worker still blocks close`, { skip: noZsh }, async t => {
-  const f = await zshTabFixture(t, { harness, leaveBackground: true, precmdSleep: '0.05' });
+test('real zsh with p10k-style startup daemon: a browser worker’s background child still blocks close', { skip: noZsh }, async t => {
+  const f = await zshTabFixture(t, { leaveBackground: true, precmdSleep: '0.05' });
   const r = f.run();
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stderr, /active unlisted process remains in shell session; not closing/);
@@ -483,7 +432,7 @@ for (const harness of ['pi', 'cli']) test(`real zsh with p10k-style startup daem
 });
 
 test('real zsh with p10k-style startup daemon: missing startup snapshot fails closed even with worker start stamped', { skip: noZsh }, async t => {
-  const f = await zshTabFixture(t, { harness: 'pi', omitSnapshot: true, precmdSleep: '0.05' });
+  const f = await zshTabFixture(t, { omitSnapshot: true, precmdSleep: '0.05' });
   assert.equal(fs.existsSync(f.snapshotPath), false);
   const r = f.run();
   assert.equal(r.status, 1, r.stdout);
@@ -492,7 +441,7 @@ test('real zsh with p10k-style startup daemon: missing startup snapshot fails cl
 });
 
 test('owner background job in a split shell started before the worker refuses tab close', { skip: noZsh }, async t => {
-  const f = await zshTabFixture(t, { harness: 'pi', splitPreWorkerBackground: true, precmdSleep: '0.05' });
+  const f = await zshTabFixture(t, { splitPreWorkerBackground: true, precmdSleep: '0.05' });
   const r = f.run();
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stderr, /non-worker shell session; not closing/);

@@ -81,12 +81,13 @@ test('TERM during the watcher startup dist-lock wait leaves no advertised PID', 
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'watch.pid')), false);
 });
 
-test('hud_close during Pi startup records stopped without relying on the watcher', { timeout: 60000 }, async (t) => {
+test('hud_close during the initial Pi prompt records stopped without relying on the watcher', { timeout: 60000 }, async (t) => {
   const skipWatcher = 'data:text/javascript,' + encodeURIComponent(
     `if (process.argv[1]?.endsWith('/hud-watch.mjs')) process.exit(0);`);
   const f = await fixture(t, true, `process.env.NODE_OPTIONS += ' --import=' + ${JSON.stringify(skipWatcher)};`);
-  fs.writeFileSync(join(f.env.HOME, 'hold-pi-start'), '');
+  fs.writeFileSync(join(f.env.HOME, 'hold-prompt-result'), '');
   fs.writeFileSync(join(f.env.HOME, 'defer-pi-report'), '');
+  const worker = fakeCliWithChild(t, f);
   const launching = f.call('hud_create', { role: 'imp', task: 'Synthetic startup stop.' });
   const jobs = join(f.env.HUD_HOME, 'jobs');
   let dir, id, closing;
@@ -96,9 +97,11 @@ test('hud_close during Pi startup records stopped without relying on the watcher
       [id] = fs.readdirSync(jobs);
       if (!id) return false;
       dir = join(jobs, id);
-      return cliState(dir)?.state === 'working';
+      return f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt' && args[2] === `${id}-primary`);
     }, t.signal);
-    assert.equal(procStat(cliState(dir).pid)?.start, cliState(dir).pid_start_time);
+    assert.equal(cliState(dir).pid, worker.pid);
+    assert.equal(procStat(worker.pid)?.start, cliState(dir).pid_start_time);
+    writeFixtureFile(join(dir, 'reap-worker'), '');
     closing = f.call('hud_close', { job: id });
   } finally {
     fs.writeFileSync(join(f.env.HOME, 'release-prompt-result'), '');
@@ -447,9 +450,9 @@ test('read-close: a live pre-turn CLI child does not block settlement or close',
   await until(() => procStat(child) === null, t.signal);
 });
 
-test('startup failure closes the tab, reports the pi startup cause instead of the timeout, and is reaped', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t);
-  fs.writeFileSync(join(f.env.HOME, 'fail-start'), 'timed out waiting for agent startup');
+test('Pi readiness failure reports the startup cause and retains the direct tab until reap', { timeout: 60000 }, async (t) => {
+  const f = await fixture(t, { failedRetentionMs: 2000 });
+  fs.writeFileSync(join(f.env.HOME, 'start-not-ready'), '');
   fs.writeFileSync(join(f.env.HOME, 'pane-read'), '[roles] synthetic start failed: unsupported thinking\n');
   const job = await f.call('hud_create', { role: 'general', on: 'pi', request_key: 'failed-launch', task: 'Synthetic task.' });
   assert.equal(job.ok, false);
@@ -457,12 +460,13 @@ test('startup failure closes the tab, reports the pi startup cause instead of th
   assert.match(job.reason, /synthetic start failed/);
   const status = JSON.parse(fs.readFileSync(join(job.task_dir, 'STATUS.json')));
   assert.equal(status.state, 'failed');
-  assert.equal(status.exit_reason, 'dispatch_failed');
+  assert.equal(status.exit_reason, 'agent_not_ready');
   assert.match(status.error, /synthetic start failed/);
   assert.ok(Number.isFinite(Date.parse(status.ended_at)));
   assert.match(cardText(workerFor(f, job.job)), /synthetic start failed/);
-  assert.deepEqual(f.commands().find(({ args }) => args[0] === 'tab' && args[1] === 'close')?.args,
-    ['tab', 'close', 'w4E:t2']);
+  assert.match(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'), /^DIRECT_EXEC=1$/m);
+  assert.equal(readCloseReaped(job), undefined);
+  assert.equal(f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'close'), false);
   assert.equal(f.commands().some(({ args }) => args[0] === 'agent' && args[1] === 'prompt'), false);
   await until(() => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).reaped_at, t.signal);
   assert.ok(f.commands().some((c) => c.command === 'hud-reap' && c.args[0] === job.task_dir));
@@ -507,8 +511,8 @@ test('failed STATUS uses its mtime when ended_at is absent or invalid', { timeou
   }
 });
 
-test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t);
+test('watcher on stock herdr reconciles a closed browser tab but leaves final jobs alone', { timeout: 60000 }, async (t) => {
+  const f = await fixture(t, { customHerdrSocket: true });
   let socket, subscription;
   const vanished = new Set();
   const server = createServer((client) => {
@@ -530,7 +534,14 @@ test('watcher subscribes to herdr and fails only a nonfinal job whose tab closes
   });
   server.listen(f.env.HERDR_SOCKET_PATH);
   await once(server, 'listening');
-  const job = await f.call('hud_create', { role: 'imp', request_key: 'tab-close', task: 'Synthetic task.' });
+  const job = { job: 'j0000000000000001', role: 'pro', bro: { tool: 'jev-ask' }, dispatch_exit_code: 0, cwd: f.root };
+  job.task_dir = join(f.env.HUD_HOME, 'jobs', job.job);
+  fs.mkdirSync(job.task_dir, { recursive: true });
+  writeFixtureFile(join(job.task_dir, 'job.json'), JSON.stringify(job));
+  writeFixtureFile(join(job.task_dir, 'SESSION.txt'), `TAB=w4E:t2\nLEFT=w4E:p2\nHERDR_SOCKET_PATH=${f.env.HERDR_SOCKET_PATH}\n`);
+  writeFixtureFile(join(job.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working', harness: 'bro' }));
+  const watcher = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], { env: f.env, stdio: 'ignore' });
+  t.after(() => watcher.kill('SIGTERM'));
   await until(() => socket, t.signal);
   assert.deepEqual(subscription, { subscriptions: [{ type: 'tab.closed' }] });
   const statusFile = join(job.task_dir, 'STATUS.json');
@@ -619,6 +630,8 @@ test(
     }, (snap) => snap.global.running === 0);
     assert.equal(reaped(first.task_dir), 0);
     assert.equal(fs.existsSync(pidFile), true, 'grace jobs must keep the watcher alive');
+    await until(() => f.socketRequests.some(request => request.id === 'hud-watch'), t.signal);
+    f.drop(); // The fixture now serves a fork; explicitly lose events and exercise file-only recovery.
     await until(() => watchLog().includes('herdr events unavailable'), t.signal);
     assert.equal(watchLog().match(/herdr events unavailable/g)?.length, 1);
     writeFixtureFile(join(second.task_dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));

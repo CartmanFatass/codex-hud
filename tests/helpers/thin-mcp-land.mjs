@@ -4,10 +4,18 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { cleanupFixture } from './process-cleanup.mjs';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
-import { fixture, until } from './thin-mcp-harness.mjs';
+import { procStat } from '../../dist/utils/proc.js';
+import { fakeCliWithChild, fixture, until } from './thin-mcp-harness.mjs';
 
 export const job = 'j0000000000000123';
 export const jobDir = (f, id = job) => join(f.home, 'jobs', id);
+export function bindSourceTab(t, f) {
+  const worker = fakeCliWithChild(t, f);
+  writeFixtureFile(join(jobDir(f), 'SESSION.txt'), `TAB=w4E:t1\nLEFT=w4E:p1\nPRIMARY=source-agent\n` +
+    `DIRECT_EXEC=1\nLAUNCH_ID=source-launch\nTERMINAL_ID=source-terminal\nPID=${worker.pid}\n` +
+    `PID_START=${procStat(worker.pid).start}\nHERDR_SOCKET_PATH=${f.env.HERDR_SOCKET_PATH}\n`);
+  return worker;
+}
 export function assertLandingRecord(f, ticket, replayBase, landed) {
   const body = f.git(f.main, 'show', `base:${ticket}`);
   const record = body.match(/^- Landed in this commit \(replay base ([0-9a-f]+)\); gate 1\/1 passed\.$/m);

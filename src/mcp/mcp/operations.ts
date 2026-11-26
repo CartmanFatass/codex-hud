@@ -9,6 +9,7 @@ import type { ReportMetaFields } from '../../roles/report-meta.js';
 import { removeQueuedJob } from '../../roles/concurrency.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
 import { herdrId, runHerdr, runCommand } from '../../roles/herdr-run.js';
+import { isShellLaunchedWorker, SHELL_WORKER_UNSUPPORTED } from '../../runtime/herdr-socket.js';
 import { CHECKS_FILE, jobChecks } from '../../roles/job-checks.js';
 import { recordQuestionAnswer, recordStopOrigin } from '../../roles/job-archive.js';
 import { JOB_ID_RE } from '../../roles/job-index-cache.js';
@@ -889,6 +890,9 @@ export async function closeJob(job: Job, stop = false) {
       if (row.state !== 'queued' || fs.existsSync(join(dir, jobFiles.session))) break;
     }
   }
+  const initialSession = jobCache.readSession(job.job, { throwOnError: true });
+  if (!job.headless && isShellLaunchedWorker(initialSession?.fields) && !job.reaped_at)
+    return { exit_code: 1, last_line: SHELL_WORKER_UNSUPPORTED };
   recordStopOrigin(dir, 'mcp', status?.state, undefined, jobCache);
   if (job.headless) {
     const closed = await stopSonic(dir);
@@ -897,7 +901,6 @@ export async function closeJob(job: Job, stop = false) {
       save({ ...(findJob(job.job) ?? job), observed_at: new Date().toISOString() });
     return { exit_code: closed ? 0 : 1, last_line: `${job.role} ${closed ? 'closed' : 'cleanup pending'}` };
   }
-  const initialSession = jobCache.readSession(job.job);
   const launchStamp = initialSession
     ? (initialSession.fields.launchId || initialSession.fields.launch || `stamp:${initialSession.stamp}`)
     : undefined;

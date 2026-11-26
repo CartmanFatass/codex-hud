@@ -3,7 +3,7 @@ import { readContract } from './contract.js';
 import { roleRuntime } from './role-runtime.js';
 import { workerTools } from './tools.js';
 import { installGuard } from './guard.js';
-import { recordStartupShellSession, workerJob } from '../../../worker/tools.js';
+import { workerJob } from '../../../worker/tools.js';
 import { mistralBudget } from './mistral-budget.js';
 import { webSearch } from './web-search.js';
 import { trackTps } from './tps.js';
@@ -26,9 +26,6 @@ export async function installWorker(pi: WorkerPi) {
   mistralBudget(pi, dir);
   if (contract.tps) trackTps(pi);
   if (isTab && contract.tab) {
-    pi.on('session_start', () => {
-      recordStartupShellSession(dir, process.env.HUD_TAB_LAUNCH, process.env.HERDR_PANE_ID);
-    });
     // Tab lifecycle is tab-only and lazily imported so headless workers never load it.
     const { installTabLifecycle } = await import('./tab-lifecycle.js');
     const tab = installTabLifecycle(pi, {

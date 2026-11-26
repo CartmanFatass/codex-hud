@@ -117,17 +117,22 @@ test('the watcher leaves a reopening CLI turn working and its send task complete
   assert.match(result.result.content[0].text, /Synthetic resumed result/);
 });
 
-test('an unconfirmed native CLI session receives no input and falls back to repair', async (t) => {
+test('an unconfirmed native CLI session receives no input, restores the original and falls back to repair', async (t) => {
   const { f, job, worker, report } = await cliFixture(t);
   resultValue(await report('Synthetic report before mismatch.'));
   f.push(job.job, 'done');
   await until(() => reaped(job) && dead(worker.pid), t.signal);
-  const first = cliToken(job.task_dir);
+  const first = cliToken(job.task_dir), reapedAt = readCloseReaped(job);
+  const candidate = fakeCliWithChild(t, f);
   write(join(f.env.HOME, 'wrong-native-session'), '');
-  const repair = await f.call('hud_send', { job: job.job, text: 'Synthetic repair after mismatch.' });
+  const repair = await f.call('hud_send', { job: job.job, text: 'Synthetic continuation with mismatched session.' });
   assert.equal(repair.continuation, 'repair');
   assert.notEqual(repair.job, job.job);
+  assert.notEqual(repair.ok, false, JSON.stringify(repair));
   assert.equal(cliToken(job.task_dir), first);
+  assert.equal(readCloseReaped(job), reapedAt);
+  assert.match(json(job.task_dir, 'job.json').resume_failures.at(-1).reason, /did not open the recorded session/);
+  assert.ok(dead(candidate.pid));
   assert.equal(f.commands().filter(({ args }) => args[1] === 'prompt' && args[2] === job.agent).length, 1);
 });
 
@@ -147,7 +152,7 @@ test('Codex uses the recorded thread ID and honors the role resume window', asyn
 const tabFor = (job) => /^TAB=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))[1];
 
 for (const closeCurrent of [false, true]) test(closeCurrent
-  ? 'a buffered close of a reused Pi tab is silent; the resumed tab closing fails and wakes the mod'
+  ? 'a buffered close of a reused Pi address is silent; exact root exit fails and wakes the mod'
   : 'a delayed close of the old Pi tab does not fail or wake during resume', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   await f.startCliSocket();
@@ -176,13 +181,14 @@ for (const closeCurrent of [false, true]) test(closeCurrent
   const ac = new AbortController(), wakes = [];
   const watch = watchCommand(['--mod'], { env: f.env, stdout: (line) => wakes.push(...JSON.parse(line).lines), stderr: assert.fail },
     { signal: ac.signal, settlementWindowMs: 0 });
-  const failed = (job) => wakes.some(line => line.startsWith(`${job.job} `) && line.includes('failed | tab closed'));
+  const failed = (job) => wakes.some(line => line.startsWith(`${job.job} `) && line.includes('failed | worker exited (code 3)'));
   try {
     await until(() => wakes.some(line => line.startsWith(`${job.job} `) && line.includes('First.')), t.signal);
-    const launchCount = () => f.commands().filter(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').length;
+    const launchCount = () => f.socketRequests.filter(req => req.method === 'agent.start').length;
     const launched = launchCount();
+    const next = fakeCliWithChild(t, f);
     if (closeCurrent) write(join(f.env.HOME, 'tab-seq'), String(Number(oldTab.split(':t')[1]) - 1));
-    else write(join(f.env.HOME, 'hold-tab-create'), '');
+    else write(join(f.env.HOME, 'hold-direct-start'), '');
     const sending = taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic Pi continuation.' });
     let task;
     try {
@@ -190,7 +196,7 @@ for (const closeCurrent of [false, true]) test(closeCurrent
         // The working STATUS is published, but the replacement tab hasn't been created.
         await until(() => launchCount() > launched, t.signal);
         f.closeTab(oldTab);
-        f.closeTab(tabFor(sibling)); // A second event witnesses processing of the first.
+        f.exitAgent(sibling.job, 3); // A second event witnesses processing of the first.
         await until(() => failed(sibling), t.signal);
         assert.equal(cliState(dir).state, 'working');
       }
@@ -207,24 +213,20 @@ for (const closeCurrent of [false, true]) test(closeCurrent
     assert.ok(json(dir, 'job.json').pi_sent_at > previous);
     if (closeCurrent) {
       assert.equal(tabFor(job), oldTab, 'the replacement got the same synthetic tab ID');
-      const pane = /^LEFT=(.+)$/m.exec(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8'))[1];
-      const checks = () => f.socketRequests.filter(req => req.method === 'pane.get' && req.params.pane_id === pane).length;
-      const before = checks();
       f.emitTabClosed(oldTab);
-      await until(() => failed(job) || checks() > before, t.signal);
+      f.exitAgent(sibling.job, 3);
+      await until(() => failed(sibling), t.signal);
       assert.equal(cliState(dir).state, 'working');
       assert.equal(failed(job), false);
-      f.closeTab(tabFor(job));
+      f.exitAgent(job.job, 3);
       await until(() => failed(job), t.signal);
       assert.equal(cliState(dir).state, 'failed');
-      assert.equal(cliState(dir).exit_reason, 'tab closed');
+      assert.equal(cliState(dir).exit_reason, 'worker exited (code 3)');
     } else {
       assert.notEqual(tabFor(job), oldTab);
       f.closeTab(oldTab); // A duplicate delayed event after the replacement is live is harmless too.
       assert.equal((await f.call('hud_peek', { job: job.job })).status.state, 'working');
-      const next = fakeCliWithChild(t, f);
-      write(join(dir, 'STATUS.json'), JSON.stringify({ ...cliState(dir), version: 1, task_dir: dir, slot: 'primary',
-        pid: next.pid, pid_start_time: procStat(next.pid).start }));
+      assert.equal(cliState(dir).pid, next.pid);
       resultValue(await report('hud_report', { text: 'Synthetic native second result.', summary: 'Second.' }));
       await publishPiGrace(t, job, next, false, session);
       await until(() => reaped(job) && dead(next.pid), t.signal, 'the resumed report should settle and reap');

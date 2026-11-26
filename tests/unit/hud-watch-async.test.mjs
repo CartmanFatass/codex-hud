@@ -38,7 +38,9 @@ ${body}`);
 const attempts = (f, dir) => text(join(f.home, 'reaps')).split('\n').filter((line) => line === dir).length;
 const session = (dir, fields, endpoint = join(dir, '../../../herdr.sock')) =>
   writeFixtureFile(join(dir, 'SESSION.txt'), `${fields}HERDR_SOCKET_PATH=${endpoint}\n`);
-const tab = (dir, name) => session(dir, `TAB=${name}\nPRIMARY=${name}-agent\n`);
+const tab = (dir, name) => session(dir, `TAB=${name}\n`);
+const directTab = (dir, name, root = '') => session(dir,
+  `TAB=${name}\nLEFT=${name}-worker\nPRIMARY=${name}-agent\nDIRECT_EXEC=1\nLAUNCH_ID=${name}-launch\nTERMINAL_ID=${name}-terminal\n${root}`);
 function settled() {
   const now = Date.now();
   return {
@@ -47,7 +49,7 @@ function settled() {
     reportTime: (now - 1000) / 1000,
   };
 }
-async function herdrSocket(t, f, answer, paneReply) {
+async function herdrSocket(t, f, answer, paneReply, fork = false) {
   const path = join(dirname(f.home), 'herdr.sock');
   const sockets = new Set();
   const subscribed = Promise.withResolvers(), queried = Promise.withResolvers();
@@ -64,7 +66,7 @@ async function herdrSocket(t, f, answer, paneReply) {
     lines.on('line', async (line) => {
       const { method, id, params } = JSON.parse(line);
       if (method === 'ping') {
-        socket.write(JSON.stringify({ id, result: { type: 'pong', version: '0.9.5', protocol: 22 } }) + '\n');
+        socket.write(JSON.stringify({ id, result: { type: 'pong', version: fork ? '0.9.5-hud.76b187b0' : '0.9.5', protocol: 22 } }) + '\n');
       }
       if (method === 'events.subscribe') {
         subscriber = socket; subscriptions++; subscribed.resolve();
@@ -98,6 +100,8 @@ async function herdrSocket(t, f, answer, paneReply) {
     preflight: Promise.all([subscribed.promise, queried.promise]),
     ready: () => Boolean(subscriber), subscriptions: () => subscriptions, queries: () => queries, pending: () => pending,
     lookups, emitTabClosed, emitTabsClosed, drop: () => subscriber.destroy(),
+    exitRoot: (name, exit_code) => subscriber.write(JSON.stringify({ event: 'pane.exited',
+      data: { launch_id: `${name}-launch`, terminal_id: `${name}-terminal`, exit_code } }) + '\n'),
     hide: (id) => vanished.add(id),
     closeTab: (id, pane = id) => { vanished.add(pane); emitTabClosed(id); },
   };
@@ -473,13 +477,13 @@ test('watcher dispatches at most four concurrent reaps and resumes the backlog',
   assert.ok(dirs.every((dir) => reaped(dir) && attempts(f, dir) === 1));
 });
 
-for (const [answer, event] of [['idle', 'self close'], ['working', 'no spin'], [null, 'external close']]) {
-  test(`read-close preflight: ${event}`, { timeout: 30000 }, async (t) => {
-    const f = fixture(t), herdr = await herdrSocket(t, f, answer);
+for (const [answer, event] of [['idle', 'self close'], ['working', 'no spin'], [null, 'root exit']]) {
+  test(`direct read-close preflight: ${event}`, { timeout: 30000 }, async (t) => {
+    const f = fixture(t), herdr = await herdrSocket(t, f, answer, undefined, true);
     const { created, state, reportTime } = settled();
     const dir = f.job(state, { created_at: created, read_at: new Date().toISOString() });
     fs.utimesSync(join(dir, 'report.md'), reportTime, reportTime);
-    tab(dir, 'pi');
+    directTab(dir, 'pi');
     reapStub(f, `while (!fs.existsSync(join(dir, 'release'))) await delay(10);`);
     const { child, exited } = f.start(herdr.preload);
     await herdr.preflight; // Startup (including the shared dist lock) is not part of the query budget.
@@ -505,11 +509,10 @@ for (const [answer, event] of [['idle', 'self close'], ['working', 'no spin'], [
       assert.equal(status(dir).exit_reason, 'closed after report read');
     } else {
       assert.equal(herdr.pending(), 1);
-      const start = performance.now();
-      herdr.closeTab('pi');
+      herdr.closeTab('pi', 'pi-worker');
+      herdr.exitRoot('pi', 3);
       await until(() => herdr.pending() === 0 && status(dir).state === 'failed', t.signal);
-      assert.ok(performance.now() - start < 1000, 'cancel the query without waiting for its 2 s budget');
-      assert.equal(status(dir).exit_reason, 'tab closed');
+      assert.equal(status(dir).exit_reason, 'worker exited (code 3)');
       assert.equal(attempts(f, dir), 0, 'failed tab is still in retention');
       child.kill('SIGTERM');
     }
@@ -517,8 +520,8 @@ for (const [answer, event] of [['idle', 'self close'], ['working', 'no spin'], [
   });
 }
 
-test('failed Pi read-close retries its live root after the tab disappears', async (t) => {
-  const f = fixture(t), herdr = await herdrSocket(t, f, 'idle');
+test('an unverified Pi read-close failure does not hide a missed root exit', { timeout: 15000 }, async (t) => {
+  const f = fixture(t), herdr = await herdrSocket(t, f, 'idle', undefined, true);
   const worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
   const ended = once(worker, 'exit');
   t.after(async () => { worker.kill(); await ended; });
@@ -526,8 +529,7 @@ test('failed Pi read-close retries its live root after the tab disappears', asyn
   const dir = f.job({ ...state, pid: worker.pid, pid_start_time: procStat(worker.pid).start },
     { created_at: created, read_at: new Date().toISOString() });
   fs.utimesSync(join(dir, 'report.md'), reportTime, reportTime);
-  tab(dir, 'pi');
-  fs.appendFileSync(join(dir, 'SESSION.txt'), 'LEFT=pi-worker\n');
+  directTab(dir, 'pi', `PID=${worker.pid}\nPID_START=${procStat(worker.pid).start}\n`);
   reapStub(f, `if (!fs.existsSync(join(dir, 'tab-gone'))) {
     fs.writeFileSync(join(dir, 'waiting-for-tab-close'), '');
     while (!fs.existsSync(join(dir, 'tab-gone'))) await delay(10);
@@ -538,15 +540,19 @@ test('failed Pi read-close retries its live root after the tab disappears', asyn
   // The shared attempts log records entry, not which branch the reaper took.
   await until(() => herdr.ready() && fs.existsSync(join(dir, 'waiting-for-tab-close')), t.signal);
   herdr.closeTab('pi', 'pi-worker');
+  assert.equal(status(dir).state, 'idle_grace');
+  worker.kill();
+  await ended;
   fs.writeFileSync(join(dir, 'tab-gone'), '');
   await until(() => f.log().includes('state=idle_grace exit=1'), t.signal);
-  assert.equal(status(dir).state, 'idle_grace');
+  // The first reap refused to verify closure; this death is not a successful read-close.
+  await until(() => status(dir).state === 'failed', t.signal);
   fs.writeFileSync(join(dir, 'allow-retry-to-finish'), '');
   await until(() => reaped(dir), t.signal);
   assert.deepEqual(await exited, [0, null]);
   assert.equal(attempts(f, dir), 2);
-  assert.equal(herdr.queries(), 1, 'the missing tab cannot answer another preflight');
-  assert.equal(status(dir).exit_reason, 'closed after report read');
+  assert.equal(herdr.queries(), 1, 'the dead root cannot answer another preflight');
+  assert.equal(status(dir).exit_reason, 'worker exited (exit unknown)');
 });
 
 test('watcher removes two merged worktrees from the same checkout', { timeout: 60000 }, async (t) => {

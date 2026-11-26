@@ -10,8 +10,7 @@ import type { JobStatus } from '../mcp/job-contracts.js';
 import { fileStampOf } from '../roles/job-index-cache.js';
 import { isActiveProcState, isValidPid, readProcStat } from '../utils/proc.js';
 import { herdrId } from '../roles/herdr-run.js';
-import { invocationWitness } from './cli-invocation.js';
-import { herdrEndpoint, isHudHerdrFork } from './herdr-socket.js';
+import { herdrEndpoint, isHudHerdrFork, isShellLaunchedWorker, SHELL_WORKER_UNSUPPORTED } from './herdr-socket.js';
 import { confirmIdleShells } from './tab-shell.js';
 import { sameTaskDirectory, tabProcessStart } from './tab-owner.js';
 
@@ -269,6 +268,8 @@ async function reap(task: string, after?: number, expectedLaunch?: string) {
   // A fork receipt never drops to the stock reaper.
   if (info.DIRECT_EXEC === '1' || info.LAUNCH_ID || info.TERMINAL_ID) return reapDirect(task, s, info, after, expectedLaunch);
   const refuse = (message: string): never => { throw Error(`${task}: ${message}`); };
+  if (isShellLaunchedWorker({ primary: info.PRIMARY, directExec: info.DIRECT_EXEC }) || s?.harness === 'cli' || s?.harness === 'pi')
+    refuse(SHELL_WORKER_UNSUPPORTED);
   if (after && isValidPid(pid) && pid !== after) refuse('recorded PID changed while waiting; nothing reaped');
   if (!s?.state || !['closed', 'failed', 'stopped', 'idle_grace'].includes(s.state)) {
     try { fs.writeFileSync(join(task, jobFiles.stopRequested), '', { flag: 'wx', mode: 0o600 }); }
@@ -280,9 +281,6 @@ async function reap(task: string, after?: number, expectedLaunch?: string) {
   if (alive() && callerAncestor(pid!)) refuse(`protected caller PID ${pid}; cleanup incomplete`);
   const left = info.TAB ? info.LEFT : info.RIGHT;
   if (!left || (!info.TAB && info.RIGHT_SPLIT !== '1')) refuse('missing pane receipt; cleanup incomplete');
-  const witness = s?.harness === 'cli' ? invocationWitness(task, info.LAUNCH) : null;
-  if (s?.harness === 'cli' && alive() && (!witness || witness.pid !== pid || witness.start !== start))
-    refuse('CLI invocation witness mismatch; cleanup incomplete');
   const ids = info.TAB ? [left, ...(info.RIGHT ? [info.RIGHT] : [])] : [left];
   const expectedSession = s?.session_file || s?.agent_session_id;
   const matches = (a: Row) => Boolean(info.PRIMARY && a.name === info.PRIMARY && a.pane_id === left &&
@@ -321,8 +319,6 @@ async function reap(task: string, after?: number, expectedLaunch?: string) {
       shells.push({ pane: p.pane_id, pid: proc.shell_pid, group: proc.foreground_process_group_id, foreground: proc.foreground_processes });
       for (const item of proc.foreground_processes) {
         if (item?.pid === proc.shell_pid && item.pid === pid) refuse('recorded worker is the pane shell; left alone');
-        if (s?.harness === 'cli' && item?.pid === pid && (item.name !== s.agent || proc.foreground_process_group_id !== pid))
-          refuse('recorded CLI worker is not the expected foreground agent');
         const ticks = tabProcessStart(task, p.pane_id, tab, item?.pid, info.LAUNCH);
         if (!ticks || p.pane_id !== left && item?.pid !== proc.shell_pid) {
           if (allowExitedForeground && isValidPid(item?.pid)) {

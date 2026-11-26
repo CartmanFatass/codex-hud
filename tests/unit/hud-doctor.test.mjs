@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { createServer } from 'node:net';
 import fsDefault, * as fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -130,7 +131,16 @@ test('bare doctor diagnoses install failures without changing files or exposing 
   const base = fs.mkdtempSync(join(tmpdir(), 'hud-install-doctor-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const home = join(base, 'hud'), bin = join(base, 'bin'), checkout = join(base, 'checkout');
-  const env = { HOME: base, HUD_HOME: home, PATH: `${bin}:/usr/bin:/bin` };
+  const env = { HOME: base, HUD_HOME: home, PATH: `${bin}:/usr/bin:/bin`, HERDR_SOCKET_PATH: join(base, 'herdr.sock') };
+  let version = '0.9.5';
+  const herdr = createServer(peer => peer.once('data', bytes => {
+    const request = JSON.parse(bytes.toString());
+    assert.equal(request.method, 'ping');
+    peer.end(JSON.stringify({ id: request.id, result: { type: 'pong', version } }) + '\n');
+  }));
+  herdr.listen(env.HERDR_SOCKET_PATH);
+  await once(herdr, 'listening');
+  t.after(() => new Promise(done => herdr.close(done)));
   fs.mkdirSync(home, { mode: 0o700 });
   const put = (rel, value, mode = 0o600) => {
     const file = join(base, rel);
@@ -215,7 +225,7 @@ test('bare doctor diagnoses install failures without changing files or exposing 
   finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
   assert.deepEqual(credentialReads, []);
   assert.equal(failed.code, 1);
-  for (const expected of [/^PASS herdr:/m, /^PASS pi:/m, /^FAIL package-lock \/ node_modules:.*synthetic/m,
+  for (const expected of [/^FAIL herdr: .*herdr-hud.*-hud/m, /^PASS pi:/m, /^FAIL package-lock \/ node_modules:.*synthetic/m,
     /^FAIL MCP generation:.*stale generation/m, /^PASS watcher generation: not running/m,
     /^PASS Claude MCP: checkout .*; Node /m, /^FAIL Codex MCP: HUD binding is disabled/m,
     /^PASS Antigravity MCP: checkout .*; Node /m, /^PASS Antigravity hook \/ permission:/m, /^PASS pi roles: checkout /m,
@@ -234,8 +244,10 @@ test('bare doctor diagnoses install failures without changing files or exposing 
   put('hud/jobs/j0000000000abcdef/job.json', { worktree: { root: orphan } });
   const { ino, ctimeNs } = fs.statSync(sentinel, { bigint: true });
   put(generation, { kind: 'mcp', stamp: `${ino}:${ctimeNs}`, start });
+  version = '0.9.5-hud.76b187b0';
   const healthy = await run();
   assert.equal(healthy.code, 0, healthy.stdout);
+  assert.match(healthy.stdout, /^PASS herdr: reachable \(herdr-hud\)/m);
   assert.doesNotMatch(healthy.stdout, /pi-role|pi-dispatch/);
   assert.match(healthy.stdout, /^PASS credentials.env mode: 0600 \(metadata only\)/m);
 });

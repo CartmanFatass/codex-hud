@@ -202,7 +202,7 @@ test('MCP tasks: launch fall-through and effective effort stay in the dispatch a
   }));
   const task = await taskCall(rpc, 'hud_create', { role: 'general', task: 'Synthetic fallback.', thinking: 'high' });
   const job = taskJob(f, task);
-  const launch = /used_place: pi \(synthetic\/second\); thinking: off; attempts: cli\/grok \(synthetic-first\) \(Synthetic start failure\) → pi \(synthetic\/second\)/;
+  const launch = /used_place: pi \(synthetic\/second\); thinking: off; attempts: cli\/grok \(synthetic-first\) \(invalid_request: Synthetic start failure\) → pi \(synthetic\/second\)/;
   assert.match(task.statusMessage, launch);
   await publishPiGrace(t, job);
   const done = await rpc('tasks/get', { taskId: task.taskId });
@@ -296,7 +296,7 @@ test('MCP tasks: cancel fences stale tasks and reaps live tasks once even with d
   assert.equal(first.status, 'cancelled');
   assert.deepEqual(first, duplicate);
   assert.deepEqual(first, await rpc('tasks/get', params));
-  const launch = /^LAUNCH=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))?.[1];
+  const launch = /^LAUNCH_ID=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))?.[1];
   assert.ok(launch);
   assert.deepEqual(reaps().map(({ args }) => args), [[job.task_dir, '--launch', launch]]);
   assert.ok(fs.existsSync(join(job.task_dir, 'STATUS.json.stop-requested')));

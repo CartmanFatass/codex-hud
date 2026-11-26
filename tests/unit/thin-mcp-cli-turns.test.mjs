@@ -21,7 +21,8 @@ test('supervisor events: report then long summary, flapping, explicit continuati
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'event-cli', 4);
   const job = await f.call('hud_create', { role: 'event-cli', request_key: 'events', task: 'Synthetic event sequences.' });
-  await until(() => cliState(job.task_dir)?.pid, t.signal);
+  await until(() => cliState(job.task_dir)?.agent_session_id, t.signal);
+  f.push(job.job, 'working');
   writeFixtureFile(join(job.task_dir, 'report.md'), 'Report before the long summary.\n');
   const afterReport = statusQueries(f, job);
   await until(() => statusQueries(f, job) >= afterReport + 2, t.signal);
@@ -304,12 +305,12 @@ test('idle and unknown with a live agent settle only a stable new report', { tim
   }
 });
 
-test('unknown while the agent is gone settles the job', { timeout: 60000 }, async (t) => {
+test('unknown status with a dead root and no exit event fails as exit unknown', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'cli-unknown'), '');
   const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'unknown-gone', task: 'Synthetic unknown.' });
   await until(() => cliState(job.task_dir)?.state === 'failed', t.signal);
-  assert.equal(cliState(job.task_dir).error, 'worker exited');
+  assert.equal(cliState(job.task_dir).error, 'worker exited (exit unknown)');
 });
 
 test(
@@ -334,8 +335,8 @@ test(
       request_key: 'grace-gone',
       task: 'Synthetic grace gone.',
     });
-    await until(() => cliState(gone.task_dir)?.state === 'closed', t.signal);
-    assert.equal(cliState(gone.task_dir).exit_reason, 'settled');
+    await until(() => cliState(gone.task_dir)?.state === 'failed', t.signal);
+    assert.equal(cliState(gone.task_dir).exit_reason, 'worker exited (exit unknown)');
     assert.equal(cliState(gone.task_dir).output_written, true);
   }
 );
@@ -366,7 +367,7 @@ test('a blocked resume treats idle as present and unknown as gone', { timeout: 6
     task: 'Synthetic blocked gone.',
   });
   await until(() => cliState(gone.task_dir)?.state === 'failed', t.signal);
-  assert.equal(cliState(gone.task_dir).error, 'worker exited');
+  assert.equal(cliState(gone.task_dir).error, 'worker exited (exit unknown)');
 });
 
 test('report written while working settles only at turn end, not mid-turn slice timeout, for continuable and noncontinuable CLIs', { timeout: 15000 }, async (t) => {

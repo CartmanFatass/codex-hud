@@ -41,7 +41,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { RunnerWatches } from './runner-watches.js';
 import { RUNNER_READY } from '../utils/runner-lifetime.js';
 import { isProcAlive, isValidPid } from '../utils/proc.js';
-import { hasLocalHerdrTarget, probeHerdrTarget, request, TAB_PROBE_INTERVAL_MS, tabProbeBackoff } from './herdr-socket.js';
+import { hasLocalHerdrTarget, isShellLaunchedWorker, probeHerdrTarget, request, SHELL_WORKER_UNSUPPORTED, TAB_PROBE_INTERVAL_MS, tabProbeBackoff } from './herdr-socket.js';
 import { pruneDisplayFiles } from './display-retention.js';
 import { JOB_RETENTION_MS, pruneJobLogs, pruneLandFlows, pruneProjectScratch } from './work-retention.js';
 import { pruneLegacyTrustBackups } from '../utils/trust-backups.js';
@@ -141,7 +141,7 @@ let watcher: fs.FSWatcher | undefined, flowsWatcher: fs.FSWatcher | undefined, s
 let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   queued = false,
   stopped = false;
-type Retry = { ownership: string; readClose: boolean; at: number; attempts: number; outcome: string; snapshot?: WorkerTreeSnapshot };
+type Retry = { ownership: string; readClose: boolean; readCloseRootReaped?: boolean; at: number; attempts: number; outcome: string; snapshot?: WorkerTreeSnapshot };
 type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<JobStatus>; session: SessionEntry | null; tab: string;
   ownership: string; retry: Retry | null; readInGrace: string | null; resumeReadReap?: boolean; jobFile: string; statusFile: string };
 type ActiveReap = { session: SessionEntry | null; ownership: string; readClose: boolean; busy: string[]; phase: 'preflight' | 'reaping';
@@ -475,14 +475,16 @@ function snapshotIssueForLog(id: string, dir: string, issue?: string) {
 }
 const reapOwner = (session: SessionEntry | null, status: Partial<JobStatus> | null) =>
   JSON.stringify([session?.fields ?? null, status?.pid, status?.pid_start_time]);
-function deferReap(entry: ActiveReap, { id, retry }: ReapInput, message: string, final = false) {
+function deferReap(entry: ActiveReap, { id, retry }: ReapInput, message: string, final = false, targetReaped = false) {
   const attempts = (retry?.attempts ?? 0) + 1;
   const exhausted = !final && attempts >= MAX_REAP_ATTEMPTS;
   const outcome = `${message}${exhausted ? '; retry limit reached' : ''}`;
   // Staging names vary across attempts without changing the failure.
   const key = outcome.replace(/worker-tree\.json\.[0-9a-f-]{36}\.tmp/g, 'worker-tree.json.tmp');
   if (key !== retry?.outcome) log(outcome);
-  reapRetries.set(id, { ownership: entry.ownership, readClose: entry.phase === 'reaping' && entry.readClose,
+  const readClose = entry.phase === 'reaping' && entry.readClose;
+  reapRetries.set(id, { ownership: entry.ownership, readClose,
+    ...(readClose && (targetReaped || retry?.readCloseRootReaped) && { readCloseRootReaped: true }),
     at: final || exhausted ? Infinity : Date.now() + Math.min(MAX_REAP_BACKOFF_MS, cliCheck * 2 ** (attempts - 1)),
     attempts, outcome: key, snapshot: entry.snapshot });
 }
@@ -596,7 +598,7 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     result.stderr.trimEnd().endsWith(`: TAB ${tab} name changed or missing; not closing`) && !result.stderr.trim().includes('\n');
   // When ancestry cannot be recovered, only the tab outcome remains to be verified.
   if (!complete && !(unrecoverable && (result.ok || refusal))) {
-    deferReap(entry, input, message(), refusal && !issue && !readClose);
+    deferReap(entry, input, message(), refusal && !issue && !readClose, result.ok);
     return;
   }
 
@@ -748,6 +750,11 @@ function scan(retryWatch = false) {
       if (job?.worktree?.root) {
         knownWorktrees.add(job.worktree.root);
         knownWorktreeRoots.add(job.worktree.main_root);
+      }
+      if (isShellLaunchedWorker(session?.fields) && !job?.reaped_at) {
+        markBusy(job);
+        warn(`legacy worker ${id}`, `${id}: ${SHELL_WORKER_UNSUPPORTED}`);
+        continue;
       }
       if (status?.state === 'queued' && job && !job.reaped_at) {
         open = true;
@@ -907,8 +914,9 @@ function scan(retryWatch = false) {
                 runner_exit_code: paneExit.exitCode, runner_exit_signal: paneExit.signal as NodeJS.Signals | null, updated_at: now };
             }
           }
-        } else if (direct && job && !job.bro && !job.jev && !job.headless && !job.reaped_at && reconciledDeadRoot) {
-          // Direct-exec Pi missed exit (verified death of exact PID + start ticks without pane.exited): never settle as success without exit_code 0.
+        } else if (direct && job && !job.bro && !job.jev && !job.headless && !job.reaped_at && reconciledDeadRoot && !retry?.readCloseRootReaped) {
+          // A verified read-close reap may have ended the root before descendant cleanup failed. Let that retry finish;
+          // otherwise exact PID/start death without pane.exited never proves a successful exit.
           const latest = readJson<JobStatus>(statusFile);
           if (['done', 'closed', 'failed', 'stopped'].includes(latest?.state ?? '')) {
             status = latest;

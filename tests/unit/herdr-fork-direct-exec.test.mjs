@@ -15,7 +15,9 @@ import { REPORT_SETTLED_EXIT, terminalFact } from '../../dist/mcp/cli-judge.js';
 import { reapWorkerTree, rememberWorkerTree, tabTreeGrant } from '../../dist/roles/worker-tree.js';
 import { procStat } from '../../dist/utils/proc.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-import { cliState, cliToken, fallbackRole, fixture, readCloseReaped, resultValue, until, workerClient, writeCliRole } from '../helpers/thin-mcp-harness.mjs';
+import { assertCliStatus, cliState, cliToken, fallbackRole, fixture as baseFixture, readCloseReaped, resultValue, until, workerClient, writeCliRole } from '../helpers/thin-mcp-harness.mjs';
+
+const fixture = (t, options = {}) => baseFixture(t, { customHerdrSocket: true, ...options });
 
 const reapBin = resolve('packages/hud-mcp/bin/hud-reap.mjs');
 
@@ -63,6 +65,42 @@ test('fork detection recognizes -hud version suffix and rejects stock versions',
     if (prior === undefined) delete process.env.HERDR_SOCKET_PATH;
     else process.env.HERDR_SOCKET_PATH = prior;
   }
+});
+
+test('hud_create rejects stock herdr once, before CLI or Pi tab launch', async (t) => {
+  const f = await fixture(t, { herdrVersion: '0.9.5', customHerdrSocket: false });
+  fallbackRole(f, 'fork-required');
+  for (const params of [{ role: 'fork-required' }, { role: 'imp' }]) {
+    const reply = await f.call('hud_create', { ...params, task: 'Synthetic worker.' });
+    assert.equal(reply.ok, false);
+    assert.equal(reply.code, 'herdr_fork_required');
+    assert.match(reply.reason, /herdr-hud.*-hud/);
+    assert.equal(reply.attempts.length, 1);
+    assert.equal(fs.existsSync(join(reply.task_dir, 'SESSION.txt')), false);
+  }
+  assert.equal(f.socketRequests.filter(req => req.method === 'agent.start').length, 0);
+  assert.equal(f.commands().some(({ args }) => ['tab', 'agent'].includes(args[0])), false);
+});
+
+test('hud_send and hud_close refuse legacy shell receipts without touching the worker', async (t) => {
+  const f = await fixture(t);
+  const job = 'j0000000000000001', dir = join(f.env.HUD_HOME, 'jobs', job);
+  fs.mkdirSync(dir, { recursive: true });
+  const record = JSON.stringify({ job, role: 'imp', cwd: f.root, dispatch_exit_code: 0, cli: { agent: 'grok' } });
+  writeFixtureFile(join(dir, 'job.json'), record);
+  const status = JSON.stringify({ version: 1, state: 'working', task_dir: dir, slot: 'primary', harness: 'cli' });
+  writeFixtureFile(join(dir, 'STATUS.json'), status);
+  writeFixtureFile(join(dir, 'SESSION.txt'), `TAB=w4E:t2\nLEFT=w4E:p2\nPRIMARY=${job}-primary\nLAUNCH=old-launch\n`);
+  const send = await f.call('hud_send', { job, text: 'Synthetic follow-up.' });
+  assert.equal(send.code, 'shell_worker_unsupported');
+  assert.match(send.error, /Legacy shell-launched worker receipt/);
+  const close = await f.call('hud_close', { job });
+  assert.equal(close.exit_code, 1);
+  assert.match(close.last_line, /Legacy shell-launched worker receipt/);
+  assert.equal(fs.readFileSync(join(dir, 'job.json'), 'utf8'), record);
+  assert.equal(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'), status);
+  assert.equal(fs.existsSync(join(dir, 'STATUS.json.stop-requested')), false);
+  assert.ok(!f.commands().some(({ command, args }) => command === 'hud-reap' || args[0] === 'agent'));
 });
 
 test('directExecEnv forwards auth/toolchain vars and strips job, session, control, and outer-terminal handles', () => {
@@ -843,7 +881,7 @@ test('direct-exec CLI and Pi wait for interactive_ready before sending exactly o
   // 1) CLI (claude): idle with launch_pending=true, then idle with interactive_ready=false -> no prompt until interactive_ready=true, then exactly one.
   {
     const f = await fixture(t);
-    let getCount = 0;
+    let startingStatus, getCount = 0;
     const promptsDuringPending = [];
     const fork = await startForkHerdr(t, f, {
       initialStatus: 'idle',
@@ -852,6 +890,7 @@ test('direct-exec CLI and Pi wait for interactive_ready before sending exactly o
       onAgentGet(entry) {
         getCount += 1;
         promptsDuringPending.push(promptCalls(f).length);
+        if (getCount === 1) startingStatus = cliState(fork.startRequests[0].env.HUD_JOB_DIR);
         if (getCount === 3) {
           // Idle with launch_pending=false but interactive_ready still false: must NOT prompt yet.
           entry.launch_pending = false;
@@ -872,6 +911,12 @@ test('direct-exec CLI and Pi wait for interactive_ready before sending exactly o
     const dir = res.task_dir;
     const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
     const entry = fork.tabs.get(session.LAUNCH_ID);
+    assertCliStatus(startingStatus, dir, 'claude');
+    assert.equal(startingStatus.role, 'readycli');
+    assert.equal(startingStatus.state, 'working');
+    assert.equal(startingStatus.pid, entry.pid);
+    assert.equal(startingStatus.pid_start_time, String(entry.pid_start_time));
+    assert.equal(startingStatus.supervisor_pid, undefined);
     assert.equal(Object.hasOwn(fork.startRequests[0], 'hidden'), false, 'older forks start visible');
     assert.deepEqual(await focusJobTab(dir, f.env), { ok: true });
     assert.deepEqual(await hideJobTab(dir, f.env), { ok: false, reason: 'hidden tabs unavailable' });

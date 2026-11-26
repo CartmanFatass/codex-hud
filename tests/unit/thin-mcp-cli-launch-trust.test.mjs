@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import * as TOML from '@iarna/toml';
-import { parseProcStat } from '../../dist/utils/proc.js';
 
 const roleText = fs.readFileSync('packages/hud-mcp/instructions/general.md', 'utf8');
 import {
@@ -42,7 +40,7 @@ test(
       '--pane',
       'w4E:p2',
     ]);
-    assert.match(tab.find((arg, i) => tab[i - 1] === '--env' && arg.startsWith('HUD_INVOCATION_TOKEN=')), /^HUD_INVOCATION_TOKEN=[a-f0-9-]+$/);
+    assert.equal(f.socketRequests.find(req => req.method === 'agent.start').params.env.HUD_INVOCATION_TOKEN, undefined);
     assert.deepEqual(start.slice(dash + 1), [
       '-m',
       'grok-4.7',
@@ -224,7 +222,8 @@ test('a grok trust dialog is declined and the job fails naming the directory', {
     false
   );
   assert.equal(fs.existsSync(join(job.task_dir, 'supervisor.pid')), false);
-  assert.ok(commands.some((c) => c.args[0] === 'tab' && c.args[1] === 'close' && c.args[2] === 'w4E:t2'));
+  assert.match(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'), /^DIRECT_EXEC=1$/m);
+  assert.equal(commands.some((c) => c.args[0] === 'tab' && c.args[1] === 'close'), false);
 });
 
 test(
@@ -375,37 +374,16 @@ test(
   }
 );
 
-for (const witnessed of [true, false]) test(`Claude's versioned PATH symlink keeps the agent name (${witnessed ? 'witnessed' : 'plain'})`, { timeout: 10000 }, async (t) => {
+test('direct Claude start preserves the versioned executable symlink', async (t) => {
   const f = await fixture(t);
-  const versioned = join(f.root, '2.1.999');
-  // Use a native executable that leaves the kernel's comm intact (Node renames its main thread).
+  const versioned = join(f.root, '2.1.999'), claude = join(f.root, 'bin', 'claude');
   fs.copyFileSync('/bin/sh', versioned);
-  const claude = join(f.root, 'bin', 'claude');
   fs.unlinkSync(claude);
   fs.symlinkSync(versioned, claude);
-  // Let dispatch generate the real shim, but stop fake Herdr before it creates its synthetic witness.
-  fs.writeFileSync(join(f.env.HOME, 'fail-start-claude'), 'Synthetic start refusal.');
-  const job = await f.call('hud_create', { role: 'general', on: 'claude', task: 'Synthetic versioned agent.' });
-  assert.equal(job.code, 'dispatch_failed');
-  const tab = f.commands().find(({ args }) => args[0] === 'tab' && args[1] === 'create').args;
-  const env = { ...f.env, ...Object.fromEntries(tab.filter((_, i) => tab[i - 1] === '--env').map(arg => arg.split(/=(.*)/s, 2))) };
-  if (!witnessed) delete env.HUD_INVOCATION_TOKEN;
-  const shims = env.PATH.split(':')[0], proof = join(shims, 'witness.json');
-  const nativeArgs = ['-c', '"$1" -e "$2" -- "$$"; exit $?', 'synthetic', process.execPath, `
-    const pid = Number(process.argv[1]);
-    const read = file => require('node:fs').readFileSync('/proc/' + pid + '/' + file, 'utf8');
-    const [argv0, ...args] = read('cmdline').slice(0, -1).split('\\0');
-    console.log(JSON.stringify({ comm: read('comm').trim(), argv0, pid, args, stat: read('stat'), token: !!process.env.HUD_INVOCATION_TOKEN }));
-  `, 'native arg'];
-  const child = spawnSync(join(shims, 'claude'), nativeArgs, { env, encoding: 'utf8', timeout: 5000 });
-  assert.equal(child.status, 0, child.stderr || String(child.error));
-  const { comm, argv0, pid, stat, args, token } = JSON.parse(child.stdout);
-  assert.deepEqual({ comm, argv0 }, { comm: 'claude', argv0: 'claude' });
-  assert.equal(pid, child.pid);
-  assert.deepEqual(args, nativeArgs);
-  assert.equal(token, false);
-  if (witnessed) assert.deepEqual(JSON.parse(fs.readFileSync(proof, 'utf8')), { pid, start: parseProcStat(stat).start });
-  else assert.equal(fs.existsSync(proof), false);
+  await f.call('hud_create', { role: 'general', on: 'claude', task: 'Synthetic versioned agent.' });
+  const start = f.socketRequests.find(req => req.method === 'agent.start').params;
+  assert.equal(start.executable, claude);
+  assert.equal(start.kind, 'claude');
 });
 
 test('a claude role launches with its flags and settles through idle grace', { timeout: 30000 }, async (t) => {
@@ -640,6 +618,6 @@ test('a failed cli job records agent_session_id published after start, before ex
   fs.writeFileSync(join(f.env.HOME, 'exit-after-done'), '');
   const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'late-fail', task: 'Synthetic late fail.' });
   await until(() => cliState(job.task_dir)?.state === 'failed', t.signal);
-  assert.equal(cliState(job.task_dir).error, 'worker exited');
+  assert.equal(cliState(job.task_dir).error, 'worker exited (exit unknown)');
   assert.equal(cliState(job.task_dir).agent_session_id, 'synthetic-grok-session');
 });

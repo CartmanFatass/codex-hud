@@ -1,7 +1,6 @@
 /** Process and Herdr helpers shared by the dispatch harnesses. */
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { herdrId, runHerdr } from '../../roles/herdr-run.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { isQuotaFailure } from '../../roles/roster.js';
@@ -64,13 +63,6 @@ export function launchFailure(result: DispatchResult) {
   const reason = code === 'agent_pane_busy' && result.pane ? `agent_pane_busy: worker pane ${result.pane} is busy`
     : result.detail || detail || `launch exited ${result.exit_code}`;
   return { code, reason: reason.slice(0, 500), stderr_tail: [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n').slice(-4096) };
-}
-/** Retry once in a fresh tab, and only after confirming the old one closed. */
-export async function retryBusyPane(result: DispatchResult, attempt: number, tab: string) {
-  if (attempt || result.exit_code === 0 || cliError(result)?.code !== 'agent_pane_busy') return false;
-  if (!(await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 })).ok) return false;
-  await sleep(100);
-  return true;
 }
 export function refusedBeforeInput(result: Awaited<ReturnType<typeof run>>): boolean {
   return result.exit_code !== 0 && (result.notStarted ||
@@ -230,10 +222,9 @@ export type DispatchResult = {
   pane?: string; detail?: string; preInput?: boolean; cleanupFailed?: boolean; launchUnknown?: boolean;
   directRollback?: DirectStartIdentity; status?: JobStatus; path?: string;
 };
-export const canTryNext = (job: Job, result: DispatchResult) => (job.role !== 'sonic' || job.headless) && result.preInput && !result.cleanupFailed;
+export const canTryNext = (job: Job, result: DispatchResult) => (job.role !== 'sonic' || job.headless) &&
+  result.code !== 'herdr_fork_required' && result.preInput && !result.cleanupFailed;
 export const launchError = (stderr: string, code?: Job['dispatch_code']): DispatchResult => ({ exit_code: 1, stdout: '', stderr, code });
-/** Stock-herdr and pre-spawn rejection helper. Direct-exec rollback uses rollbackDirectLaunch instead. */
-export async function rejectLaunch(result: DispatchResult, tab?: string): Promise<DispatchResult> {
-  const cleanup = tab && await runHerdr(['tab', 'close', tab], process.env, { budgetMs: 3000 });
-  return { ...result, preInput: true, cleanupFailed: Boolean(cleanup && !cleanup.ok) };
+export function rejectLaunch(result: DispatchResult): DispatchResult {
+  return { ...result, preInput: true, cleanupFailed: false };
 }

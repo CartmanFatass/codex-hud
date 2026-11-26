@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,6 +15,7 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const runner = resolve('packages/hud-mcp/bin/workflow-runner.mjs');
+const runFile = promisify(execFile);
 
 async function project(t, { secondBlocker = '01', count = 2 } = {}) {
   const f = await fixture(t, { failedRetentionMs: 30_000 });
@@ -138,7 +140,7 @@ test('ticket queue keeps going after origin MCP and pane exit; lead opens in pro
   assert.equal(fs.statSync(join(f.home, 'flows', flow, 'graph.json')).mode & 0o777, 0o600);
 
   // Concurrent detached driver loses election without modifying the receipt.
-  execFileSync(process.execPath, [runner, flow], { env: f.env, cwd: f.root, timeout: 4000 });
+  await runFile(process.execPath, [runner, flow], { env: f.env, cwd: f.root, timeout: 4000 });
   assert.equal(f.flow(flow).pid, initial.pid);
 
   // Origin main session closes (pane gone, MCP killed). The run keeps going, lands all tickets, reviews, and runs lead acceptance.
@@ -220,7 +222,7 @@ test('ticket queue keeps going after origin MCP and pane exit; lead opens in pro
 test('pane-less unattended ticket queue dispatches, lands, reviews, accepts, and completes with no main pane', { timeout: 45_000 }, async t => {
   const f = await project(t, { count: 1 });
   const env = { ...f.env }; delete env.HERDR_PANE_ID;
-  const started = execFileSync(process.execPath, [
+  const { stdout: started } = await runFile(process.execPath, [
     '--input-type=module', '-e',
     `import { startTicketQueue } from './dist/mcp/ticket-queue.js';
      const q = await startTicketQueue(process.env.HUD_HOME, process.argv[1], null, false, { feature: 'sample', max_parallel: 1 });

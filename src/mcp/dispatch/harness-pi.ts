@@ -1,7 +1,6 @@
 /** Pi launch and native session setup. */
-import { herdrEndpoint, isHudHerdrFork } from '../../runtime/herdr-socket.js';
+import { herdrEndpoint } from '../../runtime/herdr-socket.js';
 import { recordTabShells } from '../../runtime/tab-shell.js';
-import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { piWorkerArgv } from './pi-worker-argv.js';
 import { implicitPiProfile } from '../../roles/pi-defaults.js';
@@ -20,12 +19,12 @@ import { directory, findJob, readCachedStatus, hudHome, save, jobCache } from '.
 import type { NativeResume } from '../worker-resume.js';
 import {
   retainDirectFailure, startDirectAgent, waitDirectReady,
-  writeDirectSessionReceipt, writeSessionReceipt, type DirectStartIdentity,
+  writeDirectSessionReceipt, type DirectStartIdentity,
 } from './direct-exec.js';
 import { promptBoundary, recoverStalledPrompt } from './prompt-stall.js';
 import { registry, roleCwd } from './places.js';
 import {
-  rejectLaunch, run, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
+  run, dispatchBase, tabLabel, workspaceArgs,
   startupFailure, launchError, refusedBeforeInput, promptStalled, directExecEnv, type DispatchResult,
 } from './proc.js';
 
@@ -93,13 +92,10 @@ function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
 }
 export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, resume?: NativeResume): Promise<DispatchResult> {
   const dir = directory(job.job);
-  let openedTab: string | undefined;
   let directIdentity: DirectStartIdentity | undefined;
-  let isFork = false;
   let directStartSent = false;
   let mayHaveInput = false;
   const rollback = (result: DispatchResult): Promise<DispatchResult> => {
-    if (!isFork) return rejectLaunch(result, openedTab);
     if (directIdentity) return Promise.resolve(
       resume
         ? { ...result, preInput: true, cleanupFailed: false, directRollback: directIdentity }
@@ -143,155 +139,85 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     const effortSource = place.thinking !== undefined ? 'orchestrator' : undefined;
     const piArgs = piWorkerArgv(hudHome, dir, job, role, profile, resources, undefined, resume?.file, effortSource);
     const owner = jobCallerPane(job);
-    isFork = await isHudHerdrFork();
-    let left = '';
-    let started: DispatchResult = { exit_code: 1, stdout: '', stderr: 'tab create not attempted' };
     const name = `${job.job}-primary`;
-    if (isFork) {
-      fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
-      const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
-      const tabName = tabLabel(job, task);
-      const wsArgs = await workspaceArgs(job);
-      const workspaceId = wsArgs[1];
-      const endpoint = herdrEndpoint();
-      directStartSent = true;
-      const launch = await startDirectAgent({
-        executable: piBin,
-        argv: piArgs,
-        kind: 'pi',
-        name,
-        cwd: job.cwd,
-        env: directExecEnv({
-          HUD_JOB_DIR: dir,
-          HUD_HOME: hudHome,
-          ...(resume ? { HUD_RESUME_SESSION_ID: resume.id } : {}),
-          // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
-          GIT_OPTIONAL_LOCKS: '0',
-        }),
-        label: tabName,
-        on_exit: 'close_on_zero',
-        focus: false,
-        ...(workspaceId ? { workspace_id: workspaceId } : {}),
-      }, role.tab_visible);
-      if (!launch.ok) return launch.result;
-      directIdentity = launch.identity;
-      left = directIdentity.paneId;
-      let right = '';
-      let rightTerminalId: string | undefined;
-      const recordDirect = () => writeDirectSessionReceipt(dir, directIdentity!, {
-        task: job.job,
-        endpoint,
-        tabName,
-        right,
-        rightTerminalId,
-        orch: owner,
-        base,
-        primary: name,
-      });
-      recordDirect();
-      if (job.split) {
-        const split = await run('herdr', [
-          'pane',
-          'split',
-          left,
-          '--direction',
-          'right',
-          '--ratio',
-          '0.5',
-          '--cwd',
-          job.cwd,
-          '--env', `HUD_JOB_DIR=${dir}`,
-          '--env', `HUD_TAB_LAUNCH=${directIdentity.launchId}`,
-          '--no-focus',
-        ]);
-        if (split.exit_code !== 0) return rollback(split);
-        const splitPane = JSON.parse(split.stdout).result?.pane;
-        right = splitPane?.pane_id;
-        if (!herdrId(right)) throw new Error('split did not return a pane id');
-        if (herdrId(splitPane?.terminal_id)) rightTerminalId = splitPane.terminal_id;
-        recordDirect();
-        await recordTabShells(dir, directIdentity.launchId, directIdentity.tabId, [right]);
-      }
-      started = await waitDirectReady({
-        name,
-        paneId: left,
-        launchId: directIdentity.launchId,
-        terminalId: directIdentity.terminalId,
-        kind: 'pi',
-        pid: directIdentity.pid,
-        pidStart: directIdentity.pidStart,
-        timeoutMs: 30_000,
-      });
-    } else {
-      fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
-      const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
-      const tabName = tabLabel(job, task);
-      const tabArgv = [
-        'tab',
-        'create',
-        ...(await workspaceArgs(job)),
+    fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
+    const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
+    const tabName = tabLabel(job, task);
+    const wsArgs = await workspaceArgs(job);
+    const workspaceId = wsArgs[1];
+    const endpoint = herdrEndpoint();
+    directStartSent = true;
+    const launch = await startDirectAgent({
+      executable: piBin,
+      argv: piArgs,
+      kind: 'pi',
+      name,
+      cwd: job.cwd,
+      env: directExecEnv({
+        HUD_JOB_DIR: dir,
+        HUD_HOME: hudHome,
+        ...(resume ? { HUD_RESUME_SESSION_ID: resume.id } : {}),
+        // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
+        GIT_OPTIONAL_LOCKS: '0',
+      }),
+      label: tabName,
+      on_exit: 'close_on_zero',
+      focus: false,
+      ...(workspaceId ? { workspace_id: workspaceId } : {}),
+    }, role.tab_visible);
+    if (!launch.ok) return launch.result;
+    directIdentity = launch.identity;
+    const left = directIdentity.paneId;
+    let right = '';
+    let rightTerminalId: string | undefined;
+    const recordDirect = () => writeDirectSessionReceipt(dir, directIdentity!, {
+      task: job.job,
+      endpoint,
+      tabName,
+      right,
+      rightTerminalId,
+      orch: owner,
+      base,
+      primary: name,
+    });
+    recordDirect();
+    if (job.split) {
+      const split = await run('herdr', [
+        'pane',
+        'split',
+        left,
+        '--direction',
+        'right',
+        '--ratio',
+        '0.5',
         '--cwd',
         job.cwd,
-        '--label',
-        tabName,
-        '--env',
-        `HUD_JOB_DIR=${dir}`,
-        '--env',
-        `HUD_HOME=${hudHome}`,
-        // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
-        '--env',
-        'GIT_OPTIONAL_LOCKS=0',
-        ...(resume ? ['--env', `HUD_RESUME_SESSION_ID=${resume.id}`] : []),
-      ];
-      for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
-        const launch = randomUUID(), endpoint = herdrEndpoint();
-        const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, '--no-focus']);
-        if (result.exit_code !== 0) return rollback(result);
-        const { tab, root_pane } = JSON.parse(result.stdout).result;
-        if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
-        left = root_pane?.pane_id;
-        if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
-        let right = '';
-        const record = () => writeSessionReceipt(dir, {
-          TASK: job.job, LAUNCH: launch, HERDR_SOCKET_PATH: endpoint ?? '',
-          TAB: tab.tab_id,
-          TAB_NAME: tabName,
-          LEFT: left,
-          RIGHT: right,
-          ORCH: owner,
-          BASE: base,
-          PRIMARY: name,
-        });
-        record();
-        if (job.split) {
-          const split = await run('herdr', [
-            'pane',
-            'split',
-            left,
-            '--direction',
-            'right',
-            '--ratio',
-            '0.5',
-            '--cwd',
-            job.cwd,
-            '--env', `HUD_JOB_DIR=${dir}`, '--env', `HUD_TAB_LAUNCH=${launch}`,
-            '--no-focus',
-          ]);
-          if (split.exit_code !== 0) return rollback(split);
-          right = JSON.parse(split.stdout).result.pane.pane_id;
-          if (!herdrId(right)) throw new Error('split did not return a pane id');
-          record();
-        }
-        await recordTabShells(dir, launch, openedTab, right ? [left, right] : [left]);
-        started = await run('herdr', ['agent', 'start', name, '--kind', 'pi', '--pane', left, '--', ...piArgs]);
-        if (!await retryBusyPane(started, tabAttempt, openedTab)) break;
-        openedTab = undefined;
-      }
+        '--env', `HUD_JOB_DIR=${dir}`,
+        '--env', `HUD_TAB_LAUNCH=${directIdentity.launchId}`,
+        '--no-focus',
+      ]);
+      if (split.exit_code !== 0) return rollback(split);
+      const splitPane = JSON.parse(split.stdout).result?.pane;
+      right = splitPane?.pane_id;
+      if (!herdrId(right)) throw new Error('split did not return a pane id');
+      if (herdrId(splitPane?.terminal_id)) rightTerminalId = splitPane.terminal_id;
+      recordDirect();
+      await recordTabShells(dir, directIdentity.launchId, directIdentity.tabId, [right]);
     }
+    const started = await waitDirectReady({
+      name,
+      paneId: left,
+      launchId: directIdentity.launchId,
+      terminalId: directIdentity.terminalId,
+      kind: 'pi',
+      pid: directIdentity.pid,
+      pidStart: directIdentity.pidStart,
+      timeoutMs: 30_000,
+    });
     if (started.exit_code !== 0) {
       return rollback(await startupFailure(started, left));
     }
-    if (isFork) jobCache.invalidateFile(join(dir, jobFiles.status));
+    jobCache.invalidateFile(join(dir, jobFiles.status));
     if (resume) {
       const native = readCachedStatus(job.job).status;
       if (native?.session_id !== resume.id || native.session_file !== resume.file)

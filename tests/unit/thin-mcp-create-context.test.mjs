@@ -117,7 +117,7 @@ test('worktree isolation validates before dispatch, links dependencies and carri
   assert.deepEqual(project.ledger, [], 'a job without a ticket does not count toward progress');
 });
 
-test('hud_create closes a pre-input failure and starts the next place in the same job', async (t) => {
+test('hud_create tries the next place after a pre-spawn RPC rejection', async (t) => {
   const f = await fixture(t);
   fallbackRole(f, 'fallback-check');
   const reason = 'rate limit reached; retry after 5m';
@@ -125,7 +125,7 @@ test('hud_create closes a pre-input failure and starts the next place in the sam
   const job = await f.call('hud_create', { role: 'fallback-check', request_key: 'fallback', task: 'Synthetic fallback.' });
   assert.equal(job.state, 'working');
   assert.deepEqual(job.attempts, [
-    { index: 0, place: 'cli/grok (synthetic-first)', reason },
+    { index: 0, place: 'cli/grok (synthetic-first)', reason: `invalid_request: ${reason}` },
     { index: 1, place: 'pi (synthetic/second)' },
   ]);
   assert.equal(job.used_place, 'pi (synthetic/second)');
@@ -136,11 +136,11 @@ test('hud_create closes a pre-input failure and starts the next place in the sam
   const launches = f.commands().filter(({ args }) =>
     (args[0] === 'agent' && args[1] === 'start') || (args[0] === 'tab' && args[1] === 'close'));
   assert.deepEqual(launches.map(({ args }) => [args[1], args[2]]), [
-    ['start', `${job.job}-primary`], ['close', 'w4E:t2'], ['start', `${job.job}-primary`],
+    ['start', `${job.job}-primary`], ['start', `${job.job}-primary`],
   ]);
   const exhausted = JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'exhausted.json'))).places;
   assert.deepEqual(Object.keys(exhausted), ['cli:grok:synthetic-first']);
-  assert.equal(exhausted['cli:grok:synthetic-first'].reason, reason);
+  assert.equal(exhausted['cli:grok:synthetic-first'].reason, `invalid_request: ${reason}`);
 });
 
 test('non-general roles refuse caller Pi placement flags and do not inherit general overrides on role change', async t => {
@@ -355,7 +355,7 @@ test('hud_create retains every pre-input cause on one failed job and stays withi
   assert.equal(job.used_place, null);
   assert.deepEqual(job.attempts, [
     { index: 0, place: 'cli/grok (synthetic-first)', reason: trust },
-    { index: 1, place: 'pi (synthetic/second)', reason: 'synthetic Pi launcher failure' },
+    { index: 1, place: 'pi (synthetic/second)', reason: 'invalid_request: synthetic Pi launcher failure' },
   ]);
   assert.ok(job.reason.includes(trust) && job.reason.includes('synthetic Pi launcher failure'));
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')), [job.job]);
@@ -364,29 +364,31 @@ test('hud_create retains every pre-input cause on one failed job and stays withi
   assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
 });
 
-test('a rejected CLI prompt falls through, retaining its attempted start arguments in detail', async t => {
+test('a rejected CLI prompt retains the direct launch and its attempted arguments', async t => {
   const f = await fixture(t);
   fallbackRole(f, 'invalid-arg');
   writeFixtureFile(join(f.env.HOME, 'invalid-prompt-once'), '');
   const job = await f.call('hud_create', { role: 'invalid-arg', task: 'Synthetic fallback.' });
-  assert.equal(job.used_place, 'pi (synthetic/second)');
+  assert.equal(job.ok, false);
+  assert.equal(job.attempts.length, 1);
   assert.equal(job.attempts[0].reason, 'invalid_agent_argument: synthetic rejection');
+  assert.match(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'), /^DIRECT_EXEC=1$/m);
   const detail = await f.call('hud_peek', { job: job.job, detail: true });
   assert.ok(detail.diagnostics.launch_agent_args[0].args.includes('synthetic-first'));
 });
 
-test('a busy worker pane retries once and keeps CLI JSON out of the failure reason', async t => {
+test('a busy start is refused once and keeps RPC JSON out of the failure reason', async t => {
   const f = await fixture(t);
   writeFixtureFile(join(f.env.HOME, 'busy-pane-count'), '3');
   writeFixtureFile(join(f.env.HOME, 'tab-seq'), '1');
   const job = await f.call('hud_create', { role: 'general', on: 'grok', task: 'Synthetic busy launch.' });
   assert.equal(job.ok, false);
-  assert.equal(job.reason, 'agent_pane_busy: worker pane w4E:p3 is busy');
+  assert.equal(job.reason, 'agent_pane_busy: agent target pane w4E:p2 is not an available shell');
   assert.equal(cliState(job.task_dir).exit_reason, 'agent_pane_busy');
   assert.equal(job.attempts[0].reason, job.reason);
   assert.equal(JSON.parse(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).stderr_tail).error.code, 'agent_pane_busy');
   const starts = f.commands().filter(({ args }) => args[1] === 'start');
-  assert.deepEqual(starts.map(({ args }) => args[args.indexOf('--pane') + 1]), ['w4E:p2', 'w4E:p3']);
+  assert.deepEqual(starts.map(({ args }) => args[args.indexOf('--pane') + 1]), ['w4E:p2']);
 });
 
 test('working worker STATUS survives a nonzero prompt result', { timeout: 60000 }, async (t) => {
@@ -397,10 +399,7 @@ test('working worker STATUS survives a nonzero prompt result', { timeout: 60000 
   assert.equal(receipt.dispatch_exit_code, 1);
   assert.match(receipt.stderr_tail, /synthetic prompt timeout/);
   assert.equal(job.attempts.length, 1, 'uncertain input must not be retried on another place');
-  assert.equal(
-    fs.readFileSync(join(job.task_dir, 'STATUS.json'), 'utf8'),
-    JSON.stringify({ state: 'working', exit_reason: null })
-  );
+  assert.equal(cliState(job.task_dir).state, 'working');
   assert.equal((await f.call('hud_read', { job: job.job })).state, 'working');
 });
 
@@ -457,6 +456,7 @@ test('pi dispatch falls back to the role name for HUD instructions and passes th
   fs.writeFileSync(join(f.env.HUD_HOME, 'roles', 'general.json'), JSON.stringify({
     role: 'general', can_continue: true, run: [{ harness: 'pi', pi_role: 'implementer' }],
   }));
+  await f.startCliSocket();
   const env = { ...f.env };
   delete env.HUD_HOME;
   const client = new PiRoleClient({ release: resolve('.'), node: process.execPath, hudHome: f.env.HUD_HOME }, env, f.root, 'synthetic-pi');
@@ -467,9 +467,10 @@ test('pi dispatch falls back to the role name for HUD instructions and passes th
     const contract = JSON.parse(fs.readFileSync(join(job.task_dir, 'pi-worker.json'), 'utf8'));
     assert.equal(contract.instructions, 'general');
     assert.equal(contract.tab?.profile, 'implementer');
-    const tab = f.commands().find(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').args;
-    const at = tab.indexOf('--env');
-    assert.deepEqual(tab.slice(at, at + 6), ['--env', `HUD_JOB_DIR=${job.task_dir}`, '--env', `HUD_HOME=${f.env.HUD_HOME}`, '--env', 'GIT_OPTIONAL_LOCKS=0']);
+    const { env: workerEnv } = f.socketRequests.find(req => req.method === 'agent.start').params;
+    assert.equal(workerEnv.HUD_JOB_DIR, job.task_dir);
+    assert.equal(workerEnv.HUD_HOME, f.env.HUD_HOME);
+    assert.equal(workerEnv.GIT_OPTIONAL_LOCKS, '0');
   } finally {
     await client.stop();
   }
@@ -625,15 +626,8 @@ esac
   const logged = f.commands();
   assert.ok(logged.some(({ command, args }) => command === 'herdr' && args.join(' ') === 'pane get w4E:p1'));
   const commands = logged.filter((c) => c.args[1] !== 'get');
-  assert.deepEqual(
-    commands.map((c) => [c.command, ...c.args.slice(0, 2)]),
-    [
-      ['herdr', 'tab', 'create'],
-      ['herdr', 'pane', 'split'],
-      ['herdr', 'agent', 'start'],
-      ['herdr', 'agent', 'prompt'],
-    ]
-  );
+  assert.deepEqual(commands.filter(c => !c.rpc).map(c => c.args.slice(0, 2)), [['pane', 'split'], ['agent', 'prompt']]);
+  const start = f.socketRequests.find(req => req.method === 'agent.start').params;
   const contract = JSON.parse(fs.readFileSync(join(job.task_dir, 'pi-worker.json'), 'utf8'));
   assert.equal(contract.role, 'imp');
   assert.equal(contract.instructions, 'implementer');
@@ -646,44 +640,24 @@ esac
       .split('\n')
       .map((l) => l.split('='))
   );
-  assert.ok(commands[0].args.includes(`HUD_TAB_LAUNCH=${session.LAUNCH}`));
   assert.deepEqual(session, {
-    TASK: job.job, LAUNCH: session.LAUNCH,
+    TASK: job.job, LAUNCH_ID: session.LAUNCH_ID, TERMINAL_ID: session.TERMINAL_ID, DIRECT_EXEC: '1',
+    PID: String(cliState(job.task_dir).pid), PID_START: cliState(job.task_dir).pid_start_time,
     HERDR_SOCKET_PATH: f.env.HERDR_SOCKET_PATH,
-    TAB: 'w4E:t2',
-    TAB_NAME: session.TAB_NAME,
-    LEFT: 'w4E:p2',
-    RIGHT: 'w4E:p3',
-    ORCH: 'w4E:p1',
-    BASE: 'HEAD',
-    PRIMARY: job.agent,
+    TAB: 'w4E:t2', TAB_NAME: session.TAB_NAME, LEFT: 'w4E:p2', RIGHT: 'w4E:p3', ORCH: 'w4E:p1', BASE: 'HEAD', PRIMARY: job.agent,
   });
-  assert.ok(commands[0].args.includes('--no-focus'));
-  assert.equal(commands[0].args[commands[0].args.indexOf('--env') + 1], `HUD_JOB_DIR=${job.task_dir}`);
-  assert.equal(commands[0].args[commands[0].args.indexOf('--label') + 1], 'imp Synthetic lane');
-  assert.equal(commands[0].args[commands[0].args.indexOf('--workspace') + 1], 'w4E');
-  assert.deepEqual(commands[1].args.slice(2), [
-    'w4E:p2',
-    '--direction',
-    'right',
-    '--ratio',
-    '0.5',
-    '--cwd',
-    f.root,
-    '--env', `HUD_JOB_DIR=${job.task_dir}`, '--env', `HUD_TAB_LAUNCH=${session.LAUNCH}`,
-    '--no-focus',
+  assert.equal(start.focus, false);
+  assert.equal(start.env.HUD_JOB_DIR, job.task_dir);
+  assert.equal(start.env.HUD_TAB_LAUNCH, undefined);
+  assert.equal(start.label, 'imp Synthetic lane');
+  assert.equal(start.workspace_id, 'w4E');
+  assert.deepEqual(commands.find(c => c.args[1] === 'split').args.slice(2), [
+    'w4E:p2', '--direction', 'right', '--ratio', '0.5', '--cwd', f.root,
+    '--env', `HUD_JOB_DIR=${job.task_dir}`, '--env', `HUD_TAB_LAUNCH=${session.LAUNCH_ID}`, '--no-focus',
   ]);
-  assert.deepEqual(commands[2].args.slice(0, 7), [
-    'agent',
-    'start',
-    job.agent,
-    '--kind',
-    'pi',
-    '--pane',
-    'w4E:p2',
-  ]);
-  assert.deepEqual(commands[2].args.slice(7), [
-    '--',
+  assert.equal(start.name, job.agent);
+  assert.equal(start.kind, 'pi');
+  assert.deepEqual(start.argv, [
     '-ne',
     '-ns',
     '-np',
@@ -702,7 +676,7 @@ esac
     '--exclude-tools',
     'ask_orchestrator',
   ]);
-  assert.deepEqual(commands[3].args, [
+  assert.deepEqual(commands.find(c => c.args[1] === 'prompt').args, [
     'agent',
     'prompt',
     job.agent,
@@ -747,7 +721,7 @@ esac
   });
   assert.equal(fs.readFileSync(join(job.task_dir, 'qa', 'q1.answer.md'), 'utf8'), answer.answer);
   assert.deepEqual(await f.call('hud_close', { job: job.job }), { exit_code: 0, last_line: 'Synthetic reap complete' });
-  const piLaunch = /^LAUNCH=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))?.[1];
+  const piLaunch = /^LAUNCH_ID=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))?.[1];
   assert.deepEqual(f.commands().at(-1), { command: 'hud-reap', args: [job.task_dir, '--launch', piLaunch] });
 });
 
@@ -1120,8 +1094,8 @@ test('thin create rejects model or thinking overrides for Jev roles', { timeout:
   assert.deepEqual(withoutCallerLookups(f.commands()), []);
 });
 
-test('thin Jev roles run the real wrapper in an unfocused tab and deduplicate sends', { timeout: 15000 }, async (t) => {
-  const f = await fixture(t);
+test('thin Jev roles keep their stock shell path and deduplicate sends', { timeout: 15000 }, async (t) => {
+  const f = await fixture(t, { herdrVersion: '0.9.5' });
   enableOptionalRoles(f, 'pro', 'flow');
   const args = { role: 'pro', request_key: 'pro-once', task: 'Synthetic question.' };
   const job = await f.call('hud_create', args);
@@ -1238,7 +1212,7 @@ test('thin create requires herdr without dispatching', { timeout: 60000 }, async
   assert.deepEqual(f.commands(), []);
 });
 
-test('hud_send to a read-closed CLI worktree job repairs in the same worktree without agent_pane_busy', { timeout: 20000 }, async (t) => {
+test('hud_send to a read-closed CLI worktree job repairs in the same worktree through direct start', { timeout: 20000 }, async (t) => {
   const f = await legacyFixture(t), cwd = initRepo(f.root);
   fs.chmodSync(f.env.HUD_HOME, 0o700);
   fs.writeFileSync(join(cwd, '.gitignore'), 'build/\n');
@@ -1267,8 +1241,6 @@ test('hud_send to a read-closed CLI worktree job repairs in the same worktree wi
   await until(() => cliState(source.task_dir)?.state === 'closed', t.signal);
   assert.equal(cliState(source.task_dir).exit_reason, 'closed after report read');
 
-  // Transient agent_pane_busy clears on the single retry.
-  writeFixtureFile(join(f.env.HOME, 'busy-pane-count'), '1');
   const repair = await f.call('hud_send', { job: source.job, text: 'Synthetic follow-up in same worktree.' });
   assert.equal(repair.continued_as, repair.job);
   assert.notEqual(repair.job, source.job);
@@ -1283,29 +1255,14 @@ test('hud_send to a read-closed CLI worktree job repairs in the same worktree wi
   assert.equal(git(repairReceipt.cwd, 'rev-parse', 'HEAD'), sourceCommit);
   assert.deepEqual(fs.readdirSync(join(f.root, 'demo-wt')), [wt.root.split('/').at(-1)]);
   const repairStarts = f.commands().filter(({ args }) => args[0] === 'agent' && args[1] === 'start' && args[2] === `${repair.job}-primary`);
-  assert.equal(repairStarts.length, 2, 'one busy response followed by one successful start');
+  assert.equal(repairStarts.length, 1);
   const readRepair = await f.call('hud_read', { job: repair.job, mode: 'full' });
   assert.deepEqual(readRepair.worktree, { ...wt, owner: source.job });
   assert.equal(readRepair.git_summary.ahead_commits, 1);
   assert.equal(readRepair.git_summary.dirty, false);
   assert.deepEqual(readRepair.git_summary.overlaps, []);
 
-  // A pane that stays busy falls back to a fresh tab and pane instead of failing dispatch.
-  await until(() => cliState(repair.task_dir)?.state === 'idle_grace', t.signal);
-  await f.call('hud_read', { job: repair.job });
-  await until(() => cliState(repair.task_dir)?.state === 'closed', t.signal);
-  writeFixtureFile(join(f.env.HOME, 'tab-seq'), '1');
-  writeFixtureFile(join(f.env.HOME, 'busy-pane-id'), 'w4E:p2');
-  const third = await f.call('hud_send', { job: repair.job, text: 'Synthetic follow-up on fresh pane.' });
-  assert.equal(third.continued_as, third.job);
-  assert.notEqual(third.ok, false, JSON.stringify(third));
-  const thirdReceipt = JSON.parse(fs.readFileSync(join(third.task_dir, 'job.json'), 'utf8'));
-  assert.equal(thirdReceipt.cwd, wt.root);
-  assert.deepEqual(thirdReceipt.worktree, { ...wt, owner: source.job });
-  const thirdSession = fs.readFileSync(join(third.task_dir, 'SESSION.txt'), 'utf8');
-  assert.match(thirdSession, /^TAB=w4E:t3$/m);
-  assert.match(thirdSession, /^LEFT=w4E:p3$/m);
-  assert.ok(f.commands().some(({ args }) => args[0] === 'tab' && args[1] === 'close' && args[2] === 'w4E:t2'));
+
 });
 
 test('retry_of a failed continuation keeps the source worktree and falls back when dirty or removed', { timeout: 20000 }, async (t) => {

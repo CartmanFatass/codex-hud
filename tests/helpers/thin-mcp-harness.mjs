@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -59,12 +60,12 @@ export function legacyFixture(t, inHerdr = true, probe = '', watcherTickMs, work
   return startFixture(t, { ...opts, probe: [opts.probe, legacyReceiptProbe].filter(Boolean).join('\n') });
 }
 
-// Routing tests keep their closed PATH and real supervisor clock, without the socket simulation.
+// Routing tests keep their closed PATH and real supervisor clock.
 export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
 }
 
-async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, path = process.env.PATH, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false }) {
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, path = process.env.PATH, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false, herdrVersion = '0.9.5-hud.76b187b0', customHerdrSocket = false }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const cleanups = [];
   cleanupFixture(t, { root, hudHome: join(root, 'hud_home') }, async () => {
@@ -156,9 +157,9 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     }
   });
   const rpc = rpcClient(child);
-  let cliSocket, piStatus = () => 'idle';
-  const socketRequests = [];
-  const subscribers = new Set(), vanishedTabs = new Set();
+  let cliSocket, listening, piStatus = () => 'idle';
+  const socketRequests = [], launches = new Map(), agents = new Set();
+  const subscribers = new Set(), sockets = new Set(), vanishedTabs = new Set();
   const emitTabClosed = (tab_id) => {
     for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'tab.closed', data: { tab_id, workspace_id: 'w4E' } }) + '\n');
   };
@@ -167,17 +168,63 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     client.state = state;
     client.socket.write(JSON.stringify({ event: 'pane.agent_status_changed', data: { pane_id: client.pane, workspace_id: 'w4E', agent_status: state } }) + '\n');
   };
-  async function startCliSocket() {
-    if (cliSocket || fs.existsSync(env.HERDR_SOCKET_PATH)) return;
+  function startCliSocket() {
+    if (listening || fs.existsSync(env.HERDR_SOCKET_PATH)) return listening;
     cliSocket = createServer((socket) => {
+      sockets.add(socket);
       const client = { socket, id: null, state: null, reported: 0 };
       const lines = createInterface({ input: socket });
       lines.on('line', (line) => {
         const req = JSON.parse(line);
         socketRequests.push(req);
         const reply = (result) => socket.write(JSON.stringify({ id: req.id, result }) + '\n');
+        const error = (code, message) => socket.write(JSON.stringify({ id: req.id, error: { code, message } }) + '\n');
         if (req.method === 'ping') {
-          reply({ type: 'pong', version: '0.9.5', protocol: 22 });
+          reply({ type: 'pong', version: herdrVersion, protocol: 22 });
+          return;
+        }
+        if (req.method === 'agent.start') {
+          const { name, kind, argv, cwd, label, workspace_id, focus, timeout_ms, env: workerEnv } = req.params;
+          const seq = join(env.HOME, 'tab-seq'), n = has('tab-seq') ? (Number(fs.readFileSync(seq)) || 1) + 1 : 2;
+          if (has('tab-seq')) writeFixtureFile(seq, String(n));
+          const tab_id = `w4E:t${n}`, pane_id = `w4E:p${n}`, launch_id = randomUUID(), terminal_id = randomUUID();
+          const args = ['agent', 'start', name, '--kind', kind, '--pane', pane_id,
+            ...(timeout_ms ? ['--timeout', String(timeout_ms)] : []), '--', ...argv];
+          // Project direct-start metadata into the fixture's operation log for existing argv/label assertions.
+          // Protocol assertions use socketRequests (or filter out these projected rows via rpc).
+          const entries = [
+            ['tab', 'create', ...(workspace_id ? ['--workspace', workspace_id] : []), '--cwd', cwd, '--label', label,
+              ...['HUD_JOB_DIR', 'HUD_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR'].filter(key => workerEnv[key] !== undefined)
+                .flatMap(key => ['--env', `${key}=${workerEnv[key]}`]), ...(!focus ? ['--no-focus'] : [])],
+            args,
+          ];
+          for (const row of entries) fs.appendFileSync(log, JSON.stringify({ command: 'herdr', args: row, rpc: req.method }) + '\n');
+          const externalPid = has('cli-pid') ? Number(fs.readFileSync(join(env.HOME, 'cli-pid'))) : null;
+          const external = externalPid && procStat(externalPid);
+          const worker = external && external.state !== 'Z' ? null : spawn('/bin/sleep', ['600'], { env: workerEnv, stdio: 'ignore' });
+          if (worker) { agents.add(worker); worker.once('exit', () => agents.delete(worker)); }
+          const pid = worker?.pid ?? externalPid;
+          const start = procStat(pid)?.start;
+          if (!start) { worker?.kill(); error('invalid_request', 'fixture worker PID missing'); return; }
+          const init = { ...env, FAKE_DIRECT_PID: String(pid) };
+          const prepare = execFile(process.execPath, [fakeBin, 'direct-start', ...args], { env: init }, (err, stdout, stderr) => {
+            if (socket.destroyed) { worker?.kill(); return; }
+            if (err) {
+              worker?.kill();
+              let failure;
+              try { failure = JSON.parse(stderr).error; } catch {}
+              error(failure?.code ?? 'invalid_request', failure?.message ?? (stderr.trim() || stdout.trim()));
+              return;
+            }
+            if (worker && ['cli-exit', 'cli-unknown', 'cli-gone', 'grace-quiet-gone', 'blocked-quiet-gone', 'exit-after-done'].some(has))
+              writeFixtureFile(join(env.HOME, 'fake-agent-pid'), String(pid));
+            const resuming = argv.includes('--resume') || argv.includes('--conversation') || argv[0] === 'resume';
+            const target = { name, kind, tab_id, pane_id, launch_id, terminal_id, worker, resuming };
+            launches.set(name, target);
+            reply({ type: 'agent_started', tab: { tab_id, launch_id }, root_pane: { pane_id, launch_id, terminal_id },
+              launch_id, pid, pid_start_time: start });
+          });
+          agents.add(prepare); prepare.on('exit', () => agents.delete(prepare));
           return;
         }
         if (req.method === 'events.subscribe') {
@@ -186,25 +233,29 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
           subscribers.add(client); reply({ type: 'subscribed' });
         }
         else if (req.method === 'agent.get') {
-          const id = req.params.target.replace(/-primary$/, '');
-          const jobFile = join(env.HUD_HOME, 'jobs', id, 'job.json');
-          if (fs.existsSync(jobFile) && !JSON.parse(fs.readFileSync(jobFile)).cli) {
-            const state = piStatus();
-            if (state === 'agent_not_found') socket.write(JSON.stringify({ id: req.id, error: { code: state } }) + '\n');
-            else reply({ agent: { agent_status: state } });
-            return;
-          }
-          const sub = [...subscribers].reverse().find((item) => item.supervisor && !item.id) ?? [...subscribers].find((item) => item.supervisor && item.id === id);
+          const target = launches.get(req.params.target) ?? [...launches.values()].reverse().find(a => a.pane_id === req.params.target);
+          if (!target) { error('agent_not_found'); return; }
+          const { kind, name, pane_id, tab_id, launch_id, terminal_id } = target;
+          const id = name.replace(/-primary$/, '');
+          const sub = [...subscribers].reverse().find(item => item.id === id || (!item.id && item.pane === pane_id));
           if (sub) sub.id = id;
-          if (has('herdr-errors') || has('no-pid')) { socket.write(JSON.stringify({ id: req.id, error: { code: 'agent_not_found' } }) + '\n'); return; }
-          const session = join(env.HUD_HOME, 'jobs', id, 'SESSION.txt');
-          const fields = fs.existsSync(session) ? Object.fromEntries(fs.readFileSync(session, 'utf8').trim().split('\n').map(l => l.split('='))) : {};
-          reply({ agent: { name: req.params.target, pane_id: fields.LEFT, tab_id: fields.TAB, agent_status: sub?.state ?? 'working', agent_session: has('late-session') && !has('exit-after-done') && !has('socket-got-session') ? null : { kind: 'id', value: 'synthetic-grok-session' } } });
-          fs.writeFileSync(join(env.HOME, 'socket-got-session'), '');
+          const state = sub?.state ?? (kind === 'pi' && target.ready ? piStatus() : 'idle');
+          if (state === 'agent_not_found' || (sub && has('herdr-errors'))) { error('agent_not_found'); return; }
+          const agent_session = has('late-session') && !has('exit-after-done') && !has('socket-got-session') ? null : {
+            kind: 'id', value: target.resuming && has('wrong-native-session') ? 'unexpected-session' : 'synthetic-grok-session',
+          };
+          const blocked = !target.ready && has('start-not-ready');
+          reply({ agent: { name, pane_id, tab_id, launch_id, terminal_id, agent: kind,
+            agent_status: blocked ? 'blocked' : state, interactive_ready: !blocked, agent_session } });
+          target.ready = true;
+          if (sub) fs.writeFileSync(join(env.HOME, 'socket-got-session'), '');
         } else if (req.method === 'pane.get' || req.method === 'tab.get') {
           const id = req.params.tab_id ?? req.params.pane_id.replace(/:p/, ':t');
           if (vanishedTabs.has(id)) socket.write(JSON.stringify({ id: req.id, error: { code: req.method === 'pane.get' ? 'pane_not_found' : 'tab_not_found' } }) + '\n');
-          else reply(req.method === 'pane.get' ? { pane: { pane_id: req.params.pane_id } } : { tab: { tab_id: id } });
+          else {
+            const target = [...launches.values()].reverse().find(a => a.tab_id === id);
+            reply(req.method === 'pane.get' ? { pane: { pane_id: req.params.pane_id } } : { tab: { tab_id: id, launch_id: target?.launch_id } });
+          }
         } else if (req.method === 'pane.read') {
           if (has('pane-read-timeout')) return;
           reply({ read: { text: has('pane-read') ? fs.readFileSync(join(env.HOME, 'pane-read'), 'utf8') : 'synthetic pane' } });
@@ -220,10 +271,10 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
       });
       socket.on('error', () => {});
       lines.on('error', () => {});
-      socket.on('close', () => { subscribers.delete(client); lines.close(); });
+      socket.on('close', () => { subscribers.delete(client); sockets.delete(socket); lines.close(); });
     });
-    await new Promise((done) => cliSocket.listen(env.HERDR_SOCKET_PATH, done));
-    const simulation = setInterval(() => {
+    listening = new Promise((done) => cliSocket.listen(env.HERDR_SOCKET_PATH, done));
+    const simulation = routingOnly ? null : setInterval(() => {
       for (const client of subscribers) {
         if (!client.id || has('manual-socket')) continue;
         const dir = join(env.HUD_HOME, 'jobs', client.id);
@@ -256,7 +307,13 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
         if (client.state !== state) push(client, state);
       }
     }, 20);
-    cleanups.push(() => { clearInterval(simulation); for (const client of subscribers) client.socket.destroy(); cliSocket.close(); });
+    cleanups.push(async () => {
+      clearInterval(simulation);
+      for (const proc of agents) proc.kill('SIGKILL');
+      for (const socket of sockets) socket.destroy();
+      await new Promise(done => cliSocket.close(done));
+    });
+    return listening;
   }
   async function call(name, args = {}) {
     if (!routingOnly && name === 'hud_create') {
@@ -269,7 +326,6 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
           const defaults = JSON.parse(fs.readFileSync(resolve('packages/hud-mcp/roles', `${args.role}.json`)));
           writeFixtureFile(roleFile, JSON.stringify({ ...defaults, idle_grace_s: 15 }));
         }
-        await startCliSocket();
       }
     }
     const response = await rpc('tools/call', { name, arguments: args });
@@ -279,6 +335,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     assert.equal(response.result.content[0].type, 'text');
     return JSON.parse(response.result.content[0].text);
   }
+  // Detached workflow runners and direct dispatch helpers also call agent.start.
+  if (!customHerdrSocket) await startCliSocket();
   return {
     root,
     env,
@@ -302,6 +360,11 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
       return clients.length > 0;
     },
     emitTabClosed,
+    exitAgent: (id, exit_code) => {
+      const { pane_id, tab_id, launch_id, terminal_id } = launches.get(`${id}-primary`);
+      for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'pane.exited',
+        data: { pane_id, tab_id, launch_id, terminal_id, exit_code } }) + '\n');
+    },
     closeTab: (tab_id = 'w4E:t2') => { vanishedTabs.add(tab_id); emitTabClosed(tab_id); },
     commands: () => {
       if (!fs.existsSync(log)) return [];
@@ -576,13 +639,13 @@ const cliStatusKeys = [
   'error',
   'updated_at',
 ];
-export function assertCliStatus(status, dir) {
+export function assertCliStatus(status, dir, agent = 'grok') {
   for (const key of cliStatusKeys) assert.equal(Object.hasOwn(status, key), true, key);
   assert.equal(Object.hasOwn(status, 'session_id'), false);
   assert.equal(status.version, 1);
   assert.equal(status.slot, 'primary');
   assert.equal(status.harness, 'cli');
-  assert.equal(status.agent, 'grok');
+  assert.equal(status.agent, agent);
   assert.equal(status.task_dir, fs.realpathSync(dir));
 }
 

@@ -2,15 +2,11 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { isCliDirTrusted } from '../../cli/trust.js';
 import { cliKinds, type CliAgent } from '../../roles/cli-kinds.js';
-import { herdrId } from '../../roles/herdr-run.js';
 import { executablePath, type RolePlace } from '../../roles/roster.js';
-import { herdrEndpoint, isHudHerdrFork, request as herdrRequest } from '../../runtime/herdr-socket.js';
-import { recordTabShells } from '../../runtime/tab-shell.js';
-import { prepareCliInvocation } from '../../runtime/cli-invocation.js';
+import { herdrEndpoint, request as herdrRequest } from '../../runtime/herdr-socket.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { isProcAlive } from '../../utils/proc.js';
 import { writeTurn, withDonePrompt, reportSignature } from '../cli-judge.js';
@@ -22,10 +18,10 @@ import { jobCache, directory, bundled, hudHome, save, writeCreateStatus } from '
 import type { NativeResume } from '../worker-resume.js';
 import {
   retainDirectFailure, startDirectAgent, waitDirectReady,
-  writeDirectSessionReceipt, writeSessionReceipt, type DirectStartIdentity,
+  writeDirectSessionReceipt, type DirectStartIdentity,
 } from './direct-exec.js';
 import {
-  run, binScript, launchError, rejectLaunch, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
+  run, binScript, launchError, dispatchBase, tabLabel, workspaceArgs,
   startupFailure, paneText, refusedBeforeInput, directExecEnv, type DispatchResult,
 } from './proc.js';
 
@@ -111,13 +107,10 @@ export function failCli(dir: string, job: Job, place: RolePlace, reason: string)
 export async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[], standingBrief?: StandingBriefRef, options: { callerToken?: string; resume?: NativeResume; tabVisible?: boolean } = {}): Promise<DispatchResult> {
   const { callerToken, resume, tabVisible } = options;
   const dir = directory(job.job);
-  let openedTab: string | undefined;
   let directIdentity: DirectStartIdentity | undefined;
-  let isFork = false;
   let directStartSent = false;
   let mayHaveInput = false;
   const rollback = (result: DispatchResult): Promise<DispatchResult> => {
-    if (!isFork) return rejectLaunch(result, openedTab);
     if (directIdentity) return Promise.resolve(
       resume
         ? { ...result, preInput: true, cleanupFailed: false, directRollback: directIdentity }
@@ -157,10 +150,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
     const tabName = tabLabel(job, task),
       name = `${job.job}-primary`;
-    const starting: JobStatus = { version: 1, slot: 'primary', task_dir: fs.realpathSync(dir), state: 'working', harness: 'cli', agent: place.agent, pid: null, pid_start_time: null };
     const wsArgs = await workspaceArgs(job);
-    let left = '';
-    let started: DispatchResult = { exit_code: 1, stdout: '', stderr: 'tab create not attempted' };
     // Keep start arguments in detailed diagnostics only; never record the first prompt.
     const recordLaunchArgs = () => {
       const args = agentArgs.slice(0, 32).map(arg => arg.length <= 128 ? arg : `${arg.slice(0, 127)}…`);
@@ -168,105 +158,77 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       job.launch_agent_args = [...(job.launch_agent_args ?? []).slice(-3), { place: job.place_key ?? place.agent!, args }];
       save(job);
     };
-    isFork = await isHudHerdrFork();
-    if (isFork) {
-      const endpoint = herdrEndpoint();
-      const workspaceId = wsArgs[1];
-      recordLaunchArgs();
-      directStartSent = true;
-      const launch = await startDirectAgent({
-        executable: target,
-        argv: agentArgs,
-        kind: place.agent!,
-        name,
-        ...(kind.startTimeoutMs ? { timeout_ms: kind.startTimeoutMs } : {}),
-        cwd: job.cwd,
-        env: directExecEnv({
-          HUD_JOB_DIR: dir,
-          HUD_HOME: hudHome,
-          // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
-          GIT_OPTIONAL_LOCKS: '0',
-          // Forward custom CODEX_HOME only when set on the caller; never overwrite with ~/.codex.
-          ...(place.agent === 'codex' && process.env.CODEX_HOME ? { CODEX_HOME: resolve(process.env.CODEX_HOME) } : {}),
-          ...(place.agent === 'claude' && process.env.CLAUDE_CONFIG_DIR ? { CLAUDE_CONFIG_DIR: resolve(process.env.CLAUDE_CONFIG_DIR) } : {}),
-        }),
-        label: tabName,
-        on_exit: 'close_on_zero',
-        focus: false,
-        ...(workspaceId ? { workspace_id: workspaceId } : {}),
-      }, tabVisible);
-      if (!launch.ok) return launch.result;
-      directIdentity = launch.identity;
-      left = directIdentity.paneId;
-      writeDirectSessionReceipt(dir, directIdentity, {
-        task: job.job,
-        endpoint,
-        tabName,
-        orch: job.herdr_pane,
-        base,
-        primary: name,
-      });
-      writeCreateStatus(dir, { ...starting, pid: directIdentity.pid, pid_start_time: directIdentity.pidStart });
-      started = await waitDirectReady({
-        name,
-        paneId: left,
-        launchId: directIdentity.launchId,
-        terminalId: directIdentity.terminalId,
-        kind: place.agent!,
-        pid: directIdentity.pid,
-        pidStart: directIdentity.pidStart,
-        timeoutMs: kind.startTimeoutMs ?? 30_000,
-      });
-    } else {
-      const tabArgv = [
-        'tab',
-        'create',
-        ...(place.agent === 'codex' ? ['--env', `CODEX_HOME=${resolve(process.env.CODEX_HOME || join(homedir(), '.codex'))}`] : []),
-        ...(place.agent === 'claude' && process.env.CLAUDE_CONFIG_DIR ? ['--env', `CLAUDE_CONFIG_DIR=${resolve(process.env.CLAUDE_CONFIG_DIR)}`] : []),
-        ...wsArgs,
-        '--cwd',
-        job.cwd,
-        '--label',
-        tabName,
-        '--env',
-        `HUD_JOB_DIR=${dir}`,
-        '--env',
-        `HUD_HOME=${hudHome}`,
+    const endpoint = herdrEndpoint();
+    const workspaceId = wsArgs[1];
+    recordLaunchArgs();
+    directStartSent = true;
+    const launch = await startDirectAgent({
+      executable: target,
+      argv: agentArgs,
+      kind: place.agent!,
+      name,
+      ...(kind.startTimeoutMs ? { timeout_ms: kind.startTimeoutMs } : {}),
+      cwd: job.cwd,
+      env: directExecEnv({
+        HUD_JOB_DIR: dir,
+        HUD_HOME: hudHome,
         // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
-        '--env',
-        'GIT_OPTIONAL_LOCKS=0',
-      ];
-      for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
-        const launch = randomUUID(), endpoint = herdrEndpoint();
-        const { env } = prepareCliInvocation(dir, launch, place.agent!, target);
-        const witnessEnv = Object.entries(env).flatMap(([key, value]) => ['--env', `${key}=${value}`]);
-        const result = await run('herdr', [...tabArgv, '--env', `HUD_TAB_LAUNCH=${launch}`, ...witnessEnv, '--no-focus']);
-        if (result.exit_code !== 0) return rollback(result);
-        const { tab, root_pane } = JSON.parse(result.stdout).result;
-        if (herdrId(tab?.tab_id)) openedTab = tab.tab_id;
-        left = root_pane?.pane_id;
-        if (!openedTab || !herdrId(left)) throw new Error('tab create did not return tab/root pane ids');
-        writeSessionReceipt(dir, {
-          TASK: job.job, LAUNCH: launch, HERDR_SOCKET_PATH: endpoint ?? '',
-          TAB: tab.tab_id,
-          TAB_NAME: tabName,
-          LEFT: left,
-          RIGHT: '',
-          ORCH: job.herdr_pane,
-          BASE: base,
-          PRIMARY: name,
-        });
-        writeCreateStatus(dir, starting); // Stop intent may arrive before the supervisor discovers the worker.
-        await recordTabShells(dir, launch, openedTab, [left]);
-        const argv = ['agent', 'start', name, '--kind', place.agent!, '--pane', left];
-        if (kind.startTimeoutMs) argv.push('--timeout', String(kind.startTimeoutMs));
-        argv.push('--', ...agentArgs);
-        if (!tabAttempt) recordLaunchArgs();
-        started = await run('herdr', argv);
-        if (!await retryBusyPane(started, tabAttempt, openedTab)) break;
-        openedTab = undefined;
-      }
-    }
+        GIT_OPTIONAL_LOCKS: '0',
+        // Forward custom CODEX_HOME only when set on the caller; never overwrite with ~/.codex.
+        ...(place.agent === 'codex' && process.env.CODEX_HOME ? { CODEX_HOME: resolve(process.env.CODEX_HOME) } : {}),
+        ...(place.agent === 'claude' && process.env.CLAUDE_CONFIG_DIR ? { CLAUDE_CONFIG_DIR: resolve(process.env.CLAUDE_CONFIG_DIR) } : {}),
+      }),
+      label: tabName,
+      on_exit: 'close_on_zero',
+      focus: false,
+      ...(workspaceId ? { workspace_id: workspaceId } : {}),
+    }, tabVisible);
+    if (!launch.ok) return launch.result;
+    directIdentity = launch.identity;
+    const left = directIdentity.paneId;
+    writeDirectSessionReceipt(dir, directIdentity, {
+      task: job.job,
+      endpoint,
+      tabName,
+      orch: job.herdr_pane,
+      base,
+      primary: name,
+    });
+    const now = new Date().toISOString();
+    writeCreateStatus(dir, {
+      version: 1,
+      task_dir: fs.realpathSync(dir),
+      slot: 'primary',
+      harness: 'cli',
+      agent: place.agent,
+      role: job.role,
+      model: job.model ?? null,
+      thinking: job.thinking ?? null,
+      state: 'working',
+      output_path: join(dir, jobFiles.report),
+      output_written: false,
+      pid: directIdentity.pid,
+      pid_start_time: directIdentity.pidStart,
+      agent_session_id: null,
+      started_at: now,
+      settled_at: null,
+      idle_deadline_at: null,
+      ended_at: null,
+      exit_reason: null,
+      error: null,
+      reason: null,
+      updated_at: now,
+    });
+    const started = await waitDirectReady({
+      name,
+      paneId: left,
+      launchId: directIdentity.launchId,
+      terminalId: directIdentity.terminalId,
+      kind: place.agent!,
+      pid: directIdentity.pid,
+      pidStart: directIdentity.pidStart,
+      timeoutMs: kind.startTimeoutMs ?? 30_000,
+    });
     const failReadiness = async (result: DispatchResult) => rollback(await startupFailure(result, left));
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
     if (started.exit_code !== 0 && !notReady) return failReadiness(started);
@@ -286,20 +248,12 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       if (settled) return failReadiness(settled);
     }
     if (resume) {
-      let agent: { agent_session?: { kind?: string; value?: string }; launch_id?: string; terminal_id?: string } | null = null;
-      if (isFork && directIdentity) {
-        let reply = await herdrRequest('agent.get', { target: name }).catch(() => null);
-        if (!reply || reply.error) reply = await herdrRequest('agent.get', { target: left }).catch(() => null);
-        const found = reply && !reply.error ? reply.result?.agent : null;
-        if (found && (!found.launch_id || found.launch_id === directIdentity.launchId) &&
-            (!found.terminal_id || found.terminal_id === directIdentity.terminalId)) {
-          agent = found;
-        }
-      } else {
-        const got = await run('herdr', ['agent', 'get', name]);
-        agent = got.exit_code === 0 ? JSON.parse(got.stdout).result?.agent : null;
-      }
-      if (agent?.agent_session?.kind !== 'id' || agent.agent_session.value !== resume.id)
+      let reply = await herdrRequest('agent.get', { target: name }).catch(() => null);
+      if (!reply || reply.error) reply = await herdrRequest('agent.get', { target: left }).catch(() => null);
+      const agent = reply && !reply.error ? reply.result?.agent : null;
+      if (!agent || (agent.launch_id && agent.launch_id !== directIdentity.launchId) ||
+          (agent.terminal_id && agent.terminal_id !== directIdentity.terminalId) ||
+          agent.agent_session?.kind !== 'id' || agent.agent_session.value !== resume.id)
         return rollback(launchError(`${place.agent} did not open the recorded session`));
     }
     const turn = writeTurn(dir, { restarted: !!resume, callerToken });

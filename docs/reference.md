@@ -98,7 +98,7 @@ Panel selection accepts `--root <namespace/session-id>` or `--harness claude|pi|
 Without explicit selection, `HERDR_PANE_ID` permits a one-second `herdr pane current` lookup for the caller's Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pane); no focused-pane guess or statusline-written binding is used.
 Unavailable evidence leaves the jobs view unbound to a native session.
 
-`hud doctor` checks Node, local herdr reachability, the pi commands on PATH, installed dependency versions, client HUD bindings (resolved checkout and Node), registered project trust, the dist build stamp and live MCP/watcher generations, leases, and managed worktrees without owning job receipts.
+`hud doctor` checks Node, the local herdr fork (`herdr-hud`, confirmed by the running server's ping version), the pi commands on PATH, installed dependency versions, client HUD bindings (resolved checkout and Node), registered project trust, the dist build stamp and live MCP/watcher generations, leases, and managed worktrees without owning job receipts.
 It only checks the mode of `credentials.env` (0600 if present); it never opens the file.
 Each failed check has one fix hint and any failure makes the exit status non-zero.
 A service that starts on demand need not be running, but an older live process that does not report its generation cannot be verified.
@@ -459,9 +459,7 @@ The HUD passes only the model flag, the effort flag, that CLI's permission-bypas
 A native resume adds the recorded session identifier; launches keep the configured CLI home.
 HUD never trusts a directory while dispatching: a trust dialog is declined and the launch fails, naming `hud trust <cwd>`.
 Sessions stay in each CLI's own store.
-herdr starts the CLI through the interactive shell, so that shell's functions apply.
-For zsh, a private startup wrapper sources the owner's startup files before putting HUD's invocation shim first in `PATH`; HUD does not edit those files.
-Other shells keep their usual startup. If command lookup bypasses the shim, the CLI still starts, but HUD reports that it could not verify its identity and does not adopt the process.
+Managed CLI and Pi tabs require the HUD herdr fork (`herdr-hud`); the running server's ping version must contain `-hud`. Dispatch refuses stock herdr rather than falling back to a shell launch. The fork starts the worker directly with HUD's environment, without sourcing shell startup files. This requirement does not change headless launches, browser shells, or the shell in a split Pi helper pane. Close any old shell-launched CLI or Pi worker manually; HUD will not take ownership of it.
 
 `hud trust <dir>` adds that directory to the trust files of grok, agy and claude after a backup under `$HUD_HOME`.
 A missing CLI file is not created.
@@ -515,7 +513,6 @@ Pass that byte offset to `hud_read({ job, mode: "full", offset: next_offset })` 
 Use `jobs: [id, …]` instead of `job` to get results in input order; all use the same mode, and an unknown ID returns an error only for that entry.
 Continue each paged report separately.
 `detail: true` includes launch diagnostics such as effective CLI `idle_grace_s` and `launch_agent_args` (bounded arguments from recent CLI tab starts, not the submitted prompt).
-If Herdr reports a busy worker pane, HUD closes that tab and retries once in a fresh tab after a short delay.
 Failed launches keep a short `exit_reason` and the command output in `stderr_tail`.
 Use peek instead when you do not want to collect.
 `wait_ms` waits at most 120000 ms, stopping at settlement, a question or timeout.
@@ -604,7 +601,7 @@ For GitHub-mirrored `.scratch/`, `add` and `update` refuse: edit GitHub Issues w
 Jobs are plain files in `$HUD_HOME/jobs/<job>/`.
 Tabbed pi history stays in `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`; job `sessions/` links to primary/helper files. Headless pi keeps its native session file in the job directory.
 `job.json` records known native sessions as `sessions: [{harness, id, path?}]`, including repair continuations; reopening the same session does not duplicate it.
-A CLI job's supervisor only observes; only facts end a job: the worker's recorded pid gone (or replaced), its tab closed, or a dispatch rejected before input (`failed`, or `closed` when a new report is on disk).
+A CLI supervisor matches root exit events by launch and terminal identity. If it misses the event, it checks the recorded PID and start time; confirmed death without an exit event is an unknown exit, not a successful close. Losing a tab address alone does not end the job.
 Each CLI dispatch and `hud_send` starts a turn (`turn.json`). If Herdr refuses the send before input, HUD keeps the worker's previous turn.
 `hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
 An undeclared report follows the quiet rule, and live in-turn children defer that rule.
@@ -622,7 +619,7 @@ Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; 
 `hud_roster({detail:true})` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
 The supervisor wakes on herdr pushes, file changes and its own deadlines, plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes.
 The on-demand watcher starts on `hud_create`, `hud_read`, `hud_send`, `hud_respond` or `hud_land` if needed.
-It reaps finished tabs through HUD's bundled `hud-reap`, keeps failed tabs for two hours, and exits with no open job or pending failed-job deadline. Reaping requires launch ownership evidence from the pane processes; matching a tab label is not enough. A CLI invocation records its own PID and start ticks before exec; restarting the same CLI in that shell does not transfer ownership. HUD closes the tab only when each original shell retains its PID, start ticks and executable, owns the foreground process group, and has no other live process in its terminal session. A shell waiting in a builtin such as `read` is indistinguishable under this rule. `hud-reap <job-dir> --after-pid PID` waits up to 30 seconds without acting, then refuses if STATUS names a different worker.
+It reaps finished tabs through HUD's bundled `hud-reap`, keeps failed tabs for two hours, and exits with no open job or pending failed-job deadline. Reaping requires launch ownership evidence; matching a tab label is not enough. Managed CLI and Pi jobs use the fork's launch and terminal IDs and the worker's exact PID and start time. A browser shell or split Pi helper must retain its original PID, start time and executable, own the foreground process group, and have no other live process in its terminal session except exact members recorded in a browser worker's startup snapshot. A shell waiting in a builtin such as `read` is indistinguishable under this rule. `hud-reap <job-dir> --after-pid PID` waits up to 30 seconds without acting, then refuses if STATUS names a different worker.
 The watcher learns of a HUD runner's exit through a socket close, not a periodic scan.
 Pi tab workers have no such runner; their liveness and pending stop/read-close checks use `HUD_WATCH_CLI_CHECK_MS` (default 30000).
 A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited; worker still running"); the watcher rechecks this unsupervised worker with exponential backoff.
