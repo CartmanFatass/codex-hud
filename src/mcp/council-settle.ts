@@ -42,13 +42,20 @@ function readJson<T>(cache: JobIndexCache, file: string): T | null {
   return null;
 }
 
+function hasReason(status: JobStatus): boolean {
+  return Boolean(
+    (typeof status.reason === 'string' && status.reason.trim()) ||
+    (typeof status.exit_reason === 'string' && status.exit_reason.trim())
+  );
+}
+
 export interface SettleMainCouncilOptions {
   trigger: 'read' | 'watcher';
   activeFlow?: boolean;
   now?: string;
 }
 
-/** Settle an open synthesizer:main council once every member has settled and main collects (or previously collected) it. */
+/** Settle an open synthesizer:main council once every member has settled, or record main's collection on a closed one that has no reason yet. */
 export function settleMainCouncil(
   home: string,
   cache: JobIndexCache,
@@ -65,6 +72,16 @@ export function settleMainCouncil(
     return null;
   }
   const status = readJson<JobStatus>(cache, statusFile);
+  if (status?.state === 'closed') {
+    if (options.trigger !== 'read' || hasReason(status)) return null;
+    const nextStatus: JobStatus = {
+      ...status,
+      reason: MAIN_COUNCIL_COLLECTED_REASON,
+      exit_reason: MAIN_COUNCIL_COLLECTED_REASON,
+    };
+    cache.writeJsonAtomic(statusFile, nextStatus as unknown as Record<string, unknown>, { mkdir: false });
+    return { job: rawJob, status: nextStatus };
+  }
   if (TERMINAL_STATES.has(status?.state ?? '')) return null;
 
   const updatedMembers: NonNullable<Job['council_members']> = [];

@@ -103,16 +103,43 @@ test('shipped council runs three independent members and one browser synthesis; 
 test('shipped council defaults to main synthesis and returns member digests and instructions', async t => {
   const f = await setup(t);
   enableOptionalRoles(f, 'council');
+  const lines = [];
+  t.after(startSessionWatch(f.env.HUD_HOME, f.env.HERDR_PANE_ID, f.root, batch => lines.push(...batch), 10));
   const { job } = await f.call('hud_create', { role: 'council', task: 'Compare plans.' });
   const seats = await members(f, job);
   const plans = seats.map(m => `Plan from ${m.preset}.`);
   seats.forEach((m, i) => finish(f, m, plans[i]));
   await until(() => states(f, job).state === 'closed', 30000);
+  await until(() => lines.some(l => l.includes(job)), 30000);
+  assert.equal(states(f, job).reason, undefined);
+  assert.equal(states(f, job).exit_reason, undefined);
+  assert.equal(receipt(f, job).read_at, undefined);
   const result = await f.call('hud_read', { job });
+  assert.equal(result.state, 'closed');
+  assert.equal(result.reason, 'members collected by main');
+  assert.equal(result.exit_reason, 'members collected by main');
   assert.deepEqual(result.members.map(m => m.digest), plans);
   assert.match(result.synthesis_template, /table of disagreements/);
   assert.equal(result.synthesis_job, undefined);
+  assert.equal(states(f, job).state, 'closed');
+  assert.equal(states(f, job).reason, 'members collected by main');
+  assert.equal(states(f, job).exit_reason, 'members collected by main');
+  assert.ok(receipt(f, job).read_at);
   assert.deepEqual(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).sort(), [job, ...seats.map(m => m.job)].sort());
+
+  // Reading a closed main-synthesized council that already has a reason preserves it.
+  const keptId = 'j0000000000000191';
+  writeSyntheticCouncil(f, keptId, {
+    status: { state: 'closed', output_written: true, reason: 'existing reason', exit_reason: 'existing reason' },
+    members: [
+      { preset: 'fable', job: 'j0000000000000192', report: 'Plan 1.', digest: 'Plan 1.' },
+      { preset: 'astra', job: 'j0000000000000193', report: 'Plan 2.', digest: 'Plan 2.' },
+    ],
+  });
+  const kept = await f.call('hud_read', { job: keptId });
+  assert.equal(kept.reason, 'existing reason');
+  assert.equal(states(f, keptId).reason, 'existing reason');
+  assert.equal(states(f, keptId).exit_reason, 'existing reason');
 });
 
 test('local synthesis with one failed member gets local references, successful reports and a failure note', async t => {

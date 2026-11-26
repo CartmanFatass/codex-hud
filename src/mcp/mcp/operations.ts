@@ -700,7 +700,8 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
         const polledJob = firstCheck ? job : (findJob(job.job) ?? job);
         firstCheck = false;
         let polled = readRow(polledJob, !isWorker, null);
-        if (!isWorker && polled.job.role === 'council' && polled.job.synthesizer === 'main' && !settled(polled.row.state)) {
+        if (!isWorker && polled.job.role === 'council' && polled.job.synthesizer === 'main' &&
+            (!settled(polled.row.state) || (polled.status?.state === 'closed' && !polled.row.reason))) {
           const settledCouncil = settleMainCouncil(hudHome, jobCache, polled.job.job, { trigger: 'read' });
           if (settledCouncil) {
             scan.record(settledCouncil.job);
