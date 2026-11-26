@@ -13,14 +13,14 @@ type JobProject = Partial<Pick<Job, 'cwd' | 'project_root' | 'worktree'>>;
 type JobOwner = JobProject & Partial<Pick<Job, 'job' | 'herdr_pane' | 'caller_pane'>>;
 
 /** Older receipts resolve their cwd once per scan per directory. */
-export function projectJobFilter(cwd: string) {
-  const root = sharedRoot(cwd);
+export function projectJobFilter(cwd: string, resolveRoot = sharedRoot) {
+  const root = resolveRoot(cwd);
   const legacy = new Map([[cwd, root]]);
   return (job: JobProject): boolean => {
     if (typeof job.project_root === 'string') return job.project_root === root;
     if (typeof job.worktree?.main_root === 'string') return job.worktree.main_root === root;
     if (typeof job.cwd !== 'string' || !job.cwd) return false;
-    if (!legacy.has(job.cwd)) legacy.set(job.cwd, sharedRoot(job.cwd));
+    if (!legacy.has(job.cwd)) legacy.set(job.cwd, resolveRoot(job.cwd));
     return legacy.get(job.cwd) === root;
   };
 }

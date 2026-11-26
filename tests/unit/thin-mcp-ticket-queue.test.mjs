@@ -4,6 +4,9 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
+import { writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
+import { readTicketFeature, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
+import { runLock } from '../../dist/workflows/store.js';
 import { fixture, fallbackRole, taskCall, taskRpc, until, resultValue } from '../helpers/thin-mcp-harness.mjs';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -317,6 +320,28 @@ test('a resumed queue redispatches a launch failure with the original dispatcher
   assert.notEqual(again, first);
   assert.equal(f.job(again).ticket, 'sample/01');
   assert.deepEqual(f.job(again).dispatcher, dispatcher);
+});
+
+test('a recovered queue intent with an old scratch path dispatches by ticket ID', { timeout: 30_000 }, async t => {
+  const f = await project(t, { thirdBlocker: 'upstream/01', done: [1, 2], upstream: ['needs-triage'] });
+  const home = f.env.HUD_HOME;
+  const { flow, queued } = await f.start(1);
+  assert.deepEqual(queued, [{ ticket: 'sample/03', blockers: ['upstream/01'] }]);
+  const legacyPath = join(f.root, f.ticketPath(3)), path = ticketFeaturePath(f.root, 'sample');
+  await runLock(home, flow, () => {
+    const persisted = f.flow(flow);
+    assert.equal(persisted.tickets.length, 0);
+    persisted.tickets.push({ ticket: 'sample/03', path: legacyPath, role: 'imp' });
+    const doc = readTicketFeature(f.root, 'sample');
+    Object.assign(doc.tickets[2], { title: 'Migrated ticket', what: 'Use the typed brief.', blocked_by: [] });
+    fs.mkdirSync(join(path, '..'), { recursive: true });
+    writeFixtureFile(path, serializeTicketFeature(doc));
+    writeTicketQueue(home, persisted);
+  });
+  const [id] = await f.jobs(flow, 1);
+  assert.equal(f.flow(flow).tickets[0].path, path);
+  assert.equal(f.job(id).ticket, 'sample/03');
+  assert.match(fs.readFileSync(join(f.dir(id), 'brief.md'), 'utf8'), /^# 03: Migrated ticket[\s\S]*\*\*What to build:\*\* Use the typed brief\./);
 });
 
 test('a resumed queue drops a ticket that was closed since the queue failed', { timeout: 30_000 }, async t => {

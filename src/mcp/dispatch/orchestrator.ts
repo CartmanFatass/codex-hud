@@ -48,7 +48,7 @@ import type {
 } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
 import { isRunningListTicket, readFlakesConfig, runningListAdmission } from '../flake-admission.js';
-import { routingTicketText, ticketObjective } from '../local-tickets.js';
+import { routingTicketText, ticketBrief, ticketObjective } from '../local-tickets.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
 import { callerPane, session, trackCreatedJob } from '../mcp/session-state.js';
 import {
@@ -283,6 +283,16 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
     }
   }
   const cwd = jobCwd(args);
+  const ticketPath = typeof args.brief_file === 'string' && /\/(?:\.scratch|\.hud\/tickets)\//.test(resolve(cwd, args.brief_file));
+  if (args.ticket !== undefined && args.task === undefined && (args.brief_file === undefined || ticketPath)) {
+    const task = ticketBrief(cwd, args.ticket, args.brief_file === undefined);
+    if (task) {
+      const { brief_file: _unused, ...rest } = args;
+      args = { ...rest, task: task.trim() };
+    } else if (task === null || args.brief_file === undefined) {
+      return { ok: false, code: 'invalid_arguments', error: `unknown ticket: ${String(args.ticket)}` };
+    }
+  }
   if (args.brief_file !== undefined) {
     const loaded = await readBriefFile(args.brief_file, cwd);
     if ('code' in loaded) return loaded;
@@ -684,7 +694,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     if ('code' in localContext) return localContext;
     const context_files = localContext.contextInputs;
     route = await pickImpRoute(hudHome, settings, chain.routing, task, mode, () => ({
-      ticket: routingTicketText(project.root, args.ticket), context_files,
+      ticket: routingTicketText(projectRoot, args.ticket), context_files,
     }));
   }
   const plan = await even?.() ?? launchPlan(found, chain, now, args, routing, onEntry, retryInput, route, !!landCwd);

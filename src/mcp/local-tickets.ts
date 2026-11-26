@@ -9,8 +9,11 @@ import { SETTLED_JOB_STATES, TicketRollup, ticketJobState } from '../collectors/
 import { getHudHome } from '../hud-home.js';
 import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
-import { projectRoot, sharedRoot } from '../roles/projects.js';
-import { TICKET_STATUSES } from '../roles/tool-definitions.js';
+import { localProjectRoots, projectRoot, sharedRoot } from '../roles/projects.js';
+import {
+  parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs,
+  TICKET_STATUSES, type TicketFeatureDoc, type TicketRecord,
+} from '../tickets/store.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { isRunningListTicket, readFlakesConfig, runningListAdmission } from './flake-admission.js';
@@ -32,10 +35,11 @@ const ownLiveTryLine = /^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?Live try(?::\*\*|\*\*:|:
 const inlineBoldLiveTry = /(?:^|[\s·])\*\*Live try(?::\*\*|\*\*:)[ \t]*(.+?)[ \t]*$/i;
 const inlineAfterPunctLiveTry = /([.;!?]|·)[ \t]+Live try:[ \t]*(.+?)[ \t]*$/i;
 
-function extractWhatAndLiveTry(rawWhat: unknown, rawLiveTry: unknown): { what: string; liveTry?: string } {
+export function extractWhatAndLiveTry(rawWhat: unknown, rawLiveTry: unknown): { what: string; liveTry?: string } {
   if (typeof rawWhat !== 'string' || !rawWhat.trim()) return invalid('what');
-  if (rawLiveTry !== undefined) return { what: line(rawWhat, 'what'), liveTry: line(rawLiveTry, 'live_try') };
-  const rawLines = rawWhat.split(/\r?\n/);
+  const what = rawWhat.trim();
+  if (rawLiveTry !== undefined) return { what, liveTry: line(rawLiveTry, 'live_try') };
+  const rawLines = what.split(/\r?\n/);
   let extracted: string | undefined;
   const kept: string[] = [];
   for (const rawLine of rawLines) {
@@ -47,21 +51,20 @@ function extractWhatAndLiveTry(rawWhat: unknown, rawLiveTry: unknown): { what: s
     }
   }
   if (extracted) {
-    return { what: line(kept.join(' '), 'what'), liveTry: extracted };
+    return { what: kept.join('\n').trim() || invalid('what'), liveTry: extracted };
   }
-  const folded = line(rawWhat, 'what');
-  const boldMatch = inlineBoldLiveTry.exec(folded);
+  const boldMatch = inlineBoldLiveTry.exec(what);
   if (boldMatch?.[1]?.trim()) {
-    const rest = folded.slice(0, boldMatch.index).replace(/[ \t·]+$/, '');
-    return { what: line(rest, 'what'), liveTry: boldMatch[1].trim() };
+    const rest = what.slice(0, boldMatch.index).replace(/[\s·]+$/, '');
+    return { what: rest || invalid('what'), liveTry: line(boldMatch[1], 'live_try') };
   }
-  const punctMatch = inlineAfterPunctLiveTry.exec(folded);
+  const punctMatch = inlineAfterPunctLiveTry.exec(what);
   if (punctMatch?.[2]?.trim()) {
     const prefix = punctMatch[1] === '·' ? '' : punctMatch[1];
-    const rest = (folded.slice(0, punctMatch.index) + prefix).replace(/[ \t·]+$/, '');
-    return { what: line(rest, 'what'), liveTry: punctMatch[2].trim() };
+    const rest = (what.slice(0, punctMatch.index) + prefix).replace(/[\s·]+$/, '');
+    return { what: rest || invalid('what'), liveTry: line(punctMatch[2], 'live_try') };
   }
-  return { what: folded };
+  return { what };
 }
 function status(value: unknown): string {
   const label = TICKET_STATUSES.find((label) => label === value);
@@ -90,9 +93,23 @@ function namedTicketPath(root: string, ticket: unknown): string | undefined {
   if (matches.length === 1) return matches[0].path;
 }
 
+export function ticketBrief(cwd: string, ticket: unknown, legacy: boolean) {
+  const { mainRoot, checkout } = localProjectRoots(cwd);
+  const stored = storedTicket(mainRoot, ticket);
+  if (stored) return stored.record ? renderTicketBrief(stored.record, stored.doc) : null;
+  if (!legacy) return;
+  const path = namedTicketPath(checkout, ticket) ?? (checkout !== mainRoot ? namedTicketPath(mainRoot, ticket) : undefined);
+  if (!path) return;
+  const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
+  if (truncated) throw Error('Ticket brief exceeds 64 KiB');
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+
 /** Outbound routing input: only the named local ticket, never the rest of the board. */
 export function routingTicketText(root: string, ticket: unknown): string | undefined {
   try {
+    const stored = storedTicket(root, ticket);
+    if (stored) return stored.record && Buffer.from(renderTicketBrief(stored.record, stored.doc)).subarray(0, 4096).toString('utf8').slice(0, 4000);
     const path = namedTicketPath(root, ticket);
     if (path) return readFileBounded(path, 4096).bytes.toString('utf8').slice(0, 4000);
   } catch { /* Missing or unreadable ticket contributes no text. */ }
@@ -111,11 +128,11 @@ export function ticketObjectiveId(path: string) {
 /** An unreadable, missing or unresolvable header is not evidence of attribution. */
 export function ticketObjective(cwd: string, ticket: unknown, shared: string) {
   try {
-    const path = namedTicketPath(cwd, ticket);
-    if (!path) return;
-    const id = ticketObjectiveId(path);
-    if (!id) return;
     const checkout = projectRoot(cwd);
+    const stored = storedTicket(shared, ticket);
+    const path = stored ? undefined : namedTicketPath(checkout, ticket) ?? namedTicketPath(shared, ticket);
+    const id = stored?.record ? stored.record.objective ?? stored.doc.objective : path ? ticketObjectiveId(path) : undefined;
+    if (!id) return;
     const record = readObjectives(checkout) ?? (checkout !== shared ? readObjectives(shared) : undefined);
     return objectiveLink(record?.objectives.find(item => item.id === id));
   } catch { /* No attribution. */ }
@@ -144,15 +161,12 @@ const liveTryField = /(?:^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+(?:\[[ x]\][ \t]+)?)?|
 const liveTryHeading = /^##[ \t]+(?:Live try|How to try|Try)\b[^\r\n]*\r?\n(?:[ \t]*\r?\n)*[ \t]*\S/im;
 const approvedRemovalsField = /(?:^|·)[ \t]*\*\*Approved removals:\*\*/im;
 
-export function parseRemovalList(raw: string | undefined): string[] {
-  if (!raw) return [];
-  const trimmed = raw.trim();
-  if (!trimmed || /^none\.?$/i.test(trimmed)) return [];
-  return trimmed.split(/[,;]+/).map(s => s.trim().replace(/\.+$/, '').replace(/\s+/g, ' ').toLowerCase()).filter(Boolean);
-}
+export const parseRemovalList = splitRemovals;
 
-export function ticketApprovedRemovals(path: string): string[] {
+export function ticketApprovedRemovals(path: string, root: string, ticket: string): string[] {
   try {
+    const stored = storedTicket(root, ticket);
+    if (stored) return (stored.record?.approved_removals ?? []).flatMap(splitRemovals);
     const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
     if (truncated) return [];
     return parseRemovalList(ticketFileEvidence(bytes.toString('utf8')).approvedRemovals);
@@ -206,6 +220,9 @@ function validateTicketBody(
  * acceptance items, valid Blocked by references, a Live try / How to try line (or Live try: none),
  * and non-empty Approved removals if declared. */
 export function checkFeatureTickets(cwd: string, feature: string, only?: string): TicketGap[] {
+  const doc = readJsonTicketFeature(cwd, feature);
+  if (doc) return checkTicketPaths(cwd, doc.tickets.map(t => ({ ticket: `${feature}/${nn(t.number)}`, path: ticketFeaturePath(cwd, feature) }))
+    .filter(item => !only || item.ticket === only));
   const scratch = join(cwd, '.scratch');
   if (!directoryExists(scratch)) return [];
   const featureTickets = list(join(scratch, feature)).sort((a, b) => a.number - b.number);
@@ -214,7 +231,7 @@ export function checkFeatureTickets(cwd: string, feature: string, only?: string)
   const knownIn = (slug: string) => {
     let set = byFeature.get(slug);
     if (!set) {
-      set = new Set(list(join(scratch, slug)).map(t => t.number));
+      set = new Set((readJsonTicketFeature(cwd, slug)?.tickets ?? list(join(scratch, slug))).map(t => t.number));
       byFeature.set(slug, set);
     }
     return set;
@@ -233,12 +250,15 @@ export function checkFeatureTickets(cwd: string, feature: string, only?: string)
 
 export function checkTicketPaths(cwd: string, items: readonly { ticket: string; path: string }[]): TicketGap[] {
   const scratch = join(cwd, '.scratch');
-  if (!directoryExists(scratch)) return [];
-  const byFeature = new Map<string, Set<number>>();
+  const byFeature = new Map<string, Set<number>>(), docs = new Map<string, TicketFeatureDoc | undefined>();
+  const docFor = (slug: string) => {
+    if (!docs.has(slug)) docs.set(slug, readJsonTicketFeature(cwd, slug));
+    return docs.get(slug);
+  };
   const knownIn = (slug: string) => {
     let set = byFeature.get(slug);
     if (!set) {
-      set = new Set(list(join(scratch, slug)).map(t => t.number));
+      set = new Set((docFor(slug)?.tickets ?? list(join(scratch, slug))).map(t => t.number));
       byFeature.set(slug, set);
     }
     return set;
@@ -247,7 +267,17 @@ export function checkTicketPaths(cwd: string, items: readonly { ticket: string; 
   for (const { ticket, path } of items) {
     const feature = ticket.split('/')[0];
     if (!feature) continue;
-    try {
+    const doc = docFor(feature);
+    if (doc) {
+      const record = doc.tickets.find(t => t.number === parseTicketRef(ticket)?.number);
+      if (record?.status !== 'ready-for-agent') continue;
+      const gaps = record.acceptance.length ? [] : ['missing acceptance items'];
+      for (const ref of record.blocked_by) {
+        const parsed = parseTicketRef(ref)!;
+        if (!knownIn(parsed.feature).has(parsed.number)) gaps.push(`unknown blocked_by ticket: ${ref}`);
+      }
+      if (gaps.length) results.push({ ticket, path, gaps });
+    } else try {
       const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
       if (truncated) continue;
       const gap = validateTicketBody(feature, ticket, path, bytes.toString('utf8'), knownIn);
@@ -260,7 +290,7 @@ export function checkTicketPaths(cwd: string, items: readonly { ticket: string; 
 type LocalTicket = ProjectTicket & { what: string; objective?: string; role: 'imp' | 'frontend-imp'; runningList: boolean };
 const FRONTEND_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im;
 const declaredReady = (t: LocalTicket) => /^ready-for-agent$/i.test(t.status);
-const ticketRef = (slug: string, t: LocalTicket) => `${slug}/${nn(Number(t.number))}`;
+const readinessRef = (slug: string, t: LocalTicket) => `${slug}/${nn(Number(t.number))}`;
 const parsedTicketMemo = new Map<string, { stamp: string; ticket: LocalTicket | null }>();
 
 function parseTicketForReadiness(path: string, num: number): LocalTicket | null {
@@ -294,33 +324,39 @@ function parseTicketForReadiness(path: string, num: number): LocalTicket | null 
   return parsed ? { ...parsed, blockers: [...parsed.blockers] } : null;
 }
 
-function readTicketFeatures(scratch: string, feature?: string) {
-  const slugs = feature === undefined
-    ? fs.readdirSync(scratch, { withFileTypes: true }).filter(entry => entry.isDirectory()).map(entry => entry.name)
-      .sort((a, b) => a.localeCompare(b))
-    : [feature];
-  return slugs.map(slug => ({ slug, at: 0,
-    tickets: list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number: num, path }) => {
-      const ticket = parseTicketForReadiness(path, num);
-      return ticket ? [ticket] : [];
-    }),
-  }));
+function jsonReadiness(root: string, doc: TicketFeatureDoc, record: TicketRecord): LocalTicket {
+  const { title, status, acceptance: items } = record;
+  const checked = items.filter(item => item.done).length;
+  const state = status === 'wontfix' ? 'dropped' : status === 'done' || record.accepted ? 'done'
+    : status === 'ready-for-human' ? 'try' : 'ready';
+  return { number: nn(record.number), title, status, state, path: ticketFeaturePath(root, doc.feature), at: 0,
+    what: record.what.trimStart().split(/\r?\n/, 1)[0].replace(/\s+/g, ' ').trim(), role: record.role ?? 'imp', runningList: record.kind === 'flake-list',
+    objective: record.objective ?? doc.objective, items, checked, total: items.length,
+    blockers: record.blocked_by.length ? [record.blocked_by.join(', ')] : [] };
+}
+
+function readTicketFeatures(root: string, feature?: string) {
+  const scratch = join(root, '.scratch');
+  return (feature === undefined ? ticketFeatureSlugs(root) : [feature]).map(slug => {
+    const json = readJsonTicketFeature(root, slug);
+    return { slug, at: 0, tickets: json ? json.tickets.map(record => jsonReadiness(root, json, record))
+      : directoryExists(scratch) ? list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number: num, path }) => {
+        const ticket = parseTicketForReadiness(path, num);
+        return ticket ? [ticket] : [];
+      }) : [] };
+  });
 }
 
 /** Start-time workset, before dependency and live-job rollup hides non-dispatchable tickets. */
 export function declaredReadyTickets(cwd: string, feature?: string) {
-  const scratch = join(cwd, '.scratch');
-  if (!directoryExists(scratch)) return [];
-  return readTicketFeatures(scratch, feature).flatMap(({ slug, tickets }) => tickets.filter(t => t.state === 'ready' && declaredReady(t))
-    .map(t => ({ ticket: ticketRef(slug, t), role: t.role, objective: t.objective })));
+  return readTicketFeatures(cwd, feature).flatMap(({ slug, tickets }) => tickets.filter(t => t.state === 'ready' && declaredReady(t))
+    .map(t => ({ ticket: readinessRef(slug, t), role: t.role, objective: t.objective })));
 }
 
-/** Resolve ticket blockers across .scratch using the same TicketRollup pass as ticketReadiness. */
+/** Resolve blockers across ticket features using the same TicketRollup pass as ticketReadiness. */
 export function ticketBlockersByKey(cwd: string): Map<string, readonly string[]> {
-  const scratch = join(cwd, '.scratch');
   const blockers = new Map<string, readonly string[]>();
-  if (!directoryExists(scratch)) return blockers;
-  const features = readTicketFeatures(scratch);
+  const features = readTicketFeatures(cwd);
   new TicketRollup(features).derive(Date.now());
   for (const { slug, tickets } of features) {
     for (const t of tickets) blockers.set(targetKey(`${slug}/${t.number}`), t.blockers);
@@ -334,10 +370,10 @@ export interface ReadinessOptions {
 }
 
 export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: string, options?: ReadinessOptions) {
-  const scratch = join(cwd, '.scratch');
-  if (!directoryExists(scratch)) return { tickets: [], queued: [], blocked: [] };
-  const features = readTicketFeatures(scratch);
-  const rollup = new TicketRollup(features), matches = projectJobFilter(cwd);
+  const { mainRoot: root } = localProjectRoots(cwd);
+  const features = readTicketFeatures(root);
+  if (!features.length) return { tickets: [], queued: [], blocked: [] };
+  const rollup = new TicketRollup(features), matches = projectJobFilter(root, dir => localProjectRoots(dir).mainRoot);
   for (const id of jobs.listJobIds({ onError: error => { throw error; } })) {
     const receipt = jobs.readJob<Job>(id);
     if (receipt.status !== 'ok' || !receipt.value.ticket || receipt.value.reaped_at || !matches(receipt.value)) continue;
@@ -347,7 +383,6 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
       { role: job.role, state, created: Date.parse(job.created_at) || 0 });
   }
   const home = options?.home ?? getHudHome();
-  const root = sharedRoot(cwd);
   const blockedSet = new Set<string>();
   for (const hold of readOpenHolds(home, root)) {
     if (hold.ticket) blockedSet.add(targetKey(hold.ticket));
@@ -359,7 +394,7 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
     Date.now(), undefined, undefined, undefined, blockedSet.size ? blockedSet : undefined,
   );
   const candidates = features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) =>
-    tickets.filter(declaredReady).map(t => ({ t, ticket: ticketRef(slug, t) })));
+    tickets.filter(declaredReady).map(t => ({ t, ticket: readinessRef(slug, t) })));
   if (feature !== undefined) for (const { t, ticket } of candidates) {
     const missing = missingCrossBlockers.get(t);
     if (missing) throw Error(`${ticket}: unknown blocked_by ticket: ${missing}`);
@@ -449,7 +484,7 @@ export async function recordUnattendedAcceptance(root: string, home: string, lan
 }
 
 /** The panel groups work by an Objective's Features; no record, no warning. */
-function unlinkedWarning(root: string, feature: string): string | undefined {
+export function unlinkedWarning(root: string, feature: string): string | undefined {
   const objectives = readObjectives(root)?.objectives;
   if (!objectives || objectives.some(({ features }) => features.includes(feature))) return;
   return `feature "${feature}" is in no Objective's Features, so the panel shows it as unlinked. Objective IDs: ${
@@ -465,14 +500,14 @@ export async function syncTickets(cwd: string) {
   return { ok: true, output };
 }
 
-export async function editLocalTickets(cwd: string, args: Record<string, unknown>, home: string, op: 'add' | 'update', edits: TicketEdits) {
+export async function editLocalTickets(cwd: string, args: Record<string, unknown>, home: string, op: 'add' | 'update', edits: TicketEdits, mainRoot = sharedRoot(cwd)) {
   const { feature } = args;
   const scratch = join(cwd, '.scratch');
   scanScratch(scratch, true);
   let objectiveIds: Set<string> | undefined;
   const objectiveId = (value: unknown) => {
     if (typeof value !== 'string' || !new RegExp(OBJECTIVE_SLUG).test(value)) return invalid('objective');
-    objectiveIds ??= new Set(readObjectives(sharedRoot(cwd))?.objectives.map(({ id }) => id));
+    objectiveIds ??= new Set(readObjectives(mainRoot)?.objectives.map(({ id }) => id));
     if (!objectiveIds.has(value)) throw new Error(`unknown objective: ${value}`);
     return value;
   };
@@ -482,7 +517,8 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
       const match = typeof ref === 'string' && /^([a-z0-9-]+)\/(\d+)$/.exec(ref);
       const n = match ? Number(match[2]) : ref;
       if (!number(n)) return invalid('blocked_by');
-      const exists = match && match[1] !== feat ? list(join(scratch, match[1])).some(t => t.number === n) : known.has(n);
+      const exists = match && match[1] !== feat
+        ? (readJsonTicketFeature(mainRoot, match[1])?.tickets ?? list(join(scratch, match[1]))).some(t => t.number === n) : known.has(n);
       if (!exists) throw new Error(`unknown blocked_by ticket: ${ref}`);
       return match ? `${match[1]}/${nn(n)}` : nn(n);
     });
@@ -522,7 +558,7 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
         `**Blocked by:** ${blocked}`,
         ...(objective === undefined ? [] : [`**Objective:** ${objective}`]),
         '',
-        `**What to build:** ${what}`,
+        `**What to build:** ${line(what, 'what')}`,
         '',
         ...items,
         ...(items.length ? [''] : []),
@@ -535,9 +571,9 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
     for (const { number, path, body } of plans) await edits.stage({ ticket: `${feature}/${nn(number)}`, path, after: body });
     // Link first: if the record cannot be edited, no ticket is written.
     const linked = [...new Set(plans.flatMap(({ objective }) => objective ?? []))];
-    if (linked.length) await linkFeature(sharedRoot(cwd), home, linked, feature);
+    if (linked.length) await linkFeature(mainRoot, home, linked, feature);
     const tickets = plans.map(({ number, path }) => ({ number, path }));
-    const warning = unlinkedWarning(sharedRoot(cwd), feature);
+    const warning = unlinkedWarning(mainRoot, feature);
     return { ok: true, tickets, ...(warning && { warning }) };
   }
 

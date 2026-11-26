@@ -151,8 +151,7 @@ test('hud_tickets add applies a top-level objective to every draft without its o
   const f = await ticketAdds(t);
   f.objectives();
   const result = await f.add('loose', ['publish', null], { objective: 'measure' });
-  assert.deepEqual(result.tickets.map(({ path }) => fs.readFileSync(path, 'utf8').match(/^\*\*Objective:\*\* (.*)$/m)?.[1]),
-    ['publish', 'measure']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(result.tickets[0].path, 'utf8')).tickets.map(t => t.objective), ['publish', 'measure']);
   assert.equal(result.warning, undefined);
 });
 
@@ -165,7 +164,7 @@ test('hud_tickets add lists the feature in each named Objective, or writes nothi
     assert.equal(result.isError, true);
     assert.match(result.content[0].text, /unknown objective: missing/);
     assert.equal(fs.readFileSync(f.record, 'utf8'), before);
-    assert.ok(!fs.existsSync(join(f.cwd, '.scratch/loose')));
+    assert.ok(!fs.existsSync(join(f.cwd, '.hud/tickets/loose.json')));
   }
   assert.equal((await f.add('loose', ['measure', 'publish', null])).warning, undefined);
   assert.deepEqual(f.features(), { measure: ['listed', 'loose'], publish: ['loose'] });

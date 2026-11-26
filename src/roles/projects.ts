@@ -1,7 +1,8 @@
 /** Owner gate for a project's `.hud/`. Writing `projects.json` is setup apply, not this module. */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { basename, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { readFileBounded } from '../utils/atomic-fs.js';
 import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
 import { fileSignature } from '../utils/file-signature.js';
 
@@ -77,6 +78,36 @@ export const sharedRoot = memoRoot((cwd) => {
   }
   return projectRoot(cwd);
 });
+
+/** Ticket operations need the checkout and common root without starting Git. */
+export function localProjectRoots(cwd: string): { checkout: string; mainRoot: string } {
+  let start: string;
+  try { start = fs.realpathSync(cwd); } catch { start = resolve(cwd); }
+  const pointer = (path: string) => {
+    const { bytes, truncated } = readFileBounded(path, 4096);
+    return truncated ? '' : bytes.toString('utf8').trim();
+  };
+  for (let checkout = start; ; checkout = dirname(checkout)) {
+    const dot = join(checkout, '.git');
+    try {
+      const stat = fs.statSync(dot, { throwIfNoEntry: false });
+      if (stat?.isDirectory() && fs.statSync(join(dot, 'HEAD'), { throwIfNoEntry: false })?.isFile()) return { checkout, mainRoot: checkout };
+      if (stat?.isFile()) {
+        const match = /^gitdir: (.+)$/.exec(pointer(dot));
+        if (match) {
+          const gitDir = resolve(checkout, match[1]);
+          const common = pointer(join(gitDir, 'commondir'));
+          if (common) {
+            const commonDir = fs.realpathSync(resolve(gitDir, common));
+            if (basename(commonDir) === '.git') return { checkout, mainRoot: dirname(commonDir) };
+          }
+          return { checkout, mainRoot: checkout };
+        }
+      }
+    } catch { return { checkout, mainRoot: checkout }; }
+    if (checkout === dirname(checkout)) return { checkout: start, mainRoot: start };
+  }
+}
 
 function sameRoot(stored: string, root: string): boolean {
   if (stored === root) return true;

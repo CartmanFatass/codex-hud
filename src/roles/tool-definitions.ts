@@ -3,6 +3,7 @@ import { LEASE_TOOL } from './lease.js';
 import { MAX_CHECK_COMMAND, MAX_CHECKS } from './job-checks.js';
 import { FEATURE_SLUG, OBJECTIVE_SLUG, OBJECTIVE_STATES, PROJECT_PRIORITIES, PROJECT_STANCES } from '../collectors/objectives.js';
 import { SCHEDULE_DATE, SCHEDULE_ID, SCHEDULE_TEXT_MAX } from '../collectors/schedule.js';
+import { TICKET_KINDS, TICKET_ROLES, TICKET_STATUSES } from '../tickets/store.js';
 
 const text = { type: 'string' };
 export const EXPERIMENT_TAG_MAX_LENGTH = 64;
@@ -16,11 +17,21 @@ const tool = (name: string, description: string, properties: Record<string, unkn
   inputSchema: { type: 'object', properties, ...(required.length ? { required } : {}), additionalProperties: false },
 });
 
-export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'wontfix', 'claimed', 'done'] as const;
 const ticketStatus = { ...text, enum: TICKET_STATUSES };
 const ticketObjective = { ...text, pattern: OBJECTIVE_SLUG };
 const ticketNumber = { type: 'integer', minimum: 1 };
-const blockers = { type: 'array', items: { anyOf: [ticketNumber, { type: 'string', pattern: '^[a-z0-9-]+/[0-9]+$' }] } };
+const ticketRef = { ...text, pattern: '^[a-z0-9-]+/[0-9]+$' };
+const blockers = { type: 'array', items: { anyOf: [ticketNumber, ticketRef] } };
+const ticketSpec = {
+  title: text, what: text, live_try: text, approved_removals: { anyOf: [text, { type: 'array', items: text }] },
+  kind: { ...text, enum: TICKET_KINDS }, role: { ...text, enum: TICKET_ROLES }, main_review: bool,
+};
+const ticketUpdate = {
+  ...ticketSpec, status: ticketStatus, owner_try: bool, objective: ticketObjective, blocked_by: blockers,
+  tick: { type: 'array', items: ticketNumber, description: 'Mark acceptance items done by stable ID.' },
+  acceptance: { type: 'array', items: { type: 'object', properties: { id: ticketNumber, text }, required: ['id', 'text'], additionalProperties: false } },
+  comment: { ...text, description: 'Append a comment.' },
+};
 
 export const ROLE_TOOLS = [
   tool('hud_roster', 'Roles, assignments, convention.', {
@@ -57,7 +68,7 @@ export const ROLE_TOOLS = [
       retry_of: { ...text, description: 'Retry failed/stopped ID.' },
       cwd: text,
       package: { ...text, description: 'Display label.' },
-      ticket: { ...text, description: 'feature/NN ticket link.' },
+      ticket: { ...text, description: 'feature/NN ticket link; supplies the brief when no task is provided.' },
       ...experimentTags,
       slice: text,
       context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths in cwd.' },
@@ -222,11 +233,11 @@ export const ROLE_TOOLS = [
   }, ['op']),
   tool(
     'hud_tickets',
-    'Busy add/update: queued receipt (hud_read job). Add links feature to Objective ID.',
+    'Add/update JSON directly; Markdown edits commit or queue. Get a feature or ticket. Add links feature to Objective ID.',
     {
-      op: { ...text, enum: ['guide', 'ready', 'run', 'add', 'update', 'sync'], default: 'guide' },
+      op: { ...text, enum: ['guide', 'ready', 'get', 'run', 'add', 'update', 'sync'], default: 'guide' },
       cwd: text,
-      feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Run/add/update: slug.' },
+      feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Get/run/add/update: slug.' },
       run: { ...text, pattern: '^q[0-9a-f]{16}$', description: 'Run: cancel ID (incl. unattended).' },
       max_parallel: { type: 'integer', minimum: 1, description: 'Run: max in-flight; default imp cap.' },
       cancel: { type: 'boolean', description: 'Run: cancel; keeps jobs/lands.' },
@@ -239,40 +250,29 @@ export const ROLE_TOOLS = [
         items: {
           type: 'object',
           properties: {
-            title: text,
+            ...ticketSpec,
             blocked_by: blockers,
-            what: text,
             acceptance: { type: 'array', items: text },
             status: { ...ticketStatus, default: 'ready-for-agent' },
             owner_try: { type: 'boolean', description: 'Owner try post-land (default no).' },
-            live_try: text,
-            approved_removals: text,
             objective: ticketObjective,
           },
           required: ['title', 'blocked_by', 'what', 'acceptance'],
           additionalProperties: false,
         },
       },
-      ticket: ticketNumber,
-      status: ticketStatus,
-      owner_try: bool,
-      objective: ticketObjective,
-      blocked_by: { ...blockers, description: 'Update: replace blockers.' },
-      tick: { type: 'array', items: ticketNumber, description: 'Update: 1-based acceptance items.' },
+      ticket: { anyOf: [ticketNumber, ticketRef], description: 'Update: number. Get: number with feature, or feature/NN.' },
+      ...ticketUpdate,
       updates: {
         type: 'array',
         minItems: 1,
-        description: 'Input order; per-item errors; item feature wins.',
+        description: 'Results in input order; per-item errors or receipts; item feature wins.',
         items: {
           type: 'object',
           properties: {
             feature: { ...text, pattern: '^[a-z0-9-]+$' },
             ticket: ticketNumber,
-            status: ticketStatus,
-            owner_try: { type: 'boolean' },
-            objective: ticketObjective,
-            blocked_by: blockers,
-            tick: { type: 'array', items: ticketNumber },
+            ...ticketUpdate,
           },
           required: ['ticket'],
           additionalProperties: false,

@@ -4,7 +4,7 @@ import { targetKey } from '../collectors/ticket-evidence.js';
 import { SETTLED_JOB_STATES, ticketJobState } from '../collectors/ticket-rollup.js';
 import { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
-import { sharedRoot } from '../roles/projects.js';
+import { localProjectRoots } from '../roles/projects.js';
 import { readJsonBounded } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
 import { activeLand, landAttempt } from './land-state.js';
@@ -21,11 +21,12 @@ export function readFlakesConfig(mainRoot: string): { feature: string } | null {
 
 export function isRunningListTicket(text: string): boolean {
   const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
-  return /\brunning list\b/i.test(body) || /^###[ \t]+Cases[ \t]*\r?$/m.test(body);
+  return /\brunning list\b/i.test(body) || /^(?:###[ \t]+Cases|\*\*Kind:\*\*[ \t]*flake-list)[ \t]*\r?$/m.test(body);
 }
 
+const localMainRoot = (cwd: string) => localProjectRoots(cwd).mainRoot;
 function flakeProjectId(mainRoot: string): string {
-  return createHash('sha256').update(sharedRoot(mainRoot)).digest('hex').slice(0, 16);
+  return createHash('sha256').update(localMainRoot(mainRoot)).digest('hex').slice(0, 16);
 }
 
 export function flakeDispatchKey(mainRoot: string, ticket: string, attempt: number): string {
@@ -34,7 +35,7 @@ export function flakeDispatchKey(mainRoot: string, ticket: string, attempt: numb
 
 /** Shared admission snapshot for running-list tickets of the configured flake feature. */
 export function runningListAdmission(home: string, mainRoot: string, feature: string, cache = new JobIndexCache(home), checkActive = true) {
-  const matchesProject = projectJobFilter(mainRoot);
+  const matchesProject = projectJobFilter(mainRoot, localMainRoot);
   const prefix = `${feature}/`;
   const keyPrefix = `flakes:${flakeProjectId(mainRoot)}:`;
   const claimedTickets = new Set<string>();

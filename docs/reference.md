@@ -207,7 +207,7 @@ The batch runs independently of the main session that started it. Closing that p
 
 The owner pauses, resumes or stops a whole batch with the same control, never one confirmation per job: `X` on its row in the panel's [Jobs](#home) page, or `hud act stop|pause|resume <batch>` from any directory. The command runs at once, with no prompt, and prints the new state and totals; after a stop with members still running it names their jobs (`hud act stop <job>` stops one). It exits 1 and changes nothing when the batch's state does not take the action (pause needs a working batch, resume a paused one, stop one that has not completed). Retry-failed stays with the main session. Jobs created one by one are not a batch: `hud act stop --package LABEL --queued` cancels their queued ones.
 
-`hud_create` takes `role`, `task` (or `brief_file`: a readable UTF-8 path within `cwd`, up to 256 KiB, mutually exclusive with `task`), optional `cwd` and display-only `package`, and optional `ticket` (`feature/NN`) to link progress.
+`hud_create` takes `role`, optional `cwd` and display-only `package`, and a brief: `task`, `brief_file` (a readable UTF-8 path within `cwd`, up to 256 KiB; mutually exclusive with `task`), or `ticket` (`feature/NN`). A ticket links progress and supplies the brief when no task or custom brief file is given. The named ticket's JSON record takes priority over a stale `.scratch` ticket path.
 `slice` is a legacy target label.
 Pass `preview` to name an HTML file (`.html` or `.htm`, up to 16 MiB) the job will write at a path relative to its working directory.
 Optional `experiment` and `arm` tags (up to 64 characters each) are stored in job and archive records, inherited by retries and repairs, and never shown in the panel.
@@ -337,7 +337,7 @@ For example:
 Only configured tiers are offered.
 Auto-routing chooses the `light` or `hard` role preset; the detailed roster shows these for information, not as `hud_create` inputs for `imp`.
 `standard` has no `preset` and follows the active Control choice.
-Routing sends at most the first 4000 characters of the brief and the named local ticket (`feature/NN`, up to 4 KiB), the relative names (up to 512 characters each) and byte sizes of up to 32 `context_files`, and the configured use texts.
+Routing sends at most the first 4000 characters of the brief and the named local ticket (`feature/NN`, rendered from JSON or read from Markdown, up to 4 KiB), the relative names (up to 512 characters each) and byte sizes of up to 32 `context_files`, and the configured use texts.
 It does not send context bodies, the standing brief, prior reports, or preset/model IDs.
 The chosen descriptions become the one-line reason.
 
@@ -604,37 +604,35 @@ See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool argu
 `cwd` defaults to the server's working directory; pass the project directory to target another project.
 
 - **`guide`** (or no `op`): returns the slicing method and local ticket template as Markdown.
-- **`ready`**: lists unblocked `ready-for-agent` tickets with no live job as `tickets: [{ticket, path, title, what}]`.
-  `what` is one line from the ticket's What to build section.
-  Pass `ticket` (`feature/NN`) and `path` (as `brief_file`) to `hud_create`.
-  The live job claims the ticket in Project diagnostics without a claim commit; `hud_land` folds the ticket update into the landed commit (`done` by default; `ready-for-human` with `**Owner try:** yes`) without touching `STATE.md`.
+- **`ready`**: lists unblocked `ready-for-agent` tickets with no live job as `tickets: [{ticket, path, title, what}]`, from JSON and any not-yet-migrated Markdown features.
+  `what` is a one-line goal; `path` identifies the source file, not a brief argument. Pass `ticket` (`feature/NN`) to `hud_create` to dispatch; live jobs claim tickets without a claim edit.
+- **`get`**: pass `feature` for the whole feature document, or `feature` and `ticket` (number) for one ticket. You can also pass `ticket: "feature/NN"` on its own. An existing JSON feature takes precedence over Markdown for that feature.
 - **`run`**: pass `feature` and optional `max_parallel` (default for new queues: imp role cap) to dispatch ready tickets and land clean reports until the batch finishes or needs main. `**Role:** frontend-imp` selects that role, and `**Main review:** yes` stops auto-land. A worker question stops the batch; `hud_respond` to that question resumes it (`queue_resumed`).
   Start the queue even if another feature's tickets have not landed. `run` rejects an unknown cross-feature blocker; known blockers appear under `queued` with the tickets waiting on them. A queue with only these waits stays `working`. It rechecks on land events and blocker edits, and starts each ticket once all blockers have cleared. A cross-feature blocker marked `wontfix` clears the wait just as `done` does; a blocker awaiting an owner try does not.
   After addressing a failure, call `run` again with the same project and `feature`. A new queue attempt keeps existing jobs and completed lands, and retries eligible lands that failed before fast-forward without dispatching their tickets again. It keeps the previous `max_parallel` unless you override it. If `run` replaces a paused run, `hud_respond` on the old run’s hand-back returns `superseded_run` and names the successor.
   On an ordinary feature queue paused for an assumption, `run` with the same `feature` accepts the report and source commit that caused the pause. The assumed lines stay in `todo`; a changed report or commit is judged again. Answer an escalated report blocker with `hud_respond` on the existing run; independent work keeps going.
   `run` with the same `feature` and `cancel: true` stops new dispatches and lands; it leaves existing jobs and lands alone. Pass `run` (a run ID, or pass the run ID as `feature`) with `cancel: true` to cancel a working or paused run in this project, including an unattended run, without signalling any process.
-- **`add`**: pass `feature` (lowercase letters, digits and hyphens), `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?, live_try?, approved_removals?, objective?}]` and optionally a top-level `objective`, which applies to every draft without its own.
-  When `what` contains a `Live try:` field and `live_try` is omitted, `add` moves it to its own `**Live try:**` line.
+- **`add`**: pass `feature` (lowercase letters, digits and hyphens), `tickets: [{title, blocked_by, what, acceptance, status?, owner_try?, live_try?, approved_removals?, objective?}]` and optionally a top-level `objective`, which applies to every draft without its own. JSON drafts also accept `kind`, `role`, and `main_review`.
+  When `what` contains a `Live try:` field and `live_try` is omitted, `add` moves it into `live_try`. Otherwise the JSON default is `none`.
   `blocked_by` lists local numbers (existing tickets or earlier drafts in this call) or existing `feature/NN` references; use `[]` for no blockers.
   An unknown blocker rejects the entire batch without writing.
   `acceptance` is a list of checklist item strings.
-  Optional `owner_try` writes `**Owner try:** yes` or `no` under Status (`yes` opts into an owner try; `no` or omitted lands as `done`).
-  The result lists the assigned numbers and paths as `tickets: [{number, path}]`.
+  `owner_try` defaults to `false`. The result lists the assigned numbers and paths as `tickets: [{number, path}]`; JSON tickets in the same feature share the file path.
   With an `objective`, `add` also appends the feature to each named Objective's `Features` in `.hud/objectives.md`, through the `hud_objective` writer (not committed). It does so before writing tickets: an unknown ID or a record that cannot be edited rejects the batch.
   Without one, if the project has `.hud/objectives.md` and no Objective lists the feature, the tickets are still written and the result adds a `warning` naming the feature and the existing Objective IDs.
-- **`update`**: pass `feature`, `ticket` (number), and any of `status`, `owner_try`, `tick` (1-based checklist item numbers), `blocked_by` (replacement blockers) or `objective`; or pass `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?, objective?}]` (item `feature` overrides top-level `feature`) to apply several updates in input order and return `updates` with per-item errors.
-  An invalid acceptance item reports the valid range and leaves that ticket unchanged, even if other ticks in the same update are valid.
+- **`update`**: pass `feature`, `ticket` (number), and any of `status`, `owner_try`, `tick` (stable, 1-based acceptance IDs), `blocked_by` (replacement blockers) or `objective`. On JSON tickets, you can append a `comment`, edit `title`, `what`, `live_try`, `approved_removals` (a list or comma-separated text), `kind`, `role`, `main_review`, or revise acceptance text with `acceptance: [{id, text}]` without changing IDs or ticks. An invalid acceptance ID leaves the ticket unchanged.
+  For multiple edits, pass `updates: [{feature?, ticket, ...fields}]` (the item feature overrides the top-level one). Results are in input order. In a mixed batch, Markdown edits commit or queue separately from JSON edits; queued Markdown items share a receipt in their results.
 - **`sync`**: runs `hud tickets sync` for the given project and returns its output lines in `output`.
 
 The default status is `ready-for-agent`; other allowed labels are `needs-triage`, `needs-info`, `ready-for-human`, `claimed`, `done`, and `wontfix`.
-For `add` and `update`, `objective` sets the `**Objective:** <id>` header field. The ID must exist in the project's `.hud/objectives.md`; an unknown ID leaves the ticket unchanged. Only `add` also edits the Objective's `Features`.
+For `add` and `update`, the `objective` ID must exist in `.hud/objectives.md`; an unknown ID leaves the ticket unchanged. Only `add` also edits the Objective's `Features`.
 A new `hud_create` with an explicit ticket snapshots its Objective ID and current title. The Inspector and job archive show this snapshot; retries, repairs and Sonic children keep it, even after a rename. Jobs with no recorded link stay unattributed.
-This is a main-session tool.
-In Git, `add`, `update`, and unattended acceptance write only under the main-checkout lease. With no backlog, no waiting land, and a free lease, `add` and `update` return their results immediately. Otherwise they return `state: queued` and a `receipt`, without assigned paths or item outcomes.
+This is a main-session tool. New ticket features use `.hud/tickets/<feature>.json` in the main checkout, with a 64 KiB limit per feature. JSON `add` and `update` apply directly without taking the `main-checkout` lease, running Git, or making a commit.
+Unmigrated Markdown features keep committed edits until migration. In Git, Markdown `add`, `update`, and unattended acceptance write under the `main-checkout` lease. With no backlog, no waiting land, and a free lease, Markdown `add` and `update` return their results immediately. Otherwise they return `state: queued` and a `receipt`, without assigned Markdown paths or outcomes.
 Queued edits survive MCP restarts and run in admission order per project, rechecking the checkout when the lease is granted. At every `main-checkout` lease handoff, edits pending at that moment drain in a bounded batch before the next waiting land takes the lease (order: running land, then pending edits, then the next land); edits arriving after the handoff wait for the following turn so edits cannot starve lands. A completion notice points to `hud_read({job: receipt})` for numbers and paths, per-item outcomes, or an error. If a write was interrupted and no commit can be confirmed, inspect the checkout before retrying.
 The queue holds up to 64 pending edits (128 KiB per request) and 128 receipts total, pruning the oldest finished receipts first.
-Each edit that changes tickets makes one local commit containing only those ticket files; a batch uses the first changed ticket in `tickets: <feature>/<NN> <op>`.
-Commit or resolve hand edits to a ticket before asking HUD to change it. Unrelated staged and unstaged changes are left alone.
+Each edit that changes Markdown tickets makes one local commit containing only those ticket files; a batch uses the first changed ticket in `tickets: <feature>/<NN> <op>`.
+Commit or resolve hand edits to a Markdown ticket before asking HUD to change it. Unrelated staged and unstaged changes are left alone.
 For GitHub-mirrored `.scratch/`, `add` and `update` refuse: edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
 
 Jobs are plain files in `$HUD_HOME/jobs/<job>/`.

@@ -6,6 +6,7 @@ import type { Step } from '../workflows/graph.js';
 import type { Job } from './job-contracts.js';
 import { answerWorkerQuestion, closeJob } from './mcp/operations.js';
 import type { AnswerResult } from '../collectors/panel-actions.js';
+import { storedTicket } from '../tickets/store.js';
 import { parseRemovalList, ticketApprovedRemovals } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { directory, findJob, readCachedStatus, save } from './store/job-store.js';
@@ -296,8 +297,11 @@ export function appendTodos(q: TicketQueue, items: readonly RunTodoItem[]): bool
   return added;
 }
 
-function ticketSummaryLines(path: string): { goal?: string; liveTry?: string } {
+function ticketSummaryLines(q: TicketQueue, item: Pick<TicketQueue['tickets'][number], 'ticket' | 'path'>): { goal?: string; liveTry?: string } {
   try {
+    const stored = storedTicket(q.root, item.ticket);
+    if (stored) return stored.record ? { goal: stored.record.what.split('\n', 1)[0], liveTry: stored.record.live_try } : {};
+    const { path } = item;
     const body = readFileBounded(path, 64 * 1024).bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
     const goal = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]?.trim();
     const liveTry = body.match(/(?:^|·)[ \t]*(?:\*\*)?(?:Live try|How to try|Try)(?::\*\*|\*\*:|:)[ \t]*([^\r\n·]+)/im)?.[1]?.trim();
@@ -317,7 +321,7 @@ export function buildReviewBrief(q: TicketQueue, stepTask: string): string {
     '',
     'Landed tickets and design intent:',
     ...landed.map(item => {
-      const info = ticketSummaryLines(item.path);
+      const info = ticketSummaryLines(q, item);
       const report = item.job ? join(directory(item.job), jobFiles.report) : 'no report';
       return `- ${item.ticket}: ${info.goal ?? item.path} | report: ${report}`;
     }),
@@ -344,7 +348,7 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
     '',
     '## Tickets, Live Try & Reports',
     ...(landed.length ? landed.map(item => {
-      const info = ticketSummaryLines(item.path);
+      const info = ticketSummaryLines(q, item);
       const jobDir = item.job ? directory(item.job) : undefined;
       const reportRef = jobDir ? join(jobDir, jobFiles.report) : 'none';
       const checksRef = jobDir && fs.existsSync(join(jobDir, jobFiles.checks)) ? ` | checks: ${join(jobDir, jobFiles.checks)}` : '';
@@ -394,7 +398,7 @@ export function buildQuestionPacket(
   opts: { step?: string; ticket?: string; ticketPath?: string; workerJob: string; question: string; questionPath: string },
 ): string {
   const escalationRule = q.escalation_rule ?? DEFAULT_ESCALATION_RULE;
-  const info = opts.ticketPath ? ticketSummaryLines(opts.ticketPath) : {};
+  const info = opts.ticket && opts.ticketPath ? ticketSummaryLines(q, { ticket: opts.ticket, path: opts.ticketPath }) : {};
   let questionBody = '';
   try {
     questionBody = readFileBounded(opts.questionPath, 16 * 1024).bytes.toString('utf8').trim();
@@ -446,8 +450,8 @@ export function buildRemovalAmbiguityPacket(
   head: string,
   detail: string,
 ): string {
-  const info = ticketSummaryLines(item.path);
-  const approved = ticketApprovedRemovals(item.path);
+  const info = ticketSummaryLines(q, item);
+  const approved = ticketApprovedRemovals(item.path, q.root, item.ticket);
   return [
     `# Unattended Removal Ambiguity Check (${q.flow})`,
     `Ticket: ${item.ticket} | Objective: ${q.unattended!.objective}`,
@@ -471,7 +475,7 @@ export function buildAssumptionPacket(
   head: string,
   opts: { trigger: string; assumed: readonly string[]; blockers: readonly string[] },
 ): string {
-  const info = ticketSummaryLines(item.path);
+  const info = ticketSummaryLines(q, item);
   return [
     `# Assumption Check (${q.flow})`,
     `Ticket: ${item.ticket} | ${q.unattended ? `Objective: ${q.unattended.objective}` : `Feature: ${q.feature}`}`,

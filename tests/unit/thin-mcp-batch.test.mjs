@@ -169,21 +169,20 @@ test('hud_tickets updates applies batch updates in input order with per-item err
   assert.equal(res.updates[0].feature, 'feat-a');
   assert.equal(res.updates[0].number, 1);
   assert.equal(res.updates[1].ok, false);
-  assert.match(res.updates[1].error, /unknown ticket: 99/);
+  assert.match(res.updates[1].error, /unknown ticket: feat-a\/99/);
   assert.equal(res.updates[2].ok, true);
   assert.equal(res.updates[2].feature, 'feat-b');
   assert.equal(res.updates[3].ok, true);
   assert.equal(res.updates[4].ok, false);
   assert.equal(res.updates[4].error, 'unknown acceptance item: 9 (valid range: 1-1)');
 
-  const a1 = fs.readFileSync(res.updates[0].path, 'utf8');
-  assert.match(a1, /\*\*Status:\*\* ready-for-human/);
-  assert.match(a1, /- \[x\] Item A1/);
-  assert.match(a1, /- \[x\] Item A2/);
-  const b1 = fs.readFileSync(res.updates[2].path, 'utf8');
-  assert.match(b1, /\*\*Status:\*\* ready-for-human/);
-  assert.match(b1, /\*\*Blocked by:\*\* feat-a\/01/);
-  assert.match(b1, /- \[x\] Item B1/);
+  const a1 = JSON.parse(fs.readFileSync(res.updates[0].path, 'utf8')).tickets[0];
+  assert.equal(a1.status, 'ready-for-human');
+  assert.deepEqual(a1.acceptance.map(({ done }) => done), [true, true]);
+  const b1 = JSON.parse(fs.readFileSync(res.updates[2].path, 'utf8')).tickets[0];
+  assert.equal(b1.status, 'ready-for-human');
+  assert.deepEqual(b1.blocked_by, ['feat-a/01']);
+  assert.equal(b1.acceptance[0].done, true);
 
   // Mixing single and batch update fields is rejected.
   const mixed = await f.rpc('tools/call', {
@@ -204,7 +203,7 @@ test('hud_tickets updates applies batch updates in input order with per-item err
   assert.match(JSON.parse(refused.result.content[0].text).error, /GitHub mirror/);
 });
 
-test('hud_tickets add and update support optional owner_try boolean under Status', async (t) => {
+test('hud_tickets add and update support an owner_try boolean with a false default', async (t) => {
   const f = await fixture(t);
   const added = await f.call('hud_tickets', {
     op: 'add',
@@ -215,16 +214,10 @@ test('hud_tickets add and update support optional owner_try boolean under Status
       { title: 'Default ticket', blocked_by: [], what: 'No explicit flag.', acceptance: ['Works'] },
     ],
   });
-  const [p1, p2, p3] = added.tickets.map((x) => x.path);
-  assert.match(fs.readFileSync(p1, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* yes\n\*\*Blocked by:\*\* none/);
-  assert.match(fs.readFileSync(p2, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* no\n\*\*Blocked by:\*\* none/);
-  assert.doesNotMatch(fs.readFileSync(p3, 'utf8'), /\*\*Owner try:\*\*/);
-
-  // Single update inserts Owner try under Status when absent, and replaces in place when present.
-  await f.call('hud_tickets', { op: 'update', feature: 'try-flag', ticket: 3, owner_try: false });
-  assert.match(fs.readFileSync(p3, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* no\n\*\*Blocked by:\*\* none/);
+  const flags = () => JSON.parse(fs.readFileSync(added.tickets[0].path, 'utf8')).tickets.map(t => t.owner_try);
+  assert.deepEqual(flags(), [true, false, false]);
   await f.call('hud_tickets', { op: 'update', feature: 'try-flag', ticket: 1, owner_try: false });
-  assert.match(fs.readFileSync(p1, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* no\n\*\*Blocked by:\*\* none/);
+  assert.deepEqual(flags(), [false, false, false]);
 
   // Batch update supports owner_try and rejects invalid type per item; mixing top-level owner_try with updates fails.
   const batch = await f.call('hud_tickets', {
@@ -238,7 +231,7 @@ test('hud_tickets add and update support optional owner_try boolean under Status
   assert.equal(batch.updates[0].ok, true);
   assert.equal(batch.updates[1].ok, false);
   assert.equal(batch.updates[1].code, 'invalid_arguments');
-  assert.match(fs.readFileSync(p2, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Owner try:\*\* yes\n\*\*Blocked by:\*\* none/);
+  assert.deepEqual(flags(), [false, true, false]);
 
   const mixed = await f.rpc('tools/call', {
     name: 'hud_tickets',

@@ -14,6 +14,22 @@ import { takeLease } from '../../dist/roles/lease.js';
 import { cancelTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
 import { isProcAlive, procStat } from '../../dist/utils/proc.js';
 import { wakeWorkflow } from '../../dist/workflows/wake.js';
+import { withTicketStoreLock } from '../../dist/tickets/store.js';
+
+const seed = '.scratch/sample/issues/01-existing.md';
+async function legacyCheckout(t, gate, options) {
+  const f = await checkout(t, gate, options);
+  fs.mkdirSync(join(f.main, '.scratch/sample/issues'), { recursive: true });
+  fs.writeFileSync(join(f.main, seed), '# 01: Existing\n\n**Status:** ready-for-agent\n**Blocked by:** none\n\n**What to build:** Change it.\n\n- [ ] Check it.\n');
+  f.git(f.main, 'add', seed);
+  f.git(f.main, 'commit', '-qm', 'Seed legacy ticket');
+  return { ...f, seedHead: f.git(f.main, 'rev-parse', 'HEAD') };
+}
+
+function setLandTicket(f, ticket) {
+  const receipt = join(jobDir(f), 'job.json');
+  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket }));
+}
 
 const draft = title => ({ title, what: 'Change the sample.', acceptance: ['Check the sample.'], blocked_by: [] });
 const tickets = f => (op, args) => f.call('hud_tickets', { op, feature: 'sample', ...args });
@@ -35,10 +51,9 @@ function queued(result) {
   return result.receipt;
 }
 
-test('a ticket add or update batch commits only its changed ticket paths and preserves hand edits', async t => {
-  const f = await checkout(t, ['true']), call = tickets(f);
+test('a Markdown ticket add or update batch commits only its changed ticket paths and preserves hand edits', async t => {
+  const f = await legacyCheckout(t, ['true']), call = tickets(f);
   const feature = join(f.main, '.scratch/sample');
-  fs.mkdirSync(feature, { recursive: true });
   fs.writeFileSync(join(feature, 'spec.md'), 'Untracked planning notes.\n');
   fs.appendFileSync(join(f.main, 'tracked'), 'Staged owner change.\n');
   f.git(f.main, 'add', 'tracked');
@@ -50,32 +65,32 @@ test('a ticket add or update batch commits only its changed ticket paths and pre
   assert.equal(addState, undefined);
   const paths = added.map(({ path }) => relative(f.main, path));
   const lastCommit = () => f.git(f.main, 'show', '--format=%s', '--name-only', 'HEAD').split('\n').filter(Boolean);
-  assert.deepEqual(lastCommit(), ['tickets: sample/01 add', ...paths]);
-  assert.equal(f.git(f.main, 'rev-list', '--count', `${f.base_head}..HEAD`), '1');
+  assert.deepEqual(lastCommit(), ['tickets: sample/02 add', ...paths]);
+  assert.equal(f.git(f.main, 'rev-list', '--count', `${f.seedHead}..HEAD`), '1');
   assert.equal(status(paths[0]), '');
 
   // Even if a hand-edited ticket is named, it must not be swept into the HUD commit.
   fs.appendFileSync(added[2].path, '\nHand-edited comment.\n');
   const { updates, state: updateState } = await fast(call('update', { updates: [
-    { ticket: 1, status: 'claimed' }, { ticket: 3, status: 'done' },
-    { ticket: 2, tick: [1] }, { ticket: 1, tick: [1] },
+    { ticket: 2, status: 'claimed' }, { ticket: 4, status: 'done' },
+    { ticket: 3, tick: [1] }, { ticket: 2, tick: [1] },
   ] }));
   assert.equal(updateState, undefined);
   assert.deepEqual(updates.map(item => item.ok), [true, false, true, true]);
   assert.match(updates[1].error, /uncommitted or hidden changes/);
   assert.match(fs.readFileSync(added[2].path, 'utf8'), /Hand-edited comment/);
   assert.doesNotMatch(fs.readFileSync(added[2].path, 'utf8'), /\*\*Status:\*\* done/);
-  assert.deepEqual(lastCommit(), ['tickets: sample/01 update', ...paths.slice(0, 2)]);
-  assert.equal(f.git(f.main, 'rev-list', '--count', `${f.base_head}..HEAD`), '2');
+  assert.deepEqual(lastCommit(), ['tickets: sample/02 update', ...paths.slice(0, 2)]);
+  assert.equal(f.git(f.main, 'rev-list', '--count', `${f.seedHead}..HEAD`), '2');
   assert.match(f.git(f.main, 'show', `HEAD:${paths[0]}`), /\*\*Status:\*\* claimed[\s\S]*- \[x\]/);
-  await call('update', { ticket: 1, tick: [1] });
-  assert.equal(f.git(f.main, 'rev-list', '--count', `${f.base_head}..HEAD`), '2', 'no change means no commit');
+  await call('update', { ticket: 2, tick: [1] });
+  assert.equal(f.git(f.main, 'rev-list', '--count', `${f.seedHead}..HEAD`), '2', 'no change means no commit');
   assert.equal(f.git(f.main, 'diff', '--cached'), staged);
   assert.equal(f.git(f.main, 'diff', '--', 'tracked'), unstaged);
   assert.match(status('.scratch/sample/spec.md'), /^\?\?/);
 
   // A refused commit must not strand the new ticket or its intent-to-add entry.
-  const lock = join(f.main, '.git/refs/heads/base.lock'), fourth = '.scratch/sample/issues/04-fourth.md';
+  const lock = join(f.main, '.git/refs/heads/base.lock'), fourth = '.scratch/sample/issues/05-fourth.md';
   fs.writeFileSync(lock, '', { flag: 'wx' });
   try {
     const { result } = await f.rpc('tools/call', { name: 'hud_tickets', arguments: {
@@ -89,13 +104,32 @@ test('a ticket add or update batch commits only its changed ticket paths and pre
   assert.equal(f.git(f.main, 'diff', '--cached'), staged);
 });
 
-test('a held land lease admits multiple edits promptly, then revalidates and commits them in order', { timeout: 20000 }, async t => {
-  const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done'], { after: [] });
+test('updating existing Markdown does not take the tickets lock and the ticket still lands cleanly', { timeout: 20_000 }, async t => {
+  const f = await legacyCheckout(t, ['true']);
+  setLandTicket(f, 'sample/01');
+  // A reverse lock order would make this call wait on the tickets lock we hold.
+  await withTicketStoreLock(f.main, async () => {
+    const updated = await fast(tickets(f)('update', { ticket: 1, status: 'claimed' }));
+    assert.deepEqual(updated, { ok: true, number: 1, path: join(f.main, seed) });
+  });
+  const base = f.git(f.main, 'rev-parse', 'HEAD');
+  assert.equal(f.git(f.main, 'log', '-1', '--format=%s'), 'tickets: sample/01 update');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow).state), t.signal);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assertLandingRecord(f, seed, base, done.landed_sha);
+  assert.equal(f.git(f.main, 'status', '--porcelain', '--', seed), '');
+});
+
+test('land records a committed Markdown add and then drains queued Markdown edits in order', { timeout: 20000 }, async t => {
+  const f = await legacyCheckout(t, ['while test ! -f "$HOME/release"; do sleep .05; done'], { after: [] });
   const call = tickets(f);
-  const { tickets: [{ path }] } = await call('add', { tickets: [draft('First')] });
-  const rel = relative(f.main, path), receipt = join(jobDir(f), 'job.json');
-  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'sample/01' }));
-  await call('update', { ticket: 1, status: 'claimed', owner_try: true });
+  const { tickets: [{ number, path }] } = await call('add', { tickets: [{ ...draft('First'), owner_try: true }] });
+  const rel = relative(f.main, path);
+  assert.equal(number, 2);
+  assert.deepEqual(f.git(f.main, 'show', '--format=%s', '--name-only', 'HEAD').split('\n').filter(Boolean), ['tickets: sample/02 add', rel]);
+  setLandTicket(f, 'sample/02');
   const base = f.git(f.main, 'rev-parse', 'HEAD');
   assert.equal(f.git(f.main, 'status', '--porcelain', '--', rel), '');
   const { flow } = await f.call('hud_land', { job });
@@ -103,12 +137,12 @@ test('a held land lease admits multiple edits promptly, then revalidates and com
   const before = fs.readFileSync(path, 'utf8');
   const add = queued(await fast(call('add', { tickets: [draft('Second')] })));
   const update = queued(await fast(call('update', { updates: [
-    { ticket: 1, status: 'done' }, { ticket: 2, tick: [1] },
+    { ticket: 2, status: 'done' }, { ticket: 3, tick: [1] },
   ] })));
-  const missing = queued(await fast(call('update', { ticket: 3, status: 'done' })));
+  const missing = queued(await fast(call('update', { ticket: 4, status: 'done' })));
   assert.equal(queued(await f.call('hud_read', { job: add })), add);
   assert.equal(fs.statSync(fileOf(f, add)).mode & 0o777, 0o600);
-  const second = '.scratch/sample/issues/02-second.md';
+  const second = '.scratch/sample/issues/03-second.md';
   assert.equal(fs.existsSync(join(f.main, second)), false);
   assert.equal(fs.readFileSync(path, 'utf8'), before, 'queued updates do not write during land');
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), base);
@@ -117,25 +151,25 @@ test('a held land lease admits multiple edits promptly, then revalidates and com
   await until(() => read(f, missing).state === 'failed', t.signal);
   const added = await f.call('hud_read', { job: add });
   assert.equal(added.state, 'completed');
-  assert.deepEqual(added.tickets, [{ number: 2, path: join(f.main, second) }]);
+  assert.deepEqual(added.tickets, [{ number: 3, path: join(f.main, second) }]);
   for (const id of [add, update, missing]) assert.ok(added.changes.some(line => line.includes(id)));
   const updated = await f.call('hud_read', { job: update });
   assert.equal(updated.state, 'completed');
   assert.deepEqual(updated.updates, [
-    { feature: 'sample', ok: true, number: 1, path },
-    { feature: 'sample', ok: true, number: 2, path: join(f.main, second) },
+    { feature: 'sample', ok: true, number: 2, path },
+    { feature: 'sample', ok: true, number: 3, path: join(f.main, second) },
   ]);
   assert.equal(updated.changes, undefined, 'notices are claimed once');
   const error = await f.call('hud_read', { job: missing });
   assert.equal(error.ok, false);
   assert.equal(error.state, 'failed');
-  assert.match(error.error, /unknown ticket: 3/);
+  assert.match(error.error, /unknown ticket: 4/);
   const done = f.flowState(flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));
   const show = rev => f.git(f.main, 'show', '--format=%s', '--name-only', rev).split('\n').filter(Boolean);
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD~2'), done.landed_sha);
-  assert.deepEqual(show('HEAD^'), ['tickets: sample/02 add', second]);
-  assert.deepEqual(show('HEAD'), ['tickets: sample/01 update', rel, second]);
+  assert.deepEqual(show('HEAD^'), ['tickets: sample/03 add', second]);
+  assert.deepEqual(show('HEAD'), ['tickets: sample/02 update', rel, second]);
   assert.match(f.git(f.main, 'show', `${done.landed_sha}:${rel}`), /\*\*Status:\*\* ready-for-human/);
   assert.match(f.git(f.main, 'show', `HEAD:${rel}`), /\*\*Status:\*\* done/);
   assert.match(f.git(f.main, 'show', `HEAD:${second}`), /- \[x\]/);
@@ -144,7 +178,7 @@ test('a held land lease admits multiple edits promptly, then revalidates and com
 });
 
 test('a task-capable caller receives a queued edit completion without polling', { timeout: 15000 }, async t => {
-  const f = await checkout(t, ['true']), rpc = taskRpc(f.rpc);
+  const f = await legacyCheckout(t, ['true']), rpc = taskRpc(f.rpc);
   await rpc('server/discover');
   const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
   assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
@@ -160,7 +194,7 @@ test('a task-capable caller receives a queued edit completion without polling', 
 });
 
 test('the MCP re-drives a helper killed during land without another submission or read', { timeout: 20000 }, async t => {
-  const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done'], { after: [] });
+  const f = await legacyCheckout(t, ['while test ! -f "$HOME/release"; do sleep .05; done'], { after: [] });
   const { flow } = await f.call('hud_land', { job });
   await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
   const receipt = queued(await tickets(f)('add', { tickets: [draft('First')] }));
@@ -202,7 +236,7 @@ if (process.argv[2] === '--ticket-edits') {
     process.stderr.write('Synthetic helper import failure\\n', () => process.exit(73));
   }
 }`;
-  const f = await checkout(t, ['true'], {
+  const f = await legacyCheckout(t, ['true'], {
     probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(preload))};`,
   });
   const rpc = taskRpc(f.rpc);
@@ -222,28 +256,28 @@ if (process.argv[2] === '--ticket-edits') {
   assert.equal(notices().length, 1);
   assert.equal(result.changes, undefined);
   assert.equal(fs.readFileSync(join(f.env.HOME, 'ticket-helper-attempts'), 'utf8'), 'attempt\n'.repeat(3));
-  assert.equal(f.git(f.main, 'rev-list', '--count', `${f.base_head}..HEAD`), committed ? '1' : '0');
+  assert.equal(f.git(f.main, 'rev-list', '--count', `${f.seedHead}..HEAD`), committed ? '1' : '0');
   if (committed) {
     assert.match(f.git(f.main, 'log', '-1', '--format=%B'), new RegExp(`HUD-Ticket-Edit: ${receipt}`));
-    assert.deepEqual(fs.readdirSync(join(f.main, '.scratch/sample/issues')), ['01-first.md']);
+    assert.deepEqual(fs.readdirSync(join(f.main, '.scratch/sample/issues')).sort(), ['01-existing.md', '02-first.md']);
   } else {
     assert.match(result.error, /after 3 attempts: exited with code 73: Synthetic helper import failure/);
-    assert.equal(fs.existsSync(join(f.main, '.scratch/sample/issues')), false);
+    assert.deepEqual(fs.readdirSync(join(f.main, '.scratch/sample/issues')), ['01-existing.md']);
   }
 });
 
 test('MCP startup drains pending ticket receipts and reconciles a committed receipt without a duplicate', { timeout: 20000 }, async t => {
-  const f = await checkout(t, ['true'], { inHerdr: false }), call = tickets(f);
+  const f = await legacyCheckout(t, ['true'], { inHerdr: false }), call = tickets(f);
   const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
   assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
   const one = queued(await call('add', { tickets: [draft('First')] }));
-  const two = queued(await call('add', { tickets: [{ ...draft('Second'), blocked_by: [1] }] }));
+  const two = queued(await call('add', { tickets: [{ ...draft('Second'), blocked_by: [2] }] }));
   await f.stopMcp();
   for (const { pid } of helpers(f)) process.kill(pid, 'SIGKILL');
   await until(() => helpers(f).length === 0, t.signal);
   assert.equal(read(f, one).state, 'queued');
   assert.equal(read(f, two).state, 'queued');
-  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.base_head);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.seedHead);
 
   async function restart() {
     const child = spawn(process.execPath, [entry], { cwd: f.root, env: f.env, stdio: ['pipe', 'pipe', 'inherit'] });
@@ -258,9 +292,9 @@ test('MCP startup drains pending ticket receipts and reconciles a committed rece
   await takeLease({ name: 'main-checkout', release: true }, lease);
   await until(() => read(f, two).state === 'completed', t.signal);
   const firstResult = await first.read(one);
-  assert.equal(firstResult.tickets[0].number, 1);
-  assert.equal((await first.read(two)).tickets[0].number, 2);
-  assert.equal(f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..HEAD`), 'tickets: sample/01 add\ntickets: sample/02 add');
+  assert.equal(firstResult.tickets[0].number, 2);
+  assert.equal((await first.read(two)).tickets[0].number, 3);
+  assert.equal(f.git(f.main, 'log', '--reverse', '--format=%s', `${f.seedHead}..HEAD`), 'tickets: sample/02 add\ntickets: sample/03 add');
   const head = f.git(f.main, 'rev-parse', 'HEAD');
   await first.stop();
   await until(() => helpers(f).length === 0, t.signal);
@@ -272,7 +306,7 @@ test('MCP startup drains pending ticket receipts and reconciles a committed rece
   await until(() => read(f, one).state === 'completed', t.signal);
   assert.deepEqual((await recovered.read(one)).tickets, firstResult.tickets);
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), head);
-  assert.deepEqual(fs.readdirSync(join(f.main, '.scratch/sample/issues')).sort(), ['01-first.md', '02-second.md']);
+  assert.deepEqual(fs.readdirSync(join(f.main, '.scratch/sample/issues')).sort(), ['01-existing.md', '02-first.md', '03-second.md']);
 });
 
 function makeWorkerDir(f, id, role, cwd = f.main) {
@@ -308,7 +342,7 @@ test('lead MCP resumes ticket edit supervision across hot swap and cold start wi
   fs.symlinkSync(resolve('node_modules'), join(copy, 'node_modules'));
   t.after(() => fs.rmSync(copy, { recursive: true, force: true }));
 
-  const f = await checkout(t, ['true'], { inHerdr: false });
+  const f = await legacyCheckout(t, ['true'], { inHerdr: false });
   await f.stopMcp();
   fs.chmodSync(f.home, 0o700);
   const leadDir = makeWorkerDir(f, 'j00000000000001a1', 'lead');
@@ -515,7 +549,7 @@ function writeQueuedFlow(f, templateFlow, addedJob, createdAt = '2020-01-01T00:0
 }
 
 test('back-to-back lands drain edits queued during the first gate between the two lands without a gate rerun', { timeout: 30000 }, async t => {
-  const f = await checkout(t, [`if test ! -f "$HOME/started"; then
+  const f = await legacyCheckout(t, [`if test ! -f "$HOME/started"; then
     touch "$HOME/started"; while test ! -f "$HOME/release"; do sleep .05; done
   fi
   git rev-parse HEAD >> "$HOME/gate-heads"`], { after: [] });
@@ -528,11 +562,11 @@ test('back-to-back lands drain edits queued during the first gate between the tw
   assert.equal(f.flowState(flow2).state, 'queued');
 
   const add = queued(await fast(call('add', { tickets: [draft('Between')] })));
-  const update = queued(await fast(call('update', { ticket: 1, status: 'claimed' })));
+  const update = queued(await fast(call('update', { ticket: 2, status: 'claimed' })));
   assert.equal(f.flowState(flow1).step.startsWith('gate[1]'), true, 'running land is not interrupted mid-gate');
   assert.equal(read(f, add).state, 'queued');
   assert.equal(read(f, update).state, 'queued');
-  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.base_head);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.seedHead);
 
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
   await until(() => f.flowState(flow1).state === 'completed' && f.flowState(flow2).state === 'completed', t.signal);
@@ -540,8 +574,8 @@ test('back-to-back lands drain edits queued during the first gate between the tw
   assert.equal(read(f, add).state, 'completed');
   assert.equal(read(f, update).state, 'completed');
 
-  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..base`).split('\n');
-  assert.deepEqual(subjects, ['first', 'second', 'tickets: sample/01 add', 'tickets: sample/01 update', 'beta']);
+  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.seedHead}..base`).split('\n');
+  assert.deepEqual(subjects, ['first', 'second', 'tickets: sample/02 add', 'tickets: sample/02 update', 'beta']);
   const editTip = f.git(f.main, 'rev-parse', `${done2.landed_sha}^`);
   assert.equal(f.git(f.main, 'rev-parse', `${done2.landed_sha}~3`), done1.landed_sha);
   assert.match(f.git(f.main, 'log', '-1', '--format=%B', `${done2.landed_sha}~2`), new RegExp(`HUD-Ticket-Edit: ${add}`));
@@ -558,7 +592,7 @@ test('back-to-back lands drain edits queued during the first gate between the tw
 });
 
 test('handoff drain is bounded to edits pending at the handoff so a steady stream of edits cannot starve lands', { timeout: 30000 }, async t => {
-  const f = await checkout(t, [`if test ! -f "$HOME/started"; then
+  const f = await legacyCheckout(t, [`if test ! -f "$HOME/started"; then
     touch "$HOME/started"; while test ! -f "$HOME/release"; do sleep .05; done
   fi
   git rev-parse HEAD >> "$HOME/gate-heads"`], { after: [], probe: drainPauseProbe() });
@@ -621,7 +655,7 @@ test('handoff drain is bounded to edits pending at the handoff so a steady strea
 });
 
 test('partial train where the lease owner is excluded drains one snapshot before the owner single attempt', { timeout: 30000 }, async t => {
-  const f = await checkout(t, [`if test -f alpha && test ! -f "$HOME/train-gate-started"; then
+  const f = await legacyCheckout(t, [`if test -f alpha && test ! -f "$HOME/train-gate-started"; then
     touch "$HOME/train-gate-started"
     while test ! -f "$HOME/release-train-gate"; do sleep .05; done
   fi`], { after: [], probe: drainPauseProbe() });
@@ -669,9 +703,9 @@ test('partial train where the lease owner is excluded drains one snapshot before
   assert.equal(doneA.boarded?.flow, flowB);
   assert.equal(doneB.train, undefined);
 
-  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..base`).split('\n');
-  assert.deepEqual(subjects, ['alpha', 'tickets: sample/01 add', 'beta', 'tickets: sample/02 add']);
-  const commits = f.git(f.main, 'rev-list', '--reverse', `${f.base_head}..base`).split('\n');
+  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.seedHead}..base`).split('\n');
+  assert.deepEqual(subjects, ['alpha', 'tickets: sample/02 add', 'beta', 'tickets: sample/03 add']);
+  const commits = f.git(f.main, 'rev-list', '--reverse', `${f.seedHead}..base`).split('\n');
   assert.equal(doneA.landed_sha, commits[0]);
   assert.equal(doneB.base_sha, commits[1]);
   assert.equal(doneB.landed_sha, commits[2]);
@@ -680,7 +714,7 @@ test('partial train where the lease owner is excluded drains one snapshot before
 });
 
 test('after a partial train publish, a cancelled single attempt still drains its pending batch before releasing the lease', { timeout: 30000 }, async t => {
-  const f = await checkout(t, [`if test -f alpha && test ! -f "$HOME/train-gate-started"; then
+  const f = await legacyCheckout(t, [`if test -f alpha && test ! -f "$HOME/train-gate-started"; then
     touch "$HOME/train-gate-started"
     while test ! -f "$HOME/release-train-gate"; do sleep .05; done
   elif test -f beta && test ! -f "$HOME/single-gate-started"; then
@@ -735,9 +769,9 @@ test('after a partial train publish, a cancelled single attempt still drains its
   await until(() => f.flowState(flowB).state === 'cancelled' && f.flowState(flowC).state === 'completed', t.signal);
   assert.equal(read(f, pending).state, 'completed');
 
-  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..base`).split('\n');
-  assert.deepEqual(subjects, ['alpha', 'tickets: sample/01 add', 'gamma']);
-  const commits = f.git(f.main, 'rev-list', '--reverse', `${f.base_head}..base`).split('\n');
+  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.seedHead}..base`).split('\n');
+  assert.deepEqual(subjects, ['alpha', 'tickets: sample/02 add', 'gamma']);
+  const commits = f.git(f.main, 'rev-list', '--reverse', `${f.seedHead}..base`).split('\n');
   assert.equal(f.flowState(flowA).landed_sha, commits[0]);
   assert.equal(f.flowState(flowC).base_sha, commits[1]);
   assert.equal(f.flowState(flowC).landed_sha, commits[2]);
@@ -745,7 +779,7 @@ test('after a partial train publish, a cancelled single attempt still drains its
 });
 
 test('a clean unpublished train fallback drains one pending snapshot before the owner single attempt', { timeout: 30000 }, async t => {
-  const f = await checkout(t, [`if test -f alpha && test -f beta && ! git cat-file -e base:alpha 2>/dev/null && ! git cat-file -e base:beta 2>/dev/null; then
+  const f = await legacyCheckout(t, [`if test -f alpha && test -f beta && ! git cat-file -e base:alpha 2>/dev/null && ! git cat-file -e base:beta 2>/dev/null; then
     touch "$HOME/train-rejected"
     while test ! -f "$HOME/release-train-reject"; do sleep .05; done
     exit 7
@@ -769,7 +803,7 @@ test('a clean unpublished train fallback drains one pending snapshot before the 
 
   await takeLease({ name: 'main-checkout', release: true }, lease);
   await until(() => fs.existsSync(join(f.env.HOME, 'train-rejected')), t.signal);
-  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.base_head);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.seedHead);
 
   const beforeFallback = queued(await fast(call('add', { tickets: [draft('Before Fallback')] })));
   fs.writeFileSync(join(f.env.HOME, 'release-train-reject'), 'go');
@@ -787,11 +821,11 @@ test('a clean unpublished train fallback drains one pending snapshot before the 
   for (const row of done) assert.equal(row.train, undefined);
   assert.equal(done.flatMap(row => row.timings.filter(e => e.train && !e.ok)).length, 1);
 
-  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..base`).split('\n');
-  const commits = f.git(f.main, 'rev-list', '--reverse', `${f.base_head}..base`).split('\n');
+  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.seedHead}..base`).split('\n');
+  const commits = f.git(f.main, 'rev-list', '--reverse', `${f.seedHead}..base`).split('\n');
   assert.equal(commits.length, 4);
-  assert.equal(subjects[0], 'tickets: sample/01 add');
-  assert.equal(subjects[2], 'tickets: sample/02 add');
+  assert.equal(subjects[0], 'tickets: sample/02 add');
+  assert.equal(subjects[2], 'tickets: sample/03 add');
   assert.deepEqual([subjects[1], subjects[3]].sort(), ['alpha', 'beta']);
 
   const firstSingle = done.find(row => row.landed_sha === commits[1]);

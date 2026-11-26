@@ -45,7 +45,8 @@ import { answerComposed, callWorkflow } from '../composed-workflow.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, syncTickets } from '../local-tickets.js';
 import { isTicketEditId } from '../ticket-edit-state.js';
-import { readTicketEditReceipt, submitTicketEdit } from '../ticket-edit-queue.js';
+import { readTicketEditReceipt } from '../ticket-edit-queue.js';
+import { editTickets, getTickets } from '../ticket-store-ops.js';
 import { editObjectives, type RequestCaller } from '../local-objectives.js';
 import { callSchedule } from '../local-schedule.js';
 import { answerTicketQueueHandback, resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask } from '../ticket-queue.js';
@@ -599,9 +600,10 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     }
     if (args.op === 'ready') return readyTickets(cwd, jobCache, hudHome);
     if (args.op === 'sync') return syncTickets(cwd);
-    const edit = await submitTicketEdit(cwd, args, hudHome, callerPane);
-    if ('state' in edit && edit.state === 'queued' && callerPane && !session.taskClient) void ensureQueueWatcher(callerPane, hudHome);
-    return edit;
+    if (args.op === 'get') return getTickets(cwd, args);
+    return editTickets(cwd, args, hudHome, isWorker ? 'lead' : 'main', callerPane, () => {
+      if (callerPane && !session.taskClient) void ensureQueueWatcher(callerPane, hudHome);
+    });
   }
   if (args.detail !== undefined && typeof args.detail !== 'boolean') throw new Error('invalid_arguments: detail');
   const detail = args.detail === true;

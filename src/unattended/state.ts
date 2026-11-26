@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { ticketFileEvidence } from '../collectors/ticket-evidence.js';
 import { completedLandForJob } from '../mcp/land-state.js';
 import { isTicketQueueId, queueCancelled, queueFile, queueIds, readTicketQueue, type TicketHandbackKind, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { storedTicket } from '../tickets/store.js';
 import { readFileBounded, readJsonBounded } from '../utils/atomic-fs.js';
 import { isProcAlive, isValidPid, readBootId } from '../utils/proc.js';
 import { workflowHeaders } from '../workflows/header-scan.js';
@@ -54,31 +55,35 @@ export function unattendedOn(home: string): boolean {
   catch { return false; }
 }
 
-function ticketClosedState(path: string): boolean | undefined {
+type TicketSource = Pick<TicketQueue['tickets'][number], 'path' | 'ticket'>;
+function ticketClosedState(root: string, { path, ticket }: TicketSource): boolean | undefined {
+  const closed = /^(?:done|wontfix|ready-for-human)$/i;
   try {
+    const stored = storedTicket(root, ticket);
+    if (stored) return stored.record ? closed.test(stored.record.status) : undefined;
     return unchanged(path, () => {
       const { bytes, truncated } = readFileBounded(path, 64 * 1024);
-      return !truncated && /^(?:done|wontfix|ready-for-human)$/i.test(ticketFileEvidence(bytes.toString('utf8')).status ?? '');
+      return !truncated && closed.test(ticketFileEvidence(bytes.toString('utf8')).status ?? '');
     });
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT' ? undefined : false;
   }
 }
 
-export function itemClosed(path: string): boolean {
-  return ticketClosedState(path) ?? true;
+function itemClosed(root: string, item: TicketSource): boolean {
+  return ticketClosedState(root, item) ?? true;
 }
 
-/** Positive closure evidence for ordinary holds and resume: a missing or unreadable path is not closed. */
-export function ticketClosed(path: string): boolean {
-  return ticketClosedState(path) === true;
+/** Positive closure evidence for ordinary holds and resume: a missing or unreadable ticket is not closed. */
+export function ticketClosed(root: string, item: TicketSource): boolean {
+  return ticketClosedState(root, item) === true;
 }
 
 export function openHoldsInRun(q: TicketQueue): UnattendedHandback[] {
   if (!q.unattended) return [];
   const holds: UnattendedHandback[] = [];
   for (const item of q.tickets ?? []) {
-    if (!item.held || itemClosed(item.path)) continue;
+    if (!item.held || itemClosed(q.root, item)) continue;
     holds.push({
       flow: q.flow, root: q.root, objective: q.unattended.objective,
       ticket: item.ticket, path: item.path,
@@ -152,8 +157,8 @@ export function pinnedQueueJobs(home: string, pass = workflowHeaders(home)): Pin
     for (const q of indexedRuns(home)) {
       for (const item of q.tickets ?? []) {
         if (!item.job) continue;
-        if (item.held && !itemClosed(item.path)) held.add(item.job);
-        else if ((q.state === 'paused' || q.state === 'cancelled') && q.held && !item.landed && !itemClosed(item.path)) held.add(item.job);
+        if (item.held && !itemClosed(q.root, item)) held.add(item.job);
+        else if ((q.state === 'paused' || q.state === 'cancelled') && q.held && !item.landed && !itemClosed(q.root, item)) held.add(item.job);
       }
     }
   } catch { /* Unreadable index gives no extra pins. */ }
@@ -169,7 +174,7 @@ export function pinnedQueueJobs(home: string, pass = workflowHeaders(home)): Pin
         try {
           const land = completedLandForJob(home, item.job, pass);
           if (land && !land.ticket_queue && (unresolved || item.held_land === land.flow)) evidence.add(item.job);
-          else if (unresolved && !ticketClosed(item.path)) held.add(item.job);
+          else if (unresolved && !ticketClosed(q.root, item)) held.add(item.job);
         } catch { if (unresolved) held.add(item.job); }
       }
     } catch { /* Ignore an unreadable queue, not other holds. */ }

@@ -11,6 +11,7 @@ import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import { isProcAlive } from '../utils/proc.js';
 import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
+import { storedTicket } from '../tickets/store.js';
 import { openRunTickets, ticketClosed, type OwnerApproval } from '../unattended/state.js';
 import { driveWorkflow } from '../workflows/driver.js';
 import type { Run, Tick } from '../workflows/engine.js';
@@ -95,7 +96,7 @@ type SettlementVerdict = { assumed?: string[]; tries?: string[] } & (
   | { kind: TicketHandbackKind; reason: string; assumption?: TicketHandback['assumption'] }
 );
 
-function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus, deferAssumptions: boolean): SettlementVerdict {
+function judgeSettlement(root: string, item: TicketQueueItem, job: Job, status: JobStatus, deferAssumptions: boolean): SettlementVerdict {
   const dir = directory(job.job);
   const sig = declaredReport(dir, job, status);
   if (!sig) return { kind: 'worker', reason: 'settled without a declared report for this turn' };
@@ -113,7 +114,8 @@ function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus, def
     }
   }
   if (readReportMeta(dir, sig)?.skip_checks_reason) return { kind: 'check', reason: 'worker checks were skipped', ...notes };
-  if (/(?:^|·)[ \t]*\*\*Main review:\*\*[ \t]*yes\b/im.test(ticketHeader(item.path)))
+  const stored = storedTicket(root, item.ticket);
+  if (stored ? stored.record?.main_review : /(?:^|·)[ \t]*\*\*Main review:\*\*[ \t]*yes\b/im.test(ticketHeader(item.path)))
     return { kind: 'review', reason: 'ticket is marked for main review', ...notes };
   if (job.checks?.length) {
     const binding = checkBinding(dir, job, status);
@@ -173,7 +175,7 @@ function checkUnattendedGates(
       return { kind: 'ambiguous', head, detail: decl.detail };
     }
   } else if (decl.kind === 'named') {
-    const approved = new Set(ticketApprovedRemovals(item.path));
+    const approved = new Set(ticketApprovedRemovals(item.path, q.root, item.ticket));
     const unapproved = decl.items.filter(entry => !approved.has(entry));
     if (unapproved.length) {
       return { kind: 'hold', ownerApproval: 'feature-deletion', reason: `Unapproved removal declared: ${unapproved.join(', ')}` };
@@ -1050,7 +1052,7 @@ function tickTicketQueue(
         if (!q.unattended && !heldLand.ticket_queue) item.held_land = heldLand.flow;
         clearItemHold(q, item);
         changed = true;
-      } else if (blockerHold && ticketClosed(item.path)) {
+      } else if (blockerHold && ticketClosed(q.root, item)) {
         clearItemHold(q, item);
         q.tickets = q.tickets.filter(entry => entry !== item);
         changed = true;
@@ -1122,7 +1124,7 @@ function tickTicketQueue(
       if (left > 0) recheck = Math.min(recheck ?? left, left);
       else flag('dispatch', 'dispatch interrupted before worker status was recorded');
     } else if (status && cleanStates.includes(status.state)) {
-      const verdict = judgeSettlement(item, job, status, deferAssumptions);
+      const verdict = judgeSettlement(q.root, item, job, status, deferAssumptions);
       const source = `${item.ticket} (${job.job})`;
       changed = appendTodos(q, [
         ...(verdict.assumed ?? []).map(text => ({ source, kind: 'assumed' as const, text })),
@@ -1259,13 +1261,18 @@ function tickTicketQueue(
     return { state: 'running', changed, ...(recheck !== undefined && { recheckMs: recheck }) };
   }
   let item = q.tickets.find(entry => !entry.job && !entry.held && !entry.failed);
-  if (item && !eligible.some(t => t.ticket === item!.ticket && t.path === item!.path)) {
+  const recovered = item && eligible.find(t => t.ticket === item?.ticket);
+  if (item && !recovered) {
     if (q.unattended) {
       failItem(item, `${item.ticket}: no longer ready after recovery`, 'queue');
       return { state: 'running', changed: true };
     }
     state.problem = { kind: 'queue', ticket: item.ticket, reason: `${item.ticket}: no longer ready after recovery` };
     return { state: 'failed', reason: state.problem.reason, changed: true };
+  }
+  if (item && recovered && item.path !== recovered.path) {
+    item.path = recovered.path;
+    changed = true;
   }
   const freshCandidates = item ? [] : eligible.filter(t => !q.tickets.some(own => own.ticket === t.ticket));
   let next = freshCandidates;

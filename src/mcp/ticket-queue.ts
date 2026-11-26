@@ -250,7 +250,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
           next.changed_at = at;
           next.base_moves = land.base_moves;
           delete next.held;
-        } else if (!item.landed && (launchFailed(home, item.job) || ticketClosed(item.path))) {
+        } else if (!item.landed && (launchFailed(home, item.job) || ticketClosed(root, item))) {
           return [];
         }
         // Approve the report that caused the pause, not whatever the worker has published since.

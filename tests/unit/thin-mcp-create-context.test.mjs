@@ -255,7 +255,9 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   assert.deepEqual(legacy.objective, snapshot);
   assert.match(cardText(workerFor(f, original.job)), /Objective\s+delivery · Original title/);
   fs.writeFileSync(objectives, fs.readFileSync(objectives, 'utf8').replace('Original title', 'Renamed'));
-  fs.writeFileSync(linked.path, fs.readFileSync(linked.path, 'utf8').replace('**Objective:** delivery\n', ''));
+  const stored = JSON.parse(fs.readFileSync(linked.path, 'utf8'));
+  delete stored.tickets[0].objective;
+  fs.writeFileSync(linked.path, JSON.stringify(stored));
   writeFixtureFile(originalReceipt, JSON.stringify({ ...legacy, preset: 'two', create_options: { ...legacy.create_options, thinking: 'high' } }));
   const statusFile = join(original.task_dir, 'STATUS.json');
   writeFixtureFile(statusFile, JSON.stringify({ state: 'failed', exit_reason: 'rate limit reached; retry after 5m' }));
@@ -283,7 +285,8 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   assert.equal((await f.call('hud_create', retry)).job, next.job);
 
   // A body mention or matching title/feature is not a link.
-  fs.appendFileSync(unlinked.path, '\n**Objective:** delivery\n');
+  stored.tickets[1].what += '\n**Objective:** delivery\n';
+  fs.writeFileSync(unlinked.path, JSON.stringify(stored));
   const noLink = await f.call('hud_create', { role: 'general', cwd, task: 'Original title', package: 'sample', ticket: 'sample/02' });
   const hasObjective = job => Object.hasOwn(JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))), 'objective');
   assert.equal(hasObjective(noLink), false);
@@ -292,7 +295,7 @@ test('hud_create retry_of reuses a failed job brief and options on an available 
   ] });
   assert.equal(updates[0].ok, false);
   assert.equal(updates[1].ok, true);
-  assert.match(fs.readFileSync(unlinked.path, 'utf8'), /\*\*Status:\*\* ready-for-agent\n\*\*Objective:\*\* delivery\n/);
+  assert.equal(JSON.parse(fs.readFileSync(unlinked.path, 'utf8')).tickets[1].objective, 'delivery');
   writeFixtureFile(join(noLink.task_dir, 'STATUS.json'), JSON.stringify({ state: 'failed' }));
   assert.equal(hasObjective(await f.call('hud_create', { retry_of: noLink.job })), false);
 });
@@ -315,7 +318,7 @@ test('hud_create retry_of keeps a general harness pin only when paired with a mo
   }
 });
 
-test('hud_create stamps the linked checkout ticket against its Objective record, falling back only for a missing file', async (t) => {
+test('hud_create stamps the main ticket against the linked checkout Objective record, falling back only for a missing record', async (t) => {
   const f = await fixture(t), main = initRepo(f.root), cwd = join(f.root, 'linked');
   git(main, 'worktree', 'add', '-qb', 'linked', cwd);
   const goal = (id, title) => `## ${id}: ${title}\n**State:** active\n`;
@@ -327,14 +330,13 @@ test('hud_create stamps the linked checkout ticket against its Objective record,
   const path = join(cwd, '.hud/objectives.md');
   put(join(main, '.hud/objectives.md'), goal('main-goal', 'Main goal') + goal('branch-goal', 'Fallback goal'));
   const ticketPath = '.scratch/sample/issues/01-demo.md';
-  for (const root of [main, cwd]) {
-    put(join(root, ticketPath), ticket('main-goal'));
-    git(root, 'add', '--', ticketPath);
-    git(root, 'commit', '-qm', 'Track sample ticket');
-  }
+  put(join(main, ticketPath), ticket('main-goal'));
+  git(main, 'add', '--', ticketPath);
+  git(main, 'commit', '-qm', 'Track sample ticket');
   put(path, goal('branch-goal', 'Checkout goal'));
   const { updates } = await f.call('hud_tickets', { op: 'update', cwd, feature: 'sample', updates: [{ ticket: 1, objective: 'branch-goal' }] });
-  assert.equal(updates[0].ok, true);
+  assert.deepEqual(updates, [{ feature: 'sample', ok: true, number: 1, path: join(main, ticketPath) }]);
+  assert.equal(fs.existsSync(join(cwd, ticketPath)), false);
   const stamp = async (task) => {
     const job = await f.call('hud_create', { role: 'general', cwd, ticket: 'sample/01', task });
     return JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'))).objective;
@@ -481,17 +483,21 @@ test('pi dispatch falls back to the role name for HUD instructions and passes th
   }
 });
 
-test('ready tickets are dispatchable briefs and live jobs claim them in MCP, Home, and Project', async (t) => {
+test('legacy ready tickets are dispatchable and live jobs claim them in MCP, Home, and Project', async (t) => {
   const f = await fixture(t, false);
   const ready = () => f.call('hud_tickets', { op: 'ready' });
   assert.deepEqual(await ready(), { ok: true, tickets: [] });
   const draft = { title: 'First slice', what: 'Build the first slice.', acceptance: ['It works.'], blocked_by: [] };
-  const { tickets: [first] } = await f.call('hud_tickets', { op: 'add', feature: 'alpha', tickets: [draft] });
-  const { tickets: [second] } = await f.call('hud_tickets', { op: 'add', feature: 'beta', tickets: [
-    { ...draft, title: 'Second slice', blocked_by: ['alpha/01'] },
-    { ...draft, title: 'Legacy claim', status: 'claimed' },
-    { ...draft, title: 'Owner question', status: 'needs-info' },
-  ] });
+  const legacy = (feature, number, title = draft.title, status = 'ready-for-agent', blocked = 'none') => {
+    const dir = join(f.root, '.scratch', feature, 'issues');
+    fs.mkdirSync(dir, { recursive: true });
+    const path = join(dir, `0${number}-slice.md`);
+    fs.writeFileSync(path, `# 0${number}: ${title}\n\n**Status:** ${status}\n**Blocked by:** ${blocked}\n\n**What to build:** ${draft.what}\n\n- [ ] It works.\n`);
+    return { path };
+  };
+  const first = legacy('alpha', 1), second = legacy('beta', 1, 'Second slice', 'ready-for-agent', 'alpha/01');
+  legacy('beta', 2, 'Legacy claim', 'claimed');
+  legacy('beta', 3, 'Owner question', 'needs-info');
   assert.deepEqual((await ready()).tickets, [{ ticket: 'alpha/01', path: first.path, title: draft.title, what: draft.what }]);
   const original = fs.readFileSync(first.path, 'utf8');
   const receipt = (n, cwd, state, worktree) => {
@@ -524,6 +530,34 @@ test('ready tickets are dispatchable briefs and live jobs claim them in MCP, Hom
   assert.deepEqual((await ready()).tickets, [{ ticket: 'beta/01', path: second.path, title: 'Second slice', what: draft.what }]);
 });
 
+test('ready mixes JSON and legacy; hud_create renders a ticket-only brief and ignores stale ticket paths', async t => {
+  const f = await fixture(t);
+  const feature = 'reports';
+  const draft = { title: 'Synthetic report', what: 'Show the report.\n\nKeep its summary visible.\n\n**Live try:** Open the sample report.',
+    acceptance: ['The report opens.'], blocked_by: [],
+    approved_removals: ['old report'], owner_try: true, role: 'frontend-imp' };
+  const { tickets: [{ path }] } = await f.call('hud_tickets', { op: 'add', feature, tickets: [draft] });
+  const legacy = (slug, name) => {
+    const dir = join(f.root, '.scratch', slug, 'issues');
+    fs.mkdirSync(dir, { recursive: true });
+    const path = join(dir, name);
+    fs.writeFileSync(path, '# 01: Legacy sample\n**Status:** ready-for-agent\n**Blocked by:** none\n\n**What to build:** Read the legacy sample.\n');
+    return path;
+  };
+  const stale = legacy(feature, '01-old.md'), legacyPath = legacy('legacy', '01-sample.md');
+  const ready = await f.call('hud_tickets', { op: 'ready' });
+  assert.deepEqual(ready.tickets.map(({ ticket, path }) => [ticket, path]), [['legacy/01', legacyPath], ['reports/01', path]]);
+  const { ticket: fromLegacy } = await f.call('hud_tickets', { op: 'get', feature: 'legacy', ticket: 1 });
+  assert.equal(fromLegacy.title, 'Legacy sample');
+  const rendered = fs.readFileSync(new URL('../fixtures/rendered-ticket-brief.md', import.meta.url), 'utf8');
+  for (const brief of [undefined, stale]) {
+    const job = await f.call('hud_create', { role: 'general', ticket: 'reports/01', request_key: brief ? 'stale' : 'ticket-only',
+      ...(brief && { brief_file: brief }) });
+    const actual = fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8');
+    assert.equal(actual, rendered + '\nFinish with `hud_report`.\n');
+  }
+});
+
 test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const f = await fixture(t, true, watchStatsProbe);
   const initialized = await f.rpc('initialize', { protocolVersion: '2024-11-05' });
@@ -547,32 +581,38 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const scratch = join(f.root, '.scratch');
   await refusedTicketCall({ op: 'add', tickets: [drafts[0], { ...drafts[1], blocked_by: [999] }] }, /unknown blocked_by ticket: 999/);
   assert.equal(fs.existsSync(scratch), false);
-  const issues = join(scratch, feature, 'issues');
-  const first = join(issues, '01-first-slice.md'), second = join(issues, '02-second-slice.md');
+  const path = join(f.root, '.hud/tickets', `${feature}.json`);
   assert.deepEqual(await ticketCall({ op: 'add', tickets: drafts }), {
-    ok: true, tickets: [{ number: 1, path: first }, { number: 2, path: second }],
+    ok: true, tickets: [{ number: 1, path }, { number: 2, path }],
   });
-  const collector = new ProjectCollector(f.root, f.env.HUD_HOME, f.env, f.env.HOME);
-  const { tickets: [{ tickets }] } = await collector.collect('home', { workers: [] }, Date.now());
-  assert.deepEqual(tickets.map(({ number, status, blockers, items }) => ({ number, status, blockers, items })), [
-    { number: '01', status: 'ready-for-agent', blockers: [], items: drafts[0].acceptance.map((text) => ({ text, done: false })) },
-    { number: '02', status: 'needs-info', blockers: ['01'], items: [{ text: 'Data is read.', done: false }] },
+  const { feature: doc } = await ticketCall({ op: 'get' });
+  assert.deepEqual(doc.tickets.map(({ number, status, blocked_by, acceptance }) => ({ number, status, blocked_by, acceptance })), [
+    { number: 1, status: 'ready-for-agent', blocked_by: [], acceptance: drafts[0].acceptance.map((text, i) => ({ id: i + 1, text, done: false })) },
+    { number: 2, status: 'needs-info', blocked_by: [`${feature}/01`], acceptance: [{ id: 1, text: 'Data is read.', done: false }] },
   ]);
-  fs.appendFileSync(first, '\n- [ ] Synthetic comment, not acceptance.\n');
-  const original = fs.readFileSync(first, 'utf8');
+  const original = fs.readFileSync(path, 'utf8');
   await refusedTicketCall({ op: 'update', ticket: 1, status: 'wontfix', objective: 'unknown' }, /unknown objective: unknown/);
-  assert.equal(fs.readFileSync(first, 'utf8'), original);
+  await refusedTicketCall({ op: 'update', ticket: 1, status: 'resolved' }, /invalid_arguments: status/);
+  await refusedTicketCall({ op: 'update', ticket: 1, blocked_by: ['../fake/01'] }, /invalid ticket reference/);
+  assert.equal(fs.readFileSync(path, 'utf8'), original);
   for (const n of [3, 0]) {
     await refusedTicketCall({ op: 'update', ticket: 1, status: 'wontfix', tick: [1, n] },
       new RegExp(`unknown acceptance item: ${n} \\(valid range: 1-2\\)`));
-    assert.equal(fs.readFileSync(first, 'utf8'), original);
+    assert.equal(fs.readFileSync(path, 'utf8'), original);
   }
-  assert.deepEqual(await ticketCall({ op: 'update', ticket: 1, status: 'ready-for-human', tick: [2] }), {
-    ok: true, number: 1, path: first,
-  });
-  assert.equal(fs.readFileSync(first, 'utf8'), original.replace('ready-for-agent', 'ready-for-human').replace('- [ ] Data is visible.', '- [x] Data is visible.'));
+  assert.deepEqual(await ticketCall({ op: 'update', ticket: 1, status: 'ready-for-human', tick: [2], title: 'New title',
+    what: 'Revised goal.', live_try: 'Open the sample.', comment: '- [ ] Not an acceptance item.',
+    acceptance: [{ id: 2, text: 'Check the new result.' }] }), { ok: true, number: 1, path });
+  const { ticket: edited } = await ticketCall({ op: 'get', ticket: 1 });
+  assert.equal(edited.title, 'New title');
+  assert.equal(edited.what, 'Revised goal.');
+  assert.equal(edited.live_try, 'Open the sample.');
+  assert.equal(edited.status, 'ready-for-human');
+  assert.deepEqual(edited.acceptance[1], { id: 2, text: 'Check the new result.', done: true });
+  assert.equal(edited.comments[0].text, '- [ ] Not an acceptance item.');
+  assert.equal(edited.comments[0].author, 'main');
   assert.deepEqual((await ticketCall({ op: 'add', tickets: [{ ...drafts[0], blocked_by: [2] }] })).tickets,
-    [{ number: 3, path: join(issues, '03-first-slice.md') }]);
+    [{ number: 3, path }]);
 
   const { tickets: [{ number: noChecklist }] } = await ticketCall({ op: 'add', tickets: [{ ...drafts[0], acceptance: [] }] });
   await refusedTicketCall({ op: 'update', ticket: noChecklist, tick: [1] }, /unknown acceptance item: 1 \(no acceptance items\)/);
@@ -580,11 +620,15 @@ test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const cross = `${feature}/02`;
   await refusedTicketCall({ op: 'add', feature: 'other', tickets: [{ ...drafts[0], blocked_by: [`${feature}/99`] }] }, /unknown blocked_by/);
   const added = await ticketCall({ op: 'add', feature: 'other', tickets: [{ ...drafts[0], blocked_by: [cross] }] });
-  assert.ok(fs.readFileSync(added.tickets[0].path, 'utf8').includes(`**Blocked by:** ${cross}`));
+  assert.deepEqual(JSON.parse(fs.readFileSync(added.tickets[0].path, 'utf8')).tickets[0].blocked_by, [cross]);
+  const readFirst = async () => (await ticketCall({ op: 'get', ticket: 1 })).ticket;
   await ticketCall({ op: 'update', ticket: 1, status: 'claimed', blocked_by: ['other/01'] });
-  assert.match(fs.readFileSync(first, 'utf8'), /\*\*Status:\*\* claimed\n\*\*Blocked by:\*\* other\/01/);
+  assert.equal((await readFirst()).status, 'claimed');
+  assert.deepEqual((await readFirst()).blocked_by, ['other/01']);
+  assert.ok((await readFirst()).claimed_at);
   await ticketCall({ op: 'update', ticket: 1, status: 'done' });
-  assert.match(fs.readFileSync(first, 'utf8'), /\*\*Status:\*\* done/);
+  assert.equal((await readFirst()).status, 'done');
+  assert.equal((await readFirst()).claimed_at, undefined);
 
   const mirror = join(f.root, 'mirror'), mirroredIssues = join(mirror, '.scratch', feature, 'issues');
   fs.mkdirSync(mirroredIssues, { recursive: true });

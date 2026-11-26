@@ -236,7 +236,10 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
         result = { content: [{ type: 'text', text: `Codex statusline resource: ${statuslineResource.uri}` }] };
         break;
       }
-      await checkModTakeover();
+      // Store calls need neither checkout coordination nor the job/delivery scan,
+      // which can resolve legacy job and flow project roots through Git.
+      const ticketStoreCall = name === 'hud_tickets' && ['ready', 'get', 'add', 'update'].includes(String(args.op));
+      if (!ticketStoreCall) await checkModTakeover();
       const scan = scanForCall();
       const invoke = async () => {
         const by = name === 'hud_objective' && (args.op === 'request' || args.op === 'resolve') ? await requestCaller(agy, codex) : undefined;
@@ -244,13 +247,15 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       };
       try {
         if (session.taskClient && name === 'hud_wait') throw new Error('unknown_tool');
-        if (name !== 'hud_wait') await adoptSessionJobs(scan);
+        if (name !== 'hud_wait' && !ticketStoreCall) await adoptSessionJobs(scan);
         const key = mutationKey(name, args);
         if (key !== null && locks.has(key)) scan.invalidateSummary();
         const value = key === null ? await invoke() : await keyLock(key, invoke);
         const markExhaustion = name !== 'hud_peek';
         if (isTaskReply(value)) {
           result = value;
+        } else if (ticketStoreCall) {
+          result = taskContent(resultText(value));
         } else if (typeof value === 'string') {
           const content = [{ type: 'text', text: value }];
           const delta = await withChanges({}, markExhaustion, scan) as { changes?: unknown[] };
@@ -267,7 +272,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
               type: 'text',
               text: JSON.stringify({
                 ok: false,
-                code: (name === 'hud_objective' || name === 'hud_schedule') && message.startsWith('invalid_arguments:')
+                code: (ticketStoreCall || name === 'hud_objective' || name === 'hud_schedule') && message.startsWith('invalid_arguments:')
                   ? 'invalid_arguments' : 'tool_error',
                 error: message,
               }),
