@@ -2,6 +2,7 @@
 
 **Status:** ready-for-agent
 **Owner try:** yes
+**Live try:** On a pane with recent output, choose "Investigate this" from the pane menu and pick a working job: the job receives the pane output with its source and its answer shows on the excerpt card.
 **Blocked by:** select-send/02
 **Objective:** interaction
 

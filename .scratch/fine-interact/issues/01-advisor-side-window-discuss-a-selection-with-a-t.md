@@ -2,6 +2,7 @@
 
 **Status:** ready-for-agent
 **Owner try:** yes
+**Live try:** Select text, press Ctrl+b a, choose "Ask an advisor": a side window opens with an advisor answering about the excerpt; a follow-up continues it; closing hides it and the answer stays on the excerpt card.
 **Blocked by:** select-send/02
 **Objective:** interaction
 

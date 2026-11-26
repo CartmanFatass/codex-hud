@@ -2,6 +2,7 @@
 
 **Status:** ready-for-agent
 **Owner try:** yes
+**Live try:** Select text, choose "Note for next turn" for a working job: the note shows on the excerpt card and arrives once in that job's next prompt, then shows as delivered.
 **Blocked by:** select-send/02
 **Objective:** interaction
 
