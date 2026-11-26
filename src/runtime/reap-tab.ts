@@ -85,7 +85,11 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
   if ((s?.pid != null && s.pid !== pid) || (s?.pid_start_time != null && s.pid_start_time !== start))
     refuse('recorded worker identity does not match direct-exec launch; cleanup incomplete');
   if (after && pid !== after) refuse('recorded PID changed while waiting; nothing reaped');
-  if (info.HERDR_SOCKET_PATH && herdrEndpoint() === info.HERDR_SOCKET_PATH && !(await isHudHerdrFork()))
+  const recordedEndpoint = info.HERDR_SOCKET_PATH;
+  const currentEndpoint = herdrEndpoint();
+  if (!recordedEndpoint || !currentEndpoint || currentEndpoint !== recordedEndpoint)
+    refuse('herdr endpoint does not match receipt; not closing');
+  if (!(await isHudHerdrFork()))
     refuse('herdr endpoint lacks launch_id capability; not closing');
   if (!s?.state || !['closed', 'failed', 'stopped', 'idle_grace'].includes(s.state)) {
     try { fs.writeFileSync(join(task, jobFiles.stopRequested), '', { flag: 'wx', mode: 0o600 }); }
@@ -98,7 +102,7 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
   const matches = (a: Row) => Boolean(info.PRIMARY && a.name === info.PRIMARY && a.pane_id === left &&
     a.launch_id === launchId && (!terminalId || a.terminal_id === terminalId) &&
     (!expectedSession || expectedSession === a.agent_session?.value));
-  function inspect() {
+  async function inspect() {
     if (alreadyReaped(task)) return null;
     const freshInfo = session(task);
     checkLaunchStamp(task, freshInfo, expectedLaunch);
@@ -115,6 +119,8 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
     if (!target) {
       if (alive() || selected.length || agents.some(a => a.launch_id === launchId))
         refuse('recorded target missing but worker or panes remain');
+      if (!freshInfo.HERDR_SOCKET_PATH || herdrEndpoint() !== freshInfo.HERDR_SOCKET_PATH || !(await isHudHerdrFork()))
+        refuse('herdr endpoint could not verify absence; not closing');
       return null;
     }
     const tab = target.tab_id;
@@ -174,7 +180,7 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
       pane: right, pid: proc.shell_pid, group: proc.foreground_process_group_id, foreground: proc.foreground_processes,
     }], left);
   }
-  let state = inspect();
+  let state = await inspect();
   if (!state) {
     if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
     return;
@@ -193,7 +199,7 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
             !list('agent', Math.min(15_000, ms)).some(matches)) break;
         await delay(Math.min(500, ms));
       }
-      state = inspect();
+      state = await inspect();
       if (!state) {
         if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
         return;
@@ -206,14 +212,14 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
     process.kill(pid, 'SIGTERM');
     for (let waited = 0; waited < 5000 && alive(); waited += 250) await delay(250);
     await delay(250);
-    state = inspect();
+    state = await inspect();
     if (!state) {
       if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
       return;
     }
   }
   if (alive()) emitOwnerAndRefuse('worker process remains; not closing');
-  state = inspect();
+  state = await inspect();
   if (!state) {
     if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
     return;
@@ -227,7 +233,7 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
       const remaining = Math.ceil(settleDeadline - performance.now());
       if (!check.retryable || remaining <= 0) emitOwnerAndRefuse(check.reason);
       await delay(Math.min(200, remaining));
-      state = inspect();
+      state = await inspect();
       if (!state) {
         if (!alreadyReaped(task)) console.log(`tree-owner ${pid}:${start}`);
         return;

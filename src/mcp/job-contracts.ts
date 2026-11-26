@@ -138,8 +138,9 @@ export interface Job extends PiOptions {
   used_place?: string;
   dispatch_exit_code: number | null;
   launcher?: { pid: number; start?: string }; // The process running the launch while dispatch_exit_code is null.
-  dispatch_code?: 'untrusted_cwd' | 'unsupported_harness' | 'invalid_arguments';
+  dispatch_code?: 'untrusted_cwd' | 'unsupported_harness' | 'invalid_arguments' | 'launch_unknown';
   dispatch_path?: string;
+  launch_unknown?: string;
   stderr_tail: string;
   message_keys?: string[]; // Legacy receipts only.
   send_outcomes?: SendOutcome[];
@@ -187,6 +188,7 @@ export type JobStatus = {
   updated_at?: string;
   exit_reason?: string | null;
   error?: string | null;
+  launch_unknown?: string;
   blocked?: boolean;
   reason?: string | null;
   declared_report_sig?: string | null;

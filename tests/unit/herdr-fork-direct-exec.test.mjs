@@ -9,7 +9,7 @@ import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { isHudHerdrFork, isHudHerdrVersion, probeHerdrTarget } from '../../dist/runtime/herdr-socket.js';
 import { directExecEnv } from '../../dist/mcp/dispatch/proc.js';
-import { codexPromptReady, parseDirectStartReply, rollbackDirectLaunch } from '../../dist/mcp/dispatch/direct-exec.js';
+import { codexPromptReady, DIRECT_PRE_SPAWN_ERROR_CODES, parseDirectStartReply } from '../../dist/mcp/dispatch/direct-exec.js';
 import { terminalFact } from '../../dist/mcp/cli-judge.js';
 import { reapWorkerTree, rememberWorkerTree, tabTreeGrant } from '../../dist/roles/worker-tree.js';
 import { procStat } from '../../dist/utils/proc.js';
@@ -150,7 +150,7 @@ test('codexPromptReady mirrors herdr screen composer detection', () => {
   assert.equal(codexPromptReady('starting up...\n'), false);
 });
 
-test('parseDirectStartReply and rollbackDirectLaunch refuse incomplete/ambiguous identities', async () => {
+test('parseDirectStartReply rejects incomplete/ambiguous identities and pre-spawn code set excludes agent_start_failed', () => {
   assert.equal(parseDirectStartReply({ result: { tab: { tab_id: 'w4E:t2' }, root_pane: { pane_id: 'w4E:p2' }, pid: 123, pid_start_time: 456 } }), null);
   assert.equal(
     parseDirectStartReply({
@@ -166,10 +166,11 @@ test('parseDirectStartReply and rollbackDirectLaunch refuse incomplete/ambiguous
     null,
     'mismatched terminal_id must be rejected'
   );
-  // rollbackDirectLaunch without launchId refuses to close and marks unknown/cleanupFailed.
-  const res = await rollbackDirectLaunch({ exit_code: 1, stdout: '', stderr: 'bad' }, { tabId: 'w4E:t2', launchId: '' });
-  assert.equal(res.preInput, false);
-  assert.equal(res.cleanupFailed, true);
+  assert.equal(DIRECT_PRE_SPAWN_ERROR_CODES.has('agent_start_failed'), false, 'agent_start_failed may happen after tab creation');
+  assert.equal(DIRECT_PRE_SPAWN_ERROR_CODES.has('agent_start_input_failed'), false);
+  assert.equal(DIRECT_PRE_SPAWN_ERROR_CODES.has('invalid_request'), true);
+  assert.equal(DIRECT_PRE_SPAWN_ERROR_CODES.has('workspace_not_found'), true);
+  assert.equal(DIRECT_PRE_SPAWN_ERROR_CODES.has('unsupported_agent_kind'), true);
 });
 
 /** Fake herdr fork socket + CLI state speaking 0.9.5-hud.3027f8dd (protocol 22). */
@@ -692,7 +693,191 @@ test('cli-supervisor guards pane-exit-only writes against SESSION replacement', 
   assert.equal(cliState(dir).state, 'working', 'old supervisor must NOT overwrite replaced session STATUS on pane.exited');
 });
 
-test('reap-tab direct-exec: exact PID+start, stock rollback refusal, restored shell refusal, split helper safety, delayed reap after resume', async (t) => {
+test('pane moved to another tab with live PID stays working for both CLI and Pi until exact PID dies', { timeout: 60000 }, async (t) => {
+  const f = await fixture(t, { failedRetentionMs: 250, watcherTickMs: 120 });
+  const fork = await startForkHerdr(t, f);
+  writeCliRole(f, 'forkcli', 60, true, 'claude');
+
+  // 1) CLI worker: move pane to another tab (old pane/tab absent + tab.closed emitted) while PID stays alive.
+  const cliJob = await f.call('hud_create', { role: 'forkcli', task: 'CLI pane moved while alive.' });
+  const cliDir = cliJob.task_dir;
+  const cliSession = Object.fromEntries(fs.readFileSync(join(cliDir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+  const cliEntry = fork.tabs.get(cliSession.LAUNCH_ID);
+  await until(() => cliState(cliDir)?.supervisor_pid && fork.hasWatcher(), t.signal);
+
+  cliEntry.closed = true; // Old pane_id / tab_id address is now gone in herdr!
+  fork.emitTabClosedRaw(cliEntry.tab_id, cliEntry.launch_id, cliEntry.terminal_id);
+  fork.emit('pane.closed', {
+    type: 'pane_closed',
+    pane_id: cliEntry.pane_id,
+    workspace_id: 'w4E',
+    launch_id: cliEntry.launch_id,
+    terminal_id: cliEntry.terminal_id,
+  });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(cliState(cliDir).state, 'working', 'CLI worker with moved pane and live PID must stay working');
+
+  // 2) Pi worker: move pane to another tab (old pane/tab absent + tab.closed emitted) while PID stays alive.
+  const piJob = await f.call('hud_create', { role: 'imp', task: 'Pi pane moved while alive.' });
+  const piDir = piJob.task_dir;
+  const piSession = Object.fromEntries(fs.readFileSync(join(piDir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+  const piEntry = fork.tabs.get(piSession.LAUNCH_ID);
+  piEntry.closed = true; // Old pane_id / tab_id address is now gone in herdr!
+  fork.emitTabClosedRaw(piEntry.tab_id, piEntry.launch_id, piEntry.terminal_id);
+  fork.emit('pane.closed', {
+    type: 'pane_closed',
+    pane_id: piEntry.pane_id,
+    workspace_id: 'w4E',
+    launch_id: piEntry.launch_id,
+    terminal_id: piEntry.terminal_id,
+  });
+  await new Promise((r) => setTimeout(r, 350));
+  assert.equal(cliState(piDir).state, 'working', 'Pi worker with moved pane and live PID must stay working');
+
+  // Once the exact PID+start actually dies without pane.exited, both settle as failed (exit unknown).
+  cliEntry.child.kill('SIGKILL');
+  piEntry.child.kill('SIGKILL');
+  await until(() => cliState(cliDir)?.state === 'failed' && cliState(piDir)?.state === 'failed', t.signal);
+  assert.equal(cliState(cliDir).exit_reason, 'worker exited (exit unknown)');
+  assert.equal(cliState(piDir).exit_reason, 'worker exited (exit unknown)');
+});
+
+test('rollback after helper creation leaves the tab open for failure retention with exact pid/start', { timeout: 60000 }, async (t) => {
+  const f = await fixture(t, { failedRetentionMs: 5000 });
+  // Fake herdr CLI refuses `agent prompt` with `agent_not_ready` after split helper pane is created.
+  writeFixtureFile(join(f.env.HOME, 'rejected-prompt'), '1');
+  const fork = await startForkHerdr(t, f);
+  fallbackRole(f, 'splitpi', [
+    { harness: 'pi', model: 'anthropic/claude-sonnet-4-6' },
+    { harness: 'cli', agent: 'grok' },
+  ]);
+
+  const res = await f.call('hud_create', { role: 'splitpi', task: 'Split Pi prompt refusal.', split: true });
+  assert.equal(res.ok, false);
+  const dir = res.task_dir;
+  assert.equal(fork.startRequests.length, 1, 'must not fall back to second place after spawn');
+  assert.equal(
+    f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'tab' && c.args[1] === 'close'),
+    false,
+    'must NEVER whole-tab close after helper pane creation'
+  );
+  assert.equal(fs.existsSync(join(dir, 'SESSION.txt')), true, 'SESSION.txt must be retained');
+  const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+  const entry = fork.tabs.get(session.LAUNCH_ID);
+  assert.ok(entry);
+  assert.ok(session.RIGHT, 'helper pane RIGHT must be recorded in retained SESSION.txt');
+  assert.equal(cliState(dir)?.state, 'failed');
+  assert.equal(cliState(dir)?.pid, entry.pid);
+  assert.equal(cliState(dir)?.pid_start_time, String(entry.pid_start_time));
+  assert.equal(entry.closed, false, 'tab must remain open for reaper/failure retention');
+});
+
+test('lost reply persists launch_unknown and keeps the worktree; agent_start_failed is not fallback', { timeout: 60000 }, async (t) => {
+  // 1) Lost reply with worktree isolation: persists launch_unknown on job.json + STATUS.json and keeps worktree.
+  {
+    const f = await fixture(t, { watcherTickMs: 120 });
+    fs.chmodSync(f.env.HUD_HOME, 0o700);
+    const repo = join(f.root, 'demo');
+    fs.mkdirSync(repo);
+    const git = (...args) => spawnSync('git', args, { cwd: repo, env: f.env, encoding: 'utf8' });
+    assert.equal(git('init').status, 0);
+    assert.equal(git('-c', 'user.name=Synthetic', '-c', 'user.email=synth@hud.invalid', 'commit', '--allow-empty', '-m', 'init').status, 0);
+    const trustedRepo = fs.realpathSync(repo);
+    const claudeCfg = join(f.env.CLAUDE_CONFIG_DIR, '.claude.json');
+    const cfg = JSON.parse(fs.readFileSync(claudeCfg, 'utf8'));
+    cfg.projects[trustedRepo] = { hasTrustDialogAccepted: true };
+    writeFixtureFile(claudeCfg, JSON.stringify(cfg));
+    const fork = await startForkHerdr(t, f, {
+      onAgentStart(_req, conn) {
+        conn.destroy();
+        return 'handled';
+      },
+    });
+    fallbackRole(f, 'lostwt', [
+      { harness: 'cli', agent: 'claude' },
+      { harness: 'cli', agent: 'grok' },
+    ]);
+
+    const res = await f.call('hud_create', { role: 'lostwt', cwd: repo, task: 'Lost reply worktree job.', isolation: 'worktree' });
+    assert.equal(res.ok, false);
+    assert.equal(fork.startRequests.length, 1, `lost reply must not fall back to second place (res=${JSON.stringify(res)})`);
+    const dir = res.task_dir;
+    const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+    const status = cliState(dir);
+    assert.ok(job.launch_unknown, 'job.json must persist launch_unknown reason');
+    assert.equal(job.dispatch_code, 'launch_unknown');
+    assert.equal(status?.state, 'failed');
+    assert.equal(status?.launch_unknown, job.launch_unknown, 'STATUS.json must persist launch_unknown reason');
+    assert.ok(job.worktree?.root, 'worktree should have been created');
+    assert.equal(fs.existsSync(job.worktree.root), true, 'worktree must exist initially');
+
+    // Trigger watcher scan (simulated restart/scan) and verify worktree is NOT removed!
+    writeFixtureFile(join(dir, 'brief.md'), '# touch watcher\n');
+    await new Promise((r) => setTimeout(r, 400));
+    const jobAfter = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+    assert.equal(jobAfter.worktree_removed_at, undefined, 'watcher must exclude launch_unknown job from worktree cleanup');
+    assert.equal(fs.existsSync(job.worktree.root), true, 'worktree directory must be preserved');
+  }
+
+  // 2) agent_start_failed is NOT a pre-spawn fallback code; persists launch_unknown and stops.
+  {
+    const f = await fixture(t);
+    const fork = await startForkHerdr(t, f, {
+      onAgentStart(_req, _conn, _reply, err) {
+        err('agent_start_failed', 'tab disappeared after creation');
+        return 'handled';
+      },
+    });
+    fallbackRole(f, 'startfail', [
+      { harness: 'cli', agent: 'claude' },
+      { harness: 'cli', agent: 'grok' },
+    ]);
+
+    const res = await f.call('hud_create', { role: 'startfail', task: 'agent_start_failed must not fallback.' });
+    assert.equal(res.ok, false);
+    assert.equal(fork.startRequests.length, 1, 'agent_start_failed must NOT try second place');
+    const dir = res.task_dir;
+    const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+    const status = cliState(dir);
+    assert.match(job.launch_unknown ?? '', /agent_start_failed/);
+    assert.equal(status?.launch_unknown, job.launch_unknown);
+  }
+
+  // 3) Known pre-spawn rejection (e.g. unsupported_agent_kind) DOES justify trying the next place.
+  {
+    const f = await fixture(t);
+    let calls = 0;
+    const fork = await startForkHerdr(t, f, {
+      onAgentStart(_req, _conn, _reply, err) {
+        calls += 1;
+        if (calls === 1) {
+          err('unsupported_agent_kind', 'unsupported kind');
+          return 'handled';
+        }
+        return undefined;
+      },
+    });
+    fallbackRole(f, 'prespawnfb', [
+      { harness: 'cli', agent: 'claude' },
+      { harness: 'cli', agent: 'grok' },
+    ]);
+
+    const res = await f.call('hud_create', { role: 'prespawnfb', task: 'Pre-spawn rejection falls back.' });
+    assert.equal(res.ok, undefined, `expected fallback to succeed (got ${JSON.stringify(res)})`);
+    assert.equal(fork.startRequests.length, 2, 'known pre-spawn rejection should try second place');
+    assert.equal(fork.startRequests[0].kind, 'claude');
+    assert.equal(fork.startRequests[1].kind, 'grok');
+    const dir = res.task_dir;
+    const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+    const entry = fork.tabs.get(session.LAUNCH_ID);
+    await until(() => cliState(dir)?.supervisor_pid, t.signal);
+    writeFixtureFile(join(dir, 'report.md'), 'Fallback report.\n');
+    fork.emitPaneExited(entry, 0, null);
+    await until(() => cliState(dir)?.state === 'closed' && Boolean(readCloseReaped(res)), t.signal);
+  }
+});
+
+test('reap-tab direct-exec: exact PID+start, endpoint/ping verification, stock rollback refusal, restored shell refusal, split helper safety, delayed reap after resume', async (t) => {
   const fakeHerdr = String.raw`
 const fs = require('node:fs');
 const path = process.env.STATE;
@@ -711,15 +896,55 @@ else if (kind === 'tab' && op === 'close') { s.tabs = s.tabs.filter(t => t.tab_i
 else throw Error('unexpected fake herdr command: ' + args);
 fs.writeFileSync(path, JSON.stringify(s));`;
 
-  function makeDirectFixture(t, {
+  const runReapAsync = (argv, env) => new Promise((done, fail) => {
+    const child = spawn(process.execPath, [reapBin, ...argv], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (d) => { stdout += d; });
+    child.stderr.setEncoding('utf8').on('data', (d) => { stderr += d; });
+    const timer = setTimeout(() => { child.kill('SIGKILL'); fail(new Error('hud-reap timed out')); }, 15000);
+    child.on('error', (err) => { clearTimeout(timer); fail(err); });
+    child.on('close', (status) => { clearTimeout(timer); done({ status, stdout, stderr }); });
+  });
+
+  async function startPingSocket(t, root, version = '0.9.5-hud.3027f8dd', name = 'herdr.sock') {
+    const sock = join(root, name);
+    const conns = new Set();
+    const server = createServer((conn) => {
+      conns.add(conn);
+      const rl = createInterface({ input: conn });
+      rl.on('line', (line) => {
+        const req = JSON.parse(line);
+        const body = req.method === 'ping'
+          ? { id: req.id, result: { type: 'pong', version, protocol: 22 } }
+          : { id: req.id, error: { code: 'not_found', message: 'unexpected' } };
+        try { conn.end(JSON.stringify(body) + '\n'); } catch {}
+      });
+      conn.on('error', () => {});
+      rl.on('error', () => {});
+      conn.on('close', () => { conns.delete(conn); rl.close(); });
+    });
+    server.listen(sock);
+    await once(server, 'listening');
+    server.unref();
+    t.after(() => {
+      for (const c of conns) c.destroy();
+      return new Promise((done) => server.close(done));
+    });
+    return sock;
+  }
+
+  async function makeDirectFixture(t, {
     tabs, panes, agents, label = 'synthetic', orch = 'main-pane', pid, start, statusPid, statusStart,
     right = '', rightTerminalId = '', rootShellPid, processInfo, launchId = 'launch_direct_1', terminalId = 'term_direct_1',
-    statusState = 'working',
+    statusState = 'working', pingVersion = '0.9.5-hud.3027f8dd', envSocket, recordedSocket,
   } = {}) {
     const root = fs.mkdtempSync(join(tmpdir(), 'hud-reap-direct-'));
     const dir = join(root, 'job');
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     fs.mkdirSync(dir);
+    const sock = await startPingSocket(t, root, pingVersion);
+    const sessionSock = recordedSocket !== undefined ? recordedSocket : sock;
+    const currentSock = envSocket !== undefined ? envSocket : sock;
     fs.writeFileSync(join(root, 'herdr'), `#!${process.execPath}\n${fakeHerdr}`, { mode: 0o700 });
     const state = join(root, 'state'), log = `${state}.log`;
     fs.writeFileSync(state, JSON.stringify({
@@ -738,6 +963,7 @@ fs.writeFileSync(path, JSON.stringify(s));`;
       'DIRECT_EXEC=1',
       `PID=${pid}`,
       `PID_START=${start}`,
+      ...(sessionSock !== null ? [`HERDR_SOCKET_PATH=${sessionSock}`] : []),
       'TAB=worker-tab',
       'TAB_NAME=synthetic',
       'LEFT=worker-pane',
@@ -752,12 +978,46 @@ fs.writeFileSync(path, JSON.stringify(s));`;
       JSON.stringify({ version: 1, task_dir: dir, slot: 'primary', harness: 'cli', agent: 'claude', state: statusState, pid: statusPid ?? pid, pid_start_time: statusStart ?? start })
     );
     const env = { ...process.env, HOME: root, HUD_HOME: root, STATE: state, PATH: root };
-    delete env.HERDR_SOCKET_PATH;
+    if (currentSock) env.HERDR_SOCKET_PATH = currentSock;
+    else delete env.HERDR_SOCKET_PATH;
     const calls = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l)) : [];
     return {
-      dir, env, calls, state, launchId,
-      run: (...extra) => spawnSync(process.execPath, [reapBin, dir, ...extra], { env, encoding: 'utf8', timeout: 15000 }),
+      dir, root, sock, env, calls, state, launchId,
+      run: (...extra) => runReapAsync([dir, ...extra], env),
     };
+  }
+
+  // 0) Wrong endpoint or non-fork ping refuses even when inventory is empty (no success, no tree-owner, no stop-requested)!
+  {
+    const dead = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' });
+    const start = procStat(dead.pid)?.start ?? '1';
+    await once(dead, 'exit');
+    // 0a) Different HERDR_SOCKET_PATH than recorded in SESSION.txt
+    const otherRoot = fs.mkdtempSync(join(tmpdir(), 'hud-reap-other-'));
+    t.after(() => fs.rmSync(otherRoot, { recursive: true, force: true }));
+    const otherSock = await startPingSocket(t, otherRoot, '0.9.5-hud.3027f8dd', 'other.sock');
+    const fWrong = await makeDirectFixture(t, { pid: dead.pid, start, tabs: [], panes: [], agents: [], envSocket: otherSock });
+    const rWrong = await fWrong.run();
+    assert.equal(rWrong.status, 1, 'wrong endpoint must refuse, never conclude absence');
+    assert.match(rWrong.stderr, /endpoint does not match receipt/);
+    assert.equal(rWrong.stdout.includes('tree-owner'), false, 'must not emit tree-owner on wrong endpoint');
+    assert.equal(fs.existsSync(join(fWrong.dir, 'STATUS.json.stop-requested')), false);
+    assert.equal(fWrong.calls().length, 0);
+
+    // 0b) Unset HERDR_SOCKET_PATH
+    const fUnset = await makeDirectFixture(t, { pid: dead.pid, start, tabs: [], panes: [], agents: [], envSocket: '' });
+    const rUnset = await fUnset.run();
+    assert.equal(rUnset.status, 1);
+    assert.match(rUnset.stderr, /endpoint does not match receipt/);
+    assert.equal(rUnset.stdout.includes('tree-owner'), false);
+
+    // 0c) Matching socket but ping returns stock version (even with empty inventory!)
+    const fStock = await makeDirectFixture(t, { pid: dead.pid, start, tabs: [], panes: [], agents: [], pingVersion: '0.9.5' });
+    const rStock = await fStock.run();
+    assert.equal(rStock.status, 1, 'stock ping with empty inventory must refuse, never conclude absence');
+    assert.match(rStock.stderr, /lacks launch_id capability/);
+    assert.equal(rStock.stdout.includes('tree-owner'), false);
+    assert.equal(fStock.calls().length, 0);
   }
 
   // 1) Stock inventory after rollback (tabs/panes lack launch_id): refuses as unknown, never treats as absence!
@@ -765,12 +1025,12 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     const dead = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' });
     const start = procStat(dead.pid)?.start ?? '1';
     await once(dead, 'exit');
-    const f = makeDirectFixture(t, {
+    const f = await makeDirectFixture(t, {
       pid: dead.pid, start,
       tabs: [{ tab_id: 'worker-tab', label: 'synthetic' }], // NO launch_id!
       panes: [{ pane_id: 'worker-pane', tab_id: 'worker-tab', agent: 'claude' }], // NO launch_id!
     });
-    const r = f.run();
+    const r = await f.run();
     assert.equal(r.status, 1, 'stock inventory must refuse, not exit 0 as absent');
     assert.match(r.stderr, /missing launch_id|lacks launch_id capability/);
     assert.equal(f.calls().some((c) => c[1] === 'close'), false);
@@ -783,11 +1043,11 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     await once(dead, 'exit');
     const restoredShell = spawn('/bin/sleep', ['600'], { stdio: 'ignore' });
     t.after(() => restoredShell.kill('SIGKILL'));
-    const f = makeDirectFixture(t, {
+    const f = await makeDirectFixture(t, {
       pid: dead.pid, start,
       rootShellPid: restoredShell.pid,
     });
-    const r = f.run();
+    const r = await f.run();
     assert.equal(r.status, 1);
     assert.match(r.stderr, /hosts a different live process/);
     assert.equal(f.calls().some((c) => c[1] === 'close'), false);
@@ -798,10 +1058,10 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     const resumedWorker = spawn('/bin/sleep', ['600'], { stdio: 'ignore' });
     t.after(() => resumedWorker.kill('SIGKILL'));
     const resumedStart = procStat(resumedWorker.pid).start;
-    const f = makeDirectFixture(t, {
+    const f = await makeDirectFixture(t, {
       pid: resumedWorker.pid, start: resumedStart, launchId: 'launch_resumed_2', statusState: 'working',
     });
-    const r = f.run('--launch', 'launch_prior_1');
+    const r = await f.run('--launch', 'launch_prior_1');
     assert.equal(r.status, 1);
     assert.match(r.stderr, /launch stamp changed; nothing reaped/);
     assert.equal(fs.existsSync(join(f.dir, 'STATUS.json.stop-requested')), false, 'must NOT write stop intent on stale reap');
@@ -819,6 +1079,7 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     const dir = join(root, 'job');
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     fs.mkdirSync(dir);
+    const sock = await startPingSocket(t, root);
     const helperTags = { HUD_JOB_DIR: dir, HERDR_PANE_ID: 'helper-pane', HERDR_TAB_ID: 'worker-tab', HUD_TAB_LAUNCH: launchId };
     const helperShell = spawn('/bin/sh', ['-c', 'read line'], { detached: true, stdio: ['pipe', 'ignore', 'ignore'], env: helperTags });
     t.after(() => helperShell.kill('SIGKILL'));
@@ -832,12 +1093,11 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     fs.writeFileSync(join(root, 'herdr'), `#!${process.execPath}\n${fakeHerdr}`, { mode: 0o700 });
     fs.writeFileSync(
       join(dir, 'SESSION.txt'),
-      `LAUNCH_ID=${launchId}\nTERMINAL_ID=term_root\nRIGHT_TERMINAL_ID=term_helper\nDIRECT_EXEC=1\nPID=${dead.pid}\nPID_START=${start}\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\nRIGHT=helper-pane\nORCH=main-pane\nPRIMARY=worker\n`
+      `LAUNCH_ID=${launchId}\nTERMINAL_ID=term_root\nRIGHT_TERMINAL_ID=term_helper\nDIRECT_EXEC=1\nPID=${dead.pid}\nPID_START=${start}\nHERDR_SOCKET_PATH=${sock}\nTAB=worker-tab\nTAB_NAME=synthetic\nLEFT=worker-pane\nRIGHT=helper-pane\nORCH=main-pane\nPRIMARY=worker\n`
     );
     fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ version: 1, task_dir: dir, slot: 'primary', harness: 'pi', state: 'closed', pid: dead.pid, pid_start_time: start }));
     fs.writeFileSync(join(dir, 'tab-shells.json'), JSON.stringify({ launch: launchId, tab: 'worker-tab', shells: [helperStamp] }));
-    const env = { ...process.env, HOME: root, HUD_HOME: root, STATE: state, PATH: root };
-    delete env.HERDR_SOCKET_PATH;
+    const env = { ...process.env, HOME: root, HUD_HOME: root, STATE: state, PATH: root, HERDR_SOCKET_PATH: sock };
 
     // 4a) Busy foreground program in helper -> NEVER whole-tab close!
     fs.writeFileSync(state, JSON.stringify({
@@ -851,7 +1111,7 @@ fs.writeFileSync(path, JSON.stringify(s));`;
         'helper-pane': { pane_id: 'helper-pane', shell_pid: helperPid, foreground_process_group_id: busyFg.pid, foreground_processes: [{ pid: busyFg.pid, name: 'sleep' }] },
       },
     }));
-    const busyRes = spawnSync(process.execPath, [reapBin, dir, '--launch', launchId], { env, encoding: 'utf8', timeout: 15000 });
+    const busyRes = await runReapAsync([dir, '--launch', launchId], env);
     assert.equal(busyRes.status, 1);
     assert.match(busyRes.stderr, /helper pane has active foreground process; not closing/);
     assert.equal(fs.readFileSync(log, 'utf8').includes('"close"'), false);
@@ -868,7 +1128,7 @@ fs.writeFileSync(path, JSON.stringify(s));`;
         'helper-pane': { pane_id: 'helper-pane', shell_pid: helperPid, foreground_process_group_id: helperPid, foreground_processes: [{ pid: helperPid, name: 'sh' }] },
       },
     }));
-    const idleRes = spawnSync(process.execPath, [reapBin, dir, '--launch', launchId], { env, encoding: 'utf8', timeout: 15000 });
+    const idleRes = await runReapAsync([dir, '--launch', launchId], env);
     assert.equal(idleRes.status, 0, idleRes.stderr);
     assert.match(idleRes.stdout, new RegExp(`^tree-owner ${dead.pid}:${start}`, 'm'));
     assert.equal(JSON.parse(fs.readFileSync(state, 'utf8')).tabs.length, 0);
@@ -879,8 +1139,8 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     const child = spawn('/bin/sleep', ['600'], { stdio: 'ignore' });
     t.after(() => child.kill('SIGKILL'));
     const start = procStat(child.pid).start;
-    const f = makeDirectFixture(t, { pid: child.pid, start, statusPid: child.pid + 999 });
-    const r = f.run();
+    const f = await makeDirectFixture(t, { pid: child.pid, start, statusPid: child.pid + 999 });
+    const r = await f.run();
     assert.equal(r.status, 1);
     assert.match(r.stderr, /does not match direct-exec launch/);
   }
@@ -891,8 +1151,8 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     const child = spawn('/bin/sleep', ['600'], { stdio: 'ignore' });
     t.after(() => child.kill('SIGKILL'));
     const start = procStat(child.pid).start;
-    const f = makeDirectFixture(t, { pid: child.pid, start, ...opts });
-    const r = f.run();
+    const f = await makeDirectFixture(t, { pid: child.pid, start, ...opts });
+    const r = await f.run();
     assert.equal(r.status, 1);
     assert.match(r.stderr, pattern);
     assert.equal(f.calls().some((c) => c[1] === 'close'), false);
@@ -902,12 +1162,12 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     const dead = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' });
     const start = procStat(dead.pid)?.start ?? '1';
     await once(dead, 'exit');
-    const f = makeDirectFixture(t, {
+    const f = await makeDirectFixture(t, {
       pid: dead.pid, start,
       tabs: [{ tab_id: 'worker-tab', launch_id: 'launch_reused_other', label: 'synthetic' }],
       panes: [{ pane_id: 'worker-pane', tab_id: 'worker-tab', launch_id: 'launch_reused_other', terminal_id: 'term_other', agent: 'claude' }],
     });
-    const r = f.run();
+    const r = await f.run();
     assert.equal(r.status, 0, r.stderr);
     assert.equal(f.calls().some((c) => c[1] === 'close'), false);
   }
@@ -917,8 +1177,8 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     await once(child.stdout, 'data');
     const start = procStat(child.pid).start;
     const exited = once(child, 'exit');
-    const f = makeDirectFixture(t, { pid: child.pid, start });
-    const r = f.run();
+    const f = await makeDirectFixture(t, { pid: child.pid, start });
+    const r = await f.run();
     assert.equal(r.status, 0, r.stderr);
     assert.deepEqual(await exited, [null, 'SIGTERM']);
     assert.ok(f.calls().some((c) => c[0] === 'tab' && c[1] === 'close' && c[2] === 'worker-tab'));
@@ -938,7 +1198,7 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     const detachedStart = procStat(detachedPid).start;
     t.after(() => { if (procStat(detachedPid)?.start === detachedStart) process.kill(detachedPid, 'SIGKILL'); });
     const rootStart = procStat(rootProc.pid).start;
-    const f = makeDirectFixture(t, { pid: rootProc.pid, start: rootStart, tabs: [], panes: [], agents: [] });
+    const f = await makeDirectFixture(t, { pid: rootProc.pid, start: rootStart, tabs: [], panes: [], agents: [] });
     const status = JSON.parse(fs.readFileSync(join(f.dir, 'STATUS.json'), 'utf8'));
     const snap = rememberWorkerTree(f.dir, status);
     assert.equal(snap.issue, undefined);
@@ -946,8 +1206,8 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     const rootDone = once(rootProc, 'exit');
     rootProc.kill('SIGTERM');
     await rootDone;
-    const cleaned = await reapWorkerTree(f.dir, status, () => {
-      const r = f.run();
+    const cleaned = await reapWorkerTree(f.dir, status, async () => {
+      const r = await f.run();
       return { ok: r.status === 0, reason: r.status === 0 ? 'ok' : 'failed', stdout: r.stdout, stderr: r.stderr };
     }, (r) => r.ok, { treeGrant: tabTreeGrant });
     assert.equal(cleaned.complete, true, cleaned.issue);

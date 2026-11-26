@@ -1253,7 +1253,12 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
   const failure = result.exit_code === 0 ? null : launchFailure(result);
   job.stderr_tail = failure?.stderr_tail ?? result.stderr;
   const statusFile = join(dir, jobFiles.status);
-  if (failure && (result.preInput || !fs.existsSync(statusFile))) {
+  const launchUnknown = Boolean(failure && (result.launchUnknown || (result.cleanupFailed && !fs.existsSync(join(dir, jobFiles.session)))));
+  if (launchUnknown) {
+    job.launch_unknown = failure!.reason || reason || 'launch state unknown';
+    if (!job.dispatch_code) job.dispatch_code = 'launch_unknown';
+  }
+  if (failure && (result.preInput || launchUnknown || !fs.existsSync(statusFile))) {
     const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, reason);
     if (outcome.marked) {
       job.exhaustion_marked = true;
@@ -1264,8 +1269,9 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
       state: 'failed',
       harness: job.place?.harness,
       ...(job.bro ? { provider: job.bro.provider === 'chatgpt' ? 'openai' : 'gemini' } : {}),
-      exit_reason: failure.code,
+      exit_reason: launchUnknown && failure.code === 'dispatch_failed' ? 'launch_unknown' : failure.code,
       error: outcome.reason,
+      ...(launchUnknown ? { launch_unknown: job.launch_unknown } : {}),
       ended_at: new Date().toISOString(),
     });
   }
@@ -1396,7 +1402,17 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   recorded.exit_code = result.exit_code;
   const failure = result.exit_code === 0 ? null : launchFailure(result);
   recorded.stderr_tail = failure?.stderr_tail ?? result.stderr;
-  if (failure && result.preInput) { // The failed launch still owns a tab; let the watcher retry cleanup.
+  if (failure && result.launchUnknown) {
+    latest.launch_unknown = failure.reason;
+    writeCreateStatus(dir, {
+      ...result.status,
+      state: 'failed',
+      exit_reason: failure.code === 'dispatch_failed' ? 'launch_unknown' : failure.code,
+      error: failure.reason,
+      launch_unknown: failure.reason,
+      ended_at: new Date().toISOString(),
+    });
+  } else if (failure && result.preInput) { // The failed launch still owns a tab; let the watcher retry cleanup.
     writeCreateStatus(dir, { ...result.status, state: 'failed', exit_reason: failure.code, error: failure.reason, ended_at: new Date().toISOString() });
   }
   save(latest);

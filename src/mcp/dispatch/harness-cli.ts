@@ -13,7 +13,7 @@ import { recordTabShells } from '../../runtime/tab-shell.js';
 import { prepareCliInvocation } from '../../runtime/cli-invocation.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { isProcAlive } from '../../utils/proc.js';
-import { writeTurn, withDonePrompt, reportSignature, workerAlive } from '../cli-judge.js';
+import { writeTurn, withDonePrompt, reportSignature } from '../cli-judge.js';
 import { cliWorkerStartup, isHerdrAgentArg, type StandingBriefRef } from '../cli-worker-startup.js';
 import type { JobStatus, Job } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
@@ -21,7 +21,7 @@ import { startHeadlessProcess } from '../sonic-process.js';
 import { jobCache, directory, bundled, hudHome, save, writeCreateStatus } from '../store/job-store.js';
 import type { NativeResume } from '../worker-resume.js';
 import {
-  retainDirectFailure, rollbackDirectLaunch, startDirectAgent, waitDirectReady,
+  retainDirectFailure, startDirectAgent, waitDirectReady,
   writeDirectSessionReceipt, writeSessionReceipt, type DirectStartIdentity,
 } from './direct-exec.js';
 import {
@@ -110,6 +110,7 @@ export function failCli(dir: string, job: Job, place: RolePlace, reason: string)
 
 export async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[], standingBrief?: StandingBriefRef, options: { callerToken?: string; resume?: NativeResume } = {}): Promise<DispatchResult> {
   const { callerToken, resume } = options;
+  const dir = directory(job.job);
   let openedTab: string | undefined;
   let directIdentity: DirectStartIdentity | undefined;
   let isFork = false;
@@ -117,13 +118,12 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
   let mayHaveInput = false;
   const rollback = (result: DispatchResult): Promise<DispatchResult> => {
     if (!isFork) return rejectLaunch(result, openedTab);
-    if (directIdentity) return rollbackDirectLaunch(result, directIdentity);
-    if (directStartSent) return Promise.resolve({ ...result, preInput: false, cleanupFailed: true });
+    if (directIdentity) return Promise.resolve(retainDirectFailure(dir, job, 'cli', place.agent, directIdentity, result));
+    if (directStartSent) return Promise.resolve({ ...result, preInput: false, cleanupFailed: true, launchUnknown: true });
     return Promise.resolve({ ...result, preInput: true, cleanupFailed: false });
   };
   try {
     const kind = cliKinds[place.agent as CliAgent];
-    const dir = directory(job.job);
     const untrusted = `${place.agent} has not trusted ${job.cwd}; run hud trust ${job.cwd}`;
     if (!isCliDirTrusted(place.agent!, job.cwd, process.env)) {
       return rollback({ ...failCli(dir, job, place, untrusted), code: 'untrusted_cwd' });
@@ -305,9 +305,6 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       '30000',
     ]);
     if (refusedBeforeInput(submitted) && reportSignature(dir) === turn.report_sig) {
-      if (isFork && directIdentity && workerAlive(directIdentity.pid, directIdentity.pidStart) === false) {
-        return retainDirectFailure(dir, job, 'cli', place.agent, directIdentity, submitted);
-      }
       return rollback(submitted);
     }
     // An ambiguous submission still needs supervision; it is not worker death.

@@ -1,12 +1,12 @@
 /** Shared herdr-hud direct-exec helpers for CLI and Pi tab launches:
- * reply validation, SESSION receipt writing, launch_id-verified rollback,
- * early-crash retention, and interactive readiness polling (including Codex). */
+ * reply validation, SESSION receipt writing, failure retention,
+ * and interactive readiness polling (including Codex). */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { herdrId, runHerdr } from '../../roles/herdr-run.js';
-import { isHudHerdrFork, request as herdrRequest, type HerdrReply } from '../../runtime/herdr-socket.js';
+import { herdrId } from '../../roles/herdr-run.js';
+import { request as herdrRequest, type HerdrReply } from '../../runtime/herdr-socket.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { isValidPid } from '../../utils/proc.js';
 import { workerAlive } from '../cli-judge.js';
@@ -64,10 +64,30 @@ export function parseDirectStartReply(reply: HerdrReply): DirectStartIdentity | 
   return { tabId, paneId, terminalId, launchId, pid, pidStart };
 }
 
+/** Known pre-spawn rejection codes from herdr-hud (`src/app/agents.rs` and `src/api/server.rs`).
+ * Only these prove nothing was spawned and justify trying the next place.
+ * `agent_start_failed` (which can occur after tab creation) and all other errors are unknown. */
+export const DIRECT_PRE_SPAWN_ERROR_CODES = new Set([
+  'invalid_request',
+  'invalid_params',
+  'unknown_method',
+  'invalid_agent_name',
+  'unsupported_agent_kind',
+  'invalid_agent_argument',
+  'invalid_env',
+  'workspace_not_found',
+  'agent_pane_not_found',
+  'agent_name_taken',
+  'invalid_agent_timeout',
+  'agent_pane_busy',
+  'agent_pane_unavailable',
+]);
+
 /** Send direct-exec `agent.start` over the socket.
- * - Explicit RPC error -> pre-spawn rejection (`preInput: true, cleanupFailed: false`).
- * - Lost/timed-out or malformed/ambiguous reply -> unknown state (`preInput: false, cleanupFailed: true`),
- *   never closes by public tab ID and blocks `canTryNext` from starting a second place. */
+ * - Known pre-spawn RPC rejection code -> pre-spawn rejection (`preInput: true, cleanupFailed: false`).
+ * - `agent_start_failed`, any other error, lost/timed-out, or malformed/ambiguous reply ->
+ *   unknown state (`preInput: false, cleanupFailed: true, launchUnknown: true`),
+ *   blocking `canTryNext` and worktree cleanup. */
 export async function startDirectAgent(
   params: Record<string, unknown>,
   timeoutMs = 15_000
@@ -80,13 +100,17 @@ export async function startDirectAgent(
         ...launchError('herdr agent.start failed: no response (launch state unknown)'),
         preInput: false,
         cleanupFailed: true,
+        launchUnknown: true,
       },
     };
   }
   if (reply.error) {
+    const preSpawn = typeof reply.error.code === 'string' && DIRECT_PRE_SPAWN_ERROR_CODES.has(reply.error.code);
     return {
       ok: false,
-      result: { exit_code: 1, stdout: '', stderr: JSON.stringify(reply), preInput: true, cleanupFailed: false },
+      result: preSpawn
+        ? { exit_code: 1, stdout: '', stderr: JSON.stringify(reply), preInput: true, cleanupFailed: false }
+        : { exit_code: 1, stdout: '', stderr: JSON.stringify(reply), preInput: false, cleanupFailed: true, launchUnknown: true },
     };
   }
   const identity = parseDirectStartReply(reply);
@@ -97,6 +121,7 @@ export async function startDirectAgent(
         ...launchError('direct-exec agent.start returned incomplete or ambiguous identity (launch state unknown)'),
         preInput: false,
         cleanupFailed: true,
+        launchUnknown: true,
       },
     };
   }
@@ -136,41 +161,10 @@ export function writeDirectSessionReceipt(
   });
 }
 
-/** Direct-exec rollback: strictly separate from stock `rejectLaunch`.
- * Never closes by public tab ID alone without a matching `launch_id`. */
-export async function rollbackDirectLaunch(
-  result: DispatchResult,
-  target?: Pick<DirectStartIdentity, 'tabId' | 'launchId'>
-): Promise<DispatchResult> {
-  if (!target?.tabId || !target?.launchId) {
-    return { ...result, preInput: false, cleanupFailed: true };
-  }
-  const check = await herdrRequest('tab.get', { tab_id: target.tabId }).catch(() => null);
-  if (!check) return { ...result, preInput: false, cleanupFailed: true };
-  if (check.error) {
-    if (check.error.code === 'tab_not_found' && (await isHudHerdrFork())) {
-      return { ...result, preInput: true, cleanupFailed: false };
-    }
-    return { ...result, preInput: false, cleanupFailed: true };
-  }
-  const actual = check.result?.tab?.launch_id;
-  if (!herdrId(actual)) return { ...result, preInput: false, cleanupFailed: true };
-  if (actual !== target.launchId) return { ...result, preInput: true, cleanupFailed: false };
-  const cleanup = await runHerdr(['tab', 'close', target.tabId], process.env, { budgetMs: 3000 });
-  if (cleanup.ok) return { ...result, preInput: true, cleanupFailed: false };
-  const after = await herdrRequest('tab.get', { tab_id: target.tabId }).catch(() => null);
-  const gone = Boolean(
-    after && (
-      (after.error?.code === 'tab_not_found' && (await isHudHerdrFork())) ||
-      (herdrId(after.result?.tab?.launch_id) && after.result.tab.launch_id !== target.launchId)
-    )
-  );
-  return { ...result, preInput: true, cleanupFailed: !gone };
-}
-
-/** Retain a direct-exec launch after a readiness failure / early crash:
- * keeps SESSION.txt and the retained pane open for failure retention, marks STATUS.json failed,
- * wakes the watcher, and blocks `canTryNext` from launching a second place. */
+/** Retain a direct-exec launch after any post-spawn failure (readiness failure, early crash,
+ * resume mismatch, prompt refusal, split failure): keeps SESSION.txt and the pane open for
+ * failure retention, marks STATUS.json failed with exact pid/start, wakes the watcher so the
+ * reaper's proofs own tab close, and blocks `canTryNext` from launching a second place. */
 export function retainDirectFailure(
   dir: string,
   job: Job,

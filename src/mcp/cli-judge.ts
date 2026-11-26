@@ -238,7 +238,7 @@ export function terminalFact({ stop, alive, paneExit, directExec, tabClosed, tur
     if (directExec) return { state: 'failed', exitReason: 'worker exited (exit unknown)', outputWritten } as const;
     return { state: outputWritten ? 'closed' : 'failed', exitReason: outputWritten ? 'settled' : 'worker exited', outputWritten } as const;
   }
-  if (tabClosed) return { state: 'failed', exitReason: 'tab closed', outputWritten } as const;
+  if (tabClosed && !directExec) return { state: 'failed', exitReason: 'tab closed', outputWritten } as const;
   return null;
 }
 

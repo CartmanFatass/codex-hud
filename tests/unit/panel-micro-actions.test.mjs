@@ -142,5 +142,8 @@ test('stopJob reaps the job directory, and first asks a CLI job already in its i
   assert.deepEqual(await stopJob(dir, s.env), { ok: true });
   assert.equal(fs.statSync(join(dir, 'STATUS.json.close-requested')).mode & 0o777, 0o600);
   assert.deepEqual(await stopJob(dir, s.env), { ok: true }, 'a close request that is already there is fine');
+  fs.writeFileSync(join(dir, 'SESSION.txt'), 'TASK=x\nLAUNCH_ID=launch_panel_1\nTAB=w4E:t7\n');
+  assert.deepEqual(await stopJob(dir, s.env), { ok: true });
+  assert.equal(s.log('hud-reap').at(-1), `${dir} --launch launch_panel_1`, 'passes launch stamp from SESSION.txt');
   assert.deepEqual(await stopJob(dir, stubs(t, { reap: 3 }).env), { ok: false, reason: 'reap failed' });
 });

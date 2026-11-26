@@ -11,7 +11,6 @@ import { herdrId } from '../../roles/herdr-run.js';
 import { executable, type Role, type RolePlace } from '../../roles/roster.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { briefPrompt } from '../brief-prompt.js';
-import { workerAlive } from '../cli-judge.js';
 import type { Job } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
 import { piMcpConfigEmpty } from '../pi-mcp-config.js';
@@ -21,7 +20,7 @@ import { prepareSonicRetry } from '../sonic-session.js';
 import { directory, findJob, readCachedStatus, hudHome, bundled, save, jobCache } from '../store/job-store.js';
 import type { NativeResume } from '../worker-resume.js';
 import {
-  retainDirectFailure, rollbackDirectLaunch, startDirectAgent, waitDirectReady,
+  retainDirectFailure, startDirectAgent, waitDirectReady,
   writeDirectSessionReceipt, writeSessionReceipt, type DirectStartIdentity,
 } from './direct-exec.js';
 import { promptBoundary, recoverStalledPrompt } from './prompt-stall.js';
@@ -94,6 +93,7 @@ function piSkillArgs(job: Job, role: Role, place: RolePlace): string[] {
   return args;
 }
 export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: string, resume?: NativeResume): Promise<DispatchResult> {
+  const dir = directory(job.job);
   let openedTab: string | undefined;
   let directIdentity: DirectStartIdentity | undefined;
   let isFork = false;
@@ -101,15 +101,14 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
   let mayHaveInput = false;
   const rollback = (result: DispatchResult): Promise<DispatchResult> => {
     if (!isFork) return rejectLaunch(result, openedTab);
-    if (directIdentity) return rollbackDirectLaunch(result, directIdentity);
-    if (directStartSent) return Promise.resolve({ ...result, preInput: false, cleanupFailed: true });
+    if (directIdentity) return Promise.resolve(retainDirectFailure(dir, job, 'pi', undefined, directIdentity, result));
+    if (directStartSent) return Promise.resolve({ ...result, preInput: false, cleanupFailed: true, launchUnknown: true });
     return Promise.resolve({ ...result, preInput: true, cleanupFailed: false });
   };
   try {
     const resources = piSkillArgs(job, role, place);
     if (job.headless && !executable('pi')) throw new Error('pi not found on PATH');
-    const dir = directory(job.job),
-      output = join(dir, jobFiles.report);
+    const output = join(dir, jobFiles.report);
     const sessionFile = job.headless && job.role !== 'sonic' ? resume?.file ?? join(dir, 'sessions', `${job.job}.jsonl`) : undefined;
     let continuation = resume?.message;
     if (job.role === 'sonic' && job.retry_of) {
@@ -350,12 +349,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     const status = readCachedStatus(job.job).status;
     const completed = status?.task_dir === dir && status.slot === 'primary' && status.state === 'closed' && status.output_written;
     if (submitted.exit_code !== 0 && !completed) {
-      if (refusedBeforeInput(submitted)) {
-        if (isFork && directIdentity && workerAlive(directIdentity.pid, directIdentity.pidStart) === false) {
-          return retainDirectFailure(dir, job, 'pi', undefined, directIdentity, submitted);
-        }
-        return rollback(submitted);
-      }
+      if (refusedBeforeInput(submitted)) return rollback(submitted);
       if (!promptStalled(submitted)) return submitted;
       await recoverStalledPrompt(dir, name, left, prompt, boundary);
       return { exit_code: 0, stdout: '', stderr: '' };

@@ -9,6 +9,7 @@ import { truncateAnsi } from '../render/colors.js';
 import { runHerdr, runCommand, herdrResult, isRecord, herdrId } from '../roles/herdr-run.js';
 import { stopSonic } from '../mcp/sonic-process.js';
 import { recordStopOrigin } from '../roles/job-archive.js';
+import { fileStampOf } from '../roles/job-index-cache.js';
 import { reapWorkerTree, tabTreeGrant } from '../roles/worker-tree.js';
 import { removeQueuedJob } from '../roles/concurrency.js';
 import { OBJECTIVE_HASH } from '../collectors/objectives.js';
@@ -70,6 +71,22 @@ const readJson = (file: string): Record<string, unknown> | null => {
     return isRecord(value) ? value : null;
   } catch { return null; }
 };
+function readSessionLaunch(jobDir: string): { stamp: string; launchStamp: string } | null {
+  try {
+    const path = join(jobDir, jobFiles.session);
+    const st = fs.lstatSync(path, { bigint: true });
+    if (!st.isFile()) return null;
+    const stamp = fileStampOf(st);
+    const lines = fs.readFileSync(path, 'utf8').split('\n');
+    const field = (key: string) => lines.find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1);
+    const launchId = field('LAUNCH_ID');
+    const launch = field('LAUNCH');
+    const launchStamp = (launchId && herdrId(launchId) ? launchId : undefined)
+      ?? (launch && herdrId(launch) ? launch : undefined)
+      ?? `stamp:${stamp}`;
+    return { stamp, launchStamp };
+  } catch { return null; }
+}
 /** Stop a HUD job as `hud_close` does: a CLI job already in its idle grace is asked to quit, then `hud-reap` reaps it. */
 export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
   const status = readJson(join(jobDir, 'STATUS.json'));
@@ -80,12 +97,16 @@ export async function stopJob(jobDir: string, env: NodeJS.ProcessEnv): Promise<{
     if (outcome === 'cancelled' || outcome === 'missing') return { ok: true };
     recordStopOrigin(jobDir, 'panel', status?.state);
     if (readJson(join(jobDir, jobFiles.job))?.headless) return await stopSonic(jobDir) ? { ok: true } : { ok: false, reason: 'headless worker cleanup pending' };
+    const initialSession = readSessionLaunch(jobDir);
     const { result, complete, issue } = await reapWorkerTree(jobDir, status, () => {
-      if (isRecord(readJson(join(jobDir, 'job.json'))?.cli) && status?.state === 'idle_grace') {
+      const currentSession = readSessionLaunch(jobDir);
+      const sameLaunch = !initialSession || currentSession?.stamp === initialSession.stamp;
+      if (sameLaunch && isRecord(readJson(join(jobDir, 'job.json'))?.cli) && status?.state === 'idle_grace') {
         try { fs.writeFileSync(join(jobDir, jobFiles.closeRequested), '', { flag: 'wx', mode: 0o600 }); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
       }
-      return runCommand(process.execPath, [binScript('hud-reap'), jobDir], env, { budgetMs: 60_000, killProcessGroup: true });
+      const reapArgs = [binScript('hud-reap'), jobDir, ...(initialSession?.launchStamp ? ['--launch', initialSession.launchStamp] : [])];
+      return runCommand(process.execPath, reapArgs, env, { budgetMs: 60_000, killProcessGroup: true });
     }, (run) => run.ok, { treeGrant: tabTreeGrant });
     return complete ? { ok: true } : { ok: false, reason: issue ?? (result.reason === 'unavailable' ? 'hud-reap missing' : 'reap failed') };
   } catch { return { ok: false, reason: 'reap failed' }; }

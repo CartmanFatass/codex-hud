@@ -131,7 +131,8 @@ export async function main() {
     wake(false, true);
   }
   function checkTab() {
-    if (stopped || tabClosed || !hasLocalHerdrTarget(session)) return;
+    // On the fork, absence of the old pane address is never terminal while exact PID+start is alive.
+    if (stopped || tabClosed || directExec || !hasLocalHerdrTarget(session)) return;
     tabCheckPending = true;
     if (checkingTab || tabProbeTimer) return;
     const now = performance.now();
@@ -261,14 +262,9 @@ export async function main() {
       if (!data) return;
       if (directExec && (kind === 'pane_exited' || kind === 'pane_closed' || kind === 'tab_closed')) {
         if (data.launch_id !== launchId) return;
-        if (kind === 'tab_closed') {
-          tabClosed = true;
-          terminalWake();
-          return;
-        }
-        // launch_id is per tab; match pane events on both launch_id AND root terminal_id so sibling exits never retire the worker.
-        if (data.terminal_id !== terminalId) return;
         if (kind === 'pane_exited') {
+          // launch_id is per tab; match pane.exited on both launch_id AND root terminal_id so sibling exits never retire the worker.
+          if (data.terminal_id !== terminalId) return;
           paneExit = {
             exitCode: typeof data.exit_code === 'number' ? data.exit_code : null,
             signal: typeof data.signal === 'string' ? data.signal : null,
@@ -276,8 +272,8 @@ export async function main() {
           terminalWake();
           return;
         }
-        tabClosed = true;
-        terminalWake();
+        // tab.closed and pane.closed alone are never terminal on the fork while exact PID+start is alive; recheck liveness.
+        wake();
         return;
       }
       if (data.pane_id !== pane && !(kind === 'tab_closed' && data.tab_id === tab)) return;
@@ -354,6 +350,7 @@ export async function main() {
     tickPending = seedPending = false;
     let quitting = false;
     try {
+      if (!sameSession()) { shutdown(); return; }
       // Terminal facts never wait on a socket query. The safety tick refreshes missed status pushes.
       const stopping = fs.existsSync(stopFile);
       if (stopping) diskDirty = true;
@@ -401,12 +398,15 @@ export async function main() {
         next = judge(prev, observed, Date.now());
       }
       if (next.action === 'collect-sonic') {
+        if (!sameSession()) { shutdown(); return; }
         const { open, uncollected } = sonicChildren(dir);
         if (open || !uncollected.length) { wake(); return; }
         const submission = await beginPrompt(dir, { by: 'hud' });
+        if (!sameSession()) { await endPrompt(dir, submission, true); shutdown(); return; }
         const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected, tools), bundled, dir, submission.turn, cli.agent);
         const { result, aborted } = await effect('sonic', ['agent', 'prompt', name, prompt]).finally(() => endPrompt(dir, submission));
         if (stopped || aborted) return;
+        if (!sameSession()) { shutdown(); return; }
         diskDirty = true;
         if (!result.ok) {
           const after = collect(false);
@@ -415,12 +415,14 @@ export async function main() {
         wake(); return;
       }
       if (next.action === 'decide') {
+        if (!sameSession()) { shutdown(); return; }
         let enabled = true;
         try { enabled = loadSettings({ ...process.env, HUD_HOME: hudHome }).quietJobDecision; }
         catch { /* The decision path already hands off on a settings read error. */ }
         const skip = !enabled ? 'off' : quietQuestions >= 3 ? 'max-questions' : undefined;
         const read = skip ? undefined : await effect('read', ['pane', 'read', pane, '--source', 'recent']);
         if (stopped || read?.aborted) return;
+        if (!sameSession()) { shutdown(); return; }
         diskDirty = true;
         const mid = collect(false, true);
         if (!stillQuiet(observed, mid)) { wake(); return; }
@@ -433,19 +435,23 @@ export async function main() {
               paneText: read?.result.body?.result?.read?.text ?? '', reportPromptSent, questionIndex: quietQuestions + 1, signal }));
         if (decision.asked) quietQuestions += 1;
         if (stopped || aborted) return;
+        if (!sameSession()) { shutdown(); return; }
         diskDirty = true;
         const latest = collect(false, true);
         if (!stillQuiet(observed, latest)) { wake(); return; }
         observed = latest;
         let prompted = false;
         if (decision.action === 'prompt-report') {
+          if (!sameSession()) { shutdown(); return; }
           reportPromptSent = true;
           const submission = await beginPrompt(dir, { by: 'hud', reportPromptSent: true });
+          if (!sameSession()) { await endPrompt(dir, submission, true); shutdown(); return; }
           const sent = submission.turn;
           const prompt = withDonePrompt(tools ? 'If work remains, finish it first.' :
             `Write your report to ${output} now; if work remains, finish it first.`, bundled, dir, sent, cli.agent);
           const reply = await effect('prompt', ['agent', 'prompt', name, prompt]).finally(() => endPrompt(dir, submission));
           if (stopped || reply.aborted) return;
+          if (!sameSession()) { shutdown(); return; }
           diskDirty = true;
           const after = collect(false, !reply.result.ok);
           if (sendInFlight || after.close || terminalFact(after) || after.turn.seq !== sent.seq || after.turn.sent_at !== sent.sent_at) { wake(); return; }
@@ -490,6 +496,7 @@ export async function main() {
           deferredQuit = true;
           if (issue) console.error(`pre-quit snapshot: ${issue}; deferring quit to watcher`);
         } else {
+          if (!sameSession()) { shutdown(); return; }
           // Reserve the terminal write until delivery/cancellation; the watcher must not race it with tab failure.
           fs.writeFileSync(quitFile, '', { flag: 'wx', mode: 0o600 });
           quitting = true;
