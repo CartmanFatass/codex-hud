@@ -16,24 +16,25 @@ export type TicketHandbackKind = 'question' | 'blocker' | 'assumption' | 'escala
 export interface TicketHandback {
   step: string; choices: string[]; kind?: TicketHandbackKind;
   ticket?: string; job?: string; question?: string; land?: string; owner_approval?: OwnerApproval;
+  request_id?: string;
   assumption?: { head: string; report_sig: string };
 }
 export interface TicketItemHold {
   reason: string; at: string; kind?: TicketHandbackKind; owner_approval?: OwnerApproval;
-  head?: string; report_sig?: string;
+  head?: string; report_sig?: string; request_id?: string;
 }
 export interface TicketItemFailure {
   reason: string; at: string; kind?: TicketHandbackKind;
 }
 export interface RunTodoItem {
-  source: string; kind: 'assumed' | 'lead'; text: string;
+  source: string; kind: 'assumed' | 'lead' | 'try' | 'blocker'; text: string;
 }
 export interface RunDecision {
-  step: string; kind: 'question' | 'accept' | 'ambiguity' | 'assumption'; job: string; decision: string; reason?: string; at: string;
+  step: string; kind: 'question' | 'accept' | 'ambiguity' | 'assumption' | 'blocker'; job: string; decision: string; reason?: string; at: string;
   ticket?: string; question?: string; close_error?: string;
 }
 export interface ActiveLead {
-  job: string; kind: 'question' | 'accept' | 'ambiguity' | 'assumption'; step: string; round: number;
+  job: string; kind: 'question' | 'accept' | 'ambiguity' | 'assumption' | 'blocker'; step: string; round: number;
   ticket?: string; worker_job?: string; question?: string;
   head?: string; report_sig?: string;
 }
@@ -108,6 +109,30 @@ export function cancelTicketQueue(home: string, q: TicketQueue) {
   if (q.state === 'working') requestStop(home, q.flow);
 }
 export const queueCancelled = (home: string, q: TicketQueue) => stopRequested(home, q.flow);
+export function blockerHandbackItem(q: TicketQueue, requestId?: string): TicketQueueItem | undefined {
+  return q.tickets.find(item => item.held?.kind === 'blocker' && item.held.request_id &&
+    (requestId === undefined || item.held.request_id === requestId));
+}
+
+export function clearItemHold(q: TicketQueue, item: TicketQueueItem) {
+  if (q.notices && item.held?.request_id) delete q.notices[`handback-${item.held.request_id}`];
+  delete item.held;
+  item.changed_at = new Date().toISOString();
+}
+
+export function syncBlockerHandback(q: TicketQueue) {
+  const item = blockerHandbackItem(q);
+  if (q.handback?.request_id === item?.held?.request_id) return false;
+  if (item) {
+    q.handback = {
+      step: 'tickets', choices: ['resume'], kind: 'blocker', ticket: item.ticket, job: item.job,
+      request_id: item.held!.request_id,
+      ...(item.held!.owner_approval && { owner_approval: item.held!.owner_approval }),
+    };
+  } else if (q.handback?.kind === 'blocker') delete q.handback;
+  return true;
+}
+
 export function ticketQueueView(q: TicketQueue) {
   const { flow, feature, state, remaining, queued, blocked, max_parallel, verdict, todo, decisions, reviews, repair_rounds, handback, held, unclosed_leads } = q;
   const reason = q.reason ?? (queued?.length ? `Queued: ${queued.map(({ ticket, blockers }) => `${ticket} waiting on ${blockers.join(', ')}`).join('; ')}` : undefined);

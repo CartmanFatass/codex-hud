@@ -110,7 +110,7 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
                   let cleaned = false;
                   inDirectory(sub, run => {
                     const files = fs.readdirSync(run);
-                    if (!files.every(f => (f === 'graph.json' || /^(?:failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f)) && fs.lstatSync(join(run, f)).isFile())) return;
+                    if (!files.every(f => (f === 'graph.json' || /^(?:handback-j[a-f0-9]{16}|failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f)) && fs.lstatSync(join(run, f)).isFile())) return;
                     for (const f of files) fs.unlinkSync(join(run, f));
                     cleaned = true;
                   });

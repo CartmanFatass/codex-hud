@@ -23,8 +23,8 @@ import { BUNDLED_ROOT } from './paths.js';
 import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
-  cancelTicketQueue, isTicketQueueId, prepareTicketQueueRepair, queueIds, readTicketQueue, recordDecision,
-  ticketQueueNotice, ticketQueueView, writeTicketQueue, type TicketQueue,
+  blockerHandbackItem, cancelTicketQueue, clearItemHold, isTicketQueueId, prepareTicketQueueRepair, queueIds, readTicketQueue, recordDecision,
+  syncBlockerHandback, ticketQueueNotice, ticketQueueView, writeTicketQueue, type TicketQueue,
 } from './ticket-queue-state.js';
 
 let template: string | undefined;
@@ -302,7 +302,7 @@ function handbackStepKeys(home: string, q: TicketQueue): string[] {
   return Object.keys(q.steps ?? {});
 }
 
-/** Answer a ticket-queue run paused at a main hand-back (e.g. accept with finish/repair/escalate). */
+/** Answer an item hold in a working queue or a paused run-level hand-back. */
 export async function answerTicketQueueHandback(
   home: string,
   id: string,
@@ -317,6 +317,25 @@ export async function answerTicketQueueHandback(
     const cur = readTicketQueue(home, id);
     if (!cur || !runVisible({ ...cur, project_root: cur.project_root ?? cur.root }, opts.pane, opts.cwd)) {
       return { ok: false, code: 'flow_not_found', error: `Ticket queue ${id} not found` };
+    }
+    if (cur.state === 'working' && cur.handback?.kind === 'blocker') {
+      const item = blockerHandbackItem(cur, opts.requestId ?? cur.handback.request_id);
+      if (!item?.held?.head || !item.held.report_sig) {
+        return { ok: false, code: 'no_pending_handback', error: `Ticket queue ${id} has no matching item hold` };
+      }
+      const parsed = parseHandbackAnswer(answer, ['resume']);
+      if (!parsed) return { ok: false, code: 'invalid_choice', error: `Expected resume[: reason] for ${item.ticket}` };
+      // Approve only the evidence the lead escalated. The batch verifies both again before landing.
+      item.approved_assumptions_head = item.held.head;
+      item.approved_assumptions_sig = item.held.report_sig;
+      clearItemHold(cur, item);
+      syncBlockerHandback(cur);
+      recordDecision(cur, {
+        step: 'tickets', kind: 'blocker', job: 'main', ticket: item.ticket, decision: 'resume',
+        ...(parsed.reason && { reason: parsed.reason }), at: new Date().toISOString(),
+      });
+      writeTicketQueue(home, cur);
+      return { ok: true, queue: cur, resumed: false };
     }
     const step = cur.handback?.step;
     if (cur.state !== 'paused' || !step || !cur.handback?.choices?.length || cur.steps?.[step]?.state !== 'asking') {

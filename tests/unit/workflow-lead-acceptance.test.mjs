@@ -120,6 +120,77 @@ for (const { label, handback_to, report } of [
   });
 }
 
+test('a report blocker goes to the assumption lead even with final acceptance to main; continue records it as a todo and lands', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, handback_to: 'main' });
+  const [job] = await f.jobs(flow, 1);
+  const mixed = 'live try remains; needs a decision on the output contract';
+  await f.settle(job, { report: `Blockers: none\nBlockers: ${mixed}\nAssumed: scope stays as written\n` });
+  await until(() => f.flow(flow).active_lead?.kind === 'blocker', 15_000);
+  const lead = f.flow(flow).active_lead.job;
+  const packet = fs.readFileSync(join(f.dir(lead), 'brief.md'), 'utf8');
+  assert.ok(packet.includes(`Worker Blockers: lines:\n- ${mixed}`));
+  assert.match(packet, /Worker Assumed: lines:\n- scope stays as written/);
+  assert.deepEqual(f.flow(flow).notices, {});
+  assert.equal(f.flow(flow).tickets[0].land, undefined);
+
+  await f.settleLead(lead, 'Decision: continue\nReason: The ticket already decides the output contract.\n');
+  await until(() => f.flow(flow).tickets[0].landed, 15_000);
+  const q = f.flow(flow);
+  assert.ok(f.job(lead).reaped_at);
+  assert.deepEqual(q.decisions.map(d => [d.kind, d.decision]), [['blocker', 'continue']]);
+  assert.ok(q.todo.some(item => item.kind === 'blocker' && item.text === mixed));
+  assert.deepEqual(q.notices, {});
+});
+
+test('a blocker escalation holds just its ticket and dependent; an independent try-note ticket dispatches and lands before resume', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: {
+    '01-synthetic.md': goodTicket(1),
+    '02-synthetic.md': goodTicket(2, { blocked: '01' }),
+    '03-synthetic.md': goodTicket(3),
+  } });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, max_parallel: 1 });
+  const [heldJob] = await f.jobs(flow, 1);
+  const rule = fs.readFileSync(join(f.dir(heldJob), 'brief.md'), 'utf8');
+  assert.match(rule, /Blockers: none.*pending live try or owner try is never a blocker.*Try:/);
+  await f.settle(heldJob, { report: 'Blockers: needs an owner decision on deleting X\nRemoves: none\n' });
+  await until(() => f.flow(flow).active_lead?.kind === 'blocker', 15_000);
+  const lead = f.flow(flow).active_lead.job;
+  await f.settleLead(lead, 'Decision: escalate\nReason: Deleting X needs owner approval.\nOwner approval: feature-deletion\n');
+  const [, independent] = await f.jobs(flow, 2);
+  assert.equal(f.job(independent).ticket, 'sample/03');
+  const read = await f.call('hud_read', { job: flow });
+  assert.equal(read.state, 'working');
+  assert.equal(read.handback.ticket, 'sample/01');
+  assert.equal(read.held_items[0].owner_approval, 'feature-deletion');
+  assert.equal(read.held_items[0].request_id, lead);
+  assert.equal(read.changes.length, 1);
+  assert.match(read.changes[0], /held sample\/01: Deleting X needs owner approval/);
+  assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
+
+  await f.settle(independent, { report: 'Blockers: owner live try remains\n- **Blockers:** pending owner try\nBlockers: acceptance try is still pending\nTry: Reopen the synthetic panel.\nRemoves: none\n' });
+  await until(() => f.flow(flow).tickets[1].landed, 15_000);
+  const working = await f.call('hud_read', { job: flow });
+  assert.equal(working.state, 'working');
+  assert.deepEqual(working.landed, ['sample/03']);
+  assert.deepEqual(working.blocked, [{ ticket: 'sample/02', blockers: ['01'] }]);
+  assert.deepEqual(working.todo.map(item => item.text), [
+    'owner live try remains', 'pending owner try', 'acceptance try is still pending', 'Reopen the synthetic panel.',
+  ]);
+  assert.deepEqual(working.decisions.map(d => [d.kind, d.decision]), [['blocker', 'escalate']]);
+  assert.equal(working.changes, undefined);
+
+  const resumed = await f.call('hud_respond', { job: flow, request_id: read.handback.request_id, answer: 'resume: Owner approved X.' });
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.flow, flow);
+  assert.equal(resumed.state, 'working');
+  assert.equal(resumed.handback, undefined);
+  const [, , dependent] = await f.jobs(flow, 3);
+  assert.equal(f.job(dependent).ticket, 'sample/02');
+  assert.deepEqual(f.flow(flow).tickets.filter(x => x.landed).map(x => x.ticket), ['sample/01', 'sample/03']);
+  assert.deepEqual(f.flow(flow).decisions.map(d => [d.kind, d.decision]), [['blocker', 'escalate'], ['blocker', 'resume']]);
+});
+
 test('an assumption lead hold records head/sig; same-report resume stays paused with resolution notice; corrected turn re-judges and lands', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-scope.md': goodTicket(1) } });
   const runArgs = { op: 'run', feature: 'sample', cwd: f.root };

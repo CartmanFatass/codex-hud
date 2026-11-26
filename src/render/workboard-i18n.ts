@@ -479,6 +479,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   escalated: '已升级',
   finish: '完成',
   escalate: '升级',
+  resume: '继续',
   'todo {n}': '待办 {n}',
   'decisions {n}': '决定 {n}',
   'held {n}': '挂起 {n}',

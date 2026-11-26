@@ -19,11 +19,11 @@ const approvalFormat = 'For escalate, include `Owner approval: feature-deletion`
 export const DEFAULT_ESCALATION_RULE =
   'Escalate to main only for owner matters that block: scope change, value trade-off, visible deletion, or irreversible act.';
 
-export const WORKFLOW_WORKER_RULE =
-  'Workflow run rule: proceed on the ticket, docs/spec.md and your own default; write each assumption on its own `Assumed:` line (mark scope assumptions with `scope`); ask with `hud_ask` only when no reasonable default is safe; report owner matters (scope, value trade-off, visible deletion, irreversible act) as `Blockers:` lines; include a `Removes:` line (`Removes: none`, a comma-separated list of user-visible features removed, or `Removes: ambiguous: <detail>` if unsure).';
+const workerRuleStart = 'Workflow run rule: proceed on the ticket, docs/spec.md and your own default; write each assumption on its own `Assumed:` line (mark scope assumptions with `scope`);';
+const workerRuleReport = 'Use `Blockers:` only for an owner decision needed before this can land (scope, value trade-off, visible deletion, irreversible act); otherwise write `Blockers: none`. A pending live try or owner try is never a blocker: put it on a `Try:` line or elsewhere in the report. Include a `Removes:` line (`Removes: none`, a comma-separated list of user-visible features removed, or `Removes: ambiguous: <detail>` if unsure).';
 
-export const WORKFLOW_WORKER_RULE_NO_ASK =
-  'Workflow run rule: proceed on the ticket, docs/spec.md and your own default; write each assumption on its own `Assumed:` line (mark scope assumptions with `scope`); do not call `hud_ask`; report owner matters (scope, value trade-off, visible deletion, irreversible act) as `Blockers:` lines; include a `Removes:` line (`Removes: none`, a comma-separated list of user-visible features removed, or `Removes: ambiguous: <detail>` if unsure).';
+export const WORKFLOW_WORKER_RULE = `${workerRuleStart} ask with \`hud_ask\` only when no reasonable default is safe. ${workerRuleReport}`;
+export const WORKFLOW_WORKER_RULE_NO_ASK = `${workerRuleStart} do not call \`hud_ask\`. ${workerRuleReport}`;
 
 export const MAX_ANSWER_RETRIES = 3;
 const MAX_RUN_TODOS = 200;
@@ -36,9 +36,19 @@ export type RemovalsDeclaration =
 
 const declaresNone = (value: string) => /^none\p{P}*$/iu.test(value.trim());
 
-export function hasReportBlockers(reportText: string): boolean {
-  return Array.from(reportText.matchAll(/^[ \t]*(?:[-*] |#{1,6} )?(?:\*\*)?Blockers:(?:\*\*)?([^\r\n]*)/gim))
-    .some(([, value]) => !declaresNone(value));
+// Match standalone pending-try notes, not just the phrase "live try": a line
+// mentioning a try *and* an owner decision still needs the lead's judgment.
+const pendingTry = /^(?:only\s+)?(?:the\s+)?(?:pending\s+)?(?:owner\s+(?:live\s+|acceptance\s+)?|live\s+|acceptance\s+)tr(?:y|ies)(?:\s+(?:is\s+|are\s+)?(?:still\s+)?(?:remains?|pending|outstanding|not (?:run|done)(?: yet)?|(?:left|yet|still) to (?:run|do)|(?:to be|needs? to be) (?:run|done)))?(?:\s+(?:by|for) (?:the )?owner)?\s*[.!]?$/i;
+
+export function extractReportNotes(reportText: string): { blockers: string[]; tries: string[] } {
+  const blockers: string[] = [], tries: string[] = [];
+  for (const [, field, value] of reportText.matchAll(/^[ \t]*(?:[-*] |#{1,6} )?(?:\*\*)?(Blockers|Try):(?:\*\*)?([^\r\n]*)/gim)) {
+    const text = value.trim().replace(/\*\*$/, '').trimEnd();
+    if (!text || declaresNone(text)) continue;
+    if (field.toLowerCase() === 'try' || pendingTry.test(text)) tries.push(text);
+    else blockers.push(text);
+  }
+  return { blockers, tries };
 }
 
 export function extractRemovalsDeclaration(reportText: string): RemovalsDeclaration {
@@ -313,7 +323,7 @@ export function buildAssumptionPacket(
   item: TicketQueue['tickets'][number],
   job: Job,
   head: string,
-  opts: { trigger: string; assumed: readonly string[] },
+  opts: { trigger: string; assumed: readonly string[]; blockers: readonly string[] },
 ): string {
   const info = ticketSummaryLines(item.path);
   return [
@@ -324,13 +334,16 @@ export function buildAssumptionPacket(
     `Trigger: ${opts.trigger}`,
     'Worker Assumed: lines:',
     ...opts.assumed.map(line => `- ${line}`),
+    ...(opts.blockers.length ? ['Worker Blockers: lines:', ...opts.blockers.map(line => `- ${line}`)] : []),
     `Worker report: ${join(directory(job.job), jobFiles.report)}`,
     `Inspect the committed changes at ${head} in the worker checkout: ${job.cwd}`,
     `Escalation rule: ${q.escalation_rule ?? DEFAULT_ESCALATION_RULE}`,
-    'Inspect the ticket, report and committed changes to judge the worker assumptions under the escalation rule. Do not edit the worktree or docs/spec.md.',
+    `Inspect the ticket, report and committed changes to judge the worker ${opts.blockers.length ? 'blockers and assumptions' : 'assumptions'} under the escalation rule. Do not edit the worktree or docs/spec.md.`,
     'Use hud_report with one decision and a one-line `Reason:`:',
-    '- `Decision: continue` if the commit fits the current spec with no unapproved user-visible feature deletion (the item will land);',
-    '- `Decision: hold` with `Reason:` naming the visible deletion or docs/spec.md change and `Owner approval: feature-deletion` or `Owner approval: spec-change` ONLY if owner approval is required for a visible deletion or spec change;',
+    '- `Decision: continue` if no owner decision or repair is needed before landing (a pending live try or owner try is never a blocker);',
+    opts.blockers.length
+      ? '- `Decision: escalate` only if an owner decision is needed before landing; name the matter in `Reason:`. For visible deletion or spec change, include `Owner approval: feature-deletion` or `Owner approval: spec-change` respectively;'
+      : '- `Decision: hold` with `Reason:` naming the visible deletion or docs/spec.md change and `Owner approval: feature-deletion` or `Owner approval: spec-change` ONLY if owner approval is required for a visible deletion or spec change;',
     '- `Decision: repair` if the commit needs further work within the current spec (not an owner hold).',
   ].join('\n') + '\n';
 }

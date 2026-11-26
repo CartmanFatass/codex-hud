@@ -38,6 +38,11 @@ export function taskNoticeSource(home: string, pane: string | null, cwd: string)
       if (!file.endsWith('.json')) return [];
       const id = file.slice(0, -5);
       if (isTicketEditId(id)) return ticketEditEvent(home, pane, false, cwd, pass, file)?.events ?? [];
+      if (isTicketQueueId(id)) {
+        const q = pass.header<TicketQueue>(file);
+        return q?.task && q.state === 'working' && q.notices && runVisible(q, pane, cwd)
+          ? noticeEvents(home, { flow: id, notices: q.notices }) : [];
+      }
       if (!isComposedId(id)) return [];
       const run = pass.header<ComposedRun>(file);
       return run?.template === 'composed' && runVisible(run, pane, cwd) ? noticeEvents(home, run) : [];
@@ -100,8 +105,13 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
       if (!modCatchup || f.state === 'failed') lines.push(...events.map(e => e.line));
     } else {
       const q = pass.header<TicketQueue>(file);
-      if (!q || q.task || (!all && !runVisible(q, pane, cwd))) continue;
-      if (q.state === 'working') { pending = true; continue; }
+      if (!q || (!all && !runVisible(q, pane, cwd))) continue;
+      if (q.state === 'working') {
+        pending = true;
+        if (q.notices) lines.push(...noticeEvents(home, { flow: id, notices: q.notices }, all, path).map(e => e.line));
+        continue;
+      }
+      if (q.task) continue; // Task clients collect their terminal queue result separately.
       const outbox = q.template && q.notices !== undefined
         ? { flow: id, notices: q.notices }
         : q.notices && Object.keys(q.notices).length ? { flow: id, notices: q.notices }

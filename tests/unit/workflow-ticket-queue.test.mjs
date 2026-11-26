@@ -661,7 +661,7 @@ test('unattended repair admits repair tickets inside the same run, bounded to 2 
   assert.ok(u.status().handbacks.some(h => h.flow === flow && /max repair rounds/.test(h.reason)));
 });
 
-test('to: main question hand-back auto-resumes on hud_respond and Blockers: pauses without waking main', { timeout: 45_000 }, async t => {
+test('to: main question hand-back auto-resumes on hud_respond; the successor can be cancelled by run ID', { timeout: 45_000 }, async t => {
   const f = await setupWorkflowProject(t, { secondBlocker: 'none', count: 2 });
   const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   const [first] = await f.jobs(flow, 1);
@@ -690,39 +690,16 @@ test('to: main question hand-back auto-resumes on hud_respond and Blockers: paus
   assert.equal(f.flow(reply.queue_resumed).state, 'working');
   assert.deepEqual(f.flow(reply.queue_resumed).tickets.map(x => x.job), [first]);
 
-  // A Blockers: report pauses the run with empty notices (no stored no_wake) and NO wake to main.
-  await f.settle(first, { report: 'Synthetic finished report.\n\nBlockers: none\nBlockers: requires spec change\n' });
-  const blocked = await f.end(reply.queue_resumed);
-  assert.equal(blocked.state, 'paused');
-  assert.equal('no_wake' in blocked, false);
-  assert.equal('pause_notice' in blocked, false);
-  assert.deepEqual(blocked.notices, {});
-  assert.deepEqual(blocked.handback, {
-    step: 'tickets', choices: ['resume', 'stop'], kind: 'blocker', ticket: 'sample/01', job: first,
-  });
-  const readAfter = resultValue((await rpc('tools/call', { name: 'hud_read', arguments: { job: reply.queue_resumed } })).result);
-  assert.equal(readAfter.state, 'paused');
-  assert.equal(readAfter.changes, undefined);
-  assert.match(readAfter.pause_notice, /Blockers:/);
-
-  // Resuming does not accept blockers; the unchanged report pauses again and can be cancelled by run ID.
-  const resume = resultValue((await rpc('tools/call', {
-    name: 'hud_tickets', arguments: { op: 'run', feature: 'sample', cwd: f.root },
-  })).result);
-  assert.notEqual(resume.flow, blocked.flow);
-  const stillBlocked = await f.end(resume.flow);
-  assert.equal(stillBlocked.state, 'paused');
-  assert.deepEqual(stillBlocked.handback, blocked.handback);
-  assert.equal(stillBlocked.tickets[0].land, undefined);
+  await f.settle(first, { report: 'Synthetic finished report.\nBlockers: none\n' });
+  await f.jobs(reply.queue_resumed, 2);
+  assert.equal(f.flow(reply.queue_resumed).tickets[0].landed, true);
 
   const cancelled = resultValue((await rpc('tools/call', {
-    name: 'hud_tickets', arguments: { op: 'run', cancel: true, run: resume.flow, cwd: f.root },
+    name: 'hud_tickets', arguments: { op: 'run', cancel: true, run: reply.queue_resumed, cwd: f.root },
   })).result);
-  assert.equal(cancelled.flow, resume.flow);
-  assert.equal(cancelled.state, 'cancelled');
+  assert.equal(cancelled.flow, reply.queue_resumed);
   assert.equal(cancelled.cancel_requested, true);
-  assert.equal(f.flow(resume.flow).state, 'cancelled');
-  assert.deepEqual(f.flow(resume.flow).handback, blocked.handback);
+  assert.equal((await f.end(reply.queue_resumed)).state, 'cancelled');
 });
 
 test('workflow-runner adopts a pre-upgrade legacy q receipt without template or graph.json', { timeout: 30_000 }, async t => {
