@@ -15,7 +15,7 @@ export const freezeGraph = (home: string, id: string, graph: Pick<Graph, 'versio
 export function noticeEvents(home: string, run: { flow: string; notices: Record<string, string> }, all = false, legacyEnd?: string) {
   const events = [] as { line: string; marker: string }[];
   for (const [key, text] of Object.entries(run.notices)) {
-    if (!/^(?:failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|(?:end|pause|error)-\d+)$/.test(key)) continue;
+    if (!/^(?:failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|handback-[a-z][a-z0-9_-]{0,47}|(?:end|pause|error)-\d+)$/.test(key)) continue;
     const suffix = all ? 'observed' : 'noticed';
     const marker = legacyEnd && key.startsWith('end-') ? `${legacyEnd}.${suffix}` : join(runDir(home, run.flow), `${key}.${suffix}`);
     if (fs.existsSync(marker)) continue;

@@ -32,6 +32,14 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
       await io.stdout('One council authorized for the next 30 minutes.\n');
       return 0;
     }
+    if (args[0] === 'workflow') {
+      if (args.length !== 4 || args[1] !== 'allow') throw new CliError('Usage: hud workflow allow RUN HASH');
+      if (io.env.HUD_JOB_DIR) throw new CliError('Only the owner may authorize a workflow');
+      const { allowWorkflow } = await import('../workflows/composed-state.js');
+      if (!await allowWorkflow(getHudHome(io.env), args[2], args[3])) throw new CliError('No fresh costly workflow proposal matches RUN and HASH');
+      await io.stdout(`Workflow ${args[2]} authorized for 30 minutes (or until the proposal expires).\n`);
+      return 0;
+    }
     if (args[0] === 'act') return await actCommand(args.slice(1), io);
     if (args[0] === 'select-send') return await selectSendCommand(args.slice(1), io);
     if (args[0] === 'board') return await boardCommand(args.slice(1), io);
@@ -54,6 +62,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud act answer|try|retry|stop|pause|resume  Owner actions from a command (--help)\n' +
           '       hud select-send --help    Send a herdr pane selection to the responsible main session\n' +
           '       hud council allow         Authorize one council for 30 minutes\n' +
+          '       hud workflow allow RUN HASH  Authorize one costly workflow proposal\n' +
           '       hud doctor               Check the local installation without changing it\n' +
           '       hud doctor <jobId>       Print one job\'s disk facts without changing it\n' +
           '       hud --version            Print version, build commit and build time\n' +
@@ -65,7 +74,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
       );
       return 0;
     }
-    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|unattended|watch|act|select-send|council|board|doctor|stats|day|codex|codex-hud|uninstall\n');
+    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|unattended|watch|act|select-send|council|workflow|board|doctor|stats|day|codex|codex-hud|uninstall\n');
     return 2;
   } catch (error) {
     if (error instanceof CliError) {

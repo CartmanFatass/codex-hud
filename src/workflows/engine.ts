@@ -44,13 +44,14 @@ export function settleSealedRun(run: Run, step: string, state: 'completed' | 'fa
 }
 /** One deterministic pass under flow-state. Step adapters can inspect receipts or stage
  * one admission. The caller commits this cursor BEFORE performing the returned effect. */
-export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: (id: string, step: Step) => Tick): { changed: boolean; effect?: () => Promise<number>; recheckMs?: number } {
+export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: (id: string, step: Step) => Tick, propagateSkips = false): { changed: boolean; effect?: () => Promise<number>; recheckMs?: number } {
   let changed = false, recheckMs: number | undefined;
   for (const [id, step] of Object.entries(graph.steps)) {
     const cursor = run.steps[id];
     if (cursor.state === 'waiting' && run.state === 'working') {
       if (!step.needs.every(n => ['done','skipped'].includes(run.steps[n].state) || (graph.steps[n].optional && run.steps[n].state === 'failed'))) continue;
-      cursor.state = step.when && run.steps[step.when.step].answer !== step.when.is ? 'skipped' : 'ready'; changed = true;
+      const blocked = propagateSkips && step.needs.some(n => run.steps[n].state === 'skipped' && !graph.steps[n].optional);
+      cursor.state = blocked || (step.when && run.steps[step.when.step].answer !== step.when.is) ? 'skipped' : 'ready'; changed = true;
     }
     if (cursor.state === 'ready' && run.state === 'working') { cursor.state = 'running'; changed = true; }
     // Paused/stopped runs can reconcile already-admitted work, but cannot start another step.

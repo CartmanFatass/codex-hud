@@ -15,7 +15,7 @@ export interface CouncilRun extends Run, RunScope {
   template: 'council'; host: 'detached'; cwd: string; pid?: number; start?: string;
   intents: string[]; input_unknown?: true; cost: 'costly' | 'cheap'; cost_reasons: string[];
 }
-export type CouncilManifest = { plan: CouncilPlan; grant: CouncilGrant };
+export type CouncilManifest = { plan: CouncilPlan; grant: CouncilGrant; composed?: true };
 export const readCouncilRun = (home: string, id: string) => readJsonFile(`${runDir(home, id)}.json`) as CouncilRun;
 
 export async function createCouncilRun(home: string, parent: Job, pane: string, roles: Map<string, Role>, manifest: CouncilManifest) {

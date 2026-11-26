@@ -21,6 +21,8 @@ export interface DriverProfile<S> {
   errorLine(run: Run): string;
   // Some compatibility transports only claim notices in a watcher/MCP scan.
   readerNotices?: boolean;
+  propagateSkips?: boolean;
+  onEnd?(state: S): void;
   onError?(state: S, error: unknown): void;
 }
 /** One short-lived elected driver per run. Only the profile knows its output projection,
@@ -41,8 +43,11 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
       check: async () => {
         const turn = await locked(s => {
           if (profile.retiring?.aborted) return;
-          const run = profile.header(s), turn = advance(graph, run, (key, step) => profile.tick(s, key, step, graph));
-          if (turn.changed) profile.save(s);
+          const run = profile.header(s), turn = advance(graph, run, (key, step) => profile.tick(s, key, step, graph), profile.propagateSkips);
+          if (turn.changed) {
+            if (run.state === 'completed') profile.onEnd?.(s);
+            profile.save(s);
+          }
           watches = profile.watches(s);
           return { run, active: profile.active(s), effect: turn.effect, recheckMs: turn.recheckMs };
         });

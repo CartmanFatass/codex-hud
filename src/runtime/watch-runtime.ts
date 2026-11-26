@@ -17,6 +17,7 @@ import { landAttempt, activeLand, isFlowId, readLand } from '../mcp/land-state.j
 import type { CouncilRun } from '../mcp/council-state.js';
 import { settleMainCouncil } from '../mcp/council-settle.js';
 import { wakeWorkflow } from '../workflows/wake.js';
+import { isComposedId, type ComposedRun } from '../workflows/composed-state.js';
 import type { PrewalkRun } from '../mcp/prewalk-flow.js';
 import { workflowHeaders } from '../workflows/header-scan.js';
 import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
@@ -712,6 +713,17 @@ function scan(retryWatch = false) {
   const listedIds = jobCache.listJobIds({ onError: (error) => { throw error; } });
   const liveIds = new Set(listedIds);
   const { held: heldJobs, evidence: evidenceJobs } = pinnedQueueJobs(home, flows);
+  // An unanswered composed hand-back has no timeout. Keep its evidence and source
+  // worktrees available until the run is stopped or settles, even after main exits.
+  for (const file of flows.files) {
+    if (!file.endsWith('.json') || !isComposedId(file.slice(0, -5))) continue;
+    const run = flows.header<ComposedRun>(file);
+    if (run?.template !== 'composed' || (run.state !== 'working' && run.state !== 'paused')) continue;
+    for (const cursor of Object.values(run.steps ?? {})) {
+      if (cursor.job) heldJobs.add(cursor.job);
+      for (const item of cursor.items ?? []) if (item.job) heldJobs.add(item.job);
+    }
+  }
   const orphans = new Set<string>();
   const watch = (dir: string, pid: number) => { nearest = Math.min(nearest, runners.watch(dir, pid)); };
   for (const id of listedIds) {
@@ -1127,7 +1139,11 @@ function scan(retryWatch = false) {
     if (!file.endsWith('.json')) continue;
     const id = file.slice(0, -5);
     try {
-      if (isTicketQueueId(id)) {
+      if (isComposedId(id)) {
+        const run = header<ComposedRun>(file);
+        if (run?.template !== 'composed' || run.state !== 'working') continue;
+        wakeWorkflow(home, run);
+      } else if (isTicketQueueId(id)) {
         const q = header<TicketQueue>(file);
         if (!q || q.state !== 'working') continue;
         wakeWorkflow(home, q);

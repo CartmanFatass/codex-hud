@@ -126,7 +126,7 @@ hud codex --model gpt-5    # Codex 参数原样交给 tmux 启动器
 缺少费用记录表示未知，并不表示免费；
 总和仅包含有报告总量的任务，宿主报告的美元费用不一定是账单金额。
 
-MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**、**hud_land**、**hud_lease** 与 **hud_tickets**。
+MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_wait**、**hud_peek**、**hud_send**、**hud_respond**、**hud_close**、**hud_land**、**hud_workflow**、**hud_lease** 与 **hud_tickets**。
 
 所有客户端的主会话工具结果均使用精简的 `key: value` 文本。
 嵌套记录仍为 JSON，状态事件放在末尾的 `changes:` 列表中。
@@ -144,6 +144,14 @@ JSON-RPC 封装、任务协议以及工作者工具保持不变。
 `$HUD_HOME/roles/*.json` 按角色名覆盖内置 JSON，已注册项目的 `.hud/roles` 再覆盖。
 已注册项目的 `.hud/`、cwd、HUD 主目录、包目录中第一个 `hud-convention.md` 整体替换默认约定。
 见[项目工作者](#项目工作者)。
+
+### 主会话组合流程
+
+`hud_workflow({op: "plan", graph, cwd})` 校验版本 1 的 JSON 图；也可以用 `template` 和可选的 `params` 读取 TOML 模板。模板先查找已注册项目主检出目录的 `.hud/workflows/<name>.toml`，再查找 `$HUD_HOME/workflows/<name>.toml`。`batch`、`prewalk`、`land`、`council`、`ticket-queue` 是内置保留名，沿用各自的入口。
+
+规划不会启动任务；它返回冻结的计划、规模、费用类别、`run` 和 `hash`。主会话在 30 分钟内用 `hud_workflow({op: "start", run, hash, confirm: true})` 确认启动。高费用计划还需所有者在终端执行 `hud workflow allow RUN HASH`，仅授权该提案一次；`/council` 的独立授权不能替代它。议事会、`pro`／`flow`、任何浏览器位置（包括后备位置）、超过 50 个 Sonic 项或 2 MiB 的 Sonic 输入、超过 12 个非 Sonic 项都算高费用，跨步骤合计。
+
+`check` 在所引用祖先任务的实际工作目录执行字面参数数组 `run`，也可用 `use` 指定已注册项目 `.hud/project.json` 的 `commands` 项。不通过 shell，不插值；退出码 0 为通过。`repair: 1` 或 `2` 可将失败步骤、错误及最后 40 行输出（最多 8 KiB）发送给原工作者或同角色替代者，然后重新检查。默认的短期 `lead` 仅收到问题、选项、升级规则及选中的报告／检查／索引引用。`handback` 指定 `to: "main"` 时暂停并提醒一次；由 `hud_respond({job: run, request_id, answer})` 回答，首个有效答案才写入，并由 `when` 选分支。`hud_workflow` 的 `status` 查看回执；`control` 支持 `pause`、`resume`、`stop` 和 `retry_failed`。合入不重放。
 
 `hud_create` 接收 `role`、`task`（或 `brief_file`：位于 `cwd` 内的可读 UTF-8 文本路径，上限 256 KiB，与 `task` 互斥），可选 `cwd` 和仅用于显示的 `package`；
 还可用 `ticket`（`feature/NN`）关联进度；

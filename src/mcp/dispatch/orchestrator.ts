@@ -10,6 +10,9 @@ import type { JobRow } from '../../collectors/thin-jobs.js';
 import { isWorkingForCap, loadConcurrencySettings, capForRole, QUEUE_START_MARKER } from '../../roles/concurrency.js';
 import { councilGrants } from '../../roles/council-grant.js';
 import { wakeWorkflow } from '../../workflows/wake.js';
+import { isComposedId } from '../../workflows/composed-state.js';
+import { roleHasBrowser } from '../../workflows/graph.js';
+import type { OwnerGrant } from '../../roles/run-grant.js';
 import { createCouncilRun } from '../council-state.js';
 import { HarnessSwitchError } from '../../roles/harness-switches.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
@@ -191,7 +194,8 @@ function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): 
   return fallback?.worktree?.owner ? fallback : undefined;
 }
 
-type BatchMember = { flow: string; route: JobRoute; canAdmit: () => boolean };
+type BatchMember = { flow: string; route?: JobRoute; canAdmit: () => boolean };
+type WorkflowDispatch = { id: string; cheap: boolean; grant?: OwnerGrant; canAdmit: () => boolean; preset?: string };
 type SlotGate = { wait: Promise<void>; release: () => void };
 
 export interface TicketDispatchInput {
@@ -223,9 +227,9 @@ export async function dispatchTicketJob(
   );
 }
 
-export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote, ticketAdmission }: {
+export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote, ticketAdmission, workflow }: {
   parent?: SonicParent; repair?: { source: Job; derived: boolean }; batch?: boolean; slotGate?: SlotGate;
-  queue?: { id: string; canAdmit: () => boolean }; member?: BatchMember; dispatcher?: Job['dispatcher'];
+  queue?: { id: string; canAdmit: () => boolean }; member?: BatchMember; dispatcher?: Job['dispatcher']; workflow?: WorkflowDispatch;
   workspace?: string; runNote?: string; ticketAdmission?: boolean;
 } = {}) {
   if (parent) {
@@ -295,7 +299,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
     dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, {
       worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source,
       ticketQueue: queue?.id, ticketAdmission: Boolean(ticketAdmission || queue?.id),
-      canAdmit: member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace,
+      canAdmit: workflow?.canAdmit ?? member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace, workflow,
     }));
 }
 
@@ -446,14 +450,14 @@ async function nextEvenLaunch(even: ReturnType<typeof evenPlanner>, job: Job, re
 export async function dispatchCouncilSeat(parent: Job, seat: CouncilSeat, part: 'member' | 'synthesizer', args: Args, key: string, memberStarted: () => void) {
   const role = seat.place.harness === 'bro' ? 'pro' : 'general';
   const result = await dispatchWithKey({ ...args, role, cwd: parent.cwd, prewalk: false }, jobCallerPane(parent), key, false,
-    parent, undefined, undefined, { dispatcher: parent.dispatcher, seat, council: { id: parent.job, part }, memberStarted: part === 'member' ? memberStarted : undefined });
+    parent, undefined, undefined, { dispatcher: parent.dispatcher, workspace: parent.herdr_workspace, seat, council: { id: parent.job, part }, memberStarted: part === 'member' ? memberStarted : undefined });
   return 'job' in result ? { job: result.job } : { failure: [('code' in result && result.code), ('reason' in result && result.reason) || ('error' in result && result.error)].filter(Boolean).join(': ') || 'could not launch' };
 }
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<SonicParent, 'job' | 'objective' | 'headless'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, member, canAdmit, dispatcher, seat, council, memberStarted, workspace }: {
-    seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void;
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, member, canAdmit, dispatcher, seat, council, memberStarted, workspace, workflow }: {
+    seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void; workflow?: WorkflowDispatch;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
     ticketQueue?: string; ticketAdmission?: boolean; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
   } = {}) {
@@ -575,7 +579,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   if (args.preset !== undefined && args.on !== undefined) {
     return { ok: false, code: 'invalid_arguments', error: 'preset and on are mutually exclusive' };
   }
-  const presetName = args.preset === undefined ? undefined : required(args, 'preset');
+  const presetName = workflow?.preset ?? (args.preset === undefined ? undefined : required(args, 'preset'));
+  if (workflow?.preset) args = { ...args, preset: workflow.preset };
   const preset = chain.presets?.find((p) => p.name === presetName);
   if (presetName !== undefined && !preset && !(fromImp && sourceJob?.route)) {
     return { ok: false, code: 'invalid_arguments', error: `unknown preset: ${presetName}` };
@@ -598,7 +603,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const modelOverride = args.model === undefined ? undefined : required(args, 'model');
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
   // Sonic is headless and can belong to a headless worker without a caller pane.
-  if (!isTicketAdmission && !(parent?.headless && role === 'sonic') && !herdrId(pane))
+  if (!workflow && !(seat && workspace) && !isTicketAdmission && !(parent?.headless && role === 'sonic') && !herdrId(pane))
     return { ok: false, code: 'herdr_required' };
 
   const id = 'j' + randomBytes(8).toString('hex');
@@ -616,7 +621,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     const extra = Object.keys(args).find(k => args[k] !== undefined && !allowed.includes(k));
     if (extra || parent || repairOf || isTicketAdmission) return { ok: false, code: 'invalid_arguments', error: `Council is a standalone fixed flow; unsupported: ${extra ?? 'nested dispatch'}` };
     const askOwner = { ok: false, code: 'owner_grant_required', reason: 'Ask the owner to authorize one council before starting it.' };
-    if (!councilGrants.available(hudHome)) return askOwner;
+    if (workflow ? !workflow.grant : !councilGrants.available(hudHome)) return askOwner;
     const councilPlan = prepareCouncil(args, definition, found, configured, routing);
     if ('code' in councilPlan) return councilPlan;
     const context = await contextFor(args, false);
@@ -626,7 +631,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     const base: Job = { job: id, role, cwd, project_root: projectRoot, caller_pane: pane, request_key, created_at: new Date().toISOString(), dispatcher,
       task_length: task.length, dispatch_exit_code: 0, stderr_tail: '', ...context.metadata, ...(retryInput && { retry_of: required(retryInput, 'retry_of') }),
       council_members: members.map(preset => ({ preset })), synthesizer, create_options: { members, synthesizer } };
-    const grant = await councilGrants.reserve(hudHome, id);
+    if (canAdmit && !canAdmit()) return { ok: false, code: 'queue_stopped' };
+    if (workflow) { base.workflow = workflow.id; base.herdr_workspace = workspace; }
+    const grant = workflow?.grant ?? await councilGrants.reserve(hudHome, id);
     if (!grant) return askOwner;
     try {
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -640,15 +647,16 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       const entry = session.taskClient ? beginTask(base) : undefined;
       if (!entry) void ensureQueueWatcher(pane, hudHome);
       const reply = finishTask(entry, base, true) ?? created(base, row);
-      const flow = await createCouncilRun(hudHome, base, pane!, configured, { plan: councilPlan, grant });
+      const flow = await createCouncilRun(hudHome, base, pane ?? '', configured, { plan: councilPlan, grant, ...(workflow && { composed: true }) });
       wakeWorkflow(hudHome, flow);
       return reply;
     } catch (error) {
-      await councilGrants.releaseUnused(hudHome, id);
+      if (!workflow) await councilGrants.releaseUnused(hudHome, id);
       writeCreateStatus(dir, { state: 'failed', exit_reason: String(error), ended_at: new Date().toISOString() });
       throw error;
     }
   }
+  if (workflow?.cheap && roleHasBrowser(chain)) return { ok: false, code: 'workflow_cost_changed', reason: `Role ${role} now has a browser place; re-plan` };
   const imp = requestedRole === 'imp' || fromImp;
   const sonic = requestedRole === 'sonic';
   const settings = !member && (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
@@ -773,6 +781,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         queued_at: nowIso,
         dispatcher,
         ...(ticketQueue && { workflow: ticketQueue, ticket_queue: ticketQueue }),
+        ...(workflow && { workflow: workflow.id, workflow_cheap: workflow.cheap }),
         ...(queuedRoute && { route: queuedRoute }),
         ...((sonic || first.route?.mode === 'headless' || args.mode === 'headless') && { headless: true }),
         ...(overflowFrom && { overflow_from: overflowFrom }),
@@ -851,6 +860,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(landCwd ? { land_turn: request_key } : {}),
       ...(ticketQueue && { workflow: ticketQueue, ticket_queue: ticketQueue }),
       ...(member && { workflow: member.flow, batch_flow: member.flow }),
+      ...(workflow && { workflow: workflow.id, workflow_cheap: workflow.cheap }),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),
       ...(council && seat && { workflow: council.id, council, preset: seat.preset }),
@@ -994,6 +1004,7 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const chain = found.roles(true).get(launchRoleName);
     if (chain?.optionalEnabled === false) return failQueued(`Optional role ${launchRoleName} is off`);
     if (!chain) return failQueued(`Role ${launchRoleName} is not configured or is hidden in this project`);
+    if (existing.workflow_cheap && roleHasBrowser(chain)) return failQueued(`Role ${launchRoleName} now has a browser place; re-plan`);
     if (args.mode === 'headless' && !chain.can_continue) return failQueued('headless mode requires a continuable role', 'invalid_arguments');
     const now = Date.now();
     let routing;
@@ -1164,6 +1175,7 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
   for (const [index, { candidate, prepared, effective, route }] of candidates.entries()) {
     const launchArgs = argsForPlace(args, candidate.place, retryInput);
     if ('code' in prepared) continue; // Explicit harness-only options still constrain this dispatch.
+    if (base.workflow_cheap && prepared.place.harness === 'bro') { reason = 'Workflow role now has a browser place; re-plan'; break; }
     const first = attempts.length === 0;
     if (!first) {
       const exhausted = readExhausted(hudHome);
@@ -1405,7 +1417,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const delivered = pending.map(({ text: _, ...receipt }) => ({ ...receipt, resumed: true as const }));
   const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : undefined,
     ticket_queue: land || automatic ? current.ticket_queue : undefined,
-    workflow: automatic || answerRequest ? current.workflow : undefined,
+    workflow: automatic || answerRequest || (land && isComposedId(current.workflow)) ? current.workflow : undefined,
     batch_flow: automatic || answerRequest ? current.batch_flow : undefined,
     headless_task_fence: automatic ? taskFence(current) : undefined,
     send_outcomes: [...(current.send_outcomes ?? []), ...delivered, ...(automatic ? [] : [outcome])] };
@@ -1733,9 +1745,11 @@ export async function dispatchLandRepair(id: string, cwd: string, task: string, 
     ...(source.route?.tier === 'light' && { mode: undefined }) };
   // A closed but successfully settled job isn't a public retry target. Use the same keyed create path,
   // retaining retry provenance and the original checkout rather than starting at a clean main tip.
-  const dispatcher = ticketQueue ? readTicketQueue(hudHome, ticketQueue)?.dispatcher : undefined;
+  const workflowId = isComposedId(ticketQueue) ? ticketQueue : undefined;
+  const dispatcher = workflowId ? source.dispatcher : ticketQueue ? readTicketQueue(hudHome, ticketQueue)?.dispatcher : undefined;
   const result = await keyLock(`request:${key}`, () => dispatchWithKey(args, pane ?? jobCallerPane(source), key, false,
-    undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source, ticketQueue, dispatcher }));
+    undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source, ticketQueue: workflowId ? undefined : ticketQueue, dispatcher,
+      ...(workflowId && { workspace: source.herdr_workspace, workflow: { id: workflowId, cheap: source.workflow_cheap === true, canAdmit: () => true } }) }));
   if ('job' in result && result.job && !('ok' in result && result.ok === false)) return result.job;
   throw Error(`Could not dispatch landing repair: ${'code' in result ? result.code : 'no job'}`);
 }

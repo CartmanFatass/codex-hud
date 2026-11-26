@@ -7,14 +7,16 @@ type Brief = { task?: string; brief_file?: string };
 type Work =
   | ({ kind: 'job'; role: string; isolation?: 'none' | 'worktree'; ask?: boolean } & Brief)
   | { kind: 'batch'; role: string; items?: Brief[]; manifest?: string; tickets?: string; each?: ('job' | 'land')[]; pilot?: boolean; max_parallel?: number; ask?: boolean }
-  | ({ kind: 'council' } & Brief)
+  | ({ kind: 'council'; members?: string[]; synthesizer?: string } & Brief)
   | { kind: 'land'; job: string }
-  | { kind: 'check'; run?: string[]; use?: string }
+  | { kind: 'check'; job: string; run?: string[]; use?: string; repair: number }
   | { kind: 'handback'; ask: string; options: string[]; to?: 'lead' | 'main'; preset?: string; escalation_rule?: string };
 export type Step = Common & Work;
 export interface Graph { version: 1; name: string; policy: { breaker: Breaker }; steps: Record<string, Step>; cost: 'cheap' | 'costly'; cost_reasons: string[] }
 interface Inputs {
-  roles: ReadonlyMap<string, Pick<Role, 'run' | 'optionalEnabled'>>;
+  roles: ReadonlyMap<string, Pick<Role, 'run' | 'optionalEnabled' | 'presets'>>;
+  // Authored runs have no internal manifest/ticket bindings and classify total fan-out.
+  composed?: boolean;
   bindings?: Record<string, unknown>;
   // The bundled standalone land template binds a managed job already admitted by hud_land.
   landSource?: string;
@@ -46,7 +48,18 @@ function brief(row: Record<string, unknown>): Brief {
   return { task };
 }
 const fields = { job: ['role','task','brief_file','isolation','ask'], batch: ['role','manifest','items','tickets','each','pilot','max_parallel','ask'], council: ['task','brief_file'],
-  land: ['job'], check: ['run','use'], handback: ['ask','options','to','preset','escalation_rule'] };
+  land: ['job'], check: ['job','run','use','repair'], handback: ['ask','options','to','preset','escalation_rule'] };
+export const roleHasBrowser = (role: Pick<Role, 'run' | 'presets'>) => role.run.some(p => p.harness === 'bro') ||
+  !!role.presets?.some(preset => preset.run.some(p => p.harness === 'bro'));
+export const fanoutLimit = (role: string) => role === 'sonic' ? 50 : 12;
+export const SONIC_BYTES_LIMIT = 2 * 1024 ** 2;
+export function checkArgv(value: unknown): string[] {
+  if (!Array.isArray(value) || !value.length || value.length > 64 || !String(value[0]).trim() || value.some(
+    a => typeof a !== 'string' || a.length > 4096 || /\0|\$[{(]|\{\{|\{[a-z][\w.:-]*\}/i.test(a))) return invalid('check requires literal argv (no shell placeholders)');
+  if (/(?:^|\/)(?:sh|bash|dash|zsh|ksh|fish|csh|tcsh|ash|busybox|cmd(?:\.exe)?|powershell(?:\.exe)?|pwsh)$/.test(value[0]))
+    invalid('shell executables are not check commands');
+  return value;
+}
 const identifier = /^[a-z][a-z0-9_-]{0,47}$/;
 /** Only whole, typed parameter slots are substituted. Task prose and argv are never interpolated. */
 export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inputs): Graph {
@@ -61,6 +74,11 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
   if (!entries.length || entries.length > 32) invalid('expected 1–32 steps');
   const steps: Record<string, Step> = Object.create(null);
   const reasons: string[] = [];
+  const aggregate = new Map<string, { count: number; bytes: number }>();
+  const add = (role: string, count: number, bytes = 0) => {
+    const prev = aggregate.get(role) ?? { count: 0, bytes: 0 };
+    aggregate.set(role, { count: prev.count + count, bytes: prev.bytes + bytes });
+  };
   for (const [id, value] of entries) {
     if (!identifier.test(id) || Object.hasOwn(Object.prototype, id)) invalid(`bad step id ${id}`);
     const rawStep = object(value), kind = text(rawStep.kind);
@@ -83,16 +101,18 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
       if (!chain || chain.optionalEnabled === false || role === 'council') return invalid(`unknown or disabled ordinary role ${role}`);
       if (role === 'pro' || role === 'flow') reasons.push(`${id}: ${role} role`);
       const browser = kind === 'batch' && row.manifest ? inputs.manifest?.browser : undefined;
-      if (browser ?? chain.run.some(p => p.harness === 'bro')) reasons.push(`${id}: browser place`);
+      if (browser ?? (inputs.composed ? roleHasBrowser(chain) : chain.run.some(p => p.harness === 'bro'))) reasons.push(`${id}: browser place`);
       const ask = row.ask === undefined ? undefined : typeof row.ask === 'boolean' ? row.ask : invalid('ask must be boolean');
       if (kind === 'job') {
         const isolation = row.isolation;
         if (isolation !== undefined && isolation !== 'none' && isolation !== 'worktree') return invalid('job isolation');
         work = { kind, role, ...brief(row), isolation, ...(ask !== undefined && { ask }) };
+        if (inputs.composed) add(role, 1, role === 'sonic' ? inputs.inputBytes?.(work) ?? (work.task ? Buffer.byteLength(work.task) : invalid('unresolved file input')) : 0);
       } else {
         const max = row.max_parallel;
         if (max !== undefined && (typeof max !== 'number' || !Number.isSafeInteger(max) || max < 1)) invalid('max_parallel');
         const pilot = row.pilot === undefined ? undefined : typeof row.pilot === 'boolean' ? row.pilot : invalid('pilot must be boolean');
+        if (inputs.composed && pilot === false) invalid('a composed batch must run a pilot');
         let each: ('job' | 'land')[] | undefined;
         if (row.each !== undefined) {
           const stages = list(row.each, 2, true);
@@ -104,6 +124,7 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
         if (cap && (cap < 3 || (max !== undefined && Number(max) > cap - 2))) invalid('reserved slots');
         const batch: Extract<Work, { kind: 'batch' }> = { kind, role, max_parallel: max as number | undefined, ...(each && { each }), ...(pilot !== undefined && { pilot }), ...(ask !== undefined && { ask }) };
         let count: number, bytes: number;
+        if (inputs.composed && (row.tickets !== undefined || row.manifest !== undefined)) invalid('use inline batch items; ticket and manifest sources belong to fixed flows');
         if (row.tickets !== undefined) {
           if (row.manifest !== undefined || row.items !== undefined) return invalid('batch takes one source');
           const feature = text(row.tickets);
@@ -126,8 +147,11 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
           if (!Number.isInteger(count) || count < 1 || count > 512 || !Number.isSafeInteger(bytes) || bytes < 0) invalid('fan-out limits');
         }
         work = batch;
-        if (count > (role === 'sonic' ? 50 : 12)) reasons.push(`${id}: ${count} ${role} items`);
-        if (role === 'sonic' && bytes > 2 * 1024 ** 2) reasons.push(`${id}: ${bytes} Sonic input bytes`);
+        if (inputs.composed) add(role, count, bytes);
+        else {
+          if (count > fanoutLimit(role)) reasons.push(`${id}: ${count} ${role} items`);
+          if (role === 'sonic' && bytes > SONIC_BYTES_LIMIT) reasons.push(`${id}: ${bytes} Sonic input bytes`);
+        }
       }
     } else if (kind === 'council') {
       const council = inputs.roles.get('council');
@@ -136,20 +160,28 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
     }
     else if (kind === 'check') {
       if ((row.run === undefined) === (row.use === undefined)) invalid('need argv run or named use');
-      work = row.run === undefined ? { kind, use: text(row.use) } : { kind, run: list(row.run, 64, false) };
-      if (work.run?.length === 0 || (work.use && !identifier.test(work.use))) invalid('expected argv or a named command');
+      const job = text(row.job), repair = row.repair ?? 0;
+      if (repair !== 0 && repair !== 1 && repair !== 2) return invalid('check repair must be 0, 1 or 2');
+      work = row.run === undefined ? { kind, job, repair, use: text(row.use) } : { kind, job, repair, run: checkArgv(row.run) };
+      if (work.use && !identifier.test(work.use)) invalid('expected a named command');
     } else if (kind === 'land') work = { kind, job: text(row.job) };
     else {
       const options = list(row.options, 6), ask = text(row.ask);
       if (options.length < 2 || options.some(o => !identifier.test(o)) || ask.length > 300) invalid('handback question/options');
       const to = row.to === undefined ? 'lead' : row.to === 'lead' || row.to === 'main' ? row.to : invalid('handback to must be lead or main');
       if (to === 'lead') {
+        if (inputs.composed && options.includes('escalate')) invalid('escalate is reserved for a lead hand-back');
         const lead = inputs.roles.get('lead');
-        if (lead?.optionalEnabled === false || (row.to === 'lead' && !lead)) invalid('unknown or disabled lead role');
+        if (lead?.optionalEnabled === false || ((row.to === 'lead' || inputs.composed) && !lead)) invalid('unknown or disabled lead role');
+        if (inputs.composed && lead) {
+          if (roleHasBrowser(lead)) reasons.push(`${id}: browser lead place`);
+          add('lead', 1);
+        }
       }
       const preset = row.preset === undefined ? undefined : text(row.preset);
       const rule = row.escalation_rule === undefined ? undefined : text(row.escalation_rule);
       if (rule && rule.length > 500) invalid('handback escalation_rule exceeds 500 chars');
+      if (inputs.composed && preset && (to !== 'lead' || !inputs.roles.get('lead')?.presets?.some(p => p.name === preset))) invalid('unknown lead preset');
       work = { kind: 'handback', ask, options, ...(row.to !== undefined && { to }), ...(preset && { preset }), ...(rule && { escalation_rule: rule }) };
     }
     steps[id] = { ...common, ...work };
@@ -167,7 +199,12 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
     const all = visit(id);
     const standaloneLand = name === 'land' && entries.length === 1 && step.kind === 'land' &&
       step.job === inputs.landSource && /^j[a-f0-9]{16}$/.test(step.job);
-    for (const ref of [...step.from, ...(step.kind === 'land' && !standaloneLand ? [step.job] : [])]) if (!all.has(ref)) invalid(`${ref} is not an ancestor of ${id}`);
+    for (const ref of [...step.from, ...((step.kind === 'land' && !standaloneLand) || step.kind === 'check' ? [step.job] : [])]) if (!all.has(ref)) invalid(`${ref} is not an ancestor of ${id}`);
+    if (step.kind === 'check') {
+      const source = steps[step.job];
+      if (source.kind !== 'job') invalid('check requires a source job step');
+      if (step.repair && source.kind === 'job' && (source.isolation !== 'worktree' || source.role === 'sonic')) invalid('check repair requires a non-Sonic worktree job');
+    }
     if (step.kind === 'land' && !standaloneLand) {
       const source = steps[step.job];
       if (source.kind !== 'job' || source.isolation !== 'worktree') invalid('land requires a worktree job');
@@ -177,6 +214,11 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
       if (!all.has(step.when.step) || parent?.kind !== 'handback' || !parent.options.includes(step.when.is)) invalid(`invalid branch at ${id}`);
     }
   }
+  const sonic = aggregate.get('sonic');
+  if (sonic && sonic.count > fanoutLimit('sonic')) reasons.push(`${sonic.count} sonic items across the run`);
+  if (sonic && sonic.bytes > SONIC_BYTES_LIMIT) reasons.push(`${sonic.bytes} Sonic input bytes across the run`);
+  const other = [...aggregate].reduce((total, [role, { count }]) => total + (role === 'sonic' ? 0 : count), 0);
+  if (other > fanoutLimit('ordinary')) reasons.push(`${other} non-Sonic items across the run`);
   // DFS insertion order is topological; independent ties retain declaration order.
   return { version: 1, name, policy: { breaker }, steps: Object.fromEntries([...ancestors.keys()].map(id => [id, steps[id]])), cost: reasons.length ? 'costly' : 'cheap', cost_reasons: reasons };
 }

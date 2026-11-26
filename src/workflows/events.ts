@@ -5,6 +5,7 @@ import { activeLand, isFlowId, landFile, landNoticeLine, readLand } from '../mcp
 import { isTicketQueueId, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { activeTicketEdit, isTicketEditId, type TicketEdit } from '../mcp/ticket-edit-state.js';
 import { sharedRoot } from '../roles/projects.js';
+import { isComposedId, type ComposedRun } from './composed-state.js';
 import { workflowHeaders, type HeaderPass } from './header-scan.js';
 import { runVisible } from './scope.js';
 import { noticeEvents } from './store.js';
@@ -23,7 +24,7 @@ function ticketEditEvent(home: string, pane: string | null, all: boolean, cwd: s
   return { pending: false, events };
 }
 
-export function ticketEditNoticeSource(home: string, pane: string | null, cwd: string) {
+export function taskNoticeSource(home: string, pane: string | null, cwd: string) {
   const dir = join(home, 'flows');
   let previous: string | undefined;
   return () => {
@@ -33,8 +34,14 @@ export function ticketEditNoticeSource(home: string, pane: string | null, cwd: s
     const stamp = st && `${st.dev}:${st.ino}:${st.mtimeNs}:${st.ctimeNs}`;
     if (!stamp || stamp === previous) return [];
     const pass = workflowHeaders(home);
-    const events = pass.files.flatMap(file => file.endsWith('.json') && isTicketEditId(file.slice(0, -5))
-      ? ticketEditEvent(home, pane, false, cwd, pass, file)?.events ?? [] : []);
+    const events = pass.files.flatMap(file => {
+      if (!file.endsWith('.json')) return [];
+      const id = file.slice(0, -5);
+      if (isTicketEditId(id)) return ticketEditEvent(home, pane, false, cwd, pass, file)?.events ?? [];
+      if (!isComposedId(id)) return [];
+      const run = pass.header<ComposedRun>(file);
+      return run?.template === 'composed' && runVisible(run, pane, cwd) ? noticeEvents(home, run) : [];
+    });
     previous = stamp;
     return events;
   };
@@ -59,6 +66,14 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
     if (isTicketEditId(id)) {
       const result = ticketEditEvent(home, pane, all, cwd, pass, file);
       if (result) { pending ||= result.pending; lines.push(...result.events.map(e => e.line)); }
+      continue;
+    }
+    if (isComposedId(id)) {
+      const run = pass.header<ComposedRun>(file);
+      if (run?.template === 'composed' && (all || runVisible(run, pane, cwd))) {
+        lines.push(...noticeEvents(home, run, all).map(e => e.line));
+        pending ||= run.state === 'working';
+      }
       continue;
     }
     if (isBatchId(id)) {

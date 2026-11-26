@@ -6,6 +6,7 @@ import { sharedRoot } from '../roles/projects.js';
 import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
 import { driveWorkflow } from '../workflows/driver.js';
+import { isComposedId } from '../workflows/composed-state.js';
 import type { Run } from '../workflows/engine.js';
 import type { Graph } from '../workflows/graph.js';
 import { freezeGraph, runDir } from '../workflows/store.js';
@@ -19,6 +20,10 @@ import { driveTicketQueue } from './ticket-queue-step.js';
 /** Batch projects the engine cursor into index.json alongside its ordered item results.
  * The outer receipt is the small, watcher-facing projection; never schedule from that copy. */
 export async function runWorkflow(id: string) {
+  if (isComposedId(id)) {
+    const { driveComposed } = await import('./composed-step.js');
+    return driveComposed(id);
+  }
   if (JOB_ID_RE.test(id)) {
     // A parent job id is shared by several templates. Route on the header, not the prefix.
     const path = `${runDir(hudHome, id)}.json`;

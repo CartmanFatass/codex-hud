@@ -9,6 +9,7 @@ import { hasPendingFlakeCollection } from '../mcp/land-flakes.js';
 import type { LandFlow } from '../mcp/land-state.js';
 import { jobFiles } from '../mcp/paths.js';
 import { DEFAULT_RESUME_S } from '../mcp/worker-resume.js';
+import { isComposedId } from '../workflows/composed-state.js';
 import type { TicketQueue } from '../mcp/ticket-queue-state.js';
 import { hasOpenHold, pinnedQueueJobs, readRunIndex } from '../unattended/state.js';
 
@@ -69,11 +70,15 @@ async function pruneExpiredWorkflow(home: string, id: string, cutoff: number) {
       const receipt = join(dir, `${id}.json`), stat = fs.lstatSync(receipt);
       if (!stat.isFile() || stat.mtimeMs >= cutoff) return;
       const b = readJsonBounded(receipt, stat.size) as { template?: string; state: string; totals?: { running: number } };
-      if (id.startsWith('j') ? (b.template !== 'council' && b.template !== 'prewalk') || !['completed', 'stopped', 'failed'].includes(b.state)
+      const composed = isComposedId(id);
+      if (composed ? b.template !== 'composed' || !['proposed', 'completed', 'stopped', 'failed'].includes(b.state)
+        : id.startsWith('j') ? (b.template !== 'council' && b.template !== 'prewalk') || !['completed', 'stopped', 'failed'].includes(b.state)
         : !['completed', 'stopped', 'paused'].includes(b.state) || b.totals?.running !== 0) return;
       inDirectory(join(dir, id), batch => {
         const files = fs.readdirSync(batch);
-        if (!files.every(f => /^(?:graph|index|manifest)\.json$|^(?:failure-\d+-\d+|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f) && fs.lstatSync(join(batch, f)).isFile())) return;
+        const composedFile = /^(?:[a-z][a-z0-9_-]{0,47}\.(?:index|check)\.json|(?:handback-[a-z][a-z0-9_-]{0,47}|failure-\d+-[a-z][a-z0-9_-]{0,47})\.(?:noticed|observed))$/;
+        if (!files.every(f => (/^(?:graph|index|manifest)\.json$|^(?:failure-\d+-\d+|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f) ||
+          (composed && composedFile.test(f))) && fs.lstatSync(join(batch, f)).isFile())) return;
         for (const f of files) fs.unlinkSync(join(batch, f));
         fs.rmdirSync(join(dir, id)); fs.unlinkSync(receipt);
       });
@@ -88,7 +93,7 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
       const jobs = new Map<string, string[]>();
       const names = fs.readdirSync(dir), unattended = new Set(readRunIndex(home));
       for (const name of names) {
-        if (/^[bj][a-f0-9]{16}\.json$/.test(name)) {
+        if (/^[bjw][a-f0-9]{16}\.json$/.test(name)) {
           if (fs.lstatSync(join(dir, name)).mtimeMs < cutoff) void pruneExpiredWorkflow(home, name.slice(0, -5), cutoff).catch(() => {});
           continue;
         }

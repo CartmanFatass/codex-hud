@@ -157,7 +157,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_respond',
-    'Answer once, batch, or run hand-back (job=q...); by:"owner" relays owner.',
+    'Answer once, batch, or run hand-back (job=w... or q...); by:"owner" relays owner.',
     {
       job: text,
       request_id: text,
@@ -183,6 +183,13 @@ export const ROLE_TOOLS = [
     state: { ...text, enum: ['queued'] }, preset: text,
   }),
   tool('hud_land', 'Land settled worktree via project gate; hud_read flow ID.', { job: text }, ['job']),
+  tool('hud_workflow', 'Main only: plan a frozen JSON graph or TOML template (no launches); start by confirming run/hash; status or control. Costly plans require a bound owner grant.', {
+    op: { ...text, enum: ['plan', 'start', 'status', 'control'] },
+    graph: { anyOf: [{ type: 'object' }, text], description: 'Version 1 graph with named steps, needs and from.' },
+    template: { ...text, description: 'TOML name in project or HUD workflows directory.' },
+    cwd: text, params: { type: 'object' }, run: { ...text, pattern: '^w[0-9a-f]{16}$' },
+    hash: text, confirm: bool, action: { ...text, enum: ['pause', 'resume', 'stop', 'retry_failed'] },
+  }, ['op']),
   LEASE_TOOL,
   tool('hud_objective', 'Edit registered projects without committing. set: Objective id and fields (new: title and state). project: stance/priority. request: text and optional Objective/waits. resolve: request ID and optional resolution/note.', {
     op: { ...text, enum: ['set', 'project', 'request', 'resolve'] },

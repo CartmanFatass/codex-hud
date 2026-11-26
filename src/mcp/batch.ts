@@ -20,7 +20,7 @@ import { BUNDLED_ROOT } from './paths.js';
 import { batchDir, batchIds, batchIndex, batchLock, failuresByReason, isBatchId, readBatch, saveBatch, type Batch, type BatchInput, type Manifest } from './batch-state.js';
 
 // Size existing project files, not prose, glob expansions, directories, URLs or prospective outputs.
-function inputBytes(cwd: string, task: string, brief: string | undefined, context: string[]) {
+export function inputBytes(cwd: string, task: string, brief: string | undefined, context: string[]) {
   const seen = new Set(brief ? [fs.realpathSync(resolve(cwd, brief))] : []);
   const inputs: { path: string; bytes: number }[] = [];
   const refs = task.matchAll(/`([^`\n]+)`|"([^"\n]+)"|(?<!\w)'([^'\n]+)'|(?:^|[\s(])([\w./-]+)/gm);

@@ -45,7 +45,7 @@ function resumeManagedTicketEdits(failures?: Parameters<typeof resumeTicketEdits
   } catch { /* Unavailable worker receipt: skip ticket-edit resume. */ }
 }
 const leadWorkerTools = new Set(['hud_report', 'hud_progress']);
-const leadBlockedTools = new Set(['hud_land']);
+const leadBlockedTools = new Set(['hud_land', 'hud_workflow']);
 
 const TASK_EXTENSION = 'io.modelcontextprotocol/tasks';
 

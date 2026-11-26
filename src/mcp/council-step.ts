@@ -12,7 +12,7 @@ import { dispatchCouncilSeat } from './dispatch/orchestrator.js';
 import { jobFiles } from './paths.js';
 import { directory, findJobMutable, hudHome, jobs, readCachedStatus, save, writeCreateStatus } from './store/job-store.js';
 
-async function execute(id: string, brief: string, { plan, grant }: CouncilManifest) {
+async function execute(id: string, brief: string, { plan, grant, composed }: CouncilManifest) {
   const parent = findJobMutable(id);
   if (!parent?.council_members) throw Error('missing council receipt');
   const dir = directory(id), task = readFileSync(join(dir, brief), 'utf8').slice(0, parent.task_length);
@@ -51,7 +51,7 @@ async function execute(id: string, brief: string, { plan, grant }: CouncilManife
         return { job: child.job };
       }
       return dispatchCouncilSeat(parent, seat, part, args, key, spend);
-    }, stop.signal, async () => { if (!readCouncilRun(hudHome, id).input_unknown) await councilGrants.releaseUnused(hudHome, id); });
+    }, stop.signal, async () => { if (!composed && !readCouncilRun(hudHome, id).input_unknown) await councilGrants.releaseUnused(hudHome, id); });
   } finally { finished.abort(); await stopping; }
 }
 

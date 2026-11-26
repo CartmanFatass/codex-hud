@@ -38,7 +38,9 @@ import { runVisible } from '../../workflows/scope.js';
 import { headerScanner } from '../../workflows/header-scan.js';
 import { batchEvents, isBatchId, type Batch } from '../batch-state.js';
 import { landView, isFlowId, recoverLand } from '../land-state.js';
-import { ticketEditNoticeSource, workflowEvents } from '../../workflows/events.js';
+import { taskNoticeSource, workflowEvents } from '../../workflows/events.js';
+import { isComposedId } from '../../workflows/composed-state.js';
+import { answerComposed, callWorkflow } from '../composed-workflow.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, syncTickets } from '../local-tickets.js';
 import { isTicketEditId } from '../ticket-edit-state.js';
@@ -464,6 +466,14 @@ async function sendJobs(args: Args, dispatcher: Job['dispatcher']) {
 }
 
 export async function call(name: string, args: Args, scan: JobScan, by?: RequestCaller, dispatcher?: Job['dispatcher']): Promise<unknown> {
+  if (name === 'hud_workflow') {
+    if (isWorker) return { ok: false, code: 'worker_cannot_dispatch' };
+    const value = await callWorkflow(hudHome, callerPane, args, dispatcher);
+    if ('state' in value && value.state === 'working') {
+      ensureWatcher(); if (callerPane && !session.taskClient) void ensureQueueWatcher(callerPane, hudHome);
+    }
+    return value;
+  }
   if (name === 'hud_land') {
     const id = required(args, 'job'), job = findJob(id);
     const task = session.taskClient;
@@ -614,7 +624,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
       const reqId = typeof item.request_id === 'string' ? item.request_id : undefined;
       try {
         const id = required(item, 'job');
-        const res = await keyLock(`job:${id}`, async () => isTicketQueueId(id) ? respondTicketQueue(item, true) : respondJob(item, true));
+        const res = await keyLock(`job:${id}`, async () => isComposedId(id) ? respondComposed(item) : isTicketQueueId(id) ? respondTicketQueue(item, true) : respondJob(item, true));
         return { job: id, ...(reqId ? { request_id: reqId } : {}), ...res };
       } catch (error) {
         return { ...(jobId ? { job: jobId } : {}), ...(reqId ? { request_id: reqId } : {}), ...itemError(error) };
@@ -624,7 +634,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     // As for a single answer: the answer to the question that stopped a ticket queue resumes it.
     const queues_resumed: string[] = [];
     for (const a of answers as { ok?: boolean; job?: string; request_id?: string }[]) {
-      if (a.ok === false || !a.job || !a.request_id || isTicketQueueId(a.job)) continue;
+      if (a.ok === false || !a.job || !a.request_id || isTicketQueueId(a.job) || isComposedId(a.job)) continue;
       const flow = await resumeQueueAfterAnswer(hudHome, a.job, a.request_id, callerPane);
       if (flow) queues_resumed.push(flow);
     }
@@ -679,6 +689,7 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
     if (flow.state === 'working') { wakeWorkflow(hudHome, flow); ensureWatcher(); }
     return ticketQueueView(flow);
   }
+  if (name === 'hud_respond' && isComposedId(id)) return respondComposed(args);
   if (name === 'hud_respond' && isTicketQueueId(id)) {
     return respondTicketQueue(args, false);
   }
@@ -767,6 +778,13 @@ export async function answerWorkerQuestion(job: string, request_id: string, answ
   const result = await keyLock(`job:${job}`, () => respondJob({ job, request_id, answer }, false, undefined, 'orchestrator'));
   return 'code' in result && result.code ? { ok: false, reason: result.code } :
     { ok: true, written: 'written' in result ? result.written === true : true };
+}
+
+async function respondComposed(args: Args) {
+  if (isWorker) return { ok: false, code: 'worker_cannot_dispatch' };
+  const value = await answerComposed(hudHome, callerPane, args);
+  if (value.ok && value.written) { ensureWatcher(); if (callerPane && !session.taskClient) void ensureQueueWatcher(callerPane, hudHome); }
+  return value;
 }
 
 async function respondTicketQueue(args: Args, batch: boolean) {
@@ -1033,14 +1051,14 @@ export async function syncPanelDelivery() {
   if (session.taskClient && !session.resumeRefusal) {
     if (!ownerDelivery) {
       const cwd = process.cwd(), matches = projectJobFilter(cwd);
-      const editNotices = ticketEditNoticeSource(hudHome, callerPane, cwd);
+      const taskNotices = taskNoticeSource(hudHome, callerPane, cwd);
       ownerDelivery = panelDelivery(hudHome, callerPane, cwd, id => {
         const job = findJob(id);
         return !!job && ownsJob(job) && matches(job);
       }, async message => {
         const sent = await notify(callerPane, message, hudHome);
         return sent.status === 0 || sent.uncertain === true;
-      }, () => watching(callerPane, hudHome) ? [] : editNotices());
+      }, () => watching(callerPane, hudHome) ? [] : taskNotices());
     }
     ensureBatchTimer();
   } else {
