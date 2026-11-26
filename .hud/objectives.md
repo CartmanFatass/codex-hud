@@ -32,8 +32,8 @@
 
 ## pi-worker: HUD 用自己的 pi worker 扩展启动 pi worker，不再依赖 pi-roles
 
-**State:** active
-**Next:** pi-worker/03（回收 tab 和首条消息卡住）第三轮修复后再审；02 等 03 落地
+**State:** done
+**Next:** 
 **Result:** Sonic 已改走 HUD 扩展（e86ed24c），含联网搜索的 5 个真实 Sonic 冒烟通过
 **Evidence:** e86ed24c, 599d2644
 **Features:** pi-worker
