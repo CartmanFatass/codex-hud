@@ -3,10 +3,42 @@ import { join } from 'node:path';
 import { batchActive, batchEvents, isBatchId, type Batch } from '../mcp/batch-state.js';
 import { activeLand, isFlowId, landFile, landNoticeLine, readLand } from '../mcp/land-state.js';
 import { isTicketQueueId, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { activeTicketEdit, isTicketEditId, type TicketEdit } from '../mcp/ticket-edit-state.js';
 import { sharedRoot } from '../roles/projects.js';
-import { workflowHeaders } from './header-scan.js';
+import { workflowHeaders, type HeaderPass } from './header-scan.js';
 import { runVisible } from './scope.js';
 import { noticeEvents } from './store.js';
+
+function ticketEditEvent(home: string, pane: string | null, all: boolean, cwd: string, pass: HeaderPass, file: string) {
+  const path = join(home, 'flows', file);
+  if (fs.existsSync(`${path}.${all ? 'observed' : 'noticed'}`)) return;
+  const row = pass.header<TicketEdit>(file);
+  if (!row || (!all && (row.pane !== pane || (!pane && row.origin !== cwd)))) return;
+  if (activeTicketEdit(row)) return { pending: true, events: [] };
+  const outcome = row.state === 'failed' ? 'failed' : 'completed';
+  const line = `Ticket ${row.op} ${outcome} — hud_read({job: "${row.receipt}"})`;
+  const events = noticeEvents(home, { flow: row.receipt, notices: { 'end-0': line } }, all, path);
+  // Admission may prune a settled receipt between the scan and its notice claim.
+  if (!fs.existsSync(path)) for (const { marker } of events) fs.rmSync(marker, { force: true });
+  return { pending: false, events };
+}
+
+export function ticketEditNoticeSource(home: string, pane: string | null, cwd: string) {
+  const dir = join(home, 'flows');
+  let previous: string | undefined;
+  return () => {
+    // Task clients already have a quiet timer. Only list flows when an atomic
+    // receipt replacement or a notice claim/release actually changed the directory.
+    const st = fs.statSync(dir, { bigint: true, throwIfNoEntry: false });
+    const stamp = st && `${st.dev}:${st.ino}:${st.mtimeNs}:${st.ctimeNs}`;
+    if (!stamp || stamp === previous) return [];
+    const pass = workflowHeaders(home);
+    const events = pass.files.flatMap(file => file.endsWith('.json') && isTicketEditId(file.slice(0, -5))
+      ? ticketEditEvent(home, pane, false, cwd, pass, file)?.events ?? [] : []);
+    previous = stamp;
+    return events;
+  };
+}
 
 /** Scan active runs and unclaimed terminal results. Quiet passes only parse a
  * changed header; previously claimed land/queue results don't even need a stat. */
@@ -24,6 +56,11 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
     }
     if (!file.endsWith('.json')) continue;
     const id = file.slice(0, -5);
+    if (isTicketEditId(id)) {
+      const result = ticketEditEvent(home, pane, all, cwd, pass, file);
+      if (result) { pending ||= result.pending; lines.push(...result.events.map(e => e.line)); }
+      continue;
+    }
     if (isBatchId(id)) {
       const b = pass.header<Batch>(file);
       if (b && (all || runVisible(b, pane, cwd))) {

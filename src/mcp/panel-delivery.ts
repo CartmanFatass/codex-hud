@@ -15,8 +15,9 @@ const size = (file: string) => {
   return st?.isFile() ? st.size : 0;
 };
 
+type Notice = { line: string; marker: string };
 export function panelDelivery(home: string, pane: string | null, cwd: string, owns: (id: string) => boolean,
-  push: (text: string) => Promise<boolean>) {
+  push: (text: string) => Promise<boolean>, extraEvents?: () => Notice[]) {
   const logs = files.map(name => join(home, name));
   const scope = createHash('sha256').update(JSON.stringify([pane, cwd, process.env.CLAUDE_CODE_SESSION_ID])).digest('hex');
   const dir = join(home, 'panel-cursors', scope), cursor = join(dir, 'offsets.json');
@@ -31,16 +32,20 @@ export function panelDelivery(home: string, pane: string | null, cwd: string, ow
   let sending: Promise<string[]> | undefined;
   async function drain(notify: boolean): Promise<string[]> {
     let lock: number | undefined;
+    let extra: Notice[] = [];
     try {
-      if (sending || stopped || logs.every((file, i) => size(file) === offsets[i])) return [];
+      if (sending || stopped) return [];
+      extra = extraEvents?.() ?? [];
+      const hasLogs = logs.some((file, i) => size(file) !== offsets[i]);
+      if (!hasLogs && !extra.length) return [];
       // Reconnects (and hot reloads) can overlap. Lock the stable directory, not the replaced cursor.
-      if (pane) {
+      if (pane && hasLogs) {
         lock = fs.openSync(dir, 'r');
         if (spawnSync('flock', ['-nx', '3'], { stdio: ['ignore', 'ignore', 'ignore', lock], timeout: 1000 }).status !== 0) return [];
         offsets = JSON.parse(fs.readFileSync(cursor, 'utf8'));
       }
       const lines: string[] = [], after = [...offsets];
-      for (const [i, file] of logs.entries()) {
+      for (const [i, file] of hasLogs ? logs.entries() : []) {
         const end = size(file), start = end < offsets[i] ? 0 : offsets[i];
         after[i] = start;
         if (end === start) continue;
@@ -60,14 +65,21 @@ export function panelDelivery(home: string, pane: string | null, cwd: string, ow
           }
         } finally { fs.closeSync(fd); }
       }
+      lines.push(...extra.map(e => e.line));
       if (lines.length && notify && !await push(lines.join('\n'))) return [];
+      extra = []; // Leave successful notice claims in place, even if updating the log cursor fails.
       if (after.some((at, i) => at !== offsets[i])) {
         if (pane) writePrivateFile(cursor, JSON.stringify(after));
         offsets = after;
       }
       return lines;
     } catch { return []; } // A failed read or push leaves the previous cursor for the next call/tick.
-    finally { if (lock !== undefined) fs.closeSync(lock); }
+    finally {
+      for (const { marker } of extra) {
+        try { fs.unlinkSync(marker); } catch { /* Receipt already gone. */ }
+      }
+      if (lock !== undefined) fs.closeSync(lock);
+    }
   }
   const timer = pane && setInterval(() => {
     if (!sending) sending = drain(true).finally(() => { sending = undefined; });

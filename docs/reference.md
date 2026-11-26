@@ -612,8 +612,10 @@ The default status is `ready-for-agent`; other allowed labels are `needs-triage`
 For `add` and `update`, `objective` sets the `**Objective:** <id>` header field. The ID must exist in the project's `.hud/objectives.md`; an unknown ID leaves the ticket unchanged. Only `add` also edits the Objective's `Features`.
 A new `hud_create` with an explicit ticket snapshots its Objective ID and current title. The Inspector and job archive show this snapshot; retries, repairs and Sonic children keep it, even after a rename. Jobs with no recorded link stay unattributed.
 This is a main-session tool.
-In a Git checkout, `add`, `update`, and unattended acceptance wait for the main-checkout lease before writing.
-Each call that changes tickets makes one local commit containing only those ticket files; a batch uses the first changed ticket in `tickets: <feature>/<NN> <op>`.
+In Git, `add`, `update`, and unattended acceptance write only under the main-checkout lease. With no backlog and a free lease, `add` and `update` return their results immediately. Otherwise they return `state: queued` and a `receipt`, without assigned paths or item outcomes.
+Queued edits survive MCP restarts and run in admission order per project, rechecking the checkout when the lease is granted. A completion notice points to `hud_read({job: receipt})` for numbers and paths, per-item outcomes, or an error. If a write was interrupted and no commit can be confirmed, inspect the checkout before retrying.
+The queue holds up to 64 pending edits (128 KiB per request) and 128 receipts total, pruning the oldest finished receipts first.
+Each edit that changes tickets makes one local commit containing only those ticket files; a batch uses the first changed ticket in `tickets: <feature>/<NN> <op>`.
 Commit or resolve hand edits to a ticket before asking HUD to change it. Unrelated staged and unstaged changes are left alone.
 For GitHub-mirrored `.scratch/`, `add` and `update` refuse: edit GitHub Issues with `gh`, then call `hud_tickets` with `op: "sync"`.
 

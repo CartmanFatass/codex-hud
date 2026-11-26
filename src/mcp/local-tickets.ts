@@ -442,22 +442,16 @@ function unlinkedWarning(root: string, feature: string): string | undefined {
     objectives.map(({ id }) => id).join(', ') || 'none'}. List it with hud_objective (op: set, features: the whole list); op: add with objective does this itself.`;
 }
 
-export async function editTickets(cwd: string, args: Record<string, unknown>, home: string) {
-  const { op } = args;
-  if (op === 'sync') {
-    const output: string[] = [];
-    const capture = (text: string) => {
-      output.push(...text.trimEnd().split(/\r?\n/));
-    };
-    await ticketsCommand(['sync', '--cwd', cwd], { env: process.env, stdout: capture, stderr: capture });
-    return { ok: true, output };
-  }
-  if (op !== 'add' && op !== 'update') return invalid('op');
-  const root = fs.realpathSync(cwd);
-  return withTicketEdits(root, home, op, edits => editLocalTickets(root, args, home, op, edits));
+export async function syncTickets(cwd: string) {
+  const output: string[] = [];
+  const capture = (text: string) => {
+    output.push(...text.trimEnd().split(/\r?\n/));
+  };
+  await ticketsCommand(['sync', '--cwd', cwd], { env: process.env, stdout: capture, stderr: capture });
+  return { ok: true, output };
 }
 
-async function editLocalTickets(cwd: string, args: Record<string, unknown>, home: string, op: 'add' | 'update', edits: TicketEdits) {
+export async function editLocalTickets(cwd: string, args: Record<string, unknown>, home: string, op: 'add' | 'update', edits: TicketEdits) {
   const { feature } = args;
   const scratch = join(cwd, '.scratch');
   scanScratch(scratch, true);

@@ -12,6 +12,7 @@ import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js'
 import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
 import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
 import { compactResult } from './result-text.js';
+import { resumeTicketEdits } from '../ticket-edit-queue.js';
 import { ownStatuslineStrip } from '../../statusline-parity/strip.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
 import {
@@ -292,7 +293,10 @@ export function openRuntime() {
     async start(state?: Awaited<ReturnType<typeof snapshot>>) {
       if (!state) {
         checkResume('claude', process.env.CLAUDE_CODE_SESSION_ID);
-        if (!worker && !session.resumeRefusal) session.cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
+        if (!worker && !session.resumeRefusal) {
+          session.cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
+          resumeTicketEdits(hudHome);
+        }
         return;
       }
       if (state.version !== 1) throw new Error('incompatible MCP session handoff');

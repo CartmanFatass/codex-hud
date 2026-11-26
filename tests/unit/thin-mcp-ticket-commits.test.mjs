@@ -1,12 +1,31 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 import { assertLandingRecord, checkout, job, jobDir } from '../helpers/thin-mcp-land.mjs';
-import { until } from '../helpers/thin-mcp-harness.mjs';
+import { entry, rpcClient, resultValue, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
+import { findFixtureProcesses, stopChild } from '../helpers/process-cleanup.mjs';
+import { takeLease } from '../../dist/roles/lease.js';
 
 const draft = title => ({ title, what: 'Change the sample.', acceptance: ['Check the sample.'], blocked_by: [] });
 const tickets = f => (op, args) => f.call('hud_tickets', { op, feature: 'sample', ...args });
+const fileOf = (f, receipt) => join(f.home, 'flows', `${receipt}.json`);
+const read = (f, receipt) => JSON.parse(fs.readFileSync(fileOf(f, receipt), 'utf8'));
+async function fast(promise) {
+  const start = performance.now();
+  const value = await promise;
+  assert.ok(performance.now() - start < 2000, 'ticket edit reply must arrive within 2 seconds');
+  return value;
+}
+function queued(result) {
+  assert.equal(result.state, 'queued');
+  assert.match(result.receipt, /^te[0-9a-f]{32}$/);
+  assert.match(result.message, /No paths or item outcomes yet/);
+  for (const name of ['path', 'tickets', 'updates']) assert.equal(result[name], undefined);
+  return result.receipt;
+}
 
 test('a ticket add or update batch commits only its changed ticket paths and preserves hand edits', async t => {
   const f = await checkout(t, ['true']), call = tickets(f);
@@ -19,7 +38,8 @@ test('a ticket add or update batch commits only its changed ticket paths and pre
   const status = path => f.git(f.main, 'status', '--porcelain=v1', '--', path);
   const staged = f.git(f.main, 'diff', '--cached');
   const unstaged = f.git(f.main, 'diff');
-  const { tickets: added } = await call('add', { tickets: ['First', 'Second', 'Third'].map(draft) });
+  const { tickets: added, state: addState } = await fast(call('add', { tickets: ['First', 'Second', 'Third'].map(draft) }));
+  assert.equal(addState, undefined);
   const paths = added.map(({ path }) => relative(f.main, path));
   const lastCommit = () => f.git(f.main, 'show', '--format=%s', '--name-only', 'HEAD').split('\n').filter(Boolean);
   assert.deepEqual(lastCommit(), ['tickets: sample/01 add', ...paths]);
@@ -28,10 +48,11 @@ test('a ticket add or update batch commits only its changed ticket paths and pre
 
   // Even if a hand-edited ticket is named, it must not be swept into the HUD commit.
   fs.appendFileSync(added[2].path, '\nHand-edited comment.\n');
-  const { updates } = await call('update', { updates: [
+  const { updates, state: updateState } = await fast(call('update', { updates: [
     { ticket: 1, status: 'claimed' }, { ticket: 3, status: 'done' },
     { ticket: 2, tick: [1] }, { ticket: 1, tick: [1] },
-  ] });
+  ] }));
+  assert.equal(updateState, undefined);
   assert.deepEqual(updates.map(item => item.ok), [true, false, true, true]);
   assert.match(updates[1].error, /uncommitted or hidden changes/);
   assert.match(fs.readFileSync(added[2].path, 'utf8'), /Hand-edited comment/);
@@ -60,20 +81,8 @@ test('a ticket add or update batch commits only its changed ticket paths and pre
   assert.equal(f.git(f.main, 'diff', '--cached'), staged);
 });
 
-test('a land after a ticket update succeeds, and a concurrent ticket edit waits for that land', { timeout: 20000 }, async t => {
-  // Observe the actual wait in the MCP process rather than guessing from its wall-clock latency.
-  const probe = `
-    import fs from 'node:fs';
-    import { syncBuiltinESMExports } from 'node:module';
-    import { join } from 'node:path';
-    const watch = fs.watch;
-    fs.watch = (path, ...args) => {
-      if (path === join(process.env.HUD_HOME, 'leases')) fs.writeFileSync(join(process.env.HOME, 'ticket-waiting'), '');
-      return watch(path, ...args);
-    };
-    syncBuiltinESMExports();
-  `;
-  const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done'], { probe, after: [] });
+test('a held land lease admits multiple edits promptly, then revalidates and commits them in order', { timeout: 20000 }, async t => {
+  const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done'], { after: [] });
   const call = tickets(f);
   const { tickets: [{ path }] } = await call('add', { tickets: [draft('First')] });
   const rel = relative(f.main, path), receipt = join(jobDir(f), 'job.json');
@@ -84,21 +93,105 @@ test('a land after a ticket update succeeds, and a concurrent ticket edit waits 
   const { flow } = await f.call('hud_land', { job });
   await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
   const before = fs.readFileSync(path, 'utf8');
-  let returned = false;
-  const queued = call('update', { ticket: 1, status: 'done' }).finally(() => { returned = true; });
-  await until(() => returned || fs.existsSync(join(f.env.HOME, 'ticket-waiting')), t.signal);
-  assert.equal(returned, false);
-  assert.equal(fs.readFileSync(path, 'utf8'), before, 'the waiting call has not written the ticket');
+  const add = queued(await fast(call('add', { tickets: [draft('Second')] })));
+  const update = queued(await fast(call('update', { updates: [
+    { ticket: 1, status: 'done' }, { ticket: 2, tick: [1] },
+  ] })));
+  const missing = queued(await fast(call('update', { ticket: 3, status: 'done' })));
+  assert.equal(queued(await f.call('hud_read', { job: add })), add);
+  assert.equal(fs.statSync(fileOf(f, add)).mode & 0o777, 0o600);
+  const second = '.scratch/sample/issues/02-second.md';
+  assert.equal(fs.existsSync(join(f.main, second)), false);
+  assert.equal(fs.readFileSync(path, 'utf8'), before, 'queued updates do not write during land');
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), base);
 
   fs.writeFileSync(join(f.env.HOME, 'release'), '');
-  assert.equal((await queued).ok, true);
+  await until(() => read(f, missing).state === 'failed', t.signal);
+  const added = await f.call('hud_read', { job: add });
+  assert.equal(added.state, 'completed');
+  assert.deepEqual(added.tickets, [{ number: 2, path: join(f.main, second) }]);
+  for (const id of [add, update, missing]) assert.ok(added.changes.some(line => line.includes(id)));
+  const updated = await f.call('hud_read', { job: update });
+  assert.equal(updated.state, 'completed');
+  assert.deepEqual(updated.updates, [
+    { feature: 'sample', ok: true, number: 1, path },
+    { feature: 'sample', ok: true, number: 2, path: join(f.main, second) },
+  ]);
+  assert.equal(updated.changes, undefined, 'notices are claimed once');
+  const error = await f.call('hud_read', { job: missing });
+  assert.equal(error.ok, false);
+  assert.equal(error.state, 'failed');
+  assert.match(error.error, /unknown ticket: 3/);
   const done = f.flowState(flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));
-  assert.equal(f.git(f.main, 'rev-parse', 'HEAD^'), done.landed_sha);
-  assert.equal(f.git(f.main, 'log', '-1', '--format=%s'), 'tickets: sample/01 update');
+  const show = rev => f.git(f.main, 'show', '--format=%s', '--name-only', rev).split('\n').filter(Boolean);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD~2'), done.landed_sha);
+  assert.deepEqual(show('HEAD^'), ['tickets: sample/02 add', second]);
+  assert.deepEqual(show('HEAD'), ['tickets: sample/01 update', rel, second]);
   assert.match(f.git(f.main, 'show', `${done.landed_sha}:${rel}`), /\*\*Status:\*\* ready-for-human/);
   assert.match(f.git(f.main, 'show', `HEAD:${rel}`), /\*\*Status:\*\* done/);
+  assert.match(f.git(f.main, 'show', `HEAD:${second}`), /- \[x\]/);
   assertLandingRecord(f, rel, base, done.landed_sha);
-  assert.equal(f.git(f.main, 'status', '--porcelain', '--', rel), '');
+  assert.equal(f.git(f.main, 'status', '--porcelain', '--', rel, second), '');
+});
+
+test('a task-capable caller receives a queued edit completion without polling', { timeout: 15000 }, async t => {
+  const f = await checkout(t, ['true']), rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  const receipt = queued(resultValue(await taskCall(rpc, 'hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('First')] })));
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+  const notices = () => f.commands().filter(({ command, args }) => command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt'
+    && args[2] === f.env.HERDR_PANE_ID && args[3].includes(receipt));
+  await until(() => notices().length > 0, t.signal);
+  const result = resultValue(await taskCall(rpc, 'hud_read', { job: receipt }));
+  assert.equal(result.state, 'completed');
+  assert.equal(result.changes, undefined);
+  assert.equal(notices().length, 1);
+});
+
+test('MCP startup drains pending ticket receipts and reconciles a committed receipt without a duplicate', { timeout: 20000 }, async t => {
+  const f = await checkout(t, ['true'], { inHerdr: false }), call = tickets(f);
+  const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  const one = queued(await call('add', { tickets: [draft('First')] }));
+  const two = queued(await call('add', { tickets: [{ ...draft('Second'), blocked_by: [1] }] }));
+  await f.stopMcp();
+  const helpers = () => findFixtureProcesses({ root: f.root, hudHome: f.home })
+    .filter(p => p.cmdline.includes('workflow-runner.mjs --ticket-edits'));
+  for (const { pid } of helpers()) process.kill(pid, 'SIGKILL');
+  await until(() => helpers().length === 0, t.signal);
+  assert.equal(read(f, one).state, 'queued');
+  assert.equal(read(f, two).state, 'queued');
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.base_head);
+
+  async function restart() {
+    const child = spawn(process.execPath, [entry], { cwd: f.root, env: f.env, stdio: ['pipe', 'pipe', 'inherit'] });
+    const exited = once(child, 'exit');
+    const stop = () => stopChild(child, exited, { closeStdin: true });
+    f.onCleanup(stop);
+    const rpc = rpcClient(child);
+    assert.ok((await rpc('initialize')).result);
+    return { stop, read: async job => resultValue((await rpc('tools/call', { name: 'hud_read', arguments: { job } })).result) };
+  }
+  const first = await restart();
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+  await until(() => read(f, two).state === 'completed', t.signal);
+  const firstResult = await first.read(one);
+  assert.equal(firstResult.tickets[0].number, 1);
+  assert.equal((await first.read(two)).tickets[0].number, 2);
+  assert.equal(f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..HEAD`), 'tickets: sample/01 add\ntickets: sample/02 add');
+  const head = f.git(f.main, 'rev-parse', 'HEAD');
+  await first.stop();
+  await until(() => helpers().length === 0, t.signal);
+
+  // Recreate the last durable receipt state if the helper died just after the commit.
+  const written = read(f, one);
+  fs.writeFileSync(fileOf(f, one), JSON.stringify({ ...written, state: 'applying' }));
+  const recovered = await restart();
+  await until(() => read(f, one).state === 'completed', t.signal);
+  assert.deepEqual((await recovered.read(one)).tickets, firstResult.tickets);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), head);
+  assert.deepEqual(fs.readdirSync(join(f.main, '.scratch/sample/issues')).sort(), ['01-first.md', '02-second.md']);
 });
