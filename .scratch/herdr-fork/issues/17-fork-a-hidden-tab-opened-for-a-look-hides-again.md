@@ -1,6 +1,6 @@
 # 17: Fork: a hidden tab opened for a look hides again when focus leaves it
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Blocked by:** none
 **Objective:** herdr-fork
