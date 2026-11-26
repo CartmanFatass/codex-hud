@@ -10,7 +10,7 @@ import type { TodayFacts } from '../collectors/home-cards.js';
 import type { ScheduleItem } from '../collectors/schedule.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
-import { initialHomeTab, initialProjectTab, initialExecutionTab, initialControlTab, type FeatureTarget, type JobTarget, type MonitorState, type ObjectiveTarget } from './monitor-state.js';
+import { initialHomeTab, initialProjectTab, initialExecutionTab, initialControlTab, type FeatureTarget, type JobTarget, type MetroStationInspect, type MonitorState, type ObjectiveTarget } from './monitor-state.js';
 import type { ExecutionView, TicketActivity } from '../collectors/execution.js';
 export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
@@ -53,6 +53,7 @@ export interface RowControl {
 export interface MetroStationTarget {
   readonly item: string;
   readonly flow: string;
+  readonly stationId: string;
   readonly x: number;
   readonly width: number;
   readonly lane: number;
@@ -60,6 +61,7 @@ export interface MetroStationTarget {
   /** True for the station that changed last (or its closest column fallback) for vertical entry into the map. */
   readonly defaultEntry?: true;
   readonly execJob?: { target: JobTarget; dir: string; tab: boolean };
+  readonly inspect?: MetroStationInspect;
 }
 export interface MonitorRow {
   text: string;

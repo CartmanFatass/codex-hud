@@ -1,6 +1,9 @@
 /** Hairline metro-map golden frames (40/62/80 cols, EN/ZH, colour/no-colour/ASCII), keyboard/mouse navigation, and ? help legend. Synthetic data only. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   layoutMetroFlow,
   metroStationItem,
@@ -8,6 +11,7 @@ import {
   renderMetroLegend,
   runItem,
 } from '../../dist/render/execution-metro.js';
+import { PanelExecution } from '../../dist/panel/execution.js';
 import { handleMonitorInput, initialMonitorState, monitorItemAt, renderMonitor } from '../../dist/render/monitor.js';
 import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -533,15 +537,23 @@ test('keyboard and mouse: station cursor, lane moves, Tab switching, Enter targe
         createdAt: ago(5), updatedAt: ago(1),
         steps: [], tickets: [], todo: [], decisions: [], reviews: [], heldCount: 0, repairRounds: 0,
         batch: { flow: flow2, role: 'sonic', count: 10, state: 'working', slots: 4, totals: { done: 5, running: 3, waiting: 2, failed: 0, cancelled: 0 } },
+        metro: {
+          stations: [
+            { id: 'pool', kind: 'pool', state: 'working', role: 'sonic', pool: { done: 5, working: 3, waiting: 2 }, count: 10, changedAt: ago(1) },
+            { id: 'summary', kind: 'summary', state: 'waiting', blockers: ['pool'] },
+          ],
+          edges: [{ from: 'pool', to: 'summary' }],
+          lastChangedId: 'pool',
+        },
       },
     ],
   };
 
   const decoder = new WorkbenchInputDecoder('workboard');
-  const draw = (state) => withMode({ lang: 'en', theme: 'none', icons: 'unicode' }, () =>
-    renderMonitor({ state, width: 62, height: 30, nowMs: NOW, execution: executionView, projectName: 'demo' }));
-  const send = (state, raw) => {
-    const frame = draw(state);
+  const draw = (state, width = 62) => withMode({ lang: 'en', theme: 'none', icons: 'unicode' }, () =>
+    renderMonitor({ state, width, height: 30, nowMs: NOW, execution: executionView, projectName: 'demo' }));
+  const send = (state, raw, width = 62) => {
+    const frame = draw(state, width);
     const input = typeof raw === 'string'
       ? (raw === '\x1b' ? { type: 'key', key: 'escape' } : decoder.push(Buffer.from(raw))[0])
       : raw;
@@ -568,42 +580,42 @@ test('keyboard and mouse: station cursor, lane moves, Tab switching, Enter targe
 
   // ↓ from flow header enters the map on topmost lane (lane 0: ticket 03).
   state = send(state, '\x1b[B').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:03'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '03'));
   assert.match(draw(state).lines.map(stripAnsi).join('\n'), /◉ 03 Dead-letter view/);
 
   // ↓ moves across lanes: lane 0 (03) -> lane 1 (04) -> lane 2 (05) -> leaves map to flow2 header!
   state = send(state, '\x1b[B').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:04'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '04'));
   assert.match(draw(state).lines.map(stripAnsi).join('\n'), /\? 04 Backoff settings/);
   state = send(state, '\x1b[B').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:05'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '05'));
   state = send(state, '\x1b[B').state;
   assert.equal(state.execution.cursor, runItem(flow2));
 
   // ↑ from flow2 header re-enters flow1 on bottommost lane (05) -> 04 -> 03 -> leaves upward to flow1 header!
   state = send(state, '\x1b[A').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:05'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '05'));
   state = send(state, '\x1b[A').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:04'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '04'));
   state = send(state, '\x1b[A').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:03'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '03'));
   state = send(state, '\x1b[A').state;
   assert.equal(state.execution.cursor, runItem(flow1));
 
   // Step onto middle lane (04): ←/→ move between stations (never switch tabs, even at ends!).
   state = send(send(state, '\x1b[B').state, '\x1b[B').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:04'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '04'));
   state = send(state, '\x1b[D').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:02'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '02'));
   assert.equal(state.activeTab, 'execution');
   state = send(state, '\x1b[D').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:01'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '01'));
   // Left at leftmost station stays on map and does NOT switch tabs.
   state = send(state, '\x1b[D').state;
   assert.equal(state.activeTab, 'execution');
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:01'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '01'));
   // Right walks 01 -> 02 -> 04 (keeps lane 1) -> 06 -> review -> accept.
-  for (const id of ['ticket:02', 'ticket:04', 'ticket:06', 'review', 'accept']) {
+  for (const id of ['02', '04', '06', 'review', 'accept']) {
     state = send(state, '\x1b[C').state;
     assert.equal(state.execution.cursor, metroStationItem(flow1, id));
   }
@@ -616,48 +628,86 @@ test('keyboard and mouse: station cursor, lane moves, Tab switching, Enter targe
   assert.equal(send(state, '\t').state.activeTab, 'control');
   assert.equal(send(state, '\x1b[Z').state.activeTab, 'project');
 
-  // Enter on a station WITHOUT execJob (accept) does nothing (does not open Run Detail).
-  assert.equal(send(state, '\r').state.subpage, undefined);
+  // Enter on a non-worker station (accept) opens station inspection built from run facts; Esc returns.
+  const acceptOpen = send(state, '\r').state;
+  assert.equal(acceptOpen.subpage?.kind, 'station-detail');
+  assert.equal(acceptOpen.subpage?.flow, flow1);
+  assert.equal(acceptOpen.subpage?.stationId, 'accept');
+  assert.match(draw(acceptOpen).lines.map(stripAnsi).join('\n'), /Lead acceptance/);
+  state = send(acceptOpen, '\x1b').state;
+  assert.equal(state.subpage, undefined);
+  assert.equal(state.execution.cursor, metroStationItem(flow1, 'accept'));
+
+  // Move to 06 (future ticket): Enter opens station inspection with blockers.
+  state = send(send(state, '\x1b[D').state, '\x1b[D').state;
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '06'));
+  const futureOpen = send(state, '\r').state;
+  assert.equal(futureOpen.subpage?.kind, 'station-detail');
+  assert.equal(futureOpen.subpage?.stationId, '06');
+  const futureText = draw(futureOpen).lines.map(stripAnsi).join('\n');
+  assert.match(futureText, /Replay test/);
+  assert.match(futureText, /03, 04, 05/);
+  state = send(futureOpen, '\x1b').state;
 
   // Move to 04 (has execJob + live tab): g/P/H work and Enter opens Inspector; Esc returns to 04.
-  state = send(send(send(state, '\x1b[D').state, '\x1b[D').state, '\x1b[D').state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:04'));
+  state = send(state, '\x1b[D').state;
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '04'));
   assert.deepEqual(send(state, 'g').action, { type: 'focus-job-tab', dir: `/synthetic/hud/jobs/${J4}` });
   const insp = send(state, '\r').state;
   assert.deepEqual([insp.subpage.kind, insp.subpage.from, insp.subpage.target.workerId],
     ['inspector', 'execution', `thin-job:${J4}`]);
   state = send(insp, '\x1b').state;
   assert.equal(state.subpage, undefined);
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:04'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '04'));
 
   // Per-cell mouse hits: click 03 selects 03, click 05 selects 05, second click on 05 opens Inspector, empty cell is no-op.
   frame = draw(state);
   const pane = frame.panes.find((p) => p.id === 'agents');
-  const findCoords = (stationId) => {
-    const targetItem = metroStationItem(flow1, stationId);
+  const findCoords = (flowId, stationId) => {
+    const targetItem = metroStationItem(flowId, stationId);
     for (let i = 0; i < pane.rows.length; i++) {
       const hit = pane.rows[i].metroStations?.find((s) => s.item === targetItem);
       if (hit) return { x: pane.x + hit.x, y: pane.y + (pane.edge ?? 0) + i - pane.offset, hit };
     }
-    throw new Error(`station not found: ${stationId}`);
+    throw new Error(`station not found: ${flowId}:${stationId}`);
   };
-  const c3 = findCoords('ticket:03');
-  const c5 = findCoords('ticket:05');
-  assert.equal(monitorItemAt(pane, c3.x, c3.y), metroStationItem(flow1, 'ticket:03'));
-  assert.equal(monitorItemAt(pane, c5.x, c5.y), metroStationItem(flow1, 'ticket:05'));
+  const c3 = findCoords(flow1, '03');
+  const c5 = findCoords(flow1, '05');
+  const cPool = findCoords(flow2, 'pool');
+  const cFuture = findCoords(flow1, '06');
+  assert.equal(monitorItemAt(pane, c3.x, c3.y), metroStationItem(flow1, '03'));
+  assert.equal(monitorItemAt(pane, c5.x, c5.y), metroStationItem(flow1, '05'));
   assert.equal(monitorItemAt(pane, c3.x + 2, c3.y), undefined, 'line cell between stations is not a station hit');
 
   state = send(state, { type: 'mouse', button: 'left', x: c3.x, y: c3.y }).state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:03'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '03'));
   // Clicking empty cell leaves cursor unchanged.
   state = send(state, { type: 'mouse', button: 'left', x: c3.x + 2, y: c3.y }).state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:03'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '03'));
   // Click 05 selects 05; second click opens 05's Inspector.
   state = send(state, { type: 'mouse', button: 'left', x: c5.x, y: c5.y }).state;
-  assert.equal(state.execution.cursor, metroStationItem(flow1, 'ticket:05'));
+  assert.equal(state.execution.cursor, metroStationItem(flow1, '05'));
   assert.equal(state.subpage, undefined);
   const clickedInsp = send(state, { type: 'mouse', button: 'left', x: c5.x, y: c5.y }).state;
   assert.equal(clickedInsp.subpage.target.workerId, `thin-job:${J5}`);
+
+  // Click + second click on batch pool opens station inspection with counts and slots; Enter does too.
+  state = send(state, { type: 'mouse', button: 'left', x: cPool.x, y: cPool.y }).state;
+  assert.equal(state.execution.cursor, metroStationItem(flow2, 'pool'));
+  assert.equal(state.subpage, undefined);
+  const clickedPool = send(state, { type: 'mouse', button: 'left', x: cPool.x, y: cPool.y }).state;
+  assert.equal(clickedPool.subpage?.kind, 'station-detail');
+  assert.equal(clickedPool.subpage?.stationId, 'pool');
+  const poolText = draw(clickedPool).lines.map(stripAnsi).join('\n');
+  assert.match(poolText, /Pool of 10/);
+  assert.match(poolText, /3\/4/);
+  assert.equal(send(state, '\r').state.subpage?.stationId, 'pool');
+
+  // Second click on future ticket opens station inspection too.
+  state = send(state, { type: 'mouse', button: 'left', x: cFuture.x, y: cFuture.y }).state;
+  const clickedFuture = send(state, { type: 'mouse', button: 'left', x: cFuture.x, y: cFuture.y }).state;
+  assert.equal(clickedFuture.subpage?.kind, 'station-detail');
+  assert.equal(clickedFuture.subpage?.stationId, '06');
 });
 
 /* ───────────────────────── 3. Layout edge cases & exec-page/04 model interface ───────────────────────── */
@@ -705,4 +755,321 @@ test('layout handles inline repair fallback, cycles, skip-a-column edges, and pr
   };
   const lanedRows = paintFlow(preLaned, undefined, 62, { lang: 'en', theme: 'none' });
   assert.match(plain(lanedRows).at(-1), /\? 03 Bottom/, 'changedAt picks most recently changed station');
+});
+
+/* ───────────────────────── 4. Collector metro integration, junctions, multi-round repair, and station inspection ───────────────────────── */
+
+function putJson(file, value) {
+  fs.mkdirSync(join(file, '..'), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(value));
+}
+
+test('collection + renderMonitor: new-format queue renders parallel roots, single-root branch, 2/3 failed gate, newest landing detail, and main hand-back', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-metro-e2e-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hud = join(root, 'hud'), project = join(root, 'project'), flows = join(hud, 'flows');
+  const iso = (mins) => new Date(NOW - mins * 60_000).toISOString();
+  const id = (p, n) => `${p}${n.toString(16).padStart(16, '0')}`;
+  const addJob = (n, state, receipt = {}, statusExtra = {}) => {
+    const jid = id('j', n), dir = join(hud, 'jobs', jid);
+    putJson(join(dir, 'job.json'), {
+      job: jid, cwd: project, project_root: project, role: 'imp', headless: true,
+      dispatch_exit_code: 0, created_at: iso(40 - n), ...receipt,
+    });
+    putJson(join(dir, 'STATUS.json'), { state, started_at: iso(25 - n), ...statusExtra });
+    fs.writeFileSync(join(dir, 'brief.md'), `# ${receipt.ticket ?? `0${n}`}: ${receipt.title ?? `Task ${n}`}\n`);
+    return jid;
+  };
+
+  const jRoot2 = addJob(1, 'done', { ticket: 'demo/02', title: 'Independent root beta' }, { settled_at: iso(1) });
+  const jRoot1 = addJob(2, 'done', { ticket: 'demo/01', title: 'Independent root alpha' }, { settled_at: iso(20) });
+  const jGate = addJob(3, 'done', { ticket: 'demo/03', title: 'Worker on alpha only' }, { started_at: iso(10), settled_at: iso(6) });
+  const jRep1 = addJob(4, 'working', { ticket: 'demo/03', title: 'Repair alpha gate' }, { started_at: iso(5) });
+  const fGate = id('f', 3);
+  putJson(join(flows, `${fGate}.json`), {
+    flow: fGate, job: jGate, pane: '', task: false,
+    wt: { root: project, main_root: project, branch: 'wt/03' },
+    config: { base: 'main', gate: ['build', 'unit', 'lint'], after: [], push: false },
+    state: 'running', step: 'repair 1', pid: process.pid, start: '1',
+    created_at: iso(9), updated_at: iso(5), step_started_at: iso(5), source_sha: 'a'.repeat(40),
+    repairs: [{ step: 'gate[2]: unit', job: jRep1, outcome: 'waiting for worker', started_at: iso(5), changed_at: iso(5) }],
+    timings: [{ step: 'cherry-pick', ok: true, ms: 5 }, { step: 'gate[2]: unit', ok: false, ms: 15 }],
+  });
+  const qFlow = id('q', 1);
+  putJson(join(flows, `${qFlow}.json`), {
+    flow: qFlow, root: project, project_root: project, feature: 'demo', pane: '', task: false, max_parallel: 2,
+    created_at: iso(30), updated_at: iso(1), state: 'working', handback_to: 'main',
+    steps: { tickets: { state: 'running', changed_at: iso(30) }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
+    tickets: [
+      { ticket: 'demo/02', path: join(project, '.scratch/demo/02.md'), role: 'imp', job: jRoot2, landed: true, blockers: [], landed_at: iso(1), changed_at: iso(1) },
+      { ticket: 'demo/01', path: join(project, '.scratch/demo/01.md'), role: 'imp', job: jRoot1, landed: true, blockers: [], landed_at: iso(20), changed_at: iso(20) },
+      { ticket: 'demo/03', path: join(project, '.scratch/demo/03.md'), role: 'imp', job: jGate, land: fGate, blockers: ['demo/01'] },
+    ],
+    queued: [{ ticket: 'demo/04', blockers: ['demo/02'] }],
+  });
+
+  const execution = new PanelExecution(hud, null, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, NOW);
+  const view = execution.view(project);
+
+  const draw = (state, opts = { lang: 'en', theme: 'none', icons: 'unicode' }) => withMode(opts, () =>
+    renderMonitor({ state, width: 62, height: 24, nowMs: NOW, execution: view, projectName: 'demo' }));
+  const baseState = { ...initialMonitorState(), activeTab: 'execution' };
+  const frame = draw(baseState);
+  const allStations = frame.workboard.rows.flatMap((r) => r.metroStations ?? []);
+  const byId = new Map(allStations.map((s) => [s.stationId, s]));
+
+  // Two independent landed roots sit in parallel in column 0 on distinct lanes (never in series).
+  assert.equal(byId.get('demo/02').col, 0);
+  assert.equal(byId.get('demo/01').col, 0);
+  assert.notEqual(byId.get('demo/02').lane, byId.get('demo/01').lane);
+
+  // Worker 03 sits in column 1 on the exact lane of root 01 only, with failed 2/3 gate (‹▮✗▯›) and repair spur.
+  assert.equal(byId.get('demo/03').col, 1);
+  assert.equal(byId.get('demo/03').lane, byId.get('demo/01').lane);
+  assert.equal(byId.get('demo/04').col, 1);
+  assert.equal(byId.get('demo/04').lane, byId.get('demo/02').lane);
+  const text = frame.lines.map(stripAnsi).join('\n');
+  assert.ok(text.includes('‹▮✗▯›'), `expected 2/3 failed gate glyph:\n${text}`);
+
+  // Default detail line shows the newest change: demo/02 landed 1m ago (newer than worker start 10m & repair 5m).
+  assert.match(text, /● 02 Independent root beta\s+⚒ landed 1m/);
+
+  // Cursor on demo/03 shows real gate index/total 2/3 (not 1/1).
+  const onGate = draw({ ...baseState, execution: { cursor: metroStationItem(qFlow, 'demo/03'), scroll: 0 } });
+  assert.match(onGate.lines.map(stripAnsi).join('\n'), /gate failed 2\/3/);
+
+  // Main hand-back is labeled main (not Lead acceptance) in both EN and ZH, and opens station inspection on Enter & second click.
+  const onAccept = { ...baseState, execution: { cursor: metroStationItem(qFlow, 'accept'), scroll: 0 } };
+  const acceptEn = draw(onAccept, { lang: 'en', theme: 'none', icons: 'unicode' });
+  const acceptZh = draw(onAccept, { lang: 'zh', theme: 'none', icons: 'unicode' });
+  assert.match(acceptEn.lines.map(stripAnsi).join('\n'), /Hand-back \(main\)/);
+  assert.doesNotMatch(acceptEn.lines.map(stripAnsi).join('\n'), /Lead acceptance/);
+  assert.match(acceptZh.lines.map(stripAnsi).join('\n'), /交回 \(main\)/);
+  assert.doesNotMatch(acceptZh.lines.map(stripAnsi).join('\n'), /负责人验收/);
+
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const enterAccept = handleMonitorInput(acceptEn.state, decoder.push(Buffer.from('\r'))[0], { frame: acceptEn, nowMs: NOW }).state;
+  assert.equal(enterAccept.subpage?.kind, 'station-detail');
+  assert.equal(enterAccept.subpage?.stationId, 'accept');
+  const acceptDetailText = draw(enterAccept).lines.map(stripAnsi).join('\n');
+  assert.match(acceptDetailText, /Hand-back \(main\)/);
+  assert.match(acceptDetailText, /Seat\s+main/);
+
+  const pane = acceptEn.panes.find((p) => p.id === 'agents');
+  const acceptRowIdx = pane.rows.findIndex((r) => r.metroStations?.some((s) => s.stationId === 'accept'));
+  const acceptHit = pane.rows[acceptRowIdx].metroStations.find((s) => s.stationId === 'accept');
+  const clickAccept = handleMonitorInput(acceptEn.state, {
+    type: 'mouse', button: 'left', x: pane.x + acceptHit.x, y: pane.y + acceptRowIdx - pane.offset,
+  }, { frame: acceptEn, nowMs: NOW }).state;
+  assert.equal(clickAccept.subpage?.kind, 'station-detail');
+  assert.equal(clickAccept.subpage?.stationId, 'accept');
+});
+
+test('round 1 and round 2 repairs both render and are selectable via keyboard, mouse and Enter (spur and inline)', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-metro-rep2-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hud = join(root, 'hud'), project = join(root, 'project'), flows = join(hud, 'flows');
+  const iso = (mins) => new Date(NOW - mins * 60_000).toISOString();
+  const id = (p, n) => `${p}${n.toString(16).padStart(16, '0')}`;
+  const addJob = (n, state, receipt = {}, statusExtra = {}) => {
+    const jid = id('j', n), dir = join(hud, 'jobs', jid);
+    putJson(join(dir, 'job.json'), {
+      job: jid, cwd: project, project_root: project, role: 'imp', headless: true,
+      dispatch_exit_code: 0, created_at: iso(40 - n), ...receipt,
+    });
+    putJson(join(dir, 'STATUS.json'), { state, started_at: iso(25 - n), ...statusExtra });
+    fs.writeFileSync(join(dir, 'brief.md'), `# ${receipt.ticket ?? `0${n}`}: Repair test ${n}\n`);
+    return jid;
+  };
+
+  const jSrc = addJob(1, 'done', { ticket: 'rep/01' }, { settled_at: iso(15) });
+  const jRep1 = addJob(2, 'done', { ticket: 'rep/01' }, { started_at: iso(12), settled_at: iso(8) });
+  const jRep2 = addJob(3, 'working', { ticket: 'rep/01' }, { started_at: iso(2) });
+  const fLand = id('f', 1);
+  putJson(join(flows, `${fLand}.json`), {
+    flow: fLand, job: jSrc, pane: '', task: false,
+    wt: { root: project, main_root: project, branch: 'wt/rep01' },
+    config: { base: 'main', gate: ['build', 'unit', 'lint'], after: [], push: false },
+    state: 'running', step: 'repair 2', pid: process.pid, start: '1',
+    created_at: iso(15), updated_at: iso(2), step_started_at: iso(2), source_sha: 'b'.repeat(40),
+    repairs: [
+      { step: 'gate[2]: unit', job: jRep1, outcome: 'failed at gate[2]: unit', started_at: iso(12), changed_at: iso(6) },
+      { step: 'gate[2]: unit', job: jRep2, outcome: 'waiting for worker', started_at: iso(2), changed_at: iso(2) },
+    ],
+    timings: [{ step: 'cherry-pick', ok: true, ms: 5 }, { step: 'gate[2]: unit', ok: false, ms: 20 }],
+  });
+  const qFlow = id('q', 2);
+  putJson(join(flows, `${qFlow}.json`), {
+    flow: qFlow, root: project, project_root: project, feature: 'rep', pane: '', task: false, max_parallel: 2,
+    created_at: iso(30), updated_at: iso(2), state: 'working',
+    steps: { tickets: { state: 'running', changed_at: iso(30) }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
+    tickets: [{ ticket: 'rep/01', path: join(project, '.scratch/rep/01.md'), role: 'imp', job: jSrc, land: fLand, blockers: [] }],
+  });
+
+  const execution = new PanelExecution(hud, null, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, NOW);
+  const view = execution.view(project);
+
+  const draw = (state) => withMode({ lang: 'en', theme: 'none', icons: 'unicode' }, () =>
+    renderMonitor({ state, width: 62, height: 24, nowMs: NOW, execution: view, projectName: 'demo' }));
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const send = (state, raw) => {
+    const frame = draw(state);
+    const input = typeof raw === 'string' ? decoder.push(Buffer.from(raw))[0] : raw;
+    return handleMonitorInput(frame.state, input, { frame, nowMs: NOW });
+  };
+
+  let state = { ...initialMonitorState(), activeTab: 'execution' };
+  const frame = draw(state);
+  const stations = frame.workboard.rows.flatMap((r) => r.metroStations ?? []);
+  const r1 = stations.find((s) => s.stationId === 'rep/01↻');
+  const r2 = stations.find((s) => s.stationId === 'rep/01↻2');
+  assert.ok(r1 && r2, 'both round 1 and round 2 repair stations exist');
+  assert.equal(r1.lane, r2.lane, 'both repair rounds sit on the repair line');
+  assert.ok(r1.x < r2.x, 'round 1 sits to the left of round 2');
+
+  // Default detail line follows round 2 (newest change); moving ←/→ switches between round 1 and round 2.
+  assert.match(frame.lines.map(stripAnsi).join('\n'), /repair 2\/2 2m/);
+  state = { ...state, execution: { cursor: metroStationItem(qFlow, 'rep/01↻'), scroll: 0 } };
+  assert.match(draw(state).lines.map(stripAnsi).join('\n'), /repair failed 1\/2 6m/);
+  assert.equal(send(state, '\r').state.subpage?.target?.workerId, `thin-job:${jRep1}`);
+
+  state = send(state, '\x1b[C').state;
+  assert.equal(state.execution.cursor, metroStationItem(qFlow, 'rep/01↻2'));
+  assert.equal(send(state, '\r').state.subpage?.target?.workerId, `thin-job:${jRep2}`);
+  state = send(state, '\x1b[D').state;
+  assert.equal(state.execution.cursor, metroStationItem(qFlow, 'rep/01↻'));
+
+  // Inline fallback when all 3 lanes are full also renders and selects both rounds.
+  const crowded2 = {
+    flow: 'crowded2', kind: 'queue', name: 'full-lanes-2', state: 'running', createdAt: ago(15),
+    stations: [
+      { id: '01', num: '01', kind: 'worker', deps: [], state: 'done', title: 'Root' },
+      { id: '02', num: '02', kind: 'worker', deps: ['01'], state: 'working', title: 'Lane A' },
+      { id: '03', num: '03', kind: 'worker', deps: ['01'], state: 'working', title: 'Lane B' },
+      {
+        id: '04', num: '04', kind: 'worker', deps: ['01'], state: 'working', title: 'Lane C',
+        gate: { n: 3, k: 2, state: 'failed' },
+        repairs: [
+          { id: '04↻', state: 'failed', round: '1/2', role: 'imp', title: 'Lane C' },
+          { id: '04↻2', state: 'working', round: '2/2', role: 'imp', title: 'Lane C' },
+        ],
+      },
+      { id: '05', num: '05', kind: 'worker', deps: ['02', '03', '04'], state: 'waiting', title: 'Join' },
+    ],
+  };
+  const inlineRows = paintFlow(crowded2, '04↻2', 62, { lang: 'en', theme: 'none' });
+  const inlineIds = inlineRows.flatMap((r) => r.metroStations ?? []).map((s) => s.stationId);
+  assert.ok(inlineIds.includes('04↻') && inlineIds.includes('04↻2'), `both inline rounds selectable: ${inlineIds}`);
+});
+
+test('skip-a-column and crossing graphs render through reduceMetroLanes with junctions and preserved blockers', () => {
+  const skipFlow = {
+    flow: 'skip', kind: 'graph', name: 'skip-graph', state: 'running', createdAt: ago(10), lastChangedId: '04',
+    stations: [
+      { id: '01', kind: 'worker', state: 'done', title: 'Root 1' },
+      { id: '02', kind: 'worker', state: 'done', title: 'Root 2' },
+      { id: '03', kind: 'worker', state: 'working', title: 'Middle' },
+      { id: '04', kind: 'worker', state: 'waiting', title: 'Sink', blockers: ['01', '03'] },
+    ],
+    edges: [{ from: '02', to: '03' }, { from: '01', to: '04' }, { from: '03', to: '04' }],
+  };
+  const skipLayout = layoutMetroFlow(skipFlow, 62, false);
+  assert.equal(skipLayout.junctions.length, 1, 'skip-a-column edge renders via reduceMetroLanes shared junction');
+  const skipRows = paintFlow(skipFlow, '04', 62, { lang: 'en', theme: 'none' });
+  assert.match(plain(skipRows).at(-1), /←01,03/, 'original blockers stay visible on detail line');
+
+  const k22 = {
+    flow: 'k22', kind: 'graph', name: 'crossing-k22', state: 'running', createdAt: ago(8), lastChangedId: 'C',
+    stations: [
+      { id: 'A', kind: 'worker', state: 'done', title: 'A' },
+      { id: 'B', kind: 'worker', state: 'done', title: 'B' },
+      { id: 'C', kind: 'worker', state: 'waiting', title: 'C' },
+      { id: 'D', kind: 'worker', state: 'waiting', title: 'D' },
+    ],
+    edges: [{ from: 'A', to: 'C' }, { from: 'A', to: 'D' }, { from: 'B', to: 'C' }, { from: 'B', to: 'D' }],
+  };
+  const k22Layout = layoutMetroFlow(k22, 62, false);
+  assert.equal(k22Layout.junctions.length, 1, 'unavoidable crossing renders via shared junction');
+  const k22Plain = plain(paintFlow(k22, 'C', 62, { lang: 'en', theme: 'none' }));
+  assert.ok(k22Plain[1].includes('┬') && k22Plain[2].includes('┴'), `expected junction box glyphs:\n${k22Plain.join('\n')}`);
+  assert.match(k22Plain.at(-1), /←A,B/);
+
+  // ASCII mode handles junctions cleanly too.
+  const k22Ascii = plain(paintFlow(k22, 'C', 62, { lang: 'en', theme: 'none', icons: 'text' }));
+  assert.ok(k22Ascii[1].includes('.') && k22Ascii[2].includes("'"));
+});
+
+test('Enter and second click on folded groups (done×, wait×, overflow pool) and flow header open inspection / Run Detail', () => {
+  const flowId = 'qfolded0000000001';
+  const stations = [
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `0${i + 1}`, kind: 'worker', state: 'done', title: `Done ${i + 1}` })),
+    { id: '07', kind: 'worker', state: 'working', title: 'Active A' },
+    { id: '08', kind: 'worker', state: 'working', title: 'Active B' },
+    { id: '09', kind: 'worker', state: 'waiting', title: 'Wait 1' },
+    { id: '10', kind: 'worker', state: 'waiting', title: 'Wait 2' },
+    { id: '11', kind: 'worker', state: 'waiting', title: 'Wait 3' },
+    { id: '12', kind: 'worker', state: 'waiting', title: 'Wait 4' },
+    { id: 'review', kind: 'review', state: 'waiting' },
+    { id: 'accept', kind: 'accept', state: 'waiting', label: 'main' },
+  ];
+  const edges = [
+    { from: '01', to: '02' }, { from: '02', to: '03' }, { from: '03', to: '04' }, { from: '04', to: '05' }, { from: '05', to: '06' },
+    { from: '06', to: '07' }, { from: '06', to: '08' },
+    { from: '07', to: '09' }, { from: '08', to: '09' },
+    { from: '09', to: '10' }, { from: '10', to: '11' }, { from: '11', to: '12' },
+    { from: '12', to: 'review' }, { from: 'review', to: 'accept' },
+  ];
+  const executionView = {
+    root: '/synthetic/proj', complete: true, screens: new Map(), endedJobs: [], jobs: [],
+    runs: [{
+      flow: flowId, kind: 'queue', label: 'long-fold', unattended: false, state: 'working', acceptanceSeat: 'main',
+      createdAt: ago(60), updatedAt: ago(2),
+      steps: [{ key: 'tickets', state: 'running' }, { key: 'review', state: 'waiting' }, { key: 'accept', state: 'waiting' }],
+      tickets: stations.filter((s) => s.kind === 'worker').map((s) => ({
+        ticket: s.id, role: 'imp', title: s.title, stage: s.state === 'done' ? 'landed' : s.state === 'working' ? 'worker' : 'queued',
+      })),
+      metro: { stations, edges, lastChangedId: '07' },
+      todo: [], decisions: [], reviews: [], heldCount: 0, repairRounds: 0,
+    }],
+  };
+
+  const draw = (state) => withMode({ lang: 'en', theme: 'none', icons: 'unicode' }, () =>
+    renderMonitor({ state, width: 40, height: 24, nowMs: NOW, execution: executionView, projectName: 'demo' }));
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const base = { ...initialMonitorState(), activeTab: 'execution' };
+  const frame = draw(base);
+  const pane = frame.panes.find((p) => p.id === 'agents');
+
+  // Second click on flow header opens Run Detail.
+  const headerIdx = pane.rows.findIndex((r) => r.item === runItem(flowId));
+  const clickHeader = handleMonitorInput(frame.state, {
+    type: 'mouse', button: 'left', x: pane.x + 4, y: pane.y + headerIdx - pane.offset,
+  }, { frame, nowMs: NOW }).state;
+  assert.deepEqual(clickHeader.subpage, { kind: 'run-detail', flow: flowId, scroll: 0 });
+
+  // Both folded groups (`done×` and `wait×`) exist at 40 cols and open inspection listing their member items on Enter & second click.
+  for (const [groupId, expectedMember] of [['done×', 'Done 1'], ['wait×', 'Wait 4']]) {
+    const onGroup = { ...base, execution: { cursor: metroStationItem(flowId, groupId), scroll: 0 } };
+    const fGroup = draw(onGroup);
+    const enterRes = handleMonitorInput(fGroup.state, decoder.push(Buffer.from('\r'))[0], { frame: fGroup, nowMs: NOW }).state;
+    assert.equal(enterRes.subpage?.kind, 'station-detail');
+    assert.equal(enterRes.subpage?.stationId, groupId);
+    const detailText = draw(enterRes).lines.map(stripAnsi).join('\n');
+    assert.ok(detailText.includes(expectedMember), `${groupId} inspection missing ${expectedMember}:\n${detailText}`);
+
+    const gPane = fGroup.panes.find((p) => p.id === 'agents');
+    const rIdx = gPane.rows.findIndex((r) => r.metroStations?.some((s) => s.stationId === groupId));
+    const hit = gPane.rows[rIdx].metroStations.find((s) => s.stationId === groupId);
+    const clickRes = handleMonitorInput(fGroup.state, {
+      type: 'mouse', button: 'left', x: gPane.x + hit.x, y: gPane.y + rIdx - gPane.offset,
+    }, { frame: fGroup, nowMs: NOW }).state;
+    assert.equal(clickRes.subpage?.kind, 'station-detail');
+    assert.equal(clickRes.subpage?.stationId, groupId);
+  }
 });

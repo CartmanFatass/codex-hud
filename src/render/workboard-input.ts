@@ -272,7 +272,17 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     };
     const selectedStation = execution ? findMetroStation(boardFrame.rows, cursor) : undefined;
     const activateStation = (station: NonNullable<typeof selectedStation>) => {
-      if (station.execJob) next.subpage = { kind: 'inspector', target: station.execJob.target, scroll: 0, from: 'execution' };
+      if (station.execJob) {
+        next.subpage = { kind: 'inspector', target: station.execJob.target, scroll: 0, from: 'execution' };
+      } else {
+        next.subpage = {
+          kind: 'station-detail',
+          flow: station.flow,
+          stationId: station.stationId,
+          ...(station.inspect ? { station: station.inspect } : {}),
+          scroll: 0,
+        };
+      }
     };
     if (input.type === 'mouse') {
       const pane = frame?.panes.find((p) => p.id === 'agents');

@@ -155,9 +155,8 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
   // The first actionable body row is the first open workflow, otherwise the first card or outcome.
   const first = runs.length ? runItem(runs[0].flow) : view.jobs.length ? cardItem(view.jobs[0])
     : 'flow' in recent[0] ? runItem(recent[0].flow) : cardItem(recent[0]);
-  const seen = new Set<string>();
   const selected = cursor === PROJECT_STRIP_MORE ? undefined : cursor ?? first;
-  const workflows = workflowSectionRows(runs, selected, seen, width, now);
+  const workflows = workflowSectionRows(runs, selected, width, now);
   const from = (job: ExecutionJob) => job.parentId
     ? [job.parentRole && monitorText(job.parentRole), shortId(job.parentId)].filter(Boolean).join(' ') : sessionLabel(job.session);
 

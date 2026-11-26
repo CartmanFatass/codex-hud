@@ -18,14 +18,9 @@ export function workflowLabel(run: ExecutionRun): string {
   return `${t(word)} ${monitorText(run.label)}`;
 }
 
-/** Render one open workflow as a Hairline metro map (header + 1–3 lane rows + detail line). */
-export function workflowRows(run: ExecutionRun, selected: string | undefined, seen: Set<string>, width: number, now: number): MonitorRow[] {
-  return renderMetroFlow(metroFlowFromRun(run, seen), selected, width, now);
-}
-
 /** Render all open workflows under Workflow, stacked directly with the contextual 0–2 row legend once below. */
-export function workflowSectionRows(runs: readonly ExecutionRun[], selected: string | undefined, seen: Set<string>, width: number, now: number): MonitorRow[] {
-  const flows: MetroFlow[] = runs.map((run) => metroFlowFromRun(run, seen));
+export function workflowSectionRows(runs: readonly ExecutionRun[], selected: string | undefined, width: number, now: number): MonitorRow[] {
+  const flows: MetroFlow[] = runs.map((run) => metroFlowFromRun(run));
   const rows = flows.flatMap((flow) => renderMetroFlow(flow, selected, width, now));
   return [...rows, ...renderMetroLegend(flows, width)];
 }

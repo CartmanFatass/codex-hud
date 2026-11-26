@@ -250,7 +250,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         tree,
         // An Inspector opened from Execution or a Feature page reads the project's jobs, which other panes may have dispatched.
         workboard: (((executing && painted.subpage) || (painted.subpage?.kind === 'inspector' && painted.subpage.from === 'feature')) && execution.board()) || boardFacts(),
-        execution: executing && (!painted.subpage || painted.subpage.kind === 'run-detail') ? execution.view(chosen) : undefined,
+        execution: executing && (!painted.subpage || painted.subpage.kind === 'run-detail' || painted.subpage.kind === 'station-detail') ? execution.view(chosen) : undefined,
         projectActivity: detailRoot ? execution.activity(detailRoot)
           : projectHub() && shown.root === chosen ? execution.activity(chosen) : undefined,
         projectLandings: featOpen && detailRoot ? execution.landings(detailRoot) : undefined,

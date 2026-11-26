@@ -1,14 +1,24 @@
 /**
- * Hairline metro-map model, layout, rendering and navigation for Execution workflows.
- * Pure; no I/O. Matches `docs/design/metro-map/` variant C · Hairline and `docs/design/tab-roles/README.md` §3a.
+ * Hairline metro-map layout, rendering and navigation for Execution workflows.
+ * Pure; no I/O. Uses collector `run.metro` + `reduceMetroLanes`; width fitting, glyph placement and hit geometry live here.
  */
-import type { ExecutionRun, ExecutionRunJobTarget, ExecutionRunTicket, RunStepState, WorkflowNode } from '../collectors/execution-runs.js';
+import {
+  reduceMetroLanes,
+  type MetroEdge as CollectorMetroEdge,
+  type MetroFlow as CollectorMetroFlow,
+  type MetroJunction,
+  type MetroRepair as CollectorMetroRepair,
+  type MetroStation as CollectorMetroStation,
+  type ReducedMetroMap,
+} from '../collectors/execution-metro.js';
+import type { ExecutionRun, ExecutionRunJobTarget, ExecutionRunTicket, RunStepState } from '../collectors/execution-runs.js';
 import type { WorkBatch } from '../collectors/workboard-types.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { displayConfig } from './hud-config.js';
 import { t } from './i18n.js';
 import { roleIcon } from './model-glyphs.js';
 import type { MetroStationTarget, MonitorRow } from './monitor.js';
+import type { MetroStationInspect } from './monitor-state.js';
 import { fit, monitorText } from './monitor-text.js';
 import { PROJECT_STRIP_MORE } from './project-strip.js';
 import { asciiBoard, boardRow } from './workboard-rows.js';
@@ -26,6 +36,7 @@ export interface MetroGate {
   /** Total gate commands. */
   readonly n: number;
   readonly state: 'working' | 'failed' | 'lease';
+  readonly command?: string;
 }
 
 export interface MetroRepair {
@@ -36,6 +47,7 @@ export interface MetroRepair {
   readonly role?: string;
   readonly since?: number;
   readonly changedAt?: number;
+  readonly reason?: string;
   readonly jobId?: string;
   readonly execJob?: ExecutionRunJobTarget;
 }
@@ -61,17 +73,24 @@ export interface MetroStation {
   /** Optional detail-line state word override (e.g. `'settled'`). */
   readonly stateWord?: string;
   readonly title?: string;
+  readonly label?: string;
   readonly role?: string;
   /** Optional lane hint (0..2) from an upstream lane reducer. */
   readonly lane?: number;
   readonly deps?: readonly string[];
+  readonly blockers?: readonly string[];
   readonly waits?: string;
   readonly since?: number;
   readonly changedAt?: number;
   readonly gate?: MetroGate;
   readonly repair?: MetroRepair;
+  /** Ordered repair rounds on this station's repair line (round 1, round 2, ...). */
+  readonly repairs?: readonly MetroRepair[];
   readonly counts?: MetroPoolCounts;
   readonly count?: number;
+  readonly groupedIds?: readonly string[];
+  readonly holdTag?: string;
+  readonly reason?: string;
   readonly jobId?: string;
   readonly execJob?: ExecutionRunJobTarget;
 }
@@ -83,7 +102,7 @@ export interface MetroEdge {
 
 /**
  * Typed input model for one open workflow's Hairline metro map.
- * Collectors (or the thin `metroFlowFromRun` adapter) build this off the paint path.
+ * Collectors provide `run.metro`; `metroFlowFromRun` adds display titles and falls back to wave inference only for legacy runs without `metro`.
  */
 export interface MetroFlow {
   readonly flow: string;
@@ -294,17 +313,15 @@ function paintRow(row: readonly Cell[], noColour: boolean): string {
   return out;
 }
 
-/* ───────────────────────── layout: waves, lanes, folding, routes ───────────────────────── */
+/* ───────────────────────── layout: reduceMetroLanes, width folding, glyph placement ───────────────────────── */
 
 interface WorkNode extends MetroStation {
-  deps: string[];
   compact?: boolean;
   inlineRepair?: boolean;
   spur?: boolean;
   host?: WorkNode;
   round?: string;
   col: number;
-  pref: number;
   lane: number;
   x: number;
   w: number;
@@ -322,17 +339,27 @@ interface LayoutEdge {
   readonly spur: boolean;
 }
 
+interface LayoutJunction {
+  readonly lane: number;
+  readonly jx: number;
+  readonly minLane: number;
+  readonly maxLane: number;
+  readonly incoming: readonly WorkNode[];
+  readonly outgoing: readonly WorkNode[];
+}
+
 interface LayoutSpur {
   readonly host: WorkNode;
   readonly lane: number;
   readonly a: number;
   readonly b: number;
-  readonly node: WorkNode;
+  readonly nodes: readonly WorkNode[];
 }
 
 export interface MetroLayout {
   readonly nodes: readonly WorkNode[];
   readonly edges: readonly LayoutEdge[];
+  readonly junctions: readonly LayoutJunction[];
   readonly spurs: readonly LayoutSpur[];
   readonly lanes: number;
   readonly width: number;
@@ -342,6 +369,15 @@ interface FoldStep {
   readonly done?: boolean;
   readonly keep?: number;
   readonly compact?: boolean;
+}
+
+function stationRepairs(station: Pick<MetroStation, 'repair' | 'repairs'>): readonly MetroRepair[] {
+  if (station.repairs?.length) return station.repairs;
+  return station.repair ? [station.repair] : [];
+}
+
+function repairStationId(hostId: string, repair: MetroRepair, index: number): string {
+  return repair.id ?? (index === 0 ? `${hostId}↻` : `${hostId}↻${index + 1}`);
 }
 
 function nodeWidth(node: Pick<MetroStation, 'kind' | 'counts' | 'count' | 'gate'> & { compact?: boolean }, ascii: boolean): number {
@@ -354,279 +390,415 @@ function nodeWidth(node: Pick<MetroStation, 'kind' | 'counts' | 'count' | 'gate'
   return 1;
 }
 
-/** Cycle-safe dependency depth. */
-function depthsOf(nodes: readonly { id: string; deps: readonly string[] }[]): Map<string, number> {
-  const by = new Map(nodes.map((n) => [n.id, n]));
-  const memo = new Map<string, number>();
-  const visiting = new Set<string>();
-  const depth = (id: string): number => {
-    const cached = memo.get(id);
-    if (cached !== undefined) return cached;
-    if (visiting.has(id)) return 0;
-    visiting.add(id);
-    const node = by.get(id);
-    let maxParent = -1;
-    if (node) {
-      for (const dep of node.deps) {
-        if (by.has(dep) && !visiting.has(dep)) maxParent = Math.max(maxParent, depth(dep));
-      }
-    }
-    visiting.delete(id);
-    const d = maxParent + 1;
-    memo.set(id, d);
-    return d;
-  };
-  for (const n of nodes) depth(n.id);
-  return memo;
+interface PreparedGraph {
+  readonly stations: readonly MetroStation[];
+  readonly edges: readonly CollectorMetroEdge[];
+  readonly inlineIds: ReadonlySet<string>;
+  readonly hostByRepairId: ReadonlyMap<string, string>;
 }
 
-function resolvedStations(flow: MetroFlow): WorkNode[] {
-  const extraDeps = new Map<string, string[]>();
-  for (const edge of flow.edges ?? []) {
-    let list = extraDeps.get(edge.to);
-    if (!list) extraDeps.set(edge.to, list = []);
-    if (!list.includes(edge.from)) list.push(edge.from);
+function prepareGraph(flow: MetroFlow): PreparedGraph {
+  const edges: CollectorMetroEdge[] = [];
+  const edgeKeys = new Set<string>();
+  const addEdge = (from: string, to: string) => {
+    const key = `${from}\0${to}`;
+    if (edgeKeys.has(key)) return;
+    edgeKeys.add(key);
+    edges.push({ from, to });
+  };
+  for (const s of flow.stations) {
+    for (const dep of s.deps ?? []) addEdge(dep, s.id);
   }
-  return flow.stations.map((s) => {
-    const deps = [...new Set([...(s.deps ?? []), ...(extraDeps.get(s.id) ?? [])])];
-    return { ...s, deps, col: 0, pref: 0, lane: s.lane ?? 0, x: 0, w: 1 };
-  });
+  for (const e of flow.edges ?? []) addEdge(e.from, e.to);
+  return { stations: flow.stations, edges, inlineIds: new Set(), hostByRepairId: new Map() };
 }
 
-function fold(nodes: readonly WorkNode[], step: FoldStep): WorkNode[] {
-  let out: WorkNode[] = nodes.map((n) => ({ ...n, deps: [...n.deps], compact: step.compact }));
-  const columns = () => {
-    const d = depthsOf(out);
-    const cols: WorkNode[][] = [];
-    for (const n of out) (cols[d.get(n.id) ?? 0] ??= []).push(n);
-    return cols;
-  };
-  const replace = (gone: WorkNode[], group: WorkNode) => {
-    const ids = new Set(gone.map((n) => n.id));
-    group.deps = [...new Set(gone.flatMap((n) => n.deps).filter((d) => !ids.has(d)))];
-    const at = out.findIndex((n) => ids.has(n.id));
-    out = out.filter((n) => !ids.has(n.id)).map((n) => n.deps.some((d) => ids.has(d))
-      ? { ...n, deps: [...new Set(n.deps.map((d) => (ids.has(d) ? group.id : d)))] } : n);
-    out.splice(Math.max(0, at), 0, group);
-  };
-  const plain = (n: WorkNode) => n.kind === 'worker' && !n.gate && !n.repair;
-  if (step.done) {
-    const gone: WorkNode[] = [];
-    for (const col of columns()) {
-      if (!col || !col.every((n) => plain(n) && n.state === 'done')) break;
-      gone.push(...col);
-    }
-    if (gone.length > 1) {
-      replace(gone, {
-        id: 'done×', kind: 'group', state: 'done', count: gone.length, deps: [],
-        col: 0, pref: 0, lane: 0, x: 0, w: 1,
-      });
-    }
-  }
-  if (step.keep !== undefined) {
-    const ahead = columns().filter((col) => col && col.some((n) => plain(n) && n.state === 'waiting')
-      && col.every((n) => n.state === 'waiting'));
-    const gone = ahead.slice(step.keep).flat().filter(plain);
-    if (gone.length > 1) {
-      replace(gone, {
-        id: 'wait×', kind: 'group', state: 'waiting', count: gone.length, deps: [],
-        col: 0, pref: 0, lane: 0, x: 0, w: 1,
-      });
-    }
-  }
-  return out;
-}
-
-function limitWave(nodes: readonly WorkNode[]): WorkNode[] {
-  const d = depthsOf(nodes);
-  const cols: WorkNode[][] = [];
-  for (const n of nodes) (cols[d.get(n.id) ?? 0] ??= []).push(n);
-  let out = [...nodes];
-  let restSeq = 0;
-  for (const col of cols) {
-    if (!col || col.length <= LANES) continue;
-    const gone = [...col].sort((a, b) => URGENCY[a.state] - URGENCY[b.state]).slice(LANES - 1);
-    const counts: Partial<Record<MetroStationState, number>> = {};
-    for (const n of gone) counts[n.state] = (counts[n.state] ?? 0) + 1;
-    const ids = new Set(gone.map((n) => n.id));
-    const groupId = restSeq++ === 0 ? 'rest' : `rest-${restSeq}`;
-    const group: WorkNode = {
-      id: groupId,
-      kind: 'pool',
-      state: gone.some((n) => n.state === 'working') ? 'working' : gone[0]!.state,
-      counts,
-      deps: [...new Set(gone.flatMap((n) => n.deps))],
-      title: t('{n} more items', { n: gone.length }),
-      col: 0, pref: 0, lane: 0, x: 0, w: 1,
+function toCollectorFlow(graph: PreparedGraph): CollectorMetroFlow {
+  const stations: CollectorMetroStation[] = graph.stations.map((s) => {
+    const reps = stationRepairs(s);
+    const collectorRepairs: CollectorMetroRepair[] = reps.map((r, i) => ({
+      id: repairStationId(s.id, r, i),
+      round: i + 1,
+      total: Math.max(reps.length, 2),
+      state: r.state,
+      ...(r.changedAt !== undefined || r.since !== undefined ? { changedAt: r.changedAt ?? r.since } : {}),
+    }));
+    return {
+      id: s.id,
+      kind: s.kind === 'group' ? 'pool' : s.kind,
+      state: s.state,
+      ...(s.changedAt !== undefined || s.since !== undefined ? { changedAt: s.changedAt ?? s.since } : {}),
+      ...(s.blockers?.length ? { blockers: s.blockers } : {}),
+      ...(collectorRepairs.length ? { repair: collectorRepairs.at(-1), repairs: collectorRepairs } : {}),
+      ...(s.counts ? { pool: s.counts } : {}),
+      ...(s.count !== undefined ? { count: s.count } : {}),
     };
-    const colDepth = d.get(col[0]!.id) ?? 0;
-    out = out.filter((n) => !ids.has(n.id)).map((n) => n.deps.some((x) => ids.has(x))
-      ? { ...n, deps: [...new Set(n.deps.map((x) => (ids.has(x) ? groupId : x)))] } : n);
-    let lastInCol = -1;
-    for (let i = out.length - 1; i >= 0; i--) {
-      if ((d.get(out[i]!.id) ?? 0) === colDepth) { lastInCol = i; break; }
-    }
-    out.splice(lastInCol + 1, 0, group);
-  }
-  return out;
+  });
+  return { stations, edges: graph.edges };
 }
 
-function picks(k: number, h: number, from = 0): number[][] {
-  if (k === 0) return [[]];
-  const res: number[][] = [];
-  for (let l = from; l <= h - k; l++) {
-    for (const rest of picks(k - 1, h, l + 1)) res.push([l, ...rest]);
-  }
-  return res;
+interface FoldedGraph {
+  readonly columns: WorkNode[][];
+  readonly edges: Array<{ from: string; to: string; viaJunction?: true }>;
+  readonly junctions: MetroJunction[];
+  readonly lanes: number;
 }
 
-function buildLayout(flow: MetroFlow, step: FoldStep, gap: number, ascii: boolean): MetroLayout {
-  const baseNodes = resolvedStations(flow);
-  const hadExplicitLanes = !step.done && step.keep === undefined
-    && flow.stations.length > 0 && flow.stations.every((s) => s.lane !== undefined);
-  let nodes = limitWave(fold(baseNodes, step));
-  if (!nodes.length) return { nodes: [], edges: [], spurs: [], lanes: 0, width: 0 };
+function isPlainWorker(n: WorkNode): boolean {
+  return n.kind === 'worker' && !n.gate && !n.inlineRepair && !stationRepairs(n).length;
+}
 
-  for (let guard = 0; guard < 16; guard++) {
-    const d = depthsOf(nodes);
-    const cols: WorkNode[][] = [];
-    for (const n of nodes) {
-      const colIdx = d.get(n.id) ?? 0;
-      (cols[colIdx] ??= []).push({ ...n, deps: [...n.deps], col: colIdx });
-    }
-    const denseCols = cols.filter((c): c is WorkNode[] => Boolean(c?.length));
-    const maxColLen = Math.max(1, ...denseCols.map((c) => c.length));
-    const height = Math.min(LANES, Math.max(maxColLen, hadExplicitLanes ? Math.min(LANES, flow.lanes ?? 1) : 1));
-    const trunk = Math.floor((height - 1) / 2);
-    const by = new Map<string, WorkNode>();
+function isFoldableState(n: WorkNode, target: 'done' | 'waiting'): boolean {
+  if (isPlainWorker(n) && n.state === target) return true;
+  if (n.kind === 'pool' && n.groupedIds?.length && n.state === target && n.counts) {
+    return Object.entries(n.counts).every(([k, v]) => !v || k === target);
+  }
+  return false;
+}
 
-    for (const [colIdx, col] of denseCols.entries()) {
-      for (const n of col) {
-        n.col = colIdx;
-        if (hadExplicitLanes && n.lane !== undefined && !n.inlineRepair) {
-          n.pref = Math.max(0, Math.min(height - 1, n.lane));
-        } else {
-          n.pref = n.deps.length === 1 && by.has(n.deps[0]!) ? by.get(n.deps[0]!)!.lane : trunk;
-        }
-      }
-      col.sort((a, b) => Number(Boolean(a.repair)) - Number(Boolean(b.repair)) || a.pref - b.pref);
-      const candidates = picks(col.length, height);
-      const cost = (p: number[]) => p.reduce((sum, l, i) => sum + Math.abs(l - col[i]!.pref), 0);
-      candidates.sort((a, b) => cost(a) - cost(b));
-      const best = candidates[0] ?? col.map((_, i) => Math.min(height - 1, i));
-      col.forEach((n, i) => { n.lane = best[i]!; by.set(n.id, n); });
-    }
+function memberCountOf(n: WorkNode): number {
+  return n.groupedIds?.length ? (n.count ?? n.groupedIds.length) : 1;
+}
 
-    let x = 2;
-    for (const col of denseCols) {
-      const w = Math.max(...col.map((n) => nodeWidth(n, ascii)));
-      for (const n of col) {
-        n.w = nodeWidth(n, ascii);
-        n.x = x + Math.floor((w - n.w) / 2);
-      }
-      x += w + gap;
-    }
-    let width = x - gap + 1;
-    const allNodes = [...by.values()];
-    const edges: LayoutEdge[] = [];
-    for (const n of allNodes) {
-      for (const id of n.deps) {
-        const u = by.get(id);
-        if (!u) continue;
-        const sx = u.x + u.w;
-        const ex = n.x - 1;
-        const merge = n.deps.length > 1;
-        let bend: number | null = u.lane === n.lane ? null : merge ? Math.max(sx, ex - 1) : Math.min(ex, sx + 1);
-        // For skip-a-column edges that would pass through a station on u.lane, bend early if n.lane is free.
-        if (bend !== null && n.col - u.col > 1 && merge) {
-          const hitsSourceLane = allNodes.some((m) => m !== u && m !== n && m.lane === u.lane && m.x >= sx && m.x < bend!);
-          const targetLaneFree = !allNodes.some((m) => m !== u && m !== n && m.lane === n.lane && m.x >= sx && m.x <= ex);
-          if (hitsSourceLane && targetLaneFree) bend = Math.min(ex, sx + 1);
-        }
-        edges.push({
-          id: `${id}>${n.id}`, from: u.lane, to: n.lane, sx, ex, bend, merge,
-          lit: u.state === 'done', spur: Boolean(n.inlineRepair),
-        });
-      }
-    }
+function memberIdsOf(n: WorkNode): readonly string[] {
+  return n.groupedIds?.length ? n.groupedIds : [n.id];
+}
 
-    let lanes = height;
-    let inline: WorkNode | null = null;
-    const spurs: LayoutSpur[] = [];
-    for (const n of allNodes) {
-      if (!n.repair) continue;
-      const a = n.x - 2;
-      const b = n.x + n.w + 1;
-      const free = (lane: number) => lane >= 0 && lane < LANES
-        && !allNodes.some((m) => m.lane === lane && m.x <= b && m.x + m.w > a)
-        && !edges.some((e) => (e.from === lane && e.sx <= b && (e.bend ?? e.ex) >= a)
-          || (e.to === lane && e.ex >= a && (e.bend ?? e.sx) <= b));
-      const lane = [n.lane + 1, n.lane - 1].find(free);
-      if (lane === undefined || a < 2) { inline = n; break; }
-      const mid = Math.floor((a + b) / 2);
-      const repairId = n.repair.id ?? `${n.id}↻`;
-      spurs.push({
-        host: n, lane, a, b,
-        node: {
-          id: repairId,
-          num: n.num,
-          kind: 'worker',
-          state: n.repair.state,
-          title: n.repair.title ?? n.title,
-          role: n.repair.role,
-          since: n.repair.since,
-          changedAt: n.repair.changedAt,
-          jobId: n.repair.jobId,
-          execJob: n.repair.execJob,
-          round: n.repair.round,
-          host: n,
-          deps: [],
-          col: n.col,
-          pref: lane,
-          lane,
-          x: mid,
+function rewireAfterCollapse(
+  edges: Array<{ from: string; to: string; viaJunction?: true }>,
+  junctions: MetroJunction[],
+  goneIds: ReadonlySet<string>,
+  groupId: string,
+  startCol: number,
+  removedCols: number,
+): { edges: Array<{ from: string; to: string; viaJunction?: true }>; junctions: MetroJunction[] } {
+  const nextEdges: Array<{ from: string; to: string; viaJunction?: true }> = [];
+  const seen = new Set<string>();
+  for (const e of edges) {
+    const from = goneIds.has(e.from) ? groupId : e.from;
+    const to = goneIds.has(e.to) ? groupId : e.to;
+    if (from === to) continue;
+    const key = `${from}\0${to}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    nextEdges.push(e.viaJunction ? { from, to, viaJunction: true } : { from, to });
+  }
+  const nextJunctions: MetroJunction[] = [];
+  for (const j of junctions) {
+    if (j.afterColumn >= startCol && j.afterColumn < startCol + removedCols) continue;
+    const incoming = [...new Set(j.incoming.map((id) => (goneIds.has(id) ? groupId : id)))];
+    const outgoing = [...new Set(j.outgoing.map((id) => (goneIds.has(id) ? groupId : id)))];
+    if (incoming.every((id) => id === groupId) && outgoing.every((id) => id === groupId)) continue;
+    const afterColumn = j.afterColumn >= startCol + removedCols ? j.afterColumn - removedCols : j.afterColumn;
+    nextJunctions.push({ ...j, afterColumn, incoming, outgoing });
+  }
+  return { edges: nextEdges, junctions: nextJunctions };
+}
+
+function foldReduced(
+  reduced: ReducedMetroMap,
+  renderById: ReadonlyMap<string, MetroStation>,
+  inlineIds: ReadonlySet<string>,
+  hostByRepairId: ReadonlyMap<string, string>,
+  step: FoldStep,
+): FoldedGraph {
+  let columns: WorkNode[][] = reduced.columns.map((col, c) =>
+    col.map((ls) => {
+      const orig = renderById.get(ls.station.id);
+      if (orig) {
+        return {
+          ...orig,
+          ...(ls.blockers?.length ? { blockers: ls.blockers } : {}),
+          compact: step.compact,
+          ...(inlineIds.has(orig.id) ? { inlineRepair: true } : {}),
+          col: c,
+          lane: ls.lane,
+          x: 0,
           w: 1,
-          spur: true,
-        },
-      });
-      lanes = Math.max(lanes, lane + 1);
-      width = Math.max(width, b + 1);
-    }
-
-    if (inline && inline.repair) {
-      const repairId = inline.repair.id ?? `${inline.id}↻`;
-      const r: WorkNode = {
-        id: repairId,
-        num: inline.num,
-        kind: 'worker',
-        state: inline.repair.state,
-        title: inline.repair.title ?? inline.title,
-        role: inline.repair.role,
-        since: inline.repair.since,
-        changedAt: inline.repair.changedAt,
-        jobId: inline.repair.jobId,
-        execJob: inline.repair.execJob,
-        round: inline.repair.round,
-        host: inline,
-        deps: [inline.id],
-        inlineRepair: true,
-        col: 0, pref: 0, lane: 0, x: 0, w: 1,
+        };
+      }
+      // Overflow pool created by reduceMetroLanes for >3 parallel stations.
+      return {
+        id: ls.station.id,
+        kind: 'pool',
+        state: ls.station.state,
+        counts: ls.station.pool,
+        count: ls.station.count ?? ls.groupedIds?.length ?? 0,
+        ...(ls.station.changedAt !== undefined ? { changedAt: ls.station.changedAt } : {}),
+        ...(ls.blockers?.length ? { blockers: ls.blockers } : {}),
+        ...(ls.groupedIds?.length ? { groupedIds: ls.groupedIds } : {}),
+        title: t('{n} more items', { n: ls.station.count ?? ls.groupedIds?.length ?? 0 }),
+        compact: step.compact,
+        col: c,
+        lane: ls.lane,
+        x: 0,
+        w: 1,
       };
-      const hostId = inline.id;
-      nodes = nodes.map((n) => n.id === hostId ? { ...n, repair: undefined, state: 'done' as const }
-        : { ...n, deps: n.deps.map((dep) => (dep === hostId ? repairId : dep)) });
-      const at = nodes.findIndex((n) => n.id === hostId);
-      nodes.splice(at + 1, 0, r);
-      continue;
-    }
-
-    return { nodes: allNodes, edges, spurs, lanes, width };
+    }),
+  );
+  const byAll = new Map(columns.flat().map((n) => [n.id, n]));
+  for (const [repairId, hostId] of hostByRepairId) {
+    const r = byAll.get(repairId);
+    const h = byAll.get(hostId);
+    if (r && h) r.host = h;
   }
-  return { nodes: [], edges: [], spurs: [], lanes: 0, width: 0 };
+
+  let edges: Array<{ from: string; to: string; viaJunction?: true }> = reduced.edges.map((e) =>
+    e.viaJunction ? { from: e.from, to: e.to, viaJunction: true } : { from: e.from, to: e.to },
+  );
+  let junctions: MetroJunction[] = [...reduced.junctions];
+  let lanes = reduced.lanes;
+  const trunk = reduced.trunk;
+
+  if (step.done) {
+    let prefixCols = 0;
+    while (prefixCols < columns.length && columns[prefixCols]!.every((n) => isFoldableState(n, 'done'))) {
+      prefixCols++;
+    }
+    const gone = columns.slice(0, prefixCols).flat();
+    const totalDone = gone.reduce((sum, n) => sum + memberCountOf(n), 0);
+    if (prefixCols > 0 && totalDone > 1) {
+      const goneIds = new Set(gone.map((n) => n.id));
+      const group: WorkNode = {
+        id: 'done×', kind: 'group', state: 'done', count: totalDone,
+        groupedIds: gone.flatMap(memberIdsOf),
+        compact: step.compact, col: 0, lane: trunk, x: 0, w: 1,
+      };
+      columns = [[group], ...columns.slice(prefixCols)];
+      ({ edges, junctions } = rewireAfterCollapse(edges, junctions, goneIds, group.id, 0, prefixCols - 1));
+    }
+  }
+
+  if (step.keep !== undefined) {
+    const waitingCols: number[] = [];
+    for (let c = 0; c < columns.length; c++) {
+      if (columns[c]!.every((n) => isFoldableState(n, 'waiting'))) waitingCols.push(c);
+    }
+    const toFold = waitingCols.slice(step.keep);
+    if (toFold.length > 0) {
+      // Collapse the contiguous run of foldable waiting columns starting at `toFold[0]`.
+      const startCol = toFold[0]!;
+      let endCol = startCol;
+      for (let i = 1; i < toFold.length && toFold[i] === endCol + 1; i++) endCol = toFold[i]!;
+      const gone = columns.slice(startCol, endCol + 1).flat();
+      const totalWait = gone.reduce((sum, n) => sum + memberCountOf(n), 0);
+      if (totalWait > 1) {
+        const goneIds = new Set(gone.map((n) => n.id));
+        const group: WorkNode = {
+          id: 'wait×', kind: 'group', state: 'waiting', count: totalWait,
+          groupedIds: gone.flatMap(memberIdsOf),
+          compact: step.compact, col: startCol, lane: trunk, x: 0, w: 1,
+        };
+        columns = [...columns.slice(0, startCol), [group], ...columns.slice(endCol + 1)];
+        ({ edges, junctions } = rewireAfterCollapse(edges, junctions, goneIds, group.id, startCol, endCol - startCol));
+      }
+    }
+  }
+
+  // Re-index columns and compact lanes if width folding eliminated the only multi-lane columns.
+  for (let c = 0; c < columns.length; c++) {
+    for (const n of columns[c]!) n.col = c;
+  }
+  const usedLanes = [...new Set(columns.flat().map((n) => n.lane))].sort((a, b) => a - b);
+  if (usedLanes.length > 0 && usedLanes.length < lanes) {
+    const laneMap = new Map(usedLanes.map((l, i) => [l, i]));
+    for (const n of columns.flat()) n.lane = laneMap.get(n.lane)!;
+    junctions = junctions.map((j) => ({ ...j, lane: laneMap.get(j.lane) ?? 0 }));
+    lanes = usedLanes.length;
+  }
+
+  return { columns, edges, junctions, lanes };
+}
+
+function buildRepairWorkNode(host: WorkNode, repair: MetroRepair, index: number, lane: number, x: number, spur: boolean): WorkNode {
+  return {
+    id: repairStationId(host.id, repair, index),
+    num: host.num,
+    kind: 'worker',
+    state: repair.state,
+    title: repair.title ?? host.title,
+    role: repair.role,
+    since: repair.since,
+    changedAt: repair.changedAt,
+    reason: repair.reason,
+    jobId: repair.jobId,
+    execJob: repair.execJob,
+    round: repair.round,
+    host,
+    col: host.col,
+    lane,
+    x,
+    w: 1,
+    ...(spur ? { spur: true } : { inlineRepair: true }),
+  };
+}
+
+function inlineRepairGraph(graph: PreparedGraph, host: WorkNode): PreparedGraph {
+  const reps = stationRepairs(host);
+  const hostId = host.id;
+  const repairStations: MetroStation[] = reps.map((rep, idx) => ({
+    id: repairStationId(hostId, rep, idx),
+    num: host.num,
+    kind: 'worker',
+    state: rep.state,
+    title: rep.title ?? host.title,
+    role: rep.role,
+    since: rep.since,
+    changedAt: rep.changedAt,
+    reason: rep.reason,
+    jobId: rep.jobId,
+    execJob: rep.execJob,
+    blockers: idx === 0 ? [hostId] : [repairStationId(hostId, reps[idx - 1]!, idx - 1)],
+  }));
+  const lastId = repairStations.at(-1)!.id;
+  const stations: MetroStation[] = [];
+  for (const s of graph.stations) {
+    if (s.id === hostId) {
+      stations.push({ ...s, repair: undefined, repairs: undefined, state: 'done' });
+      stations.push(...repairStations);
+    } else {
+      stations.push(s);
+    }
+  }
+  const edges: CollectorMetroEdge[] = [];
+  for (const e of graph.edges) {
+    edges.push(e.from === hostId ? { from: lastId, to: e.to } : e);
+  }
+  let prev = hostId;
+  for (const rs of repairStations) {
+    edges.push({ from: prev, to: rs.id });
+    prev = rs.id;
+  }
+  const inlineIds = new Set(graph.inlineIds);
+  const hostByRepairId = new Map(graph.hostByRepairId);
+  const roundById = new Map<string, string>();
+  reps.forEach((rep, idx) => {
+    const rid = repairStations[idx]!.id;
+    inlineIds.add(rid);
+    hostByRepairId.set(rid, hostId);
+    roundById.set(rid, rep.round);
+  });
+  const withRounds = stations.map((s) => roundById.has(s.id) ? ({ ...s, label: s.label ?? roundById.get(s.id) }) : s);
+  return { stations: withRounds, edges, inlineIds, hostByRepairId };
+}
+
+function placeLayout(
+  graph: PreparedGraph,
+  reduced: ReducedMetroMap,
+  step: FoldStep,
+  gap: number,
+  ascii: boolean,
+): { layout: MetroLayout; inlineHost?: WorkNode } {
+  const renderById = new Map(graph.stations.map((s) => [s.id, s]));
+  const folded = foldReduced(reduced, renderById, graph.inlineIds, graph.hostByRepairId, step);
+  if (!folded.columns.length) {
+    return { layout: { nodes: [], edges: [], junctions: [], spurs: [], lanes: 0, width: 0 } };
+  }
+
+  let x = 2;
+  for (const col of folded.columns) {
+    const w = Math.max(...col.map((n) => nodeWidth(n, ascii)));
+    for (const n of col) {
+      n.w = nodeWidth(n, ascii);
+      n.x = x + Math.floor((w - n.w) / 2);
+      if (n.inlineRepair && !n.round && n.label) n.round = n.label;
+    }
+    x += w + gap;
+  }
+  let width = x - gap + 1;
+  const allNodes = folded.columns.flat();
+  const by = new Map(allNodes.map((n) => [n.id, n]));
+
+  const inDegree = new Map<string, number>();
+  for (const e of folded.edges) inDegree.set(e.to, (inDegree.get(e.to) ?? 0) + 1);
+
+  const coveredByJunction = new Set<string>();
+  const junctions: LayoutJunction[] = [];
+  for (const j of folded.junctions) {
+    const incoming = j.incoming.map((id) => by.get(id)).filter((n): n is WorkNode => Boolean(n));
+    const outgoing = j.outgoing.map((id) => by.get(id)).filter((n): n is WorkNode => Boolean(n));
+    if (!incoming.length || !outgoing.length) continue;
+    const gapLeft = Math.max(...incoming.map((u) => u.x + u.w));
+    const gapRight = Math.min(...outgoing.map((v) => v.x - 1));
+    const jx = Math.floor((gapLeft + gapRight) / 2);
+    const allLanes = [...incoming, ...outgoing].map((n) => n.lane);
+    junctions.push({
+      lane: j.lane,
+      jx,
+      minLane: Math.min(...allLanes, j.lane),
+      maxLane: Math.max(...allLanes, j.lane),
+      incoming,
+      outgoing,
+    });
+    for (const u of incoming) {
+      for (const v of outgoing) coveredByJunction.add(`${u.id}\0${v.id}`);
+    }
+  }
+
+  const edges: LayoutEdge[] = [];
+  for (const e of folded.edges) {
+    if (coveredByJunction.has(`${e.from}\0${e.to}`)) continue;
+    const u = by.get(e.from);
+    const n = by.get(e.to);
+    if (!u || !n) continue;
+    const sx = u.x + u.w;
+    const ex = n.x - 1;
+    const merge = (inDegree.get(n.id) ?? 0) > 1;
+    const bend: number | null = u.lane === n.lane ? null : merge ? Math.max(sx, ex - 1) : Math.min(ex, sx + 1);
+    edges.push({
+      id: `${e.from}>${e.to}`, from: u.lane, to: n.lane, sx, ex, bend, merge,
+      lit: u.state === 'done', spur: Boolean(n.inlineRepair),
+    });
+  }
+
+  let lanes = folded.lanes;
+  const spurs: LayoutSpur[] = [];
+  for (const n of allNodes) {
+    const reps = stationRepairs(n);
+    if (!reps.length) continue;
+    const a = n.x - 2;
+    const minSpan = reps.length === 1 ? n.w + 2 : Math.max(n.w + 2, 2 * reps.length + 1);
+    const b = Math.max(n.x + n.w + 1, a + minSpan + 1);
+    const free = (lane: number) => lane >= 0 && lane < LANES
+      && !allNodes.some((m) => m.lane === lane && m.x <= b && m.x + m.w > a)
+      && !edges.some((e) => (e.from === lane && e.sx <= b && (e.bend ?? e.ex) >= a)
+        || (e.to === lane && e.ex >= a && (e.bend ?? e.sx) <= b))
+      && !junctions.some((j) => lane >= j.minLane && lane <= j.maxLane && j.jx >= a && j.jx <= b);
+    const lane = [n.lane + 1, n.lane - 1].find(free);
+    if (lane === undefined || a < 2) return { layout: { nodes: allNodes, edges, junctions, spurs, lanes, width }, inlineHost: n };
+    const interior = b - a - 1;
+    const xs = reps.length === 1
+      ? [Math.floor((a + b) / 2)]
+      : reps.length === 2 && interior >= 7
+        ? [a + 3, b - 2]
+        : Array.from({ length: reps.length }, (_, i) => Math.round((a + 2) + (i * ((b - 2) - (a + 2))) / (reps.length - 1)));
+    const spurNodes = reps.map((rep, i) => buildRepairWorkNode(n, rep, i, lane, xs[i]!, true));
+    spurs.push({ host: n, lane, a, b, nodes: spurNodes });
+    lanes = Math.max(lanes, lane + 1);
+    width = Math.max(width, b + 1);
+  }
+
+  return { layout: { nodes: allNodes, edges, junctions, spurs, lanes, width } };
+}
+
+function resolveInlineRepairs(graph: PreparedGraph, step: FoldStep, gap: number, ascii: boolean, initialReduced: ReducedMetroMap): MetroLayout {
+  let curGraph = graph;
+  let curReduced = initialReduced;
+  for (let guard = 0; guard < 8; guard++) {
+    const res = placeLayout(curGraph, curReduced, step, gap, ascii);
+    if (!res.inlineHost) return res.layout;
+    curGraph = inlineRepairGraph(curGraph, res.inlineHost);
+    curReduced = reduceMetroLanes(toCollectorFlow(curGraph), LANES);
+  }
+  return { nodes: [], edges: [], junctions: [], spurs: [], lanes: 0, width: 0 };
 }
 
 /** First fit wins: generous spacing, then folds in order, then compact gate and tighter spacing. */
 export function layoutMetroFlow(flow: MetroFlow, width: number, ascii = asciiBoard()): MetroLayout {
+  const graph = prepareGraph(flow);
+  const reduced = reduceMetroLanes(toCollectorFlow(graph), LANES);
+  if (!reduced.columns.length) return { nodes: [], edges: [], junctions: [], spurs: [], lanes: 0, width: 0 };
+
   const steps: ReadonlyArray<[FoldStep, number, number]> = [
     [{}, 7, 4],
     [{ done: true }, 6, 4],
@@ -637,11 +809,11 @@ export function layoutMetroFlow(flow: MetroFlow, width: number, ascii = asciiBoa
   ];
   for (const [step, widest, narrowest] of steps) {
     for (let gap = widest; gap >= narrowest; gap--) {
-      const m = buildLayout(flow, step, gap, ascii);
+      const m = resolveInlineRepairs(graph, step, gap, ascii, reduced);
       if (m.width <= width) return m;
     }
   }
-  return buildLayout(flow, { done: true, keep: 0, compact: true }, 1, ascii);
+  return resolveInlineRepairs(graph, { done: true, keep: 0, compact: true }, 1, ascii, reduced);
 }
 
 /* ───────────────────────── Hairline drawing ───────────────────────── */
@@ -671,16 +843,48 @@ function drawHairlineLines(cv: Canvas, rows: Cell[][], m: MetroLayout, ascii: bo
     add(e.to, e.bend, [down ? 'U' : 'D', 'R'], e);
     for (let x = e.bend + 1; x <= e.ex; x++) add(e.to, x, LR, e);
   }
+  for (const j of m.junctions) {
+    for (const u of j.incoming) {
+      const edge: LineEdge = { lit: u.state === 'done', spur: false };
+      for (let x = u.x + u.w; x < j.jx; x++) add(u.lane, x, LR, edge);
+      if (u.lane === j.lane) {
+        add(j.lane, j.jx, ['L'], edge);
+      } else {
+        const down = j.lane > u.lane;
+        add(u.lane, j.jx, ['L', down ? 'D' : 'U'], edge);
+        for (let l = Math.min(u.lane, j.lane) + 1; l < Math.max(u.lane, j.lane); l++) add(l, j.jx, UD, edge);
+        add(j.lane, j.jx, [down ? 'U' : 'D'], edge);
+      }
+    }
+    const outEdge: LineEdge = { lit: j.incoming.every((u) => u.state === 'done'), spur: false };
+    for (const v of j.outgoing) {
+      if (v.lane === j.lane) {
+        add(j.lane, j.jx, ['R'], outEdge);
+      } else {
+        const down = v.lane > j.lane;
+        add(j.lane, j.jx, [down ? 'D' : 'U'], outEdge);
+        for (let l = Math.min(j.lane, v.lane) + 1; l < Math.max(j.lane, v.lane); l++) add(l, j.jx, UD, outEdge);
+        add(v.lane, j.jx, [down ? 'U' : 'D', 'R'], outEdge);
+      }
+      for (let x = j.jx + 1; x < v.x; x++) add(v.lane, x, LR, outEdge);
+    }
+  }
   for (const s of m.spurs) {
+    if (!s.nodes.length) continue;
     const down = s.lane > s.host.lane;
     const away: Arm = down ? 'D' : 'U';
     const back: Arm = down ? 'U' : 'D';
+    const first = s.nodes[0]!;
+    const last = s.nodes.at(-1)!;
     const out: LineEdge = { spur: true, lit: true };
-    const ret: LineEdge = { spur: true, lit: s.node.state === 'done' };
+    const ret: LineEdge = { spur: true, lit: last.state === 'done' };
     add(s.host.lane, s.a, [away], out);
     add(s.lane, s.a, [back, 'R'], out);
-    for (let x = s.a + 1; x < s.node.x; x++) add(s.lane, x, LR, out);
-    for (let x = s.node.x + 1; x < s.b; x++) add(s.lane, x, LR, ret);
+    for (let x = s.a + 1; x < first.x; x++) add(s.lane, x, LR, out);
+    for (let i = 0; i + 1 < s.nodes.length; i++) {
+      for (let x = s.nodes[i]!.x + 1; x < s.nodes[i + 1]!.x; x++) add(s.lane, x, LR, out);
+    }
+    for (let x = last.x + 1; x < s.b; x++) add(s.lane, x, LR, ret);
     add(s.lane, s.b, ['L', back], ret);
     add(s.host.lane, s.b, [away], ret);
   }
@@ -749,28 +953,13 @@ function drawStation(cv: Canvas, rows: Cell[][], node: WorkNode, ascii: boolean,
 /* ───────────────────────── default / changed-last station ───────────────────────── */
 
 function allLogicalStations(flow: MetroFlow): WorkNode[] {
-  const base = resolvedStations(flow);
   const all: WorkNode[] = [];
-  for (const n of base) {
-    all.push(n);
-    if (n.repair) {
-      all.push({
-        id: n.repair.id ?? `${n.id}↻`,
-        num: n.num,
-        kind: 'worker',
-        state: n.repair.state,
-        title: n.repair.title ?? n.title,
-        role: n.repair.role,
-        since: n.repair.since,
-        changedAt: n.repair.changedAt,
-        jobId: n.repair.jobId,
-        execJob: n.repair.execJob,
-        round: n.repair.round,
-        host: n,
-        deps: [],
-        col: 0, pref: 0, lane: 0, x: 0, w: 1,
-      });
-    }
+  for (const s of flow.stations) {
+    const host: WorkNode = { ...s, col: 0, lane: 0, x: 0, w: 1 };
+    all.push(host);
+    stationRepairs(s).forEach((rep, idx) => {
+      all.push(buildRepairWorkNode(host, rep, idx, 0, 0, false));
+    });
   }
   return all;
 }
@@ -835,7 +1024,7 @@ function renderHeaderRow(flow: MetroFlow, selected: boolean, width: number, now:
 
 function stationStateWord(node: WorkNode, flow: MetroFlow): string {
   const state = node.gate ? node.gate.state : node.state;
-  if (node.host && node.round) return `${t('repair')} ${monitorText(node.round)}`;
+  if (node.host && node.round) return `${t('repair')}${state === 'failed' ? ` ${t('failed')}` : ''} ${monitorText(node.round)}`;
   if (node.gate) {
     if (state === 'lease') return t('lease wait');
     return `${t('gate')}${state === 'failed' ? ` ${t('failed')}` : ''} ${node.gate.k}/${node.gate.n}`;
@@ -865,6 +1054,7 @@ function stationDefaultLabel(node: WorkNode, flow: MetroFlow): string {
   }
   if (node.title) return monitorText(node.title);
   if (node.host?.title) return monitorText(node.host.title);
+  if (node.kind === 'pool' && node.groupedIds?.length) return t('{n} more items', { n: node.count ?? node.groupedIds.length });
   const fallback: Record<MetroStationKind, string> = {
     worker: 'Worker', review: 'review', accept: 'acceptance', synth: 'synthesis',
     summary: 'metro: summary', pool: 'pool', group: 'Worker',
@@ -886,8 +1076,9 @@ function renderDetailRow(flow: MetroFlow, node: WorkNode | undefined, width: num
   const label = hasExplicitTitle || !num ? stationDefaultLabel(node, flow) : '';
   const fullLeft = [num, label].filter(Boolean).join(' ');
   const numPad = num ? `${num} ` : '';
-  const waits = state === 'waiting' && node.waits ? `${ascii ? '<-' : '←'}${monitorText(node.waits)}` : '';
-  const mins = elapsedMinutes(node.since, now);
+  const rawWaits = node.waits ?? (node.blockers?.length ? node.blockers.join(',') : undefined);
+  const waits = state === 'waiting' && rawWaits ? `${ascii ? '<-' : '←'}${monitorText(rawWaits)}` : '';
+  const mins = elapsedMinutes(node.since ?? node.changedAt, now);
   const since = mins !== undefined ? metroAge(mins) : '';
   const icon = node.role && !ascii ? roleIcon(node.role) : '';
   const x = cv.put(r, 2, glyph, glyphStyle) + 1;
@@ -906,6 +1097,31 @@ function renderDetailRow(flow: MetroFlow, node: WorkNode | undefined, width: num
   return boardRow(fit(paintRow(r, noColour), width));
 }
 
+function stationInspectOf(node: WorkNode, flow: MetroFlow): MetroStationInspect {
+  const since = node.since ?? node.changedAt;
+  const title = node.title ?? node.host?.title ?? stationDefaultLabel(node, flow);
+  return {
+    id: node.id,
+    kind: node.kind,
+    state: node.state,
+    ...(node.num ? { num: node.num } : node.host?.num ? { num: node.host.num } : {}),
+    ...(title ? { title } : {}),
+    ...(node.label ? { label: node.label } : {}),
+    ...(node.role ? { role: node.role } : {}),
+    ...(since !== undefined ? { since } : {}),
+    ...(node.blockers?.length ? { blockers: node.blockers } : {}),
+    ...(node.gate ? { gate: node.gate } : {}),
+    ...(node.round ? { round: node.round } : {}),
+    ...(node.host ? { hostId: node.host.id } : {}),
+    ...(node.counts ? { counts: node.counts } : {}),
+    ...(node.count !== undefined ? { count: node.count } : {}),
+    ...(node.groupedIds?.length ? { groupedIds: node.groupedIds } : {}),
+    ...(node.holdTag ? { holdTag: node.holdTag } : {}),
+    ...(node.reason ? { reason: node.reason } : {}),
+    ...(node.jobId ? { jobId: node.jobId } : {}),
+  };
+}
+
 /** Render one open flow: header row + 1–3 Hairline map rows + 1 detail row. */
 export function renderMetroFlow(flow: MetroFlow, selected: string | undefined, width: number, now: number): MonitorRow[] {
   const ascii = asciiBoard();
@@ -919,14 +1135,20 @@ export function renderMetroFlow(flow: MetroFlow, selected: string | undefined, w
   const rows = Array.from({ length: m.lanes }, () => cv.row());
   drawHairlineLines(cv, rows, m, ascii);
 
-  const stations: WorkNode[] = [...m.nodes, ...m.spurs.map((s) => s.node)];
+  const stations: WorkNode[] = [...m.nodes, ...m.spurs.flatMap((s) => s.nodes)];
   const cursorStation = stations.find((n) => metroStationItem(flow.flow, n.id) === selected);
   for (const n of stations) drawStation(cv, rows, n, ascii, noColour, n === cursorStation);
 
-  // Without colour (and in ASCII), a repair round marks itself before its station.
+  // Without colour (and in ASCII), a repair line marks itself before its station(s).
   if (noColour || ascii) {
-    for (const n of stations) {
-      if (!n.spur && !n.inlineRepair) continue;
+    for (const s of m.spurs) {
+      const first = s.nodes[0];
+      if (!first) continue;
+      const at = first.x - (cursorStation === first ? 2 : 1);
+      if (at > s.a && at < width) cv.put(rows[first.lane]!, at, ascii ? '%' : '↻', { fg: 'stalled' });
+    }
+    for (const n of m.nodes) {
+      if (!n.inlineRepair) continue;
       const at = n.x - (cursorStation === n ? 2 : 1);
       if (at >= 0 && at < width) cv.put(rows[n.lane]!, at, ascii ? '%' : '↻', { fg: 'stalled' });
     }
@@ -959,12 +1181,14 @@ export function renderMetroFlow(flow: MetroFlow, selected: string | undefined, w
     byLane[n.lane]!.push({
       item: metroStationItem(flow.flow, n.id),
       flow: flow.flow,
+      stationId: n.id,
       x: n.x,
       width: Math.min(n.w, width - n.x),
       lane: n.lane,
       col: n.col,
       ...(n.id === defaultLayoutId ? { defaultEntry: true as const } : {}),
       ...(n.execJob ? { execJob: n.execJob } : {}),
+      inspect: stationInspectOf(n, flow),
     });
   }
   for (const lane of byLane) lane.sort((a, b) => a.x - b.x);
@@ -989,7 +1213,9 @@ export function renderMetroLegend(
   const maxRows = options.maxRows ?? (all ? 6 : 2);
   const nodes = flows.flatMap((f) => f.stations.flatMap((s) => [
     { ...s, repairMark: false },
-    ...(s.repair ? [{ ...s.repair, id: s.repair.id ?? `${s.id}↻`, kind: 'worker' as const, gate: undefined, repairMark: true }] : []),
+    ...stationRepairs(s).map((rep, i) => ({
+      ...rep, id: repairStationId(s.id, rep, i), kind: 'worker' as const, gate: undefined, repairMark: true,
+    })),
   ]));
   const has = (fn: (n: (typeof nodes)[number]) => boolean) => all || nodes.some(fn);
   const acceptWord = flows.some((f) => f.kind === 'council') && !flows.some((f) => f.kind === 'queue')
@@ -1039,7 +1265,105 @@ export function renderMetroLegend(
   return cv.rows.map((row) => boardRow(fit(paintRow(row, noColour), width)));
 }
 
-/* ───────────────────────── thin adapter: ExecutionRun -> MetroFlow ───────────────────────── */
+/* ───────────────────────── ExecutionRun -> MetroFlow (collector metro + legacy wave fallback) ───────────────────────── */
+
+const ticketShort = (key: string) => key.split('/').at(-1)!;
+
+function acceptTitle(seat: 'lead' | 'main' | string | undefined): string {
+  return seat === 'main' ? t('Hand-back (main)') : t('Lead acceptance');
+}
+
+function collectorStationTitle(run: ExecutionRun, s: CollectorMetroStation): string | undefined {
+  if (s.title) return s.title;
+  if (run.kind === 'queue') {
+    if (s.kind === 'review') return t('Run review');
+    if (s.kind === 'accept') return acceptTitle(s.label ?? run.acceptanceSeat);
+    return undefined;
+  }
+  if (run.kind === 'batch') {
+    if (s.id === 'pilot') return s.label ? `${t('Pilot')} ${monitorText(s.label)}` : t('Pilot');
+    if (s.kind === 'pool') return t('Pool of {n}', { n: s.count ?? run.batch?.count ?? 0 });
+    if (s.kind === 'summary') return t('metro: summary');
+  }
+  if (run.kind === 'land') {
+    if (s.id === 'pick') return t('Cherry-pick');
+    if (s.id === 'lease') return t('Lease wait');
+    if (s.id === 'gate') return t('Gate');
+    if (s.id === 'merge') return t('Merge');
+  }
+  if (run.kind === 'council') {
+    if (s.kind === 'synth') return s.label ? t('Synthesis ({seat})', { seat: monitorText(s.label) }) : t('Synthesis');
+    return s.label ? t('Member {name}', { name: monitorText(s.label) }) : t('Worker');
+  }
+  if (run.kind === 'prewalk') {
+    if (s.id === 'target') return t('Worker');
+    return s.label ? t('{kind} prewalk scout', { kind: monitorText(s.label) }) : t('Scouts');
+  }
+  return s.label ?? s.id;
+}
+
+function flowFromCollectorMetro(run: ExecutionRun, metro: CollectorMetroFlow): MetroFlow {
+  const flowState: MetroFlowState = run.state === 'paused' ? 'paused' : 'running';
+  const ticketById = run.kind === 'queue' ? new Map(run.tickets.map((tk) => [tk.ticket, tk])) : undefined;
+  const labelRef = (ref: string) => (run.kind === 'queue' && !run.unattended && ticketById?.has(ref) ? ticketShort(ref) : ref);
+  const stations: MetroStation[] = metro.stations.map((s) => {
+    const tk = ticketById?.get(s.id);
+    const num = tk ? labelRef(s.id) : undefined;
+    const title = collectorStationTitle(run, s);
+    const waits = s.blockers?.length ? s.blockers.map(labelRef).join(',') : undefined;
+    const gate: MetroGate | undefined = s.gate && s.gate.state !== 'done'
+      ? { k: s.gate.index, n: s.gate.total, state: s.gate.state, ...(s.gate.command ? { command: s.gate.command } : {}) }
+      : undefined;
+    const rawRepairs = s.repairs?.length ? s.repairs : s.repair ? [s.repair] : [];
+    const repairs: MetroRepair[] = rawRepairs.map((r) => ({
+      id: r.id,
+      state: r.state,
+      round: `${r.round}/${r.total}`,
+      title: run.kind === 'queue' ? (s.title ?? num ?? r.label ?? t('Repair')) : (r.label ?? t('Repair')),
+      ...(r.role ? { role: r.role } : {}),
+      ...(r.changedAt !== undefined ? { changedAt: r.changedAt } : {}),
+      ...(r.reason ? { reason: r.reason } : {}),
+      ...(r.jobId ? { jobId: r.jobId } : {}),
+      ...(r.execJob ? { execJob: r.execJob } : {}),
+    }));
+    const stateWord = tk?.stage === 'settled' && s.state === 'done' ? 'settled' : undefined;
+    return {
+      id: s.id,
+      ...(num ? { num } : {}),
+      kind: s.kind,
+      state: s.state,
+      ...(stateWord ? { stateWord } : {}),
+      ...(title ? { title } : {}),
+      ...(s.label ? { label: s.label } : {}),
+      ...(s.role ? { role: s.role } : {}),
+      ...(s.blockers?.length ? { blockers: s.blockers } : {}),
+      ...(waits ? { waits } : {}),
+      ...(s.changedAt !== undefined ? { changedAt: s.changedAt } : {}),
+      ...(gate ? { gate } : {}),
+      ...(repairs.length ? { repair: repairs.at(-1), repairs } : {}),
+      ...(s.pool ? { counts: s.pool } : {}),
+      ...(s.count !== undefined ? { count: s.count } : {}),
+      ...(s.holdTag ? { holdTag: s.holdTag } : {}),
+      ...(s.reason ? { reason: s.reason } : {}),
+      ...(s.jobId ? { jobId: s.jobId } : {}),
+      ...(s.execJob ? { execJob: s.execJob } : {}),
+    };
+  });
+  const batch = run.kind === 'batch' ? run.batch : undefined;
+  const slots = batch?.slots !== undefined && batch.state === 'working' ? `${batch.totals.running}/${batch.slots}` : undefined;
+  return {
+    flow: run.flow,
+    kind: run.kind,
+    name: run.label,
+    state: flowState,
+    createdAt: run.createdAt,
+    ...(batch ? { batch } : {}),
+    ...(slots ? { slots } : {}),
+    stations,
+    edges: metro.edges,
+    ...(metro.lastChangedId !== undefined ? { lastChangedId: metro.lastChangedId } : {}),
+  };
+}
 
 function mapStepState(state: RunStepState): MetroStationState {
   switch (state) {
@@ -1053,46 +1377,31 @@ function mapStepState(state: RunStepState): MetroStationState {
   }
 }
 
-function claimJob(jobId: string | undefined, target: ExecutionRunJobTarget | undefined, seen: Set<string>): ExecutionRunJobTarget | undefined {
-  if (!jobId || !target || seen.has(jobId)) return undefined;
-  seen.add(jobId);
-  return target;
-}
-
-const ticketShort = (key: string) => key.split('/').at(-1)!;
-
-function ticketToStation(
-  ticket: ExecutionRunTicket,
-  label: (ref: string) => string,
-  deps: readonly string[],
-  seen: Set<string>,
-): MetroStation {
+function legacyTicketStation(ticket: ExecutionRunTicket, label: (ref: string) => string, deps: readonly string[]): MetroStation {
   const num = label(ticket.ticket);
-  const execJob = claimJob(ticket.jobId, ticket.execJob, seen);
   const waits = ticket.blockers?.length ? ticket.blockers.map(label).join(',') : undefined;
   const base = {
-    id: `ticket:${ticket.ticket}`,
+    id: ticket.ticket,
     num,
     kind: 'worker' as const,
     ...(ticket.title ? { title: ticket.title } : {}),
     role: ticket.role ?? 'imp',
     deps,
+    ...(ticket.blockers?.length ? { blockers: ticket.blockers } : {}),
     ...(waits ? { waits } : {}),
+    ...(ticket.holdTag ? { holdTag: ticket.holdTag } : {}),
+    ...(ticket.reason ? { reason: ticket.reason } : {}),
+    ...(ticket.changedAt !== undefined ? { changedAt: ticket.changedAt } : {}),
     ...(ticket.jobId ? { jobId: ticket.jobId } : {}),
-    ...(execJob ? { execJob } : {}),
+    ...(ticket.execJob ? { execJob: ticket.execJob } : {}),
   };
   switch (ticket.stage) {
-    case 'landed':
-      return { ...base, state: 'done' };
-    case 'settled':
-      return { ...base, state: 'done', stateWord: 'settled' };
-    case 'held':
-      return { ...base, state: 'held', ...(ticket.since !== undefined ? { since: ticket.since } : {}) };
-    case 'failed':
-      return { ...base, state: 'failed', ...(ticket.since !== undefined ? { since: ticket.since } : {}) };
+    case 'landed': return { ...base, state: 'done' };
+    case 'settled': return { ...base, state: 'done', stateWord: 'settled' };
+    case 'held': return { ...base, state: 'held', ...(ticket.since !== undefined ? { since: ticket.since } : {}) };
+    case 'failed': return { ...base, state: 'failed', ...(ticket.since !== undefined ? { since: ticket.since } : {}) };
     case 'queued':
-    case 'blocked':
-      return { ...base, state: 'waiting' };
+    case 'blocked': return { ...base, state: 'waiting' };
     case 'worker':
       return {
         ...base,
@@ -1104,278 +1413,110 @@ function ticketToStation(
       const p = ticket.landProgress;
       const since = p?.since ?? ticket.since;
       if (p?.kind === 'lease') return { ...base, state: 'lease', ...(since !== undefined ? { since } : {}) };
-      if (p?.kind === 'repair') {
-        return {
-          ...base,
-          state: 'working',
-          gate: { k: 1, n: 1, state: 'failed' },
-          repair: {
-            state: ticket.asking ? 'asking' : 'working',
-            round: `${p.index ?? 1}/${p.total ?? 2}`,
-            role: ticket.role ?? 'imp',
-            title: ticket.title ?? num,
+      const lg = ticket.landGate;
+      const gate: MetroGate | undefined = lg && lg.state !== 'done'
+        ? { k: lg.index, n: lg.total, state: lg.state, ...(lg.command ? { command: lg.command } : {}) }
+        : p?.kind === 'repair' ? { k: 1, n: 1, state: 'failed' }
+          : { k: p?.index ?? 1, n: p?.total ?? Math.max(1, p?.index ?? 1), state: 'working' };
+      const rawRepairs = ticket.landRepairs?.length ? ticket.landRepairs : ticket.landRepair ? [ticket.landRepair] : [];
+      const repairs: MetroRepair[] = rawRepairs.length
+        ? rawRepairs.map((r) => ({
+            id: r.id, state: r.state, round: `${r.round}/${r.total}`,
+            title: ticket.title ?? num, role: r.role ?? ticket.role ?? 'imp',
+            ...(r.changedAt !== undefined ? { changedAt: r.changedAt } : {}),
+            ...(r.reason ? { reason: r.reason } : {}),
+            ...(r.jobId ? { jobId: r.jobId } : {}),
+            ...(r.execJob ? { execJob: r.execJob } : {}),
+          }))
+        : p?.kind === 'repair' ? [{
+            id: `${ticket.ticket}↻`, state: ticket.asking ? 'asking' : 'working',
+            round: `${p.index ?? 1}/${p.total ?? 2}`, role: ticket.role ?? 'imp', title: ticket.title ?? num,
             ...(since !== undefined ? { since } : {}),
             ...(ticket.jobId ? { jobId: ticket.jobId } : {}),
-            ...(execJob ? { execJob } : {}),
-          },
-          execJob: undefined,
-        };
-      }
-      const k = p?.index ?? 1;
-      const n = p?.total ?? Math.max(1, k);
+            ...(ticket.execJob ? { execJob: ticket.execJob } : {}),
+          }] : [];
       return {
         ...base,
         state: 'working',
-        gate: { k, n, state: 'working' },
+        ...(gate ? { gate } : {}),
+        ...(repairs.length ? { repair: repairs.at(-1), repairs } : {}),
         ...(since !== undefined ? { since } : {}),
       };
     }
   }
 }
 
-/** Thin adapter projecting today's cached `ExecutionRun` into `MetroFlow` (wave-order fallback when edges are absent). */
-export function metroFlowFromRun(run: ExecutionRun, seen: Set<string>): MetroFlow {
+/** Wave inference fallback used only for legacy queue runs that lack collector `run.metro`. */
+function legacyQueueMetroFlow(run: ExecutionRun): MetroFlow {
   const flowState: MetroFlowState = run.state === 'paused' ? 'paused' : 'running';
-  const base = { flow: run.flow, kind: run.kind, name: run.label, state: flowState, createdAt: run.createdAt };
-
-  if (run.kind === 'queue') {
-    const own = new Set(run.tickets.map((tk) => tk.ticket));
-    const label = (ref: string) => (!run.unattended && own.has(ref) ? ticketShort(ref) : ref);
-    const idOf = (ref: string) => `ticket:${ref}`;
-    const hasExplicitEdges = run.tickets.some((tk) => tk.stage !== 'queued' && tk.stage !== 'blocked' && tk.blockers !== undefined);
-    const stations: MetroStation[] = [];
-    const referenced = new Set<string>();
-
-    if (hasExplicitEdges) {
-      for (const tk of run.tickets) {
-        const deps = (tk.blockers ?? []).filter((b) => own.has(b)).map(idOf);
+  const own = new Set(run.tickets.map((tk) => tk.ticket));
+  const label = (ref: string) => (!run.unattended && own.has(ref) ? ticketShort(ref) : ref);
+  const stations: MetroStation[] = [];
+  const referenced = new Set<string>();
+  const waves = run.queueWaves;
+  if (waves) {
+    let lastPrefixId: string | undefined;
+    for (const tk of waves.prefix) {
+      const deps = lastPrefixId ? [lastPrefixId] : [];
+      if (lastPrefixId) referenced.add(lastPrefixId);
+      stations.push(legacyTicketStation(tk, label, deps));
+      lastPrefixId = tk.ticket;
+    }
+    const currentIds: string[] = [];
+    for (const tk of waves.current) {
+      const deps = tk.blockers?.length
+        ? tk.blockers.filter((b) => own.has(b))
+        : lastPrefixId ? [lastPrefixId] : [];
+      for (const dep of deps) referenced.add(dep);
+      stations.push(legacyTicketStation(tk, label, deps));
+      currentIds.push(tk.ticket);
+    }
+    let prevWaveIds = currentIds.length ? currentIds : lastPrefixId ? [lastPrefixId] : [];
+    for (const wave of waves.blocked) {
+      const waveIds: string[] = [];
+      for (const tk of wave) {
+        const explicit = (tk.blockers ?? []).filter((b) => own.has(b));
+        const deps = explicit.length ? explicit : prevWaveIds;
         for (const dep of deps) referenced.add(dep);
-        stations.push(ticketToStation(tk, label, deps, seen));
+        stations.push(legacyTicketStation(tk, label, deps));
+        waveIds.push(tk.ticket);
       }
-    } else if (run.queueWaves) {
-      const { prefix, current, blocked } = run.queueWaves;
-      let lastPrefixId: string | undefined;
-      for (const tk of prefix) {
-        const deps = lastPrefixId ? [lastPrefixId] : [];
-        if (lastPrefixId) referenced.add(lastPrefixId);
-        stations.push(ticketToStation(tk, label, deps, seen));
-        lastPrefixId = idOf(tk.ticket);
-      }
-      const currentIds: string[] = [];
-      for (const tk of current) {
-        const deps = tk.blockers?.length
-          ? tk.blockers.filter((b) => own.has(b)).map(idOf)
-          : lastPrefixId ? [lastPrefixId] : [];
-        for (const dep of deps) referenced.add(dep);
-        stations.push(ticketToStation(tk, label, deps, seen));
-        currentIds.push(idOf(tk.ticket));
-      }
-      let prevWaveIds = currentIds.length ? currentIds : lastPrefixId ? [lastPrefixId] : [];
-      for (const wave of blocked) {
-        const waveIds: string[] = [];
-        for (const tk of wave) {
-          const explicit = (tk.blockers ?? []).filter((b) => own.has(b)).map(idOf);
-          const deps = explicit.length ? explicit : prevWaveIds;
-          for (const dep of deps) referenced.add(dep);
-          stations.push(ticketToStation(tk, label, deps, seen));
-          waveIds.push(idOf(tk.ticket));
-        }
-        prevWaveIds = waveIds;
-      }
+      prevWaveIds = waveIds;
     }
-
-    const leaves = stations.filter((s) => !referenced.has(s.id)).map((s) => s.id);
-    const reviewStep = run.steps.find((s) => s.key === 'review');
-    const acceptStep = run.steps.find((s) => s.key === 'accept');
-    const reviewJob = claimJob(run.reviewer?.jobId, run.reviewer?.execJob, seen);
-    const leadJob = claimJob(run.lead?.jobId, run.lead?.execJob, seen);
-    stations.push({
-      id: 'review',
-      kind: 'review',
-      state: mapStepState(run.reviewer?.state ?? reviewStep?.state ?? 'waiting'),
-      title: t('Run review'),
-      deps: leaves,
-      ...(run.reviewer?.since !== undefined ? { since: run.reviewer.since } : {}),
-      ...(run.reviewer?.jobId ? { jobId: run.reviewer.jobId } : {}),
-      ...(reviewJob ? { execJob: reviewJob } : {}),
-    });
-    stations.push({
-      id: 'accept',
-      kind: 'accept',
-      state: mapStepState(run.lead?.state ?? acceptStep?.state ?? 'waiting'),
-      title: t('Lead acceptance'),
-      deps: ['review'],
-      ...(run.lead?.since !== undefined ? { since: run.lead.since } : {}),
-      ...(run.lead?.jobId ? { jobId: run.lead.jobId } : {}),
-      ...(leadJob ? { execJob: leadJob } : {}),
-    });
-    return { ...base, stations };
   }
-
-  if (run.kind === 'batch' && run.batch) {
-    const { batch } = run;
-    const { done, failed, running, waiting, cancelled } = batch.totals;
-    const stations: MetroStation[] = [];
-    const hasPilot = Boolean(batch.pilots && batch.pilots.total > 0);
-    if (hasPilot && batch.pilots) {
-      stations.push({
-        id: 'pilot',
-        kind: 'worker',
-        state: mapStepState(batch.pilots.state),
-        title: t('Pilot {done}/{total}', { done: batch.pilots.done, total: batch.pilots.total }),
-        deps: [],
-      });
-    }
-    stations.push({
-      id: 'pool',
-      kind: 'pool',
-      state: running ? 'working' : waiting ? 'waiting' : failed ? 'failed' : 'done',
-      counts: { done, working: running, failed, waiting, stopped: cancelled },
-      role: batch.role,
-      title: t('Pool of {n}', { n: batch.count }),
-      deps: hasPilot ? ['pilot'] : [],
-      ...(run.createdAt !== null ? { since: run.createdAt } : {}),
-    });
-    stations.push({
-      id: 'summary',
-      kind: 'summary',
-      state: run.endedAt === undefined ? 'waiting' : 'done',
-      title: t('metro: summary'),
-      deps: ['pool'],
-    });
-    const slots = batch.slots !== undefined && batch.state === 'working' ? `${running}/${batch.slots}` : undefined;
-    return { ...base, batch, ...(slots ? { slots } : {}), stations };
-  }
-
-  if (run.kind === 'land') {
-    const flat = (run.nodes ?? []).flat();
-    const byKey = new Map(flat.map((n) => [n.key, n]));
-    const pick = byKey.get('pick');
-    const gate = byKey.get('gate');
-    const repair = byKey.get('repair');
-    const lease = byKey.get('lease');
-    const merge = byKey.get('merge');
-    const stations: MetroStation[] = [];
-    let prev: string[] = [];
-    if (pick) {
-      const execJob = claimJob(pick.jobId, pick.execJob, seen);
-      stations.push({
-        id: 'pick', kind: 'worker', state: mapStepState(pick.state), title: t('Cherry-pick'), deps: [],
-        ...(pick.since !== undefined ? { since: pick.since } : {}),
-        ...(pick.jobId ? { jobId: pick.jobId } : {}), ...(execJob ? { execJob } : {}),
-      });
-      prev = ['pick'];
-    }
-    if (lease && (!gate || gate.state === 'waiting')) {
-      const execJob = claimJob(lease.jobId, lease.execJob, seen);
-      stations.push({
-        id: 'lease', kind: 'worker', state: 'lease', title: t('Lease wait'), deps: prev,
-        ...(lease.progress?.since !== undefined ? { since: lease.progress.since } : lease.since !== undefined ? { since: lease.since } : {}),
-        ...(lease.jobId ? { jobId: lease.jobId } : {}), ...(execJob ? { execJob } : {}),
-      });
-      prev = ['lease'];
-    } else if (gate) {
-      const execJob = claimJob(gate.jobId, gate.execJob, seen);
-      const repairJob = repair ? claimJob(repair.jobId, repair.execJob, seen) : undefined;
-      const gState = gate.state === 'failed' ? 'failed' : gate.state === 'running' ? 'working' : undefined;
-      const hasGateSteps = Boolean(gate.progress?.total && gState);
-      const gateSpec: MetroGate | undefined = hasGateSteps
-        ? { k: gate.progress!.index ?? 1, n: gate.progress!.total!, state: gState! }
-        : undefined;
-      const repairSpec: MetroRepair | undefined = repair ? {
-        id: 'repair',
-        state: mapStepState(repair.state),
-        round: `${repair.progress?.index ?? 1}/${repair.progress?.total ?? 2}`,
-        role: repair.role ?? 'imp',
-        title: repair.label ?? t('Repair'),
-        ...(repair.progress?.since !== undefined ? { since: repair.progress.since } : repair.since !== undefined ? { since: repair.since } : {}),
-        ...(repair.jobId ? { jobId: repair.jobId } : {}),
-        ...(repairJob ? { execJob: repairJob } : {}),
-      } : undefined;
-      stations.push({
-        id: 'gate', kind: 'worker', state: mapStepState(gate.state), title: t('Gate'), deps: prev,
-        ...(gateSpec ? { gate: gateSpec } : {}),
-        ...(repairSpec ? { repair: repairSpec } : {}),
-        ...(gate.progress?.since !== undefined ? { since: gate.progress.since } : gate.since !== undefined ? { since: gate.since } : {}),
-        ...(gate.jobId ? { jobId: gate.jobId } : {}), ...(execJob ? { execJob } : {}),
-      });
-      prev = ['gate'];
-    }
-    if (merge) {
-      const execJob = claimJob(merge.jobId, merge.execJob, seen);
-      stations.push({
-        id: 'merge', kind: 'worker', state: mapStepState(merge.state), title: t('Merge'), deps: prev,
-        ...(merge.since !== undefined ? { since: merge.since } : {}),
-        ...(merge.jobId ? { jobId: merge.jobId } : {}), ...(execJob ? { execJob } : {}),
-      });
-    }
-    return { ...base, stations };
-  }
-
-  if (run.kind === 'council' || run.kind === 'prewalk') {
-    const waves = run.nodes ?? [];
-    const first = waves[0] ?? [];
-    const second = waves[1] ?? [];
-    const stations: MetroStation[] = [];
-    for (const node of first) {
-      const execJob = claimJob(node.jobId, node.execJob, seen);
-      const title = run.kind === 'council'
-        ? (node.label ? t('Member {name}', { name: monitorText(node.label) }) : t('Worker'))
-        : (node.word === 'Scout' && node.label ? t('{kind} prewalk scout', { kind: monitorText(node.label) }) : t(node.word ?? 'Scouts'));
-      stations.push({
-        id: node.key,
-        kind: 'worker',
-        state: mapStepState(node.state),
-        title,
-        ...(run.kind === 'council' ? { role: node.role ?? 'oracle' } : node.role ? { role: node.role } : {}),
-        deps: [],
-        ...(node.since !== undefined ? { since: node.since } : {}),
-        ...(node.jobId ? { jobId: node.jobId } : {}),
-        ...(execJob ? { execJob } : {}),
-      });
-    }
-    const deps = first.map((n) => n.key);
-    for (const node of second) {
-      const execJob = claimJob(node.jobId, node.execJob, seen);
-      const isSynth = run.kind === 'council';
-      const title = isSynth
-        ? (node.label ? t('Synthesis ({seat})', { seat: monitorText(node.label) }) : t('Synthesis'))
-        : t(node.word ?? 'Worker');
-      stations.push({
-        id: node.key,
-        kind: isSynth ? 'synth' : 'worker',
-        state: mapStepState(node.state),
-        title,
-        ...(!isSynth && node.role ? { role: node.role } : {}),
-        deps,
-        ...(node.since !== undefined ? { since: node.since } : {}),
-        ...(node.jobId ? { jobId: node.jobId } : {}),
-        ...(execJob ? { execJob } : {}),
-      });
-    }
-    return { ...base, stations };
-  }
-
-  // Generic graph.json workflow: project nodes and their explicit blockers.
-  const allNodes: WorkflowNode[] = (run.nodes ?? []).flat();
-  const known = new Set(allNodes.map((n) => n.key));
-  const stations: MetroStation[] = allNodes.map((node) => {
-    const execJob = claimJob(node.jobId, node.execJob, seen);
-    const deps = (node.blockers ?? []).filter((b) => known.has(b));
-    return {
-      id: node.key,
-      kind: 'worker',
-      state: mapStepState(node.state),
-      title: node.label ?? node.key,
-      ...(node.role ? { role: node.role } : {}),
-      deps,
-      ...(node.blockers?.length ? { waits: node.blockers.join(',') } : {}),
-      ...(node.since !== undefined ? { since: node.since } : {}),
-      ...(node.jobId ? { jobId: node.jobId } : {}),
-      ...(execJob ? { execJob } : {}),
-    };
+  const leaves = stations.filter((s) => !referenced.has(s.id)).map((s) => s.id);
+  const reviewStep = run.steps.find((s) => s.key === 'review');
+  const acceptStep = run.steps.find((s) => s.key === 'accept');
+  stations.push({
+    id: 'review',
+    kind: 'review',
+    state: mapStepState(run.reviewer?.state ?? reviewStep?.state ?? 'waiting'),
+    title: t('Run review'),
+    deps: leaves,
+    ...(run.reviewer?.since !== undefined ? { since: run.reviewer.since } : {}),
+    ...(run.reviewer?.jobId ? { jobId: run.reviewer.jobId } : {}),
+    ...(run.reviewer?.execJob ? { execJob: run.reviewer.execJob } : {}),
   });
-  return { ...base, stations };
+  stations.push({
+    id: 'accept',
+    kind: 'accept',
+    state: mapStepState(run.lead?.state ?? acceptStep?.state ?? 'waiting'),
+    title: acceptTitle(run.acceptanceSeat),
+    ...(run.acceptanceSeat ? { label: run.acceptanceSeat } : {}),
+    deps: ['review'],
+    ...(run.lead?.since !== undefined ? { since: run.lead.since } : {}),
+    ...(run.lead?.jobId ? { jobId: run.lead.jobId } : {}),
+    ...(run.lead?.execJob ? { execJob: run.lead.execJob } : {}),
+  });
+  return { flow: run.flow, kind: run.kind, name: run.label, state: flowState, createdAt: run.createdAt, stations };
+}
+
+/** Project an open `ExecutionRun` using collector `run.metro`, falling back to wave inference only for legacy runs without `metro`. */
+export function metroFlowFromRun(run: ExecutionRun): MetroFlow {
+  if (run.metro) return flowFromCollectorMetro(run, run.metro);
+  if (run.kind === 'queue') return legacyQueueMetroFlow(run);
+  const flowState: MetroFlowState = run.state === 'paused' ? 'paused' : 'running';
+  return { flow: run.flow, kind: run.kind, name: run.label, state: flowState, createdAt: run.createdAt, stations: [] };
 }
 
 /* ───────────────────────── station lookup & keyboard navigation ───────────────────────── */
@@ -1458,6 +1599,12 @@ export function navigateExecutionMetro(
   if (key === 'left' || key === 'right') {
     if (currentStop?.kind !== 'map') return { cursor, handled: false };
     const cur = currentStop.stations.find((st) => st.item === cursor)!;
+    const sameCell = currentStop.stations.filter((st) =>
+      st.lane === cur.lane && st.col === cur.col && (key === 'right' ? st.x > cur.x : st.x < cur.x));
+    if (sameCell.length) {
+      sameCell.sort((a, b) => (key === 'right' ? a.x - b.x : b.x - a.x));
+      return { cursor: sameCell[0]!.item, handled: true };
+    }
     const candidates = currentStop.stations.filter((st) => key === 'right' ? st.col > cur.col : st.col < cur.col);
     if (!candidates.length) return { cursor, handled: true };
     candidates.sort((a, b) =>

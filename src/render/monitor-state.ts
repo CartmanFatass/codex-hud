@@ -5,6 +5,7 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { filterScope } from './filter.js';
 import type { WorkTarget } from '../collectors/workboard-types.js';
 import type { Objective, ObjectiveEvidence } from '../collectors/objectives.js';
+import type { MetroPoolCounts } from '../collectors/execution-metro.js';
 import type { MainTab } from './main-tabs.js';
 import type { PresetInput } from './preset-input.js';
 
@@ -72,8 +73,34 @@ export interface FeatureDetail extends RowNav {
   expanded?: readonly string[];
   back?: ObjectiveDetail;
 }
+export interface MetroStationInspect {
+  readonly id: string;
+  readonly kind: 'worker' | 'review' | 'accept' | 'synth' | 'summary' | 'pool' | 'group';
+  readonly state: string;
+  readonly num?: string;
+  readonly title?: string;
+  readonly label?: string;
+  readonly role?: string;
+  readonly since?: number;
+  readonly blockers?: readonly string[];
+  readonly gate?: { readonly k: number; readonly n: number; readonly state: string; readonly command?: string };
+  readonly round?: string;
+  readonly hostId?: string;
+  readonly counts?: MetroPoolCounts;
+  readonly count?: number;
+  readonly groupedIds?: readonly string[];
+  readonly holdTag?: string;
+  readonly reason?: string;
+  readonly jobId?: string;
+}
 export interface RunDetailState extends RowNav { kind: 'run-detail'; flow: string }
-export type SubpageState = JobsState | InspectorState | ObjectiveDetail | FeatureDetail | RunDetailState | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
+export interface StationDetailState extends RowNav {
+  kind: 'station-detail';
+  flow: string;
+  stationId: string;
+  station?: MetroStationInspect;
+}
+export type SubpageState = JobsState | InspectorState | ObjectiveDetail | FeatureDetail | RunDetailState | StationDetailState | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
 export interface HelpOverlay { scroll?: number }
 export interface MonitorState {
   activeTab: MainTab;

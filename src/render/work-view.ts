@@ -8,7 +8,7 @@ import { homeRows, OTHER_PROJECTS, otherProjectsHint, unattendedRow } from './ho
 import { scheduleBadge, scheduleView } from './home-cards.js';
 import { objectiveCrumb, objectiveDetailRows } from './objective-detail.js';
 import { featureCrumb, featureDetailRows } from './feature-detail.js';
-import { runDetailRows } from './execution-run-detail.js';
+import { runDetailRows, stationDetailRows } from './execution-run-detail.js';
 import { executionRows } from './execution-view.js';
 import { workflowDetailRows } from './execution-workflow.js';
 import { findMetroStation, renderMetroLegend } from './execution-metro.js';
@@ -157,6 +157,7 @@ export function renderWorkboardFrame(
   const objective = subpage?.kind === 'objective' ? subpage : undefined;
   const feat = subpage?.kind === 'feature' ? subpage : undefined;
   const runDetail = subpage?.kind === 'run-detail' ? subpage : undefined;
+  const stationDetail = subpage?.kind === 'station-detail' ? subpage : undefined;
   const sub = subpage || help;
   const project = !sub && state.activeTab === 'project';
   const execution = executionShown(state);
@@ -314,8 +315,13 @@ export function renderWorkboardFrame(
       ? { root, objective: found, blocked: found.state !== 'done' && blockedObjectives(snap!.waiting).has(found.id) }
       : missingObjectiveTarget(root, worker.objective);
   })();
-  const activeRun = runDetail ? input.execution?.runs?.find((r) => r.flow === runDetail.flow) : undefined;
-  const crumb = help ? t('Help') : objective ? t('Objective') : runDetail ? `${t('Run')} · ${monitorText(activeRun ? `${activeRun.label} ${activeRun.flow.slice(0, 8)}` : runDetail.flow.slice(0, 8))}` : native ? t('Native subagents') : jobs ? t('Jobs')
+  const detailFlow = runDetail?.flow ?? stationDetail?.flow;
+  const activeRun = detailFlow ? input.execution?.runs?.find((r) => r.flow === detailFlow) : undefined;
+  const stationCrumbLabel = stationDetail?.station?.title ?? stationDetail?.station?.num ?? stationDetail?.stationId ?? '';
+  const crumb = help ? t('Help') : objective ? t('Objective')
+    : stationDetail ? `${t('Station')} · ${monitorText(stationCrumbLabel)}`
+    : runDetail ? `${t('Run')} · ${monitorText(activeRun ? `${activeRun.label} ${activeRun.flow.slice(0, 8)}` : runDetail.flow.slice(0, 8))}`
+    : native ? t('Native subagents') : jobs ? t('Jobs')
     : t('Inspector') + (worker ? ` · ${monitorText(worker.displayId || worker.id.replace(/^thin-job:/, ''))}` : '');
   const schedule = scheduleView(input.openSchedule, now);
   if (sub || page || list) {
@@ -410,6 +416,7 @@ export function renderWorkboardFrame(
     ? helpContent.rows
     : feat ? featureDetailRows(feat, width, now, featProject, input.projectActivity, input.projectLandings)
     : objDetail ? objectiveDetailRows(objDetail, width, now, objProject, input.projectActivity, objResultAt)
+    : stationDetail ? activeRun ? stationDetailRows(activeRun, stationDetail.stationId, stationDetail.station, width, now) : [boardRow(fit(t('Run not available'), width))]
     : runDetail ? activeRun ? runDetailRows(activeRun, width, now, activeRun.kind === 'queue' ? undefined : workflowDetailRows(activeRun, width, now)) : [boardRow(fit(t('Run not available'), width))]
     : native ? nativeInspectorRows(input.tree, width, now)
       : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id), workerObjectiveTarget)
@@ -435,7 +442,7 @@ export function renderWorkboardFrame(
   const hasReq = (c?: string) => !!c && reqItems.some((r) => r.item === c);
   // Do not jump past the evidence when an Inspector first opens. Enter opens the preferred evidence file;
   // the details can still be scrolled without selecting a file first.
-  const inspect = inspector ?? native ?? runDetail;
+  const inspect = inspector ?? native ?? runDetail ?? stationDetail;
   const inspectCursor = inspect?.cursor && actions.some((r) => r.item === inspect.cursor) ? inspect.cursor : undefined;
   const listNav = jobs ?? objective ?? feat ?? (home ? state.home : undefined);
   const listCursor = listNav && (
@@ -541,14 +548,14 @@ export function renderWorkboardFrame(
     : objective ? (selectedReq
         ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open', ...(!isRequestMoreItem(selectedReq.item) && selectedReq.files ? ['o file'] : []), 'Esc back']
         : [...(selected?.featureTarget || selected?.files || selected?.commit ? ['⏎ open'] : []), 'Esc back'])
-    : runDetail ? ['Esc back']
+    : runDetail || stationDetail ? ['Esc back']
     : inspector ? inspectorKeys(worker)
       : native ? ['Esc back'] : jobs ? [...(selected?.batch ? batchKeys(selected.batch) : listCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
         : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
         : execution ? [
-            ...(key === PROJECT_STRIP_MORE ? ['⏎ open'] : selectedStation ? [...(selectedStation.execJob ? ['⏎ details'] : []), '←→ station'] : selected?.selectionAdvisor ? ['⏎ advisor'] : selected ? ['⏎ details'] : []),
+            ...(key === PROJECT_STRIP_MORE ? ['⏎ open'] : selectedStation ? ['⏎ details', '←→ station'] : selected?.selectionAdvisor ? ['⏎ advisor'] : selected ? ['⏎ details'] : []),
             ...(selected?.batch ? batchKeys(selected.batch) : []), ...projectSwitch,
             ...((selectedStation?.execJob ?? selected?.execJob)?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : []),
           ]
@@ -578,7 +585,7 @@ export function renderWorkboardFrame(
   // The theme's own text colour under every row, so a row with no ink of its own is not the terminal's.
   frame.lines = frame.lines.map((line) => theme.board.text(fit(line, width)));
   frame.panes.push({
-    id: inspector || native || objective || feat || runDetail ? 'details' : 'agents',
+    id: inspector || native || objective || feat || runDetail || stationDetail ? 'details' : 'agents',
     x: 0,
     y: 1 + top,
     width,

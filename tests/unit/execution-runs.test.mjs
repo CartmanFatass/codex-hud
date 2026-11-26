@@ -321,18 +321,21 @@ test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Det
   assert.equal(backFromRun.activeTab, 'execution');
   assert.equal(backFromRun.execution.cursor, `project:exec-run:${FLOWS.working}`);
 
-  // A tickets-step assumption lead must NOT become accept's Enter target while accept is still waiting.
+  // A tickets-step assumption lead must NOT become accept's Enter target while accept is still waiting;
+  // Enter opens station inspection (not an Inspector for the assumption lead).
   const onAccept = onExecution({ cursor: `project:exec-run:${FLOWS.working}:accept` });
-  assert.equal(press(onAccept, '\r').state.subpage, undefined);
+  const acceptDetail = press(onAccept, '\r').state;
+  assert.equal(acceptDetail.subpage?.kind, 'station-detail');
+  assert.equal(acceptDetail.subpage?.stationId, 'accept');
   // Enter on a landed ticket station opens its retained job Inspector too, and Esc returns to the same station.
-  const onLandedTicket = onExecution({ cursor: `project:exec-run:${FLOWS.working}:ticket:01` });
+  const onLandedTicket = onExecution({ cursor: `project:exec-run:${FLOWS.working}:01` });
   const inspected = press(onLandedTicket, '\r').state;
   assert.deepEqual([inspected.subpage.kind, inspected.subpage.from, inspected.subpage.target.workerId],
     ['inspector', 'execution', `thin-job:${IDS.settled}`]);
   const backFromJob = press(inspected, '\x1b').state;
   assert.equal(backFromJob.subpage, undefined);
   assert.equal(backFromJob.activeTab, 'execution');
-  assert.equal(backFromJob.execution.cursor, `project:exec-run:${FLOWS.working}:ticket:01`);
+  assert.equal(backFromJob.execution.cursor, `project:exec-run:${FLOWS.working}:01`);
 });
 
 test('idle Execution shows only recent project rows, ordered together by end time with observed results', async (t) => {
@@ -560,7 +563,7 @@ test('fixed and graph workflows render from cached records; Enter and batch cont
   const rendered = render(view, { width: 62, lang: 'zh' });
   const shown = rendered.workboard.rows.map((row) => row.text).join('\n');
   for (const fragment of ['工作流', '评议 Console contract', '◉ 成员 astra', '探路 Reserve target', '◉ code 探路',
-    '落地 Repair the synthetic gate', '●─────┬─‹▮✗›╌┬╌╌╌╌╌○', '╰─↻◉╌╌╌╯', '门禁 失败 2/2',
+    '落地 Repair the synthetic gate', '●─────┬─‹▮✗›╌┬╌╌╌╌╌○', '╰─↻◉╌╌╌╯', '修复 1/2 24分',
     '落地 Land after the lease', '◷ 等锁', '等锁 9分', '流程图 console-graph', '◉ proceed',
     '槽位 7/7', '(●×22 ◉×7 ✗×1 ○×10)', '◉ 并发池 40 项', '✗ 失败  ↻ 修复  ‹▮◉▯› 门禁  ◷ 等锁  ☆✪★ 综合', '刚结束']) {
     assert.ok(shown.includes(fragment), fragment + '\n' + shown);
@@ -572,8 +575,9 @@ test('fixed and graph workflows render from cached records; Enter and batch cont
     assert.equal(visualLength(line), width);
     assert.equal(line, stripAnsi(line));
   }
+  // A retained job referenced by both council and graph stays targetable in every flow.
   const memberStations = rendered.workboard.rows.flatMap((row) => row.metroStations ?? []).filter((s) => s.execJob?.target.workerId === `thin-job:${member}`);
-  assert.equal(memberStations.length, 1);
+  assert.equal(memberStations.length, 2);
   const item = (flow, node = '') => `project:exec-run:${flow}${node ? `:${node}` : ''}`;
   const decoder = new WorkbenchInputDecoder('workboard');
   const press = (state, bytes) => {
@@ -582,7 +586,7 @@ test('fixed and graph workflows render from cached records; Enter and batch cont
     assert.equal(acceptsMonitorInput(frame.state, input), true);
     return handleMonitorInput(frame.state, input, { frame, nowMs: NOW });
   };
-  for (const [flow, node, jobId] of [[council, 'member-1', member], [prewalk, 'code', scout], [land, 'repair', repair], [leased, 'lease', leaseJob], [graph, 'proceed', graphJob]]) {
+  for (const [flow, node, jobId] of [[council, 'member-1', member], [prewalk, 'code', scout], [land, 'gate↻', repair], [leased, 'lease', leaseJob], [graph, 'proceed', graphJob], [graph, 'alternate', member]]) {
     assert.equal(press(onExecution({ cursor: item(flow, node) }), '\r').state.subpage.target.workerId, `thin-job:${jobId}`);
   }
   for (const flow of [batch, council, prewalk, land, graph, recentBatch, recentCouncil]) {
