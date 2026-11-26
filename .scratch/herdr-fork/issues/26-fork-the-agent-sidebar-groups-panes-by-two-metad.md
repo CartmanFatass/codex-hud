@@ -28,3 +28,11 @@
   count and strongest state colour. Keep the agent row's icon and title as today after the connector prefix; at narrow
   widths connectors take at most 4 cells and the title truncates first. With `ui.ascii`/no box-drawing glyphs, fall back
   to `|- \- |`.
+- Owner 2026-11-26 (collapsed sidebar and order, binding): the collapsed sidebar shows belonging with separators and
+  folds, no tree: a solid rule `────` between big groups, a dotted rule `┈┈┈┈` between small groups; a group folded in
+  the expanded sidebar is one row in the collapsed one (`▸ N`, strongest state colour). Agent rows in the collapsed
+  sidebar drop their index number (icon only); workspace rows keep their numbers (they match the workspace keys).
+  Order (stable, so rows do not jump): ungrouped panes first as today; big groups by first appearance in this server
+  session; small groups within a big group by first appearance; agent rows within a small group follow the configured
+  `agent_panel_sort` (priority: blocked/waiting first; spaces: today's order). Attention is shown by colour (rows and
+  folded headers), never by reordering groups. Same order in the expanded and collapsed sidebar.
