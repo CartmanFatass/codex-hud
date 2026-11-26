@@ -332,3 +332,4 @@ purging owner data. (new)
 - [x] tmux inside Codex panes: its prefix keys, copy mode, `codex-hud-paste`, `codex-hud-resize`, tmux height and scrollback settings. The bar stays (D-2026-11-26-01).
 - [x] Worker tabs in the tab bar by default (D-2026-11-26-01).
 - [x] The panel as an ordinary pane that can be moved or resized (D-2026-11-26-01).
+- [x] Local Markdown ticket files `.scratch/<feature>/issues/*.md`, after a lossless migration to `.hud/tickets/<feature>.json`; feature prose (`spec.md`, notes) stays Markdown (D-2026-11-26-06).

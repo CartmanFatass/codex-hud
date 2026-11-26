@@ -7,6 +7,16 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-26
 
+- **D-2026-11-26-06** (§2.1, §2.3, Removed by this spec): Owner asked for tickets as a data structure the MCP owns,
+  easy to operate and to display (oracle ja3d49d8f6c9f0b56). Canonical store is per-feature
+  `.hud/tickets/<feature>.json` in the repo (typed records: status, blockers, acceptance items, comments, landing,
+  acceptance receipt), written by `hud_tickets` and HUD hooks under a local lock with no lease and no per-edit commit;
+  HUD-written ticket files are folded into the landed commit (or `hud_tickets commit` when nothing lands), replacing
+  the queued-receipt commit path of mcp-latency/02. Live claims and run stages stay derived from jobs and flows.
+  The panel reads the JSON through a cached reader; `o` opens the JSON, `hud tickets show` prints Markdown.
+  Owner approved deleting `.scratch/*/issues/*.md` after a lossless migration; toktrack switches to the JSON.
+  Rejected: a private `$HUD_HOME` store (no public history; §3 rules out a ledger database).
+
 - **D-2026-11-26-05** (§1 display rule, §2.2): Owner asked for distinct emphasis per tab with state still traceable
   (oracle j1d071a141ca7d3ba, `docs/design/tab-roles/README.md`). One grain per tab: Home = cross-project triage
   (requests, today's active projects with one-line goal and ≤ 3-day result, today, schedule); Project = one project's

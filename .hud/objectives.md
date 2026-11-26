@@ -54,9 +54,16 @@
 ## unattended: 无人值守服务：你选定目标后，工单队列在没人时继续推进，只在删除或改 spec 时交回
 
 **State:** active
-**Features:** unattended, chores
+**Features:** unattended, chores, mcp-latency
 
 ## interaction: 单项目执行页、选中文字直达 job、通用状态栏和精细交互
 
 **State:** active
 **Features:** exec-page, select-send, universal-bar, fine-interact, home-tidy, nav-redesign
+
+## ticket-store: 工单成为 MCP 自有的数据结构：编辑即时生效不等 land，面板直接读结构化事实
+**Features:** ticket-store
+
+**State:** active
+**Next:** ticket-store/01 after chores/13-15 land
+**Evidence:** docs/decisions-log.md
