@@ -3,7 +3,7 @@
 **Status:** ready-for-agent
 **Owner try:** no
 **Live try:** none
-**Blocked by:** 01
+**Blocked by:** 06
 **Objective:** ticket-store
 
 **What to build:** Design: docs/design/ticket-store/README.md §1, §5. Build `hud tickets migrate [--cwd <dir>] [--delete-legacy]`: convert every `.scratch/*/issues/*.md` variant in use (header lines, `resolved` → done, normalised blockers, checkbox acceptance, flake-list cases, Landed and unattended-acceptance lines, comments, Objective links) into `.hud/tickets/<feature>.json`, keep `.scratch/<feature>/spec.md` and prose notes, and verify a round trip (re-render and compare facts) before `--delete-legacy` deletes anything; refuse on any mismatch and list it. Update `hud tickets sync` to write `.hud/tickets/<slug>.json` with a `mirror` block and a git-ignore for mirror files, keeping today's mutual-exclusion guards.
