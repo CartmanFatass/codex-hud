@@ -112,7 +112,7 @@ process.exit(99);
   assert.match(text, /from herdr/);
   assert.match(text, /from the pi coding-agent CLI/);
   assert.match(text, /Linked herdr plugin hud\.select-send/);
-  assert.match(text, /hud\.select-send\.send/);
+  assert.match(text, /^\[\[keys\.command\]\]\nkey = "prefix\+a"\ntype = "plugin_action"\ncommand = "hud\.select-send\.send"$/m);
   assert.doesNotMatch(text, /pi-role|pi-dispatch/);
   assert.equal(fs.existsSync(f.config), false);
   assert.equal(fs.readFileSync(path.join(f.hud, 'installed-extensions'), 'utf8').trim(), 'herdr');

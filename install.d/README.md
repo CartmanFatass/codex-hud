@@ -88,7 +88,7 @@ Claude, Codex and pi get the ticket method through `hud_tickets`. Installing a n
 - **herdr**: checks PATH for `herdr` and `pi`,
   printing their locations and sources. Only missing `herdr` fails installation.
   Links the HUD herdr plugin (`hud.select-send`, at `integrations/herdr/plugin`) via
-  `herdr plugin link`, and prints an optional `[[keys.command]]` binding snippet for
+  `herdr plugin link`, and prints an optional `[[keys.command]]` snippet binding `prefix+a` in
   `~/.config/herdr/config.toml` without editing owner config. Uninstall unlinks
   `hud.select-send` via `herdr plugin uninstall` (no-op if already absent or if
   `herdr` is not on PATH).

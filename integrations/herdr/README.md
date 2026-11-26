@@ -20,3 +20,6 @@ delivery path. If herdr refuses direct guarded typing, the composer shows a
 waiting status and retries there within a 10-minute window. Press Esc while
 waiting to cancel without sending. The action never sends without confirmation,
 and no detached retry helper or retry file is created.
+
+The installer prints an optional `prefix+a` binding for `~/.config/herdr/config.toml`.
+If you choose a different key, it must not collide with herdr's default bindings.

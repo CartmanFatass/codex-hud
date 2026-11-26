@@ -517,6 +517,7 @@ CLI 受阻时任务显示为需要你；
 主人也可在面板里回答未答的问题 （`r`，再按数字或 `d`）；
 主会话通过一行 `changes` / `hud watch` 得知：`[role@job] ANSWERED qN from panel: <答案>`， 取自 `$HUD_HOME/panel-actions.jsonl`（读取方运行期间作出的回答；
 更早回答的问题只是不再出现）。
+安装 `herdr` 扩展时会打印一段可选的 `prefix+a` 快捷键配置，用于将选中的文本发送到主会话；参见 [herdr 集成指南](../integrations/herdr/README.md#selection-to-main-plugin-plugin)。
 主会话决定所有下一步，MCP 不知道工作流。
 工具参数见 [MCP README](../packages/hud-mcp/README.md)。
 

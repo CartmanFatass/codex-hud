@@ -28,7 +28,7 @@ hud_ext_install() {
   herdr plugin link "$plugin_dir"
   printf 'Linked herdr plugin %s (%s).\n' "$hud_herdr_plugin_id" "$plugin_dir"
   printf 'Optional ~/.config/herdr/config.toml keybind (reload with: herdr server reload-config):\n'
-  printf '[[keys.command]]\nkey = "prefix+s"\ntype = "plugin_action"\ncommand = "%s.send"\ndescription = "send selection to HUD main session"\n' "$hud_herdr_plugin_id"
+  printf '[[keys.command]]\nkey = "prefix+a"\ntype = "plugin_action"\ncommand = "%s.send"\ndescription = "send selection to HUD main session"\n' "$hud_herdr_plugin_id"
 }
 
 hud_ext_uninstall() {
