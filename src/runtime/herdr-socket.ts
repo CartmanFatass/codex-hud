@@ -33,7 +33,32 @@ export interface HerdrReply {
     protocol?: number;
     capabilities?: { hidden_tabs?: boolean; pane_strip?: boolean; guarded_prompt?: boolean };
     strip?: PaneStripInfo;
-    pane?: { pane_id: string; tab_id?: string; launch_id?: string; terminal_id?: string; label?: string };
+    pane?: {
+      pane_id: string;
+      tab_id?: string;
+      workspace_id?: string;
+      launch_id?: string;
+      terminal_id?: string;
+      label?: string;
+      cwd?: string;
+      foreground_cwd?: string;
+      agent?: string;
+      agent_status?: string;
+      agent_session?: { kind?: string; value?: string };
+    };
+    panes?: Array<{
+      pane_id: string;
+      tab_id?: string;
+      workspace_id?: string;
+      launch_id?: string;
+      terminal_id?: string;
+      label?: string;
+      cwd?: string;
+      foreground_cwd?: string;
+      agent?: string;
+      agent_status?: string;
+      agent_session?: { kind?: string; value?: string };
+    }>;
     tab?: { tab_id: string; launch_id?: string; terminal_id?: string; label?: string; hidden?: boolean };
     root_pane?: { pane_id: string; tab_id?: string; launch_id?: string; terminal_id?: string };
     argv?: string[];

@@ -245,7 +245,7 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     finally { scanning = false; }
     if (stopped) return;
     const { events, progress } = notices.select(home, prev, rows, first, lastScanAt);
-    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...workflowEvents(home, pane, false, cwd).lines, ...progress]);
+    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd, pane), ...workflowEvents(home, pane, false, cwd).lines, ...progress]);
     first = false;
     lastScanAt = scanAt;
     prev = new Map(rows.map((row) => [row.job, row]));
@@ -422,7 +422,7 @@ export async function watchCommand(
       const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
         ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;
       const { events, progress } = notices.select(home, prev, rows, first && mod ? modCutoff : first, lastScanAt, verbose);
-      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd()), ...flows.lines, ...(modCatchup ? [] : progress)];
+      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd(), callerPane ?? undefined), ...flows.lines, ...(modCatchup ? [] : progress)];
       // Release the mod's first HUD call only after capturing its pre-call baseline.
       if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
       const band = readBand && await readBand(scanAt);
@@ -504,7 +504,8 @@ export async function watchCommand(
           } else if (mod) {
             // Checkpoint only after the whole scan's batch, and leave changes racing the scan eligible on reload.
             const at = i === batches.length - 1 && !notices.pending ? scanAt : undefined;
-            await io.stdout(JSON.stringify({ type: 'wake', lines: line.split('\n'), at }) + '\n');
+            const wakeLines = line.startsWith('[HUD selection]\n') ? [line] : line.split('\n');
+            await io.stdout(JSON.stringify({ type: 'wake', lines: wakeLines, at }) + '\n');
           } else await io.stdout(`${line}\n`);
         } catch (error) {
           if (isBrokenPipe(error)) {

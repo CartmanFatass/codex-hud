@@ -786,6 +786,20 @@ const ZH: Record<string, string> = {
   'Board saved: {name}': '已导出看板: {name}',
   'Could not export board': '无法导出看板',
   'export a review board (HTML) and open it': '导出审阅看板（HTML）并打开',
+  // Selection composer (`hud select-send`).
+  'Send selection': '发送选中内容',
+  'Send selection -> {target}': '发送选中内容 -> {target}',
+  'Excerpt (exact text to send)': '摘录（将原样发送）',
+  'lines {start}-{end}/{total}': '第 {start}-{end}/{total} 行',
+  'Question: ': '问题：',
+  'Content changed — showing latest excerpt. Press Enter to send.': '内容已变化 — 已显示最新摘录，按回车发送。',
+  'Content changed — review latest excerpt and press Enter to send.': '内容已变化 — 请确认最新摘录后再按回车发送。',
+  'Selection is empty; nothing to send.': '选中内容为空；未发送。',
+  'No main session found for this project.': '未找到该项目的主会话。',
+  'Enter send': '回车 发送',
+  '↑↓ scroll': '↑↓ 滚动',
+  'Sending…': '发送中…',
+  'Target busy or draft present — queued until prompt is idle and empty.': '目标繁忙或有草稿 — 已排队，待空闲且输入行空时发送。',
 };
 
 const EN_OVERRIDES: Record<string, string> = {

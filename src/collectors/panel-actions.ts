@@ -15,9 +15,10 @@ const QID = /^q\d+$/;
 const MAX_READ = 256 * 1024;
 interface AnswerRecord { at: string; type: 'answer'; job: string; qid: string; role: string | null; answer: string }
 interface AdviceCopyRecord { at: string; type: 'advice-copy'; session: string; skill: string; path: string; project: string }
+interface SelectSendRecord { at: string; type: 'select-send'; pane: string; text: string }
 type Intent = { type: 'retry'; job: string } | { type: 'land'; root: string; slices: string[] };
 
-export function appendPanelAction(home: string, action: Intent | Omit<AnswerRecord, 'at'> | Omit<AdviceCopyRecord, 'at'>): void {
+export function appendPanelAction(home: string, action: Intent | Omit<AnswerRecord, 'at'> | Omit<AdviceCopyRecord, 'at'> | Omit<SelectSendRecord, 'at'>): void {
   fs.mkdirSync(home, { mode: 0o700, recursive: true });
   const fd = fs.openSync(join(home, PANEL_ACTIONS_FILE), fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT |
     fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK, 0o600);
@@ -55,11 +56,19 @@ export function recordPanelAnswer(home: string, job: string, qid: string, text: 
 }
 
 const oneLine = (s: string) => s.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').replace(/\s+/g, ' ').trim();
+const multiLine = (s: string) => s.replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/g, '').trimEnd();
 /** Format only decisions for the reader's project or jobs; an intent is never a command. */
-export function panelActionLine(line: string, owns: (id: string) => boolean, root?: string): string | undefined {
+export function panelActionLine(line: string, owns: (id: string) => boolean, root?: string, pane?: string): string | undefined {
   try {
-    const r: Intent | AnswerRecord | AdviceCopyRecord = JSON.parse(line);
+    const r: Intent | AnswerRecord | AdviceCopyRecord | SelectSendRecord = JSON.parse(line);
     if (r.type === 'advice-copy') return undefined;
+    if (r.type === 'select-send') {
+      if (pane && r.pane === pane && typeof r.text === 'string') {
+        const cleaned = multiLine(r.text);
+        return cleaned || undefined;
+      }
+      return undefined;
+    }
     if (r.type === 'land') {
       if ((root === undefined || root === r.root) && Array.isArray(r.slices) && r.slices.every(id => typeof id === 'string'))
         return oneLine(`Land requested from panel: ${basename(r.root)}: ${r.slices.join(', ')}`);
@@ -83,7 +92,7 @@ export class PanelActionLog {
       return st.isFile() ? st.size : undefined;
     } catch { return undefined; }
   }
-  changes(jobs: ReadonlySet<string>, root?: string): string[] {
+  changes(jobs: ReadonlySet<string>, root?: string, pane?: string): string[] {
     const size = this.size();
     if (size === undefined || size === this.offset) return [];
     if (size < this.offset || size - this.offset > MAX_READ) { this.offset = size; return []; }
@@ -99,7 +108,7 @@ export class PanelActionLog {
     const end = text.lastIndexOf('\n') + 1;
     this.offset += Buffer.byteLength(text.slice(0, end));
     return text.slice(0, end).split('\n').flatMap((line) => {
-      return panelActionLine(line, id => jobs.has(id), root) ?? [];
+      return panelActionLine(line, id => jobs.has(id), root, pane) ?? [];
     });
   }
 }

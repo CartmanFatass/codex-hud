@@ -1,0 +1,22 @@
+id = "hud.select-send"
+name = "HUD Send Selection"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Send a pane selection with its source to the responsible HUD main session"
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "send"
+title = "Send selection to main session"
+description = "Open the HUD composer for the current selection"
+contexts = ["selection"]
+command = ["node", "action.mjs"]
+
+[[panes]]
+id = "composer"
+title = "HUD Send Selection"
+description = "Confirm the exact excerpt and add a question for the main session"
+placement = "popup"
+width = "80%"
+height = 18
+command = ["node", "composer.mjs"]

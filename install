@@ -156,7 +156,7 @@ for name in "${extensions[@]}"; do
   printf 'Installing extension: %s\n' "$name"
   ( source "$REPO/install.d/$name.sh"; hud_ext_install )
   # Preflight-only extensions do not install anything to refresh.
-  case "$name" in browser|herdr) continue ;; esac
+  case "$name" in browser) continue ;; esac
   if [[ ! ${installed[$name]+x} ]]; then
     installed[$name]=1
     save_extensions

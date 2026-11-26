@@ -80,19 +80,56 @@ fs.writeFileSync(file, JSON.stringify(settings));
 const board = { revision: '', lanes: [], workers: [], decisions: [], coverage: {} };
 const browserAvailable = async (f) => (await new ProjectCollector(f.repo, f.hud, f.env, f.home).collect(true, board, Date.now())).browser;
 
-test('herdr preflight reports every installed command and source; uninstall is a no-op', (t) => {
+test('herdr extension links plugin on install, is idempotent, and unlinks on uninstall', (t) => {
   const f = fixture(t);
-  for (const name of ['herdr', 'pi']) f.fake(name);
+  fs.cpSync(path.join(root, 'integrations/herdr/plugin'), path.join(f.repo, 'integrations/herdr/plugin'), { recursive: true });
+  const log = path.join(f.bin, 'herdr.log');
+  const stateFile = path.join(f.bin, 'herdr-plugins.json');
+  fs.writeFileSync(path.join(f.bin, 'herdr'), `#!${process.execPath}
+const fs = require('node:fs'), args = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
+const stateFile = ${JSON.stringify(stateFile)};
+const plugins = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf8')) : {};
+if (args[0] === 'plugin' && args[1] === 'link' && args[2]) {
+  plugins['hud.select-send'] = args[2];
+  fs.writeFileSync(stateFile, JSON.stringify(plugins));
+  process.exit(0);
+}
+if (args[0] === 'plugin' && args[1] === 'uninstall' && args[2]) {
+  if (!plugins[args[2]]) {
+    process.stderr.write('plugin not installed: ' + args[2] + '\\n');
+    process.exit(1);
+  }
+  delete plugins[args[2]];
+  fs.writeFileSync(stateFile, JSON.stringify(plugins));
+  process.exit(0);
+}
+process.exit(99);
+`, { mode: 0o755 });
+  f.fake('pi');
   const text = f.run('herdr');
   for (const name of ['herdr', 'pi']) assert.ok(text.includes(`Present: ${name} (${path.join(f.bin, name)})`));
   assert.match(text, /from herdr/);
   assert.match(text, /from the pi coding-agent CLI/);
+  assert.match(text, /Linked herdr plugin hud\.select-send/);
+  assert.match(text, /hud\.select-send\.send/);
   assert.doesNotMatch(text, /pi-role|pi-dispatch/);
   assert.equal(fs.existsSync(f.config), false);
+  assert.equal(fs.readFileSync(path.join(f.hud, 'installed-extensions'), 'utf8').trim(), 'herdr');
   fs.unlinkSync(path.join(f.bin, 'pi'));
   assert.match(f.run('herdr'), /^Missing: pi —/m);
+  assert.match(f.run('herdr', true), /Uninstalled herdr plugin hud\.select-send/);
+  assert.equal(fs.existsSync(path.join(f.hud, 'installed-extensions')), false);
+  assert.match(f.run('herdr', true), /plugin hud\.select-send not installed/);
   fs.unlinkSync(path.join(f.bin, 'herdr'));
-  assert.match(f.run('herdr', true), /no-op; nothing to uninstall/);
+  assert.match(f.run('herdr', true), /herdr not on PATH; skipping plugin unlink/);
+  const pluginDir = path.join(f.repo, 'integrations/herdr/plugin');
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse), [
+    ['plugin', 'link', pluginDir],
+    ['plugin', 'link', pluginDir],
+    ['plugin', 'uninstall', 'hud.select-send'],
+    ['plugin', 'uninstall', 'hud.select-send'],
+  ]);
 });
 
 test('missing herdr fails clearly before any home, command, config or build change', (t) => {

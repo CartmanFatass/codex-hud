@@ -14,6 +14,7 @@ import { boardCommand } from './board.js';
 import { doctorCommand, versionCommand } from './doctor.js';
 import { jobStatsCommand } from './job-stats.js';
 import { adviseCommand } from './advise.js';
+import { selectSendCommand } from './select-send.js';
 
 export async function main(args: readonly string[], io: HudIO): Promise<number> {
   try {
@@ -38,6 +39,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
       return 0;
     }
     if (args[0] === 'act') return await actCommand(args.slice(1), io);
+    if (args[0] === 'select-send') return await selectSendCommand(args.slice(1), io);
     if (args[0] === 'board') return await boardCommand(args.slice(1), io);
     if (args[0] === 'advise') return await adviseCommand(args.slice(1), io);
     if (args[0] === 'doctor') return await doctorCommand(args.slice(1), io);
@@ -56,6 +58,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud unattended --help     Keep selected Objectives moving without a main session\n' +
           '       hud watch [--all]         Stream job change lines for this pane (or all jobs)\n' +
           '       hud act answer|try|retry|stop|pause|resume  Owner actions from a command (--help)\n' +
+          '       hud select-send --help    Send a herdr pane selection to the responsible main session\n' +
           '       hud council allow         Authorize one council for 30 minutes\n' +
           '       hud doctor               Check the local installation without changing it\n' +
           '       hud doctor <jobId>       Print one job\'s disk facts without changing it\n' +
@@ -68,7 +71,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
       );
       return 0;
     }
-    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|unattended|watch|act|council|board|doctor|stats|day|codex|codex-hud|uninstall\n');
+    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|unattended|watch|act|select-send|council|board|doctor|stats|day|codex|codex-hud|uninstall\n');
     return 2;
   } catch (error) {
     if (error instanceof CliError) {

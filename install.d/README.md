@@ -10,7 +10,7 @@ a failing hook stops the installer.
 
 `./install` refreshes the extensions remembered in `$HUD_HOME` using the current
 client home settings. Use `--with name,...` once to register extensions installed by
-older installers. The `browser` and `herdr` checks are not remembered. Unless
+older installers. The `browser` check is not remembered. Unless
 `--skip-build` is set, the installer runs `npm ci` if the checkout has no recorded
 hash for its current `package-lock.json`.
 
@@ -87,7 +87,11 @@ Claude, Codex and pi get the ticket method through `hud_tickets`. Installing a n
   removes unmodified HUD instructions without requiring `agy`; owner edits stay.
 - **herdr**: checks PATH for `herdr` and `pi`,
   printing their locations and sources. Only missing `herdr` fails installation.
-  No external tool or herdr registration is installed; uninstall is a stated no-op.
+  Links the HUD herdr plugin (`hud.select-send`, at `integrations/herdr/plugin`) via
+  `herdr plugin link`, and prints an optional `[[keys.command]]` binding snippet for
+  `~/.config/herdr/config.toml` without editing owner config. Uninstall unlinks
+  `hud.select-send` via `herdr plugin uninstall` (no-op if already absent or if
+  `herdr` is not on PATH).
 - **browser**: checks PATH for `google-chrome`, `jev-ask`, `jev-aistudio` and `jev-flow`,
   printing locations and sources. Missing Chrome or `jev-ask` fails in preflight;
   the other CLIs are optional and reported. Nothing is installed, configured or launched:
