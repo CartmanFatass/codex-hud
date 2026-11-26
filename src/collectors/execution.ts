@@ -1,13 +1,10 @@
-/** The Execution tab's facts: workflows, workers and their children, recent outcomes, and panes to sample. */
+/** The Execution tab's facts: workflows, workers and their children, and recent outcomes. */
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Job, PrewalkScoutKind } from '../mcp/job-contracts.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { readSelectionExcerpts, type SelectionExcerpt } from '../roles/selection-excerpts.js';
-import { herdrId } from '../roles/herdr-run.js';
-import { herdrEndpoint } from '../runtime/herdr-socket.js';
-import type { ScreenTarget, ExecutionScreen } from './execution-screens.js';
 import { ENDED_MS, readExecutionRuns, type ExecutionRun } from './execution-runs.js';
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
 import { executionJobDirs, jobRow, worksWithin } from './thin-jobs.js';
@@ -29,8 +26,6 @@ export interface ExecutionJob {
   readonly children?: readonly ExecutionJob[];
   /** The main session that dispatched it, from the receipt; unknown stays absent. */
   readonly session?: { readonly harness?: string; readonly id?: string; readonly pane?: string };
-  /** A live tab worker whose recorded pane can be read for a thumbnail. */
-  readonly hasScreen: boolean;
   /** A live headless job that has reported no progress: the newest lines of its output log. */
   readonly output?: HeadlessOutput;
 }
@@ -58,7 +53,7 @@ export interface ExecutionSnapshot {
   readonly excerpts?: readonly SelectionExcerpt[];
   readonly complete: boolean;
 }
-export type ExecutionView = ExecutionSnapshot & { readonly screens: ReadonlyMap<string, ExecutionScreen> };
+export type ExecutionView = ExecutionSnapshot;
 
 const PHASE_ORDER: Record<ExecutionPhase, number> = { waiting: 0, running: 1, queued: 2, settled: 3 };
 const text = (value: unknown) => typeof value === 'string' && value ? value : undefined;
@@ -102,8 +97,8 @@ function endedJobResult(worker: OwnerWorker, job: Partial<Job>): EndedExecutionJ
 }
 
 /** Uses the bounded, project-scoped job snapshot; reuses its workers for Inspector identity and land facts. */
-export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: { root: string; pane: string | null; env: NodeJS.ProcessEnv; complete: boolean; activityOnly?: boolean }, now = Date.now()):
-  { snapshot: ExecutionSnapshot; targets: ScreenTarget[] } {
+export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: { root: string; pane: string | null; complete: boolean; activityOnly?: boolean }, now = Date.now()):
+  ExecutionSnapshot {
   const cache = getJobIndexCache(home);
   const workers = new Map(board.workers.map((worker) => [jobIdOf(worker.id)!, worker]));
   let complete = scope.complete, runs: ExecutionRun[] = [];
@@ -164,7 +159,7 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     }
   }
   const snapshot = { root: scope.root, ...(runs.length ? { runs } : {}), ticketActivity, complete };
-  if (scope.activityOnly) return { snapshot: { ...snapshot, jobs: [] }, targets: [] };
+  if (scope.activityOnly) return { ...snapshot, jobs: [] };
   const children = new Map<string, string[]>();
   for (const [id, worker] of workers) {
     const parent = jobIdOf(worker.parentJobId);
@@ -175,31 +170,20 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     }
   }
   const shown = new Set(live.flatMap((id) => [id, ...(children.get(id) ?? [])]));
-  const endpoint = herdrEndpoint(scope.env), targets: ScreenTarget[] = [], liveSet = new Set(live);
+  const liveSet = new Set(live);
   const jobs = new Map([...shown].map((jobId): [string, ExecutionJob] => {
     const worker = workers.get(jobId)!, job = receipt(jobId), dir = join(home, 'jobs', jobId);
     const status = cache.readStatus<{ state?: unknown }>(jobId);
     const state = status.status === 'ok' ? status.value.state : undefined;
     const phase: ExecutionPhase = !liveSet.has(jobId) ? 'settled' : worker.state === 'queued' ? 'queued'
       : worker.homeNeedsHuman || state === 'waiting_orchestrator' || state === 'blocked' ? 'waiting' : 'running';
-    let target: ScreenTarget | undefined;
-    if (phase !== 'settled' && phase !== 'queued' && !worker.headless) {
-      const fields = cache.readSession(jobId)?.fields;
-      // Only the server that launched the tab can be asked about it, and a direct launch needs its identity to be checked.
-      const direct = fields?.directExec === '1';
-      if (fields && endpoint && fields.herdrSocket === endpoint && herdrId(fields.left) &&
-          (direct ? fields.launchId && fields.terminalId : herdrId(fields.tab))) {
-        target = { jobId, pane: fields.left, ...(direct ? { launchId: fields.launchId, terminalId: fields.terminalId } : { tab: fields.tab }) };
-        targets.push(target);
-      }
-    }
     const dispatcher = job.dispatcher, pane = jobCallerPane(job) || undefined;
     const harness = text(dispatcher?.harness), id = text(dispatcher?.id);
     const preset = text(job.preset) ?? text(job.imp_preset) ?? text(job.route?.preset);
     const output = phase !== 'settled' && worker.headless && !worker.latest_progress ? readHeadlessOutput(dir) : undefined;
     const parentId = jobIdOf(worker.parentJobId);
     return [jobId, {
-      jobId, worker, dir, phase, hasScreen: !!target,
+      jobId, worker, dir, phase,
       ...(preset ? { preset } : {}),
       ...(job.prewalk_kind ? { scout: job.prewalk_kind } : {}),
       ...(parentId ? { parentId, parentRole: workers.get(parentId)?.role ?? undefined } : {}),
@@ -223,9 +207,6 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   }
   const ordered = live.map((id) => ({ ...jobs.get(id)!, children: children.get(id)?.map((child) => jobs.get(child)!).sort(byStart) }))
     .sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase] || byStart(a, b));
-  // Thumbnails follow the card order.
-  const rank = new Map(ordered.map((job, i) => [job.jobId, i]));
-  targets.sort((a, b) => rank.get(a.jobId)! - rank.get(b.jobId)!);
   const excerpts = readSelectionExcerpts(home, cache, { project: scope.root });
-  return { snapshot: { ...snapshot, endedJobs, jobs: ordered, ...(excerpts.length && { excerpts }) }, targets };
+  return { ...snapshot, endedJobs, jobs: ordered, ...(excerpts.length && { excerpts }) };
 }

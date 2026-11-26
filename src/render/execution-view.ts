@@ -1,8 +1,7 @@
 /**
- * Execution: workflow diagram, single worker cards and recent outcomes. Facts and screens are collected outside paint.
+ * Execution: workflow diagram, single worker cards and recent outcomes. Facts are collected outside paint.
  */
 import type { EndedExecutionJob, ExecutionJob, ExecutionRun, ExecutionView } from '../collectors/execution.js';
-import { SCREEN_INTERVAL_MS, SCREEN_ROWS } from '../collectors/execution-screens.js';
 import { workState } from '../collectors/work-job.js';
 import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
@@ -62,18 +61,8 @@ function edge(open: string, close: string, left: string, right: string, width: n
 const edgeChoice = (choices: [string, string][], width: number) =>
   choices.find(([left, right]) => 5 + visualLength(left) + (right ? visualLength(right) + 3 : 0) < width) ?? choices[choices.length - 1]!;
 
-function screenLines(job: ExecutionJob, view: ExecutionView): string[] {
-  if (!job.hasScreen) return [muted(t('no screen yet'))];
-  const screen = view.screens.get(job.jobId);
-  const lines = !screen ? [muted(t('reading screen'))] : screen.state === 'closed' ? [muted(t('tab closed'))]
-    : screen.state === 'unavailable' ? [muted(t('screen unavailable'))]
-      : screen.lines.length ? screen.lines.slice(-SCREEN_ROWS).map((line) => theme.board.text(monitorText(line))) : [muted(t('screen is blank'))];
-  // A fixed height: a new sample never moves the cards below.
-  return [...lines, ...Array<string>(Math.max(0, SCREEN_ROWS - lines.length)).fill('')];
-}
-
-/** A card's body: its title, an open question, then the worker's screen or the headless job's own record. */
-function cardBody(job: ExecutionJob, view: ExecutionView, now: number): ({ rule: string } | string)[] {
+/** A card's body: its title, an open question, progress/children, and for headless jobs their own record. */
+function cardBody(job: ExecutionJob, now: number): ({ rule: string } | string)[] {
   const { worker } = job, arrow = muted(mark('›', '>'));
   const body: ({ rule: string } | string)[] = [theme.board.text(titleOf(job))];
   if (job.phase === 'waiting' && worker.ask) body.push(theme.board.attention(`${stateMark.asking()} ${monitorText(worker.ask)}`));
@@ -89,8 +78,7 @@ function cardBody(job: ExecutionJob, view: ExecutionView, now: number): ({ rule:
     });
     body.push(`${muted(mark('ϟ', '*'))} ${t('Children: {summary}', { summary: children.join(muted(' · ')) })}`);
   }
-  if (job.phase === 'queued') return body;
-  if (tab) return [...body, { rule: t('screen') }, ...screenLines(job, view)];
+  if (job.phase === 'queued' || tab) return body;
   const rule = (what?: string) => ({ rule: [t('headless'), what].filter(Boolean).join(' · ') });
   if (progress.length) return [...body, rule(t('progress')), ...progress.slice(-PROGRESS_ROWS).map(entry)];
   const output = job.output?.lines.slice(-PROGRESS_ROWS) ?? [];
@@ -99,7 +87,7 @@ function cardBody(job: ExecutionJob, view: ExecutionView, now: number): ({ rule:
   return [...body, rule(), muted(t('No progress yet'))];
 }
 
-function cardRows(job: ExecutionJob, view: ExecutionView, from: string, selected: boolean, width: number, now: number): string[] {
+function cardRows(job: ExecutionJob, from: string, selected: boolean, width: number, now: number): string[] {
   const state = stateOf(job, now), age = compactAge(job.worker.startedAt ?? undefined, now);
   const marker = selected ? `${theme.board.active(mark('▸', '>'))} ` : '';
   const names = [roleInk(job.worker.role ?? '')(roleOf(job)),
@@ -107,7 +95,7 @@ function cardRows(job: ExecutionJob, view: ExecutionView, from: string, selected
   const name = (n: number) => `${marker}${state.ink(state.glyph)} ${names.slice(0, n).filter(Boolean).join(muted(' · '))}`;
   const facts = [state.ink(state.word), muted(age)].filter(Boolean).join(' ');
   if (width < FRAME_MIN) return [pair(name(1), state.ink(state.glyph), width),
-    ...cardBody(job, view, now).map((line) => typeof line === 'string' ? line : muted(line.rule))];
+    ...cardBody(job, now).map((line) => typeof line === 'string' ? line : muted(line.rule))];
   const ink: Ink = selected ? theme.board.active : theme.board.frame, side = ink(mark('│', '|'));
   // Preset, model and then the state word give way; the role and the elapsed time stay.
   const [head, right] = edgeChoice([[name(3), facts], [name(2), facts], [name(1), facts], [name(1), muted(age)]], width);
@@ -116,7 +104,7 @@ function cardRows(job: ExecutionJob, view: ExecutionView, from: string, selected
   const [parent, tail] = edgeChoice([[origin, `${muted(kind)} ${id}`], [origin, id], [origin, '']], width);
   return [
     edge(mark('┌', '+'), mark('┐', '+'), head, right, width, ink),
-    ...cardBody(job, view, now).map((line) => typeof line === 'string' ? `${side} ${fit(line, width - 4)} ${side}`
+    ...cardBody(job, now).map((line) => typeof line === 'string' ? `${side} ${fit(line, width - 4)} ${side}`
       : edge(mark('├', '+'), mark('┤', '+'), muted(line.rule), '', width, ink)),
     edge(mark('└', '+'), mark('┘', '+'), parent, tail, width, ink),
   ];
@@ -182,9 +170,7 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
     };
     const readout = `  ${[count('running', 'running', theme.board.title), count('waiting', 'waiting', theme.board.attention),
       count('queued', 'queued', theme.board.title)].join('   ')}`;
-    const source = [partial, view.jobs.some((job) => job.hasScreen) ? t('screens every {n}s', { n: SCREEN_INTERVAL_MS / 1000 }) : '']
-      .filter(Boolean).join(' · ');
-    const right = [source, partial].find((text) => visualLength(readout) + 2 + visualLength(text) <= width) ?? '';
+    const right = partial && visualLength(readout) + 2 + visualLength(partial) <= width ? partial : '';
     rows.push(plain(''), plain(pair(readout, muted(right), width)));
     if (right) missingCoverage = '';
   }
@@ -197,7 +183,7 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
     rows.push(section(t('Workers'), width, [String(view.jobs.length), missingCoverage].filter(Boolean).join(' · ')));
     for (const job of view.jobs) {
       const at = { item: cardItem(job), execJob: { target: jobTarget(job.worker), dir: job.dir, tab: !isHeadless(job.worker) && job.worker.state !== 'queued' } };
-      rows.push(...cardRows(job, view, from(job), selected === at.item, width, now).map((text) => ({ ...at, text: fit(text, width) })));
+      rows.push(...cardRows(job, from(job), selected === at.item, width, now).map((text) => ({ ...at, text: fit(text, width) })));
     }
   }
   if (recent.length) {

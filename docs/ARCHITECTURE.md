@@ -212,8 +212,7 @@ A red gate gets one immediate rerun of the reported Node.js test files (or of th
 
 **Project Execution page.**
 `PanelExecution` exists only while that page, or an Inspector opened from it, is up: a second `PanelJobPipeline` whose `ThinJobScope.within` selects by project instead of pane (the job's directory, the main checkout of its managed worktree, or the receipt's `project_root`). That view reads receipts whole (the worktree link is not a persisted fact), keeps its own artifact cache and persists nothing.
-`executionSnapshot` keeps the live (unsettled, unreaped) jobs plus their descendants and ancestors and groups the tree by the receipt's `dispatcher`. The page skips the full Project collection.
-`ScreenSampler` runs only while the page itself is on screen: pane IDs come from `SESSION.txt` of jobs launched on the panel's own herdr endpoint; each read is `pane.read` followed by `pane.get`, which must still show the job's launch and terminal ID (its tab ID for a launch without direct exec). One round at a time, at most one per 2 s even across closing and reopening, up to eight panes per round in rotation, a 1 s timeout per call, one repaint per round that changed something. Screens live in memory only and are dropped when sampling stops.
+`executionSnapshot` keeps the live (unsettled, unreaped) jobs plus their descendants and ancestors and groups the tree by the receipt's `dispatcher`. The page skips the full Project collection and does no periodic herdr pane reads.
 
 ### 4.6 Project and Control
 

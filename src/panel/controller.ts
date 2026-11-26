@@ -92,7 +92,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const place = readPanelPlace(), openedAt = place?.openedAt ?? Date.now();
   const callerPane = (process.env.HERDR_DOCK === '1' ? process.env.HUD_DOCK_CALLER_PANE : process.env.HERDR_PANE_ID) || null;
   const jobPipeline = new PanelJobPipeline(getHudHome(), { project: HUD_CWD_REAL, pane: callerPane });
-  const execution = new PanelExecution(jobPipeline.home, callerPane, process.env, () => render());
+  const execution = new PanelExecution(jobPipeline.home, callerPane);
   let boundJobRoot = '';
   let scanStoreStarted = false;
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
@@ -114,11 +114,11 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   let overviewAt = -Infinity;
   const listing = (s: MonitorState) => projectShown(s) && projectListOpen(s, projects);
   const shownRoot = () => projects.find((p) => p.root === state.selectedProject)?.root ?? HUD_CWD_REAL;
-  // The Project hub uses only ticket activity. Worker screens stay on Execution itself.
+  // The Project hub uses only ticket activity. Live worker details stay on Execution itself.
   const projectHub = () => projectShown(state, settingsFlow.open) && state.project.view.kind === 'hub';
   const executionKept = () => state.activeTab === 'execution' || projectHub();
   const executionPage = () => executionShown(state, settingsFlow.open);
-  const syncExecution = () => execution.sync(executionKept() ? shownRoot() : undefined, executionPage());
+  const syncExecution = () => execution.sync(executionKept() ? shownRoot() : undefined);
   let executionCount: { root: string; count: number } | undefined;
   applyDisplaySettings(settings);
   setLanguage(resolveLanguage(settings.language));
