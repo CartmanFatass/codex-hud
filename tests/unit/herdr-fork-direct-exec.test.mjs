@@ -459,7 +459,7 @@ async function startForkHerdr(t, f, opts = {}) {
 }
 
 test('direct starts report sidebar titles and role tokens once, without touching the main pane or awaiting metadata', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t, { expectedStderr: 'hud: pane.report_metadata failed for w4E:p3: no response\n' });
+  const f = await fixture(t, { probe: "process.env.HUD_ICONS = 'text';", expectedStderr: 'hud: pane.report_metadata failed for w4E:p3: no response\n' });
   let metadataTimedOut = false, readinessBeforeTimeout = false;
   const fork = await startForkHerdr(t, f, {
     onAgentGet(entry) {
@@ -477,16 +477,20 @@ test('direct starts report sidebar titles and role tokens once, without touching
 
   writeCliRole(f, 'synthetic-cli', 60, true, 'claude');
   writeCliRole(f, 'frontend-imp', 60, true, 'agy');
+  writeCliRole(f, 'lead', 60, true, 'claude');
   const issues = join(f.root, '.scratch', 'synthetic', 'issues');
   fs.mkdirSync(issues, { recursive: true });
   writeFixtureFile(join(issues, '01-example.md'), '# 01: Sidebar ticket title\n');
   const examples = [
-    { role: 'synthetic-cli', kind: 'claude', ticket: 'synthetic/1', package: 'ignored-package', title: 'Sidebar ticket title', icon: '·' },
-    { role: 'frontend-imp', kind: 'agy', package: '可見'.repeat(10), title: '可見'.repeat(6) + '可…', icon: '◈' },
-    { role: 'imp', kind: 'pi', title: 'Synthetic task title', icon: '◆' },
+    { role: 'synthetic-cli', kind: 'claude', ticket: 'synthetic/1', package: 'ignored-package', title: 'Sidebar ticket title', icon: '.' },
+    { role: 'frontend-imp', kind: 'agy', package: '可見'.repeat(10), title: '可見'.repeat(6) + '可…', icons: 'text', icon: 'F' },
+    { role: 'imp', kind: 'pi', title: 'Synthetic task title', icons: 'nerd', icon: '\uF0AD' },
+    { role: 'lead', kind: 'claude', title: 'Synthetic task title', icons: 'unicode', icon: '★' },
   ];
   const expected = [];
-  for (const { role, kind, ticket, package: pkg, title, icon } of examples) {
+  for (const { role, kind, ticket, package: pkg, title, icons, icon } of examples) {
+    // The same long-lived dispatcher must reread the setting for every launch.
+    writeFixtureFile(f.env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: false, icons }));
     const res = await f.call('hud_create', { role, ticket, package: pkg, task: '# Synthetic task title\n\nBody.' });
     assert.equal(res.ok, undefined, JSON.stringify(res));
     assert.equal(cliState(res.task_dir).state, 'working');

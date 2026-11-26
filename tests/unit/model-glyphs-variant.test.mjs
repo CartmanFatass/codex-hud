@@ -1,7 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { versionedModelLabel, workerModelName } from '../../dist/render/model-glyphs.js';
+import { ROLE_GLYPHS, roleIcon, versionedModelLabel, workerModelName } from '../../dist/render/model-glyphs.js';
+import { visualLength } from '../../dist/render/colors.js';
 import { lookupModelEntry } from '../../dist/models/catalog.js';
+
+test('every sidebar role icon is one terminal cell, with no emoji presentation', () => {
+  for (const role of Object.keys(ROLE_GLYPHS)) {
+    for (const icons of ['unicode', 'text', 'nerd']) {
+      const glyph = roleIcon(role, icons);
+      const label = `${role}/${icons}: ${glyph}`;
+      assert.equal([...glyph].length, 1, label);
+      assert.equal(visualLength(glyph), 1, label);
+      assert.doesNotMatch(glyph, /[\p{Emoji_Presentation}\p{Cc}\uFE0F]/u, label);
+    }
+  }
+});
 
 test('the badge keeps a model variant and ignores the provider prefix', () => {
   assert.equal(versionedModelLabel('gpt-6.1-sol'), '6.1sol');

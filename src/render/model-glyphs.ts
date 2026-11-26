@@ -15,8 +15,8 @@ export const EFFORT_GLYPHS: Record<string, string> = { ...SHIPPED_MODELS_CATALOG
 
 /**
  * The icon per HUD role, `[unicode, ascii, nerd]` (the `icons` setting picks one), in the order the worker zone and Home's top
- * line show them: sonic last, and `other` (the icon of any role not listed) before it. The one table for the bar, the pi footer
- * and Home; the native statusline carries a copy (`native/src/render.rs`). The nerd glyphs are Font Awesome's, in the BMP.
+ * line show them: sonic last, and `other` (the icon of any role not listed) before it. Shared by the bar, pi footer, Home
+ * and herdr sidebar; the native statusline carries a copy (`native/src/render.rs`). Every role glyph is one terminal cell.
  */
 export const ROLE_GLYPHS: Readonly<Record<string, readonly [unicode: string, ascii: string, nerd: string]>> = {
   imp: ['⚒', 'I', '\uF0AD'],
@@ -24,8 +24,9 @@ export const ROLE_GLYPHS: Readonly<Record<string, readonly [unicode: string, asc
   general: ['✦', 'G', '\uF013'],
   oracle: ['◈', 'O', '\uF0EB'],
   reviewer: ['⚖', 'R', '\uF002'],
+  lead: ['★', 'L', '\uF005'],
   other: ['•', '.', '•'],
-  sonic: ['⚡', '*', '\uF0E7'],
+  sonic: ['ϟ', '*', '\uF0E7'],
 };
 
 /** The role's icon in `set` (a role with no icon of its own gets `other`'s); `emoji` and `unicode` share the Unicode set. */

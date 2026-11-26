@@ -466,7 +466,7 @@ HUD never trusts a directory while dispatching: a trust dialog is declined and t
 Sessions stay in each CLI's own store.
 Managed CLI and Pi tabs require the HUD herdr fork (`herdr-hud`); the running server's ping version must contain `-hud`. Dispatch refuses stock herdr rather than falling back to a shell launch. The fork starts the worker directly with HUD's environment, without sourcing shell startup files. This requirement does not change headless launches, browser shells, or the shell in a split Pi helper pane. Close any old shell-launched CLI or Pi worker manually; HUD will not take ownership of it.
 
-After a direct start, HUD reports a short task title for the herdr sidebar (ticket title, then package or brief title, up to 28 columns). Custom sidebar rows can use `hud_role`, `hud_ticket` (when linked) and `hud_icon` (the role's glyph). This best-effort metadata does not rename the managed agent or change main-session panes.
+After a direct start, HUD reports a short task title for the herdr sidebar (ticket title, then package or brief title, up to 28 columns). Custom sidebar rows can use `hud_role`, `hud_ticket` (when linked) and `hud_icon` (the same one-cell role glyph used in the bar and Home, in the Icons setting at dispatch). This best-effort metadata does not rename the managed agent or change main-session panes.
 
 `hud trust <dir>` adds that directory to the trust files of grok, agy and claude after a backup under `$HUD_HOME`.
 A missing CLI file is not created.
@@ -1141,9 +1141,20 @@ The fixed words (`Usage`, `unparseable JSON`, `(no key)`) follow the panel langu
 There is no Agents pane, layout selector, Timeline, activity hub or agent log.
 Each page retains its scroll/selection.
 Icons (Settings → Display → Advanced → Icons, `icons`) are `nerd` (the default), `unicode` or `text`; an old or unknown saved value loads as the default.
-`nerd` draws Font Awesome glyphs from the Basic Multilingual Plane, which a Nerd Font such as MesloLGS NF has; the codepoints: roles imp U+F0AD (wrench), frontend-imp U+F1FC (paint brush), general U+F013 (cog), oracle U+F0EB (light bulb), reviewer U+F002 (search), sonic U+F0E7 (bolt); states asking U+F059 (question circle, amber), failed U+F057 (times circle, red), unread report U+F0E0 (envelope, green), done U+F058 (check circle), queued U+F252 (hourglass half), stalled U+F186 (moon), stopped U+F04D (stop).
-`unicode` is the earlier set (`⚒ ✎ ✦ ◈ ⚖ ⚡`, `? ✗ ✓● ✓ ○ ◷ −`) and `text` is ASCII letters and words.
-The panel's role and job state icons follow the saved setting.
+The bar (including the pi footer), Home and the herdr sidebar share these one-cell role glyphs. `nerd` uses Font Awesome glyphs from the Basic Multilingual Plane, available in Nerd Fonts such as MesloLGS NF.
+
+| Role | `unicode` | `text` (ASCII) | `nerd` |
+| --- | --- | --- | --- |
+| imp | `⚒` | `I` | U+F0AD (wrench) |
+| frontend-imp | `✎` | `F` | U+F1FC (paint brush) |
+| general | `✦` | `G` | U+F013 (cog) |
+| oracle | `◈` | `O` | U+F0EB (light bulb) |
+| reviewer | `⚖` | `R` | U+F002 (search) |
+| lead | `★` | `L` | U+F005 (star) |
+| other | `•` | `.` | `•` |
+| sonic | `ϟ` | `*` | U+F0E7 (bolt) |
+
+The panel's job state icons also follow the saved setting. `nerd` uses U+F059 (asking: question circle, amber), U+F057 (failed: times circle, red), U+F0E0 (unread report: envelope, green), U+F058 (done: check circle), U+F252 (queued: hourglass half), U+F186 (stalled: moon) and U+F04D (stopped: stop); `unicode` uses `? ✗ ✓● ✓ ○ ◷ −` and `text` uses ASCII letters and words.
 
 After a new installed entry is stable for two seconds, a bounded child import validates it before the panel restarts in the same pane.
 Selection, scroll, diagnostic folds, Settings cursor, opening time and width override survive.
@@ -1287,7 +1298,7 @@ Missing facts are absent.
 The notice zone is, in order: native approvals, even-pool quota exclusions, machine-wide HUD load, local CPU/RAM, then recent client events (a Claude or Codex subagent starting, finishing or failing, and Claude skill loads, three minutes each).
 A preset in the project's Imp or Sonic even pool that cannot launch because of quota appears as `⚠ imp fast: quota` (text: `!`; Nerd Font: U+F071). The bar shows the first and adds `+N` for the others. The notice disappears as the presets rejoin.
 
-`⚒3  ✦2  ◈1  ⚡4  ◷2` counts HUD jobs across all projects under the same `$HUD_HOME`: one icon and running count per role, followed by the queue clock only when jobs are waiting to start. The Icons setting selects Unicode, text (`I3  G2  O1  *4  Q2`) or Nerd Font glyphs.
+`⚒3  ✦2  ◈1  ★1  ϟ4  ◷2` counts HUD jobs across all projects under the same `$HUD_HOME`: one icon and running count per role, followed by the queue clock only when jobs are waiting to start. The Icons setting selects Unicode, text (`I3  G2  O1  L1  *4  Q2`) or Nerd Font glyphs.
 Panes show the same counts, even if a pane has no jobs of its own. Model, context, project and quotas are still session-local.
 Workers waiting for main still count as running; their questions are not owner requests and do not add a badge. Settled jobs and native subagents are not counted.
 Active `hud_land` flows appear after the running roles and before the queue clock, or on their own if there are no jobs. For example, `⇡ gate 2/3 1m` shows the second of three gate steps and its elapsed time in whole minutes (`<1m` under a minute); `wait` means waiting for the main-checkout lease and `land` covers the other steps. `⇡3` means three active lands and the details are for the oldest. Text uses `L` and Nerd Font uses U+F126. Finished lands and ticket queues are not counted.

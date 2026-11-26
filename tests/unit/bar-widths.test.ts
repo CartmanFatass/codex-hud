@@ -45,7 +45,7 @@ test('machine counts keep all groups at normal widths, without exposing job meta
     }
   const zone = (width: number, scene: string) => frames[String(width)]![scene]![0]!.split(' │ ').pop()!;
   for (const width of BAR_WIDTHS) {
-    assert.match(zone(width, 'busy'), /^⚒3 +✦2 +◈1 +⚡2 +◷2/, `busy at ${width}`);
+    assert.match(zone(width, 'busy'), /^⚒3 +✦2 +◈1 +ϟ2 +◷2/, `busy at ${width}`);
     assert.match(zone(width, 'one'), /^⚒1(?: |$)/, `one at ${width}`);
   }
   // The output rate stays while the main pane is 120 columns or more, with or without workers.
@@ -53,7 +53,7 @@ test('machine counts keep all groups at normal widths, without exposing job meta
     for (const scene of ['quiet', 'one', 'busy', 'mixed'])
       assert.match(frames[String(width)]![scene]![0]!, /~42\.7 t\/s/);
   // A wider bar carries the subagent alongside the complete machine counts.
-  assert.match(frames['144']!.mixed![0]!, /⚒3 +✦2 +◈1 +⚡2 +◷2.*◐ Explore Audit bar fitting ladder$/);
+  assert.match(frames['144']!.mixed![0]!, /⚒3 +✦2 +◈1 +ϟ2 +◷2.*◐ Explore Audit bar fitting ladder$/);
   for (const width of [120, 100]) assert.match(frames[String(width)]!.mixed![0]!, /◐ Explore/, `mixed at ${width}`);
   assert.doesNotMatch(frames['80']!.mixed![0]!, /Audit bar/);
 });

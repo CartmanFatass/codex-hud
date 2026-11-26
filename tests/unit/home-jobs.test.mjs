@@ -29,9 +29,9 @@ async function fixture(t) {
     mkdirSync(join(path, '..'), { recursive: true });
     writeFileSync(path, typeof body === 'string' ? body : JSON.stringify(body));
   };
-  const job = (n, status, pane = 'w4E:p1', parent) => {
+  const job = (n, status, pane = 'w4E:p1', parent, role = parent ? 'sonic' : 'imp') => {
     const id = `j${String(n).padStart(16, '0')}`, dir = join(home, 'jobs', id);
-    put(join(dir, 'job.json'), { job: id, role: parent ? 'sonic' : 'imp', caller_pane: pane,
+    put(join(dir, 'job.json'), { job: id, role, caller_pane: pane,
       cwd, created_at: new Date(nowMs - 86_000_000 + 100 * n).toISOString(), parent_job: parent });
     put(join(dir, 'STATUS.json'), { state: status, ...(status === 'done' && { settled_at: new Date(nowMs - 70_000_000).toISOString() }) });
     put(join(dir, 'brief.md'), `# Synthetic worker ${n}`);
@@ -39,7 +39,7 @@ async function fixture(t) {
   };
   const working = job(1, 'working');
   const finished = job(3, 'done');
-  job(2, 'queued'); job(4, 'working', 'w4E:p2'); job(5, 'working', 'w4E:p1', working.id);
+  job(2, 'queued'); job(4, 'working', 'w4E:p2', undefined, 'lead'); job(5, 'working', 'w4E:p1', working.id);
   put(join(finished.dir, 'report.md'), '# Findings\n\nThe synthetic parser kept its old rules.');
   writeReportMeta(finished.dir, cachedReportSignature(finished.dir), { summary: 'Kept «original rules».' });
   put(join(finished.dir, 'review-1.md'), 'Verdict: accept');
@@ -65,7 +65,7 @@ test('Home shows explicit STATE requests, a Now note and project-wide job counts
   const previous = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   t.after(() => setDisplayConfig(previous));
   const frame = draw(initialMonitorState());
-  assert.match(plain(frame), /Waiting[\s\S]*Approve the sample fixture[\s\S]*⚒2 ⚡1 ◷⚒1[\s\S]*¶ Validating the example set/);
+  assert.match(plain(frame), /Waiting[\s\S]*Approve the sample fixture[\s\S]*⚒1 ★1 ϟ1 ◷⚒1[\s\S]*¶ Validating the example set/);
   assert.doesNotMatch(plain(frame), /Publish the sample run|This pane|Synthetic worker|Keep the original parser|done today|Latest|Stalled/);
   assert.equal(frame.workboard.targets.size, 0);
   assert.equal(acceptsMonitorInput(frame.state, { type: 'key', text: '/', key: '' }), false);

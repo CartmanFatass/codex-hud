@@ -3,8 +3,11 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setImmediate as defer, setTimeout as sleep } from 'node:timers/promises';
+import { readBarSettings } from '../../bar-settings.js';
 import { ticketTitle } from '../../collectors/ticket-title.js';
 import { truncateAnsi } from '../../render/colors.js';
+import { resolveDisplayConfig } from '../../render/hud-config.js';
+import { roleIcon } from '../../render/model-glyphs.js';
 import { monitorText } from '../../render/monitor-text.js';
 import { herdrId, runHerdr } from '../../roles/herdr-run.js';
 import { hasHerdrHiddenTabs, isHudHerdrFork, request as herdrRequest, type HerdrReply } from '../../runtime/herdr-socket.js';
@@ -131,11 +134,6 @@ export async function startDirectAgent(
   return { ok: true, identity };
 }
 
-const hudRoleIcons: Readonly<Record<string, string>> = {
-  imp: '◆', 'frontend-imp': '◈', reviewer: '◎', lead: '★', sonic: '»',
-  oracle: '◇', general: '○', council: '✦', other: '·',
-};
-
 /** Best-effort sidebar presentation, independent of the managed agent name and readiness. */
 export async function reportDirectWorkerMetadata(paneId: string, job: Job, dir: string): Promise<void> {
   const warn = (reason: unknown) => console.warn(`hud: pane.report_metadata failed for ${paneId}: ${reason}`);
@@ -148,7 +146,7 @@ export async function reportDirectWorkerMetadata(paneId: string, job: Job, dir: 
       const task = slice(join(dir, jobFiles.brief), 4096)?.text.slice(0, job.task_length);
       title = task?.split(/\r?\n/).find(line => line.trim())?.trim().replace(/^#{1,6}\s+/, '');
     }
-    const icon = hudRoleIcons[Object.hasOwn(hudRoleIcons, job.role) ? job.role : 'other'];
+    const icon = roleIcon(job.role, readBarSettings()?.icons ?? resolveDisplayConfig().icons);
     const reply = await herdrRequest('pane.report_metadata', {
       pane_id: paneId,
       source: 'hud',

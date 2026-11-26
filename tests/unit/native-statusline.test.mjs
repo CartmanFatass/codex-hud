@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
+import { ROLE_GLYPHS, roleIcon } from '../../dist/render/model-glyphs.js';
 import { parityFixture } from '../../dist-test/fixtures/claude-hud-parity/fixture.js';
 import { syntheticProc } from '../fixtures/local-load.mjs';
 
@@ -173,7 +174,7 @@ test('Claude keeps native rendering with advisor shadow on unless a notice is li
 
 test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasNative }, (t) => {
   const env = { ...environment(receipt(t)), HERDR_PANE_ID: 'synthetic-pane' };
-  setup(env.HUD_HOME);
+  const { write } = setup(env.HUD_HOME);
   const cjk = { ...base, model: { display_name: '虚构苏州🧪 工作者' }, context_window: { used_percentage: 76.5 } };
   const ansi = { ...base, model: { display_name: '甲\x1b[31m\n\t\x00\u202e乙' }, cwd: join(env.HOME, '项目') };
   fs.mkdirSync(ansi.cwd);
@@ -221,17 +222,25 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
     assert.doesNotMatch(out.toString(), /\x1b/);
     return out.toString();
   };
-  for (const [icons, expected] of [[undefined, '\uF0AD1  \uF0E72  \uF0171'], ['unicode', '⚒1  ⚡2  ◷1'],
-    ['text', 'I1  *2  Q1'], ['emoji', '⚒1  ⚡2  ◷1']]) {
+  for (const [icons, expected] of [[undefined, '\uF0AD1  \uF0E72  \uF0171'], ['unicode', '⚒1  ϟ2  ◷1'],
+    ['text', 'I1  *2  Q1'], ['emoji', '⚒1  ϟ2  ◷1']]) {
     const out = bar(icons);
     assert.ok(out.includes(`│ ${expected}`), out);
   }
   fs.writeFileSync(file, JSON.stringify({ icons: 'unicode', theme: 'none', barFields: ['notice'] }));
-  for (const [width, expected] of [[12, '⚒1  ⚡2  ◷1'], [9, '⚒1 ⚡2 ◷1'], [6, '⚒1 ⚡2'], [5, '']]) {
+  for (const [width, expected] of [[10, '⚒1  ϟ2  ◷1'], [8, '⚒1 ϟ2 ◷1'], [5, '⚒1 ϟ2'], [4, '']]) {
     const args = ['--width', String(width)];
     assert.equal(rust(env, base, args).toString().trimEnd(), expected);
     assert.deepEqual(rust(env, base, args), ts(env, base, args));
   }
+  const roles = Object.keys(ROLE_GLYPHS).map(role => role === 'other' ? 'synthetic-other' : role);
+  write({ global: { running: roles.length, asking: 0, queued: 0,
+    roles: Object.fromEntries(roles.map(role => [role, { running: 1, asking: 0 }])) } });
+  for (const icons of ['unicode', 'text', 'nerd']) {
+    const expected = roles.map(role => `${roleIcon(role, icons)}1`).join('  ');
+    assert.ok(bar(icons).includes(`│ ${expected}`), `all roles in ${icons}`);
+  }
+
   fs.rmSync(join(env.HUD_HOME, 'hud-settings.json'), { force: true });
   const exact = Buffer.from(JSON.stringify(base).padEnd(65536, ' '));
   assert.deepEqual(run(launcher, [], env, exact), rust(env, exact), 'exactly 64 KiB remains valid');

@@ -68,7 +68,7 @@ export function sonicChildrenRunning(workers: readonly OwnerWorker[], parentId: 
   return n;
 }
 
-/** Formatted `⚡N` (ASCII `*N`) badge in sonic role ink, or `''` when zero. */
+/** Formatted `ϟN` (ASCII `*N`) badge in sonic role ink, or `''` when zero. */
 export function sonicBadge(count: number): string {
   return count > 0 ? theme.board.roleInk.sonic(`${roleIcon('sonic')}${count}`) : '';
 }

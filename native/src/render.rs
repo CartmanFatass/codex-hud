@@ -637,21 +637,26 @@ fn quota(input: &Value, now: f64) -> Option<Segment> {
     ))
 }
 // Keep in sync with ROLE_GLYPHS in src/render/model-glyphs.ts.
-const ROLE_GLYPHS: [(&str, [&str; 3]); 7] = [
+const ROLE_GLYPHS: [(&str, [&str; 3]); 8] = [
     ("imp", ["⚒", "I", "\u{F0AD}"]),
     ("frontend-imp", ["✎", "F", "\u{F1FC}"]),
     ("general", ["✦", "G", "\u{F013}"]),
     ("oracle", ["◈", "O", "\u{F0EB}"]),
     ("reviewer", ["⚖", "R", "\u{F002}"]),
+    ("lead", ["★", "L", "\u{F005}"]),
     ("other", ["•", ".", "•"]),
-    ("sonic", ["⚡", "*", "\u{F0E7}"]),
+    ("sonic", ["ϟ", "*", "\u{F0E7}"]),
 ];
 fn machine_load(work: MachineWork, display: &Display, now: f64) -> Option<Segment> {
     let set = display.icon_index();
     let mut counts = [0; ROLE_GLYPHS.len()];
+    let other = ROLE_GLYPHS
+        .iter()
+        .position(|(name, _)| *name == "other")
+        .unwrap();
     for (role, count) in work.roles {
         let index = ROLE_GLYPHS.iter().position(|(name, _)| *name == role);
-        counts[index.unwrap_or(5)] += count; // Unknown roles use `other`.
+        counts[index.unwrap_or(other)] += count;
     }
     let mut groups: Vec<_> = ROLE_GLYPHS
         .iter()

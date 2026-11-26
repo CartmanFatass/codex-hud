@@ -337,7 +337,7 @@ test('Claude, Antigravity, pi and Codex show identical machine load in every pan
   const { home, addJob, addFlow } = makeFixture(t);
   const previous = setDisplayConfig({});
   t.after(() => setDisplayConfig(previous));
-  const workers = Object.entries({ imp: 3, general: 2, oracle: 1, sonic: 4 }).flatMap(([role, n]) =>
+  const workers = Object.entries({ imp: 3, general: 2, oracle: 1, lead: 1, sonic: 4 }).flatMap(([role, n]) =>
     Array.from({ length: n }, (_, i) => addJob(i ? { role, pane: PANE_B, project: '/synthetic/second' } : { role })));
   writePrivateFile(join(workers[0].dir, 'qa', 'q1.md'), '# Synthetic question for main');
   const queued = [addJob({ status: { state: 'queued' } }), addJob({ status: { state: 'queued' } })];
@@ -384,21 +384,21 @@ test('Claude, Antigravity, pi and Codex show identical machine load in every pan
     assert.equal(readFreshWorkSummary(home, panes[2]).scope.running, 0);
     for (const render of clients) for (const line of render()) {
       if (expected) assert.ok(line.includes(expected), line);
-      else assert.doesNotMatch(line, /⚒|✦|◈|⚡|⇡|◷/);
+      else assert.doesNotMatch(line, /⚒|✦|◈|★|ϟ|⇡|◷/);
       assert.doesNotMatch(line, /\x1b|!1|needs you|asks/);
     }
   };
   const flow = addFlow();
   assert.equal(publisher.publish({ watching: true }), true);
-  assertCounts('unicode', '⚒3  ✦2  ◈1  ⚡4  ⇡ gate 2/3 1m  ◷2');
-  assertCounts('text', 'I3  G2  O1  *4  L gate 2/3 1m  Q2');
-  assertCounts('nerd', '\uf0ad3  \uf0132  \uf0eb1  \uf0e74  \uf126 gate 2/3 1m  \uf0172');
+  assertCounts('unicode', '⚒3  ✦2  ◈1  ★1  ϟ4  ⇡ gate 2/3 1m  ◷2');
+  assertCounts('text', 'I3  G2  O1  L1  *4  L gate 2/3 1m  Q2');
+  assertCounts('nerd', '\uf0ad3  \uf0132  \uf0eb1  \uf0051  \uf0e74  \uf126 gate 2/3 1m  \uf0172');
   const close = (jobs) => {
     for (const job of jobs) job.setStatus({ state: 'closed' });
     assert.equal(publisher.publish({ watching: true }), true);
   };
   close(queued);
-  assertCounts('unicode', '⚒3  ✦2  ◈1  ⚡4  ⇡ gate 2/3 1m');
+  assertCounts('unicode', '⚒3  ✦2  ◈1  ★1  ϟ4  ⇡ gate 2/3 1m');
   close(workers);
   assertCounts('unicode', '⇡ gate 2/3 1m');
   flow.write({ state: 'failed' });

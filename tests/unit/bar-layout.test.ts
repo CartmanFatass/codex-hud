@@ -350,9 +350,9 @@ test('machine load omits zeros and fits whole icon/count groups', (t) => {
   assert.equal(bar({ running: 0, queued: 0, roles: {} }), 'M');
   assert.equal(bar({ running: 0, queued: 2, roles: {} }), 'M │ ◷2');
   const count = (running: number) => ({ running, asking: 0 });
-  const work = { running: 19, queued: 2, roles: { sonic: count(4), unknown: count(1), other: count(2),
-    reviewer: count(1), oracle: count(1), general: count(2), imp: count(3), 'frontend-imp': count(5) } };
-  const roles = '⚒3  ✎5  ✦2  ◈1  ⚖1  •3  ⚡4';
+  const work = { running: 20, queued: 2, roles: { sonic: count(4), unknown: count(1), other: count(2),
+    lead: count(1), reviewer: count(1), oracle: count(1), general: count(2), imp: count(3), 'frontend-imp': count(5) } };
+  const roles = '⚒3  ✎5  ✦2  ◈1  ⚖1  ★1  •3  ϟ4';
   assert.equal(bar(work), `M │ ${roles}  ◷2`);
   const tight = `M │ ${roles.replaceAll('  ', ' ')}`;
   assert.equal(bar(work, visualWidth(`${tight} ◷2`)), `${tight} ◷2`);

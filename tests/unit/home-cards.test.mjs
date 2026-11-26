@@ -49,7 +49,7 @@ for (const lang of ['en', 'zh']) test(`Home cards: busy, quiet and short frames 
       assert.ok(all[schedule].endsWith(zh ? '6 项' : '6 items'));
       assert.ok(all.includes(zh ? '  另 4 个' : '  4 more'));
       assert.ok(all.includes(zh ? '  另 2 项' : '  2 more'));
-      assert.ok(all.includes(zh ? '  完成 ⚒7 ◈1 ⚖3 ⚡4' : '  done   ⚒7 ◈1 ⚖3 ⚡4'));
+      assert.ok(all.includes(zh ? '  完成 ⚒7 ◈1 ⚖3 ϟ4' : '  done   ⚒7 ◈1 ⚖3 ϟ4'));
       assert.ok(all.includes(zh ? '  失败 ⚒1' : '  failed ⚒1'));
       assert.ok(all.includes(zh ? '  闸门 一次过 5 · 重试 2' : '  gates  first try 5 · retried 2'));
       const land = card('today', frame).map(plain);
@@ -68,7 +68,7 @@ for (const lang of ['en', 'zh']) test(`Home cards: busy, quiet and short frames 
       const still = quiet.draw(quietData, width), quietRows = rows(still).map(plain);
       exact(still, width);
       assert.ok(quietRows.some(text => text.endsWith(zh ? '暂无落地' : 'none landed')));
-      assert.ok(quietRows.includes(zh ? '  完成 ◈1 ⚡2' : '  done   ◈1 ⚡2'));
+      assert.ok(quietRows.includes(zh ? '  完成 ◈1 ϟ2' : '  done   ◈1 ϟ2'));
       assert.ok(card('schedule', still).some(row => plain(row).includes('12-??') && plain(row).endsWith(zh ? '下月' : 'next mo')));
       assert.doesNotMatch(stripAnsi(still.lines[0]), /◉/);
       assert.equal(card('today', still).length, 0, 'yesterday’s landings stay out');
