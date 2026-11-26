@@ -18,7 +18,7 @@ import { prepareSonicRetry } from '../sonic-session.js';
 import { directory, findJob, readCachedStatus, hudHome, save, jobCache } from '../store/job-store.js';
 import type { NativeResume } from '../worker-resume.js';
 import {
-  retainDirectFailure, startDirectAgent, waitDirectReady,
+  reportDirectWorkerMetadata, retainDirectFailure, startDirectAgent, waitDirectReady,
   writeDirectSessionReceipt, type DirectStartIdentity,
 } from './direct-exec.js';
 import { promptBoundary, recoverStalledPrompt } from './prompt-stall.js';
@@ -168,6 +168,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
     if (!launch.ok) return launch.result;
     directIdentity = launch.identity;
     const left = directIdentity.paneId;
+    void reportDirectWorkerMetadata(left, job, dir);
     let right = '';
     let rightTerminalId: string | undefined;
     const recordDirect = () => writeDirectSessionReceipt(dir, directIdentity!, {

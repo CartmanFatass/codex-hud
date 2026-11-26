@@ -1,10 +1,11 @@
-/** Shared herdr-hud direct-exec helpers for CLI and Pi tab launches:
- * reply validation, SESSION receipt writing, failure retention,
- * and interactive readiness polling (including Codex). */
+/** Shared herdr-hud direct-exec helpers for CLI and Pi tab launches. */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import { setTimeout as sleep } from 'node:timers/promises';
+import { setImmediate as defer, setTimeout as sleep } from 'node:timers/promises';
+import { ticketTitle } from '../../collectors/ticket-title.js';
+import { truncateAnsi } from '../../render/colors.js';
+import { monitorText } from '../../render/monitor-text.js';
 import { herdrId, runHerdr } from '../../roles/herdr-run.js';
 import { hasHerdrHiddenTabs, isHudHerdrFork, request as herdrRequest, type HerdrReply } from '../../runtime/herdr-socket.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
@@ -12,7 +13,7 @@ import { isValidPid } from '../../utils/proc.js';
 import { workerAlive } from '../cli-judge.js';
 import type { Job, JobStatus, SessionReceipt } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
-import { jobCache, readCachedStatus, writeCreateStatus } from '../store/job-store.js';
+import { jobCache, readCachedStatus, slice, writeCreateStatus } from '../store/job-store.js';
 import { ensureWatcher, launchError, launchFailure, type DispatchResult } from './proc.js';
 
 export interface DirectStartIdentity {
@@ -128,6 +129,36 @@ export async function startDirectAgent(
     };
   }
   return { ok: true, identity };
+}
+
+const hudRoleIcons: Readonly<Record<string, string>> = {
+  imp: '◆', 'frontend-imp': '◈', reviewer: '◎', lead: '★', sonic: '»',
+  oracle: '◇', general: '○', council: '✦', other: '·',
+};
+
+/** Best-effort sidebar presentation, independent of the managed agent name and readiness. */
+export async function reportDirectWorkerMetadata(paneId: string, job: Job, dir: string): Promise<void> {
+  const warn = (reason: unknown) => console.warn(`hud: pane.report_metadata failed for ${paneId}: ${reason}`);
+  try {
+    await defer();
+    const root = job.project_root ?? job.worktree?.main_root ?? job.cwd;
+    let title = ticketTitle(root, job.ticket, job.package) || job.package?.trim() || job.title?.trim();
+    if (!title) {
+      // Use the original task even on resume, not the continuation message.
+      const task = slice(join(dir, jobFiles.brief), 4096)?.text.slice(0, job.task_length);
+      title = task?.split(/\r?\n/).find(line => line.trim())?.trim().replace(/^#{1,6}\s+/, '');
+    }
+    const icon = hudRoleIcons[Object.hasOwn(hudRoleIcons, job.role) ? job.role : 'other'];
+    const reply = await herdrRequest('pane.report_metadata', {
+      pane_id: paneId,
+      source: 'hud',
+      display_agent: title ? truncateAnsi(monitorText(title.replace(/\s+/g, ' ')), 28) : undefined,
+      tokens: { hud_role: job.role, hud_ticket: job.ticket ?? null, hud_icon: icon },
+    }, { timeoutMs: 500 });
+    if (!reply?.result || reply.error) warn(reply?.error?.code ?? 'no response');
+  } catch (error) {
+    warn(error);
+  }
 }
 
 export function writeDirectSessionReceipt(

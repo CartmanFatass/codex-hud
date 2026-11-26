@@ -215,6 +215,7 @@ async function startForkHerdr(t, f, opts = {}) {
     reusedTabId = false,
     onAgentStart,
     onAgentGet,
+    onPaneMetadata,
     initialStatus = 'idle',
     interactiveReady = true,
     launchPending = false,
@@ -336,6 +337,12 @@ async function startForkHerdr(t, f, opts = {}) {
         });
         return;
       }
+      if (req.method === 'pane.report_metadata') {
+        const entry = [...tabs.values()].reverse().find((e) => !e.closed && e.pane_id === req.params.pane_id);
+        if (!entry) { err('pane_not_found'); return; }
+        if (onPaneMetadata?.(entry, conn, err) !== 'handled') reply({ type: 'ok' });
+        return;
+      }
       if (req.method === 'pane.read') {
         const entry = [...tabs.values()].reverse().find((e) => !e.closed && e.pane_id === req.params.pane_id);
         if (!entry) { err('pane_not_found'); return; }
@@ -450,6 +457,49 @@ async function startForkHerdr(t, f, opts = {}) {
     },
   };
 }
+
+test('direct starts report sidebar titles and role tokens once, without touching the main pane or awaiting metadata', { timeout: 60000 }, async (t) => {
+  const f = await fixture(t, { expectedStderr: 'hud: pane.report_metadata failed for w4E:p3: no response\n' });
+  let metadataTimedOut = false, readinessBeforeTimeout = false;
+  const fork = await startForkHerdr(t, f, {
+    onAgentGet(entry) {
+      if (entry.kind === 'agy' && !metadataTimedOut) readinessBeforeTimeout = true;
+    },
+    onPaneMetadata(entry, conn) {
+      if (entry.kind !== 'agy') return;
+      conn.once('close', () => { metadataTimedOut = true; });
+      return 'handled'; // Leave the RPC unanswered until the launcher's short timeout.
+    },
+  });
+  const reports = () => fork.socketRequests.filter(r => r.method === 'pane.report_metadata').map(r => r.params);
+  await f.call('hud_roster');
+  assert.deepEqual(reports(), [], 'main session alone does not report metadata');
+
+  writeCliRole(f, 'synthetic-cli', 60, true, 'claude');
+  writeCliRole(f, 'frontend-imp', 60, true, 'agy');
+  const issues = join(f.root, '.scratch', 'synthetic', 'issues');
+  fs.mkdirSync(issues, { recursive: true });
+  writeFixtureFile(join(issues, '01-example.md'), '# 01: Sidebar ticket title\n');
+  const examples = [
+    { role: 'synthetic-cli', kind: 'claude', ticket: 'synthetic/1', package: 'ignored-package', title: 'Sidebar ticket title', icon: '·' },
+    { role: 'frontend-imp', kind: 'agy', package: '可見'.repeat(10), title: '可見'.repeat(6) + '可…', icon: '◈' },
+    { role: 'imp', kind: 'pi', title: 'Synthetic task title', icon: '◆' },
+  ];
+  const expected = [];
+  for (const { role, kind, ticket, package: pkg, title, icon } of examples) {
+    const res = await f.call('hud_create', { role, ticket, package: pkg, task: '# Synthetic task title\n\nBody.' });
+    assert.equal(res.ok, undefined, JSON.stringify(res));
+    assert.equal(cliState(res.task_dir).state, 'working');
+    const entry = [...fork.tabs.values()].at(-1);
+    assert.equal(entry.kind, kind);
+    assert.equal(entry.name, `${res.job}-primary`);
+    expected.push({ pane_id: entry.pane_id, source: 'hud', display_agent: title,
+      tokens: { hud_role: role, hud_ticket: ticket ?? null, hud_icon: icon } });
+  }
+  await until(() => metadataTimedOut && reports().length >= expected.length, t.signal);
+  assert.deepEqual(reports(), expected, 'one report per launched worker root; none to the main pane');
+  assert.ok(readinessBeforeTimeout, 'readiness does not await the metadata timeout');
+});
 
 test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling exit ignored, pane.exited clean & crash', { timeout: 60000 }, async (t) => {
   const f = await fixture(t, { failedRetentionMs: 250 });
@@ -719,6 +769,7 @@ test('missing or ambiguous agent.start reply is unknown: never closes by public 
     const res = await f.call('hud_create', { role: 'fallbackcli', task: `Synthetic ${mode}.` });
     assert.equal(res.ok, false, `${mode} must fail`);
     assert.equal(fork.startRequests.length, 1, `${mode}: canTryNext must NOT start a second place`);
+    assert.equal(fork.socketRequests.some(r => r.method === 'pane.report_metadata'), false);
     assert.equal(
       f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'tab' && c.args[1] === 'close'),
       false,

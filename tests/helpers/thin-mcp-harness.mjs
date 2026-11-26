@@ -65,7 +65,7 @@ export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
 }
 
-async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, path = process.env.PATH, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false, herdrVersion = '0.9.5-hud.76b187b0', customHerdrSocket = false }) {
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, path = process.env.PATH, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false, herdrVersion = '0.9.5-hud.76b187b0', customHerdrSocket = false, expectedStderr = '' }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const cleanups = [];
   cleanupFixture(t, { root, hudHome: join(root, 'hud_home') }, async () => {
@@ -151,7 +151,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   cleanups.push(async () => {
     try {
       const stopped = await stopMcp();
-      if (!stopped.forced && !t.signal?.aborted) assert.equal(stderr, '');
+      if (!stopped.forced && !t.signal?.aborted) assert.equal(stderr, expectedStderr);
     } finally {
       child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy();
     }
@@ -227,6 +227,10 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
               launch_id, pid, pid_start_time: start });
           });
           agents.add(prepare); prepare.on('exit', () => agents.delete(prepare));
+          return;
+        }
+        if (req.method === 'pane.report_metadata') {
+          reply({ type: 'ok' });
           return;
         }
         if (req.method === 'events.subscribe') {

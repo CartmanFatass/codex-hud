@@ -464,6 +464,8 @@ HUD never trusts a directory while dispatching: a trust dialog is declined and t
 Sessions stay in each CLI's own store.
 Managed CLI and Pi tabs require the HUD herdr fork (`herdr-hud`); the running server's ping version must contain `-hud`. Dispatch refuses stock herdr rather than falling back to a shell launch. The fork starts the worker directly with HUD's environment, without sourcing shell startup files. This requirement does not change headless launches, browser shells, or the shell in a split Pi helper pane. Close any old shell-launched CLI or Pi worker manually; HUD will not take ownership of it.
 
+After a direct start, HUD reports a short task title for the herdr sidebar (ticket title, then package or brief title, up to 28 columns). Custom sidebar rows can use `hud_role`, `hud_ticket` (when linked) and `hud_icon` (the role's glyph). This best-effort metadata does not rename the managed agent or change main-session panes.
+
 `hud trust <dir>` adds that directory to the trust files of grok, agy and claude after a backup under `$HUD_HOME`.
 A missing CLI file is not created.
 Codex is skipped.

@@ -17,7 +17,7 @@ import { startHeadlessProcess } from '../sonic-process.js';
 import { jobCache, directory, bundled, hudHome, save, writeCreateStatus } from '../store/job-store.js';
 import type { NativeResume } from '../worker-resume.js';
 import {
-  retainDirectFailure, startDirectAgent, waitDirectReady,
+  reportDirectWorkerMetadata, retainDirectFailure, startDirectAgent, waitDirectReady,
   writeDirectSessionReceipt, type DirectStartIdentity,
 } from './direct-exec.js';
 import {
@@ -186,6 +186,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     if (!launch.ok) return launch.result;
     directIdentity = launch.identity;
     const left = directIdentity.paneId;
+    void reportDirectWorkerMetadata(left, job, dir);
     writeDirectSessionReceipt(dir, directIdentity, {
       task: job.job,
       endpoint,
