@@ -11,9 +11,10 @@ import { getJobIndexCache, type JobIndexCache } from './job-index-cache.js';
 import { jobChecks } from './job-checks.js';
 import { cliSession } from './job-sessions.js';
 import { archiveJobLand, type JobLand } from './job-land.js';
-import { epoch, readJobUsage, record, text, type JobUsage } from './job-usage.js';
+import { count, epoch, readJobUsage, record, text, type JobUsage } from './job-usage.js';
 import { normalizeReportMeta, parseReviewedRange, parseReviewFindings, readReportMeta } from './report-meta.js';
 import { jobCitations } from './sonic-citations.js';
+import { jobSonicReads } from './sonic-reads.js';
 function reason(value: unknown) {
   if (typeof value !== 'string') return;
   const bytes = Buffer.alloc(200);
@@ -264,6 +265,9 @@ export function archiveJob(home: string, dir: string, id: string, receipt: Job |
       experiment: typeof job.experiment === 'string' ? job.experiment : undefined,
       arm: typeof job.arm === 'string' ? job.arm : undefined,
       citations: jobCitations(job.citations),
+      reads: job.role === 'sonic' ? jobSonicReads(job.reads) : undefined,
+      brief_bytes: job.role === 'sonic' ? count(job.brief_bytes) : undefined,
+      report_bytes: job.role === 'sonic' ? count(job.report_bytes) : undefined,
       findings: job.role === 'reviewer' ? parseReviewFindings(job.findings) : undefined,
       reviewed: job.role === 'reviewer' ? parseReviewedRange(job.reviewed) : undefined,
       prewalk: archivePrewalk(job.prewalk, job.pool_pick),

@@ -12,6 +12,8 @@ export type { ReportMeta, ReviewFindings, ReviewedRange } from '../roles/report-
 import type { ReviewFindings, ReviewedRange } from '../roles/report-meta.js';
 export type { CitationFailure, JobCitations } from '../roles/sonic-citations.js';
 import type { JobCitations } from '../roles/sonic-citations.js';
+export type { SonicReads, SonicToolReads } from '../roles/sonic-reads.js';
+import type { SonicReads } from '../roles/sonic-reads.js';
 
 export type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
 export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; source: 'decision' | 'default'; fallback?: string; mode_reason?: string;
@@ -148,6 +150,9 @@ export interface Job extends PiOptions {
   skipped_skills?: { name: string; reason: string }[];
   worker_prompt?: string | null;
   citations?: JobCitations;
+  reads?: SonicReads | null;
+  brief_bytes?: number;
+  report_bytes?: number;
   findings?: ReviewFindings;
   reviewed?: ReviewedRange;
 }

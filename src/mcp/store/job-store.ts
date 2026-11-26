@@ -109,6 +109,9 @@ export function save(job: Job, newAttempt = false, collectedStamp?: string | nul
   }
   if (existing?.exhaustion_marked) job.exhaustion_marked = true;
   if (existing?.citations) job.citations = existing.citations;
+  if (existing?.reads !== undefined) job.reads = existing.reads;
+  if (existing?.brief_bytes !== undefined) job.brief_bytes = existing.brief_bytes;
+  if (existing?.report_bytes !== undefined) job.report_bytes = existing.report_bytes;
   if (existing?.findings) job.findings = existing.findings;
   if (existing?.reviewed) job.reviewed = existing.reviewed;
   jobCache.writeJsonAtomic(file, job as unknown as Record<string, unknown>, { indent: 2, mkdir: false });

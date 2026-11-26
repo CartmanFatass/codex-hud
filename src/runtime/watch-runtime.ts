@@ -12,6 +12,7 @@ import { archiveJob, recordStopOrigin } from '../roles/job-archive.js';
 import { cliSession, cliStreamSession, piSessionHeader } from '../roles/job-sessions.js';
 import { recordJobUsage } from '../roles/job-usage.js';
 import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/sonic-citations.js';
+import { collectSonicReadFacts, shouldRecordSonicReads } from '../roles/sonic-reads.js';
 import { landAttempt, activeLand, isFlowId, readLand } from '../mcp/land-state.js';
 import type { CouncilRun } from '../mcp/council-state.js';
 import { wakeWorkflow } from '../workflows/wake.js';
@@ -535,6 +536,10 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
         writeJsonAtomic(jobFile, recorded, 2);
       }
     }
+    if (recorded && !waiting && shouldRecordSonicReads(recorded, settled)) {
+      recorded = { ...recorded, ...collectSonicReadFacts(dir, recorded, settled) };
+      writeJsonAtomic(jobFile, recorded, 2);
+    }
     writeJsonAtomic(statusFile, settled);
     if (recorded && !waiting) writeJsonAtomic(jobFile, { ...recorded, reaped_at: now }, 2);
     const issue = snapshotIssueForLog(id, dir, cleanup.unrecoverable);
@@ -987,6 +992,11 @@ function scan(retryWatch = false) {
           try { writeJsonAtomic(jobFile, job, 2); }
           catch (error) { warn(`citations ${id}`, `record citations ${id}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
         }
+      }
+      if (job && shouldRecordSonicReads(job, status)) {
+        job = { ...job, ...collectSonicReadFacts(dir, job, status) };
+        try { writeJsonAtomic(jobFile, job, 2); }
+        catch (error) { warn(`reads ${id}`, `record reads ${id}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
       }
       let readInGrace = null;
       if (!resumeReadReap && status.state === 'idle_grace') {

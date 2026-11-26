@@ -306,6 +306,8 @@ Each citation resolves relative to the job `cwd` or as an absolute path and is v
 Checking stops after 200 citations and reads at most the first 256 KiB of the report; reports with no citations record `total: 0`.
 HUD does no analysis on these counts and the panel does not show them.
 
+When a sonic job settles, HUD also records mechanical read-volume facts on `job.json` and the monthly archive (no model call, not shown in the panel): `reads: {tool_calls, tool_result_bytes, by_tool: {name: {calls, bytes}}, truncated?}` counted once in a single streaming pass over the sonic's pi session (`sonic-session.jsonl` when headless, or the tab session file), plus `brief_bytes` and `report_bytes` from `brief.md` and `report.md` when present. `by_tool` keeps the top 10 tools by result bytes; counting stops after 50 MiB with `truncated: true`, and a missing or unreadable session records `reads: null` without error.
+
 **Imp placement** (`impPlacement` in Settings → Models) defaults to `fixed`, which uses the active preset.
 For `even`, use the **Even pool** row (`impEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it.
 HUD rotates round-robin through the pool in pool order, keeping the last used index in a private state file under `$HUD_HOME` (`even-imp.json`), skipping and reporting unavailable or exhausted presets, wrapping around, and falling back to the active preset if the pool is empty or unavailable.
@@ -640,6 +642,7 @@ Session paths are recorded as observed; the underlying files may later move or d
 `rerun_details: [{attempt, step, passed_unchanged, tests?}]` records known rerun results and the recorded flaky command or test names for unchanged reruns that passed.
 When present, archive lines also record placement, worktree and stop facts: `model_source`, `thinking_source`, `imp_preset`, `requested_on`, `requested_model`, `had_worktree`, `worktree_removed_at`, `worktree_kept_reason`, and `stop_origin: {actor, prior_state, at}` (`mcp`, `panel`, or `pane_vanished`, recorded once when a working job is stopped or its pane vanishes).
 For reviewer jobs that declare them, `job.json` and the archive line also keep `findings: {blocker, major, minor}` and `reviewed: {base, head}` unchanged (omitted when undeclared or dropped).
+For settled sonic jobs, `job.json` and the archive line also keep `reads` (or `null` when the session was missing or unreadable), `brief_bytes`, and `report_bytes` when recorded.
 Older archive lines may omit the new fields.
 It stores neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the archive.
 In the same housekeeping pass, once a job directory is gone, the watcher prunes its settled land receipts and sidecars in `$HUD_HOME/flows/` after a day without changes.
