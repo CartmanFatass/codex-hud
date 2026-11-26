@@ -419,7 +419,7 @@ test('queue workflow runner re-drives a lead-admitted receipt after lead exit wi
   assert.equal(f.git(f.root, 'rev-parse', 'HEAD'), head);
   await until(() => helpers(f).length === 0, t.signal);
 
-  // A receipt for another project is not touched by this queue runner.
+  // A receipt for another project is not touched by this queue runner or its lead MCP.
   const otherReceipt = 'te000000000000ffff0000000000000001';
   fs.writeFileSync(fileOf(f, otherReceipt), JSON.stringify({
     receipt: otherReceipt, cwd: '/nonexistent/other', checkout: '/nonexistent/other', project: '/nonexistent/other',

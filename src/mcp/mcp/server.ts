@@ -1,6 +1,7 @@
 /** MCP request handling and generation handoff. */
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import { paneInfo } from '../../roles/notify.js';
+import { sharedRoot } from '../../roles/projects.js';
 import type { Job } from '../job-contracts.js';
 import type { RequestCaller } from '../local-objectives.js';
 import * as workerTools from '../../worker/tools.js';
@@ -34,7 +35,15 @@ function isLeadWorker(): boolean {
   if (!worker) return false;
   try { return worker.workerJob().job.role === 'lead'; } catch { return false; }
 }
-const canResumeTicketEdits = () => (!worker || isLeadWorker()) && !session.resumeRefusal;
+function resumeManagedTicketEdits(failures?: Parameters<typeof resumeTicketEdits>[1]) {
+  if (session.resumeRefusal) return;
+  if (!worker) { resumeTicketEdits(hudHome, failures); return; }
+  try {
+    const { job } = worker.workerJob();
+    const root = job.role === 'lead' ? (job.project_root || job.cwd) : undefined;
+    if (root) resumeTicketEdits(hudHome, failures, sharedRoot(root));
+  } catch { /* Unavailable worker receipt: skip ticket-edit resume. */ }
+}
 const leadWorkerTools = new Set(['hud_report', 'hud_progress']);
 const leadBlockedTools = new Set(['hud_land']);
 
@@ -299,7 +308,7 @@ export function openRuntime() {
           session.cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
           void reportMainPaneGroup(process.cwd(), process.env, hudHome);
         }
-        if (canResumeTicketEdits()) resumeTicketEdits(hudHome);
+        resumeManagedTicketEdits();
         return;
       }
       if (state.version !== 1) throw new Error('incompatible MCP session handoff');
@@ -324,7 +333,7 @@ export function openRuntime() {
         resumeTaskReceipts();
       }
       await syncPanelDelivery();
-      if (canResumeTicketEdits()) resumeTicketEdits(hudHome, state.ticketEditFailures);
+      resumeManagedTicketEdits(state.ticketEditFailures);
       return { toolsList: JSON.stringify(await toolsListResult()) };
     },
     async stop() {
