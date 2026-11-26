@@ -1,7 +1,7 @@
 /** The land step's sealed effect. The driver admits it once; no part of this transaction is scheduled separately. */
-import { spawn } from 'node:child_process';
+import { fork, spawn } from 'node:child_process';
 import type { Job, JobStatus } from './job-contracts.js';
-import { jobFiles } from './paths.js';
+import { binScript, jobFiles } from './paths.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
@@ -10,10 +10,9 @@ import { createInterface } from 'node:readline';
 import { isDeepStrictEqual } from 'node:util';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
-import type { LeaseCommandGroup } from '../collectors/thin-jobs.js';
-import { callerProtection, setLeaseCommandGroup, takeLease } from '../roles/lease.js';
+import { takeLease, type LandLease } from '../roles/lease.js';
+import type { CommandResult, Launch } from './land-custodian.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
-import { isActiveProcState, isValidPid, listProcPids, readBootId, readProcStat, readProcUid } from '../utils/proc.js';
 import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, landOwnerGone, readLand, setLandStep, writeLand, type LandFlow, type LandRerun } from './land-state.js';
 import { canRepairSealedStep } from '../workflows/engine.js';
 import { runLock, stopRequested } from '../workflows/store.js';
@@ -28,42 +27,19 @@ class CommandError extends Error {
   get tail() { return this.evidence.tail; }
 }
 class CommandTimeout extends CommandError {}
+class CustodianError extends Error {}
 const MAX_BASE_MOVES = 2; // Independent of the engine's worker repair bound.
 const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
-function hasOwnedGroupMember(pgid: number, leaderStart: string, myUid: number | undefined, protectedPids: Set<number>): boolean {
-  const startTicks = BigInt(leaderStart);
-  let found = false;
-  for (const id of listProcPids()) {
-    if (!isValidPid(id)) continue;
-    if (myUid !== undefined && readProcUid(id) !== myUid) continue;
-    const stat = readProcStat(id);
-    if (!stat || !isActiveProcState(stat.state)) continue;
-    if (stat.pgrp !== pgid || stat.session !== pgid || BigInt(stat.start) < startTicks) continue;
-    if (protectedPids.has(id)) return false;
-    found = true;
-  }
-  return found;
-}
-function command(
-  cwd: string,
-  bin: string,
-  argv: string[],
-  deadlineMs?: number,
-  env = process.env,
-  trackGroup?: (group: LeaseCommandGroup | undefined, expected?: LeaseCommandGroup) => void,
-) {
+function command(cwd: string, bin: string, argv: string[], tracked?: { deadlineMs: number; env: NodeJS.ProcessEnv; lease: LandLease }) {
   return new Promise<string[]>((ok, fail) => {
-    const child = spawn(bin, argv, { cwd, env: safeGitEnv(env), detached: deadlineMs !== undefined, stdio: ['ignore', 'pipe', 'pipe'] });
-    const bootId = deadlineMs !== undefined ? readBootId() : null;
-    const stat = deadlineMs !== undefined && child.pid ? readProcStat(child.pid) : null;
-    const group: LeaseCommandGroup | undefined =
-      child.pid && bootId && stat && stat.pgrp === child.pid && stat.session === child.pid
-        ? { pid: child.pid, start: stat.start, boot_id: bootId }
-        : undefined;
-    if (group) trackGroup?.(group);
-    const clearGroup = () => { if (group) trackGroup?.(undefined, group); };
+    const env = safeGitEnv(tracked?.env ?? process.env);
+    // Apply user preloads to the command, not the control processes that enforce its deadline.
+    const { NODE_OPTIONS: nodeOptions, ...custodianEnv } = env;
+    const child = tracked
+      ? fork(binScript('land-custodian'), [], { cwd, env: custodianEnv, detached: true, execArgv: [], silent: true })
+      : spawn(bin, argv, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const output = new LandOutput(cwd);
-    const streams = [child.stdout, child.stderr].map(input => {
+    const streams = [child.stdout!, child.stderr!].map(input => {
       const stream = output.stream();
       createInterface({ input }).on('line', stream.line).on('close', stream.finish);
       return stream;
@@ -72,34 +48,31 @@ function command(
       for (const stream of streams) stream.finish();
       return output.evidence();
     };
-    const timer = deadlineMs === undefined ? undefined : setTimeout(() => {
-      if (group) {
-        try {
-          const { pids: protectedPids, pgrps: protectedPgrps } = callerProtection();
-          const myUid = process.getuid?.();
-          if (!protectedPids.has(group.pid) && !protectedPgrps.has(group.pid)) {
-            const current = readProcStat(group.pid, { strict: true });
-            const ownedLeader = current && current.start === group.start && current.pgrp === group.pid && current.session === group.pid &&
-              (myUid === undefined || readProcUid(group.pid) === myUid);
-            const ownedOrphanGroup = !current && hasOwnedGroupMember(group.pid, group.start, myUid, protectedPids);
-            if (ownedLeader || ownedOrphanGroup) {
-              try { process.kill(-group.pid, 'SIGKILL'); }
-              catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') streams[1].line((e as Error).message); }
-            }
-          }
-        } catch (e) { streams[1].line((e as Error).message); }
-      }
-      // Don't wait for inherited stdio to close. A child can outlive the shell that opened it.
-      child.stdout.destroy(); child.stderr.destroy(); child.unref();
-      clearGroup();
-      fail(new CommandTimeout('timeout', evidence()));
-    }, deadlineMs);
-    child.once('error', (e) => { clearTimeout(timer); clearGroup(); fail(e); });
+    let result: CommandResult | undefined;
+    let ready = false, timedOut = false;
+    const send = (message: Launch | 'timeout') => {
+      if (child.connected) child.send(message, error => { if (error && child.connected) child.disconnect(); });
+    };
+    const timer = tracked && setTimeout(() => {
+      timedOut = true;
+      if (ready) send('timeout');
+      else if (child.connected) child.disconnect();
+    }, tracked.deadlineMs);
+    child.once('error', error => { clearTimeout(timer); fail(error); });
+    child.on('message', message => {
+      if (message !== 'ready') { result = message as CommandResult; return; }
+      if (!tracked || timedOut) return;
+      ready = true;
+      send({ bin, argv, nodeOptions, lease: tracked.lease });
+    });
     child.once('close', (code, signal) => {
       clearTimeout(timer);
-      clearGroup();
-      if (code === 0) ok(output.tail());
-      else fail(new CommandError(`exit ${code ?? signal}`, evidence()));
+      if (result && 'error' in result) fail(new CustodianError(result.error));
+      else if (tracked && code !== 0) fail(new CustodianError(`Land custodian exited: ${code ?? signal}`));
+      else if (timedOut) fail(new CommandTimeout('timeout', evidence()));
+      else if (tracked && !result) fail(new CustodianError('Land custodian exited without a command result'));
+      else if ((result ? result.code : code) === 0) ok(output.tail());
+      else fail(new CommandError(`exit ${result ? result.code ?? result.signal : code ?? signal}`, evidence()));
     });
   });
 }
@@ -198,11 +171,9 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         CARGO_HOME: process.env.CARGO_HOME || join(homedir(), '.cargo'),
         HUD_NATIVE_REUSE_DIR: join(kind === 'gate' ? main : integration, 'dist/native'),
       } : process.env;
-      const trackGroup = (group: LeaseCommandGroup | undefined, expected?: LeaseCommandGroup) =>
-        setLeaseCommandGroup('main-checkout', lease, group, expected);
       const invoke = (script: string) => c.wrapper
-        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], deadlineMs, env, trackGroup)
-        : command(cwd, 'sh', ['-c', script], deadlineMs, env, trackGroup);
+        ? command(cwd, resolve(main, c.wrapper), ['sh', '-c', script], { deadlineMs, env, lease })
+        : command(cwd, 'sh', ['-c', script], { deadlineMs, env, lease });
       const t0 = performance.now();
       try {
         const output = await invoke(script);
@@ -506,7 +477,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     if (!claimed.length) return false;
     const tips = new Map<LandFlow, string>();
     integration = scratch(`${own.flow}-train`);
-    let made = false;
+    let made = false, cleanupBlocked = false;
     try {
       if (fs.lstatSync(integration, { throwIfNoEntry: false })) throw Error('Integration destination already exists');
       await git(main, ['worktree', 'add', '--detach', '--', integration, base], 120000);
@@ -538,12 +509,14 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         await publish(who, tips);
       }
     } catch (e) {
+      cleanupBlocked = e instanceof CustodianError;
       if (publishing) fail(e);
+      else if (cleanupBlocked) throw e; // Do not touch a checkout whose group may still be running.
       // Nothing reached main: no train gate rerun or repair. Original helpers take the single path.
       else endStep(false);
     } finally {
       let cleanupNote: string | undefined;
-      if (!publishing && made) {
+      if (!publishing && made && !cleanupBlocked) {
         try { await git(main, ['worktree', 'remove', '--force', '--', integration], 120000); }
         catch (e) { cleanupNote = (e as Error).message.split('\n')[0]; }
       }

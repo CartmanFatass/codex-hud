@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { takeLease, terminateCommandGroup } from '../../dist/roles/lease.js';
+import { takeLease } from '../../dist/roles/lease.js';
 import { isProcAlive, procStat, readBootId } from '../../dist/utils/proc.js';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { stopChild } from '../helpers/process-cleanup.mjs';
@@ -14,7 +14,7 @@ import { checkout, job, jobDir, settle } from '../helpers/thin-mcp-land.mjs';
 const interrupted = 'Land helper exited; inspect the checkout before retrying. No step was replayed.';
 function killRunner(f, flow) {
   const row = f.flowState(flow);
-  assert.equal(procStat(row.pid)?.start, row.start);
+  assert.ok(row.start && isProcAlive(row.pid, row.start));
   assert.equal(row.workflow.steps.land.admitted, true);
   process.kill(row.pid, 'SIGKILL');
 }
@@ -190,241 +190,125 @@ function addSecondJob(f, id = 'j0000000000000456', file = 'second-file') {
   return id;
 }
 
-function killExact(pid, start) {
-  const stat = procStat(pid);
-  if (stat?.start === start) {
-    try { process.kill(pid, 'SIGKILL'); } catch { /* Already exited. */ }
-  }
+function leaseFile(f) {
+  const project = fs.realpathSync(f.main);
+  const entry = createHash('sha256').update(JSON.stringify([project, 'main-checkout'])).digest('hex') + '.json';
+  return join(f.home, 'leases', entry);
 }
+const readLease = f => JSON.parse(fs.readFileSync(leaseFile(f), 'utf8'));
+const alive = ({ pid, start }) => isProcAlive(pid, start);
+function identity(pid) {
+  const stat = procStat(pid);
+  assert.ok(stat?.start, `missing process identity for PID ${pid}`);
+  return { pid, start: stat.start };
+}
+const markerPid = (f, name) => Number(fs.readFileSync(join(f.env.HOME, name), 'utf8'));
+const watcher = '(trap "" TERM; exec sleep 60) & echo $! > "$HOME/watcher"';
+const verifyStopped = `node --input-type=module -e '
+  import { readFileSync } from "node:fs";
+  import { isProcAlive } from "${new URL('../../dist/utils/proc.js', import.meta.url).href}";
+  for (const { pid, start } of JSON.parse(readFileSync(process.env.HOME + "/old-group", "utf8"))) {
+    if (isProcAlive(pid, start)) throw Error("old process still active: " + pid);
+  }'`;
 
-test('SIGKILL during a gate command: next land terminates the orphan command group before starting its own gate', async t => {
-  const gateScript = [
-    'if test ! -f "$HOME/orphan-started"; then',
-    '  sleep 60 &',
-    '  child=$!',
-    '  echo "$$" > "$HOME/orphan-leader"',
-    '  echo "$child" > "$HOME/orphan-child"',
-    '  touch "$HOME/orphan-started"',
-    '  while true; do sleep 0.2; done',
-    'else',
-    '  leader=$(cat "$HOME/orphan-leader")',
-    '  child=$(cat "$HOME/orphan-child")',
-    '  if kill -0 "$leader" 2>/dev/null || kill -0 "$child" 2>/dev/null; then',
-    '    echo still-alive > "$HOME/second-gate-status"',
-    '    exit 1',
-    '  fi',
-    '  echo dead > "$HOME/second-gate-status"',
-    'fi',
-  ].join('\n');
-  const f = await checkout(t, [gateScript]);
+for (const kind of ['gate', 'after']) test(`SIGKILL during ${kind}: next land waits for the custodian before its own gate`, async t => {
+  const hung = `${watcher}; echo $$ > "$HOME/shell"; touch "$HOME/started"; wait`;
+  const check = `if test -f "$HOME/started"; then ${verifyStopped}; fi`;
+  const f = kind === 'gate'
+    ? await checkout(t, [`if test -f "$HOME/started"; then ${verifyStopped}; else ${hung}; fi`])
+    : await checkout(t, [check], { after: [`if test ! -f "$HOME/started"; then ${hung}; fi`] });
   const job2 = addSecondJob(f);
   const { flow: flow1 } = await f.call('hud_land', { job });
-  await until(() => fs.existsSync(join(f.env.HOME, 'orphan-started')), t.signal);
-  const leaderPid = Number(fs.readFileSync(join(f.env.HOME, 'orphan-leader'), 'utf8').trim());
-  const childPid = Number(fs.readFileSync(join(f.env.HOME, 'orphan-child'), 'utf8').trim());
-  const leaderStart = procStat(leaderPid)?.start;
-  const childStart = procStat(childPid)?.start;
-  assert.ok(leaderStart && childStart);
-  t.after(() => { killExact(childPid, childStart); killExact(leaderPid, leaderStart); });
+  await until(() => fs.existsSync(join(f.env.HOME, 'started')), t.signal);
+  const shell = identity(markerPid(f, 'shell'));
+  const child = identity(markerPid(f, 'watcher'));
+  const lease = readLease(f);
+  assert.equal(lease.holder, flow1);
+  assert.equal(lease.custodian.boot_id, readBootId());
+  const group = identity(procStat(shell.pid).pgrp);
+  assert.equal(procStat(child.pid).session, group.pid);
+  assert.notEqual(group.pid, lease.custodian.pid);
+  const old = [lease.custodian, group, shell, child];
+  assert.ok(old.every(alive));
+  fs.writeFileSync(join(f.env.HOME, 'old-group'), JSON.stringify(old));
+  assert.ok(f.flowState(flow1).step.startsWith(`${kind}[1]:`));
 
-  killRunner(f, flow1);
-  // Wait for the killed land helper to exit and confirm the orphaned gate command group is still alive.
-  const runner = f.flowState(flow1);
-  await until(() => !isProcAlive(runner.pid, runner.start), t.signal);
-  assert.equal(isProcAlive(leaderPid, leaderStart), true);
-  assert.equal(isProcAlive(childPid, childStart), true);
-
-  // Without calling hud_read on flow1, start a second land: it must terminate flow1's command group first.
   const { flow: flow2 } = await f.call('hud_land', { job: job2 });
+  await until(() => f.flowState(flow2).step.startsWith('waiting for '), t.signal);
+  killRunner(f, flow1);
   await until(() => ['completed', 'failed'].includes(f.flowState(flow2).state), 15_000);
   assert.equal(f.flowState(flow2).state, 'completed', JSON.stringify(f.flowState(flow2)));
-  assert.equal(fs.readFileSync(join(f.env.HOME, 'second-gate-status'), 'utf8').trim(), 'dead');
-  assert.equal(isProcAlive(leaderPid, leaderStart), false);
-  assert.equal(isProcAlive(childPid, childStart), false);
+  assert.ok(old.every(process => !alive(process)));
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.flowState(flow2).landed_sha);
 });
 
-test('SIGKILL during an after command in main: next land terminates the orphan command group before proceeding', async t => {
-  const gateScript = [
-    'if test -f "$HOME/after-started"; then',
-    '  leader=$(cat "$HOME/after-leader")',
-    '  child=$(cat "$HOME/after-child")',
-    '  if kill -0 "$leader" 2>/dev/null || kill -0 "$child" 2>/dev/null; then',
-    '    echo still-alive > "$HOME/second-gate-after-status"',
-    '    exit 1',
-    '  fi',
-    '  echo dead > "$HOME/second-gate-after-status"',
-    'fi',
-  ].join('\n');
-  const afterScript = [
-    'if test ! -f "$HOME/after-started"; then',
-    '  sleep 60 &',
-    '  child=$!',
-    '  echo "$$" > "$HOME/after-leader"',
-    '  echo "$child" > "$HOME/after-child"',
-    '  touch "$HOME/after-started"',
-    '  while true; do echo tick >> "$PWD/after-heartbeat"; sleep 0.05; done',
-    'else',
-    '  echo ok > "$HOME/second-after-ran"',
-    'fi',
-  ].join('\n');
-  const f = await checkout(t, [gateScript], { after: [afterScript] });
-  const job2 = addSecondJob(f);
-  const { flow: flow1 } = await f.call('hud_land', { job });
-  await until(() => fs.existsSync(join(f.env.HOME, 'after-started')), t.signal);
-  const leaderPid = Number(fs.readFileSync(join(f.env.HOME, 'after-leader'), 'utf8').trim());
-  const childPid = Number(fs.readFileSync(join(f.env.HOME, 'after-child'), 'utf8').trim());
-  const leaderStart = procStat(leaderPid)?.start;
-  const childStart = procStat(childPid)?.start;
-  assert.ok(leaderStart && childStart);
-  assert.match(f.flowState(flow1).step, /^after\[1\]:/);
-  t.after(() => { killExact(childPid, childStart); killExact(leaderPid, leaderStart); });
-
-  killRunner(f, flow1);
-  const runner = f.flowState(flow1);
-  await until(() => !isProcAlive(runner.pid, runner.start), t.signal);
-  assert.equal(isProcAlive(leaderPid, leaderStart), true);
-  assert.equal(isProcAlive(childPid, childStart), true);
-
-  // Next land must terminate the dead holder's after command group before starting its own gate.
-  const { flow: flow2 } = await f.call('hud_land', { job: job2 });
-  await until(() => ['completed', 'failed'].includes(f.flowState(flow2).state), 15_000);
-  assert.equal(f.flowState(flow2).state, 'completed', JSON.stringify(f.flowState(flow2)));
-  assert.equal(fs.readFileSync(join(f.env.HOME, 'second-gate-after-status'), 'utf8').trim(), 'dead');
-  assert.equal(fs.readFileSync(join(f.env.HOME, 'second-after-ran'), 'utf8').trim(), 'ok');
-  assert.equal(isProcAlive(leaderPid, leaderStart), false);
-  assert.equal(isProcAlive(childPid, childStart), false);
-  assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.flowState(flow2).landed_sha);
-});
-
-test('a reused PID with a different start time is never killed during lease reclaim or command-group termination', async t => {
+test('a reused custodian PID is not treated as active during lease acquisition', async t => {
   const f = await checkout(t, ['true']);
-  // Spawn a synthetic detached bystander process in its own process group and session.
   const bystander = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
   const bystanderExited = once(bystander, 'exit');
   t.after(() => stopChild(bystander, bystanderExited));
-  const bystanderStat = procStat(bystander.pid);
+  const current = identity(bystander.pid);
   const bootId = readBootId();
-  assert.ok(bystanderStat && bootId);
-  assert.equal(bystanderStat.pgrp, bystander.pid);
-  assert.equal(bystanderStat.session, bystander.pid);
-
-  // Spawn and await a short-lived process to get a guaranteed dead lease holder PID + start.
+  assert.ok(bootId);
   const dead = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' });
-  const deadStart = procStat(dead.pid)?.start;
+  const owner = identity(dead.pid);
   await once(dead, 'exit');
-  assert.ok(deadStart);
-
-  // Seed a dead main-checkout lease pointing at bystander's PID with a DIFFERENT start time.
-  const leasesDir = join(f.home, 'leases');
-  fs.mkdirSync(leasesDir, { recursive: true, mode: 0o700 });
-  const project = fs.realpathSync(f.main);
-  const entry = createHash('sha256').update(JSON.stringify([project, 'main-checkout'])).digest('hex') + '.json';
-  const differentStart = String(BigInt(bystanderStat.start) + 1n);
-  fs.writeFileSync(join(leasesDir, entry), JSON.stringify({
-    project,
-    name: 'main-checkout',
-    holder: 'f0000000000000999',
-    kind: 'main',
-    since: new Date().toISOString(),
-    pid: dead.pid,
-    pid_start_time: deadStart,
-    command_group: { pid: bystander.pid, start: differentStart, boot_id: bootId },
+  const file = leaseFile(f);
+  fs.mkdirSync(join(f.home, 'leases'), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(file, JSON.stringify({
+    project: fs.realpathSync(f.main), name: 'main-checkout', holder: 'f0000000000000999',
+    kind: 'main', since: new Date().toISOString(), pid: owner.pid, pid_start_time: owner.start,
+    custodian: { pid: current.pid, start: String(BigInt(current.start) + 1n), boot_id: bootId },
   }), { mode: 0o600 });
 
-  // Direct unit checks on terminateCommandGroup safety boundaries.
-  assert.equal(await terminateCommandGroup({ pid: bystander.pid, start: differentStart, boot_id: bootId }), 'reused');
-  assert.equal(await terminateCommandGroup({ pid: bystander.pid, start: bystanderStat.start, boot_id: '00000000-0000-0000-0000-000000000000' }), 'other-boot');
-  assert.equal(isProcAlive(bystander.pid, bystanderStat.start), true);
-
-  // Non-detached child (not its own group/session leader) must be refused and left alive.
-  const nonDetached = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: false, stdio: 'ignore' });
-  const nonDetachedExited = once(nonDetached, 'exit');
-  t.after(() => stopChild(nonDetached, nonDetachedExited));
-  const nonDetachedStat = procStat(nonDetached.pid);
-  assert.ok(nonDetachedStat);
-  await assert.rejects(
-    terminateCommandGroup({ pid: nonDetached.pid, start: nonDetachedStat.start, boot_id: bootId }),
-    /not a detached command group leader/,
-  );
-  assert.equal(isProcAlive(nonDetached.pid, nonDetachedStat.start), true);
-
-  // Protected caller PID and malformed records must be refused.
-  const selfStat = procStat(process.pid);
-  await assert.rejects(
-    terminateCommandGroup({ pid: process.pid, start: selfStat.start, boot_id: bootId }),
-    /protected/,
-  );
-  await assert.rejects(terminateCommandGroup({ pid: -1, start: '1', boot_id: bootId }), /incomplete/);
-  await assert.rejects(terminateCommandGroup({ pid: bystander.pid, start: 'bad', boot_id: bootId }), /incomplete/);
-  await assert.rejects(terminateCommandGroup('bad'), /malformed/);
-
-  // Dead leader with an unverified remaining group member must refuse both to kill and to proceed.
-  const orphanMarker = join(f.env.HOME, 'dead-leader-child');
-  const shortLeader = spawn('sh', ['-c', `sleep 60 & echo $! > ${JSON.stringify(orphanMarker)}; exit 0`], { detached: true, stdio: 'ignore' });
-  const shortLeaderStart = procStat(shortLeader.pid)?.start;
-  assert.ok(shortLeaderStart);
-  await once(shortLeader, 'exit');
-  await until(() => fs.existsSync(orphanMarker) && fs.readFileSync(orphanMarker, 'utf8').trim().length > 0, t.signal);
-  const orphanChildPid = Number(fs.readFileSync(orphanMarker, 'utf8').trim());
-  const orphanChildStart = procStat(orphanChildPid)?.start;
-  assert.ok(orphanChildStart);
-  t.after(() => killExact(orphanChildPid, orphanChildStart));
-  await assert.rejects(
-    terminateCommandGroup({ pid: shortLeader.pid, start: shortLeaderStart, boot_id: bootId }),
-    /leader exited with unverified members remaining/,
-  );
-  assert.equal(isProcAlive(orphanChildPid, orphanChildStart), true);
-  killExact(orphanChildPid, orphanChildStart);
-
-  // End-to-end: hud_land reclaims the dead lease without killing the bystander process.
   const { flow } = await f.call('hud_land', { job });
   await until(() => ['completed', 'failed'].includes(f.flowState(flow).state), 15_000);
   assert.equal(f.flowState(flow).state, 'completed', JSON.stringify(f.flowState(flow)));
-  assert.equal(isProcAlive(bystander.pid, bystanderStat.start), true);
-  assert.equal(procStat(bystander.pid)?.start, bystanderStat.start);
-
-  // Refusal path through takeLease: malformed command_group refuses to grant and keeps the dead lease intact.
-  fs.writeFileSync(join(leasesDir, entry), JSON.stringify({
-    project,
-    name: 'main-checkout',
-    holder: 'f0000000000000998',
-    kind: 'main',
-    since: new Date().toISOString(),
-    pid: dead.pid,
-    pid_start_time: deadStart,
-    command_group: { pid: bystander.pid, start: 'not-ticks', boot_id: bootId },
-  }), { mode: 0o600 });
-  await assert.rejects(
-    takeLease({ name: 'main-checkout', wait_s: 0 }, { home: f.home, cwd: f.main, holder: 'f0000000000000997' }),
-    /incomplete/,
-  );
-  assert.equal(fs.existsSync(join(leasesDir, entry)), true);
-  assert.equal(isProcAlive(bystander.pid, bystanderStat.start), true);
+  assert.ok(alive(current));
 });
 
-test('SIGKILL during a gate command: hud_read recovery terminates the orphan command group before retry', async t => {
+test('SIGKILL after the gate shell exits: recovery waits for its background watcher to stop', async t => {
   const f = await checkout(t, [
-    'if test ! -f "$HOME/rec-started"; then sleep 60 & echo "$$" > "$HOME/rec-leader"; echo "$!" > "$HOME/rec-child"; touch "$HOME/rec-started"; while true; do sleep 0.2; done; fi',
+    `${watcher}; echo $$ > "$HOME/shell"; touch "$HOME/started";
+    while ! test -f "$HOME/exit-shell"; do sleep .02; done`,
   ]);
   const { flow } = await f.call('hud_land', { job });
-  await until(() => fs.existsSync(join(f.env.HOME, 'rec-started')), t.signal);
-  const leaderPid = Number(fs.readFileSync(join(f.env.HOME, 'rec-leader'), 'utf8').trim());
-  const childPid = Number(fs.readFileSync(join(f.env.HOME, 'rec-child'), 'utf8').trim());
-  const leaderStart = procStat(leaderPid)?.start;
-  const childStart = procStat(childPid)?.start;
-  assert.ok(leaderStart && childStart);
-  t.after(() => { killExact(childPid, childStart); killExact(leaderPid, leaderStart); });
+  await until(() => fs.existsSync(join(f.env.HOME, 'started')), t.signal);
+  const shell = identity(markerPid(f, 'shell'));
+  const child = identity(markerPid(f, 'watcher'));
+  const group = identity(procStat(shell.pid).pgrp);
+  const { custodian } = readLease(f);
+  fs.writeFileSync(join(f.env.HOME, 'exit-shell'), '');
+  await until(() => !alive(shell), t.signal);
+  assert.ok([custodian, group, child].every(alive));
 
   killRunner(f, flow);
-  const runner = f.flowState(flow);
-  await until(() => !isProcAlive(runner.pid, runner.start), t.signal);
-  assert.equal(isProcAlive(leaderPid, leaderStart), true);
-  assert.equal(isProcAlive(childPid, childStart), true);
-
-  // Recovery via hud_read terminates the dead holder's command group without starting a second land.
-  const row = await failed(f, flow, t.signal);
+  const helper = f.flowState(flow);
+  await until(() => !alive(helper), t.signal);
+  const row = await f.call('hud_read', { job: flow });
+  assert.equal(row.error, interrupted);
   assert.match(row.step, /^gate\[1\]/);
-  assert.equal(isProcAlive(leaderPid, leaderStart), false);
-  assert.equal(isProcAlive(childPid, childStart), false);
+  assert.ok([custodian, group, child].every(process => !alive(process)));
+});
+
+test('an observer that cannot confirm cleanup records its refusal before exiting', { timeout: 15_000 }, async t => {
+  const f = await checkout(t, ['echo $$ > "$HOME/shell"; touch "$HOME/started"; sleep 60']);
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => fs.existsSync(join(f.env.HOME, 'started')), t.signal);
+  const shell = identity(markerPid(f, 'shell'));
+  const group = identity(procStat(shell.pid).pgrp);
+  const { custodian } = readLease(f);
+  assert.ok(alive(group));
+  process.kill(group.pid, 'SIGSTOP'); // Synthetic group leader only; prevent it from handling EOF.
+  await until(() => procStat(group.pid)?.state === 'T', t.signal);
+  killRunner(f, flow);
+  await until(() => !alive(custodian), t.signal);
+  assert.ok(alive(shell));
+  const expected = `Land custodian PID ${custodian.pid} could not confirm payload group ${group.pid} stopped`;
+  assert.ok(readLease(f).custodian_error.startsWith(expected));
+  await assert.rejects(f.call('hud_read', { job: flow }), error => error.message.includes(expected));
+  await assert.rejects(
+    takeLease({ name: 'main-checkout', wait_s: 0 }, { home: f.home, cwd: f.main, holder: 'f0000000000000999' }),
+    error => error.message.startsWith(expected),
+  );
 });

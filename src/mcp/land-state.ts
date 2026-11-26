@@ -2,7 +2,7 @@
 import { readDirSafe, readJsonFile } from '../utils/atomic-fs.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { reapDeadLeaseCommandGroup } from '../roles/lease.js';
+import { awaitDeadLandCustodian } from '../roles/lease.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import type { ManagedWorktree } from './managed-worktree.js';
 import { settleSealedRun, type Run } from '../workflows/engine.js';
@@ -86,10 +86,8 @@ export async function recoverLand(home: string, id: string, f?: LandFlow | null)
       if (initial.wt?.main_root) {
         const owner = initial.boarded ?? initial;
         const holder = initial.boarded?.flow ?? initial.flow;
-        // Terminate any recorded command group left behind by this dead holder.
-        // On refusal/error, keep the dead lease intact so the next acquirer fails closed.
-        try { await reapDeadLeaseCommandGroup(home, initial.wt.main_root, 'main-checkout', { holder, pid: owner.pid, start: owner.start }); }
-        catch { /* Leave the dead lease intact for the next lease acquirer. */ }
+        // Recovery must not settle the interruption until the custodian confirms cleanup.
+        await awaitDeadLandCustodian({ home, cwd: initial.wt.main_root, holder }, owner);
       }
       return runLock(home, id, () => recordInterruption(home, id));
     })().finally(() => recovering.delete(key));

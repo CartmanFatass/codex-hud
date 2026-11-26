@@ -377,7 +377,7 @@ function jobOwesCaller(dir: string, job: Record<string, unknown>, superseded: (j
     (!row.land_turn && failedAttempt(row) && failureUnobserved(dir, job.observed_at, statusAt));
 }
 
-export interface LeaseCommandGroup {
+export interface LeaseCustodian {
   pid: number;
   start: string;
   boot_id: string;
@@ -390,7 +390,8 @@ export interface LeaseRecord {
   since: string;
   pid: number;
   pid_start_time?: string;
-  command_group?: LeaseCommandGroup;
+  custodian?: LeaseCustodian;
+  custodian_error?: string;
 }
 export function readLease(file: string): LeaseRecord | null {
   const snap = readArtifact(file, 65536);

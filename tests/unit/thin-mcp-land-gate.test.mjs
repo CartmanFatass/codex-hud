@@ -5,15 +5,23 @@ import test from 'node:test';
 import { LandOutput } from '../../dist/mcp/land-evidence.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
 import { landTask } from '../../dist/mcp/land.js';
-import { isProcAlive } from '../../dist/utils/proc.js';
+import { isProcAlive, procStat } from '../../dist/utils/proc.js';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { checkout, job } from '../helpers/thin-mcp-land.mjs';
 
 for (const kind of ['gate', 'after']) test(`land bounds a hung ${kind} and kills children holding the output pipes`, async t => {
   // In the gate case the shell itself exits successfully, but its child still holds the pipes.
-  const hung = `seq 50; sleep 60 & echo $! > "$HOME/sleeper"; ${kind === 'gate' ? 'exit 0' : 'wait'}`;
-  const f = await checkout(t, kind === 'gate' ? [hung] : ['true'], { timeout_s: 1, ...(kind === 'after' ? { after: [hung] } : {}) });
+  const hung = `seq 50; (trap '' TERM; touch "$HOME/ready"; exec sleep 60) & echo $! > "$HOME/sleeper"; ${kind === 'gate' ? 'exit 0' : 'wait'}`;
+  const f = await checkout(t, kind === 'gate' ? [hung] : ['true'], { timeout_s: 3, ...(kind === 'after' ? { after: [hung] } : {}) });
   const { flow } = await f.call('hud_land', { job });
+  await until(() => {
+    const row = f.flowState(flow);
+    assert.notEqual(row.state, 'failed', JSON.stringify(row));
+    return fs.existsSync(join(f.env.HOME, 'ready')) && fs.existsSync(join(f.env.HOME, 'sleeper'));
+  }, t.signal);
+  const pid = Number(fs.readFileSync(join(f.env.HOME, 'sleeper'), 'utf8'));
+  const start = procStat(pid)?.start;
+  assert.ok(start && isProcAlive(pid, start));
   await until(() => f.flowState(flow).state === 'failed', t.signal);
   const done = await f.call('hud_read', { job: flow });
   assert.ok(done.step.startsWith(`${kind}[1]:`));
@@ -24,8 +32,7 @@ for (const kind of ['gate', 'after']) test(`land bounds a hung ${kind} and kills
     assert.equal(done.reruns[0].rerun_ok, undefined);
     assert.equal(fs.readFileSync(done.reruns[0].output_path, 'utf8'), done.tail.join('\n'));
   } else assert.equal(done.reruns, undefined);
-  const pid = Number(fs.readFileSync(join(f.env.HOME, 'sleeper'), 'utf8'));
-  await until(() => !isProcAlive(pid), t.signal);
+  assert.equal(isProcAlive(pid, start), false);
   assert.equal((await f.call('hud_lease', { name: 'main-checkout', wait_s: 2 })).granted, true);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
   assert.equal(!!done.landed_sha, kind === 'after');
