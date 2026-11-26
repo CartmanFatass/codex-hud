@@ -11,3 +11,5 @@
 - [ ] Land gate passes.
 
 ## Comments
+
+- 2026-11-25 main: context since herdr-fork/04 (26350ad3). Tab Pi now starts through the herdr fork's direct-exec `agent.start` (pi is the tab's PTY root; `src/mcp/dispatch/harness-pi.ts`, `direct-exec.ts`). Tab close after a clean exit belongs to the fork (`on_exit: close_on_zero`) plus HUD's `reapDirect` (`src/runtime/reap-tab.ts`) for retention and crashes. Do not port `pi-role-reap` or any tab-close logic from pi-roles; "auto-close" here means the worker extension ends pi cleanly when the job settles (native shutdown, exit 0). `PI_ROLES_KEEP_TAB=1` exists only to stop pi-roles' launch-blind reaper; drop it together with the pi-roles dispatch extension, and make sure no launch-blind reaper remains. herdr-fork/06 changes `waitDirectReady` in `direct-exec.ts` in parallel; leave that function alone. Live checks run on the installed fork (`herdr --version` ends `-hud.<sha>`); until herdr-fork/05+06 land, a fresh tab may lose its first prompt (main rescues it).
