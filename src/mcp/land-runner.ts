@@ -241,6 +241,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
   let custodianFailed = false;
   let handoffDrained = true;
   const drainHandoff = async () => {
+    if (handoffDrained || custodianFailed || members.some(row => row.publish_pending)) return;
     handoffDrained = true;
     await drainPendingTicketEdits(home, main).catch(() => {});
   };
@@ -564,7 +565,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       }
     }
     if (publishing && members.some(row => row.flow === own.flow)) return true;
-    if (!cleanupBlocked) await drainPendingTicketEdits(home, main).catch(() => {});
+    await drainHandoff();
     f = own; members = [own]; integration = scratch(own.flow); publishing = false;
     return false;
   }
@@ -573,6 +574,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       if (!await acquire()) return;
       handoffDrained = false;
       if (await train()) break;
+      handoffDrained = false;
       checkCancel();
       let who: string[];
       try { who = await prepare(); }
@@ -606,7 +608,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     fail(e);
   } finally {
     if (acquired) {
-      if (!handoffDrained && !custodianFailed && !members.some(row => row.publish_pending)) await drainHandoff();
+      await drainHandoff();
       await takeLease({ name: 'main-checkout', release: true }, lease);
     }
   }

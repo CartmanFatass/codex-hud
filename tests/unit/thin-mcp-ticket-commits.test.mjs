@@ -12,7 +12,7 @@ import { findFixtureProcesses, stopChild } from '../helpers/process-cleanup.mjs'
 import { setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 import { takeLease } from '../../dist/roles/lease.js';
 import { cancelTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
-import { isProcAlive } from '../../dist/utils/proc.js';
+import { isProcAlive, procStat } from '../../dist/utils/proc.js';
 import { wakeWorkflow } from '../../dist/workflows/wake.js';
 
 const draft = title => ({ title, what: 'Change the sample.', acceptance: ['Check the sample.'], blocked_by: [] });
@@ -460,7 +460,58 @@ function addLandJob(f, id, name, start = f.base_head) {
     ...receipt, job: id, cwd: root, worktree: { main_root: f.main, root, branch, base_head: start },
   }));
   settle(f, id, `Synthetic ${name} result.`);
-  return { id, root, branch };
+  return { id, root, branch, baseHead: start };
+}
+
+function drainPauseProbe(marker = 'drain-entered', release = 'drain-release') {
+  const preload = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+if (process.argv[1]?.includes('workflow-runner') && process.argv[2] !== '--ticket-edits') {
+  const rename = fs.renameSync;
+  const sab = new Int32Array(new SharedArrayBuffer(4));
+  fs.renameSync = (from, to) => {
+    const out = rename(from, to);
+    const entered = process.env.HOME + '/' + ${JSON.stringify(marker)};
+    const go = process.env.HOME + '/' + ${JSON.stringify(release)};
+    if (/\\/te[0-9a-f]{32}\\.json$/.test(to) && !fs.existsSync(entered)) {
+      try {
+        if (JSON.parse(fs.readFileSync(to, 'utf8')).state === 'applying') {
+          fs.writeFileSync(entered, to);
+          const deadline = performance.now() + 15000;
+          while (!fs.existsSync(go) && performance.now() < deadline) Atomics.wait(sab, 0, 0, 20);
+        }
+      } catch {}
+    }
+    return out;
+  };
+  syncBuiltinESMExports();
+}`;
+  return `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(preload))};`;
+}
+
+function writeQueuedFlow(f, templateFlow, addedJob, createdAt = '2020-01-01T00:00:00.000Z') {
+  const base = f.flowState(templateFlow);
+  const flowId = `f${addedJob.id.slice(1)}`;
+  const source = f.git(addedJob.root, 'rev-parse', 'HEAD');
+  const queuedFlow = {
+    flow: flowId,
+    job: addedJob.id,
+    pane: base.pane,
+    task: false,
+    wt: { main_root: f.main, root: addedJob.root, branch: addedJob.branch, base_head: addedJob.baseHead },
+    config: base.config,
+    source_sha: source,
+    pid: process.pid,
+    start: procStat(process.pid).start,
+    state: 'queued',
+    step: 'main-checkout lease',
+    created_at: createdAt,
+    updated_at: createdAt,
+    step_started_at: createdAt,
+  };
+  fs.writeFileSync(join(f.home, 'flows', `${flowId}.json`), JSON.stringify(queuedFlow) + '\n', { mode: 0o600 });
+  return flowId;
 }
 
 test('back-to-back lands drain edits queued during the first gate between the two lands without a gate rerun', { timeout: 30000 }, async t => {
@@ -510,7 +561,8 @@ test('handoff drain is bounded to edits pending at the handoff so a steady strea
   const f = await checkout(t, [`if test ! -f "$HOME/started"; then
     touch "$HOME/started"; while test ! -f "$HOME/release"; do sleep .05; done
   fi
-  git rev-parse HEAD >> "$HOME/gate-heads"`], { after: [] });
+  git rev-parse HEAD >> "$HOME/gate-heads"`], { after: [], probe: drainPauseProbe() });
+  t.after(() => { try { fs.writeFileSync(join(f.env.HOME, 'drain-release'), 'cleanup'); } catch {} });
   const call = tickets(f);
   const second = addLandJob(f, 'j0000000000000789', 'gamma');
 
@@ -524,37 +576,31 @@ test('handoff drain is bounded to edits pending at the handoff so a steady strea
     initial.push(queued(await fast(call('add', { tickets: [draft(title)] }))));
   }
 
-  // Trigger a steady stream of new edits the instant the first handoff batch starts applying.
-  const stream = [];
-  let streamStarted = false;
-  let streamLoop;
-  const startStream = () => {
-    if (streamStarted) return;
-    streamStarted = true;
-    streamLoop = (async () => {
-      for (let i = 1; i <= 12; i++) {
-        if (stream.length >= 2 && f.flowState(flow2).state === 'completed') break;
-        const reply = await call('add', { tickets: [draft(`Stream ${i}`)] });
-        if (reply.receipt) stream.push(reply.receipt);
-        else stream.push(null);
-        await delay(10);
-      }
-    })();
-  };
-  const watcher = fs.watch(join(f.home, 'flows'), () => {
-    if (read(f, initial[0]).state !== 'queued') startStream();
-  });
-  t.after(() => watcher.close());
-
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  // Synchronize deterministically inside the first snapshot drain while initial[0] is applying.
+  await until(() => fs.existsSync(join(f.env.HOME, 'drain-entered')), t.signal);
+  assert.equal(read(f, initial[0]).state, 'applying');
+  assert.equal(read(f, initial[1]).state, 'queued');
+  assert.equal(f.flowState(flow2).state, 'queued');
+
+  const duringDrain = queued(await fast(call('add', { tickets: [draft('During Drain')] })));
+  assert.equal(read(f, duringDrain).state, 'queued');
+
+  const stream = [duringDrain];
+  fs.writeFileSync(join(f.env.HOME, 'drain-release'), 'go');
+  const streamLoop = (async () => {
+    for (let i = 1; i <= 8; i++) {
+      if (f.flowState(flow2).state === 'completed') break;
+      const reply = await call('add', { tickets: [draft(`Stream ${i}`)] });
+      if (reply.receipt) stream.push(reply.receipt);
+      await delay(10);
+    }
+  })();
+
   await until(() => f.flowState(flow2).state === 'completed', t.signal);
-  watcher.close();
-  assert.ok(streamStarted, 'stream should have started during handoff drain');
   await streamLoop;
 
-  const queuedStream = stream.filter(Boolean);
-  assert.ok(queuedStream.length > 0, 'stream edits should queue behind the waiting land');
-  await until(() => queuedStream.every(id => read(f, id).state === 'completed'), t.signal);
+  await until(() => stream.every(id => read(f, id).state === 'completed'), t.signal);
 
   const done1 = f.flowState(flow1), done2 = f.flowState(flow2);
   assert.equal(done1.state, 'completed');
@@ -565,11 +611,194 @@ test('handoff drain is bounded to edits pending at the handoff so a steady strea
   for (const id of initial) {
     assert.match(between, new RegExp(`HUD-Ticket-Edit: ${id}`), 'pending batch drains between the two lands');
   }
-  for (const id of queuedStream) {
-    assert.doesNotMatch(between, new RegExp(`HUD-Ticket-Edit: ${id}`), 'post-handoff stream edit must not jump ahead of the waiting land');
+  for (const id of stream) {
+    assert.doesNotMatch(between, new RegExp(`HUD-Ticket-Edit: ${id}`), 'post-snapshot edit must not jump ahead of the waiting land');
   }
   const afterSecond = f.git(f.main, 'log', '--reverse', '--format=%B', `${done2.landed_sha}..base`);
-  for (const id of queuedStream) {
-    assert.match(afterSecond, new RegExp(`HUD-Ticket-Edit: ${id}`), 'post-handoff stream edits drain after the waiting land');
+  for (const id of stream) {
+    assert.match(afterSecond, new RegExp(`HUD-Ticket-Edit: ${id}`), 'post-snapshot edits drain after the waiting land');
   }
+});
+
+test('partial train where the lease owner is excluded drains one snapshot before the owner single attempt', { timeout: 30000 }, async t => {
+  const f = await checkout(t, [`if test -f alpha && test ! -f "$HOME/train-gate-started"; then
+    touch "$HOME/train-gate-started"
+    while test ! -f "$HOME/release-train-gate"; do sleep .05; done
+  fi`], { after: [], probe: drainPauseProbe() });
+  t.after(() => {
+    for (const file of ['release-train-gate', 'drain-release']) {
+      try { fs.writeFileSync(join(f.env.HOME, file), 'cleanup'); } catch {}
+    }
+  });
+  const call = tickets(f);
+  const lease = { cwd: f.main, home: f.home, holder: 'synthetic-hold' };
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  t.after(() => takeLease({ name: 'main-checkout', release: true }, lease).catch(() => {}));
+
+  const jobA = addLandJob(f, 'j0000000000000801', 'alpha');
+  const jobB = addLandJob(f, 'j0000000000000802', 'beta');
+  // Start only jobB's helper so flowB is guaranteed to own the lease; seed flowA as an eligible queued peer.
+  const { flow: flowB } = await f.call('hud_land', { job: jobB.id });
+  assert.equal(f.flowState(flowB).state, 'queued');
+  const flowA = writeQueuedFlow(f, flowB, jobA);
+
+  // Temporarily make jobB fail checkSource so train() excludes the lease owner's pick while publishing flowA.
+  const statusB = join(jobDir(f, jobB.id), 'STATUS.json');
+  const closedStatus = fs.readFileSync(statusB, 'utf8');
+  fs.writeFileSync(statusB, JSON.stringify({ state: 'working' }));
+
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+  await until(() => fs.existsSync(join(f.env.HOME, 'train-gate-started')), t.signal);
+  assert.equal(f.flowState(flowA).boarded?.flow, flowB);
+
+  const beforeDrain = queued(await fast(call('add', { tickets: [draft('Before Train Drain')] })));
+  fs.writeFileSync(statusB, closedStatus);
+  fs.writeFileSync(join(f.env.HOME, 'release-train-gate'), 'go');
+
+  await until(() => fs.existsSync(join(f.env.HOME, 'drain-entered')), t.signal);
+  assert.equal(read(f, beforeDrain).state, 'applying');
+  const duringDrain = queued(await fast(call('add', { tickets: [draft('During Train Drain')] })));
+  assert.equal(read(f, duringDrain).state, 'queued');
+  fs.writeFileSync(join(f.env.HOME, 'drain-release'), 'go');
+
+  await until(() => f.flowState(flowA).state === 'completed' && f.flowState(flowB).state === 'completed', t.signal);
+  await until(() => read(f, beforeDrain).state === 'completed' && read(f, duringDrain).state === 'completed', t.signal);
+
+  const doneA = f.flowState(flowA), doneB = f.flowState(flowB);
+  assert.equal(doneA.train, flowA);
+  assert.equal(doneA.boarded?.flow, flowB);
+  assert.equal(doneB.train, undefined);
+
+  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..base`).split('\n');
+  assert.deepEqual(subjects, ['alpha', 'tickets: sample/01 add', 'beta', 'tickets: sample/02 add']);
+  const commits = f.git(f.main, 'rev-list', '--reverse', `${f.base_head}..base`).split('\n');
+  assert.equal(doneA.landed_sha, commits[0]);
+  assert.equal(doneB.base_sha, commits[1]);
+  assert.equal(doneB.landed_sha, commits[2]);
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B', commits[1]), new RegExp(`HUD-Ticket-Edit: ${beforeDrain}`));
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B', commits[3]), new RegExp(`HUD-Ticket-Edit: ${duringDrain}`));
+});
+
+test('after a partial train publish, a cancelled single attempt still drains its pending batch before releasing the lease', { timeout: 30000 }, async t => {
+  const f = await checkout(t, [`if test -f alpha && test ! -f "$HOME/train-gate-started"; then
+    touch "$HOME/train-gate-started"
+    while test ! -f "$HOME/release-train-gate"; do sleep .05; done
+  elif test -f beta && test ! -f "$HOME/single-gate-started"; then
+    touch "$HOME/single-gate-started"
+    while test ! -f "$HOME/release-single-gate"; do sleep .05; done
+  fi`], { after: [] });
+  t.after(() => {
+    for (const file of ['release-train-gate', 'release-single-gate']) {
+      try { fs.writeFileSync(join(f.env.HOME, file), 'cleanup'); } catch {}
+    }
+  });
+  const rpc = taskRpc(f.rpc);
+  await rpc('server/discover');
+  const lease = { cwd: f.main, home: f.home, holder: 'synthetic-hold' };
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  t.after(() => takeLease({ name: 'main-checkout', release: true }, lease).catch(() => {}));
+
+  const jobA = addLandJob(f, 'j0000000000000811', 'alpha');
+  const jobB = addLandJob(f, 'j0000000000000812', 'beta');
+  const jobC = addLandJob(f, 'j0000000000000813', 'gamma');
+
+  const taskB = await taskCall(rpc, 'hud_land', { job: jobB.id });
+  const flowB = taskB.taskId;
+  assert.equal(f.flowState(flowB).state, 'queued');
+  const flowA = writeQueuedFlow(f, flowB, jobA);
+
+  const statusB = join(jobDir(f, jobB.id), 'STATUS.json');
+  const closedStatus = fs.readFileSync(statusB, 'utf8');
+  fs.writeFileSync(statusB, JSON.stringify({ state: 'working' }));
+
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+  await until(() => fs.existsSync(join(f.env.HOME, 'train-gate-started')), t.signal);
+  fs.writeFileSync(statusB, closedStatus);
+  fs.writeFileSync(join(f.env.HOME, 'release-train-gate'), 'go');
+
+  await until(() => fs.existsSync(join(f.env.HOME, 'single-gate-started')), t.signal);
+  assert.equal(f.flowState(flowA).state, 'completed');
+  assert.equal(f.flowState(flowB).state, 'running');
+
+  // Queue a waiting land and a ticket edit while the single attempt runs, then cancel the single attempt.
+  const taskC = await taskCall(rpc, 'hud_land', { job: jobC.id });
+  const flowC = taskC.taskId;
+  assert.equal(f.flowState(flowC).state, 'queued');
+  const pending = queued(resultValue(await fast(taskCall(rpc, 'hud_tickets', {
+    op: 'add', feature: 'sample', tickets: [draft('Drain On Cancel')],
+  }))));
+  assert.equal(read(f, pending).state, 'queued');
+
+  await rpc('tasks/cancel', { taskId: flowB });
+  fs.writeFileSync(join(f.env.HOME, 'release-single-gate'), 'go');
+
+  await until(() => f.flowState(flowB).state === 'cancelled' && f.flowState(flowC).state === 'completed', t.signal);
+  assert.equal(read(f, pending).state, 'completed');
+
+  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..base`).split('\n');
+  assert.deepEqual(subjects, ['alpha', 'tickets: sample/01 add', 'gamma']);
+  const commits = f.git(f.main, 'rev-list', '--reverse', `${f.base_head}..base`).split('\n');
+  assert.equal(f.flowState(flowA).landed_sha, commits[0]);
+  assert.equal(f.flowState(flowC).base_sha, commits[1]);
+  assert.equal(f.flowState(flowC).landed_sha, commits[2]);
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B', commits[1]), new RegExp(`HUD-Ticket-Edit: ${pending}`));
+});
+
+test('a clean unpublished train fallback drains one pending snapshot before the owner single attempt', { timeout: 30000 }, async t => {
+  const f = await checkout(t, [`if test -f alpha && test -f beta && ! git cat-file -e base:alpha 2>/dev/null && ! git cat-file -e base:beta 2>/dev/null; then
+    touch "$HOME/train-rejected"
+    while test ! -f "$HOME/release-train-reject"; do sleep .05; done
+    exit 7
+  fi`], { after: [], probe: drainPauseProbe() });
+  t.after(() => {
+    for (const file of ['release-train-reject', 'drain-release']) {
+      try { fs.writeFileSync(join(f.env.HOME, file), 'cleanup'); } catch {}
+    }
+  });
+  const call = tickets(f);
+  const lease = { cwd: f.main, home: f.home, holder: 'synthetic-hold' };
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  t.after(() => takeLease({ name: 'main-checkout', release: true }, lease).catch(() => {}));
+
+  const jobA = addLandJob(f, 'j0000000000000821', 'alpha');
+  const jobB = addLandJob(f, 'j0000000000000822', 'beta');
+  const { flow: flowA } = await f.call('hud_land', { job: jobA.id });
+  const { flow: flowB } = await f.call('hud_land', { job: jobB.id });
+  assert.equal(f.flowState(flowA).state, 'queued');
+  assert.equal(f.flowState(flowB).state, 'queued');
+
+  await takeLease({ name: 'main-checkout', release: true }, lease);
+  await until(() => fs.existsSync(join(f.env.HOME, 'train-rejected')), t.signal);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.base_head);
+
+  const beforeFallback = queued(await fast(call('add', { tickets: [draft('Before Fallback')] })));
+  fs.writeFileSync(join(f.env.HOME, 'release-train-reject'), 'go');
+
+  await until(() => fs.existsSync(join(f.env.HOME, 'drain-entered')), t.signal);
+  assert.equal(read(f, beforeFallback).state, 'applying');
+  const duringFallback = queued(await fast(call('add', { tickets: [draft('During Fallback')] })));
+  assert.equal(read(f, duringFallback).state, 'queued');
+  fs.writeFileSync(join(f.env.HOME, 'drain-release'), 'go');
+
+  await until(() => f.flowState(flowA).state === 'completed' && f.flowState(flowB).state === 'completed', t.signal);
+  await until(() => read(f, beforeFallback).state === 'completed' && read(f, duringFallback).state === 'completed', t.signal);
+
+  const done = [f.flowState(flowA), f.flowState(flowB)];
+  for (const row of done) assert.equal(row.train, undefined);
+  assert.equal(done.flatMap(row => row.timings.filter(e => e.train && !e.ok)).length, 1);
+
+  const subjects = f.git(f.main, 'log', '--reverse', '--format=%s', `${f.base_head}..base`).split('\n');
+  const commits = f.git(f.main, 'rev-list', '--reverse', `${f.base_head}..base`).split('\n');
+  assert.equal(commits.length, 4);
+  assert.equal(subjects[0], 'tickets: sample/01 add');
+  assert.equal(subjects[2], 'tickets: sample/02 add');
+  assert.deepEqual([subjects[1], subjects[3]].sort(), ['alpha', 'beta']);
+
+  const firstSingle = done.find(row => row.landed_sha === commits[1]);
+  const secondSingle = done.find(row => row.landed_sha === commits[3]);
+  assert.ok(firstSingle && secondSingle);
+  assert.equal(firstSingle.base_sha, commits[0]);
+  assert.equal(secondSingle.base_sha, commits[2]);
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B', commits[0]), new RegExp(`HUD-Ticket-Edit: ${beforeFallback}`));
+  assert.match(f.git(f.main, 'log', '-1', '--format=%B', commits[2]), new RegExp(`HUD-Ticket-Edit: ${duringFallback}`));
 });
