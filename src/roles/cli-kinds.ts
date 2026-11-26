@@ -13,7 +13,7 @@ export interface CliKind {
   trust: { text: string | null; decline: readonly string[] } | null;
   /** Null keeps `herdr agent start`'s own timeout. */
   startTimeoutMs: number | null;
-  startupQuirk: 'none' | 'done-before-prompt' | 'phantom-working';
+  startupQuirk: 'none' | 'phantom-working';
   resume?: (id: string, args: string[]) => string[];
   headless?: (prompt: string, resumeId?: string, newId?: string) => string[];
 }
@@ -33,7 +33,7 @@ export const cliKinds: Record<CliAgent, CliKind> = {
     bypass: ['--dangerously-skip-permissions'],
     trust: { text: 'Do you trust the contents of this project?', decline: ['down', 'enter'] },
     startTimeoutMs: null,
-    startupQuirk: 'done-before-prompt',
+    startupQuirk: 'none',
     resume: (id, args) => [...args, '--conversation', id],
     headless: (prompt, id) => ['--output-format', 'stream-json', ...(id ? ['--conversation', id] : []), '-p', prompt],
   },

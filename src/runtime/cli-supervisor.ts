@@ -2,7 +2,7 @@
 import { recordFailureExhaustion } from '../roles/roster.js';
 import { decideQuietJob } from '../mcp/quiet-decision.js';
 import { loadSettings } from '../settings.js';
-import { beginPrompt, cliWorkerTools, endPrompt, firstInput, judge, terminalFact, workerAlive, workerHasChild, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment, type PaneExit } from '../mcp/cli-judge.js';
+import { beginPrompt, cliWorkerTools, endPrompt, judge, terminalFact, workerAlive, readTurn, readDone, DONE_FILE, REPORT_SETTLED_EXIT, reportSignature, withDonePrompt, writeTurn, type Judgment, type PaneExit } from '../mcp/cli-judge.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
 import { fileStampOf, getJobIndexCache, statsMtimeMs } from '../roles/job-index-cache.js';
 import { reportWasRead } from '../collectors/thin-jobs.js';
@@ -219,8 +219,7 @@ export async function main() {
     });
     lines.on('error', unavailable); socket.on('error', unavailable); socket.on('close', unavailable);
   }
-  const sampleChild = () => workerHasChild(current.pid ?? null, current.pid_start_time ?? null, turn.sent_at, firstInput(turn));
-  function collect(isTick: boolean, checkChild = isTick && status !== 'working') {
+  function collect(isTick: boolean) {
     if (diskDirty || isTick) {
       turn = readTurn(dir) ?? turn;
       done = readDone(dir);
@@ -240,7 +239,6 @@ export async function main() {
     return { turn, reportSig: signature, reportRead: reportWasRead(receipt, st?.isFile() ? statsMtimeMs(st.mtimeNs) : null, nextStamp),
       closeAtReport: job.resume_s !== undefined,
       alive: workerAlive(current.pid ?? null, current.pid_start_time ?? null), paneExit, directExec: true, status, statusAt,
-      liveChild: checkChild ? sampleChild() : null,
       sonic: sonicChildren(dir),
       stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
       tick: isTick, agentMissing, workingAt, done };
@@ -250,7 +248,7 @@ export async function main() {
       latest.turn.seq === before.turn.seq && latest.turn.sent_at === before.turn.sent_at &&
       latest.reportSig === before.reportSig && latest.done?.at === before.done?.at &&
       latest.status === before.status && latest.workingAt === before.workingAt && !latest.openQuestions &&
-      latest.liveChild === false && !latest.sonic.open && !latest.sonic.uncollected.length;
+      !latest.sonic.open && !latest.sonic.uncollected.length;
   }
   function write(result: Judgment) {
     const terminal = ['closed', 'failed', 'stopped'].includes(result.state);
@@ -305,10 +303,6 @@ export async function main() {
       }
       if (sendInFlight && !observed.close && !terminalFact(observed)) { clearTimeout(deadline); return; }
       let next = judge(prev, observed, Date.now());
-      if (next.action === 'sample') {
-        observed = { ...observed, liveChild: sampleChild() };
-        next = judge(prev, observed, Date.now());
-      }
       if (next.action === 'collect-sonic') {
         if (!sameSession()) { shutdown(); return; }
         const { open, remind } = sonicChildren(dir);
@@ -336,12 +330,12 @@ export async function main() {
         if (stopped || read?.aborted) return;
         if (!sameSession()) { shutdown(); return; }
         diskDirty = true;
-        const mid = collect(false, true);
+        const mid = collect(false);
         if (!stillQuiet(observed, mid)) { wake(); return; }
         const { result: decision, aborted } = skip
           ? { aborted: false, result: { choice: null, probability: null, action: 'needs-human' as const, reason: skip, asked: false } }
           : await withEffect('decide', (signal) => decideQuietJob({ hudHome, jobId: job.job, role: job.role, agent: cli.agent,
-              jobState: current.state, backgroundChildAlive: mid.liveChild as false,
+              jobState: current.state,
               minutesQuiet: Math.max(0, Math.round((Date.now() - next.quietSince!) / 60000)),
               beforeRequest: () => { if (fs.existsSync(stopFile)) terminalWake(); },
               paneText: read?.result.body?.result?.read?.text ?? '', reportPromptSent, questionIndex: quietQuestions + 1, signal }));
@@ -349,7 +343,7 @@ export async function main() {
         if (stopped || aborted) return;
         if (!sameSession()) { shutdown(); return; }
         diskDirty = true;
-        const latest = collect(false, true);
+        const latest = collect(false);
         if (!stillQuiet(observed, latest)) { wake(); return; }
         observed = latest;
         let prompted = false;
@@ -365,7 +359,7 @@ export async function main() {
           if (stopped || reply.aborted) return;
           if (!sameSession()) { shutdown(); return; }
           diskDirty = true;
-          const after = collect(false, !reply.result.ok);
+          const after = collect(false);
           if (sendInFlight || after.close || terminalFact(after) || after.turn.seq !== sent.seq || after.turn.sent_at !== sent.sent_at) { wake(); return; }
           if (reply.result.ok) prompted = true;
           else {

@@ -74,6 +74,18 @@ test('Claude closes without a read, resumes the exact session in a new pane, and
   assert.equal(starts(f).at(-1).args.includes('--resume'), false);
 });
 
+test('Antigravity closes after declaration even if a detached daemon keeps herdr working', { timeout: 15000 }, async (t) => {
+  const { f, job, worker, report } = await cliFixture(t, 'agy');
+  const daemon = await worker.start('sleep', ['30'], true);
+  const start = procStat(daemon).start;
+  t.after(() => { if (procStat(daemon)?.start === start) process.kill(daemon, 'SIGKILL'); });
+  f.push(job.job, 'working'); // Never send done or idle for this turn.
+  assert.equal(dead(daemon), false);
+  resultValue(await report('Synthetic report with a lingering daemon.'));
+  await until(() => reaped(job) && dead(worker.pid) && dead(daemon), t.signal);
+  assert.equal(json(job.task_dir, 'job.json').read_at, undefined);
+});
+
 test('the watcher leaves a reopening CLI turn working and its send task completes at the new report', async (t) => {
   const { f, job, worker, report } = await cliFixture(t);
   const dir = job.task_dir, oldSupervisor = cliState(dir).supervisor_pid;
@@ -256,7 +268,7 @@ test('native Pi settlement does not close while a question is open', async (t) =
 
 const turn = { seq: 1, sent_at: new Date(0).toISOString(), report_sig: null };
 const facts = { closeAtReport: true, turn, reportSig: null, reportRead: false, alive: true, status: 'idle',
-  liveChild: false, stop: false, close: false, openQuestions: false, canContinue: true, graceMs: 60_000 };
+  stop: false, close: false, openQuestions: false, canContinue: true, graceMs: 60_000 };
 const receipt = { ...turn, report_sig: 'fresh', at: new Date(1000).toISOString() };
 const declared = { ...facts, reportSig: 'fresh', done: receipt };
 const decideAfterQuiet = (input) => judge(judge(null, input, 1000), input, 61_000);
@@ -310,22 +322,30 @@ test('exit matrix: a headless sonic missing its report stays failed', (t) => {
 
 test('exit matrix: a rewritten report or a new turn invalidates the declaration', () => {
   const early = judge(null, { ...declared, status: 'working' }, 1000);
-  assert.equal(judge(early, { ...declared, reportSig: 'rewrite' }, 2000).state, 'working');
-  assert.equal(judge(early, { ...declared, turn: { ...turn, seq: 2, report_sig: 'fresh' } }, 2000).state, 'working');
+  assert.equal(judge(early, { ...declared, reportSig: 'rewrite' }, 11_000).state, 'working');
+  assert.equal(judge(early, { ...declared, turn: { ...turn, seq: 2, report_sig: 'fresh' } }, 11_000).state, 'working');
 });
 
-test('exit matrix: wait up to 120 seconds for a turn end; keep questions and sonic ahead of closure', () => {
-  const early = judge(null, { ...declared, status: 'working' }, 1000);
-  assert.equal(early.wakeAt, 121_000);
+test('exit matrix: close on done/idle or after 10 seconds; open questions and Sonic still block closure', () => {
+  const working = { ...declared, status: 'working' };
+  const early = judge(null, working, 1000);
+  assert.equal(early.wakeAt, 11_000);
   assert.equal(judge(early, { ...declared, statusAt: 999 }, 2000).state, 'working', 'old idle is not the end of this turn');
-  assert.equal(judge(early, { ...declared, status: 'working' }, 121_000).state, 'waiting_orchestrator');
-  assert.equal(judge(early, declared, 121_001).state, 'waiting_orchestrator');
-  assert.equal(judge(early, { ...declared, openQuestions: true }, 2000).state, 'waiting_orchestrator');
-  const child = 'j0000000000000001';
-  assert.equal(judge(early, { ...declared, sonic: { open: true, uncollected: [], remind: [] } }, 2000).state, 'working');
-  assert.equal(judge(early, { ...declared, sonic: { open: false, uncollected: [child], remind: [child] } }, 2000).action, 'collect-sonic');
-  const reminded = judge(early, { ...declared, sonic: { open: false, uncollected: [child], remind: [] } }, 2000);
+  for (const status of ['done', 'idle']) {
+    assert.equal(judge(early, { ...declared, status }, 2000).exitReason, REPORT_SETTLED_EXIT);
+  }
+  assert.equal(judge(early, working, 10_999).state, 'working');
+  assert.equal(judge(early, working, 11_000).exitReason, REPORT_SETTLED_EXIT);
+  const asked = judge(early, { ...working, openQuestions: true }, 11_000);
+  assert.equal(asked.state, 'waiting_orchestrator');
+  assert.equal(judge(asked, working, 11_001).exitReason, REPORT_SETTLED_EXIT);
+  const child = 'j0000000000000001', uncollected = { open: false, uncollected: [child], remind: [child] };
+  assert.equal(judge(early, { ...working, sonic: { open: true, uncollected: [], remind: [] } }, 11_000).state, 'working');
+  const stillWorking = judge(early, { ...working, sonic: uncollected }, 11_000);
+  assert.equal(stillWorking.state, 'working');
+  assert.equal(stillWorking.action, null);
+  assert.equal(judge(stillWorking, { ...declared, sonic: uncollected }, 11_001).action, 'collect-sonic');
+  const reminded = judge(early, { ...declared, sonic: { ...uncollected, remind: [] } }, 11_001);
   assert.equal(reminded.state, 'working');
   assert.equal(reminded.action, null);
-  assert.equal(judge(early, declared, 2000).exitReason, REPORT_SETTLED_EXIT);
 });

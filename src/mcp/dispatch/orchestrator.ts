@@ -75,7 +75,7 @@ import {
   replayOptions, harnessesSourceFor, argsForPlace,
 } from './places.js';
 import { ensureWatcher, launchError, launchFailure, canTryNext, rejectLaunch, resolveWorkspace, run, refusedBeforeInput, type DispatchResult } from './proc.js';
-import { HERDR_FORK_REQUIRED, SHELL_WORKER_UNSUPPORTED, isHudHerdrFork, isShellLaunchedWorker } from '../../runtime/herdr-socket.js';
+import { SHELL_WORKER_UNSUPPORTED, herdrWorkerPreflight, isShellLaunchedWorker } from '../../runtime/herdr-socket.js';
 
 function derivedKey(kind: string, ...parts: unknown[]): string {
   return `${kind}:${createHash('sha256').update(JSON.stringify(parts)).digest('hex')}`;
@@ -1250,8 +1250,10 @@ async function prepareWorktree(job: Job, worktree: ManagedWorktree) {
 
 async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: string, task: string, worktree?: ManagedWorktree, standingBrief?: StandingBriefRef, options: { callerToken?: string; resume?: NativeResume } = {}): Promise<DispatchResult> {
   const { resume } = options;
-  if (!job.headless && (place.harness === 'cli' || place.harness === 'pi') && !(await isHudHerdrFork()))
-    return rejectLaunch(launchError(HERDR_FORK_REQUIRED, 'herdr_fork_required'));
+  if (!job.headless && (place.harness === 'cli' || place.harness === 'pi')) {
+    const error = await herdrWorkerPreflight();
+    if (error) return rejectLaunch(launchError(error, 'herdr_fork_required'));
+  }
   let instructionsPath = '';
   try {
     if (job.borrowed_instructions && place.harness === 'bro')
@@ -1459,7 +1461,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
       jobCache.invalidateFile(pidFile);
     }
     if (taskEntry) releaseTask(taskEntry);
-    if (result.code === 'herdr_fork_required') return { ok: false, code: result.code, error: HERDR_FORK_REQUIRED };
+    if (result.code === 'herdr_fork_required') return { ok: false, code: result.code, error: result.stderr };
     const cleaned = result.directRollback ? await cleanupDirectResume(result.directRollback) : !result.cleanupFailed;
     if (cleaned && !result.launchUnknown) return;
     if (carryTask && activeTasks.get(id) === carryTask && batchTasks.get(id) !== carryTask) sampleTask(carryTask);

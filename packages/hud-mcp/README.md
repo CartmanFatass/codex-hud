@@ -236,22 +236,23 @@ recorded pid gone or replaced, its tab closed, or dispatch rejected before input
 (`failed`, or `closed` when a new report is on disk). Dispatch and every non-duplicate
 `hud_send` write `turn.json` before the prompt (internal continuations also start a new turn).
 The worker's `hud_report` call (or fallback `--done --turn` command) writes a private `done.json` receipt with the prompt's turn sequence and
-send time, the current report signature, and the receipt time. A matching receipt for a fresh report settles
-without waiting for leftover children or herdr idle. A new turn invalidates the old receipt; a report rewrite
+send time, the current report signature, and the receipt time. With a matching receipt for a fresh report,
+managed CLI workers close on herdr's turn end or after 10 s with the same report signature. Open questions and
+outstanding Sonic results still block closure; leftover processes are reaped at close. A new turn invalidates the old receipt; a report rewrite
 on a declared turn reopens it. If the turn stays quiet for the role's grace period without a fresh matching
 receipt, it goes to `waiting_orchestrator` (`hud_send` to continue or `hud_close` to stop), without settling
 or calling the Decision API. Terminal output does not affect receipt validity.
-`idle_grace` keeps a continuable worker with an unread report; reading
+For older jobs, `idle_grace` keeps a continuable worker with an unread report; reading
 the report or reaching the deadline quits and reaps it. An unread deadline close has `exit_reason` `settled`.
-For a turn that never issued a receipt, a live in-turn child still defers CLI settlement, the quiet decision
-and automatic close. With `advisory` trust, the ordinary no-child path requires herdr not `working` and a fresh report
+HUD uses herdr's turn status, including its native Antigravity background-work detection, rather than scanning
+for turn children. With `advisory` trust, legacy report settlement requires herdr not `working` and a fresh report
 stable for 10 s. A turn quiet past
 the grace without a report gets one Decision API choice (see the reference); anything
 unclear is `waiting_orchestrator` with a reason. Herdr's status alone never fails a live worker.
 CLI `state_trust` has two levels: `advisory` keeps those timings, while `turn`, after herdr has been seen `working`
 in the current turn and is now `done` or `idle`, settles a stable new report in 2 s or reaches the no-report quiet
 decision after 10 s (the post-decision wait is unchanged).
-Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; set, for example,
+The default is `turn` for `agy`, `claude`, `codex` and `grok`; set, for example,
 `{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.
 `hud_roster({detail:true})` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
 The supervisor wakes on herdr pushes, file changes (including `job.json` when a report is read) and its own deadlines,

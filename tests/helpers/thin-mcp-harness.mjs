@@ -65,7 +65,7 @@ export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
 }
 
-async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, path = process.env.PATH, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false, herdrVersion = '0.9.5-hud.76b187b0', customHerdrSocket = false, expectedStderr = '' }) {
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, path = process.env.PATH, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false, herdrVersion = '0.9.5-hud.76b187b0', herdrCapabilities = { agy_background_work: true }, customHerdrSocket = false, expectedStderr = '' }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const cleanups = [];
   cleanupFixture(t, { root, hudHome: join(root, 'hud_home') }, async () => {
@@ -180,7 +180,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
         const reply = (result) => socket.write(JSON.stringify({ id: req.id, result }) + '\n');
         const error = (code, message) => socket.write(JSON.stringify({ id: req.id, error: { code, message } }) + '\n');
         if (req.method === 'ping') {
-          reply({ type: 'pong', version: herdrVersion, protocol: 22 });
+          reply({ type: 'pong', version: herdrVersion, protocol: 22, capabilities: herdrCapabilities });
           return;
         }
         if (req.method === 'agent.start') {
@@ -514,15 +514,11 @@ export function fakeCliWithChild(t, f) {
   const worker = spawn(process.execPath, ['-e', `
     const { spawn } = require('node:child_process');
     const children = new Map();
-    let latest;
     process.on('message', ({ command, args, detached }) => {
-      if (command) {
-        const child = spawn(command, args, { stdio: ['pipe', 'ignore', 'ignore'], detached });
-        latest = child.pid;
-        children.set(latest, detached);
-        child.once('exit', () => children.delete(child.pid));
-        process.send(latest);
-      } else process.kill(latest);
+      const child = spawn(command, args, { stdio: ['pipe', 'ignore', 'ignore'], detached });
+      children.set(child.pid, detached);
+      child.once('exit', () => children.delete(child.pid));
+      process.send(child.pid);
     });
     process.on('disconnect', () => {
       for (const [pid, group] of children) { try { process.kill(group ? -pid : pid); } catch {} }
@@ -548,7 +544,6 @@ export function fakeCliWithChild(t, f) {
       assert.equal(procStat(pid)?.ppid, worker.pid);
       return pid;
     },
-    stop: () => worker.send({}),
     exit: async () => { worker.disconnect(); await exited; },
   };
 }

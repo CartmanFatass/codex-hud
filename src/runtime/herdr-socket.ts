@@ -32,7 +32,7 @@ export interface HerdrReply {
     version?: string;
     protocol?: number;
     shown?: boolean;
-    capabilities?: { hidden_tabs?: boolean; hidden_tabs_peek?: boolean; pane_strip?: boolean; guarded_prompt?: boolean };
+    capabilities?: { hidden_tabs?: boolean; hidden_tabs_peek?: boolean; pane_strip?: boolean; guarded_prompt?: boolean; agy_background_work?: boolean };
     strip?: PaneStripInfo;
     pane?: {
       pane_id: string;
@@ -100,11 +100,24 @@ export function isShellLaunchedWorker(fields?: { primary?: string; directExec?: 
   return Boolean(fields?.primary && fields.directExec !== '1');
 }
 
-/** Capability must be confirmed by the running server, never by the binary on PATH. */
-export async function isHudHerdrFork(signal?: AbortSignal, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
-  if (!herdrEndpoint(env)) return false;
+async function pingHudHerdr(env: NodeJS.ProcessEnv, signal?: AbortSignal) {
+  if (!herdrEndpoint(env)) return null;
   const reply = await request('ping', {}, { timeoutMs: 500, signal, env }).catch(() => null);
-  return !reply?.error && isHudHerdrVersion(reply?.result?.version);
+  const pong = reply?.result;
+  return !reply?.error && pong && isHudHerdrVersion(pong.version) ? pong : null;
+}
+
+export async function isHudHerdrFork(signal?: AbortSignal, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  return (await pingHudHerdr(env, signal)) !== null;
+}
+
+/** New worker launches require native turn status from the running server, not the binary on PATH. */
+export async function herdrWorkerPreflight(env = process.env): Promise<string | null> {
+  const pong = await pingHudHerdr(env);
+  if (!pong) return HERDR_FORK_REQUIRED;
+  if (pong.capabilities?.agy_background_work !== true)
+    return 'Upgrade the running HUD herdr fork (herdr-hud) to one with ping capability agy_background_work.';
+  return null;
 }
 
 export async function hasHerdrHiddenTabs(env = process.env): Promise<boolean> {

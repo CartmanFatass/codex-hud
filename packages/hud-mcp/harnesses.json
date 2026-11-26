@@ -5,7 +5,7 @@
   "agy": {
     "harness": "cli",
     "agent": "agy",
-    "state_trust": "advisory",
+    "state_trust": "turn",
     "model": "gemini-4-argon-high"
   },
   "claude": {

@@ -35,7 +35,8 @@ CLI dispatch is `dispatchCli` in `src/mcp/thin-main.ts`.
 Kind flags, trust-dialog text and decline keys, and startup quirks are the table in `src/roles/cli-kinds.ts`.
 Before opening a tab, dispatch requires an explicit local trust grant for Grok, Antigravity and Claude; missing, unreadable, malformed or symlinked trust files do not grant trust.
 Codex skips this check, and the other CLIs' screen-dialog checks remain in place.
-`packages/hud-mcp/bin/hud-cli.mjs` is the per-job supervisor.
+`packages/hud-mcp/bin/hud-cli.mjs` is the per-job supervisor. Managed tab preflight and `hud doctor` require the running `herdr-hud` server to advertise `capabilities.agy_background_work: true` on `ping`.
+The supervisor trusts herdr's turn status, including Antigravity's native background-work detection, instead of scanning for turn children. A matching current-turn report receipt closes on a confirmed turn end or after 10 s with the same report signature; open questions and outstanding Sonic children still prevent closure. Descendant reaping remains a close-time operation.
 Claude and Codex workers use the HUD MCP's worker-only surface. HUD builds pi's argv and writes a private `pi-worker.json` contract for each launch; pi explicitly loads the HUD worker extension, which handles native worker tools and async asks in tabs.
 The shared worker protocol writes reports, check-ins and CLI questions and dispatches only sonic children.
 Antigravity and Grok Build use the fallback scripts in place of MCP tools.
@@ -267,7 +268,7 @@ Display surfaces do not call text models or the Decision API. The Inspector draw
 
 | Feature / collector | Public input that can leave the machine |
 |---|---|
-| Quiet-job choice | Last 60 pane lines (≤12,000 chars) of a CLI worker, state, role, agent, minutes quiet, background-child flag and whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
+| Quiet-job choice | Last 60 pane lines (≤12,000 chars) of a CLI worker, state, role, agent, minutes quiet and whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
 | Sonic auto-thinking | First 4000 characters of the dispatched task (the kind prompt, caller ask and bounded target brief for prewalk scouts), plus Sonic role scope and thinking purposes; no standing brief or referenced files |
 | Claude mod event wake | Existing pane-scoped `hud watch` lines (actionable job status and report summary/read hint, questions, batch tallies, land and owner panel decisions; not routine checkpoints or queue positions), submitted or appended as status text to the main Claude conversation; no separate model call or report-body read |
 | Sonic DeepSeek web tools | Only when invoked: search query, optional original question, count and content flag, or the HTTP(S) page URL to fetch. Returned web content is untrusted source material. No automatic brief or context attachment. |

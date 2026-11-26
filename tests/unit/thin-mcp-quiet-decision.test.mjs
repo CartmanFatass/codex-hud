@@ -19,7 +19,6 @@ import {
   taskJob,
   runSonic,
   sonicTask,
-  fakeCliWithChild,
   statusQueries,
   readCloseQuit,
   reapAttempts,
@@ -99,32 +98,6 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.equal(server.requests.length, 0);
 });
 
-test('quiet without a report and an in-turn child makes no Decision API call and types no prompt', { timeout: 30000 }, async (t) => {
-  const f = await fixture(t);
-  const worker = fakeCliWithChild(t, f);
-  writeCliRole(f, 'bg-cli', 0.25, false);
-  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-  fs.writeFileSync(join(f.env.HOME, 'write-on-report-prompt'), '');
-  const server = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
-  configureFakeDecision(f, server.baseUrl);
-  const job = await f.call('hud_create', { role: 'bg-cli', request_key: 'bg-child', task: 'Synthetic bg child.' });
-  await until(() => cliState(job.task_dir)?.agent_session_id && cliState(job.task_dir)?.pid === worker.pid, 15000);
-  const childPid = await worker.start();
-  const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && String(c.args[3]).startsWith('Write your report to '));
-  f.push(job.job, 'idle');
-  const before = statusQueries(f, job);
-  await until(() => statusQueries(f, job) >= before + 2, 15000);
-  assert.equal(server.requests.length, 0);
-  assert.equal(prompts().length, 0);
-  assert.equal(cliState(job.task_dir).state, 'working');
-  assert.equal(cliState(job.task_dir).quiet_decision, undefined);
-
-  worker.stop();
-  await until(() => !procStat(childPid) || procStat(childPid).state === 'Z', t.signal);
-  await until(() => prompts().length === 1, 15000);
-  assert.equal(server.requests.length, 1, 'the real quiet-decision path runs once the child is gone');
-});
-
 test('Quiet job off hands a quiet CLI worker to main without reading or sending its pane tail', { timeout: 20000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'qd-off', 0.25, false);
@@ -186,7 +159,6 @@ test('quiet decision still-working keeps waiting up to 3 questions then escalate
   assert.equal(pageText.split('\n').length, 60);
   assert.ok(pageText.startsWith('line 11:'));
   const facts = sentBody.input[0].content[2].data.facts;
-  assert.equal(facts.background_child_alive, false);
   assert.equal(typeof facts.minutes_quiet, 'number');
   assert.equal(facts.job_state, 'working');
   const status = cliState(job.task_dir);

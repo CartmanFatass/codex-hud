@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import fs, { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import fs, { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { binScript } from '../../dist/mcp/paths.js';
 import { reapWorkerTree, rememberWorkerTree } from '../../dist/roles/worker-tree.js';
-import { judge, procStat, withDonePrompt, workerAlive, workerHasChild } from '../../dist/mcp/cli-judge.js';
+import { judge, procStat, withDonePrompt, workerAlive } from '../../dist/mcp/cli-judge.js';
 
 test('Claude and Codex CLI finishing prompts stay unchanged', () => {
   const turn = { seq: 1, sent_at: '2026-11-22T00:00:00.000Z', report_sig: null };
@@ -25,17 +25,8 @@ test('worker identity: missing start is unknown for a live PID, but absence is s
   assert.equal(workerAlive(null, null), null);
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']);
   const exited = once(child, 'exit');
-  try {
-    const oldTurn = new Date(0).toISOString();
-    assert.equal(workerHasChild(process.pid, null, oldTurn), false);
-    assert.equal(workerHasChild(process.pid, '0', oldTurn), false, 'a reused worker PID does not count');
-    assert.equal(workerHasChild(process.pid, procStat(process.pid).start, oldTurn), true);
-    const newTurn = new Date(Date.now() + 1000).toISOString();
-    assert.equal(workerHasChild(process.pid, procStat(process.pid).start, newTurn), false);
-  } finally {
-    child.kill();
-    await exited;
-  }
+  child.kill();
+  await exited;
   assert.equal(workerAlive(child.pid, null), false);
 });
 
@@ -133,28 +124,8 @@ test('worker reap: a same-group, tagged sibling is not a descendant; PID reuse s
   assert.deepEqual(signals, [[child, 'SIGTERM']]);
 });
 
-const mcpArgs = ['-e', 'setInterval(() => {}, 1000)', 'hud-mcp'];
-for (const [label, command, args, ageMs, busy] of [
-  ['direct MCP server during launch is not busy', process.execPath, mcpArgs, 500, false],
-  ['shell during launch is busy', '/bin/bash', ['-c', 'read -r line'], 500, true],
-  ['non-shell after the launch window is busy', process.execPath, mcpArgs, 20_000, true],
-]) {
-  test(`worker child: ${label}`, async () => {
-    const child = spawn(command, args);
-    const exited = once(child, 'exit');
-    try {
-      const boot = Date.now() - parseFloat(readFileSync('/proc/uptime', 'utf8')) * 1000;
-      const sentAt = new Date(boot + Number(procStat(child.pid).start) * 10 - ageMs).toISOString();
-      assert.equal(workerHasChild(process.pid, procStat(process.pid).start, sentAt, sentAt), busy);
-    } finally {
-      child.kill();
-      await exited;
-    }
-  });
-}
-
 const turn = { seq: 1, sent_at: new Date(0).toISOString(), report_sig: null };
-const facts = { turn, reportSig: null, reportRead: false, alive: true, status: 'working', liveChild: false,
+const facts = { turn, reportSig: null, reportRead: false, alive: true, status: 'working',
   stop: false, close: false, openQuestions: false, canContinue: true, graceMs: 600_000 };
 const initial = judge(null, facts, 0);
 const quiet = judge(initial, { ...facts, status: 'done', reportSig: 'report' }, 1000);
@@ -162,22 +133,14 @@ const idle = judge(quiet, { ...facts, status: 'done', reportSig: 'report' }, 11_
 const noReport = judge(initial, { ...facts, status: 'done' }, 1000);
 
 const done = { seq: turn.seq, sent_at: turn.sent_at, report_sig: 'report', at: new Date(1000).toISOString() };
-const declared = { ...facts, reportSig: 'report', done, liveChild: true };
+const declared = { ...facts, reportSig: 'report', done };
 
 test('judge: scrolling a stale marker out of view never declares a draft', () => {
   const draft = { ...facts, turn: { ...turn, seq: 3 }, reportSig: 'draft', reportRead: true,
-    liveChild: true, reportMarker: 'two old markers' };
+    reportMarker: 'two old markers' };
   const before = judge(initial, draft, 1000);
   const later = { ...draft, reportMarker: 'one old marker' };
   assert.equal(judge(judge(before, later, 2000), later, 32_000).state, 'working');
-});
-
-test('judge: renewed old idle cannot waive a live child even on a read draft', () => {
-  const draft = { ...facts, stateTrust: 'turn', workingAt: 0, status: 'idle', idleAt: 500,
-    reportMtime: 600, reportSig: 'draft', reportRead: true, liveChild: true };
-  const before = judge(initial, draft, 1000);
-  const later = { ...draft, idleAt: 31_000 };
-  assert.equal(judge(judge(before, later, 31_000), later, 42_000).state, 'working');
 });
 
 test('judge: matching receipt settles; shell counter changes and missing pane reads cannot invalidate it', () => {
@@ -191,7 +154,7 @@ test('judge: matching receipt settles; shell counter changes and missing pane re
   assert.equal(judge(initial, { ...declared, canContinue: false }, 1000).action, 'quit');
 });
 
-const rewritten = { ...declared, reportSig: 'rewrite', reportRead: true, status: 'idle', liveChild: false,
+const rewritten = { ...declared, reportSig: 'rewrite', reportRead: true, status: 'idle',
   stateTrust: 'turn', workingAt: 0 };
 
 test('judge: rewritten report hands a quiet turn to the main session after the role grace', () => {
@@ -203,7 +166,6 @@ test('judge: rewritten report hands a quiet turn to the main session after the r
     assert.equal(reopened.wakeAt, due);
     const beforeDue = judge(reopened, rewritten, due - 1);
     assert.equal(beforeDue.state, 'working');
-    assert.equal(judge(beforeDue, { ...rewritten, liveChild: null }, due).action, 'sample');
     const handedOff = judge(beforeDue, rewritten, due);
     assert.equal(handedOff.state, 'waiting_orchestrator');
     assert.equal(handedOff.reason, 'report changed after done receipt; no new receipt (hud_send to continue or hud_close to stop)');
@@ -221,13 +183,13 @@ test('judge: work or another rewrite restarts the fresh-receipt grace', () => {
   const quiet = judge(initial, rewritten, 2000);
   const due = 2000 + facts.graceMs;
   for (const [patch, quietAt] of [
-    [{ status: 'working' }, due + 1], [{ liveChild: true }, due + 1],
+    [{ status: 'working' }, due + 1],
     [{ workingAt: due - 1 }, due], [{ reportSig: 'rewrite again' }, due],
   ]) {
     const active = judge(quiet, { ...rewritten, ...patch }, due);
     assert.equal(active.state, 'working');
     assert.equal(active.action, null);
-    const next = judge(active, { ...rewritten, ...patch, status: 'idle', liveChild: false }, due + 1);
+    const next = judge(active, { ...rewritten, ...patch, status: 'idle' }, due + 1);
     assert.equal(next.state, 'working');
     assert.equal(next.wakeAt, quietAt + facts.graceMs);
   }
@@ -248,7 +210,9 @@ test('judge: new turn or a reused sequence with a different send time invalidate
     assert.equal(judge(settled, { ...declared, turn: newTurn }, 3000).state, 'working');
   }
   const stale = { ...declared, turn: { ...turn, report_sig: 'report' }, status: 'idle' };
-  assert.equal(judge(initial, stale, 1000).quietSince, null, 'unchanged report does not count even with a receipt');
+  const unchanged = judge(initial, stale, 1000);
+  assert.equal(unchanged.declared, false, 'unchanged report does not count even with a receipt');
+  assert.equal(unchanged.outputWritten, false);
 });
 
 const rows = [
@@ -268,13 +232,8 @@ const rows = [
   ['partial report resets stability', quiet, { status: 'done', reportSig: 'rewritten' }, 11_000, { state: 'working', quietSince: 11_000, wakeAt: 21_000 }],
   ['working flap resets quiet', quiet, { reportSig: 'report' }, 9000, { state: 'working', quietSince: null }],
   ['working push inside debounce resets quiet', quiet, { status: 'done', reportSig: 'report', workingAt: 10_900 }, 11_000, { state: 'working', quietSince: 11_000, wakeAt: 21_000 }],
-  ['unsampled child fact cannot settle', quiet, { status: 'done', reportSig: 'report', liveChild: null }, 11_000, { state: 'working', action: 'sample' }],
-  ['child holds report from grace', quiet, { status: 'done', reportSig: 'report', liveChild: true }, 11_000, { state: 'working', settledAt: null, outputWritten: false }],
   ['noncontinuable report closes', quiet, { status: 'done', reportSig: 'report', canContinue: false }, 11_000, { state: 'closed', action: 'quit' }],
-  ['child holds noncontinuable settlement and quit', quiet, { status: 'done', reportSig: 'report', canContinue: false, liveChild: true }, 11_000, { state: 'working', outputWritten: false, deadline: null, wakeAt: null, action: null }],
-  ['no-report child holds quiet clock', noReport, { status: 'done', liveChild: true }, 601_000, { state: 'working', quietSince: null, action: null }],
   ['no-report deadline', noReport, { status: 'done' }, 601_000, { state: 'working', action: 'decide' }],
-  ['unsampled child fact cannot decide', noReport, { status: 'done', liveChild: null }, 601_000, { state: 'working', action: 'sample' }],
   ['decision wait', noReport, { status: 'done', decision: { action: 'wait' } }, 601_000, { state: 'working', wakeAt: 1_201_000 }],
   ['decision prompt', noReport, { status: 'done', decision: { action: 'prompt-report' } }, 601_000, { state: 'working', wakeAt: 1_201_000 }],
   ['decision human', noReport, { status: 'done', decision: { action: 'needs-human' } }, 601_000, { state: 'waiting_orchestrator', quietHandled: true }],
@@ -283,8 +242,6 @@ const rows = [
   ['idle deadline', idle, { status: 'done', reportSig: 'report' }, 611_000, { state: 'closed', action: 'quit' }],
   ['working holds idle deadline', idle, { reportSig: 'report' }, 611_000, { state: 'idle_grace', action: null, wakeAt: null }],
   ['outage does not hold an already-settled idle deadline', idle, { status: null, reportSig: 'report' }, 611_000, { state: 'closed', action: 'quit' }],
-  ['child holds idle deadline', idle, { status: 'done', reportSig: 'report', liveChild: true }, 611_000, { state: 'idle_grace', action: null }],
-  ['idle deadline samples lazily', idle, { status: 'done', reportSig: 'report', liveChild: null }, 611_000, { state: 'idle_grace', action: 'sample' }],
   ['only explicit turn reopens', idle, { status: 'done', reportSig: 'report', turn: { ...turn, seq: 2, report_sig: 'report' } }, 20_000, { state: 'working', outputWritten: false, settledAt: null, deadline: null }],
   ['error without report never decides', initial, { status: null }, 60_000, { state: 'working', wakeAt: null, action: null }],
   ['supervisor error', initial, { supervisorError: 'supervisor error' }, 2, { state: 'waiting_orchestrator', reason: 'supervisor error' }],
@@ -382,7 +339,7 @@ test('judge: turn trust without working in this turn retains advisory timings', 
   }
 });
 
-test('judge: advisory report during working and status flaps never starts grace early (agy)', () => {
+test('judge: advisory report during working and status flaps never starts grace early', () => {
   const observed = { ...facts, stateTrust: 'advisory', workingAt: 0, reportSig: 'report' };
   let prev = judge(initial, observed, 1000);
   assert.equal(prev.quietSince, null);
@@ -418,7 +375,7 @@ test('judge: an old job without state_trust behaves exactly as advisory', () => 
   }
 });
 
-test('judge: turn trust preserves outage, child, question and working-flap boundaries', () => {
+test('judge: turn trust preserves outage, question and working-flap boundaries', () => {
   const observed = { ...facts, stateTrust: 'turn', workingAt: 0, status: 'done', reportSig: 'report' };
   const prev = judge(initial, observed, 1000);
   assert.equal(judge(prev, { ...observed, status: null }, 3000).wakeAt, 63_000);
@@ -427,11 +384,4 @@ test('judge: turn trust preserves outage, child, question and working-flap bound
   assert.equal(judge(prev, { ...observed, openQuestions: true }, 3000).state, 'waiting_orchestrator');
   assert.equal(judge(prev, { ...observed, workingAt: 2999 }, 3000).wakeAt, 5000);
   assert.equal(judge(prev, { ...observed, reportSig: 'rewritten' }, 3000).wakeAt, 5000);
-  const held = judge(prev, { ...observed, liveChild: true, canContinue: false }, 3000);
-  assert.equal(held.state, 'working');
-  assert.equal(held.action, null);
-  assert.equal(judge(held, { ...observed, liveChild: true }, 4000).action, null);
-  const noReportFacts = { ...observed, reportSig: null, liveChild: true };
-  assert.equal(judge(initial, noReportFacts, 11_000).quietSince, null);
-  assert.equal(judge(prev, { ...observed, liveChild: null }, 3000).action, 'sample');
 });

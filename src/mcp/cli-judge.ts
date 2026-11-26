@@ -2,22 +2,13 @@ import { realpathSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { writeJsonPrivate } from '../utils/atomic-fs.js';
-import {
-  isActiveProcState,
-  isProcAlive,
-  LINUX_USER_HZ,
-  procStat,
-  readBootTimeMs,
-  readProcChildren,
-  readProcCmdline,
-} from '../utils/proc.js';
+import { isActiveProcState, isProcAlive, procStat } from '../utils/proc.js';
 import { binScript, jobFiles } from './paths.js';
 import type { QuietDecision } from './quiet-decision.js';
 import { readTurn, receiptForTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
 export { procStat };
 export { DONE_FILE, readDone, readTurn, reportSignature, turnToken, type DoneReceipt, type Turn } from '../roles/cli-turn.js';
 
-export const firstInput = (turn: Turn) => turn.first_sent_at ?? (turn.seq === 1 ? turn.sent_at : undefined);
 export const cliWorkerTools = (agent: string) => agent === 'claude' || agent === 'codex' || agent === 'agy';
 export function withDonePrompt(text: string, bundled: string, dir: string, turn: Turn, agent: string): string {
   const token = turnToken(turn);
@@ -39,14 +30,12 @@ export function writeTurn(dir: string, options: TurnOptions = {}, prev = readTur
   const start = options.send?.start ?? (options.by && procStat(process.pid)?.start);
   const sent = options.reportPromptSent || (!options.restarted && prev?.report_prompt_sent);
   const sent_at = new Date().toISOString();
-  const initial = options.restarted ? sent_at : prev && firstInput(prev);
   const turn: Turn = {
     seq: (prev?.seq ?? 0) + 1,
     sent_at,
     report_sig: reportSignature(dir),
     ...(prev && start ? { pending_from: { seq: prev.seq, sent_at: prev.sent_at, report_sig: prev.report_sig, pid: process.pid, start } } : {}),
     ...(sent ? { report_prompt_sent: true } : {}),
-    ...(initial ? { first_sent_at: initial } : {}),
     ...(options.callerToken ? { caller_token: options.callerToken } : options.by === 'hud' && prev ? { caller_token: prev.caller_token ?? turnToken(prev) } : {}),
     ...(options.send ? { send: options.send } : {}),
   };
@@ -90,83 +79,6 @@ export function workerAlive(pid: number | null, start: string | null): boolean |
   return info === null || !isActiveProcState(info.state) ? false : null;
 }
 
-type Bootstrap = { stage: 'launcher' } | { stage: 'shell' | 'server'; entry: string };
-const base = (path = '') => path.split('/').at(-1);
-function bootstrap(pid: number, start: string, launchDirect: boolean, parent: number, chain?: Bootstrap): Bootstrap | boolean {
-  let argv = readProcCmdline(pid);
-  if (!argv) return false;
-  if (workerAlive(pid, start) !== true) return false;
-  if (launchDirect) {
-    const command = base(argv[0]);
-    if (!command || /^(sh|bash|zsh|dash|fish)$/.test(command)) return false;
-    // npm normally retitles itself to one argv element; other launchers may retain the original argv.
-    if (argv.length === 1 && argv[0]?.startsWith('npm exec ')) argv = argv[0].split(' ');
-    if (base(argv[0]) === 'node') argv.shift();
-    const launcher = base(argv.shift());
-    if (launcher === 'npm' || launcher === 'npm-cli.js') { if (argv.shift() !== 'exec') return true; }
-    else if (launcher === 'pnpm' || launcher === 'pnpm.cjs') { if (argv.shift() !== 'dlx') return true; }
-    else if (launcher !== 'npx' && launcher !== 'npx-cli.js' && launcher !== 'uvx') return true;
-    while (['-y', '--yes', '--'].includes(argv[0] ?? '')) argv.shift();
-    const spec = argv[0];
-    return argv.length === 1 && spec && !spec.startsWith('-') && !/\s/.test(spec) ? { stage: 'launcher' } : true;
-  }
-  if (!chain) return false;
-  if (chain.stage === 'launcher') {
-    // Learn the executable from the shell, not the package spec. Reject arguments and shell syntax.
-    // npm exec quotes the bin name (`sh -c 'playwright-mcp'`); one matching pair of quotes is not syntax.
-    const entry = argv[2]?.trim().replace(/^(['"])(.*)\1$/, '$2');
-    return base(argv[0]) === 'sh' && argv.length === 3 && argv[1] === '-c' && entry && /^[\w.@%+-]+$/.test(entry)
-      ? { stage: 'shell', entry } : false;
-  }
-  const { entry, stage } = chain;
-  if (stage === 'shell') return (base(argv[0]) === entry || (base(argv[0]) === 'node' && argv[1]?.endsWith(`/.bin/${entry}`)))
-    ? { stage: 'server', entry } : false;
-  return entry === 'chrome-devtools-mcp' && base(argv[0]) === 'node' &&
-    Boolean(argv[1]?.endsWith('/node_modules/chrome-devtools-mcp/build/src/telemetry/watchdog/main.js')) &&
-    (argv.includes(`--parent-pid=${parent}`) || argv.some((arg, i) => arg === '--parent-pid' && argv[i + 1] === String(parent)));
-}
-
-/** Exempt launch helpers and their known bootstrap steps, not the work started below them. */
-export function workerHasChild(pid: number | null, start: string | null, sentAt: string, firstSentAt?: string): boolean | 'unknown' {
-  if (pid === null || workerAlive(pid, start) !== true) return false;
-  const parents: { pid: number; start: string | null; chain?: Bootstrap }[] = [{ pid, start }];
-  let budget = 512;
-  try {
-    const boot = readBootTimeMs();
-    if (boot === null) return workerAlive(pid, start) === true ? 'unknown' : false;
-    const msPerTick = 1000 / LINUX_USER_HZ;
-    const since = Math.floor((Date.parse(sentAt) - boot) / msPerTick); // Linux USER_HZ is 100; include the send's whole tick.
-    const first = Math.floor((Date.parse(firstSentAt ?? '') - boot) / msPerTick);
-    // First input can race helper startup. A continuation does not get a launch window.
-    const launchThrough = sentAt === firstSentAt ? first + 10 * LINUX_USER_HZ : first - 1; // 10 s in USER_HZ ticks.
-    if (!Number.isFinite(since)) return 'unknown';
-    for (let item; (item = parents.pop()) !== undefined;) {
-      const { pid: parent, chain } = item;
-      if (chain && workerAlive(parent, item.start) !== true) return 'unknown';
-      const children = readProcChildren(parent, { budget, strict: true });
-      if (children === null) {
-        if (parent !== pid) continue;
-        return workerAlive(pid, start) === true ? 'unknown' : false;
-      }
-      budget = children.budgetRemaining;
-      for (const id of children.pids) {
-        if (--budget < 0) return 'unknown';
-        const child = procStat(id);
-        if (child?.ppid !== parent || (child.threads <= 1 && !isActiveProcState(child.state))) continue;
-        const childStart = Number(child.start);
-        const launchDirect = parent === pid && childStart <= launchThrough;
-        const match = launchDirect || chain ? bootstrap(id, child.start, launchDirect, parent, chain) : false;
-        if (!match && childStart >= since) return workerAlive(pid, start) === true;
-        parents.push({ pid: id, start: child.start, ...(typeof match === 'object' ? { chain: match } : {}) });
-      }
-      if (children.truncated) return 'unknown';
-    }
-  } catch {
-    return workerAlive(pid, start) === true ? 'unknown' : false;
-  }
-  return false;
-}
-
 export interface Judgment {
   state: 'working' | 'idle_grace' | 'waiting_orchestrator' | 'closed' | 'failed' | 'stopped';
   seq: number;
@@ -179,7 +91,7 @@ export interface Judgment {
   blocked: boolean;
   reason: string | null;
   exitReason: string | null;
-  action: 'decide' | 'quit' | 'sample' | 'collect-sonic' | null;
+  action: 'decide' | 'quit' | 'collect-sonic' | null;
   quietHandled: boolean;
   decisionWait?: boolean; // A quiet decision's wait still uses the full idle grace.
   missingTicks: number;
@@ -207,7 +119,6 @@ export interface Facts {
   directExec?: boolean;
   status: string | null;
   statusAt?: number | null;
-  liveChild: boolean | 'unknown' | null; // null: not sampled yet
   sonic?: { open: boolean; uncollected: string[]; remind: string[] };
   stop: boolean;
   close: boolean;
@@ -294,22 +205,19 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     next.decisionWait = false;
   }
   if (facts.closeAtReport && declared) {
-    const declaredAt = Date.parse(done.at), due = declaredAt + 120_000;
+    const declaredAt = Date.parse(done.at), due = declaredAt + 10_000;
     const sentAt = Date.parse(facts.turn.sent_at);
     const ended = (facts.status === 'done' || facts.status === 'idle') &&
       (facts.statusAt ?? now) >= sentAt && ((facts.workingAt ?? -Infinity) >= sentAt || (facts.statusAt ?? now) >= declaredAt);
-    if (ended && collectSonic) return { ...next, state: 'working', action: 'collect-sonic' };
-    if (ended && now <= due) return end('closed', REPORT_SETTLED_EXIT);
-    if (now < due) return { ...next, state: 'working', wakeAt: due };
-    return { ...next, state: 'waiting_orchestrator', reason: 'declared report but turn has not ended' };
+    if (collectSonic) return { ...next, state: 'working', action: ended ? 'collect-sonic' : null };
+    // A lingering daemon can keep herdr working until close reaps it. The receipt still matches the report.
+    if (ended || now >= due) return end('closed', REPORT_SETTLED_EXIT);
+    return { ...next, state: 'working', wakeAt: due };
   }
   if (next.state === 'idle_grace' && !collectSonic) {
     if (!readReport && now < next.deadline!)
       return { ...next, state: 'idle_grace', wakeAt: next.deadline };
-    if (!declared) {
-      if (facts.status === 'working' || facts.liveChild) return { ...next, state: 'idle_grace' };
-      if (facts.liveChild === null) return { ...next, state: 'idle_grace', action: 'sample' };
-    }
+    if (!declared && facts.status === 'working') return { ...next, state: 'idle_grace' };
     return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
   }
   const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= Date.parse(facts.turn.sent_at)
@@ -317,7 +225,6 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   const legacyReport = report && !facts.closeAtReport;
   const quiet = declared || (facts.status !== 'working' && (facts.status !== null || legacyReport));
   next.quietSince = quiet ? (next.quietSince ?? now) : null;
-  if ((!legacyReport || awaitingReceipt) && facts.liveChild) next.quietSince = null;
   if (next.quietSince === null) return { ...next, state: 'working', quietHandled: false, decisionWait: false };
   if (legacyReport || collectSonic || awaitingReceipt) {
     // A trusted turn end shortens stability, not the fresh-receipt grace or the outage window.
@@ -326,8 +233,6 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
       const due = Math.max(next.quietSince + Math.max(stableMs, awaitingReceipt ? facts.graceMs : 0),
         facts.status === null ? next.errorsSince! + 60_000 : 0);
       if (now < due) return { ...next, state: 'working', wakeAt: due };
-      if (facts.liveChild === null) return { ...next, state: 'working', action: 'sample' };
-      if (facts.liveChild) return { ...next, state: 'working' };
     }
     if (awaitingReceipt) return {
       ...next, state: 'waiting_orchestrator',
@@ -341,7 +246,6 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   const due = next.quietSince + (trustedEnd && !next.decisionWait ? 10_000 : facts.graceMs);
   next.reason = !newTurn ? prev?.reason ?? null : null;
   if (now < due && !facts.decision && !next.quietHandled) return { ...next, state: 'working', wakeAt: due };
-  if (facts.liveChild === null) return { ...next, state: 'working', action: 'sample' };
   const decision = facts.decision;
   if (decision?.action === 'fail') return end('failed', decision.failReason ?? 'quota failure');
   if (decision?.action === 'wait' || decision?.action === 'prompt-report') {

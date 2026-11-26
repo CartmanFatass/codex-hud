@@ -82,6 +82,17 @@ test('hud_create rejects stock herdr once, before CLI or Pi tab launch', async (
   assert.equal(f.commands().some(({ args }) => ['tab', 'agent'].includes(args[0])), false);
 });
 
+test('hud_create refuses an older fork without agy_background_work before opening a worker tab', async (t) => {
+  const f = await fixture(t, { herdrCapabilities: { guarded_prompt: true, hidden_tabs: true }, customHerdrSocket: false });
+  const reply = await f.call('hud_create', { role: 'general', on: 'agy', task: 'Synthetic worker.' });
+  assert.equal(reply.ok, false);
+  assert.equal(reply.code, 'herdr_fork_required');
+  assert.match(reply.reason, /Upgrade the running HUD herdr fork.*agy_background_work/);
+  assert.equal(fs.existsSync(join(reply.task_dir, 'SESSION.txt')), false);
+  assert.equal(f.socketRequests.some(req => req.method === 'agent.start'), false);
+  assert.equal(f.commands().some(({ args }) => ['tab', 'agent'].includes(args[0])), false);
+});
+
 test('hud_send and hud_close refuse legacy shell receipts without touching the worker', async (t) => {
   const f = await fixture(t);
   const job = 'j0000000000000001', dir = join(f.env.HUD_HOME, 'jobs', job);
@@ -251,9 +262,8 @@ async function startForkHerdr(t, f, opts = {}) {
       const reply = (result) => conn.write(JSON.stringify({ id: req.id, result }) + '\n');
       const err = (code, message = code) => conn.write(JSON.stringify({ id: req.id, error: { code, message } }) + '\n');
       if (req.method === 'ping') {
-        const capabilities = { ...(hiddenTabs ? { hidden_tabs: true } : {}), ...(hiddenTabsPeek ? { hidden_tabs_peek: true } : {}) };
-        reply({ type: 'pong', version: '0.9.5-hud.3027f8dd', protocol: 22,
-          ...(Object.keys(capabilities).length ? { capabilities } : {}) });
+        const capabilities = { agy_background_work: true, ...(hiddenTabs ? { hidden_tabs: true } : {}), ...(hiddenTabsPeek ? { hidden_tabs_peek: true } : {}) };
+        reply({ type: 'pong', version: '0.9.5-hud.3027f8dd', protocol: 22, capabilities });
         return;
       }
       if (req.method === 'events.subscribe') {

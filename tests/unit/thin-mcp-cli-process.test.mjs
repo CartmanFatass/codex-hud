@@ -9,7 +9,6 @@ import {
   until,
   fakeCliWithChild,
   statusQueries,
-  readCloseQuit,
   readCloseReaped,
   withoutCallerLookups,
   declareDone,
@@ -17,156 +16,6 @@ import {
   cliState,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-
-test('supervisor events: renewed idle and stale scrollback do not settle a draft with an in-turn child', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t);
-  const worker = fakeCliWithChild(t, f);
-  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-  writeCliRole(f, 'background-events', 4);
-  const job = await f.call('hud_create', { role: 'background-events', request_key: 'background-events', task: 'Synthetic background work.' });
-  await until(() => cliState(job.task_dir)?.pid === worker.pid && cliState(job.task_dir)?.agent_session_id, t.signal);
-  assert.equal(cliState(job.task_dir).pid_start_time, procStat(worker.pid).start);
-  const child = await worker.start();
-  const report = join(job.task_dir, 'report.md');
-  const marker = `⏺ report written: ${report}\n`;
-  f.push(job.job, 'idle');
-  writeFixtureFile(join(f.env.HOME, 'pane-read'), marker.repeat(2));
-  writeFixtureFile(report, 'Report while tests finish.\n');
-  writeFixtureFile(join(f.env.HOME, 'pane-read'), marker);
-  const queries = statusQueries(f, job);
-  await until(() => statusQueries(f, job) >= queries + 2, t.signal);
-  assert.ok(procStat(child));
-  assert.equal(cliState(job.task_dir).state, 'working');
-  assert.equal(cliState(job.task_dir).output_written, false);
-});
-
-async function fakeMcpBootstrap(t, f, worker, generic = false) {
-  const files = Object.fromEntries(['launch', 'ready', 'pids', 'start-work', 'work-pid'].map((key) => [key, join(f.root, key)]));
-  const spec = generic ? '@synthetic/mcp-demo' : 'chrome-devtools-mcp@1.11.0';
-  const entry = generic ? 'demo-mcp' : 'chrome-devtools-mcp';
-  const bin = join(f.root, generic ? 'node_modules/.bin' : 'bin');
-  const watchdog = join(f.root, 'node_modules/chrome-devtools-mcp/build/src/telemetry/watchdog/main.js');
-  if (!generic) {
-    fs.mkdirSync(join(watchdog, '..'), { recursive: true });
-    fs.writeFileSync(watchdog, 'setTimeout(() => {}, 30000)');
-  }
-  fs.mkdirSync(bin, { recursive: true });
-  fs.writeFileSync(join(bin, entry), `#!${process.execPath}
-const { spawn } = require('node:child_process');
-const fs = require('node:fs'), files = ${JSON.stringify(files)};
-const publish = (file, data) => {
-  fs.writeFileSync(file + '.tmp', data);
-  fs.renameSync(file + '.tmp', file);
-};
-const pids = [process.ppid, process.pid];
-${generic ? '' : `process.title = 'chrome-devtools-mcp';
-pids.push(spawn(process.execPath, [${JSON.stringify(watchdog)}, '--parent-pid', String(process.pid)], { stdio: 'ignore' }).pid);`}
-publish(files.pids, JSON.stringify(pids));
-setInterval(() => {
-  if (!fs.existsSync(files['start-work']) || fs.existsSync(files['work-pid'])) return;
-  const child = spawn('sleep', ['30'], { stdio: 'ignore' });
-  publish(files['work-pid'], String(child.pid));
-}, 10);
-`, { mode: 0o700 });
-  const launcher = await worker.start(process.execPath, ['-e', `
-    const { spawn } = require('node:child_process');
-    const fs = require('node:fs'), files = ${JSON.stringify(files)};
-    process.title = ${JSON.stringify(`npm exec ${spec}`)};
-    fs.writeFileSync(files.ready, '');
-    const poll = setInterval(() => {
-      if (!fs.existsSync(files.launch)) return;
-      clearInterval(poll);
-      // As npm exec does: the bin name single-quoted (seen live 2026-11-18: sh -c 'playwright-mcp').
-      spawn('/bin/sh', ['-c', ${JSON.stringify(`'${entry}'`)}], {
-        stdio: 'ignore', env: { ...process.env, PATH: ${JSON.stringify(bin + ':')} + process.env.PATH },
-      });
-    }, 10);
-  `], true);
-  await until(() => fs.existsSync(files.ready), t.signal);
-  return {
-    async launch() {
-      fs.writeFileSync(files.launch, '');
-      await until(() => fs.existsSync(files.pids) && fs.statSync(files.pids).size > 0, t.signal);
-      const pids = JSON.parse(fs.readFileSync(files.pids, 'utf8'));
-      const [shell, server, watchdogPid] = pids;
-      assert.equal(procStat(shell)?.ppid, launcher);
-      assert.equal(procStat(server)?.ppid, shell);
-      if (generic) assert.equal(fs.readFileSync(`/proc/${server}/cmdline`, 'utf8').split('\0')[1], join(bin, entry));
-      else assert.equal(procStat(watchdogPid)?.ppid, server);
-      return [launcher, ...pids];
-    },
-    async work() {
-      fs.writeFileSync(files['start-work'], '');
-      await until(() => fs.existsSync(files['work-pid']) && fs.statSync(files['work-pid']).size > 0, t.signal);
-      return Number(fs.readFileSync(files['work-pid'], 'utf8'));
-    },
-  };
-}
-
-for (const scenario of ['bootstrap only', 'generic package', 'no report', 'direct sleep', 'sleep under old MCP server', 'same-named runner']) {
-  test(`supervisor MCP bootstrap: ${scenario}`, { timeout: 20000 }, async (t) => {
-    const f = await fixture(t);
-    const worker = fakeCliWithChild(t, f);
-    const mcp = await fakeMcpBootstrap(t, f, worker, scenario === 'generic package');
-    fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
-    writeCliRole(f, 'mcp-bootstrap', 8);
-    const job = await f.call('hud_create', { role: 'mcp-bootstrap', request_key: scenario, task: 'Synthetic task.' });
-    const dir = job.task_dir, report = join(dir, 'report.md');
-    await until(() => cliState(dir)?.pid === worker.pid && cliState(dir)?.agent_session_id, t.signal);
-    assert.equal((await f.call('hud_read')).jobs.find((row) => row.job === job.job).state, 'working');
-    const pids = await mcp.launch();
-    assert.ok(Number(procStat(pids[1]).start) > Number(procStat(pids[0]).start));
-    if (scenario === 'no report') {
-      f.push(job.job, 'idle');
-      await until(() => cliState(dir)?.state === 'waiting_orchestrator', t.signal);
-      assert.match(cliState(dir).reason, /quiet without a report/);
-      assert.equal(readCloseQuit(f, job), false);
-      return;
-    }
-    // Exercise non-shell work on a continuation, where no direct child gets a launch exemption.
-    if (['sleep under old MCP server', 'direct sleep', 'same-named runner'].includes(scenario)) {
-      writeFixtureFile(report, 'First synthetic report.\n');
-      f.push(job.job, 'idle');
-      await until(() => cliState(dir)?.state === 'idle_grace', t.signal);
-      assert.equal((await f.call('hud_send', { job: job.job, message_key: 'repair', text: 'Synthetic continuation.' })).sent, true);
-    }
-    let work;
-    if (scenario === 'sleep under old MCP server') {
-      work = await mcp.work();
-      assert.equal(procStat(work)?.ppid, pids[2]);
-    } else if (scenario === 'direct sleep') work = await worker.start('sleep', ['30']);
-    else if (scenario === 'same-named runner') work = await worker.start(process.execPath, ['-e',
-      `process.title = 'chrome-devtools-mcp'; setTimeout(() => {}, 30000);`]);
-    if (work) {
-      const reads = () => f.commands().filter((c) => c.command === 'herdr' && c.args[0] === 'pane' && c.args[1] === 'read').length;
-      const before = reads(), queries = statusQueries(f, job);
-      f.push(job.job, 'working'); f.push(job.job, 'idle');
-      await until(() => statusQueries(f, job) >= queries + 2, t.signal);
-      assert.equal(reads(), before, 'no quiet decision while the worker has a live child');
-      assert.equal(cliState(dir).state, 'working');
-    }
-    writeFixtureFile(report, 'Synthetic fresh report with MCP infrastructure still alive.\n');
-    f.push(job.job, 'idle');
-    if (work) {
-      assert.match((await f.call('hud_read', { job: job.job })).digest.result, /Synthetic fresh report/);
-      assert.ok(procStat(work));
-      declareDone(f, job);
-    } else {
-      await until(() => cliState(dir)?.state === 'idle_grace', t.signal);
-      const listing = await f.call('hud_read');
-      assert.match(listing.changes.find((line) => line.startsWith(job.job)), /: idle_grace \| report/);
-      assert.equal(cliState(dir).output_written, true);
-      assert.match((await f.call('hud_read', { job: job.job })).digest.result, /Synthetic fresh report/);
-    }
-    await until(() => cliState(dir)?.state === 'closed', 1700);
-    assert.equal(cliState(dir).exit_reason, 'closed after report read');
-    assert.equal(cliState(dir).output_written, true);
-    assert.match((await f.call('hud_read')).changes.find((line) => line.startsWith(job.job)), /: closed/);
-    await until(() => readCloseReaped(job), t.signal);
-    assert.ok([...pids, ...(work ? [work] : [])].every((pid) => !procStat(pid) || procStat(pid)?.state === 'Z'),
-      'cleanup reaps both bootstrap helpers and turn work');
-  });
-}
 
 test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; socket loss stays working', { timeout: 30000 }, async (t) => {
   const clockScale = 20;
@@ -191,14 +40,11 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   const commands = supervisorCommands(), requests = f.socketRequests.length;
   // Observe two actual 30 s safety ticks rather than assuming the test timer
   // and the supervisor's accelerated clock get the same scheduling time.
-  // Running the rest ticks first also aligns the flap loop right after a tick,
-  // away from the next 30 s safety tick's quiet-status descendant scan.
   const beforeRest = statusQueries(f, job);
   await until(() => statusQueries(f, job) >= beforeRest + 3, t.signal);
   assert.deepEqual(supervisorCommands(), commands);
   const extra = f.socketRequests.slice(requests);
   assert.ok(extra.every((r) => r.method === 'agent.get'), JSON.stringify(extra));
-  assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'working ticks never sample descendants');
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes);
   assert.equal(cliState(job.task_dir).state, 'working');
   const beforeFlaps = statusQueries(f, job);
@@ -208,7 +54,6 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   }
   await until(() => statusQueries(f, job) > beforeFlaps, t.signal);
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes, 'no-report status flaps do not write STATUS');
-  assert.equal(fs.existsSync(join(f.env.HOME, 'proc-scans')), false, 'flaps never sample descendants');
   assert.deepEqual(supervisorCommands(), commands);
   writeFixtureFile(join(f.env.HOME, 'herdr-errors'), '');
   const beforeDrop = statusQueries(f, job);

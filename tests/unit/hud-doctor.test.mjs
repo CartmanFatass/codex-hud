@@ -132,11 +132,11 @@ test('bare doctor diagnoses install failures without changing files or exposing 
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const home = join(base, 'hud'), bin = join(base, 'bin'), checkout = join(base, 'checkout');
   const env = { HOME: base, HUD_HOME: home, PATH: `${bin}:/usr/bin:/bin`, HERDR_SOCKET_PATH: join(base, 'herdr.sock') };
-  let version = '0.9.5';
+  let version = '0.9.5', capabilities;
   const herdr = createServer(peer => peer.once('data', bytes => {
     const request = JSON.parse(bytes.toString());
     assert.equal(request.method, 'ping');
-    peer.end(JSON.stringify({ id: request.id, result: { type: 'pong', version } }) + '\n');
+    peer.end(JSON.stringify({ id: request.id, result: { type: 'pong', version, capabilities } }) + '\n');
   }));
   herdr.listen(env.HERDR_SOCKET_PATH);
   await once(herdr, 'listening');
@@ -245,6 +245,10 @@ test('bare doctor diagnoses install failures without changing files or exposing 
   const { ino, ctimeNs } = fs.statSync(sentinel, { bigint: true });
   put(generation, { kind: 'mcp', stamp: `${ino}:${ctimeNs}`, start });
   version = '0.9.5-hud.76b187b0';
+  const outdated = await run();
+  assert.equal(outdated.code, 1);
+  assert.match(outdated.stdout, /^FAIL herdr: .*Upgrade the running HUD herdr fork.*agy_background_work/m);
+  capabilities = { agy_background_work: true };
   const healthy = await run();
   assert.equal(healthy.code, 0, healthy.stdout);
   assert.match(healthy.stdout, /^PASS herdr: reachable \(herdr-hud\)/m);

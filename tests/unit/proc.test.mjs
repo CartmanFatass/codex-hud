@@ -13,7 +13,6 @@ import {
   procStartTimeSec,
   procStat,
   readBootId,
-  readBootTimeMs,
   readBootTimeSec,
   readProcChildren,
   readProcCmdline,
@@ -67,8 +66,6 @@ test('reads stat, cmdline, environ, comm, uid, boot info and alive state for the
   const startSec = procStartTimeSec(process.pid);
   assert.ok(typeof bootSec === 'number' && bootSec > 0);
   assert.ok(typeof startSec === 'number' && startSec >= bootSec);
-  const bootMs = readBootTimeMs();
-  assert.ok(typeof bootMs === 'number' && bootMs > 0 && bootMs <= Date.now());
   assert.ok(listProcPids().includes(process.pid));
 
   const marker = 'SYNTHETIC=VALUE=WITH=EQUALS';

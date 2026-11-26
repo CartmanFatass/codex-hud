@@ -15,7 +15,6 @@ export interface ProcStat {
 export interface ProcChildren {
   pids: number[];
   truncated: boolean;
-  budgetRemaining: number;
 }
 
 export const isValidPid = (pid: unknown): pid is number =>
@@ -162,16 +161,6 @@ export function procStartTimeSec(pid: number): number | null {
   return boot === null ? null : boot + Number(stat.start) / LINUX_USER_HZ;
 }
 
-/** Approximate kernel boot timestamp in ms from `/proc/uptime`; null if unavailable. */
-export function readBootTimeMs(nowMs = +new Date()): number | null {
-  try {
-    const uptime = parseFloat(fs.readFileSync('/proc/uptime', 'utf8'));
-    return Number.isFinite(uptime) ? nowMs - uptime * 1000 : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Numeric PIDs currently listed under `/proc`. Throws if `/proc` cannot be read. */
 export function listProcPids(): number[] {
   const pids: number[] = [];
@@ -183,31 +172,20 @@ export function listProcPids(): number[] {
 
 /**
  * Direct child PIDs across `/proc/<pid>/task/<tid>/children` (bounded per thread, deduplicated).
- * Returns `null` when `/proc/<pid>/task` is gone (ENOENT/ESRCH).
- * With `strict`, rethrows other errors opening `/proc/<pid>/task`; otherwise returns `null`.
+ * Returns `null` when `/proc/<pid>/task` cannot be opened.
  */
-export function readProcChildren(
-  pid: number,
-  options: { maxBytesPerTask?: number; budget?: number; strict?: boolean } = {}
-): ProcChildren | null {
+export function readProcChildren(pid: number): ProcChildren | null {
   if (!Number.isInteger(pid) || pid <= 0) return null;
   const tasks = `/proc/${pid}/task`;
   let dir: fs.Dir;
   try { dir = fs.opendirSync(tasks); }
-  catch (error) {
-    if (isMissingProc(error)) return null;
-    if (options.strict) throw error;
-    return null;
-  }
-  const maxBytes = options.maxBytesPerTask ?? 4096;
-  const buffer = Buffer.alloc(maxBytes);
-  let budget = options.budget ?? Infinity;
+  catch { return null; }
+  const buffer = Buffer.alloc(4096);
   let truncated = false;
   const seen = new Set<number>();
   const pids: number[] = [];
   try {
     for (let thread; (thread = dir.readSync()) !== null;) {
-      if (--budget < 0) { truncated = true; break; }
       let size: number;
       try {
         const fd = fs.openSync(`${tasks}/${thread.name}/children`, 'r');
@@ -218,7 +196,7 @@ export function readProcChildren(
         truncated = true;
         break;
       }
-      // Skip a possibly truncated final PID; incomplete coverage cannot justify closing.
+      // Skip a possibly truncated final PID.
       const ids = buffer.toString('utf8', 0, size).trimStart().split(/\s+/);
       if (size === buffer.length) {
         ids.pop();
@@ -234,5 +212,5 @@ export function readProcChildren(
       if (truncated) break;
     }
   } finally { dir.closeSync(); }
-  return { pids, truncated, budgetRemaining: budget };
+  return { pids, truncated };
 }

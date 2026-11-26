@@ -23,7 +23,6 @@ export interface QuietDecisionInput {
   role: string;
   agent: string;
   jobState: string;
-  backgroundChildAlive: boolean;
   minutesQuiet: number;
   paneText: string;
   reportPromptSent: boolean;
@@ -116,7 +115,6 @@ export async function decideQuietJob(
         elements: [],
         facts: {
           job_state: input.jobState,
-          background_child_alive: input.backgroundChildAlive,
           minutes_quiet: input.minutesQuiet,
           role: input.role,
           agent: input.agent,

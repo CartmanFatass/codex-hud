@@ -43,9 +43,8 @@ test('CLI state trust defaults, owner overrides, roster facts and dispatch snaps
   assert.equal(defaults.agy.model, 'synthetic/override');
   let roster = (await f.call('hud_roster', { detail: true })).roles;
   for (const agent of ['agy', 'claude', 'codex', 'grok']) {
-    const expected = agent === 'agy' ? 'advisory' : 'turn';
-    assert.equal(defaults[agent].state_trust, expected);
-    assert.equal(roster.find((r) => r.role === `${agent}-check`).state_trust, expected);
+    assert.equal(defaults[agent].state_trust, 'turn');
+    assert.equal(roster.find((r) => r.role === `${agent}-check`).state_trust, 'turn');
   }
   fs.writeFileSync(config, JSON.stringify({ agy: { model: 'synthetic/override', state_trust: 'turn' }, grok: { state_trust: 'advisory' } }));
   roster = (await f.call('hud_roster', { detail: true })).roles;
@@ -607,7 +606,6 @@ test('cli kind table holds launch facts and the registry accepts only a valid cl
   assert.deepEqual(cliKinds.grok.bypass, ['--permission-mode', 'bypassPermissions']);
   assert.equal(cliKinds.grok.trust.decline[0], 'n');
   assert.equal(cliKinds.grok.startTimeoutMs, null);
-  assert.equal(cliKinds.agy.startupQuirk, 'done-before-prompt');
   assert.equal(cliKinds.agy.trust.text, 'Do you trust the contents of this project?');
   assert.deepEqual([...cliKinds.agy.trust.decline], ['down', 'enter']);
   assert.deepEqual(cliKinds.agy.model('gemini-4-hydrogen-high'), ['--model', 'gemini-4-hydrogen-high']);

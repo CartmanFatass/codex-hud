@@ -129,11 +129,8 @@ async function typeMainNotice(pane: string | null, text: string, env: NodeJS.Pro
 
 export function notifyAgy(pane: string, messages: string[], home: string, env: NodeJS.ProcessEnv, info: Pane | null, { signal }: Options = {}) {
   return pushAgyEvents(pane, home, messages, env, writePrivateFile, agyIdle(info) ? async (text) => {
-    // Another prompt may have started while this batch waited for the mailbox.
-    if (!agyIdle(await paneInfo(pane, env, { signal })) || signal?.aborted) {
-      return { status: 0, retry: true, detail: 'pending for Antigravity delivery' };
-    }
-
+    if (signal?.aborted) return { status: 0, retry: true, detail: 'pending for Antigravity delivery' };
+    // The fork's guarded prompt rechecks readiness when it writes input.
     const sent = await typeMainNotice(pane, text, env, signal);
     return sent.retryPrompt ? { status: 0, retry: true, guardPending: true, detail: 'pending for Antigravity delivery' } : sent;
   } : null);

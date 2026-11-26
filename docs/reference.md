@@ -98,7 +98,7 @@ Panel selection accepts `--root <namespace/session-id>` or `--harness claude|pi|
 Without explicit selection, `HERDR_PANE_ID` permits a one-second `herdr pane current` lookup for the caller's Claude transcript or Codex session (`CODEX_THREAD_ID` fallback inside a herdr pane); no focused-pane guess or statusline-written binding is used.
 Unavailable evidence leaves the jobs view unbound to a native session.
 
-`hud doctor` checks Node, the local herdr fork (`herdr-hud`, confirmed by the running server's ping version), the pi commands on PATH, installed dependency versions, client HUD bindings (resolved checkout and Node), registered project trust, the dist build stamp and live MCP/watcher generations, leases, and managed worktrees without owning job receipts.
+`hud doctor` checks Node, the local herdr fork (`herdr-hud`, confirmed by the running server's ping version and `agy_background_work` capability), the pi commands on PATH, installed dependency versions, client HUD bindings (resolved checkout and Node), registered project trust, the dist build stamp and live MCP/watcher generations, leases, and managed worktrees without owning job receipts.
 It only checks the mode of `credentials.env` (0600 if present); it never opens the file.
 Each failed check has one fix hint and any failure makes the exit status non-zero.
 A service that starts on demand need not be running, but an older live process that does not report its generation cannot be verified.
@@ -466,7 +466,7 @@ The HUD passes only the model flag, the effort flag, that CLI's permission-bypas
 A native resume adds the recorded session identifier; launches keep the configured CLI home.
 HUD never trusts a directory while dispatching: a trust dialog is declined and the launch fails, naming `hud trust <cwd>`.
 Sessions stay in each CLI's own store.
-Managed CLI and Pi tabs require the HUD herdr fork (`herdr-hud`); the running server's ping version must contain `-hud`. Dispatch refuses stock herdr rather than falling back to a shell launch. The fork starts the worker directly with HUD's environment, without sourcing shell startup files. This requirement does not change headless launches, browser shells, or the shell in a split Pi helper pane. Close any old shell-launched CLI or Pi worker manually; HUD will not take ownership of it.
+Managed CLI and Pi tabs require the HUD herdr fork (`herdr-hud`): the running server's ping version must contain `-hud` and set `capabilities.agy_background_work` to `true`. Dispatch refuses stock herdr rather than falling back to a shell launch; upgrade the running fork if the capability is missing. The fork starts the worker directly with HUD's environment, without sourcing shell startup files. This requirement does not change headless launches, browser shells, or the shell in a split Pi helper pane. Close any old shell-launched CLI or Pi worker manually; HUD will not take ownership of it.
 
 After a direct start, HUD reports a short task title for the herdr sidebar (ticket title, then package or brief title, up to 28 columns). Custom sidebar rows can use `hud_role`, `hud_ticket` (when linked) and `hud_icon` (the same one-cell role glyph used in the bar and Home, in the Icons setting at dispatch). This best-effort metadata does not rename the managed agent or change main-session panes.
 
@@ -527,7 +527,7 @@ Use peek instead when you do not want to collect.
 `wait_ms` waits at most 120000 ms, stopping at settlement, a question or timeout.
 Collecting either the digest or the report body stamps `read_at` (including during work and idle grace), not acceptance.
 With a current-turn declaration, the worker process and pane close at turn end, even if the report is unread.
-A CLI that has not ended within 120 seconds of declaring is handed back to main, not cut off.
+If herdr still reports no turn end, the CLI worker closes 10 seconds after declaration as long as the report still matches its receipt. This lets close-time reaping clean up a daemon that keeps the pane working.
 An open question or open or uncollected sonic child holds closure.
 Jobs launched before this change keep their original idle grace.
 Reading a failure/block separately marks that attention as seen.
@@ -621,18 +621,18 @@ Tabbed pi history stays in `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-di
 A CLI supervisor matches root exit events by launch and terminal identity. If it misses the event, it checks the recorded PID and start time; confirmed death without an exit event is an unknown exit, not a successful close. Losing a tab address alone does not end the job.
 Each CLI dispatch and `hud_send` starts a turn (`turn.json`). If Herdr refuses the send before input, HUD keeps the worker's previous turn.
 `hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
-An undeclared report follows the quiet rule, and live in-turn children defer that rule.
+An undeclared report follows the quiet rule using herdr's turn status. Antigravity's status includes its in-turn background work; HUD does not separately scan CLI workers for background children.
 A continuation invalidates an old receipt; rewriting a declared report requires a fresh receipt for that turn.
 If a rewritten report stays quiet for the role's grace, it goes to `waiting_orchestrator` without settling or calling the Decision API.
 Terminal output does not affect the receipt.
-With a matching receipt and a confirmed turn end (or pi's native settled turn with a changed report), leftover processes do not block closure.
+With a matching CLI receipt, closure follows a confirmed turn end or the 10-second post-declaration fallback. Pi uses its native settled turn with a changed report.
 Open questions and uncollected sonic results do block it.
 The watcher reaps the worker and descendants with captured ancestry, records that unverified processes were left alone, and retries unresolved cleanup on the slow tick.
 Herdr's status alone never fails a live worker.
 A turn quiet past the idle grace without a report gets one Decision API choice among fixed actions (keep waiting, one fixed prompt to write the report, `failed` only with a quota line on screen, or hand to the main session); below 0.8 confidence or on any error it goes to the main session.
 Anything unclear is `waiting_orchestrator` with a reason.
 CLI `state_trust` has two levels: `advisory` keeps those timings, while `turn`, after herdr has been seen `working` in the current turn and is now `done` or `idle`, settles a stable new report in 2 s or reaches the no-report quiet decision after 10 s (the post-decision wait is unchanged).
-Defaults are `turn` for `claude`, `codex` and `grok`, and `advisory` for `agy`; set, for example, `{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.
+The default is `turn` for `agy`, `claude`, `codex` and `grok`; set, for example, `{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.
 `hud_roster({detail:true})` shows the effective level, dispatch freezes it in `job.json`, and old jobs without it use `advisory`.
 The supervisor wakes on herdr pushes, file changes and its own deadlines, plus a 30 s tick that re-reads the status once; it writes STATUS only when the row changes.
 The on-demand watcher starts on `hud_create`, `hud_read`, `hud_send`, `hud_respond` or `hud_land` if needed.
@@ -1267,7 +1267,7 @@ The hourly counter reads `display/model-cache/decision-api/calls.json` across pr
 
 | Decision | Input |
 |---|---|
-| Quiet-job choice | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet, background-child flag and whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
+| Quiet-job choice | Last 60 pane lines (≤12,000 chars) of a CLI worker, job state, role, agent, minutes quiet and whether the report prompt was sent; at most once per idle grace without a report, ≤3 per supervisor run |
 | Sonic auto-thinking | First 4000 characters of the task as data, plus the Sonic role scope and thinking purposes. No standing brief, referenced context or reports |
 | Imp auto routing | First 4000 characters of the dispatch brief, up to 4 KiB/4000 characters of the named local ticket, and up to 32 context-file relative names (512 characters each) and byte sizes; configured tier and mode purposes. No context bodies, standing brief, prior reports or preset/model IDs |
 | Role pool pick | First 4000 characters of the dispatch brief as untrusted data; role and project name (checkout basename, not its path); up to 64 pool filenames, titles, `Kind`, `Status` and `Fits` fields (≤400 bytes read per entry); and the first 8 KiB of `README.md` as selection criteria. Facts are capped at 48 KiB together. No pool directory path, entry bodies, project design file or other references |
