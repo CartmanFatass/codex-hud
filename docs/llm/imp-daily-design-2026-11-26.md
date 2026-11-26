@@ -48,8 +48,9 @@ repairs stay unknown).
 1. **Daily small multiples**: shared date axis, daily `n` strip, the five lanes above for up to three cohorts (the
    active even pair plus the selected row), `P/M/H` marks cutting through every lane with a one-line key. Answers "is
    model X getting worse?", "what changed when the served model changed?" and "cost per landed slice per day".
-2. **Matched even days**: only days where both even-pool presets ran at least 5 round-robin jobs; per-day values on
-   7d, matched-day delta and win ticks on 30d. Answers "neon vs sol on the same days" without mixing in solo or
-   override days.
+2. **Model vs model** (owner 2026-11-26: no strict comparison restriction, so a new model can be compared with an
+   old one): pick any cohorts, including retired presets or models, each measured over its own active days with n,
+   known counts, date span and intervals per side. Days both ran on `even` are shown only as context, never as a
+   filter.
 
 Both keep the Value frontier visible at 120x40 and 200x55 when the drill-down is closed.
