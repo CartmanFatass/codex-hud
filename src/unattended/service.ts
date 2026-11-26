@@ -101,7 +101,7 @@ async function scan(home: string, control: UnattendedControl, state: ScanState, 
   const active = runs.filter(isOpenTicketRun);
   const open = runs.filter(q => isOpenTicketRun(q) || hasOpenHold(q));
   const openIds = new Set(open.map(q => q.flow));
-  const recent = runs.filter(q => !openIds.has(q.flow) && q.state === 'completed').slice(-16);
+  const recent = runs.filter(q => !openIds.has(q.flow) && (q.state === 'completed' || q.state === 'cancelled')).slice(-16);
   const keep = Math.max(0, Math.min(recent.length, MAX_OPEN_ITEMS - open.length - 1));
   let ids = [...recent.slice(recent.length - keep), ...open].map(q => q.flow);
 

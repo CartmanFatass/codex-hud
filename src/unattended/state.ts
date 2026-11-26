@@ -75,7 +75,7 @@ export function openHoldsInRun(q: TicketQueue): UnattendedHandback[] {
       ...(item.held.owner_approval && { owner_approval: item.held.owner_approval }),
     });
   }
-  if (q.state === 'paused' && q.held) {
+  if ((q.state === 'paused' || q.state === 'cancelled') && q.held) {
     holds.push({
       flow: q.flow, root: q.root, objective: q.unattended.objective,
       reason: q.held.reason, at: q.held.at,
@@ -132,7 +132,7 @@ export function pinnedHeldJobs(home: string): Set<string> {
       for (const item of q.tickets ?? []) {
         if (!item.job) continue;
         if (item.held && !itemClosed(item.path)) pinned.add(item.job);
-        else if (q.state === 'paused' && q.held && !item.landed && !itemClosed(item.path)) pinned.add(item.job);
+        else if ((q.state === 'paused' || q.state === 'cancelled') && q.held && !item.landed && !itemClosed(item.path)) pinned.add(item.job);
       }
     }
   } catch { /* Unreadable index gives no extra pins. */ }

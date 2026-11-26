@@ -31,9 +31,10 @@ import {
   type TicketHandbackKind, type TicketQueue, type TicketQueueItem,
 } from './ticket-queue-state.js';
 import {
-  appendTodos, applyLeadQuestionAnswer, buildAcceptPacket, buildQuestionPacket, buildRemovalAmbiguityPacket,
-  buildReviewBrief, closeLeadJob, extractAssumedLines, extractRemovalsDeclaration, hasReportBlockers, MAX_ANSWER_RETRIES,
-  MAX_REPAIR_ROUNDS, parseLeadReport, recordDecision, WORKFLOW_WORKER_RULE, WORKFLOW_WORKER_RULE_NO_ASK,
+  appendTodos, applyLeadQuestionAnswer, assumptionOwnerApproval, buildAcceptPacket, buildAssumptionPacket,
+  buildQuestionPacket, buildRemovalAmbiguityPacket, buildReviewBrief, closeLeadJob, extractAssumedLines,
+  extractRemovalsDeclaration, hasReportBlockers, MAX_ANSWER_RETRIES, MAX_REPAIR_ROUNDS, parseLeadReport,
+  recordDecision, WORKFLOW_WORKER_RULE, WORKFLOW_WORKER_RULE_NO_ASK,
 } from './workflow-lead.js';
 
 const cleanStates = ['idle_grace', 'done', 'closed'];
@@ -60,11 +61,11 @@ function declaredReport(dir: string, job: Job, status: JobStatus) {
 }
 
 type SettlementVerdict =
-  | { ok: true; assumed: string[]; sig: string; reportText: string }
+  | { ok: true; assumed: string[]; scopeAssumptions: string[]; sig: string; reportText: string }
   | { waitMs: number }
   | { kind: TicketHandbackKind; reason: string; assumed?: string[] };
 
-function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus): SettlementVerdict {
+function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus, deferAssumptions = false): SettlementVerdict {
   const dir = directory(job.job);
   const sig = declaredReport(dir, job, status);
   if (!sig) return { kind: 'worker', reason: 'settled without a declared report for this turn' };
@@ -74,9 +75,9 @@ function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus): Se
   const { lines: assumed, scopeAssumptions } = extractAssumedLines(text);
   if (hasReportBlockers(text))
     return { kind: 'blocker', reason: 'report has a Blockers: line', assumed };
-  if (scopeAssumptions.length)
+  if (!deferAssumptions && scopeAssumptions.length)
     return { kind: 'assumption', reason: `scope assumption in report: ${scopeAssumptions[0]}`, assumed };
-  if (assumed.length > 3)
+  if (!deferAssumptions && assumed.length > 3)
     return { kind: 'assumption', reason: `report has ${assumed.length} Assumed: lines (limit 3)`, assumed };
   if (readReportMeta(dir, sig)?.skip_checks_reason) return { kind: 'check', reason: 'worker checks were skipped', assumed };
   if (/(?:^|·)[ \t]*\*\*Main review:\*\*[ \t]*yes\b/im.test(ticketHeader(item.path)))
@@ -93,12 +94,13 @@ function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus): Se
     }
     if (receipt.results.length !== job.checks.length) return { kind: 'check', reason: 'HUD check results incomplete', assumed };
   }
-  return { ok: true, assumed, sig, reportText: text };
+  return { ok: true, assumed, scopeAssumptions, sig, reportText: text };
 }
 
 type GateResult =
   | { kind: 'pass'; head: string; sig: string }
   | { kind: 'ambiguous'; head: string; sig: string; detail: string }
+  | { kind: 'assumption'; head: string; sig: string; trigger: string; assumed: string[] }
   | { kind: 'hold'; reason: string; ownerApproval?: OwnerApproval }
   | { kind: 'fail'; problemKind: TicketHandbackKind; reason: string };
 
@@ -106,8 +108,17 @@ type GateResult =
  *  1. Verified source commit HEAD.
  *  2. Deterministic docs/spec.md diff check against base branch (in addition to publication-time check).
  *  3. Explicit Removes: declaration in the settled report compared with ticket Approved removals:.
- *     Missing line = hold (never none). Only declared ambiguity goes to a temporary lead. */
-function checkUnattendedGates(q: TicketQueue, item: TicketQueueItem, job: Job, sig: string, reportText: string): GateResult {
+ *     Missing line = hold (never none). Declared ambiguity goes to a temporary lead.
+ *  4. Scope-tagged or >3 Assumed: lines go to a temporary one-decision lead under the unattended rule. */
+function checkUnattendedGates(
+  q: TicketQueue,
+  item: TicketQueueItem,
+  job: Job,
+  sig: string,
+  reportText: string,
+  assumed: string[],
+  scopeAssumptions: string[],
+): GateResult {
   const headRes = job.worktree && spawnSync('git', [...SAFE_GIT_ARGS, 'rev-parse', '--verify', 'HEAD'], {
     cwd: job.worktree.root, env: safeGitEnv(process.env), encoding: 'utf8', timeout: 5000,
   });
@@ -131,19 +142,24 @@ function checkUnattendedGates(q: TicketQueue, item: TicketQueueItem, job: Job, s
   if (decl.kind === 'missing') {
     return { kind: 'hold', ownerApproval: 'feature-deletion', reason: 'Worker report is missing required Removes: declaration' };
   }
-  if (decl.kind === 'none') {
-    return { kind: 'pass', head, sig };
-  }
   if (decl.kind === 'ambiguous') {
-    if (item.approved_head === head && item.approved_report_sig === sig) {
-      return { kind: 'pass', head, sig };
+    if (item.approved_head !== head || item.approved_report_sig !== sig) {
+      return { kind: 'ambiguous', head, sig, detail: decl.detail };
     }
-    return { kind: 'ambiguous', head, sig, detail: decl.detail };
+  } else if (decl.kind === 'named') {
+    const approved = new Set(ticketApprovedRemovals(item.path));
+    const unapproved = decl.items.filter(entry => !approved.has(entry));
+    if (unapproved.length) {
+      return { kind: 'hold', ownerApproval: 'feature-deletion', reason: `Unapproved removal declared: ${unapproved.join(', ')}` };
+    }
   }
-  const approved = new Set(ticketApprovedRemovals(item.path));
-  const unapproved = decl.items.filter(entry => !approved.has(entry));
-  if (unapproved.length) {
-    return { kind: 'hold', ownerApproval: 'feature-deletion', reason: `Unapproved removal declared: ${unapproved.join(', ')}` };
+  const assumptionTrigger = scopeAssumptions.length
+    ? `scope assumption in report: ${scopeAssumptions[0]}`
+    : assumed.length > 3
+      ? `report has ${assumed.length} Assumed: lines (limit 3)`
+      : undefined;
+  if (assumptionTrigger && (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig)) {
+    return { kind: 'assumption', head, sig, trigger: assumptionTrigger, assumed };
   }
   return { kind: 'pass', head, sig };
 }
@@ -740,6 +756,174 @@ function dispatchAmbiguityLead(
   } };
 }
 
+function tickAssumptionLead(q: TicketQueue, state: { problem?: TicketProblem }): Tick | null {
+  const active = q.active_lead;
+  if (!active || active.kind !== 'assumption') return null;
+  const leadJob = findJob(active.job);
+  const flowId = q.flow;
+  if (!leadJob) {
+    delete q.active_lead;
+    const entry = q.tickets.find(t => t.ticket === active.ticket);
+    if (entry) failItem(entry, `assumption lead (${active.job}) receipt missing`, 'worker');
+    return { state: 'running', changed: true };
+  }
+  const { row, status } = readRow(leadJob, false, null);
+  const failed = failedAttempt(row) || row.state === 'stopped' || fs.existsSync(join(directory(leadJob.job), jobFiles.stopRequested));
+  if (failed) {
+    const why = row.reason ?? row.display_state;
+    const trustFailed = trustDispatchFailed(leadJob, status);
+    return { state: 'running', changed: false, effect: async () => {
+      const closeRes = await closeLeadJob(leadJob);
+      await runLock(hudHome, flowId, () => {
+        const cur = readTicketQueue(hudHome, flowId);
+        if (!cur || cur.state !== 'working') return;
+        if (!closeRes.ok) recordUnclosedLead(cur, leadJob.job, closeRes.reason ?? 'close refused');
+        delete cur.active_lead;
+        const msg = `assumption lead failed (${why})${closeRes.ok ? '' : `; lead close refused: ${closeRes.reason}`}`;
+        if (!closeRes.ok) {
+          holdRun(cur, msg, 'escalate');
+          state.problem = { kind: 'escalate', step: active.step, ticket: active.ticket, job: leadJob.job, reason: msg };
+        } else {
+          const entry = cur.tickets.find(t => t.ticket === active.ticket);
+          if (entry) {
+            if (trustFailed) holdItem(entry, msg, 'dispatch');
+            else failItem(entry, msg, 'worker');
+          }
+        }
+        writeTicketQueue(hudHome, cur);
+      });
+      return 0;
+    } };
+  }
+  if (!status && leadJob.dispatch_exit_code === null) {
+    const left = launchRecheckMs(leadJob);
+    if (left > 0) return { state: 'running', changed: false, recheckMs: left };
+    return { state: 'running', changed: false, effect: async () => {
+      const closeRes = await closeLeadJob(leadJob);
+      await runLock(hudHome, flowId, () => {
+        const cur = readTicketQueue(hudHome, flowId);
+        if (!cur || cur.state !== 'working') return;
+        if (!closeRes.ok) recordUnclosedLead(cur, leadJob.job, closeRes.reason ?? 'close refused');
+        delete cur.active_lead;
+        const msg = `assumption lead launch interrupted${closeRes.ok ? '' : `; lead close refused: ${closeRes.reason}`}`;
+        if (!closeRes.ok) {
+          holdRun(cur, msg, 'escalate');
+          state.problem = { kind: 'escalate', step: active.step, ticket: active.ticket, job: leadJob.job, reason: msg };
+        } else {
+          const entry = cur.tickets.find(t => t.ticket === active.ticket);
+          if (entry) failItem(entry, msg, 'worker');
+        }
+        writeTicketQueue(hudHome, cur);
+      });
+      return 0;
+    } };
+  }
+  if (status && cleanStates.includes(status.state)) {
+    const dir = directory(leadJob.job);
+    const sig = declaredReport(dir, leadJob, status);
+    const reportText = sig ? readFileBounded(join(dir, jobFiles.report), 512 * 1024).bytes.toString('utf8') : '';
+    const parsed = sig ? parseLeadReport(reportText, ['continue', 'hold', 'repair', 'escalate']) : { todos: [] };
+    return { state: 'running', changed: false, effect: async () => {
+      const closeRes = await closeLeadJob(leadJob);
+      await runLock(hudHome, flowId, () => {
+        const cur = readTicketQueue(hudHome, flowId);
+        if (!cur || cur.state !== 'working') return;
+        if (!closeRes.ok) recordUnclosedLead(cur, leadJob.job, closeRes.reason ?? 'close refused');
+        appendTodos(cur, parsed.todos.map(text => ({ source: `lead (${leadJob.job})`, kind: 'lead' as const, text })));
+        recordDecision(cur, {
+          step: active.step, kind: 'assumption', job: leadJob.job,
+          decision: parsed.decision ?? 'invalid',
+          ...(parsed.reason && { reason: parsed.reason }),
+          ...(!closeRes.ok && { close_error: closeRes.reason ?? 'close refused' }),
+          at: new Date().toISOString(),
+          ...(active.ticket && { ticket: active.ticket }),
+        });
+        delete cur.active_lead;
+        if (!closeRes.ok) {
+          const msg = `lead (${leadJob.job}) close refused: ${closeRes.reason}`;
+          holdRun(cur, msg, 'escalate');
+          state.problem = { kind: 'escalate', step: active.step, ticket: active.ticket, job: leadJob.job, reason: msg };
+          writeTicketQueue(hudHome, cur);
+          return;
+        }
+        const entry = cur.tickets.find(t => t.ticket === active.ticket && t.job === active.worker_job);
+        if (entry) {
+          if (parsed.decision === 'continue' && active.head && active.report_sig) {
+            entry.approved_assumptions_head = active.head;
+            entry.approved_assumptions_sig = active.report_sig;
+          } else if (parsed.decision === 'hold' || parsed.decision === 'escalate') {
+            const approval = assumptionOwnerApproval(parsed);
+            if (approval && parsed.reason) {
+              holdItem(entry, parsed.reason, 'assumption', approval);
+            } else {
+              failItem(entry, parsed.reason ?? 'Assumption lead requested repair', 'worker');
+            }
+          } else if (parsed.decision === 'repair') {
+            failItem(entry, parsed.reason ?? 'Assumption lead requested repair', 'worker');
+          } else {
+            failItem(entry, `assumption lead (${leadJob.job}) did not declare a valid decision (continue|hold|repair)`, 'worker');
+          }
+        }
+        writeTicketQueue(hudHome, cur);
+      });
+      return 0;
+    } };
+  }
+  return { state: 'running', changed: false };
+}
+
+function dispatchAssumptionLead(
+  q: TicketQueue,
+  opts: { item: TicketQueueItem; job: Job; head: string; sig: string; trigger: string; assumed: string[] },
+): Tick {
+  const { item, job, head, sig, trigger, assumed } = opts;
+  const round = q.repair_rounds ?? 0;
+  const reqKey = `ticket-queue:${q.flow}:assumption:${job.job}:${head}:${sig}`;
+  const existing = jobs().find(j => j.request_key === reqKey);
+  if (existing) {
+    if (q.decisions?.some(d => d.job === existing.job)) {
+      failItem(item, `assumption lead (${existing.job}) already settled without approving commit`, 'worker');
+      return { state: 'running', changed: true };
+    }
+    q.active_lead = { job: existing.job, kind: 'assumption', step: 'tickets', round, ticket: item.ticket, worker_job: job.job, head, report_sig: sig };
+    return { state: 'running', changed: true };
+  }
+  const flowId = q.flow, root = q.root, pane = livePane(q), workspace = q.workspace, dispatcher = q.dispatcher;
+  const packet = buildAssumptionPacket(q, item, job, head, { trigger, assumed });
+  return { state: 'running', changed: true, effect: async () => {
+    const canAdmit = () => {
+      const cur = readTicketQueue(hudHome, flowId);
+      return cur?.state === 'working' && !stopRequested(hudHome, flowId);
+    };
+    let leadId: string | undefined, err: string | undefined;
+    try {
+      const result = await dispatchJob({
+        role: 'lead', cwd: root, isolation: 'none', task: packet, request_key: reqKey,
+      }, pane, { queue: { id: flowId, canAdmit }, dispatcher, workspace });
+      if ('job' in result && typeof result.job === 'string') leadId = result.job;
+      if (!leadId || ('ok' in result && result.ok === false)) {
+        const code = 'code' in result ? result.code : undefined;
+        if (code !== 'queue_stopped') {
+          const why = ('reason' in result && result.reason) || ('error' in result && result.error) || code || 'no lead worker';
+          err = `assumption lead dispatch failed (${errorLine(String(why))})`;
+        }
+      }
+    } catch (error) { err = `assumption lead dispatch failed (${errorLine(error)})`; }
+    await runLock(hudHome, flowId, () => {
+      const cur = readTicketQueue(hudHome, flowId);
+      if (!cur || cur.state !== 'working') return;
+      if (leadId) {
+        cur.active_lead = { job: leadId, kind: 'assumption', step: 'tickets', round, ticket: item.ticket, worker_job: job.job, head, report_sig: sig };
+        writeTicketQueue(hudHome, cur);
+      } else if (err && !stopRequested(hudHome, flowId)) {
+        const entry = cur.tickets.find(t => t.ticket === item.ticket);
+        if (entry) { failItem(entry, err, 'worker'); writeTicketQueue(hudHome, cur); }
+      }
+    });
+    return 0;
+  } };
+}
+
 function tickTicketQueue(
   q: TicketQueue,
   step: Extract<Step, { kind: 'batch' }>,
@@ -758,13 +942,17 @@ function tickTicketQueue(
   if (activeQuestionTick) return activeQuestionTick;
   const activeAmbiguityTick = tickAmbiguityLead(q, state);
   if (activeAmbiguityTick) return activeAmbiguityTick;
+  const activeAssumptionTick = tickAssumptionLead(q, state);
+  if (activeAssumptionTick) return activeAssumptionTick;
 
   const landEach = !step.each || step.each.includes('land');
+  const deferAssumptions = Boolean(q.unattended) && q.handback_to !== 'main';
   let problem: TicketProblem | undefined, changed = false, recheck: number | undefined;
   const note = (p: TicketProblem) => { problem ??= p; };
   const clean: { item: TicketQueueItem; job: Job; state: JobStatus['state']; retry?: string }[] = [];
   let pendingQuestion: { item: TicketQueueItem; job: Job; question: string } | undefined;
   let pendingAmbiguity: { item: TicketQueueItem; job: Job; head: string; sig: string; detail: string } | undefined;
+  let pendingAssumption: { item: TicketQueueItem; job: Job; head: string; sig: string; trigger: string; assumed: string[] } | undefined;
 
   for (const item of q.tickets) {
     if (!item.job || item.landed || item.held || item.failed) continue;
@@ -828,7 +1016,7 @@ function tickTicketQueue(
       if (left > 0) recheck = Math.min(recheck ?? left, left);
       else flag('dispatch', 'dispatch interrupted before worker status was recorded');
     } else if (status && cleanStates.includes(status.state)) {
-      const verdict = judgeSettlement(item, job, status);
+      const verdict = judgeSettlement(item, job, status, deferAssumptions);
       if ('assumed' in verdict && verdict.assumed?.length) {
         if (appendTodos(q, verdict.assumed.map(text => ({ source: `${item.ticket} (${job.job})`, kind: 'assumed' as const, text })))) {
           changed = true;
@@ -838,7 +1026,7 @@ function tickTicketQueue(
         if (!landEach) {
           item.landed = true; changed = true;
         } else if (q.unattended) {
-          const gate = checkUnattendedGates(q, item, job, verdict.sig, verdict.reportText);
+          const gate = checkUnattendedGates(q, item, job, verdict.sig, verdict.reportText, verdict.assumed, verdict.scopeAssumptions);
           if (gate.kind === 'pass') {
             if (item.approved_head !== gate.head || item.approved_report_sig !== gate.sig) {
               item.approved_head = gate.head;
@@ -848,6 +1036,8 @@ function tickTicketQueue(
             clean.push({ item, job, state: status.state, retry });
           } else if (gate.kind === 'ambiguous') {
             pendingAmbiguity ??= { item, job, head: gate.head, sig: gate.sig, detail: gate.detail };
+          } else if (gate.kind === 'assumption') {
+            pendingAssumption ??= { item, job, head: gate.head, sig: gate.sig, trigger: gate.trigger, assumed: gate.assumed };
           } else if (gate.kind === 'hold') {
             holdItem(item, gate.reason, 'escalate', gate.ownerApproval);
             changed = true;
@@ -876,6 +1066,9 @@ function tickTicketQueue(
   }
   if (pendingAmbiguity) {
     return dispatchAmbiguityLead(q, pendingAmbiguity);
+  }
+  if (pendingAssumption) {
+    return dispatchAssumptionLead(q, pendingAssumption);
   }
   if (clean.length) {
     const flowId = q.flow, pane = livePane(q) ?? null;

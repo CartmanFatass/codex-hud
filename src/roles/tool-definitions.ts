@@ -220,6 +220,7 @@ export const ROLE_TOOLS = [
       op: { ...text, enum: ['guide', 'ready', 'run', 'add', 'update', 'sync'], default: 'guide' },
       cwd: text,
       feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Run/add/update: slug.' },
+      run: { ...text, pattern: '^q[0-9a-f]{16}$', description: 'Run: cancel a specific run id (working/paused, incl. unattended).' },
       max_parallel: { type: 'integer', minimum: 1, description: 'Run: max in-flight; default imp cap.' },
       cancel: { type: 'boolean', description: 'Run: cancel; keeps jobs/lands.' },
       escalation_rule: text,

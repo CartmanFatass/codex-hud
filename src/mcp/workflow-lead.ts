@@ -106,8 +106,21 @@ export function parseLeadReport(reportText: string, allowedChoices: readonly str
   }
 
   const approval = /^[ \t]*(?:[-*] )?(?:\*\*)?Owner approval:(?:\*\*)?[ \t]*(feature-deletion|spec-change)[ \t]*\r?$/im.exec(reportText)?.[1];
-  const ownerApproval = decision === 'escalate' && reason ? approval?.toLowerCase() as OwnerApproval | undefined : undefined;
+  const ownerApproval = (decision === 'escalate' || decision === 'hold') && reason
+    ? approval?.toLowerCase() as OwnerApproval | undefined : undefined;
   return { decision, reason, answer, ...(ownerApproval && { ownerApproval }), todos: extractTodoLines(reportText) };
+}
+
+const negatedPolicyTerm = /\b(?:no|not|without)\s+(?:a\s+|an\s+|any\s+|user-visible\s+|visible\s+|feature\s+|unapproved\s+)*(?:delet(?:e[ds]?|ing|ion)|remov(?:e[ds]?|ing|al)|spec(?:ification)?(?:\s+change)?|docs\/spec\.md)\b/gi;
+
+/** Under the unattended escalation rule, only a visible deletion or spec-change verdict becomes an owner hold. */
+export function assumptionOwnerApproval(parsed: ParsedLeadReport): OwnerApproval | undefined {
+  if (parsed.ownerApproval) return parsed.ownerApproval;
+  if (!parsed.reason) return undefined;
+  const text = parsed.reason.replace(negatedPolicyTerm, ' ');
+  if (/\b(?:docs\/spec\.md|spec(?:ification)?)\b/i.test(text)) return 'spec-change';
+  if (/\b(?:delet(?:e[ds]?|ing|ion)|remov(?:e[ds]?|ing|al))\b/i.test(text)) return 'feature-deletion';
+  return undefined;
 }
 
 export function appendTodos(q: TicketQueue, items: readonly RunTodoItem[]): boolean {
@@ -298,6 +311,33 @@ export function buildRemovalAmbiguityPacket(
     'Inspect the ticket, report and committed changes to resolve the declared removal ambiguity. Do not edit the worktree or docs/spec.md.',
     'Use hud_report: `Decision: finish` to authorize this exact commit if no unapproved user-visible feature is removed, `Decision: repair` if it needs further work, or `Decision: escalate` if owner approval is required. Include a one-line `Reason:`.',
     approvalFormat,
+  ].join('\n') + '\n';
+}
+
+export function buildAssumptionPacket(
+  q: TicketQueue,
+  item: TicketQueue['tickets'][number],
+  job: Job,
+  head: string,
+  opts: { trigger: string; assumed: readonly string[] },
+): string {
+  const info = ticketSummaryLines(item.path);
+  return [
+    `# Unattended Assumption Check (${q.flow})`,
+    `Ticket: ${item.ticket} | Objective: ${q.unattended!.objective}`,
+    `Ticket file: ${item.path}`,
+    ...(info.goal ? [`Ticket goal: ${info.goal.slice(0, 4000)}`] : []),
+    `Trigger: ${opts.trigger}`,
+    'Worker Assumed: lines:',
+    ...opts.assumed.map(line => `- ${line}`),
+    `Worker report: ${join(directory(job.job), jobFiles.report)}`,
+    `Inspect the committed changes at ${head} in the worker checkout: ${job.cwd}`,
+    `Escalation rule: ${q.escalation_rule}`,
+    'Inspect the ticket, report and committed changes to judge the worker assumptions under the escalation rule. Do not edit the worktree or docs/spec.md.',
+    'Use hud_report with one decision and a one-line `Reason:`:',
+    '- `Decision: continue` if the commit fits the current spec with no unapproved user-visible feature deletion (the item will land);',
+    '- `Decision: hold` with `Reason:` naming the visible deletion or docs/spec.md change and `Owner approval: feature-deletion` or `Owner approval: spec-change` ONLY if owner approval is required for a visible deletion or spec change;',
+    '- `Decision: repair` if the commit needs further work within the current spec (not an owner hold).',
   ].join('\n') + '\n';
 }
 

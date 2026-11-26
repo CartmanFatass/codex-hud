@@ -739,3 +739,194 @@ test('retention prunes expired terminal receipts and pins open held item job and
   pruneLandFlows(home, Date.now());
   assert.equal(fs.existsSync(heldReceipt), false);
 });
+
+test('unattended scope and >3 assumptions go to a temporary lead: continue lands, deletion/spec hold becomes owner hold, non-deletion hold becomes repair', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, {
+    tickets: {
+      '01-synthetic.md': goodTicket(1),
+      '02-synthetic.md': goodTicket(2, { blocked: 'none' }),
+      '03-synthetic.md': goodTicket(3, { blocked: 'none' }),
+      '04-synthetic.md': goodTicket(4, { blocked: 'none' }),
+      '05-synthetic.md': goodTicket(5, { blocked: 'none' }),
+    },
+  });
+  const u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  u.cmd('on', '--objective', 'selected');
+
+  const flow = await u.findRun('selected');
+  const w1 = await u.ticketJob(flow, 'sample/01');
+  const w2 = await u.ticketJob(flow, 'sample/02');
+
+  // 1. Scope-tagged assumption -> temporary lead -> Decision: continue -> lands cleanly!
+  await f.settle(w1, {
+    report: 'Synthetic done.\nAssumed: scope — the requested wording replaces old text without removing the feature.\nRemoves: none\n',
+  });
+  await until(() => f.flow(flow).active_lead?.kind === 'assumption' && f.flow(flow).active_lead.ticket === 'sample/01', 15_000);
+  const lead1 = f.flow(flow).active_lead.job;
+  assert.equal(f.job(lead1).role, 'lead');
+  await f.settleLead(lead1, 'Decision: continue\nReason: Wording change within current spec, no deletion.\n');
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.landed === true, 15_000);
+  assert.ok(f.job(lead1).reaped_at, 'assumption lead closed immediately after decision');
+
+  // 2. Scope-tagged assumption -> temporary lead -> Decision: hold naming deletion -> owner hold!
+  await f.settle(w2, {
+    report: 'Synthetic done.\nAssumed: scope — drop legacy greeting command.\nRemoves: none\n',
+  });
+  await until(() => f.flow(flow).active_lead?.kind === 'assumption' && f.flow(flow).active_lead.ticket === 'sample/02', 15_000);
+  const lead2 = f.flow(flow).active_lead.job;
+  await f.settleLead(lead2, 'Decision: hold\nReason: Deletes the user-visible legacy greeting command.\n');
+  await until(() => Boolean(f.flow(flow).tickets.find(x => x.ticket === 'sample/02')?.held), 15_000);
+  const item2 = f.flow(flow).tickets.find(x => x.ticket === 'sample/02');
+  assert.equal(item2.held.owner_approval, 'feature-deletion');
+  assert.equal(item2.landed, undefined);
+  assert.ok(f.job(lead2).reaped_at);
+
+  const w3 = await u.ticketJob(flow, 'sample/03');
+  const w4 = await u.ticketJob(flow, 'sample/04');
+
+  // 3. More than 3 Assumed: lines -> same temporary lead path -> Decision: continue -> lands cleanly!
+  await f.settle(w3, {
+    report: 'Synthetic done.\nAssumed: a\nAssumed: b\nAssumed: c\nAssumed: d\nRemoves: none\n',
+  });
+  await until(() => f.flow(flow).active_lead?.kind === 'assumption' && f.flow(flow).active_lead.ticket === 'sample/03', 15_000);
+  const lead3 = f.flow(flow).active_lead.job;
+  await f.settleLead(lead3, 'Decision: continue\nReason: Four routine defaults within spec.\n');
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/03')?.landed === true, 15_000);
+  assert.ok(f.job(lead3).reaped_at);
+
+  // 4. Scope-tagged assumption -> lead answers hold WITHOUT deletion/spec reason -> repair (failed item), NOT owner hold!
+  await f.settle(w4, {
+    report: 'Synthetic done.\nAssumed: scope — picked helper layout.\nRemoves: none\n',
+  });
+  await until(() => f.flow(flow).active_lead?.kind === 'assumption' && f.flow(flow).active_lead.ticket === 'sample/04', 15_000);
+  const lead4 = f.flow(flow).active_lead.job;
+  await f.settleLead(lead4, 'Decision: hold\nReason: Needs cleaner validation for empty inputs.\n');
+  await until(() => Boolean(f.flow(flow).tickets.find(x => x.ticket === 'sample/04')?.failed), 15_000);
+  const item4 = f.flow(flow).tickets.find(x => x.ticket === 'sample/04');
+  assert.equal(item4.held, undefined, 'non-deletion hold must not become an owner hold');
+  assert.match(item4.failed.reason, /Needs cleaner validation/);
+  assert.ok(f.job(lead4).reaped_at);
+
+  // 5. >3 Assumed: lines -> lead answers hold naming spec change -> spec-change owner hold!
+  const w5 = await u.ticketJob(flow, 'sample/05');
+  await f.settle(w5, {
+    report: 'Synthetic done.\nAssumed: one\nAssumed: two\nAssumed: three\nAssumed: four\nRemoves: none\n',
+  });
+  await until(() => f.flow(flow).active_lead?.kind === 'assumption' && f.flow(flow).active_lead.ticket === 'sample/05', 15_000);
+  const lead5 = f.flow(flow).active_lead.job;
+  await f.settleLead(lead5, 'Decision: hold\nReason: Requires changing docs/spec.md for the output contract.\nOwner approval: spec-change\n');
+  await until(() => Boolean(f.flow(flow).tickets.find(x => x.ticket === 'sample/05')?.held), 15_000);
+  const item5 = f.flow(flow).tickets.find(x => x.ticket === 'sample/05');
+  assert.equal(item5.held.owner_approval, 'spec-change');
+  assert.equal(item5.landed, undefined);
+  assert.ok(f.job(lead5).reaped_at);
+
+  // Milestone review and accept run over landed slices and failed ticket 04.
+  await u.accept(flow, 'Decision: finish\nReason: Landed slices verified.\n');
+  const done = await f.end(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.deepEqual(done.tickets.filter(x => x.landed).map(x => x.ticket).sort(), ['sample/01', 'sample/03']);
+  assert.deepEqual(
+    u.status().handbacks.map(h => [h.ticket, h.owner_approval]).sort((a, b) => a[0].localeCompare(b[0])),
+    [['sample/02', 'feature-deletion'], ['sample/05', 'spec-change']],
+  );
+});
+
+test('unattended cancel stops a paused or working run without signalling, keeps holds visible, and frees the Objective', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, {
+    tickets: {
+      '01-synthetic.md': goodTicket(1),
+      '02-synthetic.md': goodTicket(2, { blocked: 'none' }),
+      '03-synthetic.md': goodTicket(3, { blocked: 'none' }),
+    },
+  });
+
+  // Part 1: Cancel a paused unattended run with both an item hold and a run-level hold via `hud unattended cancel <run>`.
+  const pausedFlow = 'q00000000000000c1';
+  const pausedFlow2 = 'q00000000000000c2';
+  const heldJob = 'j00000000000000c1';
+  const at = new Date().toISOString();
+  fs.mkdirSync(join(f.home, 'flows'), { recursive: true });
+  fs.mkdirSync(f.dir(heldJob), { recursive: true });
+  writeFixtureFile(join(f.dir(heldJob), 'job.json'), JSON.stringify({
+    job: heldJob, role: 'imp', cwd: f.root, ticket: 'sample/01', ticket_queue: pausedFlow, created_at: at,
+  }));
+  writeFixtureFile(join(f.dir(heldJob), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: at }));
+  writeFixtureFile(join(f.home, 'flows', `${pausedFlow}.json`), JSON.stringify({
+    flow: pausedFlow, root: f.root, project_root: f.root, feature: 'selected', pane: '', task: false, max_parallel: 1,
+    created_at: at, updated_at: at, state: 'paused', reason: 'max repair rounds (2) reached',
+    unattended: { objective: 'selected' },
+    held: { reason: 'max repair rounds (2) reached', at, kind: 'escalate' },
+    tickets: [{
+      ticket: 'sample/01', path: join(f.root, f.ticketPath(1)), role: 'imp', job: heldJob,
+      held: { reason: 'Unapproved removal declared: legacy-banner', at, kind: 'escalate', owner_approval: 'feature-deletion' },
+    }],
+  }));
+  writeFixtureFile(join(f.home, 'flows', `${pausedFlow2}.json`), JSON.stringify({
+    flow: pausedFlow2, root: f.root, project_root: f.root, feature: 'other', pane: '', task: false, max_parallel: 1,
+    created_at: at, updated_at: at, state: 'paused', reason: 'lead escalated',
+    unattended: { objective: 'other' },
+    held: { reason: 'lead escalated', at, kind: 'escalate' },
+    tickets: [],
+  }));
+  writeFixtureFile(join(f.home, 'unattended-runs.json'), JSON.stringify([pausedFlow, pausedFlow2]));
+
+  const u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  const cancelPaused = u.cmd('cancel', pausedFlow);
+  assert.equal(cancelPaused.cancelled.flow, pausedFlow);
+  assert.equal(cancelPaused.cancelled.state, 'cancelled');
+  assert.equal(f.flow(pausedFlow).state, 'cancelled');
+  // Holds (item-level + run-level) and evidence remain visible and pinned.
+  assert.ok(cancelPaused.handbacks.some(h => h.flow === pausedFlow && h.ticket === 'sample/01' && h.owner_approval === 'feature-deletion'));
+  assert.ok(cancelPaused.handbacks.some(h => h.flow === pausedFlow && !h.ticket && /max repair rounds/.test(h.reason)));
+  assert.ok(pinnedHeldJobs(f.home).has(heldJob));
+  const logged = () => fs.existsSync(f.env.FAKE_LOG) ? f.fakeLog() : [];
+  assert.equal(logged().some(c => c.command === 'hud-reap'), false, 'cancel never reaps or signals');
+
+  // Also verify main's `hud_tickets run cancel` with the run id cancels a paused unattended run directly.
+  const mcpCancelPaused = await f.call('hud_tickets', { op: 'run', cancel: true, run: pausedFlow2, cwd: f.root });
+  assert.equal(mcpCancelPaused.flow, pausedFlow2);
+  assert.equal(mcpCancelPaused.state, 'cancelled');
+  assert.equal(mcpCancelPaused.cancel_requested, true);
+  assert.equal(f.flow(pausedFlow2).state, 'cancelled');
+
+  // Objective is now free: turning unattended on starts a new run for sample/02 & sample/03 (sample/01 stays excluded by its hold).
+  u.cmd('on', '--objective', 'selected');
+  const workingFlow = await u.findRun('selected', new Set([pausedFlow, pausedFlow2]));
+  assert.notEqual(workingFlow, pausedFlow);
+  const w2 = await u.ticketJob(workingFlow, 'sample/02');
+  assert.ok(!f.flow(workingFlow).tickets.some(x => x.ticket === 'sample/01'), 'held ticket stays excluded');
+  const workerSession = Object.fromEntries(fs.readFileSync(join(f.dir(w2), 'SESSION.txt'), 'utf8').trimEnd().split('\n').map(l => l.split('=')));
+  assert.ok(isProcAlive(Number(workerSession.PID)), 'worker process running before cancel');
+
+  // Part 2: Cancel the working unattended run from main's `hud_tickets run cancel` with the run id.
+  const mcpCancel = await f.call('hud_tickets', { op: 'run', cancel: true, run: workingFlow, cwd: f.root });
+  assert.equal(mcpCancel.flow, workingFlow);
+  assert.equal(mcpCancel.cancel_requested, true);
+  const stopped = await f.end(workingFlow);
+  assert.equal(stopped.state, 'cancelled', JSON.stringify(stopped));
+  // Running worker was NOT signalled or stopped, and no hud-reap ran.
+  assert.equal(fs.existsSync(join(f.dir(w2), 'STATUS.json.stop-requested')), false);
+  assert.equal(readJson(join(f.dir(w2), 'STATUS.json')).state, 'working');
+  assert.ok(isProcAlive(Number(workerSession.PID)), 'worker process untouched by cancel');
+  assert.equal(logged().some(c => c.command === 'hud-reap'), false, 'cancel never signals or reaps');
+  // Holds from pausedFlow are still visible.
+  assert.ok(u.status().handbacks.some(h => h.flow === pausedFlow && h.ticket === 'sample/01'));
+  assert.ok(u.status().handbacks.some(h => h.flow === pausedFlow && !h.ticket));
+
+  // Settle w2 so ticket 02 is no longer claimed by a live job, and verify Objective can start a fresh run for sample/03.
+  writeFixtureFile(join(f.dir(w2), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: false, ended_at: new Date().toISOString() }));
+  const nextFlow = await u.findRun('selected', new Set([pausedFlow, pausedFlow2, workingFlow]));
+  assert.notEqual(nextFlow, workingFlow);
+  const wNext = await u.ticketJob(nextFlow, 'sample/03');
+  assert.ok(wNext);
+
+  // Also verify `hud unattended cancel <run>` cancels a working run directly and returns cancelled state.
+  const cliCancelWorking = u.cmd('cancel', nextFlow);
+  assert.equal(cliCancelWorking.cancelled.flow, nextFlow);
+  assert.equal(cliCancelWorking.cancelled.state, 'cancelled');
+  assert.equal(f.flow(nextFlow).state, 'cancelled');
+  assert.equal(fs.existsSync(join(f.dir(wNext), 'STATUS.json.stop-requested')), false);
+});

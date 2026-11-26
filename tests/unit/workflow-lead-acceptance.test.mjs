@@ -29,10 +29,28 @@ test('ticket check refuses a run with gaps including empty Approved removals and
   // hud_tickets op: add supports optional approved_removals.
   const added = await f.call('hud_tickets', {
     op: 'add', cwd: f.root, feature: 'sample',
-    tickets: [{ title: 'With removals', blocked_by: [], what: 'Remove old panel.', acceptance: ['Removed'], live_try: 'none', approved_removals: 'old-panel' }],
+    tickets: [
+      { title: 'With removals', blocked_by: [], what: 'Remove old panel.', acceptance: ['Removed'], live_try: 'none', approved_removals: 'old-panel' },
+      { title: 'Live try in multiline what', blocked_by: [], what: 'Update greeting text.\n\n**Live try:** run ./greet', acceptance: ['Updated'] },
+      { title: 'Live try inline in what', blocked_by: [], what: 'Update banner text. **Live try:** none', acceptance: ['Updated'] },
+      { title: 'Explicit live_try keeps what', blocked_by: [], what: 'Keep prose.\n**Live try:** ignored', acceptance: ['Kept'], live_try: 'run explicit' },
+      { title: 'Prose mentioning live try', blocked_by: [], what: 'Add a Live try: parser rule.', acceptance: ['Added'] },
+    ],
   });
   assert.equal(added.ok, true);
   assert.match(fs.readFileSync(added.tickets[0].path, 'utf8'), /\*\*Approved removals:\*\* old-panel/);
+  const movedMulti = fs.readFileSync(added.tickets[1].path, 'utf8');
+  assert.match(movedMulti, /^\*\*Live try:\*\* run \.\/greet$/m);
+  assert.match(movedMulti, /^\*\*What to build:\*\* Update greeting text\.$/m);
+  const movedInline = fs.readFileSync(added.tickets[2].path, 'utf8');
+  assert.match(movedInline, /^\*\*Live try:\*\* none$/m);
+  assert.match(movedInline, /^\*\*What to build:\*\* Update banner text\.$/m);
+  const keptExplicit = fs.readFileSync(added.tickets[3].path, 'utf8');
+  assert.match(keptExplicit, /^\*\*Live try:\*\* run explicit$/m);
+  assert.match(keptExplicit, /\*\*What to build:\*\* Keep prose\. \*\*Live try:\*\* ignored/);
+  const proseOnly = fs.readFileSync(added.tickets[4].path, 'utf8');
+  assert.doesNotMatch(proseOnly, /^\*\*Live try:\*\*/m);
+  assert.match(proseOnly, /^\*\*What to build:\*\* Add a Live try: parser rule\.$/m);
 });
 
 test('Assumed: lines move to run todo; four assumptions or a scope assumption pause with no main wake', { timeout: 45_000 }, async t => {
@@ -72,9 +90,9 @@ test('Assumed: lines move to run todo; four assumptions or a scope assumption pa
   assert.match(after.pause_notice, /Assumed: lines/);
 });
 
-test('a single scope assumption pauses the run with no main wake', { timeout: 30_000 }, async t => {
+test('a single scope assumption pauses the run with no main wake (including handback_to: main)', { timeout: 30_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-scope.md': goodTicket(1) } });
-  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   const [first] = await f.jobs(flow, 1);
   await f.settle(first, { report: 'Done.\n\nAssumed: [scope] added a new public command\n' });
   const paused = await f.end(flow);
@@ -84,6 +102,8 @@ test('a single scope assumption pauses the run with no main wake', { timeout: 30
   assert.equal(paused.handback.kind, 'assumption');
   assert.match(paused.reason, /scope assumption/);
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
+  const leads = fs.readdirSync(join(f.home, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id)).map(f.job).filter(j => j.role === 'lead');
+  assert.equal(leads.length, 0, 'main-handback runs keep the breaker with zero leads');
 });
 
 test('worker and reviewer questions use temporary leads with no hud_land; owner-try outside unattended stays ready-for-human', { timeout: 60_000 }, async t => {

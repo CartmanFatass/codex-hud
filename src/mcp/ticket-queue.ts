@@ -8,10 +8,11 @@ import { roleRegistry } from '../roles/roster.js';
 import { ticketFileEvidence } from '../collectors/ticket-evidence.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
+import { waitUntilFs } from '../utils/fs-wait.js';
 import { procStat } from '../utils/proc.js';
 import { loadGraph } from '../workflows/graph.js';
 import { runVisible } from '../workflows/scope.js';
-import { freezeGraph, runDir } from '../workflows/store.js';
+import { freezeGraph, runDir, runLock } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import { ESCALATION_RULE, isOpenTicketRun } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
@@ -20,7 +21,7 @@ import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
 import { BUNDLED_ROOT } from './paths.js';
 import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
-import { cancelTicketQueue, queueIds, readTicketQueue, ticketQueueNotice, ticketQueueView, writeTicketQueue, type TicketQueue } from './ticket-queue-state.js';
+import { cancelTicketQueue, isTicketQueueId, queueIds, readTicketQueue, ticketQueueNotice, ticketQueueView, writeTicketQueue, type TicketQueue } from './ticket-queue-state.js';
 
 let template: string | undefined;
 
@@ -37,25 +38,81 @@ function ticketClosed(path: string) {
     return /^(?:done|wontfix|ready-for-human)$/i.test(status);
   } catch { return false; }
 }
+/** Cancel a working or paused ticket-queue run without signalling any process, keeping holds and evidence intact. */
+export async function cancelTicketQueueRun(
+  home: string,
+  id: string,
+  opts?: { unattendedOnly?: boolean; pane?: string | null; root?: string; waitMs?: number },
+): Promise<{ queue: TicketQueue; changed: boolean } | null> {
+  if (!isTicketQueueId(id)) return null;
+  const q = readTicketQueue(home, id);
+  if (!q || (opts?.unattendedOnly && !q.unattended)) return null;
+  if (opts?.root !== undefined && !runVisible({ ...q, project_root: q.project_root ?? q.root }, opts.pane ?? null, opts.root)) {
+    throw Error(`Ticket queue ${q.flow} is owned by another pane`);
+  }
+  if (q.state === 'working') {
+    cancelTicketQueue(home, q);
+    wakeWorkflow(home, q);
+    if (opts?.waitMs) {
+      await waitUntilFs({
+        timeoutMs: opts.waitMs,
+        coalesceMs: 25,
+        targets: () => [{ dir: join(home, 'flows'), filter: file => !file || file === `${q.flow}.json` }],
+        check: () => {
+          const cur = readTicketQueue(home, q.flow);
+          return !cur || cur.state !== 'working' ? { done: true, value: cur } : { done: false };
+        },
+      }).catch(() => undefined);
+    }
+    return { queue: readTicketQueue(home, q.flow) ?? q, changed: true };
+  }
+  if (q.state === 'paused') {
+    let changed = false;
+    const updated = await runLock(home, q.flow, () => {
+      const cur = readTicketQueue(home, q.flow);
+      if (!cur) return null;
+      if (cur.state === 'paused') {
+        cur.state = 'cancelled';
+        cur.reason = cur.reason ? `cancelled (was paused: ${cur.reason})` : 'cancelled: no more dispatches or lands started';
+        cur.queued = undefined;
+        writeTicketQueue(home, cur);
+        changed = true;
+      } else if (cur.state === 'working') {
+        cancelTicketQueue(home, cur);
+        wakeWorkflow(home, cur);
+        changed = true;
+      }
+      return cur;
+    });
+    return updated ? { queue: updated, changed } : null;
+  }
+  return { queue: q, changed: false };
+}
+
 export async function startTicketQueue(home: string, cwd: string, pane: string | null, task: boolean,
   args: Record<string, unknown>, dispatcher?: TicketQueue['dispatcher'],
   unattended?: { flow: string; objective: string; ready?: readonly { ticket: string; path: string }[] }) {
-  const { feature, max_parallel, cancel, escalation_rule, handback_to } = args;
+  const { feature, max_parallel, cancel, escalation_rule, handback_to, run } = args;
+  if (cancel !== undefined && typeof cancel !== 'boolean') throw Error('invalid_arguments: cancel');
+  if (run !== undefined && (!cancel || !isTicketQueueId(run))) throw Error('invalid_arguments: run');
+  if (pane !== null && !herdrId(pane)) throw Error('hud_tickets run requires a valid caller pane');
+  const root = sharedRoot(cwd);
+  if (!unattended && run !== undefined) {
+    const res = await cancelTicketQueueRun(home, run, { pane, root });
+    return res?.changed ? res.queue : null;
+  }
   const target = unattended ? unattended.objective : feature;
   if (typeof target !== 'string' || !/^[a-z0-9-]+$/.test(target)) throw Error('invalid_arguments: feature');
   if (max_parallel !== undefined && (typeof max_parallel !== 'number' || !Number.isSafeInteger(max_parallel) || max_parallel < 1))
     throw Error('invalid_arguments: max_parallel');
-  if (cancel !== undefined && typeof cancel !== 'boolean') throw Error('invalid_arguments: cancel');
   if (escalation_rule !== undefined && (typeof escalation_rule !== 'string' || !escalation_rule.trim() || escalation_rule.length > 500))
     throw Error('invalid_arguments: escalation_rule');
   if (handback_to !== undefined && handback_to !== 'lead' && handback_to !== 'main')
     throw Error('invalid_arguments: handback_to');
-  if (pane !== null && !herdrId(pane)) throw Error('hud_tickets run requires a valid caller pane');
-  const root = sharedRoot(cwd);
   const resolvedWorkspace = pane ? await resolveWorkspace(pane) : undefined;
   const startHead = await dispatchBase(root);
   const lockScope = unattended ? `unattended:${unattended.objective}` : target;
-  return withAbstractLock('ticket-start', `${home}\0${root}\0${lockScope}`, () => {
+  return withAbstractLock('ticket-start', `${home}\0${root}\0${lockScope}`, async () => {
     const queues = queueIds(home).map(id => readTicketQueue(home, id)).filter(q => q !== null)
       .filter(q => q.root === root && (unattended ? q.unattended?.objective === unattended.objective : !q.unattended && q.feature === target));
     const prior = queues.find(q => unattended ? isOpenTicketRun(q) : q.state === 'working');
@@ -66,7 +123,13 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       wakeWorkflow(home, prior);
       return prior;
     }
-    if (cancel) return null;
+    if (cancel) {
+      if (!unattended && isTicketQueueId(target)) {
+        const res = await cancelTicketQueueRun(home, target, { pane, root });
+        return res?.changed ? res.queue : null;
+      }
+      return null;
+    }
     if (!registeredProject(home, root).registered) throw Error('hud_tickets run requires a registered project');
     validLandConfig(home, root);
     if (!unattended) {

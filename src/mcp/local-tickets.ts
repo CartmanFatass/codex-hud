@@ -26,6 +26,41 @@ function line(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) return invalid(field);
   return value.replace(/\s+/g, ' ').trim();
 }
+const ownLiveTryLine = /^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?Live try(?::\*\*|\*\*:|:(?!\*\*))[ \t]*(.+?)[ \t]*$/i;
+const inlineBoldLiveTry = /(?:^|[\s·])\*\*Live try(?::\*\*|\*\*:)[ \t]*(.+?)[ \t]*$/i;
+const inlineAfterPunctLiveTry = /([.;!?]|·)[ \t]+Live try:[ \t]*(.+?)[ \t]*$/i;
+
+function extractWhatAndLiveTry(rawWhat: unknown, rawLiveTry: unknown): { what: string; liveTry?: string } {
+  if (typeof rawWhat !== 'string' || !rawWhat.trim()) return invalid('what');
+  if (rawLiveTry !== undefined) return { what: line(rawWhat, 'what'), liveTry: line(rawLiveTry, 'live_try') };
+  const rawLines = rawWhat.split(/\r?\n/);
+  let extracted: string | undefined;
+  const kept: string[] = [];
+  for (const rawLine of rawLines) {
+    const match = !extracted ? ownLiveTryLine.exec(rawLine) : null;
+    if (match?.[1]?.trim()) {
+      extracted = match[1].replace(/\s+/g, ' ').trim();
+    } else {
+      kept.push(rawLine);
+    }
+  }
+  if (extracted) {
+    return { what: line(kept.join(' '), 'what'), liveTry: extracted };
+  }
+  const folded = line(rawWhat, 'what');
+  const boldMatch = inlineBoldLiveTry.exec(folded);
+  if (boldMatch?.[1]?.trim()) {
+    const rest = folded.slice(0, boldMatch.index).replace(/[ \t·]+$/, '');
+    return { what: line(rest, 'what'), liveTry: boldMatch[1].trim() };
+  }
+  const punctMatch = inlineAfterPunctLiveTry.exec(folded);
+  if (punctMatch?.[2]?.trim()) {
+    const prefix = punctMatch[1] === '·' ? '' : punctMatch[1];
+    const rest = (folded.slice(0, punctMatch.index) + prefix).replace(/[ \t·]+$/, '');
+    return { what: line(rest, 'what'), liveTry: punctMatch[2].trim() };
+  }
+  return { what: folded };
+}
 function status(value: unknown): string {
   const label = TICKET_STATUSES.find((label) => label === value);
   return label ?? invalid('status');
@@ -413,11 +448,11 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     const plans = args.tickets.map((ticket: Record<string, unknown>) => {
       if (!ticket || typeof ticket !== 'object' || Array.isArray(ticket)) return invalid('tickets');
       if (!number(++next)) throw new Error('ticket numbering exhausted');
-      const title = line(ticket.title, 'title'),
-        what = line(ticket.what, 'what');
+      const title = line(ticket.title, 'title');
+      const { what, liveTry } = extractWhatAndLiveTry(ticket.what, ticket.live_try);
       const label = ticket.status === undefined ? 'ready-for-agent' : status(ticket.status);
       const tryLine = ticket.owner_try === undefined ? [] : [`**Owner try:** ${ownerTry(ticket.owner_try)}`];
-      const liveTryLine = ticket.live_try === undefined ? [] : [`**Live try:** ${line(ticket.live_try, 'live_try')}`];
+      const liveTryLine = liveTry === undefined ? [] : [`**Live try:** ${liveTry}`];
       const approvedRemovalsLine = ticket.approved_removals === undefined ? [] : [`**Approved removals:** ${line(ticket.approved_removals, 'approved_removals')}`];
       const blocked = resolveBlockers(ticket.blocked_by, feature, known);
       if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');

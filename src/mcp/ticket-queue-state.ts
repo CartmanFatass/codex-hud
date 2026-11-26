@@ -27,11 +27,11 @@ export interface RunTodoItem {
   source: string; kind: 'assumed' | 'lead'; text: string;
 }
 export interface RunDecision {
-  step: string; kind: 'question' | 'accept' | 'ambiguity'; job: string; decision: string; reason?: string; at: string;
+  step: string; kind: 'question' | 'accept' | 'ambiguity' | 'assumption'; job: string; decision: string; reason?: string; at: string;
   ticket?: string; question?: string; close_error?: string;
 }
 export interface ActiveLead {
-  job: string; kind: 'question' | 'accept' | 'ambiguity'; step: string; round: number;
+  job: string; kind: 'question' | 'accept' | 'ambiguity' | 'assumption'; step: string; round: number;
   ticket?: string; worker_job?: string; question?: string;
   head?: string; report_sig?: string;
 }
@@ -50,6 +50,8 @@ export interface TicketQueueItem {
   dispatch_queue?: string; // Keep the original worker request key across explicit resumes.
   approved_head?: string;
   approved_report_sig?: string;
+  approved_assumptions_head?: string;
+  approved_assumptions_sig?: string;
   held?: TicketItemHold;
   failed?: TicketItemFailure;
 }

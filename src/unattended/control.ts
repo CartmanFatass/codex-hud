@@ -1,9 +1,10 @@
 import { fork } from 'node:child_process';
-import { mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
 import { isCliDirTrusted } from '../cli/trust.js';
 import { readObjectives } from '../collectors/objectives.js';
 import { validLandConfig } from '../mcp/land.js';
 import { binScript, BUNDLED_ROOT } from '../mcp/paths.js';
+import { cancelTicketQueueRun } from '../mcp/ticket-queue.js';
 import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { roleRegistry, routeTiers } from '../roles/roster.js';
 import { loadSettings } from '../settings.js';
@@ -82,4 +83,14 @@ export async function setUnattended(home: string, enabled: boolean,
       child.unref();
     }
   });
+}
+
+export async function cancelUnattendedRun(home: string, id: string) {
+  const resolved = existsSync(home) ? realpathSync(home) : home;
+  const res = await cancelTicketQueueRun(resolved, id, { unattendedOnly: true, waitMs: 5_000 });
+  if (!res) throw Error(`Unknown unattended run: ${id}`);
+  if (!res.changed && res.queue.state !== 'cancelled') {
+    throw Error(`Unattended run ${id} is already ${res.queue.state}`);
+  }
+  return res.queue;
 }
