@@ -766,3 +766,349 @@ test('refused ticket edit and refused dispatch are recorded on the land receipt 
   assert.equal(listTickets(f).length, ticketCountBeforeService, 'retry did not duplicate into a new ticket');
   assert.equal(fs.readFileSync(join(f.env.HOME, 'gate-runs.log'), 'utf8').trim().split('\n').length, gateRunsBeforeService, 'service wake retry did not rerun any gate');
 });
+
+test('promoted list waiting behind an active flake imp is admitted after that imp is stopped or fails, without another flake land', { timeout: 60_000 }, async t => {
+  const f = await checkout(t, ['npm run test:sample'], { after: [], autoPrewalk: true });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+
+  const addCleanJob = (id, tag) => {
+    const base = f.git(f.main, 'rev-parse', 'HEAD');
+    const wtName = `imp-${id.slice(-6)}`;
+    const wtRoot = join(`${f.main}-wt`, wtName);
+    const branch = `wt/${wtName}`;
+    f.git(f.main, 'worktree', 'add', '-qb', branch, wtRoot, base);
+    fs.appendFileSync(join(wtRoot, 'tracked'), `${tag}\n`);
+    f.git(wtRoot, 'commit', '-qam', tag);
+    const dir = join(f.home, 'jobs', id);
+    fs.mkdirSync(dir, { recursive: true });
+    const now = new Date().toISOString();
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
+      job: id,
+      cwd: wtRoot,
+      project_root: f.main,
+      role: 'imp',
+      herdr_pane: f.env.HERDR_PANE_ID,
+      created_at: now,
+      dispatch_exit_code: 0,
+      worktree: { main_root: f.main, root: wtRoot, base_head: base, branch },
+    }));
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: now }));
+  };
+
+  // Promote test-flakes/01 and dispatch flake imp 1.
+  addFlakyTestJob(f, { id: 'j0000000000000b01', testFile: 'alpha.test.mjs', testName: 'alpha wait', markerName: 'wait-alpha-1' });
+  const { flow: flow1 } = await f.call('hud_land', { job: 'j0000000000000b01' });
+  await until(() => f.flowState(flow1).flake_collection?.state === 'done', t.signal);
+
+  addFlakyTestJob(f, { id: 'j0000000000000b02', testFile: 'alpha.test.mjs', testName: 'alpha wait', markerName: 'wait-alpha-2' });
+  const { flow: flow2 } = await f.call('hud_land', { job: 'j0000000000000b02' });
+  await until(() => f.flowState(flow2).flake_collection?.state === 'done' &&
+    listFlakeJobs(f).some(j => j.ticket === 'test-flakes/01' && j.dispatch_exit_code === 0), t.signal);
+  const job01 = listFlakeJobs(f).find(j => j.ticket === 'test-flakes/01');
+  fs.writeFileSync(join(f.home, 'jobs', job01.job, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+
+  // While job01 is active, promote test-flakes/02; flow4 must keep a durable pending waiting-dispatch state.
+  addFlakyTestJob(f, { id: 'j0000000000000b03', testFile: 'beta.test.mjs', testName: 'beta wait', markerName: 'wait-beta-1' });
+  const { flow: flow3 } = await f.call('hud_land', { job: 'j0000000000000b03' });
+  await until(() => f.flowState(flow3).flake_collection?.state === 'done', t.signal);
+
+  addFlakyTestJob(f, { id: 'j0000000000000b04', testFile: 'beta.test.mjs', testName: 'beta wait', markerName: 'wait-beta-2' });
+  const { flow: flow4 } = await f.call('hud_land', { job: 'j0000000000000b04' });
+  await until(() => f.flowState(flow4).state === 'completed' &&
+    f.flowState(flow4).flake_collection?.state === 'pending', t.signal);
+
+  const f4Waiting = f.flowState(flow4).flake_collection;
+  assert.equal(f4Waiting.stage, 'dispatch');
+  assert.equal(f4Waiting.ticket, 'test-flakes/02');
+  assert.equal(f4Waiting.job, undefined);
+  assert.equal(listFlakeJobs(f).length, 1, 'must not admit second flake imp while first is active');
+
+  // An unrelated clean land while job01 is still active must leave flow4 pending and not admit test-flakes/02.
+  addCleanJob('j0000000000000b05', 'clean-while-active');
+  const { flow: cleanWhileActive } = await f.call('hud_land', { job: 'j0000000000000b05' });
+  await until(() => f.flowState(cleanWhileActive).state === 'completed', t.signal);
+  assert.equal(f.flowState(flow4).flake_collection?.state, 'pending');
+  assert.equal(listFlakeJobs(f).length, 1);
+
+  // Start unattended service, then STOP job01 without landing it -> test-flakes/02 must be admitted automatically.
+  fs.writeFileSync(join(f.main, '.hud', 'objectives.md'), '# Objectives\n\n## synth-obj: Synthetic Objective\n\n**State:** active\n**Features:** synth\n');
+  f.git(f.main, 'add', '.hud/objectives.md');
+  f.git(f.main, 'commit', '-qm', 'add synthetic objective');
+  const unattendedEnv = { ...f.env, HUD_UNATTENDED_RECONCILE_MS: '500' };
+  const hudBin = resolve('bin/hud');
+  const stopUnattended = () => {
+    try { execFileSync(process.execPath, [hudBin, 'unattended', 'off'], { cwd: f.main, env: unattendedEnv, stdio: 'ignore', timeout: 10_000 }); }
+    catch {}
+  };
+  t.after(stopUnattended);
+  execFileSync(process.execPath, [hudBin, 'unattended', 'on', '--objective', 'synth-obj'], {
+    cwd: f.main, env: unattendedEnv, encoding: 'utf8', timeout: 15_000,
+  });
+
+  fs.writeFileSync(join(f.home, 'jobs', job01.job, 'STATUS.json'),
+    JSON.stringify({ state: 'stopped', ended_at: new Date().toISOString() }));
+  await until(() => f.flowState(flow4).flake_collection?.state === 'done' &&
+    listFlakeJobs(f).some(j => j.ticket === 'test-flakes/02' && j.dispatch_exit_code === 0), 15_000);
+
+  const job02 = listFlakeJobs(f).find(j => j.ticket === 'test-flakes/02');
+  assert.equal(f.flowState(flow4).flake_collection.ticket, 'test-flakes/02');
+  assert.equal(f.flowState(flow4).flake_collection.job, job02.job);
+  assert.equal(listFlakeJobs(f).filter(j => j.ticket === 'test-flakes/01').length, 1, 'stopped ticket 01 was not re-dispatched ahead of waiting ticket 02');
+
+  // Stop the service, keep job02 active, promote test-flakes/03, then mark job02 FAILED -> unrelated clean land admits test-flakes/03.
+  stopUnattended();
+  fs.writeFileSync(join(f.home, 'jobs', job02.job, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+
+  addFlakyTestJob(f, { id: 'j0000000000000b06', testFile: 'gamma.test.mjs', testName: 'gamma wait', markerName: 'wait-gamma-1' });
+  const { flow: flow5 } = await f.call('hud_land', { job: 'j0000000000000b06' });
+  await until(() => f.flowState(flow5).flake_collection?.state === 'done', t.signal);
+
+  addFlakyTestJob(f, { id: 'j0000000000000b07', testFile: 'gamma.test.mjs', testName: 'gamma wait', markerName: 'wait-gamma-2' });
+  const { flow: flow6 } = await f.call('hud_land', { job: 'j0000000000000b07' });
+  await until(() => f.flowState(flow6).state === 'completed' &&
+    f.flowState(flow6).flake_collection?.state === 'pending', t.signal);
+  assert.equal(f.flowState(flow6).flake_collection.ticket, 'test-flakes/03');
+
+  fs.writeFileSync(join(f.home, 'jobs', job02.job, 'STATUS.json'),
+    JSON.stringify({ state: 'failed', exit_reason: 'synthetic_fail', ended_at: new Date().toISOString() }));
+
+  addCleanJob('j0000000000000b08', 'clean-after-fail');
+  const { flow: cleanAfterFail } = await f.call('hud_land', { job: 'j0000000000000b08' });
+  await until(() => f.flowState(cleanAfterFail).state === 'completed' &&
+    f.flowState(flow6).flake_collection?.state === 'done' &&
+    listFlakeJobs(f).some(j => j.ticket === 'test-flakes/03' && j.dispatch_exit_code === 0), t.signal);
+
+  const job03 = listFlakeJobs(f).find(j => j.ticket === 'test-flakes/03');
+  assert.equal(f.flowState(flow6).flake_collection.ticket, 'test-flakes/03');
+  assert.equal(f.flowState(flow6).flake_collection.job, job03.job);
+});
+
+test('waiting-dispatch state is acknowledged only on admission or independent resolution (done, claimed, wontfix)', { timeout: 30_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+
+  // Seed an active flake imp for test-flakes/01.
+  const activeJobId = 'j0000000000000c01';
+  const activeDir = join(f.home, 'jobs', activeJobId);
+  fs.mkdirSync(activeDir, { recursive: true });
+  fs.writeFileSync(join(activeDir, 'job.json'), JSON.stringify({
+    job: activeJobId,
+    cwd: f.main,
+    project_root: f.main,
+    role: 'imp',
+    ticket: 'test-flakes/01',
+    request_key: flakeDispatchKey(f.main, 'test-flakes/01', 1),
+    created_at: new Date().toISOString(),
+    dispatch_exit_code: 0,
+  }));
+  fs.writeFileSync(join(activeDir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+
+  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
+  fs.mkdirSync(issuesDir, { recursive: true });
+  fs.writeFileSync(join(issuesDir, '01-gate-flakes-running-list.md'), [
+    '# 01: Gate flakes running list', '', '**Status:** ready-for-agent', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
+    '', '**What to build:** Running list.', '', '### Cases', '',
+    '- `seed case` (sample/seed.test.mjs) — flow `f0000000000000c00`', '', '- [ ] Pass', '', '## Comments', '',
+  ].join('\n'));
+  f.git(f.main, 'add', '.scratch');
+  f.git(f.main, 'commit', '-qm', 'seed flake 01');
+
+  const seedWaitingFlow = async (flowId, testName) => {
+    fs.mkdirSync(join(f.home, 'flows'), { recursive: true });
+    const now = new Date().toISOString();
+    const flow = {
+      flow: flowId,
+      job: 'j0000000000000c99',
+      pane: f.env.HERDR_PANE_ID,
+      task: false,
+      wt: { main_root: f.main, root: join(`${f.main}-wt`, 'gone'), base_head: f.base_head, branch: 'wt/gone' },
+      config: { base: 'base', gate: ['true'], after: [], push: false },
+      state: 'completed',
+      step: 'done',
+      pid: process.pid,
+      start: '1',
+      created_at: now,
+      updated_at: now,
+      source_sha: f.base_head,
+      reruns: [{
+        step: 'gate[1]',
+        tests: [`${testName} 1`, `${testName} 2`, `${testName} 3`, `${testName} 4`],
+        cases: [
+          { name: `${testName} 1`, file: 'sample/wait.test.mjs' },
+          { name: `${testName} 2`, file: 'sample/wait.test.mjs' },
+          { name: `${testName} 3`, file: 'sample/wait.test.mjs' },
+          { name: `${testName} 4`, file: 'sample/wait.test.mjs' },
+        ],
+        rerun_ok: true,
+      }],
+    };
+    fs.writeFileSync(join(f.home, 'flows', `${flowId}.json`), JSON.stringify(flow));
+    await collectAndRecordLandFlakes(f.home, f.main, flow, { dispatch: async () => { throw Error('must not dispatch while active'); } });
+    return f.flowState(flowId);
+  };
+
+  // Independent resolution cases: done, claimed, wontfix.
+  const resolutions = [
+    { flowId: 'f0000000000000c11', testName: 'res done', ticketNum: '02', status: 'done' },
+    { flowId: 'f0000000000000c12', testName: 'res claimed', ticketNum: '03', status: 'claimed' },
+    { flowId: 'f0000000000000c13', testName: 'res wontfix', ticketNum: '04', status: 'wontfix' },
+  ];
+  for (const r of resolutions) {
+    const waiting = await seedWaitingFlow(r.flowId, r.testName);
+    assert.equal(waiting.flake_collection?.state, 'pending');
+    assert.equal(waiting.flake_collection?.stage, 'dispatch');
+    assert.equal(waiting.flake_collection?.ticket, `test-flakes/${r.ticketNum}`);
+
+    // Retrying while activeJobId is still working and ticket is still ready-for-agent must NOT acknowledge.
+    const stillPending = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID, {
+      dispatch: async () => { throw Error('must not dispatch while active'); },
+    });
+    assert.deepEqual(stillPending, { retried: 1, resolved: 0, pending: 1 });
+    assert.equal(f.flowState(r.flowId).flake_collection?.state, 'pending');
+    assert.equal(f.flowState(r.flowId).flake_collection?.attempts, 1, 'unchanged wait does not bump attempts');
+
+    // Independently resolve the ticket -> waiting state is acknowledged without dispatching a job.
+    const ticketFile = listTickets(f).find(item => item.name.startsWith(`${r.ticketNum}-`));
+    fs.writeFileSync(ticketFile.path, ticketFile.text.replace('**Status:** ready-for-agent', `**Status:** ${r.status}`));
+    const resolved = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID, {
+      dispatch: async () => { throw Error('must not dispatch resolved ticket'); },
+    });
+    assert.deepEqual(resolved, { retried: 1, resolved: 1, pending: 0 });
+    assert.equal(f.flowState(r.flowId).flake_collection?.state, 'done');
+    assert.equal(f.flowState(r.flowId).flake_collection?.ticket, `test-flakes/${r.ticketNum}`);
+    assert.equal(f.flowState(r.flowId).flake_collection?.job, undefined);
+  }
+
+  // Admission case: waiting ticket 05 stays pending while active, then is acknowledged with job id upon admission.
+  const admitFlowId = 'f0000000000000c14';
+  const waitingAdmit = await seedWaitingFlow(admitFlowId, 'res admit');
+  assert.equal(waitingAdmit.flake_collection?.state, 'pending');
+  assert.equal(waitingAdmit.flake_collection?.ticket, 'test-flakes/05');
+
+  fs.writeFileSync(join(activeDir, 'STATUS.json'), JSON.stringify({ state: 'stopped', ended_at: new Date().toISOString() }));
+  const dispatched = [];
+  const admitted = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID, {
+    dispatch: async (input) => {
+      dispatched.push(input.ticket);
+      return { job: 'j0000000000000c55' };
+    },
+  });
+  assert.deepEqual(admitted, { retried: 1, resolved: 1, pending: 0 });
+  assert.deepEqual(dispatched, ['test-flakes/05']);
+  assert.equal(f.flowState(admitFlowId).flake_collection?.state, 'done');
+  assert.equal(f.flowState(admitFlowId).flake_collection?.ticket, 'test-flakes/05');
+  assert.equal(f.flowState(admitFlowId).flake_collection?.job, 'j0000000000000c55');
+});
+
+test('persistent refusal does not self-wake unattended service; attempts and receipt writes stay bounded until refusal clears', { timeout: 60_000 }, async t => {
+  const f = await checkout(t, ['npm run test:sample'], { after: [], autoPrewalk: true });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+
+  // Part A: persistent edit refusal (uncommitted hand edit on running list).
+  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
+  fs.mkdirSync(issuesDir, { recursive: true });
+  const t01Path = join(issuesDir, '01-gate-flakes-running-list.md');
+  fs.writeFileSync(t01Path, [
+    '# 01: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
+    '', '**What to build:** Running list.', '', '### Cases', '',
+    '- `initial case` (sample/initial.test.mjs) — flow `f0000000000000d00`, log `~/.hud/flows/f0000000000000d00.json.gate-1.log`', '',
+    '- [ ] Each listed case passes 20 consecutive runs', '', '## Comments', '',
+  ].join('\n'));
+  fs.writeFileSync(join(f.main, '.hud', 'objectives.md'), '# Objectives\n\n## synth-obj: Synthetic Objective\n\n**State:** active\n**Features:** synth\n');
+  f.git(f.main, 'add', '.scratch', '.hud/objectives.md');
+  f.git(f.main, 'commit', '-qm', 'seed flake 01 and objective');
+
+  const ownerEdit = '\n- Owner hand edit stays intact\n';
+  fs.appendFileSync(t01Path, ownerEdit);
+  const dirtyText = fs.readFileSync(t01Path, 'utf8');
+
+  addFlakyTestJob(f, { id: 'j0000000000000d01', testFile: 'alpha.test.mjs', testName: 'alpha bounded', markerName: 'bounded-edit-1' });
+  const { flow: flow1 } = await f.call('hud_land', { job: 'j0000000000000d01' });
+  await until(() => f.flowState(flow1).state === 'completed' &&
+    f.flowState(flow1).flake_collection?.state === 'pending', 10_000);
+
+  const flow1Path = join(f.home, 'flows', `${flow1}.json`);
+  const stat1Before = fs.statSync(flow1Path);
+  const fc1Before = f.flowState(flow1).flake_collection;
+  assert.equal(fc1Before.stage, 'edit');
+  assert.equal(fc1Before.attempts, 1);
+  assert.equal(fs.readFileSync(t01Path, 'utf8'), dirtyText, 'owner hand edit stays intact');
+
+  // Start unattended service with short reconcile interval and wait across multiple fallback + event wakes.
+  const unattendedEnv = { ...f.env, HUD_UNATTENDED_RECONCILE_MS: '500' };
+  const hudBin = resolve('bin/hud');
+  t.after(() => {
+    try { execFileSync(process.execPath, [hudBin, 'unattended', 'off'], { cwd: f.main, env: unattendedEnv, stdio: 'ignore', timeout: 10_000 }); }
+    catch {}
+  });
+  execFileSync(process.execPath, [hudBin, 'unattended', 'on', '--objective', 'synth-obj'], {
+    cwd: f.main, env: unattendedEnv, encoding: 'utf8', timeout: 15_000,
+  });
+
+  await new Promise(r => setTimeout(r, 700));
+  // Trigger an unrelated .scratch event wake while refusal is unchanged.
+  fs.mkdirSync(join(f.main, '.scratch', 'unrelated', 'issues'), { recursive: true });
+  fs.writeFileSync(join(f.main, '.scratch', 'unrelated', 'issues', '01-noise.md'), '# 01: Noise\n');
+  await new Promise(r => setTimeout(r, 900));
+
+  const stat1After = fs.statSync(flow1Path);
+  const fc1After = f.flowState(flow1).flake_collection;
+  assert.equal(fc1After.state, 'pending');
+  assert.equal(fc1After.attempts, 1, 'attempts must stay bounded while edit refusal is unchanged');
+  assert.equal(fc1After.updated_at, fc1Before.updated_at, 'receipt must not be rewritten while refusal is unchanged');
+  assert.equal(stat1After.ino, stat1Before.ino);
+  assert.equal(stat1After.mtimeMs, stat1Before.mtimeMs);
+  assert.equal(fs.readFileSync(t01Path, 'utf8'), dirtyText, 'owner hand edit still intact');
+
+  // Clear edit refusal by committing the owner edit -> service appends exactly once.
+  f.git(f.main, 'add', t01Path);
+  f.git(f.main, 'commit', '-qm', 'owner commits edit');
+  await until(() => f.flowState(flow1).flake_collection?.state === 'done', 15_000);
+
+  assert.equal(f.flowState(flow1).flake_collection.attempts, 2);
+  assert.equal(f.flowState(flow1).flake_collection.ticket, 'test-flakes/01');
+  const t01Resolved = fs.readFileSync(t01Path, 'utf8');
+  assert.ok(t01Resolved.includes('Owner hand edit stays intact'), 'owner edit preserved');
+  assert.equal(t01Resolved.split(flow1).length - 1, 2, 'flow1 appended once (flow id + log path)');
+
+  // Part B: persistent dispatch refusal (disabled harness) stays bounded across wakes, then admits once when cleared.
+  const harnessSwitches = join(f.home, 'harnesses.json');
+  fs.writeFileSync(harnessSwitches, JSON.stringify({ disabled: ['pi'] }));
+
+  addFlakyTestJob(f, { id: 'j0000000000000d02', testFile: 'alpha.test.mjs', testName: 'alpha bounded', markerName: 'bounded-dispatch-2' });
+  const { flow: flow2 } = await f.call('hud_land', { job: 'j0000000000000d02' });
+  await until(() => f.flowState(flow2).state === 'completed' &&
+    f.flowState(flow2).flake_collection?.state === 'pending', 10_000);
+
+  const flow2Path = join(f.home, 'flows', `${flow2}.json`);
+  const stat2Before = fs.statSync(flow2Path);
+  const fc2Before = f.flowState(flow2).flake_collection;
+  assert.equal(fc2Before.stage, 'dispatch');
+  assert.equal(fc2Before.ticket, 'test-flakes/01');
+  assert.equal(fc2Before.attempts, 1);
+  assert.deepEqual(listFlakeJobs(f), []);
+
+  await new Promise(r => setTimeout(r, 700));
+  fs.writeFileSync(join(f.main, '.scratch', 'unrelated', 'issues', '01-noise.md'), '# 01: Noise 2\n');
+  await new Promise(r => setTimeout(r, 900));
+
+  const stat2After = fs.statSync(flow2Path);
+  const fc2After = f.flowState(flow2).flake_collection;
+  assert.equal(fc2After.state, 'pending');
+  assert.equal(fc2After.attempts, 1, 'attempts must stay bounded while dispatch refusal is unchanged');
+  assert.equal(fc2After.updated_at, fc2Before.updated_at, 'receipt must not be rewritten while dispatch refusal is unchanged');
+  assert.equal(stat2After.ino, stat2Before.ino);
+  assert.equal(stat2After.mtimeMs, stat2Before.mtimeMs);
+  assert.deepEqual(listFlakeJobs(f), []);
+
+  // Re-enable pi harness -> service admits exactly one flake imp job.
+  fs.unlinkSync(harnessSwitches);
+  await until(() => f.flowState(flow2).flake_collection?.state === 'done' &&
+    listFlakeJobs(f).some(j => j.ticket === 'test-flakes/01' && j.dispatch_exit_code === 0), 15_000);
+
+  await new Promise(r => setTimeout(r, 600));
+  const flakeJobs = listFlakeJobs(f);
+  assert.equal(flakeJobs.length, 1, 'admits exactly once after refusal clears');
+  assert.equal(f.flowState(flow2).flake_collection.attempts, 2);
+  assert.equal(f.flowState(flow2).flake_collection.job, flakeJobs[0].job);
+});

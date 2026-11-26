@@ -1,16 +1,16 @@
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { readObjectives } from '../collectors/objectives.js';
 import { getHudHome } from '../hud-home.js';
-import { retryPendingFlakeCollections } from '../mcp/land-flakes.js';
+import { listPendingFlakeFlows, readFlakesConfig, retryPendingFlakeCollections } from '../mcp/land-flakes.js';
 import { checkTicketPaths, ticketObjectiveOwner, ticketReadiness } from '../mcp/local-tickets.js';
 import { jobCache } from '../mcp/store/job-store.js';
 import { startTicketQueue } from '../mcp/ticket-queue.js';
 import { ensureJobWatcher } from '../mcp/watch-pid.js';
 import { registeredProject } from '../roles/projects.js';
 import { tryAbstractLock } from '../utils/abstract-lock.js';
-import { writeJsonPrivate } from '../utils/atomic-fs.js';
+import { readDirSafe, readFileBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { procStat, readBootId } from '../utils/proc.js';
 import { wakeWorkflow } from '../workflows/wake.js';
@@ -28,6 +28,71 @@ const reason = (error: unknown) => (error instanceof Error ? error.message : Str
 function statStamp(path: string): string {
   const st = fs.lstatSync(path, { throwIfNoEntry: false });
   return st ? `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : '';
+}
+
+function gitRefStamps(root: string): string[] {
+  const parts: string[] = [`gi=${statStamp(join(root, '.gitignore'))}`];
+  const dotGit = join(root, '.git');
+  const st = fs.lstatSync(dotGit, { throwIfNoEntry: false });
+  if (!st) return parts;
+  let gitDir: string | null = null;
+  if (st.isDirectory()) {
+    gitDir = dotGit;
+  } else if (st.isFile()) {
+    try {
+      const m = /^gitdir:\s*(.+)$/m.exec(readFileBounded(dotGit, 4096).bytes.toString('utf8'));
+      if (m) gitDir = resolve(root, m[1].trim());
+    } catch { /* Best-effort gitdir resolution. */ }
+  }
+  if (!gitDir) return parts;
+  let commonDir = gitDir;
+  try {
+    const common = readFileBounded(join(gitDir, 'commondir'), 4096).bytes.toString('utf8').trim();
+    if (common) commonDir = resolve(gitDir, common);
+  } catch { /* Normal repo has no commondir file. */ }
+  parts.push(
+    `gidx=${statStamp(join(gitDir, 'index'))}`,
+    `ghead=${statStamp(join(gitDir, 'HEAD'))}`,
+    `gpack=${statStamp(join(commonDir, 'packed-refs'))}`,
+    `gexcl=${statStamp(join(commonDir, 'info', 'exclude'))}`,
+  );
+  try {
+    const headText = readFileBounded(join(gitDir, 'HEAD'), 4096).bytes.toString('utf8').trim();
+    const refMatch = /^ref:\s*(.+)$/.exec(headText);
+    if (refMatch) parts.push(`gref=${statStamp(join(commonDir, refMatch[1].trim()))}`);
+  } catch { /* Best-effort HEAD ref stat. */ }
+  return parts;
+}
+
+/** Lightweight metadata-only stamp across inputs that can clear a pending flake edit or dispatch. */
+function computeFlakeInputStamp(home: string, root: string, feature: string): string {
+  const parts: string[] = [
+    statStamp(join(root, '.hud', 'project.json')),
+    statStamp(join(home, 'harnesses.json')),
+    statStamp(join(home, 'settings.json')),
+    process.env.HUD_SETTINGS_PATH ? statStamp(process.env.HUD_SETTINGS_PATH) : '',
+    ...gitRefStamps(root),
+  ];
+  const flowsDir = join(home, 'flows');
+  parts.push(`fl=${statStamp(flowsDir)}`);
+  for (const name of readDirSafe(flowsDir).filter(f => /^f[a-f0-9]{16}(?:-\d+)?\.json$/.test(f)).sort()) {
+    parts.push(`f:${name}=${statStamp(join(flowsDir, name))}`);
+  }
+  parts.push(`jd=${statStamp(join(home, 'jobs'))}`);
+  try {
+    for (const id of [...jobCache.listJobIds()].sort()) {
+      parts.push(`j:${id}=${statStamp(join(home, 'jobs', id, 'job.json'))},${statStamp(join(home, 'jobs', id, 'STATUS.json'))}`);
+    }
+  } catch { parts.push('jobs-err'); }
+  const issues = join(root, '.scratch', feature, 'issues');
+  parts.push(`is=${statStamp(issues)}`);
+  try {
+    const files = fs.readdirSync(issues, { withFileTypes: true })
+      .filter(e => e.isFile() && /^\d+-.+\.md$/.test(e.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const f of files) parts.push(`t:${f.name}=${statStamp(join(issues, f.name))}`);
+  } catch { /* Feature issues dir may not exist yet. */ }
+  return parts.join('|');
 }
 
 /** Lightweight metadata-only stamp across control, objectives, runs, jobs dir and ticket files (no body reads). */
@@ -87,6 +152,7 @@ function groupBySelectedObjective(control: UnattendedControl, home: string) {
 
 interface ScanState {
   lastStamp?: string;
+  lastFlakeStamp?: string;
   liveJobIds: string[];
   lastIssues: UnattendedDiagnostic[];
 }
@@ -111,7 +177,18 @@ async function scan(home: string, control: UnattendedControl, state: ScanState, 
 
   if (!registeredProject(home, control.root).registered) throw Error('Unattended project is no longer registered');
 
-  await retryPendingFlakeCollections(home, control.root, null).catch(() => {});
+  const flakesConfig = readFlakesConfig(control.root);
+  if (flakesConfig && listPendingFlakeFlows(home, control.root).length > 0) {
+    const flakeStamp = computeFlakeInputStamp(home, control.root, flakesConfig.feature);
+    if (flakeStamp !== state.lastFlakeStamp) {
+      await retryPendingFlakeCollections(home, control.root, null).catch(() => {});
+      state.lastFlakeStamp = listPendingFlakeFlows(home, control.root).length > 0
+        ? computeFlakeInputStamp(home, control.root, flakesConfig.feature)
+        : undefined;
+    }
+  } else {
+    state.lastFlakeStamp = undefined;
+  }
 
   const stamp = computeInputStamp(home, control, ids, state.liveJobIds);
   if (!forceRecheck && state.lastStamp === stamp) {
@@ -174,14 +251,14 @@ async function publishDiagnostics(home: string, control: UnattendedControl, issu
 function watchTargets(home: string, control: UnattendedControl | undefined): WatchTarget[] {
   const controlName = basename(controlPath(home)), flows = join(home, 'flows');
   const targets: WatchTarget[] = [
-    { dir: home, filter: file => !file || file === controlName || file === basename(indexPath(home)) || file === 'flows' },
+    { dir: home, filter: file => !file || file === controlName || file === basename(indexPath(home)) || file === 'flows' || file === 'harnesses.json' || file === 'settings.json' },
     { dir: join(home, 'jobs'), recursive: true, filter: file => !file || /(?:^|\/)(?:job|STATUS)\.json$/.test(file) },
   ];
   // First admission creates flows/. Watch its creation in home rather than leave a failed watcher until fallback.
   if (fs.existsSync(flows)) targets.push({ dir: flows, filter: file => !file || /^[qf][a-f0-9]{16}(?:-\d+)?\.json$/.test(file) });
   if (control?.root) {
     targets.push(
-      { dir: join(control.root, '.hud'), filter: file => !file || file === 'objectives.md' },
+      { dir: join(control.root, '.hud'), filter: file => !file || file === 'objectives.md' || file === 'project.json' },
       { dir: join(control.root, '.scratch'), recursive: true },
     );
   }

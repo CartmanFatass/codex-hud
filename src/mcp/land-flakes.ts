@@ -45,6 +45,7 @@ export interface FlakeCase {
 export interface CollectFlakesOptions {
   landedTickets?: readonly string[];
   retryDispatch?: boolean;
+  pendingTicket?: string;
   dispatch?: (input: {
     role: 'imp';
     cwd: string;
@@ -86,6 +87,8 @@ const CHECKBOX_LINE = /^[ \t]*[-*] \[[ xX]\]/m;
 const MAX_TICKET_BYTES = 256 * 1024;
 const MAX_FLOW_BYTES = 128 * 1024;
 const DISPATCH_CASE_THRESHOLD = 4;
+const WAITING_DISPATCH_ERROR = 'waiting for active flake job';
+const BLOCKED_DISPATCH_ERROR = 'ticket is blocked';
 
 const nn = (n: number) => String(n).padStart(2, '0');
 const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim();
@@ -371,6 +374,41 @@ function buildRunningListTicket(
   return { title, body };
 }
 
+type TicketDispatchState =
+  | { state: 'ready'; ticket: string; path: string }
+  | { state: 'blocked'; ticket: string; path: string }
+  | { state: 'resolved'; ticket: string };
+
+function inspectRunningListTicket(
+  mainRoot: string,
+  feature: string,
+  ticket: string,
+  claimedTickets: ReadonlySet<string>,
+): TicketDispatchState {
+  const key = targetKey(ticket);
+  if (claimedTickets.has(key)) return { state: 'resolved', ticket };
+  const scratch = join(mainRoot, '.scratch');
+  const item = listFeatureTickets(scratch, feature).find(t => targetKey(`${feature}/${nn(t.number)}`) === key);
+  if (!item) return { state: 'resolved', ticket };
+  const canonical = `${feature}/${nn(item.number)}`;
+  try {
+    const { bytes, truncated } = readFileBounded(item.path, MAX_TICKET_BYTES);
+    if (truncated) return { state: 'resolved', ticket: canonical };
+    const text = bytes.toString('utf8');
+    if (!isRunningListTicket(text)) return { state: 'resolved', ticket: canonical };
+    const evidence = ticketFileEvidence(text);
+    if (evidence.landed !== undefined) return { state: 'resolved', ticket: canonical };
+    if (!/^ready-for-agent$/i.test(evidence.status ?? '')) return { state: 'resolved', ticket: canonical };
+    if (evidence.blocked !== undefined && evidence.blocked.trim() && !/^none\b/i.test(evidence.blocked.trim())) {
+      return { state: 'blocked', ticket: canonical, path: item.path };
+    }
+    return { state: 'ready', ticket: canonical, path: item.path };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return { state: 'resolved', ticket: canonical };
+    return { state: 'blocked', ticket: canonical, path: item.path };
+  }
+}
+
 function findReadyRunningListTicket(
   mainRoot: string,
   feature: string,
@@ -380,18 +418,8 @@ function findReadyRunningListTicket(
   const tickets = listFeatureTickets(scratch, feature).sort((a, b) => a.number - b.number);
   for (const item of tickets) {
     const ticket = `${feature}/${nn(item.number)}`;
-    if (claimedTickets.has(targetKey(ticket))) continue;
-    try {
-      const { bytes, truncated } = readFileBounded(item.path, MAX_TICKET_BYTES);
-      if (truncated) continue;
-      const text = bytes.toString('utf8');
-      if (!isRunningListTicket(text)) continue;
-      const evidence = ticketFileEvidence(text);
-      if (!/^ready-for-agent$/i.test(evidence.status ?? '')) continue;
-      if (evidence.landed !== undefined) continue;
-      if (evidence.blocked !== undefined && evidence.blocked.trim() && !/^none\b/i.test(evidence.blocked.trim())) continue;
-      return { ticket, path: item.path };
-    } catch { /* Skip unreadable ticket. */ }
+    const inspected = inspectRunningListTicket(mainRoot, feature, ticket, claimedTickets);
+    if (inspected.state === 'ready') return { ticket: inspected.ticket, path: inspected.path };
   }
   return null;
 }
@@ -467,14 +495,17 @@ export async function collectGateFlakes(
         const { claimedTickets } = loadFeatureJobs(home, mainRoot, feature);
 
         // Scan running-list tickets: find the newest one and collect recorded cases for idempotent retry.
-        const recordedCases: FlakeCase[] = [];
+        const seenEntries: { entry: FlakeCase; ticket: string; path: string }[] = [];
         let newestRunning: { number: number; path: string; text: string } | undefined;
         for (const item of existing) {
           try {
             const text = edits.read(item.path);
             if (!isRunningListTicket(text)) continue;
             if (!newestRunning) newestRunning = { ...item, text };
-            recordedCases.push(...parseFlakeCases(text));
+            const ticket = `${feature}/${nn(item.number)}`;
+            for (const entry of parseFlakeCases(text)) {
+              seenEntries.push({ entry, ticket, path: item.path });
+            }
           } catch { /* Ignore unreadable file. */ }
         }
 
@@ -489,21 +520,27 @@ export async function collectGateFlakes(
         }
 
         const targetCases = openTarget ? parseFlakeCases(openTarget.text) : [];
-        const seenCases: FlakeCase[] = [...recordedCases];
         const toAdd: GateFlake[] = [];
+        let matchedTarget: { ticket: string; path: string } | undefined;
         for (const flake of flakes) {
-          if (seenCases.some(c => sameRecordedEntry(c, flake))) continue;
+          const match = seenEntries.find(e => sameRecordedEntry(e.entry, flake));
+          if (match) {
+            matchedTarget ??= { ticket: match.ticket, path: match.path };
+            continue;
+          }
           toAdd.push(flake);
-          seenCases.push({ ...flake, log: formatLogPath(flake.log) });
+          seenEntries.push({ entry: { ...flake, log: formatLogPath(flake.log) }, ticket: '', path: '' });
         }
         if (!toAdd.length) {
           return {
             alreadyRecorded: true,
-            res: openTarget
-              ? { ticket: `${feature}/${nn(openTarget.number)}`, path: openTarget.path, created: false, promoted: false }
-              : newestRunning
-                ? { ticket: `${feature}/${nn(newestRunning.number)}`, path: newestRunning.path, created: false, promoted: false }
-                : {},
+            res: matchedTarget
+              ? { ticket: matchedTarget.ticket, path: matchedTarget.path, created: false, promoted: false }
+              : openTarget
+                ? { ticket: `${feature}/${nn(openTarget.number)}`, path: openTarget.path, created: false, promoted: false }
+                : newestRunning
+                  ? { ticket: `${feature}/${nn(newestRunning.number)}`, path: newestRunning.path, created: false, promoted: false }
+                  : {},
           };
         }
 
@@ -534,12 +571,44 @@ export async function collectGateFlakes(
     }
   }
 
+  const mustDispatchTicket = result.promoted
+    ? result.ticket
+    : options?.retryDispatch
+      ? options.pendingTicket
+      : alreadyRecorded
+        ? result.ticket
+        : undefined;
+
   if (result.promoted || landedFlake || options?.retryDispatch || alreadyRecorded) {
     const dispatchOutcome = await withAbstractLock('land-flakes-dispatch', `${home}\0${sharedRoot(mainRoot)}\0${feature}`, async () => {
       const { claimedTickets, nextAttempt, hasActiveFlakeJob } = loadFeatureJobs(home, mainRoot, feature);
-      if (hasActiveFlakeJob) return {};
-      const candidate = findReadyRunningListTicket(mainRoot, feature, claimedTickets);
-      if (!candidate) return {};
+      let candidate: { ticket: string; path: string } | null = null;
+      if (mustDispatchTicket) {
+        const inspected = inspectRunningListTicket(mainRoot, feature, mustDispatchTicket, claimedTickets);
+        if (inspected.state === 'resolved') {
+          if (landedFlake && !options?.retryDispatch && !hasActiveFlakeJob) {
+            candidate = findReadyRunningListTicket(mainRoot, feature, claimedTickets);
+          }
+          if (!candidate) return {};
+        } else if (inspected.state === 'blocked') {
+          return { pending: { stage: 'dispatch' as const, error: BLOCKED_DISPATCH_ERROR, ticket: inspected.ticket } };
+        } else if (hasActiveFlakeJob) {
+          return { pending: { stage: 'dispatch' as const, error: WAITING_DISPATCH_ERROR, ticket: inspected.ticket } };
+        } else {
+          candidate = { ticket: inspected.ticket, path: inspected.path };
+        }
+      } else if (options?.retryDispatch) {
+        const ready = findReadyRunningListTicket(mainRoot, feature, claimedTickets);
+        if (!ready) return {};
+        if (hasActiveFlakeJob) {
+          return { pending: { stage: 'dispatch' as const, error: WAITING_DISPATCH_ERROR, ticket: ready.ticket } };
+        }
+        candidate = ready;
+      } else {
+        if (hasActiveFlakeJob) return {};
+        candidate = findReadyRunningListTicket(mainRoot, feature, claimedTickets);
+        if (!candidate) return {};
+      }
       const validPane = pane && herdrId(pane) ? pane : undefined;
       const input = {
         role: 'imp' as const,
@@ -597,33 +666,46 @@ export async function collectAndRecordLandFlakes(
   const flakes = flakesFromLandFlow(flow);
   const landedTickets = options?.landedTickets ?? landedTicketsForFlow(home, flow);
   const landedFlake = landedTickets.some(t => targetKey(t).startsWith(`${config.feature.toLowerCase()}/`));
-  const wasPending = flow.flake_collection?.state === 'pending';
+  const prev = flow.flake_collection;
+  const wasPending = prev?.state === 'pending';
   if (!flakes.length && !landedFlake && !wasPending) return {};
 
-  const retryDispatch = wasPending && flow.flake_collection?.stage === 'dispatch';
+  const retryDispatch = wasPending && prev?.stage === 'dispatch';
   const effectivePane = options?.pane !== undefined ? options.pane : flow.pane;
   const res = await collectGateFlakes(
     home,
     mainRoot,
     retryDispatch ? [] : flakes,
     effectivePane,
-    { landedTickets, retryDispatch, dispatch: options?.dispatch },
+    {
+      landedTickets,
+      retryDispatch,
+      ...(retryDispatch && prev?.ticket ? { pendingTicket: prev.ticket } : {}),
+      dispatch: options?.dispatch,
+    },
   );
 
-  const attempts = (flow.flake_collection?.attempts ?? 0) + 1;
+  const attempts = (prev?.attempts ?? 0) + 1;
   const updated_at = new Date().toISOString();
   if (res.pending) {
-    const collection: LandFlakeCollection = {
-      state: 'pending',
-      stage: res.pending.stage,
-      error: res.pending.error,
-      ...(res.pending.ticket ?? res.ticket ? { ticket: res.pending.ticket ?? res.ticket } : {}),
-      attempts,
-      updated_at,
-    };
-    await updateLandFlakeCollection(home, flow.flow, collection);
+    const ticket = res.pending.ticket ?? res.ticket ?? prev?.ticket;
+    const unchanged = prev?.state === 'pending' &&
+      prev.stage === res.pending.stage &&
+      prev.error === res.pending.error &&
+      prev.ticket === ticket;
+    if (!unchanged) {
+      const collection: LandFlakeCollection = {
+        state: 'pending',
+        stage: res.pending.stage,
+        error: res.pending.error,
+        ...(ticket ? { ticket } : {}),
+        attempts,
+        updated_at,
+      };
+      await updateLandFlakeCollection(home, flow.flow, collection);
+    }
   } else if (res.ticket || res.dispatchedJob || wasPending) {
-    const ticket = res.ticket ?? flow.flake_collection?.ticket;
+    const ticket = res.ticket ?? prev?.ticket;
     const collection: LandFlakeCollection = {
       state: 'done',
       ...(ticket ? { ticket } : {}),
