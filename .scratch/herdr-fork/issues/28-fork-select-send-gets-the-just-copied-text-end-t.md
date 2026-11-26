@@ -1,6 +1,6 @@
 # 28: Fork: select-send gets the just-copied text end to end (owner live failure of 16)
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Live try:** after install, drag-select a line in a worker pane with the mouse, press Ctrl+b a within 30 s: the HUD composer opens with that text
 **Blocked by:** none
