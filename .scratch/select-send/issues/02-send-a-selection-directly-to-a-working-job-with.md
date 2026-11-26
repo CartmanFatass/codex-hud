@@ -1,6 +1,6 @@
 # 02: Send a selection directly to a working job, with the answer tied back to the excerpt
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Live try:** Select text in a pane, press Ctrl+b a, pick a working job in the target list and send; the job's answer appears next to the excerpt on its card in the Inspector and on Execution, and picking a job that just ended shows "ended" and offers main.
 **Blocked by:** select-send/01
