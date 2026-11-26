@@ -120,6 +120,12 @@ The owner wants progress readable at a glance, like a metro line map: **points a
 - Worker cards (工作者) lose the 画面 screen rows entirely (and the "画面每 2 秒读取一次" note); HUD stops the
   periodic screen reads for Execution.
 
+**Chosen look (owner 2026-11-26): C · Hairline** from [`docs/design/metro-map/`](../metro-map/README.md) (sample
+`sample.html`). Owner compared A · Trunk, B · Braille 45°, a neon set, and A/C with diagonal plus rounded branches
+rendered in the real terminal, and picked the original Hairline: light `─│╭╮╰╯` travelled in `muted`, `╌╎` ahead in
+`frame`, one neutral line for every flow, colour only for state; its glyphs, tokens, row budget, ASCII and no-colour
+rules and the build's open points (§"What the build needs") replace the draft glyphs above (`⚖ ★` become `◇ ☆`).
+
 ## 4. Home and Project frames (62 columns)
 
 ```text
