@@ -604,15 +604,6 @@ export interface HudData {
   /** What this pane's HUD jobs ask of the person and what they just did (`render/work-summary.ts`). */
   work?: import('./collectors/work-summary-snapshot.js').MachineWorkSignal;
   localLoad?: import('./collectors/local-load.js').LocalLoad;
-  bridgeHealth?: {
-    state: 'connected' | 'pending' | 'disconnected' | 'unresponsive' | 'unavailable';
-    mode?: 'native' | 'report';
-    nativeState?: 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
-    stateMismatch?: boolean;
-    probeFailed?: boolean;
-    notificationGap?: boolean;
-    lastSuccessAtMs?: number;
-  };
   activity?: SessionActivity;
   tokenUsageAt?: Date;
   /** The latest collection failed; displayed values are the last good snapshot. */

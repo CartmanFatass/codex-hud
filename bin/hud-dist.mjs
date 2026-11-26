@@ -3,9 +3,16 @@ import { pathToFileURL } from 'node:url';
 import { withDistLock } from '../scripts/dist-lock.mjs';
 
 switch (process.argv[2]) {
-  case 'bar':
-    await withDistLock(() => import('../dist/index.js'));
+  case 'bar': {
+    const { runBar } = await withDistLock(() => import('../dist/index.js'));
+    await runBar();
     break;
+  }
+  case 'codex-launch': {
+    const { runCodexLaunch } = await withDistLock(() => import('../dist/cli/codex-launch.js'));
+    process.exitCode = await runCodexLaunch(process.argv.slice(3));
+    break;
+  }
   case 'panel': {
     const { runPanelEntry } = await withDistLock(() => import('../dist/tree-page.js'));
     runPanelEntry();

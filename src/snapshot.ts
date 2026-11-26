@@ -75,7 +75,6 @@ export interface HudSnapshot {
    * until the first read or failure; each half is absent until it happens.
    */
   health?: { sessionBound?: boolean; lastReadAt?: string; lastError?: { source: string; message: string; at: string } };
-  bridgeHealth?: HudData['bridgeHealth'];
   /** A projection, not a reading: when a quota window runs out at its recent rate. Absent unless one holds. */
   quotaForecast?: { window: string; exhaustAt: string; percent: number; windowMinutes?: number };
   /** When the pending approval was asked for (its wait is now minus this); absent with none pending. */
@@ -160,7 +159,6 @@ export function buildSnapshot(
   };
 
   const session = data.session;
-  if (data.bridgeHealth) snapshot.bridgeHealth = data.bridgeHealth;
   const rate = data.outputRate;
   if (
     rate &&
@@ -246,9 +244,8 @@ function snapshotHealthSignature(health: HudSnapshot['health']): unknown {
 }
 
 /**
- * A tmux session name can hold anything a shell can quote; a filename cannot.
- * Both the writer and the readers (the toggle script, `codex-hud --json`)
- * apply this, so they agree on where the file is.
+ * A pane ID can hold characters a filename cannot. Both the writer and
+ * readers (`codex-hud --json`) apply this so they agree on the file path.
  */
 export function snapshotFileName(sessionName: string): string {
   const safe = sessionName.replace(/[^A-Za-z0-9._-]/g, '_');
@@ -260,10 +257,9 @@ export function snapshotDirectory(_codexHome?: string): string {
 }
 
 export function snapshotPath(env: NodeJS.ProcessEnv = process.env, pid: number = process.pid): string {
-  // The session name is what a click or a script can look up. Without tmux
-  // there is nothing to look the file up by, so it is named after this
-  // process instead and is only useful to whoever already knows the pid.
-  const session = (env.CODEX_HUD_TMUX_SESSION ?? '').trim() || `pid-${pid}`;
+  // Prefer the herdr pane ID so `codex-hud --json` can find this pane's state.
+  // Outside a herdr pane, fall back to this process's pid.
+  const session = (env.CODEX_HUD_STRIP_PANE ?? env.HERDR_PANE_ID ?? '').trim() || `pid-${pid}`;
   return path.join(snapshotDirectory(), snapshotFileName(session));
 }
 

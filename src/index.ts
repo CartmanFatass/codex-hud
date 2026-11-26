@@ -1,14 +1,15 @@
 /**
  * Codex HUD - Main entry point
- * Phase 3: Redesigned with claude-hud style rendering
+ * Renders the single-line Codex status bar onto herdr's bottom pane strip
+ * (or to stdout when run directly outside a strip launcher).
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildStamp } from '../scripts/dist-lock.mjs';
 import { runtimeSettings, applyDisplaySettings } from './settings-runtime.js';
-import * as fs from 'fs';
-import * as path from 'path';
 import { getHudDisplayHome, getHudHome } from './hud-home.js';
-import { spawn } from 'child_process';
-import { PaneRuntimeStateCollector } from './collectors/pane-runtime-state.js';
 import { SessionFinder } from './collectors/session-finder.js';
 import { HudStatus } from './collectors/hud-status.js';
 import { useTreeScanStore, flushTreeScans } from './collectors/subagent-tree.js';
@@ -23,9 +24,8 @@ import {
   recordAdaptivePoll,
 } from './collectors/adaptive-poll.js';
 import { collectionObservation } from './utils/collection-observation.js';
-import { tmuxFocusPaneArgs, tmuxForwardKeyArgs } from './utils/hud-input.js';
 import { HudFileWatcher } from './collectors/file-watcher.js';
-import { renderToStdout, cleanupRenderer, currentStatusBar } from './render/index.js';
+import { renderToStdout, renderStatusBarLine, cleanupRenderer, currentStatusBar } from './render/index.js';
 import { colors } from './render/colors.js';
 import { buildSnapshot, SnapshotWriter } from './snapshot.js';
 import { Notifier, resolveNotifierOptions } from './notify.js';
@@ -35,318 +35,320 @@ import { readAdvisorNotice } from './collectors/advisor-shadow.js';
 import { readMachineWork } from './collectors/work-summary-snapshot.js';
 import { collectLocalLoad } from './collectors/local-load.js';
 import { startProfiling, stopProfiling, time, timeAsync } from './utils/profile.js';
+import { BAR_RELOAD_EXIT_CODE, PaneStripClient } from './strip-bar.js';
 import type { RolloutParseResult } from './collectors/rollout.js';
 import type { HudData } from './types.js';
 
 // Refresh interval in milliseconds
 const REFRESH_INTERVAL = 1000;
-let adaptive = createAdaptivePollState(REFRESH_INTERVAL);
-let collectionEpoch = 0;
-const wakeCollection = () => {
-  adaptive = forceAdaptivePoll(adaptive);
-  collectionEpoch++;
-};
-
-// Current working directory for the HUD
-const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
-const HUD_CWD_REAL = (() => {
-  try {
-    return fs.realpathSync(HUD_CWD);
-  } catch {
-    return HUD_CWD;
-  }
-})();
-
-// Optional HUD session start time (for session isolation)
-const HUD_SESSION_START = (() => {
-  const raw = process.env.CODEX_HUD_SESSION_START;
-  if (!raw) return null;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return null;
-  return parsed > 1_000_000_000_000 ? new Date(parsed) : new Date(parsed * 1000);
-})();
-
-// Track if we're running
-let isRunning = true;
-
-// Phase 2: Session and rollout tracking
-const sessionFinder = new SessionFinder(
-  HUD_CWD_REAL,
-  (session) => {
-    wakeCollection();
-    // When session changes, update rollout path
-    resetRolloutSignature();
-    if (session) {
-      rolloutParser.setRolloutPath(session.path);
-      hudFileWatcher.setRolloutPath(session.path);
-      return;
-    }
-
-    rolloutParser.setRolloutPath(null);
-    hudFileWatcher.setRolloutPath(null);
-  },
-  HUD_SESSION_START
-);
-
-// Off unless CODEX_HUD_NOTIFY=1. Codex notifies on its own, and two pop-ups
-// for one event is worse than none.
-const notifier = new Notifier(resolveNotifierOptions());
-const notices = new BarNoticeTracker();
-const hudHome = getHudHome();
-
-// The same tick that draws the bar also publishes what it drew, so a click,
-// a script or another pane can read the state the reader is looking at.
-const snapshotWriter = new SnapshotWriter();
-
-const rolloutParser = new RolloutParser(10);
-const hudFileWatcher = new HudFileWatcher();
-const paneRuntimeStateCollector = process.platform === 'win32' ? new PaneRuntimeStateCollector() : null;
-
-// Cached data that gets updated by watchers
-let cachedHudData: HudData | null = null;
-let configNeedsRefresh = false;
-const parseRolloutSafely = createParseQueue(() => rolloutParser.parse());
-
-// Size/mtime/inode of the rollout as of the last parse. Reset when the session
-// changes, since the parser starts a new file from offset 0.
-let lastParsedRollout: string | null = null;
-
-function resetRolloutSignature(): void {
-  lastParsedRollout = null;
-}
-
-/**
- * Parse the rollout unless it is byte-for-byte where the last parse left it.
- * An unreadable file counts as changed so a transient error still surfaces.
- */
-async function parseRolloutIfChanged(rolloutPath: string): Promise<RolloutParseResult | null> {
-  const signature = fileSignature(rolloutPath);
-  const cached = rolloutParser.getCached();
-  if (cached && signature !== null && signature === lastParsedRollout) {
-    return cached;
-  }
-  // Recorded before the parse: an append that lands mid-parse leaves the
-  // signature different afterwards, so the next tick parses again.
-  lastParsedRollout = signature;
-  try {
-    const parsed = await parseRolloutSafely();
-    return parsed;
-  } catch (error) {
-    // A failed read must not be remembered as "already parsed", or the tick
-    // would stop retrying until the file happened to change again.
-    lastParsedRollout = null;
-    throw error;
-  }
-}
-
-// The config, project scan and git status behind the bar, each on its own
-// cadence; shared with the tree panel, which shows the same fields while it
-// replaces the bar (see collectors/hud-status.ts).
-const hudStatus = new HudStatus(HUD_CWD, () => repaintCached());
-
-/**
- * Collect all HUD data including async rollout parsing
- */
-async function collectData(): Promise<HudData> {
-  try {
-    const settings = runtimeSettings();
-    applyDisplaySettings(settings);
-    // Settings saved in the panel reach the notifier here; an environment
-    // variable that was set still wins.
-    notifier.configure(resolveNotifierOptions(process.env, settings));
-  } catch {
-    /* Keep last valid display settings. */
-  }
-  if (configNeedsRefresh) {
-    hudStatus.invalidateConfig();
-    configNeedsRefresh = false;
-  }
-
-  // Check for active session
-  let session = sessionFinder.getCurrentSession();
-  let stale = false;
-  const health = hudStatus.health;
-  try {
-    session = await sessionFinder.check();
-  } catch (error) {
-    stale = true;
-    health.fail('session', error);
-  }
-
-  // Re-parse the current rollout only when the file actually moved. The parser
-  // is incremental, but reaching that conclusion still costs an open, a read
-  // and a close of a file that grows to tens of megabytes; one stat answers
-  // the same question. The tick remains the fallback when a watcher event is
-  // missed (always, on Windows, where watches are unreliable).
-  let rolloutData = rolloutParser.getCached();
-  if (session) {
-    try {
-      rolloutData = await parseRolloutIfChanged(session.path);
-    } catch (error) {
-      stale = true;
-      health.fail('rollout', error);
-    }
-  }
-  // Keep lookup success distinct from an actual bound Codex session.
-  if (!stale) {
-    health.bind(Boolean(session));
-    health.read();
-  }
-
-  const hudData = hudStatus.build({
-    rollout: rolloutData,
-    sessionId: session?.sessionId,
-    stale,
-    runtimeSession: paneRuntimeStateCollector?.collect() ?? undefined,
-  });
-  cachedHudData = hudData;
-  return hudData;
-}
-
-// Compact HUD is always a single identity line. Subagents live in the tree panel.
 const HUD_PANE_HEIGHT = 1;
 
-/**
- * Main render loop. Data collection runs every second. The renderer always
- * receives the pane height so rows that disappear leave no stale output behind.
- */
-async function mainLoop(): Promise<void> {
-  if (!isRunning) {
-    return;
-  }
+function parsePositivePid(raw: string | undefined): number | null {
+  if (!raw || !/^[1-9]\d*$/.test(raw)) return null;
+  const pid = Number(raw);
+  return Number.isSafeInteger(pid) && pid > 1 ? pid : null;
+}
 
-  await timeAsync('tick', async () => {
-    const scopeKey = sessionFinder.getCurrentSession()?.sessionId ?? '';
-    const now = Date.now();
-    if (!adaptivePollDue(adaptive, scopeKey, now)) {
-      if (cachedHudData) {
-        cachedHudData.evenQuota = readEvenQuotaNotices(hudHome, HUD_CWD_REAL, now);
-        cachedHudData.advisor = readAdvisorNotice(hudHome, { session: scopeKey || undefined, projectRoot: HUD_CWD_REAL }, now);
-        cachedHudData.work = readMachineWork(hudHome, now);
-        cachedHudData.localLoad = collectLocalLoad(hudHome, now);
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+export async function runBar(): Promise<void> {
+  let adaptive = createAdaptivePollState(REFRESH_INTERVAL);
+  let collectionEpoch = 0;
+  const wakeCollection = () => {
+    adaptive = forceAdaptivePoll(adaptive);
+    collectionEpoch++;
+  };
+
+  const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
+  const HUD_CWD_REAL = (() => {
+    try {
+      return fs.realpathSync(HUD_CWD);
+    } catch {
+      return HUD_CWD;
+    }
+  })();
+
+  const HUD_SESSION_START = (() => {
+    const raw = process.env.CODEX_HUD_SESSION_START;
+    if (!raw) return null;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed > 1_000_000_000_000 ? new Date(parsed) : new Date(parsed * 1000);
+  })();
+
+  const stripPaneId = (process.env.CODEX_HUD_STRIP_PANE ?? '').trim();
+  const stripMode = Boolean(stripPaneId);
+  const initialStripWidth = (() => {
+    const parsed = Number(process.env.CODEX_HUD_STRIP_WIDTH);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : 80;
+  })();
+  const parentPid = parsePositivePid(process.env.CODEX_HUD_PARENT_PID);
+  const codexPid = parsePositivePid(process.env.CODEX_HUD_CODEX_PID);
+  const initialBuildStamp = buildStamp();
+
+  let isRunning = true;
+  let shuttingDown = false;
+  let tickTimer: NodeJS.Timeout | null = null;
+  let cachedHudData: HudData | null = null;
+  let configNeedsRefresh = false;
+  let lastParsedRollout: string | null = null;
+
+  const rolloutParser = new RolloutParser(10);
+  const hudFileWatcher = new HudFileWatcher();
+  const parseRolloutSafely = createParseQueue(() => rolloutParser.parse());
+
+  const resetRolloutSignature = () => {
+    lastParsedRollout = null;
+  };
+
+  const sessionFinder = new SessionFinder(
+    HUD_CWD_REAL,
+    (session) => {
+      wakeCollection();
+      resetRolloutSignature();
+      if (session) {
+        rolloutParser.setRolloutPath(session.path);
+        hudFileWatcher.setRolloutPath(session.path);
+        return;
       }
-      repaintCached();
+      rolloutParser.setRolloutPath(null);
+      hudFileWatcher.setRolloutPath(null);
+    },
+    HUD_SESSION_START
+  );
+
+  // Off unless CODEX_HUD_NOTIFY=1. In pane-strip mode, never deliver via tmux.
+  const notifier = new Notifier({
+    ...resolveNotifierOptions(),
+    ...(stripMode ? { deliver: () => {} } : {}),
+  });
+  const notices = new BarNoticeTracker();
+  const hudHome = getHudHome();
+  const snapshotWriter = new SnapshotWriter();
+
+  const stripClient = stripMode
+    ? new PaneStripClient({
+        paneId: stripPaneId,
+        position: 'bottom',
+        initialWidth: initialStripWidth,
+        onWidthChange: () => repaintCached({ force: true }),
+        onPaneGone: () => {
+          void shutdown(0, false);
+        },
+      })
+    : null;
+
+  function renderCurrent(data: HudData, opts: { force?: boolean; nowMs?: number } = {}): void {
+    const nowMs = opts.nowMs ?? Date.now();
+    if (stripClient) {
+      const line = time('render', () => renderStatusBarLine(data, stripClient.width, nowMs));
+      void stripClient.push(line, { force: opts.force, nowMs });
       return;
     }
-    const epoch = collectionEpoch;
+    renderToStdout(data, HUD_PANE_HEIGHT);
+  }
+
+  function repaintCached(opts: { force?: boolean } = {}): void {
+    if (!isRunning || !cachedHudData) return;
     try {
-      const data = await collectData();
-      data.notices = notices.observe(data, Date.now());
-      const sampledAt = Date.now();
-      data.evenQuota = readEvenQuotaNotices(hudHome, HUD_CWD_REAL, sampledAt);
-      data.advisor = readAdvisorNotice(hudHome, { session: data.session?.id, projectRoot: HUD_CWD_REAL }, sampledAt);
-      data.work = readMachineWork(hudHome, sampledAt);
-      data.localLoad = collectLocalLoad(hudHome, sampledAt);
-      renderToStdout(data, HUD_PANE_HEIGHT);
-      // Notifications and the state file run on the collection tick, not on
-      // the repaint a status refresh triggers.
-      notifier.update(data);
-      try {
-        time('snapshot.write', () => snapshotWriter.write(buildSnapshot(data, currentStatusBar(data))));
-      } catch {
-        // A state file nobody can write is not a reason to stop drawing.
-      }
-      if (epoch === collectionEpoch)
-        adaptive = recordAdaptivePoll(adaptive, {
-          scopeKey: data.session?.id ?? '',
-          nowMs: Date.now(),
-          ...collectionObservation(data, data.subagentTree),
-          succeeded: !data.stale && data.health?.sessionBound === true,
-        });
-    } catch (error) {
-      wakeCollection();
-      hudStatus.health.fail('status', error);
-      console.error('Render error:', error);
+      renderCurrent(cachedHudData, { force: opts.force, nowMs: Date.now() });
+    } catch {
+      // Between-collection repaints are best-effort.
     }
-  });
-
-  // Schedule next render
-  setTimeout(mainLoop, REFRESH_INTERVAL);
-}
-
-function repaintCached(): void {
-  if (!isRunning || !cachedHudData) {
-    return;
   }
-  try {
-    renderToStdout(cachedHudData, HUD_PANE_HEIGHT);
-  } catch {
-    // between-collection repaints are best-effort
+
+  const hudStatus = new HudStatus(HUD_CWD, () => repaintCached());
+
+  async function parseRolloutIfChanged(rolloutPath: string): Promise<RolloutParseResult | null> {
+    const signature = fileSignature(rolloutPath);
+    const cached = rolloutParser.getCached();
+    if (cached && signature !== null && signature === lastParsedRollout) {
+      return cached;
+    }
+    lastParsedRollout = signature;
+    try {
+      return await parseRolloutSafely();
+    } catch (error) {
+      lastParsedRollout = null;
+      throw error;
+    }
   }
-}
 
-/**
- * Handle graceful shutdown
- */
-function shutdown(): void {
-  isRunning = false;
+  async function collectData(): Promise<HudData> {
+    try {
+      const settings = runtimeSettings();
+      applyDisplaySettings(settings);
+      notifier.configure(resolveNotifierOptions(process.env, settings));
+    } catch {
+      /* Keep last valid display settings. */
+    }
+    if (configNeedsRefresh) {
+      hudStatus.invalidateConfig();
+      configNeedsRefresh = false;
+    }
 
-  // A snapshot of a HUD that is no longer running would read as live.
-  snapshotWriter.remove();
-  flushTreeScans();
-  stopProfiling();
-  // Clean up watchers
-  sessionFinder.stop();
-  hudFileWatcher.stop().catch(() => {
-    // Ignore cleanup errors
-  });
+    let session = sessionFinder.getCurrentSession();
+    let stale = false;
+    const health = hudStatus.health;
+    try {
+      session = await sessionFinder.check();
+    } catch (error) {
+      stale = true;
+      health.fail('session', error);
+    }
 
-  cleanupRenderer();
-  process.exit(0);
-}
+    let rolloutData = rolloutParser.getCached();
+    if (session) {
+      try {
+        rolloutData = await parseRolloutIfChanged(session.path);
+      } catch (error) {
+        stale = true;
+        health.fail('rollout', error);
+      }
+    }
+    if (!stale) {
+      health.bind(Boolean(session));
+      health.read();
+    }
 
-function spawnTmux(args: string[]): void {
-  try {
-    const child = spawn('tmux', args, { stdio: 'ignore' });
-    child.on('error', () => {});
-    child.unref();
-  } catch {
-    // Best-effort: the 1-line bar must not swallow Codex input.
+    const hudData = hudStatus.build({
+      rollout: rolloutData,
+      sessionId: session?.sessionId,
+      stale,
+    });
+    cachedHudData = hudData;
+    return hudData;
   }
-}
 
-function bounceKeysToCodex(data: Buffer): void {
-  wakeCollection();
-  const mainPane = process.env.CODEX_HUD_MAIN_PANE;
-  if (!mainPane) {
-    return;
-  }
-  const send = tmuxForwardKeyArgs(mainPane, data);
-  const focus = tmuxFocusPaneArgs(mainPane);
-  if (send) {
-    spawnTmux(send);
-  }
-  if (focus) {
-    spawnTmux(focus);
-  }
-}
+  async function shutdown(exitCode = 0, clearStrip = true): Promise<void> {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    isRunning = false;
+    if (tickTimer) {
+      clearTimeout(tickTimer);
+      tickTimer = null;
+    }
 
-function setupKeyListener(): void {
-  if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== 'function') {
-    return;
+    if (clearStrip) {
+      snapshotWriter.remove();
+    }
+    flushTreeScans();
+    stopProfiling();
+    sessionFinder.stop();
+    await hudFileWatcher.stop().catch(() => {});
+    if (stripClient) {
+      await stripClient.stop({ clear: clearStrip }).catch(() => {});
+    } else {
+      cleanupRenderer();
+    }
+    process.exit(exitCode);
   }
-  process.stdin.setRawMode(true);
-  process.stdin.on('data', bounceKeysToCodex);
-}
 
-/**
- * Main entry point
- */
-async function main(): Promise<void> {
-  // Set up signal handlers
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-  process.on('SIGHUP', shutdown);
+  async function mainLoop(): Promise<void> {
+    if (!isRunning) return;
+
+    if (stripMode) {
+      if ((parentPid && !isPidAlive(parentPid)) || (codexPid && !isPidAlive(codexPid))) {
+        await shutdown(0, true);
+        return;
+      }
+      // Hot-reload after `npm run build` without clearing the strip or restarting Codex.
+      const nextStamp = buildStamp();
+      if (initialBuildStamp && nextStamp && nextStamp !== initialBuildStamp) {
+        await shutdown(BAR_RELOAD_EXIT_CODE, false);
+        return;
+      }
+    }
+
+    await timeAsync('tick', async () => {
+      const scopeKey = sessionFinder.getCurrentSession()?.sessionId ?? '';
+      const now = Date.now();
+      if (!adaptivePollDue(adaptive, scopeKey, now)) {
+        if (cachedHudData) {
+          cachedHudData.evenQuota = readEvenQuotaNotices(hudHome, HUD_CWD_REAL, now);
+          cachedHudData.advisor = readAdvisorNotice(
+            hudHome,
+            { session: scopeKey || undefined, projectRoot: HUD_CWD_REAL },
+            now
+          );
+          cachedHudData.work = readMachineWork(hudHome, now);
+          cachedHudData.localLoad = collectLocalLoad(hudHome, now);
+        }
+        repaintCached();
+        return;
+      }
+      const epoch = collectionEpoch;
+      try {
+        const data = await collectData();
+        data.notices = notices.observe(data, Date.now());
+        const sampledAt = Date.now();
+        data.evenQuota = readEvenQuotaNotices(hudHome, HUD_CWD_REAL, sampledAt);
+        data.advisor = readAdvisorNotice(
+          hudHome,
+          { session: data.session?.id, projectRoot: HUD_CWD_REAL },
+          sampledAt
+        );
+        data.work = readMachineWork(hudHome, sampledAt);
+        data.localLoad = collectLocalLoad(hudHome, sampledAt);
+        renderCurrent(data, { nowMs: sampledAt });
+        notifier.update(data);
+        try {
+          const width = stripClient?.width;
+          time('snapshot.write', () =>
+            snapshotWriter.write(buildSnapshot(data, currentStatusBar(data, width, sampledAt), sampledAt))
+          );
+        } catch {
+          // A state file nobody can write is not a reason to stop drawing.
+        }
+        if (epoch === collectionEpoch) {
+          adaptive = recordAdaptivePoll(adaptive, {
+            scopeKey: data.session?.id ?? '',
+            nowMs: Date.now(),
+            ...collectionObservation(data, data.subagentTree),
+            succeeded: !data.stale && data.health?.sessionBound === true,
+          });
+        }
+      } catch (error) {
+        wakeCollection();
+        hudStatus.health.fail('status', error);
+        if (!stripMode) console.error('Render error:', error);
+      }
+    });
+
+    if (isRunning) {
+      tickTimer = setTimeout(() => {
+        void mainLoop();
+      }, REFRESH_INTERVAL);
+    }
+  }
+
+  const onSignal = () => {
+    void shutdown(0, true);
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+  process.on('SIGHUP', onSignal);
+
   startProfiling('bar');
-  // Started again, the bar reads only what each rollout gained since it last saved its scan.
   useTreeScanStore(new TreeScanStore(path.join(getHudDisplayHome(), 'scan')));
 
-  // Handle stdin close (tmux pane closed)
-  process.stdin.on('close', shutdown);
-  process.stdin.resume();
-  setupKeyListener();
+  if (stripClient) {
+    stripClient.start();
+  } else {
+    process.stdin.on('close', onSignal);
+    process.stdin.resume();
+    if (process.stdout.isTTY) {
+      process.stdout.write('\x1b[2J\x1b[H' + colors.dim(' codex-hud · reading session…'));
+    }
+  }
 
-  // Set up file watchers
   hudFileWatcher.onConfigChange(() => {
     wakeCollection();
     configNeedsRefresh = true;
@@ -354,25 +356,25 @@ async function main(): Promise<void> {
 
   hudFileWatcher.onRolloutChange(() => {
     wakeCollection();
-    void sessionFinder.check().then((session) => {
-      if (session) return parseRolloutIfChanged(session.path);
-    }).catch(() => { /* The next collection reports failed reads. */ });
+    void sessionFinder
+      .check()
+      .then((session) => {
+        if (session) return parseRolloutIfChanged(session.path);
+      })
+      .catch(() => {
+        /* The next collection reports failed reads. */
+      });
   });
 
   hudFileWatcher.start();
-  sessionFinder.start(5000); // Check for session changes every 5 seconds
+  sessionFinder.start(5000);
 
-  // Do not write logs to stdout: the compact pane is one line, so a startup
-  // log would hide the status header. The first read of a
-  // long rollout takes seconds; a dim line says so rather than a blank bar.
-  if (process.stdout.isTTY) {
-    process.stdout.write('\x1b[2J\x1b[H' + colors.dim(' codex-hud · reading session…'));
-  }
   await mainLoop();
 }
 
-// Run main
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  runBar().catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+}

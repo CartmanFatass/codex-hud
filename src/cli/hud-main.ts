@@ -63,7 +63,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud stats [--days N] [--by role|model|route|feature]  Report job usage and outcomes\n' +
           '       hud day [--project]       Summarize today\'s jobs and landings\n' +
           '       hud board [--html] [--cwd DIR] [--out FILE] [--open]  Write the HTML review board\n' +
-          '       hud codex [ARG ...]        Existing codex-hud launcher (alias: codex-hud)\n' +
+          '       hud codex [ARG ...]        Launch Codex with the HUD pane-strip bar (alias: codex-hud)\n' +
           '       hud uninstall [--with names]  Remove commands and extensions; keep HUD data.\n'
       );
       return 0;

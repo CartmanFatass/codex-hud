@@ -30,12 +30,7 @@ export function collectionObservation(data: HudData | undefined | null, tree: Su
       else if (node.status === 'unknown' && activity === 'quiet') activity = 'uncertain';
       agents.push([node.id, node.status, node.lastEventAt?.getTime(), node.statusAt?.getTime()]);
     });
-  const bridge = data?.bridgeHealth;
-  if (
-    activity === 'quiet' &&
-    (data?.pendingApproval || bridge?.stateMismatch || bridge?.probeFailed || (bridge && bridge.state !== 'connected'))
-  )
-    activity = 'uncertain';
+  if (activity === 'quiet' && data?.pendingApproval) activity = 'uncertain';
   return {
     activity,
     fingerprint: JSON.stringify([
@@ -46,9 +41,6 @@ export function collectionObservation(data: HudData | undefined | null, tree: Su
       data?.contextUsage?.used,
       data?.outputRate?.sampledAt?.getTime(),
       data?.pendingApproval?.callId,
-      bridge?.state,
-      bridge?.nativeState,
-      bridge?.stateMismatch,
       agents,
     ]),
   };

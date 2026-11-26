@@ -28,7 +28,7 @@ uninstall for the remaining home.
 
 After installing the selected extensions, ordinary `claude` and `pi` launches load
 Claude's statusline and pi's footer. The `agy` extension configures Antigravity's statusline.
-Codex's tmux bar comes with `codexH`.
+Codex's bottom bar comes with `codexH` on the `herdr-hud` fork's pane strip (no tmux).
 The installer never edits shell rc files; with the Codex extension selected it prints
 only this function to paste into your shell rc:
 
@@ -36,8 +36,8 @@ only this function to paste into your shell rc:
 codexH() { hud codex "$@"; }
 ```
 
-`codexH` uses the existing `hud codex` tmux-bar launcher and leaves `CODEX_HOME`
-to the caller.
+`codexH` launches Codex directly inside the current herdr pane with a bottom pane strip
+and leaves `CODEX_HOME` to the caller.
 
 The panel never opens by itself: Claude, Codex and pi all use `/hud`.
 Claude gets a `/hud` command file (one line: run `hud panel` with Bash and report the pane id);
@@ -73,7 +73,7 @@ Claude, Codex and pi get the ticket method through `hud_tickets`. Installing a n
   Before MCP edits, the resolved `config.toml` gets a one-time plain `.hud-backup`.
   The official Codex commands may drop comments; a warning names that retained
   backup if the number of comment lines falls. No comments are reinserted.
-  `hud codex` is the HUD launch (tmux bar); `/hud` opens the standalone panel.
+  `hud codex` is the HUD launch (herdr pane-strip bar, no tmux); `/hud` opens the standalone panel.
 - **agy**: requires `agy` on PATH. Stages the official `agy mcp remove/add` commands in an
   isolated home and copies only `mcpServers.hud` into `~/.gemini/config/mcp_config.json`,
   without rewriting foreign entries. Adds `mcp(hud/*)` to `permissions.allow` in

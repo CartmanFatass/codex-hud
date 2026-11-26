@@ -15,7 +15,7 @@ Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud).
 ## Quick Start
 
 Requires **Node ≥24.0.0** (Node 24 is the tested supported line), npm, and the clients
-you select. Codex's tmux bar also needs tmux. Tab jobs need `herdr`; pi workers need `pi` on PATH.
+you select. `codexH` and tab jobs need the `herdr-hud` fork; pi workers need `pi` on PATH.
 Browser roles need their external **jev-*** CLIs configured.
 The installer does not install/authenticate those tools. See the
 [Node floor evidence](./docs/ARCHITECTURE.md#3-launch-and-installation).
@@ -56,7 +56,7 @@ installers preserve an existing owner-defined non-HUD statusline.
 | Client | Bar | Open the panel | Worker modes when selected as a role place |
 | --- | --- | --- | --- |
 | Claude Code | Statusline in ordinary `claude` | `/hud` | herdr tab or headless |
-| Codex | `codexH` tmux bar or opt-in [native status line](./docs/reference.md#codex-native-status-line) | `/hud` | herdr tab |
+| Codex | `codexH` pane-strip bar or opt-in [native status line](./docs/reference.md#codex-native-status-line) | `/hud` | herdr tab |
 | pi | Footer and editor ribbon in ordinary `pi` | `/hud` | herdr tab or headless |
 | Antigravity (`agy`) | Statusline in ordinary `agy` | `hud panel` from a shell in herdr | herdr tab or headless |
 
@@ -145,16 +145,15 @@ sessions are preserved before deletion.
 ## Usage
 
 ```sh
-codexH                       # Codex with the HUD tmux bar
+codexH                       # Codex with the HUD pane-strip bar (no tmux)
 codexH --model gpt-5          # pass Codex arguments
 codexH resume                # Codex's resume picker
 hud panel --help
 hud statusline --help
 ```
 
-From the checkout, `bin/codex-hud --list`, `--attach`, `--kill`, `--self-check`
-and `--json` are available. `--kill` closes this directory's HUD sessions;
-`--json` prints the active Codex snapshot.
+From the checkout, `bin/codex-hud --self-check` and `--json` are available.
+`--json` prints the active Codex pane snapshot.
 
 ## Configuration
 

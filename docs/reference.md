@@ -43,7 +43,7 @@ Configure Chrome/login/keys through those external CLIs.
 The panel and Decision API need no browser extension.
 
 Ordinary `claude` uses the global HUD statusline unless an owner-defined non-HUD statusline already exists; ordinary `pi` loads the HUD footer.
-Codex's tmux bar uses the installer's printed shell function:
+Codex's pane-strip bar uses the installer's printed shell function (requires the `herdr-hud` fork with `pane_strip` support; no tmux):
 
 ```sh
 codexH() { hud codex "$@"; }
@@ -90,7 +90,7 @@ hud setup --apply PLAN    # write .hud/ from a plan
 hud setup --remove        # drop project registration; leave .hud/
 hud tickets sync [--cwd DIR]  # mirror GitHub parent/sub-issues into .scratch/
 hud board [--cwd DIR] [--out FILE] [--open]  # write the project's HTML review board, print its path
-hud codex --model gpt-5    # Codex arguments pass through to the tmux launcher
+hud codex --model gpt-5    # Codex arguments pass through; bar runs on the herdr pane strip
 ```
 
 `hud codex-hud` aliases `hud codex`.
@@ -1249,7 +1249,7 @@ Local workers get read references; browser workers get bounded inline context. W
 
 ## The bottom bars
 
-Claude and Antigravity statuslines, the pi footer and the Codex tmux bar use the same facts and layout:
+Claude and Antigravity statuslines, the pi footer and the Codex pane-strip bar use the same facts and layout:
 
 ```text
 model effort │ context %/window │ repo branch(dirty) │ quota │ ~N t/s │ notices ··· MCP n  skills n
@@ -1307,7 +1307,7 @@ The **Track native status line** switch in **Control → Resources** only record
 
 The compact footer puts model and effort, context, then quota first.
 It shows the same per-role HUD job counts and optional queue clock, followed by available Linux/WSL load readings.
-On a narrow footer, Codex cuts the right end with `…`; `codexH`'s tmux bar keeps its width-aware layout.
+On a narrow footer, Codex cuts the right end with `…`; `codexH`'s pane-strip bar keeps its width-aware layout.
 
 ### pi controls
 
@@ -1336,8 +1336,8 @@ Context is in the bottom group but is stored as `piFooter.band.context`; the oth
 
 ## Machine-readable state
 
-The active Codex bar/panel writes private atomic snapshots to `$HUD_HOME/display/state/<tmux-session>.json` when facts change (at most once/second).
-`hud codex --json` reads this directory's session snapshot:
+The active Codex bar/panel writes private atomic snapshots to `$HUD_HOME/display/state/<pane-id>.json` (sanitized) when facts change (at most once/second).
+`hud codex --json` reads this pane's snapshot:
 
 ```sh
 hud codex --json | jq '.context.percent, .agents.active, .attention[].label'
@@ -1365,10 +1365,9 @@ Old samples say last, not live.
 | `HUD_BAR_STYLE`, `HUD_BAR_FIELDS` | Bar defaults (also `CODEX_HUD_BAR_STYLE`, `CODEX_HUD_BAR_FIELDS`) |
 | `CODEX_HUD_THEME`, `CODEX_HUD_ICONS` | Theme/icon defaults |
 | `NO_COLOR` | Any non-empty value disables colour, even with saved settings |
-| `CODEX_HUD_STATUSLINE` | 1 default; 0 disables Codex bar on new HUD sessions, wins over Bar on launch |
+| `CODEX_HUD_STATUSLINE` | 1 default; 0 disables the Codex pane-strip bar on launch, wins over Bar on launch (also `HUD_STATUSLINE`) |
 | `CODEX_HUD_TREE_WIDTH` | Initial panel width when no saved settings |
 | `CODEX_HUD_CWD`, `CODEX_SESSIONS_PATH` | Explicit workspace/session directory |
-| `CODEX_HUD_MOUSE`, `CODEX_HUD_AUTO_ATTACH` | Mouse policy, explicit auto-attach preference |
 | `CODEX_HUD_NOTIFY`, `CODEX_HUD_NOTIFY_DESKTOP`, `CODEX_HUD_NOTIFY_COOLDOWN` | Notification opt-ins, cooldown (300 seconds default) |
 | `CODEX_HUD_PROFILE` | 1 writes stage timing summaries to `display/profile.log` |
 | `CODEX_HUD_FONT_DIR` | Override optional `bin/codex-hud-fonts` install/check directory |

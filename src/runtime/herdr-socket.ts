@@ -3,13 +3,36 @@ import { isAbsolute } from 'node:path';
 import { createInterface } from 'node:readline';
 import { clearTimeout, setTimeout } from 'node:timers';
 
+export type PaneStripPosition = 'top' | 'bottom';
+
+export interface PaneStripReservation {
+  position: PaneStripPosition;
+  line?: string;
+  lease_ms?: number;
+}
+
+export interface PaneStripInfo {
+  pane_id: string;
+  workspace_id: string;
+  tab_id: string;
+  width: number;
+  height: number;
+  cols: number;
+  rows: number;
+  top: boolean;
+  bottom: boolean;
+  top_lease_remaining_ms?: number | null;
+  bottom_lease_remaining_ms?: number | null;
+}
+
 export interface HerdrReply {
   error?: { code: string; message?: string };
   result?: {
     type?: string;
     version?: string;
     protocol?: number;
-    capabilities?: { hidden_tabs?: boolean; guarded_prompt?: boolean };
+    capabilities?: { hidden_tabs?: boolean; pane_strip?: boolean; guarded_prompt?: boolean };
+    strip?: PaneStripInfo;
     pane?: { pane_id: string; tab_id?: string; launch_id?: string; terminal_id?: string; label?: string };
     tab?: { tab_id: string; launch_id?: string; terminal_id?: string; label?: string; hidden?: boolean };
     root_pane?: { pane_id: string; tab_id?: string; launch_id?: string; terminal_id?: string };
@@ -61,6 +84,44 @@ export async function isHudHerdrFork(signal?: AbortSignal, env: NodeJS.ProcessEn
 export async function hasHerdrHiddenTabs(env = process.env): Promise<boolean> {
   const reply = await request('ping', {}, { timeoutMs: 500, env }).catch(() => null);
   return !reply?.error && reply?.result?.capabilities?.hidden_tabs === true;
+}
+
+export async function probeHerdrPaneStrip(env = process.env): Promise<{
+  supported: boolean;
+  reachable: boolean;
+  version?: string;
+}> {
+  const reply = await request('ping', {}, { timeoutMs: 500, env }).catch(() => null);
+  if (!reply || reply.error) return { supported: false, reachable: false };
+  return {
+    supported: reply.result?.capabilities?.pane_strip === true,
+    reachable: true,
+    version: reply.result?.version,
+  };
+}
+
+export function setPaneStrip(
+  paneId: string,
+  opts: { position: PaneStripPosition; line: string; leaseMs?: number },
+  reqOpts: { timeoutMs?: number; signal?: AbortSignal; id?: string; env?: NodeJS.ProcessEnv } = {}
+): Promise<HerdrReply | null> {
+  const params: Record<string, unknown> = {
+    pane_id: paneId,
+    position: opts.position,
+    line: opts.line,
+  };
+  if (opts.leaseMs !== undefined) params.lease_ms = opts.leaseMs;
+  return request('pane.strip.set', params, reqOpts);
+}
+
+export function clearPaneStrip(
+  paneId: string,
+  position?: PaneStripPosition,
+  reqOpts: { timeoutMs?: number; signal?: AbortSignal; id?: string; env?: NodeJS.ProcessEnv } = {}
+): Promise<HerdrReply | null> {
+  const params: Record<string, unknown> = { pane_id: paneId };
+  if (position) params.position = position;
+  return request('pane.strip.clear', params, reqOpts);
 }
 
 /** Capture only a literal endpoint that can be compared across processes and round-trip through SESSION. */

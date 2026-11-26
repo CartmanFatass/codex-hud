@@ -11,7 +11,6 @@ const legacyNames = {
   HUD_BAR_STYLE: 'CODEX_HUD_BAR_STYLE',
   HUD_BAR_FIELDS: 'CODEX_HUD_BAR_FIELDS',
   HUD_TREE_WIDTH: 'CODEX_HUD_TREE_WIDTH',
-  HUD_CLEAR_SCROLLBACK: 'CODEX_HUD_CLEAR_SCROLLBACK',
 } as const;
 
 export type HudEnvironmentName = keyof typeof legacyNames;

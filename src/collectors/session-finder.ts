@@ -10,7 +10,7 @@ import { getHudHome } from '../hud-home.js';
 import { codexJobSnapshot } from './job-snapshot.js';
 import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
 import { timeAsync } from '../utils/profile.js';
-import { DaemonBinding } from './daemon-binding.js';
+import { DaemonBinding, codexProcess } from './daemon-binding.js';
 
 const DEFAULT_LOOKBACK_DAYS = 30;
 
@@ -1067,22 +1067,31 @@ export class SessionFinder {
   }
 
   private async checkNow(): Promise<SessionFile | null> {
+    const rawCodexPid = process.env.CODEX_HUD_CODEX_PID;
+    const directCodexPid = rawCodexPid && /^[1-9]\d*$/.test(rawCodexPid) ? Number(rawCodexPid) : null;
     const mainPaneId = process.env.CODEX_HUD_MAIN_PANE;
-    if (mainPaneId) {
+    if (directCodexPid || mainPaneId) {
       // The daemon's log says which conversation the pane's TUI has open,
-      // a resumed one included, before it writes to it; the snapshots are
-      // the older Codex's word for it.
-      this.daemon ??= new DaemonBinding(getCodexHome(), mainPaneId, this.targetStartTime?.getTime() ?? null, {
-        onChange: () => {
-          // A daemon update can arrive while the fallback awaits its job snapshot.
-          // Recheck after that flight, rather than just joining it.
-          if (this.pending) void this.pending.then(this.checkInBackground, this.checkInBackground);
-          else this.checkInBackground();
-        },
-      });
+      // a resumed one included, before it writes to it. When codexH launched
+      // Codex directly, bind by its root PID without consulting tmux.
+      this.daemon ??= new DaemonBinding(
+        getCodexHome(),
+        directCodexPid ? `pid:${directCodexPid}` : mainPaneId!,
+        this.targetStartTime?.getTime() ?? null,
+        {
+          ...(directCodexPid ? { findPid: () => codexProcess(directCodexPid) } : {}),
+          onChange: () => {
+            // A daemon update can arrive while the fallback awaits its job snapshot.
+            // Recheck after that flight, rather than just joining it.
+            if (this.pending) void this.pending.then(this.checkInBackground, this.checkInBackground);
+            else this.checkInBackground();
+          },
+        }
+      );
       const daemonThread = this.daemon.threadId();
       const threadId =
-        (daemonThread && rootThreadOf(daemonThread)) || findThreadIdForPane(mainPaneId, this.targetStartTime);
+        (daemonThread && rootThreadOf(daemonThread)) ||
+        (mainPaneId ? findThreadIdForPane(mainPaneId, this.targetStartTime) : null);
       if (threadId) {
         if (this.currentSession?.sessionId === threadId) {
           const kept = this.refreshCurrentSession();

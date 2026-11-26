@@ -3,8 +3,6 @@
  * Phase 3: Updated to use new LayoutConfig system
  */
 
-import { resolveHudEnv } from '../utils/hud-env.js';
-import { execFile } from 'node:child_process';
 import type { HudData, RenderOptions, LayoutConfig, LayoutMode } from '../types.js';
 import { renderHud, fitStatusBar } from './header.js';
 import type { FitResult } from './layout/bar-fields.js';
@@ -15,55 +13,10 @@ import { time } from '../utils/profile.js';
 const CURSOR_HOME = '\x1b[H';
 const CLEAR_SCREEN = '\x1b[2J';
 const CLEAR_LINE = '\x1b[2K';
-const CLEAR_SCROLLBACK = '\x1b[3J';
 const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
 
 let lastStdoutFrame: string | null = null;
-
-/**
- * Pane size.
- *
- * The HUD pane is a real pty: tmux sends SIGWINCH, so `process.stdout` already
- * reports the pane size and the 'resize' listener already covers changes.
- * Asking tmux is only needed when stdout is not a TTY (a piped or redirected
- * HUD), and then once: the answer is fetched asynchronously so no frame ever
- * waits on a subprocess.
- */
-let tmuxPaneSize: { width?: number; height?: number } = {};
-let tmuxQueryStarted = false;
-
-function requestTmuxPaneSize(): void {
-  const pane = process.env.TMUX_PANE;
-  if (tmuxQueryStarted || !pane) {
-    return;
-  }
-  tmuxQueryStarted = true;
-
-  try {
-    const child = execFile(
-      'tmux',
-      ['display-message', '-p', '-t', pane, '#{pane_width} #{pane_height}'],
-      { encoding: 'utf8', timeout: 1000, windowsHide: true },
-      (error, stdout) => {
-        if (error) {
-          return;
-        }
-        const [rawWidth, rawHeight] = stdout.trim().split(/\s+/);
-        const width = Number(rawWidth);
-        const height = Number(rawHeight);
-        tmuxPaneSize = {
-          width: Number.isFinite(width) && width > 0 ? width : undefined,
-          height: Number.isFinite(height) && height > 0 ? height : undefined,
-        };
-      }
-    );
-    // A pending size probe must not keep the HUD alive on shutdown.
-    child.unref();
-  } catch {
-    // tmux missing or unspawnable: stdout and the environment still answer.
-  }
-}
 
 /**
  * Get terminal width
@@ -72,10 +25,6 @@ export function getTerminalWidth(): number {
   const stdoutColumns = process.stdout.columns;
   if (Number.isFinite(stdoutColumns) && stdoutColumns > 0) {
     return stdoutColumns;
-  }
-  requestTmuxPaneSize();
-  if (tmuxPaneSize.width) {
-    return tmuxPaneSize.width;
   }
   const envColumns = process.env.COLUMNS ? Number(process.env.COLUMNS) : NaN;
   if (Number.isFinite(envColumns) && envColumns > 0) {
@@ -91,10 +40,6 @@ export function getTerminalHeight(): number {
   const stdoutRows = process.stdout.rows;
   if (Number.isFinite(stdoutRows) && stdoutRows > 0) {
     return stdoutRows;
-  }
-  requestTmuxPaneSize();
-  if (tmuxPaneSize.height) {
-    return tmuxPaneSize.height;
   }
   const envLines = process.env.LINES ? Number(process.env.LINES) : NaN;
   if (Number.isFinite(envLines) && envLines > 0) {
@@ -155,9 +100,23 @@ function createDefaultLayout(width: number, height: number): LayoutConfig {
  * path, which would put a machine-readable side channel in the middle of the
  * drawing code for the sake of a job that happens once a second.
  */
-export function currentStatusBar(data: HudData): FitResult & { width: number } {
-  const width = getTerminalWidth();
-  return { ...fitStatusBar(data, createDefaultLayout(width, 1), width), width };
+export function currentStatusBar(
+  data: HudData,
+  widthOverride?: number,
+  nowMs: number = Date.now()
+): FitResult & { width: number } {
+  const width = widthOverride && widthOverride > 0 ? widthOverride : getTerminalWidth();
+  return { ...fitStatusBar(data, createDefaultLayout(width, 1), width, nowMs), width };
+}
+
+/**
+ * Render the single-row status bar at an exact column width for herdr's pane strip.
+ * Pure with respect to `nowMs`; produces the same line as the compact stdout renderer.
+ */
+export function renderStatusBarLine(data: HudData, width: number, nowMs: number = Date.now()): string {
+  if (!Number.isFinite(width) || width <= 0) return '';
+  const fitted = fitStatusBar(data, createDefaultLayout(width, 1), width, nowMs);
+  return truncateAnsi(fitted.line, width);
 }
 
 /**
@@ -212,10 +171,6 @@ export function initRenderer(): void {
 
   // Handle resize
   process.stdout.on('resize', () => {
-    // A non-TTY stdout never emits this, so the one-shot tmux answer only
-    // needs refreshing for the TTY case, where stdout is authoritative anyway.
-    tmuxPaneSize = {};
-    tmuxQueryStarted = false;
     lastStdoutFrame = null;
     process.stdout.write(CLEAR_SCREEN + CURSOR_HOME);
   });
@@ -235,25 +190,14 @@ export function cleanupRenderer(): void {
 
 /**
  * Simple single-line render mode
- * Used for tmux status bar integration
  */
-export function renderSingleLine(data: HudData): string {
-  const width = getTerminalWidth();
-  const layout = createDefaultLayout(width, 1);
-
-  const options: RenderOptions = {
-    width,
-    showDetails: false,
-    layout,
-  };
-
-  const lines = renderHud(data, options);
-  return truncateAnsi(lines[0] || '', width);
+export function renderSingleLine(data: HudData, widthOverride?: number, nowMs: number = Date.now()): string {
+  const width = widthOverride && widthOverride > 0 ? widthOverride : getTerminalWidth();
+  return renderStatusBarLine(data, width, nowMs);
 }
 
 /**
  * Output HUD to stdout without screen control
- * Used when running in a tmux pane
  */
 export function renderToStdout(data: HudData, heightOverride?: number): void {
   const frame = time('render', () => composeStdoutFrame(data, heightOverride));
@@ -298,10 +242,7 @@ function writeStdoutFrame({
   maxLines: number;
   isFirstRender: boolean;
 }): void {
-  const clearScrollback = resolveHudEnv(process.env, 'HUD_CLEAR_SCROLLBACK') === '1';
-  // Clear once on first render so the top line reliably appears in new panes.
-  const clearPrefix =
-    (isFirstRender && clearScrollback ? CLEAR_SCROLLBACK : '') + (isFirstRender ? CLEAR_SCREEN : '') + CURSOR_HOME;
+  const clearPrefix = (isFirstRender ? CLEAR_SCREEN : '') + CURSOR_HOME;
   process.stdout.write(clearPrefix);
 
   const totalLines = Math.max(lines.length, maxLines);

@@ -24,8 +24,6 @@ import { time, timeAsync } from '../utils/profile.js';
 import type { RolloutParseResult } from './rollout.js';
 import { quotaForecast } from './quota-forecast.js';
 import type { CodexConfig, GitStatus, HudData, ProjectInfo, SessionInfo } from '../types.js';
-import { BridgeHealthReader } from './bridge-health.js';
-import { getHudDisplayHome } from '../hud-home.js';
 
 const SYNC_REFRESH_MS = 3000;
 
@@ -87,7 +85,6 @@ export class HudStatus {
   private gitInFlight = false;
   private readonly gitTargets = new GitTargetCache();
   private last: HudData | null = null;
-  private readonly bridgeHealth = new BridgeHealthReader(getHudDisplayHome());
   /** Fed by the caller's collection and by the git refresh here; carried on every build. */
   readonly health = new HudHealth();
 
@@ -141,7 +138,6 @@ export class HudStatus {
     const forecast = quotaForecast(rollout?.quotaSamples ?? [], now);
 
     this.last = {
-      bridgeHealth: this.bridgeHealth.read(now),
       config: this.config,
       git: this.git,
       project: this.project,

@@ -21,7 +21,7 @@ Open the interactive HUD panel beside the caller in herdr, otherwise here.
 --root selects observations only, never execution/control identity.
 Without --root the existing all-delegations view is unchanged.
 Presentation aliases: HUD_THEME, HUD_DENSITY, HUD_GLYPHS, HUD_ICONS, HUD_LOOK,
-HUD_REDUCED_MOTION, HUD_CONTEXT, HUD_TREE_WIDTH, HUD_CLEAR_SCROLLBACK.
+HUD_REDUCED_MOTION, HUD_CONTEXT, HUD_TREE_WIDTH.
 HUD_SETTINGS_PATH selects the existing settings file. Present HUD_* values win
 over their CODEX_HUD_* counterparts, including empty values. Saved display
 settings retain priority; NO_COLOR still disables color.

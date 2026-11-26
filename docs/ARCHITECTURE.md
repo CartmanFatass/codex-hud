@@ -45,7 +45,7 @@ Harness behaviour and session places are untouched.
 Local briefs list resolved paths and reference a registered project's optional `.hud/brief.md`.
 Browser briefs include the paths and bounded file bodies, including that standing brief if present, in the prompt sent to the selected browser service.
 
-Claude's statusline, pi's footer and Codex's tmux bar (`src/index.ts`) are the client integrations.
+Claude's statusline, pi's footer and Codex's pane-strip bar (`src/index.ts`, `src/strip-bar.ts`) are the client integrations.
 One standalone panel (`src/tree-page.ts`) serves all three clients via `/hud` (`hud panel`), writing its own snapshot and notifications when needed.
 No panel opens at launch.
 
@@ -53,7 +53,7 @@ No panel opens at launch.
 
 | Path | Responsibility |
 |---|---|
-| `bin/` | Public launchers and Codex tmux helpers |
+| `bin/` | Public launchers (`hud`, `codex-hud`, `hud-statusline`) |
 | `install`, `install.d/` | Core installer and selected client/prerequisite extensions |
 | `packages/hud-mcp/bin/hud-mcp.mjs`, `packages/hud-mcp/bin/surface.mjs` | Stdio transport and entry selection for the reloadable MCP runtime |
 | `src/mcp/mcp/server.ts`, `src/mcp/mcp/operations.ts`, `src/roles/tool-definitions.ts` | Main/worker MCP request handling, main-session operations and role tool schemas |
@@ -66,7 +66,7 @@ No panel opens at launch.
 | `packages/hud-mcp/bin/hud-jev.mjs`, `src/runtime/browser-runner.ts` | Launcher and implementation of the browser-CLI wrapper |
 | `src/roles/roster.ts` | Role definitions, assignments and convention, shared by MCP/Project |
 | `src/cli/` | HUD commands including panel, statusline, settings import and Codex launcher compatibility |
-| `src/index.ts` | Codex tmux bar loop |
+| `src/index.ts`, `src/strip-bar.ts` | Codex pane-strip bar loop and herdr strip transport |
 | `src/cli/statusline.ts`, `src/statusline-parity/` | Statusline command and Claude/Antigravity statusline collection and rendering adapters |
 | `src/harness/pi/p10k-footer.ts` | pi footer and editor ribbon |
 | `src/tree-page.ts`, `src/panel/controller.ts` | Standalone panel entry and interaction/repaint loop |
@@ -115,11 +115,10 @@ Earlier Node versions are not supported, even if individual APIs or dependencies
   `utils/panel-reload.ts` still feature-detects `process.execve` and keeps its signal-forwarding fallback; neither lowers the supported product floor.
 - Locked runtime dependencies `chokidar` 5 and `readdirp` 5 require **≥20.19.0**; the locked build tools need no higher floor than the product (see `package-lock.json`).
 
-`hud codex` runs the existing `bin/codex-hud` tmux launcher.
-It creates a session for the cwd and selected `CODEX_HOME`, starts Codex unchanged, and opens the 1-line bar.
-The launcher forwards Codex arguments and `CODEX_HOME`; explicit `--attach` reuses a session.
-The read-only herdr observer checks the designated main pane, not whichever pane is focused.
-No global tmux configuration is required.
+`hud codex` runs `bin/codex-hud` (`src/cli/codex-launch.ts`).
+When the running `herdr-hud` fork advertises `capabilities.pane_strip`, it reserves the pane's bottom strip, spawns Codex directly in the pane with forwarded arguments and `CODEX_HOME` (no tmux), and runs the bar sidecar pushing rendered lines at the exact width from `pane.resized` events while renewing the 15 s lease.
+The bar reloads automatically after `npm run build` without restarting Codex or clearing the strip, and clears the bottom strip on exit.
+Without `pane_strip` support (unless `CODEX_HUD_STATUSLINE=0`), it refuses with an error naming `herdr-hud`.
 `/hud` opens the standalone herdr sidebar panel (`hud panel`).
 
 ## 4. Collecting data
