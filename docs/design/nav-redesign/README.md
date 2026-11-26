@@ -193,3 +193,15 @@ Open questions (recommendation first):
 - Not drawn: Home and Control, the Inspector, run detail, the Waiting, Unlinked and four linked diagnostic pages,
   scrolling (the busy Execution frame is 50 rows), unicode and text icon sets, light themes.
 - New rows are prototypes, not the product renderer; their `en` words are drawn only on the Project tab.
+
+## 11. Settled by main (2026-11-26, owner delegated the settlement)
+
+The sample is the build template, with these changes:
+
+1. **Request rows say what at every width** (spec §2.2). First row `? project › Objective … 在等你 age`; the sentence sits
+   on that row when at least 24 cells remain, otherwise on a second row cut to one row. Home uses the same area.
+2. **Projects list** stays behind `+N` on the strip.
+3. **Last landing completes an Objective**: it folds at once; the end stays visible in 刚结束 for 24 h.
+4. **Not removed in this build** (visible features; the owner was away, so they wait for the owner's word): the `?N`
+   tab badges stay, Execution screen thumbnails stay at 6 rows. Unlinked jobs move from the Project tab to 执行
+   (moved, not removed); the Details list becomes header links `工单 进度 工作区 文档` (owner's request).
