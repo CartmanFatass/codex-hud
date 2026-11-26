@@ -39,11 +39,20 @@ Older handoffs: [2026-11-03 to 11-14](archive/STATE-2026-11-03-to-11-14.md), [20
 
 ## Waiting for the owner
 
-See [PENDING.md](PENDING.md): advisor injection scope, gate concurrency, `docs/neon-proposal/`.
-- Remote owner decisions (phone/watch prompts with a recommendation and options, self-hosted; only owner-reserved
-  decisions; no answer = only that item waits): research only, parked by the owner 2026-11-26. Oracle
-  jc101d434509e9be0 surveys open-source options; file its summary, build nothing until the owner reopens it.
-- Advisor Objective paused by the owner (D-2026-11-26-07).
+Only items that block on an owner decision go here (the bar and panel show each one as waiting); parked work and
+todos go under Later.
+
+## Later (todo, not waiting)
+
+- Remote owner decisions (phone/watch prompts with a recommendation and options; owner uses Android, rich phone,
+  simple one-tap watch): research only, parked 2026-11-26. Survey and the private Cloudflare Worker alternative in
+  `docs/llm/remote-decisions-research-2026-11-26.md`.
+- Multi-device: two more laptops (one daily, one to become an Ubuntu dev machine). herdr already connects saved SSH
+  machines in one window (`docs/next/.../connecting-machines.mdx` in the fork); HUD is single-machine (spec §3
+  "cross-machine control is a later TODO"); `machine add` would install upstream herdr, so the fork must be installed
+  on the dev box first. Gather: daily laptop OS, where main and workers run, same LAN or remote access. Parked.
+- Advisor Objective paused by the owner (D-2026-11-26-07); PENDING.md keeps the advisor injection scope, gate
+  concurrency and `docs/neon-proposal/` notes.
 
 ## Next
 
