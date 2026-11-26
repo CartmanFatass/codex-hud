@@ -114,6 +114,7 @@ export function save(job: Job, newAttempt = false, collectedStamp?: string | nul
   if (existing?.report_bytes !== undefined) job.report_bytes = existing.report_bytes;
   if (existing?.findings) job.findings = existing.findings;
   if (existing?.reviewed) job.reviewed = existing.reviewed;
+  if (existing?.resume_failures && !job.resume_failures) job.resume_failures = existing.resume_failures;
   jobCache.writeJsonAtomic(file, job as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
   writeScan.getStore()?.record(job);
 }

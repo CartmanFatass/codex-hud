@@ -6,6 +6,7 @@ import { herdrId, runHerdr } from '../../roles/herdr-run.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { isQuotaFailure } from '../../roles/roster.js';
 import type { Job, JobStatus } from '../job-contracts.js';
+import type { DirectStartIdentity } from './direct-exec.js';
 import { callerPane, rememberCallerHarness } from '../mcp/session-state.js';
 import { bundled, hudHome, jobs, jobCache } from '../store/job-store.js';
 import { ensureJobWatcher } from '../watch-pid.js';
@@ -208,7 +209,8 @@ export function directExecEnv(extra: Record<string, string>, base: NodeJS.Proces
 
 export type DispatchResult = {
   exit_code: number; stdout: string; stderr: string; code?: Job['dispatch_code'];
-  pane?: string; detail?: string; preInput?: boolean; cleanupFailed?: boolean; launchUnknown?: boolean; status?: JobStatus; path?: string;
+  pane?: string; detail?: string; preInput?: boolean; cleanupFailed?: boolean; launchUnknown?: boolean;
+  directRollback?: DirectStartIdentity; status?: JobStatus; path?: string;
 };
 export const canTryNext = (job: Job, result: DispatchResult) => (job.role !== 'sonic' || job.headless) && result.preInput && !result.cleanupFailed;
 export const launchError = (stderr: string, code?: Job['dispatch_code']): DispatchResult => ({ exit_code: 1, stdout: '', stderr, code });

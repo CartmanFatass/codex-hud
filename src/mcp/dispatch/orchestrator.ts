@@ -40,7 +40,7 @@ import type { StandingBriefRef } from '../cli-worker-startup.js';
 import { defaultImpRoute, impPlacementSettings, repairImpRoute, pickImpRoute } from '../imp-routing.js';
 import { clearHeadlessSends, hasHeadlessSends, headlessFollowupReady, readHeadlessSends, writeHeadlessSends } from '../headless-sends.js';
 import type {
-  AnswerActor, Job, JobRoute, ManagedWorktree, LaunchAttempt, JobStatus, PrewalkEntry, PrewalkScoutKind, SendOutcome,
+  AnswerActor, Job, JobRoute, ManagedWorktree, LaunchAttempt, ResumeFailure, JobStatus, PrewalkEntry, PrewalkScoutKind, SendOutcome,
 } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
 import { routingTicketText, ticketObjective } from '../local-tickets.js';
@@ -66,6 +66,7 @@ import { keyLock } from '../store/key-lock.js';
 import { readTicketQueue } from '../ticket-queue-state.js';
 import { DEFAULT_RESUME_S, resumeDeadline, resumeIdentity, closedReport, type NativeResume } from '../worker-resume.js';
 import { jobCwd, required, readBriefFile, assembleContext, type Args } from './context.js';
+import { cleanupDirectResume } from './direct-exec.js';
 import { dispatchBro } from './harness-bro.js';
 import { failCli, dispatchCli, supervisorPid, supervisorAlive, spawnCliSupervisor } from './harness-cli.js';
 import { plainSkillName, dispatchPi } from './harness-pi.js';
@@ -1384,37 +1385,45 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   writeCreateStatus(dir, { state: 'working' });
   save(next, true);
   const result = await launchPlace(next, role, place, dir, message, undefined, undefined, { resume: { ...identity, message } });
-  if (result.preInput && !result.cleanupFailed) {
+  if (result.exit_code !== 0 && (result.preInput || result.launchUnknown)) {
+    const failure = launchFailure(result);
+    const diagnostic: ResumeFailure = {
+      at: new Date().toISOString(),
+      place: current.place_key ?? place.agent ?? place.harness,
+      code: result.launchUnknown && failure.code === 'dispatch_failed' ? 'launch_unknown' : failure.code,
+      reason: failure.reason,
+    };
     if (answerFile) { fs.unlinkSync(answerFile); jobCache.invalidateQa(id); }
     if (priorTurn) saveTurn(dir, priorTurn);
     const touched = findJob(id);
-    save({ ...current, read_at: touched?.read_at ?? current.read_at,
+    save({
+      ...current,
+      read_at: touched?.read_at ?? current.read_at,
       read_report_stamp: touched?.read_at ? touched.read_report_stamp : current.read_report_stamp,
-      observed_at: touched?.observed_at ?? current.observed_at }, true);
+      observed_at: touched?.observed_at ?? current.observed_at,
+      resume_failures: [...(current.resume_failures ?? []).slice(-4), diagnostic],
+      ...(result.launchUnknown ? { launch_unknown: failure.reason } : {}),
+    }, true);
     writeCreateStatus(dir, status);
-    if (priorSession) writePrivateFile(join(dir, jobFiles.session), priorSession.text, { mkdir: false });
-    if (priorPid !== null) writePrivateFile(pidFile, `${priorPid}\n`, { mkdir: false });
+    if (priorSession) {
+      writePrivateFile(join(dir, jobFiles.session), priorSession.text, { mkdir: false });
+      jobCache.invalidateFile(join(dir, jobFiles.session));
+    }
+    if (priorPid !== null) {
+      writePrivateFile(pidFile, `${priorPid}\n`, { mkdir: false });
+      jobCache.invalidateFile(pidFile);
+    }
     if (taskEntry) releaseTask(taskEntry);
-    return;
+    const cleaned = result.directRollback ? await cleanupDirectResume(result.directRollback) : !result.cleanupFailed;
+    if (cleaned && !result.launchUnknown) return;
+    if (carryTask && activeTasks.get(id) === carryTask && batchTasks.get(id) !== carryTask) sampleTask(carryTask);
+    return { ok: false, sent: false, job: id, continuation: 'resumed' as const, code: 'send_failed', stderr_tail: failure.stderr_tail };
   }
   const latest = findJobMutable(id) ?? next;
   const recorded = latest.send_outcomes?.find((attempt) => attempt.key === key) ?? outcome;
   recorded.exit_code = result.exit_code;
   const failure = result.exit_code === 0 ? null : launchFailure(result);
   recorded.stderr_tail = failure?.stderr_tail ?? result.stderr;
-  if (failure && result.launchUnknown) {
-    latest.launch_unknown = failure.reason;
-    writeCreateStatus(dir, {
-      ...result.status,
-      state: 'failed',
-      exit_reason: failure.code === 'dispatch_failed' ? 'launch_unknown' : failure.code,
-      error: failure.reason,
-      launch_unknown: failure.reason,
-      ended_at: new Date().toISOString(),
-    });
-  } else if (failure && result.preInput) { // The failed launch still owns a tab; let the watcher retry cleanup.
-    writeCreateStatus(dir, { ...result.status, state: 'failed', exit_reason: failure.code, error: failure.reason, ended_at: new Date().toISOString() });
-  }
   save(latest);
   const ok = result.exit_code === 0;
   if (ok && pending.length) clearHeadlessSends(dir);

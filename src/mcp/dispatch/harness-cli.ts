@@ -8,7 +8,7 @@ import { isCliDirTrusted } from '../../cli/trust.js';
 import { cliKinds, type CliAgent } from '../../roles/cli-kinds.js';
 import { herdrId } from '../../roles/herdr-run.js';
 import { executablePath, type RolePlace } from '../../roles/roster.js';
-import { herdrEndpoint, isHudHerdrFork } from '../../runtime/herdr-socket.js';
+import { herdrEndpoint, isHudHerdrFork, request as herdrRequest } from '../../runtime/herdr-socket.js';
 import { recordTabShells } from '../../runtime/tab-shell.js';
 import { prepareCliInvocation } from '../../runtime/cli-invocation.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
@@ -118,7 +118,11 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
   let mayHaveInput = false;
   const rollback = (result: DispatchResult): Promise<DispatchResult> => {
     if (!isFork) return rejectLaunch(result, openedTab);
-    if (directIdentity) return Promise.resolve(retainDirectFailure(dir, job, 'cli', place.agent, directIdentity, result));
+    if (directIdentity) return Promise.resolve(
+      resume
+        ? { ...result, preInput: true, cleanupFailed: false, directRollback: directIdentity }
+        : retainDirectFailure(dir, job, 'cli', place.agent, directIdentity, result)
+    );
     if (directStartSent) return Promise.resolve({ ...result, preInput: false, cleanupFailed: true, launchUnknown: true });
     return Promise.resolve({ ...result, preInput: true, cleanupFailed: false });
   };
@@ -263,11 +267,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
         openedTab = undefined;
       }
     }
-    const failReadiness = async (result: DispatchResult) => {
-      const enriched = await startupFailure(result, left);
-      if (isFork && directIdentity) return retainDirectFailure(dir, job, 'cli', place.agent, directIdentity, enriched);
-      return rollback(enriched);
-    };
+    const failReadiness = async (result: DispatchResult) => rollback(await startupFailure(result, left));
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
     if (started.exit_code !== 0 && !notReady) return failReadiness(started);
     if (kind.trust?.text) {
@@ -286,8 +286,19 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       if (settled) return failReadiness(settled);
     }
     if (resume) {
-      const got = await run('herdr', ['agent', 'get', name]);
-      const agent = got.exit_code === 0 ? JSON.parse(got.stdout).result?.agent : null;
+      let agent: { agent_session?: { kind?: string; value?: string }; launch_id?: string; terminal_id?: string } | null = null;
+      if (isFork && directIdentity) {
+        let reply = await herdrRequest('agent.get', { target: name }).catch(() => null);
+        if (!reply || reply.error) reply = await herdrRequest('agent.get', { target: left }).catch(() => null);
+        const found = reply && !reply.error ? reply.result?.agent : null;
+        if (found && (!found.launch_id || found.launch_id === directIdentity.launchId) &&
+            (!found.terminal_id || found.terminal_id === directIdentity.terminalId)) {
+          agent = found;
+        }
+      } else {
+        const got = await run('herdr', ['agent', 'get', name]);
+        agent = got.exit_code === 0 ? JSON.parse(got.stdout).result?.agent : null;
+      }
       if (agent?.agent_session?.kind !== 'id' || agent.agent_session.value !== resume.id)
         return rollback(launchError(`${place.agent} did not open the recorded session`));
     }

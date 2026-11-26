@@ -44,6 +44,7 @@ export type PoolPick = {
   dropped?: PoolDroppedEntry[];
 };
 export type LaunchAttempt = { index: number; place: string; reason?: string };
+export type ResumeFailure = { at: string; place: string; code: string; reason: string };
 export type JobSession = { harness: 'pi' | CliAgent; id: string; path?: string };
 export type StopOrigin = { actor: 'mcp' | 'panel' | 'pane_vanished'; prior_state: string; at: string };
 export type AnswerActor = 'orchestrator' | 'owner';
@@ -136,6 +137,7 @@ export interface Job extends PiOptions {
   jev?: Role;
   cli?: { agent: CliAgent; can_continue: boolean; idle_grace_s: number; state_trust?: 'turn' | 'advisory'; mcp_scope_warning?: string };
   attempts?: LaunchAttempt[];
+  resume_failures?: ResumeFailure[];
   launch_agent_args?: { place: string; args: string[] }[];
   used_place?: string;
   dispatch_exit_code: number | null;

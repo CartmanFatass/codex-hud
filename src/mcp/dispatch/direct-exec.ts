@@ -5,8 +5,8 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { herdrId } from '../../roles/herdr-run.js';
-import { request as herdrRequest, type HerdrReply } from '../../runtime/herdr-socket.js';
+import { herdrId, runHerdr } from '../../roles/herdr-run.js';
+import { isHudHerdrFork, request as herdrRequest, type HerdrReply } from '../../runtime/herdr-socket.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { isValidPid } from '../../utils/proc.js';
 import { workerAlive } from '../cli-judge.js';
@@ -199,6 +199,55 @@ export function retainDirectFailure(
   writeCreateStatus(dir, status);
   ensureWatcher();
   return { ...failure, status, preInput: false, cleanupFailed: false };
+}
+
+async function terminateDirectProcess(pid: number, pidStart: string): Promise<boolean> {
+  if (workerAlive(pid, pidStart) === false) return true;
+  if (pid === process.pid) return false;
+  if (workerAlive(pid, pidStart) === true) {
+    try { process.kill(pid, 'SIGTERM'); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return false;
+    }
+    for (let waited = 0; waited < 2000; waited += 50) {
+      if (workerAlive(pid, pidStart) === false) return true;
+      await sleep(50);
+    }
+  }
+  if (workerAlive(pid, pidStart) === true) {
+    try { process.kill(pid, 'SIGKILL'); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return false;
+    }
+    for (let waited = 0; waited < 500; waited += 50) {
+      if (workerAlive(pid, pidStart) === false) return true;
+      await sleep(50);
+    }
+  }
+  return workerAlive(pid, pidStart) === false;
+}
+
+/** Clean up a direct-exec tab spawned for a resume that failed before accepting input.
+ * Terminates only the exact (pid, pidStart) and closes the tab only after verifying `launch_id`.
+ * Call AFTER restoring the job's prior STATUS/SESSION/job.json so watcher events ignore this launch. */
+export async function cleanupDirectResume(target: DirectStartIdentity): Promise<boolean> {
+  const processGone = await terminateDirectProcess(target.pid, target.pidStart);
+  const check = await herdrRequest('tab.get', { tab_id: target.tabId }).catch(() => null);
+  if (!check) return false;
+  if (check.error) {
+    return processGone && check.error.code === 'tab_not_found' && (await isHudHerdrFork());
+  }
+  const actual = check.result?.tab?.launch_id;
+  if (!herdrId(actual)) return false;
+  if (actual !== target.launchId) return processGone;
+  const cleanup = await runHerdr(['tab', 'close', target.tabId], process.env, { budgetMs: 3000 });
+  if (cleanup.ok) return processGone;
+  const after = await herdrRequest('tab.get', { tab_id: target.tabId }).catch(() => null);
+  const tabGone = Boolean(
+    after && (
+      (after.error?.code === 'tab_not_found' && (await isHudHerdrFork())) ||
+      (herdrId(after.result?.tab?.launch_id) && after.result.tab.launch_id !== target.launchId)
+    )
+  );
+  return processGone && tabGone;
 }
 
 /** Mirror herdr-hud `src/pane/agent_detection.rs:363-378` Codex composer prompt readiness check. */

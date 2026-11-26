@@ -100,7 +100,11 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
   let mayHaveInput = false;
   const rollback = (result: DispatchResult): Promise<DispatchResult> => {
     if (!isFork) return rejectLaunch(result, openedTab);
-    if (directIdentity) return Promise.resolve(retainDirectFailure(dir, job, 'pi', undefined, directIdentity, result));
+    if (directIdentity) return Promise.resolve(
+      resume
+        ? { ...result, preInput: true, cleanupFailed: false, directRollback: directIdentity }
+        : retainDirectFailure(dir, job, 'pi', undefined, directIdentity, result)
+    );
     if (directStartSent) return Promise.resolve({ ...result, preInput: false, cleanupFailed: true, launchUnknown: true });
     return Promise.resolve({ ...result, preInput: true, cleanupFailed: false });
   };
@@ -285,9 +289,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       }
     }
     if (started.exit_code !== 0) {
-      const enriched = await startupFailure(started, left);
-      if (isFork && directIdentity) return retainDirectFailure(dir, job, 'pi', undefined, directIdentity, enriched);
-      return rollback(enriched);
+      return rollback(await startupFailure(started, left));
     }
     if (isFork) jobCache.invalidateFile(join(dir, jobFiles.status));
     if (resume) {

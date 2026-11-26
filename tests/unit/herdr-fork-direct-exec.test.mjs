@@ -10,11 +10,11 @@ import test from 'node:test';
 import { isHudHerdrFork, isHudHerdrVersion, probeHerdrTarget } from '../../dist/runtime/herdr-socket.js';
 import { directExecEnv } from '../../dist/mcp/dispatch/proc.js';
 import { codexPromptReady, DIRECT_PRE_SPAWN_ERROR_CODES, parseDirectStartReply, waitDirectReady } from '../../dist/mcp/dispatch/direct-exec.js';
-import { terminalFact } from '../../dist/mcp/cli-judge.js';
+import { REPORT_SETTLED_EXIT, terminalFact } from '../../dist/mcp/cli-judge.js';
 import { reapWorkerTree, rememberWorkerTree, tabTreeGrant } from '../../dist/roles/worker-tree.js';
 import { procStat } from '../../dist/utils/proc.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-import { cliState, fallbackRole, fixture, readCloseReaped, until, writeCliRole } from '../helpers/thin-mcp-harness.mjs';
+import { cliState, cliToken, fallbackRole, fixture, readCloseReaped, resultValue, until, workerClient, writeCliRole } from '../helpers/thin-mcp-harness.mjs';
 
 const reapBin = resolve('packages/hud-mcp/bin/hud-reap.mjs');
 
@@ -1510,4 +1510,180 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     assert.deepEqual(f.calls().filter(([, op]) => op === 'close' || op === 'prompt'), [['tab', 'close', 'worker-tab']]);
     assert.deepEqual(await watchExit, [0, null]);
   });
+});
+
+test('direct-exec resume failure before input restores closed reported job, records diagnostic, falls back to repair, and hud_land still accepts it', { timeout: 60000 }, async (t) => {
+  const f = await fixture(t, { failedRetentionMs: 250 });
+  fs.chmodSync(f.env.HUD_HOME, 0o700);
+  const repo = join(f.root, 'resume-repo');
+  fs.mkdirSync(repo);
+  const git = (cwd, ...args) => spawnSync('git', args, { cwd, env: f.env, encoding: 'utf8' });
+  assert.equal(git(repo, 'init', '-qb', 'main').status, 0);
+  assert.equal(git(repo, 'config', 'user.name', 'Synthetic').status, 0);
+  assert.equal(git(repo, 'config', 'user.email', 'synth@hud.invalid').status, 0);
+  fs.mkdirSync(join(repo, '.hud'));
+  writeFixtureFile(join(repo, '.hud/project.json'), JSON.stringify({
+    land: { base: 'main', gate: ['true'], after: [], push: false },
+  }));
+  writeFixtureFile(join(repo, 'tracked.txt'), 'base\n');
+  assert.equal(git(repo, 'add', '.hud', 'tracked.txt').status, 0);
+  assert.equal(git(repo, 'commit', '-qm', 'base').status, 0);
+  const realRepo = fs.realpathSync(repo);
+  writeFixtureFile(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: realRepo }] }));
+  fs.mkdirSync(join(f.env.HOME, '.gemini/antigravity-cli'), { recursive: true });
+  writeFixtureFile(join(f.env.HOME, '.gemini/antigravity-cli/settings.json'), JSON.stringify({ trustedWorkspaces: [realRepo] }));
+
+  let mode = 'normal';
+  const fork = await startForkHerdr(t, f, {
+    onAgentStart(req, conn) {
+      if (mode === 'drop-reply' && req.params?.argv?.includes('--conversation')) {
+        conn.destroy();
+        return 'handled';
+      }
+      return undefined;
+    },
+    onAgentGet(entry) {
+      if (mode === 'wrong-session' && entry.agent_session?.value !== 'synthetic-agy-session-1') {
+        entry.agent_session = { kind: 'id', value: 'wrong-agy-session', source: 'synthetic', agent: 'agy' };
+      }
+    },
+  });
+  writeCliRole(f, 'forkagy', 60, true, 'agy');
+
+  // 1) Create closed, reported agy job with a commit on its managed worktree.
+  const first = await f.call('hud_create', { role: 'forkagy', cwd: realRepo, task: 'Synthetic agy worktree task.', isolation: 'worktree' });
+  const dir = first.task_dir;
+  const sessionText = fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8');
+  const session1 = Object.fromEntries(sessionText.trim().split('\n').map((l) => l.split('=')));
+  const entry1 = fork.tabs.get(session1.LAUNCH_ID);
+  assert.ok(entry1);
+  await until(() => cliState(dir)?.supervisor_pid && cliState(dir)?.agent_session_id === 'synthetic-agy-session-1' && fork.hasWatcher(), t.signal);
+  const job1 = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+  const wtRoot = job1.worktree.root;
+  writeFixtureFile(join(wtRoot, 'tracked.txt'), 'base\nworker-change\n');
+  assert.equal(git(wtRoot, 'commit', '-qam', 'worker change').status, 0);
+
+  const report = workerClient(t, f, dir);
+  const firstToken = cliToken(dir);
+  assert.equal(resultValue(await report('hud_report', { text: 'Synthetic agy report.', turn: firstToken, summary: 'Worktree committed.' })).path, join(dir, 'report.md'));
+  // Close cleanly with declared report (emit done status + clean exit so it settles as REPORT_SETTLED_EXIT).
+  entry1.status = 'done';
+  fork.emit('pane.agent_status_changed', { pane_id: entry1.pane_id, agent_status: 'done' });
+  await until(() => cliState(dir)?.state === 'closed' && cliState(dir)?.exit_reason === REPORT_SETTLED_EXIT, t.signal);
+  fork.emitPaneExited(entry1, 0, null);
+  await until(() => Boolean(readCloseReaped(first)), t.signal);
+  const closedStatusBefore = cliState(dir);
+  const reapedBefore = readCloseReaped(first);
+
+  // 2) Resume fails at session open ("agy did not open the recorded session").
+  mode = 'wrong-session';
+  const sent = await f.call('hud_send', { job: first.job, text: 'Synthetic follow-up after close.' });
+  assert.equal(sent.continuation, 'repair', `expected repair fallback, got ${JSON.stringify(sent)}`);
+  assert.notEqual(sent.continued_as, first.job);
+  assert.equal(sent.job, sent.continued_as);
+
+  // Original job MUST remain closed with its declared report, turn token, SESSION receipt, and reaped_at intact.
+  const statusAfter = cliState(dir);
+  assert.equal(statusAfter.state, 'closed');
+  assert.equal(statusAfter.output_written, true);
+  assert.equal(statusAfter.exit_reason, REPORT_SETTLED_EXIT);
+  assert.equal(statusAfter.agent_session_id, closedStatusBefore.agent_session_id);
+  assert.equal(readCloseReaped(first), reapedBefore);
+  assert.equal(cliToken(dir), firstToken);
+  assert.equal(fs.readFileSync(join(dir, 'report.md'), 'utf8'), 'Synthetic agy report.');
+  assert.equal(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8'), sessionText);
+
+  // Failed resume attempt is recorded only as a diagnostic on job.json and hud_peek detail.
+  const jobAfter = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+  assert.equal(jobAfter.resume_failures?.length, 1);
+  assert.match(jobAfter.resume_failures[0].reason, /agy did not open the recorded session/);
+  const peek = await f.call('hud_peek', { job: first.job, detail: true });
+  assert.equal(peek.status.state, 'closed');
+  assert.equal(peek.diagnostics.resume_failures?.length, 1);
+  assert.match(peek.diagnostics.resume_failures[0].reason, /agy did not open the recorded session/);
+
+  // The failed-resume spawned process was terminated and its tab verified + closed.
+  const failedResumeEntry = [...fork.tabs.values()].find((e) => e.name === `${first.job}-primary` && e.launch_id !== entry1.launch_id);
+  assert.ok(failedResumeEntry, 'expected a failed-resume tab launch');
+  await until(() => !procStat(failedResumeEntry.pid) || procStat(failedResumeEntry.pid).state === 'Z', t.signal);
+  assert.ok(fork.socketRequests.some((r) => r.method === 'tab.get' && r.params.tab_id === failedResumeEntry.tab_id));
+  assert.ok(f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'tab' && c.args[1] === 'close' && c.args[2] === failedResumeEntry.tab_id));
+
+  // Settle the spawned repair job so we can cleanly verify hud_land on the original closed job.
+  const repairDir = sent.task_dir;
+  const repairSession = Object.fromEntries(fs.readFileSync(join(repairDir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+  const repairEntry = fork.tabs.get(repairSession.LAUNCH_ID);
+  assert.ok(repairEntry);
+  await until(() => cliState(repairDir)?.supervisor_pid, t.signal);
+  writeFixtureFile(join(repairDir, 'report.md'), 'Synthetic repair report.\n');
+  fork.emitPaneExited(repairEntry, 0, null);
+  await until(() => cliState(repairDir)?.state === 'closed' && Boolean(readCloseReaped(sent)), t.signal);
+
+  // 3) Lost agent.start reply (launchUnknown) during resume ALSO leaves the closed job intact (never failed).
+  mode = 'drop-reply';
+  const dropped = await f.call('hud_send', { job: first.job, text: 'Synthetic dropped-reply follow-up.', message_key: 'drop-resume' });
+  assert.equal(dropped.ok, false);
+  assert.equal(dropped.code, 'send_failed');
+  assert.equal(cliState(dir).state, 'closed');
+  assert.equal(cliState(dir).output_written, true);
+  assert.equal(readCloseReaped(first), reapedBefore);
+  const jobAfterDrop = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+  assert.equal(jobAfterDrop.resume_failures?.length, 2);
+  assert.equal(jobAfterDrop.resume_failures[1].code, 'launch_unknown');
+
+  // 4) hud_land STILL accepts and lands the original closed job!
+  const landed = await f.call('hud_land', { job: first.job });
+  assert.ok(landed.flow, `expected hud_land to accept closed job, got ${JSON.stringify(landed)}`);
+  const flowFile = join(f.env.HUD_HOME, 'flows', `${landed.flow}.json`);
+  await until(() => fs.existsSync(flowFile) && ['completed', 'failed'].includes(JSON.parse(fs.readFileSync(flowFile, 'utf8')).state), t.signal);
+  const flowState = JSON.parse(fs.readFileSync(flowFile, 'utf8'));
+  assert.equal(flowState.state, 'completed', JSON.stringify(flowState));
+  assert.match(fs.readFileSync(join(realRepo, 'tracked.txt'), 'utf8'), /worker-change/);
+});
+
+test('direct-exec resume that starts a new turn still records failure on subsequent crash', { timeout: 60000 }, async (t) => {
+  const f = await fixture(t, { failedRetentionMs: 250 });
+  const sessionId = 'synthetic-agy-resumed-session';
+  const fork = await startForkHerdr(t, f, {
+    onAgentGet(entry) {
+      entry.agent_session = { kind: 'id', value: sessionId, source: 'synthetic', agent: 'agy' };
+    },
+  });
+  writeCliRole(f, 'forkagy', 60, true, 'agy');
+
+  const first = await f.call('hud_create', { role: 'forkagy', task: 'Synthetic agy turn 1.' });
+  const dir = first.task_dir;
+  const session1 = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+  const entry1 = fork.tabs.get(session1.LAUNCH_ID);
+  await until(() => cliState(dir)?.supervisor_pid && cliState(dir)?.agent_session_id === sessionId && fork.hasWatcher(), t.signal);
+
+  const report = workerClient(t, f, dir);
+  const firstToken = cliToken(dir);
+  assert.equal(resultValue(await report('hud_report', { text: 'Synthetic turn 1 report.', turn: firstToken, summary: 'Turn 1 done.' })).path, join(dir, 'report.md'));
+  entry1.status = 'done';
+  fork.emit('pane.agent_status_changed', { pane_id: entry1.pane_id, agent_status: 'done' });
+  await until(() => cliState(dir)?.state === 'closed' && cliState(dir)?.exit_reason === REPORT_SETTLED_EXIT, t.signal);
+  fork.emitPaneExited(entry1, 0, null);
+  await until(() => Boolean(readCloseReaped(first)), t.signal);
+
+  // Resume succeeds at session open and starts turn 2.
+  const resumed = await f.call('hud_send', { job: first.job, text: 'Synthetic turn 2.', message_key: 'turn-2' });
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.continuation, 'resumed');
+  assert.equal(resumed.job, first.job);
+  assert.notEqual(cliToken(dir), firstToken);
+  assert.equal(readCloseReaped(first), undefined);
+
+  const session2 = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+  const entry2 = fork.tabs.get(session2.LAUNCH_ID);
+  assert.ok(entry2 && entry2.launch_id !== entry1.launch_id);
+  await until(() => cliState(dir)?.supervisor_pid && cliState(dir)?.pid === entry2.pid, t.signal);
+  assert.equal(cliState(dir).state, 'working');
+
+  // Crash during the resumed turn MUST record failure as today.
+  fork.emitPaneExited(entry2, 1, null);
+  await until(() => cliState(dir)?.state === 'failed', t.signal);
+  assert.equal(cliState(dir).exit_reason, 'worker exited (code 1)');
+  assert.equal(cliState(dir).runner_exit_code, 1);
+  await until(() => Boolean(readCloseReaped(first)), t.signal);
 });
