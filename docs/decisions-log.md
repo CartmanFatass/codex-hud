@@ -7,6 +7,11 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-26
 
+- **D-2026-11-26-07** (§2.1 workflow): Owner lifted the rest of the 25.08 deferral: workflow/06 (main-composed
+  workflows with check and hand-back steps, `hud_workflow`, owner grant for costly runs) goes ahead; the ticket queue
+  on the engine (workflow/05) and lead acceptance (07) had already landed. Owner also paused the advisor Objective
+  (shadow tries 01-02 and the injection question 03 wait) and cleared every other ready ticket to start.
+
 - **D-2026-11-26-06** (§2.1, §2.3, Removed by this spec): Owner asked for tickets as a data structure the MCP owns,
   easy to operate and to display (oracle ja3d49d8f6c9f0b56). Canonical store is per-feature
   `.hud/tickets/<feature>.json` in the repo (typed records: status, blockers, acceptance items, comments, landing,
