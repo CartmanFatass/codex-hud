@@ -9,9 +9,12 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 import toml from '@iarna/toml';
 import {
+  DEFAULT_INVESTIGATE_LINE,
   deliverSelection,
   formatSelectionMessage,
+  handleInvestigatePaneAction,
   handleSelectionAction,
+  normalizePaneExcerpt,
   normalizeSelectionExcerpt,
   readAndRemoveSelectionHandoff,
   resolveSelectionTarget,
@@ -914,8 +917,400 @@ test('herdr plugin manifest is valid and points to shipped entrypoints', () => {
   assert.equal(manifest.id, 'hud.select-send');
   assert.equal(manifest.actions[0].id, 'send');
   assert.deepEqual(manifest.actions[0].contexts, ['selection']);
+  assert.equal(manifest.actions[1].id, 'investigate');
+  assert.equal(manifest.actions[1].title, 'Investigate this');
+  assert.deepEqual(manifest.actions[1].contexts, ['pane']);
   assert.equal(manifest.panes[0].id, 'composer');
   assert.equal(manifest.panes[0].placement, 'popup');
   assert.equal(fs.existsSync(join(pluginDir, manifest.actions[0].command[1])), true);
+  assert.equal(fs.existsSync(join(pluginDir, manifest.actions[1].command[1])), true);
   assert.equal(fs.existsSync(join(pluginDir, manifest.panes[0].command[1])), true);
+});
+
+test('investigate pane action reads visible output into handoff and handles empty panes and popup failures', async (t) => {
+  const calls = [];
+  let visibleText = '\n  FAIL test/auth.test.mjs  \n  Expected 200, got 500\n\n\n';
+  let failPopup = false;
+  const f = await fakeFork(t, (method, params) => {
+    calls.push({ method, params });
+    if (method === 'pane.read') return { result: { type: 'pane_read', read: { text: visibleText } } };
+    if (method === 'plugin.pane.open') {
+      return failPopup
+        ? { error: { code: 'popup_open_denied', message: 'Popup unavailable' } }
+        : { result: { type: 'ok' } };
+    }
+    if (method === 'notification.show') return { result: { type: 'notification_show', shown: true, reason: 'shown' } };
+    return guardedPong;
+  });
+
+  const action = spawn(process.execPath, [join(root, 'integrations/herdr/plugin/investigate.mjs')], {
+    env: {
+      ...f.env,
+      LC_ALL: 'C',
+      HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: 'w1', focused_pane_id: 'w1:p5' }),
+    },
+  });
+  assert.deepEqual(await once(action, 'close'), [0, null]);
+  assert.deepEqual(calls.map((c) => c.method), ['pane.read', 'plugin.pane.open']);
+  assert.deepEqual(calls[0].params, { pane_id: 'w1:p5', source: 'visible', format: 'text', strip_ansi: true });
+  assert.equal(calls[1].params.plugin_id, 'hud.select-send');
+  assert.equal(calls[1].params.entrypoint, 'composer');
+  const file = calls[1].params.env.HUD_SELECT_SEND_FILE;
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  const loaded = readAndRemoveSelectionHandoff(file);
+  assert.equal(loaded.mode, 'investigate');
+  assert.equal(loaded.pane_id, 'w1:p5');
+  assert.equal(loaded.default_question, DEFAULT_INVESTIGATE_LINE);
+  assert.equal(loaded.selected_text, '  FAIL test/auth.test.mjs\n  Expected 200, got 500');
+
+  // Empty visible output shows a toast and makes no handoff file.
+  calls.length = 0;
+  visibleText = '   \n\t\n  ';
+  for (const [language, title] of [
+    ['en', 'No visible pane output to send.'],
+    ['zh', '窗格没有可发送的可见输出。'],
+  ]) {
+    calls.length = 0;
+    fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ language }));
+    const emptyRun = spawn(process.execPath, [join(root, 'integrations/herdr/plugin/investigate.mjs')], {
+      env: { ...f.env, LC_ALL: 'C', HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: 'w1:p5' }) },
+    });
+    assert.deepEqual(await once(emptyRun, 'close'), [0, null]);
+    assert.deepEqual(calls.map((c) => c.method), ['pane.read', 'notification.show']);
+    assert.deepEqual(calls[1].params, { title });
+  }
+  assert.equal(fs.readdirSync(join(f.home, 'select-send')).length, 0);
+
+  // Popup open failure cleans up the handoff file and exits non-zero.
+  calls.length = 0;
+  visibleText = 'Error: connection refused';
+  failPopup = true;
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ language: 'en' }));
+  const failed = spawn(process.execPath, [join(root, 'integrations/herdr/plugin/investigate.mjs')], {
+    env: { ...f.env, LC_ALL: 'C', HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: 'w1:p5' }) },
+  });
+  assert.deepEqual(await once(failed, 'close'), [1, null]);
+  assert.deepEqual(calls.map((c) => c.method), ['pane.read', 'plugin.pane.open', 'notification.show']);
+  assert.equal(fs.existsSync(calls[1].params.env.HUD_SELECT_SEND_FILE), false);
+  assert.deepEqual(calls[2].params, {
+    title: 'Could not open the investigate composer.',
+    body: 'popup_open_denied: Popup unavailable',
+  });
+
+  // Missing pane ID returns cleanly without touching disk.
+  const noPane = await handleInvestigatePaneAction(f.home, { ...f.env, HERDR_PLUGIN_CONTEXT_JSON: '{}' });
+  assert.equal(noPane.opened, false);
+  assert.equal(noPane.reason, 'no_pane');
+});
+
+test('investigate pane sends visible region once with source to chosen working job, binds answer, and refuses closed targets', { timeout: 15_000 }, async (t) => {
+  const a = 'j000000000000001a', b = 'j000000000000001b', c = 'j000000000000001c';
+  const main = 'w1:p1', leftA = 'w1:p2', leftB = 'w1:p3', leftC = 'w1:p4', testPane = 'w1:p5';
+  let panes = [];
+  const prompts = [];
+  const paneReads = [];
+  const visibleOutput = 'FAIL test/auth.test.mjs\n  AssertionError: expected 200 to equal 500\n\n\n';
+  const f = await fakeFork(t, (method, params) => {
+    if (method === 'ping') return guardedPong;
+    if (method === 'pane.list') return { result: { panes } };
+    if (method === 'pane.get') return { result: { pane: panes.find((p) => p.pane_id === params.pane_id) } };
+    if (method === 'pane.read') {
+      paneReads.push(params);
+      return { result: { type: 'pane_read', read: { text: visibleOutput } } };
+    }
+    if (method === 'plugin.pane.open') return { result: { type: 'ok' } };
+    if (method === 'agent.prompt') {
+      prompts.push(params);
+      return prompted;
+    }
+    return { error: { code: 'unsupported' } };
+  });
+
+  const project = join(f.dir, 'project');
+  fs.mkdirSync(project);
+  const initialPanes = [
+    { pane_id: main, cwd: project, workspace_id: 'w1', agent: 'claude', agent_status: 'idle' },
+    { pane_id: leftA, cwd: project, workspace_id: 'w1', agent: 'pi', agent_status: 'working' },
+    { pane_id: leftB, cwd: project, workspace_id: 'w1', agent: 'pi', agent_status: 'working' },
+    { pane_id: leftC, cwd: project, workspace_id: 'w1', agent: 'pi', agent_status: 'idle' },
+    { pane_id: testPane, cwd: project, workspace_id: 'w1' },
+  ];
+  panes = initialPanes;
+
+  const writeWorker = (id, leftPane, primary, state, info) => {
+    const dir = writeJob(f.home, id, {
+      callerPane: main,
+      leftPane,
+      primary,
+      projectRoot: project,
+      socketPath: f.socketPath,
+      createdAt: new Date().toISOString(),
+      ...info,
+    });
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state }));
+    return dir;
+  };
+  const dirA = writeWorker(a, leftA, 'agent-a', 'working', { ticket: 'auth/01' });
+  const dirB = writeWorker(b, leftB, 'agent-b', 'working', { role: 'reviewer', packageName: 'auth-tests' });
+  writeWorker(c, leftC, 'agent-c', 'closed', { ticket: 'auth/00' });
+
+  const cache = getJobIndexCache(f.home);
+  const excerpts = () => readSelectionExcerpts(f.home, cache, { project });
+  const run = async (script, env) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: root,
+      env: { ...f.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      signal: t.signal,
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const [code] = await once(child, 'close');
+    assert.equal(code, 0, stderr);
+    return JSON.parse(stdout);
+  };
+
+  // Trigger the real investigate action -> handoff file -> composer session.
+  const opened = await handleInvestigatePaneAction(f.home, {
+    ...f.env,
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: 'w1', focused_pane_id: testPane, focused_pane_cwd: project }),
+  });
+  assert.equal(opened.opened, true);
+  assert.ok(paneReads.some((p) => p.pane_id === testPane && p.source === 'visible'));
+
+  const sendResult = await run(`
+    import assert from 'node:assert/strict';
+    import { PassThrough } from 'node:stream';
+    import { runComposerSession } from './dist/cli/select-send.js';
+    import { readAndRemoveSelectionHandoff } from './dist/roles/select-send.js';
+    const context = readAndRemoveSelectionHandoff(process.env.HANDOFF);
+    const stdin = new PassThrough(), stdout = new PassThrough();
+    const input = text => queueMicrotask(() => stdin.write(text));
+    let stage = 0;
+    const result = await runComposerSession({
+      context,
+      hudHome: process.env.HUD_HOME,
+      env: process.env,
+      stdin,
+      stdout,
+      onFrame(lines, state) {
+        const screen = lines.join('\\n');
+        if (stage === 0) {
+          assert.equal(state.mode, 'investigate');
+          assert.equal(state.picker, 0);
+          assert.match(screen, /Choose working job/);
+          assert.doesNotMatch(screen, /Main:/);
+          assert.doesNotMatch(screen, /auth\\/00/);
+          const at = state.jobs.findIndex(job => job.job === process.env.TARGET);
+          assert.notEqual(at, -1);
+          stage++;
+          input('\\x1b[B'.repeat(at) + '\\r');
+        } else if (stage === 1 && state.picker === null && state.targetJob?.job === process.env.TARGET) {
+          assert.match(screen, /Investigate pane ->/);
+          assert.match(screen, /FAIL test\\/auth\\.test\\.mjs/);
+          assert.match(screen, /Question: Investigate this/);
+          stage++;
+          input('\\r');
+        }
+      },
+    });
+    assert.equal(stage, 2);
+    console.log(JSON.stringify(result));
+  `, { HANDOFF: opened.handoffFile, TARGET: b });
+
+  assert.equal(sendResult.sent, true);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].target, 'agent-b');
+  const [record] = excerpts();
+  assert.equal(record.target, b);
+  assert.equal(record.delivery, 'queued');
+  assert.equal(record.source.pane, testPane);
+  assert.equal(record.source.job, null);
+  assert.equal(record.question, DEFAULT_INVESTIGATE_LINE);
+  assert.equal(record.excerpt, 'FAIL test/auth.test.mjs\n  AssertionError: expected 200 to equal 500');
+  assert.ok(prompts[0].text.includes(`Excerpt ID: ${record.id}`));
+  assert.ok(prompts[0].text.includes(`pane=${testPane}`));
+  assert.ok(prompts[0].text.includes('FAIL test/auth.test.mjs\n  AssertionError: expected 200 to equal 500'));
+  assert.ok(prompts[0].text.includes('Question: Investigate this'));
+
+  // Even after the failing test pane closes, the worker's answer binds back and shows on the excerpt cards.
+  panes = [initialPanes[0], initialPanes[1], initialPanes[2]];
+  const replyOut = await run(`
+    import { callWorkerTool } from './dist/worker/tools.js';
+    console.log(JSON.stringify(await callWorkerTool('hud_progress', JSON.parse(process.env.REPLY))));
+  `, { HUD_JOB_DIR: dirB, REPLY: JSON.stringify({ message: 'Missing null guard in auth middleware', reply_to: record.id }) });
+  assert.equal(replyOut.ok, true);
+
+  const view = new PanelExecution(f.home, main, f.env, () => {});
+  t.after(() => view.dispose());
+  view.sync(project, false);
+  await view.refresh(`thin-job:${b}`);
+  const worker = view.board().workers.find((w) => w.id === `thin-job:${b}`);
+  const board = executionRows(view.view(project), undefined, 80, Date.now());
+  const card = board.filter((row) => row.item === `project:excerpt:${record.id}`).map((row) => row.text).join('\n');
+  assert.match(card, /answered/);
+  assert.match(card, /FAIL test\/auth\.test\.mjs/);
+  assert.match(card, /Missing null guard in auth middleware/);
+  const inspector = workInspectorRows(worker, 80, Date.now()).map((row) => row.text).join('\n');
+  assert.match(inspector, /Investigate this/);
+  assert.match(inspector, /Missing null guard in auth middleware/);
+
+  // Closed target refusal #1: picked working job closes before Enter -> refused, never falls back to main or reopens.
+  panes = initialPanes;
+  const closedMidway = await run(`
+    import assert from 'node:assert/strict';
+    import { writeFileSync } from 'node:fs';
+    import { PassThrough } from 'node:stream';
+    import { runComposerSession } from './dist/cli/select-send.js';
+    const stdin = new PassThrough(), stdout = new PassThrough();
+    const input = text => queueMicrotask(() => stdin.write(text));
+    let stage = 0;
+    const result = await runComposerSession({
+      context: { mode: 'investigate', workspace_id: 'w1', focused_pane_id: process.env.PANE, focused_pane_cwd: process.env.PROJECT },
+      hudHome: process.env.HUD_HOME,
+      env: process.env,
+      stdin,
+      stdout,
+      onFrame(lines, state) {
+        if (stage === 0) {
+          const at = state.jobs.findIndex(job => job.job === process.env.TARGET);
+          assert.notEqual(at, -1);
+          stage++;
+          input('\\x1b[B'.repeat(at) + '\\r');
+        } else if (stage === 1 && state.targetJob?.job === process.env.TARGET) {
+          writeFileSync(process.env.CLOSE_STATUS, JSON.stringify({ state: 'closed' }));
+          stage++;
+          input('\\r');
+        } else if (stage === 2 && state.error?.startsWith('Target ended.')) {
+          assert.doesNotMatch(lines.join('\\n'), /Enter sends to main/);
+          assert.equal(state.targetJob, undefined);
+          stage++;
+          input('\\r'); // Pressing Enter again without picking a working job stays refused.
+        } else if (stage === 3 && state.error === 'Choose a working job first.') {
+          stage++;
+          input('\\x1b');
+        }
+      },
+    });
+    assert.equal(stage, 4);
+    console.log(JSON.stringify(result));
+  `, { PANE: testPane, PROJECT: project, TARGET: b, CLOSE_STATUS: join(dirB, 'STATUS.json') });
+
+  assert.equal(closedMidway.sent, false);
+  assert.equal(prompts.length, 1, 'closed target must not deliver to worker or fall back to main');
+  assert.equal(excerpts()[0].delivery, 'target ended');
+  assert.equal(JSON.parse(fs.readFileSync(join(dirB, 'STATUS.json'), 'utf8')).state, 'closed');
+  assert.deepEqual(cache.listJobIds().toSorted(), [a, b, c]);
+
+  // Closed target refusal #2: when all project jobs are closed, Enter refuses and writes no excerpt.
+  fs.writeFileSync(join(dirA, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  const excerptCountBefore = excerpts().length;
+  const noWorking = await run(`
+    import assert from 'node:assert/strict';
+    import { PassThrough } from 'node:stream';
+    import { runComposerSession } from './dist/cli/select-send.js';
+    const stdin = new PassThrough(), stdout = new PassThrough();
+    const input = text => queueMicrotask(() => stdin.write(text));
+    let stage = 0;
+    const result = await runComposerSession({
+      context: { mode: 'investigate', workspace_id: 'w1', focused_pane_id: process.env.PANE, focused_pane_cwd: process.env.PROJECT },
+      hudHome: process.env.HUD_HOME,
+      env: process.env,
+      stdin,
+      stdout,
+      onFrame(lines, state) {
+        if (stage === 0) {
+          assert.equal(state.picker, null);
+          assert.equal(state.jobs.length, 0);
+          assert.match(lines.join('\\n'), /No working jobs found for this project/);
+          stage++;
+          input('\\r');
+        } else if (stage === 1) {
+          stage++;
+          input('\\x1b');
+        }
+      },
+    });
+    assert.equal(stage, 2);
+    console.log(JSON.stringify(result));
+  `, { PANE: testPane, PROJECT: project });
+
+  assert.equal(noWorking.sent, false);
+  assert.equal(prompts.length, 1);
+  assert.equal(excerpts().length, excerptCountBefore);
+});
+
+test('investigate composer renderer keeps exact columns, NO_COLOR, EN/ZH, picker cancel, and tail truncation', () => {
+  const prevLang = setLanguage('en');
+  try {
+    setDisplayConfig({ theme: 'none' });
+    const job = { job: 'j0000000000000009', launchId: 'launch-9', role: 'imp', ticket: 'fine-interact/02' };
+    const state = createComposerState({
+      mode: 'investigate',
+      source: {
+        project: 'demo',
+        projectRoot: '/tmp/demo',
+        pane: 'w1:p5',
+        job: null,
+        role: null,
+        time: '2026-11-26T12:00:00.000Z',
+      },
+      targetPane: 'w1:p1',
+      targetAgent: 'claude',
+      jobs: [job],
+      excerpt: normalizePaneExcerpt('\n  FAIL line 1\n  FAIL line 2\n\n'),
+      initialQuestion: DEFAULT_INVESTIGATE_LINE,
+    });
+    assert.equal(state.picker, 0);
+    assert.equal(state.question, DEFAULT_INVESTIGATE_LINE);
+    assert.equal(state.cursor, DEFAULT_INVESTIGATE_LINE.length);
+
+    // Esc on the initial picker cancels without sending.
+    assert.equal(applyComposerKey(state, { type: 'cancel' }).intent, 'cancel');
+
+    for (const [width, height] of [[40, 8], [80, 14]]) {
+      const pickerLines = renderSelectSendComposer(state, { width, height, nowMs: 0 });
+      assert.equal(pickerLines.length, height);
+      for (const line of pickerLines) {
+        assert.equal(visualLength(line), width);
+        assert.equal(line.includes('\x1b'), false);
+      }
+      assert.ok(pickerLines.join('\n').includes('Choose working job'));
+      assert.equal(pickerLines.join('\n').includes('Main:'), false);
+    }
+
+    // Choose job -> editor shows Investigate pane, Tab reopens picker, Esc returns to editor.
+    const picked = applyComposerKey(state, { type: 'enter' }).state;
+    assert.equal(picked.picker, null);
+    assert.equal(picked.targetJob, job);
+    const editorLines = renderSelectSendComposer(picked, { width: 80, height: 14, nowMs: 0 });
+    for (const line of editorLines) assert.equal(visualLength(line), 80);
+    assert.ok(editorLines.join('\n').includes('Investigate pane ->'));
+    assert.ok(editorLines.join('\n').includes('Pane output (visible region to send)'));
+    assert.ok(editorLines.join('\n').includes('Question: Investigate this'));
+
+    const reopened = applyComposerKey(picked, { type: 'targets' }).state;
+    assert.equal(reopened.picker, 0);
+    const back = applyComposerKey(reopened, { type: 'cancel' });
+    assert.equal(back.intent, 'none');
+    assert.equal(back.state.picker, null);
+    assert.equal(back.state.targetJob, job);
+
+    setLanguage('zh');
+    const zhPicker = renderSelectSendComposer(state, { width: 80, height: 12, nowMs: 0 });
+    assert.ok(zhPicker.join('\n').includes('选择运行中的任务'));
+    const zhEditor = renderSelectSendComposer(picked, { width: 80, height: 12, nowMs: 0 });
+    for (const line of zhEditor) assert.equal(visualLength(line), 80);
+    assert.ok(zhEditor.join('\n').includes('排查此窗格'));
+    assert.ok(zhEditor.join('\n').includes('窗格输出（将发送可见区域）'));
+
+    const trunc = normalizePaneExcerpt('old line\n' + 'x'.repeat(100) + '\nTAIL_MARKER', 50);
+    assert.equal(trunc.truncated, true);
+    assert.ok(trunc.text.startsWith('… (truncated)\n'));
+    assert.ok(trunc.text.endsWith('TAIL_MARKER'));
+    assert.ok(trunc.text.length <= 50);
+  } finally {
+    setLanguage(prevLang);
+  }
 });

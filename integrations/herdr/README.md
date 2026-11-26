@@ -21,6 +21,9 @@ waiting status and retries there within a 10-minute window. Press Esc while
 waiting to cancel without sending. The action never sends without confirmation,
 and no detached retry helper or retry file is created. Press Tab in the composer
 for the [working-job target picker and excerpt replies](../../docs/reference.md#send-a-pane-selection-to-a-worker).
+The plugin also registers the `hud.select-send.investigate` pane action ("Investigate this")
+to send a pane's recent visible output with default owner line `"Investigate this"` to a
+chosen working job through that same excerpt-reply path.
 
 The installer prints an optional `prefix+a` binding for `~/.config/herdr/config.toml`.
 If you choose a different key, it must not collide with herdr's default bindings.

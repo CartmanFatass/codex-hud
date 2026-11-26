@@ -12,6 +12,13 @@ description = "Open the HUD composer for the current selection"
 contexts = ["selection"]
 command = ["node", "action.mjs"]
 
+[[actions]]
+id = "investigate"
+title = "Investigate this"
+description = "Send the pane's recent visible output to a working HUD job"
+contexts = ["pane"]
+command = ["node", "investigate.mjs"]
+
 [[panes]]
 id = "composer"
 title = "HUD Send Selection"

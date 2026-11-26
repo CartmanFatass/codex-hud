@@ -16,13 +16,18 @@ import {
 } from '../render/select-send-composer.js';
 import {
   captureSelectionBaseline,
+  contextPaneId,
+  DEFAULT_INVESTIGATE_LINE,
   deliverSelection,
   formatSelectionMessage,
+  handleInvestigatePaneAction,
   handleSelectionAction,
+  normalizePaneExcerpt,
   normalizeSelectionExcerpt,
   normalizeQuestion,
   parsePluginContext,
   readAndRemoveSelectionHandoff,
+  readPaneVisibleText,
   refreshSelectionExcerpt,
   resolveSelectionTarget,
   waitAndRetryGuardedPrompt,
@@ -35,6 +40,7 @@ import { CliError } from './private-home.js';
 
 export const SELECT_SEND_HELP =
   'Usage: hud select-send --action             Invoked by the herdr selection plugin action\n' +
+  '       hud select-send --investigate        Invoked by the herdr pane investigate plugin action\n' +
   '       hud select-send --composer [--file PATH]  Open the selection composer in the current terminal\n';
 
 const PASTE_START = '\x1b[200~';
@@ -145,10 +151,21 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
   configureDisplay(opts.env);
   const now = opts.now ?? (() => new Date());
   let ctx = opts.context;
-  let excerpt = normalizeSelectionExcerpt(ctx.selected_text);
+  const mode = ctx.mode ?? 'selection';
+  const investigate = mode === 'investigate';
+  let excerpt = investigate ? normalizePaneExcerpt(ctx.selected_text) : normalizeSelectionExcerpt(ctx.selected_text);
   let stale = Boolean(ctx.stale_content);
 
-  if (stale || (excerpt.empty && ctx.selection)) {
+  if (investigate && excerpt.empty) {
+    const paneId = contextPaneId(ctx);
+    if (paneId) {
+      const rawText = await readPaneVisibleText(paneId, opts.env);
+      if (rawText !== null) {
+        excerpt = normalizePaneExcerpt(rawText);
+        ctx = { ...ctx, pane_id: paneId, selected_text: excerpt.text, stale_content: false, selection: undefined };
+      }
+    }
+  } else if (stale || (excerpt.empty && ctx.selection)) {
     const refreshed = await refreshSelectionExcerpt(ctx, excerpt, null, opts.env);
     excerpt = refreshed.excerpt;
     stale = refreshed.stale;
@@ -166,13 +183,17 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
   const resolved = await resolveSelectionTarget(ctx, opts.hudHome, opts.env, now());
 
   let state = createComposerState({
+    mode,
     source: resolved.source,
     targetPane: resolved.targetPane,
     targetAgent: resolved.targetAgent,
     jobs: resolved.jobs,
     excerpt,
+    initialQuestion: investigate ? (ctx.default_question ?? DEFAULT_INVESTIGATE_LINE) : '',
     stale,
-    error: resolved.targetPane ? null : t('No main session found for this project.'),
+    error: investigate
+      ? (resolved.jobs.length ? null : t('No working jobs found for this project.'))
+      : (resolved.targetPane ? null : t('No main session found for this project.')),
   });
 
   const isTty = Boolean(opts.stdin.isTTY && opts.stdout.isTTY);
@@ -221,7 +242,18 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
       if (submission || finished) return;
       const targetPane = state.targetPane;
       const targetJob = state.targetJob;
-      if (!targetPane && !targetJob) {
+      if (state.mode === 'investigate') {
+        if (!targetJob) {
+          state = { ...state, error: t(state.jobs.length ? 'Choose a working job first.' : 'No working jobs found for this project.') };
+          paint();
+          return;
+        }
+        if (!state.source.projectRoot) {
+          state = { ...state, error: t('Could not determine the project for this pane.') };
+          paint();
+          return;
+        }
+      } else if (!targetPane && !targetJob) {
         state = { ...state, error: t('No main session found for this project.') };
         paint();
         return;
@@ -234,6 +266,9 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
         const refreshed = await refreshSelectionExcerpt(ctx, state.excerpt, baseline, opts.env);
         if (finished) return;
         if (refreshed.baseline !== undefined) baseline = refreshed.baseline;
+        const emptyNotice = state.mode === 'investigate'
+          ? t('Pane has no visible output; nothing to send.')
+          : t('Selection is empty; nothing to send.');
         if (refreshed.stale && refreshed.changed) {
           ctx = {
             ...ctx,
@@ -248,14 +283,14 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
             excerpt: refreshed.excerpt,
             scroll: 0,
             notice: refreshed.excerpt.empty
-              ? t('Selection is empty; nothing to send.')
+              ? emptyNotice
               : t('Content changed — review latest excerpt and press Enter to send.'),
           };
           paint();
           return;
         }
         if (state.excerpt.empty) {
-          state = { ...state, phase: 'editing', notice: t('Selection is empty; nothing to send.') };
+          state = { ...state, phase: 'editing', notice: emptyNotice };
           paint();
           return;
         }
@@ -285,14 +320,17 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
             done({ code: 0, sent: true, message });
             return;
           }
+          const remaining = state.jobs.filter(job => job !== targetJob);
+          const endedError = state.mode === 'investigate'
+            ? t(remaining.length ? 'Target ended. Press Tab to choose another working job.' : 'Target ended. No working jobs left.')
+            : t(targetPane ? 'Target ended. Enter sends to main.' : 'Target ended. No main session found.');
           state = delivery === 'target ended'
-            ? { ...state, phase: 'editing', targetJob: undefined, jobs: state.jobs.filter(job => job !== targetJob),
-                error: t(targetPane ? 'Target ended. Enter sends to main.' : 'Target ended. No main session found.') }
+            ? { ...state, phase: 'editing', targetJob: undefined, jobs: remaining, error: endedError }
             : { ...state, phase: 'editing', error: t('Selection delivery unknown.') };
           paint();
           return;
         }
-        if (!targetPane) return;
+        if (state.mode === 'investigate' || !targetPane) return;
         const message = formatSelectionMessage({ excerpt: state.excerpt.text, source, question: state.question });
         let delivery = await deliverSelection(targetPane, message, opts.hudHome, opts.env, signal);
         if (finished) return;
@@ -367,6 +405,29 @@ export async function runSelectSendAction(env: NodeJS.ProcessEnv = process.env):
   return empty ? 0 : 1;
 }
 
+export async function runInvestigatePaneAction(env: NodeJS.ProcessEnv = process.env): Promise<number> {
+  const result = await handleInvestigatePaneAction(getHudHome(env), env);
+  if (result.opened) return 0;
+
+  configureDisplay(env);
+  const soft = result.reason === 'empty_pane' || result.reason === 'no_pane';
+  const title = result.reason === 'empty_pane'
+    ? t('No visible pane output to send.')
+    : result.reason === 'no_pane'
+      ? t('No pane found to investigate.')
+      : t('Could not open the investigate composer.');
+  const body = !soft && result.reason && result.reason !== 'popup_open_failed' && result.reason !== 'pane_read_failed'
+    ? monitorText(result.reason)
+    : '';
+  const reply = herdrEndpoint(env)
+    ? await herdrRequest('notification.show', { title, ...(body ? { body } : {}) }, { env }).catch(() => null)
+    : null;
+  if (!soft || reply?.result?.shown !== true) {
+    process.stderr.write(`select-send: ${title}${body ? ` ${body}` : ''}\n`);
+  }
+  return soft ? 0 : 1;
+}
+
 export async function runSelectSendComposer(env: NodeJS.ProcessEnv = process.env, file?: string): Promise<number> {
   const hudHome = getHudHome(env);
   const handoffPath = file || env.HUD_SELECT_SEND_FILE;
@@ -389,6 +450,9 @@ export async function selectSendCommand(args: readonly string[], io: HudIO): Pro
   }
   if (args.length === 1 && args[0] === '--action') {
     return runSelectSendAction(io.env);
+  }
+  if (args.length === 1 && args[0] === '--investigate') {
+    return runInvestigatePaneAction(io.env);
   }
   if (args[0] === '--composer' && (args.length === 1 || (args.length === 3 && args[1] === '--file' && args[2]))) {
     return runSelectSendComposer(io.env, args[2]);

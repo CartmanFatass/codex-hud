@@ -3,12 +3,13 @@
  * Follows ARCHITECTURE §8: exact width columns, pure paint (nowMs), single monitorText pass,
  * t() EN/ZH labels, theme roles (zero ANSI under theme=none / NO_COLOR), whole footer hints.
  */
-import type { NormalizedExcerpt, SelectionJobTarget, SelectionSource } from '../roles/select-send.js';
+import type { NormalizedExcerpt, SelectSendMode, SelectionJobTarget, SelectionSource } from '../roles/select-send.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { fit, monitorText, pair } from './monitor-text.js';
 
 export interface ComposerState {
+  readonly mode: SelectSendMode;
   readonly source: SelectionSource;
   readonly targetPane: string | null;
   readonly targetAgent: string | null;
@@ -40,25 +41,31 @@ export type ComposerKey =
   | { type: 'scroll'; delta: number };
 
 export function createComposerState(input: {
+  mode?: SelectSendMode;
   source: SelectionSource;
   targetPane: string | null;
   targetAgent: string | null;
   jobs?: readonly SelectionJobTarget[];
   excerpt: NormalizedExcerpt;
+  initialQuestion?: string;
   stale?: boolean;
   notice?: string | null;
   error?: string | null;
 }): ComposerState {
+  const mode = input.mode ?? 'selection';
+  const jobs = input.jobs ?? [];
+  const question = input.initialQuestion ?? '';
   return {
+    mode,
     source: input.source,
     targetPane: input.targetPane,
     targetAgent: input.targetAgent,
-    jobs: input.jobs ?? [],
-    picker: null,
+    jobs,
+    picker: mode === 'investigate' && jobs.length > 0 ? 0 : null,
     excerpt: input.excerpt,
     stale: Boolean(input.stale),
-    question: '',
-    cursor: 0,
+    question,
+    cursor: [...question].length,
     scroll: 0,
     notice: input.notice ?? null,
     error: input.error ?? null,
@@ -158,24 +165,31 @@ export function renderSelectSendComposer(
   const rows: string[] = [];
 
   const main = state.targetPane && monitorText(state.targetAgent ? `${state.targetAgent} (${state.targetPane})` : state.targetPane);
+  const investigate = state.mode === 'investigate';
   if (state.picker !== null) {
     const available = height - 2;
     const start = Math.max(0, state.picker - available + 1);
-    rows.push(theme.strong(t('Selection target')));
+    rows.push(theme.strong(t(investigate ? 'Choose working job' : 'Selection target')));
     for (let i = start; i < start + available; i++) {
-      const job = state.jobs[i - 1];
-      const label = i === 0 ? (main ? t('Main: {target}', { target: main }) : t('Main unavailable')) : job ? targetJobLabel(job) : '';
+      const job = investigate ? state.jobs[i] : state.jobs[i - 1];
+      const label = !investigate && i === 0
+        ? (main ? t('Main: {target}', { target: main }) : t('Main unavailable'))
+        : job ? targetJobLabel(job) : '';
       rows.push(i === state.picker ? theme.selected(`› ${label}`) : label ? `  ${label}` : '');
     }
-    rows.push(theme.dim(fitWholeHints([t('Enter choose'), t('Esc back'), t('↑↓ move')], width)));
+    rows.push(theme.dim(fitWholeHints([
+      t('Enter choose'),
+      t(investigate && !state.targetJob ? 'Esc cancel' : 'Esc back'),
+      t('↑↓ move'),
+    ], width)));
     return rows.map(line => fit(line, width));
   }
 
   // 1. Header: target on left, optional source metadata dropped before cutting on right.
-  const targetDesc = state.targetJob ? targetJobLabel(state.targetJob) : main;
+  const targetDesc = state.targetJob ? targetJobLabel(state.targetJob) : investigate ? null : main;
   const leftTitle = targetDesc
-    ? t('Send selection -> {target}', { target: targetDesc })
-    : t('Send selection');
+    ? t(investigate ? 'Investigate pane -> {target}' : 'Send selection -> {target}', { target: targetDesc })
+    : t(investigate ? 'Investigate pane' : 'Send selection');
   const rightBudget = Math.max(0, width - visualLength(leftTitle) - 2);
   const meta = headerMeta(state.source, rightBudget);
   rows.push(fit(pair(theme.strong(leftTitle), meta ? theme.dim(meta) : '', width), width));
@@ -203,7 +217,7 @@ export function renderSelectSendComposer(
   const overflow = wrappedLines.length > viewportRows;
 
   // 3. Excerpt label row.
-  const labelLeft = theme.label(t('Excerpt (exact text to send)'));
+  const labelLeft = theme.label(t(investigate ? 'Pane output (visible region to send)' : 'Excerpt (exact text to send)'));
   const labelRight = overflow
     ? theme.dim(
         t('lines {start}-{end}/{total}', {
@@ -222,7 +236,7 @@ export function renderSelectSendComposer(
     if (line !== undefined) {
       rows.push(fit(bar + theme.value(line), width));
     } else if (i === 0 && wrappedLines.length === 0) {
-      rows.push(fit(bar + theme.dim(t('Selection is empty; nothing to send.')), width));
+      rows.push(fit(bar + theme.dim(t(investigate ? 'Pane has no visible output; nothing to send.' : 'Selection is empty; nothing to send.')), width));
     } else {
       rows.push(fit('', width));
     }
@@ -238,9 +252,10 @@ export function renderSelectSendComposer(
   rows.push(fit(promptStyled + theme.value(before) + cursorMark + theme.value(after), width));
 
   // 6. Footer hints (kept whole when fitted).
+  const canSend = investigate ? Boolean(state.targetJob) : Boolean(state.targetPane || state.targetJob);
   const hints = [
     ...(editing && state.jobs.length ? [t('Tab targets')] : []),
-    ...(editing && (state.targetPane || state.targetJob) && !state.excerpt.empty ? [t('Enter send')] : []),
+    ...(editing && canSend && !state.excerpt.empty ? [t('Enter send')] : []),
     ...(state.phase !== 'waiting' ? [t('Esc cancel')] : []),
     ...(editing && overflow ? [t('↑↓ scroll')] : []),
   ];
@@ -261,14 +276,25 @@ export function applyComposerKey(
     return key.type === 'cancel' ? { state, intent: 'cancel' } : { state, intent: 'none' };
   }
   if (state.picker !== null) {
-    if (key.type === 'targets' || key.type === 'cancel') return { state: { ...state, picker: null }, intent: 'none' };
+    const investigate = state.mode === 'investigate';
+    if (key.type === 'cancel') {
+      if (investigate && !state.targetJob) return { state, intent: 'cancel' };
+      return { state: { ...state, picker: null }, intent: 'none' };
+    }
+    if (key.type === 'targets') {
+      if (investigate && !state.targetJob) return { state, intent: 'none' };
+      return { state: { ...state, picker: null }, intent: 'none' };
+    }
     if (key.type === 'scroll' || key.type === 'home' || key.type === 'end') {
-      const picker = key.type === 'home' ? 0 : key.type === 'end' ? state.jobs.length
-        : Math.max(0, Math.min(state.jobs.length, state.picker + key.delta));
+      const maxIndex = investigate ? Math.max(0, state.jobs.length - 1) : state.jobs.length;
+      const picker = key.type === 'home' ? 0 : key.type === 'end' ? maxIndex
+        : Math.max(0, Math.min(maxIndex, state.picker + key.delta));
       return { state: { ...state, picker }, intent: 'none' };
     }
     if (key.type === 'enter') {
-      return { state: { ...state, targetJob: state.jobs[state.picker - 1], picker: null, error: null }, intent: 'none' };
+      const picked = investigate ? state.jobs[state.picker] : state.jobs[state.picker - 1];
+      if (investigate && !picked) return { state, intent: 'none' };
+      return { state: { ...state, targetJob: picked, picker: null, error: null }, intent: 'none' };
     }
     return { state, intent: 'none' };
   }
@@ -279,8 +305,12 @@ export function applyComposerKey(
       return { state, intent: 'cancel' };
     case 'enter':
       return { state, intent: 'submit' };
-    case 'targets':
-      return { state: state.jobs.length ? { ...state, picker: state.targetJob ? state.jobs.indexOf(state.targetJob) + 1 : 0 } : state, intent: 'none' };
+    case 'targets': {
+      if (!state.jobs.length) return { state, intent: 'none' };
+      const idx = state.targetJob ? state.jobs.indexOf(state.targetJob) : -1;
+      const picker = state.mode === 'investigate' ? Math.max(0, idx) : idx >= 0 ? idx + 1 : 0;
+      return { state: { ...state, picker }, intent: 'none' };
+    }
     case 'text': {
       const insert = [...key.text.replace(/[\r\n\x00-\x1f\x7f]/g, ' ')];
       if (!insert.length) return { state, intent: 'none' };

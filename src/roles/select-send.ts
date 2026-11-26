@@ -29,9 +29,12 @@ import { sharedRoot } from './projects.js';
 
 export const SELECT_SEND_PLUGIN_ID = 'hud.select-send';
 export const SELECT_SEND_ACTION_ID = 'send';
+export const SELECT_SEND_INVESTIGATE_ACTION_ID = 'investigate';
 export const SELECT_SEND_COMPOSER_ENTRYPOINT = 'composer';
+export const DEFAULT_INVESTIGATE_LINE = 'Investigate this';
 export const MAX_EXCERPT_CHARS = 8000;
 export const MAX_QUESTION_CHARS = 1000;
+export type SelectSendMode = 'selection' | 'investigate';
 const HANDOFF_DIR = 'select-send';
 const HANDOFF_MAX_AGE_MS = 60 * 60_000;
 const HANDOFF_MAX_FILES = 16;
@@ -57,6 +60,7 @@ export interface PluginSelectionContext {
   worktree?: { checkout_path?: string; branch?: string } | null;
   tab_id?: string;
   tab_label?: string;
+  pane_id?: string;
   focused_pane_id?: string;
   focused_pane_cwd?: string;
   focused_pane_agent?: string;
@@ -64,6 +68,8 @@ export interface PluginSelectionContext {
   selected_text?: string;
   stale_content?: boolean;
   selection?: SelectionCoords;
+  mode?: SelectSendMode;
+  default_question?: string;
   invocation_source?: string;
   correlation_id?: string;
 }
@@ -159,6 +165,21 @@ export function normalizeSelectionExcerpt(raw: string | null | undefined, maxCha
   return { text: `${kept}${suffix}`, truncated: true, empty: false };
 }
 
+/** Normalize a pane's visible output: trim outer blank rows and trailing spaces, keeping the recent tail if over budget. */
+export function normalizePaneExcerpt(raw: string | null | undefined, maxChars = MAX_EXCERPT_CHARS): NormalizedExcerpt {
+  const cleaned = stripUnsafeControl(String(raw ?? '').replace(/\r\n?/g, '\n'), true);
+  const lines = cleaned.split('\n').map((line) => line.trimEnd());
+  const first = lines.findIndex((line) => line.length > 0);
+  if (first < 0) return { text: '', truncated: false, empty: true };
+  let last = lines.length - 1;
+  while (last > first && lines[last]!.length === 0) last--;
+  const trimmed = lines.slice(first, last + 1).join('\n');
+  if (trimmed.length <= maxChars) return { text: trimmed, truncated: false, empty: false };
+  const prefix = '… (truncated)\n';
+  const kept = trimmed.slice(-Math.max(0, maxChars - prefix.length)).replace(/^\n+/, '');
+  return { text: `${prefix}${kept}`, truncated: true, empty: false };
+}
+
 export function normalizeQuestion(raw: string | null | undefined): string {
   return stripUnsafeControl(String(raw ?? ''), false)
     .replace(/\s+/g, ' ')
@@ -243,6 +264,9 @@ export function parsePluginContext(env: NodeJS.ProcessEnv = process.env): Plugin
       }
     : undefined;
   const selection = parseSelectionCoords(raw.selection);
+  const pane_id = herdrId(raw.pane_id) ? raw.pane_id : undefined;
+  const mode = raw.mode === 'investigate' ? 'investigate' : undefined;
+  const default_question = typeof raw.default_question === 'string' ? raw.default_question : undefined;
   return {
     workspace_id: str('workspace_id') ?? (herdrId(env.HERDR_WORKSPACE_ID) ? env.HERDR_WORKSPACE_ID : undefined),
     workspace_label: str('workspace_label'),
@@ -250,6 +274,7 @@ export function parsePluginContext(env: NodeJS.ProcessEnv = process.env): Plugin
     ...(worktree ? { worktree } : {}),
     tab_id: str('tab_id') ?? (herdrId(env.HERDR_TAB_ID) ? env.HERDR_TAB_ID : undefined),
     tab_label: str('tab_label'),
+    ...(pane_id ? { pane_id } : {}),
     focused_pane_id: str('focused_pane_id') ?? (herdrId(env.HERDR_PANE_ID) ? env.HERDR_PANE_ID : undefined),
     focused_pane_cwd: str('focused_pane_cwd'),
     focused_pane_agent: str('focused_pane_agent'),
@@ -257,9 +282,15 @@ export function parsePluginContext(env: NodeJS.ProcessEnv = process.env): Plugin
     selected_text: typeof raw.selected_text === 'string' ? raw.selected_text : undefined,
     stale_content: raw.stale_content === true,
     ...(selection ? { selection } : {}),
+    ...(mode ? { mode } : {}),
+    ...(default_question !== undefined ? { default_question } : {}),
     invocation_source: str('invocation_source'),
     correlation_id: str('correlation_id'),
   };
+}
+
+export function contextPaneId(ctx: PluginSelectionContext): string | null {
+  return ctx.selection?.pane_id ?? ctx.pane_id ?? ctx.focused_pane_id ?? null;
 }
 
 function asLivePanes(raw: unknown): LivePane[] | null {
@@ -339,7 +370,7 @@ export async function resolveSelectionTarget(
   env: NodeJS.ProcessEnv = process.env,
   now = new Date()
 ): Promise<ResolvedSelectionTarget> {
-  const sourcePane = ctx.selection?.pane_id ?? ctx.focused_pane_id ?? null;
+  const sourcePane = contextPaneId(ctx);
   const panes = await listLivePanes(env);
   const paneById = new Map((panes ?? []).map((p) => [p.pane_id, p]));
   const sourcePaneInfo = sourcePane ? paneById.get(sourcePane) : undefined;
@@ -479,13 +510,15 @@ export async function resolveSelectionTarget(
     return projectMain ? result(source, projectMain) : { ...result(source), reason: 'No live main session found for this job' };
   }
 
-  const rawCwd =
-    ctx.worktree?.checkout_path ??
-    ctx.focused_pane_cwd ??
-    sourcePaneInfo?.foreground_cwd ??
-    sourcePaneInfo?.cwd ??
-    ctx.workspace_cwd ??
-    null;
+  const clickedOtherPane = Boolean(sourcePane && ctx.focused_pane_id && sourcePane !== ctx.focused_pane_id);
+  const rawCwd = clickedOtherPane
+    ? (sourcePaneInfo?.foreground_cwd ?? sourcePaneInfo?.cwd ?? ctx.worktree?.checkout_path ?? ctx.workspace_cwd ?? null)
+    : (ctx.worktree?.checkout_path ??
+      ctx.focused_pane_cwd ??
+      sourcePaneInfo?.foreground_cwd ??
+      sourcePaneInfo?.cwd ??
+      ctx.workspace_cwd ??
+      null);
   const projectRoot = rawCwd ? sharedRoot(rawCwd) : null;
   const source: SelectionSource = {
     project: projectNameFromRoot(projectRoot, ctx.workspace_label),
@@ -499,15 +532,30 @@ export async function resolveSelectionTarget(
   return projectMain ? result(source, projectMain) : { ...result(source), reason: 'No main session found for this project' };
 }
 
-async function paneReadText(paneId: string, env: NodeJS.ProcessEnv): Promise<string | null> {
-  if (!herdrEndpoint(env)) return null;
-  for (const source of ['screen', 'recent'] as const) {
-    const reply = await herdrRequest('pane.read', { pane_id: paneId, source }, { env, timeoutMs: 800 }).catch(() => null);
-    const text = reply?.result?.read?.text ?? reply?.result?.text;
-    if (!reply?.error && typeof text === 'string') return text.replace(/\r\n?/g, '\n');
+export async function readPaneVisibleText(paneId: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  if (herdrEndpoint(env)) {
+    for (const source of ['visible', 'recent'] as const) {
+      const reply = await herdrRequest(
+        'pane.read',
+        { pane_id: paneId, source, format: 'text', strip_ansi: true },
+        { env, timeoutMs: 800 }
+      ).catch(() => null);
+      const text = reply?.result?.read?.text ?? reply?.result?.text;
+      if (!reply?.error && typeof text === 'string') return text.replace(/\r\n?/g, '\n');
+    }
+    return null;
+  }
+  for (const source of ['visible', 'recent'] as const) {
+    const cli = await runHerdr(['pane', 'read', paneId, '--source', source], env, { budgetMs: 2000 }).catch(() => null);
+    if (!cli?.ok) continue;
+    const result = herdrResult(cli.stdout);
+    const read = isRecord(result?.read) ? result.read : result;
+    if (typeof read?.text === 'string') return read.text.replace(/\r\n?/g, '\n');
   }
   return null;
 }
+
+const paneReadText = readPaneVisibleText;
 
 function locateExcerptSpan(screenText: string, excerptText: string): { startLine: number; endLine: number } | null {
   const screenLines = screenText.split('\n');
@@ -542,7 +590,7 @@ export async function captureSelectionBaseline(
   excerpt: NormalizedExcerpt,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<SelectionBaseline | null> {
-  const paneId = ctx.selection?.pane_id ?? ctx.focused_pane_id;
+  const paneId = contextPaneId(ctx);
   if (!paneId || excerpt.empty) return null;
   const screenText = await paneReadText(paneId, env);
   if (screenText === null) return null;
@@ -566,7 +614,7 @@ export async function refreshSelectionExcerpt(
   baseline: SelectionBaseline | null,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<RefreshResult> {
-  const paneId = ctx.selection?.pane_id ?? ctx.focused_pane_id;
+  const paneId = contextPaneId(ctx);
   if (!paneId) return { stale: Boolean(ctx.stale_content), changed: false, excerpt: current, baseline };
 
   if (ctx.selection) {
@@ -626,8 +674,9 @@ export async function refreshSelectionExcerpt(
   }
 
   if (baseline && screenText !== baseline.screenText && !current.empty && !screenText.includes(current.text)) {
-    const updated = extractUpdatedFromScreen(screenText, lineCount, baseline);
-    const next = normalizeSelectionExcerpt(updated);
+    const next = ctx.mode === 'investigate'
+      ? normalizePaneExcerpt(screenText)
+      : normalizeSelectionExcerpt(extractUpdatedFromScreen(screenText, lineCount, baseline));
     const nextBaseline: SelectionBaseline = {
       screenText,
       startLine: locateExcerptSpan(screenText, next.text)?.startLine ?? baseline.startLine,
@@ -846,6 +895,44 @@ export async function handleSelectionAction(
     contextToStore = { ...ctx, selected_text: excerpt.text, stale_content: refreshed.stale };
   }
 
+  const handoffFile = writeSelectionHandoff(hudHome, contextToStore);
+  const opened = await openComposerPopup(handoffFile, env);
+  if (!opened.ok) {
+    try {
+      fs.unlinkSync(handoffFile);
+    } catch {
+      /* Already removed. */
+    }
+    return { opened: false, reason: opened.error ?? 'popup_open_failed' };
+  }
+  return { opened: true, handoffFile };
+}
+
+/**
+ * Entry point for the herdr pane menu action (`hud.select-send.investigate`).
+ * Reads the pane's visible region and opens the composer targeting a working job.
+ */
+export async function handleInvestigatePaneAction(
+  hudHome: string,
+  env: NodeJS.ProcessEnv = process.env
+): Promise<{ opened: boolean; reason?: string; handoffFile?: string }> {
+  const ctx = parsePluginContext(env);
+  const paneId = ctx.pane_id ?? ctx.focused_pane_id;
+  if (!paneId) return { opened: false, reason: 'no_pane' };
+  const rawText = await readPaneVisibleText(paneId, env);
+  if (rawText === null) return { opened: false, reason: 'pane_read_failed' };
+  const excerpt = normalizePaneExcerpt(rawText);
+  if (excerpt.empty) return { opened: false, reason: 'empty_pane' };
+
+  const contextToStore: PluginSelectionContext = {
+    ...ctx,
+    pane_id: paneId,
+    selected_text: excerpt.text,
+    stale_content: false,
+    selection: undefined,
+    mode: 'investigate',
+    default_question: DEFAULT_INVESTIGATE_LINE,
+  };
   const handoffFile = writeSelectionHandoff(hudHome, contextToStore);
   const opened = await openComposerPopup(handoffFile, env);
   if (!opened.ok) {

@@ -1116,6 +1116,8 @@ In the herdr selection composer, press Tab to open the target picker, use â†‘/â†
 
 A direct worker send adds an excerpt ID to the confirmed excerpt, source and question sent to the worker's conversation. The worker can answer without ending the turn using `hud_progress({reply_to: "<excerpt ID>", message: "<answer>"})`. An ordinary progress message, a wrong ID or a reply from a different job cannot mark an excerpt answered. Inspector keeps the excerpt and matching answer together under **Selections**; Execution shows compact cards for the project, including `queued`, `answered`, `target ended` and `delivery unknown`. The newest 64 direct sends are kept privately in `$HUD_HOME/selection-excerpts.json`, independently of their source panes. Sending to main does not add an excerpt card.
 
+The same plugin also defines the pane action `hud.select-send.investigate` (**Investigate this**, `contexts = ["pane"]`). It reads the pane's visible output (`pane.read`, falling back to `recent`), opens the composer on the project's working-job picker (working jobs only; closed targets are refused and never fall back to main), pre-fills the owner line with `Investigate this`, and delivers through the same excerpt-record and reply path.
+
 ## Review board
 
 `hud board [--html] [--cwd DIR] [--out FILE] [--open]` writes the project's review board: one static HTML file for a browser, with no script, font, image, link or network request (its Content-Security-Policy allows inline style only) and every project string escaped.
