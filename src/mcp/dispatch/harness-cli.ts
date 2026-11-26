@@ -175,6 +175,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
         argv: agentArgs,
         kind: place.agent!,
         name,
+        ...(kind.startTimeoutMs ? { timeout_ms: kind.startTimeoutMs } : {}),
         cwd: job.cwd,
         env: directExecEnv({
           HUD_JOB_DIR: dir,

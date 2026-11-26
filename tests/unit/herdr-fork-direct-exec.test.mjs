@@ -9,7 +9,7 @@ import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { isHudHerdrFork, isHudHerdrVersion, probeHerdrTarget } from '../../dist/runtime/herdr-socket.js';
 import { directExecEnv } from '../../dist/mcp/dispatch/proc.js';
-import { codexPromptReady, DIRECT_PRE_SPAWN_ERROR_CODES, parseDirectStartReply } from '../../dist/mcp/dispatch/direct-exec.js';
+import { codexPromptReady, DIRECT_PRE_SPAWN_ERROR_CODES, parseDirectStartReply, waitDirectReady } from '../../dist/mcp/dispatch/direct-exec.js';
 import { terminalFact } from '../../dist/mcp/cli-judge.js';
 import { reapWorkerTree, rememberWorkerTree, tabTreeGrant } from '../../dist/roles/worker-tree.js';
 import { procStat } from '../../dist/utils/proc.js';
@@ -178,8 +178,10 @@ async function startForkHerdr(t, f, opts = {}) {
   const {
     reusedTabId = false,
     onAgentStart,
+    onAgentGet,
     initialStatus = 'idle',
-    interactiveReady = false,
+    interactiveReady = true,
+    launchPending = false,
     paneReadText = '',
     crashOnStart = false,
   } = opts;
@@ -243,6 +245,7 @@ async function startForkHerdr(t, f, opts = {}) {
           pid: proc.pid, pid_start_time: proc.pid_start_time, child: proc.child,
           status: typeof initialStatus === 'function' ? initialStatus(req.params) : initialStatus,
           interactive_ready: typeof interactiveReady === 'function' ? interactiveReady(req.params) : interactiveReady,
+          launch_pending: typeof launchPending === 'function' ? launchPending(req.params) : launchPending,
           pane_read_text: typeof paneReadText === 'function' ? paneReadText(req.params) : paneReadText,
           closed: false,
           agent_session: { kind: 'id', value: `synthetic-${req.params.kind}-session-${seq}`, source: 'synthetic', agent: req.params.kind },
@@ -263,7 +266,7 @@ async function startForkHerdr(t, f, opts = {}) {
           type: 'agent_started',
           agent: {
             terminal_id, launch_id, name: entry.name, agent: entry.kind,
-            agent_status: entry.status, interactive_ready: entry.interactive_ready,
+            agent_status: entry.status, interactive_ready: entry.interactive_ready, launch_pending: entry.launch_pending,
             workspace_id: 'w4E', tab_id, pane_id, focused: false, revision: 1,
           },
           argv: [req.params.executable, ...(req.params.argv ?? [])],
@@ -278,12 +281,13 @@ async function startForkHerdr(t, f, opts = {}) {
       if (req.method === 'agent.get') {
         const entry = [...tabs.values()].reverse().find((e) => !e.closed && (e.name === req.params.target || e.pane_id === req.params.target));
         if (!entry) { err('agent_not_found'); return; }
+        if (onAgentGet) onAgentGet(entry, req.params);
         reply({
           type: 'agent_info',
           agent: {
             terminal_id: entry.terminal_id, launch_id: entry.launch_id, name: entry.name,
             pane_id: entry.pane_id, tab_id: entry.tab_id, agent: entry.kind,
-            agent_status: entry.status, interactive_ready: entry.interactive_ready,
+            agent_status: entry.status, interactive_ready: entry.interactive_ready, launch_pending: entry.launch_pending,
             agent_session: entry.agent_session,
           },
         });
@@ -404,6 +408,7 @@ test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling 
   assert.equal(fork.startRequests.length, 1);
   const req1 = fork.startRequests[0];
   assert.equal(req1.kind, 'claude');
+  assert.equal(req1.timeout_ms, undefined);
   assert.equal(req1.on_exit, 'close_on_zero');
   assert.equal(req1.focus, false);
   assert.equal(req1.workspace_id, 'w4E');
@@ -640,6 +645,7 @@ test('Codex prompt-ready with agent_status unknown counts as ready (screen signa
     assert.equal(res.ok, undefined, `Codex launch should succeed (got ${JSON.stringify(res)})`);
     assert.equal(fork.startRequests.length, 1);
     assert.equal(fork.startRequests[0].kind, 'codex');
+    assert.equal(fork.startRequests[0].timeout_ms, 90000);
     // Fixture sets CODEX_HOME to a custom path; direct-exec forwards the caller's CODEX_HOME.
     assert.equal(fork.startRequests[0].env.CODEX_HOME, f.env.CODEX_HOME);
     const dir = res.task_dir;
@@ -668,6 +674,238 @@ test('Codex prompt-ready with agent_status unknown counts as ready (screen signa
   writeFixtureFile(join(dirUnset, 'report.md'), 'Codex report.\n');
   forkUnset.emitPaneExited(entryUnset, 0, null);
   await until(() => cliState(dirUnset)?.state === 'closed' && Boolean(readCloseReaped(resUnset)), t.signal);
+});
+
+test('waitDirectReady requires interactive_ready, keeps polling while launch_pending, handles codex unknown, PID death, and deadline', { timeout: 30000 }, async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'hud-wait-direct-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sock = join(root, 'herdr.sock');
+  let agentReply = null;
+  let paneTextReply = '';
+  let polls = 0;
+  let onPoll = null;
+  const server = createServer((conn) => {
+    const rl = createInterface({ input: conn });
+    rl.on('line', (line) => {
+      const req = JSON.parse(line);
+      if (req.method === 'agent.get') {
+        polls += 1;
+        if (onPoll) onPoll(polls);
+        conn.end(JSON.stringify({ id: req.id, result: { type: 'agent_info', agent: agentReply } }) + '\n');
+      } else if (req.method === 'pane.read') {
+        conn.end(JSON.stringify({ id: req.id, result: { type: 'pane_read', read: { text: paneTextReply, pane_id: 'w4E:p2' } } }) + '\n');
+      } else {
+        conn.end(JSON.stringify({ id: req.id, result: {} }) + '\n');
+      }
+    });
+    conn.on('error', () => {});
+    rl.on('error', () => {});
+  });
+  server.listen(sock);
+  await once(server, 'listening');
+  t.after(() => new Promise((done) => server.close(done)));
+
+  const liveChild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60000)'], { stdio: 'ignore' });
+  t.after(() => { try { liveChild.kill('SIGKILL'); } catch {} });
+  const liveStart = procStat(liveChild.pid).start;
+
+  const prior = process.env.HERDR_SOCKET_PATH;
+  process.env.HERDR_SOCKET_PATH = sock;
+  t.after(() => {
+    if (prior === undefined) delete process.env.HERDR_SOCKET_PATH;
+    else process.env.HERDR_SOCKET_PATH = prior;
+  });
+
+  const baseAgent = (over) => ({
+    terminal_id: 'term_1', launch_id: 'launch_1', name: 'j1-primary',
+    pane_id: 'w4E:p2', tab_id: 'w4E:t2', agent: 'claude',
+    agent_status: 'idle', interactive_ready: false, launch_pending: false,
+    ...over,
+  });
+  const baseOpts = (over) => ({
+    name: 'j1-primary', paneId: 'w4E:p2', launchId: 'launch_1', terminalId: 'term_1',
+    kind: 'claude', pid: liveChild.pid, pidStart: liveStart, timeoutMs: 300,
+    ...over,
+  });
+
+  // 1) idle without interactive_ready -> keeps polling until deadline -> agent_not_ready.
+  polls = 0; onPoll = null; paneTextReply = '';
+  agentReply = baseAgent({ agent_status: 'idle', interactive_ready: false, launch_pending: false });
+  const rIdleNotReady = await waitDirectReady(baseOpts());
+  assert.equal(rIdleNotReady.exit_code, 1);
+  assert.equal(JSON.parse(rIdleNotReady.stderr).error.code, 'agent_not_ready');
+  assert.ok(polls >= 2, `expected repeated polling, got ${polls}`);
+
+  // 2) idle with launch_pending=true -> NOT ready (even if interactive_ready is false or true) -> deadline agent_not_ready.
+  for (const ir of [false, true]) {
+    polls = 0; onPoll = null;
+    agentReply = baseAgent({ agent_status: 'idle', interactive_ready: ir, launch_pending: true });
+    const rPending = await waitDirectReady(baseOpts());
+    assert.equal(rPending.exit_code, 1);
+    assert.equal(JSON.parse(rPending.stderr).error.code, 'agent_not_ready');
+    assert.ok(polls >= 2, `launch_pending=true (ir=${ir}) must keep polling`);
+  }
+
+  // 3) done without interactive_ready keeps polling, succeeds once interactive_ready=true & launch_pending=false.
+  polls = 0;
+  agentReply = baseAgent({ agent: 'agy', agent_status: 'done', interactive_ready: false, launch_pending: true });
+  onPoll = (n) => {
+    if (n === 2) agentReply = baseAgent({ agent: 'agy', agent_status: 'done', interactive_ready: false, launch_pending: false });
+    if (n === 3) agentReply = baseAgent({ agent: 'agy', agent_status: 'done', interactive_ready: true, launch_pending: false });
+  };
+  const rDone = await waitDirectReady(baseOpts({ kind: 'agy', timeoutMs: 2000 }));
+  assert.equal(rDone.exit_code, 0, rDone.stderr);
+  assert.equal(polls, 3);
+
+  // 4) Codex unknown with interactive_ready=true is ready; launch_pending=true holds back even with composer screen text.
+  polls = 0;
+  paneTextReply = 'Codex\n› Ask Codex to do anything\n';
+  agentReply = baseAgent({ agent: 'codex', agent_status: 'unknown', interactive_ready: false, launch_pending: true });
+  onPoll = (n) => {
+    if (n === 3) agentReply = baseAgent({ agent: 'codex', agent_status: 'unknown', interactive_ready: true, launch_pending: false });
+  };
+  const rCodex = await waitDirectReady(baseOpts({ kind: 'codex', timeoutMs: 2000 }));
+  assert.equal(rCodex.exit_code, 0, rCodex.stderr);
+  assert.equal(polls, 3, 'codex must not become ready while launch_pending=true even with composer text');
+
+  // 5) blocked while launch_pending=true fails immediately with agent_not_ready (no deadline wait).
+  polls = 0; onPoll = null;
+  agentReply = baseAgent({ agent_status: 'blocked', interactive_ready: false, launch_pending: true });
+  const blockedStart = Date.now();
+  const rBlocked = await waitDirectReady(baseOpts({ timeoutMs: 5000 }));
+  assert.equal(rBlocked.exit_code, 1);
+  assert.equal(JSON.parse(rBlocked.stderr).error.code, 'agent_not_ready');
+  assert.equal(polls, 1);
+  assert.ok(Date.now() - blockedStart < 1000, 'blocked must fail immediately');
+
+  // 6) PID/start death while idle without interactive_ready returns agent_start_failed.
+  const dying = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60000)'], { stdio: 'ignore' });
+  t.after(() => { try { dying.kill('SIGKILL'); } catch {} });
+  const dyingStart = procStat(dying.pid).start;
+  polls = 0;
+  agentReply = baseAgent({ agent_status: 'idle', interactive_ready: false, launch_pending: true });
+  onPoll = (n) => {
+    if (n === 2) { try { dying.kill('SIGKILL'); } catch {} }
+  };
+  const rDead = await waitDirectReady(baseOpts({ pid: dying.pid, pidStart: dyingStart, timeoutMs: 3000 }));
+  assert.equal(rDead.exit_code, 1);
+  assert.equal(JSON.parse(rDead.stderr).error.code, 'agent_start_failed');
+});
+
+test('direct-exec CLI and Pi wait for interactive_ready before sending exactly one agent.prompt (and codex unknown)', { timeout: 60000 }, async (t) => {
+  const promptCalls = (f) => f.commands().filter((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt');
+
+  // 1) CLI (claude): idle with launch_pending=true, then idle with interactive_ready=false -> no prompt until interactive_ready=true, then exactly one.
+  {
+    const f = await fixture(t);
+    let getCount = 0;
+    const promptsDuringPending = [];
+    const fork = await startForkHerdr(t, f, {
+      initialStatus: 'idle',
+      launchPending: true,
+      interactiveReady: false,
+      onAgentGet(entry) {
+        getCount += 1;
+        promptsDuringPending.push(promptCalls(f).length);
+        if (getCount === 3) {
+          // Idle with launch_pending=false but interactive_ready still false: must NOT prompt yet.
+          entry.launch_pending = false;
+        } else if (getCount >= 4) {
+          entry.launch_pending = false;
+          entry.interactive_ready = true;
+        }
+      },
+    });
+    writeCliRole(f, 'readycli', 60, true, 'claude');
+
+    const res = await f.call('hud_create', { role: 'readycli', task: 'Wait for CLI interactive_ready.' });
+    assert.equal(res.ok, undefined, `CLI launch should succeed (got ${JSON.stringify(res)})`);
+    assert.equal(getCount, 4, 'must poll until interactive_ready=true');
+    assert.deepEqual(promptsDuringPending, [0, 0, 0, 0], 'no agent.prompt may be sent before interactive_ready=true');
+    assert.equal(promptCalls(f).length, 1, 'exactly one agent.prompt sent once interactive_ready=true');
+
+    const dir = res.task_dir;
+    const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+    const entry = fork.tabs.get(session.LAUNCH_ID);
+    await until(() => cliState(dir)?.supervisor_pid, t.signal);
+    writeFixtureFile(join(dir, 'report.md'), 'CLI ready report.\n');
+    fork.emitPaneExited(entry, 0, null);
+    await until(() => cliState(dir)?.state === 'closed' && Boolean(readCloseReaped(res)), t.signal);
+  }
+
+  // 2) Pi: idle with launch_pending=true, then idle with interactive_ready=false -> no prompt until interactive_ready=true, then exactly one.
+  {
+    const f = await fixture(t);
+    let getCount = 0;
+    const promptsDuringPending = [];
+    const fork = await startForkHerdr(t, f, {
+      initialStatus: 'idle',
+      launchPending: true,
+      interactiveReady: false,
+      onAgentGet(entry) {
+        getCount += 1;
+        promptsDuringPending.push(promptCalls(f).length);
+        if (getCount === 3) {
+          entry.launch_pending = false;
+        } else if (getCount >= 4) {
+          entry.launch_pending = false;
+          entry.interactive_ready = true;
+        }
+      },
+    });
+
+    const res = await f.call('hud_create', { role: 'imp', task: 'Wait for Pi interactive_ready.' });
+    assert.equal(res.ok, undefined, `Pi launch should succeed (got ${JSON.stringify(res)})`);
+    assert.equal(getCount, 4, 'Pi must poll until interactive_ready=true');
+    assert.deepEqual(promptsDuringPending, [0, 0, 0, 0], 'no agent.prompt may be sent to Pi before interactive_ready=true');
+    assert.equal(promptCalls(f).length, 1, 'exactly one agent.prompt sent to Pi once interactive_ready=true');
+
+    const dir = res.task_dir;
+    const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+    const entry = fork.tabs.get(session.LAUNCH_ID);
+    await until(() => fork.hasWatcher(), t.signal);
+    writeFixtureFile(join(dir, 'report.md'), 'Pi ready report.\n');
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ ...cliState(dir), state: 'working', output_written: true }));
+    fork.emitPaneExited(entry, 0, null);
+    await until(() => cliState(dir)?.state === 'closed' && Boolean(readCloseReaped(res)), t.signal);
+  }
+
+  // 3) Codex: unknown with launch_pending=true waits even if screen composer text is visible; ready once launch_pending=false & interactive_ready=true.
+  {
+    const f = await fixture(t);
+    let getCount = 0;
+    const promptsDuringPending = [];
+    const fork = await startForkHerdr(t, f, {
+      initialStatus: 'unknown',
+      launchPending: true,
+      interactiveReady: false,
+      paneReadText: 'Codex\n› Ask Codex to do anything\n',
+      onAgentGet(entry) {
+        getCount += 1;
+        promptsDuringPending.push(promptCalls(f).length);
+        if (getCount >= 3) {
+          entry.launch_pending = false;
+          entry.interactive_ready = true;
+        }
+      },
+    });
+    writeCliRole(f, 'readycodex', 60, true, 'codex');
+
+    const res = await f.call('hud_create', { role: 'readycodex', task: 'Wait for Codex interactive_ready.' });
+    assert.equal(res.ok, undefined, `Codex launch should succeed (got ${JSON.stringify(res)})`);
+    assert.equal(fork.startRequests[0].timeout_ms, 90000);
+    assert.equal(getCount, 3);
+    assert.deepEqual(promptsDuringPending, [0, 0, 0]);
+    assert.equal(promptCalls(f).length, 1);
+
+    const dir = res.task_dir;
+    const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
+    const entry = fork.tabs.get(session.LAUNCH_ID);
+    await until(() => cliState(dir)?.supervisor_pid, t.signal);
+    writeFixtureFile(join(dir, 'report.md'), 'Codex ready report.\n');
+    fork.emitPaneExited(entry, 0, null);
+    await until(() => cliState(dir)?.state === 'closed' && Boolean(readCloseReaped(res)), t.signal);
+  }
 });
 
 test('cli-supervisor guards pane-exit-only writes against SESSION replacement', { timeout: 30000 }, async (t) => {

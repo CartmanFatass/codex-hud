@@ -227,8 +227,11 @@ function directError(code: string, message: string): DispatchResult {
 }
 
 /** Shared readiness polling for direct-exec CLI and Pi agents.
- * Mirrors herdr `src/cli/agent.rs:420-490`, treating a prompt-ready Codex with `agent_status: 'unknown'`
- * (via `interactive_ready: true` or the screen-ready composer signal) as ready instead of timing out. */
+ * Mirrors herdr `src/cli/agent.rs:414-490`: ready requires `interactive_ready: true` with
+ * `agent_status: 'idle' | 'done'` (or Codex `agent_status: 'unknown'` with `interactive_ready: true`,
+ * keeping the screen composer check as fallback once no longer `launch_pending`). Keeps polling
+ * while `launch_pending` or not yet interactive; PID/start death returns `agent_start_failed`
+ * and deadline expiry returns `agent_not_ready`. */
 export async function waitDirectReady(opts: {
   name: string;
   paneId: string;
@@ -251,7 +254,8 @@ export async function waitDirectReady(opts: {
     }
     const queryTimeout = Math.min(2000, remaining);
     let reply = await herdrRequest('agent.get', { target: name }, { timeoutMs: queryTimeout }).catch(() => null);
-    if (!reply || reply.error) {
+    let byName = Boolean(reply && !reply.error);
+    if (!byName) {
       reply = await herdrRequest('agent.get', { target: paneId }, { timeoutMs: queryTimeout }).catch(() => null);
     }
     const agent = reply && !reply.error ? reply.result?.agent : undefined;
@@ -269,20 +273,27 @@ export async function waitDirectReady(opts: {
       if (status === 'blocked') {
         return directError('agent_not_ready', `agent ${name} is blocked during startup and is not ready for prompts`);
       }
-      if (status === 'idle' || status === 'done') {
-        if (workerAlive(pid, pidStart) === false) {
-          return directError('agent_start_failed', `agent ${name} process exited before becoming interactive`);
-        }
-        return { exit_code: 0, stdout: JSON.stringify(reply), stderr: '' };
-      }
-      if (status === 'unknown' && kind === 'codex') {
-        if (agent.interactive_ready === true) {
+      if (agent.launch_pending !== true) {
+        const interactive = agent.interactive_ready === true;
+        if ((status === 'idle' || status === 'done') && interactive) {
+          if (workerAlive(pid, pidStart) === false) {
+            return directError('agent_start_failed', `agent ${name} process exited before becoming interactive`);
+          }
           return { exit_code: 0, stdout: JSON.stringify(reply), stderr: '' };
         }
-        const read = await herdrRequest('pane.read', { pane_id: paneId, source: 'recent' }, { timeoutMs: queryTimeout }).catch(() => null);
-        const text = read?.result?.read?.text ?? read?.result?.text;
-        if (typeof text === 'string' && codexPromptReady(text)) {
-          return { exit_code: 0, stdout: JSON.stringify(reply), stderr: '' };
+        if (status === 'unknown' && kind === 'codex') {
+          let codexReady = interactive;
+          if (!codexReady && (byName || agent.name === name)) {
+            const read = await herdrRequest('pane.read', { pane_id: paneId, source: 'recent' }, { timeoutMs: queryTimeout }).catch(() => null);
+            const text = read?.result?.read?.text ?? read?.result?.text;
+            codexReady = typeof text === 'string' && codexPromptReady(text);
+          }
+          if (codexReady) {
+            if (workerAlive(pid, pidStart) === false) {
+              return directError('agent_start_failed', `agent ${name} process exited before becoming interactive`);
+            }
+            return { exit_code: 0, stdout: JSON.stringify(reply), stderr: '' };
+          }
         }
       }
     }
