@@ -5,6 +5,7 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { isProcAlive, procStat, readBootId, readProcEnviron } from '../../dist/utils/proc.js';
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
@@ -15,10 +16,13 @@ import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js
 import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { loadGraph } from '../../dist/workflows/graph.js';
+import { taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js';
+import { permissionStatus } from '../../dist/mcp/worker-permissions.js';
+import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { pinnedQueueJobs } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
-import { resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
+import { fallbackRole, resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { goodTicket, readJson, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
@@ -217,6 +221,90 @@ test('pane-less unattended ticket queue dispatches, lands, reviews, accepts, and
   assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* done/);
 });
+
+for (const mode of ['ordinary', 'unattended']) {
+  test(`${mode} ticket queue waits for native permissions and lands after auto-approval`, { timeout: 35_000 }, async t => {
+    const f = await setupWorkflowProject(t, { count: 1, fixtureOptions: {
+      clockScale: 1, watcherTickMs: 350,
+      onPermissionKeys: () => fs.unlinkSync(join(f.env.HOME, 'cli-blocked')),
+    } });
+    fs.chmodSync(f.home, 0o700);
+    fallbackRole(f, 'imp', [{ harness: 'cli', agent: 'claude', model: 'synthetic-claude' }]);
+    const hold = name => writeFixtureFile(join(f.env.HOME, name), '');
+    const release = name => fs.unlinkSync(join(f.env.HOME, name));
+    hold('hold-turn');
+    hold('missing-report');
+    const u = mode === 'unattended' ? unattended(f) : undefined;
+    if (u) { f.onCleanup(() => u.cmd('off')); u.cmd('on', '--objective', 'selected'); }
+    const flow = u ? await u.findRun('selected') : (await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root })).flow;
+    const [job] = await f.jobs(flow, 1), dir = f.dir(job);
+    const statusFile = join(dir, 'STATUS.json');
+    const status = () => fs.existsSync(statusFile) ? readJson(statusFile) : {};
+    const active = () => permissionStatus(dir).active;
+    const watcherReads = () => f.socketRequests.filter(req => req.method === 'pane.read' && req.params.source === 'visible').length;
+    const keys = () => f.socketRequests.filter(req => req.method === 'pane.send_keys').map(req => req.params.keys);
+    const stillWorking = () => {
+      const queue = f.flow(flow);
+      assert.equal(queue.state, 'working', JSON.stringify(queue));
+      assert.equal(queue.tickets[0].failed, undefined);
+      assert.equal(queue.tickets[0].held, undefined);
+    };
+    await until(() => status().state === 'working' && status().supervisor_pid, 6000)
+      .catch(error => { throw Error(`${error.message}: ${JSON.stringify({ status: status(), job: f.job(job), queue: f.flow(flow) })}`); });
+    const blockWhileWatching = async text => {
+      const before = watcherReads();
+      hold('pane-read-timeout');
+      writeFixtureFile(join(f.env.HOME, 'pane-read'), text);
+      hold('cli-blocked');
+      await until(() => status().blocked && watcherReads() > before, 6000);
+      await delay(300, undefined, { signal: t.signal }); // Let the queue sample the block before releasing the watcher.
+      assert.equal(active(), undefined);
+      stillWorking();
+      release('pane-read-timeout');
+    };
+    await blockWhileWatching('Edit file synthetic.txt\nDo you want to make this edit?\n❯ 1. Yes\n2. No\nUnfamiliar footer');
+    await until(() => active()?.action === 'main', 6000);
+    assert.deepEqual(keys(), []);
+    if (u) {
+      const entry = active();
+      await until(() => f.flow(flow).notices[`handback-${entry.id}`], 6000);
+      assert.deepEqual(workflowEvents(f.home, null, false, tmpdir()).lines, []);
+      const notices = taskNoticeSource(f.home, f.env.HERDR_PANE_ID, f.root)();
+      assert.equal(notices.length, 1);
+      assert.ok(notices[0].line.includes(`Open pane ${entry.pane}`), notices[0].line);
+      assert.deepEqual(workflowEvents(f.home, f.env.HERDR_PANE_ID, false, f.root).lines, []);
+    }
+    stillWorking();
+
+    release('cli-blocked'); // Simulate main resolving the manual menu in the pane.
+    await until(() => !status().blocked && !active(), 6000);
+    const scratch = join(dir, 'scratchpad');
+    fs.mkdirSync(scratch);
+    await blockWhileWatching(`Bash command\nrm -f ${scratch}/*.png\nDo you want to proceed?\n❯ 1. Yes\n2. No\nEsc to cancel`);
+    await until(() => permissionStatus(dir).latest?.outcome === 'answered', 6000);
+    assert.deepEqual(keys(), [['Enter']]);
+    stillWorking();
+
+    const root = f.job(job).worktree.root;
+    writeFixtureFile(join(root, 'synthetic.txt'), 'Synthetic implementation.\n');
+    f.git(root, 'add', 'synthetic.txt');
+    f.git(root, 'commit', '-qm', 'synthetic implementation');
+    writeFixtureFile(join(dir, 'report.md'), 'Synthetic finished report.\nRemoves: none\n');
+    const { seq, sent_at } = readJson(join(dir, 'turn.json'));
+    writeFixtureFile(join(dir, 'done.json'), JSON.stringify({ seq, sent_at, report_sig: reportSignature(dir), at: new Date().toISOString() }));
+    release('hold-turn');
+    await until(() => f.flow(flow).tickets[0].landed, 12_000);
+    assert.equal(f.git(f.root, 'show', 'base:synthetic.txt'), 'Synthetic implementation.');
+    if (u) await u.accept(flow);
+    else {
+      await until(() => f.flow(flow).review_job, 6000);
+      await f.settleReview(f.flow(flow).review_job);
+      await until(() => f.flow(flow).active_lead?.kind === 'accept', 6000);
+      await f.settleLead(f.flow(flow).active_lead.job);
+    }
+    assert.equal((await f.end(flow)).state, 'completed');
+  });
+}
 
 test('unattended Objective run lands tickets in one run (N + 2 sessions), records durable owner-try acceptance, and wakes on fs watch for next run', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, {

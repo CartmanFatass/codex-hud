@@ -219,6 +219,58 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
   assert.equal(answers.filter(result => result.written).length, 1);
   assert.deepEqual(herdr.keys, [['Enter'], ['Enter'], ['Down', 'Down', 'Enter']]);
   assert.equal(permissionStatus(dir).latest.answer, 'decline');
+
+  for (const [visible, reason] of [
+    [`Edit file synthetic.txt\n${'x'.repeat(40_000)}\nDo you want to make this edit?\n❯ 1. Yes\n2. No\nEsc to cancel`, 'exceeds the safe parsing limit'],
+    [prompt('rm -f $S/*.png').replace('Esc to cancel · Tab to amend', 'Unfamiliar footer'), 'could not safely map'],
+  ]) {
+    await unblocked();
+    const oldRows = rows(), before = herdr.reads();
+    herdr.update('blocked', visible);
+    await until(() => permissionStatus(dir).active?.reason.includes(reason), 3000);
+    const manual = permissionStatus(dir).active;
+    assert.equal(manual.action, 'main');
+    assert.equal(manual.outcome, 'pending');
+    assert.deepEqual(manual.options, []);
+    const lines = jobChanges(oldRows, rows());
+    assert.equal(lines.length, 1);
+    assert.ok(lines[0].includes(`Open pane ${pane}`), lines[0]);
+    assert.doesNotMatch(lines[0], /hud_respond/);
+    assert.equal((await respond(manual.id, 'approve')).code, 'option_unavailable');
+    assert.equal(jobChanges(rows(), rows()).length, 0);
+    await until(() => notice.includes(reason), 3000);
+    await until(() => herdr.reads() > before + 1, 3000);
+    assert.equal(notice.split(reason).length - 1, 1);
+    assert.equal(permissionStatus(dir).active.id, manual.id);
+    assert.deepEqual(herdr.keys, [['Enter'], ['Enter'], ['Down', 'Down', 'Enter']]);
+    assert.equal(card().homeNeedsHuman, false);
+    assert.equal(card().permissionWaitingMain, true);
+  }
+});
+
+test('an answered permission does not hide the next CLI block on the bar or panel', t => {
+  const f = fixture(t), created = '2026-01-01T00:00:00.000Z';
+  const dir = f.job(null, { role: 'imp', created_at: created, herdr_pane: main, cli: { agent: 'claude' } });
+  const id = 'perm-0000000000000001';
+  writeFixtureFile(join(dir, 'permissions.json'), JSON.stringify({ active: id, entries: [{ id, action: 'approve', outcome: 'answered',
+    answer: 'approve', at: '2026-01-01T00:00:02.000Z', resolved_at: '2026-01-01T00:00:04.000Z', pane, options: [],
+    reason: 'Synthetic local proof', text: 'Bash command' }] }));
+  const block = blocked_at => writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({
+    state: 'waiting_orchestrator', harness: 'cli', blocked: true, blocked_at, updated_at: '2026-01-01T00:00:06.000Z',
+  }));
+  const row = () => readThinJobRows(f.home, { pane: main })[0];
+  const card = () => readThinJobs(f.home, { project: null, pane: main })[0].workers[0];
+  block('2026-01-01T00:00:01.000Z');
+  assert.equal(row().blocked, false);
+  assert.equal(card().homeNeedsHuman, false);
+  assert.equal(collectWorkSummary(f.home).global.asking, 0);
+
+  block('2026-01-01T00:00:05.000Z');
+  assert.equal(row().blocked, true);
+  assert.equal(card().phase, 'asking');
+  assert.equal(card().work.requestInfo.id, 'blocked');
+  assert.equal(collectWorkSummary(f.home).global.asking, 1);
+  assert.equal(card().permission.outcome, 'answered'); // The prior decision remains in the Inspector history.
 });
 
 test('unproven targets, nested headings and menu changes go to main without sending a key', { timeout: 15000 }, async t => {

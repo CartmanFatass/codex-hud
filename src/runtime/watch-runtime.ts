@@ -899,7 +899,7 @@ function scan(retryWatch = false) {
       if (job && session && permissionTarget(session) && !job.headless && !job.bro && !job.jev && !job.reaped_at &&
           (permissionsSeen.has(id) || ['working', 'waiting_orchestrator', 'blocked'].includes(status?.state ?? ''))) {
         const live = !paneExit && ['working', 'waiting_orchestrator', 'blocked'].includes(status?.state ?? '');
-        const key = `${session.stamp}:${status?.state}:${status?.blocked ?? false}:${!!paneExit}`;
+        const key = `${session.stamp}:${status?.state}:${status?.blocked ?? false}:${status?.blocked_at ?? ''}:${!!paneExit}`;
         const seen = permissionsSeen.get(id);
         if (!permissionChecks.has(id) && (seen?.key !== key || seen.next <= nowMs) && permissionChecks.size < 8) {
           permissionsSeen.set(id, { pane: session.fields.left!, key, next: live ? nowMs + cliCheck : Infinity });

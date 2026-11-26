@@ -43,8 +43,9 @@ export async function setupWorkflowProject(t, {
   count = 2,
   objectives = '## selected: Selected\n**State:** active\n**Features:** sample\n\n## other: Other\n**State:** active\n',
   spec = '# Synthetic spec\n',
+  fixtureOptions,
 } = {}) {
-  const f = await fixture(t, { failedRetentionMs: 30_000 });
+  const f = await fixture(t, { failedRetentionMs: 30_000, ...fixtureOptions });
   cleanupFixture(t, { root: `${f.root}-wt` });
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env: f.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(f.root, 'init', '-qb', 'base');

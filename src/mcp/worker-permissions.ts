@@ -23,37 +23,52 @@ const CODEX_EDIT_LINE = /^(?:(?:\*\*\*\s+)?(?:Update|Add)\s+File:\s+|(?:Edit|Wri
 const PI_FILE_LINE = /^(Edit|Write|Create|File|Path):\s+(.+)$/i;
 export const PERMISSION_ID = /^perm-[a-f0-9]{16}$/;
 type Option = { label: string; value?: 'approve' | 'decline' };
-type Prompt = { text: string; command?: string; target?: PermissionTarget; options: Option[]; selected: number };
+type Prompt = { text: string; command?: string; target?: PermissionTarget; options: Option[]; selected: number; manualReason?: string };
 type Capture = Prompt | 'unrecognized' | null | undefined;
 export type PermissionEntry = PermissionDecision & {
   id: string; key: string; launch: string; pane: string; at: string; text: string;
   options: Option[]; selected?: number;
   outcome: 'pending' | 'gone' | 'sending' | 'answered' | 'uncertain'; answer?: 'approve' | 'decline';
+  resolved_at?: string;
 };
 type Ledger = { active?: string; entries: PermissionEntry[] };
 
 /** Parse the visible native menu, never a recent/scrollback tail. Unsupported layouts never send keys. */
 export function parsePermissionPrompt(screen: string, harness: string): Prompt | null {
-  if (screen.length > 32_768 || /[\x00-\x09\x0b-\x1f\x7f\u202a-\u202e\u2066-\u2069]/.test(screen.replaceAll('\r\n', '\n'))) return null;
-  const lines = screen.replaceAll('\r\n', '\n').split('\n').map(line => line.trim().replace(/^[│║]\s*|\s*[│║]$/g, '').trim());
+  const normalized = screen.replaceAll('\r\n', '\n');
+  const cleanLine = (line: string) => line.trim().replace(/^[│║]\s*|\s*[│║]$/g, '').trim();
   const title = harness === 'claude' ? CLAUDE_TITLE : OTHER_TITLE;
+  const manual = (text: string, manualReason: string): Prompt => ({ text, options: [], selected: -1, manualReason });
+  const oversized = 'The visible permission preview exceeds the safe parsing limit.';
+  const unsafe = /[\x00-\x09\x0b-\x1f\x7f\u202a-\u202e\u2066-\u2069]/.test(normalized);
+  if (screen.length > 32_768 || unsafe) {
+    // Only identify a possible menu; do not parse controls or keep an unsafe or oversized preview.
+    for (const [line] of normalized.matchAll(/[^\n]+/g)) {
+      const heading = cleanLine(line);
+      if (title.test(heading)) return unsafe ? manual('Native permission prompt', 'The visible permission menu contains unsupported characters.')
+        : manual(heading.slice(0, 120), oversized);
+    }
+    return null;
+  }
+  const lines = normalized.split('\n').map(cleanLine);
   if (!lines.some(line => title.test(line))) return null;
   const headings = lines.flatMap((line, i) => CLAUDE_TITLE.test(line) || OTHER_TITLE.test(line) ? [i] : []);
   const body = lines.slice(headings[0]).filter(Boolean);
   while (/^[╰╯─━—]+$/.test(body.at(-1) ?? '')) body.pop();
   const text = body.join('\n');
+  // Output after a finished menu is not evidence of a permission wait.
+  const unknownLayout = () => body.slice(1, -1).some(line => FOOTER.test(line) || /^╰[─━—]+╯$/.test(line)) ? null
+    : manual(text, 'HUD could not safely map the visible permission menu.');
   // Do not mistake a heading in a preview (or earlier visible output) for the start of a fresh menu.
-  const bytes = Buffer.from(text);
-  const manual = FOOTER.test(body.at(-1) ?? '') ? { text: bytes.subarray(0, 3500).toString(), options: [], selected: -1 } : null;
-  if (headings.length !== 1 || bytes.length > 3500) return manual;
+  if (Buffer.byteLength(text) > 3500) return manual(body[0].slice(0, 120), oversized);
+  if (headings.length !== 1) return unknownLayout();
   // In a visible box, the heading must be its first row, never a row of the command preview.
   const preceding = lines.slice(0, headings[0]).filter(Boolean).reverse();
   const box = preceding.findIndex(line => /^(?:╭[─━—]+╮|╰[─━—]+╯)$/.test(line));
-  if (box > 0 && preceding[box].startsWith('╭')) return manual;
+  if (box > 0 && preceding[box].startsWith('╭')) return unknownLayout();
   const question = body.findIndex(line => /^(?:Do you want to (?:proceed|allow this connection|make this edit(?: to .+)?|create .+|overwrite .+)\?|Allow this (?:tool|command|edit)\?)$/i.test(line));
-  if (harness === 'claude' && question < 0) return manual;
   const firstOption = body.findIndex(line => /^(?:[❯›>]\s*)?1[.)]\s+/.test(line));
-  if (firstOption < 1 || (harness === 'claude' && question >= firstOption)) return manual;
+  if (firstOption < 1 || (harness === 'claude' && (question < 0 || question >= firstOption))) return unknownLayout();
   const options: Option[] = [];
   let selected = -1;
   let i = firstOption;
@@ -66,9 +81,9 @@ export function parsePermissionPrompt(screen: string, harness: string): Prompt |
       : /^(?:No|No, and tell (?:Claude|Codex) what to do differently(?: \(esc\))?|Deny|Decline|Cancel)(?:[.!])?$/i.test(label) ? 'decline' : undefined;
     options.push({ label, value });
   }
-  if (options.length < 2 || options.length > 6) return manual;
+  if (options.length < 2 || options.length > 6 || selected < 0) return unknownLayout();
   const footer = body.slice(i).join(' ');
-  if (!FOOTER.test(footer)) return manual;
+  if (!FOOTER.test(footer)) return unknownLayout();
   const parsedTarget = parsePromptTarget(harness, body, question, firstOption);
   return {
     text: [...body.slice(0, firstOption), ...options.map((option, i) => `${i + 1}. ${option.label}`), footer].join('\n'),
@@ -238,6 +253,14 @@ export function permissionStatus(dir: string, cache?: JobIndexCache) {
   return validLedger(state) ? { active: current(state), latest: state.entries.at(-1) } : {};
 }
 
+export function permissionBlockAt(status: Partial<JobStatus> | null | undefined, statusAt?: number | null) {
+  const at = Date.parse(status?.blocked_at ?? status?.updated_at ?? '');
+  return Number.isFinite(at) ? at : statusAt ?? -Infinity;
+}
+
+export const permissionPredatesBlock = (entry: PermissionEntry, blockAt: number) =>
+  blockAt > Date.parse(entry.resolved_at ?? entry.at);
+
 export function permissionNotice(job: string, entry: PermissionEntry) {
   const options = entry.outcome === 'pending' ? entry.options.filter(option => option.value).map(option => ({ label: option.label,
     action: `hud_respond ${JSON.stringify({ job, request_id: entry.id, answer: option.value })}` })) : [];
@@ -315,7 +338,8 @@ function proofFor(dir: string, job: Job, status: Partial<JobStatus> | null, bind
 }
 
 const fingerprint = (binding: Binding, prompt: Prompt) => hash(JSON.stringify([
-  binding.fields.left, binding.fields.launchId, binding.fields.terminalId, prompt.text, prompt.command, prompt.target,
+  binding.fields.left, binding.fields.launchId, binding.fields.terminalId,
+  prompt.manualReason ? ['manual', prompt.text] : prompt.text, prompt.command, prompt.target,
 ]));
 const permissionId = (key: string, prior?: string) => `perm-${hash(`${key}\0${Date.now()}\0${prior ?? ''}`).slice(0, 16)}`;
 function appendEntry(state: Ledger, binding: Binding, prompt: Prompt, decision: PermissionDecision) {
@@ -331,7 +355,7 @@ function requireManual(entry: PermissionEntry, reason: string) {
   entry.action = 'main'; entry.reason = reason; entry.options = [];
 }
 function retire(state: Ledger, entry: PermissionEntry) {
-  if (entry.outcome === 'pending') entry.outcome = 'gone';
+  if (entry.outcome === 'pending') { entry.outcome = 'gone'; entry.resolved_at = new Date().toISOString(); }
   if (entry.outcome === 'sending') entry.outcome = 'uncertain';
   delete state.active;
 }
@@ -361,7 +385,7 @@ async function sendAnswer(home: string, dir: string, job: Job, binding: Binding,
   if (fresh === null) return gone();
   if (!fresh || fresh === 'unrecognized' || fingerprint(binding, fresh) !== entry.key || fresh.selected !== observed.selected) return changed();
   // HerdR provides no conditional key send. Spend before this single write; never retry a lost reply or crash.
-  entry.outcome = 'sending'; entry.answer = answer; save(dir, state);
+  entry.outcome = 'sending'; entry.answer = answer; entry.resolved_at = new Date().toISOString(); save(dir, state);
   const reply = await request('pane.send_keys', { pane_id: entry.pane, keys }, { signal, timeoutMs: 800 });
   entry.outcome = reply?.result?.type === 'ok' && !reply.error ? 'answered' : reply?.error?.code === 'pane_not_found' ? 'gone' : 'uncertain';
   if (entry.outcome === 'gone') delete state.active;
@@ -397,12 +421,10 @@ export async function observeWorkerPermission(home: string, dir: string, job: Jo
     }
     if (!observed || observed === 'unrecognized') return;
     const proof = proofFor(dir, job, status, binding, observed);
-    const decision = await classifyPermission(home, proof);
+    const decision: PermissionDecision = observed.manualReason ? { action: 'main', reason: observed.manualReason } : await classifyPermission(home, proof);
     if (signal.aborted) return;
     const entry = appendEntry(state, binding, observed, decision);
-    if (!entry.options.length) {
-      requireManual(entry, 'The visible permission layout could not be verified.');
-    } else if (decision.action === 'approve') {
+    if (decision.action === 'approve') {
       if (!proof || proof.fingerprint !== proofFor(dir, job, status, binding, observed)?.fingerprint) {
         requireManual(entry, 'Local path evidence changed before answering.');
       } else {
@@ -422,7 +444,9 @@ export async function answerWorkerPermission(home: string, dir: string, job: Job
   return withAbstractLock('worker-permission', dir, async () => {
     const state = ledger(dir, true);
     const entry = current(state);
-    if (!entry || entry.id !== id || entry.action !== 'main' || !entry.options.length) return { ok: false, code: 'permission_not_open' };
+    if (!entry || entry.id !== id || entry.action !== 'main') return { ok: false, code: 'permission_not_open' };
+    if (entry.outcome === 'pending' && !entry.options.some(option => option.value === answer))
+      return { ok: false, code: 'option_unavailable' };
     const binding = getJobIndexCache(home).readSession(job.job);
     if (!binding || !permissionTarget(binding)) return { ok: false, code: 'prompt_unavailable' };
     if (entry.launch !== binding.fields.launchId || entry.pane !== binding.fields.left) {

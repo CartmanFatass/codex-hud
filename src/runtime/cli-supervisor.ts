@@ -68,6 +68,7 @@ export async function main() {
   };
   let prev: Judgment | null = null, status: string | null = null, statusAt: number | null = null;
   let agentMissing = false, workingAt: number | null = null;
+  let blockedAt = restore && initialStatus?.blocked ? initialStatus.blocked_at : undefined;
   let paneExit: PaneExit | null = null;
   let deadObservedAt: number | null = null;
   let turn = readTurn(dir) ?? writeTurn(dir), done: DoneReceipt | null = null, signature: string | null = null, stamp: string | null | undefined;
@@ -150,6 +151,8 @@ export async function main() {
   }
   function observeStatus(next: string | null) {
     statusAt = Date.now();
+    if (next === 'blocked') blockedAt ??= new Date(statusAt).toISOString();
+    else if (next === 'working' || next === 'idle' || next === 'done') blockedAt = undefined;
     if (next === 'working' && (status !== 'working' || (workingAt ?? -Infinity) < Date.parse(turn.sent_at))) workingAt = statusAt;
     status = next;
   }
@@ -253,7 +256,7 @@ export async function main() {
   function write(result: Judgment) {
     const terminal = ['closed', 'failed', 'stopped'].includes(result.state);
     const iso = (time: number | null) => time === null ? null : new Date(time).toISOString();
-    const row: JobStatus = { ...current, state: result.state, blocked: result.blocked, reason: result.reason ?? null,
+    const row: JobStatus = { ...current, state: result.state, blocked: result.blocked, blocked_at: result.blocked ? blockedAt : undefined, reason: result.reason ?? null,
       output_written: result.outputWritten, settled_at: iso(result.settledAt), idle_deadline_at: iso(result.deadline),
       ...(job.checks?.length ? { declared_report_sig: result.declared ? result.reportSig : null } : {}),
       ...(terminal && paneExit ? { runner_exit_code: paneExit.exitCode, runner_exit_signal: paneExit.signal as NodeJS.Signals | null } : {}),

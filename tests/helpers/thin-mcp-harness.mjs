@@ -65,7 +65,7 @@ export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
 }
 
-async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, path = process.env.PATH, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false, herdrVersion = '0.9.5-hud.76b187b0', herdrCapabilities = { agy_background_work: true }, customHerdrSocket = false, expectedStderr = '' }) {
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, path = process.env.PATH, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false, herdrVersion = '0.9.5-hud.76b187b0', herdrCapabilities = { agy_background_work: true }, customHerdrSocket = false, expectedStderr = '', onPermissionKeys }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const cleanups = [];
   cleanupFixture(t, { root, hudHome: join(root, 'hud_home') }, async () => {
@@ -260,8 +260,14 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
           if (vanishedTabs.has(id)) socket.write(JSON.stringify({ id: req.id, error: { code: req.method === 'pane.get' ? 'pane_not_found' : 'tab_not_found' } }) + '\n');
           else {
             const target = [...launches.values()].reverse().find(a => a.tab_id === id);
-            reply(req.method === 'pane.get' ? { pane: { pane_id: req.params.pane_id } } : { tab: { tab_id: id, launch_id: target?.launch_id } });
+            const state = target && onPermissionKeys && subscribers.values().find(sub => sub.pane === target.pane_id)?.state;
+            reply(req.method === 'pane.get' ? { pane: { pane_id: req.params.pane_id,
+              ...(state && { launch_id: target.launch_id, terminal_id: target.terminal_id, agent: target.kind, agent_status: state }) } }
+              : { tab: { tab_id: id, launch_id: target?.launch_id } });
           }
+        } else if (req.method === 'pane.send_keys' && onPermissionKeys) {
+          onPermissionKeys(req.params);
+          reply({ type: 'ok' });
         } else if (req.method === 'pane.read') {
           if (has('pane-read-timeout')) return;
           reply({ read: { text: has('pane-read') ? fs.readFileSync(join(env.HOME, 'pane-read'), 'utf8') : 'synthetic pane' } });

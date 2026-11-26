@@ -4,7 +4,7 @@ import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { Job, JobRoute, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
-import { permissionNotice, permissionStatus, type PermissionEntry } from '../mcp/worker-permissions.js';
+import { permissionBlockAt, permissionNotice, permissionPredatesBlock, permissionStatus, type PermissionEntry } from '../mcp/worker-permissions.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { fileStampOf, getJobIndexCache, statsMtimeMs, type JobDirMeta, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
@@ -73,7 +73,7 @@ function sameStamps(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, strin
 }
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
 const factKeys = new Set(['job', 'role', 'herdr_pane', 'caller_pane', 'created_at', 'queued_at', 'overflow_from', 'route', 'headless', 'title', 'package', 'ticket', 'objective', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
-  'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'read_report_stamp', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'agent', 'quiet_decision']);
+  'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'read_report_stamp', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'blocked_at', 'updated_at', 'agent', 'quiet_decision']);
 function restore(home: string, idx: JobIndexCache): void {
   if (hydrated.has(idx)) return;
   hydrated.add(idx);
@@ -294,8 +294,14 @@ export function jobRow(
           : rawState !== null && ['closed', 'idle_grace', 'done'].includes(rawState)
             ? 'done'
             : 'working';
-  const activePermission = displayState === 'working' && extras?.dir && !j.headless && !j.bro && !j.jev
+  let activePermission = displayState === 'working' && extras?.dir && !j.headless && !j.bro && !j.jev
     ? permissionStatus(extras.dir, extras.cache).active : undefined;
+  if (activePermission?.outcome === 'answered' && s.blocked) {
+    const fallback = !s.blocked_at && !s.updated_at && extras?.cache && extras.dir
+      ? extras.cache.readJson(join(extras.dir, jobFiles.status)) : undefined;
+    const blockAt = permissionBlockAt(s, fallback?.status === 'ok' ? fallback.at : undefined);
+    if (permissionPredatesBlock(activePermission, blockAt)) activePermission = undefined;
+  }
   const permission = activePermission && ((activePermission.action === 'main' && activePermission.outcome === 'pending') ||
     activePermission.outcome === 'uncertain' || activePermission.outcome === 'sending') ? activePermission : undefined;
   const state = activePermission && s.blocked && rawState === 'waiting_orchestrator' ? 'working' : rawState;

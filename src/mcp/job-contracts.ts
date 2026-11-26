@@ -200,6 +200,7 @@ export type JobStatus = {
   error?: string | null;
   launch_unknown?: string;
   blocked?: boolean;
+  blocked_at?: string;
   reason?: string | null;
   declared_report_sig?: string | null;
   quiet_decision?: QuietDecision & { at: string };

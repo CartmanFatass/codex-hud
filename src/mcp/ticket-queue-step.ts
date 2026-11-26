@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { readObjectives } from '../collectors/objectives.js';
 import { failedAttempt } from '../collectors/thin-jobs.js';
 import { readDone, readTurn, receiptForTurn } from '../roles/cli-turn.js';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { checkBinding, CHECK_TIMEOUT_MS, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { sharedRoot } from '../roles/projects.js';
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
@@ -42,9 +43,12 @@ import {
   extractRemovalsDeclaration, extractReportNotes, MAX_ANSWER_RETRIES, parseLeadReport,
   recordDecision, WORKFLOW_WORKER_RULE, WORKFLOW_WORKER_RULE_NO_ASK,
 } from './workflow-lead.js';
+import { permissionBlockAt, permissionNotice, permissionPredatesBlock, permissionStatus, permissionTarget, PERMISSION_ID } from './worker-permissions.js';
 
 const cleanStates = ['idle_grace', 'done', 'closed'];
 const LAUNCH_GRACE_MS = 120_000, LAUNCH_RECHECK_MS = 5_000, ANSWER_RETRY_MS = 1_000;
+// Allow the watcher's 30 s safety check plus capture, classification, and a fresh menu check.
+const PERMISSION_GRACE_MS = 45_000;
 const errorLine = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0];
 const owner = (q: TicketQueue, item: TicketQueueItem) => item.dispatch_queue ?? q.flow;
 const requestKey = (q: TicketQueue, item: TicketQueueItem) => `ticket-queue:${owner(q, item)}:${item.ticket}`;
@@ -54,6 +58,40 @@ const trustDispatchFailed = (job: Job, status: JobStatus | null | undefined) =>
   status?.exit_reason === 'untrusted_cwd' || job.dispatch_code === 'untrusted_cwd';
 const leadEnabled = (root: string) =>
   roleRegistry(hudHome, root, process.env, undefined, undefined, BUNDLED_ROOT).roles().has('lead');
+
+function permissionRecheckMs(job: Job, status: JobStatus | null, statusAt: number | null) {
+  if ((!status?.blocked && status?.state !== 'blocked') || !job.cli || job.reaped_at || job.headless || job.bro || job.jev ||
+      !permissionTarget(jobCache.readSession(job.job))) return 0;
+  const blockAt = permissionBlockAt(status, statusAt);
+  // A menu may clear before the supervisor publishes that the worker is running again.
+  const latest = permissionStatus(directory(job.job), jobCache).latest;
+  const resolvedAt = latest?.resolved_at && !permissionPredatesBlock(latest, blockAt) ? Date.parse(latest.resolved_at) : -Infinity;
+  const left = Math.max(blockAt, resolvedAt) + PERMISSION_GRACE_MS - Date.now();
+  return left > 0 ? Math.min(left, LAUNCH_RECHECK_MS) : 0;
+}
+
+// Pane-less runs have no direct recipient. Use their project-scoped, once-claimed outbox.
+function syncPermissionNotices(q: TicketQueue) {
+  if (q.pane) return false;
+  const current = new Map<string, string>();
+  const ids = [...q.tickets.filter(item => !item.landed && !item.failed).map(item => item.job), q.review_job, q.active_lead?.job];
+  for (const id of ids) {
+    const job = id && findJob(id);
+    if (!job || jobCallerPane(job)) continue;
+    const status = jobCache.readStatus<JobStatus>(job.job);
+    if (status.status !== 'ok' || !['working', 'waiting_orchestrator', 'blocked'].includes(status.value.state)) continue;
+    const entry = permissionStatus(directory(job.job), jobCache).active;
+    if (entry && PERMISSION_ID.test(entry.id) && (entry.outcome === 'uncertain' || (entry.action === 'main' && entry.outcome === 'pending')))
+      current.set(`handback-${entry.id}`, permissionNotice(job.job, { ...entry, options: [] })); // No caller owns hud_respond.
+  }
+  const notices = q.notices ??= {};
+  let changed = false;
+  for (const key of Object.keys(notices)) if (key.startsWith('handback-') && PERMISSION_ID.test(key.slice('handback-'.length)) && !current.has(key)) {
+    delete notices[key]; changed = true;
+  }
+  for (const [key, line] of current) if (notices[key] !== line) { notices[key] = line; changed = true; }
+  return changed;
+}
 
 function ticketHeader(path: string) {
   return readFileBounded(path, 64 * 1024).bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
@@ -1120,10 +1158,10 @@ function tickTicketQueue(
     };
     if (!job) { flag('worker', 'job receipt missing'); continue; }
     if (job.ticket_queue !== owner(q, item)) { flag('worker', 'job taken over outside the ticket queue'); continue; }
-    const { row, status } = readRow(job, false, null);
+    const { row, status, statusAt } = readRow(job, false, null);
     const qa = jobCache.readQa(directory(job.job)), question = qa.openIds[0];
     // Answered but not yet read: the worker still reports waiting_orchestrator until it picks the answer up.
-    const answered = !question && qa.allQuestionFiles.length > 0 && row.state === 'waiting_orchestrator';
+    const answered = !question && !row.blocked && qa.allQuestionFiles.length > 0 && row.state === 'waiting_orchestrator';
     if (q.unattended && trustDispatchFailed(job, status)) {
       holdItem(item, status?.error ?? row.reason ?? job.stderr_tail, 'dispatch');
       changed = true;
@@ -1132,9 +1170,12 @@ function tickTicketQueue(
       else pendingQuestion ??= { item, job, question };
     } else if (fs.existsSync(join(directory(job.job), jobFiles.stopRequested))) flag('worker', 'worker stop requested');
     else if (failedAttempt(row)) flag('worker', row.reason ?? row.display_state);
-    else if (!answered && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator'))
-      flag('worker', row.reason ?? 'worker needs main');
-    else if (!status && job.dispatch_exit_code === null) {
+    else if (row.permission) continue; // The watcher has handed this menu to main; the worker can still resume.
+    else if (!answered && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')) {
+      const left = permissionRecheckMs(job, status, statusAt);
+      if (left > 0) recheck = Math.min(recheck ?? left, left);
+      else flag('worker', row.reason ?? 'worker needs main');
+    } else if (!status && job.dispatch_exit_code === null) {
       // A runner that took over mid-launch sees the job before its first status: wait while the launching
       // process lives (launches under load can take minutes); legacy receipts without one get a fixed grace.
       const left = launchRecheckMs(job);
@@ -1435,9 +1476,9 @@ function tickJobStep(
       state.problem = { kind: 'worker', step: key, job: jobId, reason: `${key} (${jobId}): job receipt missing` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
-    const { row, status } = readRow(job, false, null);
+    const { row, status, statusAt } = readRow(job, false, null);
     const qa = jobCache.readQa(directory(job.job)), question = qa.openIds[0];
-    const answered = !question && qa.allQuestionFiles.length > 0 && row.state === 'waiting_orchestrator';
+    const answered = !question && !row.blocked && qa.allQuestionFiles.length > 0 && row.state === 'waiting_orchestrator';
     if (question) {
       if (step.ask === false) {
         const msg = `${key} (${job.job}): asked question ${question} while ask is disabled`;
@@ -1465,7 +1506,10 @@ function tickJobStep(
       state.problem = { kind: 'worker', step: key, job: job.job, reason: `${key} (${job.job}): ${row.reason ?? row.display_state}` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
+    if (row.permission) return { state: 'running', changed: false };
     if (!answered && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')) {
+      const left = permissionRecheckMs(job, status, statusAt);
+      if (left > 0) return { state: 'running', changed: false, recheckMs: left };
       state.problem = { kind: 'worker', step: key, job: job.job, reason: `${key} (${job.job}): ${row.reason ?? 'worker needs main'}` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
@@ -1755,7 +1799,7 @@ function tickHandbackStep(
 }
 
 const jobDirFilter = (file: string | null) =>
-  !file || /^(?:qa(?:\/q\d+\.md)?|STATUS\.json(?:\.stop-requested)?|report\.md|checks\.json|job\.json|done\.json|turn\.json)$/.test(file);
+  !file || file === jobFiles.permissions || /^(?:qa(?:\/q\d+\.md)?|STATUS\.json(?:\.stop-requested)?|report\.md|checks\.json|job\.json|done\.json|turn\.json)$/.test(file);
 
 export async function driveTicketQueue(id: string) {
   const initial = readTicketQueue(hudHome, id);
@@ -1805,10 +1849,12 @@ export async function driveTicketQueue(id: string) {
         return graph;
       },
       tick: (q, key, step, plan) => {
-        if (step.kind === 'batch') return tickTicketQueue(q, step, state);
-        if (step.kind === 'job') return tickJobStep(q, key, step, state);
-        if (step.kind === 'handback') return tickHandbackStep(q, key, step, plan, state);
-        throw Error(`unsupported ticket-queue step ${step.kind}`);
+        const changed = syncPermissionNotices(q);
+        const turn = step.kind === 'batch' ? tickTicketQueue(q, step, state)
+          : step.kind === 'job' ? tickJobStep(q, key, step, state)
+          : step.kind === 'handback' ? tickHandbackStep(q, key, step, plan, state) : null;
+        if (!turn) throw Error(`unsupported ticket-queue step ${step.kind}`);
+        return changed ? { ...turn, changed: true } : turn;
       },
       active: q => {
         if (q.state !== 'working') return false;
