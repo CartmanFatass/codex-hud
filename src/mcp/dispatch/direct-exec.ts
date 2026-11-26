@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { herdrId, runHerdr } from '../../roles/herdr-run.js';
-import { isHudHerdrFork, request as herdrRequest, type HerdrReply } from '../../runtime/herdr-socket.js';
+import { hasHerdrHiddenTabs, isHudHerdrFork, request as herdrRequest, type HerdrReply } from '../../runtime/herdr-socket.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { isValidPid } from '../../utils/proc.js';
 import { workerAlive } from '../cli-judge.js';
@@ -90,9 +90,11 @@ export const DIRECT_PRE_SPAWN_ERROR_CODES = new Set([
  *   blocking `canTryNext` and worktree cleanup. */
 export async function startDirectAgent(
   params: Record<string, unknown>,
-  timeoutMs = 15_000
+  tabVisible?: boolean
 ): Promise<{ ok: true; identity: DirectStartIdentity } | { ok: false; result: DispatchResult }> {
-  const reply = await herdrRequest('agent.start', params, { timeoutMs }).catch(() => null);
+  // Ask at launch: an older fork (or a failed probe) leaves the tab visible.
+  const hidden = tabVisible !== true && await hasHerdrHiddenTabs();
+  const reply = await herdrRequest('agent.start', { ...params, ...(hidden ? { hidden: true } : {}) }, { timeoutMs: 15_000 }).catch(() => null);
   if (!reply) {
     return {
       ok: false,

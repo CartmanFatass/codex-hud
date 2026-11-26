@@ -119,6 +119,15 @@ function stubs(t, { herdr = 0, reap = 0 } = {}) {
   return { env: { PATH: dir, NODE_OPTIONS: reapStubOptions(dir) }, log };
 }
 
+test('Inspector sends separate focus and hide actions for the selected interactive job', (t) => {
+  const f = fixture(t);
+  const worker = f.worker(RUNNING);
+  const subpage = { kind: 'inspector', scroll: 0, target: { kind: 'worker', laneId: worker.laneId, workerId: worker.id } };
+  assert.deepEqual(f.press(RUNNING, 'g', { subpage }).out.action, { type: 'focus-job-tab', dir: f.dir(RUNNING) });
+  assert.deepEqual(f.press(RUNNING, 'H', { subpage }).out.action, { type: 'hide-job-tab', dir: f.dir(RUNNING) });
+  assert.equal(f.press(RUNNING, 'H').out.action, undefined, 'not a Home action');
+});
+
 test('focusJobTab runs herdr tab focus with the TAB of SESSION.txt and says why it could not', async (t) => {
   const f = fixture(t), s = stubs(t), dir = f.dir(RUNNING);
   assert.deepEqual(await focusJobTab(dir, s.env), { ok: false, reason: 'no tab' });

@@ -207,7 +207,7 @@
     "",
     "",
     "",
-    "                        Esc back  n subagents  X stop  ⏎ open  g job tab  ? help"
+    "            Esc back  n subagents  X stop  ⏎ open  g job tab  H hide tab  ? help"
   ],
   "asking-80-en": [
     "‹ Inspector · j0000000000000004",
@@ -249,7 +249,7 @@
     "",
     "",
     "",
-    "                        Esc back  n subagents  X stop  ⏎ open  g job tab  ? help"
+    "            Esc back  n subagents  X stop  ⏎ open  g job tab  H hide tab  ? help"
   ],
   "settings-80-en": [
     "‹ Settings                                                               unsaved",
@@ -368,8 +368,9 @@
     "        Inspector for the selected job",
     "n       Jobs or Inspector: show this",
     "        session’s native subagents",
-    "g       Inspector: focus the job tab;",
-    "        headless output is shown here",
+    "g H     Inspector: reveal/focus or",
+    "        hide the job tab; headless",
+    "        output is shown here",
     "1-4 d   job: answer its open question",
     "X       job: stop (y confirms); Jobs",
     "        batch: pause/resume/stop",
@@ -384,7 +385,6 @@
     "c C     role: next / previous preset",
     "p       role: choose a preset by name",
     "N I     role: new draft, copied or",
-    "        empty",
     "                                                                        Esc back"
   ],
   "home-120-en": [
@@ -595,7 +595,7 @@
     "",
     "",
     "",
-    "                                                                Esc back  n subagents  X stop  ⏎ open  g job tab  ? help"
+    "                                                    Esc back  n subagents  X stop  ⏎ open  g job tab  H hide tab  ? help"
   ],
   "asking-120-en": [
     "‹ Inspector · j0000000000000004",
@@ -637,7 +637,7 @@
     "",
     "",
     "",
-    "                                                                Esc back  n subagents  X stop  ⏎ open  g job tab  ? help"
+    "                                                    Esc back  n subagents  X stop  ⏎ open  g job tab  H hide tab  ? help"
   ],
   "settings-120-en": [
     "‹ Settings                                                                                                       unsaved",
@@ -752,8 +752,8 @@
     "        job",
     "n       Jobs or Inspector: show this session’s native",
     "        subagents",
-    "g       Inspector: focus the job tab; headless output is",
-    "        shown here",
+    "g H     Inspector: reveal/focus or hide the job tab;",
+    "        headless output is shown here",
     "1-4 d   job: answer its open question",
     "X       job: stop (y confirms); Jobs batch:",
     "        pause/resume/stop",

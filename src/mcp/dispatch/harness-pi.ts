@@ -172,7 +172,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
         on_exit: 'close_on_zero',
         focus: false,
         ...(workspaceId ? { workspace_id: workspaceId } : {}),
-      });
+      }, role.tab_visible);
       if (!launch.ok) return launch.result;
       directIdentity = launch.identity;
       left = directIdentity.paneId;

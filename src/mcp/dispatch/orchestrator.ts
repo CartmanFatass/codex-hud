@@ -1241,7 +1241,7 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
     // Worktree setup is shared; another place cannot repair it.
     return resume ? rejectLaunch(launchError(String(error))) : launchError(String(error));
   }
-  if (place.harness === 'cli') return dispatchCli(job, place, instructionsPath, task, definition.mcp_servers ?? [], standingBrief, options);
+  if (place.harness === 'cli') return dispatchCli(job, place, instructionsPath, task, definition.mcp_servers ?? [], standingBrief, { ...options, tabVisible: definition.tab_visible });
   if (place.harness === 'pi') return dispatchPi(job, definition, place, task, resume);
   try { return await dispatchBro(job, task); }
   catch (error) { return launchError(String(error)); }

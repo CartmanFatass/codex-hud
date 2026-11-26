@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { openBoard, writeBoard } from '../cli/board.js';
-import { focusJobTab, openEditorPane, openGitShowPane, stopJob } from '../cli/panel-pane.js';
+import { focusJobTab, hideJobTab, openEditorPane, openGitShowPane, stopJob } from '../cli/panel-pane.js';
 import { readExpData, saveExpEdit } from '../collectors/exp-store.js';
 import { collectEvidenceEntry } from '../collectors/objectives.js';
 import { answerJobQuestion, appendPanelAction, recordPanelAnswer, type AnswerResult } from '../collectors/panel-actions.js';
@@ -117,12 +117,17 @@ export function createPanelActions(home: string, cwd: string, visits: ProjectVis
           break;
         }
         case 'focus-job-tab':
-          void focusJobTab(action.dir, process.env).then((focused) => {
-            if (focused.ok) return;
-            host.notice(t(focused.reason === 'tab closed' ? 'tab closed' : focused.reason === 'no tab' ? 'no tab recorded' : 'could not focus the tab'));
+        case 'hide-job-tab': {
+          const hide = action.type === 'hide-job-tab';
+          void (hide ? hideJobTab : focusJobTab)(action.dir, process.env).then((result) => {
+            if (result.ok) return;
+            const { reason } = result;
+            host.notice(t(reason === 'tab closed' ? 'tab closed' : reason === 'no tab' ? 'no tab recorded'
+              : reason === 'hidden tabs unavailable' ? reason : hide ? 'could not hide the tab' : 'could not focus the tab'));
             host.repaint();
           });
           break;
+        }
         case 'answer-job': {
           const { home, jobId, qid, answer, role } = action;
           void answerFromPanel(home, jobId, qid, answer, role).then(done => {

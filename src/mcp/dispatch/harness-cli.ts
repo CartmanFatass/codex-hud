@@ -108,8 +108,8 @@ export function failCli(dir: string, job: Job, place: RolePlace, reason: string)
   return { ...launchError(reason), status };
 }
 
-export async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[], standingBrief?: StandingBriefRef, options: { callerToken?: string; resume?: NativeResume } = {}): Promise<DispatchResult> {
-  const { callerToken, resume } = options;
+export async function dispatchCli(job: Job, place: RolePlace, instructions: string, task: string, servers: readonly string[], standingBrief?: StandingBriefRef, options: { callerToken?: string; resume?: NativeResume; tabVisible?: boolean } = {}): Promise<DispatchResult> {
+  const { callerToken, resume, tabVisible } = options;
   const dir = directory(job.job);
   let openedTab: string | undefined;
   let directIdentity: DirectStartIdentity | undefined;
@@ -194,7 +194,7 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
         on_exit: 'close_on_zero',
         focus: false,
         ...(workspaceId ? { workspace_id: workspaceId } : {}),
-      });
+      }, tabVisible);
       if (!launch.ok) return launch.result;
       directIdentity = launch.identity;
       left = directIdentity.paneId;

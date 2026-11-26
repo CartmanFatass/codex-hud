@@ -9,8 +9,9 @@ export interface HerdrReply {
     type?: string;
     version?: string;
     protocol?: number;
+    capabilities?: { hidden_tabs?: boolean };
     pane?: { pane_id: string; tab_id?: string; launch_id?: string; terminal_id?: string; label?: string };
-    tab?: { tab_id: string; launch_id?: string; terminal_id?: string; label?: string };
+    tab?: { tab_id: string; launch_id?: string; terminal_id?: string; label?: string; hidden?: boolean };
     root_pane?: { pane_id: string; tab_id?: string; launch_id?: string; terminal_id?: string };
     argv?: string[];
     pid?: number;
@@ -48,9 +49,14 @@ export async function isHudHerdrFork(signal?: AbortSignal): Promise<boolean> {
   return isHudHerdrVersion(reply?.result?.version);
 }
 
+export async function hasHerdrHiddenTabs(env = process.env): Promise<boolean> {
+  const reply = await request('ping', {}, { timeoutMs: 500, env }).catch(() => null);
+  return !reply?.error && reply?.result?.capabilities?.hidden_tabs === true;
+}
+
 /** Capture only a literal endpoint that can be compared across processes and round-trip through SESSION. */
-export function herdrEndpoint(): string | undefined {
-  const path = process.env.HERDR_SOCKET_PATH;
+export function herdrEndpoint(env = process.env): string | undefined {
+  const path = env.HERDR_SOCKET_PATH;
   if (path && isAbsolute(path) && path.trim() === path && !/[\r\n]/.test(path)) return path;
 }
 
@@ -90,8 +96,8 @@ export async function probeHerdrTarget(target: HerdrTarget, signal?: AbortSignal
 }
 
 // Herdr subscription sockets cannot carry requests; each query gets its own connection.
-export function request(method: string, params: Record<string, unknown>, { timeoutMs = 2000, signal, id = 'hud-request' }: { timeoutMs?: number; signal?: AbortSignal; id?: string } = {}): Promise<HerdrReply | null> {
-  const path = process.env.HERDR_SOCKET_PATH;
+export function request(method: string, params: Record<string, unknown>, { timeoutMs = 2000, signal, id = 'hud-request', env = process.env }: { timeoutMs?: number; signal?: AbortSignal; id?: string; env?: NodeJS.ProcessEnv } = {}): Promise<HerdrReply | null> {
+  const path = env.HERDR_SOCKET_PATH;
   if (!path || signal?.aborted) return Promise.resolve(null);
   return new Promise((resolve) => {
     const socket = createConnection(path);

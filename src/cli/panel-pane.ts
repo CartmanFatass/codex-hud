@@ -13,6 +13,7 @@ import { fileStampOf } from '../roles/job-index-cache.js';
 import { reapWorkerTree, tabTreeGrant } from '../roles/worker-tree.js';
 import { removeQueuedJob } from '../roles/concurrency.js';
 import { OBJECTIVE_HASH } from '../collectors/objectives.js';
+import { hasHerdrHiddenTabs, herdrEndpoint, request as herdrRequest } from '../runtime/herdr-socket.js';
 
 async function command(argv: string[], env: NodeJS.ProcessEnv) {
   const result = await runHerdr(argv, env);
@@ -54,16 +55,36 @@ export async function openGitShowPane(cwd: string, hash: string, env: NodeJS.Pro
     `env GIT_PAGER=less GIT_NO_LAZY_FETCH=1 git -c protocol.allow=never -c pager.show=true show --no-ext-diff --no-textconv ${hash} --`, env);
 }
 
-/** Focus the herdr tab a HUD job runs in (`TAB=` in its SESSION.txt); `ok: false` when it has none or the tab is gone. */
-export async function focusJobTab(jobDir: string, env: NodeJS.ProcessEnv): Promise<{ ok: boolean; reason?: string }> {
-  let tab: string | undefined;
-  try {
-    tab = fs.readFileSync(join(jobDir, 'SESSION.txt'), 'utf8').split('\n').find((line) => line.startsWith('TAB='))?.slice(4);
-  } catch { /* No session file: the job never opened a tab. */ }
+/** Explicit Inspector actions, addressed to the worker's recorded tab, not the active tab. */
+async function jobTabAction(jobDir: string, env: NodeJS.ProcessEnv, hide: boolean): Promise<{ ok: boolean; reason?: string }> {
+  let lines: string[];
+  try { lines = fs.readFileSync(join(jobDir, jobFiles.session), 'utf8').split('\n'); }
+  catch { return { ok: false, reason: 'no tab' }; }
+  const field = (key: string) => lines.find((line) => line.startsWith(`${key}=`))?.slice(key.length + 1);
+  const tab = field('TAB');
   if (!herdrId(tab)) return { ok: false, reason: 'no tab' };
-  const result = await runHerdr(['tab', 'focus', tab], env, { budgetMs: 5000 });
-  return result.ok ? { ok: true } : { ok: false, reason: result.reason === 'failed' ? 'tab closed' : result.reason };
+  if (field('DIRECT_EXEC') !== '1') {
+    if (hide) return { ok: false, reason: 'hidden tabs unavailable' };
+    const result = await runHerdr(['tab', 'focus', tab], env, { budgetMs: 5000 });
+    return result.ok ? { ok: true } : { ok: false, reason: result.reason === 'failed' ? 'tab closed' : result.reason };
+  }
+  const endpoint = herdrEndpoint(env), launchId = field('LAUNCH_ID');
+  if (!endpoint || endpoint !== field('HERDR_SOCKET_PATH') || !herdrId(launchId)) return { ok: false, reason: 'unavailable' };
+  if (hide && !(await hasHerdrHiddenTabs(env))) return { ok: false, reason: 'hidden tabs unavailable' };
+  const target = { tab_id: tab };
+  const got = await herdrRequest('tab.get', target, { env });
+  if (got?.error?.code === 'tab_not_found') return { ok: false, reason: 'tab closed' };
+  const found = got?.result?.tab;
+  if (!found || found.tab_id !== tab || !found.launch_id) return { ok: false, reason: 'unavailable' };
+  if (found.launch_id !== launchId) return { ok: false, reason: 'tab closed' }; // The public ID can be reused.
+  const updated = await (hide ? herdrRequest('tab.set_hidden', { ...target, hidden: true }, { env })
+    : herdrRequest('tab.focus', target, { env }));
+  if (updated?.error?.code === 'tab_not_found') return { ok: false, reason: 'tab closed' };
+  return updated?.result?.tab?.launch_id === launchId ? { ok: true } : { ok: false, reason: 'unavailable' };
 }
+
+export const focusJobTab = (dir: string, env: NodeJS.ProcessEnv) => jobTabAction(dir, env, false);
+export const hideJobTab = (dir: string, env: NodeJS.ProcessEnv) => jobTabAction(dir, env, true);
 
 const readJson = (file: string): Record<string, unknown> | null => {
   try {

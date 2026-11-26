@@ -78,6 +78,7 @@ export interface Role extends Partial<SonicLimits> {
   pi_role?: string;
   split?: boolean;
   can_continue?: boolean;
+  tab_visible?: boolean;
   skills?: string[];
   model?: string;
   thinking?: string;
@@ -246,6 +247,7 @@ function roleReason(value: unknown): string | null {
       return `bad sonic ${key}`;
   }
   if (raw.can_continue !== undefined && typeof raw.can_continue !== 'boolean') return 'bad can_continue';
+  if (raw.tab_visible !== undefined && typeof raw.tab_visible !== 'boolean') return 'bad tab_visible';
   const servers = raw.mcp_servers;
   if (servers !== undefined && (!Array.isArray(servers) || servers.some((name) =>
     typeof name !== 'string' || !name.trim() || /[\x00-\x1f\x7f]/.test(name)))) return 'bad mcp_servers';
@@ -368,6 +370,7 @@ function normalizeRole(parsed: Record<string, unknown>, path: string): Role {
       name: p.name, run: p.run.map((item) => normalizePlace(item, rawInstructions)),
     })),
     can_continue,
+    ...(typeof parsed.tab_visible === 'boolean' ? { tab_visible: parsed.tab_visible } : {}),
     ...(idle_grace_s !== undefined ? { idle_grace_s } : {}),
     ...(typeof parsed.resume_s === 'number' ? { resume_s: parsed.resume_s } : {}),
     ...(parsed.role === 'sonic' ? sonicLimits(parsed as Partial<SonicLimits>) : {}),

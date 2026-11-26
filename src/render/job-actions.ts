@@ -1,4 +1,4 @@
-/** Inspector and batch-row actions are pure; the panel applies focus, answer, retry, confirmed stop and batch control. */
+/** Inspector and batch-row actions are pure; the panel applies tab actions, answer, retry, confirmed stop and batch control. */
 import { join } from 'node:path';
 import type { OwnerWorker, WorkBatch, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
@@ -36,7 +36,7 @@ export function answerKeys(worker: OwnerWorker): string[] {
 }
 export function inspectorKeys(worker?: OwnerWorker): string[] {
   return ['Esc back', 'n subagents', ...(worker?.settledAt === null ? ['X stop'] : []),
-    '⏎ open', ...(worker && worker.state !== 'queued' && !isHeadless(worker) ? ['g job tab'] : []),
+    '⏎ open', ...(worker && worker.state !== 'queued' && !isHeadless(worker) ? ['g job tab', 'H hide tab'] : []),
     ...(worker?.state === 'failed' ? ['r request retry'] : [])];
 }
 /** The one-row prompt above the page while a stop waits for its answer. */
@@ -65,11 +65,12 @@ export function batchPromptRows(state: MonitorState, width: number): MonitorRow[
 export function openJobAction(next: MonitorState, input: WorkbenchInput, key: string, board: WorkboardSnapshot | undefined, result: (action?: MonitorOutcome['action']) => MonitorOutcome): MonitorOutcome | undefined {
   if (input.type !== 'key') return undefined;
   const digit = /^[1-4]$/.exec(input.text ?? '')?.[0], answering = digit !== undefined || key === 'answer-default';
-  if (!answering && !(key === 'stop-job' || input.text === 'g' || input.text === 'r')) return undefined;
+  const tabAction = input.text === 'g' ? 'focus-job-tab' : input.text === 'H' ? 'hide-job-tab' : undefined;
+  if (!answering && !(key === 'stop-job' || tabAction || input.text === 'r')) return undefined;
   const job = jobUnderCursor(next, board);
   if (!job) return undefined;
   if (input.text === 'r') return job.worker.state === 'failed' ? result({ type: 'request-retry', home: job.home, jobId: job.jobId }) : undefined;
-  if (input.text === 'g') return result(isHeadless(job.worker) || job.worker.state === 'queued' ? undefined : { type: 'focus-job-tab', dir: job.dir });
+  if (tabAction) return result(isHeadless(job.worker) || job.worker.state === 'queued' ? undefined : { type: tabAction, dir: job.dir });
   if (key === 'stop-job') {
     if (job.worker.settledAt !== null) return undefined;
     next.overlay = { kind: 'confirm-stop', jobId: job.jobId, role: job.worker.role ?? 'job', dir: job.dir };

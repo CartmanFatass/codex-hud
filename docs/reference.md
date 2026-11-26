@@ -439,6 +439,7 @@ The helper survives a watcher restart; an interrupted helper is reported, not re
 Receipts live under `$HUD_HOME/flows/`.
 
 A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s` (CLI quiet-job grace, default 600), optional `resume_s` (default 1620 seconds; `0` disables native resume), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude` or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place files load as `run[0]` and `"harness": "jev"` loads as `"bro"`.
+Set `"tab_visible": true` at the top level to start that role's interactive CLI and pi workers with visible tabs. This does not focus them or change headless jobs.
 Shipped roles: `imp` (`pi` implementer), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one), plus the optional `council`, `pro` (`chatgpt`, `gemini`, `argon`) and `flow` (`jev-flow`) roles.
 **Council** requires a fresh owner grant, separate from enabling the role. In the Claude mod or pi, type `/council <request>` to grant once and send that text to the main session as a council request. In Codex or Antigravity, select `council` in Control → Roles and press **g**; alternatively, run `hud council allow` in your shell. The panel and shell authorize only: give the main session your request separately. One private record in `$HUD_HOME` applies across sessions and projects, expires after 30 minutes, and replaces any unused grant. Starting the first member spends it; a refusal or failure before any member starts does not. The council receipt and archive record `grant: {via, created_at}`. On `owner_grant_required`, the caller must ask the owner, never grant itself permission.
 
@@ -1128,7 +1129,7 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
 | `m` | Control role or place: choose a model directly (or click `[model ▾]`). Type to filter, ↑↓ to pick, Enter to save (or fill an open draft). In the picker, one click sets, Esc clears then closes, and Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
-| `g` | Inspector: focus a job's herdr tab; a headless job shows Output instead |
+| `g` / `H` | Inspector: `g` reveals and focuses the job's herdr tab; `H` hides it on a fork with hidden-tab support. Headless jobs show Output instead |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) in Inspector, where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | Jobs, on a working or paused batch row: the one prompt for the whole batch (`p` pause or `r` resume, `s` stop; any other key cancels). Inspector, on an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then the bundled `hud-reap` runs and the panel reads again); any other key cancels |
 | Enter | Home: open the project or the request in its Project tab; Jobs: open Inspector; Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
@@ -1149,7 +1150,7 @@ The model picker is an exception: one click sets a model and scrolling keeps the
 Press `?` for shortcuts grouped by where they work.
 From Project or Control, Help opens at that tab’s section; from Home or Settings it opens at Everywhere.
 Marks are grouped by route (the tier bars `▂ ▄ ▆` and `∅` for headless; ASCII `- = #` and `h`), slices, answers and places.
-`g` is the job's herdr tab, or the Inspector's Output for a headless job.
+`g` brings forward the job's herdr tab; `H` hides it again. Headless jobs show Output instead.
 At 80 columns and wider, Marks sit to the right of the shortcuts.
 Scroll with ↑↓, PgUp/PgDn or the wheel; Esc, `?` or Enter returns to the previous page.
 
@@ -1159,6 +1160,8 @@ Ask the main session to read one when needed.
 ### Inspector
 
 A job's Inspector shows the original open question and report text (up to 4 KiB; open the report file for the rest), the worker's signature-checked declared summary, role/harness, model/effort, package, state, checks, flow, local timestamps and recorded progress. **Files** includes the brief, questions and answers, reviews and report. Tab selects a file or a Sonic child job; Enter opens it. With no file selected, `o` opens the report or another collected job file. With no Git diff, **Reported files** shows up to 12 worker-listed paths, not verified changes. A headless job's **Output** follows the newest displayable lines of `stdout.jsonl`.
+
+When the running herdr fork advertises `hidden_tabs`, interactive CLI and pi worker tabs start hidden unless the role sets `"tab_visible": true`. The workspace tab bar shows a hidden-tab count instead of their labels. Press `g` in Inspector to reveal and focus the job's tab. Return to Inspector and press `H` to hide the same tab without stopping the worker. A crash does not reveal a hidden tab: it stays available through Inspector until the usual failure retention ends. On an older fork, tabs start visible and `g` still focuses them; hiding is unavailable.
 
 Press `n` or click **subagents** from Jobs or a job Inspector to inspect the calling session's native Claude or Codex tree. It is scanned only while that view is open; incomplete coverage is marked. The tree shows the role and started, activity and ended times when observed. Tab selects a native transcript; Enter or `o` opens it. Esc returns to Jobs or the job Inspector.
 

@@ -50,7 +50,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
     ['a', 'expand / fold other projects'],
     ['v', 'open Jobs; Enter opens Inspector for the selected job'],
     ['n', 'Jobs or Inspector: show this session’s native subagents'],
-    ['g', 'Inspector: focus the job tab; headless output is shown here'],
+    ['g H', 'Inspector: reveal/focus or hide the job tab; headless output is shown here'],
     ['1-4 d', 'job: answer its open question'],
     ['X', 'job: stop (y confirms); Jobs batch: pause/resume/stop'],
     ['r', 'failed job: request a retry'],
