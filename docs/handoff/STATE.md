@@ -12,15 +12,14 @@ Older handoffs: [2026-11-03 to 11-14](archive/STATE-2026-11-03-to-11-14.md), [20
   (`handback_to: "lead"`); unattended trial 3 was clean and unattended/01 is done. Queues `chores` and `home-tidy`
   run on their own and leave one end notice on the run record (`hud_read({job: <flow>})`). imp: even over
   `neon` + `sol`, cap 6.
-- herdr fork (`~/projects/herdr-hud`, branch `hud` @00caf385 = 16+17+20+21) INSTALLED 2026-11-26 on the owner's word
-  ("现在安装"): `~/.local/bin/herdr` = 0.9.5-hud.00caf385, live handoff needs `--import-exe ~/.local/bin/herdr` (the
-  running server's own path is deleted after the swap); rollback binary `~/.local/bin/herdr-0.9.5-hud.a26432a7`. Two
-  test failures are known on WSL2 and upstream (HUD-FORK.md). Next: herdr-fork/22 (HUD deletes its agy turn-child scan;
-  its live try also closes 21's), owner tries 16 (select-send `Ctrl+b a`) and 20 (sidebar role icons). herdr-fork/23
-  (dock layer) is building in `~/projects/herdr-hud-wt/23` (job j285cf00554bb5a5c); HUD 24 after 23
-  (D-2026-11-26-03). Fork tickets are dispatched with `hud_create` into a fork worktree, never through the MyHUD queue.
+- herdr fork (`~/projects/herdr-hud`, branch `hud`): installed 0.9.5-hud.00caf385 (16+17+20+21) on the owner's word
+  2026-11-26; live handoff needs `--import-exe ~/.local/bin/herdr`; rollback `~/.local/bin/herdr-0.9.5-hud.a26432a7`.
+  21+22 live-checked and done (agy background task kept `working`, HUD closed 0.24 s after idle); 17 done. `hud` now
+  also has 23 (dock) and 25 (collapsed-sidebar icons) merged, release built @973fde14, NOT installed. 26 (sidebar tree
+  groups, agy job jbef41f3a978ebb4d) building; then HUD 27 and 24. Install 23+25+26 together on the owner's word. Owner
+  tries: 16 (select-send, first try failed on the old client; retry pending), 20/25 sidebar icons, cursor report open.
 - Panel navigation redesign (D-2026-11-26-04): sample `docs/design/nav-redesign/` settled by main (README §11);
-  tickets nav-redesign/01–07 run as a queue with lead hand-back. Kept for the owner's word: `?N` badges, 6-row thumbnails.
+  run qb33acad6613a3dd4 covers 01–03; 04–09 rewritten for the tab roles (D-2026-11-26-05, `docs/design/tab-roles/`) and need a new run when it ends. mcp-latency/01–02 run q7370ba79c6022f53.
 - Owner tries pending: exec-page/02 (Execution Runs section), select-send after the fork install.
 
 - The product pivot is in `docs/spec.md` (D-2026-11-23-03): HUD is the operational workbench (execution, load,
