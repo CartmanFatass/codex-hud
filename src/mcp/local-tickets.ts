@@ -315,6 +315,19 @@ export function declaredReadyTickets(cwd: string, feature?: string) {
     .map(t => ({ ticket: ticketRef(slug, t), role: t.role, objective: t.objective })));
 }
 
+/** Resolve ticket blockers across .scratch using the same TicketRollup pass as ticketReadiness. */
+export function ticketBlockersByKey(cwd: string): Map<string, readonly string[]> {
+  const scratch = join(cwd, '.scratch');
+  const blockers = new Map<string, readonly string[]>();
+  if (!directoryExists(scratch)) return blockers;
+  const features = readTicketFeatures(scratch);
+  new TicketRollup(features).derive(Date.now());
+  for (const { slug, tickets } of features) {
+    for (const t of tickets) blockers.set(targetKey(`${slug}/${t.number}`), t.blockers);
+  }
+  return blockers;
+}
+
 export interface ReadinessOptions {
   home?: string;
   excludeTickets?: ReadonlySet<string>;

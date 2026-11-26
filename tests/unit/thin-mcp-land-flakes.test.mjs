@@ -9,6 +9,8 @@ import {
 import { landNotice } from '../../dist/mcp/land-state.js';
 import { clearExhausted, markExhausted } from '../../dist/roles/exhausted.js';
 import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
+import { runUnattendedScanStep } from '../../dist/unattended/service.js';
+import { controlPath } from '../../dist/unattended/state.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { checkout } from '../helpers/thin-mcp-land.mjs';
@@ -1208,4 +1210,226 @@ test('retention keeps expired pending flake receipt and gate log after source jo
     assert.equal(fs.existsSync(dispatchReceipt), false, `pending dispatch receipt pruned after ${resolution}`);
     assert.equal(fs.existsSync(dispatchLog), false, `pending dispatch gate log pruned after ${resolution}`);
   }
+});
+
+test('changing flakes.feature preserves waiting old-feature receipt and evidence; removing config starts no worker yet lets resolved tickets prune', { timeout: 30_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'flakes-a' });
+
+  const oldIssues = join(f.main, '.scratch', 'flakes-a', 'issues');
+  fs.mkdirSync(oldIssues, { recursive: true });
+  const seedReady = (num) => {
+    const path = join(oldIssues, `${num}-gate-flakes-running-list.md`);
+    fs.writeFileSync(path, [
+      `# ${num}: Gate flakes running list`, '', '**Status:** ready-for-agent', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
+      '', '**What to build:** Running list.', '', '### Cases', '',
+      `- \`case ${num}\` (sample/a.test.mjs) — flow \`f0000000000000f0${num}\``, '', '- [ ] Pass', '', '## Comments', '',
+    ].join('\n'));
+    return path;
+  };
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const expiredSec = (now - JOB_RETENTION_MS - 120_000) / 1000;
+  const seedPendingFlow = (flowId, ticket) => {
+    const flowsDir = join(f.home, 'flows');
+    fs.mkdirSync(flowsDir, { recursive: true });
+    const receiptPath = join(flowsDir, `${flowId}.json`);
+    const logPath = join(flowsDir, `${flowId}.json.gate-1.log`);
+    fs.writeFileSync(logPath, 'synthetic gate excerpt\n');
+    fs.writeFileSync(receiptPath, JSON.stringify({
+      flow: flowId, job: `j${flowId.slice(1)}`, pane: f.env.HERDR_PANE_ID, task: false,
+      wt: { main_root: f.main, root: join(`${f.main}-wt`, 'gone'), base_head: f.base_head, branch: 'wt/gone' },
+      config: { base: 'base', gate: ['true'], after: [], push: false },
+      state: 'completed', step: 'done', pid: process.pid, start: '1',
+      created_at: nowIso, updated_at: nowIso, source_sha: f.base_head,
+      reruns: [{ step: 'gate[1]', tests: ['case'], output_path: logPath, rerun_ok: true }],
+      flake_collection: {
+        state: 'pending', stage: 'dispatch', ticket,
+        error: 'waiting for active flake job', attempts: 1, updated_at: nowIso,
+      },
+    }));
+    fs.utimesSync(receiptPath, expiredSec, expiredSec);
+    fs.utimesSync(logPath, expiredSec, expiredSec);
+    return { receiptPath, logPath };
+  };
+
+  // Part A: change flakes.feature from flakes-a to flakes-b while flakes-a/02 is waiting.
+  const t02Path = seedReady('02');
+  f.git(f.main, 'add', '.scratch');
+  f.git(f.main, 'commit', '-qm', 'seed flakes-a/02');
+  const flowA = 'f0000000000000f02';
+  const { receiptPath: receiptA, logPath: logA } = seedPendingFlow(flowA, 'flakes-a/02');
+
+  setFlakesConfig(f, { feature: 'flakes-b' });
+  const dispatched = [];
+  const retryChanged = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID, {
+    dispatch: async (input) => { dispatched.push(input.ticket); return { job: 'j0000000000000f99' }; },
+  });
+  assert.deepEqual(retryChanged, { retried: 1, resolved: 0, pending: 1 });
+  assert.deepEqual(dispatched, [], 'must not dispatch old-feature ticket under a different configured feature');
+  assert.equal(f.flowState(flowA).flake_collection?.state, 'pending', 'must not mark still-ready old-feature ticket done without a job');
+  assert.equal(f.flowState(flowA).flake_collection?.ticket, 'flakes-a/02');
+
+  // Re-age after retry's receipt update and run retention: evidence must survive.
+  fs.utimesSync(receiptA, expiredSec, expiredSec);
+  fs.utimesSync(logA, expiredSec, expiredSec);
+  pruneLandFlows(f.home, now);
+  assert.equal(fs.existsSync(receiptA), true, 'old-feature pending receipt must survive retention while ready');
+  assert.equal(fs.existsSync(logA), true, 'old-feature gate log must survive retention while ready');
+
+  // Independently resolving flakes-a/02 while configured for flakes-b acknowledges the receipt and lets it prune.
+  fs.writeFileSync(t02Path, fs.readFileSync(t02Path, 'utf8').replace('**Status:** ready-for-agent', '**Status:** wontfix'));
+  const retryResolved = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID, {
+    dispatch: async () => { throw Error('must not dispatch resolved ticket'); },
+  });
+  assert.deepEqual(retryResolved, { retried: 1, resolved: 1, pending: 0 });
+  assert.equal(f.flowState(flowA).flake_collection?.state, 'done');
+  assert.equal(f.flowState(flowA).flake_collection?.job, undefined);
+  fs.utimesSync(receiptA, expiredSec, expiredSec);
+  fs.utimesSync(logA, expiredSec, expiredSec);
+  pruneLandFlows(f.home, now);
+  assert.equal(fs.existsSync(receiptA), false, 'resolved old-feature receipt prunes');
+  assert.equal(fs.existsSync(logA), false, 'resolved old-feature gate log prunes');
+
+  // Part B: remove flakes config entirely — no worker starts, ready tickets stay pinned,
+  // and independently resolved (wontfix/done/claimed) tickets prune.
+  setFlakesConfig(f, undefined);
+  for (const [idx, resolution] of ['wontfix', 'done', 'claimed'].entries()) {
+    const num = String(idx + 3).padStart(2, '0');
+    const ticketPath = seedReady(num);
+    const flowId = `f0000000000000f1${idx}`;
+    const { receiptPath, logPath } = seedPendingFlow(flowId, `flakes-a/${num}`);
+
+    const retryOff = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID, {
+      dispatch: async () => { throw Error('must not start worker when flakes config is removed'); },
+    });
+    assert.deepEqual(retryOff, { retried: 0, resolved: 0, pending: 0 });
+    assert.equal(f.flowState(flowId).flake_collection?.state, 'pending');
+
+    pruneLandFlows(f.home, now);
+    assert.equal(fs.existsSync(receiptPath), true, `ready ticket kept with config removed (${resolution})`);
+    assert.equal(fs.existsSync(logPath), true, `ready ticket gate log kept with config removed (${resolution})`);
+
+    fs.writeFileSync(ticketPath, fs.readFileSync(ticketPath, 'utf8').replace('**Status:** ready-for-agent', `**Status:** ${resolution}`));
+    pruneLandFlows(f.home, now);
+    assert.equal(fs.existsSync(receiptPath), false, `receipt prunes with config removed after ${resolution}`);
+    assert.equal(fs.existsSync(logPath), false, `gate log prunes with config removed after ${resolution}`);
+  }
+});
+
+test('running list whose Blocked by names a landed ticket (reference left in place) dispatches exactly one imp', { timeout: 30_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+
+  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
+  fs.mkdirSync(issuesDir, { recursive: true });
+  // Seed predecessor 01 (not landed yet) and open running list 02 blocked by test-flakes/01.
+  const t01Path = join(issuesDir, '01-prerequisite.md');
+  const t02Path = join(issuesDir, '02-gate-flakes-running-list.md');
+  fs.writeFileSync(t01Path, [
+    '# 01: Prerequisite', '', '**Status:** ready-for-agent', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
+    '', '**What to build:** Prerequisite fix.', '', '- [ ] Pass', '', '## Comments', '',
+  ].join('\n'));
+  fs.writeFileSync(t02Path, [
+    '# 02: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** test-flakes/01',
+    '', '**What to build:** Running list.', '', '### Cases', '',
+    '- `dep flake` (sample/dep.test.mjs) — flow `f0000000000000g01`', '', '- [ ] Pass', '', '## Comments', '',
+  ].join('\n'));
+  f.git(f.main, 'add', '.scratch');
+  f.git(f.main, 'commit', '-qm', 'seed prerequisite and blocked running list');
+
+  // While 01 has not landed, reaching threshold promotes 02 but keeps dispatch pending (blocked).
+  const dispatched = [];
+  const fakeDispatch = async (input) => {
+    const id = `j0000000000000g9${dispatched.length + 1}`;
+    const dir = join(f.home, 'jobs', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
+      job: id, cwd: f.main, project_root: f.main, role: input.role, ticket: input.ticket,
+      request_key: input.request_key, created_at: new Date().toISOString(), dispatch_exit_code: 0,
+    }));
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+    dispatched.push({ id, ticket: input.ticket });
+    return { job: id };
+  };
+
+  const blockedRes = await collectGateFlakes(f.home, f.main, [{
+    name: 'dep flake',
+    file: 'sample/dep.test.mjs',
+    flow: 'f0000000000000g02',
+    log: join(f.home, 'flows', 'f0000000000000g02.json.gate-1.log'),
+  }], f.env.HERDR_PANE_ID, { dispatch: fakeDispatch });
+  assert.equal(blockedRes.promoted, true);
+  assert.equal(blockedRes.dispatchedJob, undefined);
+  assert.equal(blockedRes.pending?.stage, 'dispatch');
+  assert.equal(blockedRes.pending?.error, 'ticket is blocked');
+  assert.deepEqual(dispatched, []);
+
+  // Land 01 (status done, reference left untouched in 02): retry dispatches exactly one imp for 02.
+  fs.writeFileSync(t01Path, fs.readFileSync(t01Path, 'utf8')
+    .replace('**Status:** ready-for-agent', '**Status:** done')
+    .replace('- [ ] Pass', '- [x] Pass') + '\n- Landed: `abcdef1`\n');
+  const unblockedRes = await collectGateFlakes(f.home, f.main, [], f.env.HERDR_PANE_ID, {
+    retryDispatch: true, pendingTicket: 'test-flakes/02', dispatch: fakeDispatch,
+  });
+  assert.equal(unblockedRes.pending, undefined);
+  assert.equal(unblockedRes.dispatchedJob, 'j0000000000000g91');
+  assert.deepEqual(dispatched.map(d => d.ticket), ['test-flakes/02']);
+  assert.match(fs.readFileSync(t02Path, 'utf8'), /\*\*Blocked by:\*\* test-flakes\/01/, 'Blocked by reference left in place');
+
+  // Stop job 1 and verify a new running list 03 whose Blocked by already names landed 01
+  // dispatches immediately on reaching its threshold (exactly one imp).
+  fs.writeFileSync(join(f.home, 'jobs', 'j0000000000000g91', 'STATUS.json'),
+    JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  const t03Path = join(issuesDir, '03-gate-flakes-running-list.md');
+  fs.writeFileSync(t03Path, [
+    '# 03: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** test-flakes/01',
+    '', '**What to build:** Running list.', '', '### Cases', '',
+    '- `ready dep flake` (sample/dep2.test.mjs) — flow `f0000000000000g03`', '', '- [ ] Pass', '', '## Comments', '',
+  ].join('\n'));
+  f.git(f.main, 'add', '.scratch');
+  f.git(f.main, 'commit', '-qm', 'seed running list 03 with satisfied Blocked by');
+
+  const directRes = await collectGateFlakes(f.home, f.main, [{
+    name: 'ready dep flake',
+    file: 'sample/dep2.test.mjs',
+    flow: 'f0000000000000g04',
+    log: join(f.home, 'flows', 'f0000000000000g04.json.gate-1.log'),
+  }], f.env.HERDR_PANE_ID, { dispatch: fakeDispatch });
+  assert.equal(directRes.promoted, true);
+  assert.equal(directRes.pending, undefined);
+  assert.equal(directRes.dispatchedJob, 'j0000000000000g92');
+  assert.deepEqual(dispatched.map(d => d.ticket), ['test-flakes/02', 'test-flakes/03']);
+  assert.match(fs.readFileSync(t03Path, 'utf8'), /\*\*Blocked by:\*\* test-flakes\/01/, 'Blocked by reference left in place');
+});
+
+test('unattended scan error with a pending flake fallback backs off instead of rescheduling every 1 ms', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+  seedWaitingFlake(f);
+
+  const control = { enabled: true, root: f.main, objectives: [] };
+  fs.writeFileSync(controlPath(f.home), JSON.stringify(control));
+  fs.writeFileSync(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: f.main }] }));
+
+  const flakeRetryMs = 30_000;
+  const state = { liveJobIds: [], lastIssues: [] };
+
+  // Initial scan sees the pending flake flow and arms flakeRetryAt.
+  const first = await runUnattendedScanStep(f.home, control, state, false, flakeRetryMs);
+  assert.deepEqual(first.issues, []);
+  assert.ok(state.flakeRetryAt !== undefined, 'pending flake fallback armed');
+  assert.ok(first.recheckMs !== undefined && first.recheckMs > 20_000 && first.recheckMs <= flakeRetryMs,
+    `expected backoff near ${flakeRetryMs}ms, got ${first.recheckMs}`);
+
+  // Registration disappears while the flake fallback deadline has elapsed.
+  fs.writeFileSync(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: [] }));
+  state.flakeRetryAt = performance.now() - 100;
+
+  const afterError = await runUnattendedScanStep(f.home, control, state, false, flakeRetryMs);
+  assert.equal(afterError.issues.length, 1);
+  assert.match(afterError.issues[0].reason, /no longer registered/i);
+  assert.ok(afterError.recheckMs !== undefined && afterError.recheckMs > 20_000 && afterError.recheckMs <= flakeRetryMs,
+    `expected scan error to back off near ${flakeRetryMs}ms instead of 1ms, got ${afterError.recheckMs}`);
+  assert.ok(state.flakeRetryAt > performance.now(), 'stale deadline advanced past now');
 });

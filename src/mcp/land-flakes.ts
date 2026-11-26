@@ -15,6 +15,7 @@ import {
   activeLand, isFlowId, landFile, updateLandFlakeCollection,
   type LandFlakeCollection, type LandFlow,
 } from './land-state.js';
+import { ticketBlockersByKey } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { withTicketEdits } from './ticket-commits.js';
 import { ensureJobWatcher } from './watch-pid.js';
@@ -83,6 +84,7 @@ const MAX_FLOW_BYTES = 128 * 1024;
 const DISPATCH_CASE_THRESHOLD = 4;
 const WAITING_DISPATCH_ERROR = 'waiting for active flake job';
 const BLOCKED_DISPATCH_ERROR = 'ticket is blocked';
+const FEATURE_CHANGED_DISPATCH_ERROR = 'waiting for configured flakes feature';
 
 const nn = (n: number) => String(n).padStart(2, '0');
 const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim();
@@ -283,23 +285,33 @@ function buildRunningListTicket(
   return { title, body };
 }
 
+interface FeatureTicketEntry {
+  number: number;
+  path: string;
+}
+
+function parseTicketRef(ticket: string): { feature: string; number: number; key: string } | null {
+  const key = targetKey(ticket);
+  const match = /^([a-z0-9-]+)\/(\d+)$/.exec(key);
+  if (!match) return null;
+  const number = Number(match[2]);
+  return Number.isSafeInteger(number) && number > 0 ? { feature: match[1], number, key } : null;
+}
+
 type TicketDispatchState =
   | { state: 'ready'; ticket: string; path: string }
   | { state: 'blocked'; ticket: string; path: string }
   | { state: 'resolved'; ticket: string };
 
-function inspectRunningListTicket(
-  mainRoot: string,
+function inspectRunningListEntry(
   feature: string,
-  ticket: string,
+  item: FeatureTicketEntry,
   claimedTickets: ReadonlySet<string>,
+  getBlockers?: () => ReadonlyMap<string, readonly string[]>,
 ): TicketDispatchState {
-  const key = targetKey(ticket);
-  if (claimedTickets.has(key)) return { state: 'resolved', ticket };
-  const scratch = join(mainRoot, '.scratch');
-  const item = listFeatureTickets(scratch, feature).find(t => targetKey(`${feature}/${nn(t.number)}`) === key);
-  if (!item) return { state: 'resolved', ticket };
   const canonical = `${feature}/${nn(item.number)}`;
+  const key = targetKey(canonical);
+  if (claimedTickets.has(key)) return { state: 'resolved', ticket: canonical };
   try {
     const { bytes, truncated } = readFileBounded(item.path, MAX_TICKET_BYTES);
     if (truncated) return { state: 'resolved', ticket: canonical };
@@ -308,8 +320,11 @@ function inspectRunningListTicket(
     const evidence = ticketFileEvidence(text);
     if (evidence.landed !== undefined) return { state: 'resolved', ticket: canonical };
     if (!/^ready-for-agent$/i.test(evidence.status ?? '')) return { state: 'resolved', ticket: canonical };
-    if (evidence.blocked !== undefined && evidence.blocked.trim() && !/^none\b/i.test(evidence.blocked.trim())) {
-      return { state: 'blocked', ticket: canonical, path: item.path };
+    if (getBlockers) {
+      const blockers = getBlockers().get(key);
+      if (blockers ? blockers.length > 0 : evidence.blocked !== undefined) {
+        return { state: 'blocked', ticket: canonical, path: item.path };
+      }
     }
     return { state: 'ready', ticket: canonical, path: item.path };
   } catch (err) {
@@ -318,16 +333,31 @@ function inspectRunningListTicket(
   }
 }
 
+function inspectRunningListTicket(
+  mainRoot: string,
+  ticket: string,
+  claimedTickets: ReadonlySet<string>,
+  getBlockers?: () => ReadonlyMap<string, readonly string[]>,
+): TicketDispatchState {
+  const ref = parseTicketRef(ticket);
+  if (!ref) return { state: 'resolved', ticket };
+  if (claimedTickets.has(ref.key)) return { state: 'resolved', ticket };
+  const scratch = join(mainRoot, '.scratch');
+  const item = listFeatureTickets(scratch, ref.feature).find(t => t.number === ref.number);
+  if (!item) return { state: 'resolved', ticket };
+  return inspectRunningListEntry(ref.feature, item, claimedTickets, getBlockers);
+}
+
 function findReadyRunningListTicket(
   mainRoot: string,
   feature: string,
   claimedTickets: ReadonlySet<string>,
+  getBlockers: () => ReadonlyMap<string, readonly string[]>,
 ): { ticket: string; path: string } | null {
   const scratch = join(mainRoot, '.scratch');
   const tickets = listFeatureTickets(scratch, feature).sort((a, b) => a.number - b.number);
   for (const item of tickets) {
-    const ticket = `${feature}/${nn(item.number)}`;
-    const inspected = inspectRunningListTicket(mainRoot, feature, ticket, claimedTickets);
+    const inspected = inspectRunningListEntry(feature, item, claimedTickets, getBlockers);
     if (inspected.state === 'ready') return { ticket: inspected.ticket, path: inspected.path };
   }
   return null;
@@ -489,16 +519,39 @@ export async function collectGateFlakes(
         : undefined;
 
   if (result.promoted || landedFlake || options?.retryDispatch || alreadyRecorded) {
+    const targetRef = mustDispatchTicket ? parseTicketRef(mustDispatchTicket) : null;
+    if (mustDispatchTicket && targetRef?.feature !== feature) {
+      const targetClaimed = targetRef
+        ? runningListAdmission(home, mainRoot, targetRef.feature, undefined, false).claimedTickets
+        : EMPTY_CLAIMED;
+      let blockerMap: ReadonlyMap<string, readonly string[]> | undefined;
+      const getBlockers = () => (blockerMap ??= ticketBlockersByKey(mainRoot));
+      const inspected = inspectRunningListTicket(mainRoot, mustDispatchTicket, targetClaimed, getBlockers);
+      if (inspected.state === 'blocked') {
+        result.pending = { stage: 'dispatch', error: BLOCKED_DISPATCH_ERROR, ticket: inspected.ticket };
+        return result;
+      }
+      if (inspected.state === 'ready') {
+        result.pending = { stage: 'dispatch', error: FEATURE_CHANGED_DISPATCH_ERROR, ticket: inspected.ticket };
+        return result;
+      }
+      if (!landedFlake || options?.retryDispatch) return result;
+    }
+
     const dispatchOutcome = await withAbstractLock('land-flakes-dispatch', `${home}\0${sharedRoot(mainRoot)}\0${feature}`, async () => {
       const { claimedTickets, nextAttempt, eligible } = runningListAdmission(home, mainRoot, feature);
-      const inspected = mustDispatchTicket
-        ? inspectRunningListTicket(mainRoot, feature, mustDispatchTicket, claimedTickets)
+      let blockerMap: ReadonlyMap<string, readonly string[]> | undefined;
+      const getBlockers = () => (blockerMap ??= ticketBlockersByKey(mainRoot));
+      const inspected = mustDispatchTicket && targetRef?.feature === feature
+        ? inspectRunningListTicket(mainRoot, mustDispatchTicket, claimedTickets, getBlockers)
         : undefined;
       if (inspected?.state === 'blocked') {
         return { pending: { stage: 'dispatch' as const, error: BLOCKED_DISPATCH_ERROR, ticket: inspected.ticket } };
       }
       if (inspected?.state === 'resolved' && (!landedFlake || options?.retryDispatch)) return {};
-      const candidate = inspected?.state === 'ready' ? inspected : findReadyRunningListTicket(mainRoot, feature, claimedTickets);
+      const candidate = inspected?.state === 'ready'
+        ? inspected
+        : findReadyRunningListTicket(mainRoot, feature, claimedTickets, getBlockers);
       if (!candidate) return {};
       if (!eligible(candidate.ticket)) {
         return inspected?.state === 'ready' || options?.retryDispatch
@@ -625,11 +678,11 @@ export function hasPendingFlakeCollection(
   if (fc.stage !== 'dispatch' || !fc.ticket) return true;
   const mainRoot = flow.wt?.main_root;
   if (typeof mainRoot !== 'string' || !mainRoot) return true;
-  const config = readFlakesConfig(mainRoot);
-  if (!config) return true;
-  if (inspectRunningListTicket(mainRoot, config.feature, fc.ticket, EMPTY_CLAIMED).state === 'resolved') return false;
-  const { claimedTickets } = runningListAdmission(home, mainRoot, config.feature, undefined, false);
-  return !claimedTickets.has(targetKey(fc.ticket));
+  const ref = parseTicketRef(fc.ticket);
+  if (!ref) return false;
+  if (inspectRunningListTicket(mainRoot, fc.ticket, EMPTY_CLAIMED).state === 'resolved') return false;
+  const { claimedTickets } = runningListAdmission(home, mainRoot, ref.feature, undefined, false);
+  return !claimedTickets.has(ref.key);
 }
 
 export function listPendingFlakeFlows(home: string, mainRoot: string, excludeFlow?: string): LandFlow[] {

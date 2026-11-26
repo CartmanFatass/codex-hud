@@ -110,7 +110,7 @@ function groupBySelectedObjective(control: UnattendedControl, home: string) {
   return { byObjective, liveJobIds };
 }
 
-interface ScanState {
+export interface UnattendedScanState {
   lastStamp?: string;
   lastFlakeStamp?: string;
   flakeRetryAt?: number;
@@ -119,7 +119,7 @@ interface ScanState {
   lastIssues: UnattendedDiagnostic[];
 }
 
-async function scan(home: string, control: UnattendedControl, state: ScanState, forceRecheck: boolean, flakeRetryMs: number): Promise<UnattendedDiagnostic[]> {
+async function scan(home: string, control: UnattendedControl, state: UnattendedScanState, forceRecheck: boolean, flakeRetryMs: number): Promise<UnattendedDiagnostic[]> {
   const { runs, running } = readUnattendedStatus(home);
   // Resume an interrupted workflow driver, not a terminal run. Drivers don't belong to the service process.
   for (const q of running) wakeWorkflow(home, q);
@@ -236,6 +236,25 @@ function watchTargets(home: string, control: UnattendedControl | undefined): Wat
   return targets;
 }
 
+export async function runUnattendedScanStep(
+  home: string,
+  control: UnattendedControl,
+  state: UnattendedScanState,
+  forceRecheck: boolean,
+  flakeRetryMs: number,
+): Promise<{ issues: UnattendedDiagnostic[]; recheckMs?: number }> {
+  const issues = await scan(home, control, state, forceRecheck, flakeRetryMs).catch(error => {
+    if (state.flakeRetryAt !== undefined) {
+      state.flakeRetryAt = performance.now() + flakeRetryMs;
+    }
+    return [{ reason: reason(error) }];
+  });
+  await publishDiagnostics(home, control, issues);
+  return state.flakeRetryAt === undefined
+    ? { issues }
+    : { issues, recheckMs: Math.max(1, state.flakeRetryAt - performance.now()) };
+}
+
 export async function runUnattended() {
   const home = getHudHome();
   const release = await tryAbstractLock('unattended', home);
@@ -250,7 +269,7 @@ export async function runUnattended() {
     const envMs = Number(process.env.HUD_UNATTENDED_RECONCILE_MS);
     const reconcileMs = Number.isFinite(envMs) && envMs >= 500 ? envMs : DEFAULT_RECONCILE_MS;
     const flakeRetryMs = Math.min(DEGRADED_RECONCILE_MS, reconcileMs);
-    const scanState: ScanState = { liveJobIds: [], lastIssues: [] };
+    const scanState: UnattendedScanState = { liveJobIds: [], lastIssues: [] };
     let currentControl: UnattendedControl | undefined = readControl(home);
 
     await waitUntilFs<void>({
@@ -272,11 +291,8 @@ export async function runUnattended() {
         });
         currentControl = control;
         if (!control) return { done: true, value: undefined };
-        const forceRecheck = wakeReason === 'event';
-        const issues = await scan(home, control, scanState, forceRecheck, flakeRetryMs).catch(error => [{ reason: reason(error) }]);
-        await publishDiagnostics(home, control, issues);
-        return scanState.flakeRetryAt === undefined ? { done: false }
-          : { done: false, recheckMs: Math.max(1, scanState.flakeRetryAt - performance.now()) };
+        const { recheckMs } = await runUnattendedScanStep(home, control, scanState, wakeReason === 'event', flakeRetryMs);
+        return recheckMs === undefined ? { done: false } : { done: false, recheckMs };
       },
     });
   } finally { await release(); }
