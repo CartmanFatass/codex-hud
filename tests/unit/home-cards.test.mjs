@@ -5,8 +5,10 @@ import test from 'node:test';
 import { buildCardsFixture, NOW } from '../../docs/design/home-cards/gen/fixture.mjs';
 import { HomeCardsCollector } from '../../dist/collectors/home-cards.js';
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
+import { localDayStart } from '../../dist/collectors/job-stats.js';
 import { projectList } from '../../dist/roles/projects.js';
 import { stripAnsi, theme, visualLength } from '../../dist/render/colors.js';
+import { homeCardRows, scheduleView } from '../../dist/render/home-cards.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
@@ -168,6 +170,26 @@ test('Today counts local failures and live jobs waiting for main, not stops or q
   const invalid = await f.tick(NOW + 30_001);
   assert.equal(invalid.homeToday, undefined);
   assert.deepEqual(todayLines(f.draw(invalid, 40)), ['Today 1 running']);
+});
+
+for (const lang of ['en', 'zh']) test(`Today drops whole facts in attention order (${lang})`, () => {
+  const zh = lang === 'zh', prevLang = setLanguage(lang), prev = setDisplayConfig({ theme: 'mocha', icons: 'unicode' });
+  try {
+    const draw = (width, { failed = 1, running = 3, limited = false } = {}) => {
+      const active = Array.from({ length: running }, (_, i) => ({ jobId: String(i), state: 'running' }));
+      const today = { since: localDayStart(NOW), landed: 29, failed, limited };
+      const { rows: cardRows } = homeCardRows(today, scheduleView([], NOW), [{ snapshot: { active } }], width, NOW, 2);
+      assert.ok(cardRows.every(row => visualLength(row.text) === width));
+      return cardRows.map(plain);
+    };
+    assert.deepEqual(draw(zh ? 28 : 32), ['', zh ? '今天 1 失败 · 3 在跑' : 'Today 1 failed · 3 running']);
+    assert.deepEqual(draw(zh ? 12 : 14), ['', zh ? '今天 1 失败' : 'Today 1 failed']);
+    assert.deepEqual(draw(8), ['', zh ? '今天' : 'Today']);
+    assert.deepEqual(draw(56), ['', zh ? '今天 29 落地 · 1 失败 · 3 在跑' : 'Today 29 landed · 1 failed · 3 running']);
+    const bounded = { failed: 11, running: 12, limited: true };
+    assert.deepEqual(draw(40, bounded), ['', zh ? '今天 ~29 落地 · ~11 失败 · 12 在跑' : 'Today ~11 failed · 12 running']);
+    assert.deepEqual(draw(56, bounded), ['', zh ? '今天 ~29 落地 · ~11 失败 · 12 在跑' : 'Today ~29 landed · ~11 failed · 12 running']);
+  } finally { setLanguage(prevLang); setDisplayConfig(prev); }
 });
 
 test('Today is omitted when all three counts are zero', async t => {

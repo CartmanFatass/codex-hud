@@ -27,12 +27,16 @@ function todayRow(data: TodayFacts | undefined, projects: readonly HomeProject[]
   }
   if (!landed && !failed && !live.size) return;
   const ink = theme.board, approx = limited ? '~' : '';
-  const facts = joinFacts([
-    landed ? t('{n} landed', { n: approx + landed }) : '',
-    failed ? ink.danger(t('{n} failed', { n: approx + failed })) : '',
-    live.size ? ink.active(t('{count} running', { count: live.size })) : '',
-  ]);
-  return line(`${t('Today')} ${facts}`, width);
+  const landedFact = landed ? t('{n} landed', { n: approx + landed }) : '';
+  const failedFact = failed ? ink.danger(t('{n} failed', { n: approx + failed })) : '';
+  const runningFact = live.size ? ink.active(t('{count} running', { count: live.size })) : '';
+  const label = t('Today'), room = width - cells(label) - 1;
+  // Drop landed before running, but try a lower-priority fact alone if failed itself cannot fit.
+  for (const kept of [[landedFact, failedFact, runningFact], [failedFact, runningFact], [failedFact], [runningFact], [landedFact]]) {
+    const facts = joinFacts(kept);
+    if (facts && cells(facts) <= room) return line(`${label} ${facts}`, width);
+  }
+  return line(label, width);
 }
 
 export function scheduleView(items: readonly ScheduleItem[] | undefined, now: number) {
