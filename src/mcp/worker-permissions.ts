@@ -13,12 +13,15 @@ import { classifyPermission, permissionDirectory, permissionProof, type Permissi
 const MAX_LOG = 12;
 const MAX_LEDGER_BYTES = 65_536;
 const FOOTER = /^(?:(?:Enter to (?:select|confirm) · )?(?:(?:Tab\/arrow keys|↑\/↓|↑↓|arrows|arrow keys) to navigate · )?Esc to cancel|Enter to (?:select|confirm) · (?:Esc to cancel|Tab to amend)(?: · Esc to cancel)?|Press enter to confirm or esc to cancel)(?:\s*·\s*(?:Tab to amend|Ctrl\+e to explain))*$/i;
+const CLAUDE_TITLE = /^(?:Bash command|(?:Edit|Write|Create) file(?: .+)?|Do you want to allow this connection\?)$/i;
+const OTHER_TITLE = /^(?:Permission required|Permission request|Tool approval required|Command approval required|Allow command\?|Would you like to (?:run the following command|make the following edits)\?)$/i;
 export const PERMISSION_ID = /^perm-[a-f0-9]{16}$/;
 type Option = { label: string; value?: 'approve' | 'decline' };
 type Prompt = { text: string; command?: string; options: Option[]; selected: number };
+type Capture = Prompt | 'unrecognized' | null | undefined;
 export type PermissionEntry = PermissionDecision & {
   id: string; key: string; launch: string; pane: string; at: string; text: string;
-  options: Option[];
+  options: Option[]; selected?: number;
   outcome: 'pending' | 'gone' | 'sending' | 'answered' | 'uncertain'; answer?: 'approve' | 'decline';
 };
 type Ledger = { active?: string; entries: PermissionEntry[] };
@@ -26,20 +29,23 @@ type Ledger = { active?: string; entries: PermissionEntry[] };
 /** Parse the visible native menu, never a recent/scrollback tail. Unsupported layouts never send keys. */
 export function parsePermissionPrompt(screen: string, harness: string): Prompt | null {
   if (screen.length > 32_768 || /[\x00-\x09\x0b-\x1f\x7f\u202a-\u202e\u2066-\u2069]/.test(screen.replaceAll('\r\n', '\n'))) return null;
-  const lines = screen.replaceAll('\r\n', '\n').split('\n').map(line => line.trim().replace(/^[│║]\s*|\s*[│║]$/g, ''));
-  const title = harness === 'claude' ? /^(?:Bash command|(?:Edit|Write|Create) file(?: .+)?|Do you want to allow this connection\?)$/i
-    : /^(?:Permission required|Permission request|Tool approval required|Command approval required|Allow command\?|Would you like to (?:run the following command|make the following edits)\?)$/i;
-  let start = lines.length - 1;
-  while (start >= 0 && !title.test(lines[start])) start--;
-  if (start < 0) return null;
-  const body = lines.slice(start).filter(Boolean);
+  const lines = screen.replaceAll('\r\n', '\n').split('\n').map(line => line.trim().replace(/^[│║]\s*|\s*[│║]$/g, '').trim());
+  const title = harness === 'claude' ? CLAUDE_TITLE : OTHER_TITLE;
+  if (!lines.some(line => title.test(line))) return null;
+  const headings = lines.flatMap((line, i) => CLAUDE_TITLE.test(line) || OTHER_TITLE.test(line) ? [i] : []);
+  const body = lines.slice(headings[0]).filter(Boolean);
   while (/^[╰╯─━—]+$/.test(body.at(-1) ?? '')) body.pop();
   const text = body.join('\n');
-  if (Buffer.byteLength(text) > 3500) return null;
+  // Do not mistake a heading in a preview (or earlier visible output) for the start of a fresh menu.
+  const bytes = Buffer.from(text);
+  const manual = FOOTER.test(body.at(-1) ?? '') ? { text: bytes.subarray(0, 3500).toString(), options: [], selected: -1 } : null;
+  if (headings.length !== 1 || bytes.length > 3500) return manual;
+  // In a visible box, the heading must be its first row, never a row of the command preview.
+  const preceding = lines.slice(0, headings[0]).filter(Boolean).reverse();
+  const box = preceding.findIndex(line => /^(?:╭[─━—]+╮|╰[─━—]+╯)$/.test(line));
+  if (box > 0 && preceding[box].startsWith('╭')) return manual;
   const question = body.findIndex(line => /^(?:Do you want to (?:proceed|allow this connection|make this edit(?: to .+)?|create .+|overwrite .+)\?|Allow this (?:tool|command|edit)\?)$/i.test(line));
-  if (harness === 'claude' && question < 0) return null;
-  // A known permission heading and a live footer can still be handed to main when the menu cannot be keyed safely.
-  const manual = FOOTER.test(body.at(-1) ?? '') ? { text, options: [], selected: -1 } : null;
+  if (harness === 'claude' && question < 0) return manual;
   const firstOption = body.findIndex(line => /^(?:[❯›>]\s*)?1[.)]\s+/.test(line));
   if (firstOption < 1 || (harness === 'claude' && question >= firstOption)) return manual;
   const options: Option[] = [];
@@ -107,35 +113,38 @@ export function permissionTarget(binding: Binding | null) {
   return !!fields?.left && !!fields.launchId && !!fields.terminalId && fields.directExec === '1' && hasLocalHerdrTarget(fields);
 }
 
-async function capture(home: string, job: Job, binding: Binding, signal?: AbortSignal): Promise<Prompt | null | undefined> {
+async function capture(home: string, job: Job, binding: Binding, signal?: AbortSignal): Promise<Capture> {
   const { left, launchId, terminalId, pid, pidStart } = binding.fields;
   const stillBound = () => getJobIndexCache(home).readSession(job.job)?.stamp === binding.stamp;
-  if (signal?.aborted) return;
-  if (!stillBound()) return null;
+  if (signal?.aborted || !stillBound()) return;
   const state = getJobIndexCache(home).readStatus<JobStatus>(job.job);
-  if (state.status === 'ok' && ['closed', 'done', 'failed', 'stopped'].includes(state.value.state)) return null;
+  if (state.status === 'ok' && ['closed', 'done', 'failed', 'stopped'].includes(state.value.state)) return;
   const params = { pane_id: left };
   const opts = { signal, timeoutMs: 800 };
   const info = await request('pane.get', params, opts);
+  if (!stillBound()) return;
   if (info?.error?.code === 'pane_not_found') return null;
   const pane = info?.result?.pane;
-  if (!pane || !pane.launch_id || !pane.terminal_id) return;
+  if (!pane?.launch_id || !pane.terminal_id) return;
   if (pane.launch_id !== launchId || pane.terminal_id !== terminalId || pane.pane_id !== left) return null;
-  if (!pane.agent_status) return;
-  if (pane.agent_status !== 'blocked') return null;
   const harness = job.cli?.agent ?? 'pi';
-  if (pane.agent !== harness || !pidStart || !isProcAlive(Number(pid), pidStart)) return;
+  if (!pane.agent_status || pane.agent !== harness || !pidStart || !isProcAlive(Number(pid), pidStart)) return;
+  if (pane.agent_status !== 'blocked') return null;
   const read = await request('pane.read', { ...params, source: 'visible', format: 'text', strip_ansi: true }, opts);
-  if (read?.error?.code === 'pane_not_found' || !stillBound()) return null;
+  if (!stillBound()) return;
+  if (read?.error?.code === 'pane_not_found') return null;
   const text = read?.result?.read?.text;
   if (typeof text !== 'string') return;
   const live = await request('pane.get', params, opts);
-  if (live?.error?.code === 'pane_not_found' || !stillBound()) return null;
+  if (!stillBound()) return;
+  if (live?.error?.code === 'pane_not_found') return null;
   const after = live?.result?.pane;
   if (!after?.launch_id || !after.terminal_id || !after.agent_status) return;
-  if (after.launch_id !== launchId || after.terminal_id !== terminalId || after.agent_status !== 'blocked') return null;
+  if (after.launch_id !== launchId || after.terminal_id !== terminalId || after.pane_id !== left) return null;
+  if (after.agent !== harness || !isProcAlive(Number(pid), pidStart)) return;
+  if (after.agent_status !== 'blocked') return null;
   // A clipped or changed layout is not proof that the native prompt went away.
-  return parsePermissionPrompt(text, harness) ?? undefined;
+  return parsePermissionPrompt(text, harness) ?? 'unrecognized';
 }
 
 function proofFor(dir: string, job: Job, status: Partial<JobStatus> | null, binding: Binding, prompt: Prompt) {
@@ -143,91 +152,120 @@ function proofFor(dir: string, job: Job, status: Partial<JobStatus> | null, bind
   if (!pidStart || !isProcAlive(Number(pid), pidStart)) return;
   const env = readProcEnviron(Number(pid));
   if (!env || env.HUD_JOB_DIR !== dir || env.BASH_ENV || env.ENV || env['BASH_FUNC_rm%%']) return;
-  const target = permissionDirectory(prompt.command, env.S);
+  const target = permissionDirectory(prompt.command);
   if (!target) return;
   const sess = status?.agent_session_id;
   const uid = process.getuid?.();
   const nativeScratch = job.cli?.agent === 'claude' && uid !== undefined && sess && /^[\w-]{8,100}$/.test(sess) &&
     target.startsWith(`/tmp/claude-${uid}/`) && target.endsWith(`/${sess}/scratchpad`) && target.split('/').length === 6 ? target : undefined;
-  const ownScratch = job.worktree?.root && (!job.worktree.owner || job.worktree.owner === job.job)
-    ? join(job.worktree.root, 'scratchpad') : undefined;
+  const worktree = job.worktree?.root && (!job.worktree.owner || job.worktree.owner === job.job) ? job.worktree.root : undefined;
+  const ownScratch = worktree ? join(worktree, 'scratchpad') : undefined;
   const temp = env.TMPDIR && isAbsolute(env.TMPDIR) && /^(?:\/tmp|\/dev\/shm)\//.test(env.TMPDIR) &&
     basename(env.TMPDIR).includes(job.job) ? env.TMPDIR : undefined;
   // Relative command paths are accepted only with explicit shell cwd evidence; job.cwd is not that evidence.
-  return permissionProof(prompt.command, { task: dir, scratch: nativeScratch ?? ownScratch, temp, variable: env.S });
+  return permissionProof(prompt.command, { task: dir, scratch: nativeScratch ?? ownScratch, temp, worktree });
 }
 
 const fingerprint = (binding: Binding, prompt: Prompt) => hash(JSON.stringify([
-  binding.fields.launchId, binding.fields.terminalId, prompt.command ?? prompt.text, prompt.options.map(option => option.label),
+  binding.fields.left, binding.fields.launchId, binding.fields.terminalId, prompt.text, prompt.command,
 ]));
+const permissionId = (key: string, prior?: string) => `perm-${hash(`${key}\0${Date.now()}\0${prior ?? ''}`).slice(0, 16)}`;
+function appendEntry(state: Ledger, binding: Binding, prompt: Prompt, decision: PermissionDecision) {
+  const key = fingerprint(binding, prompt);
+  const entry: PermissionEntry = { ...decision, id: permissionId(key, state.entries.at(-1)?.id), key,
+    launch: binding.fields.launchId!, pane: binding.fields.left!, at: new Date().toISOString(), text: prompt.text,
+    options: prompt.selected < 0 ? [] : prompt.options, selected: prompt.selected, outcome: 'pending' };
+  state.entries = [...state.entries, entry].slice(-MAX_LOG);
+  state.active = entry.id;
+  return entry;
+}
+function requireManual(entry: PermissionEntry, reason: string) {
+  entry.action = 'main'; entry.reason = reason; entry.options = [];
+}
+function retire(state: Ledger, entry: PermissionEntry) {
+  if (entry.outcome === 'pending') entry.outcome = 'gone';
+  if (entry.outcome === 'sending') entry.outcome = 'uncertain';
+  delete state.active;
+}
 
 async function sendAnswer(home: string, dir: string, job: Job, binding: Binding, state: Ledger, entry: PermissionEntry,
-  answer: 'approve' | 'decline', fresh: Prompt | null | undefined, signal?: AbortSignal) {
+  answer: 'approve' | 'decline', observed: Capture, signal?: AbortSignal) {
   if (entry.outcome !== 'pending') return { ok: entry.outcome === 'answered', written: false, code: entry.outcome };
-  if (fresh === null || (fresh && fingerprint(binding, fresh) !== entry.key)) {
-    entry.outcome = 'gone'; delete state.active; save(dir, state);
+  const gone = () => {
+    retire(state, entry); save(dir, state);
     return { ok: false, written: false, code: 'gone' };
-  }
-  if (!fresh || signal?.aborted || existsSync(join(dir, jobFiles.stopRequested))) return { ok: false, written: false, code: 'prompt_unavailable' };
-  const matches = fresh.options.flatMap((option, i) => option.value === answer ? [i] : []);
-  if (fresh.selected < 0 || matches.length !== 1) return { ok: false, written: false, code: 'option_unavailable' };
-  const delta = matches[0] - fresh.selected;
+  };
+  if (observed === null) return gone();
+  if (!observed || signal?.aborted || existsSync(join(dir, jobFiles.stopRequested))) return { ok: false, written: false, code: 'prompt_unavailable' };
+  const changed = () => {
+    requireManual(entry, 'The visible prompt or its selected option changed or could not be confirmed before delivery; no key was sent.');
+    state.active = entry.id = permissionId(entry.key, entry.id);
+    save(dir, state);
+    return { ok: false, written: false, code: 'prompt_changed' };
+  };
+  if (observed === 'unrecognized' || fingerprint(binding, observed) !== entry.key || observed.selected !== entry.selected) return changed();
+  const matches = observed.options.flatMap((option, i) => option.value === answer ? [i] : []);
+  if (observed.selected < 0 || matches.length !== 1) return { ok: false, written: false, code: 'option_unavailable' };
+  const delta = matches[0] - observed.selected;
   const keys = [...Array<string>(Math.abs(delta)).fill(delta < 0 ? 'Up' : 'Down'), 'Enter'];
-  if (getJobIndexCache(home).readSession(job.job)?.stamp !== binding.stamp) return { ok: false, written: false, code: 'prompt_unavailable' };
-  // Spend the answer before sending. A lost reply or a crash after the write is not permission to retry.
+  const fresh = await capture(home, job, binding, signal);
+  if (signal?.aborted || existsSync(join(dir, jobFiles.stopRequested))) return { ok: false, written: false, code: 'prompt_unavailable' };
+  if (fresh === null) return gone();
+  if (!fresh || fresh === 'unrecognized' || fingerprint(binding, fresh) !== entry.key || fresh.selected !== observed.selected) return changed();
+  // HerdR provides no conditional key send. Spend before this single write; never retry a lost reply or crash.
   entry.outcome = 'sending'; entry.answer = answer; save(dir, state);
   const reply = await request('pane.send_keys', { pane_id: entry.pane, keys }, { signal, timeoutMs: 800 });
   entry.outcome = reply?.result?.type === 'ok' && !reply.error ? 'answered' : reply?.error?.code === 'pane_not_found' ? 'gone' : 'uncertain';
+  if (entry.outcome === 'gone') delete state.active;
   save(dir, state);
   return { ok: entry.outcome === 'answered', written: entry.outcome === 'answered', code: entry.outcome };
 }
 
 export async function observeWorkerPermission(home: string, dir: string, job: Job, status: Partial<JobStatus> | null,
   binding: Binding, signal: AbortSignal) {
-  const observed = await capture(home, job, binding, signal);
-  if (observed === undefined || signal.aborted) return;
   return withAbstractLock('worker-permission', dir, async () => {
+    const observed = await capture(home, job, binding, signal);
+    if (observed === undefined || signal.aborted) return;
     const state = ledger(dir, true);
     const previous = current(state);
-    const key = observed ? fingerprint(binding, observed) : null;
-    if (previous && previous.key === key) {
-      if (previous.outcome === 'sending') {
-        previous.outcome = 'uncertain'; save(dir, state);
-        return previous;
-      }
-      return;
-    }
     if (previous) {
-      if (previous.outcome === 'pending') previous.outcome = 'gone';
-      if (previous.outcome === 'sending') previous.outcome = 'uncertain';
-      delete state.active; save(dir, state);
+      if (observed && previous.launch === binding.fields.launchId && previous.pane === binding.fields.left) {
+        const same = observed !== 'unrecognized' && previous.key === fingerprint(binding, observed);
+        if (previous.outcome === 'pending' && (same || !previous.options.length)) return;
+        if (same && (previous.outcome === 'sending' || previous.outcome === 'uncertain')) {
+          if (previous.outcome === 'uncertain') return;
+          previous.outcome = 'uncertain'; save(dir, state);
+          return previous;
+        }
+        // No observed unblocked state: even an identical menu can be a different request (or the old one).
+        retire(state, previous);
+        const preview = observed === 'unrecognized' ? { text: previous.text, options: [], selected: -1 } : observed;
+        const entry = appendEntry(state, binding, { ...preview, options: [], selected: -1 }, { action: 'main',
+          reason: 'The pane stayed blocked; HUD cannot tell whether this is the same prompt or a new one.' });
+        save(dir, state);
+        return entry;
+      }
+      retire(state, previous); save(dir, state);
     }
-    if (!observed || !key) return;
+    if (!observed || observed === 'unrecognized') return;
     const proof = proofFor(dir, job, status, binding, observed);
     const decision = await classifyPermission(home, proof);
     if (signal.aborted) return;
-    const entry: PermissionEntry = { ...decision, id: `perm-${hash(`${key}\0${Date.now()}\0${state.entries.at(-1)?.id ?? ''}`).slice(0, 16)}`,
-      key, launch: binding.fields.launchId!, pane: binding.fields.left!, at: new Date().toISOString(), text: observed.text,
-      options: observed.selected < 0 ? [] : observed.options, outcome: 'pending' };
-    state.entries = [...state.entries, entry].slice(-MAX_LOG);
-    state.active = entry.id;
-    const fresh = await capture(home, job, binding, signal);
-    if (fresh === null || (fresh && fingerprint(binding, fresh) !== key)) {
-      entry.outcome = 'gone'; delete state.active; save(dir, state);
-      return;
-    }
-    if (decision.action === 'approve') {
-      if (fresh && fingerprint(binding, fresh) === key && !proofFor(dir, job, status, binding, fresh)) {
-        entry.action = 'main'; entry.reason = 'Local path evidence changed before answering.';
+    const entry = appendEntry(state, binding, observed, decision);
+    if (!entry.options.length) {
+      requireManual(entry, 'The visible permission layout could not be verified.');
+    } else if (decision.action === 'approve') {
+      if (proof !== proofFor(dir, job, status, binding, observed)) {
+        requireManual(entry, 'Local path evidence changed before answering.');
       } else {
-        const result = await sendAnswer(home, dir, job, binding, state, entry, 'approve', fresh, signal);
-        if (result.code === 'uncertain') return entry;
+        const result = await sendAnswer(home, dir, job, binding, state, entry, 'approve', observed, signal);
+        if (result.code === 'uncertain' || result.code === 'prompt_changed') return entry;
         if (result.written || result.code === 'gone') return;
-        entry.action = 'main'; entry.reason = 'Could not verify the prompt and its one-time approve option before answering.';
+        requireManual(entry, 'Could not verify the prompt and its one-time approve option before answering.');
       }
     }
     save(dir, state);
-    return entry.action === 'main' && entry.outcome === 'pending' ? entry : undefined;
+    return entry;
   }, { signal });
 }
 
@@ -236,10 +274,11 @@ export async function answerWorkerPermission(home: string, dir: string, job: Job
   return withAbstractLock('worker-permission', dir, async () => {
     const state = ledger(dir, true);
     const entry = current(state);
-    if (!entry || entry.id !== id || entry.action !== 'main') return { ok: false, code: 'permission_not_open' };
+    if (!entry || entry.id !== id || entry.action !== 'main' || !entry.options.length) return { ok: false, code: 'permission_not_open' };
     const binding = getJobIndexCache(home).readSession(job.job);
-    if (!binding || !permissionTarget(binding) || entry.launch !== binding.fields.launchId) {
-      if (entry.outcome === 'pending') { entry.outcome = 'gone'; delete state.active; save(dir, state); }
+    if (!binding || !permissionTarget(binding)) return { ok: false, code: 'prompt_unavailable' };
+    if (entry.launch !== binding.fields.launchId || entry.pane !== binding.fields.left) {
+      if (entry.outcome === 'pending') { retire(state, entry); save(dir, state); }
       return { ok: false, code: 'gone' };
     }
     return sendAnswer(home, dir, job, binding, state, entry, answer, await capture(home, job, binding));
