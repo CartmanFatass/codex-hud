@@ -195,13 +195,15 @@ export function settingsPath(env = process.env): string {
   return resolveHudEnv(env, 'HUD_SETTINGS_PATH') || path.join(getHudHome(env), 'hud-settings.json');
 }
 
-function readSettings(file: string): HudSettings {
+function readSettings(file: string, absentBase?: Partial<HudSettings>): HudSettings {
   try {
     const { bytes, truncated } = readFileBounded(file, MAX_SETTINGS_BYTES, { followSymlinks: true });
     if (truncated) throw new Error('HUD settings file is too large (maximum 64 KiB).');
     return mergeValidated(defaultSettings(), JSON.parse(bytes.toString('utf8')));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return defaultSettings();
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return absentBase ? mergeValidated(defaultSettings(), absentBase) : defaultSettings();
+    }
     throw error;
   }
 }
@@ -237,11 +239,12 @@ export function settingsPatch(original: HudSettings, draft: HudSettings): Partia
   return patch;
 }
 
-/** Validate a patch against existing preferences and atomically replace the file. */
-export function saveSettings(patch: Partial<HudSettings>): HudSettings {
+/** Validate a patch against existing preferences (or absentBase when no file exists) and atomically replace the file. */
+export function saveSettings(patch: Partial<HudSettings>, absentBase?: Partial<HudSettings>): HudSettings {
   const file = settingsPath();
   let current: HudSettings;
-  try { current = loadSettings(); } catch { current = { ...defaultSettings(), decisionApi: decisionApi() }; }
+  try { current = { ...readSettings(file, absentBase), decisionApi: decisionApi() }; }
+  catch { current = { ...defaultSettings(), decisionApi: decisionApi() }; }
   const settings = mergeValidated(current, patch);
   if (settings.decisionApi !== current.decisionApi) {
     const configFile = path.join(getHudHome(), 'config.json'), root = readHudConfig(configFile);

@@ -102,7 +102,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
     try {
       const previous = effects.current();
       const previousWidth = previous.treeWidth;
-      const settings = saveSettings(patch);
+      const settings = saveSettings(patch, draftPage.original);
       const widthChanged = settings.treeWidth !== previousWidth;
       if (settings.impOverflow !== previous.impOverflow || JSON.stringify(settings.roleCaps) !== JSON.stringify(previous.roleCaps)) {
         wakeWatcherIfQueued();
