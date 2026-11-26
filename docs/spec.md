@@ -54,6 +54,9 @@ delegation). (new, 26.02)
   need no display model. Keep idempotent create/send and batch tools. (14.03, 18.06, 21.06, 21.08, 22.01, 22.09, 22.15, 22.25)
 - An unattended service the owner sets up and switches on explicitly keeps configured work moving while nobody is
   at the desk and hands back at the configured points. It is never inferred from the owner's activity or presence. (26.02)
+- A worker's low-risk client permission prompt (confined to its own worktree, task dir, scratchpad or temp, reversible,
+  no network write, secrets, push or install) is answered for it and recorded on the job; any other prompt goes to
+  main with a recommendation and reaches the owner only if main escalates. (26.10)
 - Successful completion requires a matching current-turn report receipt and a finished turn, or native pi settlement
   with a fresh report. Open questions or uncollected children block closure. Silence or a display label cannot fail
   a live worker; the bounded quiet-job rule needs quoted quota evidence to declare failure. Hand uncertainty to main.

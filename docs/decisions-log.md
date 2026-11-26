@@ -7,6 +7,10 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-26
 
+- **D-2026-11-26-10** (§2.1): Owner, after a frontend-imp Claude pane waited on a permission prompt to remove its
+  own scratchpad files: low-risk worker permission prompts are answered for the worker (command confined to the
+  job's worktree, task dir, scratchpad or temp, reversible, no network write, secrets, push or install); anything
+  else goes to main with a recommendation, and reaches the owner only if main escalates. Recorded on the job.
 - **D-2026-11-26-09** (§1 display rule): Owner on the live Execution page: drop the 画面 screen thumbnails on worker
   cards (and the periodic screen reads), and draw the workflow as a metro map: stations are workers, lines are the
   order and dependency logic, state by mark and colour, no per-node text; one detail line for the station under the
