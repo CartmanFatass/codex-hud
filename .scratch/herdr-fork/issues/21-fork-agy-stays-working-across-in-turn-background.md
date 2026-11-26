@@ -1,6 +1,6 @@
 # 21: Fork: agy stays working across in-turn background work
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Live try:** after install, a live agy turn runs `sleep 6` in the background: herdr pane get keeps agent_status working through the wait and emits one change to idle/done within ~1.5 s after the turn ends
 **Blocked by:** none
