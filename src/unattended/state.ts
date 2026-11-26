@@ -1,9 +1,11 @@
 import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { ticketFileEvidence } from '../collectors/ticket-evidence.js';
-import { isTicketQueueId, queueFile, queueIds, readTicketQueue, type TicketHandbackKind, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { completedLandForJob } from '../mcp/land-state.js';
+import { isTicketQueueId, queueCancelled, queueFile, queueIds, readTicketQueue, type TicketHandbackKind, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { readFileBounded, readJsonBounded } from '../utils/atomic-fs.js';
 import { isProcAlive, isValidPid, readBootId } from '../utils/proc.js';
+import { workflowHeaders } from '../workflows/header-scan.js';
 
 export const MAX_OBJECTIVES = 32;
 export const MAX_OPEN_ITEMS = 128;
@@ -125,7 +127,7 @@ export function readOpenHolds(home: string, root?: string): UnattendedHandback[]
   }
 }
 
-export function pinnedHeldJobs(home: string): Set<string> {
+export function pinnedHeldJobs(home: string, pass = workflowHeaders(home)): Set<string> {
   const pinned = new Set<string>();
   try {
     for (const q of indexedRuns(home)) {
@@ -136,6 +138,21 @@ export function pinnedHeldJobs(home: string): Set<string> {
       }
     }
   } catch { /* Unreadable index gives no extra pins. */ }
+  for (const file of pass.files) {
+    if (!file.endsWith('.json') || !isTicketQueueId(file.slice(0, -5))) continue;
+    try {
+      const q = pass.header<TicketQueue>(file);
+      if (!q || q.unattended || !isOpenTicketRun(q) || q.superseded_by || queueCancelled(home, q)) continue;
+      for (const item of q.tickets ?? []) {
+        if (!item.job || !item.held || item.landed || itemClosed(item.path)) continue;
+        // Keep the evidence until resolution is recorded. A successor may still be processing the hold.
+        let landed = false;
+        try { landed = !!completedLandForJob(home, item.job, pass); }
+        catch { /* Unreadable land evidence does not clear a hold. */ }
+        if (!landed) pinned.add(item.job);
+      }
+    } catch { /* Ignore an unreadable queue, not other holds. */ }
+  }
   return pinned;
 }
 

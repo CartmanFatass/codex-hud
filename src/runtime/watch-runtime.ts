@@ -711,7 +711,7 @@ function scan(retryWatch = false) {
   };
   const listedIds = jobCache.listJobIds({ onError: (error) => { throw error; } });
   const liveIds = new Set(listedIds);
-  const heldJobs = pinnedHeldJobs(home);
+  const heldJobs = pinnedHeldJobs(home, flows);
   const orphans = new Set<string>();
   const watch = (dir: string, pid: number) => { nearest = Math.min(nearest, runners.watch(dir, pid)); };
   for (const id of listedIds) {
@@ -754,6 +754,8 @@ function scan(retryWatch = false) {
         knownWorktrees.add(job.worktree.root);
         knownWorktreeRoots.add(job.worktree.main_root);
       }
+      const held = heldJobs.has(id);
+      if (held) markBusy(job); // A continuation may share a held source worktree.
       if (isShellLaunchedWorker(session?.fields) && !job?.reaped_at) {
         markBusy(job);
         warn(`legacy worker ${id}`, `${id}: ${SHELL_WORKER_UNSUPPORTED}`);
@@ -1036,7 +1038,6 @@ function scan(retryWatch = false) {
         continue;
       }
       const readClose = Boolean(resumeReadReap || readInGrace);
-      const held = heldJobs.has(id);
       if (job && !held && (status.state === 'done' || !tab || job.reaped_at)) pruneJobLogs(dir, job, status, Date.now());
       if (!readClose && !['closed', 'failed', 'stopped'].includes(status.state ?? '')) continue;
       if (status.state === 'failed' && job && !job.exhaustion_marked) {
@@ -1058,7 +1059,7 @@ function scan(retryWatch = false) {
       const launchUnknown = Boolean(job?.launch_unknown || status.launch_unknown || status.exit_reason === 'launch_unknown');
       const worktreeSafe = Boolean(!launchUnknown && (job?.reaped_at || (!session && (job?.dispatch_exit_code ?? 0) > 0)));
       if (!worktreeSafe || resumable) markBusy(job);
-      // With a tab, wait for successful reap; keep the checkout available for native resume or open unattended holds.
+      // With a tab, wait for successful reap; keep the checkout available for native resume or open owner holds.
       if (worktreeSafe && !resumable && !checkingReport && !landing && !held && job?.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
         const root = job.worktree.main_root;
         let pending = !job.worktree_kept_reason;

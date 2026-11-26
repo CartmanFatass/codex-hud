@@ -646,6 +646,8 @@ Pi tab workers have no such runner; their liveness and pending stop/read-close c
 A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited; worker still running"); the watcher rechecks this unsupervised worker with exponential backoff.
 `hud_send` to it starts a new supervisor.
 Settled directories, including reports and `hud_read` access, normally expire **one day after closure** on a later watcher scan, not a dedicated expiry timer.
+An unresolved owner hold in a current ordinary ticket queue keeps the source job, report and worktree until the hold is resolved or the run is stopped or superseded.
+To resolve it by landing manually, wait for `hud_land({job})` to succeed before resuming with `hud_tickets({op: "run", feature})`. The successor includes the ticket in milestone review and acceptance using that job's completed land receipt, not the ticket's status.
 A headless pi job with a native session file stored only in its job directory stays for at least **seven days after settlement**.
 Before deleting a legacy pi job it moves real JSONL sessions to pi's store; CLI and browser sessions stay in their own stores.
 Invalid cwd, destination conflicts or failed moves retain the job.

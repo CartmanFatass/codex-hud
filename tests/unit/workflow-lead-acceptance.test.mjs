@@ -200,6 +200,69 @@ test('an assumption lead hold records head/sig; same-report resume stays paused 
   assert.equal(done.verdict, 'finish: Verified corrected turn.');
 });
 
+test('a single held ticket manually landed before resume is reviewed and accepted by the successor', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: { '01-synthetic.md': goodTicket(1, { ownerTry: 'yes' }) } });
+  const runArgs = { op: 'run', feature: 'sample', cwd: f.root };
+  const { flow } = await f.call('hud_tickets', runArgs);
+  const [job] = await f.jobs(flow, 1);
+  await f.settle(job, { report: 'Done.\nAssumed: [scope] removed the old command.\n' });
+  await until(() => f.flow(flow).active_lead?.kind === 'assumption', 15_000);
+  await f.settleLead(f.flow(flow).active_lead.job, 'Decision: hold\nReason: Deletes a user-visible command.\nOwner approval: feature-deletion\n');
+  const paused = await f.end(flow);
+  assert.equal(paused.state, 'paused');
+  assert.equal(paused.tickets[0].held.owner_approval, 'feature-deletion');
+
+  const manual = await f.call('hud_land', { job });
+  await until(() => f.flow(manual.flow).state === 'completed', 20_000);
+  assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* ready-for-human/);
+  assert.equal(f.flow(flow).tickets[0].landed, undefined, 'the paused run has not observed the land');
+
+  const resumed = await f.call('hud_tickets', runArgs);
+  assert.notEqual(resumed.flow, flow);
+  await until(() => Boolean(f.flow(resumed.flow).review_job), 15_000);
+  const q = f.flow(resumed.flow);
+  assert.deepEqual(q.tickets.map(x => [x.ticket, x.job, x.land, x.landed, x.held]), [['sample/01', job, manual.flow, true, undefined]]);
+  assert.match(fs.readFileSync(join(f.dir(q.review_job), 'brief.md'), 'utf8'), /Landed tickets and design intent:\s+- sample\/01:/);
+  await f.settleReview(q.review_job);
+  await until(() => f.flow(resumed.flow).active_lead?.kind === 'accept', 15_000);
+  const lead = f.flow(resumed.flow).active_lead.job;
+  assert.match(fs.readFileSync(join(f.dir(lead), 'brief.md'), 'utf8'), /Tickets, Live Try & Reports\s+- sample\/01:/);
+  await f.settleLead(lead, 'Decision: finish\nReason: Verified manual land.\n');
+  const done = await f.end(resumed.flow);
+  assert.equal(done.state, 'completed');
+  assert.equal(done.verdict, 'finish: Verified manual land.');
+  assert.match(done.notices['end-0'], /Landed: sample\/01\./);
+});
+
+test('resume does not treat closed held tickets as landed without a completed receipt for their own job', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: {
+    '01-synthetic.md': goodTicket(1, { status: 'done' }),
+    '02-synthetic.md': goodTicket(2, { status: 'ready-for-human' }),
+    '03-synthetic.md': goodTicket(3, { status: 'done' }),
+  } });
+  const flow = 'q0000000000000001', flows = join(f.home, 'flows'), at = new Date().toISOString();
+  fs.mkdirSync(flows, { recursive: true });
+  const tickets = [1, 2, 3].map(n => ({
+    ticket: `sample/0${n}`, path: join(f.root, f.ticketPath(n)), role: 'imp',
+    job: `j000000000000000${n}`, held: { reason: 'Owner approval', at, owner_approval: 'feature-deletion' },
+  }));
+  writeFixtureFile(join(flows, `${flow}.json`), JSON.stringify({
+    flow, root: f.root, pane: f.env.HERDR_PANE_ID, feature: 'sample', task: false, max_parallel: 1,
+    state: 'paused', created_at: at, updated_at: at, tickets,
+  }));
+  // No receipt for 01; 02's land failed; the completed receipt in 03's family belongs to another job.
+  for (const [n, job, state] of [[2, tickets[1].job, 'failed'], [3, 'j0000000000000009', 'completed']]) {
+    const land = `f000000000000000${n}`;
+    writeFixtureFile(join(flows, `${land}.json`), JSON.stringify({ flow: land, job, state, step: 'done' }));
+  }
+  const resumed = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root });
+  const done = await f.end(resumed.flow);
+  assert.equal(done.state, 'completed');
+  assert.deepEqual(done.tickets, []);
+  assert.equal(done.review_job, undefined);
+  assert.equal(done.verdict, undefined);
+});
+
 test('an ordinary run with a landed ticket and a held item never reaches review or finish; head-only change re-judges on resume', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, {
     tickets: {

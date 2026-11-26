@@ -154,6 +154,10 @@ export function landAttempt(home: string, job: string, pass?: HeaderPass) {
   }
   return { flow, prior, cleanup };
 }
+export function completedLandForJob(home: string, job: string, pass?: HeaderPass) {
+  const { prior } = landAttempt(home, job, pass);
+  return prior?.job === job && prior.state === 'completed' ? prior : null;
+}
 export async function updateLandFlakeCollection(home: string, flowId: string, collection: LandFlakeCollection): Promise<LandFlow | null> {
   if (!isFlowId(flowId)) return null;
   return runLock(home, flowId, () => {

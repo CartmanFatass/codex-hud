@@ -1006,7 +1006,7 @@ function tickTicketQueue(
     if (item.held) {
       if (q.unattended) continue;
       const heldLand = item.job ? landAttempt(hudHome, item.job).prior : null;
-      if (heldLand && (heldLand.state === 'completed' || activeLand(heldLand))) {
+      if (heldLand && heldLand.job === item.job && (heldLand.state === 'completed' || activeLand(heldLand))) {
         delete item.held;
         changed = true;
       } else if (heldItemChanged(item)) {
@@ -1029,7 +1029,7 @@ function tickTicketQueue(
     const land = !item.land || (item.dispatch_queue && recorded?.ticket_queue !== q.flow)
       ? landAttempt(hudHome, item.job).prior : recorded;
     let retry: string | undefined;
-    if (land) {
+    if (land?.job === item.job) {
       if (item.land !== land.flow) { item.land = land.flow; changed = true; }
       if (land.state === 'completed') {
         item.landed = true; item.base_moves = land.base_moves; changed = true;

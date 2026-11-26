@@ -164,6 +164,56 @@ for (const scenario of ['merged', 'picked', 'picked later', 'amended', 'dirty', 
   }
 });
 
+test('ordinary owner holds keep expired jobs, reports and worktrees until resolved, stopped or superseded', (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'watch-owner-hold-'));
+  cleanupFixture(t, { root: home });
+  const hud = join(home, 'hud'), flows = join(hud, 'flows'), main_root = initRepo(home);
+  fs.mkdirSync(flows, { recursive: true });
+  const at = new Date(Date.now() - 48 * 3600_000).toISOString();
+  const putQueue = q => writeFixtureFile(join(flows, `${q.flow}.json`), JSON.stringify(q));
+  const seed = (n, held) => {
+    const job = `j000000000000000${n}`, flow = `q000000000000000${n}`, path = join(home, `ticket-${n}.md`);
+    writeFixtureFile(path, '**Status:** ready-for-agent\n');
+    const dir = writeJob(hud, job, '', 'imp', { state: 'closed', ended_at: at, output_written: true }, true);
+    const q = { flow, state: held ? 'paused' : 'completed', root: main_root, feature: `synthetic-${n}`, created_at: at,
+      tickets: [{ ticket: `synthetic-${n}/01`, path, job, role: 'imp', ...(held && { held: { at, reason: 'Owner approval', owner_approval: 'feature-deletion' } }) }],
+    };
+    putQueue(q);
+    return { job, dir, q };
+  };
+  const resolved = seed(1, true), stopped = seed(2, true), superseded = seed(3, true), ordinary = seed(4, false);
+  const name = `imp-${resolved.job.slice(-6)}`, root = join(home, 'demo-wt', name), branch = `wt/${name}`;
+  const base_head = git(main_root, 'rev-parse', 'HEAD');
+  git(main_root, 'worktree', 'add', '-qb', branch, root, base_head);
+  const receipt = join(resolved.dir, 'job.json');
+  writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt, 'utf8')), cwd: root, reaped_at: at,
+    worktree: { main_root, root, branch, base_head },
+  }));
+  const scan = () => {
+    const watcher = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
+      env: { ...process.env, HOME: home, HUD_HOME: hud }, encoding: 'utf8', timeout: 10000,
+    });
+    assert.equal(watcher.status, 0, watcher.stderr || String(watcher.error));
+  };
+
+  scan();
+  for (const { dir } of [resolved, stopped, superseded]) {
+    assert.ok(fs.existsSync(join(dir, 'job.json')));
+    assert.ok(fs.existsSync(join(dir, 'report.md')));
+  }
+  assert.ok(fs.existsSync(root), 'hold protects a checkout otherwise eligible for cleanup');
+  assert.equal(fs.existsSync(ordinary.dir), false, 'a completed job without a hold still ages out');
+
+  // The matching land resolves the first hold even if the ticket status did not change.
+  const land = `f${resolved.job.slice(1)}`;
+  writeFixtureFile(join(flows, `${land}.json`), JSON.stringify({ flow: land, job: resolved.job, state: 'completed', step: 'done' }));
+  putQueue({ ...stopped.q, state: 'cancelled' });
+  putQueue({ ...superseded.q, superseded_by: 'q0000000000000009' }); // The successor need not still be on disk.
+  scan();
+  for (const { dir } of [resolved, stopped, superseded]) assert.equal(fs.existsSync(dir), false);
+  assert.equal(fs.existsSync(root), false);
+});
+
 test('watcher preserves a shared worktree while a continuation job is active and removes it once both finish', { timeout: 30000 }, async (t) => {
   const home = fs.mkdtempSync(join(tmpdir(), 'watch-shared-wt-'));
   let watcher, exited;

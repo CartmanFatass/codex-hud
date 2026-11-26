@@ -17,6 +17,7 @@ import { freezeGraph, runDir, runLock } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import { ESCALATION_RULE, isOpenTicketRun } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
+import { completedLandForJob } from './land-state.js';
 import { checkFeatureTickets, checkTicketPaths, declaredReadyTickets, ticketObjectiveOwner, ticketReadiness } from './local-tickets.js';
 import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
 import { BUNDLED_ROOT } from './paths.js';
@@ -244,15 +245,25 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       epoch: 0, settled: 0, streak: 0, failures: 0, notices: {},
       steps: Object.fromEntries(Object.keys(graph.steps).map(id => [id, { state: 'waiting' as const }])),
       dispatcher: resumed ? resumed.dispatcher : dispatcher,
-      state: 'working', tickets: resumed?.tickets.filter(item => item.landed || (!launchFailed(home, item.job) && !ticketClosed(item.path)))
-        .map(item => ({
-          ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow,
-          // Approve the report that caused the pause, not whatever the worker has published since.
-          ...(handback?.assumption && !item.held && handback.ticket === item.ticket && handback.job === item.job && {
-            approved_assumptions_head: handback.assumption.head,
-            approved_assumptions_sig: handback.assumption.report_sig,
-          }),
-        })) ?? [] };
+      state: 'working', tickets: resumed?.tickets.flatMap(item => {
+        const next = { ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow };
+        // A manual land can close the ticket before the successor has observed the receipt.
+        const land = item.held && item.job ? completedLandForJob(home, item.job) : null;
+        if (land) {
+          next.land = land.flow;
+          next.landed = true;
+          next.base_moves = land.base_moves;
+          delete next.held;
+        } else if (!item.landed && (launchFailed(home, item.job) || ticketClosed(item.path))) {
+          return [];
+        }
+        // Approve the report that caused the pause, not whatever the worker has published since.
+        if (handback?.assumption && !item.held && handback.ticket === item.ticket && handback.job === item.job) {
+          next.approved_assumptions_head = handback.assumption.head;
+          next.approved_assumptions_sig = handback.assumption.report_sig;
+        }
+        return [next];
+      }) ?? [] };
     if (readiness?.queued.length) q.queued = readiness.queued;
     if (readiness?.blocked.length) q.blocked = readiness.blocked;
     fs.mkdirSync(runDir(home, flow), { mode: 0o700, recursive: true });
