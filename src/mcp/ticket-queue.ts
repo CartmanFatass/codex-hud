@@ -320,7 +320,10 @@ export async function answerTicketQueueHandback(
       return { ok: false, code: 'flow_not_found', error: `Ticket queue ${id} not found` };
     }
     if (cur.state === 'working' && cur.handback?.kind === 'blocker') {
-      const item = blockerHandbackItem(cur, opts.requestId ?? cur.handback.request_id);
+      if (!opts.requestId) {
+        return { ok: false, code: 'invalid_arguments', error: `Resuming an item hold in ${id} requires request_id from the hold notice` };
+      }
+      const item = blockerHandbackItem(cur, opts.requestId);
       if (!item?.held?.head || !item.held.report_sig) {
         return { ok: false, code: 'no_pending_handback', error: `Ticket queue ${id} has no matching item hold` };
       }

@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { JOB_RETENTION_MS } from '../../dist/runtime/work-retention.js';
+import { extractReportNotes } from '../../dist/mcp/workflow-lead.js';
 import { pinnedQueueJobs } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
@@ -189,6 +190,130 @@ test('a blocker escalation holds just its ticket and dependent; an independent t
   assert.equal(f.job(dependent).ticket, 'sample/02');
   assert.deepEqual(f.flow(flow).tickets.filter(x => x.landed).map(x => x.ticket), ['sample/01', 'sample/03']);
   assert.deepEqual(f.flow(flow).decisions.map(d => [d.kind, d.decision]), [['blocker', 'escalate'], ['blocker', 'resume']]);
+});
+
+test('extractReportNotes parses heading/empty Blockers, qualified none, try notes with detail, and mixed blockers', () => {
+  // Heading-plus-bullet and empty declarations never clear silently.
+  assert.deepEqual(
+    extractReportNotes('## Blockers:\n- Owner must decide on deleting X\n\nRemoves: none\n'),
+    { blockers: ['Owner must decide on deleting X'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('## Blockers\n\n- Owner must decide on deleting X\n- owner live try remains: reopen the panel\n\n## Checks\n- passed\n'),
+    { blockers: ['Owner must decide on deleting X'], tries: ['owner live try remains: reopen the panel'] },
+  );
+  assert.equal(extractReportNotes('Blockers:\nRemoves: none\n').blockers.length, 1);
+  assert.equal(extractReportNotes('## Blockers\n\nRemoves: none\n').blockers.length, 1);
+  assert.deepEqual(extractReportNotes('## Blockers\n- none\n'), { blockers: [], tries: [] });
+
+  // Qualified none clears and preserves any try note.
+  assert.deepEqual(extractReportNotes('Blockers: none requiring an owner decision.\n'), { blockers: [], tries: [] });
+  assert.deepEqual(
+    extractReportNotes('Blockers: none (owner live try remains)\n'),
+    { blockers: [], tries: ['owner live try remains'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: none - only the live try\n'),
+    { blockers: [], tries: ['only the live try'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: none (owner live try remains: reopen the panel)\n'),
+    { blockers: [], tries: ['owner live try remains: reopen the panel'] },
+  );
+  // Caveated none naming an owner decision still blocks.
+  assert.deepEqual(
+    extractReportNotes('Blockers: none - owner must decide on deleting X\n'),
+    { blockers: ['none - owner must decide on deleting X'], tries: [] },
+  );
+
+  // Pending-try phrase with detail is a try note; mixed decision text still blocks.
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: reopen the panel\n'),
+    { blockers: [], tries: ['owner live try remains: reopen the panel'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: live try remains and the owner must decide on deleting X\n'),
+    { blockers: ['live try remains and the owner must decide on deleting X'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: owner must decide on deleting X\n'),
+    { blockers: ['owner live try remains: owner must decide on deleting X'], tries: [] },
+  );
+});
+
+test('qualified none and try-with-detail Blockers land without a lead while recording try notes in run todo', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: {
+    '01-qualified-none.md': goodTicket(1),
+    '02-try-detail.md': goodTicket(2, { blocked: 'none' }),
+  } });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, max_parallel: 2, handback_to: 'main' });
+  const [job1, job2] = await f.jobs(flow, 2);
+  await f.settle(job1, { report: 'Done.\nBlockers: none requiring an owner decision.\nRemoves: none\n' });
+  await f.settle(job2, {
+    report: 'Done.\nBlockers: none (owner live try remains)\nBlockers: owner live try remains: reopen the synthetic panel\nRemoves: none\n',
+  });
+  await until(() => f.flow(flow).tickets.filter(x => x.landed).length === 2, 15_000);
+  const q = f.flow(flow);
+  const leads = fs.readdirSync(join(f.home, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id)).map(f.job).filter(j => j.role === 'lead');
+  assert.equal(leads.length, 0, 'qualified none and try-with-detail must land without launching a lead');
+  assert.deepEqual(
+    q.todo.filter(item => item.kind === 'try').map(item => item.text),
+    ['owner live try remains', 'owner live try remains: reopen the synthetic panel'],
+  );
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
+});
+
+test('heading-plus-bullet and mixed-try Blockers reach the lead; item-hold resume requires request_id and targets only that hold', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: {
+    '01-heading-blocker.md': goodTicket(1),
+    '02-mixed-try-blocker.md': goodTicket(2, { blocked: 'none' }),
+  } });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, max_parallel: 2 });
+  const [job1, job2] = await f.jobs(flow, 2);
+
+  await f.settle(job1, { report: '## Blockers:\n- Owner must decide on deleting legacy flag X\n\nRemoves: none\n' });
+  await until(() => f.flow(flow).active_lead?.kind === 'blocker' && f.flow(flow).active_lead.ticket === 'sample/01', 15_000);
+  const lead1 = f.flow(flow).active_lead.job;
+  assert.match(fs.readFileSync(join(f.dir(lead1), 'brief.md'), 'utf8'), /Worker Blockers: lines:\n- Owner must decide on deleting legacy flag X/);
+  await f.settleLead(lead1, 'Decision: escalate\nReason: Deleting X needs owner decision.\nOwner approval: feature-deletion\n');
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.held?.request_id === lead1, 15_000);
+
+  await f.settle(job2, { report: 'Blockers: live try remains and the owner must decide on deleting Y\nRemoves: none\n' });
+  await until(() => f.flow(flow).active_lead?.kind === 'blocker' && f.flow(flow).active_lead.ticket === 'sample/02', 15_000);
+  const lead2 = f.flow(flow).active_lead.job;
+  assert.match(fs.readFileSync(join(f.dir(lead2), 'brief.md'), 'utf8'), /Worker Blockers: lines:\n- live try remains and the owner must decide on deleting Y/);
+  await f.settleLead(lead2, 'Decision: escalate\nReason: Deleting Y needs owner decision.\nOwner approval: feature-deletion\n');
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/02')?.held?.request_id === lead2, 15_000);
+
+  // Two holds are open: ID-less resume must be refused and leave both holds untouched.
+  const noIdTwo = await f.call('hud_respond', { job: flow, answer: 'resume: Approved.' });
+  assert.equal(noIdTwo.ok, false);
+  assert.equal(noIdTwo.code, 'invalid_arguments');
+  assert.deepEqual(
+    f.flow(flow).tickets.filter(x => x.held).map(x => [x.ticket, x.held.request_id]),
+    [['sample/01', lead1], ['sample/02', lead2]],
+  );
+
+  // Explicit request_id resumes only the second hold and leaves the first held.
+  const resumedSecond = await f.call('hud_respond', { job: flow, request_id: lead2, answer: 'resume: Owner approved Y.' });
+  assert.equal(resumedSecond.ok, true);
+  assert.equal(resumedSecond.handback.request_id, lead1);
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/02')?.landed === true, 15_000);
+  assert.equal(f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.held?.request_id, lead1);
+  assert.equal(f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.landed, undefined);
+
+  // Even with one hold left, ID-less resume is still refused.
+  const noIdOne = await f.call('hud_respond', { job: flow, answer: 'resume' });
+  assert.equal(noIdOne.ok, false);
+  assert.equal(noIdOne.code, 'invalid_arguments');
+  assert.equal(f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.held?.request_id, lead1);
+
+  // Resuming with lead1 clears the remaining hold and lands ticket 01.
+  const resumedFirst = await f.call('hud_respond', { job: flow, request_id: lead1, answer: 'resume: Owner approved X.' });
+  assert.equal(resumedFirst.ok, true);
+  assert.equal(resumedFirst.handback, undefined);
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.landed === true, 15_000);
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 });
 
 test('an assumption lead hold records head/sig; same-report resume stays paused with resolution notice; corrected turn re-judges and lands', { timeout: 60_000 }, async t => {
