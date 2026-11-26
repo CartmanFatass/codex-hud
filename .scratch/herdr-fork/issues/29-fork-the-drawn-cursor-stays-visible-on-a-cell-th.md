@@ -1,6 +1,6 @@
 # 29: fork: the drawn cursor stays visible on a cell the app already shows in reverse video
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Live try:** After install, the input prompt cursor is visible in a Claude Code pane inside herdr (focused and unfocused panes).
 **Blocked by:** none
