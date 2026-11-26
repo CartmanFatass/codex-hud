@@ -98,10 +98,7 @@ test('even quota goes between approval and HUD load in all bar looks until the p
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const bin = join(home, 'bin');
   fs.mkdirSync(bin);
-  // Headless Sonic uses pi directly; Imp still uses pi-role.
-  for (const runner of ['pi', 'pi-role']) {
-    fs.writeFileSync(join(bin, runner), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
-  }
+  fs.writeFileSync(join(bin, 'pi'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   fs.mkdirSync(join(home, 'roles'));
   const pi = (model: string) => ({ harness: 'pi', model: `synthetic/${model}` });
   const fast = pi('fast'), small = pi('small'), backup = pi('backup');

@@ -10,8 +10,7 @@ with `pi -e`, or two footers run. The binding names the installed tree (checkout
 extracted release), HUD home and Node executable directly; there is no release
 manifest, digest or version pin. `./install` builds the tree before registering.
 Each manifest selects only its own extension (plus the skills in the delegation
-package), never `hud-footer.ts`,
-managed `hud-delegate.ts` or the worker-only `integrations/pi/worker.ts`.
+package). Core installs the separate worker entry points under `$HUD_HOME/pi-worker/` without registering them in interactive pi.
 Host pi libraries are peers, never bundled dependencies. No dotfile is shipped.
 
 ## Behavior
@@ -106,7 +105,7 @@ Status strings are bounded to 160 columns; the port's original width/drop priori
 ```
 
 Both `$HUD_HOME/pi-package` and `$HUD_HOME/pi-display` are registered with `pi install`
-(workers run plain with `pi-role -ne` and load neither).
+(HUD workers launch pi with `-ne` and load neither).
 The installer backs up `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/settings.json`
 once to `settings.json.hud-backup` before changing it or running pi registration.
 It adds `-extensions/p10k-footer.ts` to the top-level `extensions` array, preserving

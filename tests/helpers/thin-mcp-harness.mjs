@@ -64,7 +64,7 @@ export function rolePlacesFixture(t, { withPi = true } = {}) {
   return startFixture(t, { routingOnly: true, withPi });
 }
 
-async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false }) {
+async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, worker = false, routingOnly = false, withPi = true, path = process.env.PATH, failedRetentionMs = 1000, clockScale = 20, mcpEntry = entry, mcpJson = true, autoPrewalk = false }) {
   const root = fs.mkdtempSync(join(tmpdir(), routingOnly ? 'role-places-' : 'thin-mcp-'));
   const cleanups = [];
   cleanupFixture(t, { root, hudHome: join(root, 'hud_home') }, async () => {
@@ -80,27 +80,15 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   // The fake shebang finds this Node even on the routing fixture's closed PATH.
   fs.symlinkSync(process.execPath, join(bin, 'node'));
   const commands = ['hud-reap', 'herdr', 'jev-ask', 'jev-aistudio', 'jev-flow', 'grok', 'agy', 'claude', 'codex'];
-  if (withPi) commands.push('pi-role', 'pi');
-  if (!routingOnly) commands.push('pi-dispatch');
-  for (const command of commands) {
-    const path = join(bin, command);
-    // The roster resolves these launchers' real paths to locate the adjacent roles directory.
-    if (command === 'pi-role' || command === 'pi-dispatch')
-      fs.writeFileSync(path, `#!/bin/sh\nexec node "$FAKE_BIN" ${command} "$@"\n`, { mode: 0o700 });
-    else fs.symlinkSync(fakeBin, path);
-  }
-  fs.mkdirSync(join(root, 'roles'));
-  fs.writeFileSync(join(root, 'roles', 'implementer.md'), routingOnly
-    ? '---\nmodel: gpt-6.1-sol\nthinking: high\n---\n'
-    : '---\nmodel: synthetic/default\nthinking: low\n---\n');
-  if (routingOnly) fs.writeFileSync(join(root, 'roles', 'reviewer.md'), '---\nmodel: anthropic/opus\nthinking: high\n---\n');
+  if (withPi) commands.push('pi');
+  for (const command of commands) fs.symlinkSync(fakeBin, join(bin, command));
   const env = {
     ...process.env,
     HUD_MCP_SURFACE: 'roles',
     HUD_MCP_JSON: '1',
     HUD_WATCH_FAILED_RETENTION_MS: String(failedRetentionMs),
     ...(watcherTickMs ? { HUD_WATCH_CLI_CHECK_MS: String(watcherTickMs) } : {}),
-    PATH: routingOnly ? bin : `${bin}:${process.env.PATH}`,
+    PATH: routingOnly ? bin : `${bin}:${path}`,
     FAKE_BIN: fakeBin,
     FAKE_LOG: log,
     // Node fetch must reach the fixture's loopback Decision server, not the caller's HTTP proxy.

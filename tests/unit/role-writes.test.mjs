@@ -31,7 +31,7 @@ function makeSandbox(t) {
   fs.mkdirSync(hud, { recursive: true });
   fs.mkdirSync(cwd, { recursive: true });
   fs.mkdirSync(bin, { recursive: true });
-  for (const cmd of ['pi-role', 'herdr', 'agy', 'claude', 'codex', 'grok', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
+  for (const cmd of ['pi', 'herdr', 'agy', 'claude', 'codex', 'grok', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
     fs.writeFileSync(join(bin, cmd), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   }
   return { root, hud, cwd, bin, env: { PATH: bin }, stops };

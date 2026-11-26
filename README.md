@@ -15,8 +15,8 @@ Inspired by [claude-hud](https://github.com/jarrodwatts/claude-hud).
 ## Quick Start
 
 Requires **Node ≥24.0.0** (Node 24 is the tested supported line), npm, and the clients
-you select. Codex's tmux bar also needs tmux. Jobs need herdr, pi and separately installed
-**pi-roles** on PATH; browser roles need their external **jev-*** CLIs configured.
+you select. Codex's tmux bar also needs tmux. Tab jobs need `herdr`; pi workers need `pi` on PATH.
+Browser roles need their external **jev-*** CLIs configured.
 The installer does not install/authenticate those tools. See the
 [Node floor evidence](./docs/ARCHITECTURE.md#3-launch-and-installation).
 
@@ -131,7 +131,7 @@ The [main-session MCP](./docs/reference.md#universal-cli-and-mcp) exposes
 settlement notices instead of `hud_wait`.
 
 Start with `hud_roster` for roles, available places and the dispatch convention;
-pass `detail: true` for accepted launch options. Roles can use external pi-roles,
+pass `detail: true` for accepted launch options. Roles can use the HUD's native pi worker,
 CLI places (`claude`, `codex`, `agy`, `grok`), or browser places (`jev-ask`,
 `jev-aistudio`, `jev-flow`). There is no automatic role chaining.
 Use `hud_tickets` for the ticket method. Landing records `done` if `Owner try`

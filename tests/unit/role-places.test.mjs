@@ -168,7 +168,9 @@ test('provider attribution uses local settings or the unfiltered cache; unknown 
   fs.mkdirSync(join(home, 'roles'));
   put(join(home, 'roles', 'defaulted.json'), { role: 'defaulted', instructions: 'implementer', can_continue: true,
     run: [{ harness: 'pi', pi_role: 'general' }] });
-  const unknown = await roster('imp'); // frontmatter has a bare ID and there is no cache yet
+  put(join(home, 'roles', 'imp.json'), { role: 'imp', instructions: 'implementer', can_continue: true,
+    run: [{ harness: 'pi', pi_role: 'implementer', model: 'gpt-6.1-sol' }] });
+  const unknown = await roster('imp'); // The place names a bare ID and there is no cache yet.
   assert.equal(unknown.provider, null);
   assert.equal(unknown.state, 'active');
   const fresh = await create('imp', 'without-cache');
@@ -212,7 +214,7 @@ function ownImp(f) {
   }));
 }
 
-test('imp falls back to agy when pi-role is missing on PATH', { timeout: 10000 }, async (t) => {
+test('imp falls back to agy when pi is missing on PATH', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, { withPi: false });
   ownImp(f);
   const roster = await f.call('hud_roster', { detail: true });
@@ -252,7 +254,7 @@ test('quota failure marks pi exhausted for 1h, names next place, and falls back 
   assert.match(read.reason, /next dispatch will use cli\/agy \(gemini-4-hydrogen-high\)/);
 
   const marks = readExhausted(f.env.HUD_HOME);
-  assert.equal(marks.has('pi:gpt-6.1-sol'), true);
+  assert.equal(marks.has('pi:openai/gpt-6.2-sol'), true);
 
   const roster = await f.call('hud_roster', { detail: true });
   const imp = roster.roles.find((r) => r.role === 'imp');
@@ -264,7 +266,7 @@ test('quota failure marks pi exhausted for 1h, names next place, and falls back 
     args: [],
   });
   assert.equal(imp.exhausted.length, 1);
-  assert.equal(imp.exhausted[0].key, 'pi:gpt-6.1-sol');
+  assert.equal(imp.exhausted[0].key, 'pi:openai/gpt-6.2-sol');
 
   fs.unlinkSync(join(f.env.HOME, 'pi-quota-fail'));
   const second = await f.call('hud_create', { role: 'imp', request_key: 'pi-quota-2', task: 'Synthetic task 2.' });
@@ -324,7 +326,7 @@ test('exhausted marks expire at the parsed reset, or after 1 hour when no reset 
 test('hud_roster drops expired exhausted marks when queried through hud-mcp', { timeout: 10000 }, async (t) => {
   const f = await fixture(t, { withPi: true });
   ownImp(f);
-  markExhausted(f.env.HUD_HOME, 'pi:gpt-6.1-sol', 'rate limit', Date.now() - 2 * EXHAUSTED_TTL_MS);
+  markExhausted(f.env.HUD_HOME, 'pi:openai/gpt-6.2-sol', 'rate limit', Date.now() - 2 * EXHAUSTED_TTL_MS);
 
   const roster = await f.call('hud_roster', { detail: true });
   const imp = roster.roles.find((r) => r.role === 'imp');
@@ -498,7 +500,7 @@ test('legacy role files including harness: jev load and deleted names are absent
     fs.mkdirSync(join(hud, 'roles'), { recursive: true });
     fs.mkdirSync(cwd, { recursive: true });
     fs.mkdirSync(bin, { recursive: true });
-    for (const cmd of ['pi-role', 'jev-ask']) fs.writeFileSync(join(bin, cmd), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+    for (const cmd of ['pi', 'jev-ask']) fs.writeFileSync(join(bin, cmd), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
     fs.writeFileSync(
       join(hud, 'roles', 'old-jev.json'),
       JSON.stringify({ role: 'old-jev', harness: 'jev', tool: 'jev-ask', provider: 'gemini' })

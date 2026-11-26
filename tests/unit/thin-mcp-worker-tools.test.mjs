@@ -273,11 +273,10 @@ test('a working pi parent gets native sonic notices unless already collecting th
   const task = sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic pi parent.' });
   const native = spawnSync(process.execPath, ['--input-type=module', '-e', `
-    import hud from ${JSON.stringify(new URL('../../integrations/pi/package/extensions/hud.mjs', import.meta.url).href)};
+    import hud from ${JSON.stringify(new URL('../../integrations/pi/worker/hud-worker.mjs', import.meta.url).href)};
     import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
     import { join } from 'node:path';
     import assert from 'node:assert/strict';
-    process.argv.push('--hud-worker-tools');
     const tools = new Map(), notice = Promise.withResolvers(), checkpoint = Promise.withResolvers(), sent = [];
     await hud({ on() {}, registerTool(tool) { tools.set(tool.name, tool); },
       sendMessage(message, options) { sent.push(message); notice.resolve({ message, options }); } });

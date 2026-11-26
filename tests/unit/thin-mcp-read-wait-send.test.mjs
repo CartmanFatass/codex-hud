@@ -93,7 +93,7 @@ try {
     assert.equal(roster.convention.text, convention);
     const imp = roster.roles.find((r) => r.role === 'imp' && r.available);
     assert.equal(imp.can_continue, true);
-    assert.deepEqual(imp.runs_on, { harness: 'pi', pi_role: 'implementer', model: 'synthetic/default', thinking: 'low' });
+    assert.deepEqual(imp.runs_on, { harness: 'pi', pi_role: 'implementer', model: 'openai/gpt-6.2-sol', thinking: 'high' });
     let repeated, collected;
     for (const request_key of ['lean-first', 'lean-repeat']) {
       const created = await call('hud_create', { role: imp.role, cwd: f.root, request_key, task: 'Synthetic task: 新 report.' });
@@ -123,8 +123,8 @@ try {
     assert.equal(refresh.convention, undefined);
     assert.ok([...(collected.changes ?? []), ...(refresh.changes ?? [])].some((line) => line.startsWith(`${repeated} imp: closed`)));
     const working = waitFixtureJob(f, 1, 'working', 'w4E:p9');
-    writeFixtureFile(join(working.dir, 'job.json'), JSON.stringify({ ...working.receipt, model: 'synthetic/default',
-      thinking: 'low', model_source: join(f.root, 'roles/implementer.md'), split: false, pi_args: [],
+    writeFixtureFile(join(working.dir, 'job.json'), JSON.stringify({ ...working.receipt, model: 'openai/gpt-6.2-sol',
+      thinking: 'high', model_source: 'pi_role:implementer', split: false, pi_args: [],
       dispatch_exit_code: 0, stderr_tail: '', role_skills: [], skipped_skills: [], worker_prompt: null }));
     const read = await call('hud_read', { job: working.job });
     assert.deepEqual(read, { job: working.job, role: 'imp', state: 'working', report_exists: false });

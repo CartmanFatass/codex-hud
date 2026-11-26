@@ -22,7 +22,7 @@ export async function runNotifyCli() {
       if (taskDelivery(dir, pane)) process.exit(0);
     } catch { /* No receipt: keep the launch delivery path. */ }
   }
-  // pi-roles builds a file-write reply; the HUD main session answers through its MCP.
+  // Translate legacy file-write reply hints into the HUD main session's MCP call.
   const line = message.replace(/ \| reply: write .*$/, ` | reply: hud_respond job=${job} request_id=${message.match(/QUESTION (q\d+):/)?.[1] ?? ''}`);
   const result = await notify(pane, line);
   if (result.error) process.stderr.write(`${result.error.message}\n`);

@@ -875,7 +875,7 @@ function scan(retryWatch = false) {
           else if (status) {
             // The marker or tab event can arrive before the PID is gone.
             open = true;
-            nearest = Math.min(nearest, Date.now() + cliCheck); // Native pi-roles has no HUD runner.
+            nearest = Math.min(nearest, Date.now() + cliCheck); // Pi tabs have no HUD runner.
             if (isWorkingForCap(job, status)) countWorking(job!.role);
             continue;
           }

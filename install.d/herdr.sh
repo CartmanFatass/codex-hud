@@ -2,7 +2,7 @@
 
 hud_ext_check() {
   local name found missing=false
-  for name in herdr pi-role pi-role-reap pi-dispatch pi; do
+  for name in herdr pi; do
     if found="$(command -v "$name")"; then
       printf 'Present: %s (%s)' "$name" "$found"
     else
@@ -12,7 +12,6 @@ hud_ext_check() {
     case "$name" in
       herdr) printf ' — from herdr; install it separately.\n' ;;
       pi) printf ' — from the pi coding-agent CLI; install it separately.\n' ;;
-      *) printf ' — from the locally installed pi-roles bundle; install it separately.\n' ;;
     esac
   done
   if $missing; then printf 'Error: herdr is required for the herdr extension.\n' >&2; return 1; fi

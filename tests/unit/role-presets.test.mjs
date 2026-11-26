@@ -90,7 +90,7 @@ const edit = (f, change) => editPreset(f.hud, f.cwd, { PATH: '' }, { role: 'imp'
 
 test('legacy file chain, explicit Custom, duplicate saved chains and missing selectors keep their own identities', (t) => {
   const f = fixture(t), now = Date.parse('2026-11-20T09:00:00Z');
-  const exe = join(f.cwd, 'pi-role');
+  const exe = join(f.cwd, 'pi');
   fs.writeFileSync(exe, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   const run = [{ ...pi, model: 'synthetic/file' }];
   const file = { ...f.own, run, presets: [{ name: 'same-a', run }, { name: 'same-b', run }] };

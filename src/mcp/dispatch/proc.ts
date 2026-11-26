@@ -158,7 +158,7 @@ const STRIPPED_PARENT_ENV = new Set([
   'CLAUDE_CODE_MESSAGING_TOKEN',
   'CODEX_THREAD_ID',
   'OMPCODE',
-  // HUD & pi-roles job/session/control handles
+  // HUD job/session/control handles
   'HUD_MCP_SURFACE',
   'HUD_MCP_PI_SESSION_ID',
   'HUD_MCP_JSON',
@@ -169,9 +169,6 @@ const STRIPPED_PARENT_ENV = new Set([
   'HUD_REAP_GROUP_TOKEN',
   'HUD_CLAUDE_MOD',
   'HUD_PANEL_CALLER_PANE',
-  'PI_ROLE_NOTIFY',
-  'PI_ORCHESTRATOR_PANE',
-  'PI_ROLES_KEEP_TAB',
   // Outer-terminal / multiplexer handles
   'HERDR_PANE_ID',
   'HERDR_TAB_ID',

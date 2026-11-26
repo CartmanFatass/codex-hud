@@ -1,4 +1,4 @@
-/** Headless worker defaults formerly supplied by pi-role frontmatter. General keeps Pi's native defaults. */
+/** HUD worker profiles for both tabs and headless jobs. General keeps Pi's native defaults. */
 export type GuardMode = 'strict' | 'oracle';
 interface PiDefaults { model?: string; thinking?: string; guard?: GuardMode; instructions: string }
 export type PiProfile = 'sonic' | 'implementer' | 'reviewer' | 'architect' | 'general';

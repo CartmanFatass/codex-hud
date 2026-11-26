@@ -64,8 +64,7 @@ Claude, Codex and pi get the ticket method through `hud_tickets`. Installing a n
   `hud-delegate`, `hud-setup` and `hud-handoff` skills, the same set Claude and Codex get) and `$HUD_HOME/pi-display` (footer, Work segment, `/hud`)
   with `pi install`. Registration is idempotent, including hand-registered packages.
   It adds the `-extensions/p10k-footer.ts` filter to pi's settings and imports
-  `p10k-footer.json` when present. Workers load the display package too; the panel
-  still never opens automatically. Uninstall uses `pi remove` for both packages,
+  `p10k-footer.json` when present. Workers use the separate core-installed `$HUD_HOME/pi-worker/` entries and load neither interactive package. Uninstall uses `pi remove` for both packages,
   removes the generated directories (keeping `pi-package` if it contains an owner's `to-tickets` skill), and
   reverses the filter change.
 - **codex**: registers the HUD MCP (`codex mcp add hud`), links the
@@ -86,7 +85,7 @@ Claude, Codex and pi get the ticket method through `hud_tickets`. Installing a n
   main-session MCP instructions to `~/.gemini/antigravity-cli/mcp/hud/instructions.md`
   unless an owner file is already there. Uninstall reverses the HUD entries and
   removes unmodified HUD instructions without requiring `agy`; owner edits stay.
-- **herdr**: checks PATH for `herdr`, `pi-role`, `pi-role-reap`, `pi-dispatch` and `pi`,
+- **herdr**: checks PATH for `herdr` and `pi`,
   printing their locations and sources. Only missing `herdr` fails installation.
   No external tool or herdr registration is installed; uninstall is a stated no-op.
 - **browser**: checks PATH for `google-chrome`, `jev-ask`, `jev-aistudio` and `jev-flow`,

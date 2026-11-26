@@ -223,14 +223,14 @@ test('a full synthetic pi table survives discovery exactly, off/restore, failure
   fs.mkdirSync(s.env.PI_CODING_AGENT_DIR);
   fs.writeFileSync(join(s.env.PI_CODING_AGENT_DIR, 'settings.json'), JSON.stringify({ defaultProvider: 'xai', defaultModel: 'grok-4.7' }));
   const collect = (now) => controlFacts(roleRegistry(s.hud, s.cwd, s.env), s.hud, now);
-  const imp = (now) => collect(now).roles.find((role) => role.role === 'imp').places[0];
-  assert.deepEqual(imp(NOW).piModel, { current: 'xai/grok-4.7', isDefault: true, defaultId: 'xai/grok-4.7', defaultSource: 'from pi settings', defaultOff: false });
+  const general = (now) => collect(now).roles.find((role) => role.role === 'general').places[0];
+  assert.deepEqual(general(NOW).piModel, { current: 'xai/grok-4.7', isDefault: true, defaultId: 'xai/grok-4.7', defaultSource: 'from pi settings', defaultOff: false });
   assert.deepEqual(collect(NOW).models.pi, ids);
   assert.equal(collect(NOW).harnessSwitches.find((item) => item.id === 'pi:new-provider').off, false);
   setHarnessDisabled(s.hud, 'pi:xai', true);
   assert.deepEqual(collect(NOW).models.pi, ids.filter((id) => !id.startsWith('xai/')));
-  assert.equal(imp(NOW).piModel.defaultOff, true);
-  assert.equal(imp(NOW).piModel.current, 'xai/grok-4.7');
+  assert.equal(general(NOW).piModel.defaultOff, true);
+  assert.equal(general(NOW).piModel.current, 'xai/grok-4.7');
   setHarnessDisabled(s.hud, 'pi:xai', false);
   assert.deepEqual(collect(NOW).models.pi, ids);
   setHarnessDisabled(s.hud, 'pi', true);
@@ -281,7 +281,7 @@ test('live panel coalesces r and picker Ctrl+R refreshes and starts no discovery
       `
     );
   }
-  for (const cmd of ['pi-role', 'herdr', 'claude', 'codex', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
+  for (const cmd of ['herdr', 'claude', 'codex', 'jev-ask', 'jev-aistudio', 'jev-flow']) {
     writeFakeCli(s.bin, cmd, '');
   }
   fs.writeFileSync(join(s.hud, 'hud-settings.json'), JSON.stringify({ modelEnabled: false, refreshMs: 60, language: 'en' }));

@@ -122,8 +122,6 @@ export interface ControlFacts {
   harnesses: HarnessFact[];
   harnessSwitches: HarnessSwitchFact[];
   models: ModelLists;
-  /** pi role definitions behind the pi places (their model and thinking defaults). */
-  piRoleFiles: string[];
 }
 
 const FIRST = ['imp', 'reviewer', 'sonic', 'oracle', 'pro', 'flow'];
@@ -155,7 +153,6 @@ export function controlFacts(
   list?: (directory: string) => string[]
 ): ControlFacts {
   const roles: RoleFact[] = [];
-  const piRoleFiles = new Set<string>();
   const context = registry.routing(now), { disabled, has, providers } = context;
   const { modelLists } = context;
   const catalog = placeCatalog(hudHome, BUNDLED, readJson, now, list, modelLists);
@@ -179,7 +176,6 @@ export function controlFacts(
     const assigned = registry.assignment(role, now, undefined, context);
     const toFact = (entry: (typeof assigned.places)[number], collect = true): PlaceFact => {
       const { place, model, thinking, provider, state, until, missing, off_by } = entry;
-      if (collect && entry.pi_role_file) piRoleFiles.add(entry.pi_role_file);
       if (collect && provider) referenced.add(provider);
       let piModel: PlaceFact['piModel'];
       if (place.harness === 'pi') {
@@ -260,7 +256,7 @@ export function controlFacts(
   const harnessSwitches: HarnessSwitchFact[] = [...ids].map((id) => {
     const colon = id.indexOf(':'), prefix = id.slice(0, colon);
     const name = id.slice(colon + 1), group = id === 'pi' ? 'runner' : prefix === 'cli' ? 'cli' : prefix === 'bro' ? 'browser' : 'provider';
-    const present = group === 'provider' ? providers.has(name) : group === 'runner' ? has('pi-role')
+    const present = group === 'provider' ? providers.has(name) : group === 'runner' ? has('pi')
       : group === 'cli' ? cliAgents.includes(name as (typeof cliAgents)[number]) && has(name)
       : BRO_TOOLS.includes(name as (typeof BRO_TOOLS)[number]) && has(name);
     return { id, name, group, off: disabled.has(id), present, uses: uses.get(id) ?? [],
@@ -285,10 +281,9 @@ export function controlFacts(
       editor: { off: [...disabled], quota: Object.fromEntries([...context.exhausted].map(([id, mark]) => [id, Date.parse(mark.until)])),
         piThinking: catalog.pi.thinking, cliThinking: catalog.cli.thinking, broThinking: [...SHIPPED_MODELS_CATALOG.harnesses.bro.thinking], flowKinds: catalog.bro.kinds },
     },
-    piRoleFiles: [...piRoleFiles],
     harnessSwitches,
     harnesses: [
-      { name: 'pi', ok: has('pi-role') },
+      { name: 'pi', ok: has('pi') },
       ...catalog.cli.agents.map((name) => ({ name, ok: has('herdr') && has(name) })),
       ...catalog.bro.tools.map((name) => ({ name, ok: has(name) })),
     ],

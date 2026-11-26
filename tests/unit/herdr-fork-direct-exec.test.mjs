@@ -66,7 +66,7 @@ test('fork detection recognizes -hud version suffix and rejects stock versions',
 
 test('directExecEnv forwards auth/toolchain vars and strips job, session, control, and outer-terminal handles', () => {
   const env = directExecEnv(
-    { HUD_JOB_DIR: '/tmp/job', HUD_HOME: '/tmp/hud', GIT_OPTIONAL_LOCKS: '0', PI_ROLES_KEEP_TAB: '1' },
+    { HUD_JOB_DIR: '/tmp/job', HUD_HOME: '/tmp/hud', GIT_OPTIONAL_LOCKS: '0' },
     {
       PATH: '/usr/local/bin:/usr/bin',
       HOME: '/home/synthetic',
@@ -84,8 +84,6 @@ test('directExecEnv forwards auth/toolchain vars and strips job, session, contro
       HUD_TAB_LAUNCH: 'stale-uuid',
       HUD_INVOCATION_TOKEN: 'stale-token',
       HUD_RESUME_SESSION_ID: 'parent-resume-id',
-      PI_ROLE_NOTIFY: 'parent-notify',
-      PI_ORCHESTRATOR_PANE: 'w4E:p1',
       HERDR_PANE_ID: 'w4E:p1',
       HERDR_TAB_ID: 'w4E:t1',
       HERDR_WORKSPACE_ID: 'w4E',
@@ -104,11 +102,10 @@ test('directExecEnv forwards auth/toolchain vars and strips job, session, contro
   assert.equal(env.HUD_JOB_DIR, '/tmp/job');
   assert.equal(env.HUD_HOME, '/tmp/hud');
   assert.equal(env.GIT_OPTIONAL_LOCKS, '0');
-  assert.equal(env.PI_ROLES_KEEP_TAB, '1');
   for (const stripped of [
     'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'OMPCODE',
     'HUD_MCP_SURFACE', 'HUD_MCP_PI_SESSION_ID', 'HUD_TAB_LAUNCH', 'HUD_INVOCATION_TOKEN',
-    'HUD_RESUME_SESSION_ID', 'PI_ROLE_NOTIFY', 'PI_ORCHESTRATOR_PANE',
+    'HUD_RESUME_SESSION_ID',
     'HERDR_PANE_ID', 'HERDR_TAB_ID', 'HERDR_WORKSPACE_ID',
     'TMUX', 'TMUX_PANE', 'ZELLIJ', 'WEZTERM_PANE', 'KITTY_WINDOW_ID',
   ]) {
@@ -251,7 +248,7 @@ async function startForkHerdr(t, f, opts = {}) {
           agent_session: { kind: 'id', value: `synthetic-${req.params.kind}-session-${seq}`, source: 'synthetic', agent: req.params.kind },
         };
         tabs.set(launch_id, entry);
-        // If Pi (and not crashing immediately), write STATUS.json with session metadata as pi-roles does on session_start.
+        // If Pi (and not crashing immediately), write STATUS.json with session metadata as the HUD pi worker does on session_start.
         if (!crashOnStart && req.params.kind === 'pi' && req.params.env?.HUD_JOB_DIR) {
           const dir = req.params.env.HUD_JOB_DIR;
           const sf = join(dir, 'pi-session.jsonl');
@@ -476,7 +473,7 @@ test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling 
   assert.ok(Date.parse(readCloseReaped(second)) >= crashedAt + 200, 'failed job held until retention deadline');
 });
 
-test('fork Pi tab worker: native pi worker extension without PI_ROLES_KEEP_TAB, sibling exit ignored, clean exit & crash retention', { timeout: 60000 }, async (t) => {
+test('fork Pi tab worker: native pi worker extension, sibling exit ignored, clean exit & crash retention', { timeout: 60000 }, async (t) => {
   const f = await fixture(t, { failedRetentionMs: 250 });
   const fork = await startForkHerdr(t, f, { reusedTabId: true });
 
@@ -493,7 +490,6 @@ test('fork Pi tab worker: native pi worker extension without PI_ROLES_KEEP_TAB, 
   assert.ok(req1.argv.some((arg) => arg.endsWith('/hud-worker.mjs')));
   assert.ok(req1.argv.some((arg) => arg.endsWith('/hud-worker-ui.mjs')));
   assert.equal(req1.env.HUD_JOB_DIR, dir1);
-  assert.equal(req1.env.PI_ROLES_KEEP_TAB, undefined, 'PI_ROLES_KEEP_TAB is dropped with the pi-roles dispatch extension');
   assert.equal(req1.env.HUD_TAB_LAUNCH, undefined);
   assert.equal(JSON.parse(fs.readFileSync(join(dir1, 'pi-worker.json'), 'utf8')).tab?.profile, 'implementer');
   assert.equal(f.commands().some((c) => c.command === 'pi-role'), false);

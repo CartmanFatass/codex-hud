@@ -53,8 +53,8 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.next[0].value, 'NATIVE-TREE: native subagents on Home beside package lanes');
   assert.match(f.data.docs[1].path, /2026-11-12-review.md$/);
   const first = (name) => f.data.roles.find((r) => r.role === name);
-  assert.deepEqual(first('imp').places, [{ harness: 'pi', label: 'pi', model: 'synthetic/model', thinking: 'high', inheritedThinking: true, state: 'active', provider: 'synthetic',
-    piModel: { current: 'synthetic/model', isDefault: true, defaultId: 'synthetic/model', defaultSource: 'from pi role', defaultOff: false } }]);
+  assert.deepEqual(first('imp').places, [{ harness: 'pi', label: 'pi', model: 'openai/gpt-6.2-sol', thinking: 'high', inheritedThinking: true, state: 'active', provider: 'openai',
+    piModel: { current: 'openai/gpt-6.2-sol', isDefault: true, defaultId: 'openai/gpt-6.2-sol', defaultSource: 'from pi role', defaultOff: false } }]);
   assert.deepEqual(
     f.data.control.find((r) => r.label === 'invalid'),
     {
@@ -80,7 +80,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.deepEqual(f.data.roles.map((r) => [r.role, r.group]), [['imp', 'roles'], ['reviewer', 'roles'], ['sonic', 'roles'],
     ['oracle', 'roles'], ['pro', 'browser'], ['flow', 'browser'], ['council', 'roles'], ['general', 'roles']]);
   assert.deepEqual(first('oracle').places.map((p) => [p.label, p.model, p.state]),
-    [['claude', 'fable', 'missing'], ['pi', null, 'active']]);
+    [['claude', 'fable', 'missing'], ['pi', 'openai/gpt-6.2-astra', 'active']]);
   for (const name of ['pro', 'flow', 'council']) {
     assert.equal(first(name).optionalEnabled, false);
     assert.deepEqual(first(name).places, []);
@@ -89,7 +89,7 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.equal(f.data.roleCount, 5);
   assert.deepEqual(f.data.harnesses.map((h) => [h.name, h.ok]), [['pi', true], ['agy', false], ['claude', false], ['codex', false],
     ['grok', false], ['jev-ask', true], ['jev-aistudio', false], ['jev-flow', false]]);
-  assert.deepEqual(f.data.control.find((r) => r.label === 'pi role'), { label: 'pi role', value: 'implementer', path: join(f.root, 'roles/implementer.md') });
+  assert.ok(!f.data.control.some((r) => r.label === 'pi role'));
   assert.equal(f.data.agents.length, 3);
   assert.equal(f.data.browser, true);
   for (const width of [32, 40, 56, 80, 120])
@@ -189,11 +189,11 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   assert.match(text, /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general$/m);
   assert.match(text, /^Optional roles ─+\n {2}⊘ pro +Off\n {2}⊘ flow +Off$/m);
   assert.match(text, /^▸ Files ─+ keys 3\/5 · browser ✓$/m);
-  assert.doesNotMatch(text, /synthetic\/model|project-agent\.md|▸ agents/);
+  assert.doesNotMatch(text, /openai\/gpt-6\.2-sol|project-agent\.md|▸ agents/);
   frame.state.control.roles.nav.cursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /^Healthy ─+ 5$/m);
-  assert.match(plain(frame).join('\n'), /imp → synthetic\/model/);
+  assert.match(plain(frame).join('\n'), /imp → openai\/gpt-6\.2-sol/);
   frame.state.control.roles.nav.cursor = 'project:fold:files';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ agents/);

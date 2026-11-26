@@ -1,4 +1,4 @@
-/** Port of the pi-roles read-only tool backstop. Bash checks are heuristics, not a sandbox for scripts or MCP. */
+/** Read-only tool backstop. Bash checks are heuristics, not a sandbox for scripts or MCP. */
 import { lstatSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { GuardMode } from '../../../roles/pi-defaults.js';

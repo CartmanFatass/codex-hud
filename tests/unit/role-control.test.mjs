@@ -108,7 +108,7 @@ test('Control plane: what needs the owner first with the place the next job uses
   assert.match(lines[at(/^▸ Healthy ─/)], / 5$/);
   assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general$/);
   assert.ok(at(/^Needs attention ─/) < at(/^▸ Healthy ─/) && at(/^▸ Healthy ─/) < at(/^▸ Usage/));
-  assert.doesNotMatch(lines.join('\n'), /synthetic\/model|^Harnesses ─/m);
+  assert.doesNotMatch(lines.join('\n'), /openai\/gpt-6\.2-sol|^Harnesses ─/m);
   // One line a row at every width and language; at 40 columns a long model is cut in the middle, never the harness or the thinking.
   for (const lang of ['en', 'zh'])
     for (const width of [32, 40, 56, 80, 120])
@@ -218,13 +218,13 @@ test('Classic expands only the selected role’s numbered chain; o opens a role�
   await s.press(DOWN); // Healthy (initial cursor is the invalid file)
   await s.press(ENTER);
   await s.press(DOWN); // imp
-  assert.match(s.text(), /imp → synthetic\/model/);
+  assert.match(s.text(), /imp → openai\/gpt-6\.2-sol/);
   assert.doesNotMatch(s.text(), /^› 1 ◉/m);
   assert.deepEqual((await s.press('o')).action, { type: 'open-files', files: [resolve('packages/hud-mcp/roles/imp.json')] });
   saveRun(s, 'imp', [{ harness: 'pi', pi_role: 'implementer' }, { harness: 'pi', model: 'synthetic/backup' }]);
   s.collector.refreshRoles(s.session.snap, NOW);
   await s.press(ENTER);
-  assert.match(s.text(), /^› 1 ◉ pi\/synthetic +\[model ▾\] +high$/m);
+  assert.match(s.text(), /^› 1 ◉ pi\/openai +\[gpt-6\.2-sol ▾\] +high$/m);
   assert.match(s.text(), /^ {2}2 ○/m);
   assert.match(s.text(), /source +yours · imp\.json/);
   await s.press(ESC);
@@ -283,7 +283,7 @@ test('c/C select from the role row and keep its cursor when attention changes; m
   const s = await setup(t), item = 'project:role:imp';
   const raw = JSON.parse(fs.readFileSync(resolve('packages/hud-mcp/roles/imp.json'), 'utf8')).run;
   s.session.state = select(s.session.state, item);
-  assert.match(s.text(), /imp → synthetic\/model/);
+  assert.match(s.text(), /imp → openai\/gpt-6\.2-sol/);
   assert.match(plain(s.frame(120)).at(-1), /c C preset/);
   await s.press('c');
   assert.deepEqual(s.session.done, { ok: true, index: 0, preset: 'hydrogen' });
@@ -340,7 +340,7 @@ const lines40 = (s, lang = 'en', height = 20) => plain(s.frame(40, lang, height)
 test('Control uses inherited model and thinking when known and a clickable arrow when unknown', async (t) => {
   const s = await setup(t, { shippedImp: false });
   for (const known of [true, false]) {
-    s.put(join(s.root, 'roles/implementer.md'), known ? '---\nmodel: xai/gpt-6.2-sol\nthinking: high\n---\nSynthetic role\n' : 'Synthetic role\n');
+    saveRun(s, 'imp', [{ harness: 'pi', pi_role: known ? 'implementer' : 'general' }]);
     s.collector.refreshRoles(s.session.snap, NOW);
     for (const panelLayout of ['classic']) for (const lang of ['en', 'zh']) {
       s.session.state = onControl(undefined, { prefs: { panelLayout } });
@@ -379,7 +379,7 @@ test('pi picker chooses exact qualified IDs in one list, and hiding/restoring a 
   let page = lines40(s).join('\n');
   assert.match(page, /^imp #1 ─+ pi$/m);
   assert.doesNotMatch(page, /list 0m old/);
-  assert.match(page, /role's model \(model\)\n +from pi role/);
+  assert.match(page, /role's model \(gpt-6\.2-sol\)\n +from pi role/);
   assert.match(page, /\? ctx {2}\? out {2}think \? {2}img \?/, 'legacy caches still populate the picker, without invented facts');
   assert.match(page, new RegExp(`/ ▌ +${MODEL_LISTS.pi.length}$`, 'm'));
   await s.keys('ANTH');
@@ -513,12 +513,12 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   await s.press(ESC);
   assert.equal(s.session.state.overlay.mode.kind, 'places');
   assert.equal(stored(s, 'imp').run[0].model, long);
-  setHarnessDisabled(s.hud, 'pi:synthetic', true);
+  setHarnessDisabled(s.hud, 'pi:openai', true);
   s.collector.refreshRoles(s.session.snap, NOW);
   await s.keys('m', '\x1b[H');
   assert.doesNotMatch(lines40(s).join('\n'), /role's model|from pi role/);
   await s.press(ESC);
-  setHarnessDisabled(s.hud, 'pi:synthetic', false);
+  setHarnessDisabled(s.hud, 'pi:openai', false);
   s.collector.refreshRoles(s.session.snap, NOW);
   await s.press('m');
   const window = s.frame().panes[0].rows.find((r) => r.modelWindow).modelWindow;
@@ -526,7 +526,7 @@ test('pi picker keeps no-match text, owns printable keys, and does not offer an 
   assert.ok(clear > 0, 'the clear row precedes provider models');
   await s.keys(...Array(clear).fill(DOWN), ENTER);
   assert.equal(stored(s, 'imp').run[0].model, undefined);
-  assert.equal(s.assignment('imp').model, 'synthetic/model');
+  assert.equal(s.assignment('imp').model, 'openai/gpt-6.2-sol');
   focus(s);
   await s.press('m');
   for (const raw of ['q', 'p', 'e', 'i', 'r', 'K', 'o', 'j', 'w']) {

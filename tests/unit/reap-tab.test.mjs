@@ -280,7 +280,7 @@ async function zshTabFixture(t, { harness, leaveBackground = false, precmdSleep 
   fs.writeFileSync(join(herdrBin, 'herdr'), `#!${process.execPath}\n${herdr}`, { mode: 0o700 });
   const launch = randomUUID();
   const tags = { HUD_JOB_DIR: dir, HERDR_PANE_ID: 'worker-pane', HERDR_TAB_ID: 'worker-tab', HUD_TAB_LAUNCH: launch };
-  const hudExt = new URL('../../integrations/pi/package/extensions/hud.mjs', import.meta.url).href;
+  const tabShell = new URL('../../dist/runtime/tab-shell.js', import.meta.url).href;
 
   // Owner zsh rc modeled on powerlevel10k: a reparented startup daemon plus a per-prompt precmd helper.
   fs.writeFileSync(join(ownerHome, '.zshrc'), `
@@ -294,11 +294,8 @@ PS1=''
 `);
 
   const piSessionStart = harness === 'pi' && !omitSnapshot ? `
-  const { default: hud } = await import(${JSON.stringify(hudExt)});
-  const hooks = new Map();
-  process.argv.push('--hud-worker-tools');
-  await hud({ on: (name, fn) => hooks.set(name, fn), registerTool: () => {}, sendMessage: () => {} });
-  await hooks.get('session_start')?.();
+  const { recordStartupShellSession } = await import(${JSON.stringify(tabShell)});
+  recordStartupShellSession(process.env.HUD_JOB_DIR, process.env.HUD_TAB_LAUNCH, process.env.HERDR_PANE_ID);
 ` : '';
   const workerBody = `(async () => {
   const fs = require('node:fs');

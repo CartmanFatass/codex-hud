@@ -461,33 +461,8 @@ export function harnessDefaults(
   }
   return result;
 }
-function piRoleInfo(
-  piRole: string | undefined,
-  env: NodeJS.ProcessEnv,
-  read: typeof slice
-): { pi_role_file: string | null; frontmatter: string | undefined } {
-  let pi_role_file: string | null = null;
-  if (piRole) {
-    for (const command of ['pi-role', 'pi-dispatch']) {
-      const bin = executable(command, env);
-      const path = bin && join(dirname(dirname(bin)), 'roles', `${piRole}.md`);
-      if (path && fs.existsSync(path)) {
-        pi_role_file = path;
-        break;
-      }
-    }
-  }
-  const frontmatter = pi_role_file
-    ? read(pi_role_file, 16384)?.text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1]
-    : undefined;
-  return { pi_role_file, frontmatter };
-}
-function frontmatterValue(frontmatter: string | undefined, key: 'model' | 'thinking'): string | null {
-  const value = frontmatter?.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim();
-  return value ? value.replace(/^(['"])(.*)\1$/, '$2') : null;
-}
 function missingCommand(place: RolePlace, has: (command: string) => boolean): string | undefined {
-  if (place.harness === 'pi') return has('pi-role') ? undefined : 'pi-role';
+  if (place.harness === 'pi') return has('pi') ? undefined : 'pi';
   if (place.harness === 'cli') {
     if (!has('herdr')) return 'herdr';
     return place.agent && has(place.agent) ? undefined : place.agent ?? 'CLI agent';
@@ -720,18 +695,13 @@ export function roleRegistry(
   function revision(role: Role) {
     return createHash('sha256').update(JSON.stringify(sources.get(role)!.layers.map(({ file, raw }) => [file.source_file, raw]))).digest('hex');
   }
-  function placeDetails(role: Role, place: RolePlace, source = chainSource(role), headless = role.role === 'sonic') {
-    const owned = headless && place.harness === 'pi';
+  function placeDetails(role: Role, place: RolePlace, source = chainSource(role)) {
     const profile = place.pi_role ?? implicitPiProfile(role.instructions);
-    const piInfo = place.harness === 'pi' && !owned ? piRoleInfo(profile, env, read) : { pi_role_file: null, frontmatter: undefined };
+    const defaults = place.harness === 'pi' && isPiProfile(profile) ? piRoleDefaults[profile] : undefined;
     const effective = (key: 'model' | 'thinking') => {
       if (place[key] !== undefined) return { value: place[key]!, source };
-      if (owned && isPiProfile(profile)) {
-        const value = piRoleDefaults[profile][key];
-        return { value: value ?? null, source: value ? `pi_role:${profile}` : null };
-      }
-      const value = frontmatterValue(piInfo.frontmatter, key);
-      return { value, source: value ? piInfo.pi_role_file : null };
+      const value = defaults?.[key];
+      return { value: value ?? null, source: value ? `pi_role:${profile}` : null };
     };
     const model = effective('model'),
       thinking = effective('thinking');
@@ -739,11 +709,11 @@ export function roleRegistry(
       place.harness === 'cli'
         ? harnessDefaults(hudHome, bundled, readJson)[place.agent!]?.state_trust ?? 'advisory'
         : undefined;
-    return { pi_role_file: piInfo.pi_role_file, model, thinking, state_trust };
+    return { model, thinking, state_trust };
   }
   const routing = (now = Date.now(), exhausted?: ReturnType<typeof readExhausted>) => routingContext(hudHome, env, now, exhausted);
   function assignment(role: Role, nowMs = Date.now(), overrideModel?: string, context = routing(nowMs), choice?: ChainChoice,
-    inheritedModel = false, headless = role.role === 'sonic') {
+    inheritedModel = false) {
     const stored = sources.get(role);
     const layer = stored?.layers.at(-1);
     let run = role.run, preset = currentPreset(role), source = chainSource(role), canContinue = role.can_continue;
@@ -760,7 +730,7 @@ export function roleRegistry(
     const evaluated = evaluatePlaces(run.map((configured, index) => {
       const overridden = overrideModel !== undefined && configured.harness !== 'bro';
       const place = overridden ? { ...configured, model: overrideModel } : configured;
-      const details = placeDetails(role, place, source, headless);
+      const details = placeDetails(role, place, source);
       const pi = place.harness === 'pi' ? attributePiModel(details.model.value, context) : undefined;
       const provider = pi?.provider;
       const provider_source = !provider ? undefined : qualifiedPiProvider(details.model.value) ? (place.model === undefined ? 'pi_role' : 'model')
@@ -773,13 +743,12 @@ export function roleRegistry(
         : place.harness === 'cli' ? [`cli:${place.agent}`] : [`bro:${place.tool}`];
       return { index, place, ...details, key, until: mark?.until, quota_reason: mark?.reason,
         missing: role.role === 'sonic' && place.harness !== 'pi' ? 'headless pi place for sonic'
-          : headless && place.harness === 'pi' ? context.has('pi') ? undefined : 'pi'
           : missingCommand(place, context.has), switch_ids, provider, provider_source };
     }), context.disabled, overrideModel !== undefined && !inheritedModel);
     const chosen = evaluated.find((entry) => entry.state === 'active') ?? null;
     const activeEntry = chosen ?? evaluated[0]!;
     const active = activeEntry.place;
-    const { pi_role_file, model, thinking } = activeEntry;
+    const { model, thinking } = activeEntry;
     return {
       ...role,
       harness: active.harness,
@@ -796,7 +765,6 @@ export function roleRegistry(
       thinking: thinking.value,
       model_source: model.source,
       thinking_source: thinking.source,
-      pi_role_file,
       agent: active.harness === 'cli' ? active.agent : undefined,
       ...(active.harness === 'cli' ? { state_trust: activeEntry.state_trust } : {}),
       accepts_options: [

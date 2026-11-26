@@ -434,10 +434,7 @@ async function installDoctor(io: HudIO): Promise<number> {
   const reachability = herdr ? runCommand('herdr', ['pane', 'list'], env, { budgetMs: 120 }) : null;
   const checks = [check('Node', `${process.version} at ${quoted(process.execPath)}`,
     Number(process.versions.node.split('.')[0]) >= 24 ? undefined : 'Use Node >=24.0.0.')];
-  const tools = ['pi', 'pi-role', 'pi-role-reap'].map((name) => {
-    const path = executable(name, env);
-    return check(name, path ? quoted(path) : 'not on PATH', path ? undefined : `Install ${name} and put it on PATH.`);
-  });
+  const pi = executable('pi', env);
   const install = [check('HUD on PATH', installed ? quoted(installed) : 'HUD launcher not resolved', installed ? undefined : 'Put the installed hud launcher on PATH.'),
     typeof stamp === 'object' ? check('dist build stamp', `${stamp.stamp} (${stamp.time}) in ${quoted(root)}`)
       : check('dist build stamp', 'dist/index.js unavailable', 'Run npm run build in the installed checkout.'), installedDeps(root)];
@@ -452,7 +449,8 @@ async function installDoctor(io: HudIO): Promise<number> {
   }
   const reachable = await reachability;
   checks.push(reachable?.ok && listedPanes(reachable.stdout) ? check('herdr', 'reachable') : check('herdr',
-    herdr ? 'not reachable within the preflight budget' : 'not on PATH', 'Run hud doctor inside a working herdr session.'), ...tools, ...install, ...state);
+    herdr ? 'not reachable within the preflight budget' : 'not on PATH', 'Run hud doctor inside a working herdr session.'),
+    check('pi', pi ? quoted(pi) : 'not on PATH', pi ? undefined : 'Install pi and put it on PATH.'), ...install, ...state);
   await io.stdout(checks.map(({ name, detail, fix }) => `${fix ? 'FAIL' : 'PASS'} ${name}: ${detail}${fix ? ` — Fix: ${fix}` : ''}\n`).join(''));
   return checks.some((row) => row.fix) ? 1 : 0;
 }

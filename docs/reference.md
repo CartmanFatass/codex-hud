@@ -35,8 +35,8 @@ Keep the checkout/extraction directory: installed commands and client bindings p
 No shell rc file is edited.
 
 External tools are checked, not installed or authenticated.
-Headless Sonic requires pi and uses the core-installed `$HUD_HOME/pi-worker/` extension. Other pi workers still require pi-roles; tab workers also require herdr.
-The herdr extension reports their PATH locations (only missing herdr fails).
+Pi workers require `pi` on PATH; tab workers also require `herdr`. Core installs the worker extension under `$HUD_HOME/pi-worker/`, separate from interactive pi. No external role bundle is needed.
+The herdr extension reports the PATH locations of `herdr` and `pi` (only missing herdr fails).
 The browser extension requires `google-chrome` and `jev-ask`; it also reports optional `jev-aistudio` and `jev-flow`.
 It writes no browser configuration and launches nothing.
 Configure Chrome/login/keys through those external CLIs.
@@ -238,16 +238,16 @@ Alternatively, `on` overrides the harness/provider (defaults from shipped `harne
 Other roles reject these four fields before launch, including in batch items and retry overrides.
 A detailed job read or peek shows the selected `preset`.
 Only `general` can also set `instructions: "imp"` (or another role visible in `hud_roster`).
-The borrowed role's instructions replace general's on the selected pi or CLI worker. A headless pi job keeps the selected place's model and thinking; borrowing can tighten its read-only guard. A pi tab uses the borrowed role's first pi profile in its active chain, or its instructions name if there is no pi place.
+The borrowed role's instructions replace general's on the selected pi or CLI worker. Both pi modes keep the selected place's model and thinking; borrowing can tighten the read-only guard. A pi tab uses the borrowed role's pi profile for tab behavior.
 The job keeps general's placement and concurrency slot.
 `hud_read` shows `instructions_from`; retrying as general and resuming the native session retain the borrowed role.
 A repeated explicit key returns the original job; a derived key only reuses a job created within the last 10 minutes.
 `kind` selects `image` (default) or `video` for `flow`.
-Optional `idle_grace_s` (integer 60–3600) overrides CLI grace for this job; pi/browser overrides refuse (pi grace follows the model's cache lifetime in pi-roles).
+Optional `idle_grace_s` (integer 60–3600) overrides CLI grace for this job; pi/browser overrides refuse (pi tab grace follows the model's cache lifetime).
 Pi-only overrides: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, plus `pi_args` (≤128 strings, ≤4096 chars each, verbatim, no shell).
-Headless pi jobs use the HUD worker extension directly, without `pi-role`. MCP is off unless requested, TPS is recorded in the native session unless disabled, and no UI extension loads. Requested MCP/lens attachments must be available under `$HUD_HOME/pi-worker/optional/` (`pi-mcp-adapter` / `pi-lens`). Pi tabs keep pi-role defaults; split defaults to the place.
-A `pi_role` must be one of `sonic`, `implementer`, `reviewer`, `architect` (oracle), or `general`. Headless places use the profile's defaults for omitted model and thinking; `general` leaves those fields to pi.
-`ui_ext: false` disables UI extensions; `skills: true` includes personal skills.
+Headless and tab jobs both load the HUD worker extension explicitly. TPS is recorded in the native session unless disabled. Tabs load the HUD footer by default; `ui_ext: false` skips it, and headless jobs never load it. Split defaults to the place; `skills: true` includes personal skills.
+MCP never auto-loads from ambient configs. Request it with `mcp: true` on the job or place, a role MCP server list, or an explicit `--mcp-config` argument. Requested MCP/lens attachments must be available under `$HUD_HOME/pi-worker/optional/` (`pi-mcp-adapter` / `pi-lens`).
+A `pi_role` must be one of `sonic`, `implementer`, `reviewer`, `architect` (oracle), or `general`. In both modes the HUD profile supplies omitted model and thinking; `general` leaves those fields to pi.
 A true split reserves a right helper pane.
 `--orchestrator`/`--notify` pi-argument overrides refuse.
 Only `general` accepts caller Pi model/provider and thinking flags.
@@ -620,7 +620,7 @@ The supervisor wakes on herdr pushes, file changes and its own deadlines, plus a
 The on-demand watcher starts on `hud_create`, `hud_read`, `hud_send`, `hud_respond` or `hud_land` if needed.
 It reaps finished tabs through HUD's bundled `hud-reap`, keeps failed tabs for two hours, and exits with no open job or pending failed-job deadline. Reaping requires launch ownership evidence from the pane processes; matching a tab label is not enough. A CLI invocation records its own PID and start ticks before exec; restarting the same CLI in that shell does not transfer ownership. HUD closes the tab only when each original shell retains its PID, start ticks and executable, owns the foreground process group, and has no other live process in its terminal session. A shell waiting in a builtin such as `read` is indistinguishable under this rule. `hud-reap <job-dir> --after-pid PID` waits up to 30 seconds without acting, then refuses if STATUS names a different worker.
 The watcher learns of a HUD runner's exit through a socket close, not a periodic scan.
-Native pi-roles workers have no such runner; their liveness and pending stop/read-close checks use `HUD_WATCH_CLI_CHECK_MS` (default 30000).
+Pi tab workers have no such runner; their liveness and pending stop/read-close checks use `HUD_WATCH_CLI_CHECK_MS` (default 30000).
 A dead supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited; worker still running"); the watcher rechecks this unsupervised worker with exponential backoff.
 `hud_send` to it starts a new supervisor.
 Settled directories, including reports and `hud_read` access, normally expire **one day after closure** on a later watcher scan, not a dedicated expiry timer.
@@ -719,7 +719,7 @@ Non-interactive.
 The `hud-setup` skill, installed beside `hud-delegate` for Claude, Codex and pi, asks; these commands only read or write.
 
 `--detect` prints one JSON document and writes nothing.
-It names the git root of `--cwd` (or `--cwd` itself), whether that root is registered, reference roles (shipped and `$HUD_HOME/roles`), project roles with their ordered `run` chains, the enabled set, invalid role files, skills and worker-skill links.
+It names the git root of `--cwd` (or `--cwd` itself), whether that root is registered, reference roles (shipped and `$HUD_HOME/roles`), project roles with their ordered `run` chains, the enabled set, invalid role files, skills and worker-skill links. `pi.installed` and `pi.path` report whether `pi` is on PATH and its resolved location (or `null`).
 Optional roles in the inventory carry an `enabled` flag; enabling one is a machine-wide choice in Control, not a project setup change.
 From a registered main checkout, `proposed_disposable` lists suggested globs for ignored leftovers in kept worktrees.
 Skill roots come from `$HUD_HOME/setup.json` `skill_roots` (defaulting to `~/.pi/agent/skills`, `~/.claude/skills` and `~/.agents/skills`), always followed by the checkout's `integrations/skills`.
@@ -888,7 +888,7 @@ Invalid or unreadable switch data is a configuration error, not an all-on defaul
 Roles, `hud_roster` and `hud_create` use the same next-place evaluation: off, live quota and missing executables are skipped in order.
 With `pi:xai` off, `imp [daily]` can go to `agy` without changing the preset or deleting the pi place.
 Restoring xai lets it return to its original position, but not until any real quota mark is cleared or expires.
-A pi provider comes from a qualified explicit or pi-role model, a unique exact bare model match in the unfiltered cache, or pi settings when no model is set.
+A pi provider comes from a qualified explicit or HUD pi profile model, a unique exact bare model match in the unfiltered cache, or pi settings when no model is set.
 Unknown providers are shown and do not block dispatch.
 `pi_args` are not read for attribution.
 The same policy applies to `general`’s per-job `preset`, `on` and `model` overrides; an explicit off target is refused, not silently rerouted.

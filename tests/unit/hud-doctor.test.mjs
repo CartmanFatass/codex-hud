@@ -139,7 +139,7 @@ test('bare doctor diagnoses install failures without changing files or exposing 
     return file;
   };
   put('bin/herdr', '#!/bin/sh\nprintf \'{"result":{"panes":[]}}\\n\'\n', 0o700);
-  for (const tool of ['pi', 'pi-role', 'claude', 'codex', 'agy']) put(`bin/${tool}`, '#!/bin/sh\nexit 99\n', 0o700);
+  for (const tool of ['pi', 'claude', 'codex', 'agy']) put(`bin/${tool}`, '#!/bin/sh\nexit 99\n', 0o700);
   fs.symlinkSync(process.execPath, join(bin, 'node'));
   put('checkout/bin/hud', '#!/bin/sh\nexit 99\n', 0o700);
   put('checkout/bin/hud-statusline', '#!/bin/sh\nexit 99\n', 0o700);
@@ -215,7 +215,7 @@ test('bare doctor diagnoses install failures without changing files or exposing 
   finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
   assert.deepEqual(credentialReads, []);
   assert.equal(failed.code, 1);
-  for (const expected of [/^PASS herdr:/m, /^FAIL pi-role-reap:/m, /^FAIL package-lock \/ node_modules:.*synthetic/m,
+  for (const expected of [/^PASS herdr:/m, /^PASS pi:/m, /^FAIL package-lock \/ node_modules:.*synthetic/m,
     /^FAIL MCP generation:.*stale generation/m, /^PASS watcher generation: not running/m,
     /^PASS Claude MCP: checkout .*; Node /m, /^FAIL Codex MCP: HUD binding is disabled/m,
     /^PASS Antigravity MCP: checkout .*; Node /m, /^PASS Antigravity hook \/ permission:/m, /^PASS pi roles: checkout /m,
@@ -223,7 +223,6 @@ test('bare doctor diagnoses install failures without changing files or exposing 
     /^FAIL stuck leases: 1 inactive/m, /^FAIL orphaned worktrees: 1 .*unowned-abcdef/m]) assert.match(failed.stdout, expected);
   assert.deepEqual(snapshot(base), before);
 
-  put('bin/pi-role-reap', '#!/bin/sh\nexit 99\n', 0o700);
   put('checkout/node_modules/synthetic/package.json', { version: '1.0.0' });
   put('dotfiles/codex.toml', `[mcp_servers.hud]\ncommand = ${JSON.stringify(mcp)}\n`);
   put('.claude.json', { mcpServers: { hud: { command: mcp } }, projects: { [project]: { hasTrustDialogAccepted: true } } });
@@ -237,6 +236,7 @@ test('bare doctor diagnoses install failures without changing files or exposing 
   put(generation, { kind: 'mcp', stamp: `${ino}:${ctimeNs}`, start });
   const healthy = await run();
   assert.equal(healthy.code, 0, healthy.stdout);
+  assert.doesNotMatch(healthy.stdout, /pi-role|pi-dispatch/);
   assert.match(healthy.stdout, /^PASS credentials.env mode: 0600 \(metadata only\)/m);
 });
 

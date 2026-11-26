@@ -416,7 +416,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
       preset: null,
       runs_on: place,
       places: [{ index: 0, place, state: 'active', key: 'pi:synthetic/override', provider: 'synthetic', provider_source: 'model',
-        switch_ids: ['pi', 'pi:synthetic'], pi_role_file: join(f.root, 'roles', 'implementer.md'),
+        switch_ids: ['pi', 'pi:synthetic'],
         model: { value: 'synthetic/override', source: join(f.env.HUD_HOME, 'roles', 'writer.json') },
         thinking: { value: 'high', source: join(f.env.HUD_HOME, 'roles', 'writer.json') } }],
       exhausted: [],
@@ -425,13 +425,12 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
       source_file: join(f.env.HUD_HOME, 'roles', 'writer.json'),
       model_source: join(f.env.HUD_HOME, 'roles', 'writer.json'),
       thinking_source: join(f.env.HUD_HOME, 'roles', 'writer.json'),
-      pi_role_file: join(f.root, 'roles', 'implementer.md'),
     }
   );
   const imp = roster.roles.find((entry) => entry.role === 'imp');
-  assert.equal(imp.model, 'synthetic/default');
-  assert.equal(imp.thinking, 'low');
-  assert.equal(imp.model_source, join(f.root, 'roles', 'implementer.md'));
+  assert.equal(imp.model, 'openai/gpt-6.2-sol');
+  assert.equal(imp.thinking, 'high');
+  assert.equal(imp.model_source, 'pi_role:implementer');
   assert.equal(imp.thinking_source, imp.model_source);
   assert.equal(roster.roles.some((r) => r.role === 'architect'), false);
   const oracle = roster.roles.find((r) => r.role === 'oracle');
@@ -464,7 +463,7 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
   assert.equal(argv[argv.indexOf('--model') + 1], 'synthetic/override');
   assert.equal(argv[argv.indexOf('--thinking') + 1], 'high');
   assert.equal(
-    f.commands().some((c) => c.command === 'pi-dispatch' || c.args[1] === 'split'),
+    f.commands().some((c) => c.args[1] === 'split'),
     false
   );
   const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
@@ -642,7 +641,7 @@ test('cli kind table holds launch facts and the registry accepts only a valid cl
   assert.equal(role.thinking, 'high');
   assert.equal(role.can_continue, true);
   assert.deepEqual(role.accepts_options, []);
-  assert.equal(role.pi_role_file, null);
+  assert.equal(Object.hasOwn(role, 'pi_role_file'), false);
   const imp = roster.find((entry) => entry.role === 'imp');
   assert.deepEqual(imp.run.map((place) => place.harness), ['pi']);
   const reviewer = roster.find((entry) => entry.role === 'reviewer');
@@ -807,13 +806,13 @@ test('hud_roster cwd and hud_create use a registered project role', async (t) =>
   const compact = await f.call('hud_roster', { cwd: proj });
   assert.deepEqual(compact.roles.find((entry) => entry.role === 'local-cli'), {
     role: 'local-cli', instructions: 'implementer', available: true, can_continue: true, runs_on: cli,
-    places: [{ index: 0, state: 'active' }, { index: 1, state: 'standby', provider: 'synthetic', provider_source: 'pi_role' }],
+    places: [{ index: 0, state: 'active' }, { index: 1, state: 'standby', provider: 'openai', provider_source: 'pi_role' }],
   });
   const local = await f.call('hud_create', {
     role: 'local-cli', request_key: 'project-cli-untrusted', task: 'Synthetic CLI task.', cwd: proj,
   });
   assert.equal(local.attempts[0].reason, `grok has not trusted ${proj}; run hud trust ${proj}`);
-  assert.equal(local.used_place, 'pi (synthetic/default)');
+  assert.equal(local.used_place, 'pi (openai/gpt-6.2-sol)');
   assert.equal(roster.convention.path, join(root, '.hud/hud-convention.md'));
   assert.equal(roster.convention.text, 'Project convention only.');
   const server = await f.call('hud_roster');
@@ -844,7 +843,7 @@ test('hud_roster cwd and hud_create use a registered project role', async (t) =>
     { ok: false, code: 'role_unavailable', reason: 'Role imp is not configured or is hidden in this project' }
   );
   const home = await f.call('hud_create', { role: 'imp', request_key: 'home-imp', task: 'Synthetic task.' });
-  assert.equal(JSON.parse(fs.readFileSync(join(home.task_dir, 'job.json'), 'utf8')).model, 'synthetic/default');
+  assert.equal(JSON.parse(fs.readFileSync(join(home.task_dir, 'job.json'), 'utf8')).model, 'openai/gpt-6.2-sol');
 });
 
 test('an unregistered .hud is ignored and roster says so', async (t) => {

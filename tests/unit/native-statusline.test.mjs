@@ -61,7 +61,7 @@ test('Claude launcher uses TypeScript for a live even quota notice and native ca
   setup(env.HUD_HOME);
   const bin = join(env.HOME, 'bin');
   fs.mkdirSync(bin);
-  fs.writeFileSync(join(bin, 'pi-role'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  fs.writeFileSync(join(bin, 'pi'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
   env.PATH = `${bin}:${env.PATH}`;
   const fast = { harness: 'pi', model: 'synthetic/fast' };
   fs.mkdirSync(join(env.HUD_HOME, 'roles'));

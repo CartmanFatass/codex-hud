@@ -29,7 +29,7 @@ function placeOptions(args: Args, configured: RolePlace) {
     if (!Number.isInteger(args.idle_grace_s) || (args.idle_grace_s as number) < 60 || (args.idle_grace_s as number) > 3600)
       return invalid('idle_grace_s must be an integer from 60 to 3600');
     if (place.harness !== 'cli') return invalid(place.harness === 'pi'
-      ? "idle_grace_s is CLI-only; pi grace follows the model's cache lifetime inside pi-roles"
+      ? "idle_grace_s is CLI-only; pi tab grace follows the model's cache lifetime"
       : 'idle_grace_s is CLI-only; browser jobs have no idle grace');
   }
   if (args.kind !== undefined) {
@@ -113,15 +113,12 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
     : route ? undefined : onEntry ? { run: [{ ...chain.run.find(p => matchPlace(p, onEntry)), ...onEntry }] }
     : preset !== undefined ? { preset } : undefined;
   const explicit = args.mode !== undefined;
-  const headless = chain.role === 'sonic' || args.mode === 'headless' ||
-    (!explicit && chain.can_continue === true && (route?.mode === 'headless' || !!route?.mode_reason));
-  const standardFor = (native: boolean) => found.assignment(chain, now, route ? undefined : model, routing, choice,
-    !!retryInput && retryInput.model === undefined, native);
-  const standard = standardFor(headless);
+  const standard = found.assignment(chain, now, route ? undefined : model, routing, choice,
+    !!retryInput && retryInput.model === undefined);
   const tierPreset = route && chain.routing?.[route.tier]?.preset;
   const tier = !route || route.tier === 'standard' ? standard
     : tierPreset && chain.presets?.some(p => p.name === tierPreset)
-      ? found.assignment(chain, now, undefined, routing, { preset: tierPreset }, false, headless) : undefined;
+      ? found.assignment(chain, now, undefined, routing, { preset: tierPreset }) : undefined;
   const entries = (effective: Assignment, route?: JobRoute) => effective.places.flatMap(candidate => {
     if ((!land && !effective.available) || (candidate.state !== 'active' && candidate.state !== 'standby') ||
       (land && candidate.place.harness === 'bro')) return [];
@@ -149,8 +146,7 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
       : `${route.tier} tier has no usable place; using standard`].filter(Boolean).join('; '),
   } : undefined;
   // On the same chain, tab-only candidates already had their tab attempt.
-  const fallbackAssignment = fallback && fallback.mode !== (headless ? 'headless' : 'tab') ? standardFor(false) : standard;
-  const all = fallback ? [...preferred, ...entries(fallbackAssignment, fallback).filter(({ candidate }) => !modeFallback || supportsHeadless(candidate.place))] : preferred;
+  const all = fallback ? [...preferred, ...entries(standard, fallback).filter(({ candidate }) => !modeFallback || supportsHeadless(candidate.place))] : preferred;
   const candidates = route || args.mode === 'headless' ? all.filter(entry => !('code' in entry.prepared)) : all;
   return { candidates, error: all.find(entry => 'code' in entry.prepared)?.prepared,
     effective: candidates[0]?.effective ?? standard, route: candidates[0]?.route ?? fallback ?? route, fallback };

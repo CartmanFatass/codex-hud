@@ -118,9 +118,8 @@ test('tps writes the pi-tps 1.3 custom entry payload with a measured stream span
     tps: 50, isPrimaryBranch: true, cost, rateUsdPerMTokens: 300 });
 });
 
-test('headless Sonic on a closed PATH without pi-role resolves omitted model and declares its report', async t => {
+test('headless Sonic on a closed PATH resolves omitted model and declares its report', async t => {
   const f = await rolePlacesFixture(t);
-  fs.unlinkSync(join(f.root, 'bin', 'pi-role'));
   const roles = join(f.env.HUD_HOME, 'roles'); fs.mkdirSync(roles, { recursive: true });
   fs.writeFileSync(join(roles, 'sonic.json'), JSON.stringify({ role: 'sonic', instructions: 'sonic', can_continue: false, run: [{ harness: 'pi', pi_role: 'sonic' }] }));
   const created = await f.call('hud_create', { role: 'sonic', task: 'Synthetic query.' });

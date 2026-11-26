@@ -360,8 +360,7 @@ test('read-close: a settled Pi with a fresh report closes and reaps a current-tu
   }));
   const report = 'Synthetic native Pi tool report.\n';
   const native = spawnSync(process.execPath, ['--input-type=module', '-e', `
-    import hud from ${JSON.stringify(pathToFileURL(resolve('integrations/pi/package/extensions/hud.mjs')).href)};
-    process.argv.push('--hud-worker-tools');
+    import hud from ${JSON.stringify(pathToFileURL(resolve('integrations/pi/worker/hud-worker.mjs')).href)};
     const tools = new Map();
     await hud({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
     const tool = tools.get('hud_report');
@@ -383,7 +382,7 @@ test('read-close: a settled Pi with a fresh report closes and reaps a current-tu
   assert.deepEqual(meta.files, ['src/native.ts']);
   assert.equal(fs.statSync(join(job.task_dir, 'report-meta.json')).mode & 0o777, 0o600);
   assert.equal(cliState(job.task_dir).state, 'working', 'publication alone does not declare pi settlement');
-  await publishPiGrace(t, job, worker, false); // Synthetic pi-roles native turn end.
+  await publishPiGrace(t, job, worker, false); // Synthetic pi worker turn end.
   assert.equal((await f.call('hud_read', { job: job.job, mode: 'full' })).report, report);
   await until(() => readCloseReaped(job), t.signal);
   assert.equal(cliState(job.task_dir).exit_reason, 'closed after report read');
@@ -448,7 +447,7 @@ test('read-close: a live pre-turn CLI child does not block settlement or close',
   await until(() => procStat(child) === null, t.signal);
 });
 
-test('startup failure closes the tab, reports the pi-roles cause instead of the timeout, and is reaped', { timeout: 60000 }, async (t) => {
+test('startup failure closes the tab, reports the pi startup cause instead of the timeout, and is reaped', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'fail-start'), 'timed out waiting for agent startup');
   fs.writeFileSync(join(f.env.HOME, 'pane-read'), '[roles] synthetic start failed: unsupported thinking\n');

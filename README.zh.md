@@ -14,7 +14,7 @@
 ## 快速开始
 
 需要 **Node ≥24.0.0**（Node 24 为经过测试的支持版本线）、npm 及所选客户端。
-Codex 状态行还需 tmux。任务另需 PATH 中的 herdr、pi 与单独安装的 **pi-roles**；
+Codex 状态行还需 tmux。标签页任务需要 PATH 中的 `herdr`，pi 工作者需要 `pi`；
 浏览器角色需已配置的外部 **jev-*** CLI。安装器不安装这些工具、不代为鉴权。
 见 [Node 下限依据](./docs/ARCHITECTURE.md#3-launch-and-installation)。
 
@@ -98,7 +98,7 @@ Claude、Codex 与 pi 都用 `/hud` 打开独立侧面板（`hud panel --here` �
 
 MCP 提供 **hud_roster**、**hud_create**、**hud_read**、**hud_send**、**hud_respond**、**hud_close** 等工具。
 调用 `hud_tickets` 可查看工单拆分方法。落地时，`Owner try` 为 `no` 或省略则记为 `done`，只有 `yes` 记为 `ready-for-human`。
-先看 roster，取得角色、模型、可用启动选项和约定。pi 角色使用外部 pi-roles 与 herdr；
+先看 roster，取得角色、模型、可用启动选项和约定。pi 角色使用 HUD 的原生 pi 工作者；
 浏览器任务使用 `jev-ask`、`jev-aistudio` 或 `jev-flow`，没有自动串联角色。
 见 [hud-mcp](./packages/hud-mcp/README.md)。
 

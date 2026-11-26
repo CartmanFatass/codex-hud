@@ -149,7 +149,7 @@ test('unregistered detect ignores project files and uses default skill roots', a
   assert.equal(doc.project.registered, false);
   assert.equal(doc.project.hud_dir, join(top, '.hud'));
   assert.equal(doc.project.hud_dir_exists, true);
-  assert.deepEqual(doc.pi, { installed: false, pi_role: null });
+  assert.deepEqual(doc.pi, { installed: false, path: null });
   assert.deepEqual(doc.project_roles, []);
   assert.deepEqual(doc.worker_skills, {});
   assert.deepEqual(doc.skill_links, []);
@@ -158,12 +158,12 @@ test('unregistered detect ignores project files and uses default skill roots', a
   const extra = doc.reference_roles.find((role: { role: string }) => role.role === 'extra');
   assert.equal(extra.source, '$HUD_HOME/roles/extra.json');
   assert.equal(extra.model, 'home-model');
-  assert.equal(extra.thinking, null);
+  assert.equal(extra.thinking, 'high');
   const imp = doc.reference_roles.find((role: { role: string }) => role.role === 'imp');
   assert.equal(imp.source, 'shipped');
   assert.equal(imp.harness, 'pi');
   assert.equal(imp.pi_role, 'implementer');
-  assert.equal(imp.model, null);
+  assert.equal(imp.model, 'openai/gpt-6.2-sol');
   assert.deepEqual(Object.keys(imp), ['role', 'harness', 'pi_role', 'model', 'thinking', 'source']);
   const cliExtra = doc.reference_roles.find((role: { role: string }) => role.role === 'cli-extra');
   assert.equal(cliExtra.agent, 'grok');
@@ -221,8 +221,7 @@ test('registered detect reports project roles, custom skill roots, links and inv
   const f = fixture(t);
   gitInit(f.project);
   const top = register(f.hud, f.project);
-  fs.writeFileSync(join(f.bin, 'pi-role'), '#!/bin/sh\n');
-  fs.chmodSync(join(f.bin, 'pi-role'), 0o755);
+  fs.writeFileSync(join(f.bin, 'pi'), '#!/bin/sh\n', { mode: 0o755 });
   fs.mkdirSync(join(f.hud, 'roles'), { recursive: true });
   fs.writeFileSync(join(f.hud, 'roles', 'extra.json'), JSON.stringify(piRole('extra', { model: 'home' })));
   fs.writeFileSync(join(f.hud, 'roles', 'bad-home.json'), 'null');
@@ -266,11 +265,11 @@ test('registered detect reports project roles, custom skill roots, links and inv
   assert.equal(doc.project.root, top);
   assert.equal(doc.project.registered, true);
   assert.equal(doc.project.hud_dir_exists, true);
-  assert.deepEqual(doc.pi, { installed: true, pi_role: fs.realpathSync(join(f.bin, 'pi-role')) });
-  assert.deepEqual(Object.keys(doc.pi), ['installed', 'pi_role']);
+  assert.deepEqual(doc.pi, { installed: true, path: fs.realpathSync(join(f.bin, 'pi')) });
+  assert.deepEqual(Object.keys(doc.pi), ['installed', 'path']);
   const refImp = doc.reference_roles.find((role: { role: string }) => role.role === 'imp');
   assert.equal(refImp.source, 'shipped');
-  assert.equal(refImp.model, null);
+  assert.equal(refImp.model, 'openai/gpt-6.2-sol');
   assert.equal(
     doc.reference_roles.some((role: { role: string }) => role.role === 'frontend'),
     false

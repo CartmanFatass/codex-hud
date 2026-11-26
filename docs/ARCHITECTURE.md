@@ -19,10 +19,10 @@ client transcripts + HUD job files + project files
   ─► optional stored model overlays ─► renderMonitor ─► terminal frame
 
 main session ─► HUD MCP ─► job files + herdr tab
-  ├─► external pi-roles + pi
+  ├─► native pi + HUD worker extension (headless or herdr tab)
   ├─► interactive CLI (grok / agy / claude / codex) + per-job supervisor
   └─► external jev-* browser CLIs
-job-file / herdr events ─► on-demand watcher ─► pi-role-reap
+job-file / herdr events ─► on-demand watcher ─► HUD reaper
 ```
 
 The panel observes; it does not brief workers, accept work or chain roles.
@@ -36,7 +36,7 @@ Kind flags, trust-dialog text and decline keys, and startup quirks are the table
 Before opening a tab, dispatch requires an explicit local trust grant for Grok, Antigravity and Claude; missing, unreadable, malformed or symlinked trust files do not grant trust.
 Codex skips this check, and the other CLIs' screen-dialog checks remain in place.
 `packages/hud-mcp/bin/hud-cli.mjs` is the per-job supervisor.
-Claude and Codex workers use the HUD MCP's worker-only surface; pi loads the HUD extension explicitly and retains pi-roles' native async ask.
+Claude and Codex workers use the HUD MCP's worker-only surface. HUD builds pi's argv and writes a private `pi-worker.json` contract for each launch; pi explicitly loads the HUD worker extension, which handles native worker tools and async asks in tabs.
 The shared worker protocol writes reports, check-ins and CLI questions and dispatches only sonic children.
 Antigravity and Grok Build use the fallback scripts in place of MCP tools.
 The HUD passes only model, effort, the bypass flag and role `args`.
@@ -80,7 +80,7 @@ No panel opens at launch.
 ## 3. Launch and installation
 
 `./install --with claude,pi,codex,browser,herdr` validates selected extension names, checks Node, then runs prerequisite hooks before any build or filesystem change.
-Core is always included.
+Core is always included. It links the worker entry points under `$HUD_HOME/pi-worker/`; dispatch loads them via `-e`, without registering them with interactive pi. Tab workers load a separate UI entry by default; headless jobs do not load it.
 The default builds the HUD and MCP together into `dist/`; `--skip-build` uses existing outputs.
 Commands link into this checkout/extraction, and client bindings also retain its path: keep that directory.
 Runtime launchers and the panel reload probe hold a per-checkout lock while loading their initial `dist/` module graph.
@@ -304,7 +304,7 @@ The owner's Inspector actions (`render/job-actions.ts`, spec §2.2) are pure inp
 Any other input cancels the stop prompt.
 On a Jobs batch row `X` opens the batch prompt (`confirm-batch`); `p` / `r` / `s` become `batch-control`, any other input cancels.
 The panel and `hud act stop|pause|resume <batch>` both call `controlBatchAsOwner` (`mcp/batch.ts`): `controlBatch`, the control behind `hud_create({batch, action})`, without its session visibility check, then `wakeWorkflow`. There is no second control path.
-`tree-page.ts` does the I/O: `focusJobTab` and `stopJob` (`cli/panel-pane.ts`: `herdr tab focus`, `pi-role-reap`) and `answerJobQuestion` (`collectors/panel-actions.ts`), which writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
+`tree-page.ts` does the I/O: `focusJobTab` and `stopJob` (`cli/panel-pane.ts`: `herdr tab focus`, HUD reaper) and `answerJobQuestion` (`collectors/panel-actions.ts`), which writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
 `PanelActionLog` turns those records into `[role@job] ANSWERED qN from panel: …` lines for `hud watch` and the MCP `changes`, as the try log does: only answers made while the reader runs.
 The `/` filter (`render/filter.ts`) owns the keyboard while editing and provides a filtered snapshot for Project Progress and Tickets. Leaving the view clears it; a kept query survives reload. The filter bar is pinned under the header.
 Always retain `frame.state`: reconciliation preserves selection and separate scroll/fold state.
@@ -341,7 +341,7 @@ Width applies to tmux/herdr panels on Save and containing-window resize, not unr
 
 | Path under HUD home | Contents / writer |
 |---|---|
-| `jobs/<job>/` | Plain job/brief/STATUS/report/QA and session links; MCP, pi-roles, CLI supervisor or browser wrapper |
+| `jobs/<job>/` | Plain job/brief/STATUS/report/QA and session links; MCP, HUD pi worker, CLI supervisor or browser wrapper |
 | `jobs/<job>/report-meta.json` | Optional private 0600 worker summary, file list and check skip reason, bound to `report.md` by signature; no lifecycle, checks or outcome authority |
 | `roles/`, `hud-convention.md` | Owner overrides; read by roster; `roles/<role>.json` places are also written by the Control tab |
 | `exhausted.json` | Quota marks on places until the parsed reset (1 minute to 24 hours; 1 hour by default); cleared by the Control tab |
@@ -368,12 +368,12 @@ Pi keeps direct subscription windows in memory for the current request only.
 Pi history lives in pi's own session store; job directories contain links.
 If a Pi worker exits before publishing shutdown status, `hud_close` and the watcher can record `stopped` from `STATUS.json.stop-requested` and the confirmed exit of the recorded process instance.
 The watcher scans on the marker.
-Native pi-roles workers have no HUD-owned runner socket, so pending stop settlement and read-close preflight may still need a timed recheck (`HUD_WATCH_CLI_CHECK_MS`, default 30 s).
+Pi tab workers have no HUD runner socket, so pending stop settlement and read-close preflight may still need a timed recheck (`HUD_WATCH_CLI_CHECK_MS`, default 30 s).
 It reaps finished tabs, keeps failed tabs for two hours, and deletes settled job directories one day after closure on a later scan, not a dedicated expiry timer.
 Before deletion it moves legacy real JSONL sessions to pi's store; failures retain the job.
 No session-link target is deleted.
 CLI sessions stay in that CLI's store.
-Headless Sonic, CLI supervisors, land and adopted check helpers expose per-job, per-PID abstract sockets.
+Headless pi, CLI supervisors, land and adopted check helpers expose per-job, per-PID abstract sockets.
 `runner.ready` wakes a watcher that scanned during startup.
 Socket close prompts a fresh PID/receipt check, not a terminal verdict.
 A dead CLI supervisor with a live worker hands the job to the main session (`waiting_orchestrator`); the socketless orphan is rechecked with exponential backoff until it exits or `hud_send` restarts the supervisor.

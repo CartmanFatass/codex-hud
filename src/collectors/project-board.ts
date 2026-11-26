@@ -401,7 +401,6 @@ export class ProjectCollector {
       const source = c.path === join(root, '.hud', 'hud-convention.md') || c.path === join(this.cwd, 'hud-convention.md') ? 'project'
         : c.path === join(this.hudHome, 'hud-convention.md') ? 'yours' : 'default';
       out.control.push({ label: 'convention', value: source, path: c.path });
-      for (const path of facts.piRoleFiles) out.control.push({ label: 'pi role', value: basename(path, '.md'), path });
     } catch (error) { this.switchError(out, error); }
     for (const name of ['CLAUDE.md', 'AGENTS.md']) {
       const path = join(this.cwd, name);

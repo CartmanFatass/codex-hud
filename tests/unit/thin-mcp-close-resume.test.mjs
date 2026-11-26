@@ -182,7 +182,7 @@ for (const closeCurrent of [false, true]) test(closeCurrent
     const launchCount = () => f.commands().filter(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').length;
     const launched = launchCount();
     if (closeCurrent) write(join(f.env.HOME, 'tab-seq'), String(Number(oldTab.split(':t')[1]) - 1));
-    else write(join(f.env.HOME, 'hold-pi-role'), '');
+    else write(join(f.env.HOME, 'hold-tab-create'), '');
     const sending = taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic Pi continuation.' });
     let task;
     try {
@@ -301,7 +301,7 @@ test('exit matrix: stop intent wins; non-stop early close retains its existing b
 test('exit matrix: a headless sonic missing its report stays failed', (t) => {
   const dir = fs.mkdtempSync(join(tmpdir(), 'sonic-missing-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  // Native pi-roles emits this terminal receipt when its headless run has no fresh output.
+  // Native pi emits this terminal receipt when its headless run has no fresh output.
   write(join(dir, 'STATUS.json'), JSON.stringify({ state: 'failed', output_written: false, exit_reason: 'output missing, empty or unchanged' }));
   assert.deepEqual(sonicState(dir), { state: 'failed', reason: 'output missing, empty or unchanged' });
 });

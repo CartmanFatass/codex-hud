@@ -112,7 +112,6 @@ const noTab = f => !f.commands().some(({ args }) => args[0] === 'tab' && args[1]
 test('question, follow-up and land repair reopen the same tabless pi session; expiry starts a headless repair', { timeout: 60000 }, async t => {
   const f = await fixture(t);
   f.overrideBin('pi', fakePi);
-  f.overrideBin('pi-role', '#!/bin/sh\nexit 1\n');
   write(join(f.env.HOME, 'ask'), '');
   const cwd = join(f.root, 'linked-cwd');
   fs.symlinkSync(f.root, cwd);
@@ -142,7 +141,6 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   assert.equal(cliState(dir).session_file, paused.session_file);
   const transcript = fs.readFileSync(paused.session_file, 'utf8');
   assert.ok(transcript.indexOf('toolResult') > 0 && transcript.indexOf('toolResult') < transcript.indexOf('Choose B.'));
-  assert.ok(!f.commands().some(({ command }) => command === 'pi-role'));
   assert.equal(fs.existsSync(join(dir, 'SESSION.txt')), false);
   write(join(dir, 'STATUS.json'), JSON.stringify({ ...cliState(dir), ended_at: new Date(0).toISOString() }));
   const repair = await f.call('hud_send', { job: job.job, text: 'Expired follow-up.' });
@@ -205,9 +203,8 @@ test('headless general resumes its own pi session with the borrowed role selecto
   assert.equal(fs.readFileSync(join(dir, 'role-section'), 'utf8'), fs.readFileSync('packages/hud-mcp/instructions/implementer.md', 'utf8').trim());
 });
 
-test('headless presets resolve profile defaults and report Sonic ready once without pi-role', async t => {
+test('headless presets resolve profile defaults and report Sonic ready once on a closed PATH', async t => {
   const f = await rolePlacesFixture(t);
-  fs.unlinkSync(join(f.root, 'bin', 'pi-role'));
   f.overrideBin('pi', fakePi);
   const roles = join(f.env.HUD_HOME, 'roles');
   fs.mkdirSync(roles);

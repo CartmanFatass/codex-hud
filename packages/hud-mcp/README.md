@@ -1,7 +1,7 @@
 # hud-mcp
 
 The local stdio MCP for Claude Code, Codex and pi. It records plain-file jobs and
-launches roles through herdr; it does not choose a workflow or chain roles.
+launches roles headlessly or in herdr tabs; it does not choose a workflow or chain roles.
 The main session decides what to do next. The implementation is
 [`src/mcp/thin-main.ts`](../../src/mcp/thin-main.ts).
 
@@ -9,10 +9,9 @@ The main session decides what to do next. The implementation is
 
 - Node **≥24.0.0** (Node 24 is the tested supported line); see the
   [runtime evidence](../../docs/ARCHITECTURE.md#3-launch-and-installation).
-- herdr, with the caller's `HERDR_PANE_ID` available for job creation.
-- For pi roles: the pi coding-agent CLI and the separately installed **pi-roles**
-  bundle (`pi-role`, `pi-role-reap` and its helper scripts). The HUD does not bundle
-  pi-roles or install/authenticate pi for you.
+- For tab jobs: herdr, with the caller's `HERDR_PANE_ID` available.
+- For pi roles: the `pi` coding-agent CLI on PATH. The HUD installs its own worker
+  extension with core; it does not install or authenticate pi.
 - For browser roles: the external **`jev-ask`**, **`jev-aistudio`** or **`jev-flow`**
   CLI used by that role, with Chrome, login and keys configured through those tools.
   `jev-ask` serves ChatGPT/Gemini, `jev-aistudio` AI Studio, and `jev-flow` image/video
@@ -65,7 +64,7 @@ adopts same-project jobs whose previous caller pane is gone, redirecting their e
 | `hud_peek` | Required `job`. Returns a compact `status` row and progress, without fetching the pane. Request `lines` (integer 1–120) for recent output from the worker's `LEFT` herdr pane, or `detail: true` for launch `diagnostics`. If a requested pane is unavailable, `pane_lines` is `null` with `pane_reason`. Does not read reports, mark anything seen or close the worker. |
 | `hud_send` | Pass `text` and either `job` or `jobs`. A single send queues a message for a working pi or CLI job, continues it in `idle_grace` if the role allows and its report is unread, or starts a repair if the worker closed after its report was read. A repair returns the create result plus `continued_as` (the new job ID) and references the earlier brief and report. `jobs` only sends to working jobs and returns `sent` job IDs and `skipped` entries (`{job, reason}`); it never creates repairs. An explicit `message_key` deduplicates attempts, including failed or uncertain ones; if omitted, the same job and text are treated as a retry only within 10 minutes. |
 | `hud_respond` | Required `job`, `request_id` (`qN`), `answer`. Writes `qa/qN.answer.md` once; an existing answer is not overwritten. |
-| `hud_close` | Required `job`. Calls `pi-role-reap` for early cleanup; safe to repeat. Normal finished-job cleanup belongs to the watcher. |
+| `hud_close` | Required `job`. Uses HUD's reaper for early cleanup; safe to repeat. Normal finished-job cleanup belongs to the watcher. |
 
 `hud_lease({name, release?, wait_s?})` is available in both main sessions (identified by their herdr pane) and workers
 (identified by job ID). Use the shared resource only after `{granted:true}`. Contention returns
@@ -75,7 +74,7 @@ for anyone else, with `held_by` if another live holder has it. The same name is 
 and its linked worktrees share one (cwd outside Git). Waiters wake on release and reclaim a lease when its worker is
 closed, failed or stopped, or its recorded process is gone. There is no background process or expiry.
 
-For `general`, `on` selects a harness or browser provider (`pi`, `agy`, `claude`, `codex`, `grok`, `chatgpt`, `gemini`, `argon`, `flow`) using defaults from shipped [`harnesses.json`](harnesses.json) overridden by `$HUD_HOME/harnesses.json`. Explicit `model` and `thinking` override a `pi` or `cli` place for this job only. `kind` selects `image` (default) or `video` for `flow`. `idle_grace_s` is CLI-only; pi overrides refuse because pi grace follows the model's cache lifetime inside pi-roles, and browser jobs have no idle grace. Other `hud_create` options are `pi`-only: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, and `pi_args`. Pi tabs keep pi-role switch defaults; headless pi uses the HUD worker extension without `pi-role`. `split` defaults to the place. `ui_ext: false` disables UI extensions; `skills: true` includes personal skills. `split: true` reserves a helper pane to the right of the primary worker. `pi_args` passes at most 128 strings of at most 4096 characters verbatim after `--`, never through a shell. `--orchestrator` and `--notify` overrides are reserved and rejected. Browser (`bro`) roles reject pi launch options. CLI places require `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), else `hud_create` returns `unsupported_harness`.
+For `general`, `on` selects a harness or browser provider (`pi`, `agy`, `claude`, `codex`, `grok`, `chatgpt`, `gemini`, `argon`, `flow`) using defaults from shipped [`harnesses.json`](harnesses.json) overridden by `$HUD_HOME/harnesses.json`. Explicit `model` and `thinking` override a `pi` or `cli` place for this job only. `kind` selects `image` (default) or `video` for `flow`. `idle_grace_s` is CLI-only; pi overrides refuse because pi tab grace follows the model's cache lifetime, and browser jobs have no idle grace. Other `hud_create` options are `pi`-only: boolean `lens`, `mcp`, `tps`, `ui_ext`, `skills`, `split`, and `pi_args`. Both modes load the HUD worker extension explicitly. `mcp: true` opts into the optional adapter; ambient configs do not auto-load it. `split` defaults to the place. `ui_ext: false` skips the HUD tab footer (headless never loads it); `skills: true` includes personal skills. `split: true` reserves a helper pane to the right of the primary worker. `pi_args` passes at most 128 strings of at most 4096 characters verbatim after `--`, never through a shell. `--orchestrator` and `--notify` overrides are reserved and rejected. Browser (`bro`) roles reject pi launch options. CLI places require `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`), else `hud_create` returns `unsupported_harness`.
 
 `hud_create` and `hud_sonic` start report the ordered `attempts` (`index`, `place`, and `reason` on failure) and
 `used_place` (the chosen place, or `null` when none started). Only a confirmed pre-input failure falls through to
@@ -124,7 +123,7 @@ stream is independent of the snapshot.
 
 With `HUD_JOB_DIR` set, only worker tools are exposed, scoped to that job. The HUD home is inferred
 from that directory, so `HUD_HOME` need not be forwarded. Claude and Codex use MCP;
-pi loads the native worker extension and uses pi-roles' native ask. Antigravity and Grok Build get the
+pi loads the HUD worker extension, which implements native questions and async asks in tabs. Antigravity and Grok Build get the
 fallback `hud-ask.mjs`, `hud-sonic.mjs` and `hud-progress.mjs` commands in their briefs. For leases without MCP,
 run `node packages/hud-mcp/bin/hud-lease.mjs [--dir <own job dir>] [--release] [--wait-s N] <name>` from the
 HUD release, or use the script's absolute path. `--dir` defaults to `HUD_JOB_DIR`.
@@ -152,7 +151,7 @@ list/wait rows or trigger `changes` / `hud watch` events.
 
 Bundled JSON files in `roles/` define logical roles: `role`, `instructions`, `can_continue`, optional `idle_grace_s`, and `run`, an ordered list of places (`pi`, `cli`, or `bro`). Legacy single-place role files still load (`run[0]`), and `"harness": "jev"` loads as `"bro"`. `$HUD_HOME/roles/*.json` overrides by role name. A project registered in `$HUD_HOME/projects.json` may add `<root>/.hud/roles/*.json` after those (project wins by name; pi only) and hide roles with `.hud/project.json`. An unregistered project's config is ignored (`project_config_ignored`), but its standing brief still applies. A registered project's `.hud/hud-convention.md` is the first convention file.
 
-A `pi` place names `pi_role` (`sonic`, `implementer`, `reviewer`, `architect`, or `general`; defaults to `instructions`, with `oracle` mapping to `architect`), `split`, optional `skills` (non-empty strings), and optional `model`/`thinking`. Headless pi uses HUD's profile defaults for omitted fields (`general` keeps native pi defaults); tabs use the pi-roles role file. Each skill name resolves to `<root>/.hud/skills/<name>` (a symlink apply made); an absolute path is used as given. Each resolved directory is passed to pi as `--skill`. A missing or broken link is skipped and recorded on the job; the launch continues. When `.hud/agents/<role>.md` exists, it is passed as `--append-system-prompt`. `hud_read({job, detail:true})` and `hud_peek({job, detail:true})` show `role_skills`, `skipped_skills` and `worker_prompt` for that job. A `cli` or `bro` place that names `skills` is invalid and skipped.
+A `pi` place names `pi_role` (`sonic`, `implementer`, `reviewer`, `architect`, or `general`; defaults to `instructions`, with `oracle` mapping to `architect`), `split`, optional `skills` (non-empty strings), and optional `model`/`thinking`. Both modes use HUD's profile defaults for omitted fields (`general` keeps native pi defaults). Each skill name resolves to `<root>/.hud/skills/<name>` (a symlink apply made); an absolute path is used as given. Each resolved directory is passed to pi as `--skill`. A missing or broken link is skipped and recorded on the job; the launch continues. When `.hud/agents/<role>.md` exists, it is passed as `--append-system-prompt`. `hud_read({job, detail:true})` and `hud_peek({job, detail:true})` show `role_skills`, `skipped_skills` and `worker_prompt` for that job. A `cli` or `bro` place that names `skills` is invalid and skipped.
 
 A `bro` place names its `tool` (`jev-ask`, `jev-aistudio`, `jev-flow`) and applicable `provider`, `kind`, `model`, `thinking` or `effort`. Shipped browser roles: `pro` (`chatgpt`, `gemini`, `argon` in order) and `flow` (`jev-flow`, default `kind: "image"`). `hud_roster` checks executable availability on `PATH` and active `$HUD_HOME/exhausted.json` marks (quota/rate-limit failures expire at the reported reset, or after 1 hour if no reset is known).
 
@@ -192,7 +191,7 @@ nor a particular role's responsibilities.
 ## Jobs and watcher
 
 `$HUD_HOME/jobs/<job>/` holds `job.json`, `brief.md`, `STATUS.json`, `SESSION.txt`,
-`report.md` and `qa/` pairs. Pi-roles owns pi lifecycle and grace; the browser
+`report.md` and `qa/` pairs. The HUD worker extension owns pi tab lifecycle and grace; the browser
 wrapper records browser-job STATUS and saves the CLI result. A pre-start failure closes the launch tab and
 uses a startup error from the pane if herdr gave only a timeout. Mutations serialize
 within an MCP process; waiting reads do not block answers. A report is unread when its mtime is newer than
@@ -213,13 +212,13 @@ session or arrive before the next model request after the current tool batch. Pa
 `hud_wait` for settlement or attention.
 
 `hud_create` starts the on-demand `hud-watch.mjs` if needed. It reacts to job-file
-and herdr tab-close events, invokes `pi-role-reap` when a pi report in idle grace
+and herdr tab-close events, invokes the HUD reaper when a pi report in idle grace
 is read or after normal closure, and exits when no open job or failed-job deadline remains.
 The read-close reason is `closed after report read`. Pi declares completion natively at `agent_settled`
 with a report changed since `before_agent_start`. Pi's pending-message and turn-start signals are internal to
-Pi; the watcher's pi-roles STATUS and herdr checks do not identify delivery of a queued `hud_send`. A prior
+Pi; the watcher's STATUS and herdr checks do not identify delivery of a queued `hud_send`. A prior
 turn can settle before the queued prompt reaches Pi, even after HUD recorded the send time. Unread pi reports
-keep the pi-roles deadline. Pi's `hud_report` captures descendants before native shutdown; pi-roles still declares
+keep the tab's grace deadline. Pi's `hud_report` captures descendants before native shutdown; the worker extension declares
 settlement. A snapshot write failure returns nonzero; a complete staged snapshot is recoverable if only the
 final rename failed. If the recorded root is gone and no matching proof can be recovered, cleanup remains
 unresolved and the slow retry stays armed. After a partial read-close, cleanup of captured descendants of a
@@ -271,7 +270,7 @@ leaves input drafts untouched and avoids typed-input prompt hooks. Stale PIDs ne
 path and `hud_respond` reply, so another read is unnecessary. Answer with `hud_respond`. A mid-turn `blocked` status marks the job as needing the
 owner; the session learns it from `changes` or `hud watch`. `hud_close` stops a working CLI job, or quits one that is in idle grace.
 
-The watcher subscribes to each CLI supervisor's lifetime socket and rechecks its PID on disconnect. Native pi-roles workers have no HUD runner socket; their pending stop/read-close checks still use `HUD_WATCH_CLI_CHECK_MS` (default 30000). A dead
+The watcher subscribes to each CLI supervisor's lifetime socket and rechecks its PID on disconnect. Pi tabs have no HUD runner socket; their pending stop/read-close checks still use `HUD_WATCH_CLI_CHECK_MS` (default 30000). A dead
 supervisor with a live worker leaves the job `waiting_orchestrator` ("supervisor exited;
 worker still running"); this orphan is rechecked with exponential backoff, and `hud_send` to it starts a new supervisor. With the worker gone
 too, the job closes with a new report or fails without one.

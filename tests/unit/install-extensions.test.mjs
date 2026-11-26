@@ -82,15 +82,15 @@ const browserAvailable = async (f) => (await new ProjectCollector(f.repo, f.hud,
 
 test('herdr preflight reports every installed command and source; uninstall is a no-op', (t) => {
   const f = fixture(t);
-  for (const name of ['herdr', 'pi-role', 'pi-role-reap', 'pi-dispatch', 'pi']) f.fake(name);
+  for (const name of ['herdr', 'pi']) f.fake(name);
   const text = f.run('herdr');
-  for (const name of ['herdr', 'pi-role', 'pi-role-reap', 'pi-dispatch', 'pi']) assert.ok(text.includes(`Present: ${name} (${path.join(f.bin, name)})`));
+  for (const name of ['herdr', 'pi']) assert.ok(text.includes(`Present: ${name} (${path.join(f.bin, name)})`));
   assert.match(text, /from herdr/);
-  assert.match(text, /from the locally installed pi-roles bundle/);
   assert.match(text, /from the pi coding-agent CLI/);
+  assert.doesNotMatch(text, /pi-role|pi-dispatch/);
   assert.equal(fs.existsSync(f.config), false);
-  for (const name of ['pi-role', 'pi-role-reap', 'pi-dispatch', 'pi']) fs.unlinkSync(path.join(f.bin, name));
-  assert.match(f.run('herdr'), /Missing: pi-role/);
+  fs.unlinkSync(path.join(f.bin, 'pi'));
+  assert.match(f.run('herdr'), /^Missing: pi —/m);
   fs.unlinkSync(path.join(f.bin, 'herdr'));
   assert.match(f.run('herdr', true), /no-op; nothing to uninstall/);
 });

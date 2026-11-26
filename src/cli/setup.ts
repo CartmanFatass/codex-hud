@@ -112,7 +112,7 @@ async function detect(cwd: string, env: NodeJS.ProcessEnv) {
     skipJson
   );
   const open = roleRegistry(hudHome, cwd, env, undefined, undefined, bundled, skipJson);
-  const pi = executable('pi-role', env);
+  const pi = executable('pi', env);
   const projectFiles = [...open.roles(true).values()].filter((role) => role.source_file.startsWith(projectRoles + sep));
   const skilled = projectFiles.filter((role): role is Role & { skills: string[] } => Array.isArray(role.skills));
   const roots = skillRoots(hudHome, env.HOME);
@@ -123,7 +123,7 @@ async function detect(cwd: string, env: NodeJS.ProcessEnv) {
       hud_dir: gate.hud_dir,
       hud_dir_exists: isDir(gate.hud_dir),
     },
-    pi: { installed: pi !== null, pi_role: pi },
+    pi: { installed: pi !== null, path: pi },
     reference_roles: listed(reference, [...reference.roles(true).values()], bundled, hudHome),
     project_roles: listed(open, projectFiles, bundled, hudHome, true),
     enabled_roles: [...full.roles().keys()].sort(cmp),

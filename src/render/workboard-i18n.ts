@@ -219,7 +219,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   standby: '备选',
   exhausted: '已耗尽',
   'not installed': '未安装',
-  'pi role': '角色定义',
   'role: next / previous preset': '角色：下一个／上一个预设',
   'type filter': '输入筛选',
   '⏎ set': '⏎ 设为',

@@ -38,7 +38,7 @@ function setup(t) {
     path.join(release, 'dist/harness/pi/package-entry.js'),
     `import { installPiPackage as real } from ${JSON.stringify(pathToFileURL(path.join(root, 'harness/pi/package-entry.js')).href)}; export function installPiPackage(pi,b,deps,mode) { return real(pi,b,globalThis[Symbol.for('hud-a5-test-ports')] ?? deps,mode); }`
   );
-  for (const entry of ['bin/hud', 'packages/hud-mcp/bin/hud-mcp.mjs', 'packages/hud-mcp/bin/worker-tools.mjs', 'dist/mcp', 'scripts/dist-lock.mjs']) {
+  for (const entry of ['bin/hud', 'packages/hud-mcp/bin/hud-mcp.mjs', 'dist/mcp', 'scripts/dist-lock.mjs']) {
     fs.mkdirSync(path.dirname(path.join(release, entry)), { recursive: true });
     fs.symlinkSync(path.resolve(entry), path.join(release, entry));
   }
@@ -905,31 +905,13 @@ test('pi refuses delegation in a resumed worker before starting its main-session
   assert.deepEqual(p.calls(), []);
 });
 
-test('pi delegation registers the native worker tools and leases in both modes', async (t) => {
-  const f = setup(t), main = host(), worker = host(), c = context(f, worker);
-  await load(f, main, ports(f));
-  assert.deepEqual([...main.tools.keys()], PI_ROLE_TOOLS.map(({ name }) => name));
-
+test('the interactive pi delegation extension has no worker branch', async (t) => {
+  const f = setup(t), h = host();
   const oldDir = process.env.HUD_JOB_DIR;
   process.env.HUD_JOB_DIR = path.join(f.binding.hudHome, 'jobs/j0000000000000001');
   try {
-    worker.pi.sendMessage = () => assert.fail('a worker must not be woken by the main watcher');
-    fs.mkdirSync(process.env.HUD_JOB_DIR, { recursive: true });
-    fs.writeFileSync(path.join(process.env.HUD_JOB_DIR, 'job.json'), JSON.stringify({ job: path.basename(process.env.HUD_JOB_DIR), cwd: f.cwd }));
-    await load(f, worker);
-    assert.deepEqual([...worker.tools.keys()], ['hud_report', 'hud_ask', 'hud_sonic', 'hud_progress', 'hud_lease']);
-    assert.deepEqual(worker.tools.get('hud_report').parameters.required, ['text']);
-    const sonic = worker.tools.get('hud_sonic');
-    assert.equal(sonic.parameters.properties.thinking, undefined);
-    assert.doesNotMatch(sonic.description, /thinking|level/);
-    const request = { task: 'Synthetic sub-task.', thinking: 'off' };
-    await assert.rejects(sonic.execute('synthetic', sonic.prepareArguments?.(request) ?? request), /invalid_arguments: unexpected thinking/);
-    const lease = worker.tools.get('hud_lease');
-    assert.deepEqual((await lease.execute('synthetic', { name: 'install', wait_s: 0 })).details, { granted: true });
-    assert.deepEqual((await lease.execute('synthetic', { name: 'install', release: true })).details, { released: true });
-    await worker.emit('session_start', c.ctx);
-    assert.equal(fs.existsSync(path.join(f.binding.hudHome, 'watchers')), false);
-    await worker.emit('session_shutdown', c.ctx);
+    await load(f, h, ports(f));
+    assert.deepEqual([...h.tools.keys()], PI_ROLE_TOOLS.map(({ name }) => name));
   } finally {
     if (oldDir === undefined) delete process.env.HUD_JOB_DIR;
     else process.env.HUD_JOB_DIR = oldDir;

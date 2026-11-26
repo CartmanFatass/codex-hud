@@ -60,13 +60,12 @@ test('hud_report schema exposes findings and reviewed only for reviewer in both 
   assert.equal(mcpReviewer.inputSchema.required.includes('findings'), false);
   assert.equal(mcpReviewer.inputSchema.required.includes('reviewed'), false);
 
-  // Verify the native pi extension registers the exact same role-gated schema from workerTools(false).
+  // Verify the pi worker's tool registration uses the same role-gated schema.
   const checkPiSchema = (dir) => {
     const res = spawnSync(process.execPath, ['--input-type=module', '-e', `
-      import hud from ${JSON.stringify(new URL('../../integrations/pi/package/extensions/hud.mjs', import.meta.url).href)};
-      process.argv.push('--hud-worker-tools');
+      import { workerTools } from ${JSON.stringify(new URL('../../dist/harness/pi/worker/tools.js', import.meta.url).href)};
       const tools = new Map();
-      await hud({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
+      await workerTools({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } }, process.env.HUD_JOB_DIR, true);
       process.stdout.write(JSON.stringify(tools.get('hud_report').parameters));
     `], { env: { ...f.env, HUD_JOB_DIR: dir }, encoding: 'utf8' });
     assert.equal(res.status, 0, res.stderr);

@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
 
-// Most callers invoke a named symlink; the two pi launchers pass their names explicitly.
+// Fixture commands normally invoke a named symlink.
 const [, invocation, ...args] = process.argv;
 const name = basename(invocation);
 const command = name === 'thin-mcp-fake-bin.mjs' ? args.shift() : name;
@@ -62,18 +62,7 @@ function waitToReply() {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
   }
 }
-if (command === 'pi-dispatch') {
-  process.exit(99); // The MCP must never use this legacy launcher.
-} else if (command === 'pi-role') {
-  const quotaModel = join(process.env.HOME, 'quota-pi-model');
-  if (args.includes('--model') && fs.existsSync(quotaModel) &&
-      args[args.indexOf('--model') + 1] === fs.readFileSync(quotaModel, 'utf8').trim()) {
-    console.error('HTTP 429: quota exceeded, retry in 10m');
-    process.exit(1);
-  }
-  if (fs.existsSync(join(process.env.HOME, 'hold-pi-role'))) waitToReply();
-  console.log(JSON.stringify(args.slice(2)));
-} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
+if (command === 'herdr' && args[0] === 'agent' && args[1] === 'start') {
   const pane = args[args.indexOf('--pane') + 1];
   const busyIdFile = join(process.env.HOME, 'busy-pane-id');
   const busyCountFile = join(process.env.HOME, 'busy-pane-count');
@@ -627,7 +616,7 @@ if (command === 'pi-dispatch') {
   const agent = fs.existsSync(agentFile) ? fs.readFileSync(agentFile, 'utf8') : 'claude';
   console.log(JSON.stringify({ result: { pane: { workspace_id: 'w4E', ...(routingOnly ? {} : { agent }) } } }));
 } else if (command === 'herdr' && args[0] === 'tab' && args[1] === 'create') {
-  if (fs.existsSync(join(process.env.HOME, 'hold-pi-role'))) waitToReply();
+  if (fs.existsSync(join(process.env.HOME, 'hold-tab-create'))) waitToReply();
   const seqFile = join(process.env.HOME, 'tab-seq');
   let n = 2;
   if (fs.existsSync(seqFile)) {

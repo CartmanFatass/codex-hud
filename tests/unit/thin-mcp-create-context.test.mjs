@@ -183,7 +183,10 @@ test('only general can borrow instructions from a visible role', async t => {
 
 test('general borrows the imp pi role and bundled instructions without borrowing placement; retry keeps them', async t => {
   const f = await fixture(t);
-  writeFixtureFile(join(f.root, 'roles', 'general.md'), '---\nmodel: synthetic/general\nthinking: high\n---\n');
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles);
+  writeFixtureFile(join(roles, 'general.json'), JSON.stringify({ role: 'general', instructions: 'general', can_continue: true,
+    run: [{ harness: 'pi', pi_role: 'general', model: 'synthetic/general', thinking: 'high' }] }));
   const create = await f.call('hud_create', { role: 'general', task: 'Synthetic comparison.', instructions: 'imp' });
   assert.equal(create.role, 'general');
   assert.equal(create.used_place, 'pi (synthetic/general)');
@@ -693,9 +696,9 @@ esac
     '-e',
     resolve('integrations/pi/worker/hud-worker-ui.mjs'),
     '--model',
-    'synthetic/default',
+    'openai/gpt-6.2-sol',
     '--thinking',
-    'low',
+    'high',
     '--exclude-tools',
     'ask_orchestrator',
   ]);
@@ -793,7 +796,7 @@ test('hud_create idle_grace_s overrides CLI grace at both bounds and refuses inv
   }
   const pi = await f.call('hud_create', { role: 'imp', request_key: 'pi-grace', task: 'Synthetic.', idle_grace_s: 60 });
   assert.equal(pi.code, 'invalid_arguments');
-  assert.match(pi.error, /pi grace follows the model's cache lifetime/);
+  assert.match(pi.error, /pi tab grace follows the model's cache lifetime/);
   const bro = await f.call('hud_create', { role: 'pro', request_key: 'bro-grace', task: 'Synthetic.', idle_grace_s: 60 });
   assert.equal(bro.code, 'invalid_arguments');
   assert.match(bro.error, /browser jobs have no idle grace/);
@@ -839,8 +842,8 @@ test(
     assert.equal(receipt().model, args.model);
     const defaults = await f.call('hud_create', { role: 'imp', request_key: 'model-default', task: 'Synthetic task.' });
     const original = JSON.parse(fs.readFileSync(join(defaults.task_dir, 'job.json')));
-    assert.equal(original.model, 'synthetic/default');
-    assert.equal(original.thinking, 'low');
+    assert.equal(original.model, 'openai/gpt-6.2-sol');
+    assert.equal(original.thinking, 'high');
     assert.equal(launches(), 2);
     const thinkingOnly = await f.call('hud_create', {
       role: 'general',
@@ -852,9 +855,9 @@ test(
       JSON.parse(fs.readFileSync(join(thinkingOnly.task_dir, 'job.json'))),
       await f.call('hud_read', { job: thinkingOnly.job, detail: true }),
     ]) {
-      assert.equal(value.model, 'synthetic/default');
+      assert.equal(value.model, 'openai/gpt-6.2-sol');
       assert.equal(value.thinking, 'max');
-      assert.equal(value.model_source, join(f.root, 'roles', 'implementer.md'));
+      assert.equal(value.model_source, 'pi_role:implementer');
     }
   }
 );

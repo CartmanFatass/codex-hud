@@ -47,9 +47,6 @@ export async function projectFixture(root, { progressTickets = true } = {}) {
   put(join(cwd, 'AGENTS.md'), '# Agent instructions');
   put(join(hud, 'roles/imp.json'), { role: 'imp', harness: 'pi', pi_role: 'implementer', split: true, can_continue: true });
   put(join(hud, 'roles/bad.json'), '{ NEVER_RENDER_ROLE_FILE');
-  put(join(root, 'roles/implementer.md'), '---\nmodel: synthetic/model\nthinking: high\n---\nRole text\n');
-  put(join(bin, 'pi-role'), '#!/bin/sh\nexit 99\n');
-  fs.chmodSync(join(bin, 'pi-role'), 0o700);
   put(join(home, '.claude/agents/user-agent.md'), '# Synthetic user agent');
   put(join(cwd, '.claude/agents/project-agent.md'), '# Synthetic project agent');
   put(join(home, '.codex/agents/codex-agent.toml'), 'model = "synthetic"');
