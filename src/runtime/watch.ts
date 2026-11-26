@@ -48,8 +48,9 @@ function readHandoff(file: string): Handoff | null {
   finally { unlinkIfPresent(file); }
 }
 
-/** Open the watcher runtime and publish readiness under the wrapper's dist lock. */
-export async function openWatcher() {
+/** Validate or open the watcher runtime under the wrapper's dist lock. */
+export async function openWatcher(probe: boolean) {
+  if (probe) { await import('./watch-runtime.js'); return; }
   const reloaded = process.env[RELOAD_ENV] === '1';
   delete process.env[RELOAD_ENV];
   const initialEnv = { ...process.env };
