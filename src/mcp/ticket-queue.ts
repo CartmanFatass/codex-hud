@@ -309,7 +309,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
           return [];
         }
         // Approve the report that caused the pause, not whatever the worker has published since.
-        if (handback?.assumption && !item.held && handback.ticket === item.ticket && handback.job === item.job) {
+        if (handback?.assumption && !item.held && handback.ticket === item.ticket && handback.job === (item.repair_job ?? item.job)) {
           next.approved_assumptions_head = handback.assumption.head;
           next.approved_assumptions_sig = handback.assumption.report_sig;
         }
@@ -327,10 +327,11 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     writeTicketQueue(home, q, true);
     if (!unattended) {
       for (const old of queues) {
-        if (old.state !== 'paused' || old.superseded_by) continue;
+        const transfersFailedHold = old.flow === resumed?.flow && old.state === 'failed' && old.tickets.some(item => item.held);
+        if ((old.state !== 'paused' && !transfersFailedHold) || old.superseded_by) continue;
         await runLock(home, old.flow, () => {
           const predecessor = readTicketQueue(home, old.flow);
-          if (predecessor?.state !== 'paused') return;
+          if (!predecessor || (predecessor.state !== 'paused' && !(transfersFailedHold && predecessor.state === 'failed'))) return;
           // Keep the same verified manual land on the ending receipt, not the resolved hold.
           if (predecessor.flow === resumed?.flow) {
             for (const item of predecessor.tickets) {
@@ -338,7 +339,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
               if (item.held && !item.landed && land && land.job === item.job) recordCompletedLand(item, land, now);
             }
           }
-          predecessor.state = 'superseded';
+          if (predecessor.state === 'paused') predecessor.state = 'superseded';
           predecessor.superseded_by = q.flow;
           predecessor.notices = {};
           writeTicketQueue(home, predecessor);
@@ -617,7 +618,7 @@ export async function answerTicketQueueHandback(
 export async function resumeQueueAfterAnswer(home: string, jobId: string, request: string, pane: string | null, cwd = process.cwd()) {
   const q = queueIds(home).map(id => readTicketQueue(home, id)).filter(q => q !== null)
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
-    .find(q => q.tickets.some(item => item.job === jobId) || q.review_job === jobId);
+    .find(q => q.tickets.some(item => item.job === jobId || item.repair_job === jobId) || q.review_job === jobId);
   const matchesQuestion = (q?.handback?.kind === 'question' && q.handback.job === jobId && q.handback.question === request) ||
     (q?.handback?.kind === 'escalate' && q.handback.job === jobId && q.handback.question === request) ||
     q?.reason?.includes(`(${jobId}): worker question ${request} `);
@@ -627,7 +628,7 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
     const cur = readTicketQueue(home, q.flow);
     if (!cur || cur.unattended || (cur.state !== 'failed' && cur.state !== 'paused')) return;
     const at = new Date().toISOString();
-    const item = cur.tickets.find(t => t.job === jobId);
+    const item = cur.tickets.find(t => t.job === jobId || t.repair_job === jobId);
     if (item) {
       item.answered_at = at;
       item.changed_at = at;

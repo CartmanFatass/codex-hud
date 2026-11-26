@@ -12,6 +12,20 @@ import { writeFixtureFile } from './thin-mcp-files.mjs';
 
 export const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 
+export function promptNotices(f, flow) {
+  const pane = f.flow(flow).pane;
+  return f.fakeLog()
+    .filter(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === pane)
+    .map(c => c.args[3])
+    .filter(line => typeof line === 'string' && line.includes(flow));
+}
+
+export async function collectDeliveredNotices(f, flow, read, expected = 1, signal = 5_000) {
+  const fromChanges = (read.changes ?? []).filter(line => line.includes(flow));
+  await until(() => fromChanges.length + promptNotices(f, flow).length >= expected, signal);
+  return [...fromChanges, ...promptNotices(f, flow)];
+}
+
 export const goodTicket = (n, {
   blocked = 'none',
   liveTry = 'none',
@@ -163,14 +177,15 @@ export async function setupWorkflowProject(t, {
     writeFixtureFile(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
     return true;
   };
-  const settleReview = async id => {
+  const settleReport = async (id, report) => {
     const receipt = job(id), jobDir = dir(id);
     if (receipt.cli) {
-      await until(() => settleCli(id, 'Verdict: accept\n\nNo blocking findings.\n'), t.signal);
+      await until(() => settleCli(id, report), t.signal);
       return;
     }
-    await writeFreshPiReport(jobDir, receipt, 'Verdict: accept\n\nNo blocking findings.\n');
+    await writeFreshPiReport(jobDir, receipt, report);
   };
+  const settleReview = id => settleReport(id, 'Verdict: accept\n\nNo blocking findings.\n');
   const settleLead = async (id, report = 'Decision: finish\nReason: Accepted synthetic feature.\n') => {
     await until(() => settleCli(id, report), t.signal);
   };
@@ -180,5 +195,5 @@ export async function setupWorkflowProject(t, {
   };
   const fakeLog = () => fs.readFileSync(f.env.FAKE_LOG, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
   const issues = join('.scratch', 'sample', 'issues');
-  return { ...f, dir, end, fakeLog, flow, git, home, issues, job, jobs, settle, settleCli, settleLead, settleReview, ticketPath, ticketRecord, writeJsonTicket };
+  return { ...f, dir, end, fakeLog, flow, git, home, issues, job, jobs, settle, settleCli, settleLead, settleReport, settleReview, ticketPath, ticketRecord, writeJsonTicket };
 }

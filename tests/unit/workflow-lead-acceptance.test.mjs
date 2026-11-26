@@ -4,31 +4,20 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
+import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { answerTicketQueueHandback, cancelTicketQueueRun, startTicketQueue } from '../../dist/mcp/ticket-queue.js';
 import { writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
 import { countProjectWaitingRuns, executionSnapshot } from '../../dist/collectors/execution.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { executionRows } from '../../dist/render/execution-view.js';
 import { buildAcceptPacket, extractReportNotes } from '../../dist/mcp/workflow-lead.js';
+import { reportSignature } from '../../dist/roles/cli-turn.js';
+import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { pinnedQueueJobs } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-import { goodTicket, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
-
-function promptNotices(f, flow) {
-  return f.fakeLog()
-    .filter(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === f.env.HERDR_PANE_ID)
-    .map(c => c.args[3])
-    .filter(line => typeof line === 'string' && line.includes(flow));
-}
-
-async function collectDeliveredNotices(f, flow, read, expected = 1, signal = 5_000) {
-  const fromChanges = (read.changes ?? []).filter(line => line.includes(flow));
-  await until(() => fromChanges.length + promptNotices(f, flow).length >= expected, signal);
-  return [...fromChanges, ...promptNotices(f, flow)];
-}
+import { collectDeliveredNotices, goodTicket, promptNotices, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
 test('ticket check refuses a run with gaps including empty Approved removals and lists every missing field', { timeout: 20_000 }, async t => {
   const f = await setupWorkflowProject(t, {
@@ -175,6 +164,60 @@ test('a report blocker goes to the assumption lead even with final acceptance to
   assert.deepEqual(q.notices, {});
 });
 
+for (const changesHead of [true, false]) test(`ordinary land repair sends ${changesHead ? 'a changed commit with a blocker' : 'a fresh report on the same commit with an assumption'} back to triage`, { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const gate = changesHead ? 'grep -q fixed docs/spec.md' : 'test -f "$HOME/synthetic-gate-green"';
+  const config = join(f.root, '.hud/project.json');
+  fs.writeFileSync(config, JSON.stringify({ land: { base: 'base', gate: [gate], after: [], push: false } }));
+  f.git(f.root, 'commit', '-qam', 'Configure synthetic gate');
+  const base = f.git(f.root, 'rev-parse', 'HEAD');
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root });
+  const [job] = await f.jobs(flow, 1);
+  const declaration = changesHead ? 'Blockers: The owner must decide the mode.' : 'Assumed: [scope] retain the existing mode.';
+  await f.settle(job, { report: `${declaration}\n` });
+  const checkout = f.job(job).worktree.root;
+  const approved = { head: f.git(checkout, 'rev-parse', 'HEAD'), report_sig: reportSignature(f.dir(job)), job };
+  const kind = changesHead ? 'blocker' : 'assumption';
+  await until(() => f.flow(flow).active_lead?.kind === kind, 15_000);
+  const lead = f.flow(flow).active_lead.job;
+  await f.settleLead(lead, 'Decision: continue\nReason: Proceed with the current evidence.\n');
+
+  const land = `f${job.slice(1)}`;
+  await until(() => fs.existsSync(join(f.home, 'flows', `${land}.json`)) && f.flow(land).repairs?.[0]?.outcome === 'waiting for worker', 15_000);
+  assert.deepEqual(f.flow(land).approval, approved);
+  const repair = f.flow(land).repairs[0].job;
+  assert.notEqual(repair, job, 'the closed source without a session requires a replacement worker');
+  assert.equal(f.job(repair).cwd, checkout);
+  assert.equal(f.job(repair).worktree, undefined, 'the replacement does not own the registered worktree');
+  if (changesHead) {
+    fs.writeFileSync(join(checkout, 'docs/spec.md'), '# Synthetic spec fixed\n');
+    f.git(checkout, 'commit', '-qam', 'Fix synthetic gate in ordinary run');
+  } else {
+    fs.writeFileSync(join(f.env.HOME, 'synthetic-gate-green'), 'green');
+  }
+  const report = `Synthetic repair finished.\n${declaration}\n`;
+  await f.settleReport(repair, report);
+  const head = f.git(checkout, 'rev-parse', 'HEAD');
+  assert.equal(head !== approved.head, changesHead);
+  await until(() => f.flow(flow).active_lead?.kind === kind && f.flow(flow).active_lead.job !== lead, 15_000);
+  const secondLead = f.flow(flow).active_lead;
+  assert.equal(secondLead.worker_job, repair);
+  assert.equal(secondLead.head, head);
+  assert.equal(secondLead.report_sig, reportSignature(f.dir(repair)));
+  assert.notEqual(secondLead.report_sig, approved.report_sig);
+  assert.equal(f.flow(land).state, 'failed');
+  assert.equal(f.flow(land).landed_sha, undefined);
+  assert.equal(f.flow(land).source_sha, approved.head);
+  assert.equal(f.git(f.root, 'rev-parse', 'HEAD'), base, 'new evidence is not published before triage');
+  await f.settleLead(secondLead.job, 'Decision: continue\nReason: The repaired evidence is approved.\n');
+  await until(() => f.flow(flow).tickets[0].landed, 15_000);
+  const finished = f.flow(f.flow(flow).tickets[0].land);
+  assert.notEqual(finished.flow, land);
+  assert.deepEqual(finished.approval, { head, report_sig: secondLead.report_sig, job: repair });
+  assert.equal(finished.protected_spec, undefined, 'ordinary approvals do not impose the unattended spec restriction');
+  assert.equal(finished.state, 'completed');
+});
+
 test('a blocker escalation holds just its ticket and dependent; an independent try-note ticket dispatches and lands before resume', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: {
     '01-synthetic.md': goodTicket(1),
@@ -196,6 +239,11 @@ test('a blocker escalation holds just its ticket and dependent; an independent t
   assert.equal(read.handback.ticket, 'sample/01');
   assert.equal(read.held_items[0].owner_approval, 'feature-deletion');
   assert.equal(read.held_items[0].request_id, lead);
+  const ready = await f.call('hud_tickets', { op: 'ready', cwd: f.root });
+  assert.ok(!ready.tickets.some(({ ticket }) => ticket === 'sample/01'));
+  assert.ok(!ready.tickets.some(({ ticket }) => ticket === 'sample/02'));
+  const board = await new ProjectCollector(f.root, f.home, f.env, f.env.HOME).collect(true, { workers: [] }, Date.now());
+  assert.equal(board.ledger.find(row => row.id === 'SAMPLE-01')?.state, 'blocked');
   const delivered = await collectDeliveredNotices(f, flow, read, 1);
   assert.equal(delivered.length, 1);
   assert.match(delivered[0], /held sample\/01: Deleting X needs owner approval/);

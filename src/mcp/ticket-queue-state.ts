@@ -65,6 +65,7 @@ export interface TicketQueueItem {
   changed_at?: string;
   held_land?: string; // Manual land that cleared this hold; retain its evidence for review and acceptance.
   dispatch_queue?: string; // Keep the original worker request key across explicit resumes.
+  repair_job?: string; // A replacement repair reports on the original managed checkout.
   approved_head?: string;
   approved_report_sig?: string;
   approved_assumptions_head?: string;
@@ -112,6 +113,14 @@ export function readTicketQueue(home: string, id: string): TicketQueue | null {
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
 }
 export function writeTicketQueue(home: string, q: TicketQueue, create = false) {
+  if (q.state === 'working') {
+    syncBlockerHandback(q);
+    for (const { ticket, held } of q.tickets) {
+      if (held?.kind !== 'blocker' || !held.request_id) continue;
+      (q.notices ??= {})[`handback-${held.request_id}`] =
+        `${q.flow} held ${ticket}: ${held.reason} — reply hud_respond job=${q.flow} request_id=${held.request_id} answer=resume`;
+    }
+  }
   q.updated_at = new Date().toISOString();
   writeJsonPrivate(queueFile(home, q.flow), q, { mkdir: false, exclusive: create });
 }
@@ -135,7 +144,7 @@ export function syncBlockerHandback(q: TicketQueue) {
   if (q.handback?.request_id === item?.held?.request_id) return false;
   if (item) {
     q.handback = {
-      step: 'tickets', choices: ['resume'], kind: 'blocker', ticket: item.ticket, job: item.job,
+      step: 'tickets', choices: ['resume'], kind: 'blocker', ticket: item.ticket, job: item.repair_job ?? item.job,
       request_id: item.held!.request_id,
       ...(item.held!.owner_approval && { owner_approval: item.held!.owner_approval }),
     };
@@ -147,7 +156,7 @@ export function ticketQueueView(q: TicketQueue) {
   const { flow, feature, state, remaining, queued, blocked, max_parallel, verdict, todo, decisions, reviews, repair_rounds, handback, held, unclosed_leads } = q;
   const reason = q.reason ?? (queued?.length ? `Queued: ${queued.map(({ ticket, blockers }) => `${ticket} waiting on ${blockers.join(', ')}`).join('; ')}` : undefined);
   const base_moves = q.tickets.reduce((total, item) => total + (item.base_moves ?? 0), 0);
-  const heldItems = q.tickets.filter(item => item.held).map(({ ticket, job, held: h }) => ({ ticket, ...(job && { job }), ...h! }));
+  const heldItems = q.tickets.flatMap(({ ticket, job, repair_job, held: h }) => h ? [{ ticket, job: repair_job ?? job, ...h }] : []);
   const failedItems = q.tickets.filter(item => item.failed).map(({ ticket, job, failed: f }) => ({ ticket, ...(job && { job }), ...f! }));
   const pause_notice = state === 'paused' && !Object.keys(q.notices ?? {}).length
     ? ticketQueueNotice(q).replace(/\r?\n/g, ' | ') : undefined;

@@ -16,6 +16,8 @@ import { jobFiles } from './paths.js';
 export const DEFAULT_LAND_TIMEOUT_S = 900;
 export const SPEC_CHANGE_REFUSAL = 'Unattended landing would change docs/spec.md';
 export const TICKET_DIFF_REFUSAL = 'Worker diff must not modify .hud/tickets/**';
+export const LAND_APPROVAL_CHANGED = 'Source commit or report changed after approval';
+export interface LandApproval { head: string; report_sig: string; job: string }
 export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string; timeout_s?: number }
 export interface LandTiming { step: string; ms: number; ok: boolean; rerun?: true; skipped?: true; train?: string }
 export interface LandRerun {
@@ -35,6 +37,8 @@ export interface LandFlow {
   ticket_queue?: string;
   auto_land?: true;
   protected_spec?: true;
+  approval?: LandApproval;
+  approval_repairs?: number; // Repairs carried across attempts that returned to triage.
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
   pid: number; start: string; created_at: string; updated_at: string; step_started_at?: string;
   base_sha?: string; source_sha: string; tested_sha?: string; landed_sha?: string; records_sha?: string; replayed_onto?: string; cleanup_note?: string; error?: string; tail?: string[];

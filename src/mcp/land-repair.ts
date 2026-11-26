@@ -72,7 +72,7 @@ function repairProgress(root: string, receipt: Job, key: string, inPlace: boolea
 }
 
 export async function repairLand(home: string, f: LandFlow, checkCancel: () => void) {
-  const repairs = f.repairs ??= [], source = repairs.at(-1)?.job ?? f.job;
+  const repairs = f.repairs ??= [], source = repairs.at(-1)?.job ?? f.approval?.job ?? f.job;
   const dir = (id: string) => join(home, 'jobs', id);
   const baseline = repairBaseline(dir(source));
   const now = new Date().toISOString();

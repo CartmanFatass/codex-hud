@@ -2,7 +2,7 @@ import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { ticketFileEvidence } from '../collectors/ticket-evidence.js';
 import { completedLandForJob } from '../mcp/land-state.js';
-import { isTicketQueueId, queueCancelled, queueFile, queueIds, readTicketQueue, type TicketHandbackKind, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { isTicketQueueId, queueCancelled, queueFile, queueIds, readTicketQueue, type TicketHandbackKind, type TicketQueue, type TicketQueueItem } from '../mcp/ticket-queue-state.js';
 import { storedTicket } from '../tickets/store.js';
 import { readFileBounded, readJsonBounded } from '../utils/atomic-fs.js';
 import { isProcAlive, isValidPid, readBootId } from '../utils/proc.js';
@@ -15,12 +15,13 @@ export type OwnerApproval = 'feature-deletion' | 'spec-change';
 export interface UnattendedRun { objective: string }
 export interface UnattendedControl { enabled: boolean; root: string; objectives: string[] }
 export interface UnattendedIdentity { pid: number; start: string; boot_id: string }
-export interface UnattendedHandback {
-  flow: string; root: string; objective: string;
+interface QueueHandback {
+  flow: string; root: string;
   ticket?: string; path?: string; job?: string;
   reason: string; at: string;
   kind?: TicketHandbackKind; owner_approval?: OwnerApproval;
 }
+export interface UnattendedHandback extends QueueHandback { objective: string }
 export const controlPath = (home: string) => join(home, 'unattended.json');
 export const identityPath = (home: string) => join(home, 'unattended.pid.json');
 export const indexPath = (home: string) => join(home, 'unattended-runs.json');
@@ -79,20 +80,17 @@ export function ticketClosed(root: string, item: TicketSource): boolean {
   return ticketClosedState(root, item) === true;
 }
 
+function itemHandback(q: TicketQueue, item: TicketQueueItem): QueueHandback {
+  const { reason, at, kind, owner_approval } = item.held!;
+  return { flow: q.flow, root: q.root, ticket: item.ticket, path: item.path, ...(item.job && { job: item.job }),
+    reason, at, ...(kind && { kind }), ...(owner_approval && { owner_approval }) };
+}
+
 export function openHoldsInRun(q: TicketQueue): UnattendedHandback[] {
   if (!q.unattended) return [];
-  const holds: UnattendedHandback[] = [];
-  for (const item of q.tickets ?? []) {
-    if (!item.held || itemClosed(q.root, item)) continue;
-    holds.push({
-      flow: q.flow, root: q.root, objective: q.unattended.objective,
-      ticket: item.ticket, path: item.path,
-      ...(item.job && { job: item.job }),
-      reason: item.held.reason, at: item.held.at,
-      ...(item.held.kind && { kind: item.held.kind }),
-      ...(item.held.owner_approval && { owner_approval: item.held.owner_approval }),
-    });
-  }
+  const { objective } = q.unattended;
+  const holds = (q.tickets ?? []).flatMap(item => item.held && !itemClosed(q.root, item)
+    ? [{ ...itemHandback(q, item), objective }] : []);
   if ((q.state === 'paused' || q.state === 'cancelled') && q.held) {
     holds.push({
       flow: q.flow, root: q.root, objective: q.unattended.objective,
@@ -133,14 +131,33 @@ function indexedRuns(home: string): TicketQueue[] {
     .filter((q): q is TicketQueue => !!q?.unattended);
 }
 
-export function readOpenHolds(home: string, root?: string): UnattendedHandback[] {
-  try {
-    return indexedRuns(home)
-      .filter(q => !root || q.root === root)
-      .flatMap(openHoldsInRun);
-  } catch {
-    return [];
+function currentOrdinaryHoldRun(home: string, q: TicketQueue) {
+  // A failed queue can hand its item holds off when an unrelated main question is answered.
+  return !q.unattended && !q.superseded_by && (isOpenTicketRun(q) || q.state === 'failed') && !queueCancelled(home, q);
+}
+
+export function readOpenHolds(home: string, root?: string): QueueHandback[] {
+  const holds: QueueHandback[] = [];
+  try { holds.push(...indexedRuns(home).filter(q => !root || q.root === root).flatMap(openHoldsInRun)); }
+  catch { /* Unreadable index does not hide ordinary holds. */ }
+  const pass = workflowHeaders(home), latest = new Map<string, TicketQueue>();
+  for (const file of pass.files) {
+    if (!file.endsWith('.json') || !isTicketQueueId(file.slice(0, -5))) continue;
+    try {
+      const q = pass.header<TicketQueue>(file);
+      if (!q || q.unattended || (root && q.root !== root)) continue;
+      // Older failed receipts may predate the superseded_by marker on question hand-offs.
+      const key = `${q.root}\0${q.feature}`, prior = latest.get(key);
+      if (!prior || q.created_at > prior.created_at || prior.superseded_by === q.flow) latest.set(key, q);
+    } catch { /* Ignore an unreadable queue, not other holds. */ }
   }
+  for (const q of latest.values()) {
+    if (!currentOrdinaryHoldRun(home, q)) continue;
+    for (const item of q.tickets ?? []) {
+      if (item.held && !item.landed && !ticketClosed(q.root, item)) holds.push(itemHandback(q, item));
+    }
+  }
+  return holds;
 }
 
 export interface PinnedQueueJobs {
@@ -166,16 +183,21 @@ export function pinnedQueueJobs(home: string, pass = workflowHeaders(home)): Pin
     if (!file.endsWith('.json') || !isTicketQueueId(file.slice(0, -5))) continue;
     try {
       const q = pass.header<TicketQueue>(file);
-      if (!q || q.unattended || !isOpenTicketRun(q) || q.superseded_by || queueCancelled(home, q)) continue;
+      if (!q || !isOpenTicketRun(q) || !currentOrdinaryHoldRun(home, q)) continue;
       for (const item of q.tickets ?? []) {
         const unresolved = !item.landed && item.held;
         const adopted = item.held_land && (!item.landed || item.held_land === item.land);
         if (!item.job || (!unresolved && !adopted)) continue;
         try {
           const land = completedLandForJob(home, item.job, pass);
-          if (land && !land.ticket_queue && (unresolved || item.held_land === land.flow)) evidence.add(item.job);
-          else if (unresolved && !ticketClosed(q.root, item)) held.add(item.job);
-        } catch { if (unresolved) held.add(item.job); }
+          if (land && !land.ticket_queue && (unresolved || item.held_land === land.flow)) {
+            evidence.add(item.job);
+            continue;
+          }
+          if (!unresolved || ticketClosed(q.root, item)) continue;
+        } catch { if (!unresolved) continue; }
+        held.add(item.job);
+        if (item.repair_job) held.add(item.repair_job);
       }
     } catch { /* Ignore an unreadable queue, not other holds. */ }
   }

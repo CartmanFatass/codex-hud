@@ -372,7 +372,7 @@ function extractLandGateAndRepair(
     const info = attempt.job && (!jobReusedLater || isActive)
       ? workerStatusInfo(cache, attempt.job, isActive ? 'running' : 'done', repairWorker)
       : undefined;
-    const outcomeDone = attempt.outcome === 'settled; retrying gate' || attempt.outcome === 'gate passed';
+    const outcomeDone = attempt.outcome === 'settled; retrying gate' || attempt.outcome === 'settled; returned to approval triage' || attempt.outcome === 'gate passed';
     const repairState: MetroStationState = isActive
       ? (info ? stepToMetroState(info.state) : 'working')
       : outcomeDone ? 'done' : 'failed';

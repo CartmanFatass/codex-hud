@@ -21,7 +21,7 @@ import { directRecipient } from '../workflows/scope.js';
 import { freezeGraph, runDir, runLock, stopRequested } from '../workflows/store.js';
 import { dispatchJob, dispatchTicketJob } from './dispatch/orchestrator.js';
 import type { Job, JobStatus } from './job-contracts.js';
-import { activeLand, landAttempt, landOutcome, readLand, retryableLand, SPEC_CHANGE_REFUSAL } from './land-state.js';
+import { activeLand, LAND_APPROVAL_CHANGED, landAttempt, landOutcome, readLand, retryableLand, SPEC_CHANGE_REFUSAL, type LandApproval } from './land-state.js';
 import { startLand, validLandConfig } from './land.js';
 import {
   checkTicketPaths, recordUnattendedAcceptance, ticketApprovedRemovals, ticketObjectiveOwner, ticketReadiness,
@@ -133,12 +133,12 @@ function milestoneReviewRange(q: TicketQueue): Job['reviewed'] {
 }
 
 type SettlementVerdict = { assumed?: string[]; tries?: string[] } & (
-  | { ok: true; assumed: string[]; blockers: string[]; trigger?: string; sig: string; reportText: string }
+  | { ok: true; assumed: string[]; blockers: string[]; trigger?: string; head?: string; sig: string; reportText: string }
   | { waitMs: number }
   | { kind: TicketHandbackKind; reason: string; assumption?: TicketHandback['assumption'] }
 );
 
-function judgeSettlement(root: string, item: TicketQueueItem, job: Job, status: JobStatus, deferAssumptions: boolean): SettlementVerdict {
+function judgeSettlement(root: string, item: TicketQueueItem, job: Job, sourceJob: Job, status: JobStatus, deferAssumptions: boolean): SettlementVerdict {
   const dir = directory(job.job);
   const sig = declaredReport(dir, job, status);
   if (!sig) return { kind: 'worker', reason: 'settled without a declared report for this turn' };
@@ -149,8 +149,9 @@ function judgeSettlement(root: string, item: TicketQueueItem, job: Job, status: 
   const { blockers, tries } = extractReportNotes(text);
   const notes = { assumed, tries };
   const trigger = assumptionTrigger(assumed, scopeAssumptions);
+  let head: string | undefined;
   if (!blockers.length && trigger && !deferAssumptions) {
-    const head = verifiedSourceHead(job);
+    head = verifiedSourceHead(sourceJob);
     if (!head || item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig) {
       return { kind: 'assumption', reason: trigger, ...notes, ...(head && { assumption: { head, report_sig: sig } }) };
     }
@@ -171,11 +172,11 @@ function judgeSettlement(root: string, item: TicketQueueItem, job: Job, status: 
     }
     if (receipt.results.length !== job.checks.length) return { kind: 'check', reason: 'HUD check results incomplete', ...notes };
   }
-  return { ok: true, ...notes, blockers, trigger, sig, reportText: text };
+  return { ok: true, ...notes, blockers, trigger, head, sig, reportText: text };
 }
 
 type GateResult =
-  | { kind: 'pass'; head: string }
+  | { kind: 'pass' }
   | { kind: 'ambiguous'; head: string; detail: string }
   | { kind: 'hold'; reason: string; ownerApproval?: OwnerApproval }
   | { kind: 'fail'; problemKind: TicketHandbackKind; reason: string };
@@ -188,15 +189,11 @@ type GateResult =
 function checkUnattendedGates(
   q: TicketQueue,
   item: TicketQueueItem,
-  job: Job,
+  repo: string,
+  head: string,
   sig: string,
   reportText: string,
 ): GateResult {
-  const head = verifiedSourceHead(job);
-  if (!head) {
-    return { kind: 'fail', problemKind: 'worker', reason: 'Verified worker commit unavailable' };
-  }
-  const repo = job.worktree!.main_root;
   let base: string;
   try { base = validLandConfig(hudHome, repo).base; }
   catch (error) { return { kind: 'fail', problemKind: 'land', reason: errorLine(error) }; }
@@ -224,7 +221,7 @@ function checkUnattendedGates(
       return { kind: 'hold', ownerApproval: 'feature-deletion', reason: `Unapproved removal declared: ${unapproved.join(', ')}` };
     }
   }
-  return { kind: 'pass', head };
+  return { kind: 'pass' };
 }
 
 export interface TicketProblem {
@@ -272,11 +269,11 @@ function heldResolutionReason(item: TicketQueueItem) {
 function heldItemChanged(item: TicketQueueItem): boolean {
   const held = item.held;
   if (!held || !item.job || (!held.head && !held.report_sig)) return false;
-  const job = findJob(item.job);
-  if (!job) return false;
+  const sourceJob = findJob(item.job), job = item.repair_job ? findJob(item.repair_job) : sourceJob;
+  if (!sourceJob || !job) return false;
   const dir = directory(job.job);
   const { row, status } = readRow(job, false, null);
-  const currentHead = verifiedSourceHead(job);
+  const currentHead = verifiedSourceHead(sourceJob);
   if (held.head && currentHead && currentHead !== held.head) return true;
   if (status && cleanStates.includes(status.state)) {
     const currentSig = declaredReport(dir, job, status);
@@ -989,7 +986,7 @@ function tickAssumptionLead(q: TicketQueue, state: { problem?: TicketProblem }):
           writeTicketQueue(hudHome, cur);
           return;
         }
-        const entry = cur.tickets.find(t => t.ticket === active.ticket && t.job === active.worker_job);
+        const entry = cur.tickets.find(t => t.ticket === active.ticket && (t.repair_job ?? t.job) === active.worker_job);
         if (entry) {
           if (parsed.decision === 'continue' && active.head && active.report_sig) {
             entry.approved_assumptions_head = active.head;
@@ -1000,8 +997,6 @@ function tickAssumptionLead(q: TicketQueue, state: { problem?: TicketProblem }):
               const reason = parsed.reason ?? 'Lead escalated a worker blocker';
               const request_id = leadJob.job;
               holdItem(entry, reason, kind, approval, { head: active.head, report_sig: active.report_sig, request_id });
-              syncBlockerHandback(cur);
-              (cur.notices ??= {})[`handback-${request_id}`] = `${cur.flow} held ${entry.ticket}: ${reason} — reply hud_respond job=${cur.flow} request_id=${request_id} answer=resume`;
             } else if (approval && parsed.reason) {
               holdItem(entry, parsed.reason, kind, approval, { head: active.head, report_sig: active.report_sig });
             } else {
@@ -1098,7 +1093,7 @@ function tickTicketQueue(
   const deferAssumptions = q.handback_to !== 'main';
   let problem: TicketProblem | undefined, changed = false, recheck: number | undefined;
   const note = (p: TicketProblem) => { problem ??= p; };
-  const clean: { item: TicketQueueItem; job: Job; state: JobStatus['state']; retry?: string }[] = [];
+  const clean: { item: TicketQueueItem; source: Job; state: JobStatus['state']; retry?: string; approval?: LandApproval }[] = [];
   let pendingQuestion: { item: TicketQueueItem; job: Job; question: string } | undefined;
   let pendingAmbiguity: { item: TicketQueueItem; job: Job; head: string; sig: string; detail: string } | undefined;
   let pendingAssumption: ReportLeadInput | undefined;
@@ -1126,7 +1121,7 @@ function tickTicketQueue(
     if (!item.job) continue;
     const recorded = item.land ? readLand(hudHome, item.land) : null;
     // A resumed queue follows any newer attempt, including one started manually after the handoff.
-    const land = !item.land || (item.dispatch_queue && recorded?.ticket_queue !== q.flow)
+    const land = !item.land || recorded?.error === LAND_APPROVAL_CHANGED || (item.dispatch_queue && recorded?.ticket_queue !== q.flow)
       ? landAttempt(hudHome, item.job).prior : recorded;
     let retry: string | undefined;
     if (land?.job === item.job) {
@@ -1135,7 +1130,14 @@ function tickTicketQueue(
         const at = land.landed_at ?? land.updated_at ?? new Date().toISOString();
         item.landed = true; item.landed_at = at; item.changed_at = at; item.base_moves = land.base_moves; changed = true;
       } else if (!activeLand(land)) {
-        if (item.dispatch_queue && land.ticket_queue !== q.flow && retryableLand(land)) retry = land.flow;
+        if (land.approval && land.error === LAND_APPROVAL_CHANGED && retryableLand(land)) {
+          const repairJob = land.repairs?.at(-1)?.job;
+          if (repairJob && repairJob !== (item.repair_job ?? item.job)) {
+            item.repair_job = repairJob === item.job ? undefined : repairJob;
+            changed = true;
+          }
+          retry = land.flow; // Judge the new evidence before admitting a replacement land receipt.
+        } else if (item.dispatch_queue && land.ticket_queue !== q.flow && retryableLand(land)) retry = land.flow;
         else if (q.unattended && land.error === SPEC_CHANGE_REFUSAL) {
           holdItem(item, SPEC_CHANGE_REFUSAL, 'escalate', 'spec-change');
           changed = true;
@@ -1152,18 +1154,21 @@ function tickTicketQueue(
       else note({ kind: 'land', ticket: item.ticket, job: item.job, land: item.land, reason: `${item.ticket} land receipt missing (${item.land})` });
       continue;
     }
-    const job = findJob(item.job);
+    const sourceJob = findJob(item.job), job = item.repair_job ? findJob(item.repair_job) : sourceJob;
     const flag = (kind: TicketHandbackKind, why: string, extra?: Partial<TicketProblem>) => {
       if (q.unattended) {
         if (kind === 'assumption' || kind === 'escalate') holdItem(item, why, kind, extra?.ownerApproval);
         else failItem(item, why, kind);
         changed = true;
       } else {
-        note({ kind, ticket: item.ticket, job: item.job, ...extra, reason: `${item.ticket} (${item.job}): ${why}` });
+        const evidenceJob = item.repair_job ?? item.job;
+        note({ kind, ticket: item.ticket, job: evidenceJob, ...extra, reason: `${item.ticket} (${evidenceJob}): ${why}` });
       }
     };
-    if (!job) { flag('worker', 'job receipt missing'); continue; }
-    if (job.ticket_queue !== owner(q, item)) { flag('worker', 'job taken over outside the ticket queue'); continue; }
+    if (!sourceJob || !job) { flag('worker', 'job receipt missing'); continue; }
+    if (sourceJob.ticket_queue !== owner(q, item) || (item.repair_job && job.cwd !== sourceJob.cwd)) {
+      flag('worker', 'job taken over outside the ticket queue'); continue;
+    }
     const { row, status, statusAt } = readRow(job, false, null);
     const qa = jobCache.readQa(directory(job.job)), question = qa.openIds[0];
     // Answered but not yet read: the worker still reports waiting_orchestrator until it picks the answer up.
@@ -1189,7 +1194,8 @@ function tickTicketQueue(
       if (left > 0) recheck = Math.min(recheck ?? left, left);
       else flag('dispatch', 'dispatch interrupted before worker status was recorded');
     } else if (status && cleanStates.includes(status.state)) {
-      const verdict = judgeSettlement(q.root, item, job, status, deferAssumptions);
+      // A replacement repair supplies the report but does not own the managed worktree.
+      const verdict = judgeSettlement(q.root, item, job, sourceJob, status, deferAssumptions);
       const source = `${item.ticket} (${job.job})`;
       changed = appendTodos(q, [
         ...(verdict.assumed ?? []).map(text => ({ source, kind: 'assumed' as const, text })),
@@ -1197,9 +1203,10 @@ function tickTicketQueue(
       ]) || changed;
       if ('ok' in verdict) {
         const { trigger, sig, assumed, blockers, reportText } = verdict;
-        if (blockers.length) {
-          const head = verifiedSourceHead(job);
-          if (!head) { flag('worker', 'Verified worker commit unavailable'); continue; }
+        const fenced = blockers.length || trigger || (landEach && (q.unattended || item.approved_assumptions_head || land?.approval));
+        const head = verdict.head ?? (fenced ? verifiedSourceHead(sourceJob) : undefined);
+        if (fenced && !head) { flag('worker', 'Verified worker commit unavailable'); continue; }
+        if (blockers.length && head) {
           if (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig) {
             if (q.handback_to === 'main' && !leadEnabled(q.root)) {
               flag('blocker', 'report declares Blockers:', { assumption: { head, report_sig: sig } });
@@ -1210,9 +1217,8 @@ function tickTicketQueue(
           }
           changed = appendTodos(q, blockers.map(text => ({ source, kind: 'blocker' as const, text }))) || changed;
         }
-        let gateHead: string | undefined;
-        if (landEach && q.unattended) {
-          const gate = checkUnattendedGates(q, item, job, sig, reportText);
+        if (landEach && q.unattended && head) {
+          const gate = checkUnattendedGates(q, item, sourceJob.worktree!.main_root, head, sig, reportText);
           if (gate.kind !== 'pass') {
             if (gate.kind === 'ambiguous') {
               pendingAmbiguity ??= { item, job, head: gate.head, sig, detail: gate.detail };
@@ -1225,23 +1231,21 @@ function tickTicketQueue(
             }
             continue;
           }
-          gateHead = gate.head;
         }
-        if (deferAssumptions && trigger && (landEach || !q.unattended)) {
-          const head = gateHead ?? verifiedSourceHead(job);
-          if (!head) { flag('worker', 'Verified worker commit unavailable'); continue; }
-          if (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig) {
-            pendingAssumption ??= { item, job, head, sig, trigger, assumed, blockers };
-            continue;
-          }
+        if (deferAssumptions && trigger && head && (landEach || !q.unattended) &&
+            (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig)) {
+          pendingAssumption ??= { item, job, head, sig, trigger, assumed, blockers };
+          continue;
         }
-        if (gateHead && (item.approved_head !== gateHead || item.approved_report_sig !== sig)) {
-          item.approved_head = gateHead;
+        if (landEach && q.unattended && head && (item.approved_head !== head || item.approved_report_sig !== sig)) {
+          item.approved_head = head;
           item.approved_report_sig = sig;
           changed = true;
         }
-        if (landEach) clean.push({ item, job, state: status.state, retry });
-        else { const at = new Date().toISOString(); item.landed = true; item.landed_at = at; item.changed_at = at; changed = true; }
+        if (landEach) {
+          const approval = head ? { head, report_sig: sig, job: job.job } : undefined;
+          clean.push({ item, source: sourceJob, state: status.state, retry, approval });
+        } else { const at = new Date().toISOString(); item.landed = true; item.landed_at = at; item.changed_at = at; changed = true; }
       } else if ('waitMs' in verdict) {
         recheck = Math.min(recheck ?? verdict.waitMs, verdict.waitMs);
       } else {
@@ -1274,12 +1278,14 @@ function tickTicketQueue(
     const flowId = q.flow, pane = livePane(q) ?? null;
     // Queue together, letting the existing land train decide whether they can share a gate.
     return { state: 'running', changed: true, effect: async () => {
-      const results = await Promise.allSettled(clean.map(async ({ item, job, state: jobState, retry }) => {
+      const results = await Promise.allSettled(clean.map(async ({ item, source, state: jobState, retry, approval }) => {
         try {
-          const land = await startLand(hudHome, job.job, job, jobState, pane, false, flowId, retry, q.unattended ? item.approved_head : undefined);
-          return { ticket: item.ticket, job: job.job, land: land.flow };
+          const land = await startLand(hudHome, source.job, source, jobState, pane, false, flowId, retry, approval);
+          return { ticket: item.ticket, job: source.job, land: land.flow };
         } catch (error) {
-          throw { ticket: item.ticket, job: job.job, reason: `${item.ticket} (${job.job}): cannot start land: ${errorLine(error)}` };
+          const why = errorLine(error);
+          if (why === LAND_APPROVAL_CHANGED) return; // Evidence raced admission. Read it again on the next tick.
+          throw { ticket: item.ticket, job: source.job, reason: `${item.ticket} (${source.job}): cannot start land: ${why}` };
         }
       }));
       await runLock(hudHome, flowId, () => {
@@ -1288,8 +1294,10 @@ function tickTicketQueue(
         let updated = false;
         for (const result of results) {
           if (result.status === 'fulfilled') {
-            const entry = cur.tickets.find(t => t.ticket === result.value.ticket && t.job === result.value.job);
-            if (entry && entry.land !== result.value.land) { entry.land = result.value.land; updated = true; }
+            const receipt = result.value;
+            if (!receipt) continue;
+            const entry = cur.tickets.find(t => t.ticket === receipt.ticket && t.job === receipt.job);
+            if (entry && entry.land !== receipt.land) { entry.land = receipt.land; updated = true; }
           } else if (cur.unattended) {
             const detail = result.reason as { ticket?: string; job?: string; reason?: string };
             const entry = cur.tickets.find(t => t.ticket === detail?.ticket && t.job === detail?.job);
@@ -1897,7 +1905,7 @@ export async function driveTicketQueue(id: string) {
         ...(q.queued ?? []).flatMap(item => item.blockers.map(ref => ({ dir: join(q.root, '.scratch', ref.split('/')[0].toLowerCase(), 'issues') }))),
         ...(blockerHandbackItem(q) && !q.unattended ? [{ dir: join(q.root, '.scratch', q.feature, 'issues') }] : []),
         ...q.tickets.flatMap(item => item.job && !item.landed && (!item.held || item.held.request_id) && !item.failed
-          ? [{ dir: directory(item.job), recursive: true, filter: jobDirFilter }] : []),
+          ? [{ dir: directory(item.repair_job ?? item.job), recursive: true, filter: jobDirFilter }] : []),
         ...(q.review_job ? [{ dir: directory(q.review_job), recursive: true, filter: jobDirFilter }] : []),
         ...(q.active_lead?.job ? [{ dir: directory(q.active_lead.job), recursive: true, filter: jobDirFilter }] : []),
         ...(q.pending_answer?.worker_job ? [{ dir: directory(q.pending_answer.worker_job), recursive: true, filter: jobDirFilter }] : []),

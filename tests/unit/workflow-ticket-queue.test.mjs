@@ -11,6 +11,7 @@ import { isProcAlive, procStat, readBootId, readProcEnviron } from '../../dist/u
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { readMachineWork } from '../../dist/collectors/work-summary-snapshot.js';
+import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { homeRows } from '../../dist/render/home-view.js';
 import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { machineWorkForms } from '../../dist/render/work-summary.js';
@@ -18,14 +19,13 @@ import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { loadGraph } from '../../dist/workflows/graph.js';
 import { taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js';
 import { permissionStatus } from '../../dist/mcp/worker-permissions.js';
-import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { MAX_TICKET_BYTES, readJsonTicketFeature, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
-import { pinnedQueueJobs } from '../../dist/unattended/state.js';
+import { pinnedQueueJobs, readOpenHolds } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { fallbackRole, resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-import { goodTicket, readJson, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
+import { collectDeliveredNotices, goodTicket, readJson, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
 const runner = resolve('packages/hud-mcp/bin/workflow-runner.mjs');
 const sonicEntry = resolve('packages/hud-mcp/bin/hud-sonic.mjs');
@@ -682,7 +682,7 @@ test('unattended deterministic gates hold spec edits and unapproved removals wit
   assert.equal(leads.length, 0);
   assert.deepEqual(u.status().handbacks.map(h => h.ticket).sort(), ['sample/01', 'sample/02']);
 
-  // Exact-SHA guard: startLand refuses when source HEAD differs from approvedHead.
+  // The approval fence rejects a changed source head even when the report is unchanged.
   const r2 = f.job(w2);
   const oldHead = f.git(r2.worktree.root, 'rev-parse', 'HEAD');
   fs.writeFileSync(join(r2.worktree.root, 'tamper.txt'), 'tampered\n');
@@ -690,7 +690,8 @@ test('unattended deterministic gates hold spec edits and unapproved removals wit
   f.git(r2.worktree.root, 'commit', '-qm', 'tamper');
   // Patch approved_head to oldHead and verify startLand refuses tampered commit.
   const qPatch = f.flow(flow);
-  qPatch.tickets.find(x => x.ticket === 'sample/02').approved_head = oldHead;
+  const approval = { head: oldHead, report_sig: reportSignature(f.dir(w2)), job: w2 };
+  Object.assign(qPatch.tickets.find(x => x.ticket === 'sample/02'), { approved_head: approval.head, approved_report_sig: approval.report_sig });
   writeFixtureFile(join(f.home, 'flows', `${flow}.json`), JSON.stringify(qPatch));
   await assert.rejects(
     runFile(process.execPath, [
@@ -698,10 +699,10 @@ test('unattended deterministic gates hold spec edits and unapproved removals wit
       `import { startLand } from './dist/mcp/land.js';
        import { findJob } from './dist/mcp/store/job-store.js';
        const job = findJob(process.argv[1]);
-       await startLand(process.env.HUD_HOME, job.job, job, 'closed', null, false, process.argv[2], undefined, process.argv[3]);`,
-      w2, flow, oldHead,
+       await startLand(process.env.HUD_HOME, job.job, job, 'closed', null, false, process.argv[2], undefined, JSON.parse(process.argv[3]));`,
+      w2, flow, JSON.stringify(approval),
     ], { env: f.env }),
-    /Source changed after unattended approval/,
+    /Source commit or report changed after approval/,
   );
 });
 
@@ -761,16 +762,28 @@ test('unattended repair admits repair tickets inside the same run, bounded to 2 
 });
 
 test('to: main question hand-back auto-resumes on hud_respond; the successor can be cancelled by run ID', { timeout: 45_000 }, async t => {
-  const f = await setupWorkflowProject(t, { secondBlocker: 'none', count: 2 });
+  const f = await setupWorkflowProject(t, { secondBlocker: 'none', count: 3 });
   const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
-  const [first] = await f.jobs(flow, 1);
+  const [held] = await f.jobs(flow, 1);
+  await f.settle(held, { report: 'Blockers: The owner must choose whether to remove X.\n' });
+  await until(() => f.flow(flow).active_lead?.kind === 'blocker', 15_000);
+  const request = f.flow(flow).active_lead.job;
+  await f.settleLead(request, 'Decision: escalate\nReason: Owner must choose whether to remove X.\nOwner approval: feature-deletion\n');
+  const [, independent] = await f.jobs(flow, 2);
+  const original = await f.call('hud_read', { job: flow });
+  assert.deepEqual(await collectDeliveredNotices(f, flow, original), [
+    `${flow} held sample/01: Owner must choose whether to remove X. — reply hud_respond job=${flow} request_id=${request} answer=resume`,
+  ]);
+  await f.settle(independent);
+  const [, , first] = await f.jobs(flow, 3);
+  assert.deepEqual(f.flow(flow).tickets.filter(item => item.landed).map(item => item.ticket), ['sample/02']);
   const qa = join(f.dir(first), 'qa');
   fs.mkdirSync(qa, { recursive: true });
   writeFixtureFile(join(qa, 'q1.md'), '# Question q1 from Synthetic\n\nChoose a synthetic path.\n');
   const stopped = await f.end(flow);
   assert.equal(stopped.state, 'failed');
   assert.deepEqual(stopped.handback, {
-    step: 'tickets', choices: ['resume', 'stop'], kind: 'question', ticket: 'sample/01', job: first, question: 'q1',
+    step: 'tickets', choices: ['resume', 'stop'], kind: 'question', ticket: 'sample/03', job: first, question: 'q1',
   });
 
   // Origin main exits; a fresh project main in another pane answers and resumes the queue.
@@ -787,11 +800,27 @@ test('to: main question hand-back auto-resumes on hud_respond; the successor can
   assert.match(reply.queue_resumed, /^q[0-9a-f]{16}$/);
   assert.notEqual(reply.queue_resumed, flow);
   assert.equal(f.flow(reply.queue_resumed).state, 'working');
-  assert.deepEqual(f.flow(reply.queue_resumed).tickets.map(x => x.job), [first]);
+  const successor = reply.queue_resumed;
+  assert.equal(f.flow(flow).superseded_by, successor);
+  assert.deepEqual(f.flow(successor).tickets.map(x => x.job), [held, independent, first]);
+  const read = async () => resultValue((await rpc('tools/call', { name: 'hud_read', arguments: { job: successor } })).result);
+  const current = await read();
+  assert.equal(current.handback.request_id, request);
+  // Either RPC can claim the notice, or the watcher can prompt the successor's pane.
+  const changes = [...(reply.changes ?? []), ...(current.changes ?? [])];
+  assert.deepEqual(await collectDeliveredNotices(f, successor, { changes }), [
+    `${successor} held sample/01: Owner must choose whether to remove X. — reply hud_respond job=${successor} request_id=${request} answer=resume`,
+  ]);
+  assert.ok(!(await read()).changes?.some(line => line.includes('held sample/01')), 'hold notice only delivered once');
+  assert.deepEqual(readOpenHolds(f.home, f.root).map(h => [h.flow, h.ticket]), [[successor, 'sample/01']]);
 
   await f.settle(first, { report: 'Synthetic finished report.\nBlockers: none\n' });
-  await f.jobs(reply.queue_resumed, 2);
-  assert.equal(f.flow(reply.queue_resumed).tickets[0].landed, true);
+  await until(() => f.flow(successor).tickets[2].landed, 15_000);
+  const answered = resultValue((await rpc('tools/call', {
+    name: 'hud_respond', arguments: { job: successor, request_id: request, answer: 'resume: The owner made the decision.' },
+  })).result);
+  assert.equal(answered.ok, true);
+  assert.deepEqual(readOpenHolds(f.home, f.root), []);
 
   const cancelled = resultValue((await rpc('tools/call', {
     name: 'hud_tickets', arguments: { op: 'run', cancel: true, run: reply.queue_resumed, cwd: f.root },

@@ -11,9 +11,10 @@ import { isDeepStrictEqual } from 'node:util';
 import { AbstractLockTimeoutError, withAbstractLock } from '../utils/abstract-lock.js';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { takeLease, type LandLease } from '../roles/lease.js';
+import { cachedReportSignature } from '../roles/report-meta.js';
 import type { CommandResult, Launch } from './land-custodian.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
-import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, landOwnerGone, readLand, setLandStep, SPEC_CHANGE_REFUSAL, TICKET_DIFF_REFUSAL, writeLand, type LandFlow, type LandRerun } from './land-state.js';
+import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, LAND_APPROVAL_CHANGED, landAttempt, landFile, landOwnerGone, readLand, setLandStep, SPEC_CHANGE_REFUSAL, TICKET_DIFF_REFUSAL, writeLand, type LandFlow, type LandRerun } from './land-state.js';
 import { canRepairSealedStep } from '../workflows/engine.js';
 import { runLock, stopRequested } from '../workflows/store.js';
 import { withTicketStoreLock } from '../tickets/store.js';
@@ -159,12 +160,15 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     if (await mainTip() !== sha) throw Error('Main checkout is not at the recorded base tip');
   };
   const checkSource = async (row: LandFlow) => {
-    const { wt } = row;
-    for (const id of new Set([row.job, row.repairs?.at(-1)?.job ?? row.job])) {
+    const { wt, approval } = row;
+    const source = await head(wt.root);
+    if (approval && (source !== approval.head || row.source_sha !== approval.head ||
+        cachedReportSignature(join(home, 'jobs', approval.job)) !== approval.report_sig)) throw Error(LAND_APPROVAL_CHANGED);
+    for (const id of new Set([row.job, approval?.job ?? row.job, row.repairs?.at(-1)?.job ?? row.job])) {
       const status = readJsonFile(join(home, 'jobs', id, jobFiles.status)) as JobStatus;
       if (!['closed', 'idle_grace', 'done'].includes(status.state)) throw Error(`Cannot land ${id}: job state is ${status.state ?? 'unknown'}`);
     }
-    if (await head(wt.root) !== row.source_sha ||
+    if (source !== row.source_sha ||
         (await git(wt.root, ['symbolic-ref', 'HEAD'])).trim() !== `refs/heads/${wt.branch}`)
       throw Error('Source job is no longer settled at the recorded commit');
   };
@@ -649,14 +653,21 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
         const prior = f.repairs?.at(-1);
         if (prior) { prior.outcome = `failed at ${f.step}`; prior.changed_at = new Date().toISOString(); }
-        // Unattended repairs return to the lead; never publish a substitute for the approved commit.
-        if (f.protected_spec || e instanceof CommandTimeout || !canRepairSealedStep(f.repairs?.length ?? 0)) throw e;
+        // Unattended queues retain their existing failure policy. Ordinary queues may repair, but must re-judge new evidence.
+        if (f.protected_spec || e instanceof CommandTimeout || !canRepairSealedStep((f.approval_repairs ?? 0) + (f.repairs?.length ?? 0))) throw e;
         checkCancel(); await checkSource(f);
         f.error = e.message; f.tail = e.tail;
         // Only the helper-created scratch checkout is disposable, never the source or main.
         await git(main, ['worktree', 'remove', '--force', '--', integration], 120000);
         await takeLease({ name: 'main-checkout', release: true }, lease); acquired = false;
         await repairLand(home, f, checkCancel);
+        checkCancel();
+        if (f.approval) {
+          const repair = f.repairs!.at(-1)!;
+          // A settled repair has a fresh report, even if its commit is unchanged.
+          repair.outcome = 'settled; returned to approval triage';
+          throw Error(LAND_APPROVAL_CHANGED);
+        }
         f.source_sha = await head(wt.root);
         delete f.error; delete f.tail;
         f.state = 'queued'; step('main-checkout lease');
