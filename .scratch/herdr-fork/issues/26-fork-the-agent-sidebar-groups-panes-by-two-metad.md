@@ -1,6 +1,6 @@
 # 26: Fork: the agent sidebar groups panes by two metadata tokens, foldable
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Live try:** after install and HUD 27, workers of two projects and two features show as two big groups with small groups beneath; fold one and it stays folded after reattaching the client
 **Blocked by:** none

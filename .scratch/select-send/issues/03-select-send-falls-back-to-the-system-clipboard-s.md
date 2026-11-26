@@ -1,6 +1,6 @@
 # 03: Select-send falls back to the system clipboard (send what was just copied)
 
-**Status:** ready-for-agent
+**Status:** wontfix
 **Owner try:** yes
 **Live try:** copy any text (in herdr, Windows Terminal or another app), press Ctrl+b a in a herdr pane: the composer opens with that text marked 来自剪贴板; confirm sends it to the main session
 **Blocked by:** none
