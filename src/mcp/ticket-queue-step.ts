@@ -74,11 +74,11 @@ function verifiedSourceHead(job: Job) {
 }
 
 type SettlementVerdict =
-  | { ok: true; assumed: string[]; scopeAssumptions: string[]; sig: string; reportText: string }
+  | { ok: true; assumed: string[]; trigger?: string; sig: string; reportText: string }
   | { waitMs: number }
   | { kind: TicketHandbackKind; reason: string; assumed?: string[]; assumption?: TicketHandback['assumption'] };
 
-function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus, deferAssumptions = false): SettlementVerdict {
+function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus, deferAssumptions: boolean): SettlementVerdict {
   const dir = directory(job.job);
   const sig = declaredReport(dir, job, status);
   if (!sig) return { kind: 'worker', reason: 'settled without a declared report for this turn' };
@@ -88,8 +88,8 @@ function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus, def
   const { lines: assumed, scopeAssumptions } = extractAssumedLines(text);
   if (hasReportBlockers(text))
     return { kind: 'blocker', reason: 'report has a Blockers: line', assumed };
-  const trigger = !deferAssumptions && assumptionTrigger(assumed, scopeAssumptions);
-  if (trigger) {
+  const trigger = assumptionTrigger(assumed, scopeAssumptions);
+  if (trigger && !deferAssumptions) {
     const head = verifiedSourceHead(job);
     if (!head || item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig) {
       return { kind: 'assumption', reason: trigger, assumed, ...(head && { assumption: { head, report_sig: sig } }) };
@@ -110,13 +110,12 @@ function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus, def
     }
     if (receipt.results.length !== job.checks.length) return { kind: 'check', reason: 'HUD check results incomplete', assumed };
   }
-  return { ok: true, assumed, scopeAssumptions, sig, reportText: text };
+  return { ok: true, assumed, trigger, sig, reportText: text };
 }
 
 type GateResult =
-  | { kind: 'pass'; head: string; sig: string }
-  | { kind: 'ambiguous'; head: string; sig: string; detail: string }
-  | { kind: 'assumption'; head: string; sig: string; trigger: string; assumed: string[] }
+  | { kind: 'pass'; head: string }
+  | { kind: 'ambiguous'; head: string; detail: string }
   | { kind: 'hold'; reason: string; ownerApproval?: OwnerApproval }
   | { kind: 'fail'; problemKind: TicketHandbackKind; reason: string };
 
@@ -124,16 +123,13 @@ type GateResult =
  *  1. Verified source commit HEAD.
  *  2. Deterministic docs/spec.md diff check against base branch (in addition to publication-time check).
  *  3. Explicit Removes: declaration in the settled report compared with ticket Approved removals:.
- *     Missing line = hold (never none). Declared ambiguity goes to a temporary lead.
- *  4. Scope-tagged or >3 Assumed: lines go to a temporary one-decision lead under the unattended rule. */
+ *     Missing line = hold (never none). Declared ambiguity goes to a temporary lead. */
 function checkUnattendedGates(
   q: TicketQueue,
   item: TicketQueueItem,
   job: Job,
   sig: string,
   reportText: string,
-  assumed: string[],
-  scopeAssumptions: string[],
 ): GateResult {
   const head = verifiedSourceHead(job);
   if (!head) {
@@ -157,7 +153,7 @@ function checkUnattendedGates(
   }
   if (decl.kind === 'ambiguous') {
     if (item.approved_head !== head || item.approved_report_sig !== sig) {
-      return { kind: 'ambiguous', head, sig, detail: decl.detail };
+      return { kind: 'ambiguous', head, detail: decl.detail };
     }
   } else if (decl.kind === 'named') {
     const approved = new Set(ticketApprovedRemovals(item.path));
@@ -166,11 +162,7 @@ function checkUnattendedGates(
       return { kind: 'hold', ownerApproval: 'feature-deletion', reason: `Unapproved removal declared: ${unapproved.join(', ')}` };
     }
   }
-  const trigger = assumptionTrigger(assumed, scopeAssumptions);
-  if (trigger && (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig)) {
-    return { kind: 'assumption', head, sig, trigger, assumed };
-  }
-  return { kind: 'pass', head, sig };
+  return { kind: 'pass', head };
 }
 
 export interface TicketProblem {
@@ -866,6 +858,10 @@ function tickAssumptionLead(q: TicketQueue, state: { problem?: TicketProblem }):
             const approval = assumptionOwnerApproval(parsed);
             if (approval && parsed.reason) {
               holdItem(entry, parsed.reason, 'assumption', approval);
+              if (!cur.unattended) state.problem = {
+                kind: 'escalate', step: active.step, ticket: entry.ticket, job: entry.job,
+                ownerApproval: approval, reason: `${entry.ticket}: ${parsed.reason}`,
+              };
             } else {
               failItem(entry, parsed.reason ?? 'Assumption lead requested repair', 'worker');
             }
@@ -957,7 +953,7 @@ function tickTicketQueue(
   if (activeAssumptionTick) return activeAssumptionTick;
 
   const landEach = !step.each || step.each.includes('land');
-  const deferAssumptions = Boolean(q.unattended) && q.handback_to !== 'main';
+  const deferAssumptions = q.handback_to !== 'main';
   let problem: TicketProblem | undefined, changed = false, recheck: number | undefined;
   const note = (p: TicketProblem) => { problem ??= p; };
   const clean: { item: TicketQueueItem; job: Job; state: JobStatus['state']; retry?: string }[] = [];
@@ -1034,31 +1030,39 @@ function tickTicketQueue(
         }
       }
       if ('ok' in verdict) {
-        if (!landEach) {
-          item.landed = true; changed = true;
-        } else if (q.unattended) {
-          const gate = checkUnattendedGates(q, item, job, verdict.sig, verdict.reportText, verdict.assumed, verdict.scopeAssumptions);
-          if (gate.kind === 'pass') {
-            if (item.approved_head !== gate.head || item.approved_report_sig !== gate.sig) {
-              item.approved_head = gate.head;
-              item.approved_report_sig = gate.sig;
+        const { trigger, sig, assumed, reportText } = verdict;
+        let gateHead: string | undefined;
+        if (landEach && q.unattended) {
+          const gate = checkUnattendedGates(q, item, job, sig, reportText);
+          if (gate.kind !== 'pass') {
+            if (gate.kind === 'ambiguous') {
+              pendingAmbiguity ??= { item, job, head: gate.head, sig, detail: gate.detail };
+            } else if (gate.kind === 'hold') {
+              holdItem(item, gate.reason, 'escalate', gate.ownerApproval);
+              changed = true;
+            } else {
+              failItem(item, gate.reason, gate.problemKind);
               changed = true;
             }
-            clean.push({ item, job, state: status.state, retry });
-          } else if (gate.kind === 'ambiguous') {
-            pendingAmbiguity ??= { item, job, head: gate.head, sig: gate.sig, detail: gate.detail };
-          } else if (gate.kind === 'assumption') {
-            pendingAssumption ??= { item, job, head: gate.head, sig: gate.sig, trigger: gate.trigger, assumed: gate.assumed };
-          } else if (gate.kind === 'hold') {
-            holdItem(item, gate.reason, 'escalate', gate.ownerApproval);
-            changed = true;
-          } else {
-            failItem(item, gate.reason, gate.problemKind);
-            changed = true;
+            continue;
           }
-        } else {
-          clean.push({ item, job, state: status.state, retry });
+          gateHead = gate.head;
         }
+        if (deferAssumptions && trigger && (landEach || !q.unattended)) {
+          const head = gateHead ?? verifiedSourceHead(job);
+          if (!head) { flag('worker', 'Verified worker commit unavailable'); continue; }
+          if (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig) {
+            pendingAssumption ??= { item, job, head, sig, trigger, assumed };
+            continue;
+          }
+        }
+        if (gateHead && (item.approved_head !== gateHead || item.approved_report_sig !== sig)) {
+          item.approved_head = gateHead;
+          item.approved_report_sig = sig;
+          changed = true;
+        }
+        if (landEach) clean.push({ item, job, state: status.state, retry });
+        else { item.landed = true; changed = true; }
       } else if ('waitMs' in verdict) {
         recheck = Math.min(recheck ?? verdict.waitMs, verdict.waitMs);
       } else {

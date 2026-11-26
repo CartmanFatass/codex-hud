@@ -53,14 +53,14 @@ test('ticket check refuses a run with gaps including empty Approved removals and
   assert.match(proseOnly, /^\*\*What to build:\*\* Add a Live try: parser rule\.$/m);
 });
 
-test('Assumed: lines move to run todo; four assumptions or a scope assumption pause with no main wake', { timeout: 45_000 }, async t => {
+test('Assumed: lines move to run todo; four assumptions pause a main hand-back without waking main', { timeout: 45_000 }, async t => {
   const f = await setupWorkflowProject(t, {
     tickets: {
       '01-two-assumed.md': goodTicket(1),
       '02-four-assumed.md': goodTicket(2, { blocked: '01' }),
     },
   });
-  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   const [first] = await f.jobs(flow, 1);
   // Brief includes the workflow run rule and Removes: instruction.
   assert.match(fs.readFileSync(join(f.dir(first), 'brief.md'), 'utf8'), /Workflow run rule:.*Assumed:.*Blockers:.*Removes:/);
@@ -90,7 +90,52 @@ test('Assumed: lines move to run todo; four assumptions or a scope assumption pa
   assert.match(after.pause_notice, /Assumed: lines/);
 });
 
-test('a scope assumption pauses without waking main; one resume accepts that report and lands', { timeout: 45_000 }, async t => {
+for (const { label, handback_to, report } of [
+  { label: 'a scope assumption on default hand-back', report: 'Done.\nAssumed: [scope] kept the old command.\n' },
+  { label: 'four assumptions on explicit lead hand-back', handback_to: 'lead', report: 'Done.\nAssumed: one\nAssumed: two\nAssumed: three\nAssumed: four\n' },
+]) {
+  test(`${label} goes to a temporary lead and lands on continue without waking main`, { timeout: 45_000 }, async t => {
+    const f = await setupWorkflowProject(t, { count: 1 });
+    const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, handback_to });
+    const [first] = await f.jobs(flow, 1);
+    await f.settle(first, { report });
+    await until(() => f.flow(flow).active_lead?.kind === 'assumption', 15_000);
+    const waiting = f.flow(flow);
+    const lead = waiting.active_lead.job;
+    assert.equal(waiting.unattended, undefined);
+    assert.equal(waiting.state, 'working');
+    assert.equal(waiting.active_lead.worker_job, first);
+    assert.equal(waiting.tickets[0].land, undefined);
+    assert.equal(f.job(lead).role, 'lead');
+    assert.deepEqual(waiting.notices, {});
+    assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
+
+    await f.settleLead(lead, 'Decision: continue\nReason: The assumptions fit the current spec.\n');
+    await until(() => f.flow(flow).tickets[0].landed, 15_000);
+    assert.ok(f.job(lead).reaped_at, 'the assumption lead closes before land');
+    assert.deepEqual(f.flow(flow).notices, {});
+    assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
+  });
+}
+
+test('an assumption lead hold for visible deletion becomes an owner hand-back in an ordinary queue', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: { '01-scope.md': goodTicket(1) } });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root });
+  const [first] = await f.jobs(flow, 1);
+  await f.settle(first, { report: 'Done.\nAssumed: [scope] removed the old command.\n' });
+  await until(() => f.flow(flow).active_lead?.kind === 'assumption', 15_000);
+  const lead = f.flow(flow).active_lead.job;
+  await f.settleLead(lead, 'Decision: hold\nReason: Deletes a user-visible command.\nOwner approval: feature-deletion\n');
+  const paused = await f.end(flow);
+  assert.equal(paused.state, 'paused');
+  assert.equal(paused.handback.kind, 'escalate');
+  assert.equal(paused.handback.owner_approval, 'feature-deletion');
+  assert.equal(paused.tickets[0].land, undefined);
+  assert.equal(paused.tickets[0].held.owner_approval, 'feature-deletion');
+  assert.equal(Object.keys(paused.notices).length, 1);
+});
+
+test('a scope assumption on main hand-back pauses without waking main; one resume accepts that report and lands', { timeout: 45_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-scope.md': goodTicket(1) } });
   const args = { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' };
   const { flow } = await f.call('hud_tickets', args);

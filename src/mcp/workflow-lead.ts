@@ -113,7 +113,7 @@ export function parseLeadReport(reportText: string, allowedChoices: readonly str
 
 const negatedPolicyTerm = /\b(?:no|not|without)\s+(?:a\s+|an\s+|any\s+|user-visible\s+|visible\s+|feature\s+|unapproved\s+)*(?:delet(?:e[ds]?|ing|ion)|remov(?:e[ds]?|ing|al)|spec(?:ification)?(?:\s+change)?|docs\/spec\.md)\b/gi;
 
-/** Under the unattended escalation rule, only a visible deletion or spec-change verdict becomes an owner hold. */
+/** Only a visible deletion or spec-change verdict becomes an owner hold for an assumption. */
 export function assumptionOwnerApproval(parsed: ParsedLeadReport): OwnerApproval | undefined {
   if (parsed.ownerApproval) return parsed.ownerApproval;
   if (!parsed.reason) return undefined;
@@ -323,8 +323,8 @@ export function buildAssumptionPacket(
 ): string {
   const info = ticketSummaryLines(item.path);
   return [
-    `# Unattended Assumption Check (${q.flow})`,
-    `Ticket: ${item.ticket} | Objective: ${q.unattended!.objective}`,
+    `# Assumption Check (${q.flow})`,
+    `Ticket: ${item.ticket} | ${q.unattended ? `Objective: ${q.unattended.objective}` : `Feature: ${q.feature}`}`,
     `Ticket file: ${item.path}`,
     ...(info.goal ? [`Ticket goal: ${info.goal.slice(0, 4000)}`] : []),
     `Trigger: ${opts.trigger}`,
@@ -332,7 +332,7 @@ export function buildAssumptionPacket(
     ...opts.assumed.map(line => `- ${line}`),
     `Worker report: ${join(directory(job.job), jobFiles.report)}`,
     `Inspect the committed changes at ${head} in the worker checkout: ${job.cwd}`,
-    `Escalation rule: ${q.escalation_rule}`,
+    `Escalation rule: ${q.escalation_rule ?? DEFAULT_ESCALATION_RULE}`,
     'Inspect the ticket, report and committed changes to judge the worker assumptions under the escalation rule. Do not edit the worktree or docs/spec.md.',
     'Use hud_report with one decision and a one-line `Reason:`:',
     '- `Decision: continue` if the commit fits the current spec with no unapproved user-visible feature deletion (the item will land);',
