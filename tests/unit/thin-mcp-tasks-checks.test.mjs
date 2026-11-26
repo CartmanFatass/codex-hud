@@ -296,7 +296,9 @@ test('MCP tasks: cancel fences stale tasks and reaps live tasks once even with d
   assert.equal(first.status, 'cancelled');
   assert.deepEqual(first, duplicate);
   assert.deepEqual(first, await rpc('tasks/get', params));
-  assert.deepEqual(reaps().map(({ args }) => args), [[job.task_dir]]);
+  const launch = /^LAUNCH=(.+)$/m.exec(fs.readFileSync(join(job.task_dir, 'SESSION.txt'), 'utf8'))?.[1];
+  assert.ok(launch);
+  assert.deepEqual(reaps().map(({ args }) => args), [[job.task_dir, '--launch', launch]]);
   assert.ok(fs.existsSync(join(job.task_dir, 'STATUS.json.stop-requested')));
 });
 
