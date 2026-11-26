@@ -1014,15 +1014,25 @@ test('cli-supervisor guards pane-exit-only writes against SESSION replacement', 
   await until(() => cliState(dir)?.supervisor_pid && fork.hasWatcher(), t.signal);
   const oldSupPid = cliState(dir).supervisor_pid;
 
-  // Simulate resume replacing SESSION.txt with a new launch while old supervisor is still connected.
+  // Simulate resume replacing SESSION.txt with a new live launch while old supervisor is still connected
+  // (real resume clears supervisor.pid and records the replacement worker PID so the watcher does not mark
+  // the dead old PID failed once oldSupPid exits).
+  const replacement = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60000)'], { stdio: 'ignore' });
+  t.after(() => { try { replacement.kill('SIGKILL'); } catch {} });
+  const replacementStart = procStat(replacement.pid).start;
+  fs.rmSync(join(dir, 'supervisor.pid'), { force: true });
+  const { supervisor_pid: _oldSup, ...priorStatus } = cliState(dir);
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ ...priorStatus, state: 'working', pid: replacement.pid, pid_start_time: replacementStart }));
   writeFixtureFile(
     join(dir, 'SESSION.txt'),
-    `TASK=${job.job}\nLAUNCH_ID=launch_replacement_9\nTERMINAL_ID=term_replacement_9\nDIRECT_EXEC=1\nPID=${entry.pid}\nPID_START=${entry.pid_start_time}\nHERDR_SOCKET_PATH=${f.env.HERDR_SOCKET_PATH}\nTAB=w4E:t9\nTAB_NAME=synthetic\nLEFT=w4E:p9\nRIGHT=\nORCH=w4E:p1\nBASE=HEAD\nPRIMARY=${job.job}-primary\n`
+    `TASK=${job.job}\nLAUNCH_ID=launch_replacement_9\nTERMINAL_ID=term_replacement_9\nDIRECT_EXEC=1\nPID=${replacement.pid}\nPID_START=${replacementStart}\nHERDR_SOCKET_PATH=${f.env.HERDR_SOCKET_PATH}\nTAB=w4E:t9\nTAB_NAME=synthetic\nLEFT=w4E:p9\nRIGHT=\nORCH=w4E:p1\nBASE=HEAD\nPRIMARY=${job.job}-primary\n`
   );
   // Emit non-zero pane.exited (no tab.closed!) for the OLD launch_id + terminal_id.
   fork.emitPaneExited(entry, 1, null, { closeOnZero: false });
   await until(() => procStat(oldSupPid) === null, t.signal);
   assert.equal(cliState(dir).state, 'working', 'old supervisor must NOT overwrite replaced session STATUS on pane.exited');
+  assert.equal(cliState(dir).pid, replacement.pid);
+  assert.equal(cliState(dir).runner_exit_code, undefined);
 });
 
 test('pane moved to another tab with live PID stays working for both CLI and Pi until exact PID dies', { timeout: 60000 }, async (t) => {

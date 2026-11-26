@@ -29,6 +29,7 @@ class CommandError extends Error {
 class CommandTimeout extends CommandError {}
 class CustodianError extends Error {}
 const MAX_BASE_MOVES = 2; // Independent of the engine's worker repair bound.
+const CUSTODIAN_START_TIMEOUT_MS = 20_000;
 const quote = (arg: string) => `'${arg.replaceAll("'", "'\\''")}'`;
 function command(cwd: string, bin: string, argv: string[], tracked?: { deadlineMs: number; env: NodeJS.ProcessEnv; lease: LandLease }) {
   return new Promise<string[]>((ok, fail) => {
@@ -49,23 +50,40 @@ function command(cwd: string, bin: string, argv: string[], tracked?: { deadlineM
       return output.evidence();
     };
     let result: CommandResult | undefined;
-    let ready = false, timedOut = false;
+    let ready = false, timedOut = false, settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const send = (message: Launch | 'timeout') => {
       if (child.connected) child.send(message, error => { if (error && child.connected) child.disconnect(); });
     };
-    const timer = tracked && setTimeout(() => {
-      timedOut = true;
-      if (ready) send('timeout');
-      else if (child.connected) child.disconnect();
-    }, tracked.deadlineMs);
-    child.once('error', error => { clearTimeout(timer); fail(error); });
+    const armTimer = (ms: number) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        timedOut = true;
+        if (ready) send('timeout');
+        else if (child.connected) child.disconnect();
+      }, ms);
+    };
+    // Bound custodian startup separately; start the command's own deadline once the payload spawns.
+    if (tracked) armTimer(Math.max(tracked.deadlineMs, CUSTODIAN_START_TIMEOUT_MS));
+    child.on('error', error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fail(error);
+    });
     child.on('message', message => {
+      if (message === 'started') {
+        if (tracked && !timedOut) armTimer(tracked.deadlineMs);
+        return;
+      }
       if (message !== 'ready') { result = message as CommandResult; return; }
       if (!tracked || timedOut) return;
       ready = true;
       send({ bin, argv, nodeOptions, lease: tracked.lease });
     });
     child.once('close', (code, signal) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       if (result && 'error' in result) fail(new CustodianError(result.error));
       else if (tracked && code !== 0) fail(new CustodianError(`Land custodian exited: ${code ?? signal}`));

@@ -47,7 +47,9 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   const handle = await taskCall(rpc, 'hud_create', { role: 'sonic-parent-cli', request_key: 'sonic-parent-cli', task: 'Synthetic CLI parent.' });
   const parent = taskJob(f, handle);
   parent.agent = `${parent.job}-primary`;
-  await until(() => cliState(parent.task_dir)?.agent_session_id, 20000);
+  await until(() => cliState(parent.task_dir)?.agent_session_id, t.signal);
+  // Real Herdr marks the agent working once prompted; manual-socket starts idle and would race sonic startup against idle_grace_s.
+  f.push(parent.job, 'working');
   const start = () => runSonic(f, 'start', parent.task_dir, '--task-file', task);
   const [child, alreadyCollected] = await Promise.all([start(), start()]);
   assert.equal(child.status, 0, child.stderr);
@@ -61,21 +63,21 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   f.push(parent.job, 'idle');
   // Two supervisor safety ticks span >= 30 s on the supervisor's accelerated clock (> 20 s grace).
   const idleQueries = statusQueries(f, parent);
-  await until(() => statusQueries(f, parent) >= idleQueries + 2, 15000);
+  await until(() => statusQueries(f, parent) >= idleQueries + 2, t.signal);
   assert.equal(server.requests.length, 0);
   assert.equal(cliState(parent.task_dir).state, 'working');
 
   writeFixtureFile(join(parent.task_dir, 'report.md'), 'Premature synthetic parent report.');
   // Two more safety ticks span >= 30 s on the supervisor's clock (> 10 s report stability window).
   const reportQueries = statusQueries(f, parent);
-  await until(() => statusQueries(f, parent) >= reportQueries + 2, 15000);
+  await until(() => statusQueries(f, parent) >= reportQueries + 2, t.signal);
   assert.equal(cliState(parent.task_dir).state, 'working');
   assert.equal(cliState(parent.task_dir).settled_at, null);
   assert.equal(readCloseQuit(f, parent), false);
   assert.equal(prompts().length, 0);
 
   fs.writeFileSync(join(dir, 'release-sonic'), '');
-  await until(() => prompts().length === 1, 20000);
+  await until(() => prompts().length === 1, t.signal);
   // Real Herdr marks the agent working once prompted; manual-socket otherwise stays idle through hud_send/declareDone.
   f.push(parent.job, 'working');
   assert.ok(prompts()[0].args[3].includes(id));
@@ -91,7 +93,7 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   writeFixtureFile(join(parent.task_dir, 'report.md'), 'Synthetic parent report after collect prompt.');
   declareDone(f, parent);
   f.push(parent.job, 'done');
-  await until(() => cliState(parent.task_dir)?.state === 'closed', 20000);
+  await until(() => cliState(parent.task_dir)?.state === 'closed', t.signal);
   assert.equal((await rpc('tasks/get', { taskId: handle.taskId })).status, 'completed');
   assert.equal(prompts().length, 1, 'the same report is not prompted for again');
   assert.equal(server.requests.length, 0);

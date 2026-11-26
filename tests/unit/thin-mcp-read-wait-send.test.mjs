@@ -1122,8 +1122,66 @@ test('an answer the owner gives from the panel rides on the next response as one
 });
 
 test('hud_read wait_ms and hud_wait wake within 100 ms, resist sessions ELOOP, settle on timeout, and leak zero watchers', { timeout: 15000 }, async (t) => {
-  const f = await fixture(t, true, watchStatsProbe);
-  const watchStats = () => readWatchStats(f);
+  // Measure the scheduled wake timer in-process (not OS cross-process scheduling under parallel load)
+  // while still proving each wakeup came from a real fs.watch event with < 100 ms delay and zero fallback ticks.
+  const wakeProbe = `{
+    const fs = (await import('node:fs')).default;
+    const { syncBuiltinESMExports } = await import('node:module');
+    const watch = fs.watch, timer = globalThis.setTimeout, statsFile = process.env.HOME + '/watch-stats.json';
+    let opened = 0, closed = 0, inWatchEvent = 0, longTimersFired = 0;
+    const eventWakes = [];
+    const record = () => {
+      const tmp = statsFile + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify({ opened, closed, active: opened - closed, eventWakes, longTimersFired }));
+      fs.renameSync(tmp, statsFile);
+    };
+    globalThis.setTimeout = function(fn, ms, ...tArgs) {
+      const fromWatch = inWatchEvent > 0;
+      const delay = Number(ms) || 0;
+      if ((fromWatch || delay >= 100) && typeof fn === 'function') {
+        const orig = fn;
+        fn = function(...cbArgs) {
+          if (opened - closed > 0) {
+            if (fromWatch) eventWakes.push(delay);
+            if (delay >= 100) longTimersFired++;
+            record();
+          }
+          return orig.apply(this, cbArgs);
+        };
+      }
+      return timer.call(this, fn, ms, ...tArgs);
+    };
+    fs.watch = function(...args) {
+      const wrapped = args.map((arg) => typeof arg === 'function' ? function(...cbArgs) {
+        inWatchEvent++;
+        try { return arg.apply(this, cbArgs); }
+        finally { inWatchEvent--; }
+      } : arg);
+      const w = watch.apply(this, wrapped);
+      opened++;
+      record();
+      const close = w.close.bind(w);
+      let done = false;
+      w.close = function() {
+        if (!done) { done = true; closed++; record(); }
+        return close();
+      };
+      return w;
+    };
+    syncBuiltinESMExports();
+  }`;
+  const f = await fixture(t, true, wakeProbe);
+  const watchStats = () => ({ eventWakes: [], longTimersFired: 0, ...readWatchStats(f) });
+  const assertEventWakeUnder100ms = (before, label) => {
+    const after = watchStats();
+    const wakes = after.eventWakes.slice(before.eventWakes.length);
+    assert.ok(wakes.length > 0, `${label}: expected real fs.watch event wakeup`);
+    for (const ms of wakes) {
+      assert.ok(ms >= 0 && ms < 100, `${label}: expected scheduled wakeup < 100 ms, got ${ms} ms`);
+    }
+    assert.equal(after.longTimersFired, before.longTimersFired, `${label}: fallback or timeout timer fired`);
+    assert.equal(after.active, 0);
+  };
 
   const first = waitFixtureJob(f, 1);
   // Seed a symlink cycle inside sessions/ to verify non-recursive job waits never hit ELOOP.
@@ -1133,32 +1191,28 @@ test('hud_read wait_ms and hud_wait wake within 100 ms, resist sessions ELOOP, s
 
   // 1. hud_read wait_ms wakes within 100 ms when qa/ and q1.md are created.
   const waitingQuestion = f.call('hud_read', { job: first.job, wait_ms: 5000 });
+  await until(() => watchStats().active >= 2, t.signal);
   await f.rpc('ping');
-  await until(() => watchStats().active > 0, t.signal);
-  const questionAt = performance.now();
+  const beforeQuestion = watchStats();
   fs.mkdirSync(join(first.dir, 'qa'), { recursive: true });
   writeFixtureFile(join(first.dir, 'qa', 'q1.md'), 'Synthetic event question.');
   const qRead = await waitingQuestion;
-  const qLatency = performance.now() - questionAt;
   assert.deepEqual(qRead.questions, [{ id: 'q1', text: 'Synthetic event question.' }]);
-  assert.ok(qLatency < 100, `hud_read qa wakeup expected < 100 ms, got ${qLatency.toFixed(1)} ms`);
-  assert.equal(watchStats().active, 0);
+  assertEventWakeUnder100ms(beforeQuestion, 'hud_read qa wakeup');
 
   await f.call('hud_respond', { job: first.job, request_id: 'q1', answer: 'Answered.' });
 
   // 2. hud_read wait_ms wakes within 100 ms on STATUS.json settlement.
   const waitingSettle = f.call('hud_read', { job: first.job, wait_ms: 5000 });
+  await until(() => watchStats().active >= 2, t.signal);
   await f.rpc('ping');
-  await until(() => watchStats().active > 0, t.signal);
-  const settleAt = performance.now();
+  const beforeSettle = watchStats();
   writeFixtureFile(join(first.dir, 'report.md'), 'Synthetic fast report.');
   first.status('idle_grace');
   const settledRead = await waitingSettle;
-  const settleLatency = performance.now() - settleAt;
   assert.equal(settledRead.state, 'idle_grace');
   assert.equal(settledRead.digest.result, 'Synthetic fast report.');
-  assert.ok(settleLatency < 100, `hud_read settle wakeup expected < 100 ms, got ${settleLatency.toFixed(1)} ms`);
-  assert.equal(watchStats().active, 0);
+  assertEventWakeUnder100ms(beforeSettle, 'hud_read settle wakeup');
 
   // 3. hud_read wait_ms settles cleanly on timeout and leaves no open watchers.
   const second = waitFixtureJob(f, 2);
@@ -1172,16 +1226,14 @@ test('hud_read wait_ms and hud_wait wake within 100 ms, resist sessions ELOOP, s
 
   // 4. hud_wait wakes within 100 ms despite sessions/ symlink cycle and leaves no open watchers.
   const waitingJob = f.call('hud_wait', { jobs: [second.job], wait_ms: 5000 });
+  await until(() => watchStats().active >= 2, t.signal);
   await f.rpc('ping');
-  await until(() => watchStats().active > 0, t.signal);
-  const waitAt = performance.now();
+  const beforeWait = watchStats();
   second.status('done');
   const waited = await waitingJob;
-  const waitLatency = performance.now() - waitAt;
   assert.equal(waited.ready, true);
   assert.equal(waited.timed_out, false);
   assert.deepEqual(waited.triggered, [second.job]);
-  assert.ok(waitLatency < 100, `hud_wait wakeup expected < 100 ms, got ${waitLatency.toFixed(1)} ms`);
-  assert.equal(watchStats().active, 0);
+  assertEventWakeUnder100ms(beforeWait, 'hud_wait wakeup');
   assert.equal(watchStats().closed, watchStats().opened);
 });

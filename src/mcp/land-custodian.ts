@@ -38,6 +38,10 @@ async function observe({ lease, ...payload }: Launch, stop: Promise<void>, stopp
     let result: CommandResult | undefined;
     let authorized = false;
     leader.on('message', message => {
+      if (message === 'started') {
+        if (!stopping() && process.connected) process.send!('started', () => {});
+        return;
+      }
       if (message !== 'ready') { result = message as CommandResult; return; }
       if (stopping() || !leader.connected) return;
       authorized = true;
@@ -122,6 +126,7 @@ function groupLeader() {
     started = true;
     const env = nodeOptions === undefined ? process.env : { ...process.env, NODE_OPTIONS: nodeOptions };
     const child = spawn(bin, argv, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    if (process.connected) process.send!('started', () => {});
     child.stdout.pipe(process.stdout, { end: false });
     child.stderr.pipe(process.stderr, { end: false });
     let failure: CommandResult | undefined;

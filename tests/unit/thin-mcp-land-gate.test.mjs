@@ -11,7 +11,7 @@ import { checkout, job } from '../helpers/thin-mcp-land.mjs';
 
 for (const kind of ['gate', 'after']) test(`land bounds a hung ${kind} and kills children holding the output pipes`, async t => {
   // In the gate case the shell itself exits successfully, but its child still holds the pipes.
-  const hung = `seq 50; (trap '' TERM; touch "$HOME/ready"; exec sleep 60) & echo $! > "$HOME/sleeper"; ${kind === 'gate' ? 'exit 0' : 'wait'}`;
+  const hung = `seq 50; (trap '' TERM; touch "$HOME/ready"; exec sleep 60) & echo $! > "$HOME/sleeper.tmp" && mv "$HOME/sleeper.tmp" "$HOME/sleeper"; ${kind === 'gate' ? 'exit 0' : 'wait'}`;
   const f = await checkout(t, kind === 'gate' ? [hung] : ['true'], { timeout_s: 3, ...(kind === 'after' ? { after: [hung] } : {}) });
   const { flow } = await f.call('hud_land', { job });
   await until(() => {
