@@ -6,8 +6,11 @@ import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { herdrEndpoint } from '../runtime/herdr-socket.js';
 import type { ScreenTarget, ExecutionScreen } from './execution-screens.js';
+import { readExecutionRuns, type ExecutionRun } from './execution-runs.js';
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
+
+export type { ExecutionRun, ExecutionRunStep, ExecutionRunTicket, RunStepKey, RunStepState, TicketRunStage } from './execution-runs.js';
 
 export type ExecutionPhase = 'waiting' | 'running' | 'queued' | 'settled';
 export interface ExecutionJob {
@@ -37,6 +40,8 @@ export interface ExecutionSession {
 }
 export interface ExecutionSnapshot {
   readonly root: string;
+  /** Ticket-queue runs of this project: paused and working, plus runs ended within the last hour. */
+  readonly runs?: readonly ExecutionRun[];
   /** Running and waiting jobs: those asking first, then running, then queued; the oldest first within each. */
   readonly jobs: readonly ExecutionJob[];
   readonly sessions: readonly ExecutionSession[];
@@ -51,10 +56,11 @@ const byStart = (a: ExecutionJob, b: ExecutionJob) =>
   (a.worker.startedAt ?? 0) - (b.worker.startedAt ?? 0) || a.jobId.localeCompare(b.jobId);
 
 /** Reads receipts (cached by signature) only for the jobs the page shows. */
-export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: { root: string; pane: string | null; env: NodeJS.ProcessEnv; complete: boolean }):
+export function executionSnapshot(home: string, board: WorkboardSnapshot, scope: { root: string; pane: string | null; env: NodeJS.ProcessEnv; complete: boolean }, now = Date.now()):
   { snapshot: ExecutionSnapshot; targets: ScreenTarget[] } {
   const cache = getJobIndexCache(home);
   const workers = new Map(board.workers.map((worker) => [jobIdOf(worker.id)!, worker]));
+  const runs = readExecutionRuns(home, { root: scope.root, pane: scope.pane }, workers, now);
   const receipts = new Map<string, Partial<Job>>();
   const receipt = (id: string) => {
     let job = receipts.get(id);
@@ -122,7 +128,7 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   // Thumbnails follow the card order.
   const rank = new Map(ordered.map((job, i) => [job.jobId, i]));
   targets.sort((a, b) => rank.get(a.jobId)! - rank.get(b.jobId)!);
-  return { snapshot: { root: scope.root, jobs: ordered, sessions: delegationTree(jobs, children, scope.pane), complete: scope.complete }, targets };
+  return { snapshot: { root: scope.root, ...(runs.length ? { runs } : {}), jobs: ordered, sessions: delegationTree(jobs, children, scope.pane), complete: scope.complete }, targets };
 }
 
 /** Roots are the shown jobs with no shown parent, grouped by the main session that dispatched them. */

@@ -72,6 +72,8 @@ export interface MonitorRow {
   batch?: WorkBatch;
   /** A job on the Execution page: Enter opens it, `g` / `H` act on its tab when it has one. */
   execJob?: { target: JobTarget; dir: string; tab: boolean };
+  /** A ticket-queue run on the Execution page: Enter opens its Run Detail view. */
+  execRun?: string;
 }
 export interface MonitorRect {
   id: MonitorPane;

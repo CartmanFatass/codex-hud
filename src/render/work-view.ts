@@ -6,6 +6,7 @@ import { nativeInspectorRows, workInspectorRows } from './work-inspector.js';
 import { homeRows, OTHER_PROJECTS, otherProjectsHint } from './home-view.js';
 import { scheduleBadge, scheduleView } from './home-cards.js';
 import { objectiveDetailRows } from './objective-detail.js';
+import { runDetailRows } from './execution-run-detail.js';
 import { activeFilter, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
 import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
@@ -132,6 +133,7 @@ export function renderWorkboardFrame(
   const jobs = subpage?.kind === 'jobs' ? subpage : undefined;
   const native = subpage?.kind === 'native-inspector' ? subpage : undefined;
   const objective = subpage?.kind === 'objective' ? subpage : undefined;
+  const runDetail = subpage?.kind === 'run-detail' ? subpage : undefined;
   const sub = subpage || help;
   const project = !sub && state.activeTab === 'project';
   const control = controlShown(state), resources = resourcesShown(state);
@@ -191,7 +193,8 @@ export function renderWorkboardFrame(
   const target = inspector?.target;
   const lane = target && source.lanes.find((l) => l.id === target.laneId);
   const worker = target && lane?.workers.find((w) => w.id === target.workerId);
-  const crumb = help ? t('Help') : objective ? t('Objective') : native ? t('Native subagents') : jobs ? t('Jobs')
+  const activeRun = runDetail ? input.execution?.runs?.find((r) => r.flow === runDetail.flow) : undefined;
+  const crumb = help ? t('Help') : objective ? t('Objective') : runDetail ? `${t('Run')} · ${monitorText(activeRun ? `${activeRun.label} ${activeRun.flow.slice(0, 8)}` : runDetail.flow.slice(0, 8))}` : native ? t('Native subagents') : jobs ? t('Jobs')
     : t('Inspector') + (worker ? ` · ${monitorText(worker.displayId || worker.id.replace(/^thin-job:/, ''))}` : '');
   const schedule = scheduleView(input.openSchedule, now);
   if (sub || page || list) {
@@ -257,6 +260,7 @@ export function renderWorkboardFrame(
   const rows: MonitorRow[] = helpContent
     ? helpContent.rows
     : objective ? objectiveDetailRows(objective, width)
+    : runDetail ? activeRun ? runDetailRows(activeRun, width, now) : [boardRow(fit(t('Run not available'), width))]
     : native ? nativeInspectorRows(input.tree, width, now)
       : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id))
         : [boardRow(t('Job not available'))]
@@ -274,7 +278,7 @@ export function renderWorkboardFrame(
   const actions = rows.filter((r) => r.item);
   // Do not jump past the evidence when an Inspector first opens. Enter opens the preferred evidence file;
   // the details can still be scrolled without selecting a file first.
-  const inspect = inspector ?? native;
+  const inspect = inspector ?? native ?? runDetail;
   const inspectCursor = inspect?.cursor && actions.some((r) => r.item === inspect.cursor) ? inspect.cursor : undefined;
   const listNav = jobs ?? objective ?? (home ? state.home : undefined);
   const listCursor = listNav && (actions.some((r) => r.item === listNav.cursor) ? listNav.cursor : actions[0]?.item);
@@ -333,6 +337,7 @@ export function renderWorkboardFrame(
   const hints: FooterHints = help
     ? { modal: ['Esc back'] }
     : objective ? [...(selected?.files ? ['o file'] : selected?.commit ? ['o commit'] : []), 'Esc back']
+    : runDetail ? ['Esc back']
     : inspector ? inspectorKeys(worker)
       : native ? ['Esc back'] : jobs ? [...(selected?.batch ? batchKeys(selected.batch) : listCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
         : resourcePage ? expHints(resourcePage, expEdit)
@@ -361,7 +366,7 @@ export function renderWorkboardFrame(
   // The theme's own text colour under every row, so a row with no ink of its own is not the terminal's.
   frame.lines = frame.lines.map((line) => theme.board.text(fit(line, width)));
   frame.panes.push({
-    id: inspector || native || objective ? 'details' : 'agents',
+    id: inspector || native || objective || runDetail ? 'details' : 'agents',
     x: 0,
     y: 1 + top,
     width,

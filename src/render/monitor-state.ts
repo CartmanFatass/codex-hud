@@ -50,7 +50,8 @@ export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | und
 
 export interface ObjectiveTarget { root: string; objective: Objective; blocked: boolean }
 export interface ObjectiveDetail extends RowNav { kind: 'objective'; target: ObjectiveTarget; evidence?: ObjectiveEvidence[] }
-export type SubpageState = JobsState | InspectorState | ObjectiveDetail | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
+export interface RunDetailState extends RowNav { kind: 'run-detail'; flow: string }
+export type SubpageState = JobsState | InspectorState | ObjectiveDetail | RunDetailState | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
 export interface HelpOverlay { scroll?: number }
 export interface MonitorState {
   activeTab: MainTab;

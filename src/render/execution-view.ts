@@ -2,12 +2,14 @@
  * The Project Execution page: a readout, one square frame per running or waiting job with its tab worker's screen (a headless
  * job's progress instead), and who started whom. Pure: jobs and screens are collected outside paint.
  */
-import type { ExecutionJob, ExecutionNode, ExecutionSession, ExecutionView } from '../collectors/execution.js';
+import type { ExecutionJob, ExecutionNode, ExecutionRun, ExecutionRunTicket, ExecutionSession, ExecutionView } from '../collectors/execution.js';
 import { SCREEN_INTERVAL_MS, SCREEN_ROWS } from '../collectors/execution-screens.js';
 import { workState } from '../collectors/work-job.js';
 import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { fit, monitorText, pair } from './monitor-text.js';
+import { sidebarRoleIcon } from './model-glyphs.js';
+import { formatRunSteps, runElapsed, runRoleInk, runStateView, ticketStageView } from './execution-run-detail.js';
 import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
 import { jobTitle, roleInk } from './work-job-row.js';
 import { jobTarget } from './work-jobs.js';
@@ -111,11 +113,88 @@ function cardRows(job: ExecutionJob, view: ExecutionView, from: string, selected
   ];
 }
 
+const runItem = (flow: string) => `project:exec-run:${flow}`;
+const runTicketItem = (flow: string, ticket: string) => `project:exec-run:${flow}:ticket:${ticket}`;
+
+function runTicketRow(run: ExecutionRun, ticket: ExecutionRunTicket, selected: string | undefined, width: number): MonitorRow {
+  const item = ticket.execJob ? runTicketItem(run.flow, ticket.ticket) : undefined;
+  const marker = item && selected === item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+  const stage = ticketStageView(ticket);
+  const leftHead = `  ${marker}${stage.ink(stage.glyph)} ${monitorText(ticket.ticket)}  `;
+  const roleIconStr = ticket.role ? runRoleInk(ticket.role)(sidebarRoleIcon(ticket.role)) : '';
+  const roleWord = ticket.role ? runRoleInk(ticket.role)(monitorText(ticket.role)) : '';
+  const shortJob = ticket.jobId ? muted(shortId(ticket.jobId)) : '';
+  const rightChoices = [
+    [roleIconStr, roleWord, shortJob].filter(Boolean).join(' '),
+    [roleIconStr, roleWord].filter(Boolean).join(' '),
+    roleIconStr,
+    '',
+  ];
+  const right = rightChoices.find((r) => visualLength(leftHead + stage.shortText) + (r ? visualLength(r) + 2 : 0) <= width) ?? '';
+  const room = Math.max(0, width - visualLength(leftHead) - (right ? visualLength(right) + 2 : 0));
+  const body = visualLength(stage.fullText) <= room
+    ? stage.fullText
+    : visualLength(stage.shortText) <= room
+      ? truncateAnsi(stage.fullText, room)
+      : truncateAnsi(stage.shortText, room);
+  const text = fit(pair(leftHead + stage.ink(body), right, width), width);
+  return item && ticket.execJob ? { text, item, execJob: ticket.execJob } : boardRow(text);
+}
+
+function runSummaryRow(run: ExecutionRun, width: number): MonitorRow {
+  const parts = [
+    muted(t('todo {n}', { n: run.todo.length })),
+    muted(t('decisions {n}', { n: run.decisions.length })),
+    (run.heldCount > 0 ? theme.board.attention : muted)(t('held {n}', { n: run.heldCount })),
+    ...(run.repairRounds > 0 ? [theme.board.attention(t('repairs {n}', { n: run.repairRounds }))] : []),
+  ];
+  const sep = muted(' · ');
+  let line = '    ' + parts[0];
+  for (const part of parts.slice(1)) {
+    if (visualLength(line + sep + part) > width) break;
+    line += sep + part;
+  }
+  return boardRow(fit(line, width));
+}
+
+function runBlockRows(run: ExecutionRun, selected: string | undefined, width: number, now: number): MonitorRow[] {
+  const item = runItem(run.flow);
+  const at = { item, execRun: run.flow };
+  const marker = selected === item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+  const state = runStateView(run.state);
+  const elapsed = runElapsed(run, now);
+  const right = elapsed ? muted(elapsed) : '';
+  const label = monitorText(run.label);
+  const short = muted(shortId(run.flow));
+  const headFull = `${marker}${state.ink(state.glyph)} ${theme.board.text(label)}  ${short}`;
+  const headShort = `${marker}${state.ink(state.glyph)} ${theme.board.text(label)}`;
+  const stepsFull = formatRunSteps(run.steps, true);
+  const stepsNoIcons = formatRunSteps(run.steps, false);
+
+  const rows: MonitorRow[] = [];
+  const gap = right ? visualLength(right) + 2 : 0;
+  if (visualLength(headFull) + 3 + visualLength(stepsFull) + gap <= width) {
+    rows.push({ ...at, text: fit(pair(`${headFull}   ${stepsFull}`, right, width), width) });
+  } else if (visualLength(headFull) + 3 + visualLength(stepsNoIcons) + gap <= width) {
+    rows.push({ ...at, text: fit(pair(`${headFull}   ${stepsNoIcons}`, right, width), width) });
+  } else {
+    const head = visualLength(headFull) + gap <= width ? headFull : headShort;
+    rows.push({ ...at, text: fit(pair(head, right, width), width) });
+    const stepLine = visualLength(stepsFull) + 4 <= width ? stepsFull : stepsNoIcons;
+    rows.push({ ...at, text: fit(`    ${stepLine}`, width) });
+  }
+
+  for (const ticket of run.tickets) rows.push(runTicketRow(run, ticket, selected, width));
+  rows.push(runSummaryRow(run, width));
+  return rows;
+}
+
 export function executionRows(view: ExecutionView | undefined, cursor: string | undefined, width: number, now: number): MonitorRow[] {
   const plain = (text: string) => boardRow(fit(text, width));
   if (!view) return [plain(''), plain(`  ${muted(t('Reading jobs…'))}`)];
+  const runs = view.runs ?? [];
   const partial = view.complete ? '' : muted(t('Partial'));
-  if (!view.jobs.length) return [plain(''), plain(pair(`  ${muted(t('No running or waiting jobs'))}`, partial, width))];
+  if (!runs.length && !view.jobs.length) return [plain(''), plain(pair(`  ${muted(t('No running or waiting jobs'))}`, partial, width))];
   const known = new Map<string, ExecutionJob>(), origin = new Map<string, string>();
   const visit = (node: ExecutionNode, session: ExecutionSession) => {
     known.set(node.job.jobId, node.job);
@@ -124,7 +203,8 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
   };
   for (const session of view.sessions) for (const node of session.nodes) visit(node, session);
   const cardItem = (job: ExecutionJob) => `project:exec:${job.jobId}`, treeItem = (job: ExecutionJob) => `project:exec-tree:${job.jobId}`;
-  const items = [...view.jobs.map(cardItem), ...[...known.values()].map(treeItem)];
+  const runItems = runs.flatMap((run) => [runItem(run.flow), ...run.tickets.filter((tk) => tk.execJob).map((tk) => runTicketItem(run.flow, tk.ticket))]);
+  const items = [...runItems, ...view.jobs.map(cardItem), ...[...known.values()].map(treeItem)];
   // The panel starts on the first row it can act on, and a vanished selection returns there.
   const selected = cursor && items.includes(cursor) ? cursor : items[0];
   const target = (job: ExecutionJob, item: string) => ({ item,
@@ -133,6 +213,20 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
     const parent = job.parentId && known.get(job.parentId);
     return parent ? `${roleOf(parent)} ${shortId(parent.jobId)}` : job.parentId ? shortId(job.parentId) : origin.get(job.jobId) ?? t('unknown session');
   };
+
+  const rows: MonitorRow[] = [];
+  if (runs.length) {
+    rows.push(plain(''), section(t('Runs'), width, String(runs.length)));
+    runs.forEach((run, i) => {
+      if (i) rows.push(plain(''));
+      rows.push(...runBlockRows(run, selected, width, now));
+    });
+  }
+
+  if (!view.jobs.length) {
+    rows.push(plain(''), plain(pair(`  ${muted(t('No running or waiting jobs'))}`, partial, width)));
+    return rows;
+  }
 
   const count = (phase: ExecutionJob['phase'], word: string, ink: Ink) => {
     const n = view.jobs.filter((job) => job.phase === phase).length;
@@ -144,8 +238,8 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
   const source = [partial, view.jobs.some((job) => job.hasScreen) ? muted(t('screens every {n}s', { n: SCREEN_INTERVAL_MS / 1000 })) : '']
     .filter(Boolean).join(muted(' · '));
   const right = [source, partial].find((text) => visualLength(readout) + 2 + visualLength(text) <= width) ?? '';
-  const rows: MonitorRow[] = [plain(''), plain(pair(readout, right, width)), plain(''),
-    section(t('Workers'), width, String(view.jobs.length))];
+  rows.push(plain(''), plain(pair(readout, right, width)), plain(''),
+    section(t('Workers'), width, String(view.jobs.length)));
   for (const job of view.jobs) {
     const at = target(job, cardItem(job));
     rows.push(...cardRows(job, view, from(job), selected === at.item, width, now).map((text) => ({ ...at, text: fit(text, width) })));

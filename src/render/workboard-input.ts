@@ -222,6 +222,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if (harnesses) return;
       }
       if (harnesses && harnessId(row?.item)) return switchAction(row);
+      if (row?.execRun) {
+        next.subpage = { kind: 'run-detail', flow: row.execRun, scroll: 0 };
+        return;
+      }
       if (row?.execJob) {
         next.subpage = { kind: 'inspector', target: row.execJob.target, scroll: 0, from: 'execution' };
         return;

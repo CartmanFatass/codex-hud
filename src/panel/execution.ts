@@ -25,11 +25,11 @@ export class PanelExecution {
     else this.screens.stop();
   }
 
-  async refresh(inspecting?: string): Promise<void> {
+  async refresh(inspecting?: string, now = Date.now()): Promise<void> {
     const open = this.open;
     if (!open || !(await open.jobs.refresh(inspecting)) || this.open !== open) return;
     const { snapshot, targets } = executionSnapshot(this.home, open.jobs.workboard(this.noAgents),
-      { root: open.root, pane: this.pane, env: this.env, complete: open.jobs.jobsObserved });
+      { root: open.root, pane: this.pane, env: this.env, complete: open.jobs.jobsObserved }, now);
     this.snapshot = snapshot;
     this.screens.watch(targets);
   }

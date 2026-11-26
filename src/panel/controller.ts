@@ -217,7 +217,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         tree,
         // An Inspector opened from Execution reads the project's jobs, which other panes may have dispatched.
         workboard: (executing && painted.subpage && execution.board()) || boardFacts(),
-        execution: executing && !painted.subpage ? execution.view(chosen) : undefined,
+        execution: executing && (!painted.subpage || painted.subpage.kind === 'run-detail') ? execution.view(chosen) : undefined,
         jobsObserved: jobPipeline.jobsObserved,
         homeWaiting: visits.snapshot(HUD_CWD_REAL)?.waiting,
         homePortfolio: portfolio,
