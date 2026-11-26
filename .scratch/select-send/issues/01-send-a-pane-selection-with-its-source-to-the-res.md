@@ -1,6 +1,6 @@
 # 01: Send a pane selection with its source to the responsible main session
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** none
 **Objective:** interaction
