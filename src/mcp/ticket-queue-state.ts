@@ -1,6 +1,9 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { readDirSafe, writeJsonPrivate } from '../utils/atomic-fs.js';
+import type { Cursor } from '../workflows/engine.js';
+import type { RunScope } from '../workflows/scope.js';
+import { requestStop, stopRequested } from '../workflows/store.js';
 import type { Job } from './job-contracts.js';
 
 export const isTicketQueueId = (id: unknown): id is string => typeof id === 'string' && /^q[0-9a-f]{16}$/.test(id);
@@ -8,14 +11,24 @@ export const queueFile = (home: string, id: string) => join(home, 'flows', `${id
 export const queueIds = (home: string) => readDirSafe(join(home, 'flows')).filter(file => file.endsWith('.json'))
   .map(file => file.slice(0, -5)).filter(isTicketQueueId);
 
+export type TicketHandbackKind = 'question' | 'blocker' | 'check' | 'review' | 'land' | 'worker' | 'dispatch' | 'queue';
+export interface TicketHandback {
+  step: string; choices: string[]; kind?: TicketHandbackKind;
+  ticket?: string; job?: string; question?: string; land?: string;
+}
 export interface TicketQueueItem {
   ticket: string; path: string; role: 'imp' | 'frontend-imp'; job?: string; land?: string; landed?: true; base_moves?: number;
   dispatch_queue?: string; // Keep the original worker request key across explicit resumes.
 }
-export interface TicketQueue {
-  flow: string; root: string; feature: string; pane: string; task: boolean; max_parallel: number;
+export interface TicketQueue extends RunScope {
+  flow: string; root: string; cwd?: string; feature: string; pane: string; task: boolean; max_parallel: number;
   created_at: string; updated_at: string; pid?: number; start?: string;
-  state: 'working' | 'completed' | 'failed' | 'cancelled'; tickets: TicketQueueItem[];
+  template?: 'ticket-queue'; host?: 'detached'; cost?: 'cheap' | 'costly'; cost_reasons?: string[];
+  steps?: Record<string, Cursor>;
+  epoch?: number; settled?: number; streak?: number; failures?: number;
+  notices?: Record<string, string>;
+  handback?: TicketHandback;
+  state: 'working' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'stopped'; tickets: TicketQueueItem[];
   reason?: string; remaining?: string[]; queued?: { ticket: string; blockers: string[] }[];
   dispatcher?: Job['dispatcher'];
 }
@@ -29,9 +42,9 @@ export function writeTicketQueue(home: string, q: TicketQueue, create = false) {
   writeJsonPrivate(queueFile(home, q.flow), q, { mkdir: false, exclusive: create });
 }
 export function cancelTicketQueue(home: string, q: TicketQueue) {
-  if (q.state === 'working') fs.closeSync(fs.openSync(`${queueFile(home, q.flow)}.cancel`, 'a', 0o600));
+  if (q.state === 'working') requestStop(home, q.flow);
 }
-export const queueCancelled = (home: string, q: TicketQueue) => fs.existsSync(`${queueFile(home, q.flow)}.cancel`);
+export const queueCancelled = (home: string, q: TicketQueue) => stopRequested(home, q.flow);
 export function ticketQueueView(q: TicketQueue) {
   const { flow, feature, state, remaining, queued, max_parallel } = q;
   const reason = q.reason ?? (queued?.length ? `Queued: ${queued.map(({ ticket, blockers }) => `${ticket} waiting on ${blockers.join(', ')}`).join('; ')}` : undefined);

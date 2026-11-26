@@ -48,9 +48,11 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
       if (!modCatchup || f.state === 'failed') lines.push(...events.map(e => e.line));
     } else {
       const q = pass.header<TicketQueue>(file);
-      if (!q || q.task || (!all && q.pane !== pane)) continue;
+      if (!q || q.task || (!all && !runVisible(q, pane, cwd))) continue;
       if (q.state === 'working') { pending = true; continue; }
-      lines.push(...noticeEvents(home, { flow: id, notices: { 'end-0': ticketQueueNotice(q).replace(/\r?\n/g, ' | ') } }, all, path).map(e => e.line));
+      const outbox = q.notices && Object.keys(q.notices).length ? { flow: id, notices: q.notices }
+        : { flow: id, notices: { 'end-0': ticketQueueNotice(q).replace(/\r?\n/g, ' | ') } };
+      lines.push(...noticeEvents(home, outbox, all, path).map(e => e.line));
     }
   }
   return { lines, pending };

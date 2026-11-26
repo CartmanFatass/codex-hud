@@ -1,0 +1,13 @@
+version = 1
+name = "ticket-queue"
+
+[policy]
+breaker = "first"
+
+[steps.tickets]
+kind = "batch"
+role = "imp"
+tickets = "{feature}"
+each = ["job", "land"]
+pilot = false
+max_parallel = "{max_parallel}"

@@ -6,7 +6,7 @@ type Common = { needs: string[]; from: string[]; optional: boolean; when?: { ste
 type Brief = { task?: string; brief_file?: string };
 type Work =
   | ({ kind: 'job'; role: string; isolation?: 'none' | 'worktree' } & Brief)
-  | { kind: 'batch'; role: string; items?: Brief[]; manifest?: string; max_parallel?: number }
+  | { kind: 'batch'; role: string; items?: Brief[]; manifest?: string; tickets?: string; each?: ('job' | 'land')[]; pilot?: boolean; max_parallel?: number }
   | ({ kind: 'council' } & Brief)
   | { kind: 'land'; job: string }
   | { kind: 'check'; run?: string[]; use?: string }
@@ -20,6 +20,7 @@ interface Inputs {
   landSource?: string;
   caps?: Readonly<Record<string, number>>;
   manifest?: { role: string; count: number; bytes: number; cap: number; browser?: boolean };
+  tickets?: { count: number };
   // Callers planning file inputs must provide the same resolved byte estimate used for admission.
   inputBytes?: (item: Brief) => number;
 }
@@ -44,7 +45,7 @@ function brief(row: Record<string, unknown>): Brief {
   if (Buffer.byteLength(task) > 256 * 1024) invalid('task exceeds 256 KiB');
   return { task };
 }
-const fields = { job: ['role','task','brief_file','isolation'], batch: ['role','manifest','items','max_parallel'], council: ['task','brief_file'],
+const fields = { job: ['role','task','brief_file','isolation'], batch: ['role','manifest','items','tickets','each','pilot','max_parallel'], council: ['task','brief_file'],
   land: ['job'], check: ['run','use'], handback: ['ask','options'] };
 const identifier = /^[a-z][a-z0-9_-]{0,47}$/;
 /** Only whole, typed parameter slots are substituted. Task prose and argv are never interpolated. */
@@ -90,21 +91,40 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
       } else {
         const max = row.max_parallel;
         if (max !== undefined && (typeof max !== 'number' || !Number.isSafeInteger(max) || max < 1)) invalid('max_parallel');
-        const cap = row.manifest === undefined ? inputs.caps?.[role] : inputs.manifest?.cap;
-        if (cap && (cap < 3 || (max !== undefined && Number(max) > cap - 2))) invalid('reserved slots');
-        work = { kind, role, max_parallel: max as number | undefined };
-        let count: number, bytes: number;
-        if (row.manifest !== undefined) {
-          const m = inputs.manifest;
-          if (row.items !== undefined || row.manifest !== 'manifest.json' || !m || role !== m.role) return invalid('unbound manifest');
-          ({ count, bytes } = m); work.manifest = 'manifest.json';
-        } else {
-          if (!Array.isArray(row.items) || !row.items.length || row.items.length > 512) return invalid('expected 1–512 items');
-          work.items = row.items.map(v => { const item = object(v); keys(item, ['task','brief_file']); return brief(item); });
-          count = work.items.length;
-          bytes = work.items.reduce((n, i) => n + (inputs.inputBytes?.(i) ?? (i.task ? Buffer.byteLength(i.task) : invalid('unresolved file input'))), 0);
+        const pilot = row.pilot === undefined ? undefined : typeof row.pilot === 'boolean' ? row.pilot : invalid('pilot must be boolean');
+        let each: ('job' | 'land')[] | undefined;
+        if (row.each !== undefined) {
+          const stages = list(row.each, 2, true);
+          if (stages.length === 1 && stages[0] === 'job') each = ['job'];
+          else if (stages.length === 2 && stages[0] === 'job' && stages[1] === 'land') each = ['job', 'land'];
+          else invalid('each must be [job] or [job, land]');
         }
-        if (!Number.isInteger(count) || count < 1 || count > 512 || !Number.isSafeInteger(bytes) || bytes < 0) invalid('fan-out limits');
+        const cap = row.tickets !== undefined ? undefined : row.manifest === undefined ? inputs.caps?.[role] : inputs.manifest?.cap;
+        if (cap && (cap < 3 || (max !== undefined && Number(max) > cap - 2))) invalid('reserved slots');
+        const batch: Extract<Work, { kind: 'batch' }> = { kind, role, max_parallel: max as number | undefined, ...(each && { each }), ...(pilot !== undefined && { pilot }) };
+        let count: number, bytes: number;
+        if (row.tickets !== undefined) {
+          if (row.manifest !== undefined || row.items !== undefined) return invalid('batch takes one source');
+          const feature = text(row.tickets);
+          if (!/^[a-z0-9-]+$/.test(feature)) return invalid('tickets feature');
+          batch.tickets = feature;
+          count = inputs.tickets?.count ?? 0; bytes = 0;
+          if (!Number.isInteger(count) || count < 0 || count > 512) invalid('fan-out limits');
+        } else {
+          if (each?.includes('land')) return invalid('each land requires tickets source');
+          if (row.manifest !== undefined) {
+            const m = inputs.manifest;
+            if (row.items !== undefined || row.manifest !== 'manifest.json' || !m || role !== m.role) return invalid('unbound manifest');
+            ({ count, bytes } = m); batch.manifest = 'manifest.json';
+          } else {
+            if (!Array.isArray(row.items) || !row.items.length || row.items.length > 512) return invalid('expected 1–512 items');
+            batch.items = row.items.map(v => { const item = object(v); keys(item, ['task','brief_file']); return brief(item); });
+            count = batch.items.length;
+            bytes = batch.items.reduce((n, i) => n + (inputs.inputBytes?.(i) ?? (i.task ? Buffer.byteLength(i.task) : invalid('unresolved file input'))), 0);
+          }
+          if (!Number.isInteger(count) || count < 1 || count > 512 || !Number.isSafeInteger(bytes) || bytes < 0) invalid('fan-out limits');
+        }
+        work = batch;
         if (count > (role === 'sonic' ? 50 : 12)) reasons.push(`${id}: ${count} ${role} items`);
         if (role === 'sonic' && bytes > 2 * 1024 ** 2) reasons.push(`${id}: ${bytes} Sonic input bytes`);
       }

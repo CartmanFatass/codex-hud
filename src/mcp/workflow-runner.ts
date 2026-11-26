@@ -13,6 +13,8 @@ import { batchActive, batchIndex, isBatchId, readBatch, saveBatch, type Manifest
 import { recoverBatch, tickBatch } from './batch-step.js';
 import { jobFiles } from './paths.js';
 import { directory, hudHome } from './store/job-store.js';
+import { isTicketQueueId, readTicketQueue } from './ticket-queue-state.js';
+import { driveTicketQueue } from './ticket-queue-step.js';
 
 /** Batch projects the engine cursor into index.json alongside its ordered item results.
  * The outer receipt is the small, watcher-facing projection; never schedule from that copy. */
@@ -27,6 +29,14 @@ export async function runWorkflow(id: string) {
       const { runReservedPrewalk } = await import('./dispatch/orchestrator.js');
       return runReservedPrewalk(id, 'detached', new AbortController().signal);
     }
+    return;
+  }
+  if (isTicketQueueId(id)) {
+    const header = readTicketQueue(hudHome, id);
+    if (!header || header.state !== 'working') return;
+    const legacy = !header.template ? await tryAbstractLock('ticket-runner', `${hudHome}\0${id}`) : undefined;
+    if (!header.template && !legacy) return;
+    try { await driveTicketQueue(id); } finally { await legacy?.(); }
     return;
   }
   if (!isBatchId(id)) return;

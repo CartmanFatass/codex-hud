@@ -40,7 +40,7 @@ import { startLand, landTask } from '../land.js';
 import { readyTickets, editTickets } from '../local-tickets.js';
 import { editObjectives, type RequestCaller } from '../local-objectives.js';
 import { callSchedule } from '../local-schedule.js';
-import { resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask, wakeTicketQueue } from '../ticket-queue.js';
+import { resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask } from '../ticket-queue.js';
 import { isTicketQueueId, readTicketQueue, ticketQueueView } from '../ticket-queue-state.js';
 import { gitSummary } from '../managed-worktree.js';
 import { panelDelivery } from '../panel-delivery.js';
@@ -664,8 +664,8 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
   }
   if (name === 'hud_read' && isTicketQueueId(id)) {
     const flow = readTicketQueue(hudHome, id);
-    if (!flow || flow.pane !== callerPane) return { ok: false, code: 'flow_not_found' };
-    if (flow.state === 'working') { wakeTicketQueue(hudHome, flow); ensureWatcher(); }
+    if (!flow || !runVisible(flow, callerPane)) return { ok: false, code: 'flow_not_found' };
+    if (flow.state === 'working') { wakeWorkflow(hudHome, flow); ensureWatcher(); }
     return ticketQueueView(flow);
   }
   const job = findJob(id);

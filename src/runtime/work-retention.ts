@@ -92,9 +92,20 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
           try {
             const path = join(dir, name), stat = fs.lstatSync(path);
             if (stat.isFile() && stat.mtimeMs < cutoff) {
-              // Terminal queue IDs are never reused. Remove sidecars with their receipt.
+              // Terminal queue IDs are never reused. Remove sidecars and workflow dir with their receipt.
               const receipt = readJsonBounded(path, stat.size) as { state?: unknown } | null;
               if (receipt?.state === 'completed' || receipt?.state === 'failed' || receipt?.state === 'cancelled') {
+                const sub = join(dir, name.slice(0, -5)), subStat = fs.lstatSync(sub, { throwIfNoEntry: false });
+                if (subStat?.isDirectory()) {
+                  let cleaned = false;
+                  inDirectory(sub, run => {
+                    const files = fs.readdirSync(run);
+                    if (!files.every(f => (f === 'graph.json' || /^(?:failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f)) && fs.lstatSync(join(run, f)).isFile())) return;
+                    for (const f of files) fs.unlinkSync(join(run, f));
+                    cleaned = true;
+                  });
+                  if (cleaned) fs.rmdirSync(sub);
+                }
                 fs.unlinkSync(path);
                 for (const suffix of ['cancel', 'noticed', 'observed']) fs.rmSync(`${path}.${suffix}`, { force: true });
               }

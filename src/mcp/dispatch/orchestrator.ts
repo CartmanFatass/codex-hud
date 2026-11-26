@@ -557,7 +557,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   const modelOverride = args.model === undefined ? undefined : required(args, 'model');
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
-  if (!herdrId(pane)) return { ok: false, code: 'herdr_required' };
+  if (!ticketQueue && !herdrId(pane)) return { ok: false, code: 'herdr_required' };
 
   const id = 'j' + randomBytes(8).toString('hex');
   const dir = directory(id);
@@ -598,7 +598,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       const entry = session.taskClient ? beginTask(base) : undefined;
       if (!entry) void ensureQueueWatcher(pane, hudHome);
       const reply = finishTask(entry, base, true) ?? created(base, row);
-      const flow = await createCouncilRun(hudHome, base, pane, configured, { plan: councilPlan, grant });
+      const flow = await createCouncilRun(hudHome, base, pane!, configured, { plan: councilPlan, grant });
       wakeWorkflow(hudHome, flow);
       return reply;
     } catch (error) {
@@ -717,11 +717,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         project_root: projectRoot,
         ...(preview && { preview }),
         ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
-        caller_pane: pane,
+        ...(pane && { caller_pane: pane }),
         created_at: nowIso,
         queued_at: nowIso,
         dispatcher,
-        ...(ticketQueue && { ticket_queue: ticketQueue }),
+        ...(ticketQueue && { workflow: ticketQueue, ticket_queue: ticketQueue }),
         ...(queuedRoute && { route: queuedRoute }),
         ...((sonic || first.route?.mode === 'headless' || args.mode === 'headless') && { headless: true }),
         ...(overflowFrom && { overflow_from: overflowFrom }),
@@ -789,7 +789,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       project_root: projectRoot,
       ...(preview && { preview }),
       ...(reusedWorktree ? { worktree: reusedWorktree } : {}),
-      caller_pane: pane,
+      ...(pane && { caller_pane: pane }),
       created_at: new Date().toISOString(),
       dispatcher,
       task_length: task.length,
@@ -797,7 +797,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(repairOf ? { repair_of: repairOf } : {}),
       ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
       ...(landCwd ? { land_turn: request_key } : {}),
-      ...(ticketQueue && { ticket_queue: ticketQueue }),
+      ...(ticketQueue && { workflow: ticketQueue, ticket_queue: ticketQueue }),
       ...(member && { workflow: member.flow, batch_flow: member.flow }),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
       ...(parentJob ? { parent_job: parentJob } : {}),

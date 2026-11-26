@@ -44,10 +44,10 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
           const run = profile.header(s), turn = advance(graph, run, (key, step) => profile.tick(s, key, step, graph));
           if (turn.changed) profile.save(s);
           watches = profile.watches(s);
-          return { run, active: profile.active(s), effect: turn.effect };
+          return { run, active: profile.active(s), effect: turn.effect, recheckMs: turn.recheckMs };
         });
         if (!turn) return { done: true, value: undefined };
-        const { run, active, effect } = turn;
+        const { run, active, effect, recheckMs } = turn;
         // If the original main exited, leave the outbox unclaimed for the next project
         // reader. Its PID/pane never determine whether this or any subsequent step runs.
         if (!profile.readerNotices && Object.keys(run.notices).length && directRecipient(run) && !watching(run.pane, home)) for (const { line, marker } of noticeEvents(home, run)) {
@@ -58,7 +58,7 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
           fs.rmSync(marker, { force: true });
         }
         if (effect) return { done: false, recheckMs: await effect() };
-        return active ? { done: false } : { done: true, value: undefined };
+        return active ? { done: false, ...(recheckMs !== undefined && { recheckMs }) } : { done: true, value: undefined };
       },
     });
   } catch (error) {

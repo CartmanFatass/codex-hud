@@ -81,6 +81,7 @@ export async function dispatchBase(cwd: string): Promise<string> {
 }
 export async function workspaceArgs(job: Job): Promise<string[]> {
   const owner = jobCallerPane(job);
+  if (!owner) return [];
   const result = await run('herdr', ['pane', 'get', owner]);
   if (result.exit_code !== 0) return [];
   try {

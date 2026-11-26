@@ -25,7 +25,7 @@ export function controlRun(run: Omit<Run, 'steps'> & { steps?: Run['steps'] }, a
   } else return;
   return action;
 }
-export interface Tick { state: 'running' | 'done' | 'failed' | 'cancelled'; reason?: string; changed?: boolean; effect?: () => Promise<number> }
+export interface Tick { state: 'running' | 'done' | 'failed' | 'cancelled'; reason?: string; changed?: boolean; recheckMs?: number; effect?: () => Promise<number> }
 
 export const canRepairSealedStep = (attempts: number) => attempts < 2;
 /** A sealed effect can contain its own transaction and repair loop. The durable
@@ -43,8 +43,8 @@ export function settleSealedRun(run: Run, step: string, state: 'completed' | 'fa
 }
 /** One deterministic pass under flow-state. Step adapters can inspect receipts or stage
  * one admission. The caller commits this cursor BEFORE performing the returned effect. */
-export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: (id: string, step: Step) => Tick) {
-  let changed = false;
+export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: (id: string, step: Step) => Tick): { changed: boolean; effect?: () => Promise<number>; recheckMs?: number } {
+  let changed = false, recheckMs: number | undefined;
   for (const [id, step] of Object.entries(graph.steps)) {
     const cursor = run.steps[id];
     if (cursor.state === 'waiting' && run.state === 'working') {
@@ -56,6 +56,7 @@ export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: 
     if (cursor.state !== 'running') continue;
     const result = tick(id, step);
     changed ||= !!result.changed || result.state !== cursor.state;
+    if (result.recheckMs !== undefined) recheckMs = Math.min(recheckMs ?? result.recheckMs, result.recheckMs);
     cursor.state = result.state;
     if (result.state === 'done' && step.kind !== 'batch' && run.state === 'working') settlement(run, graph.policy.breaker);
     if (result.state === 'failed') {
@@ -74,5 +75,5 @@ export function advance(graph: Pick<Graph, 'steps' | 'policy'>, run: Run, tick: 
   if (run.state === 'working' && Object.values(run.steps).every(c => ['done','failed','skipped','cancelled'].includes(c.state))) {
     run.state = 'completed'; changed = true;
   }
-  return { changed };
+  return { changed, ...(recheckMs !== undefined && { recheckMs }) };
 }

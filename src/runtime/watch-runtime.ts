@@ -20,7 +20,6 @@ import type { PrewalkRun } from '../mcp/prewalk-flow.js';
 import { workflowHeaders } from '../workflows/header-scan.js';
 import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
 import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
-import { wakeTicketQueue } from '../mcp/ticket-queue.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
 import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
 import { hasHeadlessSends, headlessFollowupReady } from '../mcp/headless-sends.js';
@@ -1106,7 +1105,7 @@ function scan(retryWatch = false) {
       if (isTicketQueueId(id)) {
         const q = header<TicketQueue>(file);
         if (!q || q.state !== 'working') continue;
-        wakeTicketQueue(home, q);
+        wakeWorkflow(home, q);
       } else if (/^j[0-9a-f]{16}$/.test(id)) {
         const run = header<CouncilRun | PrewalkRun>(file);
         if ((run?.template !== 'council' && run?.template !== 'prewalk') || run.state !== 'working') continue;
