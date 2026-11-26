@@ -6,7 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PanelExecution } from '../../dist/panel/execution.js';
 import { reduceMetroLanes, lastChangedStationId } from '../../dist/collectors/execution-metro.js';
+import { saveBatch, settleItem } from '../../dist/mcp/batch-state.js';
+import { answerComposed } from '../../dist/mcp/composed-workflow.js';
 import { ticketReadiness } from '../../dist/mcp/local-tickets.js';
+import { resumeQueueAfterAnswer } from '../../dist/mcp/ticket-queue.js';
+import { readTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
 import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { advance } from '../../dist/workflows/engine.js';
 
@@ -484,4 +488,438 @@ test('Execution collector projects metro stations, edges, change times, gate ste
   // 8. Ended run omits metro
   assert.equal(byFlow.get(qEnded).metro, undefined);
   assert.equal(lastChangedStationId([]), undefined);
+});
+
+test('repair rounds: round two preserves round one with a distinct station id in order for queue tickets, standalone land, and reduced lanes', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-metro-repairs-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hud = join(root, 'hud'), project = join(root, 'project'), flows = join(hud, 'flows');
+  const id = (p, n) => `${p}${n.toString(16).padStart(16, '0')}`;
+  const addJob = (n, state, receipt = {}, statusExtra = {}) => {
+    const jid = id('j', n), dir = join(hud, 'jobs', jid);
+    putJson(join(dir, 'job.json'), {
+      job: jid, cwd: project, project_root: project, role: 'imp', headless: true,
+      dispatch_exit_code: 0, created_at: ago(40 - n), ...receipt,
+    });
+    putJson(join(dir, 'STATUS.json'), {
+      state, started_at: ago(30 - n), ...(state === 'done' || state === 'closed' ? { settled_at: ago(15) } : {}), ...statusExtra,
+    });
+    fs.writeFileSync(join(dir, 'brief.md'), `# ${receipt.ticket ?? `0${n}`}: Synthetic repair ${n}\n`);
+    return jid;
+  };
+
+  // Queue ticket in round 2 of land repair (distinct worker per round, with recorded changed_at).
+  const jSrc = addJob(1, 'done', { ticket: 'rep/01' });
+  const jRep1 = addJob(2, 'done', { ticket: 'rep/01' }, { started_at: ago(12), settled_at: ago(9) });
+  const jRep2 = addJob(3, 'working', { ticket: 'rep/01' }, { started_at: ago(2) });
+  const fQueue = id('f', 1);
+  putJson(join(flows, `${fQueue}.json`), {
+    flow: fQueue, job: jSrc, pane: '', task: false,
+    wt: { root: project, main_root: project, branch: 'wt/01' },
+    config: { base: 'main', gate: ['build', 'unit', 'lint'], after: [], push: false },
+    state: 'running', step: 'repair 2', pid: process.pid, start: '1',
+    created_at: ago(18), updated_at: ago(2), step_started_at: ago(2), source_sha: 'a'.repeat(40),
+    repairs: [
+      { step: 'gate[2]: unit', job: jRep1, outcome: 'failed at gate[2]: unit', started_at: ago(12), changed_at: ago(6) },
+      { step: 'gate[2]: unit', job: jRep2, outcome: 'waiting for worker', started_at: ago(2), changed_at: ago(2) },
+    ],
+    timings: [{ step: 'cherry-pick', ok: true, ms: 5 }, { step: 'gate[2]: unit', ok: false, ms: 20 }],
+  });
+  const qRep = id('q', 10);
+  putJson(join(flows, `${qRep}.json`), {
+    flow: qRep, root: project, project_root: project, feature: 'rep', pane: '', task: false, max_parallel: 2,
+    created_at: ago(30), updated_at: ago(2), state: 'working',
+    steps: { tickets: { state: 'running', changed_at: ago(30) }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
+    tickets: [
+      { ticket: 'rep/01', path: join(project, '.scratch/rep/01.md'), role: 'imp', job: jSrc, land: fQueue, blockers: [] },
+      { ticket: 'rep/02', path: join(project, '.scratch/rep/02.md'), role: 'imp', job: addJob(4, 'working', { ticket: 'rep/02' }, { started_at: ago(10) }), blockers: [] },
+    ],
+  });
+
+  // Legacy standalone land flow in round 2 WITHOUT started_at/changed_at on repairs, reusing the same worker job.
+  const jSolo = addJob(5, 'working', { role: 'imp' }, { started_at: ago(3) });
+  const fSolo = id('f', 5);
+  putJson(join(flows, `${fSolo}.json`), {
+    flow: fSolo, job: jSolo, pane: '', task: false,
+    wt: { root: project, main_root: project, branch: 'wt/solo' },
+    config: { base: 'main', gate: ['unit', 'lint'], after: [], push: false },
+    state: 'running', step: 'repair 2', pid: process.pid, start: '1',
+    created_at: ago(20), updated_at: ago(3), step_started_at: ago(3), source_sha: 'b'.repeat(40),
+    repairs: [
+      { step: 'gate[2]: lint', job: jSolo, outcome: 'failed at gate[2]: lint' },
+      { step: 'gate[2]: lint', job: jSolo, outcome: 'waiting for worker' },
+    ],
+    timings: [{ step: 'cherry-pick', ok: true, ms: 5 }, { step: 'gate[2]: lint', ok: false, ms: 15 }],
+  });
+
+  const execution = new PanelExecution(hud, null, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, NOW);
+  const byFlow = new Map(execution.view(project).runs.map((r) => [r.flow, r]));
+
+  const qRun = byFlow.get(qRep);
+  const t1 = qRun.metro.stations.find((s) => s.id === 'rep/01');
+  assert.equal(t1.repairs.length, 2);
+  assert.deepEqual(t1.repairs.map((r) => [r.id, r.round, r.state, r.jobId, r.changedAt]), [
+    ['rep/01↻', 1, 'failed', jRep1, agoMs(6)],
+    ['rep/01↻2', 2, 'working', jRep2, agoMs(2)],
+  ]);
+  assert.notEqual(t1.repairs[0].id, t1.repairs[1].id);
+  assert.equal(t1.repairs[0].reason, 'failed at gate[2]: unit');
+  assert.equal(t1.repair.id, 'rep/01↻2');
+  assert.equal(qRun.tickets[0].landRepairs.length, 2);
+  assert.equal(qRun.metro.lastChangedId, 'rep/01↻2');
+
+  // Inline / reduced layout data retains both repair rounds and keeps the repaired station lowest in its column.
+  const reduced = reduceMetroLanes(qRun.metro);
+  const reducedT1 = reduced.columns[0].find((s) => s.station.id === 'rep/01');
+  assert.equal(reduced.columns[0].at(-1).station.id, 'rep/01');
+  assert.deepEqual(reducedT1.station.repairs.map((r) => r.id), ['rep/01↻', 'rep/01↻2']);
+
+  // Legacy standalone land with reused job keeps both ordered rounds and does not copy round 2's time onto round 1.
+  const soloRun = byFlow.get(fSolo);
+  const gateStation = soloRun.metro.stations.find((s) => s.id === 'gate');
+  assert.deepEqual(gateStation.repairs.map((r) => [r.id, r.round, r.state, r.changedAt]), [
+    ['gate↻', 1, 'failed', undefined],
+    ['gate↻2', 2, 'working', agoMs(3)],
+  ]);
+  assert.equal(soloRun.metro.lastChangedId, 'gate↻2');
+  assert.deepEqual(soloRun.nodes.flat().filter((n) => n.key.startsWith('repair')).map((n) => [n.key, n.progress.index, n.state]), [
+    ['repair', 1, 'failed'],
+    ['repair-2', 2, 'running'],
+  ]);
+
+  // Direct lastChangedStationId check across multiple repair rounds on one station.
+  assert.equal(lastChangedStationId([
+    st('01', 'working', {
+      changedAt: agoMs(10),
+      repairs: [
+        { id: '01↻', round: 1, total: 2, state: 'failed', changedAt: agoMs(5) },
+        { id: '01↻2', round: 2, total: 2, state: 'working', changedAt: agoMs(1) },
+      ],
+    }),
+  ]), '01↻2');
+});
+
+test('acceptance seat: tickets-step leads never appear as accept; accept reflects only the acceptance step and recorded seat', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-metro-accept-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hud = join(root, 'hud'), project = join(root, 'project'), flows = join(hud, 'flows');
+  const id = (p, n) => `${p}${n.toString(16).padStart(16, '0')}`;
+  const addJob = (n, role, state, extra = {}) => {
+    const jid = id('j', n), dir = join(hud, 'jobs', jid);
+    putJson(join(dir, 'job.json'), {
+      job: jid, cwd: project, project_root: project, role, headless: true,
+      dispatch_exit_code: 0, created_at: ago(25 - n),
+    });
+    putJson(join(dir, 'STATUS.json'), { state, started_at: ago(20 - n), ...extra });
+    fs.writeFileSync(join(dir, 'brief.md'), `# Synthetic ${role} ${n}\n`);
+    return jid;
+  };
+
+  const jWorker = addJob(1, 'imp', 'done', { settled_at: ago(10) });
+  const jAssumpLead = addJob(2, 'lead', 'working', { started_at: ago(1) });
+  const jBlockerLead = addJob(3, 'lead', 'working', { started_at: ago(1) });
+  const jAcceptLead = addJob(4, 'lead', 'working', { started_at: ago(2) });
+  const jEscalatedLead = addJob(5, 'lead', 'closed', { settled_at: ago(3) });
+
+  // 1. Assumption lead active during tickets step: accept must stay waiting with no lead target.
+  const qAssump = id('q', 1);
+  putJson(join(flows, `${qAssump}.json`), {
+    flow: qAssump, root: project, project_root: project, feature: 'seat-assump', pane: '', task: false, max_parallel: 2,
+    created_at: ago(20), updated_at: ago(1), state: 'working',
+    steps: { tickets: { state: 'running', changed_at: ago(20) }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
+    active_lead: { job: jAssumpLead, kind: 'assumption', step: 'tickets', round: 0, ticket: 'seat-assump/01', worker_job: jWorker },
+    tickets: [{ ticket: 'seat-assump/01', path: join(project, '.scratch/seat-assump/01.md'), role: 'imp', job: jWorker, blockers: [] }],
+  });
+
+  // 2. Blocker lead active during tickets step on a main-seated queue: accept stays main & waiting.
+  const qMain = id('q', 2);
+  putJson(join(flows, `${qMain}.json`), {
+    flow: qMain, root: project, project_root: project, feature: 'seat-main', pane: '', task: false, max_parallel: 2,
+    created_at: ago(20), updated_at: ago(1), state: 'paused', handback_to: 'main',
+    steps: { tickets: { state: 'done', changed_at: ago(8) }, review: { state: 'done', changed_at: ago(5) }, accept: { state: 'asking', changed_at: ago(2) } },
+    active_lead: { job: jBlockerLead, kind: 'blocker', step: 'tickets', round: 0, ticket: 'seat-main/01', worker_job: jWorker },
+    tickets: [{ ticket: 'seat-main/01', path: join(project, '.scratch/seat-main/01.md'), role: 'imp', job: jWorker, landed: true, landed_at: ago(8), blockers: [] }],
+  });
+
+  // 3. Real acceptance lead active during accept step: accept binds to lead worker.
+  const qLead = id('q', 3);
+  putJson(join(flows, `${qLead}.json`), {
+    flow: qLead, root: project, project_root: project, feature: 'seat-lead', pane: '', task: false, max_parallel: 2,
+    created_at: ago(20), updated_at: ago(2), state: 'working', handback_to: 'lead',
+    steps: { tickets: { state: 'done', changed_at: ago(9) }, review: { state: 'done', changed_at: ago(4) }, accept: { state: 'running', changed_at: ago(2) } },
+    active_lead: { job: jAcceptLead, kind: 'accept', step: 'accept', round: 0 },
+    tickets: [{ ticket: 'seat-lead/01', path: join(project, '.scratch/seat-lead/01.md'), role: 'imp', job: jWorker, landed: true, landed_at: ago(9), blockers: [] }],
+  });
+
+  // 4. Settled accept lead after escalation (active_lead cleared, decision recorded).
+  const qEsc = id('q', 4);
+  putJson(join(flows, `${qEsc}.json`), {
+    flow: qEsc, root: project, project_root: project, feature: 'seat-esc', pane: '', task: false, max_parallel: 2,
+    created_at: ago(20), updated_at: ago(3), state: 'paused', handback_to: 'lead',
+    steps: { tickets: { state: 'done', changed_at: ago(9) }, review: { state: 'done', changed_at: ago(5) }, accept: { state: 'failed', changed_at: ago(3) } },
+    decisions: [{ step: 'accept', kind: 'accept', job: jEscalatedLead, decision: 'escalate', reason: 'needs owner', at: ago(3) }],
+    tickets: [{ ticket: 'seat-esc/01', path: join(project, '.scratch/seat-esc/01.md'), role: 'imp', job: jWorker, landed: true, landed_at: ago(9), blockers: [] }],
+  });
+
+  const execution = new PanelExecution(hud, null, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, NOW);
+  const byFlow = new Map(execution.view(project).runs.map((r) => [r.flow, r]));
+
+  const rAssump = byFlow.get(qAssump);
+  assert.equal(rAssump.lead, undefined);
+  assert.equal(rAssump.jobIds.includes(jAssumpLead), true, 'assumption lead stays grouped with the run');
+  const acceptAssump = rAssump.metro.stations.find((s) => s.id === 'accept');
+  assert.equal(acceptAssump.state, 'waiting');
+  assert.equal(acceptAssump.label, 'lead');
+  assert.equal(acceptAssump.role, 'lead');
+  assert.equal(acceptAssump.jobId, undefined);
+  assert.equal(acceptAssump.execJob, undefined);
+  assert.equal(acceptAssump.changedAt, undefined);
+  assert.notEqual(rAssump.metro.lastChangedId, 'accept');
+
+  const rMain = byFlow.get(qMain);
+  assert.equal(rMain.lead, undefined);
+  assert.equal(rMain.acceptanceSeat, 'main');
+  const acceptMain = rMain.metro.stations.find((s) => s.id === 'accept');
+  assert.equal(acceptMain.state, 'asking');
+  assert.equal(acceptMain.label, 'main');
+  assert.equal(acceptMain.role, undefined);
+  assert.equal(acceptMain.jobId, undefined);
+  assert.equal(acceptMain.execJob, undefined);
+  assert.equal(acceptMain.changedAt, agoMs(2));
+
+  const rLead = byFlow.get(qLead);
+  assert.equal(rLead.lead.jobId, jAcceptLead);
+  const acceptLead = rLead.metro.stations.find((s) => s.id === 'accept');
+  assert.equal(acceptLead.state, 'working');
+  assert.equal(acceptLead.label, 'lead');
+  assert.equal(acceptLead.role, 'lead');
+  assert.equal(acceptLead.jobId, jAcceptLead);
+  assert.equal(acceptLead.execJob.target.workerId, `thin-job:${jAcceptLead}`);
+  assert.equal(acceptLead.changedAt, agoMs(2));
+
+  const rEsc = byFlow.get(qEsc);
+  const acceptEsc = rEsc.metro.stations.find((s) => s.id === 'accept');
+  assert.equal(acceptEsc.state, 'failed');
+  assert.equal(acceptEsc.jobId, jEscalatedLead);
+  assert.equal(acceptEsc.changedAt, agoMs(3));
+});
+
+test('answer times: answerComposed, main-answered queue resume, and departure qa fallback update station changedAt', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-metro-answers-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hud = join(root, 'hud'), project = join(root, 'project'), flows = join(hud, 'flows');
+  fs.mkdirSync(project, { recursive: true });
+  const id = (p, n) => `${p}${n.toString(16).padStart(16, '0')}`;
+
+  // 1. Composed workflow answered via answerComposed: cursor.changed_at updates to answer time.
+  const wFlow = id('w', 1);
+  const graph = {
+    version: 1, name: 'composed-answer', cost: 'cheap', cost_reasons: [], policy: { breaker: 'none' }, scale: {},
+    steps: {
+      build: { kind: 'check', needs: [], from: [], optional: false, job: 'x', repair: 0 },
+      approve: { kind: 'handback', needs: ['build'], from: ['build'], optional: false, to: 'main', ask: 'Ship?', options: ['ship', 'hold'] },
+      publish: { kind: 'check', needs: ['approve'], from: [], optional: false, job: 'x', repair: 0 },
+    },
+  };
+  putJson(join(flows, wFlow, 'graph.json'), graph);
+  const { hashComposedGraph } = await import('../../dist/workflows/composed-state.js');
+  putJson(join(flows, `${wFlow}.json`), {
+    flow: wFlow, pane: 'w1:p1', cwd: project, project_root: project, template: 'composed',
+    hash: hashComposedGraph(project, graph), cost: 'cheap', created_at: ago(20), state: 'paused',
+    epoch: 0, streak: 0, failures: 0, settled: 0, notices: {}, answers: {},
+    handback: { step: 'approve', request_id: 'h-approve', ask: 'Ship?', choices: ['ship', 'hold'], refs: [] },
+    steps: {
+      build: { state: 'done', changed_at: ago(15) },
+      approve: { state: 'asking', changed_at: ago(10) },
+      publish: { state: 'waiting' },
+    },
+  });
+  const beforeComposed = Date.now();
+  const composedRes = await answerComposed(hud, 'w1:p1', { job: wFlow, request_id: 'h-approve', answer: 'ship' });
+  const afterComposed = Date.now();
+  assert.deepEqual(composedRes, { ok: true, written: true, answer: 'ship' });
+  const savedComposed = JSON.parse(fs.readFileSync(join(flows, `${wFlow}.json`), 'utf8'));
+  const composedAnswerAt = Date.parse(savedComposed.steps.approve.changed_at);
+  assert.ok(composedAnswerAt >= beforeComposed && composedAnswerAt <= afterComposed, 'answerComposed records cursor changed_at');
+
+  // 2. Main-answered queue question resume path: records answered_at, changed_at, and decision on the queue item.
+  const jMainQ = id('j', 20);
+  putJson(join(hud, 'jobs', jMainQ, 'job.json'), {
+    job: jMainQ, cwd: project, project_root: project, role: 'imp', headless: true, dispatch_exit_code: 0, created_at: ago(25),
+  });
+  putJson(join(hud, 'jobs', jMainQ, 'STATUS.json'), { state: 'working', started_at: ago(20) });
+  fs.writeFileSync(join(hud, 'jobs', jMainQ, 'brief.md'), '# ans/01: Main-answered ticket\n');
+  const qMain = id('q', 20);
+  putJson(join(flows, `${qMain}.json`), {
+    flow: qMain, root: project, project_root: project, feature: 'ans', pane: '', task: false, max_parallel: 1,
+    created_at: ago(25), updated_at: ago(12), state: 'paused', handback_to: 'main',
+    handback: { step: 'tickets', choices: ['resume', 'stop'], kind: 'question', ticket: 'ans/01', job: jMainQ, question: 'q1' },
+    steps: { tickets: { state: 'failed', changed_at: ago(12) }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
+    tickets: [{ ticket: 'ans/01', path: join(project, '.scratch/ans/01.md'), role: 'imp', job: jMainQ, blockers: [] }],
+  });
+  const beforeResume = Date.now();
+  await resumeQueueAfterAnswer(hud, jMainQ, 'q1', '', project);
+  const afterResume = Date.now();
+  const updatedQueue = readTicketQueue(hud, qMain);
+  const resumeAnswerAt = Date.parse(updatedQueue.tickets[0].answered_at);
+  assert.ok(resumeAnswerAt >= beforeResume && resumeAnswerAt <= afterResume, 'resumeQueueAfterAnswer stamps item.answered_at');
+  assert.equal(updatedQueue.tickets[0].changed_at, updatedQueue.tickets[0].answered_at);
+  assert.equal(updatedQueue.decisions.some((d) => d.kind === 'question' && d.decision === 'answer' && d.ticket === 'ans/01' && d.question === 'q1'), true);
+
+  // 3. Departure fallback: worker answered with non-default choice (`state: 'departure'` in thin-jobs) without item.answered_at.
+  const jDep = id('j', 21);
+  const depDir = join(hud, 'jobs', jDep);
+  putJson(join(depDir, 'job.json'), {
+    job: jDep, cwd: project, project_root: project, role: 'imp', headless: true, dispatch_exit_code: 0, created_at: ago(25),
+  });
+  putJson(join(depDir, 'STATUS.json'), { state: 'working', started_at: ago(20) });
+  fs.writeFileSync(join(depDir, 'brief.md'), '# dep/01: Departure answer ticket\n');
+  fs.mkdirSync(join(depDir, 'qa'), { recursive: true });
+  const qPath = join(depDir, 'qa', 'q1.md');
+  const aPath = join(depDir, 'qa', 'q1.answer.md');
+  fs.writeFileSync(qPath, '# Question\n\nPick a retention window?\n\nOptions:\n- 1h\n- 24h\n\nDefault if unanswered: 1h\n');
+  fs.writeFileSync(aPath, '24h\n');
+  const depAnswerMs = Math.floor((Date.now() - 2 * 60_000) / 1000) * 1000;
+  fs.utimesSync(qPath, new Date(depAnswerMs - 60_000), new Date(depAnswerMs - 60_000));
+  fs.utimesSync(aPath, new Date(depAnswerMs), new Date(depAnswerMs));
+  const qDep = id('q', 21);
+  putJson(join(flows, `${qDep}.json`), {
+    flow: qDep, root: project, project_root: project, feature: 'dep', pane: '', task: false, max_parallel: 2,
+    created_at: ago(25), updated_at: ago(15), state: 'working',
+    steps: { tickets: { state: 'running', changed_at: ago(25) }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
+    tickets: [
+      { ticket: 'dep/01', path: join(project, '.scratch/dep/01.md'), role: 'imp', job: jDep, blockers: [] },
+      { ticket: 'dep/02', path: join(project, '.scratch/dep/02.md'), role: 'imp', blockers: ['dep/01'] },
+    ],
+  });
+
+  const collectNow = Date.now() + 5_000;
+  const execution = new PanelExecution(hud, null, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, collectNow);
+  const byFlow = new Map(execution.view(project).runs.map((r) => [r.flow, r]));
+
+  // Verify composed workflow station picked up answerComposed changed_at.
+  const composedRun = byFlow.get(wFlow);
+  assert.equal(composedRun.metro.stations.find((s) => s.id === 'approve').state, 'done');
+  assert.equal(composedRun.metro.stations.find((s) => s.id === 'approve').changedAt, composedAnswerAt);
+  assert.equal(composedRun.metro.lastChangedId, 'approve');
+
+  // Verify main-answered queue ticket picked up resumeQueueAfterAnswer timestamp.
+  const mainRun = byFlow.get(qMain);
+  assert.equal(mainRun.metro.stations.find((s) => s.id === 'ans/01').changedAt, resumeAnswerAt);
+  assert.equal(mainRun.metro.lastChangedId, 'ans/01');
+
+  // Verify non-default departure answer sets station changedAt from qa answer file.
+  const depWorker = [...execution.board().lanes.flatMap((l) => l.workers)].find((w) => w.id === `thin-job:${jDep}`);
+  assert.equal(depWorker.files.find((f) => f.kind === 'question').state, 'departure');
+  const depRun = byFlow.get(qDep);
+  assert.equal(depRun.metro.stations.find((s) => s.id === 'dep/01').changedAt, depAnswerMs);
+  assert.equal(depRun.metro.lastChangedId, 'dep/01');
+});
+
+test('batch pool change time: failed pilot stays lastChangedStationId over unstarted pool, and legacy batch records still parse', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-metro-batch-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hud = join(root, 'hud'), project = join(root, 'project'), flows = join(hud, 'flows');
+  fs.mkdirSync(project, { recursive: true });
+  const id = (p, n) => `${p}${n.toString(16).padStart(16, '0')}`;
+
+  // 1. Real settleItem + saveBatch: failed pilot pauses batch before tail starts; later save bumps updated_at.
+  const bFail = id('b', 30);
+  fs.mkdirSync(join(flows, bFail), { recursive: true });
+  const failBatch = {
+    flow: bFail, cwd: project, project_root: project, pane: '', key: 'k1',
+    created_at: agoMs(15), state: 'working', epoch: 0, streak: 0, settled: 0, failures: 0, notices: {},
+    scale: { role: 'sonic', count: 5, cap: 8, max_parallel: 3, presets: ['fast'], input_bytes: { max: 10, median: 10, total: 50 } },
+    totals: { waiting: 4, running: 1, done: 0, failed: 0 },
+  };
+  const failItems = [
+    { item: 1, preset: 'fast', pilot: true, state: 'running' },
+    { item: 2, preset: 'fast', pilot: false, state: 'waiting' },
+    { item: 3, preset: 'fast', pilot: false, state: 'waiting' },
+    { item: 4, preset: 'fast', pilot: false, state: 'waiting' },
+    { item: 5, preset: 'fast', pilot: false, state: 'waiting' },
+  ];
+  settleItem(failBatch, failItems, failItems[0], 'pilot failed check');
+  saveBatch(hud, failBatch, failItems);
+  assert.equal(failBatch.state, 'paused');
+  assert.equal(typeof failBatch.pilot_changed_at, 'number');
+  assert.equal(failBatch.pool_changed_at, undefined);
+  // Simulate a later saveBatch bumping updated_at past pilot_changed_at.
+  const bumpedFail = JSON.parse(fs.readFileSync(join(flows, `${bFail}.json`), 'utf8'));
+  bumpedFail.updated_at = failBatch.pilot_changed_at + 10_000;
+  putJson(join(flows, `${bFail}.json`), bumpedFail);
+
+  // 2. Real settleItem + saveBatch on tail: pool_changed_at records true tail transition, ignoring later updated_at saves.
+  const bTail = id('b', 31);
+  fs.mkdirSync(join(flows, bTail), { recursive: true });
+  const tailBatch = {
+    flow: bTail, cwd: project, project_root: project, pane: '', key: 'k2',
+    created_at: agoMs(15), state: 'working', epoch: 0, streak: 0, settled: 0, failures: 0, notices: {},
+    scale: { role: 'sonic', count: 3, cap: 8, max_parallel: 2, presets: ['fast'], input_bytes: { max: 10, median: 10, total: 30 } },
+    totals: { waiting: 1, running: 1, done: 1, failed: 0 },
+    pilot_changed_at: agoMs(10),
+  };
+  const tailItems = [
+    { item: 1, preset: 'fast', pilot: true, state: 'done' },
+    { item: 2, preset: 'fast', pilot: false, state: 'running' },
+    { item: 3, preset: 'fast', pilot: false, state: 'waiting' },
+  ];
+  settleItem(tailBatch, tailItems, tailItems[1]);
+  saveBatch(hud, tailBatch, tailItems);
+  assert.equal(typeof tailBatch.pool_changed_at, 'number');
+  const bumpedTail = JSON.parse(fs.readFileSync(join(flows, `${bTail}.json`), 'utf8'));
+  bumpedTail.updated_at = tailBatch.pool_changed_at + 60_000;
+  putJson(join(flows, `${bTail}.json`), bumpedTail);
+
+  // 3. Legacy failed-pilot batch written before pilot_changed_at / pool_changed_at existed: still parses, pilot wins.
+  const bLegacy = id('b', 32);
+  const legacyPath = join(flows, `${bLegacy}.json`);
+  putJson(legacyPath, {
+    flow: bLegacy, cwd: project, project_root: project, pane: '', state: 'paused', reason: 'pilot failed',
+    created_at: agoMs(12), updated_at: agoMs(4),
+    scale: { role: 'sonic', count: 4, max_parallel: 2 },
+    totals: { waiting: 3, running: 0, done: 0, failed: 1 },
+  });
+  putJson(join(flows, bLegacy, 'index.json'), {
+    items: [
+      { item: 1, pilot: true, state: 'failed', reason: 'timeout' },
+      { item: 2, pilot: false, state: 'waiting' },
+      { item: 3, pilot: false, state: 'waiting' },
+      { item: 4, pilot: false, state: 'waiting' },
+    ],
+  });
+  const legacyRawBefore = fs.readFileSync(legacyPath, 'utf8');
+
+  const execution = new PanelExecution(hud, null, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, Date.now() + 120_000);
+  const byFlow = new Map(execution.view(project).runs.map((r) => [r.flow, r]));
+
+  const failRun = byFlow.get(bFail);
+  assert.equal(failRun.metro.stations.find((s) => s.id === 'pilot').state, 'failed');
+  assert.equal(failRun.metro.stations.find((s) => s.id === 'pilot').changedAt, failBatch.pilot_changed_at);
+  assert.equal(failRun.metro.stations.find((s) => s.id === 'pool').state, 'waiting');
+  assert.equal(failRun.metro.stations.find((s) => s.id === 'pool').changedAt, undefined);
+  assert.equal(failRun.metro.lastChangedId, 'pilot');
+
+  const tailRun = byFlow.get(bTail);
+  assert.equal(tailRun.metro.stations.find((s) => s.id === 'pool').changedAt, tailBatch.pool_changed_at);
+  assert.equal(tailRun.metro.lastChangedId, 'pool');
+
+  const legacyRun = byFlow.get(bLegacy);
+  assert.equal(legacyRun.metro.stations.find((s) => s.id === 'pilot').state, 'failed');
+  assert.equal(legacyRun.metro.stations.find((s) => s.id === 'pilot').changedAt, agoMs(4));
+  assert.equal(legacyRun.metro.stations.find((s) => s.id === 'pool').changedAt, undefined);
+  assert.equal(legacyRun.metro.lastChangedId, 'pilot');
+  assert.equal(fs.readFileSync(legacyPath, 'utf8'), legacyRawBefore, 'legacy batch record must not be rewritten');
 });

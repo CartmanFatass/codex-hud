@@ -17,7 +17,8 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
   const repairs = f.repairs ??= [], source = repairs.at(-1)?.job ?? f.job;
   const dir = (id: string) => join(home, 'jobs', id);
   const seen = questions(dir(source)), before = cachedReportSignature(dir(source));
-  const attempt: NonNullable<LandFlow['repairs']>[number] = { step: f.step, outcome: 'dispatching' };
+  const now = new Date().toISOString();
+  const attempt: NonNullable<LandFlow['repairs']>[number] = { step: f.step, outcome: 'dispatching', started_at: now, changed_at: now };
   repairs.push(attempt);
   const key = `land:${f.flow}:${repairs.length}`;
   const task = `Repair this landing in ${f.wt.root} on branch ${f.wt.branch}. Rebase onto the current ${f.config.base} base, fix the failure and commit. Do not push or change the main checkout.\nFailing step: ${f.step}: ${f.error}\nLog tail:\n${f.tail?.join('\n')}`;
@@ -26,7 +27,7 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
     checkCancel();
     const started = Date.now();
     const id = await dispatchLandRepair(source, f.wt.root, task, key, f.pane, f.ticket_queue);
-    attempt.job = id; attempt.outcome = 'waiting for worker'; writeLand(home, f);
+    attempt.job = id; attempt.outcome = 'waiting for worker'; attempt.changed_at = new Date().toISOString(); writeLand(home, f);
     for (;;) {
       checkCancel();
       const root = dir(id), receipt = readJsonFile(join(root, jobFiles.job)) as Job;
@@ -57,9 +58,12 @@ export async function repairLand(home: string, f: LandFlow, checkCancel: () => v
       await delay(250);
     }
     attempt.outcome = 'settled; retrying gate';
+    attempt.changed_at = new Date().toISOString();
   } catch (e) {
     // A question or cancellation hands the worker (and its later notices) back to the caller.
     if (attempt.job) releaseLandTurn(attempt.job, key);
-    attempt.outcome = (e as Error).message; throw e;
+    attempt.outcome = (e as Error).message;
+    attempt.changed_at = new Date().toISOString();
+    throw e;
   }
 }

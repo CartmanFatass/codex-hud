@@ -475,6 +475,33 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
     q?.reason?.includes(`(${jobId}): worker question ${request} `);
   // An owner answer can resume the worker, but must not implicitly restart unattended landing.
   if (!q || q.unattended || (q.state !== 'failed' && q.state !== 'paused') || !runVisible(q, pane, cwd) || !matchesQuestion) return undefined;
+  await runLock(home, q.flow, () => {
+    const cur = readTicketQueue(home, q.flow);
+    if (!cur || cur.unattended || (cur.state !== 'failed' && cur.state !== 'paused')) return;
+    const at = new Date().toISOString();
+    const item = cur.tickets.find(t => t.job === jobId);
+    if (item) {
+      item.answered_at = at;
+      item.changed_at = at;
+      const alreadyRecorded = cur.decisions?.some(
+        d => d.kind === 'question' && d.decision === 'answer' && d.ticket === item.ticket && d.question === request,
+      );
+      if (!alreadyRecorded) {
+        recordDecision(cur, { step: 'tickets', kind: 'question', job: 'main', decision: 'answer', ticket: item.ticket, question: request, at });
+      }
+      writeTicketQueue(home, cur);
+    } else if (cur.review_job === jobId) {
+      cur.steps ??= {};
+      cur.steps.review = { ...(cur.steps.review ?? { state: 'running' as const }), changed_at: at };
+      const alreadyRecorded = cur.decisions?.some(
+        d => d.kind === 'question' && d.decision === 'answer' && d.step === 'review' && d.question === request,
+      );
+      if (!alreadyRecorded) {
+        recordDecision(cur, { step: 'review', kind: 'question', job: 'main', decision: 'answer', question: request, at });
+      }
+      writeTicketQueue(home, cur);
+    }
+  });
   try { return (await startTicketQueue(home, q.root, pane ?? (q.pane || null), false, { feature: q.feature, max_parallel: q.max_parallel }))?.flow; }
   catch { return undefined; }
 }

@@ -90,6 +90,7 @@ export interface ExecutionRunTicket {
   readonly landProgress?: LandProgress;
   readonly landGate?: MetroGate;
   readonly landRepair?: MetroRepair;
+  readonly landRepairs?: readonly MetroRepair[];
   readonly title?: string;
   readonly since?: number;
   /** Last station transition time (landed, failed, held, asking, answered, gate step change, worker start). */
@@ -123,6 +124,7 @@ export interface WorkflowNode {
   readonly progress?: LandProgress;
   readonly gate?: MetroGate;
   readonly repair?: MetroRepair;
+  readonly repairs?: readonly MetroRepair[];
   readonly since?: number;
   readonly changedAt?: number;
   readonly reason?: string;
@@ -264,6 +266,16 @@ interface WorkerStatusInfo {
   readonly changedAt?: number;
 }
 
+function answeredQuestionTime(worker?: OwnerWorker): number | undefined {
+  let best: number | undefined;
+  if (worker?.files?.length) {
+    for (const f of worker.files) {
+      if (f.kind === 'question' && (f.state === 'answered' || f.state === 'departure')) best = maxTime(best, f.at);
+    }
+  }
+  return best;
+}
+
 function workerStatusInfo(cache: JobIndexCache, jobId: string, fallback: RunStepState, worker?: OwnerWorker): WorkerStatusInfo {
   const status = cache.readStatus<{ state?: string; started_at?: string; settled_at?: string; ended_at?: string }>(jobId);
   const v = status.status === 'ok' ? status.value : undefined;
@@ -279,7 +291,7 @@ function workerStatusInfo(cache: JobIndexCache, jobId: string, fallback: RunStep
     : state === 'asking'
       ? (worker?.humanEndedAt ?? worker?.startedAt ?? parseTime(v?.started_at) ?? undefined)
       : state === 'running'
-        ? (worker?.startedAt ?? parseTime(v?.started_at) ?? undefined)
+        ? (maxTime(worker?.startedAt, parseTime(v?.started_at), answeredQuestionTime(worker)) ?? undefined)
         : undefined;
   return { state, changedAt };
 }
@@ -290,12 +302,13 @@ function extractLandGateAndRepair(
   workers: ReadonlyMap<string, OwnerWorker>,
   cache: JobIndexCache,
   repairIdPrefix: string,
-): { progress?: LandProgress; gate?: MetroGate; repair?: MetroRepair } {
+): { progress?: LandProgress; gate?: MetroGate; repair?: MetroRepair; repairs?: MetroRepair[] } {
   const progress = landProgress(land);
   const total = land.config?.gate?.length;
   const publishing = land.step === 'records' || land.step === 'fast-forward' || /^after\[/.test(land.step);
   const gateTiming = land.timings?.filter((timing) => /^gate\[/.test(timing.step)).at(-1);
-  const lastRepair = land.repairs?.at(-1);
+  const rawRepairs = land.repairs ?? [];
+  const lastRepair = rawRepairs.at(-1);
   let gate: MetroGate | undefined;
   if (progress?.kind === 'gate') {
     gate = parseGateStep(land.step, total, land.state === 'failed' ? 'failed' : 'working');
@@ -308,36 +321,42 @@ function extractLandGateAndRepair(
     gate = parseGateStep('', total, 'done');
   }
 
-  let repair: MetroRepair | undefined;
-  if (lastRepair) {
-    const repairing = progress?.kind === 'repair';
-    const repairWorker = lastRepair.job ? workers.get(lastRepair.job) : undefined;
-    const info = lastRepair.job
-      ? workerStatusInfo(cache, lastRepair.job, repairing ? 'running' : 'done', repairWorker)
+  const repairing = progress?.kind === 'repair';
+  const repairs: MetroRepair[] = rawRepairs.map((attempt, idx) => {
+    const round = idx + 1;
+    const isLast = idx === rawRepairs.length - 1;
+    const isActive = repairing && isLast;
+    const jobReusedLater = Boolean(attempt.job && rawRepairs.slice(idx + 1).some((later) => later.job === attempt.job));
+    const repairWorker = attempt.job ? workers.get(attempt.job) : undefined;
+    const info = attempt.job && (!jobReusedLater || isActive)
+      ? workerStatusInfo(cache, attempt.job, isActive ? 'running' : 'done', repairWorker)
       : undefined;
-    const outcomeDone = lastRepair.outcome === 'settled; retrying gate' || lastRepair.outcome === 'gate passed';
-    const repairState: MetroStationState = repairing
+    const outcomeDone = attempt.outcome === 'settled; retrying gate' || attempt.outcome === 'gate passed';
+    const repairState: MetroStationState = isActive
       ? (info ? stepToMetroState(info.state) : 'working')
       : outcomeDone ? 'done' : 'failed';
-    const repairChangedAt = repairing
-      ? (info?.changedAt ?? parseTime(land.step_started_at) ?? parseTime(land.updated_at) ?? undefined)
-      : (info?.changedAt ?? parseTime(land.updated_at) ?? undefined);
-    repair = {
-      id: `${repairIdPrefix}↻`,
-      round: land.repairs!.length,
+    const recordedAt = parseTime(attempt.changed_at);
+    const startedAt = parseTime(attempt.started_at);
+    const repairChangedAt = isActive
+      ? (maxTime(info?.changedAt, recordedAt) ?? parseTime(land.step_started_at) ?? parseTime(land.updated_at) ?? undefined)
+      : (maxTime(recordedAt, !jobReusedLater ? info?.changedAt : undefined) ?? startedAt ?? (isLast ? parseTime(land.updated_at) : null) ?? undefined);
+    return {
+      id: round === 1 ? `${repairIdPrefix}↻` : `${repairIdPrefix}↻${round}`,
+      round,
       total: SEALED_REPAIR_LIMIT,
       state: repairState,
       ...(repairChangedAt !== undefined ? { changedAt: repairChangedAt } : {}),
-      ...(lastRepair.job ? {
+      ...(attempt.job ? {
         role: 'imp',
-        label: lastRepair.job.slice(0, 8),
-        jobId: lastRepair.job,
-        execJob: jobTargetFor(home, repairWorker, lastRepair.job),
+        label: attempt.job.slice(0, 8),
+        jobId: attempt.job,
+        execJob: jobTargetFor(home, repairWorker, attempt.job),
       } : {}),
-      ...(repairState === 'failed' && lastRepair.outcome ? { reason: lastRepair.outcome } : {}),
+      ...(repairState === 'failed' && attempt.outcome ? { reason: attempt.outcome } : {}),
     };
-  }
-  return { progress, gate, repair };
+  });
+  const repair = repairs.at(-1);
+  return { progress, gate, ...(repair ? { repair, repairs } : {}) };
 }
 
 function answerTimeForTicket(decisions: readonly RunDecision[] | undefined, ticket: string, worker?: OwnerWorker): number | undefined {
@@ -349,12 +368,7 @@ function answerTimeForTicket(decisions: readonly RunDecision[] | undefined, tick
       }
     }
   }
-  if (worker?.files?.length) {
-    for (const f of worker.files) {
-      if (f.kind === 'question' && f.state === 'answered') best = maxTime(best, f.at);
-    }
-  }
-  return best;
+  return maxTime(best, answeredQuestionTime(worker));
 }
 
 function projectTicketItem(
@@ -404,10 +418,10 @@ function projectTicketItem(
       const land = isFlowId(item.land) ? pass.header<LandFlow>(`${item.land}.json`) : null;
       if (land?.flow === item.land && land.job === item.job && typeof land.step === 'string' && land.step.trim() &&
           (land.landed_sha === undefined || (typeof land.landed_sha === 'string' && /^[\da-f]{7,64}$/i.test(land.landed_sha)))) {
-        const { progress, gate, repair } = extractLandGateAndRepair(home, land, workers, cache, item.ticket);
+        const { progress, gate, repair, repairs } = extractLandGateAndRepair(home, land, workers, cache, item.ticket);
         if (land.state === 'failed') {
           const changedAt = parseTime(land.updated_at) ?? parseTime(land.step_started_at) ?? parseTime(land.created_at) ?? worker?.settledAt ?? worker?.startedAt ?? undefined;
-          return { ...base, stage: 'failed', ...(changedAt !== undefined ? { changedAt } : {}), ...(gate ? { landGate: gate } : {}), ...(repair ? { landRepair: repair } : {}), ...(typeof land.error === 'string' ? { reason: land.error } : {}) };
+          return { ...base, stage: 'failed', ...(changedAt !== undefined ? { changedAt } : {}), ...(gate ? { landGate: gate } : {}), ...(repair ? { landRepair: repair } : {}), ...(repairs?.length ? { landRepairs: repairs } : {}), ...(typeof land.error === 'string' ? { reason: land.error } : {}) };
         }
         if (land.state === 'cancelled') {
           const changedAt = parseTime(land.updated_at) ?? parseTime(land.step_started_at) ?? parseTime(land.created_at) ?? worker?.settledAt ?? worker?.startedAt ?? undefined;
@@ -432,6 +446,7 @@ function projectTicketItem(
           return { ...base, stage: 'land-gate', landStep: land.step, landProgress: progress,
             ...(gate ? { landGate: gate } : {}),
             ...(repair ? { landRepair: repair } : {}),
+            ...(repairs?.length ? { landRepairs: repairs } : {}),
             ...(repairId ? { jobId: repairId, execJob: jobTargetFor(home, workers.get(repairId), repairId) } : {}),
             since,
             ...(changedAt !== undefined ? { changedAt } : {}) };
@@ -571,12 +586,14 @@ function ticketToMetroState(ticket: ExecutionRunTicket): MetroStationState {
 }
 
 function buildQueueMetro(
+  home: string,
   q: TicketQueue,
   tickets: readonly ExecutionRunTicket[],
   waves: NonNullable<ExecutionRun['queueWaves']>,
   steps: readonly ExecutionRunStep[],
   reviewer: WorkflowNode | undefined,
   lead: WorkflowNode | undefined,
+  workers: ReadonlyMap<string, OwnerWorker>,
 ): MetroFlow {
   const byId = new Set(tickets.map((t) => t.ticket));
   const normToId = new Map<string, string>();
@@ -679,6 +696,7 @@ function buildQueueMetro(
       ...(blockers?.length ? { blockers } : {}),
       ...(t.landGate ? { gate: t.landGate } : {}),
       ...(t.landRepair ? { repair: t.landRepair } : {}),
+      ...(t.landRepairs?.length ? { repairs: t.landRepairs } : {}),
       ...(t.holdTag ? { holdTag: t.holdTag } : {}),
       ...(t.reason ? { reason: t.reason } : {}),
       ...(t.jobId ? { jobId: t.jobId } : {}),
@@ -690,9 +708,18 @@ function buildQueueMetro(
   const sinks = tickets.filter((t) => !hasOut.has(t.ticket)).map((t) => t.ticket);
   const reviewStep = steps.find((s) => s.key === 'review');
   const acceptStep = steps.find((s) => s.key === 'accept');
-  const latestAcceptDecisionAt = (q.decisions ?? [])
-    .filter((d) => d.kind === 'accept')
-    .reduce<number | undefined>((best, d) => maxTime(best, parseTime(d.at)), undefined);
+  const acceptSeat: 'lead' | 'main' = q.handback_to === 'main' ? 'main' : 'lead';
+  const acceptStarted = Boolean(lead) || (acceptStep?.state !== undefined && acceptStep.state !== 'waiting');
+  const latestAcceptDecision = acceptStarted
+    ? (q.decisions ?? []).filter((d) => d.kind === 'accept' && d.step === 'accept').at(-1)
+    : undefined;
+  const latestAcceptDecisionAt = latestAcceptDecision ? parseTime(latestAcceptDecision.at) ?? undefined : undefined;
+  const settledAcceptJobId = !lead && acceptSeat === 'lead' &&
+    (acceptStep?.state === 'done' || acceptStep?.state === 'failed') &&
+    latestAcceptDecision && latestAcceptDecision.decision !== 'repair' && JOB_ID_RE.test(latestAcceptDecision.job)
+    ? latestAcceptDecision.job : undefined;
+  const acceptJobId = lead?.jobId ?? settledAcceptJobId;
+  const acceptExecJob = lead?.execJob ?? (settledAcceptJobId ? jobTargetFor(home, workers.get(settledAcceptJobId), settledAcceptJobId) : undefined);
 
   stations.push({
     id: 'review',
@@ -711,13 +738,13 @@ function buildQueueMetro(
   stations.push({
     id: 'accept',
     kind: 'accept',
-    role: 'lead',
-    label: lead ? 'lead' : q.handback_to ?? 'lead',
+    ...(acceptSeat === 'lead' ? { role: 'lead' } : {}),
+    label: acceptSeat,
     state: stepToMetroState(lead?.state ?? acceptStep?.state ?? 'waiting'),
     ...(acceptChangedAt !== undefined ? { changedAt: acceptChangedAt } : {}),
     blockers: ['review'],
-    ...(lead?.jobId ? { jobId: lead.jobId } : {}),
-    ...(lead?.execJob ? { execJob: lead.execJob } : {}),
+    ...(acceptJobId ? { jobId: acceptJobId } : {}),
+    ...(acceptExecJob ? { execJob: acceptExecJob } : {}),
   });
   edges.push({ from: 'review', to: 'accept' });
 
@@ -782,8 +809,17 @@ function readFixedExecutionRun(
         }, undefined);
         const stations: MetroStation[] = [];
         const edges: MetroEdge[] = [];
-        if (index && pilots.length > 0) {
-          const pilotAt = maxTime(parseTime(b.pilot_changed_at), itemWorkerAt(pilots), pilotState !== 'waiting' ? createdAt : undefined);
+        const hasPilot = Boolean(index && pilots.length > 0);
+        const tail = items.filter((it) => !it.pilot);
+        const totalNonWaiting = b.totals.done + b.totals.running + b.totals.failed + (b.totals.cancelled ?? 0);
+        const pilotNonWaiting = pilots.filter((it) => it.state !== 'waiting').length;
+        const poolChangedAt = parseTime(b.pool_changed_at);
+        const tailHasActivity = hasPilot
+          ? (poolChangedAt !== null || tail.some((it) => it.state !== 'waiting') || totalNonWaiting > pilotNonWaiting)
+          : (poolChangedAt !== null || totalNonWaiting > 0);
+        if (hasPilot) {
+          const pilotAt = maxTime(parseTime(b.pilot_changed_at), itemWorkerAt(pilots))
+            ?? (pilotState !== 'waiting' ? ((!tailHasActivity ? batchUpdated : null) ?? createdAt ?? undefined) : undefined);
           stations.push({
             id: 'pilot',
             kind: 'worker',
@@ -802,7 +838,12 @@ function readFixedExecutionRun(
           ...(b.totals.cancelled ? { stopped: b.totals.cancelled } : {}),
         };
         const poolState: MetroStationState = b.totals.running ? 'working' : b.totals.waiting ? 'waiting' : b.totals.failed ? 'failed' : 'done';
-        const poolAt = maxTime(batchUpdated, itemWorkerAt(items.filter((it) => !it.pilot)), createdAt);
+        const poolWorkerAt = itemWorkerAt(hasPilot ? tail : items);
+        const poolAt = poolChangedAt !== null
+          ? maxTime(poolChangedAt, poolWorkerAt)
+          : tailHasActivity
+            ? maxTime(poolWorkerAt, batchUpdated, createdAt)
+            : undefined;
         stations.push({
           id: 'pool',
           kind: 'pool',
@@ -828,8 +869,8 @@ function readFixedExecutionRun(
   if (isFlowId(file.slice(0, -5))) {
     const land = pass.header<LandFlow>(file);
     if (land?.flow !== id || land.ticket_queue || !land.wt?.main_root || !visible({}, land.wt.main_root) || !activeLand(land) || typeof land.step !== 'string') return;
-    const { progress, gate: metroGate, repair: metroRepair } = extractLandGateAndRepair(home, land, workers, cache, 'gate');
-    const repair = land.repairs?.at(-1), waiting = progress?.kind === 'lease', repairing = progress?.kind === 'repair';
+    const { progress, gate: metroGate, repair: metroRepair, repairs: metroRepairs } = extractLandGateAndRepair(home, land, workers, cache, 'gate');
+    const waiting = progress?.kind === 'lease';
     const picking = land.step === 'prepare' || land.step === 'cherry-pick';
     const publishing = land.step === 'records' || land.step === 'fast-forward' || /^after\[/.test(land.step);
     const gateTiming = land.timings?.filter((timing) => /^gate\[/.test(timing.step)).at(-1);
@@ -849,14 +890,23 @@ function readFixedExecutionRun(
       : gateState === 'failed' || gateState === 'done' ? (updatedAt ?? stepStarted ?? createdAt ?? undefined) : undefined;
     const leaseChangedAt = waiting ? (stepStarted ?? updatedAt ?? createdAt ?? undefined) : undefined;
     const mergeChangedAt = land.landed_sha ? (landedAt ?? updatedAt ?? undefined) : publishing ? (stepStarted ?? updatedAt ?? undefined) : undefined;
+    const repairNodes: WorkflowNode[][] = (metroRepairs ?? []).map((rep) => [{
+      key: rep.round === 1 ? 'repair' : `repair-${rep.round}`,
+      word: rep.round === 1 ? 'Repair' : `Repair ${rep.round}`,
+      state: rep.state === 'working' ? 'running' as const
+        : rep.state === 'asking' ? 'asking' as const
+          : rep.state === 'done' ? 'done' as const
+            : rep.state === 'stopped' ? 'cancelled' as const : 'failed' as const,
+      progress: { kind: 'repair' as const, index: rep.round, total: rep.total },
+      jobId: rep.jobId,
+      ...(rep.changedAt !== undefined ? { changedAt: rep.changedAt } : {}),
+      label: rep.label, role: rep.role, execJob: rep.execJob,
+    }]);
     const nodes: WorkflowNode[][] = [
       [{ key: 'pick', word: 'Pick', state: pickState, ...(pickChangedAt !== undefined ? { changedAt: pickChangedAt } : {}), ...(picking && source) }],
-      [{ key: 'gate', word: 'Gate', progress: gate, ...(metroGate ? { gate: metroGate } : {}), ...(metroRepair ? { repair: metroRepair } : {}),
+      [{ key: 'gate', word: 'Gate', progress: gate, ...(metroGate ? { gate: metroGate } : {}), ...(metroRepair ? { repair: metroRepair } : {}), ...(metroRepairs?.length ? { repairs: metroRepairs } : {}),
         ...(gateChangedAt !== undefined ? { changedAt: gateChangedAt } : {}), ...(progress?.kind === 'gate' && source), state: gateState }],
-      ...(repair ? [[{ key: 'repair', word: 'Repair', state: repairing ? 'running' as const : repair.outcome === 'settled; retrying gate' ? 'done' as const : 'failed' as const,
-        progress: { kind: 'repair' as const, index: land.repairs!.length, total: SEALED_REPAIR_LIMIT }, jobId: repair.job,
-        ...(metroRepair?.changedAt !== undefined ? { changedAt: metroRepair.changedAt } : {}),
-        label: repair.job?.slice(0, 8), role: repair.job ? 'imp' : undefined, execJob: jobTargetFor(home, repair.job ? workers.get(repair.job) : undefined, repair.job) }]] : []),
+      ...repairNodes,
       ...(waiting ? [[{ key: 'lease', word: 'Lease wait', progress, state: 'running' as const, ...(leaseChangedAt !== undefined ? { changedAt: leaseChangedAt } : {}), ...source }]] : []),
       [{ key: 'merge', word: 'Merge', state: land.landed_sha ? 'done' : publishing ? 'running' : 'waiting', ...(mergeChangedAt !== undefined ? { changedAt: mergeChangedAt } : {}), ...(publishing && source) }],
     ];
@@ -874,6 +924,7 @@ function readFixedExecutionRun(
       ...(gateChangedAt !== undefined ? { changedAt: gateChangedAt } : {}),
       ...(metroGate ? { gate: metroGate } : {}),
       ...(metroRepair ? { repair: metroRepair } : {}),
+      ...(metroRepairs?.length ? { repairs: metroRepairs } : {}),
       ...(progress?.kind === 'gate' ? source : {}),
       ...(land.error && gateState === 'failed' ? { reason: land.error } : {}),
     };
@@ -1091,17 +1142,21 @@ export function readExecutionRuns(
         since: reviewWorker?.startedAt ?? undefined,
         ...(reviewInfo!.changedAt !== undefined ? { changedAt: reviewInfo!.changedAt } : {}),
       } : undefined;
-      const leadWorker = q.active_lead ? workers.get(q.active_lead.job) : undefined;
-      const leadInfo = q.active_lead ? workerStatusInfo(cache, q.active_lead.job, 'running', leadWorker) : undefined;
-      const lead: WorkflowNode | undefined = q.active_lead ? {
-        key: 'lead', role: 'lead', jobId: q.active_lead.job,
+      const acceptSeat: 'lead' | 'main' = q.handback_to === 'main' ? 'main' : 'lead';
+      const acceptActiveLead = acceptSeat === 'lead' && q.active_lead?.kind === 'accept' && q.active_lead.step === 'accept' &&
+        (!q.steps?.accept || q.steps.accept.state !== 'waiting')
+        ? q.active_lead : undefined;
+      const leadWorker = acceptActiveLead ? workers.get(acceptActiveLead.job) : undefined;
+      const leadInfo = acceptActiveLead ? workerStatusInfo(cache, acceptActiveLead.job, 'running', leadWorker) : undefined;
+      const lead: WorkflowNode | undefined = acceptActiveLead ? {
+        key: 'lead', role: 'lead', jobId: acceptActiveLead.job,
         state: leadInfo!.state,
-        execJob: jobTargetFor(home, leadWorker, q.active_lead.job),
+        execJob: jobTargetFor(home, leadWorker, acceptActiveLead.job),
         since: leadWorker?.startedAt ?? undefined,
         ...(leadInfo!.changedAt !== undefined ? { changedAt: leadInfo!.changedAt } : {}),
       } : undefined;
       const waves = open ? queueWaves(tickets) : undefined;
-      const metro = open ? buildQueueMetro(q, tickets, waves!, steps, reviewer, lead) : undefined;
+      const metro = open ? buildQueueMetro(home, q, tickets, waves!, steps, reviewer, lead, workers) : undefined;
       const run: ExecutionRun = {
         flow: q.flow,
         kind: 'queue',

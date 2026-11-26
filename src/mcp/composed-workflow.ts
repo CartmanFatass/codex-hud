@@ -149,7 +149,8 @@ export async function callWorkflow(home: string, pane: string | null, args: Args
             ...(c.items && { items: c.items.map(i => i.state === 'done' ? i : { state: 'waiting', attempt: i.attempt + 1 }) }) };
         }
         if (run.state === 'stopped') {
-          for (const c of Object.values(run.steps)) if (c.state === 'asking') c.state = 'cancelled';
+          const stoppedAt = new Date().toISOString();
+          for (const c of Object.values(run.steps)) if (c.state === 'asking') { c.state = 'cancelled'; c.changed_at = stoppedAt; }
           run.notices[`end-${run.epoch}`] = `${id} workflow stopped`;
           if (run.grant && !run.input_admitted) await workflowGrants.releaseUnused(home, id);
         }
@@ -172,7 +173,8 @@ export async function answerComposed(home: string, pane: string | null, args: Ar
     if (run.state !== 'paused' || h?.request_id !== request || run.steps[h.step]?.state !== 'asking')
       return { value: { ok: false, code: 'question_not_open' } };
     if (!h.choices.includes(answer)) return { value: { ok: false, code: 'invalid_answer', choices: h.choices } };
-    run.answers[request] = answer; run.steps[h.step].answer = answer; run.steps[h.step].state = 'done';
+    const at = new Date().toISOString();
+    run.answers[request] = answer; run.steps[h.step].answer = answer; run.steps[h.step].state = 'done'; run.steps[h.step].changed_at = at;
     delete run.handback; delete run.reason; run.state = 'working'; saveHeader(home, run);
     return { run, value: { ok: true, written: true, answer } };
   });

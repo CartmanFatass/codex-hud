@@ -48,7 +48,7 @@ export function tickBatch(b: Batch, items: ItemResult[], step: Extract<Step, { k
   for (const { i, failure, stall } of settled) {
     if (stall) {
       if (breaker === 'none' || b.state !== 'working' || i.stall === stall) continue;
-      i.stall = stall; pauseRun(b, 'items', `pilot ${i.item} (${i.job}) stalled: ${stall.slice(0, 300)}`);
+      i.stall = stall; b.pilot_changed_at = Date.now(); pauseRun(b, 'items', `pilot ${i.item} (${i.job}) stalled: ${stall.slice(0, 300)}`);
       b.notices[`pause-${b.epoch}`] = `${id} batch paused — ${b.reason}; use hud_create batch=${id} action=resume or stop`;
     } else settleItem(b, items, i, failure, breaker);
     changed = true;
@@ -58,6 +58,9 @@ export function tickBatch(b: Batch, items: ItemResult[], step: Extract<Step, { k
   const next = b.state === 'working' && running < (step.max_parallel ?? b.scale.max_parallel) ? items.find(i => i.state === 'waiting' && (!pilot || i.pilot)) : undefined;
   if (!next || !batchHasRoom(step.role)) return { state: !running && !items.some(i => i.state === 'waiting') ? 'done' : 'running', changed };
   next.state = 'running';
+  const startedAt = Date.now();
+  if (next.pilot) b.pilot_changed_at = startedAt;
+  else b.pool_changed_at = startedAt;
   return { state: 'running', effect: async () => {
     const input = manifest.items[next.item-1];
     let job: string | undefined, failure: string | undefined, deferred = false;
@@ -74,7 +77,12 @@ export function tickBatch(b: Batch, items: ItemResult[], step: Extract<Step, { k
     await batchLock(hudHome, id, () => {
       const { batch: current, items } = batchIndex(hudHome, id), i = items[next.item-1];
       job ??= jobs().find(j => j.batch_flow === id && j.request_key === requestKey(id, i))?.job;
-      if (job) i.job = job;
+      if (job) {
+        i.job = job;
+        const boundAt = Date.now();
+        if (i.pilot) current.pilot_changed_at = boundAt;
+        else current.pool_changed_at = boundAt;
+      }
       else if (deferred) i.state = current.state === 'stopped' ? 'cancelled' : 'waiting';
       else settleItem(current, items, i, failure || 'dispatch failed', breaker);
       saveBatch(hudHome, current, items);

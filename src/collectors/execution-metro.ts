@@ -67,6 +67,8 @@ export interface MetroStation {
   readonly blockers?: readonly string[];
   readonly gate?: MetroGate;
   readonly repair?: MetroRepair;
+  /** Ordered repair attempts on this station's repair line (round 1, round 2, ...). */
+  readonly repairs?: readonly MetroRepair[];
   /** Present on `pool` stations (batch pools and >3-parallel overflow groups). */
   readonly pool?: MetroPoolCounts;
   /** Item count for `pool` stations. */
@@ -148,6 +150,11 @@ const URGENCY: Record<MetroStationState, number> = {
   done: 7,
 };
 
+function stationRepairs(station: MetroStation): readonly MetroRepair[] {
+  if (station.repairs?.length) return station.repairs;
+  return station.repair ? [station.repair] : [];
+}
+
 /** Pick the station (or repair spur) that changed most recently. */
 export function lastChangedStationId(stations: readonly MetroStation[]): string | undefined {
   let bestId: string | undefined;
@@ -157,10 +164,12 @@ export function lastChangedStationId(stations: readonly MetroStation[]): string 
       bestAt = station.changedAt;
       bestId = station.id;
     }
-    const repairAt = station.repair?.changedAt;
-    if (repairAt !== undefined && Number.isFinite(repairAt) && repairAt >= bestAt) {
-      bestAt = repairAt;
-      bestId = station.repair!.id;
+    for (const repair of stationRepairs(station)) {
+      const repairAt = repair.changedAt;
+      if (repairAt !== undefined && Number.isFinite(repairAt) && repairAt >= bestAt) {
+        bestAt = repairAt;
+        bestId = repair.id;
+      }
     }
   }
   return bestId;
@@ -322,7 +331,10 @@ export function reduceMetroLanes(
     let maxChanged: number | undefined;
     for (const s of grouped) {
       counts[s.state] = (counts[s.state] ?? 0) + 1;
-      const at = Math.max(s.changedAt ?? -Infinity, s.repair?.changedAt ?? -Infinity);
+      let at = s.changedAt ?? -Infinity;
+      for (const r of stationRepairs(s)) {
+        if (r.changedAt !== undefined && r.changedAt > at) at = r.changedAt;
+      }
       if (Number.isFinite(at) && (maxChanged === undefined || at > maxChanged)) maxChanged = at;
     }
     const groupId = uniqueOverflowId(c);
@@ -461,7 +473,7 @@ export function reduceMetroLanes(
       adjEdges.filter((e) => e.to === s.id).map((e) => laneOf.get(e.from)!),
     );
     const prefs = col.map((_, i) => (parents[i].length === 1 ? parents[i][0] : trunk));
-    const hasRepair = col.map((s) => Boolean(s.repair));
+    const hasRepair = col.map((s) => stationRepairs(s).length > 0);
     const repairCount = hasRepair.filter(Boolean).length;
     const placements = lanePlacements(col.length, height);
 

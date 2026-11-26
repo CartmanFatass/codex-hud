@@ -56,12 +56,19 @@ export async function controlBatch(home: string, pane: string | null, args: Args
   const apply = () => {
     const { batch: b, items } = batchIndex(home, id);
     const applied = controlRun(b, action as Control, items.some(i => i.state === 'failed'));
+    const now = Date.now();
     if (applied === 'stop') {
-      for (const i of items) if (i.state === 'waiting') i.state = 'cancelled'; // Manifest waiters have no queued jobs to close.
+      for (const i of items) if (i.state === 'waiting') {
+        i.state = 'cancelled'; // Manifest waiters have no queued jobs to close.
+        if (i.pilot) b.pilot_changed_at = now;
+        else b.pool_changed_at = now;
+      }
     } else if (applied === 'retry_failed' || applied === 'resume') {
       if (applied === 'retry_failed') for (const i of items) if (i.state === 'failed') {
         (i.previous ??= []).push({ job: i.job, reason: i.reason });
         i.state = 'waiting'; delete i.job; delete i.reason; delete i.report_path; delete i.files;
+        if (i.pilot) b.pilot_changed_at = now;
+        else b.pool_changed_at = now;
       }
       if (b.steps?.items) b.steps.items.state = 'running';
     }

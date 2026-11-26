@@ -581,7 +581,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         const conflict = f.step === 'cherry-pick' && !!(await git(integration, ['ls-files', '-u']));
         if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
         const prior = f.repairs?.at(-1);
-        if (prior) prior.outcome = `failed at ${f.step}`;
+        if (prior) { prior.outcome = `failed at ${f.step}`; prior.changed_at = new Date().toISOString(); }
         // Unattended repairs return to the lead; never publish a substitute for the approved commit.
         if (f.protected_spec || e instanceof CommandTimeout || !canRepairSealedStep(f.repairs?.length ?? 0)) throw e;
         checkCancel(); await checkSource(f);
@@ -597,7 +597,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         continue;
       }
       const prior = f.repairs?.at(-1);
-      if (prior) prior.outcome = 'gate passed';
+      if (prior) { prior.outcome = 'gate passed'; prior.changed_at = new Date().toISOString(); }
       await publish(who);
       break;
     }

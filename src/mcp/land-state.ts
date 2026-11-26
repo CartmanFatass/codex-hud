@@ -45,7 +45,7 @@ export interface LandFlow {
   // an unknown fast-forward, even via a new attempt. Keep its candidate for inspection.
   publish_pending?: string;
   workflow?: Run & RunScope;
-  repairs?: { step: string; job?: string; outcome: string }[];
+  repairs?: { step: string; job?: string; outcome: string; started_at?: string; changed_at?: string }[];
   reruns?: (string | LandRerun)[];
   flake_collection?: LandFlakeCollection;
   timings?: LandTiming[];
@@ -134,6 +134,7 @@ function recoverRepairReceipt(home: string, f: LandFlow) {
       if (job.job === id && (job.land_turn === key || job.request_key === key || job.send_outcomes?.at(-1)?.key === key)) {
         attempt.job = id;
         attempt.outcome = 'dispatched; land helper exited';
+        attempt.changed_at = new Date().toISOString();
         break;
       }
     } catch { /* Receipt missing or unreadable; do not infer an outcome. */ }

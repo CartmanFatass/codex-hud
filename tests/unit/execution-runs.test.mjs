@@ -194,6 +194,9 @@ test('Execution collects paused, working, and recently ended runs (including pan
   assert.deepEqual(working.tickets[7].blockers, ['07', '05']);
   assert.equal(working.heldCount, 1);
   assert.equal(working.repairRounds, 1);
+  assert.equal(working.lead, undefined, 'tickets-step assumption lead must not bind to accept');
+  assert.equal(working.metro.stations.find((s) => s.id === 'accept').state, 'waiting');
+  assert.equal(working.metro.stations.find((s) => s.id === 'accept').jobId, undefined);
   assert.deepEqual(f.execution.activity(f.project).filter(({ kind }) => kind === 'gate').map(({ ticket, flow }) => [ticket, flow]),
     [['exec-runs/02', LAND_FLOW]], 'an active queue landing is one gate for its linked ticket');
 
@@ -236,12 +239,12 @@ test('queue waves render EN/ZH, no-colour, coloured, role icons (unicode/nerd/te
   const wideEn = text(render(view, { width: 120, lang: 'en', theme: 'none', icons: 'unicode' }));
   for (const needle of [
     'Workflow', 'Queue exec-runs', 'Queue obj-unattended', 'Queue recent-done · 1 ticket',
-    'paused 45m', 'running 22m', 'held for you', 'Lead acceptance', 'asking 3m',
+    'paused 45m', 'running 22m', 'held for you',
     '◇◈◆ review', '☆✪★ accept',
   ]) {
     assert.ok(wideEn.includes(needle), `EN 120 missing: ${needle}\n${wideEn}`);
   }
-  assert.doesNotMatch(wideEn.split('Workers')[0], /⚖|▼|─▶|○ ★|q1a2b3c4|q2b3c4d5|Assumed|blocked by|owner approval|Build passes/);
+  assert.doesNotMatch(wideEn.split('Workers')[0], /⚖|▼|─▶|○ ★|q1a2b3c4|q2b3c4d5|Assumed|blocked by|owner approval|Build passes|Lead acceptance/);
   assert.doesNotMatch(wideEn.split('Recently ended')[1], /q3c4d5e6|Finished earlier|land gate synthetic ticket/, 'ended run members are not repeated');
   assert.equal(wideEn.split('\n').filter((line) => line.includes('recent-done')).length, 1);
 
@@ -249,11 +252,11 @@ test('queue waves render EN/ZH, no-colour, coloured, role icons (unicode/nerd/te
   const wideZh = text(render(view, { width: 120, lang: 'zh', theme: 'none', icons: 'unicode' }));
   for (const needle of [
     '工作流', '队列 exec-runs', '队列 obj-unattended', '已暂停 45分', '运行中 22分',
-    '挂起·等你', '负责人验收', '提问中 3分', '◇◈◆ 评审', '☆✪★ 验收', '刚结束',
+    '挂起·等你', '◇◈◆ 评审', '☆✪★ 验收', '刚结束',
   ]) {
     assert.ok(wideZh.includes(needle), `ZH 120 missing: ${needle}\n${wideZh}`);
   }
-  assert.doesNotMatch(wideZh.split('工作者')[0], /⚖|▼|─▶|○ ★/);
+  assert.doesNotMatch(wideZh.split('工作者')[0], /⚖|▼|─▶|○ ★|负责人验收/);
 
   // Text icon mode emits ASCII only on the Workflow metro map.
   const asciiFrame = render(view, { width: 120, lang: 'en', theme: 'none', icons: 'text' });
@@ -318,16 +321,10 @@ test('Enter on a ticket opens its job Inspector and Enter on a run opens Run Det
   assert.equal(backFromRun.activeTab, 'execution');
   assert.equal(backFromRun.execution.cursor, `project:exec-run:${FLOWS.working}`);
 
-  // Enter on a map station with a retained job opens its Inspector, and Esc returns to the same station.
+  // A tickets-step assumption lead must NOT become accept's Enter target while accept is still waiting.
   const onAccept = onExecution({ cursor: `project:exec-run:${FLOWS.working}:accept` });
-  const lead = press(onAccept, '\r').state;
-  assert.deepEqual([lead.subpage.kind, lead.subpage.from, lead.subpage.target.workerId],
-    ['inspector', 'execution', `thin-job:${LEAD}`]);
-  const backFromLead = press(lead, '\x1b').state;
-  assert.equal(backFromLead.subpage, undefined);
-  assert.equal(backFromLead.activeTab, 'execution');
-  assert.equal(backFromLead.execution.cursor, `project:exec-run:${FLOWS.working}:accept`);
-  // Enter on a landed ticket station opens its retained job Inspector too.
+  assert.equal(press(onAccept, '\r').state.subpage, undefined);
+  // Enter on a landed ticket station opens its retained job Inspector too, and Esc returns to the same station.
   const onLandedTicket = onExecution({ cursor: `project:exec-run:${FLOWS.working}:ticket:01` });
   const inspected = press(onLandedTicket, '\r').state;
   assert.deepEqual([inspected.subpage.kind, inspected.subpage.from, inspected.subpage.target.workerId],

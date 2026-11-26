@@ -18,7 +18,7 @@ export interface BatchScale {
   presets: (string | null)[]; cap: number; max_parallel: number;
 }
 export interface Batch extends RunScope {
-  flow: string; cwd: string; dispatcher?: Job['dispatcher']; key: string; created_at: number; updated_at?: number; pilot_changed_at?: number;
+  flow: string; cwd: string; dispatcher?: Job['dispatcher']; key: string; created_at: number; updated_at?: number; pilot_changed_at?: number; pool_changed_at?: number;
   state: 'working' | 'paused' | 'stopped' | 'completed'; scale: BatchScale; pid?: number; start?: string;
   template?: 'batch'; host?: 'detached'; cost?: 'cheap' | 'costly'; cost_reasons?: string[]; steps?: Record<string, Cursor>;
   handback?: { step: string; choices: string[] };
@@ -51,6 +51,7 @@ export function settleItem(b: Batch, items: ItemResult[], i: ItemResult, failure
   const now = Date.now();
   b.updated_at = now;
   if (i.pilot) b.pilot_changed_at = now;
+  else b.pool_changed_at = now;
   if (b.state !== 'working') return;
   const count = failure ? failuresByReason(items).find(g => g.reason === i.reason)?.count : 0;
   const action = settlement(b, breaker, i.reason, count, i.pilot);
