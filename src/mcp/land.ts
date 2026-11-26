@@ -67,7 +67,19 @@ export async function startLand(
     if (!registeredProject(home, wt.main_root).registered) throw Error('hud_land requires a registered project');
     return prior;
   }
-  if (!['idle_grace', 'closed', 'done'].includes(state ?? '')) throw Error(`Cannot land ${id}: job state is ${state ?? 'unknown'} (expected idle_grace, done or closed)`);
+  if (!['idle_grace', 'closed', 'done'].includes(state ?? '')) {
+    const repair = state === 'failed' && prior?.state === 'failed' && /^repair \d+$/.test(prior.step)
+      ? prior.repairs?.at(-1)
+      : undefined;
+    if (repair?.job === id) {
+      const outcome = repair.outcome.replace(/\s+/g, ' ').trim();
+      const where = fs.existsSync(wt.root)
+        ? `Branch ${wt.branch} is preserved at ${wt.root}; inspect ${prior!.flow} (hud_read job=${prior!.flow}) and retry on this worktree with hud_create retry_of=${id}, then call hud_land on the new job.`
+        : `Inspect ${prior!.flow} (hud_read job=${prior!.flow}) before retrying with hud_create retry_of=${id}.`;
+      throw Error(`Cannot land ${id}: job state is failed from ${prior!.flow} ${prior!.step} (${outcome}). ${where}`);
+    }
+    throw Error(`Cannot land ${id}: job state is ${state ?? 'unknown'} (expected idle_grace, done or closed)`);
+  }
   const c = validLandConfig(home, wt.main_root);
   try { await git(wt.main_root, ['check-ref-format', `refs/heads/${c.base}`]); }
   catch { throw Error('Invalid project land config: land.base must be a branch name'); }

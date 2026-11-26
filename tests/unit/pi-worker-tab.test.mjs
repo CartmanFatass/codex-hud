@@ -476,6 +476,52 @@ test('tab-lifecycle: one Sonic reminder does not settle; collection and a fresh 
   assert.equal(f.sentUsers.length, 1);
 });
 
+test('tab-lifecycle: hud-sonic-ready follow-up keeps the turn report baseline; an empty new turn still fails', async (t) => {
+  const clock = makeFakeClock(1000);
+  const f = makeLifecycleFixture(t, { role: 'imp', profile: 'implementer', timing: clock.timing });
+  const jobs = join(f.root, 'jobs'), id = 'j0000000000000002', child = join(jobs, id);
+  const parent = JSON.parse(fs.readFileSync(join(f.dir, 'job.json'), 'utf8'));
+  // Simulate a resumed Pi session that already has the earlier turn's report on disk.
+  f.writeReport('Previous turn report.\n');
+  fs.mkdirSync(child);
+  fs.mkdirSync(join(f.dir, '.sonic'));
+  fs.writeFileSync(join(f.dir, '.sonic', id), '');
+  fs.writeFileSync(join(child, 'job.json'), JSON.stringify({ job: id, role: 'sonic', parent_job: parent.job }));
+  fs.writeFileSync(join(child, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+
+  await f.emit('session_start');
+  await f.emit('before_agent_start');
+  f.writeReport('Repair turn report.\n');
+  await f.emit('agent_settled');
+  await immediate();
+  assert.equal(f.status().state, 'working');
+  assert.equal(f.status().settled_at, null);
+  assert.equal(f.controller.isSettled(), false);
+
+  // Sonic finishes and hud-sonic-ready starts a continuation run before the 2s retry timer.
+  fs.writeFileSync(join(child, 'report.md'), 'Synthetic Sonic confirmation.\n');
+  fs.writeFileSync(join(child, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  await f.emit('before_agent_start');
+  const collected = await waitSonic({ dir: f.dir, root: jobs, job: parent }, [id], 0);
+  assert.equal(collected.reports[0].id, id);
+  await f.emit('agent_settled');
+  await immediate();
+  assert.equal(f.status().state, 'idle_grace');
+  assert.equal(f.status().output_written, true);
+  assert.equal(f.status().error, null);
+  assert.equal(f.controller.isSettled(), true);
+
+  // A subsequent turn from idle_grace with no fresh report still fails.
+  await f.emit('before_agent_start');
+  assert.equal(f.controller.isSettled(), false);
+  await f.emit('agent_settled');
+  await immediate();
+  assert.equal(f.status().state, 'failed');
+  assert.equal(f.status().output_written, false);
+  assert.equal(f.status().exit_reason, 'output missing, empty or unchanged');
+  assert.equal(f.controller.isSettled(), true);
+});
+
 test('tab-lifecycle: stale/missing/empty outputs and aborted/provider-error settlements fail and retain tab (no exit 0)', async (t) => {
   for (const kind of ['stale', 'missing', 'empty', 'aborted', 'provider-error']) {
     const f = makeLifecycleFixture(t, { role: 'reviewer', profile: 'reviewer' });

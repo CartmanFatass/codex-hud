@@ -58,6 +58,7 @@ export interface TabLifecycleOptions {
 export interface TabLifecycleController {
   canAskAsync(ctx: WorkerContext, qaDir: string): boolean;
   trackQuestion(ctx: WorkerContext, question: PublishedQuestion, timeoutMs: number): string;
+  isSettled(): boolean;
   disable(ctx: WorkerContext): void;
 }
 
@@ -113,6 +114,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
   let enabled = false;
   let disabled = false;
   let settled = false;
+  let turnStarted = false;
   let closing = false;
   let failed = false;
   let outputWritten = false;
@@ -466,6 +468,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
       }
     }
     settled = true;
+    turnStarted = false;
     settledAt = new Date().toISOString();
     const current = signature(outputPath);
     outputWritten = !cancelledQuestions && current !== null && current !== baseline;
@@ -510,7 +513,12 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     deadline = undefined;
     deadlineAt = null;
     runError = null;
-    baseline = signature(outputPath);
+    // Keep the turn's original report baseline across internal follow-ups (e.g., hud-sonic-ready)
+    // until this turn actually settles; async ask and uncollected-Sonic reminders advance it explicitly.
+    if (!turnStarted) {
+      baseline = signature(outputPath);
+      turnStarted = true;
+    }
     outputWritten = false;
     settledAt = null;
     state = 'working';
@@ -663,5 +671,5 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     enabled = false;
   });
 
-  return { canAskAsync, trackQuestion, disable };
+  return { canAskAsync, trackQuestion, isSettled: () => settled || closing, disable };
 }

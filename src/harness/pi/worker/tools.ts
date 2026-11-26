@@ -148,9 +148,12 @@ export async function workerTools(
             id,
             notices.signal,
             state => {
-              const send = () => pi.sendMessage({ customType: 'hud-sonic-ready', display: true,
-                content: `Sonic ${id} ${state}. Collect its result with hud_sonic (wait: ["${id}"]).` },
-                { triggerTurn: true, deliverAs: 'steer' });
+              const send = () => {
+                if (tab?.isSettled()) return;
+                pi.sendMessage({ customType: 'hud-sonic-ready', display: true,
+                  content: `Sonic ${id} ${state}. Collect its result with hud_sonic (wait: ["${id}"]).` },
+                  { triggerTurn: true, deliverAs: 'steer' });
+              };
               if (state === 'failed') send();
               else { pendingReady.set(id, send); flushReady(); }
             },

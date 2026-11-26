@@ -3,7 +3,10 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { setImmediate as immediate } from 'node:timers/promises';
 import { withDistLock } from '../../scripts/dist-lock.mjs';
+import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
+import { waitSonic } from '../../dist/worker/tools.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
@@ -246,4 +249,152 @@ test('cherry-pick conflict goes to the repair worker; even a quickly answered qu
   await until(() => f.flowState(flow).state === 'failed', 15000);
   const done = f.flowState(flow); assert.match(done.error, /needs the main session: q1/); assert.equal(done.repairs.length, 1);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
+});
+
+function mountResumedPiLifecycle(t, dir, sessionFile, sessionId) {
+  const handlers = new Map();
+  const timers = new Set();
+  const timing = {
+    now: () => performance.now(),
+    schedule(cb, ms) {
+      const id = setTimeout(() => { timers.delete(id); cb(); }, ms);
+      timers.add(id);
+      return id;
+    },
+    cancel(id) { timers.delete(id); clearTimeout(id); },
+  };
+  const ctx = {
+    cwd: dir,
+    mode: 'tui',
+    hasUI: true,
+    model: { provider: 'fake', id: 'model', promptCache: { short: 600 } },
+    sessionManager: { getSessionId: () => sessionId, getSessionFile: () => sessionFile },
+    isIdle: () => true,
+    hasPendingMessages: () => false,
+    abort() {},
+    shutdown() {},
+    ui: { theme: { fg: (_k, s) => s }, setStatus() {}, notify() {} },
+  };
+  const pi = {
+    on(name, fn) { handlers.set(name, [...(handlers.get(name) ?? []), fn]); },
+    sendMessage() {},
+    sendUserMessage() {},
+    getAllTools: () => [],
+    getActiveTools: () => [],
+    setActiveTools() {},
+    getThinkingLevel: () => 'high',
+    appendEntry() {},
+    registerTool() {},
+  };
+  installTabLifecycle(pi, { taskDir: dir, role: 'imp', profile: 'implementer', timing, watchQa: false, fatal(r) { throw Error(r); } });
+  const emit = async (name, event = {}) => {
+    for (const fn of handlers.get(name) ?? []) await fn(event, ctx);
+  };
+  t.after(async () => {
+    for (const id of timers) clearTimeout(id);
+    timers.clear();
+    if (fs.existsSync(dir)) await emit('session_shutdown', { reason: 'quit' });
+  });
+  return { emit };
+}
+
+async function prepareResumedPiSource(t, f, sessionId = 'synthetic-resumed-pi') {
+  const dir = jobDir(f), file = join(f.env.PI_CODING_AGENT_DIR, `${sessionId}.jsonl`);
+  const now = new Date().toISOString();
+  writeFixtureFile(file, JSON.stringify({ type: 'session', id: sessionId, cwd: f.worktree }) + '\n');
+  const jobFile = join(dir, 'job.json');
+  const source = JSON.parse(fs.readFileSync(jobFile));
+  writeFixtureFile(jobFile, JSON.stringify({ ...source, reaped_at: now, resume_s: 1620,
+    place: { harness: 'pi', pi_role: 'implementer' } }));
+  await bindSourceTab(t, f).exit();
+  writeFixtureFile(join(dir, 'report.md'), 'Synthetic original report.\n');
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true,
+    exit_reason: 'settled', settled_at: now, ended_at: now, session_id: sessionId, session_file: file }));
+  return { dir, file, sessionId };
+}
+
+test('resumed pi source worker that rebases, commits, rewrites its report, and collects Sonic passes repair and retries the gate', async t => {
+  const f = await checkout(t, ['grep fixed tracked || { echo repair-needed; exit 1; }']);
+  fs.writeFileSync(join(f.main, 'upstream'), 'advanced base\n');
+  f.git(f.main, 'add', 'upstream');
+  f.git(f.main, 'commit', '-qm', 'advance base');
+  const { dir, file, sessionId } = await prepareResumedPiSource(t, f, 'synthetic-repair-sonic');
+  const { flow } = await f.call('hud_land', { job });
+  assert.equal(await repair(f, flow, 0), job);
+
+  const tab = mountResumedPiLifecycle(t, dir, file, sessionId);
+  await tab.emit('session_start');
+  await tab.emit('before_agent_start');
+
+  // Start an open Sonic child during the repair turn.
+  const sonicId = 'j0000000000000222', sonicDir = join(f.home, 'jobs', sonicId);
+  fs.mkdirSync(sonicDir, { recursive: true });
+  fs.mkdirSync(join(dir, '.sonic'), { recursive: true });
+  fs.writeFileSync(join(dir, '.sonic', sonicId), '');
+  writeFixtureFile(join(sonicDir, 'job.json'), JSON.stringify({ job: sonicId, role: 'sonic', parent_job: job }));
+  writeFixtureFile(join(sonicDir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+
+  // Rebase onto current base, commit the fix, and rewrite the report while Sonic is still running.
+  f.git(f.worktree, 'rebase', 'base');
+  fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
+  f.git(f.worktree, 'commit', '-qam', 'repair after rebase');
+  writeFixtureFile(join(dir, 'report.md'), 'Rebased and committed repair.\n');
+  await tab.emit('agent_settled');
+  await immediate();
+  assert.equal(JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8')).state, 'working');
+
+  // Sonic settles; hud-sonic-ready triggers a continuation turn and the worker collects Sonic without re-reporting.
+  writeFixtureFile(join(sonicDir, 'report.md'), 'Synthetic Sonic confirmation.\n');
+  writeFixtureFile(join(sonicDir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  await tab.emit('before_agent_start');
+  const receipt = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+  const collected = await waitSonic({ dir, root: join(f.home, 'jobs'), job: receipt }, [sonicId], 0);
+  assert.equal(collected.reports[0].id, sonicId);
+  await tab.emit('agent_settled');
+  await immediate();
+  const settledStatus = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
+  assert.equal(settledStatus.state, 'idle_grace');
+  assert.equal(settledStatus.output_written, true);
+
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.repairs[0].outcome, 'gate passed');
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
+});
+
+test('empty repair turn still fails, preserves the branch, and hud_land explains the next step', async t => {
+  const f = await checkout(t, ['grep fixed tracked || { echo repair-needed; exit 1; }']);
+  const sourceHead = f.git(f.worktree, 'rev-parse', 'HEAD');
+  const { dir, file, sessionId } = await prepareResumedPiSource(t, f, 'synthetic-repair-empty');
+  const { flow } = await f.call('hud_land', { job });
+  assert.equal(await repair(f, flow, 0), job);
+
+  const tab = mountResumedPiLifecycle(t, dir, file, sessionId);
+  await tab.emit('session_start');
+  await tab.emit('before_agent_start');
+  await tab.emit('agent_settled');
+  await immediate();
+
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'failed');
+  assert.equal(done.error, `${job}: output missing, empty or unchanged`);
+  assert.equal(done.repairs[0].outcome, `${job}: output missing, empty or unchanged`);
+
+  // The worktree and branch with the source commits are preserved.
+  assert.equal(fs.existsSync(f.worktree), true);
+  assert.equal(f.git(f.worktree, 'rev-parse', 'HEAD'), sourceHead);
+  assert.match(f.git(f.main, 'branch', '--list', f.branch), new RegExp(f.branch));
+
+  // Retrying hud_land on the repair-failed job explains the next step instead of a bare state refusal.
+  const { result } = await f.rpc('tools/call', { name: 'hud_land', arguments: { job } });
+  assert.equal(result.isError, true);
+  const text = result.content[0].text;
+  assert.match(text, new RegExp(`${flow} repair 1`));
+  assert.match(text, /output missing, empty or unchanged/);
+  assert.match(text, new RegExp(f.branch));
+  assert.match(text, new RegExp(`hud_read job=${flow}`));
+  assert.match(text, new RegExp(`hud_create retry_of=${job}`));
+  assert.doesNotMatch(text, /expected idle_grace, done or closed/);
 });
