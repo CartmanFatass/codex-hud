@@ -107,10 +107,11 @@ export function runDetailRows(run: ExecutionRun, width: number, now: number, dia
   const state = runStateView(run.state);
   const elapsed = runElapsed(run, now);
   const titleLeft = `${state.ink(state.glyph)} ${monitorText(run.label)}`;
+  const waitingMain = run.state === 'paused' || (run.state === 'working' && run.handback?.kind === 'blocker');
   const rows: MonitorRow[] = [
     boardRow(theme.board.title(pair(titleLeft, muted(run.flow.slice(0, 8)), width))),
     ...kvRows('Run', run.flow, width),
-    ...kvRows('State', [t(run.state), run.unattended ? t('Unattended') : ''].filter(Boolean).join(' · '), width),
+    ...kvRows('State', [t(run.state), waitingMain ? t('Waiting on main') : '', run.unattended ? t('Unattended') : ''].filter(Boolean).join(' · '), width),
     ...(run.steps.length ? kvRows('Steps', formatRunStepsPlain(run.steps), width) : []),
     ...(elapsed ? kvRows('Elapsed', elapsed, width) : []),
     ...(run.verdict ? kvRows('Verdict', run.verdict, width) : []),

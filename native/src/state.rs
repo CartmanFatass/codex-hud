@@ -369,6 +369,7 @@ pub struct MachineWork {
     pub roles: Vec<(String, u64)>,
     pub queued: u64,
     pub permission_main: u64,
+    pub paused_main: u64,
     pub land: Option<LandWork>,
 }
 pub struct LandWork {
@@ -497,11 +498,16 @@ pub fn work(home: &Path, now: f64) -> Option<MachineWork> {
     if permission_main > global.get("asking").count()? {
         return None;
     }
+    let paused_main = match global.field("pausedMain") {
+        Some(v) => v.count()?,
+        None => 0,
+    };
     Some(MachineWork {
         unattended: unattended_on(home),
         roles,
         queued: global.get("queued").count()?,
         permission_main,
+        paused_main,
         land: match global.field("land") {
             Some(v) => Some(land_work(v)?),
             None => None,

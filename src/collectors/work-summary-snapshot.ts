@@ -3,7 +3,10 @@ import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { headerScanner, type HeaderPass } from '../workflows/header-scan.js';
+import { isComposedId, type ComposedRun } from '../workflows/composed-state.js';
+import { stopRequested } from '../workflows/store.js';
 import { activeLand, isFlowId, isLandWait, readLand, type LandFlow } from '../mcp/land-state.js';
+import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
@@ -29,7 +32,7 @@ export interface MachineLandWork {
   count: number;
   oldest: { project: string; step: string; step_started_at: number; gate?: [number, number] };
 }
-export interface MachineWorkCounts extends Pick<WorkSummaryScope, 'running' | 'roles'> { queued: number; land?: MachineLandWork; permissionMain?: number; }
+export interface MachineWorkCounts extends Pick<WorkSummaryScope, 'running' | 'roles'> { queued: number; land?: MachineLandWork; permissionMain?: number; pausedMain?: number; }
 export type MachineWorkSignal = (MachineWorkCounts & { unattended?: true }) | { unattended: true; roles?: never };
 export interface WorkSummarySnapshot {
   version: 1;
@@ -63,34 +66,49 @@ const sortScope = (scope: WorkSummaryScope): WorkSummaryScope => ({
 });
 
 const scanSummaryFlows = headerScanner();
-function collectLandWork(home: string, pass?: HeaderPass): MachineLandWork | undefined {
-  let count = 0, oldest: LandFlow | undefined, oldestAt = Infinity;
+function collectFlowSummary(home: string, pass?: HeaderPass): { land?: MachineLandWork; pausedMain: number } {
+  let count = 0, oldest: LandFlow | undefined, oldestAt = Infinity, landValid = true, pausedMain = 0;
   try {
     pass ??= scanSummaryFlows(home);
     for (const file of pass.files) {
       if (!file.endsWith('.json')) continue;
       const id = file.slice(0, -5);
-      if (!isFlowId(id)) continue;
-      const flow = readLand(home, id, pass);
-      if (!flow || !activeLand(flow)) continue;
-      const created = Date.parse(flow.created_at);
-      if (!Number.isFinite(created)) return undefined;
-      count++;
-      if (!oldest || created < oldestAt || (created === oldestAt && flow.flow < oldest.flow)) {
-        oldest = flow; oldestAt = created;
+      if (isFlowId(id)) {
+        if (!landValid) continue;
+        const flow = readLand(home, id, pass);
+        if (!flow || !activeLand(flow)) continue;
+        const created = Date.parse(flow.created_at);
+        if (!Number.isFinite(created)) { landValid = false; continue; }
+        count++;
+        if (!oldest || created < oldestAt || (created === oldestAt && flow.flow < oldest.flow)) {
+          oldest = flow; oldestAt = created;
+        }
+      } else if (isTicketQueueId(id)) {
+        try {
+          const q = pass.header<TicketQueue>(file);
+          if (q && !q.superseded_by && !stopRequested(home, id) &&
+              (q.state === 'paused' || (q.state === 'working' && q.handback?.kind === 'blocker'))) {
+            pausedMain++;
+          }
+        } catch { /* Unreadable queue receipt does not hide other counts. */ }
+      } else if (isComposedId(id)) {
+        try {
+          const run = pass.header<ComposedRun>(file);
+          if (run?.template === 'composed' && run.state === 'paused') pausedMain++;
+        } catch { /* Unreadable workflow receipt does not hide other counts. */ }
       }
     }
-    if (!oldest) return undefined;
+    if (!landValid || !oldest) return { pausedMain };
     const at = Date.parse(oldest.step_started_at ?? oldest.updated_at);
-    if (!isCount(at)) return undefined;
+    if (!isCount(at)) return { pausedMain };
     const index = Number(/^gate\[([1-9]\d*)\]:/.exec(oldest.step)?.[1]);
     const total = Array.isArray(oldest.config?.gate) ? oldest.config.gate.length : 0;
     const gate: [number, number] | undefined = index <= total ? [index, total] : undefined;
     // Keep step names, never the gate/after commands or the full checkout path.
     const step = isLandWait(oldest.step) ? 'wait' : oldest.step.split(':', 1)[0]!.slice(0, 64);
     const project = basename(oldest.wt.main_root).slice(0, 255).replace(/[\ud800-\udfff]/gu, '�');
-    return { count, oldest: { project, step, step_started_at: at, ...(gate && { gate }) } };
-  } catch { return undefined; } // No reliable land census; still show job counts.
+    return { land: { count, oldest: { project, step, step_started_at: at, ...(gate && { gate }) } }, pausedMain };
+  } catch { return { pausedMain: 0 }; } // No reliable flow census; still show job counts.
 }
 
 export function collectWorkSummary(
@@ -140,8 +158,8 @@ export function collectWorkSummary(
     }
   }
   const panes = Object.fromEntries(Object.keys(rawPanes).sort().map((p) => [p, sortScope(rawPanes[p]!)]));
-  const land = collectLandWork(home, options?.flows);
-  return { global: { ...sortScope(global), queued, ...(land && { land }), ...(permissionMain > 0 && { permissionMain }) }, panes, complete };
+  const { land, pausedMain } = collectFlowSummary(home, options?.flows);
+  return { global: { ...sortScope(global), queued, ...(land && { land }), ...(permissionMain > 0 && { permissionMain }), ...(pausedMain > 0 && { pausedMain }) }, panes, complete };
 }
 
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
@@ -176,6 +194,7 @@ export function parseWorkSummarySnapshot(raw: unknown): WorkSummarySnapshot | nu
   if (typeof raw.watching !== 'boolean' || typeof raw.complete !== 'boolean' || !isPlain(raw.global) || !isCount(raw.global.queued) ||
     !isValidScope(raw.global) || !isPlain(raw.panes)) return null;
   if (raw.global.permissionMain !== undefined && (!isCount(raw.global.permissionMain) || raw.global.permissionMain > raw.global.asking)) return null;
+  if (raw.global.pausedMain !== undefined && !isCount(raw.global.pausedMain)) return null;
   if (raw.global.land !== undefined && !isValidLand(raw.global.land)) return null;
   const paneEntries = Object.entries(raw.panes);
   if (paneEntries.length > WORK_SUMMARY_MAX_PANES || paneEntries.some(([p, s]) => !herdrId(p) || !isValidScope(s))) return null;
@@ -207,7 +226,8 @@ export function readMachineWork(home: string, now: number): MachineWorkSignal | 
   const global = readFreshWorkSummary(home, null, now)?.snapshot.global;
   const unattended = unattendedOn(home) ? { unattended: true as const } : undefined;
   return global ? { running: global.running, queued: global.queued, roles: global.roles, ...(global.land && { land: global.land }),
-    ...(global.permissionMain && { permissionMain: global.permissionMain }), ...unattended }
+    ...(global.permissionMain && { permissionMain: global.permissionMain }),
+    ...(global.pausedMain && { pausedMain: global.pausedMain }), ...unattended }
     : unattended;
 }
 
@@ -244,7 +264,7 @@ export function createWorkSummaryPublisher(home: string, producer: WorkSummaryPr
       global: collected.global, panes: collected.panes,
     } satisfies WorkSummarySnapshot) + '\n';
     if (Buffer.byteLength(text, 'utf8') > WORK_SUMMARY_MAX_BYTES ||
-        (!jobsExist && !collected.global.land && !lastStat && !fs.existsSync(join(home, 'jobs')))) return false;
+        (!jobsExist && !collected.global.land && !collected.global.pausedMain && !lastStat && !fs.existsSync(join(home, 'jobs')))) return false;
     try {
       try { fs.mkdirSync(join(home, 'display'), { mode: 0o700 }); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return false; }

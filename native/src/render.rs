@@ -664,8 +664,9 @@ fn machine_load(work: MachineWork, display: &Display, now: f64) -> Option<Segmen
         .filter(|(_, count)| *count > 0)
         .map(|((_, glyphs), count)| format!("{}{count}", glyphs[set]))
         .collect();
-    let permission = (work.permission_main > 0).then(|| format!("Main {}", work.permission_main));
-    if let Some(part) = &permission {
+    let main_load = work.permission_main.saturating_add(work.paused_main);
+    let main_part = (main_load > 0).then(|| format!("Main {main_load}"));
+    if let Some(part) = &main_part {
         groups.insert(0, part.clone());
     }
     let marker = "Unatt";
@@ -709,7 +710,7 @@ fn machine_load(work: MachineWork, display: &Display, now: f64) -> Option<Segmen
     groups.extend(queue);
     (!groups.is_empty()).then(|| {
         forms.extend([groups.join("  "), groups.join(" "), roles]);
-        forms.extend(permission);
+        forms.extend(main_part);
         if short {
             forms.push(marker.to_owned());
         }

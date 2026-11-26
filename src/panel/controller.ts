@@ -45,7 +45,7 @@ import { PanelJobPipeline } from './job-pipeline.js';
 import { createPanelLifecycle, type InstallCleanup } from './lifecycle.js';
 import { createPanelModelDiscovery } from './model-discovery.js';
 import { PanelExecution } from './execution.js';
-import { countProjectLiveJobs } from '../collectors/execution.js';
+import { countProjectLiveJobs, countProjectWaitingRuns, type ExecutionView } from '../collectors/execution.js';
 import { callsByFeature, ModelRuntimeStore } from '../collectors/model-runtime-store.js';
 import { computeRepaintDelay, createCollectionScheduler } from './scheduler.js';
 import { createSettingsFlow } from './settings-flow.js';
@@ -220,7 +220,10 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         : painted.activeTab !== 'project' ? { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) }
           : painted.project.view.kind === 'waiting' ? { root: chosen, snapshot: chosenSnapshot }
             : visits.shown(chosen);
-    const liveJobs = (executing ? execution.view(chosen)?.jobs.length : undefined)
+    const waitingRuns = (view?: ExecutionView) => (view?.runs ?? []).filter((run) =>
+      run.endedAt === undefined && (run.state === 'paused' || (run.state === 'working' && run.handback?.kind === 'blocker'))).length;
+    const execView = executing ? execution.view(chosen) : undefined;
+    const liveJobs = (execView ? execView.jobs.length + waitingRuns(execView) : undefined)
       ?? (executionCount?.root === chosen ? executionCount.count : undefined);
     const output = time('render', () => {
       const width = process.stdout.columns || 30, height = process.stdout.rows || 24;
@@ -391,9 +394,12 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       // on every visible tab (Home derives them from its portfolio reads; modals pause them; opening the list reads at once).
       const full = shown && !listing(state);
       const countRoot = shownRoot();
+      const activeExecView = state.activeTab === 'execution' ? execution.view(countRoot) : undefined;
       executionCount = {
         root: countRoot,
-        count: (state.activeTab === 'execution' ? execution.view(countRoot)?.jobs.length : undefined) ?? countProjectLiveJobs(jobPipeline.home, countRoot),
+        count: (activeExecView ? activeExecView.jobs.length + (activeExecView.runs ?? []).filter((run) =>
+          run.endedAt === undefined && (run.state === 'paused' || (run.state === 'working' && run.handback?.kind === 'blocker'))).length : undefined)
+          ?? (countProjectLiveJobs(jobPipeline.home, countRoot) + countProjectWaitingRuns(jobPipeline.home, countRoot)),
       };
       if (visible && !home && (projects.length > 1 || !full) && now - overviewAt >= 5000) {
         overviewAt = now;

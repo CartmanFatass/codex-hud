@@ -5,6 +5,11 @@ import type { Job, PrewalkScoutKind } from '../mcp/job-contracts.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { readSelectionExcerpts, type SelectionExcerpt } from '../roles/selection-excerpts.js';
+import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { isComposedId, type ComposedRun } from '../workflows/composed-state.js';
+import { headerScanner } from '../workflows/header-scan.js';
+import { runVisible } from '../workflows/scope.js';
+import { stopRequested } from '../workflows/store.js';
 import { ENDED_MS, jobTargetFor, readExecutionRuns, type ExecutionRun, type ExecutionRunJobTarget, type LandProgress } from './execution-runs.js';
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
 import type { ProjectSnapshot } from './project-board.js';
@@ -95,6 +100,41 @@ const text = (value: unknown) => typeof value === 'string' && value ? value : un
 const jobIdOf = (id: string | undefined) => id?.replace(/^thin-job:/, '');
 const byStart = (a: ExecutionJob, b: ExecutionJob) =>
   (a.worker.startedAt ?? 0) - (b.worker.startedAt ?? 0) || a.jobId.localeCompare(b.jobId);
+
+const scanWaitingRuns = headerScanner();
+
+/** Count open workflow runs waiting on main (paused or live blocker hand-back) for `projectRoot`. */
+export function countProjectWaitingRuns(home: string, projectRoot: string): number {
+  let root: string;
+  try { root = fs.realpathSync(projectRoot); } catch { root = resolve(projectRoot); }
+  let count = 0;
+  try {
+    const pass = scanWaitingRuns(home);
+    for (const file of pass.files) {
+      if (!file.endsWith('.json')) continue;
+      const id = file.slice(0, -5);
+      try {
+        if (isTicketQueueId(id)) {
+          const q = pass.header<TicketQueue>(file);
+          const scopeRoot = q?.project_root ?? q?.root;
+          if (q && scopeRoot && !q.superseded_by && !stopRequested(home, id) &&
+              (q.state === 'paused' || (q.state === 'working' && q.handback?.kind === 'blocker')) &&
+              runVisible({ ...q, project_root: scopeRoot }, null, root)) {
+            count++;
+          }
+        } else if (isComposedId(id)) {
+          const run = pass.header<ComposedRun>(file);
+          const scopeRoot = run?.project_root ?? run?.cwd;
+          if (run?.template === 'composed' && scopeRoot && run.state === 'paused' &&
+              runVisible({ ...run, project_root: scopeRoot }, null, root)) {
+            count++;
+          }
+        }
+      } catch { /* An unreadable flow header does not hide other runs. */ }
+    }
+  } catch { /* Missing flows directory means zero waiting runs. */ }
+  return count;
+}
 
 /** Count live (running, waiting, queued) jobs belonging to `projectRoot`, using the same membership and settlement rules as Execution. */
 export function countProjectLiveJobs(home: string, projectRoot: string): number {

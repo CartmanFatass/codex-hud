@@ -16,7 +16,8 @@ export function machineWorkForms(work: MachineWorkSignal, now: number, icons = i
     const count = counts.get(role);
     return count ? [`${roleIcon(role, icons)}${count}`] : [];
   });
-  if (work.permissionMain) roles.unshift(`Main ${work.permissionMain}`);
+  const mainLoad = (work.permissionMain ?? 0) + (work.pausedMain ?? 0);
+  if (mainLoad) roles.unshift(`Main ${mainLoad}`);
   if (work.unattended) roles.unshift(marker);
   const queueIcon = icons === 'text' ? 'Q' : icons === 'nerd' ? '' : '◷';
   const queue = work.queued > 0 ? [`${queueIcon}${work.queued}`] : [];
@@ -33,7 +34,7 @@ export function machineWorkForms(work: MachineWorkSignal, now: number, icons = i
   }
   const groups = [...roles, ...queue];
   return groups.length ? [...detail, groups.join('  '), groups.join(' '), roles.join(' '),
-    ...(work.permissionMain ? [`Main ${work.permissionMain}`] : []),
+    ...(mainLoad ? [`Main ${mainLoad}`] : []),
     ...(work.unattended && roles.length > 1 ? [marker] : [])] : [];
 }
 

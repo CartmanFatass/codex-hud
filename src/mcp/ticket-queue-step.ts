@@ -28,6 +28,7 @@ import { jobFiles } from './paths.js';
 import { piReportSettlement } from './pi-read-settlement.js';
 import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/job-store.js';
 import { resumeTicketEdits, stopTicketEdits } from './ticket-edit-queue.js';
+import { ensureJobWatcher } from './watch-pid.js';
 import {
   blockerHandbackItem, clearItemHold, prepareTicketQueueRepair, readTicketQueue, syncBlockerHandback,
   ticketQueueNotice, writeTicketQueue,
@@ -281,18 +282,22 @@ function terminalNotice(q: TicketQueue, keyPrefix: 'end' | 'pause' = 'end') {
   return q.task ? {} : { [`${keyPrefix}-${q.epoch ?? 0}`]: ticketQueueNotice(q).replace(/\r?\n/g, ' | ') };
 }
 
+function pauseNotice(q: TicketQueue) {
+  return { [`pause-${q.epoch ?? 0}`]: ticketQueueNotice(q).replace(/\r?\n/g, ' | ') };
+}
+
 /** Hand-back settlement for ticket-queue problems:
  * - assumption breaker: pauses the run with no main wake (empty notices).
- * - escalate / unattended run hold: pauses the run and wakes main once.
+ * - blocker / escalate / unattended run hold: pauses the run, records pause-<epoch> in notices, and wakes main once.
  * - other problems (land/check/worker/dispatch/to:main question): failed receipt with terminal notice. */
 export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
   const step = problem?.step ?? q.handback?.step ?? 'tickets';
   q.queued = undefined;
   q.remaining = computeRemaining(q);
-  if (q.unattended && (q.held || problem?.ownerApproval)) {
+  if (q.unattended && (q.held || problem?.ownerApproval || problem?.kind === 'blocker' || problem?.kind === 'escalate')) {
     q.handback = {
       step,
-      choices: ['manual'],
+      choices: q.held || problem?.ownerApproval ? ['manual'] : ['resume', 'stop'],
       ...(problem && {
         kind: problem.kind,
         ...(problem.ticket && { ticket: problem.ticket }),
@@ -303,7 +308,7 @@ export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
       }),
     };
     q.state = 'paused';
-    q.notices = terminalNotice(q, 'pause');
+    q.notices = pauseNotice(q);
     return;
   }
   if (q.unattended) {
@@ -330,9 +335,9 @@ export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
     q.notices = {};
     return;
   }
-  if (problem?.kind === 'escalate') {
+  if (problem?.kind === 'escalate' || problem?.kind === 'blocker') {
     q.state = 'paused';
-    q.notices = terminalNotice(q, 'pause');
+    q.notices = pauseNotice(q);
     return;
   }
   q.state = 'failed';
@@ -1508,7 +1513,7 @@ function tickHandbackStep(
     q.reason = step.ask;
     q.handback = { step: key, choices: step.options };
     q.remaining = computeRemaining(q);
-    q.notices = q.task ? {} : {
+    q.notices = {
       [`pause-${q.epoch ?? 0}`]: `${q.flow} (ticket queue ${q.feature}) — hand-back at ${key}: ${step.ask} (${step.options.join('/')}) | reply: hud_respond job=${q.flow} answer=<${step.options.join('|')}>[: reason]`,
     };
     return { state: 'asking', changed: true };
@@ -1720,6 +1725,9 @@ export async function driveTicketQueue(id: string) {
           q.notices = terminalNotice(q, 'end');
         }
         writeTicketQueue(hudHome, q);
+        if ((q.state === 'paused' || q.handback?.kind === 'blocker') && Object.keys(q.notices ?? {}).length) {
+          ensureJobWatcher(hudHome);
+        }
       },
       open: q => {
         fs.mkdirSync(dir, { mode: 0o700, recursive: true });

@@ -276,6 +276,11 @@ test('native and TypeScript agree on land progress, main permission load and wid
   expect('Main 1  ⚒2');
   expect('Main 1 ⚒2', 9);
   expect('Main 1', 6);
+  write({ global: { running: 0, queued: 0, asking: 0, pausedMain: 1, roles: {} } });
+  expect('Main 1');
+  write({ global: { ...global, asking: 1, permissionMain: 1, pausedMain: 2, roles: { imp: { running: 2, asking: 1 } } } });
+  expect('Main 3  ⚒2');
+  expect('Main 3', 6);
 });
 
 test('Claude processes share a private CPU sample and show RAM and swap only as observed', { skip: process.platform !== 'linux' }, (t) => {

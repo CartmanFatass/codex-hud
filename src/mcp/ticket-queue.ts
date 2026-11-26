@@ -12,7 +12,7 @@ import { waitUntilFs } from '../utils/fs-wait.js';
 import { procStat } from '../utils/proc.js';
 import { loadGraph } from '../workflows/graph.js';
 import { runVisible } from '../workflows/scope.js';
-import { freezeGraph, runDir, runLock } from '../workflows/store.js';
+import { freezeGraph, noticeEvents, runDir, runLock } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import { ESCALATION_RULE, isOpenTicketRun, ticketClosed } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
@@ -386,7 +386,7 @@ export async function answerTicketQueueHandback(
         cur.queued = undefined;
         cur.remaining = cur.remaining ?? [];
         cur.handback = { step, choices: ['resume', 'stop'], kind: 'escalate' };
-        cur.notices = cur.task ? {} : { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
+        cur.notices = { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
         writeTicketQueue(home, cur);
         return { ok: true, queue: cur, resumed: false };
       }
@@ -416,7 +416,7 @@ export async function answerTicketQueueHandback(
       cur.remaining = cur.remaining ?? [];
       cur.handback = { step, choices: ['resume', 'stop'], kind: 'escalate' };
       cur.state = 'paused';
-      cur.notices = cur.task ? {} : { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
+      cur.notices = { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
       writeTicketQueue(home, cur);
       return { ok: true, queue: cur, resumed: false };
     }
@@ -464,6 +464,8 @@ export async function answerTicketQueueHandback(
     try { await withAbstractLock('flow-runner', `${home}\0${id}`, () => {}, { timeoutMs: 2_000 }); }
     catch { /* Best-effort wait; watcher still recovers if busy. */ }
     wakeWorkflow(home, result.queue);
+  } else if (result.ok && result.queue.state === 'paused' && Object.keys(result.queue.notices ?? {}).length) {
+    ensureJobWatcher(home);
   }
   return result;
 }
@@ -514,9 +516,17 @@ export function ticketQueueTask(home: string, q: TicketQueue, cancel = false) {
     wakeWorkflow(home, q);
     ensureJobWatcher(home);
   }
+  const pauseKey = `pause-${q.epoch ?? 0}`;
+  const pauseText = q.state === 'paused' ? q.notices?.[pauseKey] : undefined;
+  if (pauseText) {
+    try { noticeEvents(home, { flow: q.flow, notices: { [pauseKey]: pauseText } }); }
+    catch { /* Best-effort claim so a later mode switch does not duplicate the pause notice. */ }
+  }
   const text = q.state === 'working'
-    ? `${q.flow} (ticket queue ${q.feature}) — ${ticketQueueView(q).reason ?? 'working'}` : ticketQueueNotice(q);
-  return { taskId: q.flow, status: q.state, statusMessage: text,
+    ? `${q.flow} (ticket queue ${q.feature}) — ${ticketQueueView(q).reason ?? 'working'}`
+    : pauseText ?? ticketQueueNotice(q);
+  const status = q.state === 'paused' ? 'completed' : q.state === 'stopped' ? 'cancelled' : q.state;
+  return { taskId: q.flow, status, statusMessage: text,
     createdAt: q.created_at, lastUpdatedAt: q.updated_at, ttlMs: 3 * 60 * 60_000, pollIntervalMs: 5000,
     ...(q.state !== 'working' && { result: { content: [{ type: 'text', text }] } }) };
 }

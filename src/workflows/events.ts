@@ -7,7 +7,7 @@ import { activeTicketEdit, isTicketEditId, type TicketEdit } from '../mcp/ticket
 import { sharedRoot } from '../roles/projects.js';
 import { isComposedId, type ComposedRun } from './composed-state.js';
 import { workflowHeaders, type HeaderPass } from './header-scan.js';
-import { runVisible } from './scope.js';
+import { directRecipient, runVisible } from './scope.js';
 import { noticeEvents } from './store.js';
 
 function ticketEditEvent(home: string, pane: string | null, all: boolean, cwd: string, pass: HeaderPass, file: string) {
@@ -40,14 +40,16 @@ export function taskNoticeSource(home: string, pane: string | null, cwd: string)
       if (isTicketEditId(id)) return ticketEditEvent(home, pane, false, cwd, pass, file)?.events ?? [];
       if (isTicketQueueId(id)) {
         const q = pass.header<TicketQueue>(file);
-        return q?.task && q.state === 'working' && q.notices && runVisible(q, pane, cwd)
-          ? noticeEvents(home, { flow: id, notices: q.notices }) : [];
+        if (!q?.notices || !runVisible(q, pane, cwd)) return [];
+        if (q.task && q.state !== 'working' && directRecipient(q)) return [];
+        return noticeEvents(home, { flow: id, notices: q.notices }, false, landFile(home, id));
       }
       if (!isComposedId(id)) return [];
       const run = pass.header<ComposedRun>(file);
       return run?.template === 'composed' && runVisible(run, pane, cwd) ? noticeEvents(home, run) : [];
     });
-    previous = stamp;
+    // Keep the stamp dirty when events were claimed so a released marker retries on the next tick.
+    if (!events.length) previous = stamp;
     return events;
   };
 }
@@ -55,7 +57,7 @@ export function taskNoticeSource(home: string, pane: string | null, cwd: string)
 /** Scan active runs and unclaimed terminal results. Quiet passes only parse a
  * changed header; previously claimed land/queue results don't even need a stat. */
 export function workflowEvents(home: string, pane: string | null, all = false, cwd = process.cwd(), modCatchup = false) {
-  const lines: string[] = [];
+  const events: { line: string; marker: string }[] = [];
   let pending = false;
   const pass = workflowHeaders(home);
   for (const file of pass.files) {
@@ -70,13 +72,13 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
     const id = file.slice(0, -5);
     if (isTicketEditId(id)) {
       const result = ticketEditEvent(home, pane, all, cwd, pass, file);
-      if (result) { pending ||= result.pending; lines.push(...result.events.map(e => e.line)); }
+      if (result) { pending ||= result.pending; events.push(...result.events); }
       continue;
     }
     if (isComposedId(id)) {
       const run = pass.header<ComposedRun>(file);
       if (run?.template === 'composed' && (all || runVisible(run, pane, cwd))) {
-        lines.push(...noticeEvents(home, run, all).map(e => e.line));
+        events.push(...noticeEvents(home, run, all));
         pending ||= run.state === 'working';
       }
       continue;
@@ -84,7 +86,7 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
     if (isBatchId(id)) {
       const b = pass.header<Batch>(file);
       if (b && (all || runVisible(b, pane, cwd))) {
-        lines.push(...batchEvents(home, b, all).map(event => event.line));
+        events.push(...batchEvents(home, b, all));
         pending ||= batchActive(b);
       }
       continue;
@@ -101,23 +103,23 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
       if (activeLand(f)) { pending = true; continue; }
       // Old receipts and new outboxes share the historical end marker (also across rollback).
       const outbox = f.workflow ?? { flow: id, notices: { 'end-0': landNoticeLine(f) } };
-      const events = noticeEvents(home, outbox, all, path);
-      if (!modCatchup || f.state === 'failed') lines.push(...events.map(e => e.line));
+      const claimed = noticeEvents(home, outbox, all, path);
+      if (!modCatchup || f.state === 'failed') events.push(...claimed);
     } else {
       const q = pass.header<TicketQueue>(file);
       if (!q || (!all && !runVisible(q, pane, cwd))) continue;
       if (q.state === 'working') {
         pending = true;
-        if (q.notices) lines.push(...noticeEvents(home, { flow: id, notices: q.notices }, all, path).map(e => e.line));
+        if (q.notices) events.push(...noticeEvents(home, { flow: id, notices: q.notices }, all, path));
         continue;
       }
-      if (q.task) continue; // Task clients collect their terminal queue result separately.
+      if (q.task && directRecipient(q)) continue; // Live task clients collect their paused/terminal queue result via tasks/get.
       const outbox = q.template && q.notices !== undefined
         ? { flow: id, notices: q.notices }
         : q.notices && Object.keys(q.notices).length ? { flow: id, notices: q.notices }
         : { flow: id, notices: { 'end-0': ticketQueueNotice(q).replace(/\r?\n/g, ' | ') } };
-      lines.push(...noticeEvents(home, outbox, all, path).map(e => e.line));
+      events.push(...noticeEvents(home, outbox, all, path));
     }
   }
-  return { lines, pending };
+  return { lines: events.map(e => e.line), events, pending };
 }

@@ -248,13 +248,20 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     catch { if (!stopped) schedule(DEFAULT_RESCAN_MS); return; }
     finally { scanning = false; }
     if (stopped) return;
+    const flows = workflowEvents(home, pane, false, cwd);
     const { events, progress } = notices.select(home, prev, rows, first, lastScanAt);
-    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd, pane), ...workflowEvents(home, pane, false, cwd).lines, ...progress]);
+    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd, pane), ...flows.lines, ...progress]);
     first = false;
     lastScanAt = scanAt;
     prev = new Map(rows.map((row) => [row.job, row]));
     schedule(dirty ? DEBOUNCE_MS : DEFAULT_RESCAN_MS);
-    if (lines.length) deliver(lines);
+    if (lines.length) {
+      try { deliver(lines); }
+      catch (error) {
+        for (const { marker } of flows.events) fs.rmSync(marker, { force: true });
+        throw error;
+      }
+    }
   }
   inputs.attach();
   schedule(DEBOUNCE_MS);
@@ -405,10 +412,37 @@ export async function watchCommand(
     const agyBacklog: string[] = [];
     let agyGuardUntil: number | undefined;
     let typedPending: { retry: NonNullable<NotifyResult['retryPrompt']>; text: string; until: number } | undefined;
+    let flowRetryAt = Infinity;
+    const flowMarkers = new Map<string, string[]>();
+    const trackFlowEvents = (items: readonly { line: string; marker: string }[]) => {
+      for (const { line, marker } of items) {
+        const list = flowMarkers.get(line);
+        if (list) list.push(marker);
+        else flowMarkers.set(line, [marker]);
+      }
+    };
+    const takeMarkers = (text: string): string[] => {
+      const taken: string[] = [];
+      for (const part of text.split('\n')) {
+        const list = flowMarkers.get(part);
+        if (!list?.length) continue;
+        taken.push(list.shift()!);
+        if (!list.length) flowMarkers.delete(part);
+      }
+      return taken;
+    };
+    const releaseMarkers = (markers: readonly string[]) => {
+      for (const marker of markers) fs.rmSync(marker, { force: true });
+    };
+    const releaseAllFlowMarkers = () => {
+      for (const list of flowMarkers.values()) releaseMarkers(list);
+      flowMarkers.clear();
+    };
     while (!stopped) {
       if (!first) await wait();
       if (stopped) break;
       dirty = false;
+      if (performance.now() >= flowRetryAt) flowRetryAt = Infinity;
       const pane = queue ? await delivery!.paneInfo(callerPane, io.env, { signal }) : null;
       if (stopped) break;
       if (queue) {
@@ -423,6 +457,7 @@ export async function watchCommand(
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const modCatchup = first && freshMod;
       const flows = workflowEvents(home, callerPane, all, process.cwd(), modCatchup);
+      trackFlowEvents(flows.events);
       const trySize = modHandshake ? fs.lstatSync(join(home, TRIES_FILE), { throwIfNoEntry: false })?.size ?? 0 : 0;
       const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
         ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;
@@ -433,7 +468,7 @@ export async function watchCommand(
       const band = readBand && await readBand(scanAt);
       if (band) await io.stdout(JSON.stringify(band) + '\n');
       if (queue || mod) {
-        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || typedPending !== undefined || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running')))) ||
+        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || typedPending !== undefined || Number.isFinite(flowRetryAt) || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running')))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
@@ -462,8 +497,9 @@ export async function watchCommand(
         if (!stopped && (agyBacklog.length || agyPending)) {
           // After expiry the ordinary PreInvocation hook can still claim the mailbox.
           const sent = await delivery!.notifyAgy(callerPane, agyBacklog, home, io.env, agyGuardUntil === 0 ? null : pane, { signal });
-          if (stopped) break;
-          agyBacklog.splice(0, sent.accepted);
+          if (stopped) { releaseAllFlowMarkers(); break; }
+          const accepted = agyBacklog.splice(0, sent.accepted);
+          for (const item of accepted) takeMarkers(item);
           if (sent.guardPending) {
             agyGuardUntil ??= performance.now() + PROMPT_RETRY_TTL_MS;
             waitForPrompt();
@@ -480,7 +516,10 @@ export async function watchCommand(
           noPendingPrompt();
         } else {
           const incoming = lines.join('\n');
-          if (incoming) typedPending.text = joinPendingNotices(typedPending.text, incoming);
+          if (incoming) {
+            takeMarkers(incoming);
+            typedPending.text = joinPendingNotices(typedPending.text, incoming);
+          }
           const sent = await typedPending.retry(typedPending.text, signal);
           if (sent.retryPrompt) {
             typedPending.retry = sent.retryPrompt;
@@ -494,16 +533,33 @@ export async function watchCommand(
       }
       const batches = first && mod && lines.length ? [lines.join('\n')] : lines;
       for (const [i, line] of batches.entries()) {
-        if (stopped) break;
+        if (stopped) {
+          for (const rest of batches.slice(i)) releaseMarkers(takeMarkers(rest));
+          break;
+        }
+        const claimed = takeMarkers(line);
         try {
           if (queue) {
             const sent = await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
-            if (stopped) break;
+            if (stopped) {
+              if (sent.status !== 0 && !sent.uncertain) releaseMarkers(claimed);
+              for (const rest of batches.slice(i + 1)) releaseMarkers(takeMarkers(rest));
+              break;
+            }
             if (sent.retryPrompt) {
               const rest = batches.slice(i + 1).join('\n');
+              if (rest) takeMarkers(rest);
               typedPending = { retry: sent.retryPrompt, text: rest ? joinPendingNotices(line, rest) : line, until: performance.now() + PROMPT_RETRY_TTL_MS };
               waitForPrompt();
               break;
+            }
+            if (sent.status !== 0 && !sent.uncertain) {
+              releaseMarkers(claimed);
+              if (claimed.length) {
+                idleSince = null;
+                flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
+                retryAt = Math.min(retryAt, flowRetryAt);
+              }
             }
             if (sent.detail?.includes('failed') || sent.status !== 0) io.stderr(`${sent.detail || 'event delivery failed'}\n`);
           } else if (mod) {
@@ -513,6 +569,8 @@ export async function watchCommand(
             await io.stdout(JSON.stringify({ type: 'wake', lines: wakeLines, at }) + '\n');
           } else await io.stdout(`${line}\n`);
         } catch (error) {
+          releaseMarkers(claimed);
+          for (const rest of batches.slice(i + 1)) releaseMarkers(takeMarkers(rest));
           if (isBrokenPipe(error)) {
             stop();
             break;
@@ -521,6 +579,7 @@ export async function watchCommand(
         }
       }
     }
+    releaseAllFlowMarkers();
     return 0;
   } catch (error) {
     if (isBrokenPipe(error)) return 0;

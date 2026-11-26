@@ -349,7 +349,9 @@ export function renderWorkboardFrame(
     // A count is a `?` and its number, the mark of what waits for the owner everywhere else: a bare number beside a tab reads as its key.
     const badge = (n: number) => (n ? ' ' + theme.board.attention(`?${n}`) : '');
     const counts = { home: homeCount, project: projectCount, execution: 0, control: 0 };
-    const liveJobs = input.executionCount ?? input.execution?.jobs.length ?? input.project?.active.length ?? 0;
+    const waitingRuns = (input.execution?.runs ?? []).filter((run) =>
+      run.endedAt === undefined && (run.state === 'paused' || (run.state === 'working' && run.handback?.kind === 'blocker'))).length;
+    const liveJobs = input.executionCount ?? ((input.execution?.jobs.length ?? input.project?.active.length ?? 0) + waitingRuns);
     const liveBadge = (active: boolean) => (liveJobs > 0 ? `·${active ? String(liveJobs) : theme.board.active(String(liveJobs))}` : '');
     const tabs = MAIN_TABS, calendar = scheduleBadge(schedule);
     const labels = (requests: 'all' | 'active' | 'none', due: boolean, live: boolean) => tabs.map((tab) =>

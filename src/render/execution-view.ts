@@ -163,12 +163,13 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
 
   const rows: MonitorRow[] = [];
   let missingCoverage = partial;
-  if (view.jobs.length) {
-    const count = (phase: ExecutionJob['phase'], word: string, ink: Ink) => {
-      const n = view.jobs.filter((job) => job.phase === phase).length;
+  const pausedMain = runs.filter((run) => run.state === 'paused' || (run.state === 'working' && run.handback?.kind === 'blocker')).length;
+  if (view.jobs.length || pausedMain > 0) {
+    const count = (phase: ExecutionJob['phase'], word: string, ink: Ink, extra = 0) => {
+      const n = view.jobs.filter((job) => job.phase === phase).length + extra;
       return `${(n ? ink : muted)(String(n))} ${muted(t(word))}`;
     };
-    const readout = `  ${[count('running', 'running', theme.board.title), count('waiting', 'waiting', theme.board.attention),
+    const readout = `  ${[count('running', 'running', theme.board.title), count('waiting', 'waiting', theme.board.attention, pausedMain),
       count('queued', 'queued', theme.board.title)].join('   ')}`;
     const right = partial && visualLength(readout) + 2 + visualLength(partial) <= width ? partial : '';
     rows.push(plain(''), plain(pair(readout, muted(right), width)));

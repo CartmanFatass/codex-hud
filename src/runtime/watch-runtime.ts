@@ -19,6 +19,8 @@ import type { CouncilRun } from '../mcp/council-state.js';
 import { settleMainCouncil } from '../mcp/council-settle.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import { isComposedId, type ComposedRun } from '../workflows/composed-state.js';
+import { directRecipient } from '../workflows/scope.js';
+import { noticeEvents, runDir } from '../workflows/store.js';
 import type { PrewalkRun } from '../mcp/prewalk-flow.js';
 import { workflowHeaders } from '../workflows/header-scan.js';
 import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
@@ -32,7 +34,7 @@ import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js'
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { observeWorkerPermission, permissionNotice, permissionTarget } from '../mcp/worker-permissions.js';
 import { jobCallerPane } from '../roles/job-pane.js';
-import { notify as notifyPane } from '../roles/notify.js';
+import { notify as notifyPane, watching } from '../roles/notify.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
 import { createWorkSummaryPublisher } from '../collectors/work-summary-snapshot.js';
 import type { Job, JobSession, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
@@ -47,7 +49,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { RunnerWatches } from './runner-watches.js';
 import { RUNNER_READY } from '../utils/runner-lifetime.js';
 import { isProcAlive, isValidPid } from '../utils/proc.js';
-import { hasLocalHerdrTarget, isShellLaunchedWorker, probeHerdrTarget, request, SHELL_WORKER_UNSUPPORTED, TAB_PROBE_INTERVAL_MS, tabProbeBackoff } from './herdr-socket.js';
+import { hasLocalHerdrTarget, herdrEndpoint, isShellLaunchedWorker, probeHerdrTarget, request, SHELL_WORKER_UNSUPPORTED, TAB_PROBE_INTERVAL_MS, tabProbeBackoff } from './herdr-socket.js';
 import { pruneDisplayFiles } from './display-retention.js';
 import { JOB_RETENTION_MS, pruneJobLogs, pruneLandFlows, pruneProjectScratch } from './work-retention.js';
 import { pinnedQueueJobs } from '../unattended/state.js';
@@ -222,6 +224,53 @@ const inFlightWorktrees = new Map<string, Promise<void>>();
 const inFlightStarts = new Map<string, { role: string; promise: Promise<void> }>();
 const permissionChecks = new Map<string, { controller: AbortController; promise: Promise<void> }>();
 const permissionsSeen = new Map<string, { pane: string; key: string; next: number }>();
+const flowNoticeChecks = new Map<string, { controller: AbortController; promise: Promise<void> }>();
+const flowNoticeRetries = new Map<string, { at: number; attempts: number }>();
+const WAITING_FLOW_NOTICE = /^(?:pause-\d+|handback-[a-z][a-z0-9_-]{0,47}|error-\d+)$/;
+function deliverFlowNotices(
+  id: string,
+  run: { pane: string; origin_mcp?: { pid: number; start: string }; notices?: Record<string, string> },
+  now: number,
+  seenMarkers: Set<string>,
+): number {
+  let nextAt = Infinity;
+  const endpoint = herdrEndpoint();
+  if (!endpoint || !fs.existsSync(endpoint) || !run.pane || !run.notices || !directRecipient(run) || watching(run.pane, home)) return nextAt;
+  const ready: Record<string, string> = {};
+  for (const [key, text] of Object.entries(run.notices)) {
+    if (!WAITING_FLOW_NOTICE.test(key)) continue;
+    const marker = join(runDir(home, id), `${key}.noticed`);
+    seenMarkers.add(marker);
+    if (flowNoticeChecks.has(marker)) continue;
+    const retry = flowNoticeRetries.get(marker);
+    if (retry && retry.at > now) { nextAt = Math.min(nextAt, retry.at); continue; }
+    ready[key] = text;
+  }
+  if (!Object.keys(ready).length) return nextAt;
+  for (const { line, marker } of noticeEvents(home, { flow: id, notices: ready })) {
+    const controller = new AbortController();
+    const recordRetry = () => {
+      fs.rmSync(marker, { force: true });
+      if (!controller.signal.aborted && herdrEndpoint()) {
+        const attempts = (flowNoticeRetries.get(marker)?.attempts ?? 0) + 1;
+        flowNoticeRetries.set(marker, { at: Date.now() + Math.min(30_000, 500 * 2 ** Math.min(attempts - 1, 6)), attempts });
+      }
+    };
+    const promise = notifyPane(run.pane, line, home, { signal: controller.signal }).then(sent => {
+      if (!sent.skipped && (sent.status === 0 || sent.uncertain)) {
+        flowNoticeRetries.delete(marker);
+        return;
+      }
+      recordRetry();
+    }).catch(recordRetry).finally(() => {
+      flowNoticeChecks.delete(marker);
+      drained();
+      schedule();
+    });
+    flowNoticeChecks.set(marker, { controller, promise });
+  }
+  return nextAt;
+}
 function checkPermission(dir: string, job: Job, status: Partial<JobStatus> | null, session: SessionEntry) {
   const controller = new AbortController();
   const promise = observeWorkerPermission(home, dir, job, status, session, controller.signal).then(entry => {
@@ -242,7 +291,7 @@ let nextPiExitCheck = 0;
 const orphanRetries = new Map<string, { pid: number; at: number; delay: number }>();
 let pauseReady: ((state: Handoff | null) => void) | undefined;
 function drained() {
-  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightStarts.size || checking.size || permissionChecks.size) return;
+  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightStarts.size || checking.size || permissionChecks.size || flowNoticeChecks.size) return;
   stopScheduling();
   pauseReady({ version: 1, reapRetries, preflightHold, worktreeRetries, summaryGeneration: workSummary.generation });
   pauseReady = undefined;
@@ -310,8 +359,10 @@ async function shutdown() {
   // Check helpers own their own lifetime. Reap helpers must exit before we release watch.pid.
   const permissions = [...permissionChecks.values()];
   for (const entry of permissions) entry.controller.abort();
+  const flowNotices = [...flowNoticeChecks.values()];
+  for (const entry of flowNotices) entry.controller.abort();
   await Promise.all([Promise.allSettled(reaps.map((entry) => entry.promise)), worktrees, starts,
-    Promise.race([Promise.allSettled(permissions.map(entry => entry.promise)), delay(SHUTDOWN_DRAIN_MS, undefined, { ref: false })])]);
+    Promise.race([Promise.allSettled([...permissions, ...flowNotices].map(entry => entry.promise)), delay(SHUTDOWN_DRAIN_MS, undefined, { ref: false })])]);
 }
 function sessionFolders(dir: string) {
   const dispatch = join(dir, '.dispatch');
@@ -1178,17 +1229,27 @@ function scan(retryWatch = false) {
   }
   // The batch driver watches settlement itself; this on-demand watcher only recovers a dead driver.
   const { files, header } = flows;
+  const seenFlowNoticeMarkers = new Set<string>();
+  const flowScanNow = Date.now();
   for (const file of files) {
     if (!file.endsWith('.json')) continue;
     const id = file.slice(0, -5);
     try {
       if (isComposedId(id)) {
         const run = header<ComposedRun>(file);
-        if (run?.template !== 'composed' || run.state !== 'working') continue;
+        if (run?.template !== 'composed') continue;
+        if (run.state === 'paused' || run.state === 'working') {
+          nearest = Math.min(nearest, deliverFlowNotices(id, run, flowScanNow, seenFlowNoticeMarkers));
+        }
+        if (run.state !== 'working') continue;
         wakeWorkflow(home, run);
       } else if (isTicketQueueId(id)) {
         const q = header<TicketQueue>(file);
-        if (!q || q.state !== 'working') continue;
+        if (!q) continue;
+        if (!q.task && (q.state === 'paused' || q.state === 'working')) {
+          nearest = Math.min(nearest, deliverFlowNotices(id, q, flowScanNow, seenFlowNoticeMarkers));
+        }
+        if (q.state !== 'working') continue;
         wakeWorkflow(home, q);
       } else if (/^j[0-9a-f]{16}$/.test(id)) {
         const run = header<CouncilRun | PrewalkRun>(file);
@@ -1283,7 +1344,8 @@ function scan(retryWatch = false) {
   runners.finishScan();
   for (const id of orphanRetries.keys()) if (!orphans.has(id)) orphanRetries.delete(id);
   for (const id of permissionsSeen.keys()) if (!liveIds.has(id)) permissionsSeen.delete(id);
-  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0 || permissionChecks.size > 0;
+  for (const marker of [...flowNoticeRetries.keys()]) if (!seenFlowNoticeMarkers.has(marker)) flowNoticeRetries.delete(marker);
+  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0 || permissionChecks.size > 0 || flowNoticeChecks.size > 0;
   if ((open || hasInFlight || nearest !== Infinity) && !watching) nearest = Math.min(nearest, Date.now() + degradedMs);
   if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
   if (!queued && !open && !hasInFlight && nearest === Infinity) {
@@ -1322,7 +1384,7 @@ function startWatch() {
     flowsWatcher = fs.watch(flows, { persistent: false }, (_event, name) => {
       const file = name?.toString();
       // Ticket queues still wake their existing recovery scan; they are not counted as lands.
-      if (!file || (file.endsWith('.json') && isFlowId(file.slice(0, -5))) || /^[bq][a-f0-9]{16}\.json$/.test(file)) schedule();
+      if (!file || (file.endsWith('.json') && isFlowId(file.slice(0, -5))) || /^[bqw][a-f0-9]{16}\.json$/.test(file)) schedule();
     }).once('error', () => {
       flowsWatcher?.close(); flowsWatcher = undefined;
       workSummary.markDegraded();

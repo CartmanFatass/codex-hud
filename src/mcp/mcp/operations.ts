@@ -556,6 +556,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
   if (name === 'hud_workflow') {
     if (isWorker) return { ok: false, code: 'worker_cannot_dispatch' };
     const value = await callWorkflow(hudHome, callerPane, args, dispatcher);
+    publishWorkSummary();
     if ('state' in value && value.state === 'working') {
       ensureWatcher(); if (callerPane && !session.taskClient) void ensureQueueWatcher(callerPane, hudHome);
     }
@@ -583,6 +584,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     if (args.op === 'run') {
       const q = await startTicketQueue(hudHome, cwd, callerPane, session.taskClient, args, dispatcher);
       if (!q) return { ok: false, code: 'queue_not_running' };
+      publishWorkSummary();
       ensureWatcher();
       if (q.task && session.taskCapable && args.cancel !== true) {
         rememberLandTask(landTasks, q.flow, landActive);
@@ -876,6 +878,7 @@ export async function answerWorkerQuestion(job: string, request_id: string, answ
 async function respondComposed(args: Args) {
   if (isWorker) return { ok: false, code: 'worker_cannot_dispatch' };
   const value = await answerComposed(hudHome, callerPane, args);
+  publishWorkSummary();
   if (value.ok && value.written) { ensureWatcher(); if (callerPane && !session.taskClient) void ensureQueueWatcher(callerPane, hudHome); }
   return value;
 }
@@ -891,6 +894,7 @@ async function respondTicketQueue(args: Args, batch: boolean) {
   }
   const res = await answerTicketQueueHandback(hudHome, id, answer, { pane: callerPane, requestId });
   if (!res.ok) return res;
+  publishWorkSummary();
   if (res.resumed) {
     ensureWatcher();
     if (!batch && res.queue.task && session.taskCapable) {

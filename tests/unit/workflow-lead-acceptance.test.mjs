@@ -12,6 +12,19 @@ import { resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { goodTicket, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
+function promptNotices(f, flow) {
+  return f.fakeLog()
+    .filter(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'prompt' && c.args[2] === f.env.HERDR_PANE_ID)
+    .map(c => c.args[3])
+    .filter(line => typeof line === 'string' && line.includes(flow));
+}
+
+async function collectDeliveredNotices(f, flow, read, expected = 1) {
+  const fromChanges = (read.changes ?? []).filter(line => line.includes(flow));
+  await until(() => fromChanges.length + promptNotices(f, flow).length >= expected, 5_000);
+  return [...fromChanges, ...promptNotices(f, flow)];
+}
+
 test('ticket check refuses a run with gaps including empty Approved removals and lists every missing field', { timeout: 20_000 }, async t => {
   const f = await setupWorkflowProject(t, {
     tickets: {
@@ -165,8 +178,9 @@ test('a blocker escalation holds just its ticket and dependent; an independent t
   assert.equal(read.handback.ticket, 'sample/01');
   assert.equal(read.held_items[0].owner_approval, 'feature-deletion');
   assert.equal(read.held_items[0].request_id, lead);
-  assert.equal(read.changes.length, 1);
-  assert.match(read.changes[0], /held sample\/01: Deleting X needs owner approval/);
+  const delivered = await collectDeliveredNotices(f, flow, read, 1);
+  assert.equal(delivered.length, 1);
+  assert.match(delivered[0], /held sample\/01: Deleting X needs owner approval/);
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
 
   await f.settle(independent, { report: 'Blockers: owner live try remains\n- **Blockers:** pending owner try\nBlockers: acceptance try is still pending\nTry: Reopen the synthetic panel.\nRemoves: none\n' });
@@ -358,8 +372,9 @@ test('an assumption lead hold records head/sig; same-report resume stays paused 
   const leadsAfterSame = fs.readdirSync(join(f.home, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id)).map(f.job).filter(j => j.role === 'lead');
   assert.equal(leadsAfterSame.length, 1, 'same-report resume must not launch review/accept or duplicate leads');
   const readSame = await f.call('hud_read', { job: sameResume.flow });
-  assert.equal(readSame.changes.length, 1);
-  assert.match(readSame.changes[0], /worker correction.*hud_land.*stop/i);
+  const sameNotices = await collectDeliveredNotices(f, sameResume.flow, readSame, 1);
+  assert.equal(sameNotices.length, 1);
+  assert.match(sameNotices[0], /worker correction.*hud_land.*stop/i);
   assert.deepEqual(readSame.landed, []);
 
   // A new worker turn that still triggers an assumption is re-judged (never blanket-approved) and can hold again.
@@ -572,7 +587,9 @@ test('an ordinary run with a landed ticket and a held item never reaches review 
   assert.equal(stillPaused.review_job, undefined);
   assert.equal(stillPaused.verdict, undefined);
   const readSame = await f.call('hud_read', { job: sameResume.flow });
-  assert.match(readSame.changes[0], /worker correction.*hud_land.*stop/i);
+  const sameNotices = await collectDeliveredNotices(f, sameResume.flow, readSame, 1);
+  assert.equal(sameNotices.length, 1);
+  assert.match(sameNotices[0], /worker correction.*hud_land.*stop/i);
 
   // Moving only the worker worktree HEAD (same report) un-holds and re-judges via a new assumption lead.
   const wt2 = f.job(second).worktree.root;
@@ -852,8 +869,9 @@ test('configurable escalation_rule reaches lead packet; escalate wakes main once
   assert.equal(escalated.handback.kind, 'escalate');
   assert.ok(f.job(leadId).reaped_at);
   const readEsc = await f.call('hud_read', { job: flow });
-  assert.equal(readEsc.changes.length, 1);
-  assert.match(readEsc.changes[0], /escalated: Would delete a user-visible feature/);
+  const escNotices = await collectDeliveredNotices(f, flow, readEsc, 1);
+  assert.equal(escNotices.length, 1);
+  assert.match(escNotices[0], /escalated: Would delete a user-visible feature/);
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
 
   // Separate feature with handback_to: main wakes main directly at accept with zero lead jobs.
@@ -873,9 +891,10 @@ test('configurable escalation_rule reaches lead packet; escalate wakes main once
   assert.deepEqual(pausedMain.handback, { step: 'accept', choices: ['finish', 'repair', 'escalate'] });
   assert.equal(pausedMain.decisions, undefined);
   const readDirect = await f.call('hud_read', { job: directFlow });
-  assert.equal(readDirect.changes.length, 1);
-  assert.match(readDirect.changes[0], /hand-back at accept/);
-  assert.match(readDirect.changes[0], new RegExp(`hud_respond job=${directFlow} answer=<finish\\|repair\\|escalate>`));
+  const directNotices = await collectDeliveredNotices(f, directFlow, readDirect, 1);
+  assert.equal(directNotices.length, 1);
+  assert.match(directNotices[0], /hand-back at accept/);
+  assert.match(directNotices[0], new RegExp(`hud_respond job=${directFlow} answer=<finish\\|repair\\|escalate>`));
 });
 
 test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, escalate) and rejects invalid choices or non-asking runs', { timeout: 60_000 }, async t => {
@@ -971,6 +990,7 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
   f.git(f.root, 'commit', '-qm', 'repair feature');
   const { flow: repFlow } = await f.call('hud_tickets', { op: 'run', feature: 'rep', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   let prevReview;
+  let repChangeNotices = 0;
   for (let round = 0; round < 3; round++) {
     const ticketJobs = await f.jobs(repFlow, round + 1);
     await f.settle(ticketJobs[round]);
@@ -981,7 +1001,12 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
     assert.equal(pausedRound.state, 'paused');
     assert.equal(pausedRound.steps.accept.state, 'asking');
     const readPaused = await f.call('hud_read', { job: repFlow });
-    assert.ok(readPaused.changes?.some(line => line.includes(`hud_respond job=${repFlow} answer=<finish|repair|escalate>`)), JSON.stringify(readPaused));
+    const roundChanges = (readPaused.changes ?? []).filter(line => line.includes(repFlow));
+    repChangeNotices += roundChanges.length;
+    await until(() => repChangeNotices + promptNotices(f, repFlow).length >= round + 1, 5_000);
+    const roundNotices = [...roundChanges, ...promptNotices(f, repFlow)];
+    assert.equal(repChangeNotices + promptNotices(f, repFlow).length, round + 1, JSON.stringify(readPaused));
+    assert.ok(roundNotices.some(line => line.includes(`hud_respond job=${repFlow} answer=<finish|repair|escalate>`)), JSON.stringify(roundNotices));
     if (round < 2) {
       await f.call('hud_tickets', {
         op: 'add', cwd: f.root, feature: 'rep',
@@ -1155,6 +1180,7 @@ test('repair rounds are bounded to at most 2, then escalate and wake main once',
   assert.match(escalated.reason, /max repair rounds \(2\) reached/);
   assert.ok(f.job(prevLead).reaped_at);
   const readEsc = await f.call('hud_read', { job: flow });
-  assert.equal(readEsc.changes.length, 1);
-  assert.match(readEsc.changes[0], /max repair rounds \(2\) reached/);
+  const escNotices = await collectDeliveredNotices(f, flow, readEsc, 1);
+  assert.equal(escNotices.length, 1);
+  assert.match(escNotices[0], /max repair rounds \(2\) reached/);
 });
