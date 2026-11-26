@@ -52,6 +52,7 @@ import { isTicketQueueId, readTicketQueue, ticketQueueView } from '../ticket-que
 import { gitSummary } from '../managed-worktree.js';
 import { panelDelivery } from '../panel-delivery.js';
 import { binScript, jobFiles } from '../paths.js';
+import { answerWorkerPermission, PERMISSION_ID, permissionNotice, permissionStatus } from '../worker-permissions.js';
 import { settleStoppedPi } from '../pi-stop-settlement.js';
 import { stopSonic } from '../sonic-process.js';
 import {
@@ -83,6 +84,7 @@ function compactRow(row: JobRow) {
     ...(row.report_unread ? { report_unread: true } : {}),
     ...(row.blocked ? { blocked: true } : {}),
     ...(row.question_ids.length ? { question_ids: row.question_ids } : {}),
+    ...(row.permission ? { permission: row.permission, permission_notice: permissionNotice(row.job, row.permission) } : {}),
     ...(reason ? { reason } : {}),
   };
 }
@@ -172,7 +174,7 @@ function listJobs(recent: boolean, scan: JobScan) {
   return { jobs: rows, ...(older_unread_reports ? { older_unread_reports } : {}) };
 }
 
-const JOB_WATCH_FILES = new Set<string>([jobFiles.status, jobFiles.job, jobFiles.report, jobFiles.qa, CHECKS_FILE]);
+const JOB_WATCH_FILES = new Set<string>([jobFiles.status, jobFiles.job, jobFiles.report, jobFiles.qa, jobFiles.permissions, CHECKS_FILE]);
 const WAIT_JOB_DIRECT_WATCH_LIMIT = 16;
 
 function jobWatchTargets(dir: string): WatchTarget[] {
@@ -220,7 +222,7 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args, scan
   function result(rows: JobRow[], timedOut = false) {
     const allSettled = mode === 'all' && rows.length === targets.size && rows.every((row) => settled(row.state));
     const triggered = rows.filter((row) => allSettled || (mode === 'any' && settled(row.state)) ||
-      row.blocked || row.state === 'waiting_orchestrator' || row.display_state === 'failed' || row.open_questions > 0
+      row.blocked || row.state === 'waiting_orchestrator' || row.display_state === 'failed' || row.open_questions > 0 || !!row.permission
     ).map((row) => row.job);
     const ready = targets.size === 0 || triggered.length > 0;
     const timed_out = !ready && (timedOut || performance.now() >= deadline);
@@ -391,6 +393,8 @@ function observation(
       ...(detail || row.blocked ? { blocked: row.blocked } : {}),
       ...(detail || exit_reason ? { exit_reason } : {}),
       ...(full && status?.quiet_decision && typeof status.quiet_decision === 'object' ? { quiet_decision: status.quiet_decision } : {}),
+      ...(full ? { permission: permissionStatus(dir).latest } : row.permission ? { permission: row.permission } : {}),
+      ...(row.permission ? { permission_notice: permissionNotice(row.job, row.permission) } : {}),
       ...(detail ? jobDiagnostics(currentJob) : {}),
       ...readGit(git, full),
       ...(full && currentJob.worktree ? { worktree: currentJob.worktree } : {}),
@@ -706,7 +710,7 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
       settled(row.state) ||
       row.state === 'waiting_orchestrator' ||
       row.blocked ||
-      row.open_questions > 0 ||
+      row.open_questions > 0 || !!row.permission ||
       (initial !== undefined && jobChanges([initial], [row]).length > 0);
     let summary: GitSummary | undefined;
     let firstCheck = true;
@@ -816,6 +820,10 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
   if (!job) return { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
   const request = required(args, 'request_id');
+  if (PERMISSION_ID.test(request)) {
+    if (isWorker || answeredBy !== 'orchestrator' || !ownsJob(job)) return { ok: false, code: 'permission_not_open' };
+    return answerWorkerPermission(hudHome, dir, job, request, required(args, 'answer'));
+  }
   if (!/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
   const answer = required(args, 'answer');
   if (args.by !== undefined && args.by !== 'owner') throw new Error('invalid_arguments: by');

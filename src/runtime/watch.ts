@@ -89,7 +89,8 @@ export async function openWatcher() {
         reconnectTimer = setTimeout(() => { reconnectTimer = undefined; subscribe(); }, reconnectMs).unref();
         reconnectMs = Math.min(30000, reconnectMs * 2);
       };
-      const subscriptions = fork ? [{ type: 'tab.closed' }, { type: 'pane.exited' }, { type: 'pane.closed' }] : [{ type: 'tab.closed' }];
+      const subscriptions = fork ? [{ type: 'tab.closed' }, { type: 'pane.exited' }, { type: 'pane.closed' },
+        { type: 'pane.agent_status_changed' }] : [{ type: 'tab.closed' }];
       peer.on('connect', () => peer.write(JSON.stringify({ id: 'hud-watch', method: 'events.subscribe',
         params: { subscriptions } }) + '\n'));
       const lines = createInterface({ input: peer });
@@ -100,7 +101,9 @@ export async function openWatcher() {
         if (event.error) return unavailable(event.error.message);
         if (event.id === 'hud-watch') { reconnectMs = 5000; warned = false; runtime.reconcileTabs(); }
         const kind = String(event.event ?? '').replace(/\./g, '_'), data = event.data;
-        if (kind === 'tab_closed') {
+        if (kind === 'pane_agent_status_changed' && typeof data?.pane_id === 'string') {
+          runtime.panePermissionChanged(data.pane_id);
+        } else if (kind === 'tab_closed') {
           if (typeof data?.launch_id === 'string' && data.launch_id)
             runtime.tabClosedByLaunch(data.launch_id, typeof data.tab_id === 'string' ? data.tab_id : undefined);
           else if (typeof data?.tab_id === 'string')

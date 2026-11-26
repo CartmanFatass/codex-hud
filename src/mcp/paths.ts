@@ -20,6 +20,7 @@ export const jobFiles = {
   reportMeta: 'report-meta.json',
   usage: 'usage.json',
   progress: 'progress.jsonl',
+  permissions: 'permissions.json',
   qa: 'qa',
   sonic: '.sonic',
   sonicExit: 'sonic-exit.json',

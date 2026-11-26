@@ -15,6 +15,7 @@ import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { reportMainPaneGroup } from '../runtime/pane-group.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { permissionNotice } from '../mcp/worker-permissions.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 import { bandReader } from './watch-band.js';
@@ -62,8 +63,10 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
       : -Infinity;
   };
   const notices = rows.flatMap<Notice>((row) => {
-    if (row.ticket_queue) return [];
     const old = prev.get(row.job);
+    if (row.permission && (row.permission.id !== old?.permission?.id || row.permission.outcome !== old.permission.outcome))
+      return [{ line: permissionNotice(row.job, row.permission) }];
+    if (row.ticket_queue) return [];
     const questions = row.question_ids.filter((id) => !old?.question_ids.includes(id)).map((id) => {
           const file = join(home, 'jobs', row.job, 'qa', `${id}.md`);
           const buffer = Buffer.alloc(2048);

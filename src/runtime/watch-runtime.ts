@@ -29,6 +29,9 @@ import { missingRunnerEvidence, missingRunnerReceipt } from '../mcp/sonic-failur
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { observeWorkerPermission, permissionNotice, permissionTarget } from '../mcp/worker-permissions.js';
+import { jobCallerPane } from '../roles/job-pane.js';
+import { notify as notifyPane } from '../roles/notify.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
 import { createWorkSummaryPublisher } from '../collectors/work-summary-snapshot.js';
 import type { Job, JobSession, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
@@ -216,6 +219,18 @@ type Handoff = { version: 1; reapRetries: typeof reapRetries; preflightHold: typ
 const inFlightReaps = new Map<string, ActiveReap>();
 const inFlightWorktrees = new Map<string, Promise<void>>();
 const inFlightStarts = new Map<string, { role: string; promise: Promise<void> }>();
+const permissionChecks = new Map<string, { controller: AbortController; promise: Promise<void> }>();
+const permissionsSeen = new Map<string, { pane: string; key: string; next: number }>();
+function checkPermission(dir: string, job: Job, status: Partial<JobStatus> | null, session: SessionEntry) {
+  const controller = new AbortController();
+  const promise = observeWorkerPermission(home, dir, job, status, session, controller.signal).then(entry => {
+    const recipient = jobCallerPane(job);
+    if (entry && recipient && !controller.signal.aborted)
+      void notifyPane(recipient, permissionNotice(job.job, entry), home).catch(() => {});
+  }).catch(() => { if (!controller.signal.aborted) warn(`permission ${job.job}`, `${job.job}: could not reconcile worker permission`); })
+    .finally(() => { permissionChecks.delete(job.job); drained(); schedule(); });
+  permissionChecks.set(job.job, { controller, promise });
+}
 const worktreeLocks = new Set<string>(), checking = new Set<string>();
 const sweptWorktrees = new Set<string>(), sweptArchiveRoots = new Set<string>();
 let worktreeSweepDone = false;
@@ -226,7 +241,7 @@ let nextPiExitCheck = 0;
 const orphanRetries = new Map<string, { pid: number; at: number; delay: number }>();
 let pauseReady: ((state: Handoff | null) => void) | undefined;
 function drained() {
-  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightStarts.size || checking.size) return;
+  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightStarts.size || checking.size || permissionChecks.size) return;
   stopScheduling();
   pauseReady({ version: 1, reapRetries, preflightHold, worktreeRetries, summaryGeneration: workSummary.generation });
   pauseReady = undefined;
@@ -292,7 +307,10 @@ async function shutdown() {
     Promise.allSettled([...inFlightStarts.values()].map((entry) => entry.promise)), delay(SHUTDOWN_DRAIN_MS, undefined, { ref: false }),
   ]);
   // Check helpers own their own lifetime. Reap helpers must exit before we release watch.pid.
-  await Promise.all([Promise.allSettled(reaps.map((entry) => entry.promise)), worktrees, starts]);
+  const permissions = [...permissionChecks.values()];
+  for (const entry of permissions) entry.controller.abort();
+  await Promise.all([Promise.allSettled(reaps.map((entry) => entry.promise)), worktrees, starts,
+    Promise.race([Promise.allSettled(permissions.map(entry => entry.promise)), delay(SHUTDOWN_DRAIN_MS, undefined, { ref: false })])]);
 }
 function sessionFolders(dir: string) {
   const dispatch = join(dir, '.dispatch');
@@ -809,6 +827,20 @@ function scan(retryWatch = false) {
       const directRoot = direct ? directRootPid(session) : null;
       const closedForLaunch = tabWasClosed(id, session);
       const paneExit = directKey ? exitedLaunches.get(directKey) ?? null : null;
+      if (job && session && permissionTarget(session) && !job.headless && !job.bro && !job.jev && !job.reaped_at &&
+          (permissionsSeen.has(id) || ['working', 'waiting_orchestrator', 'blocked'].includes(status?.state ?? ''))) {
+        const live = !paneExit && ['working', 'waiting_orchestrator', 'blocked'].includes(status?.state ?? '');
+        const key = `${session.stamp}:${status?.state}:${status?.blocked ?? false}:${!!paneExit}`;
+        const seen = permissionsSeen.get(id);
+        if (!permissionChecks.has(id) && (seen?.key !== key || seen.next <= nowMs) && permissionChecks.size < 8) {
+          permissionsSeen.set(id, { pane: session.fields.left!, key, next: live ? nowMs + cliCheck : Infinity });
+          checkPermission(dir, job, status, session);
+        }
+        if (live) {
+          const due = permissionsSeen.get(id)?.next;
+          if (due !== undefined && due > nowMs) nearest = Math.min(nearest, due);
+        }
+      }
       if (direct && directKey && directRoot && !job?.reaped_at && !['done', 'closed', 'failed', 'stopped'].includes(status?.state ?? '')) {
         nearest = Math.min(nearest, nextPiExitCheck);
         if (!paneExit && !deadDirectRoots.has(directKey)) {
@@ -1239,7 +1271,8 @@ function scan(retryWatch = false) {
   open ||= workSummary.hasActiveLand;
   runners.finishScan();
   for (const id of orphanRetries.keys()) if (!orphans.has(id)) orphanRetries.delete(id);
-  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0;
+  for (const id of permissionsSeen.keys()) if (!liveIds.has(id)) permissionsSeen.delete(id);
+  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0 || permissionChecks.size > 0;
   if ((open || hasInFlight || nearest !== Infinity) && !watching) nearest = Math.min(nearest, Date.now() + degradedMs);
   if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
   if (!queued && !open && !hasInFlight && nearest === Infinity) {
@@ -1293,7 +1326,7 @@ function startWatch() {
       if (path?.endsWith(`/${RUNNER_READY}`)) { runners.ready(join(jobs, dirname(path))); schedule(); return; }
       if (path?.endsWith(`/${jobFiles.session}`)) wakeTab(`job:${dirname(path)}`);
       if (event === 'rename' && path && /^[^/]+\/(sonic-session\.jsonl|(?:\.dispatch\/[^/]+\/)?sessions(?:\/[^/]+\.jsonl)?)$/.test(path)) schedule();
-      if (!path || !path.includes('/') || /^[^/]+\/(supervisor\.pid|STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-(?:exit|stop)\.json|headless-sends\.json|job\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
+      if (!path || !path.includes('/') || /^[^/]+\/(supervisor\.pid|STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-(?:exit|stop)\.json|headless-sends\.json|job\.json|permissions\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
     }).on('error', (error) => {
       if (stopped) return;
       warn('watch error', `watch error: ${error.message}`);
@@ -1322,7 +1355,13 @@ export function openRuntime(emit: typeof notify) {
     paneClosedByLaunch(_launchId: string, _terminalId: string) {
       schedule();
     },
-    reconcileTabs() { checkAllTabs = true; schedule(); },
+    panePermissionChanged(pane: string) {
+      for (const entry of permissionsSeen.values()) if (entry.pane === pane && entry.next !== Infinity) {
+        entry.next = 0;
+        schedule();
+      }
+    },
+    reconcileTabs() { checkAllTabs = true; permissionsSeen.clear(); schedule(); },
     pause() {
       if (stopped) return null;
       // Stop admitting scans; don't rely on a 30 s tick landing between two reaps.

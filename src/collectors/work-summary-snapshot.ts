@@ -29,7 +29,7 @@ export interface MachineLandWork {
   count: number;
   oldest: { project: string; step: string; step_started_at: number; gate?: [number, number] };
 }
-export interface MachineWorkCounts extends Pick<WorkSummaryScope, 'running' | 'roles'> { queued: number; land?: MachineLandWork; }
+export interface MachineWorkCounts extends Pick<WorkSummaryScope, 'running' | 'roles'> { queued: number; land?: MachineLandWork; permissionMain?: number; }
 export type MachineWorkSignal = (MachineWorkCounts & { unattended?: true }) | { unattended: true; roles?: never };
 export interface WorkSummarySnapshot {
   version: 1;
@@ -98,7 +98,7 @@ export function collectWorkSummary(
   cache: JobIndexCache = getJobIndexCache(home),
   options?: { flows?: HeaderPass; ids?: readonly string[]; jobs?: readonly (Job & Record<string, unknown>)[] }
 ) {
-  let complete = true, queued = 0;
+  let complete = true, queued = 0, permissionMain = 0;
   const global = emptyWorkSummaryScope();
   const rawPanes: Record<string, WorkSummaryScope> = {};
   const considerJob = (id: string, job: Job & Record<string, unknown>) => {
@@ -109,14 +109,16 @@ export function collectWorkSummary(
     const statusRes = cache.readStatus<JobStatus>(id);
     if (statusRes.status !== 'ok' && statusRes.status !== 'missing') { complete = false; return; }
     const status = statusRes.status === 'ok' ? statusRes.value : null;
-    const row = jobRow(job, status);
+    const dir = join(home, 'jobs', id);
+    const row = jobRow(job, status, { dir, cache, questionIds: [], reportPresent: false });
     if (row.display_state === 'queued') queued += 1;
     if (row.display_state !== 'working') return;
     let openQuestions = 0;
-    try { openQuestions = cache.readQa(join(home, 'jobs', id)).openIds.length; }
+    try { openQuestions = cache.readQa(dir).openIds.length; }
     catch { complete = false; return; }
     const cliJob = (typeof status?.harness === 'string' && status.harness.trim() === 'cli') || (job.cli !== null && typeof job.cli === 'object');
-    const asking = openQuestions > 0 || (cliJob && (row.blocked || row.state === 'waiting_orchestrator'));
+    if (row.permission) permissionMain++;
+    const asking = !!row.permission || openQuestions > 0 || (cliJob && (row.blocked || row.state === 'waiting_orchestrator'));
     const role = job.role.trim().toLowerCase() || 'job';
     addRole(global, role, asking);
     const pane = jobCallerPane(job);
@@ -139,7 +141,7 @@ export function collectWorkSummary(
   }
   const panes = Object.fromEntries(Object.keys(rawPanes).sort().map((p) => [p, sortScope(rawPanes[p]!)]));
   const land = collectLandWork(home, options?.flows);
-  return { global: { ...sortScope(global), queued, ...(land && { land }) }, panes, complete };
+  return { global: { ...sortScope(global), queued, ...(land && { land }), ...(permissionMain > 0 && { permissionMain }) }, panes, complete };
 }
 
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
@@ -171,7 +173,9 @@ export function parseWorkSummarySnapshot(raw: unknown): WorkSummarySnapshot | nu
   if ((raw.producer !== 'hud-watch' && raw.producer !== 'hud-mcp') || !isValidPid(raw.pid)) return null;
   if (raw.pid_start !== null && (typeof raw.pid_start !== 'string' || !/^\d+$/.test(raw.pid_start))) return null;
   if (!isCount(raw.generation) || raw.generation < 1 || typeof raw.observed_at !== 'number' || !Number.isFinite(raw.observed_at) || raw.observed_at <= 0) return null;
-  if (typeof raw.watching !== 'boolean' || typeof raw.complete !== 'boolean' || !isPlain(raw.global) || !isCount(raw.global.queued) || !isValidScope(raw.global) || !isPlain(raw.panes)) return null;
+  if (typeof raw.watching !== 'boolean' || typeof raw.complete !== 'boolean' || !isPlain(raw.global) || !isCount(raw.global.queued) ||
+    !isValidScope(raw.global) || !isPlain(raw.panes)) return null;
+  if (raw.global.permissionMain !== undefined && (!isCount(raw.global.permissionMain) || raw.global.permissionMain > raw.global.asking)) return null;
   if (raw.global.land !== undefined && !isValidLand(raw.global.land)) return null;
   const paneEntries = Object.entries(raw.panes);
   if (paneEntries.length > WORK_SUMMARY_MAX_PANES || paneEntries.some(([p, s]) => !herdrId(p) || !isValidScope(s))) return null;
@@ -202,7 +206,8 @@ export function readFreshWorkSummary(home: string, pane: string | null, now = Da
 export function readMachineWork(home: string, now: number): MachineWorkSignal | undefined {
   const global = readFreshWorkSummary(home, null, now)?.snapshot.global;
   const unattended = unattendedOn(home) ? { unattended: true as const } : undefined;
-  return global ? { running: global.running, queued: global.queued, roles: global.roles, ...(global.land && { land: global.land }), ...unattended }
+  return global ? { running: global.running, queued: global.queued, roles: global.roles, ...(global.land && { land: global.land }),
+    ...(global.permissionMain && { permissionMain: global.permissionMain }), ...unattended }
     : unattended;
 }
 

@@ -157,7 +157,7 @@ export const ROLE_TOOLS = [
   ),
   tool(
     'hud_respond',
-    'Answer once, batch, or run hand-back (job=w... or q...); by:"owner" relays owner.',
+    'Answer once, batch, or run hand-back (job=w... or q...); by:"owner" relays owner. Worker permission IDs (perm-...) take approve or decline.',
     {
       job: text,
       request_id: text,

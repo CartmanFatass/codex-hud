@@ -62,6 +62,8 @@ export interface OwnerWorker extends Partial<JobProgress> {
   readonly reportMeta?: import('../roles/report-meta.js').ReportMeta;
   readonly superseded?: boolean;
   readonly failureObserved?: boolean;
+  readonly permission?: Pick<import('../mcp/worker-permissions.js').PermissionEntry, 'text' | 'reason' | 'action' | 'outcome' | 'answer'>;
+  readonly permissionWaitingMain?: true;
   readonly quietDecision?: {
     readonly choice: string | null;
     readonly probability: number | null;

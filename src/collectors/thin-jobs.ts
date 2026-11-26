@@ -4,6 +4,7 @@ import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { Job, JobRoute, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
+import { permissionNotice, permissionStatus, type PermissionEntry } from '../mcp/worker-permissions.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { fileStampOf, getJobIndexCache, statsMtimeMs, type JobDirMeta, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
@@ -212,6 +213,7 @@ export interface JobRow extends Partial<JobProgress> {
   overflow_from?: string;
   reason: string | null;
   blocked: boolean;
+  permission?: PermissionEntry;
   open_questions: number;
   report_present: boolean;
   report_unread: boolean;
@@ -292,7 +294,12 @@ export function jobRow(
           : rawState !== null && ['closed', 'idle_grace', 'done'].includes(rawState)
             ? 'done'
             : 'working';
-  const blocked = displayState === 'working' && s.blocked === true;
+  const activePermission = displayState === 'working' && extras?.dir && !j.headless && !j.bro && !j.jev
+    ? permissionStatus(extras.dir, extras.cache).active : undefined;
+  const permission = activePermission && ((activePermission.action === 'main' && activePermission.outcome === 'pending') ||
+    activePermission.outcome === 'uncertain' || activePermission.outcome === 'sending') ? activePermission : undefined;
+  const state = activePermission && s.blocked && rawState === 'waiting_orchestrator' ? 'working' : rawState;
+  const blocked = displayState === 'working' && s.blocked === true && !activePermission;
   const cliInfo = j.cli !== null && typeof j.cli === 'object' ? j.cli : null;
   const cliJob = word(s.harness) === 'cli' || cliInfo !== null;
   const cliAgent = word(s.agent) ?? word(cliInfo?.agent) ?? 'CLI';
@@ -311,6 +318,7 @@ export function jobRow(
       ? (word(s.error) ?? word(s.exit_reason) ?? word(s.reason) ?? (!hasStatus ? stderrFirstLine : null))
       : blocked
         ? (word(s.reason) ?? (cliJob ? `${cliAgent} needs input in its pane` : 'needs input in its pane'))
+        : activePermission && s.blocked ? null
         : displayState === 'working' && rawState === 'waiting_orchestrator'
           ? (word(s.reason) ?? (cliJob && openQuestions === 0 ? 'quiet without a report; hud_send to continue or hud_close to stop' : null))
           : displayState === 'working'
@@ -332,8 +340,9 @@ export function jobRow(
     role: word(j.role),
     ...(overflowFrom ? { overflow_from: overflowFrom } : {}),
     package: word(j.package),
-    state: rawState,
+    state,
     display_state: displayState,
+    ...(permission ? { permission } : {}),
     ...(rawState === 'queued' && extras?.queuePosition !== undefined ? { queue_position: extras.queuePosition } : {}),
     reason,
     blocked,
@@ -483,6 +492,10 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   const lines: string[] = [];
   for (const row of rows) {
     const old = prior.get(row.job);
+    if (row.permission && (row.permission.id !== old?.permission?.id || row.permission.outcome !== old.permission.outcome)) {
+      lines.push(permissionNotice(row.job, row.permission));
+      continue;
+    }
     if ((row.workflow || row.batch_flow) && !row.question_ids.some(id => !old?.question_ids.includes(id)) && !(row.blocked && !old?.blocked)) continue;
     if (row.ticket_queue || (row.land_turn && !row.question_ids.some(id => !old?.question_ids.includes(id)))) continue;
     if (row.parent_job && row.display_state !== 'working' && row.display_state !== 'failed' &&
@@ -903,7 +916,8 @@ export function readThinJobs(
     }
     const report = readArt(join(directory, 'report.md'));
     const row = jobRow(job, status?.v ?? null, {
-      openQuestions: openCount, reportPresent: report !== null, reportAt: report?.at, reportStamp: report?.stamp,
+      dir: directory, cache: idx, questionIds: [],
+      openQuestions: openCount, reportPresent: report !== null, reportAt: report?.at ?? null, reportStamp: report?.stamp,
       progress: readJobProgress(directory, true, artifacts, seenArtifacts),
     });
     const cliJob = word(s.harness) === 'cli' || (job.cli !== null && typeof job.cli === 'object');
@@ -1001,6 +1015,7 @@ export function readThinJobs(
       ? (job.worktree as { main_root: string }).main_root : undefined;
     const projectRoot = word(job.project_root) ?? worktreeRoot ?? scope.project;
     const ticketHeading = ticketTitle(projectRoot, word(job.ticket) ?? word(job.slice), word(job.package) ?? '');
+    const permission = permissionStatus(directory, idx).latest;
     const worker: OwnerWorker = {
       files,
       ...(flow ? { flow } : {}),
@@ -1022,6 +1037,8 @@ export function readThinJobs(
       ...(projectRoot ? { projectRoot } : {}),
       objective: objectiveLink(job.objective),
       ...(quietDecision ? { quietDecision } : {}),
+      ...(permission ? { permission } : {}),
+      ...(row.permission ? { permissionWaitingMain: true as const } : {}),
       ...(row.report_unread ? { reportUnread: true as const } : {}),
       ...(failedAttempt(row) ? {
         superseded: superseded(job),

@@ -368,6 +368,7 @@ pub struct MachineWork {
     pub unattended: bool,
     pub roles: Vec<(String, u64)>,
     pub queued: u64,
+    pub permission_main: u64,
     pub land: Option<LandWork>,
 }
 pub struct LandWork {
@@ -489,10 +490,18 @@ pub fn work(home: &Path, now: f64) -> Option<MachineWork> {
     }
     let mut roles = Vec::new();
     scope_counts(global, |role, n| roles.push((role.to_owned(), n)))?;
+    let permission_main = match global.field("permissionMain") {
+        Some(v) => v.count()?,
+        None => 0,
+    };
+    if permission_main > global.get("asking").count()? {
+        return None;
+    }
     Some(MachineWork {
         unattended: unattended_on(home),
         roles,
         queued: global.get("queued").count()?,
+        permission_main,
         land: match global.field("land") {
             Some(v) => Some(land_work(v)?),
             None => None,

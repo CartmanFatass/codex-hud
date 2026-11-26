@@ -110,6 +110,13 @@ export function workInspectorRows(
     rows.push(boardRow(''), section(t('Progress'), width));
     for (const entry of progress) rows.push(...stemLines(`${entry.at} · ${entry.text}`, width).map((text) => boardRow(text)));
   }
+  if (worker.permission) {
+    const { outcome, answer, reason, text } = worker.permission;
+    const decision = worker.permissionWaitingMain ? t('Waiting on main') : outcome === 'answered'
+      ? t(answer === 'decline' ? 'Permission declined' : 'Permission approved') : t(`Permission ${outcome}`);
+    const prompt = text.split('\n').slice(0, 2).join(' — ');
+    rows.push(boardRow(fit(monitorText(`${decision} · ${prompt} · ${reason}`), width)));
+  }
   if (children.length) rows.push(boardRow(''), section(t('Sonic children'), width), ...jobRows(children, width));
   rows.push(...outputRows(worker, width));
   const stamp = (at: number | null) =>

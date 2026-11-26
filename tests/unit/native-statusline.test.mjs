@@ -247,7 +247,7 @@ test('native compact Claude bar matches TypeScript byte-for-byte', { skip: !hasN
   assert.deepEqual(run(launcher, [], env, Buffer.concat([exact, Buffer.from([0])])), ts(env, Buffer.alloc(65537, 32)));
 });
 
-test('native and TypeScript agree on land progress and width fitting', { skip: !hasNative }, (t) => {
+test('native and TypeScript agree on land progress, main permission load and width fitting', { skip: !hasNative }, (t) => {
   const env = { ...environment(receipt(t)), NO_COLOR: '1', HUD_ICONS: 'unicode', HUD_BAR_FIELDS: 'notice' };
   const { write } = setup(env.HUD_HOME);
   const global = { running: 2, queued: 0, asking: 0, roles: { imp: { running: 2, asking: 0 } } };
@@ -272,6 +272,10 @@ test('native and TypeScript agree on land progress and width fitting', { skip: !
   expect('⚒2  ⇡ wait <1m');
   scope(1, { project: 'first', step: 'fast-forward', step_started_at: Date.now() });
   expect('⚒2  ⇡ land <1m');
+  write({ global: { ...global, asking: 1, permissionMain: 1, roles: { imp: { running: 2, asking: 1 } } } });
+  expect('Main 1  ⚒2');
+  expect('Main 1 ⚒2', 9);
+  expect('Main 1', 6);
 });
 
 test('Claude processes share a private CPU sample and show RAM and swap only as observed', { skip: process.platform !== 'linux' }, (t) => {

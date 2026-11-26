@@ -58,6 +58,7 @@ export function workJobDetail(card: WorkJob): string {
   const detail =
     card.worker.reportMeta?.summary ||
     card.worker.ask ||
+    (card.worker.permissionWaitingMain ? t('Waiting on main') : '') ||
     (card.worker.work?.reason ? t(card.worker.work.reason) : card.reason ? t(card.reason) : '');
   return [quiet, detail].filter(Boolean).join(' · ');
 }
