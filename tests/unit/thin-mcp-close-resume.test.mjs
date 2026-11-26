@@ -319,7 +319,11 @@ test('exit matrix: wait up to 120 seconds for a turn end; keep questions and son
   assert.equal(judge(early, { ...declared, status: 'working' }, 121_000).state, 'waiting_orchestrator');
   assert.equal(judge(early, declared, 121_001).state, 'waiting_orchestrator');
   assert.equal(judge(early, { ...declared, openQuestions: true }, 2000).state, 'waiting_orchestrator');
-  assert.equal(judge(early, { ...declared, sonic: { open: true, uncollected: [] } }, 2000).state, 'working');
-  assert.equal(judge(early, { ...declared, sonic: { open: false, uncollected: ['j0000000000000001'] } }, 2000).action, 'collect-sonic');
+  const child = 'j0000000000000001';
+  assert.equal(judge(early, { ...declared, sonic: { open: true, uncollected: [], remind: [] } }, 2000).state, 'working');
+  assert.equal(judge(early, { ...declared, sonic: { open: false, uncollected: [child], remind: [child] } }, 2000).action, 'collect-sonic');
+  const reminded = judge(early, { ...declared, sonic: { open: false, uncollected: [child], remind: [] } }, 2000);
+  assert.equal(reminded.state, 'working');
+  assert.equal(reminded.action, null);
   assert.equal(judge(early, declared, 2000).exitReason, REPORT_SETTLED_EXIT);
 });

@@ -208,7 +208,7 @@ export interface Facts {
   status: string | null;
   statusAt?: number | null;
   liveChild: boolean | 'unknown' | null; // null: not sampled yet
-  sonic?: { open: boolean; uncollected: string[] };
+  sonic?: { open: boolean; uncollected: string[]; remind: string[] };
   stop: boolean;
   close: boolean;
   openQuestions: boolean;
@@ -287,7 +287,8 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   if (facts.openQuestions || (!receipt && facts.status === 'blocked')) {
     return { ...next, state: 'waiting_orchestrator', blocked: facts.status === 'blocked', quietSince: null };
   }
-  if (facts.sonic?.open) return { ...next, state: 'working', quietSince: null, quietHandled: false, decisionWait: false };
+  if (facts.sonic?.open || (collectSonic && !facts.sonic?.remind.length))
+    return { ...next, state: 'working', quietSince: null, quietHandled: false, decisionWait: false };
   if (awaitingReceipt) {
     next.quietHandled = false;
     next.decisionWait = false;

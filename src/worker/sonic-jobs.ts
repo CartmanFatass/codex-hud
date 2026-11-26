@@ -39,6 +39,7 @@ export function headlessSonicChildren(dir: string) {
 export function sonicChildren(dir: string) {
   const ids = childIds(dir);
   const uncollected = [];
+  const remind = [];
   let open = false;
   for (const id of ids) {
     const child = join(dirname(dir), id);
@@ -46,11 +47,12 @@ export function sonicChildren(dir: string) {
     const { state } = sonicState(child);
     if (state === 'open') open = true;
     if (state === 'settled' && fs.existsSync(join(child, jobFiles.report)) &&
-        !fs.existsSync(join(child, 'sonic-collected')) && !fs.existsSync(join(child, 'sonic-prompted'))) {
+        !fs.existsSync(join(child, 'sonic-collected'))) {
       uncollected.push(id);
+      if (!fs.existsSync(join(child, 'sonic-prompted'))) remind.push(id);
     }
   }
-  return { open, uncollected };
+  return { open, uncollected, remind };
 }
 
 export function sonicCollectPrompt(dir: string, output: string, ids: string[], tools = true) {

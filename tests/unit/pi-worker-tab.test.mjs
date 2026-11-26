@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { setImmediate as immediate, setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
+import { jobChanges, readThinJobRows } from '../../dist/collectors/thin-jobs.js';
 import { readContract, writeContract } from '../../dist/harness/pi/worker/contract.js';
 import { installWorker } from '../../dist/harness/pi/worker/index.js';
 import { ASYNC_ANSWER_TYPE, installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
@@ -23,6 +24,7 @@ import { trackTps } from '../../dist/harness/pi/worker/tps.js';
 import { piWorkerArgv } from '../../dist/mcp/dispatch/pi-worker-argv.js';
 import { stripAnsi } from '../../dist/render/colors.js';
 import { nextQuestionNumber, publishQuestion, readQuestionAnswer } from '../../dist/worker/qa.js';
+import { waitSonic } from '../../dist/worker/tools.js';
 import { createFooterHost, piPackage } from '../fakes/pi.mjs';
 
 const VALID_STATES = new Set([
@@ -100,7 +102,6 @@ function makeLifecycleFixture(t, {
   timing,
   watchQa = false,
   warmCapUsd,
-  sonic,
   promptCache = { short: 60, long: 120 },
 } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-tab-lifecycle-'));
@@ -158,7 +159,6 @@ function makeLifecycleFixture(t, {
     timing,
     watchQa,
     warmCapUsd,
-    sonic,
     fatal(reason) { throw new Error(reason); },
   });
   const emit = async (name, event = {}) => {
@@ -192,50 +192,36 @@ test('tab-policy: lifecycle classification, warming precedence, $0.50 cap bounda
   for (const p of ['reviewer', 'architect', 'sonic']) assert.equal(lifecycle(p), 'one_shot');
   for (const p of [undefined, '', 'custom-implementer', 'informer']) assert.equal(lifecycle(p), undefined);
 
-  const warm = {
-    role: 'implementer', cap: 0.50, admitted: 0, warmCost: 0.10, action: 'stop',
-    closing: false, helperPending: false, settled: false, now: 100,
-  };
-  assert.equal(warming({ ...warm, role: undefined }), undefined);
-  assert.equal(warming({ ...warm, helperPending: true, closing: true })?.action, 'stop');
-  assert.equal(warming({ ...warm, helperPending: true, cap: 0 })?.action, 'stop');
-  assert.equal(warming({ ...warm, role: 'sonic', helperPending: true, settled: true })?.action, 'warm');
-  assert.equal(warming({ ...warm, role: 'sonic', settled: true, action: 'warm' })?.action, 'stop');
-  assert.equal(warming({ ...warm, settled: true, deadline: 101 })?.action, 'stop', 'idle grace never warms beyond settlement');
-  assert.equal(warming({ ...warm, settled: true, deadline: 100 })?.action, 'stop');
-  assert.equal(warming({ ...warm, settled: true })?.action, 'stop');
-  assert.equal(warming(warm)?.action, 'stop');
-  assert.equal(warming({ ...warm, action: 'warm' })?.action, 'warm');
+  const warm = { cap: 0.50, admitted: 0, warmCost: 0.10, action: 'warm', closing: false, settled: false };
+  assert.equal(warming({ ...warm, closing: true }).action, 'stop');
+  assert.equal(warming({ ...warm, cap: 0 }).action, 'stop');
+  assert.equal(warming({ ...warm, settled: true }).action, 'stop', 'idle grace never warms beyond settlement');
+  assert.equal(warming({ ...warm, action: 'stop' }).action, 'stop');
+  assert.equal(warming(warm).action, 'warm');
 
-  assert.deepEqual(warming({ ...warm, action: 'warm', warmCost: 0.50 }), { action: 'warm', admitted: 0.50 });
-  assert.equal(warming({ ...warm, helperPending: true, admitted: 0.50, warmCost: 0 })?.action, 'stop');
-  assert.equal(warming({ ...warm, helperPending: true, admitted: 0.49, warmCost: 0.02 })?.action, 'stop');
-  assert.equal(warming({ ...warm, action: 'warm', warmCost: 0 })?.admitted, 0);
+  assert.deepEqual(warming({ ...warm, warmCost: 0.50 }), { action: 'warm', admitted: 0.50 });
+  assert.equal(warming({ ...warm, admitted: 0.50, warmCost: 0 }).action, 'stop');
+  assert.equal(warming({ ...warm, admitted: 0.49, warmCost: 0.02 }).action, 'stop');
+  assert.equal(warming({ ...warm, warmCost: 0 }).admitted, 0);
   for (const value of [NaN, Infinity, -1]) {
     for (const field of ['cap', 'admitted', 'warmCost']) {
-      assert.equal(warming({ ...warm, action: 'warm', [field]: value })?.action, 'stop');
+      assert.equal(warming({ ...warm, [field]: value }).action, 'stop');
     }
   }
-  const first = warming({ ...warm, action: 'warm', warmCost: 0.30 });
-  assert.equal(warming({ ...warm, action: 'warm', admitted: first.admitted, warmCost: 0.30 })?.action, 'stop', 'no refund');
+  const first = warming({ ...warm, warmCost: 0.30 });
+  assert.equal(warming({ ...warm, admitted: first.admitted, warmCost: 0.30 }).action, 'stop', 'no refund');
 
   const exit = {
-    contract: true, role: 'reviewer', settled: true, outputWritten: true, failed: false, idle: true,
-    pendingMessages: false, helperPending: false, pendingQuestions: 0,
-    generation: 1, expectedGeneration: 1, now: 100, print: false,
+    lifecycle: 'one_shot', settled: true, outputWritten: true, failed: false, idle: true,
+    pendingMessages: false, pendingQuestions: 0, generation: 1, expectedGeneration: 1, now: 100,
   };
-  for (const role of ['reviewer', 'architect', 'sonic']) {
-    assert.equal(exitDecision({ ...exit, role }), 'closed');
-    assert.equal(exitDecision({ ...exit, role, outputWritten: false }), 'failed');
-  }
+  assert.equal(exitDecision(exit), 'closed');
+  assert.equal(exitDecision({ ...exit, outputWritten: false }), 'failed');
   assert.equal(exitDecision({ ...exit, failed: true }), 'failed');
-  assert.equal(exitDecision({ ...exit, role: 'implementer', deadline: 101 }), 'wait');
-  assert.equal(exitDecision({ ...exit, role: 'implementer', deadline: 100 }), 'closed');
-  assert.equal(exitDecision({ ...exit, role: 'general', deadline: 100 }), 'closed');
-  assert.equal(exitDecision({ ...exit, role: 'implementer', deadline: 101, print: true }), 'closed');
+  assert.equal(exitDecision({ ...exit, lifecycle: 'implementer', deadline: 101 }), 'wait');
+  assert.equal(exitDecision({ ...exit, lifecycle: 'implementer', deadline: 100 }), 'closed');
   for (const patch of [
-    { role: undefined }, { contract: false }, { settled: false }, { idle: false },
-    { pendingMessages: true }, { helperPending: true }, { pendingQuestions: 2 }, { generation: 2 },
+    { settled: false }, { idle: false }, { pendingMessages: true }, { pendingQuestions: 2 }, { generation: 2 },
   ]) {
     assert.equal(exitDecision({ ...exit, ...patch }), 'wait');
   }
@@ -335,18 +321,16 @@ test('tab-lifecycle: one-shot closes cleanly after settled and defers/rechecks q
   assert.equal(s.idle_deadline_at, null, 'one-shots never advertise idle grace');
 });
 
-test('tab-lifecycle: holds session for open Sonic children and sends one collect follow-up', async (t) => {
+test('tab-lifecycle: one Sonic reminder does not settle; collection and a fresh report do', async (t) => {
   const clock = makeFakeClock(1000);
-  let open = true;
-  let prompted = false;
-  const sonic = {
-    sonicChildren: () => ({ open, uncollected: prompted ? [] : ['j0000000000000001'] }),
-    sonicCollectPrompt: (_dir, _output, ids) => {
-      prompted = true;
-      return `Collect ${ids.join(', ')}`;
-    },
-  };
-  const f = makeLifecycleFixture(t, { role: 'reviewer', profile: 'reviewer', timing: clock.timing, sonic });
+  const f = makeLifecycleFixture(t, { timing: clock.timing });
+  const jobs = join(f.root, 'jobs'), id = 'j0000000000000001', child = join(jobs, id);
+  const parent = JSON.parse(fs.readFileSync(join(f.dir, 'job.json'), 'utf8'));
+  fs.mkdirSync(child);
+  fs.mkdirSync(join(f.dir, '.sonic'));
+  fs.writeFileSync(join(f.dir, '.sonic', id), '');
+  fs.writeFileSync(join(child, 'job.json'), JSON.stringify({ job: id, role: 'sonic', parent_job: parent.job }));
+  fs.writeFileSync(join(child, 'STATUS.json'), JSON.stringify({ state: 'working' }));
   await f.emit('session_start');
   await f.emit('before_agent_start');
   f.writeReport();
@@ -360,14 +344,31 @@ test('tab-lifecycle: holds session for open Sonic children and sends one collect
 
   clock.fireNext();
   assert.equal(f.shutdowns(), 0);
-  open = false;
+  fs.writeFileSync(join(child, 'report.md'), 'Synthetic Sonic report.\n');
+  fs.writeFileSync(join(child, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
   clock.fireNext();
-  assert.deepEqual(f.sentUsers, [['Collect j0000000000000001', { deliverAs: 'followUp' }]]);
+  assert.equal(f.sentUsers.length, 1);
+  assert.match(f.sentUsers[0][0], new RegExp(id));
+  assert.deepEqual(f.sentUsers[0][1], { deliverAs: 'followUp' });
+  assert.equal(fs.existsSync(join(child, 'sonic-prompted')), true);
   assert.equal(f.status().state, 'working');
   assert.equal(f.shutdowns(), 0);
 
   await f.emit('before_agent_start');
-  f.writeReport('Final report after sonic.\n');
+  f.writeReport('Another report, before collection.\n');
+  await f.emit('agent_settled');
+  await immediate();
+  assert.equal(f.status().state, 'working');
+  assert.equal(f.status().settled_at, null);
+  assert.equal(f.shutdowns(), 0);
+  assert.equal(f.sentUsers.length, 1);
+
+  const result = await waitSonic({ dir: f.dir, root: jobs, job: parent }, [id], 0);
+  assert.equal(result.reports[0].id, id);
+  assert.equal(fs.existsSync(join(child, 'sonic-collected')), true);
+  assert.equal(f.shutdowns(), 0, 'collection alone does not settle the earlier report');
+  await f.emit('before_agent_start');
+  f.writeReport('Final report after Sonic collection.\n');
   await f.emit('agent_settled');
   await immediate();
   assert.equal(f.status().state, 'closed');
@@ -749,7 +750,7 @@ test('async hud_ask wakes via fs.watch (< 200 ms), steers once, and settles clea
   assert.equal(f.messages.length, 1);
 });
 
-test('async hud_ask timeout & unreceived delivery timeout with deterministic fake timers', async (t) => {
+test('async hud_ask answer and default timeout require ack and fresh output', async (t) => {
   const clock = makeFakeClock(1000);
   const f = makeLifecycleFixture(t, { role: 'reviewer', profile: 'reviewer', timing: clock.timing, watchQa: false });
   await f.emit('session_start');
@@ -784,21 +785,55 @@ test('async hud_ask timeout & unreceived delivery timeout with deterministic fak
   await f.emit('agent_settled');
   await immediate();
   assert.equal(f.status().state, 'failed', 'interim report cannot be accepted as fresh output');
+});
 
-  // Unreceived decision (no message_start ack within 20s while idle) fails the job.
-  const clock2 = makeFakeClock(1000);
-  const f2 = makeLifecycleFixture(t, { role: 'reviewer', profile: 'reviewer', timing: clock2.timing, watchQa: false });
-  await f2.emit('session_start');
-  await f2.emit('before_agent_start');
-  const q3 = publishQuestion(join(f2.dir, 'qa'), { tag: 'reviewer@proj', question: 'Stuck?', default: 'A' });
-  f2.controller.trackQuestion(f2.ctx, q3, 1000);
-  f2.setIdle(true);
-  clock2.advance(1000);
-  assert.equal(f2.sentMessages.length, 1);
-  clock2.advance(20_000);
+test('an overdue async steer polls normally while busy, then tells main and accepts a late ack once', async (t) => {
+  const clock = makeFakeClock(1000);
+  const f = makeLifecycleFixture(t, { timing: clock.timing });
+  await f.emit('session_start');
+  await f.emit('before_agent_start');
+  const q = publishQuestion(join(f.dir, 'qa'), { tag: 'reviewer@proj', question: 'Choose?', default: 'A' });
+  f.controller.trackQuestion(f.ctx, q, 5000);
+  fs.writeFileSync(q.afile, 'B', { flag: 'wx' });
+  f.setIdle(false);
+  clock.advance(2000);
+  assert.equal(f.sentMessages.length, 1);
+  assert.equal(f.sentMessages[0].message.details.answered, true);
+  clock.advance(20_000);
+  assert.equal([...clock.timers.values()][0].delay, 2000, 'no 1 ms loop while Pi is busy');
+  assert.equal(f.status().reason, undefined);
+
+  const rows = () => readThinJobRows(f.root, { pane: null });
+  const before = rows();
+  assert.equal(before.length, 1);
+  assert.equal(before[0].open_questions, 0, 'main already answered');
+  f.setIdle(true);
+  clock.advance(2000);
+  assert.equal(f.status().state, 'waiting_orchestrator');
+  assert.equal(f.status().error, null);
+  assert.equal(f.status().ended_at, null);
+  assert.match(jobChanges(before, rows()).join('\n'), /waiting_orchestrator.*Undelivered HUD decision \(q1\)/);
+  f.writeReport('Interim report while awaiting acknowledgement.\n');
+  await f.emit('agent_settled');
   await immediate();
-  assert.equal(f2.status().state, 'failed');
-  assert.match(f2.status().error, /HUD decision q1 was not received by Pi/);
+  assert.equal(f.shutdowns(), 0);
+  assert.equal(f.status().state, 'waiting_orchestrator');
+  const noticed = rows();
+  clock.advance(20_000);
+  assert.deepEqual(jobChanges(noticed, rows()), [], 'no repeated notification');
+  assert.equal(f.sentMessages.length, 1);
+
+  const ack = { message: { role: 'custom', ...f.sentMessages[0].message } };
+  await f.emit('message_start', ack);
+  assert.equal(f.status().state, 'working');
+  assert.equal(f.status().reason, undefined);
+  f.writeReport('Fresh report after acknowledgement.\n');
+  await f.emit('message_start', ack); // Duplicate ack must not reset the fresh-report baseline.
+  await f.emit('agent_settled');
+  await immediate();
+  assert.equal(f.status().state, 'closed');
+  assert.equal(f.shutdowns(), 1);
+  assert.equal(f.sentMessages.length, 1);
 });
 
 test('stop, abort, session_tree, session_shutdown and stale ownership suppress pending async delivery', async (t) => {

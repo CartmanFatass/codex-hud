@@ -14,21 +14,15 @@ export function lifecycle(profile?: string): Lifecycle | undefined {
 }
 
 export interface WarmInput {
-  role?: string;
   cap: number;
   admitted: number;
   warmCost: number;
   action: 'warm' | 'stop';
   closing: boolean;
-  helperPending: boolean;
   settled: boolean;
-  deadline?: number;
-  now: number;
 }
 
-export function warming(input: WarmInput): { action: 'warm' | 'stop'; admitted: number } | undefined {
-  const p = input;
-  if (!p.role) return undefined;
+export function warming(p: WarmInput): { action: 'warm' | 'stop'; admitted: number } {
   const stop = () => ({ action: 'stop' as const, admitted: p.admitted });
   if (
     p.closing ||
@@ -43,42 +37,36 @@ export function warming(input: WarmInput): { action: 'warm' | 'stop'; admitted: 
   ) {
     return stop();
   }
-  const action = p.helperPending ? 'warm' : p.settled ? 'stop' : p.action;
+  const action = p.settled ? 'stop' : p.action;
   return { action, admitted: action === 'warm' ? p.admitted + p.warmCost : p.admitted };
 }
 
 export interface ExitInput {
-  contract: boolean;
-  role?: string;
+  lifecycle: Lifecycle;
   settled: boolean;
   outputWritten: boolean;
   failed: boolean;
   idle: boolean;
   pendingMessages: boolean;
-  helperPending: boolean;
   pendingQuestions: number;
   generation: number;
   expectedGeneration: number;
   now: number;
   deadline?: number;
-  print: boolean;
 }
 
 export function exitDecision(p: ExitInput): 'wait' | 'closed' | 'failed' {
   if (
-    !p.contract ||
-    !lifecycle(p.role) ||
     !p.settled ||
     !p.idle ||
     p.pendingMessages ||
-    p.helperPending ||
     p.pendingQuestions ||
     p.generation !== p.expectedGeneration
   ) {
     return 'wait';
   }
   if (p.failed || !p.outputWritten) return 'failed';
-  if (p.print || lifecycle(p.role) === 'one_shot' || (p.deadline !== undefined && p.now >= p.deadline)) {
+  if (p.lifecycle === 'one_shot' || (p.deadline !== undefined && p.now >= p.deadline)) {
     return 'closed';
   }
   return 'wait';

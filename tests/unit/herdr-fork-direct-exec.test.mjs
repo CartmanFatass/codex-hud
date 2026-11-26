@@ -1177,9 +1177,9 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     statusState = 'working', pingVersion = '0.9.5-hud.3027f8dd', envSocket, recordedSocket,
   } = {}) {
     const root = fs.mkdtempSync(join(tmpdir(), 'hud-reap-direct-'));
-    const dir = join(root, 'job');
+    const dir = join(root, 'jobs', 'j0000000000000001');
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    fs.mkdirSync(dir);
+    fs.mkdirSync(dir, { recursive: true });
     const sock = await startPingSocket(t, root, pingVersion);
     const sessionSock = recordedSocket !== undefined ? recordedSocket : sock;
     const currentSock = envSocket !== undefined ? envSocket : sock;
@@ -1451,4 +1451,63 @@ fs.writeFileSync(path, JSON.stringify(s));`;
     assert.equal(cleaned.complete, true, cleaned.issue);
     assert.equal(procStat(detachedPid), null, 'detached descendant must be cleaned up');
   }
+
+  await t.test('failed startup retains its live unnamed root until expiry; changed ownership refuses', { timeout: 15000 }, async (sub) => {
+    const root = spawn('/bin/sleep', ['600'], { stdio: 'ignore' });
+    const exited = once(root, 'exit');
+    sub.after(() => { if (root.signalCode === null && root.exitCode === null) root.kill('SIGKILL'); });
+    const pid = root.pid, start = procStat(pid).start;
+    const unnamed = { tab_id: 'worker-tab', pane_id: 'worker-pane', launch_id: 'launch_direct_1', terminal_id: 'term_direct_1', name: null, agent: 'claude', agent_status: 'idle' };
+    const f = await makeDirectFixture(sub, { pid, start, agents: [unnamed], statusState: 'failed' });
+    const sessionPath = join(f.dir, 'SESSION.txt'), statusPath = join(f.dir, 'STATUS.json');
+    const receipt = fs.readFileSync(sessionPath, 'utf8');
+    const inventory = JSON.parse(fs.readFileSync(f.state, 'utf8'));
+    const ended = Date.now() - 60_000, retention = 5000, deadline = ended + retention;
+    const status = { ...cliState(f.dir), exit_reason: 'agent_not_ready', ended_at: new Date(ended).toISOString() };
+    writeFixtureFile(join(f.dir, 'job.json'), JSON.stringify({ job: 'j0000000000000001', cli: { agent: 'claude' }, role: 'reviewer', cwd: f.root, dispatch_exit_code: 1 }));
+
+    for (const [patch, expected] of [
+      [{ socket: receipt.replace(f.sock, join(f.root, 'foreign.sock')) }, /endpoint does not match/],
+      [{ agents: [{ ...unnamed, launch_id: 'foreign_launch' }] }, /foreign agent/],
+      [{ agents: [{ ...unnamed, terminal_id: 'foreign_terminal' }] }, /foreign agent/],
+      [{ panes: [...inventory.panes, { ...inventory.panes[0], pane_id: 'foreign-pane' }] }, /pane set changed/],
+      [{ rootShellPid: process.pid }, /root pane process does not match/],
+      [{ pidStart: '1' }, /unnamed root PID\/start unverified/],
+      [{ agents: [{ ...unnamed, name: 'foreign-worker' }] }, /foreign agent/],
+    ]) {
+      const { socket, pidStart, ...foreign } = patch;
+      writeFixtureFile(f.state, JSON.stringify({ ...inventory, ...foreign }));
+      writeFixtureFile(sessionPath, socket ?? (pidStart ? receipt.replace(`PID_START=${start}`, `PID_START=${pidStart}`) : receipt));
+      writeFixtureFile(statusPath, JSON.stringify({ ...status, pid_start_time: pidStart ?? start }));
+      const result = await f.run('--launch', f.launchId);
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, expected);
+      assert.doesNotMatch(result.stdout, /tree-owner/);
+      assert.equal(procStat(pid)?.start, start, 'refusal must not signal the live process');
+      assert.ok(!f.calls().some(([, op]) => op === 'close' || op === 'prompt'));
+    }
+
+    writeFixtureFile(f.state, JSON.stringify(inventory));
+    writeFixtureFile(sessionPath, receipt);
+    writeFixtureFile(statusPath, JSON.stringify(status));
+    // Freeze the watcher's first scan before expiry, then release its clock to cross the deadline.
+    const hold = join(f.root, 'before-expiry');
+    writeFixtureFile(hold, '');
+    const preload = `import fs from 'node:fs'; const realNow = Date.now; Date.now = () => fs.existsSync(${JSON.stringify(hold)}) ? ${deadline - 1000} : realNow();`;
+    const watcher = spawn(process.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(preload), resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
+      env: { ...f.env, HUD_WATCH_FAILED_RETENTION_MS: String(retention) }, stdio: 'ignore',
+    });
+    const watchExit = once(watcher, 'exit');
+    sub.after(async () => { if (watcher.exitCode === null && watcher.signalCode === null) watcher.kill(); await watchExit; });
+    await until(() => fs.existsSync(join(f.root, 'display', 'work-summary.v1.json')), sub.signal);
+    assert.equal(procStat(pid)?.start, start);
+    assert.equal(readCloseReaped({ task_dir: f.dir }), undefined);
+    assert.ok(!f.calls().some(([, op]) => op === 'close' || op === 'prompt'));
+    fs.unlinkSync(hold);
+    await until(() => Boolean(readCloseReaped({ task_dir: f.dir })), sub.signal);
+    assert.deepEqual(await exited, [null, 'SIGTERM']);
+    assert.equal(cliState(f.dir).state, 'failed');
+    assert.deepEqual(f.calls().filter(([, op]) => op === 'close' || op === 'prompt'), [['tab', 'close', 'worker-tab']]);
+    assert.deepEqual(await watchExit, [0, null]);
+  });
 });

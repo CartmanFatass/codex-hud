@@ -23,11 +23,6 @@ export interface TabTiming {
   cancel: (timer: ReturnType<typeof setTimeout>) => void;
 }
 
-export interface TabSonicAdapter {
-  sonicChildren(dir: string): { open: boolean; uncollected: string[] };
-  sonicCollectPrompt(dir: string, output: string, ids: string[]): string;
-}
-
 export interface TabLifecycleOptions {
   taskDir: string;
   role: string;
@@ -36,7 +31,6 @@ export interface TabLifecycleOptions {
   warmCapUsd?: number;
   timing?: TabTiming;
   watchQa?: boolean;
-  sonic?: TabSonicAdapter;
   fatal?: (reason: string) => never;
 }
 
@@ -51,6 +45,7 @@ type AsyncQuestion = {
   deadline: number;
   timeoutMs: number;
   sentAt?: number;
+  deliveryOverdue?: boolean;
 };
 
 function signature(file?: string): string | null {
@@ -82,7 +77,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     schedule: setTimeout,
     cancel: clearTimeout,
   };
-  const sonic: TabSonicAdapter = options.sonic ?? { sonicChildren, sonicCollectPrompt };
+  const policy = lifecycle(options.profile);
   const fatal = options.fatal ?? defaultFail;
   const watchQa = options.watchQa ?? options.timing === undefined;
   const warmCapUsd = options.warmCapUsd ?? DEFAULT_WARM_CAP_USD;
@@ -184,6 +179,8 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
       exit_reason: closing && stopRequested() ? 'stop requested' : exitReason,
       error: closing && stopRequested() ? null : error,
     };
+    const undelivered = [...asyncQuestions].filter(([, q]) => q.deliveryOverdue).map(([id]) => id);
+    if (undelivered.length) snapshot.reason = `Undelivered HUD decision (${undelivered.join(', ')}): Pi has not acknowledged delivery; still waiting`;
     const serialized = JSON.stringify(snapshot);
     if (serialized === lastSnapshot) return;
     try {
@@ -252,7 +249,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     );
   }
 
-  function scheduleQuestions(ctx: WorkerContext): void {
+  function scheduleQuestions(ctx: WorkerContext, useDeadlines = true): void {
     if (!asyncQuestions.size) {
       cancelQuestionTimer();
       closeQaWatch();
@@ -265,11 +262,14 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
       });
     }
     if (questionTimer !== undefined) return;
-    const now = timing.now();
     let ms = ASYNC_FALLBACK_POLL_MS;
-    for (const q of asyncQuestions.values()) {
-      if (q.sentAt === undefined) ms = Math.min(ms, q.deadline - now);
-      else ms = Math.min(ms, q.sentAt + ASYNC_DELIVERY_TIMEOUT_MS - now);
+    if (useDeadlines) {
+      const now = timing.now();
+      const idle = ctx.isIdle?.() ?? true;
+      for (const q of asyncQuestions.values()) {
+        if (q.sentAt === undefined) ms = Math.min(ms, q.deadline - now);
+        else if (idle && !q.deliveryOverdue) ms = Math.min(ms, q.sentAt + ASYNC_DELIVERY_TIMEOUT_MS - now);
+      }
     }
     questionTimer = timing.schedule(() => pollQuestions(ctx), Math.max(1, Math.ceil(ms)));
   }
@@ -294,22 +294,21 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
       if (idle) settleTurn(ctx, false);
       else {
         ctx.abort();
-        scheduleQuestions(ctx);
+        scheduleQuestions(ctx, false);
       }
       return;
     }
     if (ctx.signal?.aborted) {
-      scheduleQuestions(ctx);
+      scheduleQuestions(ctx, false);
       return;
     }
     const now = timing.now();
     for (const [requestId, pending] of asyncQuestions) {
       if (pending.sentAt !== undefined) {
-        if (idle && now - pending.sentAt >= ASYNC_DELIVERY_TIMEOUT_MS) {
-          failed = true;
-          error ??= `HUD decision ${requestId} was not received by Pi`;
-          settleTurn(ctx, false);
-          return;
+        // Publish the undelivered decision through the normal main-session escalation, but keep the steer queued.
+        if (idle && !pending.deliveryOverdue && now - pending.sentAt >= ASYNC_DELIVERY_TIMEOUT_MS) {
+          pending.deliveryOverdue = true;
+          publish(ctx);
         }
         continue;
       }
@@ -361,23 +360,19 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
   }
 
   function checkExit(ctx: WorkerContext, expected: number): void {
-    if (!active() || closing) return;
-    const isPrint = ctx.mode === 'print' || ctx.mode === 'json';
+    if (!active() || closing || !policy) return;
     const decision = exitDecision({
-      contract: true,
-      role: options.profile,
+      lifecycle: policy,
       settled,
       outputWritten,
       failed,
       idle: ctx.isIdle?.() ?? true,
       pendingMessages: ctx.hasPendingMessages?.() ?? false,
-      helperPending: false,
       pendingQuestions: questions.size + asyncQuestions.size,
       generation,
       expectedGeneration: expected,
       now: timing.now(),
       deadline,
-      print: isPrint,
     });
     if (decision === 'wait') return;
     cancelTimer();
@@ -389,7 +384,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     // Under herdr-hud direct-exec (`on_exit: close_on_zero`), exiting 0 closes the tab cleanly.
     // Keep failed tabs open for the failure-retention window (reaped by HUD's `reapDirect`);
     // clean settlements and explicit stops shut Pi down natively (exit 0).
-    if (!isPrint && (decision === 'closed' || stopRequested())) ctx.shutdown?.();
+    if (decision === 'closed' || stopRequested()) ctx.shutdown?.();
   }
 
   function deferredExit(ctx: WorkerContext): void {
@@ -432,19 +427,17 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
           settleTurn(ctx, aborted);
         }, SONIC_RETRY_MS);
       };
-      let prompt: string | undefined;
       try {
-        const { open, uncollected } = sonic.sonicChildren(taskDir);
+        const { open, uncollected, remind } = sonicChildren(taskDir);
         if (open) return retry();
         if (uncollected.length && !aborted && !runError && !failed) {
-          prompt = sonic.sonicCollectPrompt(taskDir, outputPath, uncollected);
+          cancelTimer();
+          baseline = signature(outputPath); // A report written before collection cannot settle this turn.
+          if (remind.length) pi.sendUserMessage?.(sonicCollectPrompt(taskDir, outputPath, remind), { deliverAs: 'followUp' });
+          return;
         }
       } catch {
         return retry(); // Missing lifecycle evidence does not authorize settlement.
-      }
-      if (prompt) {
-        pi.sendUserMessage?.(prompt, { deliverAs: 'followUp' });
-        return;
       }
     }
     settled = true;
@@ -453,8 +446,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     outputWritten = !cancelledQuestions && current !== null && current !== baseline;
     failed ||= aborted || runError !== null || !outputWritten;
     if (failed) error ??= aborted ? 'agent aborted' : runError ?? 'output missing, empty or unchanged';
-    const isPrint = ctx.mode === 'print' || ctx.mode === 'json';
-    const grace = lifecycle(options.profile) === 'implementer' && !failed && !isPrint;
+    const grace = policy === 'implementer' && !failed;
     const ttl = grace ? idleGraceMs(ctx.model, process.env.PI_CACHE_RETENTION) : 0;
     deadline = grace ? timing.now() + ttl : undefined;
     deadlineAt = grace ? new Date(Date.now() + ttl).toISOString() : null;
@@ -471,7 +463,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
       return;
     }
     try {
-      if (!lifecycle(options.profile)) throw Error(`unsupported tab profile: ${options.profile}`);
+      if (!policy) throw Error(`unsupported tab profile: ${options.profile}`);
       taskDir = realpathSync(options.taskDir);
       if (!statSync(taskDir).isDirectory()) throw Error('task-dir is not a directory');
       outputPath = canonical(join(taskDir, jobFiles.report));
@@ -539,18 +531,13 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
 
   pi.on('cache_warming_decision', (event, ctx) => {
     const decision = warming({
-      role: options.profile,
       cap: warmCapUsd,
       admitted,
       warmCost: event.warmCost,
       action: event.action,
       closing: closing || failed || disabled,
-      helperPending: false,
       settled: settled || (asyncQuestions.size > 0 && (ctx.isIdle?.() ?? true)),
-      deadline: active() ? deadline : undefined,
-      now: timing.now(),
     });
-    if (!decision) return;
     if (decision.action === 'warm') {
       admitted = decision.admitted;
       admittedCount++;
@@ -584,8 +571,6 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     clearAsyncQuestions();
     generation++;
     if (!active()) return;
-    const isPrint = ctx.mode === 'print' || ctx.mode === 'json';
-    if (!closing && settled && isPrint) checkExit(ctx, generation);
     if (!closing) {
       if (state === 'idle_grace' && settled && outputWritten && !failed) exitReason = 'shutdown during idle grace';
       else {

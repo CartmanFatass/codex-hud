@@ -81,6 +81,8 @@ test('an open sonic child holds the real CLI supervisor; uncollected reports get
   assert.ok(prompts()[0].args[3].includes(id));
   assert.ok(!prompts()[0].args[3].includes(collectedId));
   assert.equal((await rpc('tasks/get', { taskId: handle.taskId })).status, 'working');
+  const collected = await runSonic(f, 'wait', parent.task_dir, '--job', id, '--timeout', '25');
+  assert.equal(collected.status, 0, collected.stderr);
   const next = await taskCall(rpc, 'hud_send', { job: parent.job, text: 'Synthetic caller turn after collection.' });
   assert.equal(next.resultType, 'complete');
   assert.equal(resultValue(next).sent, true);

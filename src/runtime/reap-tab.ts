@@ -21,7 +21,7 @@ function query(args: string[], timeout?: number) {
   if (r.status !== 0) throw Error(`herdr ${args.join(' ')}: ${r.error?.message ?? r.stderr}`);
   return JSON.parse(r.stdout).result;
 }
-type Row = { pane_id: string; tab_id: string; launch_id?: string; terminal_id?: string; name?: string; agent?: string; agent_status?: string; agent_session?: { value: string }; label?: string };
+type Row = { pane_id: string; tab_id: string; launch_id?: string; terminal_id?: string; name?: string | null; agent?: string; agent_status?: string; agent_session?: { value: string }; label?: string };
 function list(kind: 'pane' | 'agent' | 'tab', timeout?: number): Row[] {
   const rows = query([kind, 'list'], timeout)?.[`${kind}s`];
   if (!Array.isArray(rows) || !rows.every(row => herdrId(row?.tab_id) && (kind === 'tab' || herdrId(row.pane_id))))
@@ -102,6 +102,7 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
   const matches = (a: Row) => Boolean(info.PRIMARY && a.name === info.PRIMARY && a.pane_id === left &&
     a.launch_id === launchId && (!terminalId || a.terminal_id === terminalId) &&
     (!expectedSession || expectedSession === a.agent_session?.value));
+  let verifiedUnnamedRoot = false;
   async function inspect() {
     if (alreadyReaped(task)) return null;
     const freshInfo = session(task);
@@ -143,15 +144,29 @@ async function reapDirect(task: string, s: JobStatus | undefined, info: ReturnTy
         refuse('helper pane terminal_id mismatch; not closing');
       if (helperPane.agent) refuse('foreign agent in helper pane; not closing');
     }
-    if (agents.some(a => (ids.includes(a.pane_id) || a.tab_id === tab || a.launch_id === launchId || (info.PRIMARY && a.name === info.PRIMARY)) &&
-      (!rootPane || !matches(a) || a.tab_id !== tab))) refuse('foreign agent in recorded pane or binding changed; not closing');
+    // Managed startup can release the name without killing the root. Admit only the failed
+    // launch's exact pane set and root, never an alternate binding or a different process.
+    const occupants = agents.filter(a => ids.includes(a.pane_id) || a.tab_id === tab || a.launch_id === launchId ||
+      (info.PRIMARY && a.name === info.PRIMARY));
+    const failedStartup = fresh?.state === 'failed' && fresh.exit_reason === 'agent_not_ready';
+    const unnamedRoot = occupants.length === 1 && occupants[0].name == null && rootPane &&
+      info.DIRECT_EXEC === '1' && (failedStartup || verifiedUnnamedRoot) &&
+      fresh?.pid === pid && fresh.pid_start_time === start && herdrId(terminalId) &&
+      selected.length === ids.length && (!right || (herdrId(rightTerminalId) && helperPane?.terminal_id === rightTerminalId)) &&
+      occupants[0].tab_id === tab && occupants[0].pane_id === left && occupants[0].launch_id === launchId &&
+      occupants[0].terminal_id === terminalId;
+    if (!unnamedRoot && occupants.some(a => !rootPane || !matches(a) || a.tab_id !== tab))
+      refuse('foreign agent in recorded pane or binding changed; not closing');
     // Verify the root pane's process matches our recorded direct-exec PID/start (never close a restored/respawned shell after handoff).
     if (rootPane) {
       const proc = query(['pane', 'process-info', '--pane', left!])?.process_info;
       if (proc?.pane_id !== left) refuse('root pane process info unavailable; not closing');
       if (alive()) {
         if (proc.shell_pid !== pid) refuse('root pane process does not match direct-exec launch; not closing');
+        if (unnamedRoot) verifiedUnnamedRoot = true;
       } else {
+        // A stale inventory row after SIGTERM is not a new ownership grant.
+        if (unnamedRoot && !verifiedUnnamedRoot) refuse('unnamed root PID/start unverified; not closing');
         if (isValidPid(proc.shell_pid) && liveStart(proc.shell_pid) !== null)
           refuse('root pane hosts a different live process; not closing');
         if (Array.isArray(proc.foreground_processes) &&

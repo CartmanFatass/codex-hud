@@ -399,11 +399,11 @@ export async function main() {
       }
       if (next.action === 'collect-sonic') {
         if (!sameSession()) { shutdown(); return; }
-        const { open, uncollected } = sonicChildren(dir);
-        if (open || !uncollected.length) { wake(); return; }
+        const { open, remind } = sonicChildren(dir);
+        if (open || !remind.length) { wake(); return; }
         const submission = await beginPrompt(dir, { by: 'hud' });
         if (!sameSession()) { await endPrompt(dir, submission, true); shutdown(); return; }
-        const prompt = withDonePrompt(sonicCollectPrompt(dir, output, uncollected, tools), bundled, dir, submission.turn, cli.agent);
+        const prompt = withDonePrompt(sonicCollectPrompt(dir, output, remind, tools), bundled, dir, submission.turn, cli.agent);
         const { result, aborted } = await effect('sonic', ['agent', 'prompt', name, prompt]).finally(() => endPrompt(dir, submission));
         if (stopped || aborted) return;
         if (!sameSession()) { shutdown(); return; }

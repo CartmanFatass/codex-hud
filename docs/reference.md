@@ -545,7 +545,7 @@ The worker can fix the failure and retry, or report while blocked with a nonblan
 That reason appears in the `hud_read` digest.
 These checks are separate from `hud_create` checks and the land gate.
 
-Workers use `hud_sonic` to start sonic sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting.
+Workers use `hud_sonic` to start sonic sub-tasks without waiting, then collect their reports; HUD prompts once if they finish without collecting. The reminder does not count as collection.
 `hud_send` queues a message for a working pi or CLI job when the transport accepts it.
 If a tabbed worker is blocked on a client prompt, the send returns `worker_blocked` and `queued: false`. Resolve the prompt and send again with a new `message_key`.
 After a worker closes on its report, HUD checks the clock and native session.
@@ -557,6 +557,7 @@ Use `messages: [{job, text, message_key?}]` to send distinct messages (including
 An explicit `message_key` deduplicates sends; if omitted, the same job and text are treated as a retry only within 10 minutes.
 Workers ask with `hud_ask`; the question arrives through an active MCP task or the `QUESTION` notice, and `hud_respond` answers it.
 A synchronous question waits up to 20 minutes; pi can ask asynchronously and continue unrelated work.
+If an async decision goes unacknowledged for 20 seconds and pi is idle, HUD surfaces it as undelivered. The job stays waiting and can accept a late acknowledgement without resending the decision.
 A blocked CLI marks the job as needing the owner; task clients can see it in `hud_read`, and other clients receive it through `changes` or their live job notices.
 `hud_respond` writes a `qN.answer.md` once (or pass `answers: [{job, request_id, answer}]` to answer several in one call, returning `answers` in input order with per-item errors).
 `hud_close` reaps early.
