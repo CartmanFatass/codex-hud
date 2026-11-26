@@ -239,7 +239,7 @@ function listFeatureTickets(scratchDir: string, feature: string): { number: numb
   });
 }
 
-function loadFeatureJobs(home: string, mainRoot: string, feature: string) {
+function loadFeatureJobs(home: string, mainRoot: string, feature: string, checkActive = true) {
   const cache = new JobIndexCache(home);
   const matchesProject = projectJobFilter(mainRoot);
   const projectId = flakeProjectId(mainRoot);
@@ -284,11 +284,13 @@ function loadFeatureJobs(home: string, mainRoot: string, feature: string) {
     } else {
       claimedTickets.add(key);
     }
-    if (!receipt.value.reaped_at && (!SETTLED_JOB_STATES.has(state) || state === 'idle_grace')) {
-      hasActiveFlakeJob = true;
-    } else {
-      const prior = landAttempt(home, id).prior;
-      if (prior && activeLand(prior)) hasActiveFlakeJob = true;
+    if (checkActive) {
+      if (!receipt.value.reaped_at && (!SETTLED_JOB_STATES.has(state) || state === 'idle_grace')) {
+        hasActiveFlakeJob = true;
+      } else {
+        const prior = landAttempt(home, id).prior;
+        if (prior && activeLand(prior)) hasActiveFlakeJob = true;
+      }
     }
   }
   const nextAttempt = (ticket: string) => {
@@ -716,6 +718,24 @@ export async function collectAndRecordLandFlakes(
     await updateLandFlakeCollection(home, flow.flow, collection);
   }
   return res;
+}
+
+const EMPTY_CLAIMED: ReadonlySet<string> = new Set();
+
+export function hasPendingFlakeCollection(
+  home: string,
+  flow: Partial<Pick<LandFlow, 'wt' | 'flake_collection'>> | null | undefined,
+): boolean {
+  const fc = flow?.flake_collection;
+  if (!fc || fc.state !== 'pending') return false;
+  if (fc.stage !== 'dispatch' || !fc.ticket) return true;
+  const mainRoot = flow.wt?.main_root;
+  if (typeof mainRoot !== 'string' || !mainRoot) return true;
+  const config = readFlakesConfig(mainRoot);
+  if (!config) return true;
+  if (inspectRunningListTicket(mainRoot, config.feature, fc.ticket, EMPTY_CLAIMED).state === 'resolved') return false;
+  const { claimedTickets } = loadFeatureJobs(home, mainRoot, config.feature, false);
+  return !claimedTickets.has(targetKey(fc.ticket));
 }
 
 export function listPendingFlakeFlows(home: string, mainRoot: string, excludeFlow?: string): LandFlow[] {

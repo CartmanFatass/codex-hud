@@ -5,6 +5,8 @@ import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { projectRegistryRoots } from '../roles/projects.js';
 import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
+import { hasPendingFlakeCollection } from '../mcp/land-flakes.js';
+import type { LandFlow } from '../mcp/land-state.js';
 import { jobFiles } from '../mcp/paths.js';
 import { DEFAULT_RESUME_S } from '../mcp/worker-resume.js';
 import type { TicketQueue } from '../mcp/ticket-queue-state.js';
@@ -132,8 +134,9 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
           if (files.some(({ graphDir, stat }) => stat.mtimeMs >= cutoff || (graphDir ? !stat.isDirectory() : !stat.isFile()))) continue;
           if (files.some(({ path }) => {
             if (!path.endsWith('.json')) return false;
-            const receipt = readJsonBounded(path, 128 * 1024) as { state?: unknown } | null;
-            return receipt?.state !== 'completed' && receipt?.state !== 'failed' && receipt?.state !== 'cancelled';
+            const receipt = readJsonBounded(path, 128 * 1024) as Partial<LandFlow> | null;
+            return (receipt?.state !== 'completed' && receipt?.state !== 'failed' && receipt?.state !== 'cancelled') ||
+              hasPendingFlakeCollection(home, receipt);
           })) continue;
           for (const { path, stat } of files) {
             try {

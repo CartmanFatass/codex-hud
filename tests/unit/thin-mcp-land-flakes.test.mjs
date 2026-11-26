@@ -7,6 +7,7 @@ import {
   collectAndRecordLandFlakes, collectGateFlakes, flakeDispatchKey, retryPendingFlakeCollections,
 } from '../../dist/mcp/land-flakes.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
+import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { checkout } from '../helpers/thin-mcp-land.mjs';
@@ -1111,4 +1112,117 @@ test('persistent refusal does not self-wake unattended service; attempts and rec
   assert.equal(flakeJobs.length, 1, 'admits exactly once after refusal clears');
   assert.equal(f.flowState(flow2).flake_collection.attempts, 2);
   assert.equal(f.flowState(flow2).flake_collection.job, flakeJobs[0].job);
+});
+
+test('retention keeps expired pending flake receipt and gate log after source job removal until collected or resolved', { timeout: 30_000 }, async t => {
+  const f = await checkout(t, ['npm run test:sample'], { after: [], autoPrewalk: true });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+
+  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
+  fs.mkdirSync(issuesDir, { recursive: true });
+  const t01Path = join(issuesDir, '01-gate-flakes-running-list.md');
+  fs.writeFileSync(t01Path, [
+    '# 01: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
+    '', '**What to build:** Running list.', '', '### Cases', '',
+    '- `initial case` (sample/initial.test.mjs) — flow `f0000000000000e00`, log `~/.hud/flows/f0000000000000e00.json.gate-1.log`', '',
+    '- [ ] Each listed case passes 20 consecutive runs', '', '## Comments', '',
+  ].join('\n'));
+  f.git(f.main, 'add', '.scratch');
+  f.git(f.main, 'commit', '-qm', 'seed flake 01');
+
+  // Hand edit causes pending edit refusal on a real completed land with a gate rerun log.
+  fs.appendFileSync(t01Path, '\n- Owner hand edit before retention\n');
+  const jobId = 'j0000000000000e01';
+  addFlakyTestJob(f, { id: jobId, testFile: 'alpha.test.mjs', testName: 'alpha survives retention', markerName: 'retain-edit-1' });
+  const { flow } = await f.call('hud_land', { job: jobId });
+  await until(() => f.flowState(flow).state === 'completed' &&
+    f.flowState(flow).flake_collection?.state === 'pending', 10_000);
+
+  const flowReceipt = f.flowState(flow);
+  assert.equal(flowReceipt.flake_collection.stage, 'edit');
+  const gateLog = flowReceipt.reruns?.[0]?.output_path;
+  assert.ok(gateLog && fs.existsSync(gateLog), 'referenced gate log exists');
+
+  // Seed an expired completed land whose collection is already done (bound check: must be pruned).
+  const doneFlow = 'f0000000000000e02';
+  const doneReceiptPath = join(f.home, 'flows', `${doneFlow}.json`);
+  const doneGateLog = join(f.home, 'flows', `${doneFlow}.json.gate-1.log`);
+  fs.writeFileSync(doneGateLog, 'expired done gate excerpt\n');
+  fs.writeFileSync(doneReceiptPath, JSON.stringify({
+    ...flowReceipt, flow: doneFlow, job: 'j0000000000000e02',
+    flake_collection: { state: 'done', ticket: 'test-flakes/01', attempts: 1, updated_at: flowReceipt.updated_at },
+  }));
+
+  // Remove the source job directory (as job retention does after 24h) and age all flow family artifacts past cutoff.
+  fs.rmSync(join(f.home, 'jobs', jobId), { recursive: true, force: true });
+  const now = Date.now();
+  const expiredSec = (now - JOB_RETENTION_MS - 120_000) / 1000;
+  for (const name of fs.readdirSync(join(f.home, 'flows'))) {
+    if (!name.startsWith(flow) && !name.startsWith(doneFlow)) continue;
+    const p = join(f.home, 'flows', name);
+    fs.utimesSync(p, expiredSec, expiredSec);
+    if (fs.lstatSync(p).isDirectory()) {
+      for (const child of fs.readdirSync(p)) fs.utimesSync(join(p, child), expiredSec, expiredSec);
+    }
+  }
+
+  // Prune: pending receipt and its referenced gate log survive; expired done family is pruned.
+  pruneLandFlows(f.home, now);
+  const receiptPath = join(f.home, 'flows', `${flow}.json`);
+  assert.equal(fs.existsSync(receiptPath), true, 'pending flow receipt kept through pruneLandFlows');
+  assert.equal(fs.existsSync(gateLog), true, 'referenced gate log kept through pruneLandFlows');
+  assert.equal(fs.existsSync(doneReceiptPath), false, 'expired done receipt pruned');
+  assert.equal(fs.existsSync(doneGateLog), false, 'expired done gate log pruned');
+
+  // Clear refusal (commit hand edit) -> exactly one collection from the retained evidence.
+  f.git(f.main, 'add', t01Path);
+  f.git(f.main, 'commit', '-qm', 'commit hand edit after job removal');
+  const firstRetry = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID);
+  assert.deepEqual(firstRetry, { retried: 1, resolved: 1, pending: 0 });
+  assert.equal(f.flowState(flow).flake_collection?.state, 'done');
+  assert.equal(f.flowState(flow).flake_collection?.ticket, 'test-flakes/01');
+  const textAfter = fs.readFileSync(t01Path, 'utf8');
+  assert.ok(textAfter.includes('Owner hand edit before retention'), 'owner hand edit preserved');
+  assert.ok(textAfter.includes(`\`alpha survives retention\` (sample/alpha.test.mjs) — flow \`${flow}\``), textAfter);
+  assert.equal(textAfter.split(flow).length - 1, 2, 'collected once (flow id + log path)');
+
+  const secondRetry = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID);
+  assert.deepEqual(secondRetry, { retried: 0, resolved: 0, pending: 0 });
+  assert.equal(fs.readFileSync(t01Path, 'utf8'), textAfter, 'no duplicate collection');
+
+  // Once collection succeeds, the next prune past retention removes the family as before.
+  pruneLandFlows(f.home, Date.now() + JOB_RETENTION_MS + 60_000);
+  assert.equal(fs.existsSync(receiptPath), false, 'collected receipt pruned');
+  assert.equal(fs.existsSync(gateLog), false, 'collected gate log pruned');
+
+  // Independent ticket resolution (done/claimed/wontfix) unpins an expired pending dispatch family on the next prune.
+  for (const [idx, resolution] of ['done', 'claimed', 'wontfix'].entries()) {
+    const num = String(idx + 2).padStart(2, '0');
+    const ticketPath = join(issuesDir, `${num}-gate-flakes-running-list.md`);
+    fs.writeFileSync(ticketPath, [
+      `# ${num}: Gate flakes running list`, '', '**Status:** ready-for-agent', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
+      '', '**What to build:** Running list.', '', '### Cases', '',
+      '- `case` (sample/a.test.mjs) — flow `f0000000000000e00`', '', '- [ ] Pass', '', '## Comments', '',
+    ].join('\n'));
+    const dispatchFlow = `f0000000000000e1${idx}`;
+    const dispatchReceipt = join(f.home, 'flows', `${dispatchFlow}.json`);
+    const dispatchLog = join(f.home, 'flows', `${dispatchFlow}.json.gate-1.log`);
+    fs.writeFileSync(dispatchLog, 'synthetic gate excerpt\n');
+    fs.writeFileSync(dispatchReceipt, JSON.stringify({
+      ...flowReceipt, flow: dispatchFlow, job: `j0000000000000e1${idx}`,
+      reruns: [{ step: 'gate[1]', tests: ['case'], output_path: dispatchLog, rerun_ok: true }],
+      flake_collection: { state: 'pending', stage: 'dispatch', ticket: `test-flakes/${num}`, error: 'waiting for active flake job', attempts: 1, updated_at: flowReceipt.updated_at },
+    }));
+    fs.utimesSync(dispatchReceipt, expiredSec, expiredSec);
+    fs.utimesSync(dispatchLog, expiredSec, expiredSec);
+
+    pruneLandFlows(f.home, now);
+    assert.equal(fs.existsSync(dispatchReceipt), true, `pending dispatch kept while ready (${resolution})`);
+    assert.equal(fs.existsSync(dispatchLog), true, `pending dispatch gate log kept while ready (${resolution})`);
+
+    fs.writeFileSync(ticketPath, fs.readFileSync(ticketPath, 'utf8').replace('**Status:** ready-for-agent', `**Status:** ${resolution}`));
+    pruneLandFlows(f.home, now);
+    assert.equal(fs.existsSync(dispatchReceipt), false, `pending dispatch receipt pruned after ${resolution}`);
+    assert.equal(fs.existsSync(dispatchLog), false, `pending dispatch gate log pruned after ${resolution}`);
+  }
 });
