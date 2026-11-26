@@ -38,9 +38,9 @@ export class PanelExecution {
     return this.snapshot?.root === root ? this.snapshot : undefined;
   }
 
-  /** The project's jobs, every pane's: what an Inspector opened from the page reads. */
+  /** The project's jobs, every pane's: what an Inspector opened from Execution or a Feature page reads. */
   board(): WorkboardSnapshot | undefined {
-    return this.snapshot && this.open?.jobs.workboard(this.noAgents);
+    return this.open && (this.snapshot || this.ticketActivity) ? this.open.jobs.workboard(this.noAgents) : undefined;
   }
 
   dispose(): void { this.close(); }

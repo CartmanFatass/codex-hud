@@ -459,6 +459,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Queue {label} · {n} tickets': '队列 {label} · {n} 张工单',
   Run: '运行',
   'Run not available': '运行记录不可用',
+  'Feature not available': '功能不可用',
   Steps: '步骤',
   Elapsed: '耗时',
   Verdict: '结论',

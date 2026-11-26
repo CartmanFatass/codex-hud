@@ -137,7 +137,7 @@ export function objectiveDetailRows(
       const ratio = ticketProgressText(fields);
       const note = featureActivityNote(feature, byFeature.get(slug) ?? [], now, width);
       const ticket = firstUnfinishedTicket(feature);
-      return { slug, cleanSlug: monitorText(slug), fields, ratio, note, ticket };
+      return { slug, cleanSlug: monitorText(slug), feature, fields, ratio, note, ticket };
     });
     const wide = width >= 56;
     const countCol = Math.max(wide ? 5 : 3, ...items.map((e) => visualLength(e.ratio)));
@@ -146,7 +146,7 @@ export function objectiveDetailRows(
     const maxNote = Math.max(0, ...items.map((e) => visualLength(e.note)));
     const baseNoteCol = maxNote ? Math.min(maxNote, wide ? 18 : 12) : 0;
 
-    for (const { slug, cleanSlug, fields, ratio, note, ticket } of items) {
+    for (const { slug, cleanSlug, feature, fields, ratio, note, ticket } of items) {
       const noteWidth = maxNote ? Math.max(baseNoteCol, visualLength(note)) : 0;
       const noteGap = noteWidth ? (wide ? 2 : 1) : 0;
       const labelCells = Math.max(4, Math.min(desiredId, width - 2 - countCol - noteWidth - noteGap - 2));
@@ -157,6 +157,7 @@ export function objectiveDetailRows(
       rows.push({
         text: fit(`  ${tokenColumn(cleanSlug, labelCells)}${bar} ${ratioPart}${notePart}`, width),
         item: `objective:feature:${slug}`,
+        ...(feature ? { featureTarget: { root, slug, objectiveId: objective.id } } : {}),
         ...(ticket ? { files: [ticket.path] } : {}),
       });
     }

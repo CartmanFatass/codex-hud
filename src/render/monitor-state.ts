@@ -19,8 +19,9 @@ export type JobTarget = Extract<WorkTarget, { kind: 'worker' }>;
 export interface InspectorState extends RowNav {
   kind: 'inspector';
   target: JobTarget;
-  /** Opened from the Execution tab: it reads that project's jobs, and back returns there. */
-  from?: 'execution';
+  /** Opened from the Execution tab or a Feature page: it reads that project's jobs, and back returns there. */
+  from?: 'execution' | 'feature';
+  back?: FeatureDetail;
 }
 export interface JobsState extends RowNav { kind: 'jobs' }
 interface HomeTabState extends RowNav { othersExpanded?: boolean; requestsExpanded?: boolean }
@@ -55,8 +56,15 @@ export interface ObjectiveDetail extends RowNav {
   evidence?: ObjectiveEvidence[];
   back?: InspectorState;
 }
+export interface FeatureTarget { root: string; slug: string; objectiveId?: string }
+export interface FeatureDetail extends RowNav {
+  kind: 'feature';
+  target: FeatureTarget;
+  expanded?: readonly string[];
+  back?: ObjectiveDetail;
+}
 export interface RunDetailState extends RowNav { kind: 'run-detail'; flow: string }
-export type SubpageState = JobsState | InspectorState | ObjectiveDetail | RunDetailState | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
+export type SubpageState = JobsState | InspectorState | ObjectiveDetail | FeatureDetail | RunDetailState | (RowNav & { kind: 'native-inspector'; back?: InspectorState });
 export interface HelpOverlay { scroll?: number }
 export interface MonitorState {
   activeTab: MainTab;
@@ -168,8 +176,8 @@ export const jobsPage = (state: MonitorState): JobsState => ({ ...state.jobs, ki
 export function backFromSubpage(state: MonitorState): MonitorState {
   const sub = state.subpage;
   return { ...state, subpage: sub?.kind === 'native-inspector' ? sub.back ?? jobsPage(state)
-    : sub?.kind === 'objective' ? sub.back
-    : sub?.kind === 'inspector' && sub.from !== 'execution' ? jobsPage(state) : undefined };
+    : sub?.kind === 'objective' || sub?.kind === 'feature' ? sub.back
+    : sub?.kind === 'inspector' ? sub.back ?? (sub.from !== 'execution' ? jobsPage(state) : undefined) : undefined };
 }
 export function transitionTab(state: MonitorState, activeTab: MainTab): MonitorState {
   const base = { ...state, subpage: undefined };
@@ -260,7 +268,7 @@ export function acceptsMonitorInput(state: MonitorState | undefined, input: Work
   if (state.overlay) return false;
   if (input.text === '/') return filterScope(state) !== undefined;
   if ((input.text === 't' || input.text === 'b') && state.activeTab === 'project' && !state.subpage && !projectPage(state.project.view)) return true;
-  return (input.text === 'g' || input.text === 'P' || input.text === 'H') && (state.subpage?.kind === 'inspector' || executionPageOpen(state));
+  return (input.text === 'g' || input.text === 'P' || input.text === 'H') && (state.subpage?.kind === 'inspector' || state.subpage?.kind === 'feature' || executionPageOpen(state));
 }
 /** The Execution tab itself, with no Inspector or Run Detail over it. */
 export const executionPageOpen = (state: MonitorState) =>

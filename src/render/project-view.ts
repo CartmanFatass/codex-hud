@@ -106,7 +106,7 @@ const ASKS = /^(needs-triage|needs-info|ready-for-human)$/i;
 export const asksYou = (r: ProjectTicket) => (r.state === 'ready' || r.state === 'blocked') && ASKS.test(r.status);
 const ticketLane = (r: ProjectTicket) => r.state === 'done' || r.state === 'dropped' ? 'done' : asksYou(r) ? 'you' : ticketWorking(r) ? 'working'
   : r.state;
-const ticketGlyph = (r: ProjectTicket) => r.state === 'done' ? theme.board.success(mark('✓', '+')) : r.state === 'dropped' ? theme.board.muted(mark('–', '-'))
+export const ticketGlyph = (r: ProjectTicket) => r.state === 'done' ? theme.board.success(mark('✓', '+')) : r.state === 'dropped' ? theme.board.muted(mark('–', '-'))
   : r.state === 'queued' ? theme.board.muted(mark('·', '.')) : r.state === 'try' ? sliceInk('try')(mark('◇', '*'))
   : r.state === 'blocked' ? theme.board.attention(mark('◆', '!')) : theme.board.active(ticketWorking(r) ? mark('◐', '@') : mark('●', '*'));
 /** Two to four letters naming a feature on its tickets' rows: its words' initials, else the first letters of its slug, never the same for two. */
@@ -197,7 +197,7 @@ export function featureRow(feature: TicketFeature, width: number, open = false):
   const ratio = `${feature.tickets.length - openTickets.length}/${feature.tickets.length}`;
   const word = status && monitorText(t(status));
   const right = word && visualLength(word) + visualLength(ratio) + 8 <= width ? `${ratio}  ${word}` : ratio;
-  return { item: featureItem(feature), text: pair(`  ${mark(open ? '▾' : '▸', open ? 'v' : '>')} ${monitorText(feature.slug)}`, theme.board.muted(right), width) };
+  return { item: featureItem(feature), featureTarget: { root: '', slug: feature.slug }, text: pair(`  ${mark(open ? '▾' : '▸', open ? 'v' : '>')} ${monitorText(feature.slug)}`, theme.board.muted(right), width) };
 }
 /** One page: today's section content, without the section header (the crumb names the page). */
 export function pageRows(

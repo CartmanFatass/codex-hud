@@ -424,13 +424,18 @@ test('Objective page: crumb, prose with result age, features in every activity s
     assert.match(body, /https:\/\/example\.org\/ingest/);
     assert.match(body, zh ? /缺 · docs\/absent\.md/ : /missing · docs\/absent\.md/);
 
-    // Enter on retry-queue opens its first unfinished ticket (03.md); on quiet-docs (all done) opens latest (02.md); on missing-feat is a no-op.
+    // Enter on retry-queue opens its Feature page (o opens its first unfinished ticket 03.md); on quiet-docs opens its Feature page (o opens 02.md); on missing-feat is a no-op.
     assert.equal(objFrame.state.subpage.cursor, 'objective:feature:retry-queue');
-    assert.deepEqual(key(objFrame, 'enter').action, { type: 'open-files', files: ['/synthetic/retry-queue/03.md'] });
+    assert.equal(key(objFrame, 'enter').state.subpage?.kind, 'feature');
+    assert.equal(key(objFrame, 'enter').state.subpage?.target?.slug, 'retry-queue');
+    assert.deepEqual(sendKey(objFrame, 'o').action, { type: 'open-files', files: ['/synthetic/retry-queue/03.md'] });
     const quietSelected = draw({ ...objFrame.state, subpage: { ...objFrame.state.subpage, cursor: 'objective:feature:quiet-docs' } }, 34);
-    assert.deepEqual(key(quietSelected, 'enter').action, { type: 'open-files', files: ['/synthetic/quiet-docs/02.md'] });
+    assert.equal(key(quietSelected, 'enter').state.subpage?.kind, 'feature');
+    assert.equal(key(quietSelected, 'enter').state.subpage?.target?.slug, 'quiet-docs');
+    assert.deepEqual(sendKey(quietSelected, 'o').action, { type: 'open-files', files: ['/synthetic/quiet-docs/02.md'] });
     const missingSelected = draw({ ...objFrame.state, subpage: { ...objFrame.state.subpage, cursor: 'objective:feature:missing-feat' } }, 34);
     assert.equal(key(missingSelected, 'enter').action, undefined);
+    assert.equal(key(missingSelected, 'enter').state.subpage?.kind, 'objective');
 
     // Enter on file and commit evidence opens them.
     const fileEv = draw({ ...objFrame.state, subpage: { ...objFrame.state.subpage, cursor: 'objective:evidence:0' } }, 34);

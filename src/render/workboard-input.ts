@@ -257,6 +257,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       }
       if (row?.objectiveEvidence) return { type: 'open-objective-evidence' as const, ...row.objectiveEvidence };
       if (row?.objectiveTarget) openObjective(row.objectiveTarget);
+      else if (row?.featureTarget) {
+        const root = row.featureTarget.root || frame.projectDisplayRoot || next.selectedProject || frame.projects?.[0]?.root || '';
+        next.subpage = { kind: 'feature', target: { ...row.featureTarget, root }, scroll: 0 };
+      }
       else if (row?.item === PROJECT_STRIP_MORE) showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectSubPage);
@@ -380,6 +384,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     if (batch) openBatchAction(next, batch);
     return result();
   }
+  if (sub?.kind === 'feature' && input.type === 'key' && (input.text === 'g' || input.text === 'P' || input.text === 'H')) {
+    const job = boardFrame.rows.find((row) => row.item === sub.cursor)?.execJob;
+    const type = input.text === 'g' ? 'focus-job-tab' : input.text === 'P' ? 'pin-job-tab' : 'hide-job-tab';
+    return result(job?.tab ? { type, dir: job.dir } : undefined);
+  }
   const pane = frame?.panes[0];
   if (!frame || !pane) return null;
   const nav = sub ?? frame.state.home;
@@ -392,6 +401,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   };
   const objective = sub?.kind === 'objective';
+  const feature = sub?.kind === 'feature';
   const reqRows = (boardFrame.requests ?? []).filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i);
   const bodyActions = boardFrame.rows.filter((r, i, all) => r.item && r.item !== all[i - 1]?.item);
   const actions = [...reqRows, ...bodyActions];
@@ -406,7 +416,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   };
   const toggleRequestsMore = (item: string) => {
-    if (objective && next.activeTab === 'project') {
+    if ((objective || feature) && next.activeTab === 'project') {
       const folded = new Set(next.project.folded);
       if (!folded.delete('waiting:more')) folded.add('waiting:more');
       next.project = { ...next.project, folded };
@@ -417,20 +427,47 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         requestsExpanded: !frame.state.home.requestsExpanded,
         ...(!sub ? { cursor: item, revealed: undefined } : {}),
       };
-      if (objective) next.subpage = { ...sub!, cursor: item, revealed: undefined };
+      if (objective || feature) next.subpage = { ...sub!, cursor: item, revealed: undefined };
     }
     return result();
   };
   if (!sub && key === 'home-other-projects' && actions.some((row) => row.item === OTHER_PROJECTS)) return toggleOtherProjects();
   const act = (row: MonitorRow | undefined, fileOnly = false) => {
     if (!fileOnly && isRequestMoreItem(row?.item)) return toggleRequestsMore(row!.item!);
-    if (objective && !fileOnly && row?.waitingTarget) {
+    if ((objective || feature) && !fileOnly && row?.waitingTarget) {
       const { root, index, request } = row.waitingTarget;
       next.subpage = undefined;
       if (root) useProject(!frame.projects || root === frame.projects[0].root ? undefined : root);
       goTab('project');
       readWait(index, request);
       return result();
+    }
+    if (sub?.kind === 'objective' && !fileOnly && row?.featureTarget) {
+      next.subpage = {
+        kind: 'feature',
+        target: row.featureTarget,
+        scroll: 0,
+        back: { ...sub, cursor: row.item, revealed: row.item === sub.cursor ? sub.revealed : undefined },
+      };
+      return result();
+    }
+    if (sub?.kind === 'feature' && !fileOnly) {
+      if (row?.execJob) {
+        next.subpage = {
+          kind: 'inspector',
+          target: row.execJob.target,
+          scroll: 0,
+          from: 'feature',
+          back: { ...sub, cursor: row.item, revealed: row.item === sub.cursor ? sub.revealed : undefined },
+        };
+        return result();
+      }
+      if (row?.item?.startsWith('feature:ticket:')) {
+        const expanded = new Set(sub.expanded ?? []);
+        if (!expanded.delete(row.item)) expanded.add(row.item);
+        next.subpage = { ...sub, cursor: row.item, expanded: [...expanded] };
+        return result();
+      }
     }
     if (!sub && !fileOnly && row?.item === OTHER_PROJECTS) return toggleOtherProjects();
     if (!sub && !fileOnly && row?.advisorCopy) {
@@ -479,7 +516,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     }
     const row = monitorRowAt(pane, input.x, input.y);
     if (row?.item && !sub && row.item.startsWith('home:card:schedule:') && !row.homeTarget) return select(row.item);
-    return row?.item ? objective && row.item !== cursor ? select(row.item) : act(row) : result();
+    return row?.item ? (objective || feature) && row.item !== cursor ? select(row.item) : act(row) : result();
   }
   if (enter || key === 'open-session') {
     const request = sub?.kind === 'inspector' ? boardFrame.snapshot.workers.find((w) => w.id === sub.target.workerId)?.work?.requestInfo : undefined;
@@ -490,15 +527,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   const step = key === 'up' ? -1 : key === 'down' ? 1 : key === 'page-up' ? -Math.max(1, pane.height) : key === 'page-down' ? Math.max(1, pane.height) : 0;
   if (step || key === 'home' || key === 'end') {
-    if ((sub?.kind === 'jobs' || ((!sub || objective) && (key === 'up' || key === 'down')) ||
-      (objective && (key === 'home' || key === 'end'))) && actions.length) {
+    if ((sub?.kind === 'jobs' || ((!sub || objective || feature) && (key === 'up' || key === 'down')) ||
+      ((objective || feature) && (key === 'home' || key === 'end'))) && actions.length) {
       const at = actions.findIndex((r) => r.item === cursor);
       return select(actions[key === 'home' ? 0 : key === 'end' ? actions.length - 1 : Math.max(0, Math.min(actions.length - 1, at + step))]?.item);
     }
     // Home can page past Waiting into the handoff; Inspector scrolls its evidence.
     return moveScroll(key === 'home' ? 0 : key === 'end' ? pane.contentLength : nav.scroll + step);
   }
-  if ((objective || sub?.kind === 'inspector' || sub?.kind === 'native-inspector') && actions.length && (key === 'tab' || key === 'shift-tab')) {
+  if ((objective || feature || sub?.kind === 'inspector' || sub?.kind === 'native-inspector') && actions.length && (key === 'tab' || key === 'shift-tab')) {
     const at = actions.findIndex((r) => r.item === cursor);
     return select(actions[(at < 0 ? key === 'tab' ? 0 : actions.length - 1 : (at + (key === 'tab' ? 1 : -1) + actions.length) % actions.length)]?.item);
   }

@@ -68,14 +68,14 @@ function recentNote(end: Extract<TicketActivity, { kind: 'ended' }>, now: number
   }
 }
 
-export function unlinkedFeatureRows(features: readonly TicketFeature[], width: number): MonitorRow[] {
+export function unlinkedFeatureRows(features: readonly TicketFeature[], width: number, root = ''): MonitorRow[] {
   const scanned = new Map(features.map((feature) => [feature.slug, feature]));
   return features.flatMap(({ slug, tickets }) => {
     const ticket = tickets.find((r) => !resolvedTicket(r)) ?? tickets.at(-1);
     if (!ticket) return [];
     const p = linkedTicketProgress(scanned, [slug]), ratio = ticketProgressText(p);
     const id = tokenColumn(monitorText(slug), Math.min(24, Math.floor(width / 2)));
-    return [{ item: `project:file:${ticket.path}:unlinked`, files: [ticket.path],
+    return [{ item: `project:file:${ticket.path}:unlinked`, files: [ticket.path], featureTarget: { root, slug },
       text: fit(pair(`  ${id} ${ticketTrack(p, Math.min(24, Math.max(0, width - visualLength(id + ratio) - 5)), false)}`, ratio, width), width) }];
   });
 }

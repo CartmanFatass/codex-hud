@@ -63,7 +63,7 @@ export interface ActiveJob {
 export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
   number: string; title: string; path: string; at: number; status: string;
-  checked: number; total: number; items: TicketItem[]; comment?: string; commit?: string; recordedLanding?: boolean;
+  checked: number; total: number; items: TicketItem[]; comment?: string; landedComment?: string; commit?: string; recordedLanding?: boolean;
   blockers: string[]; ownerTry?: boolean;
   state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
   job?: { id?: string; role: string; state: string; at?: number; created: number };
@@ -328,10 +328,16 @@ export class ProjectCollector {
           const { status, blocked, items, checked, ownerTry, landed, commit, recordedLanding } = ticketFileEvidence(text);
           if (!heading || !status || blocked === undefined) return undefined;
           const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
-          const commentRaw = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)].at(-1)?.[1]?.replace(/\s+/g, ' ').trim();
+          const commentBullets = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)]
+            .map((m) => m[1].replace(/\s+/g, ' ').trim())
+            .filter(Boolean);
+          const commentRaw = commentBullets.at(-1);
           const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
+          const landedRaw = commentBullets.filter((b) => /^Landed\b/i.test(b)).at(-1);
+          const landedComment = landedRaw && landedRaw !== commentRaw ? landedRaw.slice(0, 600) : undefined;
           return { ...heading, path, at: stat.mtimeMs, status, ownerTry,
             checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
+            ...(landedComment !== undefined ? { landedComment } : {}),
             ...(commit !== undefined ? { commit } : {}), ...(recordedLanding ? { recordedLanding } : {}),
             blockers: /^none\b/i.test(blocked) ? [] : [blocked],
             state: landed ?? (/^claimed\b/i.test(status) ? 'working' : 'ready') };

@@ -224,7 +224,7 @@ function readSteps(q: TicketQueue): ExecutionRunStep[] {
   });
 }
 
-function jobTargetFor(home: string, worker: OwnerWorker | undefined, jobId: string | undefined): ExecutionRunJobTarget | undefined {
+export function jobTargetFor(home: string, worker: OwnerWorker | undefined, jobId: string | undefined): ExecutionRunJobTarget | undefined {
   return worker && jobId ? {
     target: { kind: 'worker', laneId: worker.laneId, workerId: worker.id },
     dir: join(home, 'jobs', jobId),

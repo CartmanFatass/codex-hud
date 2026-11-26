@@ -7,6 +7,7 @@ import { nativeInspectorRows, workInspectorRows } from './work-inspector.js';
 import { homeRows, OTHER_PROJECTS, otherProjectsHint, unattendedRow } from './home-view.js';
 import { scheduleBadge, scheduleView } from './home-cards.js';
 import { objectiveCrumb, objectiveDetailRows } from './objective-detail.js';
+import { featureCrumb, featureDetailRows } from './feature-detail.js';
 import { runDetailRows } from './execution-run-detail.js';
 import { executionRows } from './execution-view.js';
 import { workflowDetailRows } from './execution-workflow.js';
@@ -154,6 +155,7 @@ export function renderWorkboardFrame(
   const jobs = subpage?.kind === 'jobs' ? subpage : undefined;
   const native = subpage?.kind === 'native-inspector' ? subpage : undefined;
   const objective = subpage?.kind === 'objective' ? subpage : undefined;
+  const feat = subpage?.kind === 'feature' ? subpage : undefined;
   const runDetail = subpage?.kind === 'run-detail' ? subpage : undefined;
   const sub = subpage || help;
   const project = !sub && state.activeTab === 'project';
@@ -218,8 +220,8 @@ export function renderWorkboardFrame(
     return [];
   };
   const showHomeRequests = home;
-  const showProjectRequests = (project && !list && page !== 'waiting') || Boolean(objective);
-  const requestsExpanded = showHomeRequests || (Boolean(objective) && state.activeTab === 'home')
+  const showProjectRequests = (project && !list && page !== 'waiting') || Boolean(objective) || Boolean(feat);
+  const requestsExpanded = showHomeRequests || ((Boolean(objective) || Boolean(feat)) && state.activeTab === 'home')
     ? Boolean(state.home.requestsExpanded)
     : state.project.folded.has('waiting:more');
   const scopedRequests: ScopedRequest[] = showHomeRequests
@@ -232,7 +234,7 @@ export function renderWorkboardFrame(
         })))
     : showProjectRequests
       ? (() => {
-          const root = objective ? objective.target.root : selectedRoot;
+          const root = feat ? (feat.target.root || selectedRoot) : objective ? objective.target.root : selectedRoot;
           return projectWaitingList(root).map((item, index) => ({ root, projectName: '', item, index }));
         })()
       : [];
@@ -292,6 +294,18 @@ export function renderWorkboardFrame(
     ? objProject?.objectives?.resultDates?.[objDetail.target.objective.id]
       ?? objPortfolio?.resultDates?.get(objDetail.target.objective.id)
     : undefined;
+  const featRoot = feat?.target.root ?? '';
+  const featPortfolio = featRoot ? input.homePortfolio?.projects.find((p) => p.root === featRoot) : undefined;
+  const featProject = feat
+    ? (input.project && (!input.projectDisplayRoot || !featRoot || input.projectDisplayRoot === featRoot)
+        ? input.project
+        : featPortfolio?.snapshot ?? (!featRoot ? input.project : undefined))
+    : undefined;
+  const featProjectName = feat
+    ? (featRoot ? input.projects?.find((p) => p.root === featRoot)?.name : undefined)
+      ?? featPortfolio?.name
+      ?? (!featRoot || !input.projectDisplayRoot || input.projectDisplayRoot === featRoot ? input.projectName : undefined)
+    : undefined;
   const workerObjectiveTarget = (() => {
     if (!worker?.objective) return undefined;
     const root = worker.projectRoot ?? input.projectDisplayRoot ?? selectedRoot;
@@ -310,9 +324,11 @@ export function renderWorkboardFrame(
     // An open subpage or the Projects list has no tab row: clicking anywhere on its crumb row returns.
     const at = page
       ? projectCrumb(page, input.project, width, (input.projects?.length ?? 0) > 1 ? input.projectName : '')
-      : objDetail
-        ? objectiveCrumb(objDetail, objProject, objProjectName, width)
-        : undefined;
+      : feat
+        ? featureCrumb(feat, featProject, featProjectName, width)
+        : objDetail
+          ? objectiveCrumb(objDetail, objProject, objProjectName, width)
+          : undefined;
     frame.lines[0] = subTopRow(at?.crumb ?? (list ? t('Projects') : crumb), at?.right ?? '', width);
     frame.controls.push({ kind: help ? 'help' : 'board-back', x: 0, y: 0, width });
   } else {
@@ -392,6 +408,7 @@ export function renderWorkboardFrame(
   if (harnessAdd && addingHarness) state = { ...state, overlay: { ...addingHarness, pick: harnessAdd.pick } };
   let rows: MonitorRow[] = helpContent
     ? helpContent.rows
+    : feat ? featureDetailRows(feat, width, now, featProject, input.projectActivity)
     : objDetail ? objectiveDetailRows(objDetail, width, now, objProject, input.projectActivity, objResultAt)
     : runDetail ? activeRun ? runDetailRows(activeRun, width, now, activeRun.kind === 'queue' ? undefined : workflowDetailRows(activeRun, width, now)) : [boardRow(fit(t('Run not available'), width))]
     : native ? nativeInspectorRows(input.tree, width, now)
@@ -420,7 +437,7 @@ export function renderWorkboardFrame(
   // the details can still be scrolled without selecting a file first.
   const inspect = inspector ?? native ?? runDetail;
   const inspectCursor = inspect?.cursor && actions.some((r) => r.item === inspect.cursor) ? inspect.cursor : undefined;
-  const listNav = jobs ?? objective ?? (home ? state.home : undefined);
+  const listNav = jobs ?? objective ?? feat ?? (home ? state.home : undefined);
   const listCursor = listNav && (
     hasReq(listNav.cursor) || actions.some((r) => r.item === listNav.cursor)
       ? listNav.cursor
@@ -475,6 +492,7 @@ export function renderWorkboardFrame(
     frame.helpPage = { count: room, maxOffset: max };
   } else if (inspect) state = { ...state, subpage: { ...inspect, cursor: inspectCursor, scroll: offset, revealed } };
   else if (objective) state = { ...state, subpage: { ...objective, cursor: listCursor, scroll: offset, revealed } };
+  else if (feat) state = { ...state, subpage: { ...feat, cursor: listCursor, scroll: offset, revealed } };
   else if (jobs) {
     const place = { cursor: listCursor, scroll: offset, revealed };
     state = { ...state, jobs: place, subpage: { kind: 'jobs', ...place } };
@@ -513,9 +531,16 @@ export function renderWorkboardFrame(
   const reqFoldHint = requestsExpanded ? '⏎ fold' : '⏎ expand';
   const hints: FooterHints = help
     ? { modal: ['Esc back'] }
+    : feat ? (selectedReq
+        ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open', ...(!isRequestMoreItem(selectedReq.item) && selectedReq.files ? ['o file'] : []), 'Esc back']
+        : selected?.execJob
+          ? ['⏎ details', 'Esc back', ...(selected.execJob.tab ? ['g job tab'] : []), 'o file', ...(selected.execJob.tab ? ['P pin tab', 'H hide tab'] : [])]
+          : selected?.files
+            ? [feat.expanded?.includes(selected.item ?? '') ? '⏎ fold' : '⏎ expand', 'o file', 'Esc back']
+            : ['Esc back'])
     : objective ? (selectedReq
         ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open', ...(!isRequestMoreItem(selectedReq.item) && selectedReq.files ? ['o file'] : []), 'Esc back']
-        : [...(selected?.files || selected?.commit ? ['⏎ open'] : []), 'Esc back'])
+        : [...(selected?.featureTarget || selected?.files || selected?.commit ? ['⏎ open'] : []), 'Esc back'])
     : runDetail ? ['Esc back']
     : inspector ? inspectorKeys(worker)
       : native ? ['Esc back'] : jobs ? [...(selected?.batch ? batchKeys(selected.batch) : listCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
@@ -553,7 +578,7 @@ export function renderWorkboardFrame(
   // The theme's own text colour under every row, so a row with no ink of its own is not the terminal's.
   frame.lines = frame.lines.map((line) => theme.board.text(fit(line, width)));
   frame.panes.push({
-    id: inspector || native || objective || runDetail ? 'details' : 'agents',
+    id: inspector || native || objective || feat || runDetail ? 'details' : 'agents',
     x: 0,
     y: 1 + top,
     width,

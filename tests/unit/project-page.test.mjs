@@ -460,8 +460,7 @@ test('Each Project page keeps its own cursor and scroll, leaving it and across a
   const send = (frame, raw) => draw(handleMonitorInput(frame.state, decoder.push(Buffer.from(raw))[0], ctx(frame)).state);
   const hub = draw(onPage());
   let frame = send(hub, 't');
-  frame = draw(press(frame, 'enter').state); // expand the first feature, long enough to scroll
-  frame = draw(press(frame, 'end').state);
+  frame = draw(press(frame, 'end').state); // enough rows at height 8 to scroll
   const { cursor, scroll } = frame.state.project.nav;
   assert.ok(scroll > 0 && cursor.startsWith('project:'));
   const before = plain(frame);
