@@ -50,6 +50,9 @@
     ],
     "push": true
   },
+  "flakes": {
+    "feature": "test-flakes"
+  },
   "scratch": {
     "paths": [
       "tmp/tasks",

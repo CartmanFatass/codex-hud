@@ -21,6 +21,7 @@ import { recordLanding } from './land-records.js';
 import { repairLand } from './land-repair.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 import { LandOutput } from './land-evidence.js';
+import { collectGateFlakes, type GateFlake } from './land-flakes.js';
 
 class CommandError extends Error {
   constructor(message: string, readonly evidence: ReturnType<LandOutput['evidence']>) { super(message); }
@@ -116,6 +117,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
   const { wt, config: c } = own, main = wt.main_root;
   const scratch = (id: string) => join(dirname(wt.root), `land-${id}`);
   let f = own, members = [own], integration = scratch(own.flow), publishing = false;
+  const passedFlakes: GateFlake[] = [];
   const ref = `refs/heads/${c.base}`, lease = { home, cwd: main, holder: own.flow };
   // A queued helper can update its receipt without the checkout lease; serialize that with boarding.
   const queueLock = <T>(run: () => T) => withAbstractLock('land-queue', `${home}\0${main}`, run);
@@ -209,7 +211,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
           writePrivateFile(path, error.evidence.excerpt, { mkdir: false });
           return path;
         };
-        const { tests, files } = e.evidence;
+        const { tests, files, cases } = e.evidence;
         const entry: LandRerun = { step: label, tests, output_path: saveExcerpt(e) };
         reruns.push(entry);
         recordTiming(label, t0, false);
@@ -227,6 +229,14 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         }
         entry.rerun_ok = true;
         recordTiming(label, r0, true, { rerun: true });
+        for (const item of cases.length ? cases : [{ name: label }]) {
+          passedFlakes.push({
+            name: item.name ?? item.file ?? label,
+            ...(item.file && { file: item.file }),
+            flow: f.flow,
+            ...(entry.output_path && { log: entry.output_path }),
+          });
+        }
       }
     }
   }
@@ -559,7 +569,8 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
   }
   try {
     for (;;) {
-      if (!await acquire() || await train()) return;
+      if (!await acquire()) return;
+      if (await train()) break;
       checkCancel();
       let who: string[];
       try { who = await prepare(); }
@@ -589,4 +600,14 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     }
   } catch (e) { fail(e); }
   finally { if (acquired) await takeLease({ name: 'main-checkout', release: true }, lease); }
+  const landedTickets = members.flatMap(row => {
+    if (row.state !== 'completed') return [];
+    try {
+      const receipt = readJsonFile(join(home, 'jobs', row.job, jobFiles.job)) as Job;
+      return typeof receipt.ticket === 'string' && receipt.ticket ? [receipt.ticket] : [];
+    } catch { return []; }
+  });
+  if (passedFlakes.length || landedTickets.length) {
+    await collectGateFlakes(home, main, passedFlakes, f.pane, { landedTickets }).catch(() => {});
+  }
 }

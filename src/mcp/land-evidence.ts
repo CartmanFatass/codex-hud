@@ -18,11 +18,14 @@ function clip(line: string, cap: number, fromEnd = false) {
 
 type Block = { kind: 'spec' | 'tap'; lines: string[]; bytes: number; file?: string; name?: string; assertion?: number };
 
+export interface LandEvidenceCase { name?: string; file?: string }
+
 /** Capture assertion blocks as they arrive; a long frame or trailing output must not evict them. */
 export class LandOutput {
   private recent: string[] = [];
   private blocks: Block[] = [];
   private first = new Map<string, Block>();
+  private caseMap = new Map<string, LandEvidenceCase>();
   readonly files = new Set<string>();
   readonly tests = new Set<string>();
 
@@ -44,9 +47,15 @@ export class LandOutput {
       if (block?.name) {
         const name = clip(block.name, BYTE_CAP / 4);
         this.tests.add(file ? `${name} (${file})` : name);
+        const key = `${name}\0${file ?? ''}`;
+        if (!this.caseMap.has(key)) this.caseMap.set(key, file ? { name, file } : { name });
         if (file && !this.first.has(file) && this.first.size < LINE_CAP) this.first.set(file, block);
         if (this.blocks.length < LINE_CAP) this.blocks.push(block);
-      } else if (file) this.tests.add(file);
+      } else if (file) {
+        this.tests.add(file);
+        const key = `\0${file}`;
+        if (!this.caseMap.has(key)) this.caseMap.set(key, { file });
+      }
       block = undefined;
     };
     const start = (kind: Block['kind'], line: string, file?: string, name?: string) => {
@@ -97,12 +106,12 @@ export class LandOutput {
   tail() { return [...this.recent]; }
 
   evidence() {
-    const tests = [...this.tests], files = [...this.files];
+    const tests = [...this.tests], files = [...this.files], cases = [...this.caseMap.values()];
     // Reserve names and assertion messages before spending either limit on stacks and diffs.
     const blocks = [...new Set([...this.first.values(), ...this.blocks])];
     if (!blocks.length) {
       const excerpt = clip(this.recent.join('\n'), BYTE_CAP, true);
-      return { tail: excerpt ? excerpt.split('\n') : [], excerpt, tests, files };
+      return { tail: excerpt ? excerpt.split('\n') : [], excerpt, tests, files, cases };
     }
     let lines = 0, bytes = 0;
     const picked = new Map(blocks.map(block => [block, new Set<number>()]));
@@ -137,13 +146,13 @@ export class LandOutput {
         const half = Math.floor(cap / 2);
         return assertion ? `${clip(title, half)}: ${clip(assertion, cap - half - 2)}` : clip(title, cap);
       });
-      return { tail, excerpt: tail.join('\n'), tests, files };
+      return { tail, excerpt: tail.join('\n'), tests, files, cases };
     }
     for (const block of blocks) {
       if (!picked.get(block)!.size) continue;
       for (let i = 0; i < block.lines.length; i++) if (!take(block, [i])) break;
     }
     const tail = blocks.flatMap(block => [...picked.get(block)!].sort((a, b) => a - b).map(i => block.lines[i]));
-    return { tail, excerpt: tail.join('\n'), tests, files };
+    return { tail, excerpt: tail.join('\n'), tests, files, cases };
   }
 }
