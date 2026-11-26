@@ -28,3 +28,15 @@ Build: Rust toolchain pinned 1.96.1 in `rust-toolchain.toml` (machine has 1.97.1
 `src/runtime/cli-invocation.ts` (shim, ZDOTDIR wrapper, witness, startup shell snapshot), `src/runtime/tab-shell.ts`, `src/runtime/tab-owner.ts:10-19`, `packages/hud-mcp/bin/hud-cli.mjs` exec-witness, most of `src/runtime/reap-tab.ts`, `closedTabs`/close reconciliation in `src/runtime/watch-runtime.ts` and `watch.ts`, close handling in `src/runtime/cli-supervisor.ts`, `retryBusyPane`/`HUD_TAB_LAUNCH`. Kept: `src/roles/worker-tree.ts` (headless and detached descendants), `cli-kinds.ts`, `cli-judge.ts`.
 
 HUD detects the fork's capabilities (version suffix `-hud` or an API capability field) and keeps today's path on stock herdr until the fork is installed.
+
+## Backlog (D-2026-11-26-02, owner 2026-11-26)
+
+Allowed, not scheduled. Order after D-2026-11-26-01 steps 1–3 unless the owner moves one up:
+
+1. Unattended service: owner sets it up and switches it on; keeps configured work moving and hands back at
+   configured points; may be a resident service; never inferred from activity or presence.
+2. Single-project execution page: live worker views, thumbnails, delegation; separate from Home.
+3. Selection sent directly to a working job, for tasks that gain from closer interaction (needs answer correlation).
+4. Universal herdr-drawn statusline for every client; native statuslines stay until it matches them.
+5. Fine-grained interaction, lower priority: advisor side window, drag a pane to a worker, pane annotations.
+6. TODO, not now: cross-machine control (phone client, remote worker pool).

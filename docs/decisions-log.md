@@ -7,6 +7,15 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-25
 
+- **D-2026-11-26-02** (§1 display rule, §2.1, §2.2, §3): Owner widened the boundary after reading what the herdr
+  plans left out. A resident service is allowed where a feature needs one. A universal herdr-drawn statusline may be
+  built, but native statuslines stay for now. Execution detail is allowed on a separate single-project execution
+  page; the old ban was about Home, where the owner oversees several projects. A selection may go directly to a
+  working job where a task gains from closer interaction. An unattended capability is wanted, as a service the owner
+  sets up and switches on, never as monitoring. Fine-grained interaction (advisor side window, drag a pane to a
+  worker, annotations) may be built at lower priority. Cross-machine control is a TODO, not now. Backlog with order:
+  `.scratch/herdr-fork/plan.md` "Backlog (D-2026-11-26-02)".
+
 - **D-2026-11-26-01** (§1, §2.1, §2.2, Removed): Next stage on the herdr fork, adopted from the converged plan
   `docs/fable-proposal/01-herdr-fork-final-plan.md` (Fable, Astra, Carbon proposals). Owner (2026-11-26): adopt all
   three steps as the `herdr-fork` objective, with draft-safe typing (plan 2c) moved into the first fork install;

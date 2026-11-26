@@ -25,7 +25,9 @@ efficiency, before/after comparisons); HUD records the facts it reads (§2.3) an
 **Personal Standards** (external repos and skills) holds knowledge and preferences; HUD owns none of it. (new)
 
 Display rule, replacing “cards win” (22.14): the owner's objectives, results and open requests come before
-execution detail; when space runs out, execution detail is not shown. (new)
+execution detail; when space runs out, execution detail is not shown. This governs Home and the multi-project
+views; a separate single-project execution page may show execution detail (live worker views, thumbnails,
+delegation). (new, 26.02)
 
 ## 2. What it must do
 
@@ -47,9 +49,11 @@ execution detail; when space runs out, execution detail is not shown. (new)
   start children. `oracle` advises without changing tracked files or owner state. Keep named exclusive leases for shared resources. (17.06, 18.03, 21.07, 21.10, 22.19, 23.02)
 - Worker questions, reports and progress work without a panel. Questions reach main immediately; an answer is written
   once and resumes a waiting headless turn. Keep negotiated MCP tasks, mod-owned wake, native client delivery and
-  watch/`changes` fallbacks without duplicate wakes. Owner actions reach the responsible session too, including a pane selection sent with its source. Typed delivery into a main session happens only when it is idle and its prompt line is empty (26.01). A completion
+  watch/`changes` fallbacks without duplicate wakes. Owner actions reach the responsible session too, including a pane selection sent with its source (to main, or directly to a working job where a task gains from closer interaction). Typed delivery into a main session happens only when it is idle and its prompt line is empty (26.01). A completion
   notice is not a read. `hud_read` returns a digest or the full report; signature-bound summary, files and checks
   need no display model. Keep idempotent create/send and batch tools. (14.03, 18.06, 21.06, 21.08, 22.01, 22.09, 22.15, 22.25)
+- An unattended service the owner sets up and switches on explicitly keeps configured work moving while nobody is
+  at the desk and hands back at the configured points. It is never inferred from the owner's activity or presence. (26.02)
 - Successful completion requires a matching current-turn report receipt and a finished turn, or native pi settlement
   with a fresh report. Open questions or uncollected children block closure. Silence or a display label cannot fail
   a live worker; the bounded quiet-job rule needs quoted quota evidence to declare failure. Hand uncertainty to main.
@@ -120,7 +124,8 @@ for tool contracts, role defaults, launches, wake, checks, trains, repairs and c
 ### 2.2 What the owner sees
 
 **Statusline.** Keep the compact client line, `line` and `p10k`, pi's editor ribbon and other extensions' statuses,
-the `codexH` bar (drawn by herdr in a reserved pane row, without tmux) and supported native statuslines. (11.04, 12.01, 17.09, 22.12, 22.27)
+the `codexH` bar (drawn by herdr in a reserved pane row, without tmux) and supported native statuslines. A universal
+statusline drawn by herdr for every client may follow; native statuslines stay until it matches them. (26.02) (11.04, 12.01, 17.09, 22.12, 22.27)
 
 - Distinguish **this session** (model, effort, context, project/branch, available quota and reset, output tokens/s or
   client-specific usage) from **this machine** (local CPU utilization, RAM used/total, running and queued HUD jobs).
@@ -237,9 +242,10 @@ one-way GitHub Issues mirror via `gh`; no polling GitHub or contacting it from t
 
 ## 3. What it does not do
 
-- No new harness, general supervisor, ledger database or resident server. Local adapters and the on-demand watcher
-  suffice; the workflow runner is short-lived per run and exits when the run pauses or ends. No native Windows,
-  multi-user identity, cross-machine control or npm publishing. (10.01, 10.03, 14.02, 22.10, 25.06)
+- No new harness, general supervisor or ledger database. A resident service is allowed where a feature needs one
+  (e.g. an unattended service); otherwise local adapters and the on-demand watcher suffice, and the workflow runner
+  is short-lived per run. No native Windows, multi-user identity or npm publishing. Cross-machine control is a later
+  TODO, not built now. (10.01, 10.03, 14.02, 22.10, 25.06, 26.02)
 - No transactional installer, vendor pins or upstream tracking for HUD-owned bars. Back up edited client files. (10.01, 10.03)
 - Not a replacement for Git, issues or project docs. No inferred attention score, human activity surveillance, ROI
   or “intelligence” ranking. Historical comparisons belong in toktrack or a requested study. Teaching, preferences
