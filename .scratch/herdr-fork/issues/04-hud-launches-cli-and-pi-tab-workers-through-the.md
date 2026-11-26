@@ -16,3 +16,5 @@
 ## Comments
 
 - Landed in this commit (replay base dc11e8d8c6b42574f27be1b1de356a8809507826); gate 5/5 passed.
+
+- 2026-11-25 main: landed 26350ad3 (flow f62da6fce5ec7a353; gate repair j59a9e822a81e6288 updated the cancel reap argv test for `--launch`). Reviews: docs/reviews/2026-11-25-herdr-fork-04-review.md. Live check on fork 0.9.5-hud.3027f8dd: claude, agy, pi start direct (parent herdr), PID/start match /proc, tab launch_id matches SESSION. First prompt stalled for all three (fork direct-exec skips the managed launch lifecycle; HUD took idle as ready) → herdr-fork/05, /06. After a manual Enter, claude and pi reported and their tabs closed on the first reap.
