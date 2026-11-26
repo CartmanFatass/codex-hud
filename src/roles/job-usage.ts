@@ -8,24 +8,56 @@ import { jobFiles as files } from '../mcp/paths.js';
 import { readFileBounded, readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 
 const WINDOW = 1024 * 1024;
+const MAX_SERVED_MODELS = 4;
+const MAX_MODEL_LEN = 160;
 const fields = ['input', 'cache_read', 'cache_write', 'output', 'cost_usd'] as const;
-export type JobUsage = Partial<Record<(typeof fields)[number], number>>;
+export type JobUsage = Partial<Record<(typeof fields)[number], number>> & {
+  served_model?: string;
+  served_models?: string[];
+};
 export const record = (v: unknown): Record<string, unknown> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
 export const text = (v: unknown) => typeof v === 'string' && v ? v : undefined;
 export const count = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : undefined;
 export const epoch = (v: unknown) => { const at = Date.parse(text(v) ?? ''); return Number.isFinite(at) ? at : undefined; };
 const dollars = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined;
+function modelId(value: unknown): string | undefined {
+  const s = text(value)?.trim();
+  if (!s || s.length > MAX_MODEL_LEN || /[\r\n\0]/.test(s) || s.toLowerCase() === '<synthetic>') return;
+  return s;
+}
+function collectServed(raw: Iterable<unknown>): Pick<JobUsage, 'served_model' | 'served_models'> {
+  const list: string[] = [];
+  for (const item of raw) {
+    const id = modelId(item);
+    if (!id) continue;
+    const i = list.indexOf(id);
+    if (i !== -1) list.splice(i, 1);
+    list.push(id);
+  }
+  if (!list.length) return {};
+  const capped = list.slice(-MAX_SERVED_MODELS);
+  return capped.length > 1 ? { served_model: capped[capped.length - 1], served_models: capped } : { served_model: capped[0] };
+}
+function servedList(u: Record<string, unknown> | undefined): string[] {
+  if (!u) return [];
+  const many = Array.isArray(u.served_models) ? u.served_models : [];
+  return [...many, u.served_model].flatMap(v => { const id = modelId(v); return id ? [id] : []; });
+}
 export function jobUsage(value: unknown): JobUsage | undefined {
   const raw = record(value), usage: JobUsage = {};
   for (const key of fields) {
     const n = key === 'cost_usd' ? dollars(raw[key]) : count(raw[key]);
     if (n !== undefined) usage[key] = n;
   }
+  const served = collectServed(servedList(raw));
+  if (served.served_model) usage.served_model = served.served_model;
+  if (served.served_models) usage.served_models = served.served_models;
   return Object.keys(usage).length ? usage : undefined;
 }
 function sum(a: JobUsage | undefined, b: JobUsage | undefined): JobUsage | undefined {
   if (!a || !b) return;
-  return jobUsage(Object.fromEntries(fields.flatMap(key => a[key] === undefined || b[key] === undefined ? [] : [[key, a[key] + b[key]]])));
+  const totals = Object.fromEntries(fields.flatMap(key => a[key] === undefined || b[key] === undefined ? [] : [[key, a[key] + b[key]]]));
+  return jobUsage({ ...totals, ...collectServed([...servedList(a), ...servedList(b)]) });
 }
 
 function rows(path: string, start = 0) {
@@ -48,14 +80,51 @@ function rows(path: string, start = 0) {
   return { data, cut: offset > start, malformed, end: before.size };
 }
 
+function piTierSuffix(rawTier: unknown, model: string): string {
+  const tier = text(rawTier)?.trim().toLowerCase(), lower = model.toLowerCase();
+  if (tier === 'priority' || tier === 'fast') return lower.endsWith(':fast') || lower.endsWith('-fast') ? '' : ':fast';
+  if (tier === 'ultrafast' || tier === 'ultra_fast' || tier === 'ultra-fast')
+    return lower.endsWith(':ultrafast') || lower.endsWith('-ultrafast') ? '' : ':ultrafast';
+  return '';
+}
+function piModel(m: Record<string, unknown>, u: Record<string, unknown>, activeTier?: string): string | undefined {
+  const model = modelId(m.model);
+  if (!model) return;
+  const provider = text(m.provider)?.trim();
+  const qualified = provider && !model.startsWith(`${provider}/`) ? `${provider}/${model}` : model;
+  const tier = text(m.serviceTier) ?? text(m.service_tier) ?? text(u.serviceTier) ?? text(u.service_tier) ?? text(u.speed) ?? activeTier;
+  return modelId(qualified + piTierSuffix(tier, qualified));
+}
+
 // Same entry types as the pi footer, without its pricing fallback. A copied sonic
 // session includes the source job's traffic; only count entries from this job.
 function piTotals(path: string, job: Partial<Job>) {
   const window = rows(path);
   if (!window || window.cut || window.malformed || window.data[0]?.type !== 'session') return;
   const since = job.retry_of && epoch(job.created_at);
+  let sessionTier: string | undefined;
+  const providerTiers = new Map<string, string>();
   const entries: (JobUsage | undefined)[] = [];
+  const models: string[] = [];
   for (const row of window.data) {
+    if (row.type === 'service_tier_change') {
+      const st = row.serviceTier ?? row.service_tier;
+      if (typeof st === 'string' && st.trim()) {
+        sessionTier = st.trim();
+        providerTiers.clear();
+      } else if (st && typeof st === 'object' && !Array.isArray(st)) {
+        sessionTier = undefined;
+        providerTiers.clear();
+        for (const [k, v] of Object.entries(st)) {
+          const val = text(v)?.trim();
+          if (val) providerTiers.set(k, val);
+        }
+      } else {
+        sessionTier = undefined;
+        providerTiers.clear();
+      }
+      continue;
+    }
     const m = record(row.message);
     // Pi may record a failed/aborted assistant with no metered usage; it still
     // makes the job's totals uncertain rather than free.
@@ -68,11 +137,17 @@ function piTotals(path: string, job: Partial<Job>) {
       if (at < since) continue;
     }
     const u = record(raw), cost = record(u.cost), total = dollars(cost.total);
+    if (row.type === 'message' && m.role === 'assistant' && raw !== undefined) {
+      const provider = text(m.provider)?.trim();
+      const served = piModel(m, u, (provider ? providerTiers.get(provider) : undefined) ?? sessionTier);
+      if (served) models.push(served);
+    }
     // Pi can use an unmarked zero for an unpriced model.
     entries.push(jobUsage({ input: u.input, cache_read: u.cacheRead, cache_write: u.cacheWrite, output: u.output,
       cost_usd: (total !== undefined && total > 0) || cost.totalFromProvider === true ? total : undefined }));
   }
-  return entries.length ? entries.reduce(sum) : undefined;
+  const totals = entries.length ? entries.reduce(sum) : undefined;
+  return jobUsage({ ...totals, ...collectServed(models) });
 }
 
 function claudeUsage(raw: unknown, cost?: unknown) {
@@ -92,9 +167,15 @@ function agyUsage(raw: unknown) {
 }
 
 function resultUsage(row: Record<string, unknown>, agent: string) {
-  if (agent === 'claude' && row.type === 'result') return { usage: claudeUsage(row.usage, row.total_cost_usd) };
+  if (agent === 'claude' && row.type === 'result') {
+    const served = collectServed(Object.keys(record(row.modelUsage)));
+    return { usage: jobUsage({ ...claudeUsage(row.usage, row.total_cost_usd), ...served }) };
+  }
   if (agent === 'codex' && row.type === 'turn.completed') return { usage: codexUsage(row.usage) };
-  if (agent === 'agy' && row.event === 'result') return { usage: agyUsage(record(row.result).usage) };
+  if (agent === 'agy' && row.event === 'result') {
+    const res = record(row.result);
+    return { usage: jobUsage({ ...agyUsage(res.usage), ...collectServed([res.model]) }) };
+  }
 }
 
 function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobStatus>) {
@@ -110,11 +191,23 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
   const window = rows(path);
   if (!window) return;
   if (agent === 'codex') {
+    const turnModels: string[] = [], metaModels: string[] = [];
+    for (const row of window.data) {
+      const p = record(row.payload);
+      if (row.type === 'turn_context') {
+        const m = modelId(p.model ?? record(record(p.collaboration_mode).settings).model);
+        if (m) turnModels.push(m);
+      } else if (row.type === 'session_meta') {
+        const m = modelId(p.model);
+        if (m) metaModels.push(m);
+      }
+    }
+    const served = collectServed(turnModels.length ? turnModels : metaModels);
     let newerRequest = false;
     for (const row of [...window.data].reverse()) {
       const p = record(row.payload);
       const total = row.type === 'event_msg' && p.type === 'token_count' ? record(p.info).total_token_usage : undefined;
-      if (total && !newerRequest) return codexUsage(total);
+      if (total && !newerRequest) return jobUsage({ ...codexUsage(total), ...served });
       if (row.type === 'token_usage_record') newerRequest = true;
     }
     if (window.cut || window.malformed) return;
@@ -142,24 +235,29 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
       turns.set(key, entry);
     }
     const usages = [...turns.values()].flatMap(t => t.modern.length ? t.modern : t.legacy);
-    return usages.length ? usages.reduce(sum) : undefined;
+    const totals = usages.length ? usages.reduce(sum) : undefined;
+    return jobUsage({ ...totals, ...served });
   }
   // These transcripts have per-request, not cumulative, usage.
   if (window.cut || window.malformed) return;
   if (agent === 'agy') {
-    const turns = window.data.filter(row => row.type === 'PLANNER_RESPONSE').map(agyUsage);
-    return turns.length ? turns.reduce(sum) : undefined;
+    const planner = window.data.filter(row => row.type === 'PLANNER_RESPONSE');
+    const totals = planner.length ? planner.map(agyUsage).reduce(sum) : undefined;
+    return jobUsage({ ...totals, ...collectServed(planner.map(row => row.model)) });
   }
   const turns = new Map<string, JobUsage | undefined>();
+  const models: unknown[] = [];
   for (const row of window.data) {
     if (row.type !== 'assistant') continue;
     const m = record(row.message), key = text(m.id) ?? text(row.requestId);
-    if (m.model === '<synthetic>') continue;
+    if (typeof m.model === 'string' && m.model.trim().toLowerCase() === '<synthetic>') continue;
     if (!key) return;
+    models.push(m.model);
     const usage = claudeUsage(m.usage);
     if (usage || !turns.has(key)) turns.set(key, usage);
   }
-  return turns.size ? [...turns.values()].reduce(sum) : undefined;
+  const totals = turns.size ? [...turns.values()].reduce(sum) : undefined;
+  return jobUsage({ ...totals, ...collectServed(models) });
 }
 
 type Receipt = { key: string; usage?: JobUsage; stream?: { end: number; usage?: JobUsage } };
@@ -192,7 +290,16 @@ export function recordJobUsage(dir: string, job: Partial<Job>, status: Partial<J
         // stream only, and must not silently omit a paused or killed turn.
         const complete = start !== undefined ? results.length === 1 : !window.cut && !window.malformed &&
           results.length > 0 && starts <= results.length;
-        const current = complete ? results.map(r => r.usage).reduce(sum) : undefined;
+        let current = complete ? results.map(r => r.usage).reduce(sum) : undefined;
+        if (complete && agent === 'claude') {
+          const assistantModels = window.data.flatMap(row => {
+            if (row.type !== 'assistant') return [];
+            const id = modelId(record(row.message).model);
+            return id ? [id] : [];
+          });
+          if (assistantModels.length)
+            current = jobUsage({ ...current, ...collectServed([...servedList(current), ...assistantModels]) });
+        }
         usage = start ? (prior?.stream?.end === start ? sum(prior.stream.usage, current) : undefined) : current;
         stream = { end: window.end, usage };
       }
@@ -200,10 +307,18 @@ export function recordJobUsage(dir: string, job: Partial<Job>, status: Partial<J
   }
   try {
     if (agent) {
-      // Native transcripts may supply token totals when a stream has no result
-      // (for example, a pause). Never add two views of the same traffic.
-      if (!usage || usage.input === undefined || usage.output === undefined)
-        usage = jobUsage({ ...transcriptUsage(agent, job, status), ...usage });
+      // Native transcripts may supply token totals or served_model when a stream
+      // lacks them (for example, a pause or Codex/AGY stream). Never add two views of the same traffic.
+      if (!usage || usage.input === undefined || usage.output === undefined || !usage.served_model) {
+        const native = transcriptUsage(agent, job, status);
+        if (native) {
+          const totals = !usage || usage.input === undefined || usage.output === undefined ? { ...native, ...usage } : { ...usage };
+          const served = usage?.served_model
+            ? { served_model: usage.served_model, served_models: usage.served_models }
+            : { served_model: native.served_model, served_models: native.served_models };
+          usage = jobUsage({ ...totals, ...served });
+        }
+      }
     } else {
       const path = status.session_file ?? (job.headless ? join(dir, files.sonicSession) : undefined);
       if (path && isAbsolute(path)) usage = piTotals(path, job);

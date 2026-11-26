@@ -10,6 +10,8 @@ import { stopJob } from '../../dist/cli/panel-pane.js';
 import { answerJobQuestion } from '../../dist/collectors/panel-actions.js';
 import { procStat } from '../../dist/mcp/cli-judge.js';
 import { archiveJob } from '../../dist/roles/job-archive.js';
+import { archiveJobLand } from '../../dist/roles/job-land.js';
+import { recordJobUsage } from '../../dist/roles/job-usage.js';
 import { defaultSettings } from '../../dist/settings.js';
 import { ask } from '../../dist/worker/tools.js';
 import { fixture as retentionFixture, until as watchUntil } from '../helpers/job-retention-fixture.mjs';
@@ -277,4 +279,78 @@ test('questions archive answered_by (orchestrator, owner via panel or hud_respon
   assert.equal(byQ.q8.answered_at, undefined);
   assert.equal(byQ.q8.answered_by, undefined);
   assert.equal(byQ.q8.used_default, false);
+});
+
+test('archiveJobLand and archiveJob copy land.base_sha, land.source_sha, and usage.served_model while older records omit them cleanly', async (t) => {
+  const f = await fixture(t);
+  const ended = '2026-11-24T12:00:00.000Z';
+  const base1 = '1'.repeat(40), src1 = '2'.repeat(40);
+  const base2 = '3'.repeat(40), src2 = '4'.repeat(40), landedSha = '5'.repeat(40);
+
+  // 1. Job with usage.served_model (+ served_models) and 2-attempt land flow carrying base_sha/source_sha.
+  const modern = await f.call('hud_create', { role: 'imp', task: 'Synthetic served_model + land span.' });
+  const piSession = join(modern.task_dir, 'session.jsonl');
+  write(piSession, [
+    JSON.stringify({ type: 'session' }),
+    JSON.stringify({ type: 'message', timestamp: '2026-11-24T11:55:00.000Z', message: { role: 'assistant', provider: 'openai', model: 'gpt-6.2-sol', serviceTier: 'fast', usage: { input: 8, cacheRead: 2, cacheWrite: 0, output: 4 } } }),
+    JSON.stringify({ type: 'message', timestamp: '2026-11-24T11:58:00.000Z', message: { role: 'assistant', provider: 'openai', model: 'gpt-6.2-sol-2026-11-24', usage: { input: 6, cacheRead: 1, cacheWrite: 0, output: 3 } } }),
+  ].join('\n') + '\n');
+  const modernStatus = { state: 'closed', started_at: '2026-11-24T11:50:00.000Z', settled_at: ended, ended_at: ended, session_file: piSession, output_written: true };
+  recordJobUsage(modern.task_dir, readJob(modern.task_dir), modernStatus);
+
+  const flowsDir = join(f.env.HUD_HOME, 'flows');
+  fs.mkdirSync(flowsDir, { recursive: true });
+  const flowBase = `f${modern.job.slice(1)}`;
+  write(join(flowsDir, `${flowBase}.json`), JSON.stringify({
+    job: modern.job, state: 'failed', created_at: '2026-11-24T12:01:00.000Z', updated_at: '2026-11-24T12:02:00.000Z',
+    base_sha: base1, source_sha: src1,
+  }));
+  write(join(flowsDir, `${flowBase}-2.json`), JSON.stringify({
+    job: modern.job, state: 'completed', created_at: '2026-11-24T12:03:00.000Z', updated_at: '2026-11-24T12:04:00.000Z',
+    base_sha: base2, source_sha: src2, landed_sha: landedSha, landed_at: '2026-11-24T12:04:00.000Z',
+  }));
+
+  const projectedLand = archiveJobLand(f.env.HUD_HOME, modern.job);
+  assert.equal(projectedLand?.sha, landedSha);
+  assert.equal(projectedLand?.base_sha, base2);
+  assert.equal(projectedLand?.source_sha, src2);
+
+  archiveJob(f.env.HUD_HOME, modern.task_dir, modern.job, readJob(modern.task_dir), modernStatus, Date.parse(ended), (m) => assert.fail(m));
+
+  // 2. Older job & flow lacking served_model, base_sha, and source_sha serialize without fabricated defaults.
+  const legacy = await f.call('hud_create', { role: 'imp', task: 'Synthetic legacy job without new fields.' });
+  const legacyStatus = { state: 'closed', started_at: '2026-11-24T11:50:00.000Z', settled_at: ended, ended_at: ended, output_written: true };
+  write(join(legacy.task_dir, 'usage.json'), JSON.stringify({
+    key: ended, usage: { input: 5, output: 2 },
+  }));
+  write(join(f.env.HUD_HOME, 'flows', `f${legacy.job.slice(1)}.json`), JSON.stringify({
+    job: legacy.job, state: 'completed', created_at: '2026-11-24T12:01:00.000Z', updated_at: '2026-11-24T12:02:00.000Z',
+    landed_sha: landedSha, landed_at: '2026-11-24T12:02:00.000Z',
+  }));
+
+  const legacyLand = archiveJobLand(f.env.HUD_HOME, legacy.job);
+  assert.equal(legacyLand?.sha, landedSha);
+  assert.equal('base_sha' in legacyLand, false);
+  assert.equal('source_sha' in legacyLand, false);
+
+  archiveJob(f.env.HUD_HOME, legacy.task_dir, legacy.job, readJob(legacy.task_dir), legacyStatus, Date.parse(ended), (m) => assert.fail(m));
+
+  const byId = new Map(readArchive(f.env.HUD_HOME).map((row) => [row.job, row]));
+  const modernRow = byId.get(modern.job);
+  assert.deepEqual(modernRow.usage, {
+    input: 14, cache_read: 3, cache_write: 0, output: 7,
+    served_model: 'openai/gpt-6.2-sol-2026-11-24',
+    served_models: ['openai/gpt-6.2-sol:fast', 'openai/gpt-6.2-sol-2026-11-24'],
+  });
+  assert.equal(modernRow.land.sha, landedSha);
+  assert.equal(modernRow.land.base_sha, base2);
+  assert.equal(modernRow.land.source_sha, src2);
+
+  const legacyRow = byId.get(legacy.job);
+  assert.deepEqual(legacyRow.usage, { input: 5, output: 2 });
+  assert.equal('served_model' in legacyRow.usage, false);
+  assert.equal('served_models' in legacyRow.usage, false);
+  assert.equal(legacyRow.land.sha, landedSha);
+  assert.equal('base_sha' in legacyRow.land, false);
+  assert.equal('source_sha' in legacyRow.land, false);
 });

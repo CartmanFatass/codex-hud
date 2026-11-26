@@ -25,9 +25,12 @@ function archiveFacts(value: unknown): JobFacts | undefined {
   if (r.v !== 1 || !id || !JOB_ID_RE.test(id)) return;
   const route = record(r.route), raw = record(r.land);
   const attempts = count(raw.attempts), reruns = count(raw.reruns), repairs = count(raw.repairs), state = text(raw.state);
+  const hexSha = (v: unknown) => typeof v === 'string' && /^[0-9a-f]{7,64}$/i.test(v) ? v : undefined;
+  const base_sha = hexSha(raw.base_sha), source_sha = hexSha(raw.source_sha);
   const land: JobLand | undefined = attempts !== undefined && reruns !== undefined && repairs !== undefined &&
     (state === 'queued' || state === 'running' || state === 'completed' || state === 'failed' || state === 'cancelled')
-    ? { attempts, reruns, repairs, state, sha: text(raw.sha), landed_at: text(raw.landed_at), updated_at: text(raw.updated_at) } : undefined;
+    ? { attempts, reruns, repairs, state, sha: text(raw.sha), ...(base_sha && { base_sha }), ...(source_sha && { source_sha }),
+        landed_at: text(raw.landed_at), updated_at: text(raw.updated_at) } : undefined;
   return { job: id, project: text(r.project), role: text(r.role), harness: text(r.harness), model: text(r.model),
     used_place: text(r.used_place), ticket: text(r.ticket), objective: objectiveLink(r.objective), package: text(r.package), route: { tier: text(route.tier), mode: text(route.mode) },
     mode: text(r.mode), question_count: count(r.question_count), parent_job: text(r.parent_job), summary: text(r.summary),
@@ -181,7 +184,7 @@ export function summarizeJobs(jobs: readonly JobFacts[], children: JobStats['chi
   const middle = Math.floor(times.length / 2);
   const median = !times.length ? undefined : times.length % 2 ? times[middle] : (times[middle - 1] + times[middle]) / 2;
   const lands = jobs.flatMap(j => j.land ? [j.land] : []);
-  const usage = Object.fromEntries(usageMetrics.map(key => [key, metric(jobs.map(j => j.usage?.[key]))])) as Record<keyof JobUsage, Metric>;
+  const usage = Object.fromEntries(usageMetrics.map(key => [key, metric(jobs.map(j => j.usage?.[key]))])) as Record<(typeof usageMetrics)[number], Metric>;
   return { jobs: jobs.length, time: metric(times), median, questions: metric(jobs.map(j => j.question_count)),
     sonic: jobs.reduce((n, j) => n + (children.get(j.job) ?? 0), 0), usage,
     land: { observed: lands.length, landed: lands.filter(l => l.sha).length,

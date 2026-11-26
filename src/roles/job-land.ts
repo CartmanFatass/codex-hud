@@ -12,9 +12,11 @@ type LandAttempt = {
   sha?: string; landed_at?: string; reruns: number; repairs: number;
 };
 export type JobLand = Omit<LandAttempt, 'attempt'> & LandDetails & {
-  attempts: number; attempt_details?: LandAttempt[];
+  attempts: number; base_sha?: string; source_sha?: string; attempt_details?: LandAttempt[];
 };
-export type JobFlow = LandAttempt & LandDetails & { job: string; project?: string; flaky: string[] };
+export type JobFlow = LandAttempt & LandDetails & {
+  job: string; project?: string; base_sha?: string; source_sha?: string; flaky: string[];
+};
 const states = new Set(['queued', 'running', 'completed', 'failed', 'cancelled']);
 const sha = (v: unknown) => typeof v === 'string' && /^[0-9a-f]{7,64}$/i.test(v) ? v : undefined;
 export function readJobFlow(home: string, name: string, details = false): JobFlow {
@@ -28,8 +30,10 @@ export function readJobFlow(home: string, name: string, details = false): JobFlo
   const flakyTests = (r: Record<string, unknown>) =>
     (r.rerun_ok === true || (r.rerun_ok === undefined && !r.output_path)) && Array.isArray(r.tests)
       ? r.tests.flatMap(test => typeof test === 'string' && test ? [test.slice(0, 240)] : []) : [];
+  const base_sha = sha(f.base_sha), source_sha = sha(f.source_sha);
   // Keep the legacy date fallback for stats, but retain only measured times in attempt details.
   return { job, attempt, project: text(record(f.wt).main_root), state: state as JobLand['state'], sha: sha(f.landed_sha),
+    ...(base_sha && { base_sha }), ...(source_sha && { source_sha }),
     created_at: text(f.created_at), landed_at: text(f.landed_at) ?? (details ? undefined : text(f.updated_at)),
     updated_at: text(f.updated_at), reruns: reruns.filter(raw => {
       const r = record(raw);
@@ -59,10 +63,13 @@ export function jobLand(flows: readonly JobFlow[], details = false): JobLand | u
   // If an earlier receipt is absent, its counts are not zero.
   if (flows.length !== latest.attempt) return;
   const landed = flows.find(f => f.sha);
+  const anchor = landed ?? latest;
   const repair_details = flows.flatMap(f => f.repair_details ?? []), rerun_details = flows.flatMap(f => f.rerun_details ?? []);
   return { attempts: flows.length, state: latest.state, reruns: flows.reduce((n, f) => n + f.reruns, 0),
-    repairs: flows.reduce((n, f) => n + f.repairs, 0), sha: landed?.sha, landed_at: landed?.landed_at ?? landed?.updated_at,
-    created_at: (landed ?? latest).created_at, updated_at: latest.updated_at,
+    repairs: flows.reduce((n, f) => n + f.repairs, 0), sha: landed?.sha,
+    ...(anchor.base_sha && { base_sha: anchor.base_sha }), ...(anchor.source_sha && { source_sha: anchor.source_sha }),
+    landed_at: landed?.landed_at ?? landed?.updated_at,
+    created_at: anchor.created_at, updated_at: latest.updated_at,
     ...(details && { attempt_details: flows.map(({ attempt, state, created_at, updated_at, sha, landed_at, reruns, repairs }) =>
       ({ attempt, state, created_at, updated_at, sha, landed_at, reruns, repairs })) }),
     ...(repair_details.length && { repair_details }), ...(rerun_details.length && { rerun_details }) };
