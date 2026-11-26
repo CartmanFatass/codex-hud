@@ -7,6 +7,9 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-26
 
+- **D-2026-11-26-12** (§2.1, §4): Owner, on review finding #1 of the workflow/06 milestone (main's shell can run
+  `hud workflow allow` / `hud council allow` itself): keep the grant check, keep issuance an ordinary local command,
+  and rely on the prompt rule that main asks and never grants itself. No owner-only issuance path for now.
 - **D-2026-11-26-11** (§2.3): Owner: HUD's data is valuable, keep it. Pruned jobs move into a compressed cold archive
   instead of being deleted: text (brief, report, Q&A, records, flow/land records, gate logs) forever, raw transcripts
   capped (default 20 GB, oldest raw dropped first). Measured: text about 10-15 MB a day, raw about 180 MB a day,
