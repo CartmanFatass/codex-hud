@@ -7,6 +7,19 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-26
 
+- **D-2026-11-26-04** (§1 display rule, §2.2 Project): Owner found the Project tab hard to read and the Execution
+  page hard to reach (its link sat at the bottom of a ~100-row page, finished jobs vanished, Enter on an Objective
+  showed only evidence, feature bars opened nothing). Redesign as element-to-element navigation: a resident project
+  strip under the tabs (activity marks, `[ ]` and click) replaces the folded project picker; the owner-request area
+  sits at the top of every page across projects and takes no row when empty (requests only, per §2.2; failures and
+  completions stay with main); Objectives sort by activity (live work, recent landings, waiting on the owner, idle),
+  with fully done and paused ones folded into one row; Enter drills Project → Objective (features, tickets, its live
+  and recently finished jobs) → feature (tickets, its jobs) → job Inspector, replacing the bottom Details list; the
+  project-level Execution page becomes its own top tab (Home · Project · Execution · Control; owner: "attention on
+  the hot area"), single-project per the §1 display rule, following the shared project strip and showing the live
+  count on the tab; it keeps finished jobs in a "recently finished" section for 24 hours with result and landing
+  state. Design sample first, then tickets.
+
 - **D-2026-11-26-03** (§2.2 Home): The docked panel (fork plan Step 2a) does not fit herdr's modal popup; it needs a
   new fork dock layer (~650–850 Rust lines, Shape A: server-projected session dock, wire protocol unchanged) and
   deletes HUD's split bookkeeping. Owner approved the larger change, sequenced after the agy native-status fix
