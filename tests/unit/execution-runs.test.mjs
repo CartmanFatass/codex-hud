@@ -5,6 +5,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { executionJobs, fakeFork, IDS, NOW, PANE } from '../fixtures/execution-page.mjs';
+import { putTicketFeature, ticketRecord } from '../fixtures/ticket-store.mjs';
 import { viewFor, withState } from '../fixtures/state-helpers.mjs';
 import { PanelExecution } from '../../dist/panel/execution.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
@@ -211,6 +212,34 @@ test('Execution collects paused, working, and recently ended runs (including pan
   // Painting never calls herdr.
   for (const width of [36, 40, 56, 60, 100, 140]) render(view, { width });
   assert.equal(f.fork.requests.length, 0);
+});
+
+test('queued stations get titles and dependency waves from JSON even without jobs or header blockers', async (t) => {
+  const f = await setupWithRuns(t);
+  putTicketFeature(f.project, 'exec-runs', [
+    ticketRecord(7, { title: 'Replay the synthetic queue', blocked_by: ['exec-runs/03'] }),
+    ticketRecord(8, { title: 'Index queued records', blocked_by: ['exec-runs/07'] }),
+    ticketRecord(9, { title: 'Show queue counts', blocked_by: ['exec-runs/08'] }),
+    ticketRecord(10, { title: 'Store title for the future station', blocked_by: ['exec-runs/09'] }),
+  ]);
+  const file = join(f.hud, 'flows', `${FLOWS.working}.json`), header = JSON.parse(fs.readFileSync(file, 'utf8'));
+  header.queued = [{ ticket: '07' }, { ticket: 'exec-runs/08' }];
+  header.blocked = [{ ticket: '09' }];
+  header.future = [{ ticket: '10', title: 'Future station', role: 'imp', blockers: ['exec-runs/01'] }];
+  putJson(file, header);
+  await f.execution.refresh(undefined, NOW + 1);
+  const view = f.execution.view(f.project), working = view.runs.find((r) => r.flow === FLOWS.working);
+  assert.deepEqual(working.queueWaves.blocked.map((wave) => wave.map(({ ticket }) => ticket)), [['07'], ['exec-runs/08'], ['09']]);
+  assert.deepEqual(working.metro.edges.filter(({ to }) => ['07', 'exec-runs/08', '09'].includes(to)), [
+    { from: '03', to: '07' }, { from: '07', to: 'exec-runs/08' }, { from: 'exec-runs/08', to: '09' },
+  ]);
+  assert.ok(working.queueWaves.current.some(({ ticket }) => ticket === '10'), 'omitted waiting_on in a receipt means ready');
+  assert.deepEqual(working.metro.edges.filter(({ to }) => to === '10'), [{ from: '01', to: '10' }], 'receipt edges take precedence over store edges');
+  const station = working.metro.stations.find(({ id }) => id === '07');
+  assert.equal(station.title, 'Replay the synthetic queue');
+  assert.equal(station.jobId, undefined);
+  const frame = render(view, { state: onExecution({ cursor: `project:exec-run:${FLOWS.working}:07` }) });
+  assert.match(text(frame), /07 Replay the synthetic queue/);
 });
 
 test('queue waves render EN/ZH, no-colour, coloured, role icons (unicode/nerd/text), and exact widths down to narrow columns', async (t) => {

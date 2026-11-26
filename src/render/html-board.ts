@@ -5,6 +5,7 @@
  */
 import { SETTLED_JOB_STATES, SLICE_STATES, type LedgerSlice, type ProjectSnapshot, type ProjectTicket, type SliceState, type TicketFeature } from '../collectors/project-board.js';
 import { acceptanceTasks, type AcceptanceTask } from '../collectors/acceptance-tasks.js';
+import { targetKey } from '../collectors/ticket-evidence.js';
 import type { DiffStatSummary } from '../collectors/diff-stat.js';
 import type { OwnerWorker, WorkboardSnapshot } from '../collectors/workboard-types.js';
 import { age } from './monitor-labels.js';
@@ -113,6 +114,8 @@ function feature(f: TicketFeature, only: ReadonlySet<number> | undefined, limit:
 
 function tryCard(slice: LedgerSlice, project: ProjectSnapshot, now: number): string {
   const mentions = new Map<string, Set<number>>();
+  const canonical = /^\.hud\/tickets\/([a-z0-9-]+)\.json$/.exec(slice.ticketPath ?? '');
+  if (canonical) mentions.set(canonical[1], new Set([Number(targetKey(slice.id).split('/')[1])]));
   const sources = slice.ticketPath ? `${slice.text} ${slice.ticketPath}` : slice.text;
   for (const m of sources.matchAll(/\.scratch\/([\w.-]+)(?:\/issues\/(\d+)-)?/g)) {
     const set = mentions.get(m[1]) ?? new Set<number>();

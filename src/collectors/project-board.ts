@@ -16,20 +16,14 @@ import { DiffStatCollector, type DiffStatSummary } from './diff-stat.js';
 import { collectControlRadar, type ControlRadar } from './control-radar.js';
 import { collectControlJobStats, jobSettledAt, type ControlJobStats } from './job-stats.js';
 import { epoch } from '../roles/job-usage.js';
-import { targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
+import { targetKey } from './ticket-evidence.js';
+import { ticketStoreFor } from './ticket-store.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { TryLog } from './try-records.js';
 import { SETTLED_JOB_STATES, TicketRollup, ticketIds, ticketJobState } from './ticket-rollup.js';
 import { readActiveLeases, stripJobPrefix, type LeaseRecord } from './thin-jobs.js';
 /** A placeholder bullet such as "- Nothing open." in an empty Waiting section is not a request. */
 const EMPTY_WAITING = /^(?:none|nothing(?: open| pending)?|n\/a|—|-|无|没有|暂无)[.。]?$/i;
-const ticketPathId = (path: string) => {
-  const match = /^\.scratch\/([^/]+)\/issues\/(\d+)-[^/]+\.md$/.exec(path);
-  return match && targetKey(`${match[1]}/${match[2]}`);
-};
-const landingStatus = /^(ready-for-human|done)$/i;
-const landingLogBoundary = /\0\0(?=(?:[a-f0-9]{40}|[a-f0-9]{64})\0)/;
-
 export { SETTLED_JOB_STATES } from './ticket-rollup.js';
 export interface ProjectItem {
   label: string;
@@ -64,14 +58,14 @@ export interface TicketItem { done: boolean; text: string }
 export interface ProjectTicket {
   number: string; title: string; path: string; at: number; status: string;
   checked: number; total: number; items: TicketItem[]; comment?: string; landedComment?: string; commit?: string; recordedLanding?: boolean;
-  blockers: string[]; ownerTry?: boolean;
+  blockers: string[]; ownerTry?: boolean; sourcePath?: string; landingAt?: number; claimedAt?: number;
   state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
   job?: { id?: string; role: string; state: string; at?: number; completedAt?: number; created: number };
 }
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[]; partial?: true }
 export interface ProjectSnapshot {
   objectives?: ObjectiveRecord & { path: string; acceptance: Record<string, { checked: number; total: number }>; resultDates?: Record<string, number> };
-  /** Scanned Objective features, including ones outside the Tickets page's finished-feature preview. */
+  /** Scanned features linked to Objectives. */
   objectiveTickets?: TicketFeature[];
   /** With an Objective record: features it does not list that have open tickets or live jobs; live ones first. */
   unlinked?: TicketFeature[];
@@ -212,11 +206,7 @@ export class ProjectCollector {
   private commitAt = new Map<string, number>();
   private diffs = new DiffStatCollector();
   private tries: TryLog;
-  private head = '';
-  private packedHead?: { key: string; sha: string };
-  private landed = new Set<string>();
-  private ticketCommits = new Map<string, { sha: string; at: number }>();
-  private ticketsMemo?: { stamp: string; features: TicketFeature[]; paths: string[]; claimTimes: number[]; partial: boolean };
+  private ticketStore?: ReturnType<typeof ticketStoreFor>;
   private collectMemo = new Map<string, { key: string; claimFloor: number; claimExpiry: number; snapshot: ProjectSnapshot }>();
   private resultReceipts: ResultReceipts;
   constructor(private cwd: string, private hudHome: string, private env = process.env, private home = homedir()) {
@@ -276,84 +266,6 @@ export class ProjectCollector {
     const file = this.body(path, (b, truncated) => ({ text: b.toString('utf8'), truncated }));
     return file && { text: file.text.slice(0, limit), truncated: file.truncated || Buffer.byteLength(file.text) > limit };
   };
-  /** Features by when their issues folder last changed (a ticket added or renamed), name breaking ties. */
-  private scanTickets() {
-    const root = join(this.cwd, '.scratch'), rootSt = lstat(root);
-    if (!rootSt || !rootSt.isDirectory()) {
-      this.cache.delete(root);
-      return (this.ticketsMemo = { stamp: '', features: [], paths: [], claimTimes: [], partial: false });
-    }
-    // Retain an extra name to distinguish reaching a cap from omitting entries, without extra body reads.
-    const slugs = this.orderedNames(root, 257, (entry) => entry.isDirectory(), false, rootSt);
-    const ranked = (slugs ?? []).slice(0, 256)
-      .map((slug) => { const issues = join(root, slug, 'issues'), st = lstat(issues); return { slug, issues, st, at: st?.mtimeMs ?? -1 }; })
-      .sort((a, b) => b.at - a.at || (a.slug < b.slug ? -1 : 1));
-    let partial = !slugs || slugs.length > 256 || ranked.slice(64).some(({ st }) => st?.isDirectory());
-    let budget = 512;
-    const stamps: string[] = [stampOf(rootSt)], paths: string[] = [root];
-    const groups: { slug: string; partial: boolean; entries: { name: string; path: string; st: fs.Stats | undefined }[] }[] = [];
-    for (const { slug, issues, st } of ranked.slice(0, 64)) {
-      if (!st || !st.isDirectory()) { this.cache.delete(issues); continue; }
-      if (budget <= 0) { partial = true; break; }
-      paths.push(issues);
-      stamps.push(`${slug}:${stampOf(st)}`);
-      const limit = Math.min(64, budget);
-      const names = this.orderedNames(issues, 65, (entry) => entry.isFile() && /^\d+-[^/]+\.md$/.test(entry.name), false, st);
-      const incomplete = !names || names.length > limit;
-      if (incomplete) partial = true;
-      const selected = (names ?? []).slice(0, limit);
-      budget -= selected.length;
-      const entries = selected.map((name) => {
-        const path = join(issues, name), fst = lstat(path);
-        paths.push(path);
-        stamps.push(`${name}:${fst?.isFile() ? stampOf(fst) : ''}`);
-        return { name, path, st: fst };
-      });
-      groups.push({ slug, entries, partial: incomplete });
-    }
-    stamps.push(String(partial));
-    const stamp = stamps.join('|');
-    if (this.ticketsMemo?.stamp === stamp) {
-      for (const p of this.ticketsMemo.paths) this.seen.add(p);
-      return this.ticketsMemo;
-    }
-    const features: TicketFeature[] = [], claimTimes: number[] = [];
-    for (const { slug, entries, partial: capped } of groups) {
-      const tickets: ProjectTicket[] = [];
-      let incomplete = capped;
-      for (const { name, path, st } of entries) {
-        const ticket = this.body(path, (buffer, truncated, stat): ProjectTicket | null | undefined => {
-          if (truncated) return null;
-          const text = buffer.toString('utf8'), heading = ticketHeading(text, Number(name.split('-')[0]));
-          const { status, blocked, items, checked, ownerTry, landed, commit, recordedLanding } = ticketFileEvidence(text);
-          if (!heading || !status || blocked === undefined) return undefined;
-          const commentsSection = text.split(/^## Comments[ \t]*\r?$/m)[1]?.split(/^## /m)[0] ?? '';
-          const commentBullets = [...commentsSection.matchAll(/^[-*] (.+(?:\r?\n[ \t]+.+)*)/gm)]
-            .map((m) => m[1].replace(/\s+/g, ' ').trim())
-            .filter(Boolean);
-          const commentRaw = commentBullets.at(-1);
-          const comment = commentRaw ? commentRaw.slice(0, 600) : undefined;
-          const landedRaw = commentBullets.filter((b) => /^Landed\b/i.test(b)).at(-1);
-          const landedComment = landedRaw && landedRaw !== commentRaw ? landedRaw.slice(0, 600) : undefined;
-          return { ...heading, path, at: stat.mtimeMs, status, ownerTry,
-            checked, total: items.length, items, ...(comment !== undefined ? { comment } : {}),
-            ...(landedComment !== undefined ? { landedComment } : {}),
-            ...(commit !== undefined ? { commit } : {}), ...(recordedLanding ? { recordedLanding } : {}),
-            blockers: /^none\b/i.test(blocked) ? [] : [blocked],
-            state: landed ?? (/^claimed\b/i.test(status) ? 'working' : 'ready') };
-        }, st ?? null);
-        if (ticket) {
-          tickets.push(ticket);
-          if (/^claimed\b/i.test(ticket.status)) claimTimes.push(ticket.at);
-        } else if (ticket === null) incomplete = true; // Unreadable or truncated, not a known invalid ticket.
-      }
-      if (incomplete) partial = true;
-      tickets.sort((a, b) => Number(a.number) - Number(b.number) || a.path.localeCompare(b.path));
-      if (tickets.length) features.push({ slug, at: Math.max(...tickets.map((t) => t.at)), tickets, ...(incomplete && { partial: true }) });
-    }
-    features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug));
-    return (this.ticketsMemo = { stamp, features, paths, claimTimes, partial });
-  }
   /** The newest 64 top-level jobs and their bounded children: the one lookup behind Project's Now section and the Projects list. */
   private recentJobs(cache = getJobIndexCache(this.hudHome)) {
     return cache.recentJobFamilies(cache.listJobDirsByMtime().dirs, 64);
@@ -492,9 +404,9 @@ export class ProjectCollector {
     return { dir, common, root };
   }
 
-  /** Read the loose/detached HEAD or the shared ref of a linked checkout without starting Git. */
-  private probeGitRefs() {
-    const { dir, common, root } = this.gitDirs();
+  /** Read named worker branches from Git's worktree metadata without starting Git. */
+  private probeWorktrees() {
+    const { common, root } = this.gitDirs();
     const trees = join(common, 'worktrees'), branches: string[] = [];
     for (const name of this.names(trees, 64)) {
       const branch = this.read(join(trees, name, 'HEAD'))?.text.trim().match(/^ref: refs\/heads\/wt\/(.+)$/)?.[1];
@@ -502,92 +414,7 @@ export class ProjectCollector {
       const back = this.read(join(trees, name, 'gitdir'))?.text.trim();
       if (back && basename(back) === '.git' && fs.lstatSync(back, { throwIfNoEntry: false })?.isFile()) branches.push(branch);
     }
-    let sha = this.read(join(dir, 'HEAD'))?.text.trim() ?? '', packedKey: string | undefined;
-    if (sha.startsWith('ref: refs/') && !sha.includes('..')) {
-      const ref = sha.slice(5);
-      sha = this.read(join(common, ref))?.text.trim() ?? '';
-      if (!sha) {
-        const path = join(common, 'packed-refs'), packed = this.read(path);
-        sha = packed?.text.split('\n').find(l => l.endsWith(' ' + ref))?.split(' ')[0] ?? '';
-        if (!sha && packed?.truncated) packedKey = `${ref}:${this.cache.get(path)?.stamp}`;
-      }
-    }
-    return { sha, branches, packedKey, root, stamp: `${sha}\0${packedKey ?? ''}\0${branches.join('\0')}` };
-  }
-
-  private async landedTickets(rollup: TicketRollup, refs = this.probeGitRefs()) {
-    for (const branch of refs.branches) rollup.worktree(branch);
-    let sha = refs.sha;
-    if (!sha && refs.packedKey) {
-      // A ref beyond our bounded file read: ask Git once for this ref/file signature, not on each tick.
-      if (this.packedHead?.key !== refs.packedKey) this.packedHead = { key: refs.packedKey, sha: (await worktreeGit(this.cwd, ['rev-parse', '--verify', 'HEAD']).catch(() => '')).trim() };
-      sha = this.packedHead.sha;
-    }
-    if (sha !== this.head) {
-      this.head = sha;
-      this.landed.clear();
-      this.ticketCommits.clear();
-      if (/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(sha)) try {
-        const log = await worktreeGit(this.cwd, [
-          'log', '-n', '64', '--no-show-signature', '--no-renames', '--no-ext-diff', '--no-textconv', '--no-relative', '--no-color',
-          '--name-status', '-z', '--format=%x00%x00%H%x00%ct%x00%s', sha, '--',
-        ]);
-        const commits = new Map<string, { at: number; ids: string[]; changed: Map<string, boolean> }>();
-        const candidates: string[] = [], credited = new Set<string>();
-        for (const chunk of log.split(landingLogBoundary)) {
-          const [commitSha, ct, subject, ...fields] = chunk.split('\0');
-          const at = Number(ct) * 1000;
-          if (!commitSha || !Number.isFinite(at)) continue;
-          let code = false;
-          const changed = new Map<string, boolean>(); // Ticket ID -> newly added file.
-          for (let i = 0; fields[i + 1]; i += 2) {
-            const status = fields[i].trim(), path = fields[i + 1], id = ticketPathId(path);
-            if (id && status !== 'D') changed.set(id, status === 'A');
-            if (!path.startsWith('docs/') && !path.startsWith('.scratch/')) code = true;
-          }
-          if (/^Record landing\b/.test(subject)) {
-            // Legacy records name the actual change in the ticket's Landed comment, not by this commit's SHA.
-            for (const id of changed.keys()) this.landed.add(id);
-            continue;
-          }
-          const ids = code ? ticketIds(subject) : [];
-          // A direct landing in this or a newer commit already supplies this ticket's attribution.
-          for (const id of ids) credited.add(id);
-          for (const id of changed.keys()) if (credited.has(id)) changed.delete(id);
-          if (changed.size) candidates.push(commitSha);
-          if (ids.length || changed.size) commits.set(commitSha, { at, ids, changed });
-        }
-        if (candidates.length) {
-          // Only unresolved ticket edits need content. No history traversal or patches outside tickets.
-          const patches = await worktreeGit(this.cwd, [
-            '--no-literal-pathspecs', '-c', `core.bigFileThreshold=${STATE_BYTES}`, 'log', '--no-walk',
-            '--no-show-signature', '--no-renames', '--no-ext-diff', '--no-textconv', '--no-relative', '--no-color',
-            '--submodule=short', '--src-prefix=a/', '--dst-prefix=b/', '--patch', '-U0',
-            '--ignore-matching-lines=^([^*]|[*][^*])+[*]?$|^\n', '--format=%x00%x00%H%x00',
-            ...candidates, '--', ':(top,glob).scratch/*/issues/*.md',
-          ]).catch(() => ''); // A failed patch read does not discard direct or legacy evidence.
-          for (const chunk of patches.split(landingLogBoundary)) {
-            const [commitSha, body] = chunk.split('\0', 2), commit = commits.get(commitSha);
-            if (!body || !commit) continue;
-            for (const patch of body.split(/^diff --git /m)) {
-              const path = /^\+\+\+ "?b\/(.+?)"?\t?$/m.exec(patch)?.[1];
-              const id = path && ticketPathId(path);
-              if (!id || !commit.changed.has(id)) continue;
-              const statuses = [...patch.matchAll(/^([+-])(?:[ \t]*|[^\r\n]*?·[ \t]*)\*\*Status:\*\*[ \t]*([^·\r\n]+)/gim)];
-              const before = statuses.find(([, sign]) => sign === '-')?.[2].trim();
-              const after = statuses.find(([, sign]) => sign === '+')?.[2].trim();
-              if (after && landingStatus.test(after) && (commit.changed.get(id) || (before && !landingStatus.test(before)))) commit.ids.push(id);
-            }
-          }
-        }
-        // Apply both kinds of evidence in the original newest-first order, not the patch output order.
-        for (const [commitSha, { at, ids }] of commits) for (const id of ids) {
-          this.landed.add(id);
-          if (!this.ticketCommits.has(id)) this.ticketCommits.set(id, { sha: commitSha, at });
-        }
-      } catch { /* Git unavailable: rely on ticket files. */ }
-    }
-    return { ids: this.landed, commits: this.ticketCommits };
+    return { branches, root };
   }
 
   private homeJobsProbe(board: WorkboardSnapshot, hasTickets: boolean, window = projectJobWindow(this.hudHome)) {
@@ -627,9 +454,9 @@ export class ProjectCollector {
       return out;
     }
     const home = shown === 'home' || shown === 'overview';
-    const ticketsScan = this.scanTickets();
+    const ticketsScan = (this.ticketStore ??= ticketStoreFor(this.cwd)).scan();
     let memoKey: string | undefined;
-    let gitRefs: ReturnType<ProjectCollector['probeGitRefs']> | undefined;
+    let worktrees: ReturnType<ProjectCollector['probeWorktrees']> | undefined;
     let jobsProbe: ReturnType<ProjectCollector['homeJobsProbe']> | undefined;
     const objectiveFile = objectivePath(this.cwd), objectiveStat = lstat(objectiveFile);
     const objectiveDir = lstat(join(this.cwd, '.hud'));
@@ -638,10 +465,10 @@ export class ProjectCollector {
       const specStamp = shown === 'overview' ? '' : statKey(join(this.cwd, 'docs/spec.md'));
       const triesStamp = statKey(join(this.hudHome, 'tries.jsonl'));
       const holdsStamp = statKey(join(this.hudHome, 'unattended-runs.json'));
-      if (shown !== 'overview' && ticketsScan.features.length) gitRefs = this.probeGitRefs();
+      if (shown !== 'overview' && ticketsScan.features.length) worktrees = this.probeWorktrees();
       if (shown !== 'overview') jobsProbe = this.homeJobsProbe(board, ticketsScan.features.length > 0, jobWindow);
       memoKey = [ticketsScan.stamp, stateStamps, objectiveStat && stampOf(objectiveStat), objectiveDir && stampOf(objectiveDir),
-        specStamp, triesStamp, holdsStamp, gitRefs?.stamp, jobsProbe?.stamp].join('\x1e');
+        specStamp, triesStamp, holdsStamp, worktrees?.branches.join('\0'), jobsProbe?.stamp].join('\x1e');
       const hit = this.collectMemo.get(shown);
       if (hit && hit.key === memoKey && now >= hit.claimFloor && now < hit.claimExpiry) return hit.snapshot;
     }
@@ -655,7 +482,6 @@ export class ProjectCollector {
     const objectives = objective?.record;
     if (objectives) {
       const linked = new Set(objectives.objectives.flatMap((item) => item.features));
-      // Keep the linked features before the Tickets page folds away older finished ones.
       const objectiveTickets = out.tickets.filter(({ slug }) => linked.has(slug));
       if (!home) out.objectiveTickets = objectiveTickets;
       const acceptance = Object.fromEntries(objectiveTickets.filter((f) => !f.partial)
@@ -695,10 +521,10 @@ export class ProjectCollector {
     const rollup = new TicketRollup(out.tickets);
     if (shown !== 'overview') this.joinJobs(out, board, home, shown === 'export', rollup, jobsProbe?.jobs);
     if (jobsProbe?.complete && !out.active.some(({ state }) => state !== 'queued')) out.idle = true;
-    const refs = shown !== 'overview' && out.tickets.length ? (gitRefs ?? this.probeGitRefs()) : undefined;
-    const landedInfo = refs ? await this.landedTickets(rollup, refs) : undefined;
-    const heldTickets = out.tickets.length ? new Set(readOpenHolds(this.hudHome, refs?.root ?? this.gitDirs().root).flatMap(h => h.ticket ? [targetKey(h.ticket)] : [])) : undefined;
-    const { totals, visible, rows, marks } = rollup.derive(now, landedInfo?.ids, landedInfo?.commits, (rows) => this.tries.marks(this.cwd, rows, true), heldTickets?.size ? heldTickets : undefined);
+    if (shown !== 'overview' && out.tickets.length) worktrees ??= this.probeWorktrees();
+    for (const branch of worktrees?.branches ?? []) rollup.worktree(branch);
+    const heldTickets = out.tickets.length ? new Set(readOpenHolds(this.hudHome, worktrees?.root ?? this.gitDirs().root).flatMap(h => h.ticket ? [targetKey(h.ticket)] : [])) : undefined;
+    const { totals, rows, marks } = rollup.derive(now, (rows) => this.tries.marks(this.cwd, rows, true), heldTickets);
     const active = new Map(out.active.map((job) => [job.jobId, job]));
     const ticketJobs = new Map(out.tickets.flatMap(({ slug, tickets }) => tickets.map((t) => [targetKey(`${slug}/${t.number}`), t.job?.id] as const)));
     const settled = new Set([...marks].filter(([, action]) => action === 'accept').map(([id]) => targetKey(id)));
@@ -739,12 +565,11 @@ export class ProjectCollector {
         return { ...ordered, request: fields.request, ...(fields.objective && { objective: fields.objective }),
           sentence: fields.sentence, text, value: text.replace(/\s+/g, ' ').trim() };
       });
-    // Home summarizes linked features, not the Tickets page's preview of finished features.
-    if (shown !== 'home') out.tickets = visible;
     if (home && memoKey !== undefined) {
       let claimFloor = -Infinity, claimExpiry = Infinity;
-      for (const at of ticketsScan.claimTimes) {
-        const edge = at + 7200000;
+      for (const { tickets } of ticketsScan.features) for (const ticket of tickets) {
+        if (!/^claimed\b/i.test(ticket.status)) continue;
+        const edge = (ticket.claimedAt ?? ticket.at) + 7200000;
         if (now < edge) claimExpiry = Math.min(claimExpiry, edge);
         else claimFloor = Math.max(claimFloor, edge);
       }
@@ -794,11 +619,12 @@ export class ProjectCollector {
 
   private async fullLedgerDetails(out: ProjectSnapshot, now: number, exporting: boolean, refreshedGit: boolean) {
     if (refreshedGit) {
-      const hashes = [...new Set(out.ledger.map((r) => r.commit?.toLowerCase()).filter((c): c is string => !!c))];
+      // Older Markdown land comments can name a commit but have no timestamp of their own.
+      const hashes = [...new Set(out.ledger.flatMap((r) => r.at === undefined && r.commit ? [r.commit.toLowerCase()] : []))];
       this.commitAt = await this.commitDates(hashes);
     }
     for (const row of out.ledger) {
-      const at = row.commit ? this.commitAt.get(row.commit.toLowerCase()) : undefined;
+      const at = row.at === undefined && row.commit ? this.commitAt.get(row.commit.toLowerCase()) : undefined;
       if (at !== undefined) row.at = at;
     }
     const toTry = out.ledger.filter((r) => r.state === 'try').reverse()

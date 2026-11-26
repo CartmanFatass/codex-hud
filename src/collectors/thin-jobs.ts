@@ -13,7 +13,7 @@ import { previewNotice, readReportMeta, type ReportMeta, type ReportMetaFields }
 import { reportReadHint } from '../utils/report-summary.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
-import { ticketTitle } from './ticket-title.js';
+import { ticketTitleReader } from './ticket-title.js';
 import { objectiveLink } from './objectives.js';
 import { workerTreeRootGone } from '../roles/worker-tree.js';
 import { computeQueuePositions, queuedTimestamp } from '../roles/concurrency.js';
@@ -810,7 +810,7 @@ export function readThinJobs(
       return created === null ? [] : [{ id, job, created, jobAt: file.at, status }];
     })
     .sort((a, b) => b.created - a.created || a.id.localeCompare(b.id));
-  const lanes = new Map<string, WorkLane>();
+  const lanes = new Map<string, WorkLane>(), ticketTitle = ticketTitleReader();
   const cards = jobs.flatMap(({ id, job, created, jobAt, status: checkedStatus }) => {
     const directory = join(root, id),
       status = checkedStatus ?? readFact(join(directory, 'STATUS.json')),
@@ -1023,7 +1023,7 @@ export function readThinJobs(
     const worktreeRoot = typeof (job.worktree as { main_root?: unknown } | undefined)?.main_root === 'string'
       ? (job.worktree as { main_root: string }).main_root : undefined;
     const projectRoot = word(job.project_root) ?? worktreeRoot ?? scope.project;
-    const ticketHeading = ticketTitle(projectRoot, word(job.ticket) ?? word(job.slice), word(job.package) ?? '');
+    const ticketHeading = ticketTitle(projectRoot ? canonical(projectRoot) : undefined, word(job.ticket) ?? word(job.slice), word(job.package) ?? '');
     const permission = permissionStatus(directory, idx).latest;
     const worker: OwnerWorker = {
       files,

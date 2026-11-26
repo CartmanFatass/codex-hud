@@ -399,7 +399,7 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
     for (const ticket of options.excludeTickets) blockedSet.add(targetKey(ticket));
   }
   const { declaredBlockers, crossBlockers, missingCrossBlockers } = rollup.derive(
-    Date.now(), undefined, undefined, undefined, blockedSet.size ? blockedSet : undefined,
+    Date.now(), undefined, blockedSet.size ? blockedSet : undefined,
   );
   const candidates = features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) =>
     tickets.filter(declaredReady).map(t => ({ t, ticket: readinessRef(slug, t) })));

@@ -6,9 +6,12 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
 import { ticketFixture, ticketFrames, ticketVocabulary } from '../fixtures/project-tickets.mjs';
+import { putTicketFeature, ticketRecord } from '../fixtures/ticket-store.mjs';
 import { plain, onPage, NOW, TREE } from '../fixtures/project-page.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
+import { ticketTitle } from '../../dist/collectors/ticket-title.js';
+import { main } from '../../dist/cli/hud.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { openEditorPane } from '../../dist/cli/panel-pane.js';
@@ -205,6 +208,55 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
   assert.match(plain(bare).join('\n'), /● nt 06 Polish +triaging +0\/0\n +no checklist/);
   assert.match(plain(bare).join('\n'), /· nt 04 Settings cleanup +← 02, 03 +0\/2\n/, 'the blockers share the row at 40 columns');
 });
+test('JSON wins per feature, its rows open one file independently, and show prints Markdown', async (t) => {
+  const f = await fixture(t), acceptance = [{ id: 1, done: false, text: 'Stored checklist only' }];
+  const path = putTicketFeature(f.cwd, 'native-tree', [ticketRecord(3, { blocked_by: ['native-tree/01', 'retired-tools/01'], acceptance }), ticketRecord(1)],
+    { title: 'Native tree', objective: 'synthetic' });
+  const data = await f.collector.collect(true, f.board, NOW + 2);
+  assert.deepEqual(tickets(data).map(({ number, state, blockers }) => [number, state, blockers]),
+    [['01', 'working', []], ['03', 'queued', ['01']]], 'known settled Markdown dependencies and multiple canonical edges resolve');
+  assert.equal(tickets(data, 'retired-tools').length, 2, 'an unmigrated feature still uses Markdown');
+  assert.equal(data.ticketTotals.partial, undefined);
+
+  for (const state of [featurePage('lane:queued:native-tree'), {
+    ...onPage(), subpage: { kind: 'feature', target: { root: f.cwd, slug: 'native-tree' }, scroll: 0 },
+  }]) {
+    const frame = f.render(80, 'en', state, data);
+    const rows = frame.workboard.rows.filter((r) => r.files?.[0] === path);
+    assert.equal(rows.length, 2);
+    assert.notEqual(rows[0].item, rows[1].item);
+    for (const row of rows) {
+      if (state.subpage) frame.state.subpage.cursor = row.item;
+      else frame.state.project.nav.cursor = row.item;
+      assert.deepEqual(press(frame, 'open-session').action, { type: 'open-files', files: [path] });
+    }
+  }
+
+  const cwd = process.cwd();
+  const show = async (id) => {
+    let out = '', err = '';
+    const code = await main(['tickets', 'show', id], { env: f.env, stdout: (s) => { out += s; }, stderr: (s) => { err += s; } });
+    return { out, err, code };
+  };
+  try {
+    process.chdir(f.cwd);
+    const one = await show('native-tree/03'), all = await show('native-tree');
+    assert.equal(one.code, 0);
+    assert.match(one.out, /^# 03: Synthetic ticket 3\n[^]*\*\*Objective:\*\* synthetic[^]*- \[ \] Stored checklist only/);
+    assert.doesNotMatch(one.out, /Synthetic ticket 1|Legacy cleanup/);
+    assert.equal(all.code, 0);
+    assert.match(all.out, /^# Native tree\n\n# 01: Synthetic ticket 1[^]*# 03: Synthetic ticket 3/);
+    assert.match((await show('retired-tools/02')).out, /^# 02: Legacy cleanup/);
+    assert.equal((await show('native-tree/02')).code, 1, 'do not fall back per missing ticket');
+    assert.equal((await show('../native-tree')).code, 2);
+  } finally { process.chdir(cwd); }
+
+  fs.appendFileSync(path, 'x'.repeat(65536));
+  const calls = observe(t), incomplete = await f.collector.collect(true, f.board, NOW + 3);
+  assert.equal(incomplete.ticketTotals.partial, true);
+  assert.ok(!incomplete.tickets.some(({ slug }) => slug === 'native-tree'), 'bad canonical JSON never resurrects stale Markdown');
+  assert.ok(!calls.openSync.some(([file]) => file === path), 'a stat-confirmed oversize JSON is not opened');
+});
 test('Home collects no tickets; warm signatures read/parse nothing, changes unblock and reorder without cached overlays', async (t) => {
   const f = await fixture(t), calls = observe(t);
   assert.equal(await f.collector.collect(projectShown(sliceState()), f.board, NOW + 2), undefined);
@@ -264,43 +316,42 @@ test('ticket reads cap at 64 KiB and discovery at 512 files, last-changed featur
   assert.equal(data.tickets.find((f) => f.slug === 'feature-00').tickets.length, 63);
   assert.equal(data.ticketTotals.partial, true);
   const opened = calls.openSync.map((args) => String(args[0])).filter((p) => p.includes('/.scratch/'));
-  assert.equal(opened.length, 512);
+  assert.equal(opened.length, 511, 'skip the stat-confirmed oversized file without opening it');
   assert.ok(opened.every((p) => !p.includes('/feature-05/') && !p.endsWith('/65-ticket.md')));
   assert.ok(calls.readSync.every((args) => args[3] <= 65536));
 });
-test('the 64-feature scan marks partial meters without opening omitted tickets', async (t) => {
-  const f = await fixture(t), scratch = join(f.cwd, '.scratch');
-  fs.rmSync(scratch, { recursive: true });
-  const slug = (n) => `feature-${String(n).padStart(2, '0')}`;
-  for (let n = 0; n < 81; n++) {
-    f.issue(slug(n), '01', 'ticket', `Synthetic ${n}`, n % 2 ? 'ready-for-agent' : 'resolved');
-    const at = new Date(NOW - n * 1000);
-    fs.utimesSync(join(scratch, slug(n), 'issues'), at, at);
-  }
-  const calls = observe(t), data = await f.collector.collect(true, f.board, NOW + 2);
-  assert.deepEqual(data.ticketTotals, { doneTickets: 32, totalTickets: 64, doneFeatures: 32, totalFeatures: 64, partial: true });
-  const opened = calls.openSync.map(([path]) => String(path)).filter((path) => path.startsWith(scratch));
-  assert.equal(opened.length, 64);
-  assert.ok(opened.every((path) => Number(path.match(/feature-(\d+)/)[1]) < 64));
-  for (const [lang, word] of [['en', 'Partial'], ['zh', '不完整']]) {
-    for (const panelLayout of ['classic']) for (const page of [undefined, 'tickets']) {
-      const frame = f.render(40, lang, onPage(page, { prefs: { panelLayout } }), data);
-      const text = plain(frame).join('\n');
-      if (page) assert.match(text, new RegExp(word));
-      else {
-        assert.doesNotMatch(text, /Partial|不完整/);
-        assert.doesNotMatch(text, /^Details ─|^详情 ─/m);
-      }
-      assert.ok(frame.lines.every((line) => visualLength(line) === 40));
-    }
-  }
-  const home = await f.collector.collect('home', f.board, NOW + 3);
-  for (let n = 64; n < 81; n++) fs.rmSync(join(scratch, slug(n)), { recursive: true });
-  const complete = await f.collector.collect('home', f.board, NOW + 4);
-  assert.equal(complete.ticketTotals.totalFeatures, 64);
-  assert.equal(complete.ticketTotals.partial, undefined, 'an exact cap is not a partial scan');
+test('all 256 JSON features are visible without partial; warm body reads are zero and the 257th is omitted', async (t) => {
+  const f = await fixture(t);
+  fs.rmSync(join(f.cwd, '.scratch'), { recursive: true });
+  const slug = (n) => `feature-${String(n).padStart(3, '0')}`;
+  for (let n = 0; n < 256; n++) putTicketFeature(f.cwd, slug(n), [ticketRecord(1, { status: n % 2 ? 'ready-for-agent' : 'done' })]);
+  const calls = observe(t), opened = () => calls.openSync.map(([path]) => String(path)).filter((p) => p.includes('/.hud/tickets/'));
+  const collect = () => f.collector.collect(true, f.board, NOW + 2);
+  const complete = await collect();
+  assert.deepEqual(complete.ticketTotals, { doneTickets: 128, totalTickets: 256, doneFeatures: 128, totalFeatures: 256 });
+  assert.equal(complete.tickets.length, 256);
+  const frame = (data, lang) => f.render(40, lang, onPage('tickets'), data, 'none', 280);
+  assert.equal(frame(complete, 'en').workboard.rows.filter((r) => r.featureTarget).length, 256);
+  assert.doesNotMatch(plain(frame(complete, 'en')).join('\n'), /Partial/);
+  assert.equal(opened().length, 256);
+
+  calls.openSync.length = calls.readSync.length = 0;
+  await collect();
+  assert.equal(calls.readSync.length, 0);
+  assert.deepEqual(opened(), []);
+  assert.equal(ticketTitle(f.cwd, `${slug(211)}/1`), 'Synthetic ticket 1');
+  assert.deepEqual(opened(), [], 'job titles share the warm Project cache');
+
+  const changed = putTicketFeature(f.cwd, slug(211), [ticketRecord(1, { title: 'Changed title' })]);
+  putTicketFeature(f.cwd, slug(256), [ticketRecord(1)]);
+  const data = await collect();
+  assert.deepEqual(opened(), [changed]);
+  assert.equal(tickets(data, slug(211))[0].title, 'Changed title');
+  assert.equal(data.ticketTotals.partial, true);
+  assert.equal(data.tickets.length, 256);
+  for (const [lang, mark] of [['en', /Partial/], ['zh', /不完整/]]) assert.match(plain(frame(data, lang)).join('\n'), mark);
 });
-test('features with open tickets always show; finished ones fill the rest of sixteen, newest first', async (t) => {
+test('all scanned features stay in the list, newest first', async (t) => {
   const f = await fixture(t);
   fs.rmSync(join(f.cwd, '.scratch'), { recursive: true });
   const slug = (n) => `feature-${String(n).padStart(2, '0')}`;
@@ -315,9 +366,7 @@ test('features with open tickets always show; finished ones fill the rest of six
   const data = await f.collector.collect(true, f.board, NOW + 2);
   const shown = data.tickets.map((x) => x.slug);
   assert.deepEqual(data.ticketTotals, { doneTickets: 18, totalTickets: 20, doneFeatures: 18, totalFeatures: 20 });
-  assert.equal(shown.length, 16);
-  assert.ok(shown.includes(slug(0)) && shown.includes(slug(1)), shown.join(' '));
-  for (const n of [2, 3, 4, 5]) assert.ok(!shown.includes(slug(n)), `oldest finished ${slug(n)} drops out`);
+  assert.deepEqual(shown, [...Array.from({ length: 18 }, (_, i) => slug(19 - i)), slug(0), slug(1)]);
 });
 test('tickets reuse only the newest 64 job directories, even when an older matching job exists', async (t) => {
   const f = await fixture(t);

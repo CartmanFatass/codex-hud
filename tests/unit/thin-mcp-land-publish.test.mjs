@@ -59,7 +59,7 @@ for (const [label, ownerTryLine, expectedStatus] of [
   ['omitted', '', 'done'],
   ['yes', '**Owner try:** yes\n', 'ready-for-human'],
   ['no', '**Owner try:** no\n', 'done'],
-]) test(`land folds ${expectedStatus} and a resolvable record into one commit without STATE.md change (owner_try ${label})`, async t => {
+]) test(`land folds ${expectedStatus} and its record into one commit without STATE.md change (owner_try ${label})`, async t => {
   const f = await checkout(t, ['true']), dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', file = join(dir, 'job.json');
   // Squash the worker branch to one commit so we verify one commit on main per landed slice.
   f.git(f.worktree, 'reset', '--soft', f.base_head);
@@ -91,8 +91,10 @@ for (const [label, ownerTryLine, expectedStatus] of [
   assert.equal(f.git(f.remote, 'show', 'base:STATE.md') + '\n', initialState);
   const project = await new ProjectCollector(f.main, f.home, f.env, f.env.HOME).collect(true, EMPTY_BOARD, Date.now());
   const latest = landedNewest(project).map(({ r }) => r);
-  assert.equal(latest.find(r => r.id === 'FEATURE-01')?.commit, done.landed_sha);
-  assert.equal(latest.find(r => r.id === 'FEATURE-01')?.state, expectedStatus === 'done' ? 'accepted' : 'try');
+  const fresh = latest.find(r => r.id === 'FEATURE-01');
+  assert.equal(fresh?.landed, true);
+  assert.equal(fresh?.commit, undefined, 'the Markdown record says in this commit; the collector no longer mines patches for its SHA');
+  assert.equal(fresh?.state, expectedStatus === 'done' ? 'accepted' : 'try');
   assert.equal(latest.find(r => r.id === 'FEATURE-02')?.state, 'try');
 });
 

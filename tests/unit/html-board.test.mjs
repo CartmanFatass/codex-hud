@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { projectFixture, plain, onPage, NOW, TREE } from '../fixtures/project-page.mjs';
 import { git, initRepo } from '../fixtures/managed-worktree.mjs';
+import { putTicketFeature, ticketRecord } from '../fixtures/ticket-store.mjs';
 import { renderHtmlBoard } from '../../dist/render/html-board.js';
 import { language } from '../../dist/render/i18n.js';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
@@ -203,19 +204,19 @@ test('hud board exports every To-try slice with diff bars, including the oldest 
   git(cwd, 'add', '.');
   git(cwd, 'commit', '-qm', 'land synthetic changes');
   const commit = git(cwd, 'rev-parse', '--short', 'HEAD');
-  const ids = Array.from({ length: 13 }, (_, i) => `TRY-${i + 1}`);
-  for (const id of ids) {
-    const n = id.slice(4);
-    f.put(join(cwd, `.scratch/try/issues/${n}-landed.md`), `# ${n}: Synthetic change\n**Status:** try\n**Blocked by:** none\n\n## Comments\n- Landed ${commit}\n`);
-  }
+  const ids = Array.from({ length: 13 }, (_, i) => `TRY-${String(i + 1).padStart(2, '0')}`);
+  const landing = { at: new Date(NOW).toISOString(), job: 'j0000000000000001', flow: 'f0000000000000001', replay_base: 'a'.repeat(40), gates: 1, commit };
+  putTicketFeature(cwd, 'try', ids.map((id, i) => ticketRecord(i + 1, { status: 'ready-for-human', owner_try: true, landing,
+    acceptance: [{ id: 1, text: `Check ${id}`, done: true }] })));
   const result = await f.run(['board', '--cwd', cwd]);
   assert.equal(result.code, 0, result.err);
   const html = fs.readFileSync(result.out.trim(), 'utf8');
   const cards = [...html.matchAll(/<article class="card try"><header><span class="id">(TRY-\d+)<\/span>(.*?)<\/article>/g)];
   assert.deepEqual(cards.map((card) => card[1]), [...ids].reverse());
-  for (const [, , card] of cards) {
+  for (const [, id, card] of cards) {
     assert.equal([...card.matchAll(/class="p mono"/g)].length, 12);
     assert.match(card, /\+1 more files/);
+    assert.deepEqual([...card.matchAll(/Check (TRY-\d+)/g)].map((m) => m[1]), [id]);
   }
 });
 

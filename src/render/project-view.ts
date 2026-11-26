@@ -5,6 +5,7 @@ import { roleInk } from './work-job-row.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { projectPage, type ProjectSubPage } from './monitor-state.js';
 import { basename } from 'node:path';
+import { ticketRowKey } from '../collectors/ticket-evidence.js';
 import { boardRow, itemRow, section, mark, minuteAge, pack } from './workboard-rows.js';
 import { projectOverviewRows, projectListRows } from './inbox-project.js';
 import { unlinkedFeatureRows } from './project-objectives.js';
@@ -158,7 +159,7 @@ export function ticketRows(data: ProjectSnapshot, folded: ReadonlySet<string>, w
     ].filter(Boolean).join('  ');
     const lead = `  ${lane === 'you' ? theme.board.attention('?') : ticketGlyph(ticket)} ${theme.board.muted(fit(codes.get(feature.slug)!, column))} `;
     const number = monitorText(ticket.number), room = width - visualLength(lead) - visualLength(number) - 1 - (right ? visualLength(right) + 1 : 0);
-    const title = `${number} ${cutTicketTitle(ticket.title, room)}`, tid = `ticket:${feature.slug}:${basename(ticket.path)}`, at = { item: `project:fold:${tid}`, files: [ticket.path] };
+    const title = `${number} ${cutTicketTitle(ticket.title, room)}`, tid = `ticket:${feature.slug}:${ticketRowKey(ticket)}`, at = { item: `project:fold:${tid}`, files: [ticket.path] };
     rows.push({ text: pair(`${lead}${dropped ? theme.board.muted(title) : title}`, right, width), ...at });
     // For you: the latest comment is why, under the row. Enter shows what is checked and the whole comment here; o opens the file.
     const sub = (text: string) => rows.push({ text: fit(text, width), ...at });

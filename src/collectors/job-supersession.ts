@@ -1,8 +1,8 @@
 /** Read-only evidence that another attempt owns a failed job's target. Never infer identity from free prose. */
-import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { parseLedger, statePaths } from './state-ledger.js';
-import { targetKey, ticketFileEvidence } from './ticket-evidence.js';
+import { targetKey } from './ticket-evidence.js';
+import { scanTicketStore } from './ticket-store.js';
 import { TryLog } from './try-records.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
@@ -31,6 +31,7 @@ function target(j: Receipt, title: () => string): string {
     text(j.target_hint) || identifier(text(j.title)) || (j.target_hint === undefined ? title() : '') || pkg.toLowerCase();
 }
 
+const SETTLED = ['try', 'accepted', 'done', 'dropped'];
 let log: TryLog | undefined, logHome: string;
 /** Build the per-project indexes lazily: an ordinary scan with no failures never opens project or legacy brief files. */
 export function supersession(home: string, jobs: Receipt[], read: (path: string) => string | undefined,
@@ -50,8 +51,9 @@ export function supersession(home: string, jobs: Receipt[], read: (path: string)
   const scope = (j: Receipt) => rootOf(j) || `pane:${jobCallerPane(j)}`;
   const byTarget = new Map<string, number>();
   let replaced: Map<string, number> | undefined;
-  const targets = new Map<Receipt, string>(), indexed = new Set<string>(), landed = new Map<string, Set<string>>();
-  function landedIds(root: string) {
+  const targets = new Map<Receipt, string>(), indexed = new Set<string>();
+  const landed = new Map<string, (id: string) => boolean>();
+  function isLanded(root: string) {
     if (!landed.has(root)) {
       if (!log || logHome !== home) { log = new TryLog(home); logHome = home; }
       let rows: ReturnType<typeof parseLedger> = [];
@@ -62,8 +64,9 @@ export function supersession(home: string, jobs: Receipt[], read: (path: string)
         break;
       }
       const ids = new Set(log.accepted(root, rows).map(targetKey));
-      for (const row of rows) if (['try', 'accepted', 'done', 'dropped'].includes(row.state)) ids.add(targetKey(row.id));
-      landed.set(root, ids);
+      for (const row of rows) if (SETTLED.includes(row.state)) ids.add(targetKey(row.id));
+      const { lookup } = scanTicketStore(root);
+      landed.set(root, (id) => ids.has(id) || SETTLED.includes(lookup(id)?.state ?? ''));
     }
     return landed.get(root)!;
   }
@@ -97,17 +100,7 @@ export function supersession(home: string, jobs: Receipt[], read: (path: string)
     if ((byTarget.get(key(j.role, id)) ?? -Infinity) > created) return true;
     const root = rootOf(j) || fallbackRoot;
     if (!root || !id) return false;
-    const ids = landedIds(root);
-    if (ids.has(id) || (text(j.slice) && ids.has(targetKey(text(j.slice))))) return true;
-    const ticket = /^([a-z0-9]+(?:-[a-z0-9]+)*)\/(\d+)$/.exec(id);
-    if (!ticket) return false;
-    // Look at just this ticket, even in a finished feature outside Project's visible window.
-    const dir = join(root, '.scratch', ticket[1], 'issues');
-    try {
-      if (fs.realpathSync(dir) !== dir) return false;
-      const files = fs.readdirSync(dir).filter((name) => /^\d+-.+\.md$/.test(name) && Number(name.split('-')[0]) === Number(ticket[2]));
-      const body = files.length === 1 && read(join(dir, files[0]));
-      return !!body && !!ticketFileEvidence(body).landed;
-    } catch { return false; }
+    const hasLanded = isLanded(root);
+    return hasLanded(id) || (!!text(j.slice) && hasLanded(targetKey(text(j.slice))));
   };
 }

@@ -1,5 +1,3 @@
-import { withState, sliceState } from '../fixtures/state-helpers.mjs';
-import { projectPageOf } from '../../dist/render/project-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,18 +7,15 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { homeFixture } from '../fixtures/home-progress.mjs';
-import { NOW, TREE, plain } from '../fixtures/project-page.mjs';
+import { NOW } from '../fixtures/project-page.mjs';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
-import { targetKey } from '../../dist/collectors/workboard-types.js';
-import { handleMonitorInput } from '../../dist/render/monitor.js';
-import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 async function fixture(t) {
   const root = fs.mkdtempSync(join(tmpdir(), 'home-progress-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return { root, ...await homeFixture(root) };
 }
 
-test('Home joins cached STATE, spec, tickets, HEAD and jobs; no control or agents; only changed bodies refresh', async (t) => {
+test('Home joins cached STATE, spec, tickets and jobs without Git, control or agents; only changed bodies refresh', async (t) => {
   const f = await fixture(t), opened = [], listed = [], spawned = [];
   const original = { openSync: fs.openSync, opendirSync: fs.opendirSync, execFile: childProcess.execFile };
   fs.openSync = (path, ...args) => { opened.push(String(path)); return original.openSync(path, ...args); };
@@ -33,7 +28,7 @@ test('Home joins cached STATE, spec, tickets, HEAD and jobs; no control or agent
   assert.ok(opened.length > 0);
   assert.ok(opened.every((p) => /\/(STATE|spec)\.md$|\/\.git\/|\/jobs\/j[0-9a-f]+\/(job\.json|STATUS\.json|brief\.md)$|\/\.scratch\/[^/]+\/issues\/[^/]+\.md$/.test(p)), opened.join('\n'));
   assert.ok(listed.every((p) => /\/(\.scratch|jobs|worktrees)$|\/\.scratch\/[^/]+\/issues$/.test(p)));
-  assert.deepEqual(spawned, ['git']);
+  assert.deepEqual(spawned, [], 'cold Home collection does not spawn Git');
   assert.equal(data.git, undefined);
   assert.deepEqual(data.control, []);
   assert.deepEqual(data.agents, []);
@@ -47,10 +42,10 @@ test('Home joins cached STATE, spec, tickets, HEAD and jobs; no control or agent
   data = await collector.collect('home', f.board, NOW + 60001);
   assert.equal(data.tickets[0].tickets[0].state, 'done');
   assert.deepEqual(opened, [f.paths.working]);
-  assert.deepEqual(spawned, ['git'], 'no git call without a HEAD change, even past the Project gate');
+  assert.deepEqual(spawned, [], 'Home still does not spawn Git after a ticket edit');
   assert.equal(await collector.collect(false, f.board, NOW + 60002), undefined);
 });
-test('live panel stays Home-only: only the HEAD-keyed subject scan invokes git', async (t) => {
+test('live panel stays Home-only and never invokes Git', async (t) => {
   const f = await fixture(t), runner = join(f.root, 'home-only.mjs'), log = join(f.root, 'git-spawns');
   f.put(join(f.root, 'bin/git'), `#!${process.execPath}\nimport fs from 'node:fs'; fs.appendFileSync(${JSON.stringify(log)}, 'git\\n'); process.exit(1);\n`);
   fs.chmodSync(join(f.root, 'bin/git'), 0o700);
@@ -81,5 +76,5 @@ await runLivePage();
   clearTimeout(timeout);
   assert.equal(code, 0, stderr);
   assert.match(stdout, /HOME_ONLY/);
-  assert.equal(fs.readFileSync(log, 'utf8'), 'git\n', 'one cold subject scan for two collections');
+  assert.equal(fs.existsSync(log), false, 'neither Home collection invokes Git');
 });

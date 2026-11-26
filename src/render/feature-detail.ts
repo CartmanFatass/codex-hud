@@ -3,7 +3,7 @@ import { basename } from 'node:path';
 import type { ExecutionRunJobTarget, LandProgress, TicketActivity } from '../collectors/execution.js';
 import { ENDED_MS } from '../collectors/execution-runs.js';
 import { SETTLED_JOB_STATES, type ProjectSnapshot, type ProjectTicket, type SliceState, type TicketFeature } from '../collectors/project-board.js';
-import { targetKey } from '../collectors/ticket-evidence.js';
+import { targetKey, ticketRowKey } from '../collectors/ticket-evidence.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import type { MonitorRow } from './monitor.js';
@@ -183,6 +183,9 @@ function ticketJobEvidence(
       : 'working';
     return { statusText: liveJobText(state, ticket.job.at, now), endedAt: latestEndedAt };
   }
+  if (ticket.landingAt !== undefined && recent(ticket.landingAt)) {
+    return { statusText: endedJobText('landed', ticket.landingAt, now), execJob: fallbackExecJob, endedAt: ticket.landingAt };
+  }
   if (ended.length) {
     const latest = ended[0];
     return {
@@ -269,7 +272,7 @@ export function featureDetailRows(
     const latest = (result: 'landed' | 'done') => entries.reduce<number | undefined>((at, entry) =>
       entry.kind === 'ended' && entry.result === result && entry.at <= now && (at === undefined || entry.at > at) ? entry.at : at, undefined);
     const doneAt = ticket.state === 'done'
-      ? landings?.get(key) ?? latest('landed') ?? ledgerAt.get(key) ?? latest('done') ?? ticket.job?.completedAt ?? ticket.at
+      ? ticket.landingAt ?? landings?.get(key) ?? latest('landed') ?? ledgerAt.get(key) ?? latest('done') ?? ticket.job?.completedAt ?? ticket.at
       : Math.max(evidence.endedAt ?? -Infinity, ledgerAt.get(key) ?? -Infinity, ticket.at);
     return { ticket, evidence, doneAt };
   });
@@ -293,7 +296,7 @@ export function featureDetailRows(
 
   const expanded = new Set(detail.expanded ?? []);
   for (const { ticket, evidence } of enriched) {
-    const item = `feature:ticket:${feature.slug}:${basename(ticket.path)}`;
+    const item = `feature:ticket:${feature.slug}:${ticketRowKey(ticket)}`;
     const number = monitorText(ticket.number);
     const prefix = `  ${ticketGlyph(ticket)} ${number} `;
     const cleanTitle = monitorText(ticket.title);

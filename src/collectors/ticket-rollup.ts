@@ -38,7 +38,7 @@ export class TicketRollup {
     if (pkg && explicit && /^\d+$/.test(explicit)) targets = [key(pkg, explicit)];
     if (!targets.length && pkg && !explicit) {
       const feature = this.features.find(f => f.slug === pkg);
-      targets = (feature?.tickets ?? []).filter(t => material.includes(basename(t.path)) ||
+      targets = (feature?.tickets ?? []).filter(t => (!t.sourcePath && material.includes(basename(t.path))) ||
         new RegExp(`(?:\\bticket\\s+#?|#)0*${Number(t.number)}\\b`, 'i').test(material)).map(t => key(pkg, t.number));
     }
     for (const id of targets) {
@@ -51,31 +51,26 @@ export class TicketRollup {
       if (typeof job.slice === 'string') this.linkedSlices.set(t, job.slice); else this.linkedSlices.delete(t);
     }
   }
-  derive(now: number, landed: ReadonlySet<string> = new Set(),
-    ticketCommits: ReadonlyMap<string, { sha: string; at: number }> = new Map(),
-    readMarks?: (rows: LedgerSlice[]) => ReadonlyMap<string, string>,
-    blockedTickets?: ReadonlySet<string>) {
+  derive(now: number, readMarks?: (rows: LedgerSlice[]) => ReadonlyMap<string, string>, blockedTickets?: ReadonlySet<string>) {
     const entries: { ticket: ProjectTicket; row: LedgerSlice }[] = [];
     // Oldest features first; later rows win ties when showing the newest landings.
     for (const { slug, tickets } of [...this.features].reverse()) for (const t of tickets) {
-      const id = key(slug, t.number), job = t.job?.state, claimed = live(job), gitLanded = landed.has(id);
+      const id = key(slug, t.number), job = t.job?.state, claimed = live(job);
       if (t.state !== 'done' && t.state !== 'dropped' && t.state !== 'try') {
-        if (gitLanded) t.state = t.ownerTry ? 'try' : 'done';
-        else if (blockedTickets?.has(id)) t.state = 'blocked';
+        if (blockedTickets?.has(id)) t.state = 'blocked';
         else if (job === 'failed' || job === 'blocked' || job === 'waiting_orchestrator') t.state = 'blocked';
         else if (claimed || this.trees.has(t)) t.state = 'working';
-        else if (/^claimed\b/i.test(t.status)) t.state = !job && now - t.at < 7200000 ? 'working' : 'blocked';
+        else if (/^claimed\b/i.test(t.status)) t.state = !job && now - (t.claimedAt ?? t.at) < 7200000 ? 'working' : 'blocked';
         else if (/^needs-(info|triage)\b/i.test(t.status)) t.state = 'blocked';
       }
       if ((t.state === 'working' || t.state === 'blocked') && claimed && /^ready-for-agent$/i.test(t.status)) t.status = 'claimed';
       const hasLand = t.state === 'done' || t.state === 'try';
-      const gitCommit = hasLand ? ticketCommits.get(id) : undefined;
-      const commit = gitCommit?.sha ?? (hasLand ? t.commit : undefined);
+      const commit = hasLand ? t.commit : undefined;
       entries.push({ ticket: t, row: { id: `${slug.toUpperCase()}-${t.number}`, state: sliceState(t), milestone: slug,
-        text: t.commit && hasLand ? `${t.title} (${t.commit.slice(0, 8)})` : t.title,
-        ...(commit ? { commit } : {}), ...(gitCommit ? { at: gitCommit.at } : {}),
-        ...(t.recordedLanding || t.state === 'try' || (hasLand && gitLanded) ? { landed: true } : {}),
-        ticketPath: `.scratch/${slug}/issues/${basename(t.path)}`, path: t.path } });
+        text: commit ? `${t.title} (${commit.slice(0, 8)})` : t.title,
+        ...(commit ? { commit } : {}), ...(t.landingAt !== undefined ? { at: t.landingAt } : {}),
+        ...(t.recordedLanding || t.state === 'try' ? { landed: true } : {}),
+        ticketPath: t.sourcePath ?? `.scratch/${slug}/issues/${basename(t.path)}`, path: t.path } });
     }
     // Keep old try records for explicitly linked slice IDs readable, but write new accepts against the ticket ID.
     const marks = readMarks?.(entries.flatMap(({ ticket, row }) => {
@@ -90,8 +85,8 @@ export class TicketRollup {
     const declaredBlockers = new Map<ProjectTicket, string[]>();
     const crossBlockers = new Map<ProjectTicket, string[]>(), missingCrossBlockers = new Map<ProjectTicket, string>();
     for (const { slug, tickets } of this.features) for (const t of tickets) {
-      const raw = t.blockers[0] ?? '', title = (ref: string) => tickets.find(x => x.title.toLowerCase() === ref.trim().toLowerCase());
-      const refs = title(raw) ? [raw] : raw.replace(/\([^()]*\)/g, '').split(/[,;]|\s+and\s+/i);
+      const title = (ref: string) => tickets.find(x => x.title.toLowerCase() === ref.trim().toLowerCase());
+      const refs = t.blockers.flatMap((raw) => title(raw) ? [raw] : raw.replace(/\([^()]*\)/g, '').split(/[,;]|\s+and\s+/i));
       t.blockers = [];
       const deps = [];
       const declared: string[] = [];
@@ -112,7 +107,7 @@ export class TicketRollup {
           deps.push(target);
           if (cross && !target) missingCrossBlockers.set(t, cross);
         }
-        t.blockers.push(m?.[1] ? ref : target?.number ?? ref);
+        t.blockers.push(cross ? ref : target?.number ?? ref);
       }
       if (declared.length) declaredBlockers.set(t, declared);
       if (t.state === 'ready' && (deps.length || crossBlockers.has(t))) dependencies.set(t, deps);
@@ -128,12 +123,10 @@ export class TicketRollup {
     };
     for (const t of dependencies.keys()) visit(t);
     const resolved = (t: ProjectTicket) => t.state === 'done' || t.state === 'dropped';
-    const open = (f: TicketFeature) => !f.tickets.every(resolved);
-    const doneFeatures = this.features.filter(f => !open(f)).length;
+    const doneFeatures = this.features.filter((f) => f.tickets.length > 0 && f.tickets.every(resolved)).length;
     const totals = { doneTickets: [...this.index.values()].filter(resolved).length, totalTickets: this.index.size,
       doneFeatures, totalFeatures: this.features.length };
-    let room = 16 - (totals.totalFeatures - doneFeatures);
     const rows = entries.map(({ ticket, row }) => ({ ...row, state: sliceState(ticket) }));
-    return { totals, rows, marks, declaredBlockers, crossBlockers, missingCrossBlockers, visible: this.features.filter(f => open(f) || room-- > 0) };
+    return { totals, rows, marks, declaredBlockers, crossBlockers, missingCrossBlockers };
   }
 }

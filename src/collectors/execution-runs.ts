@@ -38,6 +38,8 @@ import {
   type MetroStationState,
   type ReducedMetroMap,
 } from './execution-metro.js';
+import { targetKey } from './ticket-evidence.js';
+import { scanTicketStore } from './ticket-store.js';
 import { workState } from './work-job.js';
 import type { OwnerWorker, WorkBatch, WorkTarget } from './workboard-types.js';
 
@@ -99,7 +101,7 @@ export interface ExecutionRunTicket {
   readonly stalled?: true;
   readonly statusUnknown?: true;
   readonly blockers?: readonly string[];
-  /** Declared dependencies (absent on legacy records without per-item blockers). */
+  /** Declared dependencies from the run receipt, or the ticket store when not recorded there. */
   readonly deps?: readonly string[];
   readonly asking?: boolean;
   readonly holdTag?: string;
@@ -553,7 +555,8 @@ function projectTickets(
       seen.add(entry.ticket);
       out.push({ ticket: entry.ticket, title: entry.title, role: entry.role,
         stage: blockedIds.has(entry.ticket) ? 'blocked' : 'queued',
-        deps: entry.blockers, blockers: entry.waiting_on });
+        // An omitted waiting_on in a future receipt means there are no unresolved blockers.
+        deps: entry.blockers, blockers: entry.waiting_on ?? [] });
     }
   }
   for (const entry of q.queued ?? []) {
@@ -567,6 +570,32 @@ function projectTickets(
     out.push({ ticket: entry.ticket, stage: 'blocked', ...(entry.blockers?.length ? { blockers: entry.blockers } : {}) });
   }
   return out;
+}
+
+/** Normalize for joins without changing the original IDs displayed by a legacy run. */
+function queueTicketKey(ticket: string, feature?: string): string {
+  const token = ticket.trim();
+  const number = /^#?(\d+)$/.exec(token)?.[1];
+  if (number) return feature ? `${feature.toLowerCase()}/${Number(number)}` : String(Number(number));
+  const qualified = /^([\w.-]+)\/(\d+)$/.exec(token);
+  return qualified ? `${qualified[1].toLowerCase()}/${Number(qualified[2])}` : targetKey(token);
+}
+
+function withTicketFacts(tickets: ExecutionRunTicket[], feature: string | undefined, lookup: ReturnType<typeof scanTicketStore>['lookup']) {
+  const landed = new Set(tickets.filter(({ stage }) => stage === 'landed').map(({ ticket }) => queueTicketKey(ticket, feature)));
+  return tickets.map((t) => {
+    const fact = lookup(t.ticket, feature);
+    if (!fact) return t;
+    // Admitted items keep the edges recorded by their run; queued items have no admission record yet.
+    const deps = t.deps ?? fact.blockers;
+    const owner = t.ticket.includes('/') ? t.ticket.split('/')[0] : feature;
+    const blockers = t.blockers ?? (t.stage === 'queued' || t.stage === 'blocked'
+      ? deps?.filter((ref) => {
+        const key = queueTicketKey(ref, owner), state = lookup(key)?.state;
+        return !landed.has(key) && state !== 'done' && state !== 'dropped';
+      }) : undefined);
+    return { ...t, title: fact.title, ...(deps !== undefined ? { deps } : {}), ...(blockers?.length ? { blockers } : {}) };
+  });
 }
 
 // Level the recorded edges only. Unknown/outside dependencies stay on their nodes;
@@ -584,14 +613,16 @@ function dependencyWaves<T>(nodes: readonly T[], key: (node: T) => string, needs
   return waves;
 }
 
-function queueWaves(tickets: readonly ExecutionRunTicket[]): NonNullable<ExecutionRun['queueWaves']> {
+function queueWaves(tickets: readonly ExecutionRunTicket[], feature?: string): NonNullable<ExecutionRun['queueWaves']> {
   const first = tickets.findIndex((ticket) => ticket.stage !== 'landed');
   const prefix = first < 0 ? tickets : tickets.slice(0, first);
   const current: ExecutionRunTicket[] = [], blocked: ExecutionRunTicket[] = [];
   for (const ticket of tickets.slice(prefix.length)) {
     (ticket.stage === 'blocked' || (ticket.stage === 'queued' && ticket.blockers?.length) ? blocked : current).push(ticket);
   }
-  return { prefix, current, blocked: dependencyWaves(blocked, (ticket) => ticket.ticket, (ticket) => ticket.blockers ?? []) };
+  return { prefix, current, blocked: dependencyWaves(blocked,
+    ({ ticket }) => queueTicketKey(ticket, feature),
+    ({ ticket, blockers }) => (blockers ?? []).map((ref) => queueTicketKey(ref, ticket.includes('/') ? ticket.split('/')[0] : feature))) };
 }
 
 function ticketToMetroState(ticket: ExecutionRunTicket): MetroStationState {
@@ -627,42 +658,17 @@ function buildQueueMetro(
 ): MetroFlow {
   const byId = new Set(tickets.map((t) => t.ticket));
   const normToId = new Map<string, string>();
-  const pad2 = (n: string) => String(Number(n)).padStart(2, '0');
+  const bareToId = new Map<string, string>();
   for (const id of byId) {
-    normToId.set(id.toLowerCase(), id);
-    const m = /^([\w.-]+)\/(\d+)$/.exec(id);
-    if (m) {
-      normToId.set(`${m[1].toLowerCase()}/${pad2(m[2])}`, id);
-      normToId.set(`${m[1].toLowerCase()}/${Number(m[2])}`, id);
-    } else if (/^\d+$/.test(id)) {
-      normToId.set(pad2(id), id);
-      normToId.set(String(Number(id)), id);
-      if (q.feature) normToId.set(`${q.feature.toLowerCase()}/${pad2(id)}`, id);
-    }
+    normToId.set(queueTicketKey(id, q.feature), id);
+    if (/^#?\d+$/.test(id.trim())) bareToId.set(queueTicketKey(id), id);
   }
   const resolveRef = (ownerTicket: string, ref: string): string => {
     const trimmed = ref.trim();
     if (byId.has(trimmed)) return trimmed;
-    const low = trimmed.toLowerCase();
-    const direct = normToId.get(low);
-    if (direct) return direct;
-    const cross = /^([\w.-]+)\/(\d+)$/.exec(trimmed);
-    if (cross) {
-      const hit = normToId.get(`${cross[1].toLowerCase()}/${pad2(cross[2])}`);
-      if (hit) return hit;
-    }
-    const bare = /^#?(\d+)$/.exec(trimmed);
-    if (bare) {
-      const num = pad2(bare[1]);
-      const feat = ownerTicket.includes('/') ? ownerTicket.slice(0, ownerTicket.indexOf('/')) : q.feature;
-      if (feat) {
-        const hit = normToId.get(`${feat.toLowerCase()}/${num}`);
-        if (hit) return hit;
-      }
-      const bareHit = normToId.get(num);
-      if (bareHit) return bareHit;
-    }
-    return trimmed;
+    const feature = ownerTicket.includes('/') ? ownerTicket.split('/')[0] : q.feature;
+    const bare = bareToId.get(queueTicketKey(trimmed));
+    return (/^\d+$/.test(trimmed) ? bare : undefined) ?? normToId.get(queueTicketKey(trimmed, feature)) ?? bare ?? trimmed;
   };
 
   const admitted = (q.tickets ?? []).filter((item) => item?.ticket);
@@ -1164,6 +1170,7 @@ export function readExecutionRuns(
 ): ExecutionRun[] {
   const pass = scan(home);
   const cache = getJobIndexCache(home);
+  let ticketFacts: ReturnType<typeof scanTicketStore> | undefined;
   const runs = pass.files.flatMap((file) => {
     if (!file.endsWith('.json')) return [];
     const id = file.slice(0, -5);
@@ -1186,7 +1193,9 @@ export function readExecutionRuns(
         endedAt = updatedAt !== null ? Math.min(updatedAt, mtime) : mtime;
         if (endedAt < now - ENDED_MS || endedAt > now) return [];
       }
-      const tickets = projectTickets(home, q, pass, workers, cache, now, open);
+      const items = projectTickets(home, q, pass, workers, cache, now, open);
+      if (items.length) ticketFacts ??= scanTicketStore(scope.root);
+      const tickets = ticketFacts ? withTicketFacts(items, q.feature, ticketFacts.lookup) : items;
       const steps = readSteps(q);
       const result = open ? undefined : endedResult(tickets);
       const heldCount = (q.tickets ?? []).filter((item) => item?.held).length + (q.held ? 1 : 0);
@@ -1212,7 +1221,7 @@ export function readExecutionRuns(
         since: leadWorker?.startedAt ?? undefined,
         ...(leadInfo!.changedAt !== undefined ? { changedAt: leadInfo!.changedAt } : {}),
       } : undefined;
-      const waves = open ? queueWaves(tickets) : undefined;
+      const waves = open ? queueWaves(tickets, q.feature) : undefined;
       const metro = open ? buildQueueMetro(home, q, tickets, waves!, steps, reviewer, lead, workers) : undefined;
       const run: ExecutionRun = {
         flow: q.flow,

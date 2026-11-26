@@ -13,6 +13,8 @@ import { acceptAll, appendTry, TryLog } from '../../dist/collectors/try-records.
 import { currentRows, landedNewest } from '../../dist/render/project-view.js';
 import { renderHtmlBoard } from '../../dist/render/html-board.js';
 import { projectList } from '../../dist/roles/projects.js';
+import { collectFeatureActivity } from '../../dist/render/project-objectives.js';
+import { putTicketFeature, ticketRecord } from '../fixtures/ticket-store.mjs';
 
 const NOW = Date.parse('2026-11-14T10:00:00Z');
 const EMPTY_BOARD = { revision: 'synthetic', lanes: [], workers: [], decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: '' } };
@@ -179,7 +181,7 @@ test('ticket items and latest ## Comments bullet parsed; absent comments omitted
   assert.equal(tickets[2].comment.length, 600);
 });
 
-test('Home and Project derive ticket, commit, job, and cross-feature dependency states without tracker writes', async (t) => {
+test('Home and Project derive ticket, landing, job, and cross-feature dependency states without tracker writes', async (t) => {
   const f = makeTemp(t);
   initRepo(f.cwd, [{ file: 'a', msg: 'deliver base/02; not OTHER-BASE-03', date: '2026-11-10T08:00:00Z' }]);
   const issue = (slug, n, blocked = 'none', state = 'ready-for-agent', ownerTry = '') => {
@@ -188,7 +190,8 @@ test('Home and Project derive ticket, commit, job, and cross-feature dependency 
     return file;
   };
   const file = issue('base', '01', 'none', 'try');
-  issue('base', '02', 'none', undefined, '**Owner try:** yes\n');
+  const landed = issue('base', '02', 'none', 'ready-for-human', '**Owner try:** yes\n');
+  fs.appendFileSync(landed, `\n## Comments\n- Landed in this commit (replay base ${'a'.repeat(40)}); gate 1/1 passed.\n`);
   issue('base', '03'); issue('next', '01', 'base/01, base/02');
   issue('next', '02', 'base/03'); issue('next', '03', '02'); issue('next', '04', 'absent/01');
   const receipt = (id, cwd, state) => {
@@ -242,23 +245,17 @@ test('a managed worktree without a job starts a ticket; stale claims, unknown ed
   assert.equal((await tick()).tickets[0].tickets[0].state, 'ready');
 });
 
-test('subject cache follows the resolved SHA of a linked checkout (packed and loose refs)', async (t) => {
+test('ticket cache on a linked checkout follows the JSON file without depending on HEAD', async (t) => {
   const f = makeTemp(t), tree = join(f.root, 'linked');
-  initRepo(f.cwd, [{ file: 'a', msg: 'OTHER-DEMO-01 and DEMO-010 are not DEMO/01a', date: '2026-11-10T08:00:00Z' }]);
-  const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], { cwd, stdio: 'pipe' });
-  git(f.cwd, 'worktree', 'add', '-b', 'side', tree); git(tree, 'pack-refs', '--all');
-  f.put(join(tree, '.scratch/demo/issues/01-item.md'), '# 01: Item\n**Status:** ready-for-agent\n**Blocked by:** none\n');
-  const collector = new ProjectCollector(tree, f.hud, f.env, f.home), calls = [], orig = childProcess.execFile;
-  childProcess.execFile = (file, args, ...rest) => { calls.push(args); return orig(file, args, ...rest); }; syncBuiltinESMExports();
-  t.after(() => { childProcess.execFile = orig; syncBuiltinESMExports(); });
+  initRepo(f.cwd, [{ file: 'a', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);
+  execFileSync('git', ['worktree', 'add', '-b', 'side', tree], { cwd: f.cwd, stdio: 'pipe' });
+  const path = putTicketFeature(tree, 'demo', [ticketRecord(1)]);
+  const collector = new ProjectCollector(tree, f.hud, f.env, f.home);
   const tick = async () => (await collector.collect('home', EMPTY_BOARD, NOW)).tickets[0].tickets[0].state;
-  assert.equal(await tick(), 'ready'); assert.equal(await tick(), 'ready'); assert.equal(calls.length, 1);
-  git(tree, 'commit', '--allow-empty', '-m', 'deliver DEMO-01');
-  assert.equal(await tick(), 'ready'); assert.equal(calls.length, 2);
-  f.put(join(tree, 'a'), 'delivered\n');
-  git(tree, 'commit', '-am', 'deliver DEMO-01');
-  assert.equal(await tick(), 'done'); assert.equal(await tick(), 'done'); assert.equal(calls.length, 3);
-  git(tree, 'checkout', '--detach'); assert.equal(await tick(), 'done'); assert.equal(calls.length, 3);
+  assert.equal(await tick(), 'ready');
+  const next = putTicketFeature(tree, 'pending', [ticketRecord(1, { status: 'done' })], { feature: 'demo' });
+  fs.renameSync(next, path);
+  assert.equal(await tick(), 'done');
 });
 
 test('projectList is registered-only, orders pane root first, deduplicates and retains unavailable roots', async (t) => {
@@ -306,7 +303,7 @@ test('projectList is registered-only, orders pane root first, deduplicates and r
   assert.deepEqual(listedSnap.active, []);
 });
 
-test('Home shares the subject scan and project job facts; full working-tree probes retain their five-second gate', async (t) => {
+test('Home reads ticket and job evidence without Git; full working-tree probes retain their five-second gate', async (t) => {
   const f = makeTemp(t);
   const [h1] = initRepo(f.cwd, [{ file: 'a.txt', msg: 'init', date: '2026-11-12T10:00:00Z' }]);
   f.put(join(f.cwd, 'docs/handoff/STATE.md'), '# State\n\nMilestone: M4\n');
@@ -324,7 +321,7 @@ test('Home shares the subject scan and project job facts; full working-tree prob
 
   const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home);
   const homeSnap = await collector.collect('home', EMPTY_BOARD, NOW);
-  assert.deepEqual(spawned, ['git']);
+  assert.deepEqual(spawned, []);
   assert.ok(opened.every((p) => /\/STATE\.md$|\/issues\/01-item\.md$|\/\.git\/|\/jobs\/j\w+\/(job|STATUS)\.json$/.test(p)));
   assert.equal(homeSnap.ledger[0].commit, h1);
   assert.equal('at' in homeSnap.ledger[0], false);
@@ -418,7 +415,7 @@ test('multiple ProjectCollectors, ProjectOverviews and Control share one JobInde
   assert.equal(updatedCtrl.radar.roleStats.imp.ok, 2);
 });
 
-test('scratch-only subjects do not land tickets; commit-only landings default to done unless owner try is requested', async (t) => {
+test('commit mentions are not landings; explicit Markdown Landed comments still count', async (t) => {
   const f = makeTemp(t);
   initRepo(f.cwd, [{ file: 'code.txt', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);
   const git = (...args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
@@ -434,43 +431,33 @@ test('scratch-only subjects do not land tickets; commit-only landings default to
   f.put(join(f.hud, 'jobs/j0000000000000001/job.json'), { cwd: f.cwd, role: 'imp', ticket: 'demo/01' });
   f.put(join(f.cwd, 'code.txt'), 'land the changes\n');
   git('commit', '-am', 'deliver demo/02, DEMO-03 and demo/05');
-  const landed = git('rev-parse', 'HEAD');
   issue('03', 'yes', '\n## Comments\n- Follow-up note.\n');
   git('commit', '-am', 'demo/03: update tracker');
 
   const data = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect('home', EMPTY_BOARD, NOW);
-  assert.deepEqual(data.tickets[0].tickets.map(t => t.state), ['working', 'done', 'try', 'done', 'done']);
-  assert.deepEqual(data.ledger.map(r => [r.id, r.state, r.landed, r.commit]), [
-    ['DEMO-01', 'working', undefined, undefined], ['DEMO-02', 'accepted', true, landed],
-    ['DEMO-03', 'try', true, landed], ['DEMO-04', 'accepted', true, undefined],
-    ['DEMO-05', 'accepted', true, landed],
-  ]);
-  assert.equal(acceptAll(f.hud, f.cwd, data.ledger), 1);
-  assert.deepEqual(JSON.parse(fs.readFileSync(join(f.hud, 'tries.jsonl'), 'utf8')).slices, ['DEMO-03']);
+  assert.deepEqual(data.tickets[0].tickets.map(t => t.state), ['working', 'ready', 'ready', 'done', 'ready']);
+  assert.deepEqual(data.ledger.filter((r) => r.landed).map((r) => r.id), ['DEMO-04']);
+  assert.equal(acceptAll(f.hud, f.cwd, data.ledger), 0);
 });
 
-test('a code commit naming its changed ticket needs only the cheap history read', async (t) => {
+test('recently landed reads the stored landing time, not file times or Git', async (t) => {
   const f = makeTemp(t);
-  initRepo(f.cwd, [{ file: 'app.js', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);
-  f.put(join(f.cwd, '.scratch/feature/issues/01-item.md'), '# 01: Item\n**Status:** ready-for-agent\n**Blocked by:** none\n');
-  f.put(join(f.cwd, 'app.js'), 'export const value = 1;\n');
-  const git = (...args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
-    cwd: f.cwd, stdio: 'pipe',
-  });
-  git('add', '.'); git('commit', '-m', 'deliver feature/01');
-
+  const [commit] = initRepo(f.cwd, [{ file: 'app.js', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);
+  const at = NOW - 30 * 60_000;
+  const landing = { at: new Date(at).toISOString(), job: 'j0000000000000001', flow: 'f0000000000000001', replay_base: 'a'.repeat(40), gates: 1, commit };
+  putTicketFeature(f.cwd, 'feature', [ticketRecord(1, { status: 'ready-for-human', owner_try: true, landing }),
+    ticketRecord(2, { status: 'ready-for-human', owner_try: true, landing, accepted: { at: new Date(NOW).toISOString(), by: 'lead' } })]);
   const collector = new ProjectCollector(f.cwd, f.hud, f.env, f.home), calls = [], orig = childProcess.execFile;
-  childProcess.execFile = (file, args, ...rest) => { calls.push(args); return orig(file, args, ...rest); }; syncBuiltinESMExports();
+  childProcess.execFile = (file, args, ...rest) => { calls.push([file, args]); return orig(file, args, ...rest); }; syncBuiltinESMExports();
   t.after(() => { childProcess.execFile = orig; syncBuiltinESMExports(); });
-  const tick = () => collector.collect('home', EMPTY_BOARD, NOW);
-  assert.equal((await tick()).ledger[0].landed, true);
-  await tick();
-  assert.equal(calls.length, 1);
-  assert.ok(calls[0].includes('--name-status'));
-  assert.ok(!calls[0].includes('--patch'));
+  const data = await collector.collect('home', EMPTY_BOARD, NOW);
+  assert.deepEqual(data.ledger.map((r) => [r.state, r.landed, r.at, r.commit]), [['try', true, at, commit], ['accepted', true, at, commit]]);
+  const scanned = new Map(data.tickets.map((f) => [f.slug, f]));
+  assert.deepEqual(collectFeatureActivity(scanned, data.ledger, [], NOW).get('feature').map((e) => [e.result, e.at]), [['landed', at], ['landed', at]]);
+  assert.deepEqual(calls, []);
 });
 
-test('docs and ticket mentions leave a live ticket working until Git records its landing', async (t) => {
+test('legacy landings are observed from current file evidence, not patches to prior ticket versions', async (t) => {
   const f = makeTemp(t);
   initRepo(f.cwd, [{ file: 'code.txt', msg: 'baseline', date: '2026-11-10T08:00:00Z' }]);
   const git = (...args) => execFileSync('git', ['-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@invalid', ...args], {
@@ -498,18 +485,13 @@ test('docs and ticket mentions leave a live ticket working until Git records its
   issue('02', 'ready-for-agent', '- Unrelated tracker note.\n');
   git('commit', '-am', 'implement the feature');
   const landed = git('rev-parse', 'HEAD');
-  f.put(join(f.cwd, 'docs/spec.md'), '# Follow-up spec\n');
-  issue('01', 'ready-for-human', '- Follow-up tracker note.\n');
-  git('commit', '-am', 'docs: update feature/01 notes');
   assert.deepEqual((await tick()).ledger.map(({ state, landed, commit }) => [state, landed, commit]), [
-    ['try', true, landed], ['todo', undefined, undefined],
+    ['try', true, undefined], ['todo', undefined, undefined],
   ]);
-
+  issue('01', 'ready-for-human', '- Follow-up tracker note without a landing record.\n');
   issue('02', 'ready-for-agent', `- Landed ${landed}; gate 1/1 passed.\n`);
-  git('commit', '-am', `Record landing ${landed.slice(0, 12)}`);
-  issue('02', 'ready-for-agent'); // With no file evidence, the legacy commit still witnesses the landing.
-  assert.deepEqual((await tick()).ledger.map(({ state, landed, commit }) => [state, landed, commit]), [
-    ['try', true, landed], ['try', true, undefined],
+  assert.deepEqual((await tick()).ledger.map(({ state, landed: recorded, commit }) => [state, recorded, commit]), [
+    ['working', undefined, undefined], ['try', true, landed],
   ]);
 });
 
@@ -532,6 +514,10 @@ test('Project collector, Home, HTML board and TryLog use ticket landings, not le
   f.put(join(f.cwd, t2), '# 02: Visible panel change\n\n**Status:** ready-for-human\n**Owner try:** yes\n**Blocked by:** 01\n- [x] panel works\n\n## Comments\n\n- Landed b2c3d4e5; gate 1/1 passed.\n');
   git(['add', '.']); git(['commit', '-m', 'land ui slice'], '2026-11-12T10:00:00Z');
   const h2 = git(['rev-parse', 'HEAD']);
+  // Older receipts that name a commit can still link its diff and date, without searching history for the ticket.
+  for (const [path, placeholder, sha] of [[t1, 'a1b2c3d4', h1], [t2, 'b2c3d4e5', h2]]) {
+    f.put(join(f.cwd, path), fs.readFileSync(join(f.cwd, path), 'utf8').replace(placeholder, sha));
+  }
 
   f.put(join(f.cwd, 'src/c.txt'), 'v3\n');
   git(['add', 'src/c.txt']); git(['commit', '-m', 'legacy state slice'], '2026-11-10T08:00:00Z');

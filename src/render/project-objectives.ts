@@ -19,7 +19,7 @@ export const ticketProgressText = (p: ReturnType<typeof linkedTicketProgress>) =
 export const ticketTrack = (p: ReturnType<typeof linkedTicketProgress>, cells: number, dim: boolean) => !p ? theme.board.muted(mark('—', '-'))
   : p.total ? barText(p, cells, TICKET_BAR_ORDER, dim) : theme.board.frame(mark('╌', '.').repeat(cells));
 
-/** Group live, gate and recent-24h ended ticket activity by feature slug, merging ticket-scan claims and Git landings. */
+/** Group live, gate and recent-24h ended activity by feature, merging claims and recorded ticket landings. */
 export function collectFeatureActivity(
   scanned: ReadonlyMap<string, TicketFeature>,
   ledger: ProjectSnapshot['ledger'],
@@ -28,18 +28,21 @@ export function collectFeatureActivity(
 ): Map<string, TicketActivity[]> {
   const jobTickets = new Map([...scanned.values()].flatMap(({ slug, tickets }) => tickets.flatMap(({ number, job }) =>
     job?.id ? [[job.id, targetKey(`${slug}/${number}`)] as const] : [])));
+  const landingDates = new Map([...scanned.values()].flatMap(({ slug, tickets }) => tickets.flatMap(({ number, landingAt }) =>
+    landingAt === undefined ? [] : [[targetKey(`${slug}/${number}`), landingAt] as const])));
   const byFeature = new Map<string, TicketActivity[]>();
   const recent = (at: number) => at <= now && now - at <= ENDED_MS;
   const add = (entry: TicketActivity) => {
     const ticket = (entry.kind === 'live' ? jobTickets.get(entry.jobId) : undefined) ?? targetKey(entry.ticket);
     const slug = /^([a-z0-9_-]+)\/\d+$/.exec(ticket)?.[1];
+    if (entry.kind === 'ended' && entry.result === 'landed') entry = { ...entry, at: landingDates.get(ticket) ?? entry.at };
     if (!slug || (entry.kind === 'ended' && !recent(entry.at))) return;
     const list = byFeature.get(slug);
     if (list) list.push({ ...entry, ticket });
     else byFeature.set(slug, [{ ...entry, ticket }]);
   };
   for (const entry of activity) add(entry);
-  // The project ticket scan also has live claims and dated Git landings, even outside the execution job window.
+  // The ticket scan also knows about claims and landings outside the execution job window.
   for (const { slug, tickets } of scanned.values()) for (const { number, job } of tickets) {
     if (job?.id && !SETTLED_JOB_STATES.has(job.state)) add({ ticket: `${slug}/${number}`, kind: 'live', jobId: job.id, at: job.at });
   }
