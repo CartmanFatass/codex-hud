@@ -90,11 +90,13 @@ test('Assumed: lines move to run todo; four assumptions or a scope assumption pa
   assert.match(after.pause_notice, /Assumed: lines/);
 });
 
-test('a single scope assumption pauses the run with no main wake (including handback_to: main)', { timeout: 30_000 }, async t => {
+test('a scope assumption pauses without waking main; one resume accepts that report and lands', { timeout: 45_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-scope.md': goodTicket(1) } });
-  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
+  const args = { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' };
+  const { flow } = await f.call('hud_tickets', args);
   const [first] = await f.jobs(flow, 1);
-  await f.settle(first, { report: 'Done.\n\nAssumed: [scope] added a new public command\n' });
+  const assumed = '[scope] added a new public command';
+  await f.settle(first, { report: `Done.\n\nAssumed: ${assumed}\n` });
   const paused = await f.end(flow);
   assert.equal(paused.state, 'paused');
   assert.equal('no_wake' in paused, false);
@@ -104,7 +106,50 @@ test('a single scope assumption pauses the run with no main wake (including hand
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
   const leads = fs.readdirSync(join(f.home, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id)).map(f.job).filter(j => j.role === 'lead');
   assert.equal(leads.length, 0, 'main-handback runs keep the breaker with zero leads');
+
+  const resumed = await f.call('hud_tickets', args);
+  assert.notEqual(resumed.flow, flow);
+  await until(() => {
+    const q = f.flow(resumed.flow);
+    assert.equal(q.state, 'working', JSON.stringify(q));
+    return Boolean(q.review_job);
+  }, 15_000);
+  const landed = await f.call('hud_read', { job: resumed.flow });
+  assert.deepEqual(landed.landed, ['sample/01']);
+  assert.equal(landed.jobs[0].job, first);
+  assert.deepEqual(landed.todo, [{ source: `sample/01 (${first})`, kind: 'assumed', text: assumed }]);
 });
+
+for (const change of ['report', 'head']) {
+  test(`a changed source ${change} is judged again on resuming an assumption hand-back`, { timeout: 45_000 }, async t => {
+    const f = await setupWorkflowProject(t, { count: 1 });
+    const args = { op: 'run', feature: 'sample', cwd: f.root, handback_to: 'main' };
+    const { flow } = await f.call('hud_tickets', args);
+    const [first] = await f.jobs(flow, 1);
+    const report = 'Done.\nAssumed: [scope] kept the old command\n';
+    await f.settle(first, { report });
+    assert.equal((await f.end(flow)).handback.kind, 'assumption');
+
+    if (change === 'report') {
+      // A new turn settled while the queue was paused, keeping the source and Assumed: line unchanged.
+      const sentAt = new Date().toISOString();
+      writeFixtureFile(join(f.dir(first), 'job.json'), JSON.stringify({ ...f.job(first), pi_sent_at: sentAt }));
+      await until(() => Date.now() > Date.parse(sentAt) + 1, t.signal);
+      writeFixtureFile(join(f.dir(first), 'report.md'), report.replace('Done.', 'Updated.'));
+      writeFixtureFile(join(f.dir(first), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
+    } else {
+      // Move the source before resuming, leaving the report and its signature untouched.
+      f.git(f.job(first).worktree.root, 'commit', '--allow-empty', '-qm', 'Updated synthetic source');
+    }
+    const resumed = await f.call('hud_tickets', args);
+    assert.notEqual(resumed.flow, flow);
+    const paused = await f.end(resumed.flow);
+    assert.equal(paused.state, 'paused', JSON.stringify(paused));
+    assert.equal(paused.handback.kind, 'assumption');
+    assert.equal(paused.handback.job, first);
+    assert.equal(paused.tickets[0].land, undefined);
+  });
+}
 
 test('worker and reviewer questions use temporary leads with no hud_land; owner-try outside unattended stays ready-for-human', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-question.md': goodTicket(1, { ownerTry: 'yes' }) } });

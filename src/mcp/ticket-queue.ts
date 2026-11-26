@@ -145,6 +145,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     const readiness = unattended ? undefined : ticketReadiness(root, jobCache, target, { home });
     const latest = queues.filter(q => !q.unattended).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
     const resumed = !unattended && latest && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;
+    const handback = resumed?.state === 'paused' && resumed.handback?.kind === 'assumption' ? resumed.handback : undefined;
     const limit = max_parallel ?? resumed?.max_parallel ?? capForRole(loadConcurrencySettings(), 'imp');
     const effectiveHandbackTo = unattended ? 'lead' : handback_to ?? resumed?.handback_to;
     const effectiveRule = unattended ? ESCALATION_RULE : escalation_rule?.trim() ?? resumed?.escalation_rule;
@@ -179,7 +180,14 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       steps: Object.fromEntries(Object.keys(graph.steps).map(id => [id, { state: 'waiting' as const }])),
       dispatcher: resumed ? resumed.dispatcher : dispatcher,
       state: 'working', tickets: resumed?.tickets.filter(item => item.landed || (!launchFailed(home, item.job) && !ticketClosed(item.path)))
-        .map(item => ({ ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow })) ?? [] };
+        .map(item => ({
+          ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow,
+          // Approve the report that caused the pause, not whatever the worker has published since.
+          ...(handback?.assumption && handback.ticket === item.ticket && handback.job === item.job && {
+            approved_assumptions_head: handback.assumption.head,
+            approved_assumptions_sig: handback.assumption.report_sig,
+          }),
+        })) ?? [] };
     if (readiness?.queued.length) q.queued = readiness.queued;
     if (readiness?.blocked.length) q.blocked = readiness.blocked;
     fs.mkdirSync(runDir(home, flow), { mode: 0o700, recursive: true });

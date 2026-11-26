@@ -16,6 +16,7 @@ export type TicketHandbackKind = 'question' | 'blocker' | 'assumption' | 'escala
 export interface TicketHandback {
   step: string; choices: string[]; kind?: TicketHandbackKind;
   ticket?: string; job?: string; question?: string; land?: string; owner_approval?: OwnerApproval;
+  assumption?: { head: string; report_sig: string };
 }
 export interface TicketItemHold {
   reason: string; at: string; kind?: TicketHandbackKind; owner_approval?: OwnerApproval;

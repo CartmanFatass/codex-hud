@@ -28,7 +28,7 @@ import { piReportSettlement } from './pi-read-settlement.js';
 import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/job-store.js';
 import {
   readTicketQueue, ticketQueueNotice, writeTicketQueue,
-  type TicketHandbackKind, type TicketQueue, type TicketQueueItem,
+  type TicketHandback, type TicketHandbackKind, type TicketQueue, type TicketQueueItem,
 } from './ticket-queue-state.js';
 import {
   appendTodos, applyLeadQuestionAnswer, assumptionOwnerApproval, buildAcceptPacket, buildAssumptionPacket,
@@ -60,10 +60,23 @@ function declaredReport(dir: string, job: Job, status: JobStatus) {
     Date.parse(status.settled_at ?? '') >= Date.parse(turn.sent_at) ? sig : null;
 }
 
+function assumptionTrigger(assumed: string[], scopeAssumptions: string[]) {
+  if (scopeAssumptions.length) return `scope assumption in report: ${scopeAssumptions[0]}`;
+  if (assumed.length > 3) return `report has ${assumed.length} Assumed: lines (limit 3)`;
+}
+
+function verifiedSourceHead(job: Job) {
+  const res = job.worktree && spawnSync('git', [...SAFE_GIT_ARGS, 'rev-parse', '--verify', 'HEAD'], {
+    cwd: job.worktree.root, env: safeGitEnv(process.env), encoding: 'utf8', timeout: 5000,
+  });
+  const head = res?.status === 0 ? res.stdout?.trim() : undefined;
+  return head && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(head) ? head : undefined;
+}
+
 type SettlementVerdict =
   | { ok: true; assumed: string[]; scopeAssumptions: string[]; sig: string; reportText: string }
   | { waitMs: number }
-  | { kind: TicketHandbackKind; reason: string; assumed?: string[] };
+  | { kind: TicketHandbackKind; reason: string; assumed?: string[]; assumption?: TicketHandback['assumption'] };
 
 function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus, deferAssumptions = false): SettlementVerdict {
   const dir = directory(job.job);
@@ -75,10 +88,13 @@ function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus, def
   const { lines: assumed, scopeAssumptions } = extractAssumedLines(text);
   if (hasReportBlockers(text))
     return { kind: 'blocker', reason: 'report has a Blockers: line', assumed };
-  if (!deferAssumptions && scopeAssumptions.length)
-    return { kind: 'assumption', reason: `scope assumption in report: ${scopeAssumptions[0]}`, assumed };
-  if (!deferAssumptions && assumed.length > 3)
-    return { kind: 'assumption', reason: `report has ${assumed.length} Assumed: lines (limit 3)`, assumed };
+  const trigger = !deferAssumptions && assumptionTrigger(assumed, scopeAssumptions);
+  if (trigger) {
+    const head = verifiedSourceHead(job);
+    if (!head || item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig) {
+      return { kind: 'assumption', reason: trigger, assumed, ...(head && { assumption: { head, report_sig: sig } }) };
+    }
+  }
   if (readReportMeta(dir, sig)?.skip_checks_reason) return { kind: 'check', reason: 'worker checks were skipped', assumed };
   if (/(?:^|·)[ \t]*\*\*Main review:\*\*[ \t]*yes\b/im.test(ticketHeader(item.path)))
     return { kind: 'review', reason: 'ticket is marked for main review', assumed };
@@ -119,11 +135,8 @@ function checkUnattendedGates(
   assumed: string[],
   scopeAssumptions: string[],
 ): GateResult {
-  const headRes = job.worktree && spawnSync('git', [...SAFE_GIT_ARGS, 'rev-parse', '--verify', 'HEAD'], {
-    cwd: job.worktree.root, env: safeGitEnv(process.env), encoding: 'utf8', timeout: 5000,
-  });
-  const head = headRes?.status === 0 ? headRes.stdout?.trim() : undefined;
-  if (!head || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(head)) {
+  const head = verifiedSourceHead(job);
+  if (!head) {
     return { kind: 'fail', problemKind: 'worker', reason: 'Verified worker commit unavailable' };
   }
   let base: string;
@@ -153,13 +166,9 @@ function checkUnattendedGates(
       return { kind: 'hold', ownerApproval: 'feature-deletion', reason: `Unapproved removal declared: ${unapproved.join(', ')}` };
     }
   }
-  const assumptionTrigger = scopeAssumptions.length
-    ? `scope assumption in report: ${scopeAssumptions[0]}`
-    : assumed.length > 3
-      ? `report has ${assumed.length} Assumed: lines (limit 3)`
-      : undefined;
-  if (assumptionTrigger && (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig)) {
-    return { kind: 'assumption', head, sig, trigger: assumptionTrigger, assumed };
+  const trigger = assumptionTrigger(assumed, scopeAssumptions);
+  if (trigger && (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig)) {
+    return { kind: 'assumption', head, sig, trigger, assumed };
   }
   return { kind: 'pass', head, sig };
 }
@@ -173,6 +182,7 @@ export interface TicketProblem {
   question?: string;
   land?: string;
   ownerApproval?: OwnerApproval;
+  assumption?: TicketHandback['assumption'];
 }
 
 function recordUnclosedLead(q: TicketQueue, jobId: string, reason: string) {
@@ -271,6 +281,7 @@ export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
       ...(problem.question && { question: problem.question }),
       ...(problem.land && { land: problem.land }),
       ...(problem.ownerApproval && { owner_approval: problem.ownerApproval }),
+      ...(problem.assumption && { assumption: problem.assumption }),
     }),
   };
   if (problem?.kind === 'blocker' || problem?.kind === 'assumption') {
@@ -1051,7 +1062,7 @@ function tickTicketQueue(
       } else if ('waitMs' in verdict) {
         recheck = Math.min(recheck ?? verdict.waitMs, verdict.waitMs);
       } else {
-        flag(verdict.kind, verdict.reason);
+        flag(verdict.kind, verdict.reason, verdict.assumption ? { assumption: verdict.assumption } : undefined);
       }
     }
   }

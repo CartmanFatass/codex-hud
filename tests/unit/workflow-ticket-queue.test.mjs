@@ -683,6 +683,25 @@ test('to: main question hand-back auto-resumes on hud_respond and Blockers: paus
   assert.equal(readAfter.state, 'paused');
   assert.equal(readAfter.changes, undefined);
   assert.match(readAfter.pause_notice, /Blockers:/);
+
+  // Resuming does not accept blockers; the unchanged report pauses again and can be cancelled by run ID.
+  const resume = resultValue((await rpc('tools/call', {
+    name: 'hud_tickets', arguments: { op: 'run', feature: 'sample', cwd: f.root },
+  })).result);
+  assert.notEqual(resume.flow, blocked.flow);
+  const stillBlocked = await f.end(resume.flow);
+  assert.equal(stillBlocked.state, 'paused');
+  assert.deepEqual(stillBlocked.handback, blocked.handback);
+  assert.equal(stillBlocked.tickets[0].land, undefined);
+
+  const cancelled = resultValue((await rpc('tools/call', {
+    name: 'hud_tickets', arguments: { op: 'run', cancel: true, run: resume.flow, cwd: f.root },
+  })).result);
+  assert.equal(cancelled.flow, resume.flow);
+  assert.equal(cancelled.state, 'cancelled');
+  assert.equal(cancelled.cancel_requested, true);
+  assert.equal(f.flow(resume.flow).state, 'cancelled');
+  assert.deepEqual(f.flow(resume.flow).handback, blocked.handback);
 });
 
 test('workflow-runner adopts a pre-upgrade legacy q receipt without template or graph.json', { timeout: 30_000 }, async t => {
