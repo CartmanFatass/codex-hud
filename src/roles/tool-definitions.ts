@@ -224,7 +224,6 @@ export const ROLE_TOOLS = [
       cancel: { type: 'boolean', description: 'Run: cancel; keeps jobs/lands.' },
       escalation_rule: text,
       handback_to: { ...text, enum: ['lead', 'main'] },
-      lead_preset: text,
       tickets: {
         type: 'array',
         minItems: 1,
@@ -239,6 +238,7 @@ export const ROLE_TOOLS = [
             status: { ...ticketStatus, default: 'ready-for-agent' },
             owner_try: { type: 'boolean', description: 'Owner try post-land (default no).' },
             live_try: text,
+            approved_removals: text,
             objective: ticketObjective,
           },
           required: ['title', 'blocked_by', 'what', 'acceptance'],

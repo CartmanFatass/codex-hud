@@ -120,12 +120,12 @@ export class HomePortfolioCollector {
     try {
       const status = readUnattendedStatus(this.home);
       if (status.on && status.control) unattended = { objectives: status.control.objectives, running: status.running.length, handbacks: status.handbacks.length };
-      for (const q of status.handbacks) {
-        const item = q.unattended!;
-        const project = projects.find(p => p.root === q.root) ?? { root: q.root, name: basename(q.root), registrationIndex: list.length };
-        requests.push({ project, index: -1, files: [item.path, queueFile(this.home, q.flow)], item: {
-          label: 'unattended', value: `${item.ticket}: ${q.reason ?? q.handback?.owner_approval}`,
-          request: q.flow, objective: item.objective, at: Date.parse(q.updated_at), waitedOn: true,
+      for (const h of status.handbacks) {
+        const project = projects.find(p => p.root === h.root) ?? { root: h.root, name: basename(h.root), registrationIndex: list.length };
+        const files = [...(h.path ? [h.path] : []), queueFile(this.home, h.flow), ...(h.job ? [join(this.home, 'jobs', h.job, 'report.md')] : [])];
+        requests.push({ project, index: -1, files, item: {
+          label: 'unattended', value: h.ticket ? `${h.ticket}: ${h.reason}` : h.reason,
+          request: h.ticket ? `${h.flow}:${h.ticket}` : h.flow, objective: h.objective, at: Date.parse(h.at), waitedOn: true,
         } });
       }
     } catch { /* Unreadable service receipts give no display evidence. */ }

@@ -1,15 +1,17 @@
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, isAbsolute, resolve } from 'node:path';
 import { scanScratch, slugify, ticketsCommand, writeFileAtomic } from '../cli/tickets.js';
 import { OBJECTIVE_SLUG, objectiveLink, readObjectives } from '../collectors/objectives.js';
 import type { ProjectTicket } from '../collectors/project-board.js';
 import { STATE_BYTES } from '../collectors/state-ledger.js';
-import { ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
+import { targetKey, ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
 import { SETTLED_JOB_STATES, TicketRollup, ticketJobState } from '../collectors/ticket-rollup.js';
+import { getHudHome } from '../hud-home.js';
 import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
 import { projectRoot, sharedRoot } from '../roles/projects.js';
 import { TICKET_STATUSES } from '../roles/tool-definitions.js';
+import { readOpenHolds } from '../unattended/state.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
 import { linkFeature } from './local-objectives.js';
@@ -82,8 +84,8 @@ export function ticketObjective(cwd: string, ticket: unknown, shared: string) {
   } catch { /* No attribution. */ }
 }
 
-export function readyTickets(cwd: string, jobs: JobIndexCache) {
-  return { ok: true, tickets: ticketReadiness(cwd, jobs).tickets };
+export function readyTickets(cwd: string, jobs: JobIndexCache, home?: string) {
+  return { ok: true, tickets: ticketReadiness(cwd, jobs, undefined, { home }).tickets.map(({ ticket, path, title, what }) => ({ ticket, path, title, what })) };
 }
 
 export interface TicketGap {
@@ -94,9 +96,69 @@ export interface TicketGap {
 
 const liveTryField = /(?:^|·)[ \t]*(?:\*\*)?(?:Live try|How to try|Try)(?::\*\*|\*\*:|:)[ \t]*\S/im;
 const liveTryHeading = /^##[ \t]+(?:Live try|How to try|Try)\b[^\r\n]*\r?\n(?:[ \t]*\r?\n)*[ \t]*\S/im;
+const approvedRemovalsField = /(?:^|·)[ \t]*\*\*Approved removals:\*\*/im;
+
+export function parseRemovalList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed || /^none\.?$/i.test(trimmed)) return [];
+  return trimmed.split(/[,;]+/).map(s => s.trim().replace(/\.+$/, '').replace(/\s+/g, ' ').toLowerCase()).filter(Boolean);
+}
+
+export function ticketApprovedRemovals(path: string): string[] {
+  try {
+    const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
+    if (truncated) return [];
+    return parseRemovalList(ticketFileEvidence(bytes.toString('utf8')).approvedRemovals);
+  } catch {
+    return [];
+  }
+}
+
+function validateTicketBody(
+  feature: string,
+  ticket: string,
+  path: string,
+  text: string,
+  knownIn: (slug: string) => Set<number>,
+): TicketGap | null {
+  const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
+  const { status, blocked, approvedRemovals, items } = ticketFileEvidence(text);
+  if (!status || !/^ready-for-agent$/i.test(status)) return null;
+  const gaps: string[] = [];
+  const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
+    ?.replace(/\s+/g, ' ').trim() ?? '';
+  if (!what) gaps.push('missing goal (What to build)');
+  if (items.length === 0) gaps.push('missing acceptance items');
+  if (blocked === undefined || !blocked.trim()) {
+    gaps.push('missing Blocked by');
+  } else if (!/^none\b/i.test(blocked.trim())) {
+    const parts = blocked.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+    if (!parts.length) gaps.push('invalid Blocked by');
+    for (const raw of parts) {
+      const clean = raw.replace(/\s*\([^)]*\)\s*$/, '').trim();
+      const cross = /^([a-z0-9-]+)\/(\d+)$/i.exec(clean);
+      if (cross) {
+        const slug = cross[1].toLowerCase(), n = Number(cross[2]);
+        if (!knownIn(slug).has(n)) gaps.push(`unknown blocked_by ticket: ${clean}`);
+      } else {
+        const local = /^#?(\d+)$/.exec(clean);
+        if (!local || !knownIn(feature).has(Number(local[1]))) gaps.push(`unknown blocked_by ticket: ${clean}`);
+      }
+    }
+  }
+  if (!liveTryField.test(body) && !liveTryHeading.test(body)) {
+    gaps.push('missing Live try (add how to try or Live try: none)');
+  }
+  if (approvedRemovalsField.test(body) && !approvedRemovals) {
+    gaps.push('empty Approved removals (list removals or Approved removals: none)');
+  }
+  return gaps.length ? { ticket, path, gaps } : null;
+}
 
 /** Deterministic pre-start check: every ready-for-agent ticket needs a goal (What to build),
- * acceptance items, valid Blocked by references, and a Live try / How to try line (or Live try: none). */
+ * acceptance items, valid Blocked by references, a Live try / How to try line (or Live try: none),
+ * and non-empty Approved removals if declared. */
 export function checkFeatureTickets(cwd: string, feature: string, only?: string): TicketGap[] {
   const scratch = join(cwd, '.scratch');
   if (!directoryExists(scratch)) return [];
@@ -113,63 +175,91 @@ export function checkFeatureTickets(cwd: string, feature: string, only?: string)
   };
   const results: TicketGap[] = [];
   for (const { number: num, path } of featureTickets) {
-    if (only && `${feature}/${nn(num)}` !== only) continue;
+    const ticket = `${feature}/${nn(num)}`;
+    if (only && ticket !== only) continue;
     const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
     if (truncated) continue;
-    const text = bytes.toString('utf8');
-    const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
-    const { status, blocked, items } = ticketFileEvidence(text);
-    if (!status || !/^ready-for-agent$/i.test(status)) continue;
-    const ticket = `${feature}/${nn(num)}`;
-    const gaps: string[] = [];
-    const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
-      ?.replace(/\s+/g, ' ').trim() ?? '';
-    if (!what) gaps.push('missing goal (What to build)');
-    if (items.length === 0) gaps.push('missing acceptance items');
-    if (blocked === undefined || !blocked.trim()) {
-      gaps.push('missing Blocked by');
-    } else if (!/^none\b/i.test(blocked.trim())) {
-      const parts = blocked.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
-      if (!parts.length) gaps.push('invalid Blocked by');
-      for (const raw of parts) {
-        const clean = raw.replace(/\s*\([^)]*\)\s*$/, '').trim();
-        const cross = /^([a-z0-9-]+)\/(\d+)$/i.exec(clean);
-        if (cross) {
-          const slug = cross[1].toLowerCase(), n = Number(cross[2]);
-          if (!knownIn(slug).has(n)) gaps.push(`unknown blocked_by ticket: ${clean}`);
-        } else {
-          const local = /^#?(\d+)$/.exec(clean);
-          if (!local || !knownIn(feature).has(Number(local[1]))) gaps.push(`unknown blocked_by ticket: ${clean}`);
-        }
-      }
-    }
-    if (!liveTryField.test(body) && !liveTryHeading.test(body)) {
-      gaps.push('missing Live try (add how to try or Live try: none)');
-    }
-    if (gaps.length) results.push({ ticket, path, gaps });
+    const gap = validateTicketBody(feature, ticket, path, bytes.toString('utf8'), knownIn);
+    if (gap) results.push(gap);
   }
   return results;
 }
 
-export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: string) {
+export function checkTicketPaths(cwd: string, items: readonly { ticket: string; path: string }[]): TicketGap[] {
   const scratch = join(cwd, '.scratch');
-  if (!directoryExists(scratch)) return { tickets: [], queued: [] };
+  if (!directoryExists(scratch)) return [];
+  const byFeature = new Map<string, Set<number>>();
+  const knownIn = (slug: string) => {
+    let set = byFeature.get(slug);
+    if (!set) {
+      set = new Set(list(join(scratch, slug)).map(t => t.number));
+      byFeature.set(slug, set);
+    }
+    return set;
+  };
+  const results: TicketGap[] = [];
+  for (const { ticket, path } of items) {
+    const feature = ticket.split('/')[0];
+    if (!feature) continue;
+    try {
+      const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
+      if (truncated) continue;
+      const gap = validateTicketBody(feature, ticket, path, bytes.toString('utf8'), knownIn);
+      if (gap) results.push(gap);
+    } catch { /* Missing ticket will not be admitted. */ }
+  }
+  return results;
+}
+
+interface ParsedTicketMemo {
+  stamp: string;
+  ticket: (ProjectTicket & { what: string; objective?: string }) | null;
+}
+const parsedTicketMemo = new Map<string, ParsedTicketMemo>();
+
+function parseTicketForReadiness(path: string, num: number): (ProjectTicket & { what: string; objective?: string }) | null {
+  const st = fs.lstatSync(path, { throwIfNoEntry: false });
+  if (!st || !st.isFile()) { parsedTicketMemo.delete(path); return null; }
+  const stamp = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}:${num}`;
+  const hit = parsedTicketMemo.get(path);
+  if (hit?.stamp === stamp) {
+    return hit.ticket ? { ...hit.ticket, blockers: [...hit.ticket.blockers] } : null;
+  }
+  const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
+  let parsed: (ProjectTicket & { what: string; objective?: string }) | null = null;
+  if (!truncated) {
+    const text = bytes.toString('utf8');
+    const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
+    const heading = ticketHeading(body, num);
+    const { status, blocked, items, checked, landed } = ticketFileEvidence(text);
+    if (heading && status && blocked !== undefined) {
+      const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
+        ?.replace(/\s+/g, ' ').trim() ?? '';
+      const objective = objectiveField.exec(ticketHeader(text))?.[2]?.trim() || undefined;
+      parsed = { ...heading, path, what, ...(objective && { objective }), status, at: 0, items, checked,
+        total: items.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
+        state: landed ?? (/^ready-for-human$/i.test(status) ? 'try' : 'ready') };
+    }
+  }
+  parsedTicketMemo.delete(path);
+  if (parsedTicketMemo.size >= 512) parsedTicketMemo.delete(parsedTicketMemo.keys().next().value!);
+  parsedTicketMemo.set(path, { stamp, ticket: parsed });
+  return parsed ? { ...parsed, blockers: [...parsed.blockers] } : null;
+}
+
+export interface ReadinessOptions {
+  home?: string;
+  excludeTickets?: ReadonlySet<string>;
+}
+
+export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: string, options?: ReadinessOptions) {
+  const scratch = join(cwd, '.scratch');
+  if (!directoryExists(scratch)) return { tickets: [], queued: [], blocked: [] };
   const features = fs.readdirSync(scratch, { withFileTypes: true }).filter(entry => entry.isDirectory())
     .sort((a, b) => a.name.localeCompare(b.name)).map(({ name: slug }) => ({ slug, at: 0,
-      tickets: list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number, path }) => {
-        const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
-        if (truncated) return [];
-        const text = bytes.toString('utf8');
-        const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
-        const heading = ticketHeading(body, number);
-        const { status, blocked, items, checked, landed } = ticketFileEvidence(text);
-        if (!heading || !status || blocked === undefined) return [];
-        const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
-          ?.replace(/\s+/g, ' ').trim() ?? '';
-        const ticket: ProjectTicket & { what: string } = { ...heading, path, what, status, at: 0, items, checked,
-          total: items.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
-          state: landed ?? (/^ready-for-human$/i.test(status) ? 'try' : 'ready') };
-        return [ticket];
+      tickets: list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number: num, path }) => {
+        const ticket = parseTicketForReadiness(path, num);
+        return ticket ? [ticket] : [];
       }),
     }));
   const rollup = new TicketRollup(features), matches = projectJobFilter(cwd);
@@ -181,7 +271,18 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
     if (!SETTLED_JOB_STATES.has(state)) rollup.link({ ticket: job.ticket, package: job.package }, '',
       { role: job.role, state, created: Date.parse(job.created_at) || 0 });
   }
-  const { crossBlockers, missingCrossBlockers } = rollup.derive(Date.now());
+  const home = options?.home ?? getHudHome();
+  const root = sharedRoot(cwd);
+  const blockedSet = new Set<string>();
+  for (const hold of readOpenHolds(home, root)) {
+    if (hold.ticket) blockedSet.add(targetKey(hold.ticket));
+  }
+  if (options?.excludeTickets) {
+    for (const ticket of options.excludeTickets) blockedSet.add(targetKey(ticket));
+  }
+  const { crossBlockers, missingCrossBlockers } = rollup.derive(
+    Date.now(), undefined, undefined, undefined, blockedSet.size ? blockedSet : undefined,
+  );
   const candidates = features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) => tickets.flatMap(t =>
     /^ready-for-agent$/i.test(t.status) ? [{ t, ticket: `${slug}/${nn(Number(t.number))}` }] : []));
   if (feature !== undefined) for (const { t, ticket } of candidates) {
@@ -189,11 +290,14 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
     if (missing) throw Error(`${ticket}: unknown blocked_by ticket: ${missing}`);
   }
   return {
-    tickets: candidates.flatMap(({ t, ticket }) => t.state === 'ready' ? [{ ticket, path: t.path, title: t.title, what: t.what }] : []),
+    tickets: candidates.flatMap(({ t, ticket }) => t.state === 'ready'
+      ? [{ ticket, path: t.path, title: t.title, what: t.what, ...(t.objective && { objective: t.objective }) }] : []),
     queued: candidates.flatMap(({ t, ticket }) => {
       const blockers = crossBlockers.get(t);
       return t.state === 'queued' && blockers ? [{ ticket, blockers }] : [];
     }),
+    blocked: candidates.flatMap(({ t, ticket }) =>
+      t.state === 'blocked' && t.blockers.length ? [{ ticket, blockers: t.blockers }] : []),
   };
 }
 
@@ -230,6 +334,29 @@ export function landedTicket(original: string, ticket: number, comment: string) 
   const body = withStatus(before, needsTry ? 'ready-for-human' : 'done', ticket)
     .replace(/^([ \t]*[-*] \[) \]/gm, '$1x]');
   return (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n`;
+}
+
+/** Record durable unattended lead acceptance on a landed ticket: status done + run/verdict comment. */
+export function recordUnattendedAcceptance(root: string, ticketPath: string, ticketRef: string, flowId: string, verdict: string): boolean {
+  const scratch = join(root, '.scratch');
+  if (!directoryExists(scratch)) return false;
+  const rel = relative(resolve(scratch), resolve(ticketPath));
+  if (!rel || rel.startsWith('..') || isAbsolute(rel)) return false;
+  scanScratch(scratch, true);
+  const st = fs.lstatSync(ticketPath, { throwIfNoEntry: false });
+  if (!st || !st.isFile() || fs.realpathSync(ticketPath) !== resolve(ticketPath)) return false;
+  const original = fs.readFileSync(ticketPath, 'utf8');
+  const marker = `- Accepted by unattended lead (${flowId}):`;
+  if (original.includes(marker)) return false;
+  const start = original.search(/^## Comments[ \t]*\r?$/m);
+  const before = start < 0 ? original : original.slice(0, start);
+  const num = Number(ticketRef.split('/')[1] ?? 0);
+  const currentStatus = ticketFileEvidence(original).status ?? '';
+  const body = /^wontfix$/i.test(currentStatus) ? before : withStatus(before, 'done', num);
+  const summary = verdict.replace(/\s+/g, ' ').trim().slice(0, 400);
+  const updated = (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n${marker} ${summary}\n`;
+  writeFileAtomic(ticketPath, updated, st.mode & 0o777);
+  return true;
 }
 
 /** The panel groups work by an Objective's Features; no record, no warning. */
@@ -291,6 +418,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       const label = ticket.status === undefined ? 'ready-for-agent' : status(ticket.status);
       const tryLine = ticket.owner_try === undefined ? [] : [`**Owner try:** ${ownerTry(ticket.owner_try)}`];
       const liveTryLine = ticket.live_try === undefined ? [] : [`**Live try:** ${line(ticket.live_try, 'live_try')}`];
+      const approvedRemovalsLine = ticket.approved_removals === undefined ? [] : [`**Approved removals:** ${line(ticket.approved_removals, 'approved_removals')}`];
       const blocked = resolveBlockers(ticket.blocked_by, feature, known);
       if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');
       const items = ticket.acceptance.map((item) => `- [ ] ${line(item, 'acceptance')}`);
@@ -301,6 +429,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
         `**Status:** ${label}`,
         ...tryLine,
         ...liveTryLine,
+        ...approvedRemovalsLine,
         `**Blocked by:** ${blocked}`,
         ...(objective === undefined ? [] : [`**Objective:** ${objective}`]),
         '',

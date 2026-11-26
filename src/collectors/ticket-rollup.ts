@@ -49,13 +49,15 @@ export class TicketRollup {
   }
   derive(now: number, landed: ReadonlySet<string> = new Set(),
     ticketCommits: ReadonlyMap<string, { sha: string; at: number }> = new Map(),
-    readMarks?: (rows: LedgerSlice[]) => ReadonlyMap<string, string>) {
+    readMarks?: (rows: LedgerSlice[]) => ReadonlyMap<string, string>,
+    blockedTickets?: ReadonlySet<string>) {
     const entries: { ticket: ProjectTicket; row: LedgerSlice }[] = [];
     // Oldest features first; later rows win ties when showing the newest landings.
     for (const { slug, tickets } of [...this.features].reverse()) for (const t of tickets) {
       const id = key(slug, t.number), job = t.job?.state, claimed = live(job), gitLanded = landed.has(id);
       if (t.state !== 'done' && t.state !== 'dropped' && t.state !== 'try') {
         if (gitLanded) t.state = t.ownerTry ? 'try' : 'done';
+        else if (blockedTickets?.has(id)) t.state = 'blocked';
         else if (job === 'failed' || job === 'blocked' || job === 'waiting_orchestrator') t.state = 'blocked';
         else if (claimed || this.trees.has(t)) t.state = 'working';
         else if (/^claimed\b/i.test(t.status)) t.state = !job && now - t.at < 7200000 ? 'working' : 'blocked';
@@ -92,14 +94,14 @@ export class TicketRollup {
         const target = m ? this.index.get(key(m[1] ?? slug, m[2])) : title(ref);
         const cross = m?.[1] && m[1].toLowerCase() !== slug.toLowerCase() ? `${m[1]}/${m[2]}` : undefined;
         if (target && (target.state === 'done' || target.state === 'dropped' || (!cross && target.state === 'try'))) continue;
-        if (cross && target) {
-          // A known external dependency is a queue wait, not a local stall.
+        if (cross && target && !blockedTickets?.has(key(m![1]!, m![2]!))) {
+          // A known external dependency is a queue wait, not a local stall (unless held/failed).
           const waiting = crossBlockers.get(t) ?? [];
           waiting.push(cross);
           crossBlockers.set(t, waiting);
         } else {
           deps.push(target);
-          if (cross) missingCrossBlockers.set(t, cross);
+          if (cross && !target) missingCrossBlockers.set(t, cross);
         }
         t.blockers.push(m?.[1] ? ref : target?.number ?? ref);
       }

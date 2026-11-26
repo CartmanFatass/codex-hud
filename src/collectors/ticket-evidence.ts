@@ -14,6 +14,7 @@ export function ticketFileEvidence(text: string) {
   const comments = commentsSection.split(/^## /m, 1)[0];
   const field = (key: string) => body.match(new RegExp(`(?:^|·)[ \\t]*\\*\\*${key}:\\*\\*[ \\t]*([^·\\r\\n]*)`, 'mi'))?.[1]?.trim();
   const status = field('Status'), blocked = field('Blocked by');
+  const approvedRemovals = field('Approved removals');
   const trial = field('Owner try') ?? '';
   const ownerTry = /^yes$/i.test(trial);
   const items = [...body.matchAll(/^[ \t]*[-*] \[([ xX])\][ \t]*([^\r\n]*)/gm)].map(b => ({
@@ -21,13 +22,14 @@ export function ticketFileEvidence(text: string) {
   }));
   const checked = items.filter(i => i.done).length;
   const record = [...comments.matchAll(/^[ \t]*[-*][ \t]+Landed:?[ \t]+(?:in this commit \(replay base (?:[0-9a-f]{40}|[0-9a-f]{64})\)|(?:(?:in|at)[ \t]+)?`?([0-9a-f]{7,40})`?\b)/gim)].at(-1);
+  const acceptedByLead = /^[ \t]*[-*][ \t]+Accepted by unattended lead \(q[0-9a-f]{16}\):/im.test(comments);
   const commit = record?.[1], recordedLanding = !!record;
   const allChecked = items.length > 0 && checked === items.length;
   const readyForHuman = /^ready-for-human\b/i.test(status ?? '');
   const landed = /^(wontfix|dropped)\b/i.test(status ?? '') ? 'dropped'
-    : /^(accepted|done|closed|complete|resolved)\b/i.test(status ?? '') ? 'done'
+    : /^(accepted|done|closed|complete|resolved)\b/i.test(status ?? '') || acceptedByLead ? 'done'
     // Preserve legacy pending records with no Owner try field.
     : /^try\b/i.test(status ?? '') || recordedLanding || (readyForHuman && allChecked) ? (/^no\b/i.test(trial) ? 'done' : 'try')
     : allChecked ? 'done' : undefined;
-  return { status, blocked, items, checked, ownerTry, landed, recordedLanding, ...(commit ? { commit } : {}) } as const;
+  return { status, blocked, approvedRemovals, items, checked, ownerTry, landed, recordedLanding, ...(commit ? { commit } : {}) } as const;
 }

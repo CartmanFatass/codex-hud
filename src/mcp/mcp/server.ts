@@ -33,6 +33,7 @@ function isLeadWorker(): boolean {
   try { return worker.workerJob().job.role === 'lead'; } catch { return false; }
 }
 const leadWorkerTools = new Set(['hud_report', 'hud_progress']);
+const leadBlockedTools = new Set(['hud_land']);
 
 const TASK_EXTENSION = 'io.modelcontextprotocol/tasks';
 
@@ -45,7 +46,9 @@ async function toolsListResult() {
     const own = await worker.listWorkerTools(true);
     return {
       ...(session.discovered ? privateCache : {}),
-      tools: isLeadWorker() ? [...tools, ...own.filter((tool) => leadWorkerTools.has(tool.name))] : own,
+      tools: isLeadWorker()
+        ? [...tools.filter((tool) => !leadBlockedTools.has(tool.name)), ...own.filter((tool) => leadWorkerTools.has(tool.name))]
+        : own,
     };
   }
   return {
@@ -185,7 +188,7 @@ async function receive(line: string, write: (value: unknown) => void): Promise<v
       }
       if (worker) {
         const isLead = isLeadWorker();
-        if (isLead && !leadWorkerTools.has(name) && tools.some((tool) => tool.name === name)) {
+        if (isLead && !leadWorkerTools.has(name) && !leadBlockedTools.has(name) && tools.some((tool) => tool.name === name)) {
           const scan = scanForCall();
           try {
             const invoke = () => writeScan.run(scan, () => call(name, args, scan, undefined, dispatchIdentity(thread)));

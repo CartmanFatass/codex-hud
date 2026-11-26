@@ -210,8 +210,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   const role = input.role === undefined && source ? source.role : required(input, 'role');
   // Check caller input, not inherited retry options or internal repair placement.
   if (!repair && role !== 'general') {
-    const allowedOverrides = role === 'lead' && queue ? ['preset'] : [];
-    const fields: string[] = parent ? [] : placementOverrides.filter(key => input[key] !== undefined && !allowedOverrides.includes(key));
+    const fields: string[] = parent ? [] : placementOverrides.filter(key => input[key] !== undefined);
     if (hasPiPlacement(input.pi_args)) fields.push('pi_args');
     const borrowsInstructions = input.instructions !== undefined;
     if (fields.length || borrowsInstructions) {

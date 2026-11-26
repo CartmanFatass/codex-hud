@@ -50,19 +50,24 @@ agent proposes.
 
    One fresh implementer fixes the findings in one pass. Findings block only if a real user would hit them or the
    spec is violated.
-   When the work runs as a workflow (ticket queue or a composed graph), steps 4–6 run inside it: clean slices land
-   automatically, an independent milestone `reviewer` step runs before acceptance (so the lead never waits on it), and
-   the run ends with a one-decision project-lead acceptance session (role `lead`, Claude Code on `claude-opus-5-5` at
-   thinking high with the HUD MCP tools). The lead reads the run packet (reports, checks, live try instructions, and
-   the milestone `reviewer` report), tries the result live where specified, judges findings, and declares `finish`,
-   `repair` (adding repair tickets and continuing, bounded to at most 2 repair rounds), or `escalate` — then the
-   runner closes the lead session immediately through herdr. Non-blocking doubts or follow-ups go to `Todo:` lines
-   stored on the run record (`hud_read({ job: <run> })` lists them; they never wake main). Worker `Assumed:` lines also
-   go to the run todo (more than three, or one about scope, pauses the run without waking main); `Blockers:` owner
-   matters pause without a wake; worker questions start a temporary one-decision `lead` that answers and closes. The
-   orchestrator starts the run, receives only the one end notice (with the verdict and todo count) or an escalation
-   under the run's configured escalation rule, and stays decoupled — runs keep going even if the dispatching main
-   session closes (D-2026-11-25-07, D-2026-11-26-02).
+   When the work runs as a workflow (ticket queue or a composed graph), steps 4–6 run inside it: one run covers the
+   feature (or, in unattended mode, one selected `(project, Objective)` workset with normal `max_parallel`) for a
+   baseline cost of **N + 2** sessions per N clean slices (N implementers + 1 milestone `reviewer` + 1 acceptance
+   `lead`). Clean slices land automatically (in unattended runs, gated deterministically on no `docs/spec.md` diff and
+   a settled `Removes:` declaration matching the ticket's `Approved removals:`, calling a temporary lead only on a
+   declared ambiguity), an independent milestone `reviewer` step runs before acceptance (so the lead never waits on it),
+   and the run ends with a one-decision project-lead acceptance session (role `lead`, Claude Code on `claude-opus-5-5`
+   at thinking high with the HUD MCP tools, minus `hud_land`). The lead reads the run packet (reports, checks, live try
+   instructions, and the milestone `reviewer` report), tries the result live where specified, judges findings, and
+   declares `finish` (in unattended runs, recording durable acceptance per landed ticket), `repair` (adding repair
+   tickets admitted by the same run, bounded to at most 2 repair rounds, then holding for the owner), or `escalate` —
+   then the runner closes the lead session immediately through herdr. Non-blocking doubts or follow-ups go to `Todo:`
+   lines stored on the run record (`hud_read({ job: <run> })` lists them; they never wake main). Worker `Assumed:`
+   lines also go to the run todo (more than three, or one about scope, pauses the run without waking main); `Blockers:`
+   owner matters pause without a wake; worker and reviewer questions start a temporary one-decision `lead` that answers
+   (verified delivered) and closes. The orchestrator starts the run, receives only the one end notice (with the verdict
+   and todo count) or an escalation under the run's configured escalation rule, and stays decoupled — runs keep going
+   even if the dispatching main session closes (D-2026-11-25-07, D-2026-11-26-02).
 6. **Accept.** The orchestrator accepts work after verification; there is no routine ticket-level owner acceptance.
    Ask the owner only for what they must judge themselves (milestone scope, a value trade-off, a visible deletion, an
    irreversible act, or behaviour only they can try) and record it as an owner request in STATE's

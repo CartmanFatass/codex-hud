@@ -17,6 +17,8 @@ import { collectControlRadar, type ControlRadar } from './control-radar.js';
 import { collectControlJobStats, jobSettledAt, type ControlJobStats } from './job-stats.js';
 import { epoch } from '../roles/job-usage.js';
 import { targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
+import { readOpenHolds } from '../unattended/state.js';
+import { sharedRoot } from '../roles/projects.js';
 import { TryLog } from './try-records.js';
 import { SETTLED_JOB_STATES, TicketRollup, ticketIds, ticketJobState } from './ticket-rollup.js';
 import { readActiveLeases, stripJobPrefix, type LeaseRecord } from './thin-jobs.js';
@@ -615,10 +617,11 @@ export class ProjectCollector {
       const stateStamps = statePaths(this.cwd).map(statKey).join('|');
       const specStamp = shown === 'overview' ? '' : statKey(join(this.cwd, 'docs/spec.md'));
       const triesStamp = statKey(join(this.hudHome, 'tries.jsonl'));
+      const holdsStamp = statKey(join(this.hudHome, 'unattended-runs.json'));
       if (shown !== 'overview' && ticketsScan.features.length) gitRefs = this.probeGitRefs();
       if (shown !== 'overview') jobsProbe = this.homeJobsProbe(board, ticketsScan.features.length > 0, jobWindow);
       memoKey = [ticketsScan.stamp, stateStamps, objectiveStat && stampOf(objectiveStat), objectiveDir && stampOf(objectiveDir),
-        specStamp, triesStamp, gitRefs?.stamp, jobsProbe?.stamp].join('\x1e');
+        specStamp, triesStamp, holdsStamp, gitRefs?.stamp, jobsProbe?.stamp].join('\x1e');
       const hit = this.collectMemo.get(shown);
       if (hit && hit.key === memoKey && now >= hit.claimFloor && now < hit.claimExpiry) return hit.snapshot;
     }
@@ -673,7 +676,8 @@ export class ProjectCollector {
     if (shown !== 'overview') this.joinJobs(out, board, home, shown === 'export', rollup, jobsProbe?.jobs);
     if (jobsProbe?.complete && !out.active.some(({ state }) => state !== 'queued')) out.idle = true;
     const landedInfo = shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup, gitRefs) : undefined;
-    const { totals, visible, rows, marks } = rollup.derive(now, landedInfo?.ids, landedInfo?.commits, (rows) => this.tries.marks(this.cwd, rows, true));
+    const heldTickets = out.tickets.length ? new Set(readOpenHolds(this.hudHome, sharedRoot(this.cwd)).flatMap(h => h.ticket ? [targetKey(h.ticket)] : [])) : undefined;
+    const { totals, visible, rows, marks } = rollup.derive(now, landedInfo?.ids, landedInfo?.commits, (rows) => this.tries.marks(this.cwd, rows, true), heldTickets?.size ? heldTickets : undefined);
     const active = new Map(out.active.map((job) => [job.jobId, job]));
     const ticketJobs = new Map(out.tickets.flatMap(({ slug, tickets }) => tickets.map((t) => [targetKey(`${slug}/${t.number}`), t.job?.id] as const)));
     const settled = new Set([...marks].filter(([, action]) => action === 'accept').map(([id]) => targetKey(id)));

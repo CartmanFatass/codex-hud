@@ -463,7 +463,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
   if (name === 'hud_land') {
     const id = required(args, 'job'), job = findJob(id);
     const task = session.taskClient;
-    const flow = await startLand(hudHome, id, job, job ? readRow(job).row.state : null, callerPane, task);
+    const flow = await startLand(hudHome, id, job, job ? readRow(job).row.state : null, callerPane, task, undefined, undefined, undefined, !isWorker);
     ensureWatcher();
     if (task) {
       rememberLandTask(landTasks, flow.flow, landActive);
@@ -491,7 +491,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
       if (!q.task && callerPane) void ensureQueueWatcher(callerPane, hudHome);
       return { ...ticketQueueView(q), ...(args.cancel === true && { cancel_requested: true }) };
     }
-    return args.op === 'ready' ? readyTickets(cwd, jobCache) : editTickets(cwd, args, hudHome);
+    return args.op === 'ready' ? readyTickets(cwd, jobCache, hudHome) : editTickets(cwd, args, hudHome);
   }
   if (args.detail !== undefined && typeof args.detail !== 'boolean') throw new Error('invalid_arguments: detail');
   const detail = args.detail === true;

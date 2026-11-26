@@ -5,6 +5,8 @@ import { readFileBounded } from '../utils/atomic-fs.js';
 import type { Step } from '../workflows/graph.js';
 import type { Job } from './job-contracts.js';
 import { answerWorkerQuestion, closeJob } from './mcp/operations.js';
+import type { AnswerResult } from '../collectors/panel-actions.js';
+import { parseRemovalList, ticketApprovedRemovals } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { directory, findJob, save } from './store/job-store.js';
 import type { RunDecision, RunTodoItem, TicketQueue } from './ticket-queue-state.js';
@@ -16,14 +18,37 @@ export const DEFAULT_ESCALATION_RULE =
   'Escalate to main only for owner matters that block: scope change, value trade-off, visible deletion, or irreversible act.';
 
 export const WORKFLOW_WORKER_RULE =
-  'Workflow run rule: proceed on the ticket, docs/spec.md and your own default; write each assumption on its own `Assumed:` line (mark scope assumptions with `scope`); ask with `hud_ask` only when no reasonable default is safe; report owner matters (scope, value trade-off, visible deletion, irreversible act) as `Blockers:` lines.';
+  'Workflow run rule: proceed on the ticket, docs/spec.md and your own default; write each assumption on its own `Assumed:` line (mark scope assumptions with `scope`); ask with `hud_ask` only when no reasonable default is safe; report owner matters (scope, value trade-off, visible deletion, irreversible act) as `Blockers:` lines; include a `Removes:` line (`Removes: none`, a comma-separated list of user-visible features removed, or `Removes: ambiguous: <detail>` if unsure).';
 
 export const WORKFLOW_WORKER_RULE_NO_ASK =
-  'Workflow run rule: proceed on the ticket, docs/spec.md and your own default; write each assumption on its own `Assumed:` line (mark scope assumptions with `scope`); do not call `hud_ask`; report owner matters (scope, value trade-off, visible deletion, irreversible act) as `Blockers:` lines.';
+  'Workflow run rule: proceed on the ticket, docs/spec.md and your own default; write each assumption on its own `Assumed:` line (mark scope assumptions with `scope`); do not call `hud_ask`; report owner matters (scope, value trade-off, visible deletion, irreversible act) as `Blockers:` lines; include a `Removes:` line (`Removes: none`, a comma-separated list of user-visible features removed, or `Removes: ambiguous: <detail>` if unsure).';
 
 export const MAX_REPAIR_ROUNDS = 2;
+export const MAX_ANSWER_RETRIES = 3;
 const MAX_RUN_TODOS = 200;
 const MAX_RUN_DECISIONS = 100;
+
+export type RemovalsDeclaration =
+  | { kind: 'missing' }
+  | { kind: 'none' }
+  | { kind: 'ambiguous'; detail: string }
+  | { kind: 'named'; items: string[]; raw: string };
+
+export function extractRemovalsDeclaration(reportText: string): RemovalsDeclaration {
+  const values: string[] = [];
+  for (const match of reportText.matchAll(/^[ \t]*(?:[-*] |#{1,6} )?(?:\*\*)?Removes:(?:\*\*)?[ \t]*(.*?)[ \t]*$/gim)) {
+    const val = match[1].trim();
+    if (val) values.push(val);
+  }
+  if (!values.length) return { kind: 'missing' };
+  const ambiguous = values.find(v => /^(?:ambiguous|unclear|unsure)\b/i.test(v) || /\bambiguous\b/i.test(v));
+  if (ambiguous) return { kind: 'ambiguous', detail: ambiguous };
+  const nonNone = values.filter(v => !/^none\.?$/i.test(v));
+  if (!nonNone.length) return { kind: 'none' };
+  const raw = nonNone.join(', ');
+  const items = parseRemovalList(raw);
+  return items.length ? { kind: 'named', items, raw } : { kind: 'missing' };
+}
 
 export function extractAssumedLines(reportText: string): { lines: string[]; scopeAssumptions: string[] } {
   const lines: string[] = [];
@@ -134,19 +159,21 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
   const rounds = q.repair_rounds ?? 0;
   const escalationRule = step.escalation_rule ?? q.escalation_rule ?? DEFAULT_ESCALATION_RULE;
   const landed = q.tickets.filter(t => t.landed);
+  const held = q.tickets.filter(t => t.held);
+  const failed = q.tickets.filter(t => t.failed);
   const latestReview = q.reviews?.at(-1);
   const choices = rounds >= MAX_REPAIR_ROUNDS ? step.options.filter(o => o !== 'repair') : step.options;
 
   const lines: string[] = [
     `# Workflow Acceptance Packet (${q.flow})`,
     '',
-    `Feature: ${q.feature}`,
+    q.unattended ? `Objective: ${q.unattended.objective}` : `Feature: ${q.feature}`,
     `Question: ${step.ask}`,
     `Declared choices: ${choices.join(', ')}${rounds >= MAX_REPAIR_ROUNDS ? ` (repair limit ${MAX_REPAIR_ROUNDS}/${MAX_REPAIR_ROUNDS} reached)` : ` (repair round ${rounds}/${MAX_REPAIR_ROUNDS})`}`,
     `Escalation rule: ${escalationRule}`,
     '',
     '## Tickets, Live Try & Reports',
-    ...landed.map(item => {
+    ...(landed.length ? landed.map(item => {
       const info = ticketSummaryLines(item.path);
       const jobDir = item.job ? directory(item.job) : undefined;
       const reportRef = jobDir ? join(jobDir, jobFiles.report) : 'none';
@@ -154,9 +181,20 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
       return `- ${item.ticket}: ${info.goal ?? item.path}` +
         (info.liveTry ? ` | Live try: ${info.liveTry}` : '') +
         ` | ticket: ${item.path} | report: ${reportRef}${checksRef}`;
-    }),
+    }) : ['- (none landed)']),
   ];
 
+  if (failed.length) {
+    lines.push('', '## Failed Tickets', ...failed.map(item =>
+      `- ${item.ticket}${item.job ? ` (${item.job})` : ''}: ${item.failed!.reason} | ticket: ${item.path}`));
+  }
+  if (held.length) {
+    lines.push('', '## Held Tickets (waiting for owner)', ...held.map(item =>
+      `- ${item.ticket}${item.job ? ` (${item.job})` : ''}: ${item.held!.reason} | ticket: ${item.path}`));
+  }
+  if (q.blocked?.length) {
+    lines.push('', '## Blocked Dependents', ...q.blocked.map(b => `- ${b.ticket}: blocked by ${b.blockers.join(', ')}`));
+  }
   if (latestReview) {
     const revReport = join(directory(latestReview.job), jobFiles.report);
     const findings = latestReview.findings
@@ -174,30 +212,33 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
     '',
     '## Required Report Format',
     `Respond via hud_report with \`Decision: <${choices.join('|')}>\`, \`Reason: <one line>\`, and optional \`Todo: <item>\` lines for non-blocking doubts/follow-ups.`,
-    'If choosing `repair`, add the repair ticket(s) via `hud_tickets` (with `live_try`) before reporting.',
+    'If choosing `repair`, add the repair ticket(s) via `hud_tickets` (with `live_try`) before reporting so this run admits and lands them before re-reviewing.',
     'Do not edit docs/spec.md or land outside this run.',
-    ...(q.unattended ? ['The ticket already landed after approval. If the review finds work requiring owner approval, use repair to file a separate ready follow-up; it will be reviewed before it can land. File repairs for this same Objective. Never create an Objective or call hud_land.'] : []),
+    ...(q.unattended ? [`For unattended repair, add ready repair ticket(s) linked to Objective \`${q.unattended.objective}\` (with \`live_try\`) so this run admits them directly (bounded to ${MAX_REPAIR_ROUNDS} rounds). Never create an Objective or edit docs/spec.md.`, approvalFormat] : []),
   );
   return lines.join('\n') + '\n';
 }
 
 export function buildQuestionPacket(
   q: TicketQueue,
-  opts: { ticket: string; ticketPath: string; workerJob: string; question: string; questionPath: string },
+  opts: { step?: string; ticket?: string; ticketPath?: string; workerJob: string; question: string; questionPath: string },
 ): string {
   const escalationRule = q.escalation_rule ?? DEFAULT_ESCALATION_RULE;
-  const info = ticketSummaryLines(opts.ticketPath);
+  const info = opts.ticketPath ? ticketSummaryLines(opts.ticketPath) : {};
   let questionBody = '';
   try {
     questionBody = readFileBounded(opts.questionPath, 16 * 1024).bytes.toString('utf8').trim();
   } catch { /* Missing or unreadable question file; path is still included. */ }
 
+  const subject = opts.ticket
+    ? `${q.unattended ? `Objective: ${q.unattended.objective}` : `Feature: ${q.feature}`} | Ticket: ${opts.ticket} | Worker: ${opts.workerJob} | Request: ${opts.question}`
+    : `${q.unattended ? `Objective: ${q.unattended.objective}` : `Feature: ${q.feature}`} | Step: ${opts.step ?? 'review'} | Worker: ${opts.workerJob} | Request: ${opts.question}`;
   const lines: string[] = [
     `# Worker Question Packet (${q.flow})`,
     '',
-    `Feature: ${q.feature} | Ticket: ${opts.ticket} | Worker: ${opts.workerJob} | Request: ${opts.question}`,
+    subject,
     ...(info.goal ? [`Ticket goal: ${info.goal}`] : []),
-    `Ticket file: ${opts.ticketPath}`,
+    ...(opts.ticketPath ? [`Ticket file: ${opts.ticketPath}`] : []),
     `Question file: ${opts.questionPath}`,
     'Declared choices: answer, escalate',
     `Escalation rule: ${escalationRule}`,
@@ -205,6 +246,12 @@ export function buildQuestionPacket(
     '## Worker Question',
     questionBody || `(Read ${opts.questionPath})`,
   ];
+  if (!opts.ticket) {
+    const landed = q.tickets.filter(t => t.landed);
+    if (landed.length) {
+      lines.push('', '## Landed Tickets', ...landed.map(t => `- ${t.ticket}: ${t.path}`));
+    }
+  }
   if (q.decisions?.length) {
     lines.push('', '## Prior Decisions', ...q.decisions.slice(-10).map(d => `- [${d.step}/${d.kind}] ${d.decision}${d.reason ? `: ${d.reason}` : ''}`));
   }
@@ -217,42 +264,56 @@ export function buildQuestionPacket(
     'Respond via hud_report with either:',
     '- `Decision: answer`, `Reason: <one line>`, and `Answer: <answer for the worker>` (plus optional `Todo:` lines), OR',
     '- `Decision: escalate` and `Reason: <why this blocks on the owner per the escalation rule>`.',
-    ...(q.unattended ? [approvalFormat, 'Never create an Objective, edit docs/spec.md or call hud_land.'] : []),
+    ...(q.unattended ? [approvalFormat, 'Never create an Objective or edit docs/spec.md.'] : []),
   );
   return lines.join('\n') + '\n';
 }
 
-export function buildPrelandPacket(q: TicketQueue, item: TicketQueue['tickets'][number], job: Job, head?: string, failure?: string) {
+export function buildRemovalAmbiguityPacket(
+  q: TicketQueue,
+  item: TicketQueue['tickets'][number],
+  job: Job,
+  head: string,
+  detail: string,
+): string {
   const info = ticketSummaryLines(item.path);
+  const approved = ticketApprovedRemovals(item.path);
   return [
-    `# Unattended Ticket Review (${q.flow})`,
+    `# Unattended Removal Ambiguity Check (${q.flow})`,
     `Ticket: ${item.ticket} | Objective: ${q.unattended!.objective}`,
     `Ticket file: ${item.path}`,
     ...(info.goal ? [`Ticket goal: ${info.goal.slice(0, 4000)}`] : []),
+    `Approved removals in ticket: ${approved.length ? approved.join(', ') : 'none'}`,
+    `Worker declared Removes: ${detail}`,
     `Worker report: ${join(directory(job.job), jobFiles.report)}`,
-    ...(head ? [`Inspect the committed changes at ${head} in the worker checkout: ${job.cwd}`] : []),
-    ...(failure ? [`The workflow cannot land this attempt: ${failure.slice(0, 2000)}`] : []),
+    `Inspect the committed changes at ${head} in the worker checkout: ${job.cwd}`,
     `Escalation rule: ${q.escalation_rule}`,
-    'Inspect the ticket, report and committed changes before deciding. Do not edit the worktree, docs/spec.md or land.',
-    'Use hud_report: `Decision: finish` to authorize this exact commit if checks passed and neither owner matter is required, `Decision: repair` if it needs further work, or `Decision: escalate` only under the escalation rule. Include a one-line `Reason:`.',
-    'For repair, file a ready follow-up using hud_tickets (with live_try) for this same Objective, not blocked by the failed ticket, before reporting. Do not create an Objective.',
+    'Inspect the ticket, report and committed changes to resolve the declared removal ambiguity. Do not edit the worktree or docs/spec.md.',
+    'Use hud_report: `Decision: finish` to authorize this exact commit if no unapproved user-visible feature is removed, `Decision: repair` if it needs further work, or `Decision: escalate` if owner approval is required. Include a one-line `Reason:`.',
     approvalFormat,
   ].join('\n') + '\n';
 }
 
+export interface CloseLeadResult {
+  ok: boolean;
+  reason?: string;
+}
+
 /** Close a lead session through normal HUD closure (herdr, exact identity); adds no new kill sites. */
-export async function closeLeadJob(job: Job): Promise<void> {
+export async function closeLeadJob(job: Job): Promise<CloseLeadResult> {
   const latest = findJob(job.job) ?? job;
-  if (latest.reaped_at) return;
+  if (latest.reaped_at) return { ok: true };
   const result = await closeJob(latest);
   if (result.exit_code === 0) {
     const after = findJob(job.job);
     if (after && !after.reaped_at) save({ ...after, reaped_at: new Date().toISOString() });
+    return { ok: true };
   }
+  return { ok: false, reason: result.last_line || `close failed (exit ${result.exit_code})` };
 }
 
-export async function applyLeadQuestionAnswer(workerJobId: string, requestId: string, answer: string): Promise<void> {
+export async function applyLeadQuestionAnswer(workerJobId: string, requestId: string, answer: string): Promise<AnswerResult> {
   const answerPath = join(directory(workerJobId), jobFiles.qa, `${requestId}.answer.md`);
-  if (fs.existsSync(answerPath)) return;
-  await answerWorkerQuestion(workerJobId, requestId, answer);
+  if (fs.existsSync(answerPath)) return { ok: true, written: false };
+  return answerWorkerQuestion(workerJobId, requestId, answer);
 }

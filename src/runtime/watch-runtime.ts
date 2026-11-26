@@ -44,6 +44,7 @@ import { isProcAlive, isValidPid } from '../utils/proc.js';
 import { hasLocalHerdrTarget, isShellLaunchedWorker, probeHerdrTarget, request, SHELL_WORKER_UNSUPPORTED, TAB_PROBE_INTERVAL_MS, tabProbeBackoff } from './herdr-socket.js';
 import { pruneDisplayFiles } from './display-retention.js';
 import { JOB_RETENTION_MS, pruneJobLogs, pruneLandFlows, pruneProjectScratch } from './work-retention.js';
+import { pinnedHeldJobs } from '../unattended/state.js';
 import { pruneLegacyTrustBackups } from '../utils/trust-backups.js';
 import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 
@@ -709,6 +710,7 @@ function scan(retryWatch = false) {
   };
   const listedIds = jobCache.listJobIds({ onError: (error) => { throw error; } });
   const liveIds = new Set(listedIds);
+  const heldJobs = pinnedHeldJobs(home);
   const orphans = new Set<string>();
   const watch = (dir: string, pid: number) => { nearest = Math.min(nearest, runners.watch(dir, pid)); };
   for (const id of listedIds) {
@@ -1022,7 +1024,8 @@ function scan(retryWatch = false) {
         continue;
       }
       const readClose = Boolean(resumeReadReap || readInGrace);
-      if (job && (status.state === 'done' || !tab || job.reaped_at)) pruneJobLogs(dir, job, status, Date.now());
+      const held = heldJobs.has(id);
+      if (job && !held && (status.state === 'done' || !tab || job.reaped_at)) pruneJobLogs(dir, job, status, Date.now());
       if (!readClose && !['closed', 'failed', 'stopped'].includes(status.state ?? '')) continue;
       if (status.state === 'failed' && job && !job.exhaustion_marked) {
         const text = String(status.exit_reason ?? status.error ?? '');
@@ -1043,8 +1046,8 @@ function scan(retryWatch = false) {
       const launchUnknown = Boolean(job?.launch_unknown || status.launch_unknown || status.exit_reason === 'launch_unknown');
       const worktreeSafe = Boolean(!launchUnknown && (job?.reaped_at || (!session && (job?.dispatch_exit_code ?? 0) > 0)));
       if (!worktreeSafe || resumable) markBusy(job);
-      // With a tab, wait for successful reap; keep the checkout available for native resume.
-      if (worktreeSafe && !resumable && !checkingReport && !landing && job?.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
+      // With a tab, wait for successful reap; keep the checkout available for native resume or open unattended holds.
+      if (worktreeSafe && !resumable && !checkingReport && !landing && !held && job?.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
         const root = job.worktree.main_root;
         let pending = !job.worktree_kept_reason;
         // Only a clean, unpicked result has a checked HEAD. Don't spawn Git for an unchanged base.
@@ -1062,7 +1065,7 @@ function scan(retryWatch = false) {
       if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
       const closedAt = Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs);
       const now = Date.now();
-      if (!landing && !checkingReport && !resumable && !launchUnknown && closedAt + JOB_RETENTION_MS < now && (!tab || job?.reaped_at)) {
+      if (!landing && !checkingReport && !resumable && !launchUnknown && !held && closedAt + JOB_RETENTION_MS < now && (!tab || job?.reaped_at)) {
         if (job && now <= closedAt + 7 * JOB_RETENTION_MS && hasLocalPiSession(dir, job, status, piLocalFiles)) continue;
         // Preserve legacy Pi history. CLI and browser keep theirs in their own stores.
         if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;

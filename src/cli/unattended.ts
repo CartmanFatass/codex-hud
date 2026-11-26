@@ -17,9 +17,9 @@ export async function unattendedCommand(args: readonly string[], io: HudIO) {
     } else if (rest.length || (op !== 'off' && op !== 'status')) throw Error(usage);
     else if (op === 'off') await setUnattended(home, false, undefined, io.env);
     const { on, identity, control, runs, handbacks } = readUnattendedStatus(home);
-    const view = (q: typeof runs[number]) => ({ project: q.root, objective: q.unattended!.objective, ticket: q.unattended!.ticket, ...ticketQueueView(q) });
+    const view = (q: typeof runs[number]) => ({ project: q.root, objective: q.unattended!.objective, ...ticketQueueView(q) });
     await io.stdout(JSON.stringify({ on, ...identity, project: control?.root, objectives: control?.objectives ?? [],
-      runs: runs.map(view), handbacks: handbacks.map(view), ...(on && { diagnostics: readUnattendedDiagnostics(home) }) }, null, 2) + '\n');
+      runs: runs.map(view), handbacks, ...(on && { diagnostics: readUnattendedDiagnostics(home) }) }, null, 2) + '\n');
     return 0;
   } catch (error) {
     throw new CliError(error instanceof Error ? error.message : String(error));

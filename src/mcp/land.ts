@@ -9,6 +9,7 @@ import { wakeSealedWorkflow } from '../workflows/wake.js';
 import { activeLand, landAttempt, landNotice, landOutcome, readLand, recoverLand, retryableLand, writeLand, type LandConfig, type LandFlow } from './land-state.js';
 import { managedReceiptMatches } from './managed-worktree.js';
 import { BUNDLED_ROOT } from './paths.js';
+import { readTicketQueue } from './ticket-queue-state.js';
 import type { Job } from './job-contracts.js';
 
 export function validLandConfig(home: string, root: string): LandConfig {
@@ -21,10 +22,34 @@ export function validLandConfig(home: string, root: string): LandConfig {
     throw Error('Invalid or missing project land config: expected base, gate, after, push and optional wrapper and timeout_s');
   return c;
 }
-export async function startLand(home: string, id: string, job: Pick<Job, 'job' | 'cwd' | 'worktree'> | null, state: string | null, pane: string | null, task: boolean, ticketQueue?: string, retry?: string, approvedHead?: string) {
+export async function startLand(
+  home: string,
+  id: string,
+  job: Pick<Job, 'job' | 'cwd' | 'worktree' | 'ticket_queue'> | null,
+  state: string | null,
+  pane: string | null,
+  task: boolean,
+  ticketQueue?: string,
+  retry?: string,
+  approvedHead?: string,
+  ownerManual = false,
+) {
   const wt = job?.worktree;
   if (!job || job.job !== id || !wt || wt.root !== job.cwd)
     throw Error('hud_land requires a managed worktree job');
+  const ownerQueue = job.ticket_queue ? readTicketQueue(home, job.ticket_queue) : null;
+  if (ownerQueue?.unattended) {
+    const item = ownerQueue.tickets.find(t => t.job === id);
+    if (ticketQueue) {
+      if (ticketQueue !== ownerQueue.flow || !approvedHead || item?.approved_head !== approvedHead)
+        throw Error('Unattended job can only be landed by its run with an approved commit');
+    } else if (ownerManual) {
+      if (!item?.held)
+        throw Error('Unattended job is managed by its run; only a held item can be landed manually');
+    } else {
+      throw Error('Unattended job requires its run and an approved commit');
+    }
+  }
   let attempt = landAttempt(home, id);
   if (attempt.prior && activeLand(attempt.prior)) {
     await recoverLand(home, attempt.prior.flow);
@@ -45,7 +70,7 @@ export async function startLand(home: string, id: string, job: Pick<Job, 'job' |
       !managedReceiptMatches(id, { ...job, worktree: wt }))
     throw Error('Source is no longer the registered job worktree');
   const source_sha = tree.head;
-  if (approvedHead && source_sha !== approvedHead) throw Error('Source changed after unattended lead approval');
+  if (approvedHead && source_sha !== approvedHead) throw Error('Source changed after unattended approval');
   const graph = loadGraph(fs.readFileSync(join(BUNDLED_ROOT, 'workflows/land.toml'), 'utf8'), 'toml', {
     roles: new Map(), bindings: { job: id }, landSource: id,
   });
