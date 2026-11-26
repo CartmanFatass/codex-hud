@@ -131,7 +131,7 @@ try {
     t.diagnostic(`optional replies (B): roster refresh ${calls[0][1]}; working read ${calls[1][1]}`);
     const retry = await call('hud_create', { role: imp.role, cwd: f.root, request_key: 'lean-repeat', task: 'Do not run this.' });
     assert.equal(retry.job, repeated);
-    assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 2, 'retry never relaunches');
+    assert.equal(f.commands().filter((c) => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start').length, 2, 'retry never relaunches');
   } finally {
     pi.stdin.end();
     assert.deepEqual(await exited, [0, null], stderr);

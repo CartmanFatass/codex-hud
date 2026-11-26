@@ -3,7 +3,7 @@ import { readContract } from './contract.js';
 import { roleRuntime } from './role-runtime.js';
 import { workerTools } from './tools.js';
 import { installGuard } from './guard.js';
-import { workerJob } from '../../../worker/tools.js';
+import { recordStartupShellSession, workerJob } from '../../../worker/tools.js';
 import { mistralBudget } from './mistral-budget.js';
 import { webSearch } from './web-search.js';
 import { trackTps } from './tps.js';
@@ -16,13 +16,31 @@ export async function installWorker(pi: WorkerPi) {
   if (!dir) throw Error('Missing HUD_JOB_DIR');
   const contract = readContract(dir);
   const { job } = workerJob(dir);
-  if (!job.headless || job.cli || job.role !== contract.role) throw Error('Expected the matching headless pi job');
+  const isTab = contract.tab !== undefined;
+  if (Boolean(job.headless) === isTab || job.cli || job.role !== contract.role) {
+    throw Error(`Expected the matching ${isTab ? 'tab' : 'headless'} pi job`);
+  }
   if (contract.guard) installGuard(pi, contract.guard, dir, job.project_root);
-  await workerTools(pi, dir, contract.session !== undefined);
   webSearch(pi, dirname(dirname(dir)));
   roleRuntime(pi, contract);
   mistralBudget(pi, dir);
   if (contract.tps) trackTps(pi);
+  if (isTab && contract.tab) {
+    pi.on('session_start', () => {
+      recordStartupShellSession(dir, process.env.HUD_TAB_LAUNCH, process.env.HERDR_PANE_ID);
+    });
+    // Tab lifecycle is tab-only and lazily imported so headless workers never load it.
+    const { installTabLifecycle } = await import('./tab-lifecycle.js');
+    const tab = installTabLifecycle(pi, {
+      taskDir: dir,
+      role: contract.role,
+      profile: contract.tab.profile,
+      effortSource: contract.tab.effortSource,
+    });
+    await workerTools(pi, dir, true, tab);
+    return;
+  }
+  await workerTools(pi, dir, contract.session !== undefined);
   // Only the final provider error is evidence; do not classify quoted tool output or replay this job.
   let quota = false;
   pi.on('message_end', ({ message }) => {

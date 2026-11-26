@@ -109,6 +109,12 @@ if (command === 'pi-dispatch') {
     process.exit(1);
   }
   const kind = args[args.indexOf('--kind') + 1];
+  const quotaModel = join(process.env.HOME, 'quota-pi-model');
+  if (kind === 'pi' && args.includes('--model') && fs.existsSync(quotaModel) &&
+      args[args.indexOf('--model') + 1] === fs.readFileSync(quotaModel, 'utf8').trim()) {
+    console.error('HTTP 429: quota exceeded, retry in 10m');
+    process.exit(1);
+  }
   const failure = ['fail-start-' + kind, 'fail-start']
     .map((name) => join(process.env.HOME, name))
     .find((file) => fs.existsSync(file));
@@ -119,10 +125,10 @@ if (command === 'pi-dispatch') {
   const first = args.indexOf('--') + 1;
   const nativeResume = args.includes('--resume') || args.includes('--conversation') || args[first] === 'resume';
   if (nativeResume) fs.rmSync(join(process.env.HUD_HOME, 'jobs', args[2].replace(/-primary$/, ''), 'agent-gone'), { force: true });
-  const at = args.indexOf('--task-dir');
-  if (!routingOnly && at >= 0) {
-    const dir = args[at + 1];
-    const holdPi = kind === 'pi' && fs.existsSync(join(process.env.HOME, 'hold-pi-start'));
+  const piDir = kind === 'pi' ? join(process.env.HUD_HOME, 'jobs', args[2].replace(/-primary$/, '')) : null;
+  if (!routingOnly && piDir && fs.existsSync(join(piDir, 'job.json'))) {
+    const dir = piDir;
+    const holdPi = fs.existsSync(join(process.env.HOME, 'hold-pi-start'));
     const stat = holdPi && fs.readFileSync('/proc/self/stat', 'utf8').split(') ').at(-1).split(' ');
     const identity = holdPi ? { version: 1, task_dir: dir, slot: 'primary', pid: process.pid, pid_start_time: stat[19] } : {};
     const resumeArg = args.lastIndexOf('--session');
@@ -621,6 +627,7 @@ if (command === 'pi-dispatch') {
   const agent = fs.existsSync(agentFile) ? fs.readFileSync(agentFile, 'utf8') : 'claude';
   console.log(JSON.stringify({ result: { pane: { workspace_id: 'w4E', ...(routingOnly ? {} : { agent }) } } }));
 } else if (command === 'herdr' && args[0] === 'tab' && args[1] === 'create') {
+  if (fs.existsSync(join(process.env.HOME, 'hold-pi-role'))) waitToReply();
   const seqFile = join(process.env.HOME, 'tab-seq');
   let n = 2;
   if (fs.existsSync(seqFile)) {

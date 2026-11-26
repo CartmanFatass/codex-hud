@@ -4,20 +4,19 @@ import { recordTabShells } from '../../runtime/tab-shell.js';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { piWorkerArgv } from './pi-worker-argv.js';
-import { implicitPiProfile, isPiProfile, piProfileError } from '../../roles/pi-defaults.js';
+import { implicitPiProfile } from '../../roles/pi-defaults.js';
 import { isAbsolute, join, dirname } from 'node:path';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { herdrId } from '../../roles/herdr-run.js';
-import { executable, type Role, type RolePlace } from '../../roles/roster.js';
+import { executablePath, type Role, type RolePlace } from '../../roles/roster.js';
 import { writePrivateFile } from '../../utils/atomic-fs.js';
 import { briefPrompt } from '../brief-prompt.js';
 import type { Job } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
-import { piMcpConfigEmpty } from '../pi-mcp-config.js';
 import { sonicLimits } from '../sonic-policy.js';
 import { startHeadlessProcess } from '../sonic-process.js';
 import { prepareSonicRetry } from '../sonic-session.js';
-import { directory, findJob, readCachedStatus, hudHome, bundled, save, jobCache } from '../store/job-store.js';
+import { directory, findJob, readCachedStatus, hudHome, save, jobCache } from '../store/job-store.js';
 import type { NativeResume } from '../worker-resume.js';
 import {
   retainDirectFailure, startDirectAgent, waitDirectReady,
@@ -26,7 +25,7 @@ import {
 import { promptBoundary, recoverStalledPrompt } from './prompt-stall.js';
 import { registry, roleCwd } from './places.js';
 import {
-  rejectLaunch, binScript, quote, run, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
+  rejectLaunch, run, dispatchBase, tabLabel, workspaceArgs, retryBusyPane,
   startupFailure, launchError, refusedBeforeInput, promptStalled, directExecEnv, type DispatchResult,
 } from './proc.js';
 
@@ -107,8 +106,8 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
   };
   try {
     const resources = piSkillArgs(job, role, place);
-    if (job.headless && !executable('pi')) throw new Error('pi not found on PATH');
-    const output = join(dir, jobFiles.report);
+    const piBin = executablePath('pi');
+    if (!piBin) throw new Error('pi not found on PATH');
     const sessionFile = job.headless && job.role !== 'sonic' ? resume?.file ?? join(dir, 'sessions', `${job.job}.jsonl`) : undefined;
     let continuation = resume?.message;
     if (job.role === 'sonic' && job.retry_of) {
@@ -116,7 +115,6 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       if (source?.role === 'sonic') continuation = prepareSonicRetry(dir, job.cwd, source, directory(source.job), readCachedStatus(source.job).status);
     }
     const prompt = continuation ?? briefPrompt(join(dir, jobFiles.brief));
-    const borrowed = job.borrowed_instructions;
     const profile = place.pi_role ?? implicitPiProfile(role.instructions);
     if (job.headless) {
       const args = piWorkerArgv(hudHome, dir, job, role, profile, resources, prompt, sessionFile);
@@ -138,46 +136,15 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       }
       return { exit_code: 0, stdout: '', stderr: '' };
     }
-    const piRole = borrowed?.pi_role ?? profile;
-    if (!isPiProfile(piRole)) throw Error(piProfileError);
-    const launcher = executable('pi-role');
-    if (!launcher) throw new Error('pi-role not found on PATH');
-    const argv = [piRole, '--task-dir', dir, '--role-output', output, '--dispatch-slot', 'primary', '--dispatch-label', job.role,
-      '--allow-write', output, '--qa-dir', join(dir, jobFiles.qa)];
+    const effortSource = place.thinking !== undefined ? 'orchestrator' : undefined;
+    const piArgs = piWorkerArgv(hudHome, dir, job, role, profile, resources, undefined, resume?.file, effortSource);
     const owner = jobCallerPane(job);
-    if (owner) {
-      const notify = binScript('hud-notify.mjs');
-      argv.push('--notify', [process.execPath, notify, hudHome, owner, job.job].map(quote).join(' '));
-    }
-    const instructionsName = borrowed?.name ?? role.instructions ?? role.role;
-    if (plainSkillName(instructionsName)) {
-      const instructions = join(bundled, 'instructions', `${instructionsName}.md`);
-      if (fs.existsSync(instructions)) argv.push('--hud-instructions', instructions);
-    }
-    argv.push('--hud-sonic-jobs', join(bundled, 'bin', 'sonic-jobs.mjs'));
-    if (place.thinking !== undefined) argv.push('--dispatch-effort-source', 'orchestrator');
-    for (const key of ['lens', 'mcp', 'tps'] as const)
-      if (job[key] !== undefined) argv.push(`--${job[key] ? '' : 'no-'}${key}`);
-    if (job.mcp === undefined && piMcpConfigEmpty(job.cwd, job.pi_args)) argv.push('--no-mcp');
-    if (job.ui_ext === false) argv.push('--no-ui-ext');
-    if (job.skills === true) argv.push('--skills');
-    argv.push('--', '--tui-mode', 'regular', '--hud-worker-tools', '-e',
-      join(bundled, '../../integrations/pi/package/extensions/hud.mjs'));
-    for (const key of ['model', 'thinking'] as const) {
-      const value = place[key] ?? (borrowed ? job[key] : undefined);
-      if (value != null) argv.push(`--${key}`, value);
-      // Pi leaves its native default alone for an empty flag; pi-roles sees the flag
-      // and does not apply the borrowed role's frontmatter default instead.
-      else if (borrowed) argv.push(`--${key}=`);
-    }
-    argv.push(...resources, ...(job.pi_args ?? []));
-    if (resume?.file) argv.push('--session', resume.file);
     isFork = await isHudHerdrFork();
     let left = '';
     let started: DispatchResult = { exit_code: 1, stdout: '', stderr: 'tab create not attempted' };
     const name = `${job.job}-primary`;
     if (isFork) {
-      fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
+      fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
       const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
       const tabName = tabLabel(job, task);
       const wsArgs = await workspaceArgs(job);
@@ -185,16 +152,15 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
       const endpoint = herdrEndpoint();
       directStartSent = true;
       const launch = await startDirectAgent({
-        executable: launcher,
-        argv,
+        executable: piBin,
+        argv: piArgs,
         kind: 'pi',
         name,
         cwd: job.cwd,
         env: directExecEnv({
           HUD_JOB_DIR: dir,
           HUD_HOME: hudHome,
-          // Keep pi-roles' detached launch-blind pi-role-reap disabled; HUD and close_on_zero own tab lifetime.
-          PI_ROLES_KEEP_TAB: '1',
+          ...(resume ? { HUD_RESUME_SESSION_ID: resume.id } : {}),
           // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
           GIT_OPTIONAL_LOCKS: '0',
         }),
@@ -253,10 +219,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
         timeoutMs: 30_000,
       });
     } else {
-      const built = await run(launcher, ['--args-json', ...argv], job.cwd);
-      if (built.exit_code !== 0) return rollback(built);
-      const piArgs: string[] = JSON.parse(built.stdout);
-      fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true });
+      fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
       const base = job.worktree?.base_head ?? await dispatchBase(job.cwd);
       const tabName = tabLabel(job, task);
       const tabArgv = [
@@ -274,6 +237,7 @@ export async function dispatchPi(job: Job, role: Role, place: RolePlace, task: s
         // A killed `git status` (a worker's tool timeout) would leave a stale index.lock that blocks every later commit.
         '--env',
         'GIT_OPTIONAL_LOCKS=0',
+        ...(resume ? ['--env', `HUD_RESUME_SESSION_ID=${resume.id}`] : []),
       ];
       for (let tabAttempt = 0; tabAttempt < 2; tabAttempt++) {
         const launch = randomUUID(), endpoint = herdrEndpoint();

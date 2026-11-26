@@ -476,7 +476,7 @@ test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling 
   assert.ok(Date.parse(readCloseReaped(second)) >= crashedAt + 200, 'failed job held until retention deadline');
 });
 
-test('fork Pi tab worker: PI_ROLES_KEEP_TAB=1, sibling exit ignored, clean exit & crash retention', { timeout: 60000 }, async (t) => {
+test('fork Pi tab worker: native pi worker extension without PI_ROLES_KEEP_TAB, sibling exit ignored, clean exit & crash retention', { timeout: 60000 }, async (t) => {
   const f = await fixture(t, { failedRetentionMs: 250 });
   const fork = await startForkHerdr(t, f, { reusedTabId: true });
 
@@ -487,11 +487,15 @@ test('fork Pi tab worker: PI_ROLES_KEEP_TAB=1, sibling exit ignored, clean exit 
   assert.equal(req1.kind, 'pi');
   assert.equal(req1.on_exit, 'close_on_zero');
   assert.equal(req1.focus, false);
-  assert.ok(req1.executable.endsWith('/pi-role'));
+  assert.ok(req1.executable.endsWith('/pi'));
   assert.equal(req1.argv.includes('--args-json'), false);
+  assert.ok(req1.argv.includes('--tui-mode'));
+  assert.ok(req1.argv.some((arg) => arg.endsWith('/hud-worker.mjs')));
+  assert.ok(req1.argv.some((arg) => arg.endsWith('/hud-worker-ui.mjs')));
   assert.equal(req1.env.HUD_JOB_DIR, dir1);
-  assert.equal(req1.env.PI_ROLES_KEEP_TAB, '1', 'direct Pi launches must set PI_ROLES_KEEP_TAB=1');
+  assert.equal(req1.env.PI_ROLES_KEEP_TAB, undefined, 'PI_ROLES_KEEP_TAB is dropped with the pi-roles dispatch extension');
   assert.equal(req1.env.HUD_TAB_LAUNCH, undefined);
+  assert.equal(JSON.parse(fs.readFileSync(join(dir1, 'pi-worker.json'), 'utf8')).tab?.profile, 'implementer');
   assert.equal(f.commands().some((c) => c.command === 'pi-role'), false);
   assert.equal(f.commands().some((c) => c.command === 'herdr' && c.args[0] === 'tab' && c.args[1] === 'create'), false);
   assert.equal(fs.existsSync(join(dir1, 'tab-shells.json')), false);

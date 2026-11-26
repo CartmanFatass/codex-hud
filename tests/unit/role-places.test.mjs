@@ -138,7 +138,7 @@ test('machine switches: panel, roster and create use the same daily chain, witho
   const job = JSON.parse(fs.readFileSync(join(enabledOverride.task_dir, 'job.json'), 'utf8'));
   assert.equal(job.place_key, 'pi:other/new-model');
   assert.equal(job.lens, false);
-  assert.ok(f.commands().some(({ command, args }) => command === 'pi-role' && args.includes('--synthetic-flag')));
+  assert.ok(f.commands().some(({ command, args }) => command === 'herdr' && args[0] === 'agent' && args[1] === 'start' && args.includes('--synthetic-flag')));
   const key = placeKey(assigned.run[0]);
   markExhausted(home, key, 'quota exceeded');
   const both = await roster();
@@ -453,8 +453,10 @@ test('oracle runs locally on claude fable with oracle.md and falls back to pi ar
   assert.deepEqual(fbRoster.runs_on, { harness: 'pi', pi_role: 'architect', split: false });
   const fbJob = await f.call('hud_create', { role: 'oracle', request_key: 'ora-pi', task: 'Fallback design question?' });
   assert.ok(fbJob.job);
-  const piCmd = f.commands().find((c) => c.command === 'pi-role' && c.args.includes('architect'));
-  assert.ok(piCmd);
+  const fbContract = JSON.parse(fs.readFileSync(join(fbJob.task_dir, 'pi-worker.json'), 'utf8'));
+  assert.equal(fbContract.tab?.profile, 'architect');
+  assert.equal(fbContract.guard, 'oracle');
+  assert.equal(fbContract.instructions, 'oracle');
 
   const alias = await f.call('hud_create', { role: 'architect', request_key: 'ora-alias', task: 'Alias question?' });
   assert.ok(alias.job);

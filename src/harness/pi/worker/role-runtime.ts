@@ -24,8 +24,12 @@ export function roleRuntime(pi: WorkerPi, contract: WorkerContract, fatal = fail
     pi.setActiveTools([...new Set([...ordinary, ...protocol])].filter(name =>
       !disallowed.test(name) && !(sonic && (name === 'hud_sonic' || name === 'hud_ask'))));
     if (!protocol.every(name => pi.getActiveTools().includes(name))) fatal('Missing required HUD worker protocol tools');
+    if (ctx.mode === 'tui' && ctx.ui?.setStatus) {
+      ctx.ui.setStatus('role', ctx.ui.theme.fg('accent', `role:${contract.role}${contract.guard ? ' (read-only)' : ''}`));
+    }
   });
   pi.on('before_agent_start', ({ systemPromptOptions }) => {
+    if (!systemPromptOptions) return;
     systemPromptOptions.sections.role = instructions;
     systemPromptOptions.skills = systemPromptOptions.skills.filter(skill => skill.name !== 'helper-pane');
   });

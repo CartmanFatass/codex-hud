@@ -87,10 +87,12 @@ if $uninstall; then
     printf 'Selected extensions uninstalled; core commands and data kept\n'
     exit 0
   fi
-  worker="$HUD_HOME/pi-worker/hud-worker.mjs"
-  if [[ ! -L "$HUD_HOME/pi-worker" && -L "$worker" && "$(readlink "$worker")" == "$REPO/integrations/pi/worker/hud-worker.mjs" ]]; then
-    rm -- "$worker"
-  fi
+  for entry in hud-worker.mjs hud-worker-ui.mjs; do
+    worker="$HUD_HOME/pi-worker/$entry"
+    if [[ ! -L "$HUD_HOME/pi-worker" && -L "$worker" && "$(readlink "$worker")" == "$REPO/integrations/pi/worker/$entry" ]]; then
+      rm -- "$worker"
+    fi
+  done
   rm -f -- "$extension_file"
   printf 'Removing command symlinks owned by this repo\n'
   for name in hud hud-mcp; do
@@ -126,14 +128,16 @@ printf 'Ensuring HUD home: %s\n' "$HUD_HOME"
 if [[ ! -d "$HUD_HOME" ]]; then
   mkdir -p -m 700 -- "$HUD_HOME"
 fi
-# Explicit -e entry for workers of every orchestrator. Never register it in interactive pi.
+# Explicit -e entries for workers of every orchestrator. Never register them in interactive pi.
 [[ ! -L "$HUD_HOME/pi-worker" ]] || fail "Worker directory is a symlink: $HUD_HOME/pi-worker"
 mkdir -p -m 700 -- "$HUD_HOME/pi-worker"
-worker="$HUD_HOME/pi-worker/hud-worker.mjs"
-target="$REPO/integrations/pi/worker/hud-worker.mjs"
-if [[ ! -L "$worker" || "$(readlink "$worker")" != "$target" ]]; then
-  ln -sT -- "$target" "$worker" || fail "Worker entry already exists: $worker"
-fi
+for entry in hud-worker.mjs hud-worker-ui.mjs; do
+  worker="$HUD_HOME/pi-worker/$entry"
+  target="$REPO/integrations/pi/worker/$entry"
+  if [[ ! -L "$worker" || "$(readlink "$worker")" != "$target" ]]; then
+    ln -sT -- "$target" "$worker" || fail "Worker entry already exists: $worker"
+  fi
+done
 printf 'Installing command symlinks in %s\n' "$BIN_DIR"
 mkdir -p -- "$BIN_DIR"
 for name in hud hud-mcp; do

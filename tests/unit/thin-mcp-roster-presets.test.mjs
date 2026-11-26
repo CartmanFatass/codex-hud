@@ -457,10 +457,12 @@ test('thin roles load a custom role file and dispatch its mapped pi role', { tim
     reason: 'Role unknown is not configured or is hidden in this project',
   });
   const job = await f.call('hud_create', { role: role.role, request_key: 'custom-role', task: 'Synthetic task.' });
-  const argv = f.commands().find((c) => c.command === 'pi-role').args;
-  assert.ok(argv.includes('--dispatch-effort-source'));
-  assert.equal(argv[argv.indexOf('--dispatch-label') + 1], role.role);
-  assert.deepEqual(argv.slice(-4), ['--model', 'synthetic/override', '--thinking', 'high']);
+  const argv = f.commands().find((c) => c.args[0] === 'agent' && c.args[1] === 'start').args;
+  const contract = JSON.parse(fs.readFileSync(join(job.task_dir, 'pi-worker.json'), 'utf8'));
+  assert.equal(contract.tab?.effortSource, 'orchestrator');
+  assert.equal(contract.role, role.role);
+  assert.equal(argv[argv.indexOf('--model') + 1], 'synthetic/override');
+  assert.equal(argv[argv.indexOf('--thinking') + 1], 'high');
   assert.equal(
     f.commands().some((c) => c.command === 'pi-dispatch' || c.args[1] === 'split'),
     false
@@ -498,11 +500,12 @@ test('general uses a named preset for one job and falls back within it without e
 
   const args = { role: 'general', preset: 'default', task: 'Synthetic task.' };
   const receipt = (job) => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
-  const piArgv = () => f.commands().filter((c) => c.command === 'pi-role').at(-1).args;
+  const piArgv = () => f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'start').at(-1).args;
   const first = await f.call('hud_create', { ...args, request_key: 'preset-primary' });
   assert.equal(receipt(first).dispatch_exit_code, 0);
   assert.equal(receipt(first).preset, 'default');
-  assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/primary', '--thinking', 'low']);
+  assert.equal(piArgv()[piArgv().indexOf('--model') + 1], 'synthetic/primary');
+  assert.equal(piArgv()[piArgv().indexOf('--thinking') + 1], 'low');
   assert.equal((await f.call('hud_read', { job: first.job, detail: true })).preset, 'default');
   assert.deepEqual(receipt(first).skipped_skills, []); // No skills inherited from the unselected default run.
 
@@ -515,15 +518,17 @@ test('general uses a named preset for one job and falls back within it without e
   assert.equal(record.preset, 'default');
   assert.equal(record.place.pi_role, 'reviewer');
   assert.equal(record.model_source, file);
-  assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/backup', '--thinking', 'high']);
-  assert.ok(piArgv().includes('--no-lens'));
+  assert.equal(piArgv()[piArgv().indexOf('--model') + 1], 'synthetic/backup');
+  assert.equal(piArgv()[piArgv().indexOf('--thinking') + 1], 'high');
+  assert.equal(piArgv().some((arg) => arg.includes('pi-lens')), false);
   const read = await f.call('hud_read', { job: fallback.job, detail: true });
   assert.deepEqual([read.preset, read.model, read.split], ['default', 'synthetic/backup', false]);
   const override = await f.call('hud_create', { ...args, request_key: 'preset-override', model: 'synthetic/override' });
   assert.equal(receipt(override).place.pi_role, 'implementer', 'quota on the old model does not exhaust an override');
   assert.equal(receipt(override).place_key, 'pi:synthetic/override');
   assert.equal(receipt(override).model_source, 'hud_create');
-  assert.deepEqual(piArgv().slice(-4), ['--model', 'synthetic/override', '--thinking', 'low']);
+  assert.equal(piArgv()[piArgv().indexOf('--model') + 1], 'synthetic/override');
+  assert.equal(piArgv()[piArgv().indexOf('--thinking') + 1], 'low');
   assert.equal((await f.call('hud_create', { ...args, request_key: 'preset-fallback', preset: 'ignored-on-duplicate' })).job, fallback.job);
 
   markExhausted(f.env.HUD_HOME, 'pi:synthetic/backup', 'rate limit');
@@ -531,7 +536,7 @@ test('general uses a named preset for one job and falls back within it without e
   assert.equal(unavailable.ok, false);
   assert.equal(unavailable.code, 'no_available_place');
   assert.deepEqual(unavailable.exhausted.map((p) => p.key), ['pi:synthetic/primary', 'pi:synthetic/backup']);
-  assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 3);
+  assert.equal(f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'start').length, 3);
   assert.deepEqual(await roster(), before);
   assert.deepEqual(fs.readdirSync(roles), ['general.json']);
   assert.equal(fs.readFileSync(file, 'utf8'), original);
@@ -831,8 +836,8 @@ test('hud_roster cwd and hud_create use a registered project role', async (t) =>
   const receipt = JSON.parse(fs.readFileSync(join(created.task_dir, 'job.json'), 'utf8'));
   assert.equal(receipt.model, 'project/model');
   assert.equal(receipt.cwd, resolve(proj));
-  const launch = f.commands().find((entry) => entry.command === 'pi-role').args;
-  assert.equal(launch[launch.indexOf('--args-json') + 1], 'implementer');
+  const launch = f.commands().find((entry) => entry.args[0] === 'agent' && entry.args[1] === 'start').args;
+  assert.equal(JSON.parse(fs.readFileSync(join(created.task_dir, 'pi-worker.json'), 'utf8')).tab?.profile, 'implementer');
   assert.equal(launch.includes('--skill'), false);
   assert.deepEqual(
     await f.call('hud_create', { role: 'imp', request_key: 'hidden-imp', task: 'Synthetic task.', cwd: proj }),
@@ -931,14 +936,14 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
     cwd: proj,
     pi_args: piArgs,
   });
-  const argv = f.commands().find((entry) => entry.command === 'pi-role').args;
+  const argv = f.commands().find((entry) => entry.args[0] === 'agent' && entry.args[1] === 'start').args;
   const dash = argv.indexOf('--');
   const skillAt = argv.indexOf('--skill');
   const promptAt = argv.indexOf('--append-system-prompt');
   assert.deepEqual(skillFlags(argv), [join(root, '.hud', 'skills', 'to-tickets'), absolute]);
   assert.equal(argv[promptAt + 1], prompt);
   assert.ok(dash >= 0 && dash < skillAt && skillAt < promptAt && promptAt < argv.indexOf('--tools'));
-  assert.deepEqual(argv.slice(-piArgs.length), piArgs);
+  assert.deepEqual(argv.slice(-2), ['--tools', 'read,hud_report,hud_progress,hud_lease,hud_ask,hud_sonic']);
   assert.equal(
     argv.some((arg) => arg.includes('..')),
     false
@@ -975,14 +980,11 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
   });
   const plainArgv = f
     .commands()
-    .filter((entry) => entry.command === 'pi-role')
+    .filter((entry) => entry.args[0] === 'agent' && entry.args[1] === 'start')
     .at(-1).args;
   assert.equal(plainArgv.includes('--skill'), false);
   assert.equal(plainArgv.includes('--append-system-prompt'), false);
-  assert.equal(plainArgv.includes('--hud-instructions'), false, 'a pi role with no HUD text retains its Pi body');
-  const sonicAt = plainArgv.indexOf('--hud-sonic-jobs');
-  assert.notEqual(sonicAt, -1);
-  assert.equal(plainArgv[sonicAt + 1], resolve('packages/hud-mcp/bin/sonic-jobs.mjs'));
+  assert.equal(JSON.parse(fs.readFileSync(join(plain.task_dir, 'pi-worker.json'), 'utf8')).instructions, 'implementer');
   const plainRead = await f.call('hud_read', { job: plain.job, detail: true });
   assert.deepEqual(plainRead.role_skills, []);
   assert.deepEqual(plainRead.skipped_skills, []);
@@ -996,7 +998,7 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
   });
   const linkedArgv = f
     .commands()
-    .filter((entry) => entry.command === 'pi-role')
+    .filter((entry) => entry.args[0] === 'agent' && entry.args[1] === 'start')
     .at(-1).args;
   assert.equal(linkedArgv[linkedArgv.indexOf('--append-system-prompt') + 1], join(root, '.hud', 'agents', 'linked.md'));
   assert.equal(
@@ -1012,7 +1014,7 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
   });
   const brokenArgv = f
     .commands()
-    .filter((entry) => entry.command === 'pi-role')
+    .filter((entry) => entry.args[0] === 'agent' && entry.args[1] === 'start')
     .at(-1).args;
   assert.equal(brokenArgv.includes('--append-system-prompt'), false);
   assert.equal((await f.call('hud_read', { job: broken.job, detail: true })).worker_prompt, null);
@@ -1043,11 +1045,11 @@ test('unregistered skill names are skipped and a CLI role is not given skill fla
     task: 'Synthetic task.',
     pi_args: ['--tools', 'read'],
   });
-  const argv = f.commands().find((entry) => entry.command === 'pi-role').args;
+  const argv = f.commands().find((entry) => entry.args[0] === 'agent' && entry.args[1] === 'start').args;
   assert.deepEqual(skillFlags(argv), [absolute]);
   assert.equal(argv.includes('--append-system-prompt'), false);
   assert.ok(argv.indexOf('--') < argv.indexOf('--skill') && argv.indexOf('--skill') < argv.indexOf('--tools'));
-  assert.deepEqual(argv.slice(-2), ['--tools', 'read']);
+  assert.deepEqual(argv.slice(-2), ['--tools', 'read,hud_report,hud_progress,hud_lease,hud_ask,hud_sonic']);
   const read = await f.call('hud_read', { job: job.job, detail: true });
   assert.deepEqual(read.role_skills, [{ name: absolute, path: absolute }]);
   assert.deepEqual(read.skipped_skills, [{ name: 'to-tickets', reason: 'unresolved' }]);

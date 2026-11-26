@@ -194,12 +194,17 @@ test('general borrows the imp pi role and bundled instructions without borrowing
   assert.equal(retry.role, 'general');
   assert.equal(retry.used_place, create.used_place);
   assert.equal(JSON.parse(fs.readFileSync(join(retry.task_dir, 'job.json'))).instructions_from, 'imp');
-  const launches = f.commands().filter(({ command }) => command === 'pi-role');
+  const launches = f.commands().filter(({ command, args }) => command === 'herdr' && args[0] === 'agent' && args[1] === 'start');
   assert.equal(launches.length, 2);
+  for (const jobDir of [create.task_dir, retry.task_dir]) {
+    const contract = JSON.parse(fs.readFileSync(join(jobDir, 'pi-worker.json'), 'utf8'));
+    assert.equal(contract.instructions, 'implementer');
+    assert.equal(contract.model, 'synthetic/general');
+    assert.equal(contract.thinking, 'high');
+    assert.equal(contract.tab?.profile, 'implementer');
+  }
   for (const { args } of launches) {
-    assert.deepEqual(args.slice(0, 2), ['--args-json', 'implementer']);
     for (const [flag, value] of [
-      ['--hud-instructions', resolve('packages/hud-mcp/instructions/implementer.md')],
       ['--model', 'synthetic/general'], ['--thinking', 'high'],
     ]) assert.equal(args[args.indexOf(flag) + 1], value);
   }
@@ -396,24 +401,26 @@ test('working worker STATUS survives a nonzero prompt result', { timeout: 60000 
   assert.equal((await f.call('hud_read', { job: job.job })).state, 'working');
 });
 
-test('pi dispatch preserves explicit MCP switches and the launcher default for nonempty or unreadable config', async (t) => {
+test('pi dispatch only attaches MCP adapter on explicit mcp: true (R2), never auto-loading from ambient config', async (t) => {
   const f = await fixture(t);
   const cwd = join(f.root, 'project');
   fs.mkdirSync(join(cwd, '.pi'), { recursive: true });
+  const mcpPkg = join(f.env.HUD_HOME, 'pi-worker', 'optional', 'pi-mcp-adapter');
+  fs.mkdirSync(mcpPkg, { recursive: true });
   const project = join(cwd, '.pi', 'mcp.json');
-  const args = async (key, mcp) => {
+  const startArgs = async (key, mcp) => {
     const job = await f.call('hud_create', { role: 'imp', request_key: key, task: 'Synthetic task.', cwd, mcp });
     assert.equal(job.state, 'working', JSON.stringify(job));
-    return f.commands().filter(c => c.command === 'pi-role').at(-1).args.filter(arg => ['--mcp', '--no-mcp'].includes(arg));
+    return f.commands().filter(c => c.command === 'herdr' && c.args[0] === 'agent' && c.args[1] === 'start').at(-1).args;
   };
   fs.writeFileSync(project, '{"mcpServers":{}}');
-  assert.deepEqual(await args('empty'), ['--no-mcp']);
-  assert.deepEqual(await args('forced-on', true), ['--mcp']);
+  assert.equal((await startArgs('empty')).includes(mcpPkg), false);
+  assert.equal((await startArgs('forced-on', true)).includes(mcpPkg), true);
   fs.writeFileSync(project, '{"mcpServers":{"synthetic":{"command":"unused"}}}');
-  assert.deepEqual(await args('project-server'), []);
-  assert.deepEqual(await args('forced-off', false), ['--no-mcp']);
+  assert.equal((await startArgs('project-server')).includes(mcpPkg), false);
+  assert.equal((await startArgs('forced-off', false)).includes(mcpPkg), false);
   fs.writeFileSync(project, 'unparseable');
-  assert.deepEqual(await args('unknown'), []);
+  assert.equal((await startArgs('unknown')).includes(mcpPkg), false);
 });
 
 test('request and place pi_args cannot override the inherited caller notification binding', async (t) => {
@@ -454,10 +461,9 @@ test('pi dispatch falls back to the role name for HUD instructions and passes th
     const result = await client.call('hud_create', { role: 'general', request_key: 'bound-home', task: 'Synthetic task.' });
     const job = JSON.parse(result.content[0].text);
     assert.match(job.job, /^j[0-9a-f]{16}$/);
-    const argv = f.commands().find(({ command }) => command === 'pi-role').args;
-    const instructions = argv.indexOf('--hud-instructions');
-    assert.notEqual(instructions, -1);
-    assert.equal(argv[instructions + 1], resolve('packages/hud-mcp/instructions/general.md'));
+    const contract = JSON.parse(fs.readFileSync(join(job.task_dir, 'pi-worker.json'), 'utf8'));
+    assert.equal(contract.instructions, 'general');
+    assert.equal(contract.tab?.profile, 'implementer');
     const tab = f.commands().find(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').args;
     const at = tab.indexOf('--env');
     assert.deepEqual(tab.slice(at, at + 6), ['--env', `HUD_JOB_DIR=${job.task_dir}`, '--env', `HUD_HOME=${f.env.HUD_HOME}`, '--env', 'GIT_OPTIONAL_LOCKS=0']);
@@ -619,42 +625,16 @@ esac
   assert.deepEqual(
     commands.map((c) => [c.command, ...c.args.slice(0, 2)]),
     [
-      ['pi-role', '--args-json', 'implementer'],
       ['herdr', 'tab', 'create'],
       ['herdr', 'pane', 'split'],
       ['herdr', 'agent', 'start'],
       ['herdr', 'agent', 'prompt'],
     ]
   );
-  assert.deepEqual(commands[0].args, [
-    '--args-json',
-    'implementer',
-    '--task-dir',
-    job.task_dir,
-    '--role-output',
-    join(job.task_dir, 'report.md'),
-    '--dispatch-slot',
-    'primary',
-    '--dispatch-label',
-    'imp',
-    '--allow-write',
-    join(job.task_dir, 'report.md'),
-    '--qa-dir',
-    join(job.task_dir, 'qa'),
-    '--notify',
-    [process.execPath, resolve('packages/hud-mcp/bin/hud-notify.mjs'), f.env.HUD_HOME, 'w4E:p1', job.job].map((s) => "'" + s.replace(/'/g, "'\\''") + "'").join(' '),
-    '--hud-instructions',
-    resolve('packages/hud-mcp/instructions/implementer.md'),
-    '--hud-sonic-jobs',
-    resolve('packages/hud-mcp/bin/sonic-jobs.mjs'),
-    '--no-mcp',
-    '--',
-    '--tui-mode',
-    'regular',
-    '--hud-worker-tools',
-    '-e',
-    resolve('integrations/pi/package/extensions/hud.mjs'),
-  ]);
+  const contract = JSON.parse(fs.readFileSync(join(job.task_dir, 'pi-worker.json'), 'utf8'));
+  assert.equal(contract.role, 'imp');
+  assert.equal(contract.instructions, 'implementer');
+  assert.equal(contract.tab?.profile, 'implementer');
   assert.equal(commands.find((c) => c.args[1] === 'start').args.includes('--session-dir'), false);
   const session = Object.fromEntries(
     fs
@@ -663,7 +643,7 @@ esac
       .split('\n')
       .map((l) => l.split('='))
   );
-  assert.ok(commands[1].args.includes(`HUD_TAB_LAUNCH=${session.LAUNCH}`));
+  assert.ok(commands[0].args.includes(`HUD_TAB_LAUNCH=${session.LAUNCH}`));
   assert.deepEqual(session, {
     TASK: job.job, LAUNCH: session.LAUNCH,
     HERDR_SOCKET_PATH: f.env.HERDR_SOCKET_PATH,
@@ -675,11 +655,11 @@ esac
     BASE: 'HEAD',
     PRIMARY: job.agent,
   });
-  assert.ok(commands[1].args.includes('--no-focus'));
-  assert.equal(commands[1].args[commands[1].args.indexOf('--env') + 1], `HUD_JOB_DIR=${job.task_dir}`);
-  assert.equal(commands[1].args[commands[1].args.indexOf('--label') + 1], 'imp Synthetic lane');
-  assert.equal(commands[1].args[commands[1].args.indexOf('--workspace') + 1], 'w4E');
-  assert.deepEqual(commands[2].args.slice(2), [
+  assert.ok(commands[0].args.includes('--no-focus'));
+  assert.equal(commands[0].args[commands[0].args.indexOf('--env') + 1], `HUD_JOB_DIR=${job.task_dir}`);
+  assert.equal(commands[0].args[commands[0].args.indexOf('--label') + 1], 'imp Synthetic lane');
+  assert.equal(commands[0].args[commands[0].args.indexOf('--workspace') + 1], 'w4E');
+  assert.deepEqual(commands[1].args.slice(2), [
     'w4E:p2',
     '--direction',
     'right',
@@ -690,7 +670,7 @@ esac
     '--env', `HUD_JOB_DIR=${job.task_dir}`, '--env', `HUD_TAB_LAUNCH=${session.LAUNCH}`,
     '--no-focus',
   ]);
-  assert.deepEqual(commands[3].args, [
+  assert.deepEqual(commands[2].args.slice(0, 7), [
     'agent',
     'start',
     job.agent,
@@ -698,10 +678,28 @@ esac
     'pi',
     '--pane',
     'w4E:p2',
-    '--',
-    ...commands[0].args.slice(2),
   ]);
-  assert.deepEqual(commands[4].args, [
+  assert.deepEqual(commands[2].args.slice(7), [
+    '--',
+    '-ne',
+    '-ns',
+    '-np',
+    '--no-themes',
+    '--no-mcp',
+    '-e',
+    resolve('integrations/pi/worker/hud-worker.mjs'),
+    '--tui-mode',
+    'regular',
+    '-e',
+    resolve('integrations/pi/worker/hud-worker-ui.mjs'),
+    '--model',
+    'synthetic/default',
+    '--thinking',
+    'low',
+    '--exclude-tools',
+    'ask_orchestrator',
+  ]);
+  assert.deepEqual(commands[3].args, [
     'agent',
     'prompt',
     job.agent,
@@ -825,22 +823,17 @@ test(
       thinking: 'max',
     };
     const job = await f.call('hud_create', args);
-    const argv = f.commands().find((c) => c.command === 'pi-role').args;
-    assert.deepEqual(argv.slice(-4), ['--model', args.model, '--thinking', args.thinking]);
-    assert.ok(argv.indexOf('--model') > argv.indexOf('--'));
-    assert.ok(
-      f
-        .commands()
-        .find((c) => c.args[0] === 'agent' && c.args[1] === 'start')
-        .args.includes(args.model)
-    );
+    const start = f.commands().find((c) => c.args[0] === 'agent' && c.args[1] === 'start').args;
+    assert.equal(start[start.indexOf('--model') + 1], args.model);
+    assert.equal(start[start.indexOf('--thinking') + 1], args.thinking);
+    assert.ok(start.indexOf('--model') > start.indexOf('--'));
     const receipt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
     for (const value of [receipt(), await f.call('hud_read', { job: job.job, detail: true })]) {
       assert.equal(value.model, args.model);
       assert.equal(value.thinking, args.thinking);
       assert.equal(value.model_source, 'hud_create');
     }
-    const launches = () => f.commands().filter((c) => c.command === 'pi-role').length;
+    const launches = () => f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'start').length;
     assert.deepEqual(await f.call('hud_create', { ...args, model: '', thinking: 'low' }), withoutHint(job));
     assert.equal(launches(), 1);
     assert.equal(receipt().model, args.model);
@@ -1032,6 +1025,10 @@ test('thin resume forwards the session ID without overriding pi default lookup',
 });
 test('thin pi launch switches and verbatim arguments reach argv, receipts and reads', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
+  const mcpPkg = join(f.env.HUD_HOME, 'pi-worker', 'optional', 'pi-mcp-adapter');
+  const lensPkg = join(f.env.HUD_HOME, 'pi-worker', 'optional', 'pi-lens');
+  fs.mkdirSync(mcpPkg, { recursive: true });
+  fs.mkdirSync(lensPkg, { recursive: true });
   for (const enabled of [false, true]) {
     const options = {
       lens: enabled,
@@ -1044,21 +1041,20 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
     };
     const args = { role: 'imp', request_key: `launch-${enabled}`, task: 'Synthetic task.', ...options };
     const job = await f.call('hud_create', args);
-    const argv = f
-      .commands()
-      .filter((c) => c.command === 'pi-role')
-      .at(-1).args;
-    const before = argv.slice(0, argv.indexOf('--'));
-    for (const key of ['lens', 'mcp', 'tps']) assert.ok(before.includes(`--${options[key] ? '' : 'no-'}${key}`));
-    assert.equal(before.includes('--no-ui-ext'), !enabled);
-    assert.equal(before.includes('--skills'), !enabled);
-    assert.deepEqual(argv.slice(-options.pi_args.length), options.pi_args);
-    assert.ok(argv.indexOf('--tools') > argv.indexOf('--'));
     const start = f
       .commands()
       .filter((c) => c.args[0] === 'agent' && c.args[1] === 'start')
       .at(-1).args;
-    assert.deepEqual(start.slice(-options.pi_args.length), options.pi_args);
+    const contract = JSON.parse(fs.readFileSync(join(job.task_dir, 'pi-worker.json'), 'utf8'));
+    assert.equal(start.includes(lensPkg), enabled);
+    assert.equal(start.includes(mcpPkg), !enabled);
+    assert.equal(contract.tps, enabled);
+    assert.equal(contract.explicitTools, true);
+    assert.equal(start.some((arg) => arg.endsWith('/hud-worker-ui.mjs')), enabled);
+    assert.equal(start.includes('-ns'), enabled);
+    assert.equal(start[start.indexOf('--tools') + 1], 'read,hud_report,hud_progress,hud_lease,hud_ask,hud_sonic');
+    assert.equal(start.at(-1), 'literal space;$(not-a-command)');
+    assert.ok(start.indexOf('--tools') > start.indexOf('--'));
     assert.equal(start[start.indexOf('--pane') + 1], 'w4E:p2');
     const receipt = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json')));
     for (const value of [receipt(), await f.call('hud_read', { job: job.job, detail: true })])
@@ -1068,7 +1064,7 @@ test('thin pi launch switches and verbatim arguments reach argv, receipts and re
     assert.equal(receipt().lens, enabled);
     assert.deepEqual(receipt().pi_args, options.pi_args);
   }
-  assert.equal(f.commands().filter((c) => c.command === 'pi-role').length, 2);
+  assert.equal(f.commands().filter((c) => c.args[0] === 'agent' && c.args[1] === 'start').length, 2);
   const defaults = await f.call('hud_create', { role: 'imp', request_key: 'launch-default', task: 'Synthetic task.' });
   const original = await f.call('hud_read', { job: defaults.job, detail: true });
   assert.equal(original.split, false);

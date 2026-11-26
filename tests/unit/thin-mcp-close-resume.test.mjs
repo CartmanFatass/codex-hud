@@ -179,7 +179,7 @@ for (const closeCurrent of [false, true]) test(closeCurrent
   const failed = (job) => wakes.some(line => line.startsWith(`${job.job} `) && line.includes('failed | tab closed'));
   try {
     await until(() => wakes.some(line => line.startsWith(`${job.job} `) && line.includes('First.')), t.signal);
-    const launchCount = () => f.commands().filter(({ command }) => command === 'pi-role').length;
+    const launchCount = () => f.commands().filter(({ command, args }) => command === 'herdr' && args[0] === 'tab' && args[1] === 'create').length;
     const launched = launchCount();
     if (closeCurrent) write(join(f.env.HOME, 'tab-seq'), String(Number(oldTab.split(':t')[1]) - 1));
     else write(join(f.env.HOME, 'hold-pi-role'), '');

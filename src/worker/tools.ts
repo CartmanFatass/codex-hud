@@ -16,13 +16,19 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
 import { jobCallerPane } from '../roles/job-pane.js';
-import { recordQuestionTimeout } from '../roles/job-archive.js';
-import { notify, taskDelivery } from '../roles/notify.js';
 import { readJobProgress } from '../collectors/thin-jobs.js';
 import { worktreeGit as git } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
 import { progress } from './progress.js';
 import { runWorkerChecks } from './checks.js';
+import {
+  notifyQuestion,
+  parseAskTimeoutSeconds,
+  publishQuestion,
+  questionTag,
+  waitForQuestionAnswer,
+  type QuestionInput,
+} from './qa.js';
 
 export { progress } from './progress.js';
 export { recordStartupShellSession } from '../runtime/tab-shell.js';
@@ -30,8 +36,6 @@ export { recordStartupShellSession } from '../runtime/tab-shell.js';
 let dispatchModule: Promise<typeof import('../mcp/dispatch/orchestrator.js')> | undefined;
 const idPattern = /^j[0-9a-f]{16}$/;
 type Worker = ReturnType<typeof workerJob>;
-type QuestionInput = { question: string; default: string; options?: string[]; context?: string };
-type Question = QuestionInput & { tag: string; n: number; qfile: string; afile: string };
 
 function readJob(dir: string) {
   const job = readJsonFile(join(dir, jobFiles.job)) as Job;
@@ -432,69 +436,13 @@ export async function workerTools(cli = false) {
   ].filter(({ name }) => role !== 'sonic' || (name !== 'hud_sonic' && name !== 'hud_ask'));
 }
 
-function questionBody(q: Question) {
-  return [
-    `# Question q${q.n} from ${q.tag}`, '', q.question.trim(), '',
-    ...(q.options?.length ? ['Options:', ...q.options.map((o) => `- ${o}`), ''] : []),
-    `Default if unanswered: ${q.default.trim()}`, '',
-    ...(q.context ? ['', `Context: ${q.context.trim()}`] : []), '',
-    `Answer: write the answer to ${q.afile}`, '',
-  ].join('\n');
-}
-function questionLine(q: Question, job: Job) {
-  const oneLine = q.question.replace(/\s+/g, ' ').trim().slice(0, 400);
-  const options = q.options?.length ? ` | options: ${q.options.join(' / ')}` : '';
-  return `[${q.tag}] QUESTION q${q.n}: ${oneLine}${options} | default: ${q.default.trim()} | full text: ${q.qfile} | reply: hud_respond job=${job.job} request_id=q${q.n}`;
-}
-function publishQuestion(qa: string, input: QuestionInput & { tag: string }) {
-  let highest = 0;
-  for (const file of fs.readdirSync(qa)) {
-    const match = /^q(\d+)(?:\.answer)?\.md$/.exec(file);
-    if (match) highest = Math.max(highest, Number(match[1]));
-  }
-  for (let n = highest + 1;; n++) {
-    const q = { ...input, n, qfile: join(qa, `q${n}.md`), afile: join(qa, `q${n}.answer.md`) };
-    const answerExistedAtCreation = fs.existsSync(q.afile);
-    try { writePrivateFile(q.qfile, questionBody(q), { exclusive: true, mkdir: false }); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue; throw error; }
-    return { ...q, answerExistedAtCreation, questionMtimeMs: fs.statSync(q.qfile).mtimeMs };
-  }
-}
-function readQuestionAnswer(q: ReturnType<typeof publishQuestion>) {
-  try {
-    const answer = fs.statSync(q.afile);
-    if (!answer.isFile() || answer.size === 0 || (q.answerExistedAtCreation && answer.mtimeMs < q.questionMtimeMs)) return undefined;
-    return fs.readFileSync(q.afile, 'utf8').trim() || undefined;
-  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-}
-function orchestrator(dir: string) {
-  try {
-    const line = fs.readFileSync(join(dir, jobFiles.session), 'utf8').split('\n').find((row) => row.startsWith('ORCH='));
-    return line?.slice(5) ?? '';
-  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return ''; }
-}
-
 export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: QuestionInput, timeoutRaw = process.env.HUD_ASK_TIMEOUT, signal?: AbortSignal) {
   if (job.council) throw new Error('list open questions in your council report');
   if (job.role === 'sonic') throw new Error('sonic cannot ask questions');
   signal?.throwIfAborted();
-  const tag = `${typeof job.role === 'string' ? job.role : 'cli'}@${basename(job.cwd || dir)}`;
   const qa = join(dir, jobFiles.qa);
-  fs.mkdirSync(qa, { recursive: true, mode: 0o700 });
-  const published = publishQuestion(qa, { ...input, tag });
-  let pushed = 'not pushed (no --notify / --orchestrator)';
-  // SESSION.txt describes the launch. The receipt can name a new main session after a handoff.
-  const receipt = readJob(dir);
-  const orch = jobCallerPane(receipt) || orchestrator(dir);
-  if (receipt.scout_only === true) pushed = 'handled by scouted dispatch';
-  else if (receipt.ticket_queue) pushed = 'handled by the ticket queue';
-  else if (taskDelivery(dir, orch)) pushed = 'delivered by MCP task';
-  else if (typeof orch === 'string' && orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
-    const ran = await notify(orch, questionLine(published, job), dirname(dirname(resolve(dir))), { signal });
-    signal?.throwIfAborted();
-    const detail = ran.error?.message ?? ((ran.stderr || ran.stdout || '').trim().slice(0, 200) || `exit ${ran.status}`);
-    pushed = ran.skipped ? 'delivered by hud watch' : ran.status === 0 ? (ran.detail || `pushed via "herdr agent prompt ${orch}"`) : `notify failed (${ran.detail ? `${ran.detail}; ` : ''}${detail})`;
-  }
+  const published = publishQuestion(qa, { ...input, tag: questionTag(dir, job) });
+  const pushed = await notifyQuestion(dir, job, published, signal);
   if (job.headless) {
     if (job.cli) {
       capturePiTree(dir);
@@ -504,31 +452,7 @@ export async function ask({ dir, job }: Pick<Worker, 'dir' | 'job'>, input: Ques
     }
     return `Question q${published.n} recorded (${pushed}); end this turn without acting on a default. The orchestrator's answer resumes this session.`;
   }
-  const timeoutSec = timeoutRaw !== undefined && /^\d+$/.test(String(timeoutRaw)) ? Number(timeoutRaw) : 1200;
-  const started = performance.now();
-  let answer;
-  if (timeoutSec > 0) {
-    const answerName = `q${published.n}.answer.md`;
-    answer = await waitUntilFs({
-      targets: [{ dir: qa, filter: (name) => name === null || name === answerName }],
-      timeoutMs: timeoutSec * 1000,
-      signal,
-      coalesceMs: 15,
-      fallbackIntervalMs: 5000,
-      check: ({ timedOut }) => {
-        const value = readQuestionAnswer(published);
-        if (value !== undefined) return { done: true, value };
-        if (timedOut) return { done: true, value: undefined };
-        return { done: false };
-      },
-    });
-  }
-  const waited = Math.round((performance.now() - started) / 1000);
-  if (!answer && timeoutSec > 0) recordQuestionTimeout(dir, `q${published.n}`);
-  const defaultLine = `Proposed default: ${input.default.trim()}. Proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report.`;
-  return answer
-    ? `ANSWER from the orchestrator (q${published.n}, after ${waited}s):\n\n${answer}`
-    : timeoutSec === 0
-      ? `Question q${published.n} recorded (${pushed}); not waiting. ${defaultLine}`
-      : `No answer to q${published.n} within ${timeoutSec}s (${pushed}). ${defaultLine}`;
+  const timeoutSec = parseAskTimeoutSeconds(timeoutRaw);
+  const { text } = await waitForQuestionAnswer(dir, qa, published, timeoutSec, pushed, signal);
+  return text;
 }
