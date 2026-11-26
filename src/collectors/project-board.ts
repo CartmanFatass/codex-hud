@@ -162,6 +162,7 @@ export const insideRoot = (root: string, path: string) => {
 };
 interface JobReceipt {
   cwd?: unknown;
+  project_root?: unknown;
   worktree?: { root?: unknown; branch?: unknown; main_root?: unknown };
   created_at?: unknown;
   started_at?: unknown;
@@ -445,7 +446,16 @@ export class ProjectCollector {
       if (!job || typeof job.cwd !== 'string' || job.reaped_at) continue;
       const statusRes = cache.readStatus<JobStatus>(id);
       const status = statusRes.status === 'ok' ? statusRes.value : {};
-      if (!SETTLED_JOB_STATES.has(ticketJobState(job, status))) cwds.push(canonicalPath(job.cwd));
+      if (!SETTLED_JOB_STATES.has(ticketJobState(job, status))) {
+        const cwd = canonicalPath(job.cwd);
+        const wt = job.worktree;
+        const root = wt?.root === cwd && typeof wt.main_root === 'string'
+          ? canonicalPath(wt.main_root)
+          : typeof job.project_root === 'string'
+            ? canonicalPath(job.project_root)
+            : cwd;
+        cwds.push(root);
+      }
     }
     return cwds;
   }

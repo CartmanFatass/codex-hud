@@ -40,14 +40,15 @@ test('Projects list keeps projects visible before their overviews load', async (
   const l = await fixture(t), choices = l.projects.map(({ root, name }) => ({ root, name }));
   assert.deepEqual(text(l.list(40, 'en', undefined, 24, 'unicode', choices)).match(/^  [a-z]+-project/gm).map((row) => row.trim()), choices.map((p) => p.name));
 });
-test('Projects list through real input: name row opens it, Enter opens a hub, Esc and the crumb come back, 2 opens the hub, reload keeps it', async (t) => {
+test('Projects list through real input: strip +N opens it, Enter opens a hub, Esc and the crumb come back, reload keeps it', async (t) => {
   const l = await fixture(t), { projects } = l, byName = (name) => projects.find((p) => p.name === name).root;
   const view = (state) => l.render(40, 'en', state, 24, l.data, true, 'unicode', 'none', {
     projects, projectName: (projects.find((p) => p.root === state.selectedProject) ?? projects[0]).name });
   let frame = view(onPage());
-  assert.match(text(frame), /^demo-project ─+ ▾ project 1\/6$/m);
-  // Enter on the name row opens the list with the cursor on the shown project.
-  frame.state.project.nav.cursor = 'project:switch';
+  assert.match(plain(frame)[1], /\+\d/);
+  assert.doesNotMatch(text(frame), /▾ (project|项目) \d+\/\d+/);
+  // Home moves the cursor onto the strip's +N; Enter opens the list with the cursor on the shown project.
+  frame = view(send(frame, '\x1b[H').state);
   frame = view(send(frame, '\r').state);
   assert.equal((frame.state.project.view.kind === 'projects-list'), true);
   assert.equal(frame.state.project.nav.cursor, `project:list:${byName('demo-project')}`);
@@ -58,7 +59,8 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   frame = view(send(frame, '\r').state);
   assert.equal(frame.state.selectedProject, byName('busy-project'));
   assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), projectPageOf(frame.state)], [false, undefined]);
-  assert.match(text(frame), /^busy-project ─+ ▾ project 4\/6$/m, 'the hub of that project, numbered by the switch order');
+  assert.match(plain(frame)[1], /busy-pr…/);
+  assert.doesNotMatch(text(frame), /▾ (project|项目) \d+\/\d+/);
   // Stepping on with ] leaves that hub: Esc no longer goes back to the list it was opened from.
   const stepped = view(send(frame, ']').state);
   assert.equal(stepped.state.project.fromProjectsList, false);
@@ -71,7 +73,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], [false, byName('busy-project')]);
   // That hub was not reached from the list now: Esc on it does what it always did (nothing here), so keys can be given back.
   assert.equal((esc(frame).state.project.view.kind === 'projects-list'), false);
-  assert.match(text(view(esc(frame).state)), /^busy-project ─+ ▾ project 4\/6$/m);
+  assert.match(plain(view(esc(frame).state))[1], /busy-pr…/);
   // One click on an entry opens its hub; a click on the crumb row returns to the shown project's hub.
   frame = view(onPage(undefined, { project: { view: { kind: 'projects-list' } } }));
   const at = frame.workboard.rows.findIndex((r) => r.item === `project:list:${byName('waiting-project')}`);
@@ -98,7 +100,7 @@ test('Projects list through real input: name row opens it, Enter opens a hub, Es
   frame = view(send(view(onPage(undefined, { selectedProject: byName('quiet-project'), project: { view: { kind: 'projects-list' } } })), '\x1b[D').state);
   frame = view(send(frame, '\x1b[C').state);
   assert.deepEqual([(frame.state.project.view.kind === 'projects-list'), frame.state.selectedProject], [false, byName('quiet-project')]);
-  assert.match(text(frame), /^quiet-project ─+ ▾ project 2\/6$/m);
+  assert.match(plain(frame)[1], /quiet-p…/);
   // The list survives the panel's own restart: the whole state goes through the reload place.
   const listed = onPage(undefined, { selectedProject: byName('quiet-project'), project: { view: { kind: 'projects-list' } } });
   process.env.HUD_PANEL_RELOAD_PLACE = encodePanelPlace({ state: listed, settings: null });
@@ -135,7 +137,7 @@ test('the list reads no Git and re-reads only the files that changed', async (t)
   const pool = l.pool(), fresh = await pool.read(roots, l.board, NOW);
   assert.deepEqual(spawned, [], 'no Git, no process of any kind');
   assert.ok(opened.length > 0 && opened.every((p) => /\/(STATE\.md|\d+-[^/]+\.md|job\.json|STATUS\.json)$/.test(p) && !/\.git\//.test(p)), opened.join('\n'));
-  assert.equal(fresh.get(l.places[0][0]).running, 1);
+  assert.equal(fresh.get(l.places[0][0]).running, 2);
   assert.equal(fresh.get(l.places[3][0]).running, 2);
   const cold = opened.length;
   await pool.read(roots, l.board, NOW + 1000);

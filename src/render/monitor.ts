@@ -88,7 +88,7 @@ export interface MonitorRect {
   pinned?: number;
   visible?: number;
 }
-/** A project the tab can show; `overview` is read only while the Projects list is open. */
+/** A project the tab can show; `overview` holds the light per-project facts for the strip and Projects list. */
 export interface ProjectChoice { root: string; name: string; overview?: ProjectOverview }
 export interface MonitorControl {
   kind:
@@ -96,6 +96,8 @@ export interface MonitorControl {
     | 'board-back'
     | 'board-jobs'
     | 'board-native'
+    | 'project-strip-pick'
+    | 'project-strip-more'
     | 'control-roles'
     | 'control-harnesses'
     | 'control-resources'

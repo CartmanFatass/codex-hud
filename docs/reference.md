@@ -1049,23 +1049,25 @@ A chain save updates only its owner role file, keeping unrelated fields and pres
 The next `hud_roster` and `hud_create` read these same files.
 
 **Switching projects.**
-With more than one project the hub's name row reads `name ▾ project i/n` and `[` and `]` step through the panel's own project and the existing roots in `$HUD_HOME/projects.json` (deduplicated).
-Enter or a click on the name row opens the **Projects list** (`‹ Projects` replaces the tabs; Esc or a click on the crumb returns to the hub).
-On a page `[`/`]` work too and its crumb shows the project's name; its cursor, scroll and folds start fresh.
+With more than one project a pinned one-row **project strip** sits directly under the tabs on **Project** and **Execution** (not **Home** or **Control**), replacing the old folded `▾ project i/n` picker header.
+The strip lists the panel's own project first followed by the existing roots in `$HUD_HOME/projects.json` (deduplicated, never re-sorted by activity) so `[` and `]` always step to the neighbour on screen.
+Each entry shows `?` for an open owner request, else `●` for live work, else no mark (idle names muted); the current project sits on the title surface and a rule fills any remaining width.
+When the strip is wider than the pane, idle projects fold from the end into `+N`, then names shorten to 8 cells, and only then marked projects fold with `+N` carrying their strongest mark (`?` over `●`); the current project always stays visible.
+Clicking a project name switches to it directly; clicking `+N` (or moving up onto `+N` and pressing Enter) opens the grouped **Projects list** (`‹ Projects` replaces the tabs and strip; Esc or a click on the crumb returns to the tab that opened it).
+`[` and `]` step through projects on Project (hub and sub-pages, where the crumb shows the project's name and cursor, scroll and folds start fresh), Execution and Control (which keeps `[ ]` without the strip).
 The choice belongs to the panel and survives its reload, not Settings.
 Home's progress block always shows the panel's own project, and opening that block returns to it.
-The panel keeps one collector per visited project (at most four, the panel's own never dropped, the oldest other one first) and collects only the shown one.
-With one project there is no `▾ project i/n` and no list.
+The panel keeps one collector per visited project (at most four, the panel's own never dropped, the oldest other one first) and collects only the shown one in full.
+With one project there is no strip and no Projects list.
 
 **Projects list.**
 Groups are Needs you (STATE waiting items), Running, and Quiet.
 Entries show counts and, when known, time since the last change to STATE.md or a ticket file.
 Quiet projects take one row and show their milestone or `no STATE.md` when known.
 Within each group the panel's own project comes first, then projects with waiting items, then those with running jobs, then the most recently touched.
-Enter or one click opens the project's hub; Esc returns to the list from a hub opened that way.
+Enter or one click opens the project (on the tab that opened the list); Esc returns to the list from a Project hub opened that way.
 On the root hub, Esc does nothing.
-The list is read only while it is visible: for each listed project STATE and tickets as Home reads them (cached by file signature) and, in one pass over the newest 64 top-level jobs and up to 64 of their children, the unsettled jobs per root, at most once every five seconds while the list stays open (opening it again reads at once).
-No Git, no roles, no full collection; the shown project's own full collection pauses while the list is open.
+The light per-project facts behind the strip marks and Projects list (STATE and tickets as Home reads them, cached by file signature, plus one pass over recent jobs for unsettled live work per root) refresh on every visible tab at most once every five seconds, off the paint path: Home reuses its portfolio reads, Help and Settings modals pause them, and opening the Projects list reads at once while pausing the shown project's full collection (no Git, no roles).
 The last-touched time reads `12m`, `3h`, `4d` (`12分`, `3小时`, `4天` in Chinese).
 A project without STATE.md says `no STATE.md` on Progress; its other pages work.
 

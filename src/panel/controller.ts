@@ -9,7 +9,7 @@ import { collectObjectiveEvidence } from '../collectors/objectives.js';
 import { HomePortfolioCollector, type HomePortfolio } from '../collectors/home-portfolio.js';
 import { HomeCardsCollector, type TodayFacts } from '../collectors/home-cards.js';
 import type { ScheduleItem } from '../collectors/schedule.js';
-import { ProjectVisits, ProjectOverviews, type ProjectOverview } from '../collectors/project-visits.js';
+import { ProjectVisits, ProjectOverviews, overviewOf, type ProjectOverview } from '../collectors/project-visits.js';
 import { RolloutParser, type RolloutParseResult } from '../collectors/rollout.js';
 import { SessionFinder, findRolloutsInDaysYielding, findSessionByThreadId, treeLookbackDays } from '../collectors/session-finder.js';
 import { buildSubagentTreeYielding, useTreeScanStore, flushTreeScans } from '../collectors/subagent-tree.js';
@@ -108,7 +108,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   ];
   let projects = projectChoices();
   let projectsAt = Date.now();
-  // The Projects list reads every listed project lightly, and only while it is open.
+  // Light per-project facts for the resident strip and Projects list, refreshed on every visible tab at a 5 s cadence.
   const overviews = new ProjectOverviews((root) => new ProjectCollector(root, jobPipeline.home), HUD_CWD_REAL);
   let overview = new Map<string, ProjectOverview>();
   let overviewAt = -Infinity;
@@ -236,7 +236,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         projectDisplayRoot: shown.root,
         projectWaiting: (control || executing) ? chosenSnapshot?.waiting.length : undefined,
         projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
-        projects: listing(painted) ? projects.map((p) => ({ ...p, overview: overview.get(p.root) })) : projects,
+        projects: projects.map((p) => ({ ...p, overview: overview.get(p.root) })),
         error,
         publicationNotice: boardNotice || null,
         nowMs,
@@ -350,26 +350,25 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const now = Date.now();
       openSchedule = homeCards.readOpenSchedule();
       const shown = projectShown(state, settingsFlow.open), control = projectControlShown(state, settingsFlow.open);
-      const home = state.activeTab === 'home' && !state.subpage && !state.help && !settingsFlow.open;
-      if (home || ((shown || control || executionPage()) && now - projectsAt >= 5000)) {
+      const visible = !settingsFlow.open && !state.help;
+      const home = state.activeTab === 'home' && !state.subpage && visible;
+      if (home || (visible && now - projectsAt >= 5000)) {
         projectsAt = now;
         registered = projectList(jobPipeline.home, HUD_CWD_REAL);
         projects = projectChoices();
       }
-      // The open list reads the light overviews instead of the shown project's full collection (Git included), at most once
-      // per five seconds; opening it again reads at once. The Execution tab needs neither: its jobs come from their records.
+      // The open list pauses the shown project's full collection (Git included); light overviews refresh at a 5 s cadence
+      // on every visible tab (Home derives them from its portfolio reads; modals pause them; opening the list reads at once).
       const full = shown && !listing(state);
       const countRoot = shownRoot();
       executionCount = {
         root: countRoot,
         count: execution.view(countRoot)?.jobs.length ?? countProjectLiveJobs(jobPipeline.home, countRoot),
       };
-      if (shown && listing(state)) {
-        if (Date.now() - overviewAt >= 5000) {
-          overviewAt = Date.now();
-          overview = await overviews.read(projects.map((p) => p.root), board, Date.now());
-        }
-      } else overviewAt = -Infinity;
+      if (visible && !home && projects.length > 1 && now - overviewAt >= 5000) {
+        overviewAt = now;
+        overview = await overviews.read(projects.map((p) => p.root), board, now);
+      }
       if (home) {
         portfolio = await portfolioCollector.read(registered, board, now);
         homeToday = homeCards.readToday(portfolio.projects, now);
@@ -377,12 +376,26 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         // The tab badge remains pane-project scoped, even if that project isn't registered.
         own.snapshot = portfolio.projects.find((p) => p.root === HUD_CWD_REAL)?.snapshot
           ?? await own.collector.collect('home', board, now);
+        const nextOverview = new Map<string, ProjectOverview>();
+        for (const entry of portfolio.projects) {
+          if (entry.snapshot) nextOverview.set(entry.root, overviewOf(entry.snapshot, entry.snapshot.active.length));
+        }
+        if (own.snapshot && !nextOverview.has(HUD_CWD_REAL)) {
+          nextOverview.set(HUD_CWD_REAL, overviewOf(own.snapshot, own.snapshot.active.length));
+        }
+        overview = nextOverview;
+        overviewAt = now;
       } else if (full || control) {
         const visit = visits.visit(shownRoot());
         const facts = await visit.collector.collect(control ? 'control' : true, board, now);
         if (control) visit.control = facts;
-        else visit.snapshot = facts;
+        else {
+          visit.snapshot = facts;
+          if (facts) overview.set(shownRoot(), overviewOf(facts, facts.active.length));
+        }
       }
+      const currentOverview = overview.get(countRoot);
+      if (currentOverview) overview.set(countRoot, { ...currentOverview, running: executionCount.count });
       error = settingsError || roleNotice || null;
     } catch (err) {
       error = t('Refresh: {reason}', { reason: String(err) });
@@ -496,6 +509,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       if (wasNative !== nativeInspector()) void scheduler.collect(true);
       syncExecution();
       if (wasExecution !== executionPage() || (executionKept() && priorRoot !== shownRoot())) void scheduler.collect(true);
+      if (!listing(previous) && listing(state)) overviewAt = -Infinity;
       if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state) || priorRoot !== shownRoot())) ||
         (projectControlShown(state) && (!projectControlShown(previous) || state.selectedProject !== previous.selectedProject)) ||
         ((state.subpage?.kind === 'inspector' || previous.subpage?.kind === 'inspector') &&

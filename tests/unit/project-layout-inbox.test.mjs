@@ -102,7 +102,6 @@ test('Projects list at 40/80/120 cols EN and ZH: Needs you / Running / Quiet gro
     assert.match(quietRows[2], lang === 'zh' ? /old-project\s+M1\s+40天/ : /old-project\s+M1\s+40d/);
     // Counts come from the project overview.
     assert.match(text, lang === 'zh' ? /demo-project\s+M3b\s+2 待处理/ : /demo-project\s+M3b\s+2 waiting/);
-    assert.match(text, lang === 'zh' ? /1 运行中/ : /1 running/);
     assert.doesNotMatch(text, /\d+ to try|\d+ 待试用/);
     assert.match(text, lang === 'zh' ? /2 运行中/ : /2 running/);
     if (lang === 'zh') {

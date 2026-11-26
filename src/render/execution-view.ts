@@ -14,6 +14,7 @@ import { jobTitle, roleInk } from './work-job-row.js';
 import { jobTarget } from './work-jobs.js';
 import { isHeadless, workerModelName } from './worker-roster.js';
 import { t } from './i18n.js';
+import { PROJECT_STRIP_MORE } from './project-strip.js';
 
 /** Narrower than this a frame leaves no room for its content. */
 const FRAME_MIN = 16;
@@ -241,7 +242,7 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
   const items = [...view.jobs.map(cardItem), ...runItems, ...recent.map((entry) => 'flow' in entry ? runItem(entry.flow) : cardItem(entry)),
     ...[...known.values()].map(treeItem)];
   // The panel starts on the first row it can act on, and a vanished selection returns there.
-  const selected = cursor && items.includes(cursor) ? cursor : items[0];
+  const selected = cursor === PROJECT_STRIP_MORE ? undefined : cursor && items.includes(cursor) ? cursor : items[0];
   const target = (job: ExecutionJob, item: string) => ({ item,
     execJob: { target: jobTarget(job.worker), dir: job.dir, tab: !isHeadless(job.worker) && job.worker.state !== 'queued' } });
   const from = (job: ExecutionJob) => {

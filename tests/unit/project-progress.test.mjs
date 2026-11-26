@@ -126,11 +126,12 @@ test('a Progress page of jobs alone pages by keyboard: Down, PgDn and End move t
   assert.match(plain(frame).join('\n'), /Task 1\b/, 'the view came back to the first job');
   assert.deepEqual(send(frame, '\r').action, { type: 'open-files', files: [join(f.job, 'brief.md')] });
 });
-test('hub: with several projects the name row reads `▾ i/n` and opens the Projects list; [ ] step through them, wrapping; a page keeps its page', async (t) => {
+test('hub: with several projects the resident strip switches projects and +N opens the Projects list; [ ] step through them, wrapping; a page keeps its page', async (t) => {
   const f = await fixture(t), height = 24;
-  const hub = (state) => f.render(40, 'en', state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'demo-project' });
+  const hub = (state, projects = PROJECTS) => f.render(40, 'en', state, height, f.data, true, 'unicode', 'none', { projects, projectName: 'demo-project' });
   let frame = hub(onPage());
-  assert.match(text(frame), /^demo-project ─+ ▾ project 1\/3$/m);
+  assert.match(plain(frame)[1], /^ demo-project  second-project  third ─+$/);
+  assert.doesNotMatch(text(frame), /▾ (project|项目) \d+\/\d+/);
   assert.deepEqual(frame.projects, PROJECTS);
   assert.match(plain(frame).at(-1), /\[ \] project/);
   assert.equal(f.render(40, 'en').projects, undefined, 'one project: no switch, no hint');
@@ -140,16 +141,24 @@ test('hub: with several projects the name row reads `▾ i/n` and opens the Proj
   const roots = [];
   for (const raw of [']', ']', ']', '[']) { frame = hub(send(frame, raw).state); roots.push(frame.state.selectedProject); }
   assert.deepEqual(roots, [PROJECTS[1].root, PROJECTS[2].root, undefined, PROJECTS[2].root]);
-  // A click on the name row (and Enter on it) opens the Projects list; Esc closes it again (project-list.test.mjs has the rest).
-  const name = frame.workboard.rows.findIndex((r) => r.item === 'project:switch');
-  frame = hub(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 3, y: name + 1 }, { tree: TREE, frame, nowMs: NOW, standalone: true }).state);
+  // Click a project name on the strip to switch directly.
+  const secondBtn = frame.controls.find((c) => c.kind === 'project-strip-pick' && c.item === PROJECTS[1].root);
+  assert.ok(secondBtn);
+  frame = hub(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: secondBtn.x, y: secondBtn.y }, { tree: TREE, frame, nowMs: NOW, standalone: true }).state);
+  assert.equal(frame.state.selectedProject, PROJECTS[1].root);
+  // With overflow (+N), clicking +N or moving to +N and pressing Enter opens the Projects list; Esc closes it again.
+  const many = [...PROJECTS, { root: '/synthetic/fourth', name: 'fourth-project' }, { root: '/synthetic/fifth', name: 'fifth-project' }];
+  frame = hub(onPage(), many);
+  const moreBtn = frame.controls.find((c) => c.kind === 'project-strip-more');
+  assert.ok(moreBtn, '+N overflow control present at 40 cols with 5 projects');
+  frame = hub(handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: moreBtn.x, y: moreBtn.y }, { tree: TREE, frame, nowMs: NOW, standalone: true }).state, many);
   assert.equal((frame.state.project.view.kind === 'projects-list'), true);
   assert.match(plain(frame)[0], /^‹ Projects/);
-  frame = hub(handleMonitorInput(frame.state, { type: 'key', key: 'escape' }, { tree: TREE, frame, nowMs: NOW, standalone: true }).state);
+  frame = hub(handleMonitorInput(frame.state, { type: 'key', key: 'escape' }, { tree: TREE, frame, nowMs: NOW, standalone: true }).state, many);
   assert.equal((frame.state.project.view.kind === 'projects-list'), false);
-  frame.state.project.nav.cursor = 'project:switch';
-  assert.equal((hub(send(frame, '\r').state).state.project.view.kind === 'projects-list'), true);
-  assert.equal(hub(send(frame, ']').state).state.selectedProject, undefined, 'the cursor on the name row does not stop [ ] from stepping');
+  frame = hub(send(frame, '\x1b[H').state, many);
+  assert.equal((hub(send(frame, '\r').state, many).state.project.view.kind === 'projects-list'), true);
+  assert.equal(hub(send(frame, ']').state, many).state.selectedProject, many[1].root, 'the cursor on +N does not stop [ ] from stepping');
   // A page: its crumb names the project, the page stays open, and the page's cursor, scroll and folds start fresh.
   const page = (state) => f.render(40, 'en', state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'second-project' });
   assert.match(plain(f.render(40, 'en', 'progress'))[0], /^‹ Project › Progress/, 'one project: the crumb says Project');
@@ -169,7 +178,8 @@ test('hub: with several projects the name row reads `▾ i/n` and opens the Proj
   const place = readPanelPlace();
   assert.equal(place.state.selectedProject, PROJECTS[1].root);
   frame = f.render(40, 'en', place.state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS, projectName: 'second-project' });
-  assert.match(text(frame), /^second-project ─+ ▾ project 2\/3$/m);
+  assert.match(plain(frame)[1], /second-project/);
+  assert.doesNotMatch(text(frame), /▾ (project|项目) \d+\/\d+/);
   // A root that left projects.json is the panel's own again, not an empty page.
   assert.match(text(f.render(40, 'en', place.state, height, f.data, true, 'unicode', 'none', { projects: PROJECTS.slice(2), projectName: 'x' })), /^x ─+$/m);
 });

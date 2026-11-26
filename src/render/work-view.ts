@@ -11,6 +11,7 @@ import { executionRows } from './execution-view.js';
 import { activeFilter, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
 import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
+import { PROJECT_STRIP_MORE, projectStripRow } from './project-strip.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, footerLayout, mark, type FooterHints } from './workboard-rows.js';
 import { modelInput, pickOf } from './model-input.js';
 import { theme, visualLength } from './colors.js';
@@ -185,16 +186,22 @@ export function renderWorkboardFrame(
     (resourcePage.notice === 'Saved' ? theme.board.success : theme.board.attention)(t(resourcePage.notice))
   ) : undefined;
   const controlTop = control && !pick ? controlHeader(input, state, width) : [];
+  const strip = (input.projects?.length ?? 0) > 1 && ((project && !page && !list) || execution)
+    ? projectStripRow(input.projects!, state.selectedProject, width) : undefined;
   const truncatedFiles = project && !list && [input.project?.stateTruncated && 'STATE.md', input.project?.specTruncated && 'spec.md'].filter(Boolean).join(', ');
-  const headers = [...controlTop.map((r) => r.text), ...(bar ? [bar.text] : []),
+  const headers = [...(strip ? [''] : []), ...controlTop.map((r) => r.text), ...(bar ? [bar.text] : []),
     ...(inspector ? stopPromptRows(state, width).map((r) => r.text) : []),
     ...(jobs ? batchPromptRows(state, width).map((r) => r.text) : []),
     ...(truncatedFiles ? [fit(theme.board.attention(t('Truncated: {files}', { files: truncatedFiles })), width)] : []),
     ...(control && input.error ? [theme.error(monitorText(input.error))] : [])];
   const top = Math.min(headers.length, Math.max(0, height - 2));
   const room = Math.max(0, height - 2 - top);
-  controlTop.slice(0, top).forEach((row, i) => {
-    for (const control of row.controls ?? []) frame.controls.push({ ...control, y: 1 + i });
+  const stripTop = strip && top > 0 ? 1 : 0;
+  if (strip && stripTop) {
+    for (const c of strip.controls) frame.controls.push({ ...c, y: 1 });
+  }
+  controlTop.slice(0, Math.max(0, top - stripTop)).forEach((row, i) => {
+    for (const control of row.controls ?? []) frame.controls.push({ ...control, y: 1 + stripTop + i });
   });
   const target = inspector?.target;
   const lane = target && source.lanes.find((l) => l.id === target.laneId);
@@ -276,7 +283,7 @@ export function renderWorkboardFrame(
         : jobs ? jobsRows(source.workers, width, !!input.jobsObserved, source.batches)
         : project
           ? projectRows(input.project, state, width, now, source, input.projectName, input.projects, input.worktrees)
-          : execution ? executionRows(input.execution, state.execution.cursor, width, now)
+          : execution ? executionRows(input.execution, state.execution.cursor === PROJECT_STRIP_MORE && !strip?.hasMore ? undefined : state.execution.cursor, width, now)
           : resourcePage ? expRows(resourcePage, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.publicationNotice)))
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
@@ -293,11 +300,11 @@ export function renderWorkboardFrame(
   const listNav = jobs ?? objective ?? (home ? state.home : undefined);
   const listCursor = listNav && (actions.some((r) => r.item === listNav.cursor) ? listNav.cursor : actions[0]?.item);
   const nav = controlView?.nav ?? (project ? state.project.nav : execution ? state.execution : undefined);
-  const hasCursor = (cursor?: string) => rows.some((r) => r.item && r.item === cursor);
-  // A new hub starts on its first destination, ahead of the project switch.
+  const stripMore = !!(strip && stripTop && strip.hasMore);
+  const hasCursor = (cursor?: string) => (stripMore && cursor === PROJECT_STRIP_MORE) || rows.some((r) => r.item && r.item === cursor);
+  // A new hub starts on its first destination, ahead of the strip's +N overflow.
   const cursor = nav && !hasCursor(nav.cursor) && (project || execution || (!addingHarness && !sheet && input.project))
-    ? ((project && !page && !list ? rows.find((r) => r.item && r.item !== 'project:switch') : undefined)
-      ?? rows.find((r) => r.item))?.item : nav?.cursor;
+    ? (rows.find((r) => r.item)?.item ?? (stripMore ? PROJECT_STRIP_MORE : undefined)) : nav?.cursor;
   const expCursor = resourcePage && !expEdit && !hasCursor(resourcePage.cursor) ? rows.find((r) => r.item)?.item : resourcePage?.cursor;
   const key = addingHarness ? harnessAdd?.pick : sheet ? sheet.cursor : nav ? cursor : inspect ? inspectCursor
     : resourcePage ? expEdit ? undefined : expCursor : listCursor;
@@ -311,12 +318,17 @@ export function renderWorkboardFrame(
   if (anchor && key && cursorAt >= offset + room) offset = Math.max(0, cursorAt - room + 1);
   let revealed = nav ? nav.revealed : inspect ? inspect.revealed : resourcePage ? resourcePage.revealed : listNav?.revealed;
   if (!help && !sheet && key && (addingHarness || revealed !== key) && room) {
-    // An Execution card is several rows of one job: bring all of it into view, and the page's head with the first.
-    const last = execution ? rows.map((r) => r.item).lastIndexOf(key) : cursorAt;
-    if (execution && cursorAt === rows.findIndex((r) => r.item) && last < room) offset = 0;
-    else if (cursorAt < offset) offset = cursorAt;
-    else if (last >= offset + room) offset = Math.min(cursorAt, last - room + 1);
-    if (!addingHarness) revealed = key;
+    if (cursorAt < 0) {
+      offset = 0;
+      if (!addingHarness) revealed = key;
+    } else {
+      // An Execution card is several rows of one job: bring all of it into view, and the page's head with the first.
+      const last = execution ? rows.map((r) => r.item).lastIndexOf(key) : cursorAt;
+      if (execution && cursorAt === rows.findIndex((r) => r.item) && last < room) offset = 0;
+      else if (cursorAt < offset) offset = cursorAt;
+      else if (last >= offset + room) offset = Math.min(cursorAt, last - room + 1);
+      if (!addingHarness) revealed = key;
+    }
   }
   if (help) {
     state = { ...state, help: { scroll: offset } };
@@ -333,6 +345,7 @@ export function renderWorkboardFrame(
   else if (resourcePage) state = { ...state, exp: { ...resourcePage, cursor: expCursor, scroll: offset, revealed: expEdit ? undefined : revealed } };
   else if (home) state = { ...state, home: { ...state.home, cursor: listCursor, scroll: offset, revealed } };
   frame.state = state;
+  if (strip && stripTop) headers[0] = strip.paint(key === PROJECT_STRIP_MORE);
   headers.slice(0, top).forEach((text, i) => { frame.lines[1 + i] = text; });
   for (let i = 0; i < room; i++) {
     const row = rows[offset + i];
@@ -354,7 +367,7 @@ export function renderWorkboardFrame(
         : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
-        : execution ? [...(selected ? ['⏎ details'] : []), ...projectSwitch, ...(selected?.execJob?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : [])]
+        : execution ? [...(key === PROJECT_STRIP_MORE ? ['⏎ open'] : selected ? ['⏎ details'] : []), ...projectSwitch, ...(selected?.execJob?.tab ? ['g job tab', 'P pin tab', 'H hide tab'] : [])]
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']

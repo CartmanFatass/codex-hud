@@ -27,7 +27,8 @@ function projectView(value: unknown): ProjectView {
   switch (kind) {
     case 'progress': return { kind };
     case 'waiting': return typeof request === 'string' ? { kind, index: offset(index) ?? -1, request } : { kind: 'hub' };
-    case 'projects-list': case 'tickets': case 'tree': case 'docs': return { kind };
+    case 'projects-list': return fields(value).from === 'execution' ? { kind, from: 'execution' } : { kind };
+    case 'tickets': case 'tree': case 'docs': return { kind };
     default: return { kind: 'hub' };
   }
 }

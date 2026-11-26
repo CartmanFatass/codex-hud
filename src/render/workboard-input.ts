@@ -5,6 +5,7 @@ import { backFromSubpage, CONTROL_VIEWS, copyControlTab, controlRoleItem, contro
   switchProject, transitionProjectView, transitionTab, type OverlayState, type ProjectSubPage } from './monitor-state.js';
 import { monitorRowAt } from './monitor-input.js';
 import { ACCEPT_ALL, projectPageOf, projectListOpen } from './project-view.js';
+import { PROJECT_STRIP_MORE } from './project-strip.js';
 import type { RoleFact } from '../roles/role-control.js';
 import { openQuickModel, roleModelIndex } from './chain-input.js';
 import { openBatchAction, openJobAction } from './job-actions.js';
@@ -80,16 +81,25 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const at = Math.max(0, list.findIndex((p) => p.root === next.selectedProject)), to = list[(at + step + list.length) % list.length];
     useProject(to === list[0] ? undefined : to.root);
   };
-  // The Projects list sits above the hubs: the name row opens it, a click on its entry opens that project's hub.
+  // The Projects list sits behind the strip's +N: a click or Enter on an entry opens that project on the tab that opened the list.
   const listed = projectListOpen(next, frame?.projects);
   const showList = (on: boolean) => {
     const root = next.selectedProject ?? frame?.projects?.[0].root;
-    next = transitionProjectView(next, { kind: on ? 'projects-list' : 'hub' }, {
-      cursor: on ? `project:list:${root}` : 'project:switch', fromProjectsList: false });
+    const fromExec = on ? next.activeTab === 'execution'
+      : next.project.view.kind === 'projects-list' && next.project.view.from === 'execution';
+    if (on) {
+      next = { ...transitionProjectView(next, { kind: 'projects-list', ...(fromExec ? { from: 'execution' } : {}) }, {
+        cursor: `project:list:${root}`, fromProjectsList: false }), activeTab: 'project' };
+    } else {
+      next = { ...transitionProjectView(next, { kind: 'hub' }, {
+        cursor: undefined, fromProjectsList: false }), activeTab: fromExec ? 'execution' : 'project' };
+    }
   };
   const openProject = (root: string) => {
+    const fromExec = next.project.view.kind === 'projects-list' && next.project.view.from === 'execution';
     useProject(root === frame?.projects?.[0].root ? undefined : root);
-    next = transitionProjectView(next, { kind: 'hub' }, { fromProjectsList: true });
+    next = transitionProjectView(next, { kind: 'hub' }, { fromProjectsList: !fromExec });
+    if (fromExec) next = { ...next, activeTab: 'execution' };
   };
   const back =
     input.type === 'mouse' &&
@@ -143,8 +153,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       else next.project.folded = folded;
     };
     // A selectable entry may span multiple rows; the cursor visits it once.
-    const rows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i),
-      at = rows.findIndex((r) => r.item === cursor);
+    const bodyRows = boardFrame.rows.filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i);
+    const hasStripMore = !control && frame.controls.some((c) => c.kind === 'project-strip-more');
+    const rows = hasStripMore ? [{ item: PROJECT_STRIP_MORE, text: '' }, ...bodyRows] : bodyRows;
+    const at = rows.findIndex((r) => r.item === cursor);
     const harnesses = control && next.control.subTab === 'harnesses';
     const switchAction = (row: typeof rows[number] | undefined, remove = false): MonitorOutcome['action'] => {
       const id = harnessId(row?.item);
@@ -234,7 +246,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       }
       if (row?.objectiveEvidence) return { type: 'open-objective-evidence' as const, ...row.objectiveEvidence };
       if (row?.objectiveTarget) openObjective(row.objectiveTarget);
-      else if (row?.item === 'project:switch') showList(true);
+      else if (row?.item === PROJECT_STRIP_MORE) showList(true);
       else if (row?.item?.startsWith('project:list:')) openProject(row.item.slice(13));
       else if (row?.item?.startsWith('project:page:')) goProject(row.item.slice(13) as ProjectSubPage);
       else if (row?.item === ACCEPT_ALL) return { type: 'accept-all' as const };
@@ -248,12 +260,23 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         const page = Math.max(1, pane?.height ?? 1), max = Math.max(0, (pane?.contentLength ?? 0) - page);
         nav.scroll = Math.max(0, Math.min(max, nav.scroll + (input.button === 'wheel-down' ? 3 : -3)));
       } else {
+        const stripHit = !control ? frame?.controls.find((c) =>
+          (c.kind === 'project-strip-pick' || c.kind === 'project-strip-more') &&
+          c.y === input.y && input.x >= c.x && input.x < c.x + c.width) : undefined;
+        if (stripHit?.kind === 'project-strip-pick' && stripHit.item) {
+          useProject(stripHit.item === frame?.projects?.[0].root ? undefined : stripHit.item);
+          return result();
+        }
+        if (stripHit?.kind === 'project-strip-more') {
+          showList(true);
+          return result();
+        }
         const row = pane && monitorRowAt(pane, input.x, input.y);
         if (row?.item) {
           const again = row.item === cursor;
           select(row.item);
           // A hub entry is a link: one click opens it. Elsewhere a click selects and a second one acts.
-          return result(again || row.waitingTarget || /^project:(page:|list:|switch$)/.test(row.item) ? activate(row) : undefined);
+          return result(again || row.waitingTarget || /^project:(page:|list:)/.test(row.item) ? activate(row) : undefined);
         }
       }
       return result();

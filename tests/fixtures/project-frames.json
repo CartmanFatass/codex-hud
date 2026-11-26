@@ -1325,8 +1325,7 @@
   ],
   "hub-switch-40-en": [
     " Home  Project ?2  Execution·2  Control",
-    "",
-    "second-project ─────────── ▾ project 2/3",
+    " demo-project  second-project  third ───",
     "  1m ago",
     "Needs you ──────────────────────────── 2",
     "  ? Try the Project tab",
@@ -1347,12 +1346,12 @@
     "Progress  M3b · 2 working · 1 to do",
     "Worktree  synthetic-project · 6 changed",
     "Docs      spec M3b · AI-THIN",
+    "",
     "             ⏎ open  [ ] project  ? help"
   ],
   "hub-switch-40-zh": [
     " 首页  项目 ?2  执行·2  控制",
-    "",
-    "second-project ────────────── ▾ 项目 2/3",
+    " demo-project  second-project  third ───",
     "  1分前",
     "需要你处理 ─────────────────────────── 2",
     "  ? Try the Project tab",
@@ -1373,6 +1372,7 @@
     "进度      M3b · 2 进行中 · 1 待办",
     "工作区    synthetic-project · 6 项修改",
     "文档      规范 M3b · AI-THIN",
+    "",
     "                ⏎ 打开  [ ] 项目  ? 帮助"
   ],
   "progress-switch-40-en": [

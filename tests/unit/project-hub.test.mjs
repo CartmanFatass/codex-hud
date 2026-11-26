@@ -39,11 +39,13 @@ test('the Working tree row counts unlinked worktrees and its page lists them', a
   assert.match(rows('zh', 'tree').join('\n'), /! NO-JOB +未关联工单/);
 });
 
-test('the name row identifies the project switch; try and accepted keep distinct inks in every theme', async (t) => {
+test('the resident strip replaces the folded picker header; try and accepted keep distinct inks in every theme', async (t) => {
   const f = await fixture(t);
-  const name = (lang) => plain(f.render(38, lang, onPage(undefined, { selectedProject: PROJECTS[1].root }), 46, { projects: PROJECTS, projectName: PROJECTS[1].name }))[2];
-  assert.match(name('en'), /^second-project ─+ ▾ project 2\/3$/);
-  assert.match(name('zh'), /^second-project ─+ ▾ 项目 2\/3$/);
+  for (const lang of ['en', 'zh']) {
+    const lines = plain(f.render(38, lang, onPage(undefined, { selectedProject: PROJECTS[1].root }), 46, { projects: PROJECTS, projectName: PROJECTS[1].name }));
+    assert.match(lines[1], /second-project/);
+    assert.doesNotMatch(lines.join('\n'), /▾ (project|项目) \d+\/\d+/);
+  }
   // CIE76 distance between the two inks, on every coloured theme.
   const lin = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   const lab = ([R, G, B]) => {

@@ -28,7 +28,7 @@ export const initialHomeTab = (): HomeTabState => ({ scroll: 0 });
 export const initialExecutionTab = (): RowNav => ({ scroll: 0 });
 
 export type ProjectSubPage = 'progress' | 'tickets' | 'tree' | 'docs';
-export type ProjectView = { kind: 'projects-list' } | { kind: 'hub' }
+export type ProjectView = { kind: 'projects-list'; from?: 'execution' } | { kind: 'hub' }
   | { kind: 'progress' }
   | { kind: 'tickets' } | { kind: 'tree' } | { kind: 'docs' } | { kind: 'waiting'; index: number; request: string };
 export interface ProjectTabState {
@@ -178,10 +178,9 @@ export function transitionTab(state: MonitorState, activeTab: MainTab): MonitorS
 
 export function switchProject(state: MonitorState, selectedProject?: string): MonitorState {
   if (selectedProject === state.selectedProject) return state;
-  const { view, nav } = state.project;
+  const { view } = state.project;
   return { ...state, selectedProject, overlay: state.overlay?.kind === 'control-harness-add' ? state.overlay : undefined,
-    project: { ...initialProjectTab(), view,
-      nav: emptyNav(nav.cursor === 'project:switch' ? nav.cursor : undefined) },
+    project: { ...initialProjectTab(), view, nav: emptyNav() },
     execution: emptyNav(),
     control: { ...state.control, roles: initialControlView('roles'), notice: undefined } };
 }

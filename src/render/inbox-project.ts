@@ -67,7 +67,7 @@ function stateNotes(data: ProjectSnapshot, width: number): MonitorRow[] {
 export function projectOverviewRows(
   data: ProjectSnapshot, state: MonitorState, width: number, now: number, name: string, projects: ProjectChoice[],
 ): MonitorRow[] {
-  const many = projects.length > 1, at = Math.max(0, projects.findIndex((p) => p.root === state.selectedProject));
+  const many = projects.length > 1;
   const record = data.objectives, stance = record && record.stance !== 'unknown' ? t(record.stance) : '';
   const priority = record && record.priority !== 'normal' ? t('{priority} priority', { priority: t(record.priority) }) : '';
   const age = compactAge(Math.max(data.updatedAt ?? -Infinity, data.objectivesAt ?? -Infinity), now);
@@ -76,8 +76,8 @@ export function projectOverviewRows(
   while (visualLength(identity.join(' · ')) + 2 > width && identity.length) identity.shift();
   if (stance && identity.includes(stance)) identity.unshift(identity.pop()!);
   const title = truncateAnsi(monitorText(name), width < 50 ? 14 : width < 80 ? 18 : 24) || t('Project');
-  return [plain('', width),
-    { ...section(theme.board.title(title), width, many ? `${mark('▾', 'v')} ${t('project')} ${at + 1}/${projects.length}` : ''), ...(many ? { item: 'project:switch' } : {}) },
+  // With multiple projects, the resident project strip under the tabs replaces the folded picker header.
+  return [...(many ? [] : [plain('', width), section(theme.board.title(title), width)]),
     ...(identity.length ? [plain(`  ${muted(identity.join(' · '))}`, width)] : []),
     ...requestRows(data, state, width, now), ...(!record ? stateNotes(data, width) : []), ...objectiveRows(data, width, now, state.project.folded.has('unlinked:more')),
     ...detailRows(data, width, now)];
