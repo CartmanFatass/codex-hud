@@ -72,6 +72,7 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   {
     key: 'dockMode', group: 'Panel', label: 'Dock mode', values: ['overlay', 'push'],
     help: 'Overlay keeps the main pane width; Push makes room for the dock',
+    format: (value) => value === 'push' ? 'dock: push' : String(value),
   },
   {
     key: 'notify',

@@ -533,7 +533,7 @@ const ZH: Record<string, string> = {
   'Requested width of the herdr dock': 'herdr 停靠面板的目标宽度',
   'Dock mode': '停靠模式',
   overlay: '覆盖',
-  push: '挤占',
+  'dock: push': '挤占',
   'Overlay keeps the main pane width; Push makes room for the dock': '覆盖保留主窗格宽度；挤占会缩小主窗格',
   'Saved; could not update the dock': '已保存；无法更新当前停靠面板',
   '{n} cols': '{n} 列',
@@ -832,6 +832,7 @@ const EN_OVERRIDES: Record<string, string> = {
   // Setting values whose stored form is not a word in either language.
   en: 'English',
   zh: '中文',
+  'dock: push': 'push',
   // Schedule names the unit in its heading; Chinese uses a classifier on the fold row.
   '{n} more items': '{n} more',
   // Chinese words a batch's unstarted items apart from requests that wait for the owner.
