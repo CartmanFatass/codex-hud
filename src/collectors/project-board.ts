@@ -18,7 +18,6 @@ import { collectControlJobStats, jobSettledAt, type ControlJobStats } from './jo
 import { epoch } from '../roles/job-usage.js';
 import { targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
 import { readOpenHolds } from '../unattended/state.js';
-import { sharedRoot } from '../roles/projects.js';
 import { TryLog } from './try-records.js';
 import { SETTLED_JOB_STATES, TicketRollup, ticketIds, ticketJobState } from './ticket-rollup.js';
 import { readActiveLeases, stripJobPrefix, type LeaseRecord } from './thin-jobs.js';
@@ -469,12 +468,18 @@ export class ProjectCollector {
     return dates;
   }
 
-  /** Read the loose/detached HEAD or the shared ref of a linked checkout without starting Git. */
-  private probeGitRefs() {
+  private gitDirs() {
     const dot = join(this.cwd, '.git');
     const pointer = fs.lstatSync(dot, { throwIfNoEntry: false })?.isFile() && this.read(dot)?.text.match(/^gitdir: (.+)\s*$/)?.[1];
     const dir = pointer ? resolve(this.cwd, pointer.trim()) : dot;
     const common = pointer ? resolve(dir, this.read(join(dir, 'commondir'))?.text.trim() ?? '.') : dir;
+    const root = pointer && basename(common) === '.git' ? canonicalPath(resolve(common, '..')) : canonicalPath(this.cwd);
+    return { dir, common, root };
+  }
+
+  /** Read the loose/detached HEAD or the shared ref of a linked checkout without starting Git. */
+  private probeGitRefs() {
+    const { dir, common, root } = this.gitDirs();
     const trees = join(common, 'worktrees'), branches: string[] = [];
     for (const name of this.names(trees, 64)) {
       const branch = this.read(join(trees, name, 'HEAD'))?.text.trim().match(/^ref: refs\/heads\/wt\/(.+)$/)?.[1];
@@ -492,7 +497,7 @@ export class ProjectCollector {
         if (!sha && packed?.truncated) packedKey = `${ref}:${this.cache.get(path)?.stamp}`;
       }
     }
-    return { sha, branches, packedKey, stamp: `${sha}\0${packedKey ?? ''}\0${branches.join('\0')}` };
+    return { sha, branches, packedKey, root, stamp: `${sha}\0${packedKey ?? ''}\0${branches.join('\0')}` };
   }
 
   private async landedTickets(rollup: TicketRollup, refs = this.probeGitRefs()) {
@@ -675,8 +680,9 @@ export class ProjectCollector {
     const rollup = new TicketRollup(out.tickets);
     if (shown !== 'overview') this.joinJobs(out, board, home, shown === 'export', rollup, jobsProbe?.jobs);
     if (jobsProbe?.complete && !out.active.some(({ state }) => state !== 'queued')) out.idle = true;
-    const landedInfo = shown !== 'overview' && out.tickets.length ? await this.landedTickets(rollup, gitRefs) : undefined;
-    const heldTickets = out.tickets.length ? new Set(readOpenHolds(this.hudHome, sharedRoot(this.cwd)).flatMap(h => h.ticket ? [targetKey(h.ticket)] : [])) : undefined;
+    const refs = shown !== 'overview' && out.tickets.length ? (gitRefs ?? this.probeGitRefs()) : undefined;
+    const landedInfo = refs ? await this.landedTickets(rollup, refs) : undefined;
+    const heldTickets = out.tickets.length ? new Set(readOpenHolds(this.hudHome, refs?.root ?? this.gitDirs().root).flatMap(h => h.ticket ? [targetKey(h.ticket)] : [])) : undefined;
     const { totals, visible, rows, marks } = rollup.derive(now, landedInfo?.ids, landedInfo?.commits, (rows) => this.tries.marks(this.cwd, rows, true), heldTickets?.size ? heldTickets : undefined);
     const active = new Map(out.active.map((job) => [job.jobId, job]));
     const ticketJobs = new Map(out.tickets.flatMap(({ slug, tickets }) => tickets.map((t) => [targetKey(`${slug}/${t.number}`), t.job?.id] as const)));

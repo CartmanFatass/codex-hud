@@ -1377,7 +1377,7 @@ export async function driveTicketQueue(id: string) {
     read: () => readTicketQueue(hudHome, id)!,
     header: q => q as TicketQueue & Run,
     save: q => {
-      if (q.state === 'paused' && !Object.values(q.steps ?? {}).some(c => c.state === 'asking')) {
+      if (q.state === 'paused' && !Object.values(q.steps ?? {}).some(c => c.state === 'asking') && (!q.handback || state.problem)) {
         settleTicketHandback(q, state.problem ?? { kind: 'queue', reason: q.reason ?? 'ticket queue error' });
       } else if (q.state === 'completed') {
         q.queued = undefined;
