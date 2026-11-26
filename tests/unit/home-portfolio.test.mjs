@@ -68,21 +68,22 @@ async function design(t) {
   return { ...f, homePortfolio, draw, tick };
 }
 
-test('design Home at 40, 50 and 80 columns: cell-exact in EN/ZH across icon sets and themes', async (t) => {
+test('design Home at 40, 62 and 80 columns: cell-exact in EN/ZH across icon sets and themes, no bars or unlinked', async (t) => {
   const f = await design(t);
   const { item } = f.homePortfolio.requests[0];
   assert.match(item.value, /^2026-11-23 r1 .* · Per-key rate limits.*\(work waits\)$/);
   assert.equal(item.sentence, 'Pick the default burst size: 20 or 60 requests per second? Main cannot ship the quota headers until it is chosen.');
-  for (const [icons, blocked, paused, gone, note, bars, dots] of [
-    ['unicode', '?', '‖', '✗', '¶', '█', '╌'], ['nerd', '\uF059', '\uF28B', '\uF057', '\uF249', '█', '╌'],
-    ['text', '?', '=', 'x', '.', '#', '.'],
-  ]) for (const width of [40, 50, 80]) for (const lang of ['en', 'zh']) {
+  for (const [icons, goalMark, ask, gone, note, doneMark] of [
+    ['unicode', '▸', '?', '✗', '¶', '✓'], ['nerd', '▸', '\uF059', '\uF057', '\uF249', '\uF058'],
+    ['text', '>', '?', 'x', '.', '+'],
+  ]) for (const width of [40, 62, 80]) for (const lang of ['en', 'zh']) {
     const prev = setDisplayConfig({ theme: 'mocha', icons }), prevLang = setLanguage(lang);
     try {
       const frame = f.draw(width, 40), rows = frame.workboard.rows, reqs = frame.workboard.requests ?? [];
-      const text = plain(frame), goal = (id) => rows.find((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.objective.id === id).text;
+      const text = plain(frame), goal = (id) => rows.find((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.objective.id === id)?.text;
       assert.ok([...frame.lines, ...rows.map((r) => r.text), ...reqs.map((r) => r.text)].every((line) => visualLength(line) === width));
       assert.match(text, lang === 'en' ? /Home \?1/ : /首页 \?1/);
+      assert.match(stripAnsi(rows[0].text), lang === 'en' ? /^Active today [─-]+ 2$/ : /^今日活跃项目 [─-]+ 2$/);
       const [head, ...body] = reqs.filter((r) => r.item?.startsWith('home:wait:')).map((r) => stripAnsi(r.text).trimEnd());
       assert.match(head, lang === 'en' ? /harbor-api . rate-limits .*work waits 1d$/ : /harbor-api . rate-limits .*在等你 1天$/);
       if (width === 80) {
@@ -92,24 +93,31 @@ test('design Home at 40, 50 and 80 columns: cell-exact in EN/ZH across icon sets
         assert.equal(body.length, 1, 'sentence sits on a second row cut to one row when < 24 cells remain');
         assert.match(body[0], /^  Pick the default burst size:.*…$/);
       }
-      const rate = goal('rate-limits'), quill = goal('docs-site');
-      assert.ok(stripAnsi(rate).startsWith(`  ${blocked} rate-limits`));
-      assert.ok(rate.includes(theme.board.attention(blocked)));
-      assert.match(stripAnsi(rate), /\b4\/8\b/);
-      assert.ok(rate.includes(bars));
-      assert.equal(stripAnsi(rate).includes(lang === 'en' ? 'blocked' : '受阻'), width >= 50);
-      assert.equal(stripAnsi(rate).includes('Per-key rate limits'), width >= 80);
-      assert.equal(stripAnsi(rate).includes(lang === 'en' ? '4/8 tickets' : '4/8 工单'), width >= 56);
-      assert.ok(stripAnsi(quill).startsWith(`  ${paused} docs-site`));
-      const [filled] = stripAnsi(quill).match(/[█#]+/);
-      assert.ok(quill.includes(theme.board.muted(filled)), 'paused progress is grey');
-      assert.ok(!quill.includes(theme.board.success(filled)));
-      assert.match(stripAnsi(quill), /\b2\/3\b/);
-      assert.ok(stripAnsi(goal('tokenizers')).includes(dots.repeat(4)));
+      // Header mark shows `?` when an open request exists, plus role load.
+      const harborHead = rows.find((r) => r.item === `home:project:${f.roots.harbor}`).text;
+      assert.ok(stripAnsi(harborHead).startsWith(`${ask} harbor-api`));
+      assert.ok(harborHead.includes(theme.board.attention(ask)));
+      // Current goal shows `▸ id (+N)  title` at 40, 62 and 80 columns, never hidden below 80.
+      const rate = goal('rate-limits'), quill = goal('docs-site'), lab = goal('tokenizers');
+      assert.ok(stripAnsi(rate).startsWith(`  ${goalMark} rate-limits (+1)  Per-key rate`), stripAnsi(rate));
+      assert.ok(rate.includes(theme.board.attention(goalMark)));
+      assert.ok(stripAnsi(lab).startsWith(`  ${goalMark} tokenizers  Compare`), stripAnsi(lab));
+      assert.ok(!stripAnsi(lab).includes('(+'));
+      assert.ok(stripAnsi(quill).startsWith(`  ${goalMark} docs-site  Rebuild`), stripAnsi(quill));
+      assert.ok(quill.includes(theme.board.muted('docs-site')));
+      // Each active project has at most 3 rows (header + goal + optional result).
+      const harborIdx = rows.findIndex((r) => r.item === `home:project:${f.roots.harbor}`);
+      const labIdx = rows.findIndex((r) => r.item === `home:project:${f.roots.lab}`);
+      assert.equal(labIdx - harborIdx, 3, 'harbor-api: header + goal + recent result');
+      // No ticket bars, done/total counts, home:more or home:unlinked rows on Home.
+      assert.doesNotMatch(text, /[█▒░╌#]|\b\d+\/\d+\b|Unlinked|未归入目标|done\/tickets|完成\/工单|Recent advice|近期建议/);
+      assert.ok(!rows.some((r) => r.item?.startsWith('home:more:') || r.item?.startsWith('home:unlinked:')));
       assert.ok(text.includes(`  ${note} Prototype the capture overlay`));
       assert.ok(text.includes(`${gone} old-mill`));
       assert.match(text, lang === 'en' ? /old-mill .+ unavailable/ : /old-mill .+ 不可用/);
-      assert.match(text, lang === 'en' ? /Token-bucket core shipped;.*4h/ : /Token-bucket core shipped;.*4时/);
+      const resultRow = rows.find((r) => r.item === `home:result:${f.roots.harbor}:rate-limits`).text;
+      assert.ok(stripAnsi(resultRow).startsWith(`  ${doneMark} Token-bucket core shipped;`), stripAnsi(resultRow));
+      assert.match(stripAnsi(resultRow), lang === 'en' ? /4h$/ : /4时$/);
       assert.doesNotMatch(text, /Two of three tokenizers measured|All clients on v2|v1 removed|Pick the colour palette|This pane|当前窗格/);
       setDisplayConfig({ theme: 'none' });
       const noColour = f.draw(width, 40);
@@ -126,7 +134,7 @@ test('Home folds three quiet registrations behind one row after two active proje
   const portfolio = await f.tick(), otherRoots = [sketch, quill, mill];
   const decoder = new WorkbenchInputDecoder('workboard');
   const press = (frame, ch) => handleMonitorInput(frame.state, decoder.push(Buffer.from(ch))[0], { frame }).state;
-  for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
+  for (const width of [40, 62, 80]) for (const lang of ['en', 'zh']) {
     const prev = setLanguage(lang);
     try {
       const draw = (state = initialMonitorState()) => f.draw(width, 40, portfolio, state);
@@ -138,13 +146,14 @@ test('Home folds three quiet registrations behind one row after two active proje
         if (open) assert.ok(toggleAt < rows.indexOf(projects[2]));
         else assert.ok(rows.slice(toggleAt + 1).every(row => !row.item), 'only summary rows follow the folded project list');
         assert.equal(rows.filter((r) => r.item === toggle.item).length, 1);
-        const label = lang === 'en' ? '3 other projects' : '其他 3 个项目';
-        assert.ok(stripAnsi(toggle.text).startsWith(label));
+        const glyph = open ? '▾' : '▸';
+        const label = lang === 'en' ? `${glyph} 3 other projects` : `${glyph} 3 个其他项目`;
+        assert.ok(stripAnsi(toggle.text).startsWith(label), stripAnsi(toggle.text));
         const hint = lang === 'en' ? open ? 'a fold' : 'a expand' : open ? 'a 折叠' : 'a 展开';
         assert.ok(stripAnsi(toggle.text).endsWith(hint));
         if (frame.state.home.cursor === toggle.item) assert.ok(stripAnsi(frame.lines.at(-1)).includes(hint));
         assert.ok([...frame.lines, ...rows.map((r) => r.text)].every((line) => visualLength(line) === width));
-        assert.equal((frame.workboard.requests ?? []).filter((r) => r.item?.startsWith('home:wait:')).length, width === 40 ? 2 : 1);
+        assert.equal((frame.workboard.requests ?? []).filter((r) => r.item?.startsWith('home:wait:')).length, width === 80 ? 1 : 2);
       };
       const collapsed = draw();
       check(collapsed, false);
@@ -329,15 +338,17 @@ test('Home puts blocked and live Objectives ahead of idle work, with paused Obje
   run(2, { feature: 'service', unattended: { objective: 'service' } });
   run(3, { root: f.own, feature: 'idle' });
   const portfolio = await f.tick();
-  assert.deepEqual(objectiveIds(f.rows(portfolio)), ['blocked', 'running'], 'blocked beats live; live ties keep file order');
-  for (const id of live) assert.deepEqual(objectiveIds(f.rows(portfolio, 'idle', 'paused', id)), [id, 'idle'], id);
+  const full = f.rows(portfolio);
+  assert.deepEqual(objectiveIds(full), ['blocked'], 'one current goal per project: blocked beats live');
+  assert.match(stripAnsi(full.find((r) => r.item === `home:objective:${root}:blocked`).text), /blocked \(\+6\)/);
+  for (const id of live) assert.deepEqual(objectiveIds(f.rows(portfolio, 'idle', 'paused', id)), [id], id);
   run(1, { feature: 'queue', state: 'paused' });
   run(2, { feature: 'service', unattended: { objective: 'service' }, state: 'completed' });
   const settled = await f.tick();
-  for (const id of ['queue', 'service']) assert.deepEqual(objectiveIds(f.rows(settled, 'idle', id)), ['idle', id]);
+  for (const id of ['queue', 'service']) assert.deepEqual(objectiveIds(f.rows(settled, 'idle', id)), ['idle']);
 });
 
-test('Home ranks idle Objectives by the latest snapshot activity and excludes complete ticket sets from the fold', async (t) => {
+test('Home ranks idle Objectives by the latest snapshot activity and excludes complete ticket sets from the (+N) count', async (t) => {
   const f = objectiveFixture(t), { root } = f;
   f.goals([['complete', 'closed, dropped', 'active', 'The sample shipped.'], ['stale'], ['changed', 'stale, changed'],
     ['tie'], ['landed'], ['result', 'result', 'active', 'The sample passed.'], ['unknown', 'closed, missing'], ['study', ''], ['partial']]);
@@ -360,18 +371,19 @@ test('Home ranks idle Objectives by the latest snapshot activity and excludes co
     for (const [key, original] of Object.entries(originals)) fs[key] = (...args) => { calls.push(key); return original(...args); };
     syncBuiltinESMExports();
     const rows = f.rows(portfolio);
-    assert.deepEqual(objectiveIds(rows), ['result', 'landed']);
-    assert.match(stripAnsi(rows.find((r) => r.item === `home:more:${root}`).text), /6 more/);
-    assert.deepEqual(objectiveIds(f.rows(portfolio, 'landed', 'changed', 'tie')), ['landed', 'changed']);
-    assert.deepEqual(objectiveIds(f.rows(portfolio, 'stale', 'changed', 'tie')), ['changed', 'tie']);
+    assert.deepEqual(objectiveIds(rows), ['result']);
+    assert.match(stripAnsi(rows.find((r) => r.item === `home:objective:${root}:result`).text), /result \(\+7\)/);
+    assert.ok(!rows.some((r) => r.item === `home:more:${root}`));
+    assert.deepEqual(objectiveIds(f.rows(portfolio, 'landed', 'changed', 'tie')), ['landed']);
+    assert.deepEqual(objectiveIds(f.rows(portfolio, 'stale', 'changed', 'tie')), ['changed']);
     assert.deepEqual(objectiveIds(f.rows(portfolio, 'complete', 'partial')), ['partial']);
     const scarce = f.rows(portfolio, 'complete', 'unknown', 'study');
-    assert.deepEqual(objectiveIds(scarce), ['unknown', 'study'], 'unread links and ticketless studies are not complete');
-    assert.ok(!scarce.some((r) => r.item === `home:more:${root}`));
+    assert.deepEqual(objectiveIds(scarce), ['unknown'], 'unread links and ticketless studies are not complete');
+    assert.match(stripAnsi(scarce.find((r) => r.item === `home:objective:${root}:unknown`).text), /unknown \(\+1\)/);
     const one = f.rows(portfolio, 'complete', 'study');
     assert.deepEqual(objectiveIds(one), ['study']);
+    assert.ok(!stripAnsi(one.find((r) => r.item === `home:objective:${root}:study`).text).includes('(+'));
     assert.ok(one.some((r) => r.item === `home:result:${root}:complete`));
-    assert.ok(!one.some((r) => r.item === `home:more:${root}`));
     assert.deepEqual(calls, [], 'painting from the collected snapshot does not touch disk');
   } finally { Object.assign(fs, originals); syncBuiltinESMExports(); }
   const projectFrame = renderMonitor({ state: { ...initialMonitorState(), activeTab: 'project' }, width: 80, height: 40, nowMs,
@@ -379,7 +391,7 @@ test('Home ranks idle Objectives by the latest snapshot activity and excludes co
   assert.ok(projectFrame.workboard.rows.some((r) => r.item === `project:objective:${root}:complete`));
 });
 
-test('Home shows both fresh done Objectives with full green bars, but no expired or undated ones', async (t) => {
+test('Home shows newest fresh done Objective as one goal + result line, excluding expired or undated ones', async (t) => {
   const f = await design(t), root = f.roots.lantern;
   const path = join(root, '.hud/objectives.md'), events = join(f.home, 'events/2026-11.jsonl');
   const done = [['shipped', 'Migration shipped.', 4], ['verified', 'Clients verified.', 2],
@@ -389,31 +401,30 @@ test('Home shows both fresh done Objectives with full green bars, but no expired
     v: 1, kind: 'objective', project: root, id, change: 'result', at: new Date(NOW - hours * 3600e3).toISOString(), result,
   })).join('\n') + '\n');
   const portfolio = await f.tick();
-  const projectRows = (frame, kind) => frame.workboard.rows.filter((r) => r.item?.startsWith(`home:${kind}:${root}:`));
-  for (const width of [40, 80]) for (const lang of ['en', 'zh']) {
+  const projectRowsOf = (frame, kind) => frame.workboard.rows.filter((r) => r.item?.startsWith(`home:${kind}:${root}:`));
+  for (const width of [40, 62, 80]) for (const lang of ['en', 'zh']) {
     const prev = setDisplayConfig({ theme: 'mocha', icons: 'unicode' }), prevLang = setLanguage(lang);
     try {
-      const frame = f.draw(width, 40, portfolio), goals = projectRows(frame, 'objective'), results = projectRows(frame, 'result');
+      const frame = f.draw(width, 40, portfolio), goals = projectRowsOf(frame, 'objective'), results = projectRowsOf(frame, 'result');
       assert.ok([...frame.lines, ...frame.workboard.rows.map((r) => r.text)].every((line) => visualLength(line) === width));
-      assert.deepEqual(goals.map((r) => r.objectiveTarget.objective.id), ['shipped', 'verified']);
-      assert.deepEqual(results.map((r) => r.objectiveTarget.objective.id), ['shipped', 'verified']);
-      for (const [i, goal] of goals.entries()) {
-        const [id, result, hours] = done[i];
-        assert.match(stripAnsi(goal.text), new RegExp(`^  ✓ ${id} `));
-        const full = '█'.repeat(width === 40 ? 18 : 16);
-        assert.ok(goal.text.includes(theme.board.success(full)), 'the entire track uses the success ink');
-        assert.equal(stripAnsi(results[i].text).trim().replace(/ +/g, ' '), `✓ ${result} ${hours}${lang === 'en' ? 'h' : '时'}`);
-      }
+      assert.deepEqual(goals.map((r) => r.objectiveTarget.objective.id), ['verified']);
+      assert.deepEqual(results.map((r) => r.objectiveTarget.objective.id), ['verified']);
+      assert.match(stripAnsi(goals[0].text), /^  ▸ verified \(\+1\)  Clients/);
+      assert.ok(goals[0].text.includes(theme.board.success('▸')));
+      assert.doesNotMatch(stripAnsi(goals[0].text), /[█#]/, 'no progress bars on Home');
+      assert.equal(stripAnsi(results[0].text).trim().replace(/ +/g, ' '), `✓ Clients verified. 2${lang === 'en' ? 'h' : '时'}`);
       assert.ok(!frame.workboard.rows.some((r) => r.item === `home:more:${root}`));
     } finally { setLanguage(prevLang); setDisplayConfig(prev); }
   }
   fs.appendFileSync(path, '\n## follow-up: Follow up\n**State:** active\n');
-  const capped = f.draw(40, 40, await f.tick());
-  assert.deepEqual(projectRows(capped, 'objective').map((r) => r.objectiveTarget.objective.id), ['follow-up', 'shipped']);
-  assert.ok(capped.workboard.rows.some((r) => r.item === `home:more:${root}` && /1 more|另 1 个/.test(r.text)));
+  const capped = f.draw(62, 40, await f.tick());
+  assert.deepEqual(projectRowsOf(capped, 'objective').map((r) => r.objectiveTarget.objective.id), ['follow-up']);
+  assert.match(stripAnsi(projectRowsOf(capped, 'objective')[0].text), /follow-up \(\+2\)  Follow up/);
+  // Current goal has no recent result, so the project's newest recent result (verified) still appears.
+  assert.deepEqual(projectRowsOf(capped, 'result').map((r) => r.objectiveTarget.objective.id), ['verified']);
 });
 
-test('a 27-row panel keeps request prose and one row for each of 17 registrations', async (t) => {
+test('a 27-row panel keeps request prose and one header row per registration with no bars or counts', async (t) => {
   const f = await design(t);
   const extra = Array.from({ length: 11 }, (_, i) => join(f.dir, `study-${i}`));
   for (const root of extra) fs.mkdirSync(root);
@@ -426,56 +437,34 @@ test('a 27-row panel keeps request prose and one row for each of 17 registration
   assert.equal(projects.length, 17);
   assert.equal(frame.workboard.requests?.length, 2, 'pinned request keeps its sentence row at 40 cols');
   assert.equal(rows.length, 19, 'one heading, seventeen project rows and the fold row');
-  assert.match(stripAnsi(projects[0].text), /8\/14/);
+  assert.doesNotMatch(stripAnsi(projects[0].text), /[█▒░╌#]|\d+\/\d+/);
   const tiny = f.draw(40, 6, portfolio);
   assert.deepEqual(tiny.workboard.rows, rows, 'below the minimum the same rows stay scrollable');
 });
 
-test('density drops separators, then results, then the second Objective with an updated more count', async (t) => {
+test('density drops results, then goal and note rows down to header-only rows', async (t) => {
   const f = await design(t);
-  fs.appendFileSync(join(f.roots.harbor, '.hud/objectives.md'), '\n## follow-up: Follow up\n**State:** paused\n');
   const portfolio = await f.tick();
-  for (const [height, blanks, result, objectives, more] of [[23, 4, true, 2, 1], [19, 0, true, 2, 1],
-    [18, 0, false, 2, 1], [17, 0, false, 1, 2], [16, 0, false, 0, 0]]) {
+  // Expanded fixture: 1 heading + 6 headers + 4 goal/note rows + 1 result + 1 fold = 13 rows; + 2 chrome + 2 request rows = 17 height.
+  for (const [height, result, objectives] of [[17, true, 1], [16, false, 1], [15, false, 0]]) {
     const rows = f.draw(40, height, portfolio).workboard.rows;
-    assert.equal(rows.filter((r) => !r.text.trim()).length, blanks);
-    assert.equal(rows.some((r) => r.item?.startsWith('home:result:')), result);
-    assert.equal(rows.filter((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.root === f.roots.harbor).length, objectives);
-    assert.equal(rows.find((r) => r.item === `home:more:${f.roots.harbor}`)?.text.includes(`${more} more`) ?? false, more > 0);
+    assert.equal(rows.some((r) => r.item?.startsWith('home:result:')), result, `height ${height}`);
+    assert.equal(rows.filter((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.root === f.roots.harbor).length, objectives, `height ${height}`);
   }
 });
 
-test('Home bars exclude dropped tickets and omit figures for unread linked features', async (t) => {
+test('Home header shows running and queued role load while omitting ticket bars and counts', async (t) => {
   const f = await design(t), root = f.roots.harbor;
-  fs.writeFileSync(join(root, '.scratch/rate-limit-core/issues/06-drop.md'), '# 06: Dropped\n**Status:** dropped\n**Blocked by:** none\n');
   const job = join(f.home, 'jobs/j0000000000000003');
   fs.mkdirSync(job, { recursive: true });
   fs.writeFileSync(join(job, 'job.json'), JSON.stringify({ role: 'reviewer', cwd: root }));
   fs.writeFileSync(join(job, 'STATUS.json'), JSON.stringify({ state: 'queued' }));
   const prev = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   try {
-    const rows = async () => f.draw(40, 40, await f.tick()).workboard.rows;
-    const rate = (rows) => rows.find((r) => r.item === `home:objective:${root}:rate-limits`).text;
-    const known = await rows();
-    assert.match(rate(known), /4\/8/);
-    assert.match(known.find((r) => r.item === `home:project:${root}`).text, /⚒1 ⚖1 ◷⚖1/);
-    const path = join(root, '.hud/objectives.md'), original = fs.readFileSync(path, 'utf8');
-    fs.writeFileSync(path, original.replace('quota-headers', 'unread-feature'));
-    assert.doesNotMatch(rate(await rows()), /[█▒░╌]|\d\/\d/);
-    fs.writeFileSync(path, original);
-    const truncated = join(root, '.scratch/rate-limit-core/issues/07-partial.md');
-    fs.writeFileSync(truncated, 'x'.repeat(66_000));
-    assert.doesNotMatch(rate(await rows()), /[█▒░╌]|\d\/\d/);
-    fs.rmSync(truncated);
-    // A finished feature outside the Tickets page preview still belongs to its Objective.
-    for (const slug of ['archived-work', ...Array.from({ length: 16 }, (_, i) => `other-${i}`)]) {
-      const issue = join(root, '.scratch', slug, 'issues/01-done.md');
-      fs.mkdirSync(join(issue, '..'), { recursive: true });
-      fs.writeFileSync(issue, '# 01: Finished\n**Status:** done\n**Blocked by:** none\n');
-      if (slug === 'archived-work') fs.utimesSync(issue, new Date(NOW - 30 * 86_400_000), new Date(NOW - 30 * 86_400_000));
-    }
-    fs.writeFileSync(path, original.replace('quota-headers', 'quota-headers, archived-work'));
-    assert.match(rate(await rows()), /5\/9/);
+    const rows = f.draw(40, 40, await f.tick()).workboard.rows;
+    const rate = rows.find((r) => r.item === `home:objective:${root}:rate-limits`).text;
+    assert.match(rows.find((r) => r.item === `home:project:${root}`).text, /⚒1 ⚖1 ◷⚖1/);
+    assert.doesNotMatch(rate, /[█▒░╌]|\d+\/\d+/);
   } finally { setDisplayConfig(prev); }
 });
 
@@ -501,69 +490,36 @@ async function unlinkedWork(t) {
   feature('advisor', ['done'], 6);
   job('j00000000000000a1', { role: 'imp', ticket: 'council/01' }, 'working');
   job('j00000000000000a2', { role: 'oracle', package: 'advisor' }, 'queued');
-  const rowOf = (rows) => rows.find((r) => r.item === `home:unlinked:${root}`);
-  return { ...f, root, feature, job, rowOf };
+  return { ...f, root, feature, job };
 }
 
-test('work no Objective lists shows on one Home row, live features first, and leaves once listed', async (t) => {
-  const f = await unlinkedWork(t), { root } = f;
-  // Open work in a project without an Objective record is not "unlinked".
-  const sketch = join(f.roots.sketch, '.scratch/loose/issues/01-demo.md');
-  fs.mkdirSync(join(sketch, '..'), { recursive: true });
-  fs.writeFileSync(sketch, '# 01: Sample\n**Status:** ready-for-agent\n**Blocked by:** none\n');
-  const prev = setDisplayConfig({ theme: 'none', icons: 'unicode' });
-  try {
-    const portfolio = await f.tick(), frame = f.draw(80, 40, portfolio);
-    const rows = frame.workboard.rows, row = f.rowOf(rows);
-    assert.equal(row.text.trimEnd(), '  ◌ Unlinked: council 1/1 · advisor 1/1 · workflow 1/7 · pi-worker 1/5');
-    assert.deepEqual(rows.filter((r) => r.item?.startsWith('home:unlinked:')), [row]);
-    const objectives = rows.filter((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.root === root);
-    assert.ok(rows.indexOf(row) > rows.indexOf(objectives.at(-1)));
-    assert.ok(rows.indexOf(row) < rows.findIndex((r) => r.item?.startsWith('home:project:') && r.homeTarget.root !== root));
-    const { state } = handleMonitorInput({ ...frame.state, home: { ...frame.state.home, cursor: row.item } },
-      { type: 'key', key: 'enter' }, { frame });
-    assert.equal(state.activeTab, 'project');
-    // An incompletely read feature keeps its name without a figure.
-    fs.writeFileSync(join(root, '.scratch/workflow/issues/08-partial.md'), 'x'.repeat(66_000));
-    assert.match(f.rowOf(f.draw(80, 40, await f.tick()).workboard.rows).text, /advisor 1\/1 · workflow · pi-worker 1\/5/);
-    fs.appendFileSync(join(root, '.hud/objectives.md'), '\n## loose: Listed now\n**State:** done\n**Features:** workflow, pi-worker, council, advisor\n');
-    const linked = await f.tick();
-    assert.deepEqual(linked.projects.find((p) => p.root === root).snapshot.unlinked, []);
-    assert.ok(!f.draw(80, 40, linked).workboard.rows.some((r) => r.item?.startsWith('home:unlinked:')));
-  } finally { setDisplayConfig(prev); }
-});
-
-test('the unlinked row keeps exact width in EN and ZH and folds before any Objective row', async (t) => {
-  const f = await unlinkedWork(t), portfolio = await f.tick();
-  for (const icons of ['unicode', 'nerd', 'text']) for (const lang of ['en', 'zh']) for (const width of [40, 50, 80]) {
-    const prev = setDisplayConfig({ theme: 'mocha', icons }), prevLang = setLanguage(lang);
+test('Home never renders Unlinked rows even when unlinked features exist', async (t) => {
+  const f = await unlinkedWork(t);
+  const portfolio = await f.tick();
+  assert.ok(portfolio.projects.find((p) => p.root === f.root).snapshot.unlinked.length > 0);
+  for (const lang of ['en', 'zh']) for (const width of [40, 62, 80]) {
+    const prev = setDisplayConfig({ theme: 'none', icons: 'unicode' }), prevLang = setLanguage(lang);
     try {
-      const frame = f.draw(width, 60, portfolio), row = f.rowOf(frame.workboard.rows);
-      assert.ok([...frame.lines, row.text].every((line) => visualLength(line) === width));
-      const text = stripAnsi(row.text).trimEnd(), shown = { 40: 1, 50: 2, 80: 4 }[width];
-      assert.match(text, lang === 'en' ? / Unlinked: council 1\/1/ : / 未归入目标: council 1\/1/);
-      assert.equal(text.match(/\d\/\d/g).length, shown, text);
-      assert.equal(text.endsWith(` +${4 - shown}`), shown < 4, text);
+      const frame = f.draw(width, 40, portfolio);
+      assert.ok(!frame.workboard.rows.some((r) => r.item?.startsWith('home:unlinked:')));
+      assert.doesNotMatch(plain(frame), /Unlinked|未归入目标/);
     } finally { setLanguage(prevLang); setDisplayConfig(prev); }
   }
-  const seen = [];
-  for (let height = 60; height >= 14; height--) {
-    const rows = f.draw(40, height, portfolio).workboard.rows;
-    seen.push({ unlinked: !!f.rowOf(rows), results: rows.some((r) => r.item?.startsWith('home:result:')),
-      objectives: rows.filter((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.root === f.root).length });
+});
+
+test('Home places the unattended status line above pinned requests and projects', async (t) => {
+  const f = await design(t);
+  const portfolio = { ...f.homePortfolio, unattended: { objectives: ['rate-limits'], running: 1, handbacks: 0 } };
+  for (const lang of ['en', 'zh']) for (const width of [40, 62, 80]) {
+    const prev = setDisplayConfig({ theme: 'none', icons: 'unicode' }), prevLang = setLanguage(lang);
+    try {
+      const frame = f.draw(width, 30, portfolio, initialMonitorState());
+      assert.ok(frame.lines.every((line) => visualLength(line) === width));
+      assert.match(frame.lines[1], lang === 'en' ? /^Unatt/ : /^(?:无人值守|值守)/);
+      assert.match(frame.lines[2], /^\? harbor-api/);
+      assert.match(frame.lines[width === 80 ? 3 : 4], lang === 'en' ? /^Active today / : /^今日活跃项目 /);
+    } finally { setLanguage(prevLang); setDisplayConfig(prev); }
   }
-  assert.ok(seen[0].unlinked);
-  assert.ok(seen.every((s) => !s.unlinked || s.objectives === 2), 'never shown while an Objective row is folded');
-  assert.ok(seen.some((s) => s.unlinked && !s.results), 'results fold first');
-  assert.ok(seen.some((s) => !s.unlinked && s.objectives === 2), 'then the row, before any Objective');
-  // One long slug is cut; its count and the number left over stay.
-  const slug = 'synthetic-feature-with-a-very-long-name';
-  f.feature(slug, ['ready-for-agent'], 0);
-  f.job('j00000000000000a3', { role: 'imp', ticket: `${slug}/01` }, 'working');
-  const prev = setDisplayConfig({ theme: 'none', icons: 'unicode' });
-  try {
-    assert.match(f.rowOf(f.draw(40, 60, await f.tick()).workboard.rows).text, /synthetic-feat\S*… 0\/1 \+4$/);
-  } finally { setDisplayConfig(prev); }
 });
 
 test('Project lists the unlinked features after the Objectives, with their jobs and a five-row preview', async (t) => {

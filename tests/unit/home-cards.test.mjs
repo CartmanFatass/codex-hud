@@ -18,7 +18,7 @@ const stamp = (ms = NOW) => new Date(ms).toISOString();
 const rows = frame => frame.workboard.rows;
 const plain = row => stripAnsi(row.text).trimEnd();
 const scheduleItems = frame => rows(frame).filter(row => row.item?.startsWith('home:card:schedule:'));
-const todayLines = (frame, lang = 'en') => rows(frame).map(plain).filter(text => text.startsWith(lang === 'zh' ? '今天 ' : 'Today '));
+const todayLines = (frame, lang = 'en') => rows(frame).map(plain).filter(text => text.startsWith(lang === 'zh' ? '今日 ' : 'Today '));
 const exact = (frame, width) => assert.ok([...frame.lines, ...rows(frame).map(row => row.text)].every(text => visualLength(text) === width));
 
 async function fixture(t, day, lang) {
@@ -37,30 +37,30 @@ async function fixture(t, day, lang) {
   return { ...f, tick, draw };
 }
 
-for (const lang of ['en', 'zh']) test(`Home cards: busy, quiet and short frames at 40/50/80 (${lang})`, async t => {
+for (const lang of ['en', 'zh']) test(`Home cards: busy, quiet and short frames at 40/62/80 (${lang})`, async t => {
   const busy = await fixture(t, 'busy', lang), quiet = await fixture(t, 'quiet', lang);
   const [busyData, quietData] = await Promise.all([busy.tick(), quiet.tick()]);
   const zh = lang === 'zh', prevLang = setLanguage(lang), prev = setDisplayConfig({ theme: 'mocha', icons: 'unicode' });
   try {
-    for (const width of [40, 50, 80]) {
+    for (const width of [40, 62, 80]) {
       const frame = busy.draw(busyData, width), all = rows(frame).map(plain);
       exact(frame, width);
-      const today = all.findIndex(text => text.startsWith(zh ? '今天 ' : 'Today '));
+      const today = all.findIndex(text => text.startsWith(zh ? '今日 ' : 'Today '));
       const schedule = all.findIndex(text => text.startsWith(zh ? '日程 ' : 'Schedule '));
       assert.equal(rows(frame)[today - 2].item, 'home:other-projects');
-      const summary = zh ? '今天 7 落地 · 1 失败 · 2 在跑' : 'Today 7 landed · 1 failed · 2 running';
+      const summary = zh ? '今日 7 已落地 · 1 失败' : 'Today 7 landed · 1 failed';
       assert.deepEqual(all.slice(today, schedule), [summary, '']);
       assert.ok(all[schedule].endsWith(zh ? '6 项' : '6 items'));
       assert.ok(all.includes(zh ? '  另 2 项' : '  2 more'));
       const items = scheduleItems(frame).map(plain);
       assert.deepEqual(items.filter(x => /^\S/.test(x)).map(x => x.slice(2, 7)), ['11-22', '11-24', '11-27', '12-01']);
       assert.equal(items.includes('  harbor-api › rate-limits'), width < 80);
-      assert.ok(items[1].endsWith(zh ? '今天' : 'today'));
+      assert.ok(items[1].endsWith(zh ? '今日' : 'today'));
       assert.ok(all.includes(zh ? '○ 静默 sketchbook 3周' : '○ quiet sketchbook 3w'));
 
       const still = quiet.draw(quietData, width);
       exact(still, width);
-      assert.deepEqual(todayLines(still, lang), [zh ? '今天 2 在跑' : 'Today 2 running'], 'yesterday’s landings stay out');
+      assert.deepEqual(todayLines(still, lang), [], 'zero landed and zero failed yields zero Today rows even with live jobs');
       assert.ok(scheduleItems(still).some(row => plain(row).includes('12-??') && plain(row).endsWith(zh ? '下月' : 'next mo')));
       assert.doesNotMatch(stripAnsi(still.lines[0]), /◉/);
 
@@ -111,7 +111,7 @@ test('due badge and row inks follow the shared calendar; done items disappear on
     const monthEnd = f.draw(changedData, 50, 48, initialMonitorState(), Date.parse('2026-12-31T12:00:00Z'));
     assert.match(stripAnsi(monthEnd.lines[0]), /\uF0735/);
     assert.match(plain(find(monthEnd, 's4')), /12-\?\?.+today$/);
-    assert.deepEqual(todayLines(monthEnd), ['Today 2 running'], 'a repaint on a new day omits stale history but still shows observed running jobs');
+    assert.deepEqual(todayLines(monthEnd), [], 'a repaint on a new day omits stale history and shows no Today row');
     const raw = fs.readFileSync(f.schedulePath, 'utf8');
     assert.equal(raw, JSON.stringify(doc), 'paint and collection leave the schedule untouched');
     fs.writeFileSync(f.schedulePath, '{bad');
@@ -152,7 +152,7 @@ test('Schedule links navigate without actions; an unlinked item only selects', a
   assert.equal(noAction.state.activeTab, 'home');
 });
 
-test('Today counts local failures and live jobs waiting for main, not stops or queued jobs', async t => {
+test('Today counts local failures, excludes stops, and omits running counts', async t => {
   const f = await fixture(t, 'empty', 'en'), path = join(f.home, 'archive/2026-11.jsonl');
   const status = (n, state) => fs.writeFileSync(join(f.home, 'jobs', `j000000000000000${n}`, 'STATUS.json'), JSON.stringify({ state }));
   status(1, 'waiting_orchestrator');
@@ -166,38 +166,34 @@ test('Today counts local failures and live jobs waiting for main, not stops or q
     .map(item => JSON.stringify(item)).join('\n'));
   const data = await f.tick();
   assert.equal(data.homeToday.failed, 1);
-  assert.deepEqual(todayLines(f.draw(data, 40)), ['Today 1 failed · 1 running']);
+  assert.deepEqual(todayLines(f.draw(data, 40)), ['Today 1 failed']);
   fs.appendFileSync(path, '\n{bad json');
   const invalid = await f.tick(NOW + 30_001);
   assert.equal(invalid.homeToday, undefined);
-  assert.deepEqual(todayLines(f.draw(invalid, 40)), ['Today 1 running']);
+  assert.deepEqual(todayLines(f.draw(invalid, 40)), []);
 });
 
-for (const lang of ['en', 'zh']) test(`Today drops whole facts in attention order (${lang})`, () => {
+for (const lang of ['en', 'zh']) test(`Today drops landed before failed when narrow (${lang})`, () => {
   const zh = lang === 'zh', prevLang = setLanguage(lang), prev = setDisplayConfig({ theme: 'mocha', icons: 'unicode' });
   try {
-    const draw = (width, { failed = 1, running = 3, limited = false } = {}) => {
+    const draw = (width, { landed = 29, failed = 1, running = 3, limited = false } = {}) => {
       const active = Array.from({ length: running }, (_, i) => ({ jobId: String(i), state: 'running' }));
-      const today = { since: localDayStart(NOW), landed: 29, failed, limited };
+      const today = { since: localDayStart(NOW), landed, failed, limited };
       const { rows: cardRows } = homeCardRows(today, scheduleView([], NOW), [{ snapshot: { active } }], width, NOW, 2);
       assert.ok(cardRows.every(row => visualLength(row.text) === width));
       return cardRows.map(plain);
     };
-    assert.deepEqual(draw(zh ? 28 : 32), ['', zh ? '今天 1 失败 · 3 在跑' : 'Today 1 failed · 3 running']);
-    assert.deepEqual(draw(zh ? 12 : 14), ['', zh ? '今天 1 失败' : 'Today 1 failed']);
-    assert.deepEqual(draw(8), ['', zh ? '今天' : 'Today']);
-    assert.deepEqual(draw(56), ['', zh ? '今天 29 落地 · 1 失败 · 3 在跑' : 'Today 29 landed · 1 failed · 3 running']);
+    assert.deepEqual(draw(zh ? 16 : 18), ['', zh ? '今日 1 失败' : 'Today 1 failed']);
+    assert.deepEqual(draw(8), ['', zh ? '今日' : 'Today']);
+    assert.deepEqual(draw(40), ['', zh ? '今日 29 已落地 · 1 失败' : 'Today 29 landed · 1 failed']);
     const bounded = { failed: 11, running: 12, limited: true };
-    assert.deepEqual(draw(40, bounded), ['', zh ? '今天 ~29 落地 · ~11 失败 · 12 在跑' : 'Today ~11 failed · 12 running']);
-    assert.deepEqual(draw(56, bounded), ['', zh ? '今天 ~29 落地 · ~11 失败 · 12 在跑' : 'Today ~29 landed · ~11 failed · 12 running']);
+    assert.deepEqual(draw(40, bounded), ['', zh ? '今日 ~29 已落地 · ~11 失败' : 'Today ~29 landed · ~11 failed']);
+    assert.deepEqual(draw(40, { landed: 0, failed: 0, running: 3 }), []);
   } finally { setLanguage(prevLang); setDisplayConfig(prev); }
 });
 
-test('Today is omitted when all three counts are zero', async t => {
+test('Today is omitted when landed and failed are zero even while jobs run', async t => {
   const f = await fixture(t, 'quiet', 'en');
-  for (const id of ['j0000000000000001', 'j0000000000000002']) {
-    fs.writeFileSync(join(f.home, 'jobs', id, 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: stamp() }));
-  }
   const data = await f.tick();
   assert.deepEqual(todayLines(f.draw(data, 40)), []);
 });

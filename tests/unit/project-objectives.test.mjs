@@ -113,7 +113,8 @@ test('Home and Project open an Objective detail and route only its openable evid
     const draw = (state, lang = 'en') => f.render(120, lang, state, 24, data, true, 'unicode', 'none', { homePortfolio });
     const list = draw({ ...draw().state, activeTab });
     const entry = list.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'measure');
-    assert.match(entry.text, /blocked/);
+    if (activeTab === 'project') assert.match(entry.text, /blocked/);
+    else assert.equal(entry.objectiveTarget.blocked, true);
     assert.ok(!list.workboard.rows.some((r) => r.objectiveTarget?.objective.id === 'hold' && r.objectiveTarget.blocked));
     if (activeTab === 'home') {
       assert.ok(!list.workboard.rows.some((r) => r.item?.startsWith('home:result:')), 'undated results stay off Home');

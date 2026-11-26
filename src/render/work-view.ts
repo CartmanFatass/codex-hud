@@ -4,7 +4,7 @@ import type { WorkboardSnapshot, WorkTarget } from '../collectors/workboard-type
 import { targetKey } from '../collectors/workboard-types.js';
 import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './monitor.js';
 import { nativeInspectorRows, workInspectorRows } from './work-inspector.js';
-import { homeRows, OTHER_PROJECTS, otherProjectsHint } from './home-view.js';
+import { homeRows, OTHER_PROJECTS, otherProjectsHint, unattendedRow } from './home-view.js';
 import { scheduleBadge, scheduleView } from './home-cards.js';
 import { objectiveDetailRows } from './objective-detail.js';
 import { runDetailRows } from './execution-run-detail.js';
@@ -226,22 +226,26 @@ export function renderWorkboardFrame(
   const reqRows = scopedRequests.length
     ? requestAreaRows(scopedRequests, { showProject: showHomeRequests, width, now, expanded: requestsExpanded })
     : [];
+  const unattendedLine = home && input.homePortfolio?.unattended
+    ? unattendedRow(input.homePortfolio.unattended, width).text : undefined;
   const truncatedFiles = project && !list && [input.project?.stateTruncated && 'STATE.md', input.project?.specTruncated && 'spec.md'].filter(Boolean).join(', ');
-  const headers = [...(strip ? [''] : []), ...reqRows.map(() => ''), ...controlTop.map((r) => r.text), ...(bar ? [bar.text] : []),
+  const headers = [...(unattendedLine ? [unattendedLine] : []), ...(strip ? [''] : []), ...reqRows.map(() => ''), ...controlTop.map((r) => r.text), ...(bar ? [bar.text] : []),
     ...(inspector ? stopPromptRows(state, width).map((r) => r.text) : []),
     ...(jobs || execution ? batchPromptRows(state, width).map((r) => r.text) : []),
     ...(truncatedFiles ? [fit(theme.board.attention(t('Truncated: {files}', { files: truncatedFiles })), width)] : []),
     ...(control && input.error ? [theme.error(monitorText(input.error))] : [])];
   const top = Math.min(headers.length, Math.max(0, height - 2));
   const room = Math.max(0, height - 2 - top);
-  const stripTop = strip && top > 0 ? 1 : 0;
-  const reqVisible = Math.min(reqRows.length, Math.max(0, top - stripTop));
+  const unattendedTop = unattendedLine && top > 0 ? 1 : 0;
+  const stripTop = strip && top > unattendedTop ? 1 : 0;
+  const reqStart = unattendedTop + stripTop;
+  const reqVisible = Math.min(reqRows.length, Math.max(0, top - reqStart));
   const visibleReqRows = reqRows.slice(0, reqVisible);
   if (strip && stripTop) {
-    for (const c of strip.controls) frame.controls.push({ ...c, y: 1 });
+    for (const c of strip.controls) frame.controls.push({ ...c, y: 1 + unattendedTop });
   }
-  controlTop.slice(0, Math.max(0, top - stripTop - reqVisible)).forEach((row, i) => {
-    for (const control of row.controls ?? []) frame.controls.push({ ...control, y: 1 + stripTop + reqVisible + i });
+  controlTop.slice(0, Math.max(0, top - reqStart - reqVisible)).forEach((row, i) => {
+    for (const control of row.controls ?? []) frame.controls.push({ ...control, y: 1 + reqStart + reqVisible + i });
   });
   const target = inspector?.target;
   const lane = target && source.lanes.find((l) => l.id === target.laneId);
@@ -346,7 +350,7 @@ export function renderWorkboardFrame(
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
             : sheetRows ?? controlRows(input.project, state.control.roles, width, now)
           : homeRows(input.homePortfolio, width, now, room - Number(!!input.error) - Number(!!input.publicationNotice),
-              state.home.othersExpanded, input.homeToday, schedule);
+              state.home.othersExpanded, input.homeToday, schedule, false);
   if (!control && input.error) rows.unshift(boardRow(theme.error(monitorText(input.error))));
   if (input.publicationNotice) rows.unshift(boardRow(theme.warning(monitorText(input.publicationNotice))));
   const actions = rows.filter((r) => r.item);
@@ -412,15 +416,15 @@ export function renderWorkboardFrame(
   else if (resourcePage) state = { ...state, exp: { ...resourcePage, cursor: expCursor, scroll: offset, revealed: expEdit ? undefined : revealed } };
   else if (home) state = { ...state, home: { ...state.home, cursor: listCursor, scroll: offset, revealed } };
   frame.state = state;
-  if (strip && stripTop) headers[0] = strip.paint(key === PROJECT_STRIP_MORE);
+  if (strip && stripTop) headers[unattendedTop] = strip.paint(key === PROJECT_STRIP_MORE);
   for (let i = 0; i < reqVisible; i++) {
     const row = visibleReqRows[i]!;
     const text = fit(row.paint?.() ?? row.text, width);
     const marked = !help && !!key && row.item === key;
-    headers[stripTop + i] = marked ? boardCursor(text) : text;
+    headers[reqStart + i] = marked ? boardCursor(text) : text;
     if (row.item) {
       const kind = isRequestMoreItem(row.item) ? 'request-more' : 'request-pick';
-      frame.controls.push({ kind, item: row.item, x: 0, y: 1 + stripTop + i, width });
+      frame.controls.push({ kind, item: row.item, x: 0, y: 1 + reqStart + i, width });
     }
   }
   headers.slice(0, top).forEach((text, i) => { frame.lines[1 + i] = text; });

@@ -19,20 +19,15 @@ function sectionFacts(label: string, width: number, ...facts: string[]) {
   return section(label, width, joinFacts(kept));
 }
 
-function todayRow(data: TodayFacts | undefined, projects: readonly HomeProject[], width: number, now: number): MonitorRow | undefined {
+function todayRow(data: TodayFacts | undefined, width: number, now: number): MonitorRow | undefined {
   const { landed, failed, limited } = data?.since === localDayStart(now) ? data : {};
-  const live = new Set<string>();
-  for (const { snapshot } of projects) {
-    for (const { jobId, state } of snapshot?.active ?? []) if (state !== 'queued') live.add(jobId);
-  }
-  if (!landed && !failed && !live.size) return;
+  if (!landed && !failed) return;
   const ink = theme.board, approx = limited ? '~' : '';
   const landedFact = landed ? t('{n} landed', { n: approx + landed }) : '';
   const failedFact = failed ? ink.danger(t('{n} failed', { n: approx + failed })) : '';
-  const runningFact = live.size ? ink.active(t('{count} running', { count: live.size })) : '';
   const label = t('Today'), room = width - cells(label) - 1;
-  // Drop landed before running, but try a lower-priority fact alone if failed itself cannot fit.
-  for (const kept of [[landedFact, failedFact, runningFact], [failedFact, runningFact], [failedFact], [runningFact], [landedFact]]) {
+  // Drop landed before failed, but try landed alone if failed itself cannot fit.
+  for (const kept of [[landedFact, failedFact], [failedFact], [landedFact]]) {
     const facts = joinFacts(kept);
     if (facts && cells(facts) <= room) return line(`${label} ${facts}`, width);
   }
@@ -125,7 +120,7 @@ function scheduleRows({ sorted, overdue, today }: ScheduleView, projects: readon
 /** Cards never borrow a row from the full-tier portfolio. */
 export function homeCardRows(today: TodayFacts | undefined, schedule: ScheduleView, projects: readonly HomeProject[], width: number, now: number, spare: number) {
   if (spare <= 0) return { rows: [], full: false };
-  const blank = line('', width), summary = todayRow(today, projects, width, now);
+  const blank = line('', width), summary = todayRow(today, width, now);
   for (let level = 0; level <= 3; level++) {
     const a = summary && level < 3 ? [summary] : [], b = scheduleRows(schedule, projects, width, now, level);
     if (!a.length && !b.length) return { rows: [], full: level === 0 };

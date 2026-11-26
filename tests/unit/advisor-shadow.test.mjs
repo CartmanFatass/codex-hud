@@ -553,43 +553,12 @@ test('Home recent advice spans sessions and UTC months, expires, caps at five, a
 
   const draw = (state = initialMonitorState()) => renderMonitor({ state, homePortfolio: portfolio, width: 40, height: 20, nowMs: now });
   const frame = draw();
-  const { x, y, rows } = frame.panes[0];
-  const header = rows.findIndex(r => r.text.startsWith('Recent advice'));
-  assert.ok(header > 0);
-  assert.equal(rows[header - 1].item, 'home:other-projects');
-  const [rules, oldSkill, skill, oldRules, missingSkill] = rows.slice(header + 1, header + 6);
-  assert.deepEqual([rules, oldSkill, skill, oldRules].map(row => row.text.trimEnd()),
-    ['5m other-project rules: R3 R8', '6m unknown project skill: legacy', '8m Demo skill: review', '30m unknown project rules: R2']);
-  assert.match(missingSkill.text, /skill: Legacy/);
+  const { rows } = frame.panes[0];
   assert.ok(rows.every(row => visualLength(row.text) === 40));
-  const copy = { type: 'copy-advisor', root: f.projectRoot, session: 'b', skill: 'review', path: skillPath };
-  const legacyCopy = { type: 'copy-advisor', root: '', session: 'a', skill: 'legacy', path: legacyPath };
-  const click = (row) => handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: x + 4, y: y + rows.indexOf(row) }, { frame });
-  assert.deepEqual(click(skill).action, copy);
-  assert.deepEqual(click(oldSkill).action, legacyCopy);
-  for (const row of [rules, oldRules, missingSkill]) {
-    assert.equal(row.item, undefined);
-    assert.equal(click(row).action, undefined);
-  }
-  const start = draw({ ...frame.state, home: { ...frame.state.home, cursor: rows[header - 1].item } });
-  const down = handleMonitorInput(start.state, { type: 'key', key: 'down' }, { frame: start });
-  assert.ok(oldSkill.item);
-  assert.equal(down.state.home.cursor, oldSkill.item);
-  const selected = draw(down.state);
-  const enter = handleMonitorInput(selected.state, { type: 'key', key: 'enter' }, { frame: selected });
-  assert.deepEqual(enter.action, legacyCopy);
-  const copied = [];
-  createPanelActions(f.hudHome, f.projectRoot, null, {
-    state: enter.state,
-    copyClipboard(text) { copied.push(text); return true; },
-    notice() {},
-  }).execute(enter.action, selected.state);
-  assert.deepEqual(copied, [legacyPath]);
-  const { at, ...logged } = JSON.parse(fs.readFileSync(path.join(f.hudHome, PANEL_ACTIONS_FILE), 'utf8'));
-  assert.deepEqual(logged, { type: 'advice-copy', project: '', session: 'a', skill: 'legacy', path: legacyPath });
+  assert.ok(!rows.some(row => row.text.includes('Recent advice')), 'Home omits the removed multi-row Recent advice block');
   setLanguage('zh');
   const translated = draw().panes[0].rows;
-  assert.ok(translated.some(row => row.text.startsWith('近期建议')));
+  assert.ok(!translated.some(row => row.text.includes('近期建议')));
   assert.ok(translated.every(row => visualLength(row.text) === 40));
   setLanguage('en');
 
@@ -600,7 +569,7 @@ test('Home recent advice spans sessions and UTC months, expires, caps at five, a
   assert.ok(!offRows.some(row => row.text.includes('Recent advice')));
 });
 
-test('Home drops the whole recent advice block before live advice, projects or cards', () => {
+test('Home keeps the per-project opt-in Advisor line and never renders the Recent advice block', () => {
   const now = Date.parse('2026-11-24T20:00:00Z'), root = '/demo/project', skillPath = '/demo/skills/live/SKILL.md';
   const portfolio = {
     requests: [],
@@ -609,16 +578,11 @@ test('Home drops the whole recent advice block before live advice, projects or c
   };
   const schedule = scheduleView(Array.from({ length: 4 }, (_, id) => ({ id: `due-${id}`, text: 'Review the plan', date: '2026-11-24' })), now);
   const draw = (p, room) => homeRows(p, 50, now, room, false, undefined, schedule);
-  const full = draw(portfolio, 20), short = draw(portfolio, full.length - 1);
-  assert.ok(full.some(r => stripAnsi(r.text).startsWith('Recent advice')));
-  assert.ok(full.findIndex(r => stripAnsi(r.text).startsWith('Recent advice')) > full.findIndex(r => r.item === `home:advisor:${root}`));
-  assert.ok(!short.some(r => r.text.includes('Recent advice') || r.text.includes('rules: R3')));
-  assert.deepEqual(short, draw({ ...portfolio, recentAdvice: undefined }, full.length - 1));
-  assert.ok(short.some(r => r.advisorCopy?.path === skillPath));
-  assert.ok(short.some(r => stripAnsi(r.text).startsWith('Schedule')));
-  const folded = draw(portfolio, 7);
-  assert.ok(folded.some(r => stripAnsi(r.text).startsWith('Schedule')));
-  assert.ok(!folded.some(r => stripAnsi(r.text).startsWith('Recent advice')), 'recent advice stays hidden when cards fold');
+  const full = draw(portfolio, 20);
+  assert.ok(!full.some(r => stripAnsi(r.text).includes('Recent advice') || stripAnsi(r.text).includes('rules: R3')));
+  assert.deepEqual(full, draw({ ...portfolio, recentAdvice: undefined }, 20));
+  assert.ok(full.some(r => r.advisorCopy?.path === skillPath));
+  assert.ok(full.some(r => stripAnsi(r.text).startsWith('Schedule')));
   assert.ok(draw(portfolio, 1).some(r => r.advisorCopy?.path === skillPath));
 });
 
