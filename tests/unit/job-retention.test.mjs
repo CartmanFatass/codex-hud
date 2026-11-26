@@ -474,10 +474,15 @@ test('watcher exits without expiry timers and deletes tabless and already-reaped
   ];
   for (const elapsed of [0, hour, hour + 1]) {
     const { child, exited, stderr } = f.start(`
+import fs from 'node:fs';
 Date.now = () => ${now + elapsed};
-globalThis.setTimeout = () => { throw Error('unexpected expiry timer'); };`);
-    await exited;
-    assert.equal(child.exitCode, 0, stderr());
+const timeout = globalThis.setTimeout;
+globalThis.setTimeout = (...args) => {
+  // The wrapper can wait for the dist lock before the watcher publishes its PID.
+  if (fs.existsSync(process.env.HUD_HOME + '/watch.pid')) throw Error('unexpected expiry timer');
+  return timeout(...args);
+};`);
+    assert.deepEqual(await exited, [0, null], stderr());
     assert.ok(dirs.every((dir) => fs.existsSync(dir) === (elapsed <= hour)), 'delete only when strictly over 24 hours');
     assert.equal(fs.existsSync(join(f.home, 'reaps')), false);
     assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);

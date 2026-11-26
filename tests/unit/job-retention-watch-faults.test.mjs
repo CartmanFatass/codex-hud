@@ -112,27 +112,29 @@ globalThis.setTimeout = (callback, wait, ...args) => {
 });
 
 test('degraded watching polls for new jobs while a failed tab deadline keeps it alive', { timeout }, async (t) => {
-  const f = fixture(t), failed = f.job({ state: 'failed', ended_at: new Date().toISOString() }, {}, true);
-  const { child, exited, stderr } = f.start(permanentWatchFailure + `
-const timeout = globalThis.setTimeout, now = Date.now, startup = now();
-Date.now = () => startup;
-globalThis.setTimeout = (callback, delay, ...args) => {
-  Date.now = now;
-  fs.appendFileSync(process.env.HUD_HOME + '/timers', delay + '\\n');
-  return timeout(callback, delay, ...args);
-};`);
+  const f = fixture(t), now = Date.now(), ended_at = new Date(now).toISOString();
+  const failed = f.job({ state: 'failed', ended_at }, {}, true);
   const timers = join(f.home, 'timers');
-  const readTimers = () => {
-    if (!fs.existsSync(timers)) return [];
-    const text = fs.readFileSync(timers, 'utf8');
-    const end = text.lastIndexOf('\n');
-    return end < 0 ? [] : text.slice(0, end).split('\n').map(Number);
-  };
+  const { child, exited, stderr } = f.start(permanentWatchFailure + `
+import { writeFixtureFile } from ${JSON.stringify(atomicWriter)};
+// Polls still run on real timers, but scheduler delays must not advance the failed-tab deadline.
+Date.now = () => ${now};
+const timeout = globalThis.setTimeout, scheduled = [];
+globalThis.setTimeout = (callback, delay, ...args) => {
+  const timer = timeout(callback, delay, ...args);
+  // Ignore wrapper timers before the watcher publishes its PID under the dist lock.
+  if (fs.existsSync(process.env.HUD_HOME + '/watch.pid')) {
+    scheduled.push(delay);
+    writeFixtureFile(${JSON.stringify(timers)}, JSON.stringify(scheduled));
+  }
+  return timer;
+};`);
+  const readTimers = () => fs.existsSync(timers) ? JSON.parse(fs.readFileSync(timers, 'utf8')) : [];
   await until(() => child.exitCode !== null || readTimers().length >= 1, t.signal);
   assert.equal(child.exitCode, null, stderr());
   assert.equal(readTimers()[0], 1000, 'unconfigured degraded interval');
   const second = f.job({ state: 'working' }, {}, true);
-  writeFixtureFile(join(second, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  writeFixtureFile(join(second, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at }));
   await until(() => child.exitCode !== null || JSON.parse(fs.readFileSync(join(second, 'job.json'), 'utf8')).reaped_at, t.signal);
   assert.equal(child.exitCode, null, 'the first failed deadline is still pending');
   // Bound the scheduled fallback intervals, not OS time to deliver them and run the reaper.
@@ -141,7 +143,7 @@ globalThis.setTimeout = (callback, delay, ...args) => {
     `expected degraded fallback intervals <= 1000ms, got ${JSON.stringify(scheduled)}`);
   assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), second + '\n');
   assert.equal(JSON.parse(fs.readFileSync(join(failed, 'job.json'), 'utf8')).reaped_at, undefined);
-  writeFixtureFile(join(failed, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  writeFixtureFile(join(failed, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at }));
   await exited;
   assert.equal(child.exitCode, 0, stderr());
   assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), second + '\n' + failed + '\n');
