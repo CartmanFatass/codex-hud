@@ -106,7 +106,7 @@ test('a Progress page of jobs alone pages by keyboard: Down, PgDn and End move t
   const job = (i) => ({ jobId: `j${String(i).padStart(16, '0')}`, role: 'imp', state: 'working', title: `Task ${i + 1}`, at: NOW, asking: false });
   const active = Array.from({ length: 12 }, (_, i) => ({ ...job(i), ...(i === 11 ? {} : { path: join(f.job, 'brief.md') }) }));
   // A project with no STATE.md and more jobs than rows (a panel this short cannot show them all).
-  const data = { ...f.data, statePath: undefined, slices: [], next: [], ledger: [], active };
+  const data = { ...f.data, statePath: undefined, waiting: [], slices: [], next: [], ledger: [], active };
   const page = (state) => f.render(40, 'en', state, height, data);
   let frame = page('progress');
   const first = plain(frame);

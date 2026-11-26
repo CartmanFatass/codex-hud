@@ -102,7 +102,7 @@ test('standalone mouse: tabs switch, first row click selects, second click acts 
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: 4, y: 0 }).state);
   const homeTab = frame.controls.find((c) => c.kind === 'board-home');
   frame = draw(send(frame, { type: 'mouse', button: 'left', x: homeTab.x, y: homeTab.y }).state);
-  const shortFrame = draw(frame.state, 6);
+  const shortFrame = draw(frame.state, 5);
   const beforeScroll = shortFrame.state.home.scroll ?? 0;
   const scrolled = send(shortFrame, { type: 'mouse', button: 'wheel-down', x: 4, y: 3 });
   assert.ok((scrolled.state.home.scroll ?? 0) > beforeScroll);

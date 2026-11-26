@@ -33,7 +33,8 @@ function drive(f, state, { width = 40, height = 30, lang = 'en', data = f.data }
     return last;
   };
   return { press, type: (text) => [...text].forEach((c) => press(c)), esc: () => press({ type: 'key', key: 'escape' }), enter: () => press('\r'),
-    get frame() { return frame; }, get state() { return frame.state; }, get out() { return last; }, lines: () => plain(frame), bar: () => plain(frame)[1] };
+    get frame() { return frame; }, get state() { return frame.state; }, get out() { return last; }, lines: () => plain(frame),
+    bar: () => plain(frame)[1 + (frame.workboard?.requests?.length ?? 0)] };
 }
 const labels = (f) => new Map(f.board.lanes.map((l) => [l.id, l.label]));
 
