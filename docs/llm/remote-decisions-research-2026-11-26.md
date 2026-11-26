@@ -47,3 +47,22 @@ survey's path is the HUD page/Web Push for the phone plus self-hosted ntfy `http
 Still open when reopened: watch model (Wear OS assumed), how far "more complex remote" goes on the phone (decisions
 only, or also viewing runs and steering work), exposure (Tailscale recommended), reminder delay (2 h suggested), and
 the spec carve-out.
+
+## Owner-proposed alternative: a private Cloudflare Worker (free plan)
+
+Owner asked (2026-11-26) whether a self-deployed, private Cloudflare Worker can replace Tailscale. Main session's
+assessment, **not yet verified against Cloudflare docs** (verify limits before slicing):
+
+- Shape: a Worker plus one Durable Object in the owner's own account acts as a mailbox. HUD connects outbound
+  (WebSocket or polling), so WSL2 opens no inbound port and the phone needs no VPN. The phone opens the Worker's
+  page or gets Web Push (VAPID signing and RFC 8291 encryption are doable with WebCrypto in the Worker); ntfy
+  `http` actions on the watch call the Worker URL. Answers flow back over the same channel into HUD's existing
+  write-once paths.
+- Extra benefit: prompts and answers queue in the Durable Object while the PC sleeps; they apply when HUD reconnects.
+- Free-plan points to verify: daily request quota (believed 100k/day), Durable Objects availability on the free plan
+  (believed yes for SQLite-backed objects), per-request CPU limit (~10 ms) against Web Push encryption cost, and
+  Cloudflare Access free tier for owner login.
+- Privacy: TLS terminates at Cloudflare, so content is visible to Cloudflare unless HUD encrypts end to end.
+  Recommended if chosen: HUD encrypts each prompt with a key shared with the phone once at pairing (QR), the Worker
+  stores and forwards ciphertext only, the phone page decrypts; Cloudflare Access plus a HUD device token guard
+  the page.
