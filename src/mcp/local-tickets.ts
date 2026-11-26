@@ -94,7 +94,7 @@ export interface TicketGap {
   gaps: string[];
 }
 
-const liveTryField = /(?:^|·)[ \t]*(?:\*\*)?(?:Live try|How to try|Try)(?::\*\*|\*\*:|:)[ \t]*\S/im;
+const liveTryField = /(?:^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+(?:\[[ x]\][ \t]+)?)?|·[ \t]*)(?:\*\*)?(?:Live try|How to try|Try)(?::\*\*|\*\*:|:(?!\*\*))[ \t]*[^\s·]/im;
 const liveTryHeading = /^##[ \t]+(?:Live try|How to try|Try)\b[^\r\n]*\r?\n(?:[ \t]*\r?\n)*[ \t]*\S/im;
 const approvedRemovalsField = /(?:^|·)[ \t]*\*\*Approved removals:\*\*/im;
 
@@ -148,7 +148,7 @@ function validateTicketBody(
     }
   }
   if (!liveTryField.test(body) && !liveTryHeading.test(body)) {
-    gaps.push('missing Live try (add how to try or Live try: none)');
+    gaps.push('missing Live try (add how to try or `**Live try:** none`)');
   }
   if (approvedRemovalsField.test(body) && !approvedRemovals) {
     gaps.push('empty Approved removals (list removals or Approved removals: none)');

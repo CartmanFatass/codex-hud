@@ -10,7 +10,7 @@ import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import { isProcAlive } from '../utils/proc.js';
 import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
-import type { OwnerApproval } from '../unattended/state.js';
+import { openRunTickets, type OwnerApproval } from '../unattended/state.js';
 import { driveWorkflow } from '../workflows/driver.js';
 import type { Run, Tick } from '../workflows/engine.js';
 import type { Graph, Step } from '../workflows/graph.js';
@@ -32,7 +32,7 @@ import {
 } from './ticket-queue-state.js';
 import {
   appendTodos, applyLeadQuestionAnswer, buildAcceptPacket, buildQuestionPacket, buildRemovalAmbiguityPacket,
-  buildReviewBrief, closeLeadJob, extractAssumedLines, extractRemovalsDeclaration, MAX_ANSWER_RETRIES,
+  buildReviewBrief, closeLeadJob, extractAssumedLines, extractRemovalsDeclaration, hasReportBlockers, MAX_ANSWER_RETRIES,
   MAX_REPAIR_ROUNDS, parseLeadReport, recordDecision, WORKFLOW_WORKER_RULE, WORKFLOW_WORKER_RULE_NO_ASK,
 } from './workflow-lead.js';
 
@@ -43,6 +43,8 @@ const owner = (q: TicketQueue, item: TicketQueueItem) => item.dispatch_queue ?? 
 const requestKey = (q: TicketQueue, item: TicketQueueItem) => `ticket-queue:${owner(q, item)}:${item.ticket}`;
 const receiptFor = (q: TicketQueue, item: TicketQueueItem) => jobs().find(job => job.request_key === requestKey(q, item));
 const livePane = (q: TicketQueue) => q.pane && directRecipient(q) ? q.pane : undefined;
+const trustDispatchFailed = (job: Job, status: JobStatus | null | undefined) =>
+  status?.exit_reason === 'untrusted_cwd' || job.dispatch_code === 'untrusted_cwd';
 
 function ticketHeader(path: string) {
   return readFileBounded(path, 64 * 1024).bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
@@ -70,7 +72,7 @@ function judgeSettlement(item: TicketQueueItem, job: Job, status: JobStatus): Se
   if (report.truncated) return { kind: 'worker', reason: 'report is too large to verify' };
   const text = report.bytes.toString('utf8');
   const { lines: assumed, scopeAssumptions } = extractAssumedLines(text);
-  if (/^[ \t]*(?:[-*] |#{1,6} )?(?:\*\*)?Blockers:/im.test(text))
+  if (hasReportBlockers(text))
     return { kind: 'blocker', reason: 'report has a Blockers: line', assumed };
   if (scopeAssumptions.length)
     return { kind: 'assumption', reason: `scope assumption in report: ${scopeAssumptions[0]}`, assumed };
@@ -173,11 +175,15 @@ function holdRun(q: TicketQueue, reason: string, kind?: TicketHandbackKind, owne
   q.held = { reason, at: new Date().toISOString(), ...(kind && { kind }), ...(ownerApproval && { owner_approval: ownerApproval }) };
 }
 
-function objectiveWorkset(home: string, root: string, objective: string, failedTickets?: ReadonlySet<string>) {
+function objectiveWorkset(home: string, q: TicketQueue) {
+  const { root, flow, unattended } = q;
+  const objective = unattended!.objective;
   const objectives = readObjectives(root)?.objectives ?? [];
   const selected = objectives.find(o => o.id === objective && o.state === 'active');
   if (!selected) return { tickets: [], queued: [], blocked: [] };
-  const readiness = ticketReadiness(root, jobCache, undefined, { home, excludeTickets: failedTickets });
+  const excluded = openRunTickets(home, root, flow);
+  for (const item of q.tickets) if (item.failed || item.held) excluded.add(item.ticket);
+  const readiness = ticketReadiness(root, jobCache, undefined, { home, excludeTickets: excluded });
   const belongs = (ticket: string, path?: string, declared?: string) => {
     const feature = ticket.split('/')[0];
     if (!/^[a-z0-9-]+$/.test(feature)) return false;
@@ -191,11 +197,6 @@ function objectiveWorkset(home: string, root: string, objective: string, failedT
     queued: readiness.queued.filter(t => belongs(t.ticket)),
     blocked: readiness.blocked.filter(t => belongs(t.ticket)),
   };
-}
-
-function blockedTicketSet(q: TicketQueue): Set<string> | undefined {
-  const blocked = q.tickets.filter(t => t.failed || t.held).map(t => t.ticket);
-  return blocked.length ? new Set(blocked) : undefined;
 }
 
 function computeRemaining(q: TicketQueue): string[] {
@@ -810,7 +811,10 @@ function tickTicketQueue(
     const qa = jobCache.readQa(directory(job.job)), question = qa.openIds[0];
     // Answered but not yet read: the worker still reports waiting_orchestrator until it picks the answer up.
     const answered = !question && qa.allQuestionFiles.length > 0 && row.state === 'waiting_orchestrator';
-    if (question) {
+    if (q.unattended && trustDispatchFailed(job, status)) {
+      holdItem(item, status?.error ?? row.reason ?? job.stderr_tail, 'dispatch');
+      changed = true;
+    } else if (question) {
       if (q.handback_to === 'main') flag('question', `worker question ${question} — use hud_read or hud_respond`, { question });
       else pendingQuestion ??= { item, job, question };
     } else if (fs.existsSync(join(directory(job.job), jobFiles.stopRequested))) flag('worker', 'worker stop requested');
@@ -919,7 +923,7 @@ function tickTicketQueue(
     return { state: 'running', changed, ...(recheck !== undefined && { recheckMs: recheck }) };
   }
   const workset = q.unattended
-    ? objectiveWorkset(hudHome, q.root, q.unattended.objective, blockedTicketSet(q))
+    ? objectiveWorkset(hudHome, q)
     : ticketReadiness(q.root, jobCache, step.tickets, { home: hudHome });
   const eligible = workset.tickets;
   const queued = q.unattended ? [] : workset.queued;
@@ -1073,6 +1077,12 @@ function tickJobStep(
       state.problem = { kind: 'worker', step: key, job: job.job, reason: `${key} (${job.job}): worker stop requested` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
+    if (q.unattended && trustDispatchFailed(job, status)) {
+      const msg = `${key} (${jobId}): ${status?.error ?? row.reason ?? job.stderr_tail}`;
+      holdRun(q, msg, 'dispatch');
+      state.problem = { kind: 'dispatch', step: key, job: jobId, reason: msg };
+      return { state: 'failed', reason: msg, changed: true };
+    }
     if (failedAttempt(row)) {
       state.problem = { kind: 'worker', step: key, job: job.job, reason: `${key} (${job.job}): ${row.reason ?? row.display_state}` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
@@ -1145,7 +1155,8 @@ function tickJobStep(
         writeTicketQueue(hudHome, cur);
       });
     }
-    if (err && !stopRequested(hudHome, flowId)) {
+    // Unattended runs classify a recorded launch failure from its durable status, including trust refusals.
+    if (err && !(q.unattended && launched) && !stopRequested(hudHome, flowId)) {
       state.problem = { kind: 'dispatch', step: key, ...(launched && { job: launched }), reason: err };
     }
     return 0;
@@ -1272,7 +1283,7 @@ function tickHandbackStep(
             } else {
               let hasNewWork = false;
               if (cur.unattended) {
-                const ws = objectiveWorkset(hudHome, cur.root, cur.unattended.objective, blockedTicketSet(cur));
+                const ws = objectiveWorkset(hudHome, cur);
                 const fresh = ws.tickets.filter(t => !cur.tickets.some(own => own.ticket === t.ticket));
                 const invalid = new Set(checkTicketPaths(cur.root, fresh).map(g => g.ticket));
                 hasNewWork = fresh.some(t => !invalid.has(t.ticket));

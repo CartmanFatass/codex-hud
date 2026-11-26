@@ -1,7 +1,7 @@
 import { lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { ticketFileEvidence } from '../collectors/ticket-evidence.js';
-import { isTicketQueueId, queueFile, readTicketQueue, type TicketHandbackKind, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { isTicketQueueId, queueFile, queueIds, readTicketQueue, type TicketHandbackKind, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { readFileBounded, readJsonBounded } from '../utils/atomic-fs.js';
 import { isProcAlive, isValidPid, readBootId } from '../utils/proc.js';
 
@@ -90,9 +90,28 @@ export function hasOpenHold(q: TicketQueue | null | undefined): boolean {
   return !!q && openHoldsInRun(q).length > 0;
 }
 
+export function isOpenTicketRun(q: TicketQueue): boolean {
+  return q.state === 'working' || q.state === 'paused';
+}
+
+const cachedQueue = (home: string, id: string) => unchanged(queueFile(home, id), () => readTicketQueue(home, id));
+
+/** A settled job can look ready on the board while its queue still owns the ticket. */
+export function openRunTickets(home: string, root: string, except?: string): Set<string> {
+  const tickets = new Set<string>();
+  for (const id of queueIds(home)) {
+    if (id === except) continue;
+    const run = cachedQueue(home, id);
+    if (run?.root === root && isOpenTicketRun(run)) {
+      for (const item of run.tickets) if (item.job) tickets.add(item.ticket);
+    }
+  }
+  return tickets;
+}
+
 function indexedRuns(home: string): TicketQueue[] {
   return readRunIndex(home).filter(isTicketQueueId)
-    .map(id => unchanged(queueFile(home, id), () => readTicketQueue(home, id)))
+    .map(id => cachedQueue(home, id))
     .filter((q): q is TicketQueue => !!q?.unattended);
 }
 

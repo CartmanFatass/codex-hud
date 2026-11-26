@@ -15,8 +15,8 @@ import { procStat, readBootId } from '../utils/proc.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import { withControl } from './control.js';
 import {
-  controlPath, diagnosticsPath, hasOpenHold, identityPath, indexPath, MAX_OPEN_ITEMS, readControl, readRunIndex,
-  readUnattendedDiagnostics, readUnattendedStatus, type UnattendedControl, type UnattendedDiagnostic,
+  controlPath, diagnosticsPath, hasOpenHold, identityPath, indexPath, isOpenTicketRun, MAX_OPEN_ITEMS, openRunTickets,
+  readControl, readRunIndex, readUnattendedDiagnostics, readUnattendedStatus, type UnattendedControl, type UnattendedDiagnostic,
 } from './state.js';
 
 const DEFAULT_RECONCILE_MS = 180_000;
@@ -63,7 +63,7 @@ function groupBySelectedObjective(control: UnattendedControl, home: string) {
   const selected = objectives.filter(o => o.state === 'active' && control.objectives.includes(o.id));
   if (!selected.length) return { byObjective: new Map<string, { ticket: string; path: string }[]>(), liveJobIds: [] as string[] };
   // One readiness pass per admission batch; ticketReadiness memoizes unchanged ticket bodies and excludes open holds.
-  const readiness = ticketReadiness(control.root, jobCache, undefined, { home });
+  const readiness = ticketReadiness(control.root, jobCache, undefined, { home, excludeTickets: openRunTickets(home, control.root) });
   const byObjective = new Map<string, { ticket: string; path: string }[]>();
   for (const { ticket, path, objective: declared } of readiness.tickets) {
     const feature = ticket.split('/')[0];
@@ -98,7 +98,8 @@ async function scan(home: string, control: UnattendedControl, state: ScanState, 
   for (const q of running) wakeWorkflow(home, q);
   if (running.length) ensureJobWatcher(home);
 
-  const open = runs.filter(q => q.state === 'working' || hasOpenHold(q));
+  const active = runs.filter(isOpenTicketRun);
+  const open = runs.filter(q => isOpenTicketRun(q) || hasOpenHold(q));
   const openIds = new Set(open.map(q => q.flow));
   const recent = runs.filter(q => !openIds.has(q.flow) && q.state === 'completed').slice(-16);
   const keep = Math.max(0, Math.min(recent.length, MAX_OPEN_ITEMS - open.length - 1));
@@ -119,7 +120,7 @@ async function scan(home: string, control: UnattendedControl, state: ScanState, 
   const { byObjective, liveJobIds } = groupBySelectedObjective(control, home);
   state.liveJobIds = liveJobIds;
   const issues: UnattendedDiagnostic[] = [];
-  const busy = new Set(running.filter(q => q.root === control.root).map(q => q.unattended!.objective));
+  const busy = new Set(active.filter(q => q.root === control.root).map(q => q.unattended!.objective));
 
   for (const objective of control.objectives) {
     if (!same(readControl(home), control)) break;

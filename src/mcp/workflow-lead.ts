@@ -8,7 +8,7 @@ import { answerWorkerQuestion, closeJob } from './mcp/operations.js';
 import type { AnswerResult } from '../collectors/panel-actions.js';
 import { parseRemovalList, ticketApprovedRemovals } from './local-tickets.js';
 import { jobFiles } from './paths.js';
-import { directory, findJob, save } from './store/job-store.js';
+import { directory, findJob, readCachedStatus, save } from './store/job-store.js';
 import type { RunDecision, RunTodoItem, TicketQueue } from './ticket-queue-state.js';
 import type { OwnerApproval } from '../unattended/state.js';
 
@@ -34,6 +34,13 @@ export type RemovalsDeclaration =
   | { kind: 'ambiguous'; detail: string }
   | { kind: 'named'; items: string[]; raw: string };
 
+const declaresNone = (value: string) => /^none\p{P}*$/iu.test(value.trim());
+
+export function hasReportBlockers(reportText: string): boolean {
+  return Array.from(reportText.matchAll(/^[ \t]*(?:[-*] |#{1,6} )?(?:\*\*)?Blockers:(?:\*\*)?([^\r\n]*)/gim))
+    .some(([, value]) => !declaresNone(value));
+}
+
 export function extractRemovalsDeclaration(reportText: string): RemovalsDeclaration {
   const values: string[] = [];
   for (const match of reportText.matchAll(/^[ \t]*(?:[-*] |#{1,6} )?(?:\*\*)?Removes:(?:\*\*)?[ \t]*(.*?)[ \t]*$/gim)) {
@@ -43,7 +50,7 @@ export function extractRemovalsDeclaration(reportText: string): RemovalsDeclarat
   if (!values.length) return { kind: 'missing' };
   const ambiguous = values.find(v => /^(?:ambiguous|unclear|unsure)\b/i.test(v) || /\bambiguous\b/i.test(v));
   if (ambiguous) return { kind: 'ambiguous', detail: ambiguous };
-  const nonNone = values.filter(v => !/^none\.?$/i.test(v));
+  const nonNone = values.filter(v => !declaresNone(v));
   if (!nonNone.length) return { kind: 'none' };
   const raw = nonNone.join(', ');
   const items = parseRemovalList(raw);
@@ -303,6 +310,13 @@ export interface CloseLeadResult {
 export async function closeLeadJob(job: Job): Promise<CloseLeadResult> {
   const latest = findJob(job.job) ?? job;
   if (latest.reaped_at) return { ok: true };
+  // A known failed tab dispatch with no session receipt has nothing for hud-reap to close.
+  // An ambiguous launch is not proof that no tab was created.
+  if (!latest.headless && latest.dispatch_exit_code && !latest.launch_unknown &&
+      !fs.existsSync(join(directory(latest.job), jobFiles.session))) {
+    const { status } = readCachedStatus(latest.job);
+    if (status?.state === 'failed' && !status.pid && !status.launch_unknown) return { ok: true };
+  }
   const result = await closeJob(latest);
   if (result.exit_code === 0) {
     const after = findJob(job.job);

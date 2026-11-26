@@ -201,7 +201,9 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
           for (const row of entries) fs.appendFileSync(log, JSON.stringify({ command: 'herdr', args: row, rpc: req.method }) + '\n');
           const externalPid = has('cli-pid') ? Number(fs.readFileSync(join(env.HOME, 'cli-pid'))) : null;
           const external = externalPid && procStat(externalPid);
-          const worker = external && external.state !== 'Z' ? null : spawn('/bin/sleep', ['600'], { env: workerEnv, stdio: 'ignore' });
+          const worker = external && external.state !== 'Z' ? null : spawn('/bin/sleep', ['600'], {
+            env: { ...workerEnv, HERDR_PANE_ID: pane_id, HERDR_TAB_ID: tab_id, HERDR_WORKSPACE_ID: 'w4E' }, stdio: 'ignore',
+          });
           if (worker) { agents.add(worker); worker.once('exit', () => agents.delete(worker)); }
           const pid = worker?.pid ?? externalPid;
           const start = procStat(pid)?.start;

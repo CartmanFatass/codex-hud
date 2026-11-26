@@ -6,7 +6,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { isProcAlive, procStat, readBootId } from '../../dist/utils/proc.js';
+import { isProcAlive, procStat, readBootId, readProcEnviron } from '../../dist/utils/proc.js';
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { readMachineWork } from '../../dist/collectors/work-summary-snapshot.js';
@@ -22,6 +22,7 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { goodTicket, readJson, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
 const runner = resolve('packages/hud-mcp/bin/workflow-runner.mjs');
+const sonicEntry = resolve('packages/hud-mcp/bin/hud-sonic.mjs');
 const runFile = promisify(execFile);
 
 function unattended(f, extraEnv = {}) {
@@ -215,7 +216,7 @@ test('unattended Objective run lands tickets in one run (N + 2 sessions), record
   const f = await setupWorkflowProject(t, {
     tickets: {
       '01-synthetic.md': goodTicket(1, { ownerTry: 'yes', approvedRemovals: 'legacy-banner' }),
-      '02-synthetic.md': goodTicket(2, { blocked: '01' }),
+      '02-synthetic.md': goodTicket(2, { blocked: '01' }).replace('**Live try:** none\n', '').replace('- [ ] Checked', '- [ ] Checked\n- [ ] Live try: none'),
     },
     extraFeatures: {
       downstream: {
@@ -247,6 +248,20 @@ test('unattended Objective run lands tickets in one run (N + 2 sessions), record
   assert.match(q1.escalation_rule, /only.*user-visible feature.*docs\/spec\.md/);
 
   const w1 = await u.ticketJob(flow1, 'sample/01');
+  assert.equal(f.job(w1).caller_pane, undefined);
+  const session = Object.fromEntries(fs.readFileSync(join(f.dir(w1), 'SESSION.txt'), 'utf8').trimEnd().split('\n').map(line => line.split('=')));
+  const workerEnv = readProcEnviron(Number(session.PID));
+  assert.equal(workerEnv.HERDR_PANE_ID, session.LEFT);
+  assert.equal(workerEnv.HERDR_TAB_ID, session.TAB);
+  assert.notEqual(workerEnv.HERDR_PANE_ID, f.env.HERDR_PANE_ID);
+  const sonic = (...args) => runFile(process.execPath, [sonicEntry, ...args, '--dir', f.dir(w1)], {
+    cwd: f.job(w1).cwd, env: workerEnv, timeout: 15_000,
+  });
+  const child = (await sonic('start', '--task', 'Inspect synthetic input.')).stdout.trim();
+  assert.equal(f.job(child).parent_job, w1);
+  assert.equal(f.job(child).caller_pane, session.LEFT);
+  assert.match((await sonic('wait', '--job', child, '--timeout', '10')).stdout, /Synthetic implementation report/);
+
   // Brief asks for Removes: declaration.
   assert.match(fs.readFileSync(join(f.dir(w1), 'brief.md'), 'utf8'), /Removes:/);
   // Named removal matching ticket Approved removals: passes deterministically without pre-land lead!
@@ -256,7 +271,7 @@ test('unattended Objective run lands tickets in one run (N + 2 sessions), record
   assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* ready-for-human/);
 
   const w2 = await u.ticketJob(flow1, 'sample/02');
-  await f.settle(w2, { report: 'Synthetic finished.\nRemoves: none\n' });
+  await f.settle(w2, { report: 'Synthetic finished.\n- **Blockers:** NoNe!\nRemoves: NONE;\n' });
   await u.accept(flow1, 'Decision: finish\nReason: Verified both slices cleanly.\n');
   const done1 = await f.end(flow1);
   assert.equal(done1.state, 'completed', JSON.stringify(done1));
@@ -288,6 +303,122 @@ test('unattended Objective run lands tickets in one run (N + 2 sessions), record
   await u.accept(flow2);
   assert.equal((await f.end(flow2)).state, 'completed');
   assert.ok(machineWorkForms(readMachineWork(f.home, Date.now()), Date.now()).some(form => form.includes('Unatt')));
+});
+
+test('a headless worker without an orchestrator pane can start and collect Sonic', { timeout: 25_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  const job = 'j0000000000000001', dir = f.dir(job);
+  fs.mkdirSync(dir, { recursive: true });
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ job, role: 'imp', cwd: f.root, headless: true }));
+  const env = { ...f.env, HUD_JOB_DIR: dir };
+  delete env.HERDR_PANE_ID;
+  const sonic = (...args) => runFile(process.execPath, [sonicEntry, ...args, '--dir', dir], { cwd: f.root, env, timeout: 15_000 });
+  const child = (await sonic('start', '--task', 'Inspect synthetic input.')).stdout.trim();
+  assert.equal(f.job(child).parent_job, job);
+  assert.equal(f.job(child).caller_pane, undefined);
+  assert.match((await sonic('wait', '--job', child, '--timeout', '10')).stdout, /Synthetic implementation report/);
+});
+
+test('unattended on preflights land fields and trust for the lead and imp pool before writing control', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  const enable = () => runFile(process.execPath, [resolve('bin/hud'), 'unattended', 'on', '--objective', 'selected'], {
+    cwd: f.root, env: f.env, timeout: 15_000,
+  });
+  const config = join(f.root, '.hud', 'project.json'), { land } = readJson(config);
+  for (const [field, value] of Object.entries({ base: '-bad', gate: [''], after: undefined, push: 'no', wrapper: 3, timeout_s: 0 })) {
+    writeFixtureFile(config, JSON.stringify({ land: { ...land, [field]: value } }));
+    await assert.rejects(enable(), error => error.code === 2 && error.stderr.includes(`land.${field} must be`));
+  }
+  writeFixtureFile(config, JSON.stringify({ land }));
+  // Remove the reviewer's agy fallback: agy is now reachable only through imp's even pool.
+  const roles = join(f.root, '.hud', 'roles');
+  fs.mkdirSync(roles);
+  writeFixtureFile(join(roles, 'reviewer.json'), JSON.stringify({ role: 'reviewer', can_continue: false, run: [{ harness: 'pi', pi_role: 'reviewer' }] }));
+  writeFixtureFile(f.env.HUD_SETTINGS_PATH, JSON.stringify({ impPlacement: 'even', impEvenPool: ['hydrogen'] }));
+  const agy = join(f.env.HOME, '.gemini', 'antigravity-cli', 'settings.json');
+  const claude = join(f.env.CLAUDE_CONFIG_DIR, '.claude.json');
+  const claudeGrant = fs.readFileSync(claude, 'utf8');
+  writeFixtureFile(agy, '{}');
+  writeFixtureFile(claude, '{}');
+  await assert.rejects(enable(), error => error.code === 2 &&
+    error.stderr.includes('not trusted for: agy, claude') && error.stderr.trimEnd().endsWith(`\nhud trust ${f.root}`));
+  assert.equal(fs.readFileSync(claude, 'utf8'), '{}');
+
+  // Restore the shipped reviewer fallback and disable imp routing: standby agy still needs trust.
+  fs.unlinkSync(join(roles, 'reviewer.json'));
+  writeFixtureFile(f.env.HUD_SETTINGS_PATH, JSON.stringify({ impPlacement: 'fixed' }));
+  writeFixtureFile(claude, claudeGrant);
+  await assert.rejects(enable(), error => error.code === 2 && error.stderr.includes(`not trusted for: agy\nhud trust ${f.root}`));
+  assert.equal(fs.readFileSync(agy, 'utf8'), '{}');
+  assert.equal(fs.existsSync(join(f.home, 'unattended.json')), false);
+  assert.equal(unattended(f).status().on, false);
+});
+
+test('unattended holds an item whose imp dispatch refuses trust after preflight', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  const roles = join(f.root, '.hud', 'roles');
+  fs.mkdirSync(roles);
+  writeFixtureFile(join(roles, 'imp.json'), JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true, run: [{ harness: 'cli', agent: 'agy' }] }));
+  const u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  u.cmd('on', '--objective', 'selected');
+  writeFixtureFile(join(f.env.HOME, '.gemini', 'antigravity-cli', 'settings.json'), '{}');
+  writeFixtureFile(join(f.root, f.ticketPath(1)), goodTicket(1));
+  const flow = await u.findRun('selected');
+  const job = await u.ticketJob(flow, 'sample/01');
+  const done = await f.end(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(readJson(join(f.dir(job), 'STATUS.json')).exit_reason, 'untrusted_cwd');
+  assert.equal(done.tickets[0].failed, undefined);
+  assert.equal(done.tickets[0].held.kind, 'dispatch');
+  assert.ok(u.status().handbacks.some(h => h.job === job && h.reason.includes(`hud trust ${f.root}`)));
+});
+
+test('unattended does not reap a question lead that never started', { timeout: 35_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  u.cmd('on', '--objective', 'selected');
+  const flow = await u.findRun('selected');
+  const worker = await u.ticketJob(flow, 'sample/01');
+  writeFixtureFile(join(f.env.CLAUDE_CONFIG_DIR, '.claude.json'), '{}');
+  writeFixtureFile(join(f.dir(worker), 'qa', 'q1.md'), '# Question q1\n\nChoose a synthetic path.\n');
+  const done = await f.end(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  const lead = fs.readdirSync(join(f.home, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id)).map(f.job).find(j => j.role === 'lead');
+  assert.equal(readJson(join(f.dir(lead.job), 'STATUS.json')).exit_reason, 'untrusted_cwd');
+  assert.equal(fs.existsSync(join(f.dir(lead.job), 'SESSION.txt')), false);
+  assert.ok(!f.fakeLog().some(c => c.command === 'hud-reap' && c.args[0] === f.dir(lead.job)));
+  assert.equal(done.unclosed_leads, undefined);
+  assert.match(done.tickets[0].held.reason, /question lead failed.*hud trust/);
+});
+
+test('unattended reserves a paused Objective and does not re-admit its failed job under another Objective', { timeout: 35_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: {
+    '01-synthetic.md': goodTicket(1, { objective: 'other' }),
+    '02-synthetic.md': goodTicket(2),
+    '03-synthetic.md': goodTicket(3, { objective: 'other' }),
+  } });
+  const paused = 'q0000000000000001', job = 'j0000000000000001', at = new Date().toISOString();
+  fs.mkdirSync(join(f.home, 'flows'), { recursive: true });
+  fs.mkdirSync(f.dir(job), { recursive: true });
+  writeFixtureFile(join(f.dir(job), 'job.json'), JSON.stringify({
+    job, role: 'imp', cwd: f.root, ticket: 'sample/01', ticket_queue: paused, created_at: at, dispatch_exit_code: 1,
+  }));
+  writeFixtureFile(join(f.dir(job), 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'synthetic failure', ended_at: at }));
+  writeFixtureFile(join(f.home, 'flows', `${paused}.json`), JSON.stringify({
+    flow: paused, root: f.root, feature: 'selected', pane: '', task: false, max_parallel: 1,
+    created_at: at, updated_at: at, state: 'paused', unattended: { objective: 'selected' },
+    tickets: [{ ticket: 'sample/01', path: join(f.root, f.ticketPath(1)), job, failed: { reason: 'synthetic failure', at } }],
+  }));
+  writeFixtureFile(join(f.home, 'unattended-runs.json'), JSON.stringify([paused]));
+  const u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  u.cmd('on', '--objective', 'selected', '--objective', 'other');
+  const other = await u.findRun('other');
+  assert.ok(await u.ticketJob(other, 'sample/03'));
+  assert.deepEqual(u.status().runs.map(({ flow, state }) => [flow, state]), [[paused, 'paused'], [other, 'working']]);
+  assert.deepEqual(f.flow(other).tickets.map(t => t.ticket), ['sample/03']);
 });
 
 test('held item stays on Home, excludes itself and dependents from shared admission, allows manual owner land, while unrelated ticket drains and off kills nothing', { timeout: 60_000 }, async t => {
@@ -394,7 +525,7 @@ test('unattended deterministic gates hold spec edits and unapproved removals wit
   u.cmd('on', '--objective', 'selected');
   await until(() => {
     const file = join(f.home, 'unattended-diagnostics.json');
-    return fs.existsSync(file) && readJson(file).some(d => d.ticket === 'sample/01' && /missing Live try/.test(d.reason));
+    return fs.existsSync(file) && readJson(file).some(d => d.ticket === 'sample/01' && d.reason.includes('`**Live try:** none`'));
   }, 8_000);
   assert.deepEqual(u.status().runs, []);
 
@@ -535,7 +666,7 @@ test('to: main question hand-back auto-resumes on hud_respond and Blockers: paus
   assert.deepEqual(f.flow(reply.queue_resumed).tickets.map(x => x.job), [first]);
 
   // A Blockers: report pauses the run with empty notices (no stored no_wake) and NO wake to main.
-  await f.settle(first, { report: 'Synthetic finished report.\n\nBlockers: requires spec change\n' });
+  await f.settle(first, { report: 'Synthetic finished report.\n\nBlockers: none\nBlockers: requires spec change\n' });
   const blocked = await f.end(reply.queue_resumed);
   assert.equal(blocked.state, 'paused');
   assert.equal('no_wake' in blocked, false);

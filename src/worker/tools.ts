@@ -213,9 +213,12 @@ export async function startSonic({ dir, job: parent }: Pick<Worker, 'dir' | 'job
   const id = parent.cli ? status?.agent_session_id : status?.session_id ?? piSessionIdentity(parent, status?.session_file)?.id;
   const dispatcher = ['pi', 'claude', 'codex'].includes(harness) && typeof id === 'string' && id ? { harness, id } : undefined;
   const { dispatchJob } = await (dispatchModule ??= withDistLock(() => import('../mcp/dispatch/orchestrator.js')));
+  // A detached run has no orchestrator pane. Herdr still gives a tabbed worker
+  // its own pane ID; don't confuse that with the caller pane in the job receipt.
+  const pane = jobCallerPane(parent) || (!parent.headless ? process.env.HERDR_PANE_ID : undefined);
   const result = await dispatchJob({
     role: 'sonic', request_key: `sonic:${randomUUID()}`, cwd, task,
-  }, jobCallerPane(parent), { parent, dispatcher });
+  }, pane, { parent, dispatcher });
   if (!('job' in result) || !result.job) {
     const code = 'code' in result ? result.code : undefined;
     const message = ('error' in result ? result.error : undefined) ?? code;

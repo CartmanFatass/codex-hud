@@ -13,7 +13,7 @@ import { loadGraph } from '../workflows/graph.js';
 import { runVisible } from '../workflows/scope.js';
 import { freezeGraph, runDir } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
-import { ESCALATION_RULE } from '../unattended/state.js';
+import { ESCALATION_RULE, isOpenTicketRun } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
 import { checkFeatureTickets, checkTicketPaths, ticketReadiness } from './local-tickets.js';
 import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
@@ -58,7 +58,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
   return withAbstractLock('ticket-start', `${home}\0${root}\0${lockScope}`, () => {
     const queues = queueIds(home).map(id => readTicketQueue(home, id)).filter(q => q !== null)
       .filter(q => q.root === root && (unattended ? q.unattended?.objective === unattended.objective : !q.unattended && q.feature === target));
-    const prior = queues.find(q => q.state === 'working');
+    const prior = queues.find(q => unattended ? isOpenTicketRun(q) : q.state === 'working');
     if (prior) {
       if (unattended) return null;
       if (!runVisible(prior, pane, root)) throw Error(`Ticket queue ${prior.flow} is owned by another pane`);

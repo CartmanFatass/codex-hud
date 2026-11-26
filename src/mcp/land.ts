@@ -16,10 +16,16 @@ export function validLandConfig(home: string, root: string): LandConfig {
   if (!registeredProject(home, root).registered) throw Error('hud_land requires a registered project');
   const c = JSON.parse(fs.readFileSync(join(root, '.hud/project.json'), 'utf8')).land;
   const commands = (v: unknown) => Array.isArray(v) && v.every(x => typeof x === 'string' && x.trim());
-  if (!c || typeof c.base !== 'string' || !c.base || c.base.startsWith('-') || !commands(c.gate) || !commands(c.after) ||
-      typeof c.push !== 'boolean' || (c.wrapper !== undefined && (typeof c.wrapper !== 'string' || !c.wrapper)) ||
-      (c.timeout_s !== undefined && (!Number.isFinite(c.timeout_s) || c.timeout_s < 0.001 || c.timeout_s * 1000 > 2 ** 31 - 1)))
-    throw Error('Invalid or missing project land config: expected base, gate, after, push and optional wrapper and timeout_s');
+  const invalid = (field: string, expected: string): never => {
+    throw Error(`Invalid or missing project land config: land.${field} must be ${expected}`);
+  };
+  if (typeof c?.base !== 'string' || !c.base.trim() || c.base.startsWith('-')) invalid('base', 'a branch name');
+  if (!commands(c.gate)) invalid('gate', 'an array of non-empty commands');
+  if (!commands(c.after)) invalid('after', 'an array of non-empty commands');
+  if (typeof c.push !== 'boolean') invalid('push', 'true or false');
+  if (c.wrapper !== undefined && (typeof c.wrapper !== 'string' || !c.wrapper.trim())) invalid('wrapper', 'a non-empty string');
+  if (c.timeout_s !== undefined && (!Number.isFinite(c.timeout_s) || c.timeout_s < 0.001 || c.timeout_s * 1000 > 2 ** 31 - 1))
+    invalid('timeout_s', 'a number in seconds from 0.001 through 2147483.647');
   return c;
 }
 export async function startLand(
@@ -63,7 +69,8 @@ export async function startLand(
   }
   if (!['idle_grace', 'closed', 'done'].includes(state ?? '')) throw Error(`Cannot land ${id}: job state is ${state ?? 'unknown'} (expected idle_grace, done or closed)`);
   const c = validLandConfig(home, wt.main_root);
-  await git(wt.main_root, ['check-ref-format', `refs/heads/${c.base}`]);
+  try { await git(wt.main_root, ['check-ref-format', `refs/heads/${c.base}`]); }
+  catch { throw Error('Invalid project land config: land.base must be a branch name'); }
   const trees = parseWorktreeList(await git(wt.main_root, ['worktree', 'list', '--porcelain', '-z']));
   const tree = trees.slice(1).find(t => t.path === wt.root && t.branch === wt.branch);
   if (trees[0]?.path !== wt.main_root || !tree?.head || tree.locked !== undefined || tree.prunable !== undefined ||

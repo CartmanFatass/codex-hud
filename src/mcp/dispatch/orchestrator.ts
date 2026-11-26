@@ -162,7 +162,7 @@ function originalTask(job: Job): string {
   return brief.split(/\n## Context References\n\nRead these files for task context:\n|\n## Context\n\n### |\nFinish with `hud_report`\.\n$|\nThis harness uses the commands below instead of the worker tools named in your role\./, 1)[0].trimEnd();
 }
 
-type SonicParent = Pick<Job, 'job' | 'cwd' | 'project_root' | 'worktree' | 'objective'>;
+type SonicParent = Pick<Job, 'job' | 'cwd' | 'project_root' | 'worktree' | 'objective' | 'headless'>;
 function sonicCwd(parent: SonicParent, args: Args): string {
   // Use the actual launch cwd from the receipt, not the worktree's main checkout or process.cwd().
   if (typeof parent.cwd !== 'string' || !isAbsolute(parent.cwd)) throw new Error('missing parent cwd');
@@ -418,7 +418,7 @@ export async function dispatchCouncilSeat(parent: Job, seat: CouncilSeat, part: 
 }
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
-  parent?: Pick<Job, 'job' | 'objective'>, repairOf?: string, retryInput?: Args,
+  parent?: Pick<SonicParent, 'job' | 'objective' | 'headless'>, repairOf?: string, retryInput?: Args,
   { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, member, canAdmit, dispatcher, seat, council, memberStarted, workspace }: {
     seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
@@ -563,7 +563,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   const modelOverride = args.model === undefined ? undefined : required(args, 'model');
   if (onEntry?.harness === 'bro' && modelOverride !== undefined) return { ok: false, code: 'invalid_arguments' };
-  if (!ticketQueue && !herdrId(pane)) return { ok: false, code: 'herdr_required' };
+  // Sonic is headless and can belong to a headless worker without a caller pane.
+  if (!ticketQueue && !(parent?.headless && role === 'sonic') && !herdrId(pane))
+    return { ok: false, code: 'herdr_required' };
 
   const id = 'j' + randomBytes(8).toString('hex');
   const dir = directory(id);
