@@ -1,6 +1,6 @@
 # 15: Fork: make the declared-vs-detected kind path honest
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Blocked by:** none
 **Objective:** herdr-fork

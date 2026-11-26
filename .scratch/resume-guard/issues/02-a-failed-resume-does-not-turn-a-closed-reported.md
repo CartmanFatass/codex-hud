@@ -12,3 +12,5 @@
 ## Comments
 
 - Landed in this commit (replay base 72d11e5b5601d4a71104ba1082d9431fb5054740); gate 5/5 passed.
+
+- 2026-11-26 main: the acceptance line saying "return send_failed" was wrong; per spec the closed state is restored and the send falls back to repair (send_failed only when cleanup fails or the launch is unknown). Landed f4c14d46.

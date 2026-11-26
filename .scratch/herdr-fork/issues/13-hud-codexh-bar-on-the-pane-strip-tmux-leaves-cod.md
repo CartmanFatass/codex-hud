@@ -12,3 +12,5 @@
 - [ ] Owner try: open Codex with codexH: same bar as today; mouse selection and scrollback behave as in any herdr pane; a bar code change shows after npm run build without restarting the session
 
 ## Comments
+
+- 2026-11-26 main: implemented on wt/herdr-fork-13-d3083e (15a80f5e). Owner accepted (2026-11-26) that codexH now runs only inside herdr-hud (refuses in other terminals or an older fork, naming herdr-hud; CODEX_HUD_STATUSLINE=0 launches Codex without the bar) and that the tmux session flags --attach/--new-session/--kill/--list go with tmux. Land after the fork with pane_strip is installed, then live-check.

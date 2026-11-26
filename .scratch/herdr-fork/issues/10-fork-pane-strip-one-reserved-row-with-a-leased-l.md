@@ -1,6 +1,6 @@
 # 10: Fork: pane strip (one reserved row with a leased line)
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Blocked by:** herdr-fork/07
 **Objective:** herdr-fork

@@ -1,6 +1,6 @@
 # 12: HUD: worker tabs start hidden; Inspector brings one forward
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** herdr-fork/09
 **Objective:** herdr-fork
@@ -13,3 +13,5 @@
 ## Comments
 
 - Landed in this commit (replay base feea030a97917e3ef4cd47efd6baecf789bae280); gate 5/5 passed.
+
+- 2026-11-26 main: fork 0.9.5-hud.a26432a7 installed (live-handoff kept the main tab launch_id). Live: a claude worker (j3a436ad5853bbfba) and an imp started hidden; the main tab stayed visible; the hidden worker reported and its tab closed.

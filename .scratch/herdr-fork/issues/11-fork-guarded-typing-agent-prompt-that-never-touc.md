@@ -1,6 +1,6 @@
 # 11: Fork: guarded typing (agent.prompt that never touches a draft)
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Blocked by:** herdr-fork/07
 **Objective:** herdr-fork
@@ -12,3 +12,5 @@
 - [ ] ping capability; release build; full suite no new failures; merged on `hud`
 
 ## Comments
+
+- 2026-11-26 main: merged on fork `hud` as 63555cf2 (e864c542). Merge conflicts were capability fields next to hidden_tabs; kept both, schema regenerated; unit suite 3601/3601 single-threaded (parallel runs race on shared env, as upstream expects nextest), api_ping 26/26, live_handoff tests pass singly (load flakes only). Not installed yet; live check of each kind after install with 09+10.

@@ -1,6 +1,6 @@
 # 14: HUD: typed delivery to main sessions goes through guarded typing
 
-**Status:** ready-for-human
+**Status:** done
 **Owner try:** yes
 **Blocked by:** herdr-fork/11
 **Objective:** herdr-fork

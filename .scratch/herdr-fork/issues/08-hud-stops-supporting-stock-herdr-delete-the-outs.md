@@ -18,3 +18,5 @@
 - 2026-11-26 main: the milestone review (docs/reviews/2026-11-26-worker-stage-milestone.md, "Deletion boundary") narrows this ticket. Keep `tab-shell.ts`, `tab-owner.ts` and the stock reaper/close reconciliation: browser jobs (`harness-bro.ts`, `browser-runner.ts`) and the split Pi helper shell still use them. Delete only what the review's Delete list names. Starts after the review-fix job lands (it touches `reap-tab.ts`).
 
 - Landed in this commit (replay base 87e748b73492a11b77108fdc0dfcd0fb47acbdf4); gate 5/5 passed.
+
+- 2026-11-26 main: landed 77d7dcf1 (first try failed the gate on a missing `role` STATUS key; fixed in 894f345d). Live check on fork 0.9.5-hud.76b187b0: claude (jd235df55a6f7388d), agy (jba7eeeedde76ae3e) and pi (j90d6f5c3c7cda6a6) each got the first prompt without manual input, reported and closed; no tabs left.
