@@ -1,11 +1,12 @@
 /** Portfolio handoff. A job waiting for main is not an owner request. */
 import { basename } from 'node:path';
 import { RECENT_ADVICE_MS } from '../collectors/advisor-history.js';
-import { blockedObjectives, ownerRequestKey, type ProjectSnapshot } from '../collectors/project-board.js';
+import { blockedObjectives, ownerRequestKey, SETTLED_JOB_STATES, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { Objective } from '../collectors/objectives.js';
 import { homeActivityAt, type HomePortfolio, type HomeProject, type HomeRequest } from '../collectors/home-portfolio.js';
 import type { TodayFacts } from '../collectors/home-cards.js';
 import type { MonitorRow } from './monitor.js';
+import type { ObjectiveTarget } from './monitor-state.js';
 import { homeCardRows, type ScheduleView } from './home-cards.js';
 import { theme, truncateAnsi, visualLength as cells } from './colors.js';
 import { cutSentence, fit, monitorText, pair, sentenceRows, tokenColumn } from './monitor-text.js';
@@ -48,25 +49,46 @@ function loadFacts(jobs: ProjectSnapshot['active']) {
     roles.filter((r) => queued[r]).map((r) => ink.muted(queueMark) + roleInk(r)(roleIcon(r) + queued[r]))].flat().join(' ');
 }
 
-function projectView({ root, name, unavailable, snapshot, resultDates, advisor, advisorRules }: HomeProject, now: number) {
+function projectView({ root, name, unavailable, snapshot, resultDates, workingRuns, advisor, advisorRules }: HomeProject, now: number) {
   const ink = theme.board;
   const record = snapshot?.objectives, jobs = snapshot?.active ?? [], objectives = record?.objectives ?? [];
   const blocked = blockedObjectives(snapshot?.waiting ?? []), running = jobs.some(({ state }) => state !== 'queued');
-  const open = objectives.filter(({ state }) => state !== 'done').sort((a, b) =>
-    Number(blocked.has(b.id)) - Number(blocked.has(a.id)) || Number(a.state === 'paused') - Number(b.state === 'paused'));
+  const features = new Map(snapshot?.tickets.map((f) => [f.slug, f])), packages = new Set(jobs.map(({ package: slug }) => slug));
+  const landings = new Map<string, number>();
+  for (const { milestone, landed, at } of snapshot?.ledger ?? []) {
+    if (landed && at !== undefined) landings.set(milestone, Math.max(landings.get(milestone) ?? -Infinity, at));
+  }
   const recentAge = (id: string) => {
     const at = resultDates?.get(id);
     return at !== undefined && now - at <= 3 * 86_400_000 ? compactAge(at, now) : '';
   };
   const finished = objectives.filter(({ id, state }) => state === 'done' && recentAge(id));
+  const resultOnly: Objective[] = [];
+  const open = objectives.flatMap((objective) => {
+    const { id, state, features: links, result } = objective;
+    if (state === 'done') return [];
+    const data = progress(features, links);
+    // Ticketless objectives and ones with incomplete ticket evidence aren't known to be finished.
+    if (links.length && data && data.counts.accepted === data.total) {
+      if (result && recentAge(id)) resultOnly.push(objective);
+      return [];
+    }
+    const live = workingRuns?.objectives.has(id) || links.some((slug) =>
+      workingRuns?.features.has(slug) || packages.has(slug) || features.get(slug)?.tickets.some(({ job }) =>
+        job && !SETTLED_JOB_STATES.has(job.state)));
+    const rank = blocked.has(id) ? 0 : state === 'paused' ? 3 : live ? 1 : 2;
+    const at = links.reduce((latest, slug) => Math.max(latest, features.get(slug)?.at ?? -Infinity, landings.get(slug) ?? -Infinity),
+      resultDates?.get(id) ?? -Infinity);
+    return [{ objective, rank, at }];
+  }).sort((a, b) => a.rank - b.rank || (a.rank === 2 && a.at !== b.at ? b.at - a.at : 0)).map(({ objective }) => objective);
   const stance = record?.stance === 'paused' || record?.stance === 'maintenance' ? ink.muted(` · ${t(record.stance)}`) : '';
   const priority = record?.priority === 'high' ? ink.attention(mark('↑', '^', '\uF062'))
     : record?.priority === 'low' ? ink.muted(mark('↓', 'v', '\uF063')) : '';
   const idle = snapshot?.idle && !running, idleWord = idle && !stance ? ink.muted(t('idle')) : '';
   const noNotes = snapshot && !record && !snapshot.statePath;
   const age = compactAge(homeActivityAt(snapshot), now);
-  return { root, name: monitorText(name), unavailable, stance, paused: record?.stance === 'paused', open, finished, blocked,
-    features: new Map(snapshot?.tickets.map((f) => [f.slug, f])), unlinked: snapshot?.unlinked ?? [],
+  return { root, name: monitorText(name), unavailable, stance, paused: record?.stance === 'paused', open, finished, resultOnly, blocked,
+    features, unlinked: snapshot?.unlinked ?? [],
     mark: unavailable ? ink.danger(stateMark.failed()) : running ? liveMark() : idleMark(),
     nameInk: running && !unavailable ? ink.text : ink.muted,
     priority, idleWord, age: age && ink.muted(age), load: loadFacts(jobs),
@@ -140,11 +162,16 @@ function objectiveRows(v: ProjectView, objective: Objective, width: number) {
   const target = { root: v.root, objective, blocked };
   const row = { text: fit(`${lead}${textInk(tokenColumn(monitorText(objective.id), idCol))} ${title}${graphic} ${pad(countCol - cells(count))}${(paused ? ink.muted : ink.text)(count)}${flag}`, width),
     item: `home:objective:${v.root}:${objective.id}`, objectiveTarget: target };
-  const recentAge = v.recentAge(objective.id);
-  if (!recentAge || !objective.result) return { row };
+  return { row, result: objectiveResultRow(v, target, width) };
+}
+
+function objectiveResultRow(v: ProjectView, target: ObjectiveTarget, width: number) {
+  const ink = theme.board, { id, result } = target.objective;
+  const recentAge = v.recentAge(id);
+  if (!recentAge || !result) return;
   const age = ink.muted(recentAge);
-  const line = sentenceRows(monitorText(objective.result), width - cells(age) - 1, 1, 4, ink.success(stateMark.done()))[0] ?? '';
-  return { row, result: { text: fit(pair(line, age, width), width), item: `home:result:${v.root}:${objective.id}`, objectiveTarget: target } };
+  const line = sentenceRows(monitorText(result), width - cells(age) - 1, 1, 4, ink.success(stateMark.done()))[0] ?? '';
+  return { text: fit(pair(line, age, width), width), item: `home:result:${v.root}:${id}`, objectiveTarget: target };
 }
 
 /** Work no Objective lists, on one row: live features first, whole `slug done/total` facts, the rest counted. */
@@ -286,13 +313,18 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
     const header = projectHeader(v, width);
     const advisor = advisorRows(v, width);
     const previews = v.unavailable ? [] : [...v.open, ...v.finished].slice(0, 2).map((o) => objectiveRows(v, o, width));
+    const resultOnly = v.unavailable ? [] : v.resultOnly.slice(0, 2 - previews.length).flatMap((objective) => {
+      const result = objectiveResultRow(v, { root: v.root, objective, blocked: v.blocked.has(objective.id) }, width);
+      return result ? [result] : [];
+    });
     const noteLines = v.unavailable ? [] : v.note ? sentenceRows(monitorText(v.note), width, 1, 2, mark('¶', '.', '\uF249'))
       : v.noNotes ? [`  ${t('no Objectives or handoff notes')}`] : [];
     const note = noteLines.map((line) => boardRow(fit(ink.muted(line), width)));
-    return { v, header, advisor, previews, note, unlinked: unlinkedRow(v, width) };
+    return { v, header, advisor, previews, resultOnly, note, unlinked: unlinkedRow(v, width) };
   });
-  const tier = (limit: number, results: boolean, gaps = false, loose = false) => blocks.map(({ v, header, advisor, previews, note, unlinked }, i) => {
+  const tier = (limit: number, results: boolean, gaps = false, loose = false) => blocks.map(({ v, header, advisor, previews, resultOnly, note, unlinked }, i) => {
     const rows = [header, ...advisor, ...note, ...previews.slice(0, limit).flatMap(({ row, result }) => results && result ? [row, result] : [row])];
+    if (results) rows.push(...resultOnly);
     const more = v.open.length + v.finished.length - Math.min(limit, previews.length);
     if (!v.unavailable && more > 0) rows.push({ text: fit(`  ${ink.muted(t('{remaining} more', { remaining: more }))}`, width),
       item: `home:more:${v.root}`, homeTarget: { root: v.root } });

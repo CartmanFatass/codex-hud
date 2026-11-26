@@ -282,6 +282,100 @@ test('Home shows a no-notes line and newest observed job age even when idle is u
   }
 });
 
+function objectiveFixture(t) {
+  const f = fixture(t), root = f.paused;
+  f.put(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root }] }));
+  const goals = (items) => f.objectives(root, '**Stance:** active', items.map(([id, links = id, state = 'active', result]) =>
+    `## ${id}: Sample ${id}\n**State:** ${state}\n${links ? `**Features:** ${links}\n` : ''}${result ? `**Result:** ${result}\n` : ''}`).join('\n'));
+  const ticket = (slug, number, status, hours) => {
+    const file = join(root, '.scratch', slug, `issues/${number}-sample.md`), at = new Date(nowMs - hours * 3600e3);
+    f.put(file, `# ${number}: Sample\n**Status:** ${status}\n**Blocked by:** none\n`);
+    fs.utimesSync(file, at, at);
+  };
+  const rows = (portfolio, ...ids) => {
+    const [project] = portfolio.projects, snapshot = project.snapshot;
+    const selected = ids.length ? { ...snapshot, objectives: { ...snapshot.objectives,
+      objectives: snapshot.objectives.objectives.filter(({ id }) => ids.includes(id)) } } : snapshot;
+    return renderMonitor({ state: initialMonitorState(), width: 80, height: 40, nowMs,
+      homePortfolio: { ...portfolio, projects: [{ ...project, snapshot: selected }] } }).workboard.rows;
+  };
+  return { ...f, root, goals, ticket, rows };
+}
+const objectiveIds = (rows) => rows.filter((r) => r.item?.startsWith('home:objective:')).map((r) => r.objectiveTarget.objective.id);
+
+test('Home puts blocked and live Objectives ahead of idle work, with paused Objectives last', async (t) => {
+  const f = objectiveFixture(t), { root } = f;
+  const live = ['running', 'queued', 'queue', 'service'];
+  f.goals([['paused', 'on-hold', 'paused'], ['idle'], ['running'], ['queued'], ['queue'], ['service', 'service-work'], ['blocked', '', 'paused']]);
+  for (const slug of ['on-hold', 'idle', 'running', 'queued', 'queue', 'service-work']) f.ticket(slug, '01', 'ready-for-agent', slug === 'idle' ? 1 : 19);
+  f.put(join(root, 'STATE.md'), '## Waiting for the owner\n- 2026-11-24 [r1] Choose an example (objective blocked) (work waits)\n');
+  const job = (n, fields, state) => {
+    const dir = join(f.home, 'jobs', `j${String(n).padStart(16, '0')}`);
+    f.put(join(dir, 'job.json'), JSON.stringify({ cwd: root, role: 'imp', ...fields }));
+    f.put(join(dir, 'STATUS.json'), JSON.stringify({ state }));
+  };
+  job(1, { ticket: 'running/01' }, 'working');
+  job(2, { package: 'queued' }, 'queued');
+  job(3, { package: 'on-hold' }, 'working');
+  const run = (n, fields) => {
+    const file = join(f.home, 'flows', `q${String(n).padStart(16, '0')}.json`);
+    f.put(`${file}.tmp`, JSON.stringify({ root, state: 'working', ...fields }));
+    fs.renameSync(`${file}.tmp`, file);
+  };
+  run(1, { feature: 'queue' });
+  run(2, { feature: 'service', unattended: { objective: 'service' } });
+  run(3, { root: f.own, feature: 'idle' });
+  const portfolio = await f.tick();
+  assert.deepEqual(objectiveIds(f.rows(portfolio)), ['blocked', 'running'], 'blocked beats live; live ties keep file order');
+  for (const id of live) assert.deepEqual(objectiveIds(f.rows(portfolio, 'idle', 'paused', id)), [id, 'idle'], id);
+  run(1, { feature: 'queue', state: 'paused' });
+  run(2, { feature: 'service', unattended: { objective: 'service' }, state: 'completed' });
+  const settled = await f.tick();
+  for (const id of ['queue', 'service']) assert.deepEqual(objectiveIds(f.rows(settled, 'idle', id)), ['idle', id]);
+});
+
+test('Home ranks idle Objectives by the latest snapshot activity and excludes complete ticket sets from the fold', async (t) => {
+  const f = objectiveFixture(t), { root } = f;
+  f.goals([['complete', 'closed, dropped', 'active', 'The sample shipped.'], ['stale'], ['changed', 'stale, changed'],
+    ['tie'], ['landed'], ['result', 'result', 'active', 'The sample passed.'], ['unknown', 'closed, missing'], ['study', ''], ['partial']]);
+  for (const slug of ['stale', 'landed', 'result']) f.ticket(slug, '01', 'ready-for-agent', 19);
+  for (const slug of ['changed', 'tie']) f.ticket(slug, '01', 'ready-for-agent', 4);
+  f.ticket('closed', '01', 'done', 9);
+  f.ticket('dropped', '01', 'wontfix', 9);
+  f.ticket('partial', '01', 'done', 9);
+  f.put(join(root, '.scratch/partial/issues/02-partial.md'), 'x'.repeat(66_000));
+  const receipts = [['complete', 'The sample shipped.', 3 * 24], ['result', 'The sample passed.', 1]].map(([id, result, hours]) =>
+    JSON.stringify({ ...f.receipt, id, result, at: new Date(nowMs - hours * 3600e3).toISOString() }));
+  f.put(f.receiptPath, receipts.join('\n') + '\n');
+  const { projects: [project], ...rest } = await f.tick(), { snapshot } = project;
+  const ledger = [...snapshot.ledger, { milestone: 'landed', landed: true, at: nowMs - 2 * 3600e3 },
+    { milestone: 'stale', landed: true, at: nowMs - 30 * 3600e3 }];
+  const portfolio = { ...rest, projects: [{ ...project, snapshot: { ...snapshot, ledger } }] };
+  const originals = Object.fromEntries(['statSync', 'lstatSync', 'openSync', 'readFileSync', 'readdirSync'].map(key => [key, fs[key]]));
+  const calls = [];
+  try {
+    for (const [key, original] of Object.entries(originals)) fs[key] = (...args) => { calls.push(key); return original(...args); };
+    syncBuiltinESMExports();
+    const rows = f.rows(portfolio);
+    assert.deepEqual(objectiveIds(rows), ['result', 'landed']);
+    assert.match(stripAnsi(rows.find((r) => r.item === `home:more:${root}`).text), /6 more/);
+    assert.deepEqual(objectiveIds(f.rows(portfolio, 'landed', 'changed', 'tie')), ['landed', 'changed']);
+    assert.deepEqual(objectiveIds(f.rows(portfolio, 'stale', 'changed', 'tie')), ['changed', 'tie']);
+    assert.deepEqual(objectiveIds(f.rows(portfolio, 'complete', 'partial')), ['partial']);
+    const scarce = f.rows(portfolio, 'complete', 'unknown', 'study');
+    assert.deepEqual(objectiveIds(scarce), ['unknown', 'study'], 'unread links and ticketless studies are not complete');
+    assert.ok(!scarce.some((r) => r.item === `home:more:${root}`));
+    const one = f.rows(portfolio, 'complete', 'study');
+    assert.deepEqual(objectiveIds(one), ['study']);
+    assert.ok(one.some((r) => r.item === `home:result:${root}:complete`));
+    assert.ok(!one.some((r) => r.item === `home:more:${root}`));
+    assert.deepEqual(calls, [], 'painting from the collected snapshot does not touch disk');
+  } finally { Object.assign(fs, originals); syncBuiltinESMExports(); }
+  const projectFrame = renderMonitor({ state: { ...initialMonitorState(), activeTab: 'project' }, width: 80, height: 40, nowMs,
+    project: await new ProjectCollector(root, f.home).collect(true, board, nowMs) });
+  assert.ok(projectFrame.workboard.rows.some((r) => r.item === `project:objective:${root}:complete`));
+});
+
 test('Home shows both fresh done Objectives with full green bars, but no expired or undated ones', async (t) => {
   const f = await design(t), root = f.roots.lantern;
   const path = join(root, '.hud/objectives.md'), events = join(f.home, 'events/2026-11.jsonl');
@@ -586,6 +680,7 @@ test('unchanged Home tick with eight registered projects only stats files', asyn
     f.put(join(job, 'job.json'), JSON.stringify({ cwd: root, role: 'imp', title: 'Example job' }));
     f.put(join(job, 'STATUS.json'), JSON.stringify({ state: i % 2 ? 'queued' : 'working' }));
   }
+  f.put(join(f.home, 'flows/q0000000000000001.json'), JSON.stringify({ root: f.paused, feature: 'sample', state: 'working' }));
   const cold = await f.tick();
   assert.equal(cold.projects.length, 8);
   assert.ok(cold.projects.every((p) => p.snapshot.active.length === 1));

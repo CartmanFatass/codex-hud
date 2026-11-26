@@ -1,5 +1,7 @@
 import { basename, join } from 'node:path';
-import { queueFile } from '../mcp/ticket-queue-state.js';
+import { isTicketQueueId, queueFile, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { fileSignature } from '../utils/file-signature.js';
+import { headerScanner, type HeaderPass } from '../workflows/header-scan.js';
 import { readUnattendedStatus } from '../unattended/state.js';
 import type { ListedProject } from '../roles/projects.js';
 import type { ObjectiveRecord } from './objectives.js';
@@ -13,6 +15,7 @@ import { AdvisorHistory, type AdviceEvent } from './advisor-history.js';
 export interface HomeProject extends ListedProject {
   snapshot?: ProjectSnapshot;
   resultDates?: ReadonlyMap<string, number>;
+  workingRuns?: { features: ReadonlySet<string>; objectives: ReadonlySet<string> };
   activeToday?: true;
   advisor?: { skill: string; path: string; session: string; at: number };
   advisorRules?: AdvisorRuleHit;
@@ -63,6 +66,8 @@ export class HomePortfolioCollector {
   private receipts: ResultReceipts;
   private advice: AdvisorHistory;
   private history?: { since: number; at: number; projects: ReadonlySet<string> };
+  private scanFlows = headerScanner();
+  private queues?: { stamp: string; pass: HeaderPass; files: string[] };
   constructor(private home: string) {
     this.receipts = new ResultReceipts(join(home, 'events'));
     this.advice = new AdvisorHistory(home);
@@ -75,6 +80,38 @@ export class HomePortfolioCollector {
     const projects = archivedActivityProjects(this.home, since, now);
     this.history = { since, at: now, projects };
     return projects;
+  }
+
+  private collectWorkingRuns(projects: HomeProject[]) {
+    const byRoot = new Map(projects.filter((p) => p.snapshot?.objectives?.objectives.length).map((p) => [p.root, p]));
+    if (!byRoot.size) return;
+    // Reuse the directory listing until entries change; the header cache checks each queue's own stamp.
+    const stamp = fileSignature(join(this.home, 'flows'));
+    if (stamp === null) { this.queues = undefined; return; }
+    if (stamp !== this.queues?.stamp) {
+      try {
+        const pass = this.scanFlows(this.home);
+        this.queues = { stamp, pass, files: pass.files.filter((file) => file.endsWith('.json') && isTicketQueueId(file.slice(0, -5))) };
+      } catch { this.queues = undefined; return; }
+    }
+    const { pass, files } = this.queues;
+    const working = new Map<string, { features: Set<string>; objectives: Set<string> }>();
+    for (const file of files) {
+      try {
+        const q = pass.header<TicketQueue>(file);
+        if (q?.state !== 'working') continue;
+        const root = q.project_root ?? q.root, project = byRoot.get(root);
+        if (!project) continue;
+        let runs = working.get(root);
+        if (!runs) {
+          runs = { features: new Set(), objectives: new Set() };
+          working.set(root, runs);
+          project.workingRuns = runs;
+        }
+        if (q.unattended) runs.objectives.add(q.unattended.objective);
+        else runs.features.add(q.feature);
+      } catch { /* An unreadable queue gives no evidence. */ }
+    }
   }
 
   async read(list: readonly ListedProject[], board: WorkboardSnapshot, now: number): Promise<HomePortfolio> {
@@ -102,6 +139,7 @@ export class HomePortfolioCollector {
           today(s?.jobActivityAt) || history?.has(project.root)) entry.activeToday = true;
       projects.push(entry);
     }
+    this.collectWorkingRuns(projects);
     if (projects.some((p) => p.snapshot?.objectives?.objectives.some((o) => o.result))) {
       const receipts = this.receipts.read();
       for (const project of projects) {
