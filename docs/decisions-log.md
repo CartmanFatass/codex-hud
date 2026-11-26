@@ -5,6 +5,15 @@ Dates are the owner dates in the source spec unless marked *recorded*: a spec re
 separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-NN`. Section refs point into
 `docs/spec.md`.
 
+## 2026-11-26
+
+- **D-2026-11-26-03** (§2.2 Home): The docked panel (fork plan Step 2a) does not fit herdr's modal popup; it needs a
+  new fork dock layer (~650–850 Rust lines, Shape A: server-projected session dock, wire protocol unchanged) and
+  deletes HUD's split bookkeeping. Owner approved the larger change, sequenced after the agy native-status fix
+  (herdr-fork/21, 23, 24). Same day: agy status moves into the fork (herdr-fork/21–22), replacing the HUD-side
+  turn-child scan of D-2026-11-17-05; Home hides Objectives with no open tickets and the Today card becomes one
+  count line (home-tidy/01–02).
+
 ## 2026-11-25
 
 - **D-2026-11-26-02** (§1 display rule, §2.1, §2.2, §3): Owner widened the boundary after reading what the herdr
