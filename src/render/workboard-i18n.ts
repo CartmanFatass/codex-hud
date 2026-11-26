@@ -294,7 +294,6 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '{done}/{total} closed': '{done}/{total} 完结',
   '{n} queued': '{n} 待前序',
   'queued {n}': '排队 {n}',
-  'done {n}': '完成 {n}',
   '+{n} queued': '+{n} 待前序',
   'Active & ready': '进行与就绪',
   '{n} ask': '{n} 待决定',

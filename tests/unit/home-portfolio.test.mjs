@@ -130,8 +130,10 @@ test('Home folds three quiet registrations behind one row after two active proje
       const check = (frame, open) => {
         const { rows } = frame.workboard, toggle = foldRow(frame), projects = projectRows(frame);
         assert.deepEqual(projects.map((r) => r.homeTarget.root), open ? [harbor, lab, ...otherRoots] : [harbor, lab]);
-        assert.ok(rows.indexOf(toggle) > rows.indexOf(projects[1]));
-        assert.ok(open ? rows.indexOf(toggle) < rows.indexOf(projects[2]) : rows.at(-1) === toggle);
+        const toggleAt = rows.indexOf(toggle);
+        assert.ok(toggleAt > rows.indexOf(projects[1]));
+        if (open) assert.ok(toggleAt < rows.indexOf(projects[2]));
+        else assert.ok(rows.slice(toggleAt + 1).every(row => !row.item), 'only summary rows follow the folded project list');
         assert.equal(rows.filter((r) => r.item === toggle.item).length, 1);
         const label = lang === 'en' ? '3 other projects' : '其他 3 个项目';
         assert.ok(stripAnsi(toggle.text).startsWith(label));

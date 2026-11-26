@@ -4,11 +4,9 @@ import { localDayStart } from '../collectors/job-stats.js';
 import { DAY_MS, scheduleTiming, type ScheduleItem } from '../collectors/schedule.js';
 import { theme, visualLength as cells } from './colors.js';
 import { t } from './i18n.js';
-import { ROLE_GLYPHS, roleIcon } from './model-glyphs.js';
 import type { MonitorRow } from './monitor.js';
 import { cutSentence, fit, monitorText, tokenColumn } from './monitor-text.js';
-import { roleInk } from './work-job-row.js';
-import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
+import { boardRow, compactAge, mark, section } from './workboard-rows.js';
 
 const calendar = () => mark('◉', '@', '\uF073');
 const joinFacts = (facts: string[]) => facts.filter(Boolean).join(theme.board.muted(' · '));
@@ -21,51 +19,20 @@ function sectionFacts(label: string, width: number, ...facts: string[]) {
   return section(label, width, joinFacts(kept));
 }
 
-function roleCounts(counts: ReadonlyMap<string, number>, failed: boolean) {
-  const grouped = new Map<string, number>();
-  for (const [role, n] of counts) {
-    const key = Object.hasOwn(ROLE_GLYPHS, role) ? role : 'other';
-    grouped.set(key, (grouped.get(key) ?? 0) + n);
+function todayRow(data: TodayFacts | undefined, projects: readonly HomeProject[], width: number, now: number): MonitorRow | undefined {
+  const { landed, failed, limited } = data?.since === localDayStart(now) ? data : {};
+  const live = new Set<string>();
+  for (const { snapshot } of projects) {
+    for (const { jobId, state } of snapshot?.active ?? []) if (state !== 'queued') live.add(jobId);
   }
-  return Object.keys(ROLE_GLYPHS).flatMap(role => {
-    const n = grouped.get(role);
-    return n ? [(failed ? theme.board.danger : roleInk(role))(roleIcon(role) + n)] : [];
-  }).join(' ');
-}
-const total = (counts: ReadonlyMap<string, number>) => [...counts.values()].reduce((sum, n) => sum + n, 0);
-
-function todayRows(data: TodayFacts | undefined, width: number, now: number, level: number): MonitorRow[] {
-  if (!data || level >= 3 || data.since !== localDayStart(now)) return [];
-  const ink = theme.board, label = t('Today'), { landed, newest, finished, failed, first, retried, limited } = data;
-  const nDone = total(finished), nFailed = total(failed), bound = limited ? t('bounded scan') : '';
-  if (!landed && !nDone && !nFailed) return [sectionFacts(label, width, t('nothing yet'), bound)];
-  const lands = landed ? t('{n} landed', { n: landed }) : '';
-  if (level === 2) return [sectionFacts(label, width, lands, nDone ? t('done {n}', { n: nDone }) : '',
-    nFailed ? ink.danger(t('failed {n}', { n: nFailed })) : '', bound)];
-  const rows = [sectionFacts(label, width, lands || t('none landed'), bound)];
-  if (level === 0) {
-    const nameCol = Math.min(width < 50 ? 10 : width < 80 ? 14 : 18, Math.max(0, width - 8)), ticketCol = width >= 80 ? 18 : 0;
-    for (const { id, root, name, ticket, title, at } of newest) {
-      const age = compactAge(at, now), titleCol = Math.max(0, width - 4 - nameCol - Math.max(4, cells(age)) - (ticketCol ? ticketCol + 1 : 0));
-      const ticketText = ticketCol ? ' ' + ink.muted(tokenColumn(monitorText(ticket ?? ''), ticketCol)) : '';
-      rows.push({ ...line(`${ink.success(stateMark.done())} ${ink.text(tokenColumn(monitorText(name), nameCol))} ` +
-        `${ink.muted(fit(cutSentence(monitorText(title ?? ''), titleCol), titleCol))}${ticketText} ${ink.muted(paddedLeft(age, 4))}`, width),
-        item: `home:card:today:${id}`, homeTarget: { root } });
-    }
-    if (landed > newest.length) rows.push(line('  ' + ink.muted(t('{remaining} more', { remaining: landed - newest.length })), width));
-  }
-  const col = Math.max(...[t('done'), t('failed'), t('gates')].map(cells)) + 1, room = width - 2 - col;
-  const fact = (key: string, paint: (s: string) => string, value: string) => line(`  ${paint(fit(t(key), col))}${value}`, width);
-  const roles = (counts: ReadonlyMap<string, number>, n: number, failed: boolean) => {
-    const value = roleCounts(counts, failed);
-    return cells(value) <= room ? value : (failed ? ink.danger : ink.text)(String(n));
-  };
-  if (nDone) rows.push(fact('done', ink.muted, roles(finished, nDone, false)));
-  if (nFailed) rows.push(fact('failed', ink.danger, roles(failed, nFailed, true)));
-  const gates = [first ? t('first try {n}', { n: first }) : '', retried ? t('retried {n}', { n: retried }) : ''].filter(Boolean);
-  while (gates.length && cells(joinFacts(gates)) > room) gates.shift();
-  if (gates.length) rows.push(fact('gates', ink.muted, joinFacts(gates)));
-  return rows;
+  if (!landed && !failed && !live.size) return;
+  const ink = theme.board, approx = limited ? '~' : '';
+  const facts = joinFacts([
+    landed ? t('{n} landed', { n: approx + landed }) : '',
+    failed ? ink.danger(t('{n} failed', { n: approx + failed })) : '',
+    live.size ? ink.active(t('{count} running', { count: live.size })) : '',
+  ]);
+  return line(`${t('Today')} ${facts}`, width);
 }
 
 export function scheduleView(items: readonly ScheduleItem[] | undefined, now: number) {
@@ -154,9 +121,9 @@ function scheduleRows({ sorted, overdue, today }: ScheduleView, projects: readon
 /** Cards never borrow a row from the full-tier portfolio. */
 export function homeCardRows(today: TodayFacts | undefined, schedule: ScheduleView, projects: readonly HomeProject[], width: number, now: number, spare: number) {
   if (spare <= 0) return { rows: [], full: false };
-  const blank = line('', width);
+  const blank = line('', width), summary = todayRow(today, projects, width, now);
   for (let level = 0; level <= 3; level++) {
-    const a = todayRows(today, width, now, level), b = scheduleRows(schedule, projects, width, now, level);
+    const a = summary && level < 3 ? [summary] : [], b = scheduleRows(schedule, projects, width, now, level);
     if (!a.length && !b.length) return { rows: [], full: level === 0 };
     const rows = [...(level < 3 ? [blank] : []), ...a, ...(a.length && b.length && level < 2 ? [blank] : []), ...b];
     if (rows.length <= spare) return { rows, full: level === 0 };
