@@ -7,6 +7,7 @@ import {
   collectAndRecordLandFlakes, collectGateFlakes, flakeDispatchKey, retryPendingFlakeCollections,
 } from '../../dist/mcp/land-flakes.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
+import { clearExhausted, markExhausted } from '../../dist/roles/exhausted.js';
 import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
@@ -768,120 +769,94 @@ test('refused ticket edit and refused dispatch are recorded on the land receipt 
   assert.equal(fs.readFileSync(join(f.env.HOME, 'gate-runs.log'), 'utf8').trim().split('\n').length, gateRunsBeforeService, 'service wake retry did not rerun any gate');
 });
 
-test('promoted list waiting behind an active flake imp is admitted after that imp is stopped or fails, without another flake land', { timeout: 60_000 }, async t => {
-  const f = await checkout(t, ['npm run test:sample'], { after: [], autoPrewalk: true });
+function seedWaitingFlake(f) {
+  const dir = join(f.main, '.scratch', 'test-flakes', 'issues');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const number of ['01', '02']) {
+    fs.writeFileSync(join(dir, `${number}-running-list.md`), [
+      `# ${number}: Gate flakes running list`, '', `**Status:** ${number === '01' ? 'claimed' : 'ready-for-agent'}`,
+      '**Owner try:** no', '**Live try:** none', '**Blocked by:** none', '',
+      '**What to build:** Fix the synthetic flake.', '', '- [ ] Pass', '', '## Comments', '',
+    ].join('\n'));
+  }
+  f.git(f.main, 'add', '.scratch');
+  f.git(f.main, 'commit', '-qm', 'seed running lists');
+
+  const job = 'j0000000000000b01';
+  const jobDir = join(f.home, 'jobs', job);
+  const status = join(jobDir, 'STATUS.json');
+  const now = new Date().toISOString();
+  fs.mkdirSync(jobDir, { recursive: true });
+  fs.writeFileSync(join(jobDir, 'job.json'), JSON.stringify({
+    job, cwd: f.main, project_root: f.main, role: 'imp', ticket: 'test-flakes/01',
+    request_key: flakeDispatchKey(f.main, 'test-flakes/01', 1), created_at: now, dispatch_exit_code: 0,
+  }));
+  fs.writeFileSync(status, JSON.stringify({ state: 'working' }));
+
+  const flow = 'f0000000000000b02';
+  const flowsDir = join(f.home, 'flows');
+  fs.mkdirSync(flowsDir, { recursive: true });
+  fs.writeFileSync(join(flowsDir, `${flow}.json`), JSON.stringify({
+    flow, job: 'j0000000000000b02', pane: f.env.HERDR_PANE_ID, task: false,
+    wt: { main_root: f.main, root: f.worktree, base_head: f.base_head, branch: f.branch },
+    config: { base: 'base', gate: ['true'], after: [], push: false },
+    state: 'completed', step: 'done', pid: process.pid, start: '1',
+    created_at: now, updated_at: now, source_sha: f.base_head,
+    flake_collection: { state: 'pending', stage: 'dispatch', ticket: 'test-flakes/02',
+      error: 'waiting for active flake job', attempts: 1, updated_at: now },
+  }));
+  return { flow, status };
+}
+
+test('selected Objective cannot admit a promoted running list until the active flake imp stops', { timeout: 40_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
   setFlakesConfig(f, { feature: 'test-flakes' });
+  const { flow, status } = seedWaitingFlake(f);
+  fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: false, roleCaps: { imp: 3 } }));
 
-  const addCleanJob = (id, tag) => {
-    const base = f.git(f.main, 'rev-parse', 'HEAD');
-    const wtName = `imp-${id.slice(-6)}`;
-    const wtRoot = join(`${f.main}-wt`, wtName);
-    const branch = `wt/${wtName}`;
-    f.git(f.main, 'worktree', 'add', '-qb', branch, wtRoot, base);
-    fs.appendFileSync(join(wtRoot, 'tracked'), `${tag}\n`);
-    f.git(wtRoot, 'commit', '-qam', tag);
-    const dir = join(f.home, 'jobs', id);
-    fs.mkdirSync(dir, { recursive: true });
-    const now = new Date().toISOString();
-    fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
-      job: id,
-      cwd: wtRoot,
-      project_root: f.main,
-      role: 'imp',
-      herdr_pane: f.env.HERDR_PANE_ID,
-      created_at: now,
-      dispatch_exit_code: 0,
-      worktree: { main_root: f.main, root: wtRoot, base_head: base, branch },
-    }));
-    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: now }));
-  };
+  // The later-sorting ordinary ticket proves the selected Objective's queue has had a chance to admit work.
+  fs.writeFileSync(join(f.main, '.hud', 'objectives.md'), '# Objectives\n\n## synth-obj: Synthetic Objective\n\n**State:** active\n**Features:** test-flakes, zz-probe\n');
+  const probeDir = join(f.main, '.scratch', 'zz-probe', 'issues');
+  fs.mkdirSync(probeDir, { recursive: true });
+  fs.writeFileSync(join(probeDir, '01-probe.md'), [
+    '# 01: Probe', '', '**Status:** ready-for-agent', '**Live try:** none', '**Blocked by:** none', '',
+    '**What to build:** Prove ordinary work is admitted.', '', '- [ ] Pass', '',
+  ].join('\n'));
+  f.git(f.main, 'add', '.hud/objectives.md', probeDir);
+  f.git(f.main, 'commit', '-qm', 'add objective and probe');
 
-  // Promote test-flakes/01 and dispatch flake imp 1.
-  addFlakyTestJob(f, { id: 'j0000000000000b01', testFile: 'alpha.test.mjs', testName: 'alpha wait', markerName: 'wait-alpha-1' });
-  const { flow: flow1 } = await f.call('hud_land', { job: 'j0000000000000b01' });
-  await until(() => f.flowState(flow1).flake_collection?.state === 'done', t.signal);
-
-  addFlakyTestJob(f, { id: 'j0000000000000b02', testFile: 'alpha.test.mjs', testName: 'alpha wait', markerName: 'wait-alpha-2' });
-  const { flow: flow2 } = await f.call('hud_land', { job: 'j0000000000000b02' });
-  await until(() => f.flowState(flow2).flake_collection?.state === 'done' &&
-    listFlakeJobs(f).some(j => j.ticket === 'test-flakes/01' && j.dispatch_exit_code === 0), t.signal);
-  const job01 = listFlakeJobs(f).find(j => j.ticket === 'test-flakes/01');
-  fs.writeFileSync(join(f.home, 'jobs', job01.job, 'STATUS.json'), JSON.stringify({ state: 'working' }));
-
-  // While job01 is active, promote test-flakes/02; flow4 must keep a durable pending waiting-dispatch state.
-  addFlakyTestJob(f, { id: 'j0000000000000b03', testFile: 'beta.test.mjs', testName: 'beta wait', markerName: 'wait-beta-1' });
-  const { flow: flow3 } = await f.call('hud_land', { job: 'j0000000000000b03' });
-  await until(() => f.flowState(flow3).flake_collection?.state === 'done', t.signal);
-
-  addFlakyTestJob(f, { id: 'j0000000000000b04', testFile: 'beta.test.mjs', testName: 'beta wait', markerName: 'wait-beta-2' });
-  const { flow: flow4 } = await f.call('hud_land', { job: 'j0000000000000b04' });
-  await until(() => f.flowState(flow4).state === 'completed' &&
-    f.flowState(flow4).flake_collection?.state === 'pending', t.signal);
-
-  const f4Waiting = f.flowState(flow4).flake_collection;
-  assert.equal(f4Waiting.stage, 'dispatch');
-  assert.equal(f4Waiting.ticket, 'test-flakes/02');
-  assert.equal(f4Waiting.job, undefined);
-  assert.equal(listFlakeJobs(f).length, 1, 'must not admit second flake imp while first is active');
-
-  // An unrelated clean land while job01 is still active must leave flow4 pending and not admit test-flakes/02.
-  addCleanJob('j0000000000000b05', 'clean-while-active');
-  const { flow: cleanWhileActive } = await f.call('hud_land', { job: 'j0000000000000b05' });
-  await until(() => f.flowState(cleanWhileActive).state === 'completed', t.signal);
-  assert.equal(f.flowState(flow4).flake_collection?.state, 'pending');
-  assert.equal(listFlakeJobs(f).length, 1);
-
-  // Start unattended service, then STOP job01 without landing it -> test-flakes/02 must be admitted automatically.
-  fs.writeFileSync(join(f.main, '.hud', 'objectives.md'), '# Objectives\n\n## synth-obj: Synthetic Objective\n\n**State:** active\n**Features:** synth\n');
-  f.git(f.main, 'add', '.hud/objectives.md');
-  f.git(f.main, 'commit', '-qm', 'add synthetic objective');
-  const unattendedEnv = { ...f.env, HUD_UNATTENDED_RECONCILE_MS: '500' };
+  const env = { ...f.env, HUD_UNATTENDED_RECONCILE_MS: '500' };
   const hudBin = resolve('bin/hud');
-  const stopUnattended = () => {
-    try { execFileSync(process.execPath, [hudBin, 'unattended', 'off'], { cwd: f.main, env: unattendedEnv, stdio: 'ignore', timeout: 10_000 }); }
+  t.after(() => {
+    try { execFileSync(process.execPath, [hudBin, 'unattended', 'off'], { cwd: f.main, env, stdio: 'ignore', timeout: 10_000 }); }
     catch {}
-  };
-  t.after(stopUnattended);
-  execFileSync(process.execPath, [hudBin, 'unattended', 'on', '--objective', 'synth-obj'], {
-    cwd: f.main, env: unattendedEnv, encoding: 'utf8', timeout: 15_000,
   });
+  execFileSync(process.execPath, [hudBin, 'unattended', 'on', '--objective', 'synth-obj'], {
+    cwd: f.main, env, encoding: 'utf8', timeout: 15_000,
+  });
+  await until(() => listFlakeJobs(f, 'zz-probe').some(j => j.dispatch_exit_code === 0), t.signal);
+  assert.equal(readJson(status).state, 'working');
+  assert.deepEqual(listFlakeJobs(f).map(j => j.ticket), ['test-flakes/01']);
+  assert.equal(f.flowState(flow).flake_collection.state, 'pending');
 
-  fs.writeFileSync(join(f.home, 'jobs', job01.job, 'STATUS.json'),
-    JSON.stringify({ state: 'stopped', ended_at: new Date().toISOString() }));
-  await until(() => f.flowState(flow4).flake_collection?.state === 'done' &&
-    listFlakeJobs(f).some(j => j.ticket === 'test-flakes/02' && j.dispatch_exit_code === 0), 15_000);
+  fs.writeFileSync(status, JSON.stringify({ state: 'stopped', ended_at: new Date().toISOString() }));
+  const jobsFor02 = () => listFlakeJobs(f).filter(j => j.ticket === 'test-flakes/02');
+  await until(() => f.flowState(flow).flake_collection.state === 'done' &&
+    jobsFor02().some(j => j.dispatch_exit_code === 0), t.signal);
+  assert.equal(jobsFor02().length, 1);
+});
 
-  const job02 = listFlakeJobs(f).find(j => j.ticket === 'test-flakes/02');
-  assert.equal(f.flowState(flow4).flake_collection.ticket, 'test-flakes/02');
-  assert.equal(f.flowState(flow4).flake_collection.job, job02.job);
-  assert.equal(listFlakeJobs(f).filter(j => j.ticket === 'test-flakes/01').length, 1, 'stopped ticket 01 was not re-dispatched ahead of waiting ticket 02');
-
-  // Stop the service, keep job02 active, promote test-flakes/03, then mark job02 FAILED -> unrelated clean land admits test-flakes/03.
-  stopUnattended();
-  fs.writeFileSync(join(f.home, 'jobs', job02.job, 'STATUS.json'), JSON.stringify({ state: 'working' }));
-
-  addFlakyTestJob(f, { id: 'j0000000000000b06', testFile: 'gamma.test.mjs', testName: 'gamma wait', markerName: 'wait-gamma-1' });
-  const { flow: flow5 } = await f.call('hud_land', { job: 'j0000000000000b06' });
-  await until(() => f.flowState(flow5).flake_collection?.state === 'done', t.signal);
-
-  addFlakyTestJob(f, { id: 'j0000000000000b07', testFile: 'gamma.test.mjs', testName: 'gamma wait', markerName: 'wait-gamma-2' });
-  const { flow: flow6 } = await f.call('hud_land', { job: 'j0000000000000b07' });
-  await until(() => f.flowState(flow6).state === 'completed' &&
-    f.flowState(flow6).flake_collection?.state === 'pending', t.signal);
-  assert.equal(f.flowState(flow6).flake_collection.ticket, 'test-flakes/03');
-
-  fs.writeFileSync(join(f.home, 'jobs', job02.job, 'STATUS.json'),
-    JSON.stringify({ state: 'failed', exit_reason: 'synthetic_fail', ended_at: new Date().toISOString() }));
-
-  addCleanJob('j0000000000000b08', 'clean-after-fail');
-  const { flow: cleanAfterFail } = await f.call('hud_land', { job: 'j0000000000000b08' });
-  await until(() => f.flowState(cleanAfterFail).state === 'completed' &&
-    f.flowState(flow6).flake_collection?.state === 'done' &&
-    listFlakeJobs(f).some(j => j.ticket === 'test-flakes/03' && j.dispatch_exit_code === 0), t.signal);
-
-  const job03 = listFlakeJobs(f).find(j => j.ticket === 'test-flakes/03');
-  assert.equal(f.flowState(flow6).flake_collection.ticket, 'test-flakes/03');
-  assert.equal(f.flowState(flow6).flake_collection.job, job03.job);
+test('an unrelated clean land admits a waiting flake list after the active imp fails', { timeout: 30_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+  const { flow, status } = seedWaitingFlake(f);
+  fs.writeFileSync(status, JSON.stringify({ state: 'failed', exit_reason: 'synthetic failure', ended_at: new Date().toISOString() }));
+  const { flow: cleanLand } = await f.call('hud_land', { job: 'j0000000000000123' });
+  await until(() => f.flowState(cleanLand).state === 'completed' &&
+    f.flowState(flow).flake_collection.state === 'done', t.signal);
+  const admitted = listFlakeJobs(f).filter(j => j.ticket === 'test-flakes/02');
+  assert.equal(admitted.length, 1);
+  assert.equal(f.flowState(flow).flake_collection.job, admitted[0].job);
 });
 
 test('waiting-dispatch state is acknowledged only on admission or independent resolution (done, claimed, wontfix)', { timeout: 30_000 }, async t => {
@@ -1072,21 +1047,29 @@ test('persistent refusal does not self-wake unattended service; attempts and rec
   assert.ok(t01Resolved.includes('Owner hand edit stays intact'), 'owner edit preserved');
   assert.equal(t01Resolved.split(flow1).length - 1, 2, 'flow1 appended once (flow id + log path)');
 
-  // Part B: persistent dispatch refusal (disabled harness) stays bounded across wakes, then admits once when cleared.
-  const harnessSwitches = join(f.home, 'harnesses.json');
-  fs.writeFileSync(harnessSwitches, JSON.stringify({ disabled: ['pi'] }));
+  // Part B: every Imp place is quota-exhausted. Exhaustion is neither watched nor stamped by the service.
+  const roles = join(f.home, 'roles');
+  fs.mkdirSync(roles, { recursive: true });
+  fs.writeFileSync(join(roles, 'imp.json'), JSON.stringify({ role: 'imp', instructions: 'implementer', can_continue: true,
+    run: [{ harness: 'pi', pi_role: 'implementer', model: 'synthetic/quota-test' }],
+  }));
+  const key = 'pi:synthetic/quota-test';
+  markExhausted(f.home, key, 'synthetic quota exhausted');
+  const refused = await f.call('hud_create', { role: 'imp', task: 'Synthetic quota probe', scouts: [] });
+  assert.equal(refused.code, 'no_available_place', JSON.stringify(refused));
 
   addFlakyTestJob(f, { id: 'j0000000000000d02', testFile: 'alpha.test.mjs', testName: 'alpha bounded', markerName: 'bounded-dispatch-2' });
   const { flow: flow2 } = await f.call('hud_land', { job: 'j0000000000000d02' });
-  await until(() => f.flowState(flow2).state === 'completed' &&
-    f.flowState(flow2).flake_collection?.state === 'pending', 10_000);
+  await until(() => f.flowState(flow2).flake_collection !== undefined, t.signal);
+  assert.equal(f.flowState(flow2).state, 'completed');
 
   const flow2Path = join(f.home, 'flows', `${flow2}.json`);
   const stat2Before = fs.statSync(flow2Path);
   const fc2Before = f.flowState(flow2).flake_collection;
-  assert.equal(fc2Before.stage, 'dispatch');
+  assert.equal(fc2Before.stage, 'dispatch', JSON.stringify(fc2Before));
   assert.equal(fc2Before.ticket, 'test-flakes/01');
   assert.equal(fc2Before.attempts, 1);
+  assert.match(fc2Before.error, /synthetic quota exhausted/);
   assert.deepEqual(listFlakeJobs(f), []);
 
   await new Promise(r => setTimeout(r, 700));
@@ -1102,8 +1085,8 @@ test('persistent refusal does not self-wake unattended service; attempts and rec
   assert.equal(stat2After.mtimeMs, stat2Before.mtimeMs);
   assert.deepEqual(listFlakeJobs(f), []);
 
-  // Re-enable pi harness -> service admits exactly one flake imp job.
-  fs.unlinkSync(harnessSwitches);
+  // Clear only the exhaustion mark: no new land, job, ticket edit or watched input change.
+  assert.equal(clearExhausted(f.home, key), true);
   await until(() => f.flowState(flow2).flake_collection?.state === 'done' &&
     listFlakeJobs(f).some(j => j.ticket === 'test-flakes/01' && j.dispatch_exit_code === 0), 15_000);
 

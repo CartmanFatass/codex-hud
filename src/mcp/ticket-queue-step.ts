@@ -1263,6 +1263,7 @@ function tickTicketQueue(
     : step.ask === false ? WORKFLOW_WORKER_RULE_NO_ASK : WORKFLOW_WORKER_RULE;
   return { state: 'running', changed: true, effect: async () => {
     let job: string | undefined, err: string | undefined;
+    let flakeDeferred = false;
     const canAdmit = () => {
       const cur = readTicketQueue(hudHome, flowId);
       return cur?.state === 'working' && !stopRequested(hudHome, flowId);
@@ -1276,7 +1277,8 @@ function tickTicketQueue(
       if ('job' in result && typeof result.job === 'string') job = result.job;
       if (!job || ('ok' in result && result.ok === false)) {
         const code = 'code' in result ? result.code : undefined;
-        if (code !== 'queue_stopped') {
+        flakeDeferred = code === 'flake_ineligible';
+        if (code !== 'queue_stopped' && !flakeDeferred) {
           const why = ('reason' in result && result.reason) || ('error' in result && result.error) || code || 'no worker';
           err = `${launching.ticket}: dispatch failed (${errorLine(String(why))})`;
         }
@@ -1289,7 +1291,11 @@ function tickTicketQueue(
       if (entry) {
         const bound = job ?? receiptFor(cur, entry)?.job;
         if (bound) { entry.job = bound; writeTicketQueue(hudHome, cur); }
-        else if (err && cur.unattended && !stopRequested(hudHome, flowId)) {
+        else if (flakeDeferred) {
+          // Another admission won the race. Drop the unbound intent and let readiness decide again.
+          cur.tickets.splice(cur.tickets.indexOf(entry), 1);
+          writeTicketQueue(hudHome, cur);
+        } else if (err && cur.unattended && !stopRequested(hudHome, flowId)) {
           failItem(entry, err, 'dispatch');
           writeTicketQueue(hudHome, cur);
         }

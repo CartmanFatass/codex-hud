@@ -1,16 +1,18 @@
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
-import { basename, join, resolve } from 'node:path';
+import { basename, join } from 'node:path';
 import { readObjectives } from '../collectors/objectives.js';
 import { getHudHome } from '../hud-home.js';
-import { listPendingFlakeFlows, readFlakesConfig, retryPendingFlakeCollections } from '../mcp/land-flakes.js';
+import { readFlakesConfig, runningListAdmission } from '../mcp/flake-admission.js';
+import { listPendingFlakeFlows, retryPendingFlakeCollections } from '../mcp/land-flakes.js';
+import type { LandFlow } from '../mcp/land-state.js';
 import { checkTicketPaths, ticketObjectiveOwner, ticketReadiness } from '../mcp/local-tickets.js';
 import { jobCache } from '../mcp/store/job-store.js';
 import { startTicketQueue } from '../mcp/ticket-queue.js';
 import { ensureJobWatcher } from '../mcp/watch-pid.js';
 import { registeredProject } from '../roles/projects.js';
 import { tryAbstractLock } from '../utils/abstract-lock.js';
-import { readDirSafe, readFileBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { writeJsonPrivate } from '../utils/atomic-fs.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { procStat, readBootId } from '../utils/proc.js';
 import { wakeWorkflow } from '../workflows/wake.js';
@@ -30,60 +32,18 @@ function statStamp(path: string): string {
   return st ? `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}` : '';
 }
 
-function gitRefStamps(root: string): string[] {
-  const parts: string[] = [`gi=${statStamp(join(root, '.gitignore'))}`];
-  const dotGit = join(root, '.git');
-  const st = fs.lstatSync(dotGit, { throwIfNoEntry: false });
-  if (!st) return parts;
-  let gitDir: string | null = null;
-  if (st.isDirectory()) {
-    gitDir = dotGit;
-  } else if (st.isFile()) {
-    try {
-      const m = /^gitdir:\s*(.+)$/m.exec(readFileBounded(dotGit, 4096).bytes.toString('utf8'));
-      if (m) gitDir = resolve(root, m[1].trim());
-    } catch { /* Best-effort gitdir resolution. */ }
-  }
-  if (!gitDir) return parts;
-  let commonDir = gitDir;
-  try {
-    const common = readFileBounded(join(gitDir, 'commondir'), 4096).bytes.toString('utf8').trim();
-    if (common) commonDir = resolve(gitDir, common);
-  } catch { /* Normal repo has no commondir file. */ }
-  parts.push(
-    `gidx=${statStamp(join(gitDir, 'index'))}`,
-    `ghead=${statStamp(join(gitDir, 'HEAD'))}`,
-    `gpack=${statStamp(join(commonDir, 'packed-refs'))}`,
-    `gexcl=${statStamp(join(commonDir, 'info', 'exclude'))}`,
-  );
-  try {
-    const headText = readFileBounded(join(gitDir, 'HEAD'), 4096).bytes.toString('utf8').trim();
-    const refMatch = /^ref:\s*(.+)$/.exec(headText);
-    if (refMatch) parts.push(`gref=${statStamp(join(commonDir, refMatch[1].trim()))}`);
-  } catch { /* Best-effort HEAD ref stat. */ }
-  return parts;
-}
-
-/** Lightweight metadata-only stamp across inputs that can clear a pending flake edit or dispatch. */
-function computeFlakeInputStamp(home: string, root: string, feature: string): string {
+/** Metadata-only fast path for pending receipts and their direct inputs; fallback covers everything else. */
+function computeFlakeInputStamp(home: string, root: string, feature: string, pending: readonly LandFlow[], activeJob?: string): string {
   const parts: string[] = [
+    root, feature,
     statStamp(join(root, '.hud', 'project.json')),
     statStamp(join(home, 'harnesses.json')),
     statStamp(join(home, 'settings.json')),
     process.env.HUD_SETTINGS_PATH ? statStamp(process.env.HUD_SETTINGS_PATH) : '',
-    ...gitRefStamps(root),
+    statStamp(join(home, 'jobs')),
   ];
-  const flowsDir = join(home, 'flows');
-  parts.push(`fl=${statStamp(flowsDir)}`);
-  for (const name of readDirSafe(flowsDir).filter(f => /^f[a-f0-9]{16}(?:-\d+)?\.json$/.test(f)).sort()) {
-    parts.push(`f:${name}=${statStamp(join(flowsDir, name))}`);
-  }
-  parts.push(`jd=${statStamp(join(home, 'jobs'))}`);
-  try {
-    for (const id of [...jobCache.listJobIds()].sort()) {
-      parts.push(`j:${id}=${statStamp(join(home, 'jobs', id, 'job.json'))},${statStamp(join(home, 'jobs', id, 'STATUS.json'))}`);
-    }
-  } catch { parts.push('jobs-err'); }
+  for (const { flow } of pending) parts.push(`f:${flow}=${statStamp(join(home, 'flows', `${flow}.json`))}`);
+  if (activeJob) parts.push(`j:${activeJob}=${statStamp(join(home, 'jobs', activeJob, 'STATUS.json'))}`);
   const issues = join(root, '.scratch', feature, 'issues');
   parts.push(`is=${statStamp(issues)}`);
   try {
@@ -153,11 +113,13 @@ function groupBySelectedObjective(control: UnattendedControl, home: string) {
 interface ScanState {
   lastStamp?: string;
   lastFlakeStamp?: string;
+  flakeRetryAt?: number;
+  activeFlakeJob?: string;
   liveJobIds: string[];
   lastIssues: UnattendedDiagnostic[];
 }
 
-async function scan(home: string, control: UnattendedControl, state: ScanState, forceRecheck: boolean): Promise<UnattendedDiagnostic[]> {
+async function scan(home: string, control: UnattendedControl, state: ScanState, forceRecheck: boolean, flakeRetryMs: number): Promise<UnattendedDiagnostic[]> {
   const { runs, running } = readUnattendedStatus(home);
   // Resume an interrupted workflow driver, not a terminal run. Drivers don't belong to the service process.
   for (const q of running) wakeWorkflow(home, q);
@@ -178,16 +140,25 @@ async function scan(home: string, control: UnattendedControl, state: ScanState, 
   if (!registeredProject(home, control.root).registered) throw Error('Unattended project is no longer registered');
 
   const flakesConfig = readFlakesConfig(control.root);
-  if (flakesConfig && listPendingFlakeFlows(home, control.root).length > 0) {
-    const flakeStamp = computeFlakeInputStamp(home, control.root, flakesConfig.feature);
-    if (flakeStamp !== state.lastFlakeStamp) {
+  let pending = flakesConfig ? listPendingFlakeFlows(home, control.root) : [];
+  if (flakesConfig && pending.length) {
+    const { feature } = flakesConfig;
+    const stamp = () => computeFlakeInputStamp(home, control.root, feature, pending, state.activeFlakeJob);
+    if (stamp() !== state.lastFlakeStamp || performance.now() >= (state.flakeRetryAt ?? 0)) {
       await retryPendingFlakeCollections(home, control.root, null).catch(() => {});
-      state.lastFlakeStamp = listPendingFlakeFlows(home, control.root).length > 0
-        ? computeFlakeInputStamp(home, control.root, flakesConfig.feature)
-        : undefined;
+      pending = listPendingFlakeFlows(home, control.root);
+      if (pending.length) {
+        // Keep a fast wake for the known blocker so the collector can resume before Objective admission.
+        state.activeFlakeJob = pending.some(f => f.flake_collection?.stage === 'dispatch')
+          ? runningListAdmission(home, control.root, feature, jobCache).activeJobId : undefined;
+        // Baseline after our own writes, and rate-limit unchanged-input retries from the end of the pass.
+        state.lastFlakeStamp = stamp();
+        state.flakeRetryAt = performance.now() + flakeRetryMs;
+      }
     }
-  } else {
-    state.lastFlakeStamp = undefined;
+  }
+  if (!pending.length) {
+    state.lastFlakeStamp = state.flakeRetryAt = state.activeFlakeJob = undefined;
   }
 
   const stamp = computeInputStamp(home, control, ids, state.liveJobIds);
@@ -278,6 +249,7 @@ export async function runUnattended() {
 
     const envMs = Number(process.env.HUD_UNATTENDED_RECONCILE_MS);
     const reconcileMs = Number.isFinite(envMs) && envMs >= 500 ? envMs : DEFAULT_RECONCILE_MS;
+    const flakeRetryMs = Math.min(DEGRADED_RECONCILE_MS, reconcileMs);
     const scanState: ScanState = { liveJobIds: [], lastIssues: [] };
     let currentControl: UnattendedControl | undefined = readControl(home);
 
@@ -301,9 +273,10 @@ export async function runUnattended() {
         currentControl = control;
         if (!control) return { done: true, value: undefined };
         const forceRecheck = wakeReason === 'event';
-        const issues = await scan(home, control, scanState, forceRecheck).catch(error => [{ reason: reason(error) }]);
+        const issues = await scan(home, control, scanState, forceRecheck, flakeRetryMs).catch(error => [{ reason: reason(error) }]);
         await publishDiagnostics(home, control, issues);
-        return { done: false };
+        return scanState.flakeRetryAt === undefined ? { done: false }
+          : { done: false, recheckMs: Math.max(1, scanState.flakeRetryAt - performance.now()) };
       },
     });
   } finally { await release(); }

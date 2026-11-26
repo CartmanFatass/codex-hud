@@ -13,6 +13,7 @@ import { projectRoot, sharedRoot } from '../roles/projects.js';
 import { TICKET_STATUSES } from '../roles/tool-definitions.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
+import { isRunningListTicket, readFlakesConfig, runningListAdmission } from './flake-admission.js';
 import type { Job } from './job-contracts.js';
 import { linkFeature } from './local-objectives.js';
 import { withTicketEdits, type TicketEdits } from './ticket-commits.js';
@@ -256,7 +257,7 @@ export function checkTicketPaths(cwd: string, items: readonly { ticket: string; 
   return results;
 }
 
-type LocalTicket = ProjectTicket & { what: string; objective?: string; role: 'imp' | 'frontend-imp' };
+type LocalTicket = ProjectTicket & { what: string; objective?: string; role: 'imp' | 'frontend-imp'; runningList: boolean };
 const FRONTEND_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im;
 const declaredReady = (t: LocalTicket) => /^ready-for-agent$/i.test(t.status);
 const ticketRef = (slug: string, t: LocalTicket) => `${slug}/${nn(Number(t.number))}`;
@@ -282,7 +283,7 @@ function parseTicketForReadiness(path: string, num: number): LocalTicket | null 
         ?.replace(/\s+/g, ' ').trim() ?? '';
       const objective = objectiveField.exec(ticketHeader(text))?.[2]?.trim() || undefined;
       const role = FRONTEND_ROLE_RE.test(body) ? 'frontend-imp' : 'imp';
-      parsed = { ...heading, path, what, role, ...(objective && { objective }), status, at: 0, items, checked,
+      parsed = { ...heading, path, what, role, runningList: isRunningListTicket(body), ...(objective && { objective }), status, at: 0, items, checked,
         total: items.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
         state: landed ?? (/^ready-for-human$/i.test(status) ? 'try' : 'ready') };
     }
@@ -350,9 +351,15 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
     const missing = missingCrossBlockers.get(t);
     if (missing) throw Error(`${ticket}: unknown blocked_by ticket: ${missing}`);
   }
+  const flakeFeature = readFlakesConfig(root)?.feature;
+  let flakes: ReturnType<typeof runningListAdmission> | undefined;
   return {
-    tickets: candidates.flatMap(({ t, ticket }) => t.state === 'ready'
-      ? [{ ticket, path: t.path, title: t.title, what: t.what, role: t.role, ...(t.objective && { objective: t.objective }) }] : []),
+    tickets: candidates.flatMap(({ t, ticket }) => {
+      if (t.state !== 'ready') return [];
+      if (flakeFeature && t.runningList && ticket.startsWith(`${flakeFeature}/`) &&
+          !(flakes ??= runningListAdmission(home, root, flakeFeature, jobs)).eligible(ticket)) return [];
+      return [{ ticket, path: t.path, title: t.title, what: t.what, role: t.role, ...(t.objective && { objective: t.objective }) }];
+    }),
     queued: candidates.flatMap(({ t, ticket }) => {
       const blockers = crossBlockers.get(t);
       return t.state === 'queued' && blockers ? [{ ticket, blockers }] : [];

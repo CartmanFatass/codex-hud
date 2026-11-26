@@ -43,6 +43,7 @@ import type {
   AnswerActor, Job, JobRoute, ManagedWorktree, LaunchAttempt, ResumeFailure, JobStatus, PrewalkEntry, PrewalkScoutKind, SendOutcome,
 } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
+import { isRunningListTicket, readFlakesConfig, runningListAdmission } from '../flake-admission.js';
 import { routingTicketText, ticketObjective } from '../local-tickets.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
 import { callerPane, session, trackCreatedJob } from '../mcp/session-state.js';
@@ -713,6 +714,14 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const admit = async () => {
     const stopped = () => canAdmit && !canAdmit();
     if (stopped()) return { ok: false as const, code: 'queue_stopped' };
+    // Readiness is a snapshot; serialize the final flake check with the on-disk slot reservation.
+    if (isTicketAdmission && typeof args.ticket === 'string' && isRunningListTicket(task)) {
+      const feature = readFlakesConfig(projectRoot)?.feature;
+      if (feature && args.ticket.startsWith(`${feature}/`) &&
+          !runningListAdmission(hudHome, projectRoot, feature, jobCache).eligible(args.ticket)) {
+        return { ok: false as const, code: 'flake_ineligible' as const };
+      }
+    }
     let shouldQueue = false;
     if (enforceCap) {
       const concurrency = loadConcurrencySettings();
