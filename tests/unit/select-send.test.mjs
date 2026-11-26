@@ -26,6 +26,11 @@ import { panelActionLine } from '../../dist/collectors/panel-actions.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { visualLength } from '../../dist/render/colors.js';
+import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
+import { readSelectionExcerpts } from '../../dist/roles/selection-excerpts.js';
+import { PanelExecution } from '../../dist/panel/execution.js';
+import { executionRows } from '../../dist/render/execution-view.js';
+import { workInspectorRows } from '../../dist/render/work-inspector.js';
 
 const root = resolve(new URL('../..', import.meta.url).pathname);
 const guardedPong = { result: { type: 'pong', version: '0.9.5-hud.a26432a7', capabilities: { guarded_prompt: true, hidden_tabs: true, pane_strip: true } } };
@@ -77,6 +82,7 @@ if (!sock) process.exit(1);
 let method, params = {};
 if (args[0] === 'pane' && args[1] === 'get') { method = 'pane.get'; params = { pane_id: args[2] }; }
 else if (args[0] === 'pane' && args[1] === 'list') { method = 'pane.list'; }
+else if (args[0] === 'agent' && args[1] === 'prompt') { method = 'agent.prompt'; params = { target: args[2], text: args[3] }; }
 else process.exit(2);
 const c = net.createConnection(sock);
 let buf = '';
@@ -84,7 +90,12 @@ c.on('connect', () => c.write(JSON.stringify({ id: 'cli', method, params }) + '\
 c.on('data', d => {
   buf += d.toString('utf8');
   const nl = buf.indexOf('\\n');
-  if (nl >= 0) { process.stdout.write(buf.slice(0, nl + 1)); c.destroy(); }
+  if (nl >= 0) {
+    const response = buf.slice(0, nl + 1);
+    if (JSON.parse(response).error) { process.stderr.write(response); process.exitCode = 1; }
+    else process.stdout.write(response);
+    c.destroy();
+  }
 });
 c.on('error', () => process.exit(1));
 `,
@@ -103,7 +114,8 @@ c.on('error', () => process.exit(1));
   return { dir, home, bin, socketPath, env };
 }
 
-function writeJob(home, id, { role = 'imp', callerPane, leftPane, projectRoot, socketPath, createdAt = '2026-11-26T10:00:00.000Z', reapedAt } = {}) {
+function writeJob(home, id, { role = 'imp', callerPane, leftPane, projectRoot, socketPath, createdAt = '2026-11-26T10:00:00.000Z', reapedAt,
+  primary, ticket, packageName } = {}) {
   const dir = join(home, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
@@ -119,11 +131,14 @@ function writeJob(home, id, { role = 'imp', callerPane, leftPane, projectRoot, s
       dispatch_exit_code: 0,
       stderr_tail: '',
       ...(reapedAt ? { reaped_at: reapedAt } : {}),
+      ...(ticket ? { ticket } : {}),
+      ...(packageName ? { package: packageName } : {}),
     })
   );
   const sessionLines = [
     `LEFT=${leftPane}`,
     `ORCH=${callerPane}`,
+    ...(primary ? [`PRIMARY=${primary}`, `LAUNCH_ID=launch-${primary}`, 'DIRECT_EXEC=1'] : []),
     ...(socketPath ? [`HERDR_SOCKET_PATH=${socketPath}`] : []),
   ];
   fs.writeFileSync(join(dir, 'SESSION.txt'), sessionLines.join('\n') + '\n');
@@ -218,6 +233,137 @@ test('worker pane selection delivers excerpt, job source, and question once to j
   assert.match(prompts[0].text, /time=2026-11-26T12:00:00\.000Z/);
   assert.ok(prompts[0].text.includes('FAIL test/foo.test.mjs\nExpected 2 to equal 3'));
   assert.ok(prompts[0].text.includes('Question: is this from your last change?'));
+});
+
+test('working jobs cross-send selections, bind reverse-order replies, and offer main if a picked job ended', { timeout: 15_000 }, async (t) => {
+  const a = 'j000000000000000a', b = 'j000000000000000b';
+  const main = 'w1:p1', leftA = 'w1:p2', leftB = 'w1:p3';
+  let panes = [];
+  const prompts = [];
+  const f = await fakeFork(t, (method, params) => {
+    if (method === 'ping') return guardedPong;
+    if (method === 'pane.list') return { result: { panes } };
+    if (method === 'pane.get') return { result: { pane: panes.find(pane => pane.pane_id === params.pane_id) } };
+    if (method === 'agent.prompt') {
+      prompts.push(params);
+      return params.text.includes('uncertain excerpt') ? { error: { code: 'agent_prompt_stalled' } } : prompted;
+    }
+    return { error: { code: 'unsupported' } };
+  });
+  const project = join(f.dir, 'project');
+  fs.mkdirSync(project);
+  const initialPanes = [main, leftA, leftB].map((pane_id, i) => ({
+    pane_id, cwd: project, workspace_id: 'w1', agent: 'pi', agent_status: i ? 'working' : 'idle',
+  }));
+  panes = initialPanes;
+  const writeWorker = (id, leftPane, primary, info) => {
+    const dir = writeJob(f.home, id, { callerPane: main, leftPane, primary, projectRoot: project, socketPath: f.socketPath,
+      createdAt: new Date().toISOString(), ...info });
+    fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+    return dir;
+  };
+  const dirA = writeWorker(a, leftA, 'agent-a', { ticket: 'feature/01' });
+  const dirB = writeWorker(b, leftB, 'agent-b', { role: 'reviewer', packageName: 'checks' });
+  const cache = getJobIndexCache(f.home);
+  const excerpts = () => readSelectionExcerpts(f.home, cache, { project });
+  const run = async (script, env) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], { cwd: root, env: { ...f.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'], signal: t.signal });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    const [code] = await once(child, 'close');
+    assert.equal(code, 0, stderr);
+    return JSON.parse(stdout);
+  };
+  const compose = (pane, target, text, mode) => run(`
+    import assert from 'node:assert/strict';
+    import { writeFileSync } from 'node:fs';
+    import { PassThrough } from 'node:stream';
+    import { runComposerSession } from './dist/cli/select-send.js';
+    const { PROJECT, PANE, TARGET, TEXT, MODE, CLOSE_STATUS } = process.env;
+    const stdin = new PassThrough(), stdout = new PassThrough();
+    const input = text => queueMicrotask(() => stdin.write(text));
+    let stage = 0;
+    const result = await runComposerSession({
+      context: { workspace_id: 'w1', focused_pane_id: PANE, focused_pane_cwd: PROJECT, selected_text: TEXT },
+      hudHome: process.env.HUD_HOME, env: process.env, stdin, stdout,
+      onFrame(lines, state) {
+        if (stage === 0) { stage++; input('\\t'); }
+        else if (stage === 1) {
+          assert.notEqual(state.picker, null);
+          const screen = lines.join('\\n');
+          assert.match(screen, /imp · working · feature\\/01/);
+          assert.match(screen, /reviewer · working · checks/);
+          const at = state.jobs.findIndex(job => job.job === TARGET);
+          assert.notEqual(at, -1);
+          stage++; input('\\x1b[B'.repeat(at + 1) + '\\r');
+        } else if (stage === 2 && state.targetJob?.job === TARGET) {
+          if (MODE === 'ended') writeFileSync(CLOSE_STATUS, JSON.stringify({ state: 'closed' }));
+          stage++; input('Why?\\r');
+        } else if (stage === 3 && state.error?.startsWith('Target ended.')) {
+          assert.equal(MODE, 'ended');
+          assert.match(lines.join('\\n'), /Enter sends to main/);
+          assert.equal(state.targetJob, undefined);
+          stage++; input('\\r');
+        } else if (stage === 3 && state.error === 'Selection delivery unknown.') {
+          assert.equal(MODE, 'unknown');
+          stage++; input('\\x1b');
+        }
+      },
+    });
+    assert.equal(stage, MODE ? 4 : 3);
+    console.log(JSON.stringify(result));
+  `, { PROJECT: project, PANE: pane, TARGET: target, TEXT: text, MODE: mode ?? '', CLOSE_STATUS: join(dirB, 'STATUS.json') });
+  const reply = (jobDir, message, reply_to) => run(`
+    import { callWorkerTool } from './dist/worker/tools.js';
+    console.log(JSON.stringify(await callWorkerTool('hud_progress', JSON.parse(process.env.REPLY))));
+  `, { HUD_JOB_DIR: jobDir, REPLY: JSON.stringify({ message, reply_to }) });
+
+  assert.equal((await compose(leftA, b, 'error from A')).sent, true);
+  assert.equal((await compose(leftB, a, 'error from B')).sent, true);
+  const [toA, toB] = excerpts();
+  assert.deepEqual([toA, toB].map(row => [row.source.job, row.target, row.question, row.delivery]), [[b, a, 'Why?', 'queued'], [a, b, 'Why?', 'queued']]);
+  assert.deepEqual(prompts.map(p => p.target), ['agent-b', 'agent-a']);
+  assert.ok(prompts[0].text.includes(`Excerpt ID: ${toB.id}`));
+  assert.ok(prompts[1].text.includes(`Excerpt ID: ${toA.id}`));
+  assert.equal(fs.statSync(join(f.home, 'selection-excerpts.json')).mode & 0o777, 0o600);
+
+  panes = [initialPanes[0]]; // Answers do not depend on source panes or their contents.
+  assert.equal((await reply(dirA, 'Normal milestone')).ok, true);
+  assert.equal((await reply(dirA, 'Wrong job', toB.id)).ok, false);
+  assert.equal((await reply(dirB, 'Unknown ID', 'not-an-excerpt')).ok, false);
+  assert.ok(excerpts().every(row => row.answer === undefined));
+  assert.equal((await reply(dirA, 'A answered B', toA.id)).ok, true);
+  assert.equal((await reply(dirB, 'B answered A', toB.id)).ok, true);
+  assert.deepEqual(excerpts().map(row => [row.excerpt, row.answer.text]), [['error from B', 'A answered B'], ['error from A', 'B answered A']]);
+
+  panes = initialPanes;
+  assert.equal((await compose(leftA, b, 'uncertain excerpt', 'unknown')).sent, false);
+  assert.equal(excerpts()[0].delivery, 'delivery unknown');
+  assert.equal((await compose(leftA, b, 'new error', 'ended')).targetPane, main);
+  assert.deepEqual(prompts.map(p => p.target), ['agent-b', 'agent-a', 'agent-b', main]);
+  assert.equal(prompts.at(-1).guarded, true);
+  assert.equal(excerpts()[0].delivery, 'target ended');
+  assert.equal(JSON.parse(fs.readFileSync(join(dirB, 'STATUS.json'), 'utf8')).state, 'closed');
+  assert.deepEqual(cache.listJobIds().toSorted(), [a, b]);
+
+  const view = new PanelExecution(f.home, main, f.env, () => {});
+  t.after(() => view.dispose());
+  view.sync(project, false);
+  await view.refresh(`thin-job:${b}`);
+  const worker = view.board().workers.find(w => w.id === `thin-job:${b}`);
+  const board = executionRows(view.view(project), undefined, 80, Date.now());
+  const card = board.filter(row => row.item === `project:excerpt:${toA.id}`).map(row => row.text).join('\n');
+  assert.match(card, /answered/);
+  assert.match(card, /error from B/);
+  assert.match(card, /A answered B/);
+  assert.doesNotMatch(card, /B answered A/);
+  const inspector = workInspectorRows(worker, 80, Date.now()).map(row => row.text).join('\n');
+  assert.match(inspector, /error from A/);
+  assert.match(inspector, /B answered A/);
+  assert.match(inspector, /target ended/);
+  assert.doesNotMatch(inspector, /A answered B/);
 });
 
 test('non-worker pane routes to its own project main session (not another project)', async (t) => {

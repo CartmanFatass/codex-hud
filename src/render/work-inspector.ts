@@ -24,6 +24,7 @@ import { t } from './i18n.js';
 import { diffStatRows } from './diff-stat-rows.js';
 import { formatTokenCount } from './lines/activity-line.js';
 import { answerable, answerKeys } from './job-actions.js';
+import { selectionExcerptRows } from './selection-excerpts.js';
 export function localTime(at: number | null, now: number): string {
   if (at === null) return '';
   const date = new Date(at),
@@ -86,6 +87,7 @@ export function workInspectorRows(
       if (report.truncated) rows.push(boardRow(fit(theme.board.muted(t('Truncated: {files}', { files: 'report.md' })), width)));
     }
   }
+  if (worker.excerpts) for (const row of selectionExcerptRows(worker.excerpts, width)) rows.push(row);
   const progress = worker.progress?.length ? worker.progress : worker.latest_progress ? [worker.latest_progress] : [];
   if (progress.length) {
     rows.push(boardRow(''), section(t('Progress'), width));

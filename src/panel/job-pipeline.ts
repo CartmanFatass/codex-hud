@@ -9,6 +9,8 @@ import type { WorkBatch, WorkboardSnapshot, WorkLane } from '../collectors/workb
 import { buildWorkboard } from '../collectors/workboard.js';
 import type { SubagentTree } from '../types.js';
 import { jobPanelObservation } from '../utils/collection-observation.js';
+import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { readSelectionExcerpts } from '../roles/selection-excerpts.js';
 
 /** Collect the retained jobs of the calling pane, with extra evidence only for the inspected job. */
 export class PanelJobPipeline {
@@ -59,8 +61,10 @@ export class PanelJobPipeline {
       const excerpt = worker.files?.some((file) => file.kind === 'report')
         ? readJobFile(path.join(directory, jobFiles.report), limit) : undefined;
       const report = excerpt?.text.trim() ? { text: excerpt.text, truncated: (excerpt.size ?? 0) > limit } : undefined;
-      if (diffStat || output || report) lanes = lanes.map((l) => l !== lane ? l : {
-        ...l, workers: l.workers.map((w) => w === worker ? { ...w, ...(diffStat && { diffStat }), ...(output && { output }), ...(report && { report }) } : w),
+      const excerpts = readSelectionExcerpts(this.home, getJobIndexCache(this.home), { job: id });
+      if (diffStat || output || report || excerpts.length) lanes = lanes.map((l) => l !== lane ? l : {
+        ...l, workers: l.workers.map((w) => w === worker ? { ...w, ...(diffStat && { diffStat }), ...(output && { output }),
+          ...(report && { report }), ...(excerpts.length && { excerpts }) } : w),
       });
     }
     if (this.thinJobs !== lanes || this.batches !== snapshot.batches) this.boardCache = undefined;

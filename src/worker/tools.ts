@@ -16,6 +16,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
 import { jobCallerPane } from '../roles/job-pane.js';
+import { MAX_EXCERPT_REPLY, replyToExcerpt } from '../roles/selection-excerpts.js';
 import { readJobProgress } from '../collectors/thin-jobs.js';
 import { worktreeGit as git } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
@@ -364,7 +365,8 @@ export async function callWorkerTool(name: string, args: Record<string, unknown>
   };
   switch (name) {
     case 'hud_report': return finishReport(context, args.turn, string('text'), args);
-    case 'hud_progress': return progress(context, string('message'));
+    case 'hud_progress': return args.reply_to === undefined ? progress(context, string('message'))
+      : replyToExcerpt(dirname(context.root), context.job.job, string('reply_to'), string('message'));
     case 'hud_lease': return workerLease(context, args, signal);
     case 'hud_ask': return ask(context, { question: string('question'), default: string('default'), options: strings('options'),
       context: args.context === undefined ? undefined : string('context') }, undefined, signal, true);
@@ -434,7 +436,10 @@ export async function workerTools(cli = false) {
     tool('hud_sonic', 'Start one sonic child with task; returns its id without waiting for the report. Sonic cannot start children. To collect, pass wait with ids, or omit task and ids for all uncollected children (timeout_s applies to wait; defaults to 480). Pi sends a ready notice.',
       { task: string, cwd: { ...string, description: "Start only. Defaults to the parent job's working directory. Resolve relative paths there; the destination must stay inside the parent project." },
         wait: strings, timeout_s: { type: 'number', minimum: 0, description: 'Wait only. Seconds to wait before returning still-working ids; defaults to 480.' } }),
-    tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters).', { message: string }, ['message']),
+    tool('hud_progress', 'Publish an optional milestone (one line, up to 240 characters), or answer a HUD selection.', {
+      message: string,
+      reply_to: { ...string, description: `Exact Excerpt ID from a HUD selection sent to this job. With this field, message is the answer (up to ${MAX_EXCERPT_REPLY} characters), not a milestone.` },
+    }, ['message']),
     LEASE_TOOL,
   ].filter(({ name }) => role !== 'sonic' || (name !== 'hud_sonic' && name !== 'hud_ask'));
 }

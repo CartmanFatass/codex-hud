@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import type { Job, PrewalkScoutKind } from '../mcp/job-contracts.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
+import { readSelectionExcerpts, type SelectionExcerpt } from '../roles/selection-excerpts.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { herdrEndpoint } from '../runtime/herdr-socket.js';
 import type { ScreenTarget, ExecutionScreen } from './execution-screens.js';
@@ -48,6 +49,7 @@ export interface ExecutionSnapshot {
   readonly endedJobs?: readonly EndedExecutionJob[];
   /** Running and waiting jobs: those asking first, then running, then queued; the oldest first within each. */
   readonly jobs: readonly ExecutionJob[];
+  readonly excerpts?: readonly SelectionExcerpt[];
   readonly complete: boolean;
 }
 export type ExecutionView = ExecutionSnapshot & { readonly screens: ReadonlyMap<string, ExecutionScreen> };
@@ -174,5 +176,7 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   // Thumbnails follow the card order.
   const rank = new Map(ordered.map((job, i) => [job.jobId, i]));
   targets.sort((a, b) => rank.get(a.jobId)! - rank.get(b.jobId)!);
-  return { snapshot: { root: scope.root, ...(runs.length ? { runs } : {}), endedJobs, jobs: ordered, complete }, targets };
+  const excerpts = readSelectionExcerpts(home, cache, { project: scope.root });
+  return { snapshot: { root: scope.root, ...(runs.length ? { runs } : {}), endedJobs, jobs: ordered, complete,
+    ...(excerpts.length && { excerpts }) }, targets };
 }

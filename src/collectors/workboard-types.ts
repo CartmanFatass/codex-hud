@@ -90,6 +90,8 @@ export interface OwnerWorker extends Partial<JobProgress> {
   }[];
   /** Bounded original report excerpt, attached only for the inspected job. */
   readonly report?: { readonly text: string; readonly truncated: boolean };
+  /** Owner selections addressed to this job, attached only in its Inspector. */
+  readonly excerpts?: readonly import('../roles/selection-excerpts.js').SelectionExcerpt[];
   /** Newest working session, selected/stat'ed once by the thin-job collector. */
   readonly sessionFile?: { readonly path: string; readonly at: number };
   readonly work?: import('./work-job.js').WorkFacts;

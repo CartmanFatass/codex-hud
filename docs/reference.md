@@ -579,6 +579,7 @@ The owner can also answer an open question from the panel (`1`–`4` or `d` on i
 With the `herdr` extension installed (`./install --with herdr`), the `hud.select-send.send` herdr plugin action opens a small popup composer for the active pane selection. If there is no selection or the composer cannot open, the action requests a herdr notification and sends nothing.
 The composer shows the exact excerpt plus one question line, refreshing to the latest text if `stale_content` occurs. Confirm with Enter to send the excerpt and its source (`project`, `pane`, `job` if a worker pane, `time`) to the job's dispatcher or the project's main session via HUD's normal delivery path (active pane watcher via `panel-actions.jsonl`, or `notify`). If direct guarded typing is refused, the popup stays open and retries within a 10-minute window; press Esc while waiting to cancel without sending. No retry helper or retry file is created. Only the temporary action-to-composer handoff uses `$HUD_HOME/select-send/` (`0600`, pruned by count and age).
 The installer prints an optional `prefix+a` binding for this action; see [the herdr integration guide](../integrations/herdr/README.md#selection-to-main-plugin-plugin).
+See [Send a pane selection to a worker](#send-a-pane-selection-to-a-worker) for direct replies.
 The main session chooses next steps outside fixed HUD flows it starts.
 See [the MCP README](../packages/hud-mcp/README.md) for the delegation tool arguments.
 
@@ -1093,6 +1094,12 @@ Execution is its own top tab (`Execution·N` / `执行·N`, where `N` is the cur
 Enter (or a second click) opens the Inspector from a worker card or a workflow node with a retained job, and Run Detail from a flow header or recent flow row. Esc returns to the same row. `X` on a working or paused batch header opens its pause/resume/stop controls. `g` peeks/focuses the selected worker's herdr tab, `P` pins it visible, and `H` hides it again, from the job's row or Inspector, with the same conditions as in [Inspector](#inspector). Headless and queued jobs have no tab.
 
 Screens are read from herdr (`pane.read`, then `pane.get` to confirm the pane is still the job's) only while this page is on screen: at most one round every two seconds, eight panes a round (more take turns), and the panel repaints only when a screen changed. Help, Settings, an Inspector or any other page stops the reads. Nothing read from a screen is stored or sent anywhere.
+
+### Send a pane selection to a worker
+
+In the herdr selection composer, press Tab to open the target picker, use ↑/↓ to choose a target, then Enter to select it. Main is the default. The list also shows the project's working pi, Claude Code and Codex tab workers with their role and ticket or package when known. Headless jobs are not offered: their queue would need to resume them after the current turn. If the selected job has ended, the composer offers main; it never sends there until you confirm again, and it never resumes or repairs the worker.
+
+A direct worker send adds an excerpt ID to the confirmed excerpt, source and question sent to the worker's conversation. The worker can answer without ending the turn using `hud_progress({reply_to: "<excerpt ID>", message: "<answer>"})`. An ordinary progress message, a wrong ID or a reply from a different job cannot mark an excerpt answered. Inspector keeps the excerpt and matching answer together under **Selections**; Execution shows compact cards for the project, including `queued`, `answered`, `target ended` and `delivery unknown`. The newest 64 direct sends are kept privately in `$HUD_HOME/selection-excerpts.json`, independently of their source panes. Sending to main does not add an excerpt card.
 
 ## Review board
 

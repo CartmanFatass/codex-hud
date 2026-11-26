@@ -1,5 +1,7 @@
 /** `hud select-send`: plugin action and minimal popup composer. */
 import { StringDecoder } from 'node:string_decoder';
+import { resolve as resolvePath } from 'node:path';
+import { recordSelectionExcerpt, setExcerptDelivery, type ExcerptDelivery } from '../roles/selection-excerpts.js';
 import { getHudHome } from '../hud-home.js';
 import { setDisplayConfig } from '../render/hud-config.js';
 import { resolveLanguage, setLanguage, t } from '../render/i18n.js';
@@ -18,6 +20,7 @@ import {
   formatSelectionMessage,
   handleSelectionAction,
   normalizeSelectionExcerpt,
+  normalizeQuestion,
   parsePluginContext,
   readAndRemoveSelectionHandoff,
   refreshSelectionExcerpt,
@@ -95,6 +98,7 @@ export class ComposerKeyDecoder {
       const ch = String.fromCodePoint(this.pending.codePointAt(0)!);
       this.pending = this.pending.slice(ch.length);
       if (ch === '\r' || ch === '\n') out.push({ type: 'enter' });
+      else if (ch === '\t') out.push({ type: 'targets' });
       else if (ch === '\x03' || ch === '\x04') out.push({ type: 'cancel' });
       else if (ch === '\x7f' || ch === '\b') out.push({ type: 'backspace' });
       else if (ch === '\x15') out.push({ type: 'clear-line' });
@@ -165,6 +169,7 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
     source: resolved.source,
     targetPane: resolved.targetPane,
     targetAgent: resolved.targetAgent,
+    jobs: resolved.jobs,
     excerpt,
     stale,
     error: resolved.targetPane ? null : t('No main session found for this project.'),
@@ -215,7 +220,8 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
     const submit = async () => {
       if (submission || finished) return;
       const targetPane = state.targetPane;
-      if (!targetPane) {
+      const targetJob = state.targetJob;
+      if (!targetPane && !targetJob) {
         state = { ...state, error: t('No main session found for this project.') };
         paint();
         return;
@@ -253,11 +259,41 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           paint();
           return;
         }
-        const message = formatSelectionMessage({
-          excerpt: state.excerpt.text,
-          source: { ...state.source, time: now().toISOString() },
-          question: state.question,
-        });
+        const source = { ...state.source, time: now().toISOString() };
+        if (targetJob && source.projectRoot) {
+          const record = await recordSelectionExcerpt(opts.hudHome, {
+            excerpt: state.excerpt.text, source: { ...source, project: source.project?.slice(0, 256) ?? null },
+            question: normalizeQuestion(state.question), target: targetJob.job, launchId: targetJob.launchId, role: targetJob.role.slice(0, 256),
+          });
+          const message = formatSelectionMessage({ ...record, excerptId: record.id });
+          let delivery: ExcerptDelivery = 'delivery unknown';
+          const { hudHome } = await import('../mcp/store/job-store.js');
+          // The runtime's job store is process-scoped; never send to a different configured home.
+          if (hudHome === resolvePath(opts.hudHome)) {
+            const { sendJob } = await import('../mcp/dispatch/orchestrator.js');
+            if (!signal.aborted) {
+              const sent = await sendJob(targetJob.job, message, record.id, true, {
+                selection: { project: source.projectRoot, launchId: record.launchId },
+              });
+              if ('ok' in sent && sent.ok) delivery = 'queued';
+              else if ('code' in sent && sent.code === 'target_ended') delivery = 'target ended';
+            }
+          }
+          await setExcerptDelivery(opts.hudHome, record.id, delivery);
+          if (finished) return;
+          if (delivery === 'queued') {
+            done({ code: 0, sent: true, message });
+            return;
+          }
+          state = delivery === 'target ended'
+            ? { ...state, phase: 'editing', targetJob: undefined, jobs: state.jobs.filter(job => job !== targetJob),
+                error: t(targetPane ? 'Target ended. Enter sends to main.' : 'Target ended. No main session found.') }
+            : { ...state, phase: 'editing', error: t('Selection delivery unknown.') };
+          paint();
+          return;
+        }
+        if (!targetPane) return;
+        const message = formatSelectionMessage({ excerpt: state.excerpt.text, source, question: state.question });
         let delivery = await deliverSelection(targetPane, message, opts.hudHome, opts.env, signal);
         if (finished) return;
         if (delivery.retryPrompt) {
@@ -272,6 +308,11 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           return;
         }
         done({ code: 0, sent: true, message, targetPane });
+      } catch {
+        if (!finished) {
+          state = { ...state, phase: 'editing', error: t(targetJob ? 'Selection delivery unknown.' : 'Delivery failed.') };
+          paint();
+        }
       } finally {
         submission = undefined;
       }

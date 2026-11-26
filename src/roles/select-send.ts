@@ -10,7 +10,8 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
 import { appendPanelAction } from '../collectors/panel-actions.js';
-import type { Job } from '../mcp/job-contracts.js';
+import type { Job, JobStatus } from '../mcp/job-contracts.js';
+import { excerptTargetSupported, jobProjectRoot } from './selection-excerpts.js';
 import { herdrEndpoint, request as herdrRequest, watchHerdrPane, type HerdrReply } from '../runtime/herdr-socket.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import { herdrId, herdrResult, isRecord, runCommand, runHerdr } from './herdr-run.js';
@@ -90,10 +91,19 @@ export interface SelectionSource {
   time: string;
 }
 
+export interface SelectionJobTarget {
+  job: string;
+  launchId: string;
+  role: string;
+  ticket?: string;
+  package?: string;
+}
+
 export interface ResolvedSelectionTarget {
   source: SelectionSource;
   targetPane: string | null;
   targetAgent: string | null;
+  jobs: SelectionJobTarget[];
   reason?: string;
 }
 
@@ -168,6 +178,7 @@ export function formatSelectionMessage(input: {
   excerpt: string;
   source: SelectionSource;
   question?: string;
+  excerptId?: string;
 }): string {
   const meta: string[] = [];
   if (input.source.project) meta.push(`project=${stripUnsafeControl(input.source.project, false)}`);
@@ -181,6 +192,7 @@ export function formatSelectionMessage(input: {
   const question = normalizeQuestion(input.question);
   const lines = [
     '[HUD selection]',
+    ...(input.excerptId ? [`Excerpt ID: ${input.excerptId}`, 'Answer this selection with hud_progress: pass the answer as message and this exact Excerpt ID as reply_to.'] : []),
     `Source: ${meta.join(' | ')}`,
     fence,
     input.excerpt,
@@ -289,13 +301,6 @@ export async function listLivePanes(env: NodeJS.ProcessEnv = process.env): Promi
   return asLivePanes(result?.panes);
 }
 
-function jobProjectRoot(job: Partial<Job>): string | null {
-  if (typeof job.project_root === 'string' && job.project_root) return job.project_root;
-  if (typeof job.worktree?.main_root === 'string' && job.worktree.main_root) return job.worktree.main_root;
-  if (typeof job.cwd === 'string' && job.cwd) return sharedRoot(job.cwd);
-  return null;
-}
-
 function projectNameFromRoot(root: string | null, fallback?: string): string | null {
   if (root) return basename(root) || root;
   return fallback?.trim() || null;
@@ -345,6 +350,7 @@ export async function resolveSelectionTarget(
   const { dirs } = cache.listJobDirsByMtime();
   const workerPanes = new Set<string>();
   const recentProjectCaller = new Map<string, string>();
+  const jobTargets = new Map<string, SelectionJobTarget[]>();
   let matchedJob: { job: Job; caller: string | null; root: string | null } | null = null;
 
   for (const { id } of dirs.slice(0, MAX_JOBS_SCAN)) {
@@ -356,6 +362,15 @@ export async function resolveSelectionTarget(
     const reaped = Boolean(job.reaped_at);
     const root = jobProjectRoot(job);
     const caller = jobCallerPane(job) || (herdrId(fields?.orch) ? fields.orch : '');
+
+    if (root && typeof job.role === 'string' && !reaped && excerptTargetSupported(job, fields, currentSocket)) {
+      const status = cache.readStatus<JobStatus>(id);
+      if (status.status === 'ok' && status.value.state === 'working') {
+        const targets = jobTargets.get(root) ?? [];
+        targets.push({ job: id, launchId: fields.launchId, role: job.role, ticket: job.ticket, package: job.package });
+        jobTargets.set(root, targets);
+      }
+    }
 
     if (root && caller && (!panes || paneById.has(caller)) && !recentProjectCaller.has(root)) {
       recentProjectCaller.set(root, caller);
@@ -429,6 +444,12 @@ export async function resolveSelectionTarget(
   };
 
   const time = now.toISOString();
+  const result = (source: SelectionSource, main?: LivePane | null): ResolvedSelectionTarget => ({
+    source,
+    targetPane: main?.pane_id ?? null,
+    targetAgent: main?.agent ?? null,
+    jobs: source.projectRoot ? jobTargets.get(source.projectRoot) ?? [] : [],
+  });
 
   if (matchedJob) {
     const { job, caller, root } = matchedJob;
@@ -442,8 +463,7 @@ export async function resolveSelectionTarget(
     };
     // Prefer the job's recorded dispatcher pane when live.
     if (caller && (!panes || paneById.has(caller))) {
-      const live = paneById.get(caller);
-      return { source, targetPane: caller, targetAgent: live?.agent ?? null };
+      return result(source, paneById.get(caller) ?? { pane_id: caller });
     }
     // Fall back to matching the recorded dispatcher session identity across live panes.
     if (panes && job.dispatcher?.harness && job.dispatcher?.id) {
@@ -453,15 +473,10 @@ export async function resolveSelectionTarget(
           p.agent === job.dispatcher!.harness &&
           p.agent_session?.value === job.dispatcher!.id
       );
-      if (bySession) {
-        return { source, targetPane: bySession.pane_id, targetAgent: bySession.agent ?? null };
-      }
+      if (bySession) return result(source, bySession);
     }
     const projectMain = pickProjectMain(root);
-    if (projectMain) {
-      return { source, targetPane: projectMain.pane_id, targetAgent: projectMain.agent ?? null };
-    }
-    return { source, targetPane: null, targetAgent: null, reason: 'No live main session found for this job' };
+    return projectMain ? result(source, projectMain) : { ...result(source), reason: 'No live main session found for this job' };
   }
 
   const rawCwd =
@@ -481,10 +496,7 @@ export async function resolveSelectionTarget(
     time,
   };
   const projectMain = pickProjectMain(projectRoot);
-  if (projectMain) {
-    return { source, targetPane: projectMain.pane_id, targetAgent: projectMain.agent ?? null };
-  }
-  return { source, targetPane: null, targetAgent: null, reason: 'No main session found for this project' };
+  return projectMain ? result(source, projectMain) : { ...result(source), reason: 'No main session found for this project' };
 }
 
 async function paneReadText(paneId: string, env: NodeJS.ProcessEnv): Promise<string | null> {

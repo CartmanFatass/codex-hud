@@ -19,6 +19,7 @@ import { recordQuestionAnswer } from '../../roles/job-archive.js';
 import { withAbstractLock } from '../../utils/abstract-lock.js';
 import { watching, ensureQueueWatcher } from '../../roles/notify.js';
 import { sharedRoot } from '../../roles/projects.js';
+import { excerptTargetEnded, excerptTargetSupported, jobProjectRoot } from '../../roles/selection-excerpts.js';
 import { readReportMeta, validPreviewPath } from '../../roles/report-meta.js';
 import { EXPERIMENT_TAG_MAX_LENGTH } from '../../roles/tool-definitions.js';
 import {
@@ -76,7 +77,7 @@ import {
   replayOptions, harnessesSourceFor, argsForPlace,
 } from './places.js';
 import { ensureWatcher, launchError, launchFailure, canTryNext, rejectLaunch, resolveWorkspace, run, refusedBeforeInput, type DispatchResult } from './proc.js';
-import { SHELL_WORKER_UNSUPPORTED, herdrWorkerPreflight, isShellLaunchedWorker } from '../../runtime/herdr-socket.js';
+import { SHELL_WORKER_UNSUPPORTED, herdrEndpoint, herdrWorkerPreflight, isShellLaunchedWorker } from '../../runtime/herdr-socket.js';
 
 function derivedKey(kind: string, ...parts: unknown[]): string {
   return `${kind}:${createHash('sha256').update(JSON.stringify(parts)).digest('hex')}`;
@@ -1508,9 +1509,28 @@ const blockedSend = {
 } as const;
 
 export async function sendJob(id: string, message: string, explicitKey: string | undefined, workingOnly: boolean,
-  { land = false, batch = false, dispatcher }: { land?: boolean; batch?: boolean; dispatcher?: Job['dispatcher'] } = {}) {
+  { land = false, batch = false, dispatcher, selection }: {
+    land?: boolean; batch?: boolean; dispatcher?: Job['dispatcher']; selection?: { project: string; launchId: string };
+  } = {}) {
+  // Owner selections use the hud_send path without ever enrolling in a resume/repair or headless follow-up.
+  if (selection) workingOnly = true;
+  const selectionRefusal = (job: Job | null, agent?: string) => {
+    if (!selection) return;
+    if (!job) return 'target_ended';
+    if (jobProjectRoot(job) !== selection.project) return 'not_continuable';
+    const status = readCachedStatus(id).status;
+    if (excerptTargetEnded(job, status) || fs.existsSync(join(directory(id), jobFiles.stopRequested))) return 'target_ended';
+    const fields = jobCache.readSession(id)?.fields;
+    if (fields?.launchId && fields.launchId !== selection.launchId) return 'target_ended';
+    if (status?.state !== 'working' || !excerptTargetSupported(job, fields, herdrEndpoint()) ||
+        (agent !== undefined && fields?.primary !== agent)) return 'not_continuable';
+  };
   const matchKey = explicitKey ?? derivedKey('send', id, message);
   let current = findJobMutable(id);
+  if (selection) {
+    const code = selectionRefusal(current);
+    if (code) return { ok: false, code };
+  }
   if (!current) return { ok: false, code: 'job_not_found' };
   if (current.role === 'sonic' || current.role === 'council' || current.council) return { ok: false, code: 'not_continuable' };
   if (!current.headless && isShellLaunchedWorker(jobCache.readSession(id, { throwOnError: true })?.fields))
@@ -1623,6 +1643,17 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   // Read the rollback baseline at mutation time, with no pane query between it and the write.
   const submission = current.cli ? await beginPrompt(dir, { send: { key, pid: process.pid, start: procStat(process.pid)?.start ?? null } }) : null;
   const turn = submission?.turn;
+  if (selection) {
+    const latest = findJobMutable(id);
+    const code = selectionRefusal(latest, agent);
+    if (code) {
+      if (submission) await endPrompt(dir, submission, true);
+      const fresh = findJobMutable(id);
+      const attempted = fresh?.send_outcomes?.find(item => item.key === key);
+      if (fresh && attempted) { attempted.exit_code = -1; save(fresh); }
+      return { ok: false, code };
+    }
+  }
   const taskEntry = session.taskClient && !current.batch_flow && !workingOnly && !land && !carryTask
     ? beginTask(current, row.report_mtime, undefined, row, statusAt) : undefined;
   const result = await run('herdr', ['agent', 'prompt', agent, turn ? withDonePrompt(message, bundled, dir, turn, current.cli!.agent) : message]);
@@ -1637,8 +1668,8 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   // Pi settlement also uses a send-time baseline. Keep it unchanged on confirmed refusals.
   if (!current.cli && !refused) latest.pi_sent_at = recorded_at;
   save(latest);
-  if (!session.taskClient && result.exit_code === 0) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
-  if (result.exit_code === 0 && current.cli) {
+  if (!selection && !session.taskClient && result.exit_code === 0) void ensureQueueWatcher(process.env.HERDR_PANE_ID, hudHome);
+  if (!selection && result.exit_code === 0 && current.cli) {
     const supPid = supervisorPid(dir, status);
     if (
       supPid &&
@@ -1675,7 +1706,9 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   }
   if (!ok && oldTask && !carryTask && sampleTask(oldTask).status === 'working') claimTask(oldTask, latest);
   return {
-    ...(ok ? (queued ? { queued: true } : {}) : blocked ? blockedSend : { code: 'send_failed' }),
+    ...(ok ? (queued ? { queued: true } : {}) : selection && refused &&
+      (launchFailure(result).code === 'agent_not_found' || selectionRefusal(findJob(id)) === 'target_ended')
+      ? { code: 'target_ended' } : blocked ? blockedSend : { code: 'send_failed' }),
     ok, sent: ok,
     exit_code: result.exit_code,
     stderr_tail: result.stderr,

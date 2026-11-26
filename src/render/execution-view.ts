@@ -15,6 +15,7 @@ import { jobTarget } from './work-jobs.js';
 import { isHeadless, workerModelName } from './worker-roster.js';
 import { t } from './i18n.js';
 import { PROJECT_STRIP_MORE } from './project-strip.js';
+import { excerptItem, selectionExcerptRows } from './selection-excerpts.js';
 
 /** Narrower than this a frame leaves no room for its content. */
 const FRAME_MIN = 16;
@@ -158,8 +159,11 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
   const endedRuns = (view.runs ?? []).filter((run): run is ExecutionRun & { endedAt: number } => run.endedAt !== undefined);
   const recent = [...(view.endedJobs ?? []), ...endedRuns].sort((a, b) => b.endedAt - a.endedAt);
   const partial = view.complete ? '' : t('Partial');
-  if (!runs.length && !view.jobs.length && !recent.length)
-    return [plain(''), plain(pair(`  ${muted(t('No running or waiting jobs'))}`, muted(partial), width))];
+  if (!runs.length && !view.jobs.length && !recent.length) {
+    const firstExcerpt = view.excerpts?.[0];
+    return [plain(''), plain(pair(`  ${muted(t('No running or waiting jobs'))}`, muted(partial), width)),
+      ...selectionExcerptRows(view.excerpts ?? [], width, true, cursor ?? (firstExcerpt && excerptItem(firstExcerpt)))];
+  }
   // The first actionable body row is the first open workflow, otherwise the first card or outcome.
   const first = runs.length ? runItem(runs[0].flow) : view.jobs.length ? cardItem(view.jobs[0])
     : 'flow' in recent[0] ? runItem(recent[0].flow) : cardItem(recent[0]);
@@ -204,5 +208,6 @@ export function executionRows(view: ExecutionView | undefined, cursor: string | 
     rows.push(section(heading, width, visualLength(heading + summary) + 2 <= width ? summary : compact));
     rows.push(...recent.map((entry) => endedRow(entry, selected, width, now)));
   }
+  if (view.excerpts) rows.push(...selectionExcerptRows(view.excerpts, width, true, selected));
   return cursor && cursor !== PROJECT_STRIP_MORE && !rows.some((row) => row.item === cursor) ? executionRows(view, undefined, width, now) : rows;
 }
