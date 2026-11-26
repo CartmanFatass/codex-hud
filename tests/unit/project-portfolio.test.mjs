@@ -70,8 +70,8 @@ test('Project design: cell-exact, word-wrapped, with per-feature progress and na
     }
     assert.match(text, /docs\/notes\/rate-limits\.md/);
     assert.match(text, /9f3a1c2/);
-    assert.match(text, zh ? /^详情 [-─]+\n执行 +2 个任务\n工单 +8\/14 完成 · 3 个功能\n进度 +M2 · 2 进行中 · 4 待办\n文档 +规范 M2 · 复审 2天前$/m
-      : /^Details [-─]+\nExecution +2 jobs\nTickets +8\/14 done · 3 features\nProgress +M2 · 2 working · 4 to do\nDocs +spec M2 · review 2d ago$/m);
+    assert.match(text, zh ? /^详情 [-─]+\n工单 +8\/14 完成 · 3 个功能\n进度 +M2 · 2 进行中 · 4 待办\n文档 +规范 M2 · 复审 2天前$/m
+      : /^Details [-─]+\nTickets +8\/14 done · 3 features\nProgress +M2 · 2 working · 4 to do\nDocs +spec M2 · review 2d ago$/m);
     assert.ok(!rows.some((r) => r.item === 'project:page:tree'));
   }
   const config = setDisplayConfig({ theme: 'mocha' });
