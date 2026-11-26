@@ -67,7 +67,10 @@ test('preview is byte/tree read-only; apply imports settings and env existing-wi
   const secrets = ['unique-env-secret-517', 'unique-old-settings-secret-518'];
   fs.writeFileSync(
     settings,
-    JSON.stringify({ theme: 'mocha', language: 'en', briefingApiKey: secrets[1], briefingApiReasoning: true })
+    JSON.stringify({
+      theme: 'mocha', language: 'en', roleCaps: { imp: 3, general: 4 },
+      briefingApiKey: secrets[1], briefingApiReasoning: true,
+    })
   );
   fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ theme: 'latte' }));
   fs.writeFileSync(
@@ -108,11 +111,16 @@ test('preview is byte/tree read-only; apply imports settings and env existing-wi
     assert.ok(!f.output().includes(secret), 'preview leaked a value');
   for (const name of ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'skip existing: theme'])
     assert.ok(f.output().includes(name), name);
+  const destination = join(f.hud, 'hud-settings.json');
+  // Another writer can update the destination between preview and apply.
+  fs.writeFileSync(destination, JSON.stringify({ theme: 'latte', impEvenPool: ['first', 'second'], roleCaps: { imp: 6 } }));
   f.reset();
   assert.equal(await main(['import', 'apply', ...args], f.io), 0, f.output());
   for (const secret of secrets) assert.ok(!f.output().includes(secret), 'apply leaked a value');
-  const saved = JSON.parse(fs.readFileSync(join(f.hud, 'hud-settings.json'), 'utf8'));
-  assert.deepEqual(saved, { theme: 'latte', language: 'en' });
+  const saved = JSON.parse(fs.readFileSync(destination, 'utf8'));
+  assert.deepEqual(saved, {
+    theme: 'latte', impEvenPool: ['first', 'second'], roleCaps: { imp: 6, general: 4 }, language: 'en',
+  });
   const creds = readCredentialsEnv(join(f.hud, 'credentials.env'));
   assert.equal(creds.openaiApiKey, 'existing-wins-524');
   assert.equal(creds.geminiApiKey, 'unique-gemini-525');

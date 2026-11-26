@@ -1,4 +1,4 @@
-import { defaultSettings, type HudSettings } from '../settings.js';
+import { defaultSettings, settingsPatch, type HudSettings } from '../settings.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { truncateAnsi, theme, visualLength, coloredBar } from './colors.js';
 import { t } from './i18n.js';
@@ -221,15 +221,8 @@ export function settingGroup(stateOrRow: Pick<SettingsPageState, 'selected'> | S
     ? stateOrRow.group
     : SETTING_ROWS[Math.min(SETTING_ROWS.length - 1, Math.max(0, stateOrRow.selected))].group;
 }
-const sameSettingValue = (a: unknown, b: unknown): boolean =>
-  a === b || (typeof a === 'object' && typeof b === 'object' && a !== null && b !== null && JSON.stringify(a) === JSON.stringify(b));
 export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original'>): boolean {
-  return (
-    !!state.original &&
-    (Object.keys(defaultSettings()) as Array<keyof HudSettings>).some(
-      (key) => !sameSettingValue(state.draft[key], state.original![key])
-    )
-  );
+  return !!state.original && Object.keys(settingsPatch(state.original, state.draft)).length > 0;
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
@@ -243,7 +236,11 @@ export function resetSettingsGroup(draft: HudSettings, group: string): HudSettin
   if (!Object.hasOwn(RESET_FIELDS, group)) return draft;
   const defaults = defaultSettings(),
     patch: Partial<HudSettings> = {};
-  for (const key of RESET_FIELDS[group as SettingGroup]) Object.assign(patch, { [key]: defaults[key] });
+  for (const key of RESET_FIELDS[group as SettingGroup]) {
+    // Reset the caps on the page, not custom roles configured outside it.
+    const value = key === 'roleCaps' ? { ...draft.roleCaps, ...defaults.roleCaps } : defaults[key];
+    Object.assign(patch, { [key]: value });
+  }
   return { ...draft, ...patch };
 }
 export interface SettingsFrame {

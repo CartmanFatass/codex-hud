@@ -2,6 +2,7 @@ import type { DecisionProviderId } from './jev/decide.js';
 import { readHudConfig, resolveDecisions } from './jev/ask/config.js';
 import { resolveHudEnv } from './utils/hud-env.js';
 import * as path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { readFileBounded, writePrivateFile } from './utils/atomic-fs.js';
 import {
   BAR_FIELDS,
@@ -219,6 +220,21 @@ export function paneStripEnabled(client: StripClient, env = process.env): boolea
 /** Missing files use defaults. Malformed preference JSON and I/O failures belong to the caller. */
 export function loadSettings(env = process.env): HudSettings {
   return { ...readSettings(settingsPath(env)), decisionApi: decisionApi(env) };
+}
+
+/** Compare a Settings draft with the values it started from, not with the latest file. */
+export function settingsPatch(original: HudSettings, draft: HudSettings): Partial<HudSettings> {
+  const patch: Partial<HudSettings> = {};
+  for (const key of Object.keys(validators) as Array<keyof HudSettings>) {
+    if (key === 'roleCaps') {
+      // The page edits individual caps; omitted entries are not deletions.
+      const changed = Object.entries(draft.roleCaps).filter(([role, cap]) => original.roleCaps[role] !== cap);
+      if (changed.length) patch.roleCaps = Object.fromEntries(changed);
+    } else if (!isDeepStrictEqual(original[key], draft[key])) {
+      Object.assign(patch, { [key]: draft[key] });
+    }
+  }
+  return patch;
 }
 
 /** Validate a patch against existing preferences and atomically replace the file. */

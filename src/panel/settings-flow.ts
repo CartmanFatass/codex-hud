@@ -14,7 +14,7 @@ import {
   handleSettingsConfirmation, renderSettingsConfirmation, type SettingsConfirmationFrame, type SettingsConfirmationState,
 } from '../render/settings-confirmation.js';
 import { withDisplaySettings } from '../settings-runtime.js';
-import { loadSettings, saveSettings, type HudSettings } from '../settings.js';
+import { loadSettings, saveSettings, settingsPatch, type HudSettings } from '../settings.js';
 import { setUnattended } from '../unattended/control.js';
 import { readControl, unattendedOn } from '../unattended/state.js';
 import type { PanelPlace } from '../render/monitor-reload-codec.js';
@@ -57,8 +57,11 @@ type SettingsFacts = NonNullable<Parameters<typeof renderSettingsPage>[3]>;
 /** Own the Settings draft, dirty-navigation prompt and overlaid Help. */
 export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settings'] | undefined, effects: SettingsEffects, rolePresets: (role: 'imp' | 'sonic') => readonly string[]) {
   const presets = () => ({ impPresets: rolePresets('imp'), sonicPresets: rolePresets('sonic') });
-  let page: SettingsPageState | null = place
-    ? { ...place, draft: { ...saved, roleCaps: { ...saved.roleCaps } }, original: { ...saved, roleCaps: { ...saved.roleCaps } }, decisionKeys: availableDecisionKeys(), ...presets(), message: '' } : null;
+  // Draft edits replace values rather than mutating the opening snapshot.
+  const openPage = (settings: HudSettings, position: NonNullable<PanelPlace['settings']>): SettingsPageState => ({
+    ...position, draft: settings, original: settings, decisionKeys: availableDecisionKeys(), ...presets(), message: '',
+  });
+  let page = place ? openPage(saved, place) : null;
   let settingsFrame: SettingsFrame | undefined;
   let help: MonitorState | undefined;
   let leave: (SettingsConfirmationState & { destination?: string }) | null = null;
@@ -90,18 +93,24 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
 
   const applyDraft = (): boolean => {
     const draftPage = page;
-    if (!draftPage) return false;
+    if (!draftPage?.original) return false;
+    const patch = settingsPatch(draftPage.original, draftPage.draft);
+    if (!Object.keys(patch).length) {
+      draftPage.message = t('Saved');
+      return true;
+    }
     try {
       const previous = effects.current();
       const previousWidth = previous.treeWidth;
-      const settings = saveSettings(draftPage.draft);
+      const settings = saveSettings(patch);
       const widthChanged = settings.treeWidth !== previousWidth;
       if (settings.impOverflow !== previous.impOverflow || JSON.stringify(settings.roleCaps) !== JSON.stringify(previous.roleCaps)) {
         wakeWatcherIfQueued();
       }
       effects.apply(settings, widthChanged);
       draftPage.message = t('Saved');
-      draftPage.original = { ...settings, roleCaps: { ...settings.roleCaps } };
+      draftPage.draft = settings;
+      draftPage.original = settings;
       effects.setMouseTracking(settings.mouse);
       void (widthChanged ? effects.applyWidth() : undefined)
         ?.then(() => effects.repaintAll())
@@ -128,7 +137,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
       observeUnattended();
       let decisionApi = settings.decisionApi;
       try { decisionApi = loadSettings().decisionApi; } catch { /* Keep the loaded draft. */ }
-      page = { draft: { ...settings, roleCaps: { ...settings.roleCaps }, decisionApi }, decisionKeys: availableDecisionKeys(), ...presets(), selected: 0, offset: 0, message: '' };
+      page = openPage({ ...settings, decisionApi }, { selected: 0, offset: 0 });
     },
     paint(width: number, height: number, facts: () => SettingsFacts, paintHelp: (help: MonitorState, mouse: boolean) => string[]): string[] | undefined {
       if (!page) return;

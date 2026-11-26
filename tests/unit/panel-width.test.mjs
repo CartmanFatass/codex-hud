@@ -117,9 +117,10 @@ for (const [label, opts] of [
     await until(() => output.includes('Home'), 'panel did not paint: ' + stderr);
     child.stdin.write(',');
     await until(() => output.includes('Settings'), 'settings did not open: ' + stderr);
-    child.stdin.write('s');
+    child.stdin.write('\x1b[Cs'); // Change the theme; saving a clean draft does not write.
     const file = join(env.HUD_HOME, 'hud-settings.json');
-    await until(() => { try { return JSON.parse(readFileSync(file, 'utf8')).treeWidth === 56; } catch { return false; } }, 'settings not saved: ' + stderr);
+    await until(() => { try { return JSON.parse(readFileSync(file, 'utf8')).theme === 'titanium'; } catch { return false; } }, 'settings not saved: ' + stderr);
+    assert.equal(loadSettings(f.env).treeWidth, 56);
     assert.equal(child.exitCode, null);
     assert.equal(readFileSync(config, 'utf8'), bytes, 'unrelated save preserves even broken config bytes');
   });

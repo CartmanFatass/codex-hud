@@ -228,11 +228,17 @@ const rows: { name: string; run: (t: test.TestContext) => void | Promise<void> }
       const f = fixture(t);
       fs.writeFileSync(join(f.hud, 'config.json'), '{}');
       const outputs = ['line', 'p10k'].map((barStyle) => {
-        fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ barStyle }));
+        const file = join(f.hud, 'hud-settings.json');
+        const body = JSON.stringify({ barStyle, roleCaps: { imp: 6 }, impEvenPool: ['first', 'second'] });
+        fs.writeFileSync(file, body);
+        const before = fs.statSync(file, { bigint: true });
         const r = spawnSync(process.execPath, [resolve('bin/hud-statusline'), '--width', '120'], {
           env: f.env, input: JSON.stringify(f.input), encoding: 'utf8', timeout: 5000,
         });
         assert.equal(r.status, 0, r.stderr);
+        assert.equal(fs.readFileSync(file, 'utf8'), body);
+        const after = fs.statSync(file, { bigint: true });
+        assert.deepEqual([after.ino, after.mtimeNs], [before.ino, before.mtimeNs], 'bar and statusline only read HUD settings');
         return strip(r.stdout);
       });
       assert.notEqual(outputs[0], outputs[1]);
