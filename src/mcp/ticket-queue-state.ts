@@ -58,7 +58,7 @@ export interface TicketQueueItem {
   answered_at?: string;
   /** ISO timestamp of the latest station transition (landed, failed, held, unheld, answered). */
   changed_at?: string;
-  held_land?: string; // Matching land adopted from a hold; keep its evidence through review and acceptance.
+  held_land?: string; // Manual land that cleared this hold; retain its evidence for review and acceptance.
   dispatch_queue?: string; // Keep the original worker request key across explicit resumes.
   approved_head?: string;
   approved_report_sig?: string;

@@ -16,7 +16,7 @@ import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { loadGraph } from '../../dist/workflows/graph.js';
 import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
-import { pinnedHeldJobs } from '../../dist/unattended/state.js';
+import { pinnedQueueJobs } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -745,8 +745,8 @@ test('retention prunes expired terminal receipts and pins open held item job and
   fs.utimesSync(receipt, old, old);
   fs.utimesSync(heldReceipt, old, old);
 
-  // While hold is open, pinnedHeldJobs includes the held source job and pruneLandFlows keeps the held receipt.
-  assert.ok(pinnedHeldJobs(home).has('j0000000000000001'));
+  // While the hold is open, its source job is pinned and pruneLandFlows keeps the held receipt.
+  assert.ok(pinnedQueueJobs(home).held.has('j0000000000000001'));
   pruneLandFlows(home, Date.now());
   assert.equal(fs.existsSync(receipt), false);
   assert.equal(fs.existsSync(`${receipt}.noticed`), false);
@@ -755,7 +755,7 @@ test('retention prunes expired terminal receipts and pins open held item job and
 
   // Once the ticket is closed (wontfix), hold clears -> job is unpinned and unindexed receipt can be pruned.
   fs.writeFileSync(ticketFile, goodTicket(1, { status: 'wontfix' }));
-  assert.equal(pinnedHeldJobs(home).has('j0000000000000001'), false);
+  assert.equal(pinnedQueueJobs(home).held.has('j0000000000000001'), false);
   fs.writeFileSync(join(home, 'unattended-runs.json'), JSON.stringify([]));
   pruneLandFlows(home, Date.now());
   assert.equal(fs.existsSync(heldReceipt), false);
@@ -902,7 +902,7 @@ test('unattended cancel stops a paused or working run without signalling, keeps 
   // Holds (item-level + run-level) and evidence remain visible and pinned.
   assert.ok(cancelPaused.handbacks.some(h => h.flow === pausedFlow && h.ticket === 'sample/01' && h.owner_approval === 'feature-deletion'));
   assert.ok(cancelPaused.handbacks.some(h => h.flow === pausedFlow && !h.ticket && /max repair rounds/.test(h.reason)));
-  assert.ok(pinnedHeldJobs(f.home).has(heldJob));
+  assert.ok(pinnedQueueJobs(f.home).held.has(heldJob));
   const logged = () => fs.existsSync(f.env.FAKE_LOG) ? f.fakeLog() : [];
   assert.equal(logged().some(c => c.command === 'hud-reap'), false, 'cancel never reaps or signals');
 

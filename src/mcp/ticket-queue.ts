@@ -241,7 +241,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
         const next = { ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow };
         // A manual land can close the ticket before the successor has observed the receipt.
         const land = item.held && item.job ? completedLandForJob(home, item.job) : null;
-        if (land) {
+        if (land && !land.ticket_queue) {
           const at = land.landed_at ?? land.updated_at ?? now;
           next.land = land.flow;
           next.held_land = land.flow;

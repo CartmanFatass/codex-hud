@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { JOB_RETENTION_MS } from '../../dist/runtime/work-retention.js';
-import { pinnedHeldJobs, pinnedQueueJobs } from '../../dist/unattended/state.js';
+import { pinnedQueueJobs } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -369,7 +369,7 @@ test('a temporarily missing ticket file keeps an ordinary hold pinned across ret
 
   // Simulate a branch switch hiding the ticket file during a retention pass.
   fs.unlinkSync(ticketFile);
-  assert.ok(pinnedHeldJobs(f.home).has(job), 'retention treats a missing ticket file as not closed');
+  assert.ok(pinnedQueueJobs(f.home).held.has(job), 'retention treats a missing ticket file as not closed');
   const watcher = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
     env: f.env, encoding: 'utf8', timeout: 15_000,
   });

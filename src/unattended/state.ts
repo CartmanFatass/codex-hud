@@ -141,7 +141,7 @@ export function readOpenHolds(home: string, root?: string): UnattendedHandback[]
 export interface PinnedQueueJobs {
   /** Unresolved holds: keep worktree checkout, raw logs, job directory and land receipts. */
   held: Set<string>;
-  /** Lands that resolve ordinary holds: keep the source report and land receipts, not the worktree or raw logs. */
+  /** Manual lands that resolve ordinary holds: keep the source report and land receipts, not the worktree or raw logs. */
   evidence: Set<string>;
 }
 
@@ -163,26 +163,18 @@ export function pinnedQueueJobs(home: string, pass = workflowHeaders(home)): Pin
       const q = pass.header<TicketQueue>(file);
       if (!q || q.unattended || !isOpenTicketRun(q) || q.superseded_by || queueCancelled(home, q)) continue;
       for (const item of q.tickets ?? []) {
-        if (!item.job) continue;
-        if (item.landed) {
-          if (item.held_land && item.held_land === item.land) evidence.add(item.job);
-          continue;
-        }
-        if (!item.held) continue;
-        // Before adoption, only a completed receipt for the held job resolves its hold.
-        let landed: boolean | 'error' = false;
-        try { landed = !!completedLandForJob(home, item.job, pass); }
-        catch { landed = 'error'; }
-        if (landed === true) evidence.add(item.job);
-        else if (landed === 'error' || !ticketClosed(item.path)) held.add(item.job);
+        const unresolved = !item.landed && item.held;
+        const adopted = item.held_land && (!item.landed || item.held_land === item.land);
+        if (!item.job || (!unresolved && !adopted)) continue;
+        try {
+          const land = completedLandForJob(home, item.job, pass);
+          if (land && !land.ticket_queue && (unresolved || item.held_land === land.flow)) evidence.add(item.job);
+          else if (unresolved && !ticketClosed(item.path)) held.add(item.job);
+        } catch { if (unresolved) held.add(item.job); }
       }
     } catch { /* Ignore an unreadable queue, not other holds. */ }
   }
   return { held, evidence };
-}
-
-export function pinnedHeldJobs(home: string, pass = workflowHeaders(home)): Set<string> {
-  return pinnedQueueJobs(home, pass).held;
 }
 
 export function readUnattendedStatus(home: string) {

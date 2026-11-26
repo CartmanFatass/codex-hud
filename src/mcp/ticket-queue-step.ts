@@ -1030,7 +1030,7 @@ function tickTicketQueue(
       if (q.unattended && !blockerHold) continue;
       const heldLand = item.job ? landAttempt(hudHome, item.job).prior : null;
       if (heldLand && heldLand.job === item.job && (heldLand.state === 'completed' || activeLand(heldLand))) {
-        item.held_land = heldLand.flow;
+        if (!q.unattended && !heldLand.ticket_queue) item.held_land = heldLand.flow;
         clearItemHold(q, item);
         changed = true;
       } else if (blockerHold && ticketClosed(item.path)) {
