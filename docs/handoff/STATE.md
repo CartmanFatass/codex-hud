@@ -12,15 +12,19 @@ Older handoffs: [2026-11-03 to 11-14](archive/STATE-2026-11-03-to-11-14.md), [20
   (`handback_to: "lead"`); unattended trial 3 was clean and unattended/01 is done. Queues `chores` and `home-tidy`
   run on their own and leave one end notice on the run record (`hud_read({job: <flow>})`). imp: even over
   `neon` + `sol`, cap 6.
-- herdr fork (`~/projects/herdr-hud`, branch `hud`): installed 0.9.5-hud.00caf385 (16+17+20+21) on the owner's word
-  2026-11-26; live handoff needs `--import-exe ~/.local/bin/herdr`; rollback `~/.local/bin/herdr-0.9.5-hud.a26432a7`.
-  21+22 live-checked and done (agy background task kept `working`, HUD closed 0.24 s after idle); 17 done. `hud` now
-  also has 23 (dock) and 25 (collapsed-sidebar icons) merged, release built @973fde14, NOT installed. 26 (sidebar tree
-  groups, agy job jbef41f3a978ebb4d) building; then HUD 27 and 24. Install 23+25+26 together on the owner's word. Owner
-  tries: 16 (select-send, first try failed on the old client; retry pending), 20/25 sidebar icons, cursor report open.
-- Panel navigation redesign (D-2026-11-26-04): sample `docs/design/nav-redesign/` settled by main (README §11);
-  run qb33acad6613a3dd4 covers 01–03; 04–09 rewritten for the tab roles (D-2026-11-26-05, `docs/design/tab-roles/`) and need a new run when it ends. mcp-latency/01–02 run q7370ba79c6022f53.
-- Owner tries pending: exec-page/02 (Execution Runs section), select-send after the fork install.
+- herdr fork (`~/projects/herdr-hud`, branch `hud`): installed 0.9.5-hud.f6236449 on the owner's word 2026-11-26
+  (adds 23 dock, 25 collapsed-sidebar icons, 26 sidebar tree groups, 28 select-send via OSC 52, 29 cursor on
+  reverse-video cells); live handoff needs `--import-exe ~/.local/bin/herdr --expected-version <v>`; rollback
+  `~/.local/bin/herdr-0.9.5-hud.6e0d5d7e`. Owner confirmed 28 and 29 live; 16-29 done except 24 (HUD uses the dock,
+  next). HUD 27 landed (1f60edeb): new workers report `hud_group`/`hud_subgroup`, main sessions `hud_group` on start.
+  Judge fork regressions single-threaded (parallel env-lock race, HUD-FORK.md known failures).
+- Ticket store (D-2026-11-26-06, `docs/design/ticket-store/README.md`): tickets move to per-feature
+  `.hud/tickets/<feature>.json`; run q4d41eea7199f2815 covers ticket-store/01-05 (03 waits on nav-redesign/07, 09;
+  05 waits on toktrack hud-ticket-json/01, owner-approved deletion of `.scratch/*/issues/*.md`). mcp-latency/03
+  wontfix (superseded).
+- Runs: nav-redesign qb33acad6613a3dd4 (01-03; 04-09 need a new run when it ends), chores follow-ups 16-17
+  q4cb6b4851e0cf926, ticket-store above. mcp-latency run q7370ba79c6022f53 in review.
+- Owner tries pending: exec-page/02 (Execution Runs section); sidebar tree groups once new workers start.
 
 - The product pivot is in `docs/spec.md` (D-2026-11-23-03): HUD is the operational workbench (execution, load,
   Objectives, owner requests), toktrack does history and insights. The owner approved all 23 removals in its
