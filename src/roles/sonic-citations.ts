@@ -1,15 +1,19 @@
 /** Mechanical citation verification for settled sonic reports. No model calls or network. */
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
+import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
 import { count, record, text } from './job-usage.js';
 
 export const MAX_CITATION_REPORT_BYTES = 256 * 1024;
 export const MAX_CITATIONS = 200;
 export const MAX_CITATION_FAILURES = 20;
 const MAX_TARGET_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_TRACKED_FILES_BYTES = 8 * 1024 * 1024;
+const GIT_LS_FILES_TIMEOUT_MS = 2000;
 const QUOTE_WINDOW_LINES = 3;
 const MAX_REF_LENGTH = 260;
 const MAX_REASON_LENGTH = 64;
@@ -110,10 +114,10 @@ function extractLineCitations(line: string): ParsedCitation[] {
   return out;
 }
 
-function collectRoots(cwd: string, worktreeRoot?: string) {
+function collectRoots(cwd: string, worktreeRoot?: string, projectRoot?: string) {
   const rawRoots: string[] = [];
   const realRoots: string[] = [];
-  for (const dir of [cwd, worktreeRoot]) {
+  for (const dir of [cwd, worktreeRoot, projectRoot]) {
     if (typeof dir !== 'string' || !dir) continue;
     const resolved = resolve(dir);
     if (!rawRoots.includes(resolved)) rawRoots.push(resolved);
@@ -125,31 +129,125 @@ function collectRoots(cwd: string, worktreeRoot?: string) {
   return { rawRoots, realRoots };
 }
 
+function listTrackedByBasename(root: string): Map<string, string[]> | null {
+  try {
+    const git = spawnSync('git', [...SAFE_GIT_ARGS, 'ls-files', '-z'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: safeGitEnv(process.env),
+      maxBuffer: MAX_TRACKED_FILES_BYTES,
+      timeout: GIT_LS_FILES_TIMEOUT_MS,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    if (git.status !== 0 || git.error || typeof git.stdout !== 'string') return null;
+    const byBasename = new Map<string, string[]>();
+    for (const entry of git.stdout.split('\0')) {
+      if (!entry) continue;
+      const slash = entry.lastIndexOf('/');
+      const base = slash === -1 ? entry : entry.slice(slash + 1);
+      const bucket = byBasename.get(base);
+      if (bucket) bucket.push(entry);
+      else byBasename.set(base, [entry]);
+    }
+    return byBasename;
+  } catch {
+    return null;
+  }
+}
+
+function matchTrackedSuffix(
+  byBasename: Map<string, string[]> | null,
+  citedPath: string,
+): { kind: 'unique'; path: string } | { kind: 'ambiguous' } | null {
+  if (!byBasename) return null;
+  const normalized = citedPath.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '');
+  if (!normalized || normalized.startsWith('/')) return null;
+  const segments = normalized.split('/');
+  if (segments.some((seg) => !seg || seg === '.' || seg === '..')) return null;
+  const base = segments[segments.length - 1]!;
+  const candidates = byBasename.get(base);
+  if (!candidates?.length) return null;
+  const matches = segments.length === 1
+    ? candidates
+    : candidates.filter((file) => file === normalized || file.endsWith(`/${normalized}`));
+  if (matches.length === 1) return { kind: 'unique', path: matches[0]! };
+  if (matches.length > 1) return { kind: 'ambiguous' };
+  return null;
+}
+
 export function checkReportCitations(
   reportText: string,
-  roots: { cwd: string; worktreeRoot?: string },
+  roots: { cwd: string; worktreeRoot?: string; projectRoot?: string },
 ): JobCitations {
   const bounded = Buffer.byteLength(reportText, 'utf8') > MAX_CITATION_REPORT_BYTES
     ? trimUtf8Prefix(Buffer.from(reportText, 'utf8').subarray(0, MAX_CITATION_REPORT_BYTES))
     : reportText;
-  const { rawRoots, realRoots } = collectRoots(roots.cwd, roots.worktreeRoot);
+  const { rawRoots, realRoots } = collectRoots(roots.cwd, roots.worktreeRoot, roots.projectRoot);
   const fileCache = new Map<string, CachedFile>();
   const pathCache = new Map<string, { ok: true; realPath: string } | { ok: false; reason: string }>();
+  const trackedCache = new Map<string, Map<string, string[]> | null>();
+
+  const getTracked = (root: string): Map<string, string[]> | null => {
+    if (trackedCache.has(root)) return trackedCache.get(root)!;
+    const index = listTrackedByBasename(root);
+    trackedCache.set(root, index);
+    return index;
+  };
 
   const resolveCitedPath = (citedPath: string): { ok: true; realPath: string } | { ok: false; reason: string } => {
     const prior = pathCache.get(citedPath);
     if (prior) return prior;
-    const candidate = isAbsolute(citedPath) ? resolve(citedPath) : resolve(roots.cwd, citedPath);
     let outcome: { ok: true; realPath: string } | { ok: false; reason: string };
-    try {
-      const realPath = fs.realpathSync(candidate);
-      outcome = realRoots.some((root) => isWithin(root, realPath))
-        ? { ok: true, realPath }
-        : { ok: false, reason: 'outside_root' };
-    } catch {
-      const lexicallyInside = rawRoots.some((root) => isWithin(root, candidate)) ||
-        realRoots.some((root) => isWithin(root, candidate));
-      outcome = { ok: false, reason: lexicallyInside ? 'missing_file' : 'outside_root' };
+    if (isAbsolute(citedPath)) {
+      const candidate = resolve(citedPath);
+      try {
+        const realPath = fs.realpathSync(candidate);
+        outcome = realRoots.some((root) => isWithin(root, realPath))
+          ? { ok: true, realPath }
+          : { ok: false, reason: 'outside_root' };
+      } catch {
+        const lexicallyInside = rawRoots.some((root) => isWithin(root, candidate)) ||
+          realRoots.some((root) => isWithin(root, candidate));
+        outcome = { ok: false, reason: lexicallyInside ? 'missing_file' : 'outside_root' };
+      }
+      pathCache.set(citedPath, outcome);
+      return outcome;
+    }
+
+    const lexicalBase = realRoots[0] ?? rawRoots[0] ?? resolve(roots.cwd);
+    if (!isWithin(lexicalBase, resolve(lexicalBase, citedPath))) {
+      outcome = { ok: false, reason: 'outside_root' };
+      pathCache.set(citedPath, outcome);
+      return outcome;
+    }
+
+    outcome = { ok: false, reason: 'missing_file' };
+    for (const root of realRoots) {
+      const direct = resolve(root, citedPath);
+      try {
+        const realPath = fs.realpathSync(direct);
+        outcome = realRoots.some((allowed) => isWithin(allowed, realPath))
+          ? { ok: true, realPath }
+          : { ok: false, reason: 'outside_root' };
+        break;
+      } catch { /* Fall through to unique tracked-file resolution in this root. */ }
+
+      const suffix = matchTrackedSuffix(getTracked(root), citedPath);
+      if (suffix?.kind === 'ambiguous') {
+        outcome = { ok: false, reason: 'ambiguous_path' };
+        break;
+      }
+      if (suffix?.kind === 'unique') {
+        try {
+          const realPath = fs.realpathSync(resolve(root, suffix.path));
+          outcome = realRoots.some((allowed) => isWithin(allowed, realPath))
+            ? { ok: true, realPath }
+            : { ok: false, reason: 'outside_root' };
+        } catch {
+          outcome = { ok: false, reason: 'missing_file' };
+        }
+        break;
+      }
     }
     pathCache.set(citedPath, outcome);
     return outcome;
@@ -251,19 +349,24 @@ export function checkReportCitations(
 export function shouldCheckSonicCitations(job: Partial<Job>, status: Partial<JobStatus>): boolean {
   return job.role === 'sonic' &&
     !job.citations &&
+    !job.reaped_at &&
     (status.state === 'closed' || status.state === 'done') &&
     status.output_written !== false;
 }
 
 export function checkSonicReportCitations(
   dir: string,
-  job: Pick<Job, 'role' | 'cwd' | 'worktree'>,
+  job: Pick<Job, 'role' | 'cwd' | 'worktree' | 'project_root'>,
 ): JobCitations | undefined {
   if (job.role !== 'sonic') return undefined;
   try {
     const { bytes, truncated } = readFileBounded(join(dir, jobFiles.report), MAX_CITATION_REPORT_BYTES);
     const body = truncated ? trimUtf8Prefix(bytes) : bytes.toString('utf8');
-    return checkReportCitations(body, { cwd: job.cwd, worktreeRoot: job.worktree?.root });
+    return checkReportCitations(body, {
+      cwd: job.cwd,
+      worktreeRoot: job.worktree?.root,
+      projectRoot: job.project_root ?? job.worktree?.main_root,
+    });
   } catch {
     return undefined;
   }

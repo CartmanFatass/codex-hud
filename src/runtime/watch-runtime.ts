@@ -614,7 +614,11 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
   const receipt = readJson<Job>(jobFile);
   if (receipt) {
     if (!receipt.reaped_at) {
-      writeJsonAtomic(jobFile, { ...receipt, reaped_at: new Date().toISOString() }, 2);
+      const finalStatus = readJson<JobStatus>(statusFile) ?? latest;
+      const citations = shouldCheckSonicCitations(receipt, finalStatus)
+        ? checkSonicReportCitations(dir, receipt)
+        : undefined;
+      writeJsonAtomic(jobFile, { ...receipt, ...(citations ? { citations } : {}), reaped_at: new Date().toISOString() }, 2);
       log(message());
     }
     reapRetries.delete(id);

@@ -301,8 +301,9 @@ If a startup attempt is refused for quota before the brief is taken, HUD marks t
 The job record includes `route.placement: "even"`, `route.preset` for the preset that ran, and the skipped startup preset and reason if there was a fallback. Explicit retries keep the chosen preset.
 Sonic still accepts no placement fields from callers.
 
-When a sonic job settles with a report, HUD checks its `path:line` and `path:line-line` citations once mechanically (no model call or network) and records `citations: {total, verified, failed: [{ref, reason}]}` on `job.json` and the monthly archive (with at most 20 failures).
-Each citation resolves relative to the job `cwd` or as an absolute path and is verified when the file exists inside the job's `cwd` or worktree, the line range exists, and any text quoted in backticks on the same row appears (whitespace-normalised) within ±3 lines.
+When a sonic job settles with a report, HUD checks its `path:line` and `path:line-line` citations once mechanically at settlement (no model call or network, and not retroactively on already-reaped jobs) and records `citations: {total, verified, failed: [{ref, reason}]}` on `job.json` and the monthly archive (with at most 20 failures).
+Each citation resolves directly against the job's working directory (falling back to its worktree or project root if needed) or as an absolute path inside those roots; if a bare or partial relative path misses directly, HUD resolves it against `git ls-files` in that root only when exactly one tracked file matches, failing multiple tracked matches as `ambiguous_path` and zero matches as `missing_file`.
+A resolved citation is verified when the file exists inside those roots, the line range exists, and any text quoted in backticks on the same row appears (whitespace-normalised) within ±3 lines.
 Checking stops after 200 citations and reads at most the first 256 KiB of the report; reports with no citations record `total: 0`.
 HUD does no analysis on these counts and the panel does not show them.
 

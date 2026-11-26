@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,10 +7,13 @@ import test from 'node:test';
 import { archiveJob } from '../../dist/roles/job-archive.js';
 import {
   checkReportCitations,
+  checkSonicReportCitations,
   MAX_CITATION_FAILURES,
   MAX_CITATION_REPORT_BYTES,
   MAX_CITATIONS,
+  shouldCheckSonicCitations,
 } from '../../dist/roles/sonic-citations.js';
+import { git, initRepo } from '../fixtures/managed-worktree.mjs';
 import { cliState, fixture, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 
@@ -186,4 +190,137 @@ await callWorkerTool('hud_report', { text });
   const archived = fs.readFileSync(join(f.env.HUD_HOME, 'archive', '2026-11.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
   assert.deepEqual(archived.find((row) => row.job === sonic.job).citations, expected);
   assert.deepEqual(archived.find((row) => row.job === second.job).citations, { total: 0, verified: 0, failed: [] });
+});
+
+function gitInitAndTrack(repo, files) {
+  execFileSync('git', ['init', '-q'], { cwd: repo });
+  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo });
+  execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: repo });
+  for (const [rel, body] of Object.entries(files)) {
+    const full = join(repo, rel);
+    fs.mkdirSync(join(full, '..'), { recursive: true });
+    fs.writeFileSync(full, body);
+  }
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: repo });
+}
+
+test('checkReportCitations resolves unique tracked basenames/partial paths, fails ambiguous_path, and resolves repo-root citations when worktree cwd is absent', (t) => {
+  const base = fs.mkdtempSync(join(tmpdir(), 'hud-citations-git-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const repo = join(base, 'repo');
+  fs.mkdirSync(repo, { recursive: true });
+  gitInitAndTrack(repo, {
+    'src/deep/unique.ts': sampleSourceLines(),
+    'src/a/shared.ts': 'export const side = "a";\n',
+    'src/b/shared.ts': 'export const side = "b";\n',
+  });
+  // Untracked file must NOT be matched via bare basename (tracked files only), though direct path still works.
+  fs.mkdirSync(join(repo, 'scratch'), { recursive: true });
+  fs.writeFileSync(join(repo, 'scratch', 'untracked.ts'), 'export const temp = 1;\n');
+
+  const report = [
+    '- `unique.ts:2` computes `const sum = a + b;`', // unique tracked basename -> verifies
+    '- `./unique.ts:6` defines `export function beta()`', // leading ./ unique basename -> verifies
+    '- `a/shared.ts:1` sets `side = "a"`', // unique partial path -> verifies
+    '- `shared.ts:1` matches two tracked files', // ambiguous tracked basename -> ambiguous_path
+    '- `nique.ts:2` is not a path-segment match', // partial filename -> missing_file
+    '- `untracked.ts:1` is untracked', // untracked basename -> missing_file
+    '- `scratch/untracked.ts:1` sets `temp = 1`', // direct untracked path -> verifies
+    '- `../outside.ts:1` escapes root', // lexical escape -> outside_root
+  ].join('\n');
+
+  assert.deepEqual(checkReportCitations(report, { cwd: repo }), {
+    total: 8,
+    verified: 4,
+    failed: [
+      { ref: 'shared.ts:1', reason: 'ambiguous_path' },
+      { ref: 'nique.ts:2', reason: 'missing_file' },
+      { ref: 'untracked.ts:1', reason: 'missing_file' },
+      { ref: '../outside.ts:1', reason: 'outside_root' },
+    ],
+  });
+
+  // Prewalk scout whose worktree cwd does not exist yet (or was removed) resolves against project_root.
+  const jobDir = join(base, 'job');
+  fs.mkdirSync(jobDir, { recursive: true });
+  fs.writeFileSync(join(jobDir, 'report.md'), [
+    '- `src/deep/unique.ts:2` computes `const sum = a + b;`',
+    '- `unique.ts:6` defines `export function beta()`',
+    '- `shared.ts:1` ambiguous',
+  ].join('\n'));
+  const missingWorktree = join(base, 'repo-wt', 'imp-missing');
+  assert.deepEqual(
+    checkSonicReportCitations(jobDir, {
+      role: 'sonic',
+      cwd: missingWorktree,
+      project_root: repo,
+    }),
+    {
+      total: 3,
+      verified: 2,
+      failed: [{ ref: 'shared.ts:1', reason: 'ambiguous_path' }],
+    },
+  );
+
+  // Already-reaped sonic jobs are never checked retroactively.
+  assert.equal(shouldCheckSonicCitations({ role: 'sonic', reaped_at: '2026-11-24T00:00:00.000Z' }, { state: 'closed', output_written: true }), false);
+  assert.equal(shouldCheckSonicCitations({ role: 'sonic' }, { state: 'closed', output_written: true }), true);
+});
+
+test('prewalk scout verifies unique basename and repo-root files at settlement and flags ambiguous_path', async (t) => {
+  const f = await fixture(t, { autoPrewalk: true });
+  const repo = initRepo(f.root);
+  for (const dir of ['src/core', 'src/one', 'src/two']) fs.mkdirSync(join(repo, dir), { recursive: true });
+  write(join(repo, 'src', 'core', 'only-one.ts'), sampleSourceLines());
+  write(join(repo, 'src', 'one', 'dup.ts'), 'export const kind = "one";\n');
+  write(join(repo, 'src', 'two', 'dup.ts'), 'export const kind = "two";\n');
+  git(repo, 'add', 'src');
+  git(repo, 'commit', '-m', 'add sources');
+  // Untracked context file in the repo root (not present in the linked worktree).
+  write(join(repo, 'repo-context.md'), 'Synthetic repo-root context line.\n');
+
+  const scoutReport = [
+    '# Prewalk findings',
+    '- `only-one.ts:2` computes `const sum = a + b;`',
+    '- `one/dup.ts:1` sets `kind = "one"`',
+    '- `repo-context.md:1` notes `Synthetic repo-root context line.`',
+    '- `dup.ts:1` matches two tracked files',
+  ].join('\n');
+
+  f.overrideBin('pi', `#!${process.execPath}
+import * as fs from 'node:fs';
+import { join } from 'node:path';
+if (!process.argv.includes('--print')) process.exit(1);
+const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
+await callWorkerTool('hud_report', { text: ${JSON.stringify(scoutReport)} });
+`);
+
+  const target = await f.call('hud_create', {
+    role: 'imp',
+    cwd: repo,
+    task: 'Inspect tracked files and repo-root context.',
+    isolation: 'worktree',
+    context_files: ['repo-context.md'],
+    scouts: [{ kind: 'code', ask: 'Locate unique, duplicate, and context files.' }],
+  });
+
+  const jobsDir = join(f.env.HUD_HOME, 'jobs');
+  let scoutDir;
+  await until(() => {
+    if (!fs.existsSync(jobsDir)) return false;
+    scoutDir = fs.readdirSync(jobsDir)
+      .map((id) => join(jobsDir, id))
+      .find((dir) => fs.existsSync(join(dir, 'job.json')) && readJson(join(dir, 'job.json')).parent_job === target.job);
+    return Boolean(scoutDir && cliState(scoutDir)?.state === 'closed' && readJson(join(scoutDir, 'job.json')).reaped_at);
+  }, t.signal);
+  await until(() => readJson(join(target.task_dir, 'job.json')).dispatch_exit_code !== null, t.signal);
+
+  const scoutReceipt = readJson(join(scoutDir, 'job.json'));
+  assert.equal(scoutReceipt.prewalk_kind, 'code');
+  assert.deepEqual(scoutReceipt.citations, {
+    total: 4,
+    verified: 3,
+    failed: [{ ref: 'dup.ts:1', reason: 'ambiguous_path' }],
+  });
 });
