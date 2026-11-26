@@ -313,6 +313,14 @@ test('external quota failure marks exhaustion through cache and updates subseque
     return text.trim() ? text.trim().split('\n').map((line) => JSON.parse(line)) : [];
   };
 
+  // Match the synthetic receipt to a configured place without depending on the shipped model defaults.
+  const place = { harness: 'pi', pi_role: 'implementer', model: 'synthetic/default', thinking: 'low' };
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles, { recursive: true });
+  writeFixtureFile(join(roles, 'imp.json'), JSON.stringify({
+    role: 'imp', instructions: 'implementer', can_continue: true, run: [place],
+  }));
+
   const id = 'j00000000000000bb';
   const dir = join(f.env.HUD_HOME, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });
@@ -326,8 +334,8 @@ test('external quota failure marks exhaustion through cache and updates subseque
       project_root: f.root,
       herdr_pane: 'w4E:p1',
       created_at: '2030-01-01T00:00:00.000Z',
-      place: { harness: 'pi', pi_role: 'implementer', model: 'synthetic/default', thinking: 'low' },
-      model: 'synthetic/default',
+      place,
+      model: place.model,
       dispatch_exit_code: 0,
       stderr_tail: '',
     })
