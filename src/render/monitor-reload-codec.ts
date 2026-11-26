@@ -27,13 +27,13 @@ function projectView(value: unknown): ProjectView {
   switch (kind) {
     case 'progress': return { kind };
     case 'waiting': return typeof request === 'string' ? { kind, index: offset(index) ?? -1, request } : { kind: 'hub' };
-    case 'projects-list': case 'tickets': case 'tree': case 'docs': return { kind };
+    case 'projects-list': case 'execution': case 'tickets': case 'tree': case 'docs': return { kind };
     default: return { kind: 'hub' };
   }
 }
 function savedPages(value: unknown) {
   const pages = fields(value);
-  return Object.fromEntries(['progress', 'tickets', 'tree', 'docs'].flatMap((key) =>
+  return Object.fromEntries(['execution', 'progress', 'tickets', 'tree', 'docs'].flatMap((key) =>
     object(pages[key]) ? [[key, rowPlace(pages[key])]] : []));
 }
 function inspectorPlace(value: unknown): InspectorState | undefined {

@@ -58,6 +58,7 @@ function helpRows(input: MonitorData, state: MonitorState, width: number) {
   const project = [
     ['[ ]', 'previous / next project'],
     ['⏎', 'Accept all: record all pending slices'],
+    ['g H', 'Execution: show or hide the job’s tab; ⏎ opens it'],
   ];
   const control = [
     ['c C', 'role: next / previous preset'],
@@ -261,7 +262,7 @@ export function renderWorkboardFrame(
         : [boardRow(t('Job not available'))]
         : jobs ? jobsRows(source.workers, width, !!input.jobsObserved, source.batches)
         : project
-          ? projectRows(input.project, state, width, now, source, input.projectName, input.projects, input.worktrees)
+          ? projectRows(input.project, state, width, now, source, input.projectName, input.projects, input.worktrees, input.execution)
           : resourcePage ? expRows(resourcePage, expEdit, input.expData, width, now, Math.max(0, height - 2 - top - Number(!!input.publicationNotice)))
           : control ? harnesses && input.project ? harnessAdd
               ? [section(t('Add back'), width), ...harnessAdd.rows] : harnessRows(input.project, state.control.harnesses, width)
@@ -296,8 +297,11 @@ export function renderWorkboardFrame(
   if (anchor && key && cursorAt >= offset + room) offset = Math.max(0, cursorAt - room + 1);
   let revealed = nav ? nav.revealed : inspect ? inspect.revealed : resourcePage ? resourcePage.revealed : listNav?.revealed;
   if (!help && !sheet && key && (addingHarness || revealed !== key) && room) {
-    if (cursorAt < offset) offset = cursorAt;
-    else if (cursorAt >= offset + room) offset = cursorAt - room + 1;
+    // An Execution card is several rows of one job: bring all of it into view, and the page's head with the first.
+    const last = page === 'execution' ? rows.map((r) => r.item).lastIndexOf(key) : cursorAt;
+    if (page === 'execution' && cursorAt === rows.findIndex((r) => r.item) && last < room) offset = 0;
+    else if (cursorAt < offset) offset = cursorAt;
+    else if (last >= offset + room) offset = Math.min(cursorAt, last - room + 1);
     if (!addingHarness) revealed = key;
   }
   if (help) {
@@ -334,7 +338,8 @@ export function renderWorkboardFrame(
         : resourcePage ? expHints(resourcePage, expEdit)
         : control ? harnesses ? addingHarness ? addBackHints : harnessHints(input.project, state.control.harnesses)
             : sheet ? sheet.hints : controlHints(input.project, cursor)
-        : project ? (page === 'waiting' ? ['o file', 'Esc back']
+        : project ? (page === 'execution' ? ['Esc back', ...(selected?.execJob?.tab ? ['g job tab', 'H hide tab'] : []), ...(selected ? ['⏎ details'] : [])]
+          : page === 'waiting' ? ['o file', 'Esc back']
           : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
           : page === 'tickets' || (page === 'progress' && cursor?.startsWith('project:fold:task:')) ? ['⏎ details', 'Esc back', 'o file']
           : page || list ? ['⏎ open', 'Esc back']

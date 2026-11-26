@@ -94,9 +94,9 @@
     "  ⚒ Build the Project tab            20m",
     "",
     "Details ────────────────────────────────",
+    "Execution 3 jobs",
     "Tickets   3/13 done · 2 features",
     "Progress  M3b · 2 working · 6 to do",
-    "Worktree  synthetic-project · 5 changed",
     "                          ⏎ open  ? help"
   ],
   "ticket-open-40-en": [
@@ -340,11 +340,11 @@
     "  ⚒ Build the Project tab                                                                                            20m",
     "",
     "Details ────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "Execution  3 jobs",
     "Tickets    3/13 done · 2 features",
     "Progress   M3b · 2 working · 6 to do · 2 blocked",
     "Worktree   synthetic-project · 5 changed · 1 unlisted worktree · 2 worktrees",
     "Docs       spec M3b · AI-THIN · review 30m ago",
-    "",
     "                                                                                                          ⏎ open  ? help"
   ],
   "ticket-open-120-en": [
@@ -516,9 +516,9 @@
     "  ⚒ Build the Project tab           20分",
     "",
     "详情 ───────────────────────────────────",
+    "执行      3 个任务",
     "工单      3/13 完成 · 2 个功能",
     "进度      M3b · 2 进行中 · 6 待办",
-    "工作区    synthetic-project · 5 项修改",
     "                          ⏎ 打开  ? 帮助"
   ],
   "ticket-open-40-zh": [
@@ -762,11 +762,11 @@
     "  ⚒ Build the Project tab                                                                                           20分",
     "",
     "详情 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+    "执行       3 个任务",
     "工单       3/13 完成 · 2 个功能",
     "进度       M3b · 2 进行中 · 6 待办 · 2 受阻",
     "工作区     synthetic-project · 5 项修改 · 1 个未登记工作树 · 2 个工作树",
     "文档       规范 M3b · AI-THIN · 复审 30分前",
-    "",
     "                                                                                                          ⏎ 打开  ? 帮助"
   ],
   "ticket-open-120-zh": [

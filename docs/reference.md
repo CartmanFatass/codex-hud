@@ -808,7 +808,7 @@ Project → **Working tree** includes the Git diagnostics formerly on the separa
 
 Project opens to the selected project's stance, priority (if not normal) and activity age. **Needs you** shows only explicit owner requests, with up to four lines of the request itself and any linked Objective ID, age and work-waits flag. **Objectives** follows; when there is no `.hud/objectives.md`, the overview instead shows the available STATE **Now** and **Next** notes (up to two lines each). Neither the Home roll-up bars nor pane load are repeated here.
 
-**Details** links to **Tickets** (if present), **Progress**, **Worktree** (when Git facts exist) and **Docs**. Its rows name the figures: completed/non-dropped tickets and feature count; milestone and ticket states; branch and changed paths; spec milestone and review age. When the ticket scan is bounded or a read fails, the Details heading names how many features the counts sampled. Job and ticket activity is diagnostic, not an owner request. Exhausted roles are still shown in Control.
+**Details** links to **[Execution](#execution-page)** (while the project has running or waiting jobs), **Tickets** (if present), **Progress**, **Worktree** (when Git facts exist) and **Docs**. Its rows name the figures: live jobs, and how many of them wait or are queued; completed/non-dropped tickets and feature count; milestone and ticket states; branch and changed paths; spec milestone and review age. When the ticket scan is bounded or a read fails, the Details heading names how many features the counts sampled. Job and ticket activity is diagnostic, not an owner request. Exhausted roles are still shown in Control.
 
 In a registered project, main keeps `.hud/objectives.md` in Git. An optional header such as `**Stance:** active · **Priority:** high` declares stance (`active`, `paused`, `maintenance`; otherwise unknown) and priority (`high`, `normal`, `low`; otherwise `normal`). Each `## <id>: <title>` section has a unique lowercase slug (`[a-z0-9-]+`) and a `**State:** active|paused|done` line. Optional single-line fields are `**Next:**`, `**Result:**`, `**Features:**` (comma-separated `.scratch` feature slugs) and `**Evidence:**` (comma-separated repo paths, URLs or commit hashes). Project shows blocked Objectives first, then active, paused and done. An open, linked request that work waits on marks an Objective as blocked on Home and in Project without changing its declared state. An open Objective shows its ID, state and done/non-dropped ticket count, then the title and next step (up to three lines each), one ticket bar per linked feature, and its result (up to two lines, with the age if a receipt dates that exact result). Features with unknown coverage do not get a bar or count. At 56 columns and wider, a known acceptance checklist count can appear as a muted, separate figure. Jobs appear under their linked features with ticket number, title and age; the remaining jobs have their own section. Enter on a job opens its report, or its brief if it has no report. A done Objective uses one row.
 
@@ -1058,6 +1058,20 @@ Full Project collection runs while the hub or a page is visible, not behind moda
 Git is gated to at most once per five seconds.
 Reads do not start a browser or MCP.
 
+### Execution page
+
+Execution shows one project's running and waiting work, from every session and pane. It is the only place with execution detail: Home and the Projects list do not show it. A job belongs to the project when it works inside the project directory, in a worktree HUD manages for it, or its record names the project (a Sonic child working in its parent's worktree).
+
+- **Readout:** how many jobs are running, waiting and queued. `screens every 2s` says how old a thumbnail can be; `Partial` that some job records were not read.
+- **Workers:** one framed card per job, those asking for an answer or waiting for the main session first, then running (oldest first), then queued. The top edge has the state mark, role, model, preset (when the record names one), state and time since the job started. The bottom edge says who started it, and whether it is a `tab`, `headless` or `queued` job. An open question shows under the title.
+- **Screens:** a tab worker's card shows its latest progress line and the last six non-blank, non-rule lines of its herdr pane, in a fixed height so the cards do not move. `tab closed` means the recorded pane is gone or now belongs to something else; `screen unavailable` that herdr did not answer; `no screen yet` that the job has no readable pane (not started, or started by another herdr server).
+- **Headless jobs** show their last three progress lines, or the newest lines of their output while they have reported none.
+- **Delegation:** a tree per main session (this pane's first): its jobs, then the Sonic children and prewalk scouts each started. Settled jobs appear here while they are part of a live job's family.
+
+Enter (or a second click) opens the selected job's Inspector; Esc returns to the same card. `g` reveals and focuses that tab worker's herdr tab and `H` hides it again, from a card, a tree row or the Inspector, with the same conditions as in [Inspector](#inspector). Headless and queued jobs have no tab.
+
+Screens are read from herdr (`pane.read`, then `pane.get` to confirm the pane is still the job's) only while this page is on screen: at most one round every two seconds, eight panes a round (more take turns), and the panel repaints only when a screen changed. Help, Settings, an Inspector or any other page stops the reads. Nothing read from a screen is stored or sent anywhere.
+
 ## Review board
 
 `hud board [--html] [--cwd DIR] [--out FILE] [--open]` writes the project's review board: one static HTML file for a browser, with no script, font, image, link or network request (its Content-Security-Policy allows inline style only) and every project string escaped.
@@ -1141,10 +1155,10 @@ Standalone panels consume their own keys and SGR mouse events directly.
 | Space / Enter, Del, `i` | Harnesses: toggle; remove (= off); Add back (type to filter, Enter restores, Esc cancels). Enter on Off folds or expands it |
 | `m` | Control role or place: choose a model directly (or click `[model ▾]`). Type to filter, ↑↓ to pick, Enter to save (or fill an open draft). In the picker, one click sets, Esc clears then closes, and Ctrl+R refreshes the lists |
 | Up/Down (`j`/`k`), PgUp/PgDn, Home/End (`G` is End) | Move/page/first/last |
-| `g` / `H` | Inspector: `g` reveals and focuses the job's herdr tab; `H` hides it on a fork with hidden-tab support. Headless jobs show Output instead |
+| `g` / `H` | Execution page or Inspector: `g` reveals and focuses the job's herdr tab; `H` hides it on a fork with hidden-tab support. Headless jobs have no tab |
 | `1`–`4` / `d` | On a HUD job's open question (`qN.md` with options or a default) in Inspector, where the options are numbered `[1]`…: `1`–`4` pick that option and `d` the worker's default, with no key before. Writes `qN.answer.md` once (as `hud_respond`; an existing answer stands, `Already answered`) and shows nothing else. A collapsed question takes no digit |
 | `X` | Jobs, on a working or paused batch row: the one prompt for the whole batch (`p` pause or `r` resume, `s` stop; any other key cancels). Inspector, on an unsettled HUD job: a one-row prompt `Stop <role> <id>?  y confirm · Esc cancel` above the page. `y` or Enter stops it as `hud_close` does (a CLI job in its idle grace is first asked to quit with `STATUS.json.close-requested`, then the bundled `hud-reap` runs and the panel reads again); any other key cancels |
-| Enter | Home: open the project or the request in its Project tab; Jobs: open Inspector; Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
+| Enter | Home: open the project or the request in its Project tab; Jobs and the Execution page: open Inspector; Project: open a page, fold, show a ticket, open a file or run the selected Accept all action |
 | `o` | Inspector or Project diagnostics: open the file |
 | `v` | Home: open Jobs |
 | `n` | Jobs or Inspector: show this session’s native subagents |

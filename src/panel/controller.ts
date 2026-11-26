@@ -44,6 +44,7 @@ import { createAgentContext, treePaths } from './agent-context.js';
 import { PanelJobPipeline } from './job-pipeline.js';
 import { createPanelLifecycle, type InstallCleanup } from './lifecycle.js';
 import { createPanelModelDiscovery } from './model-discovery.js';
+import { PanelExecution } from './execution.js';
 import { callsByFeature, ModelRuntimeStore } from '../collectors/model-runtime-store.js';
 import { computeRepaintDelay, createCollectionScheduler } from './scheduler.js';
 import { createSettingsFlow } from './settings-flow.js';
@@ -88,10 +89,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     settingsFailure = err;
   }
   const place = readPanelPlace(), openedAt = place?.openedAt ?? Date.now();
-  const jobPipeline = new PanelJobPipeline(getHudHome(), {
-    project: HUD_CWD_REAL,
-    pane: process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null,
-  });
+  const callerPane = process.env.HUD_PANEL_CALLER_PANE || process.env.HERDR_PANE_ID || null;
+  const jobPipeline = new PanelJobPipeline(getHudHome(), { project: HUD_CWD_REAL, pane: callerPane });
+  const execution = new PanelExecution(jobPipeline.home, callerPane, process.env, () => render());
   let boundJobRoot = '';
   let scanStoreStarted = false;
   const finder = new SessionFinder(HUD_CWD_REAL, undefined, HUD_SESSION_START);
@@ -113,6 +113,10 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   let overviewAt = -Infinity;
   const listing = (s: MonitorState) => projectShown(s) && projectListOpen(s, projects);
   const shownRoot = () => projects.find((p) => p.root === state.selectedProject)?.root ?? HUD_CWD_REAL;
+  // The Execution page's jobs are kept while it, or an Inspector opened from it, is up; worker screens only for the page itself.
+  const executionKept = () => state.activeTab === 'project' && state.project.view.kind === 'execution';
+  const executionPage = () => projectShown(state, settingsFlow.open) && state.project.view.kind === 'execution';
+  const syncExecution = () => execution.sync(executionKept() ? shownRoot() : undefined, executionPage());
   applyDisplaySettings(settings);
   setLanguage(resolveLanguage(settings.language));
   if (settingsFailure) settingsError = t('Settings: {reason}', { reason: String(settingsFailure) });
@@ -191,11 +195,13 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     const source = state, painted = framePlace(source);
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
     const control = projectControlShown(painted, settingsFlow.open), chosen = shownRoot();
+    const executing = painted.activeTab === 'project' && painted.project.view.kind === 'execution';
     const shown = control ? { root: chosen, snapshot: visits.control(chosen) }
       : painted.activeTab !== 'project' ? { root: HUD_CWD_REAL, snapshot: visits.snapshot(HUD_CWD_REAL) }
         : painted.project.view.kind === 'waiting' ? { root: chosen, snapshot: visits.snapshot(chosen)
           ?? portfolio?.projects.find((p) => p.root === chosen)?.snapshot }
-          : visits.shown(chosen);
+          : executing ? { root: chosen, snapshot: visits.snapshot(chosen) }
+            : visits.shown(chosen);
     const output = time('render', () => {
       const width = process.stdout.columns || 30, height = process.stdout.rows || 24;
       const settingsLines = settingsFlow.paint(width, height, () => ({
@@ -209,7 +215,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const nowMs = Date.now();
       frame = renderMonitor({
         tree,
-        workboard: boardFacts(),
+        // An Inspector opened from Execution reads the project's jobs, which other panes may have dispatched.
+        workboard: (executing && painted.subpage && execution.board()) || boardFacts(),
+        execution: executing && !painted.subpage ? execution.view(chosen) : undefined,
         jobsObserved: jobPipeline.jobsObserved,
         homeWaiting: visits.snapshot(HUD_CWD_REAL)?.waiting,
         homePortfolio: portfolio,
@@ -269,6 +277,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       } else boundJobRoot = '';
       const inspect = inspector()?.target;
       await jobPipeline.refresh(inspect?.workerId);
+      if (isClosed()) return;
+      syncExecution();
+      await execution.refresh(inspect?.workerId);
       if (isClosed()) return;
       stage = 'rollout';
       parser.setRolloutPath(session?.path ?? null);
@@ -341,9 +352,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         projects = projectChoices();
       }
       // The open list reads the light overviews instead of the shown project's full collection (Git included), at most once
-      // per five seconds; opening it again reads at once.
-      const full = shown && !listing(state);
-      if (shown && !full) {
+      // per five seconds; opening it again reads at once. The Execution page needs neither: its jobs come from their records.
+      const full = shown && !listing(state) && !executionPage();
+      if (shown && listing(state)) {
         if (Date.now() - overviewAt >= 5000) {
           overviewAt = Date.now();
           overview = await overviews.read(projects.map((p) => p.root), board, Date.now());
@@ -461,7 +472,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const input = settingsFlow.input(key, { frame }, framePlace);
       if (!input) continue;
       const previous = state;
-      const wasWorkingTree = workingTree(), priorRoot = shownRoot(), wasNative = nativeInspector();
+      const wasWorkingTree = workingTree(), priorRoot = shownRoot(), wasNative = nativeInspector(), wasExecution = executionPage();
       const result = handleMonitorInput(state, input, { frame, navigationOverlay: fromSettings });
       state = result.state;
       const detail = state.subpage;
@@ -473,6 +484,8 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       if (workingTree() && (!wasWorkingTree || priorRoot !== shownRoot())) void scheduler.refreshGit();
       if (!nativeInspector()) tree = undefined;
       if (wasNative !== nativeInspector()) void scheduler.collect(true);
+      syncExecution();
+      if (wasExecution !== executionPage()) void scheduler.collect(true);
       if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state) || priorRoot !== shownRoot())) ||
         (projectControlShown(state) && (!projectControlShown(previous) || state.selectedProject !== previous.selectedProject)) ||
         ((state.subpage?.kind === 'inspector' || previous.subpage?.kind === 'inspector') &&
@@ -507,6 +520,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     },
     dispose() {
       jobPipeline.dispose();
+      execution.dispose();
       finder.stop();
       discovery.dispose();
       if (scanStoreStarted) flushTreeScans();

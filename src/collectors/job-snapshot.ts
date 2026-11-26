@@ -75,7 +75,7 @@ function snapshot<T extends Lanes | string[]>(view: View) {
 }
 export function jobLaneSnapshot(home: string, scope: ThinJobScope, options?: LaneView['options']) {
   // A non-pane caller has no thin lanes and should not even start a collector.
-  if (!herdrId(scope.pane)) return { async read(): Promise<Lanes> { return { lanes: [], complete: false }; }, close() {} };
+  if (scope.within === undefined && !herdrId(scope.pane)) return { async read(): Promise<Lanes> { return { lanes: [], complete: false }; }, close() {} };
   return snapshot<Lanes>({ kind: 'lanes', home, scope, options });
 }
 /** A one-shot command never installs a recursive jobs watch of its own. */

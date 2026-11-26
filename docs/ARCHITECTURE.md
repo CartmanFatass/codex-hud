@@ -205,6 +205,11 @@ Integration tests the source commit directly when possible, otherwise picking on
 The landing records `done` when `Owner try` is omitted or `no`; only `yes` lands `ready-for-human`.
 A red gate gets one immediate rerun of the reported Node.js test files (or of the whole command when no files are reported); recovery is stored in the flow and reported with the flaky test names when available.
 
+**Project Execution page.**
+`PanelExecution` exists only while that page, or an Inspector opened from it, is up: a second `PanelJobPipeline` whose `ThinJobScope.within` selects by project instead of pane (the job's directory, the main checkout of its managed worktree, or the receipt's `project_root`). That view reads receipts whole (the worktree link is not a persisted fact), keeps its own artifact cache and persists nothing.
+`executionSnapshot` keeps the live (unsettled, unreaped) jobs plus their descendants and ancestors and groups the tree by the receipt's `dispatcher`. The page skips the full Project collection.
+`ScreenSampler` runs only while the page itself is on screen: pane IDs come from `SESSION.txt` of jobs launched on the panel's own herdr endpoint; each read is `pane.read` followed by `pane.get`, which must still show the job's launch and terminal ID (its tab ID for a launch without direct exec). One round at a time, at most one per 2 s even across closing and reopening, up to eight panes per round in rotation, a 1 s timeout per call, one repaint per round that changed something. Screens live in memory only and are dropped when sampling stops.
+
 ### 4.6 Project and Control
 
 `ProjectCollector` reads STATE, spec milestone, reviews, roles/convention/instructions, key-presence booleans, local tickets, current jobs and Git/worktree facts.
@@ -302,6 +307,7 @@ Retired style values load as `line`.
 Home Waiting links open the corresponding Project detail. `v` opens Jobs; Enter opens Inspector there, and `n` opens Native Inspector from Jobs or Inspector.
 The owner's Inspector actions (`render/job-actions.ts`, spec §2.2) are pure input: `g` becomes `focus-job-tab`; `1`–`4` and `d` pick an option or the worker's default and become `answer-job`; `X` opens the stop-confirmation overlay, whose `y`/Enter becomes `stop-job`.
 Any other input cancels the stop prompt.
+The Execution page (`render/execution-view.ts`) paints only collected facts and screens; its rows carry the job (`execJob`), so `g` and `H` emit the same `focus-job-tab` / `hide-job-tab` actions for a tab worker's row, and Enter opens an Inspector marked `from: 'execution'`, whose Esc returns to the page.
 On a Jobs batch row `X` opens the batch prompt (`confirm-batch`); `p` / `r` / `s` become `batch-control`, any other input cancels.
 The panel and `hud act stop|pause|resume <batch>` both call `controlBatchAsOwner` (`mcp/batch.ts`): `controlBatch`, the control behind `hud_create({batch, action})`, without its session visibility check, then `wakeWorkflow`. There is no second control path.
 `tree-page.ts` does the I/O: `focusJobTab` and `stopJob` (`cli/panel-pane.ts`: `herdr tab focus`, HUD reaper) and `answerJobQuestion` (`collectors/panel-actions.ts`), which writes `qa/qN.answer.md` once (`wx`, like `hud_respond`) and appends the answer to `$HUD_HOME/panel-actions.jsonl`.
@@ -321,7 +327,7 @@ The panel polls its own installed entry signature per collection.
 A change must be quiet for two seconds and pass a bounded child import before reload.
 Dirty Settings, an open filter, a stop or batch confirmation and Control/EXP editors delay replacement.
 The transient `MonitorState.overlay` is never sent to the next process; a clean chain view returns to its role row.
-`render/monitor-state.ts` holds these reload rules and the input rule for unnamed keys (including `/` and `g`).
+`render/monitor-state.ts` holds these reload rules and the input rule for unnamed keys (`/` where a filter applies; `g` and `H` in the Inspector and on the Execution page).
 A bad generation leaves the old panel running.
 Restart preserves argv/env, view/selection/scroll/expansion, Settings cursor, opening time and width override.
 `process.execve` replaces the process when available; otherwise one signal-forwarding supervisor handles restart-exit handoffs without nested parents.

@@ -43,8 +43,9 @@ function detailRows(data: ProjectSnapshot, width: number, now: number): MonitorR
   const totals = data.ticketTotals, col = width < 56 ? 9 : 10;
   const coverage = totals?.partial ? t(totals.totalFeatures === 1 ? '{n} feature sampled' : '{n} features sampled', { n: totals.totalFeatures }) : '';
   const rows = [plain('', width), section(t('Details'), width, coverage)];
-  for (const page of ['tickets', 'progress', 'tree', 'docs'] as const) {
-    if ((page === 'tickets' && !(totals?.totalFeatures || totals?.partial || data.tickets.length)) || (page === 'tree' && !data.git)) continue;
+  for (const page of ['execution', 'tickets', 'progress', 'tree', 'docs'] as const) {
+    if ((page === 'execution' && !data.active.length) ||
+      (page === 'tickets' && !(totals?.totalFeatures || totals?.partial || data.tickets.length)) || (page === 'tree' && !data.git)) continue;
     const label = page === 'tree' ? 'Worktree' : PAGE_WORD[page], room = width - col - 1;
     const summary = pageSummary(page, data, now);
     // The Git branch is a token; let it give way to the whole change count.

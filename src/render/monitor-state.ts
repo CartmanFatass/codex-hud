@@ -16,13 +16,18 @@ export interface RowNav {
 const emptyNav = (cursor?: string): RowNav => ({ cursor, scroll: 0 });
 export interface ViewFilter { query: string; editing: boolean }
 export type JobTarget = Extract<WorkTarget, { kind: 'worker' }>;
-export interface InspectorState extends RowNav { kind: 'inspector'; target: JobTarget }
+export interface InspectorState extends RowNav {
+  kind: 'inspector';
+  target: JobTarget;
+  /** Opened from the Project Execution page: it reads that project's jobs, and back returns there. */
+  from?: 'execution';
+}
 export interface JobsState extends RowNav { kind: 'jobs' }
 interface HomeTabState extends RowNav { othersExpanded?: boolean }
 export const initialHomeTab = (): HomeTabState => ({ scroll: 0 });
 
-export type ProjectSubPage = 'progress' | 'tickets' | 'tree' | 'docs';
-export type ProjectView = { kind: 'projects-list' } | { kind: 'hub' }
+export type ProjectSubPage = 'execution' | 'progress' | 'tickets' | 'tree' | 'docs';
+export type ProjectView = { kind: 'projects-list' } | { kind: 'hub' } | { kind: 'execution' }
   | { kind: 'progress' }
   | { kind: 'tickets' } | { kind: 'tree' } | { kind: 'docs' } | { kind: 'waiting'; index: number; request: string };
 export interface ProjectTabState {
@@ -38,7 +43,7 @@ export const initialProjectTab = (): ProjectTabState => ({ view: { kind: 'hub' }
 export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | undefined => {
   switch (view.kind) {
     case 'hub': case 'projects-list': return undefined;
-    case 'progress': case 'tickets': case 'tree': case 'docs': case 'waiting': return view.kind;
+    case 'execution': case 'progress': case 'tickets': case 'tree': case 'docs': case 'waiting': return view.kind;
     default: return assertNever(view);
   }
 };
@@ -156,7 +161,7 @@ export const jobsPage = (state: MonitorState): JobsState => ({ ...state.jobs, ki
 export function backFromSubpage(state: MonitorState): MonitorState {
   const sub = state.subpage;
   return { ...state, subpage: sub?.kind === 'native-inspector' ? sub.back ?? jobsPage(state)
-    : sub?.kind === 'inspector' ? jobsPage(state) : undefined };
+    : sub?.kind === 'inspector' && sub.from !== 'execution' ? jobsPage(state) : undefined };
 }
 export function transitionTab(state: MonitorState, activeTab: MainTab): MonitorState {
   const base = { ...state, subpage: undefined };
@@ -244,8 +249,11 @@ export function acceptsMonitorInput(state: MonitorState | undefined, input: Work
   if (acceptsRawText(state)) return true;
   if (state.overlay) return false;
   if (input.text === '/') return filterScope(state) !== undefined;
-  return input.text === 'g' && state.subpage?.kind === 'inspector';
+  return (input.text === 'g' || input.text === 'H') && (state.subpage?.kind === 'inspector' || executionPageOpen(state));
 }
+/** The Execution page itself, with no Inspector over it. */
+export const executionPageOpen = (state: MonitorState) =>
+  !state.subpage && state.activeTab === 'project' && state.project.view.kind === 'execution';
 
 /** Drop inert leading text. An admitted event can change the view or open an editor;
  * check the rest of the batch against each new state as it is applied. */

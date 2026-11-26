@@ -380,11 +380,11 @@
     "[ ]     previous / next project",
     "⏎       Accept all: record all pending",
     "        slices",
+    "g H     Execution: show or hide the",
+    "        job’s tab; ⏎ opens it",
     "",
     "Control ──────────────────────────────",
     "c C     role: next / previous preset",
-    "p       role: choose a preset by name",
-    "N I     role: new draft, copied or",
     "                                                                        Esc back"
   ],
   "home-120-en": [
@@ -762,6 +762,7 @@
     "Project ──────────────────────────────────────────────────",
     "[ ]     previous / next project",
     "⏎       Accept all: record all pending slices",
+    "g H     Execution: show or hide the job’s tab; ⏎ opens it",
     "",
     "Control ──────────────────────────────────────────────────",
     "c C     role: next / previous preset",
@@ -772,7 +773,6 @@
     "K J     place: move up / down",
     "m       role/place: picker in this pane; one click or",
     "        Enter sets. In a draft, fill only; else save.",
-    "Esc     picker: clear filter, then close",
     "                                                                                                                Esc back"
   ],
   "settings-40-en": [

@@ -1,7 +1,7 @@
 /** Read-only thin jobs. Package labels are display grouping, never execution identity. */
 import * as fs from 'node:fs';
 import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { Job, JobRoute, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { jobCallerPane } from '../roles/job-pane.js';
@@ -39,11 +39,26 @@ type ArtifactStore = Map<string, { stamp: string; snap: Snap }>;
 const artifactStores = new WeakMap<JobIndexCache, ArtifactStore>();
 const hydrated = new WeakSet<JobIndexCache>();
 const persistStates = new WeakMap<JobIndexCache, { file: string; fileStamp: string; stamps: Map<string, string> }>();
-const artifactStoreFor = (idx: JobIndexCache) => {
-  let store = artifactStores.get(idx);
-  if (!store) artifactStores.set(idx, (store = new Map()));
+const projectArtifactStores = new WeakMap<JobIndexCache, ArtifactStore>();
+const artifactStoreFor = (idx: JobIndexCache, stores = artifactStores) => {
+  let store = stores.get(idx);
+  if (!store) stores.set(idx, (store = new Map()));
   return store;
 };
+/**
+ * Whether the job works inside `root`: its own directory, the main checkout of the worktree HUD manages for it, or the
+ * checkout its receipt names as the project (a Sonic child working in its parent's worktree has only that link).
+ */
+function worksWithin(root: string, job: Record<string, unknown>, canonical: (path: string) => string): boolean {
+  if (typeof job.cwd !== 'string') return false;
+  const inside = (path: string) => {
+    const rel = relative(root, canonical(path));
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  };
+  const cwd = canonical(job.cwd), tree = job.worktree as { root?: unknown; main_root?: unknown } | undefined;
+  return inside(cwd) || (tree?.root === cwd && typeof tree.main_root === 'string' && inside(tree.main_root)) ||
+    (typeof job.project_root === 'string' && inside(job.project_root));
+}
 function statFileStamp(file: string): string | null {
   try {
     const st = fs.lstatSync(file, { bigint: true, throwIfNoEntry: false });
@@ -179,6 +194,8 @@ function headlessOutputAt(directory: string): number | undefined {
 export interface ThinJobScope {
   project: string | null;
   pane: string | null;
+  /** A project root: its jobs, whatever pane dispatched them, instead of the pane's (the Execution page). */
+  within?: string;
 }
 export interface JobRow extends Partial<JobProgress> {
   job: string;
@@ -683,14 +700,26 @@ export function readThinJobs(
   observation?: { complete: boolean },
   inventory?: ThinJobInventory
 ): WorkLane[] {
-  let complete = herdrId(scope.pane) && inventory?.complete !== false;
+  const { within } = scope;
+  let complete = (within !== undefined || herdrId(scope.pane)) && inventory?.complete !== false;
   const markIncomplete = () => { complete = false; };
-  const idx = getJobIndexCache(home), artifacts = artifactStoreFor(idx);
+  // The two kinds of view prune their own artifacts, so one does not evict what the other keeps reading.
+  const idx = getJobIndexCache(home), artifacts = artifactStoreFor(idx, within === undefined ? artifactStores : projectArtifactStores);
+  const canonicals = new Map<string, string>(), canonical = (path: string) => {
+    let known = canonicals.get(path);
+    if (known === undefined) {
+      try { known = fs.realpathSync(path); } catch { known = resolve(path); }
+      canonicals.set(path, known);
+    }
+    return known;
+  };
+  const projectRoot = within === undefined ? '' : canonical(within);
   const seenStamps = new Map<string, string>(), seenArtifacts = new Set<string>();
   restore(home, idx);
   const root = join(home, 'jobs');
-  const readFact = (path: string): { v: Record<string, unknown>; at: number } | null => {
-    const res = idx.readJson(path, { parse, acceptFacts: true });
+  // The worktree link is not among the persisted facts, so a project view reads receipts whole.
+  const readFact = (path: string, acceptFacts = true): { v: Record<string, unknown>; at: number } | null => {
+    const res = idx.readJson(path, { parse, acceptFacts });
     if (res.status === 'ok') { seenStamps.set(path, `ok:${res.stamp}`); return { v: res.value, at: res.at }; }
     if (res.status === 'truncated' || res.status === 'invalid') seenStamps.set(path, `${res.status}:${res.stamp}`);
     else seenStamps.delete(path);
@@ -711,7 +740,7 @@ export function readThinJobs(
     .flatMap(({ id }) => {
       // Overflow discovery already loaded these receipts to identify parents. Persist their
       // facts and skip STATUS entirely on other panes. Small windows retain the status-first path.
-      const receipt = dirs.length > 200 ? readFact(join(root, id, 'job.json')) : null;
+      const receipt = dirs.length > 200 && within === undefined ? readFact(join(root, id, 'job.json')) : null;
       if (receipt?.v.job === id && typeof receipt.v.role === 'string' && jobCallerPane(receipt.v) !== scope.pane) {
         receipts.push(receipt.v);
         return [];
@@ -725,7 +754,7 @@ export function readThinJobs(
         (Math.max(when(status.v.ended_at) ?? when(status.v.settled_at) ?? status.at, land?.updatedAt ?? -Infinity) < (options?.settledBefore ?? -Infinity) ||
           Math.max(when(status.v.settled_at) ?? when(status.v.ended_at) ?? status.at, land?.updatedAt ?? -Infinity) < (options?.openedAt ?? -Infinity))
       ) { outsideTimeWindow.push(id); return []; }
-      const file = receipt ?? readFact(join(root, id, 'job.json')),
+      const file = receipt ?? readFact(join(root, id, 'job.json'), within === undefined),
         job = file?.v;
       // Bars may have read STATUS before the directory vanished during the receipt read.
       if (!file) seenStamps.delete(join(root, id, 'STATUS.json'));
@@ -736,8 +765,7 @@ export function readThinJobs(
         !job ||
         job.job !== id ||
         typeof job.role !== 'string' ||
-        !herdrId(scope.pane) ||
-        jobCallerPane(job) !== scope.pane
+        !(within === undefined ? herdrId(scope.pane) && jobCallerPane(job) === scope.pane : worksWithin(projectRoot, job, canonical))
       )
         return [];
       const created = when(job.created_at);
@@ -1035,7 +1063,7 @@ export function readThinJobs(
     const lane = lanes.get(laneId);
     lanes.set(laneId, {
       id: laneId,
-      identity: { kind: 'invocation', home, root: scope.pane!, jobId: id },
+      identity: { kind: 'invocation', home, root: within === undefined ? scope.pane! : jobCallerPane(job), jobId: id },
       label,
       title: label,
       startedAt: lane?.startedAt ?? created,
@@ -1047,7 +1075,8 @@ export function readThinJobs(
   }
   // Retain only artifact signatures used by this bounded scan.
   for (const path of artifacts.keys()) if (!seenArtifacts.has(path)) artifacts.delete(path);
-  persist(home, idx, seenStamps);
+  // The persisted facts are the pane view's.
+  if (within === undefined) persist(home, idx, seenStamps);
   if (observation) observation.complete = complete;
   return [...lanes.values()];
 }

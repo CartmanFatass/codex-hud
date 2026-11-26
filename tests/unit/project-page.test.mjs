@@ -442,7 +442,7 @@ test('Hub: project name, first attention row, one entry per page; Enter opens a 
   const f = await fixture(t);
   let frame = f.render(80);
   assert.match(plain(frame).join('\n'), /^demo-project ─/m);
-  assert.deepEqual(hubEntries(frame), ['tickets', 'progress', 'tree', 'docs'].map((p) => `project:page:${p}`));
+  assert.deepEqual(hubEntries(frame), ['execution', 'tickets', 'progress', 'tree', 'docs'].map((p) => `project:page:${p}`));
   assert.equal(frame.state.project.nav.cursor, 'project:wait:0', 'the cursor starts on the first explicit request');
   assert.match(plain(frame).join('\n'), /Try the Project tab/);
   assert.match(plain(frame).join('\n'), /^Progress +M3b · \d+ working · \d+ to do/m);
@@ -456,7 +456,7 @@ test('Hub: project name, first attention row, one entry per page; Enter opens a 
     visited.push(frame.state.project.nav.cursor);
   }
   assert.deepEqual(visited, ['project:page:progress', 'project:page:tree', 'project:page:docs']);
-  for (const page of ['progress', 'tickets', 'tree', 'docs']) {
+  for (const page of ['execution', 'progress', 'tickets', 'tree', 'docs']) {
     frame.state.project.nav.cursor = `project:page:${page}`;
     frame = f.render(80, 'en', press(frame, 'enter').state);
     assert.equal(projectPageOf(frame.state), page);

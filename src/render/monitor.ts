@@ -10,7 +10,8 @@ import type { TodayFacts } from '../collectors/home-cards.js';
 import type { ScheduleItem } from '../collectors/schedule.js';
 import type { ProjectOverview } from '../collectors/project-visits.js';
 import type { ModelLists, PlaceEdit, PresetEdit, RoleFact } from '../roles/role-control.js';
-import { initialHomeTab, initialProjectTab, initialControlTab, type MonitorState, type ObjectiveTarget } from './monitor-state.js';
+import { initialHomeTab, initialProjectTab, initialControlTab, type JobTarget, type MonitorState, type ObjectiveTarget } from './monitor-state.js';
+import type { ExecutionView } from '../collectors/execution.js';
 export type { MonitorState } from './monitor-state.js';
 import type { ModelPick } from './model-input.js';
 import type { MainTab } from './main-tabs.js';
@@ -69,6 +70,8 @@ export interface MonitorRow {
   commit?: { cwd: string; hash: string };
   /** The row of a fixed batch on the Jobs page: `X` there acts on the whole batch. */
   batch?: WorkBatch;
+  /** A job on the Execution page: Enter opens it, `g` / `H` act on its tab when it has one. */
+  execJob?: { target: JobTarget; dir: string; tab: boolean };
 }
 export interface MonitorRect {
   id: MonitorPane;
@@ -157,6 +160,8 @@ export interface MonitorData {
   width: number;
   height: number;
   worktrees?: WorktreesSnapshot | null;
+  /** Only while the Project Execution page is open. */
+  execution?: ExecutionView;
   expData?: ExpData;
   nowMs?: number;
   error?: string | null;

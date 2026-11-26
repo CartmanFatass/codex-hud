@@ -222,6 +222,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         if (harnesses) return;
       }
       if (harnesses && harnessId(row?.item)) return switchAction(row);
+      if (row?.execJob) {
+        next.subpage = { kind: 'inspector', target: row.execJob.target, scroll: 0, from: 'execution' };
+        return;
+      }
       if (row?.objectiveEvidence) return { type: 'open-objective-evidence' as const, ...row.objectiveEvidence };
       if (row?.objectiveTarget) openObjective(row.objectiveTarget);
       else if (row?.item === 'project:switch') showList(true);
@@ -247,6 +251,10 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
         }
       }
       return result();
+    }
+    if (input.type === 'key' && (input.text === 'g' || input.text === 'H') && !control && projectPageOf(next) === 'execution') {
+      const job = rows[at]?.execJob;
+      return result(job?.tab ? { type: input.text === 'g' ? 'focus-job-tab' : 'hide-job-tab', dir: job.dir } : undefined);
     }
     if (['enter', 'activate', 'open-session'].includes(key)) return result(activate(undefined, key === 'open-session'));
     if ((key === 'project-prev' || key === 'project-next') && !listed) {
