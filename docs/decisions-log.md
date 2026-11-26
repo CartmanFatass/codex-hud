@@ -7,6 +7,12 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-26
 
+- **D-2026-11-26-08** (§2.1 runs): Owner: runs must not stall on permission-style waits. Three queue runs paused
+  because workers listed "owner live try remains" as `Blockers:`. A pending live/owner try is a hint recorded in the
+  run todo, never a blocking reason; other Blockers go to the lead like scope assumptions; an escalated owner matter
+  holds only its ticket and dependents, everything else keeps running (ticket unattended/NN). Main also stops
+  asking for the owner's word on decided, reversible steps such as installing a tested herdr fork build.
+
 - **D-2026-11-26-07** (§2.1 workflow): Owner lifted the rest of the 25.08 deferral: workflow/06 (main-composed
   workflows with check and hand-back steps, `hud_workflow`, owner grant for costly runs) goes ahead; the ticket queue
   on the engine (workflow/05) and lead acceptance (07) had already landed. Owner also paused the advisor Objective

@@ -96,7 +96,7 @@ delegation). (new, 26.02)
   refuses to start with the list of gaps. Jobs proceed on the ticket, spec and their own default and record each
   assumption as an `Assumed:` line that goes to the run's todo; a job with more than three assumptions, or one about
   scope, pauses the run like a failed pilot. A job asks only when no reasonable default is safe; its question goes to
-  a temporary lead (the fallback), never to main. Owner matters are reported as a blocker, which pauses the run.
+  a temporary lead (the fallback), never to main. Owner matters are reported as a blocker; the lead judges it, and an escalated one holds only that ticket and its dependents while the rest keeps running. A pending live or owner try is a note, never a blocker (26.08).
   Branches between steps follow rules (checks pass → continue; fail → at most two repairs → pause). A run ends with
   one lead acceptance. A hand-back goes by
   default to a project-lead acceptance session (role `lead`: a fresh Claude Code session on Claude Opus 5.5 at high with the HUD tools, the same model and
