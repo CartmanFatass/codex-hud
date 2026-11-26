@@ -38,10 +38,16 @@ test('Project design: cell-exact, word-wrapped, with per-feature progress and na
     assert.ok([...rows.map((r) => r.text), ...frame.lines].every((line) => visualLength(line) === width && !line.includes('\x1b')));
     assert.doesNotMatch(text, /Partial|不完整|This pane|本窗格|Jobs in Project|^任务 /m);
     assert.match(text, zh ? /进行中 · 高优先级 · 20分前/ : /active · high priority · (?:updated )?20m ago/);
-    const request = rows.filter((r) => r.item === 'project:wait:0').map(visible);
-    assert.match(request[0], zh ? /rate-limits +在等你 1天$/ : /rate-limits +work waits 1d$/);
-    assert.ok(request.length <= 5);
-    assert.equal(request.slice(1).map((s) => s.trim()).join(' '), f.project.waiting[0].sentence);
+    const request = (frame.workboard.requests ?? []).filter((r) => r.item === 'project:wait:0').map(visible);
+    assert.match(request[0], zh ? /rate-limits .*在等你 1天$/ : /rate-limits .*work waits 1d$/);
+    const inline = width === 80 || (width === 50 && zh);
+    if (inline) {
+      assert.equal(request.length, 1);
+      assert.match(request[0], /Pick the default burst/);
+    } else {
+      assert.equal(request.length, 2);
+      assert.match(request[1], /^  Pick the default burst size:/);
+    }
     for (const [id, ratio, flag] of [['rate-limits', '4/8', zh ? '受阻' : 'blocked'], ['ci-speed', '4/6', zh ? '进行中' : 'active']]) {
       const lines = rows.filter((r) => r.item === objective(id)).map(visible);
       assert.match(lines[0], new RegExp(`${ratio} ${zh ? '工单' : 'tickets'} ${flag}$`));

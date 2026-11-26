@@ -79,16 +79,19 @@ test('design Home at 40, 50 and 80 columns: cell-exact in EN/ZH across icon sets
   ]) for (const width of [40, 50, 80]) for (const lang of ['en', 'zh']) {
     const prev = setDisplayConfig({ theme: 'mocha', icons }), prevLang = setLanguage(lang);
     try {
-      const frame = f.draw(width, 40), rows = frame.workboard.rows;
+      const frame = f.draw(width, 40), rows = frame.workboard.rows, reqs = frame.workboard.requests ?? [];
       const text = plain(frame), goal = (id) => rows.find((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.objective.id === id).text;
-      assert.ok([...frame.lines, ...rows.map((r) => r.text)].every((line) => visualLength(line) === width));
+      assert.ok([...frame.lines, ...rows.map((r) => r.text), ...reqs.map((r) => r.text)].every((line) => visualLength(line) === width));
       assert.match(text, lang === 'en' ? /Home \?1/ : /首页 \?1/);
-      const [head, ...body] = rows.filter((r) => r.item?.startsWith('home:wait:')).map((r) => stripAnsi(r.text).trimEnd());
-      assert.match(head, lang === 'en' ? /harbor-api . rate-limits +work waits 1d$/ : /harbor-api . rate-limits +在等你 1天$/);
-      assert.equal(body.length, 2);
-      assert.match(body[0], /^  Pick the default burst size:/);
-      assert.ok(body.every((line) => line.search(/\S/) === 2), 'sentence rows use a two-cell hang');
-      assert.equal(body[1].endsWith('…'), width < 80);
+      const [head, ...body] = reqs.filter((r) => r.item?.startsWith('home:wait:')).map((r) => stripAnsi(r.text).trimEnd());
+      assert.match(head, lang === 'en' ? /harbor-api . rate-limits .*work waits 1d$/ : /harbor-api . rate-limits .*在等你 1天$/);
+      if (width === 80) {
+        assert.equal(body.length, 0, 'sentence sits inline when >= 24 cells remain');
+        assert.match(head, /Pick the default burst size:/);
+      } else {
+        assert.equal(body.length, 1, 'sentence sits on a second row cut to one row when < 24 cells remain');
+        assert.match(body[0], /^  Pick the default burst size:.*…$/);
+      }
       const rate = goal('rate-limits'), quill = goal('docs-site');
       assert.ok(stripAnsi(rate).startsWith(`  ${blocked} rate-limits`));
       assert.ok(rate.includes(theme.board.attention(blocked)));
@@ -141,7 +144,7 @@ test('Home folds three quiet registrations behind one row after two active proje
         assert.ok(stripAnsi(toggle.text).endsWith(hint));
         if (frame.state.home.cursor === toggle.item) assert.ok(stripAnsi(frame.lines.at(-1)).includes(hint));
         assert.ok([...frame.lines, ...rows.map((r) => r.text)].every((line) => visualLength(line) === width));
-        assert.equal(rows.filter((r) => r.item?.startsWith('home:wait:')).length, 3);
+        assert.equal((frame.workboard.requests ?? []).filter((r) => r.item?.startsWith('home:wait:')).length, width === 40 ? 2 : 1);
       };
       const collapsed = draw();
       check(collapsed, false);
@@ -417,11 +420,12 @@ test('a 27-row panel keeps request prose and one row for each of 17 registration
   const roots = [...Object.values(f.roots), ...extra];
   fs.writeFileSync(join(f.home, 'projects.json'), JSON.stringify({ version: 1, projects: roots.map((root) => ({ root })) }));
   const portfolio = await f.tick();
-  const rows = f.draw(40, 27, portfolio).workboard.rows;
+  const frame = f.draw(40, 27, portfolio), rows = frame.workboard.rows;
   const projects = rows.filter((r) => r.item?.startsWith('home:project:'));
   assert.deepEqual(new Set(projects.map((r) => r.homeTarget.root)), new Set(roots));
   assert.equal(projects.length, 17);
-  assert.equal(rows.length, 23, 'two headings, three request rows, seventeen project rows and the fold row');
+  assert.equal(frame.workboard.requests?.length, 2, 'pinned request keeps its sentence row at 40 cols');
+  assert.equal(rows.length, 19, 'one heading, seventeen project rows and the fold row');
   assert.match(stripAnsi(projects[0].text), /8\/14/);
   const tiny = f.draw(40, 6, portfolio);
   assert.deepEqual(tiny.workboard.rows, rows, 'below the minimum the same rows stay scrollable');
@@ -431,8 +435,8 @@ test('density drops separators, then results, then the second Objective with an 
   const f = await design(t);
   fs.appendFileSync(join(f.roots.harbor, '.hud/objectives.md'), '\n## follow-up: Follow up\n**State:** paused\n');
   const portfolio = await f.tick();
-  for (const [height, blanks, result, objectives, more] of [[25, 4, true, 2, 1], [21, 0, true, 2, 1],
-    [20, 0, false, 2, 1], [19, 0, false, 1, 2], [18, 0, false, 0, 0]]) {
+  for (const [height, blanks, result, objectives, more] of [[23, 4, true, 2, 1], [19, 0, true, 2, 1],
+    [18, 0, false, 2, 1], [17, 0, false, 1, 2], [16, 0, false, 0, 0]]) {
     const rows = f.draw(40, height, portfolio).workboard.rows;
     assert.equal(rows.filter((r) => !r.text.trim()).length, blanks);
     assert.equal(rows.some((r) => r.item?.startsWith('home:result:')), result);
@@ -543,7 +547,7 @@ test('the unlinked row keeps exact width in EN and ZH and folds before any Objec
     } finally { setLanguage(prevLang); setDisplayConfig(prev); }
   }
   const seen = [];
-  for (let height = 60; height >= 18; height--) {
+  for (let height = 60; height >= 14; height--) {
     const rows = f.draw(40, height, portfolio).workboard.rows;
     seen.push({ unlinked: !!f.rowOf(rows), results: rows.some((r) => r.item?.startsWith('home:result:')),
       objectives: rows.filter((r) => r.item?.startsWith('home:objective:') && r.objectiveTarget.root === f.root).length });

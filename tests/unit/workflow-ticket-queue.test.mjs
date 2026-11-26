@@ -11,6 +11,7 @@ import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js'
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
 import { readMachineWork } from '../../dist/collectors/work-summary-snapshot.js';
 import { homeRows } from '../../dist/render/home-view.js';
+import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { loadGraph } from '../../dist/workflows/graph.js';
@@ -498,7 +499,8 @@ test('held item stays on Home, excludes itself and dependents from shared admiss
   const rows = homeRows(portfolio, 80, now, 24, false, undefined, { sorted: [], overdue: 0, today: 0 });
   assert.match(stripAnsi(rows[0].text), /Unattended · Runs: 1 · Hand-backs: 1 · selected/);
   assert.ok(rows.every(r => visualLength(r.text) === 80));
-  assert.ok(rows.some(r => stripAnsi(r.text).includes('sample/01')));
+  const frame = renderMonitor({ state: initialMonitorState(), homePortfolio: portfolio, width: 80, height: 24, nowMs: now });
+  assert.ok((frame.workboard.requests ?? []).some(r => stripAnsi(r.text).includes('sample/01')));
 
   // `off` stops the resident service without killing the live run and admits no new run.
   assert.equal(u.cmd('off').on, false);

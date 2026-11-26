@@ -118,7 +118,7 @@ test('Project ticket frames are cell-exact at 40/80/120 EN/ZH; unknown words dim
   const data = await f.collector.collect(true, f.board, NOW + 3);
   assert.deepEqual(data.tickets, []);
   assert.doesNotMatch(plain(f.render(80, 'en', undefined, data)).join('\n'), /Tickets|native-tree|retired-tools/, 'no Tickets entry on the hub');
-  assert.match(plain(f.render(80, 'en', 'tickets', data)).join('\n'), /Project › Tickets\n\n  none/);
+  assert.match(plain(f.render(80, 'en', 'tickets', data)).join('\n'), /Project › Tickets\n\? Try the Project tab\n\? Choose the browser profile after trying the synthetic setup\n\n  none/);
 });
 test('open features list tickets by state and keep queued tickets folded', async (t) => {
   const f = await fixture(t), state = featurePage();

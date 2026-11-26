@@ -479,7 +479,7 @@ test('Hub: project name, first attention row, one entry per page; Enter opens a 
   // One click opens a hub entry; no editor or execution action.
   for (const page of ['docs', 'progress']) {
     const rows = frame.workboard.rows, index = rows.findIndex((r) => r.item === `project:page:${page}`);
-    const result = click(frame, 10, index + 1);
+    const result = click(frame, 10, frame.panes[0].y + index);
     assert.equal(projectPageOf(result.state), page);
     assert.equal(result.action, undefined);
   }

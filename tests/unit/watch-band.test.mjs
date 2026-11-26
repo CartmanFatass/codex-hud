@@ -36,7 +36,9 @@ test('the band and Project hub show explicit waiting items, not a prompt to try 
   const project = await new ProjectCollector(f.cwd, f.hud, f.env, f.home).collect('home', board, NOW);
   assert.deepEqual(project.waiting.map((item) => item.value), ['Decide the export format', 'Send a sample file (waits on export/04)']);
   const hub = plain(renderMonitor({ state: onPage(undefined), tree: TREE, workboard: board, project, width: 60, height: 40, nowMs: NOW })).join('\n');
-  assert.match(hub, new RegExp(`^Needs you ─+ ${band.waiting}$`, 'm'));
+  assert.match(hub, /^. Decide the export format$/m);
+  assert.match(hub, /^. Send a sample file \(waits on export\/04\)$/m);
+  assert.doesNotMatch(hub, /^Needs you ─/m);
   assert.equal(project.ledger.filter((row) => row.state === 'try').length, 2);
   assert.doesNotMatch(hub, /Accept all|\d+ to try/);
 });
@@ -107,8 +109,8 @@ test('a numbered request keeps its identity across owner surfaces; Home and Proj
   };
   const expected = '2026-01-01 r7 · Choose a layout · Measure sample (work waits)';
   const [home, project, html] = await draw();
-  assert.match(home, /^. project [›>] measure +work waits[^\n]*\n  Choose a layout$/m);
-  assert.match(project, /^. measure +work waits[^\n]*\n  Choose a layout$/m);
+  assert.match(home, /^. project [›>] measure  Choose a layout +work waits/m);
+  assert.match(project, /^. measure  Choose a layout +work waits/m);
   for (const text of [home, project]) {
     assert.ok(text.includes(legacy));
     assert.doesNotMatch(text, /r7|\(work waits\)/);
@@ -174,13 +176,12 @@ test('M1: a routine question wakes main, stays in Jobs → Inspector, and never 
     const draw = (state) => renderMonitor({ state, tree: TREE, workboard, project, homePortfolio, width: 80, height: 30, nowMs: NOW });
     const hub = plain(draw(onPage())).join('\n');
     const home = draw(initialMonitorState()), portfolioText = plain(home).join('\n');
-    assert.match(portfolioText, /^. project +work waits\n  Decide the public export format$/m);
-    assert.match(hub, /^. +work waits\n  Decide the public export format$/m);
-    assert.doesNotMatch(hub, /\(work waits\)/);
+    assert.match(portfolioText, /^. project  Decide the public export format +work waits$/m);
+    assert.match(hub, /^. Decide the public export format +work waits$/m);
+    assert.doesNotMatch(hub, /\(work waits\)|^Needs you ─/m);
     const html = renderHtmlBoard({ project, workboard, projectName: 'Sample', root: f.cwd, generatedAt: NOW });
     assert.ok(html.includes(explicit));
     for (const text of [portfolioText, hub, html]) assert.ok(!text.includes(question));
-    assert.match(hub, /^Needs you ─+ 1$/m);
     const press = (frame, key) => draw(handleMonitorInput(frame.state, { type: 'key', key }, { frame }).state);
     const jobs = press(home, 'jobs');
     assert.equal(jobs.state.subpage.kind, 'jobs');

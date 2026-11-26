@@ -1,9 +1,9 @@
 /** Portfolio handoff. A job waiting for main is not an owner request. */
 import { basename } from 'node:path';
 import { RECENT_ADVICE_MS } from '../collectors/advisor-history.js';
-import { blockedObjectives, ownerRequestKey, SETTLED_JOB_STATES, type ProjectSnapshot } from '../collectors/project-board.js';
+import { blockedObjectives, SETTLED_JOB_STATES, type ProjectSnapshot } from '../collectors/project-board.js';
 import type { Objective } from '../collectors/objectives.js';
-import { homeActivityAt, type HomePortfolio, type HomeProject, type HomeRequest } from '../collectors/home-portfolio.js';
+import { homeActivityAt, type HomePortfolio, type HomeProject } from '../collectors/home-portfolio.js';
 import type { TodayFacts } from '../collectors/home-cards.js';
 import type { MonitorRow } from './monitor.js';
 import type { ObjectiveTarget } from './monitor-state.js';
@@ -121,27 +121,6 @@ function projectHeader(v: ProjectView, width: number): MonitorRow {
   const rule = width - cells(left) - (right ? cells(right) + 2 : 1);
   const body = rule > 0 ? `${left} ${ink.frame(mark('─', '-').repeat(rule))}` : left;
   return { ...boardRow(fit(pair(body, right, width), width)), ...projectTarget(v) };
-}
-
-function requestRows({ project, index, item, files }: HomeRequest, width: number, now: number): MonitorRow[] {
-  const ink = theme.board;
-  const name = monitorText(project.name), id = monitorText(item.objective ?? ''), lead = `${askMark()} `;
-  const divider = id ? ` ${ink.muted(mark('›', '>'))} ` : '';
-  const fixed = cells(lead + divider), minName = Math.min(cells(name), 8), minId = Math.min(cells(id), 8);
-  const age = compactAge(item.at, now), flag = item.waitedOn ? ink.attention(t('work waits')) : '';
-  const right = keepFacts(width - fixed - minName - minId - 1, age && ink.muted(age), flag).reverse().join(' ');
-  const room = Math.max(0, width - fixed - (right ? cells(right) + 1 : 0));
-  let nameWidth = Math.min(cells(name), nameCap(width)), idWidth = Math.min(cells(id), width < 50 ? 11 : 14);
-  while (nameWidth + idWidth > room && (nameWidth > minName || idWidth > minId)) {
-    if (nameWidth > minName && (nameWidth >= idWidth || idWidth <= minId)) nameWidth--;
-    else idWidth--;
-  }
-  const head = `${lead}${ink.text(truncateAnsi(name, nameWidth))}${divider}${ink.text(truncateAnsi(id, idWidth))}`;
-  const prose = monitorText((item.sentence ?? item.value).replace(/\s+/g, ' ').trim());
-  const itemId = `home:wait:${project.root}:${item.request ?? index}`;
-  const target = files ? { files } : { homeTarget: { root: project.root, index, request: ownerRequestKey(item) } };
-  return [pair(head, right, width), ...sentenceRows(prose, width, 2, 2).map(ink.text)]
-    .map((text) => ({ text: fit(text, width), item: itemId, ...target }));
 }
 
 function objectiveRows(v: ProjectView, objective: Objective, width: number) {
@@ -280,7 +259,7 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
   todayFacts: TodayFacts | undefined, schedule: ScheduleView): MonitorRow[] {
   const ink = theme.board;
   if (!portfolio) return [boardRow(fit(t('Loading…'), width))];
-  const { requests, projects, unattended } = portfolio;
+  const { projects, unattended } = portfolio;
   const top: MonitorRow[] = [];
   if (unattended) {
     const { objectives, running, handbacks } = unattended;
@@ -290,7 +269,6 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
     const left = cells(prefix) + Math.min(16, cells(ids)) + 3 <= width ? prefix : compact;
     top.push(boardRow(fit(ink.active(left) + (cells(left) + 3 < width ? ` · ${ink.text(ids)}` : ''), width)));
   }
-  if (requests.length) top.push(section(t('Waiting'), width, String(requests.length)), ...requests.flatMap((r) => requestRows(r, width, now)));
   top.push(section(t('Projects'), width, width < 56 ? t('done/tickets') : ''));
   const withCards = (rows: MonitorRow[]) => {
     const cards = homeCardRows(todayFacts, schedule, projects, width, now, room - rows.length);

@@ -217,6 +217,16 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       });
       if (settingsLines) return settingsLines;
       const nowMs = Date.now();
+      const unattendedHandbacks = portfolio?.requests.filter((r) => r.index < 0).length ?? 0;
+      const registeredWaiting = overview.size
+        ? registered.reduce((sum, p) => sum + (overview.get(p.root)?.waiting ?? 0), 0) + unattendedHandbacks
+        : undefined;
+      const homeRequestCount = painted.activeTab === 'home' && portfolio
+        ? portfolio.requests.length
+        : registeredWaiting ?? portfolio?.requests.length;
+      const projectWaiting = shown.root === chosen && shown.snapshot
+        ? shown.snapshot.waiting.length
+        : chosenSnapshot?.waiting.length ?? overview.get(chosen)?.waiting;
       frame = renderMonitor({
         tree,
         // An Inspector opened from Execution reads the project's jobs, which other panes may have dispatched.
@@ -225,6 +235,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         executionCount: liveJobs,
         jobsObserved: jobPipeline.jobsObserved,
         homeWaiting: visits.snapshot(HUD_CWD_REAL)?.waiting,
+        homeRequestCount,
         homePortfolio: portfolio,
         homeToday,
         openSchedule,
@@ -234,7 +245,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         expData: resourcesShown(painted) ? expData : undefined,
         project: shown.snapshot,
         projectDisplayRoot: shown.root,
-        projectWaiting: (control || executing) ? chosenSnapshot?.waiting.length : undefined,
+        projectWaiting,
         projectName: projects.find((p) => p.root === shown.root)?.name ?? path.basename(HUD_CWD_REAL),
         projects: projects.map((p) => ({ ...p, overview: overview.get(p.root) })),
         error,
@@ -365,7 +376,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         root: countRoot,
         count: execution.view(countRoot)?.jobs.length ?? countProjectLiveJobs(jobPipeline.home, countRoot),
       };
-      if (visible && !home && projects.length > 1 && now - overviewAt >= 5000) {
+      if (visible && !home && (projects.length > 1 || !full) && now - overviewAt >= 5000) {
         overviewAt = now;
         overview = await overviews.read(projects.map((p) => p.root), board, now);
       }

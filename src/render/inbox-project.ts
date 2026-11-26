@@ -1,14 +1,13 @@
-/** Pure Project overview and project switcher. Only explicit requests belong under Needs you. */
-import { ownerRequestKey, type ProjectSnapshot } from '../collectors/project-board.js';
+/** Pure Project overview and project switcher. Owner requests live in the pinned request area. */
+import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { MonitorRow, MonitorState, ProjectChoice } from './monitor.js';
 import { PAGE_WORD, objectiveRows, pageSummary, projectOrder, sinceText } from './project-view.js';
-import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
+import { boardRow, compactAge, mark, section } from './workboard-rows.js';
 import { cutWords, fit, monitorText, pair, sentenceRows } from './monitor-text.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 
 const muted = (text: string) => theme.board.muted(text);
-const NEEDS_CAP = 7;
 const plain = (text: string, width: number): MonitorRow => ({ text: fit(text, width) });
 const cutText = (b: string, room: number) => room < 1 ? '' : visualLength(b) <= room ? b : cutWords(b, room);
 const cutId = (text: string, room: number) => {
@@ -16,29 +15,6 @@ const cutId = (text: string, room: number) => {
   return cutText(body, room) || truncateAnsi(body, room);
 };
 
-function requestRows(data: ProjectSnapshot, state: MonitorState, width: number, now: number): MonitorRow[] {
-  const expanded = state.project.folded.has('waiting:more');
-  const shown = expanded ? data.waiting : data.waiting.slice(0, NEEDS_CAP);
-  const rows = [section(t('Needs you'), width, String(data.waiting.length))];
-  if (!shown.length) rows.push(plain('  ' + muted(t('Nothing needs you')), width));
-  for (const [i, r] of shown.entries()) {
-    const item = `project:wait:${i}`, path = r.path ?? data.statePath;
-    const target = { item, waitingTarget: { index: i, request: ownerRequestKey(r) }, ...(path ? { files: [path] } : {}) };
-    const glyph = theme.board.attention(stateMark.asking()), age = compactAge(r.at, now);
-    const id = truncateAnsi(monitorText(r.objective ?? ''), width < 50 ? 11 : 14);
-    const flag = r.waitedOn ? theme.board.attention(t('work waits')) : '';
-    const head = `${glyph} ${id}`, facts = [flag, age && muted(age)].filter(Boolean).join(' ');
-    const right = visualLength(head + facts) + 1 <= width ? facts : flag;
-    if (id || right) rows.push({ ...plain(pair(head, right, width), width), ...target });
-    const sentence = monitorText((r.sentence ?? r.value).replace(/\s+/g, ' ').trim());
-    const lines = id || right ? sentenceRows(sentence, width, 4, 2) : sentenceRows(sentence, width, 4, 2, glyph);
-    rows.push(...lines.map((line) => ({ ...plain(line, width), ...target })));
-  }
-  const more = data.waiting.length - NEEDS_CAP;
-  if (more > 0) rows.push({ item: 'project:fold:waiting:more', text: fit(`  ${muted(expanded
-    ? `${mark('▾', 'v')} ${t('fewer')}` : `${mark('▸', '>')} ${t('{n} more', { n: more })}`)}`, width) });
-  return rows;
-}
 function detailRows(data: ProjectSnapshot, width: number, now: number): MonitorRow[] {
   const totals = data.ticketTotals, col = width < 56 ? 9 : 10;
   const coverage = totals?.partial ? t(totals.totalFeatures === 1 ? '{n} feature sampled' : '{n} features sampled', { n: totals.totalFeatures }) : '';
@@ -63,7 +39,7 @@ function stateNotes(data: ProjectSnapshot, width: number): MonitorRow[] {
       ...(path && { item: `project:file:${path}:${label.toLowerCase()}`, files: [path] }) }))] : []);
 }
 
-/** Project landing: explicit requests, declared Objectives or STATE notes, then diagnostic links. */
+/** Project landing: declared Objectives or STATE notes, then diagnostic links. */
 export function projectOverviewRows(
   data: ProjectSnapshot, state: MonitorState, width: number, now: number, name: string, projects: ProjectChoice[],
 ): MonitorRow[] {
@@ -79,7 +55,7 @@ export function projectOverviewRows(
   // With multiple projects, the resident project strip under the tabs replaces the folded picker header.
   return [...(many ? [] : [plain('', width), section(theme.board.title(title), width)]),
     ...(identity.length ? [plain(`  ${muted(identity.join(' · '))}`, width)] : []),
-    ...requestRows(data, state, width, now), ...(!record ? stateNotes(data, width) : []), ...objectiveRows(data, width, now, state.project.folded.has('unlinked:more')),
+    ...(!record ? stateNotes(data, width) : []), ...objectiveRows(data, width, now, state.project.folded.has('unlinked:more')),
     ...detailRows(data, width, now)];
 }
 

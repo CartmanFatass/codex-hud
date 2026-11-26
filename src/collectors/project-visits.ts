@@ -1,5 +1,5 @@
 /** The panel's Project collectors: one per visited root, the panel's own never dropped, at most `max` in all. */
-import { insideRoot, type ProjectCollector, type ProjectSnapshot } from './project-board.js';
+import { insideRoot, type ProjectCollector, type ProjectItem, type ProjectSnapshot } from './project-board.js';
 import type { WorkboardSnapshot } from './workboard-types.js';
 
 export class ProjectVisits {
@@ -39,16 +39,18 @@ export class ProjectVisits {
     return [...this.seen.keys()];
   }
 }
-/** What the Projects list shows of one project. */
+/** What the Projects list, resident strip and scoped request area read of one project. */
 export interface ProjectOverview {
   hasState: boolean; milestone?: string; waiting: number; running: number;
   counts: ProjectSnapshot['counts']; open: number; at?: number;
+  waitingItems?: readonly ProjectItem[];
 }
 export const overviewOf = (data: ProjectSnapshot, running: number): ProjectOverview => {
   const newest = Math.max(data.updatedAt ?? 0, data.tickets[0]?.at ?? 0);
   return { hasState: !!data.statePath || data.ledger.length > 0, milestone: data.ladder.current, waiting: data.waiting.length, running, counts: data.counts,
     open: data.tickets.flatMap((f) => f.tickets).filter((r) => r.state !== 'done' && r.state !== 'dropped').length,
-    ...(newest ? { at: newest } : {}) };
+    ...(newest ? { at: newest } : {}),
+    ...(data.waiting.length ? { waitingItems: data.waiting } : {}) };
 };
 /**
  * The light read behind the Projects list, one pass for every listed root while the list is visible: STATE and tickets as

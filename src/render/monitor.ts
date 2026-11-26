@@ -63,7 +63,7 @@ export interface MonitorRow {
   harnessOff?: boolean;
   roleFact?: RoleFact;
   homeTarget?: { root: string; index?: number; request?: string };
-  waitingTarget?: { index: number; request: string };
+  waitingTarget?: { index: number; request: string; root?: string };
   objectiveTarget?: ObjectiveTarget;
   objectiveEvidence?: { root: string; text: string };
   advisorCopy?: { root: string; session: string; skill: string; path: string };
@@ -98,6 +98,8 @@ export interface MonitorControl {
     | 'board-native'
     | 'project-strip-pick'
     | 'project-strip-more'
+    | 'request-pick'
+    | 'request-more'
     | 'control-roles'
     | 'control-harnesses'
     | 'control-resources'
@@ -127,6 +129,7 @@ export interface MonitorFrame {
     snapshot: WorkboardSnapshot;
     targets: ReadonlyMap<string, WorkTarget>;
     rows: MonitorRow[];
+    requests?: MonitorRow[];
   };
   lines: string[];
   panes: MonitorRect[];
@@ -150,6 +153,8 @@ export interface MonitorData {
   /** Whether the calling pane's HUD job collection is complete. */
   jobsObserved?: boolean;
   homeWaiting?: readonly ProjectItem[];
+  /** Total open owner requests across all registered projects, for the Home tab `?N` badge. */
+  homeRequestCount?: number;
   homePortfolio?: HomePortfolio;
   homeToday?: TodayFacts;
   openSchedule?: readonly ScheduleItem[];

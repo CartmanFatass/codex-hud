@@ -94,7 +94,8 @@ test('exhausted roles stay in Control and do not create Project alerts', async (
   const f = await fixture(t), data = { ...richControl(f.data), ledger: [], waiting: [], tickets: [], slices: [] };
   const frame = f.render(40, 'en', onPage(), 36, data);
   assert.ok(!frame.workboard.rows.some((r) => r.item?.startsWith('inbox:role:') || r.item === 'project:page:control'));
-  assert.match(plain(frame).join('\n'), /Nothing needs you/);
+  assert.equal(frame.workboard.requests, undefined, 'no open requests means zero request rows');
+  assert.doesNotMatch(plain(frame).join('\n'), /Needs you|Nothing needs you/);
 });
 
 test('legacy Project/control continuation returns to the selected role on Control, in Classic and Split', async (t) => {

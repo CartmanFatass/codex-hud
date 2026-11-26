@@ -6,6 +6,7 @@ import { backFromSubpage, CONTROL_VIEWS, copyControlTab, controlRoleItem, contro
 import { monitorRowAt } from './monitor-input.js';
 import { ACCEPT_ALL, projectPageOf, projectListOpen } from './project-view.js';
 import { PROJECT_STRIP_MORE } from './project-strip.js';
+import { isRequestMoreItem } from './request-area.js';
 import type { RoleFact } from '../roles/role-control.js';
 import { openQuickModel, roleModelIndex } from './chain-input.js';
 import { openBatchAction, openJobAction } from './job-actions.js';
@@ -153,10 +154,11 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       else next.project.folded = folded;
     };
     // A selectable entry may span multiple rows; the cursor visits it once.
-    const seen = new Set<string>();
-    const bodyRows = boardFrame.rows.filter((r) => r.item && !seen.has(r.item) && seen.add(r.item));
+    const seenReq = new Set<string>(), seenBody = new Set<string>();
+    const reqRows = (boardFrame.requests ?? []).filter((r) => r.item && !seenReq.has(r.item) && seenReq.add(r.item));
+    const bodyRows = boardFrame.rows.filter((r) => r.item && !seenBody.has(r.item) && seenBody.add(r.item));
     const hasStripMore = !control && frame.controls.some((c) => c.kind === 'project-strip-more');
-    const rows = hasStripMore ? [{ item: PROJECT_STRIP_MORE, text: '' }, ...bodyRows] : bodyRows;
+    const rows = [...(hasStripMore ? [{ item: PROJECT_STRIP_MORE, text: '' }] : []), ...reqRows, ...bodyRows];
     const at = rows.findIndex((r) => r.item === cursor);
     const harnesses = control && next.control.subTab === 'harnesses';
     const switchAction = (row: typeof rows[number] | undefined, remove = false): MonitorOutcome['action'] => {
@@ -272,6 +274,16 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
           showList(true);
           return result();
         }
+        const reqHit = !control ? frame?.controls.find((c) =>
+          (c.kind === 'request-pick' || c.kind === 'request-more') &&
+          c.y === input.y && input.x >= c.x && input.x < c.x + c.width) : undefined;
+        if (reqHit?.item) {
+          const row = reqRows.find((r) => r.item === reqHit.item);
+          if (row) {
+            select(row.item);
+            return result(activate(row));
+          }
+        }
         const row = pane && monitorRowAt(pane, input.x, input.y);
         if (row?.item) {
           const again = row.item === cursor;
@@ -348,7 +360,9 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   };
   const objective = sub?.kind === 'objective';
-  const actions = boardFrame.rows.filter((r, i, all) => r.item && ((sub && !objective) || r.item !== all[i - 1]?.item));
+  const reqRows = (boardFrame.requests ?? []).filter((r, i, all) => r.item && all.findIndex((o) => o.item === r.item) === i);
+  const bodyActions = boardFrame.rows.filter((r, i, all) => r.item && ((sub && !objective) || r.item !== all[i - 1]?.item));
+  const actions = [...reqRows, ...bodyActions];
   const cursor = nav.cursor;
   const select = (item?: string) => {
     if (sub) next.subpage = { ...sub, cursor: item, revealed: undefined };
@@ -359,8 +373,33 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     next.home = { ...frame.state.home, cursor: OTHER_PROJECTS, revealed: undefined, othersExpanded: !frame.state.home.othersExpanded };
     return result();
   };
+  const toggleRequestsMore = (item: string) => {
+    if (objective && next.activeTab === 'project') {
+      const folded = new Set(next.project.folded);
+      if (!folded.delete('waiting:more')) folded.add('waiting:more');
+      next.project = { ...next.project, folded };
+      next.subpage = { ...sub!, cursor: item, revealed: undefined };
+    } else {
+      next.home = {
+        ...frame.state.home,
+        requestsExpanded: !frame.state.home.requestsExpanded,
+        ...(!sub ? { cursor: item, revealed: undefined } : {}),
+      };
+      if (objective) next.subpage = { ...sub!, cursor: item, revealed: undefined };
+    }
+    return result();
+  };
   if (!sub && key === 'home-other-projects' && actions.some((row) => row.item === OTHER_PROJECTS)) return toggleOtherProjects();
   const act = (row: MonitorRow | undefined, fileOnly = false) => {
+    if (!fileOnly && isRequestMoreItem(row?.item)) return toggleRequestsMore(row!.item!);
+    if (objective && !fileOnly && row?.waitingTarget) {
+      const { root, index, request } = row.waitingTarget;
+      next.subpage = undefined;
+      if (root) useProject(!frame.projects || root === frame.projects[0].root ? undefined : root);
+      goTab('project');
+      readWait(index, request);
+      return result();
+    }
     if (!sub && !fileOnly && row?.item === OTHER_PROJECTS) return toggleOtherProjects();
     if (!sub && !fileOnly && row?.advisorCopy) {
       select(row.item);
@@ -390,6 +429,13 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   };
   if (input.type === 'mouse') {
     if (input.button !== 'left') return moveScroll(nav.scroll + (input.button === 'wheel-down' ? 3 : -3));
+    const reqHit = frame.controls.find((c) =>
+      (c.kind === 'request-pick' || c.kind === 'request-more') &&
+      c.y === input.y && input.x >= c.x && input.x < c.x + c.width);
+    if (reqHit?.item) {
+      const row = reqRows.find((r) => r.item === reqHit.item);
+      if (row) return act(row);
+    }
     const row = monitorRowAt(pane, input.x, input.y);
     if (row?.item && !sub && row.item.startsWith('home:card:schedule:') && !row.homeTarget) return select(row.item);
     return row?.item ? objective && row.item !== cursor ? select(row.item) : act(row) : result();

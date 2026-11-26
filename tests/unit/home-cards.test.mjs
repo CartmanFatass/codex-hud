@@ -64,7 +64,7 @@ for (const lang of ['en', 'zh']) test(`Home cards: busy, quiet and short frames 
       assert.ok(scheduleItems(still).some(row => plain(row).includes('12-??') && plain(row).endsWith(zh ? '下月' : 'next mo')));
       assert.doesNotMatch(stripAnsi(still.lines[0]), /◉/);
 
-      const prefix = rows(frame).slice(0, today - 1), fullPortfolio = prefix.length + 2;
+      const prefix = rows(frame).slice(0, today - 1), fullPortfolio = prefix.length + 2 + (frame.workboard.requests?.length ?? 0);
       for (const [spare, nCards] of [[7, 7], [3, 3], [1, 1], [0, 0]]) {
         const short = busy.draw(busyData, width, fullPortfolio + spare);
         exact(short, width);

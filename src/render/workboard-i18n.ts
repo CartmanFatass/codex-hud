@@ -305,6 +305,8 @@ export const WORKBOARD_ZH: Record<string, string> = {
   Latest: '最近完成',
   'newest first': '最新在前',
   '{n} more': '还有 {n} 项',
+  '{n} more request': '另 {n} 个请求',
+  '{n} more requests': '另 {n} 个请求',
   fewer: '收起',
   '{n} at limit': '{n} 个已耗尽',
   'For you': '等你处理',

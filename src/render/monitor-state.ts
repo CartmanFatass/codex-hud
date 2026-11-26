@@ -23,7 +23,7 @@ export interface InspectorState extends RowNav {
   from?: 'execution';
 }
 export interface JobsState extends RowNav { kind: 'jobs' }
-interface HomeTabState extends RowNav { othersExpanded?: boolean }
+interface HomeTabState extends RowNav { othersExpanded?: boolean; requestsExpanded?: boolean }
 export const initialHomeTab = (): HomeTabState => ({ scroll: 0 });
 export const initialExecutionTab = (): RowNav => ({ scroll: 0 });
 

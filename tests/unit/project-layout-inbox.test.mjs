@@ -33,7 +33,8 @@ test('Project uses its overview for old saved layouts and no longer offers a lay
     assert.ok(!Object.hasOwn(settings, 'projectLayout'));
     assert.equal(fs.readFileSync(path, 'utf8'), saved, 'loading does not rewrite owner settings');
     const frame = busy.render(40, 'en', 36, onPage());
-    assert.match(plain(frame).join('\n'), /^Needs you ─/m);
+    assert.match(plain(frame).join('\n'), /^\? Try the Project tab/m);
+    assert.doesNotMatch(plain(frame).join('\n'), /^Needs you ─/m);
     assert.equal(frame.panes.some((pane) => pane.id === 'preview'), false);
   }
 });
@@ -50,7 +51,8 @@ test('Project overview at 40 cols: explicit needs and links, with Accept all onl
       const corpus = [data.summary, ...data.waiting.map((w) => w.value), ...data.active.map((j) => j.title ?? ''),
         ...data.ledger.map((r) => r.text), ...data.tickets.flatMap((f) => f.tickets.map((tk) => tk.title))].join(' ');
       assertNoMidWordCut(lines, corpus, `hub ${layout} ${lang}`);
-      assert.match(text, new RegExp(`^${lang === 'zh' ? '需要你处理' : 'Needs you'} ─+ ${data.waiting.length}$`, 'm'));
+      assert.doesNotMatch(text, /^(?:Needs you|需要你处理) ─/m);
+      assert.equal(frame.workboard.requests?.length, data.waiting.length);
       assert.doesNotMatch(text, /Accept all|全部验收|\d+\/\d+ (?:accepted|已验收)/);
       assert.match(text, /Try the Project tab/);
       assert.doesNotMatch(text, /DATA-ONE|WATCH-LINK|How to try|Space mark|PAGE-TWO|pi out|已耗尽|Running|运行中|last accepted|最近验收/);
@@ -80,8 +82,8 @@ test('Project overview expands remaining explicit requests', async () => {
   const waiting = Array.from({ length: 8 }, (_, i) => ({ label: '', value: `Explicit request ${i + 1}` }));
   const d = driver(busy, { data: { ...busy.control, waiting },
     state: panelState({ activeTab: 'project', project: { nav: { cursor: 'project:fold:waiting:more' } } }) });
-  assert.match(d.lines().join('\n'), /▸ 1 more/);
-  assert.doesNotMatch(d.lines().join('\n'), /Explicit request 8/);
+  assert.match(d.lines().join('\n'), /▸ 4 more requests/);
+  assert.doesNotMatch(d.lines().join('\n'), /Explicit request 5/);
   d.run('enter');
   assert.match(d.lines().join('\n'), /Explicit request 8/);
 });

@@ -65,14 +65,15 @@ test('Project hub renders Objective details and a linked checklist at 120 column
   f.put(objectivePath(f.cwd), sample);
   const withObjectives = await f.collector.collect(true, f.board, NOW);
   const words = {
-    en: ['Needs you', 'Objectives', 'active', 'paused', 'checks'],
-    zh: ['需要你处理', '目标', '进行中', '已暂停', '检查项'],
+    en: ['? Try the Project tab', 'Objectives', 'active', 'paused', 'checks'],
+    zh: ['? Try the Project tab', '目标', '进行中', '已暂停', '检查项'],
   };
   for (const [lang, [needs, heading, active, paused, checks]] of Object.entries(words)) {
     const baseline = plain(f.render(120, lang));
     assert.ok(!baseline.some((line) => line.startsWith(heading)));
     const frame = f.render(120, lang, undefined, 56, withObjectives), lines = plain(frame);
     for (const line of frame.lines) assert.equal(visualLength(line), 120);
+    assert.doesNotMatch(lines.join('\n'), /^(?:Needs you|需要你处理) ─/m);
     const order = [needs, heading, '● measure', 'Measure the sample', 'Repeat the sample.', 'Recorded a baseline.', '‖ hold', '✓ finish Publish the guide']
       .map((word) => lines.findIndex((line) => line.includes(word)));
     assert.ok(order.every((n, i) => n > (order[i - 1] ?? -1)), lines.join('\n'));

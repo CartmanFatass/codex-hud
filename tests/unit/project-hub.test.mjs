@@ -70,7 +70,7 @@ test('Enter or a click on a waiting item opens its whole STATE text on a page, i
   // The hub has a four-line preview; the waiting page preserves continuation paragraphs.
   assert.equal(f.data.waiting[1].text, TRY_LONG);
   const hubAt = (lang, state) => f.render(38, lang, state ?? onPage(undefined, { project: { nav: { cursor: 'project:wait:1' } } }), 24);
-  const hub = hubAt('en'), y = plain(hub).findIndex((row) => /^  \? Try 0\.3 PANEL-NEXT/.test(row));
+  const hub = hubAt('en'), y = plain(hub).findIndex((row) => /^\? Try 0\.3 PANEL-NEXT/.test(row));
   assert.ok(y > 0);
   const key = press(hub, 'enter'), click = press(hub, { type: 'mouse', button: 'left', x: 4, y });
   for (const opened of [key, click]) {
@@ -140,7 +140,7 @@ test('the page scrolls with the movement keys and the wheel; Esc or a click on t
       const hub = f.render(38, lang, press(frame, back).state, 24);
       assert.equal(projectPageOf(hub.state), undefined);
       assert.equal(hub.state.project.nav.cursor, 'project:wait:1');
-      assert.match(plain(hub).join('\n'), /^  \? Try 0\.3 PANEL-NEXT/m);
+      assert.match(plain(hub).join('\n'), /^\? Try 0\.3 PANEL-NEXT/m);
       assert.equal(hub.state.project.nav.scroll, 0);
     }
   }

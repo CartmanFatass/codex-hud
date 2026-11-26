@@ -65,8 +65,8 @@ test('Home shows explicit STATE requests, a Now note and project-wide job counts
   const previous = setDisplayConfig({ theme: 'none', icons: 'unicode' });
   t.after(() => setDisplayConfig(previous));
   const frame = draw(initialMonitorState());
-  assert.match(plain(frame), /Waiting[\s\S]*Approve the sample fixture[\s\S]*⚒1 ★1 ϟ1 ◷⚒1[\s\S]*¶ Validating the example set/);
-  assert.doesNotMatch(plain(frame), /Publish the sample run|This pane|Synthetic worker|Keep the original parser|done today|Latest|Stalled/);
+  assert.match(plain(frame), /\? project +Approve the sample fixture[\s\S]*⚒1 ★1 ϟ1 ◷⚒1[\s\S]*¶ Validating the example set/);
+  assert.doesNotMatch(plain(frame), /^Waiting ─|Publish the sample run|This pane|Synthetic worker|Keep the original parser|done today|Latest|Stalled/m);
   assert.equal(frame.workboard.targets.size, 0);
   assert.equal(acceptsMonitorInput(frame.state, { type: 'key', text: '/', key: '' }), false);
   assert.equal(press(frame, 'X').state.overlay, undefined);
@@ -76,11 +76,9 @@ test('Home Waiting opens the calling project request by keyboard and click', asy
   const { draw } = await fixture(t);
   const home = draw({ ...initialMonitorState(), selectedProject: '/another/sample-project' }, 40);
   const selected = draw(key(home, 'down').state, 40);
-  const pane = selected.panes[0];
-  const continuation = pane.rows.findLastIndex((r) => r.item && r.item === selected.state.home.cursor);
-  assert.ok(continuation > 0, 'the request wraps');
-  const clicked = handleMonitorInput(selected.state, { type: 'mouse', button: 'left', x: 3,
-    y: pane.y + continuation - pane.offset }, { frame: selected });
+  const hit = selected.controls.find((c) => c.kind === 'request-pick' && c.item === selected.state.home.cursor);
+  assert.ok(hit, 'the pinned request row is clickable');
+  const clicked = handleMonitorInput(selected.state, { type: 'mouse', button: 'left', x: 3, y: hit.y }, { frame: selected });
   for (const outcome of [key(selected, 'enter'), clicked]) {
     assert.equal(outcome.state.activeTab, 'project');
     assert.equal(outcome.state.selectedProject, undefined);
