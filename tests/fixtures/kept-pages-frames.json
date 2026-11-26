@@ -262,6 +262,7 @@
     "  Width                                                                  56 cols",
     "  Notifications                                                              off",
     "  Open previews                                                               on",
+    "  Unattended                                                                 off",
     "",
     "Models ─────────────────────────────────────────────────────────────────────────",
     "  Decision API                                                   OpenAI (no key)",
@@ -290,7 +291,6 @@
     "  Workers · imp cap                                                            3",
     "  Workers · general cap                                                        3",
     "  Workers · imp→general overflow                                              on",
-    "",
     "                                    ←→ change  s save  Esc back  r reset  ? help"
   ],
   "settings-80-zh": [
@@ -304,6 +304,7 @@
     "  宽度                                                                     56 列",
     "  通知                                                                        关",
     "  打开预览                                                                    开",
+    "  无人值守                                                                    关",
     "",
     "模型 ───────────────────────────────────────────────────────────────────────────",
     "  决策 API                                                       OpenAI (无 key)",
@@ -331,7 +332,6 @@
     "  工作者 · imp 上限                                                            3",
     "  工作者 · general 上限                                                        3",
     "  工作者 · imp→general 溢出                                                   开",
-    "",
     "",
     "                                       ←→ 修改  s 保存  Esc 返回  r 重置  ? 帮助"
   ],
@@ -650,6 +650,7 @@
     "  Width                                                                                                          56 cols",
     "  Notifications                                                                                                      off",
     "  Open previews                                                                                                       on",
+    "  Unattended                                                                                                         off",
     "",
     "Models ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  Decision API                                                                                           OpenAI (no key)",
@@ -678,7 +679,6 @@
     "  Workers · general cap                                                                                                3",
     "  Workers · imp→general overflow                                                                                      on",
     "",
-    "",
     "                                                                            ←→ change  s save  Esc back  r reset  ? help"
   ],
   "settings-120-zh": [
@@ -692,6 +692,7 @@
     "  宽度                                                                                                             56 列",
     "  通知                                                                                                                关",
     "  打开预览                                                                                                            开",
+    "  无人值守                                                                                                            关",
     "",
     "模型 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
     "  决策 API                                                                                               OpenAI (无 key)",
@@ -719,7 +720,6 @@
     "  工作者 · imp 上限                                                                                                    3",
     "  工作者 · general 上限                                                                                                3",
     "  工作者 · imp→general 溢出                                                                                           开",
-    "",
     "",
     "                                                                               ←→ 修改  s 保存  Esc 返回  r 重置  ? 帮助"
   ],
@@ -786,6 +786,7 @@
     "  Width                          56 cols",
     "  Notifications                      off",
     "  Open previews                       on",
+    "  Unattended                         off",
     "",
     "Models ─────────────────────────────────",
     "  Decision API           OpenAI (no key)",
@@ -814,7 +815,6 @@
     "  Sonic thinking 140",
     "  Workers · imp cap                    3",
     "  Workers · general cap                3",
-    "  Workers · imp→general overflow      on",
     "     ←→ change  s save  Esc back  ? help"
   ],
   "settings-40-zh": [
@@ -828,6 +828,7 @@
     "  宽度                             56 列",
     "  通知                                关",
     "  打开预览                            开",
+    "  无人值守                            关",
     "",
     "模型 ───────────────────────────────────",
     "  决策 API               OpenAI (无 key)",
@@ -856,17 +857,16 @@
     "  工作者 · imp 上限                    3",
     "  工作者 · general 上限                3",
     "  工作者 · imp→general 溢出           开",
-    "",
     "       ←→ 修改  s 保存  Esc 返回  ? 帮助"
   ],
   "settings-even-40-en": [
     "‹ Settings                       unsaved",
-    "  Language                          auto",
     "",
     "Panel ──────────────────────────────────",
     "  Width                          56 cols",
     "  Notifications                      off",
     "  Open previews                       on",
+    "  Unattended                         off",
     "",
     "Models ─────────────────────────────────",
     "  Decision API           OpenAI (no key)",
@@ -883,12 +883,12 @@
   ],
   "settings-even-40-zh": [
     "‹ 设置                            未保存",
-    "  语言                              自动",
     "",
     "面板 ───────────────────────────────────",
     "  宽度                             56 列",
     "  通知                                关",
     "  打开预览                            开",
+    "  无人值守                            关",
     "",
     "模型 ───────────────────────────────────",
     "  决策 API               OpenAI (无 key)",

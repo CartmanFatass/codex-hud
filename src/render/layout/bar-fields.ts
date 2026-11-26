@@ -19,7 +19,7 @@ import { activeBarStyle, displayConfig, iconSet, type BarField } from '../hud-co
 import { machineWorkForms } from '../work-summary.js';
 import { localLoadForms } from '../local-load.js';
 import type { LocalLoad } from '../../collectors/local-load.js';
-import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
+import type { MachineWorkSignal } from '../../collectors/work-summary-snapshot.js';
 import { providerMark } from '../providers.js';
 import { monitorText } from '../monitor-text.js';
 import type { EvenQuotaNotice } from '../../collectors/even-quota.js';
@@ -118,7 +118,7 @@ export interface BarFacts {
   advisorRules?: AdvisorRuleNotice;
   events?: BarEvent[];
   /** Fresh machine-wide HUD load. */
-  work?: MachineWorkCounts;
+  work?: MachineWorkSignal;
   localLoad?: LocalLoad;
   loaded?: { counts: ReadonlyArray<readonly [string, number | null | undefined]>; words?: Form[] };
 }

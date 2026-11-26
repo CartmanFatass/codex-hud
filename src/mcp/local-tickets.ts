@@ -63,14 +63,18 @@ export function routingTicketText(root: string, ticket: unknown): string | undef
 const objectiveField = /^([ \t]*(?:\*\*[^:\r\n]+:\*\*[^·\r\n]*·[ \t]*)*?\*\*Objective:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
 const ticketHeader = (text: string) => text.split(/^(?:[ \t]*\*\*What to build:\*\*|##(?:[ \t]|\r?$))/im, 1)[0];
 
+export function ticketObjectiveId(path: string) {
+  const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
+  if (truncated) throw Error('Ticket exceeds the Objective attribution limit');
+  return objectiveField.exec(ticketHeader(bytes.toString('utf8')))?.[2];
+}
+
 /** An unreadable, missing or unresolvable header is not evidence of attribution. */
 export function ticketObjective(cwd: string, ticket: unknown, shared: string) {
   try {
     const path = namedTicketPath(cwd, ticket);
     if (!path) return;
-    const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
-    if (truncated) return;
-    const id = objectiveField.exec(ticketHeader(bytes.toString('utf8')))?.[2];
+    const id = ticketObjectiveId(path);
     if (!id) return;
     const checkout = projectRoot(cwd);
     const record = readObjectives(checkout) ?? (checkout !== shared ? readObjectives(shared) : undefined);
@@ -93,7 +97,7 @@ const liveTryHeading = /^##[ \t]+(?:Live try|How to try|Try)\b[^\r\n]*\r?\n(?:[ 
 
 /** Deterministic pre-start check: every ready-for-agent ticket needs a goal (What to build),
  * acceptance items, valid Blocked by references, and a Live try / How to try line (or Live try: none). */
-export function checkFeatureTickets(cwd: string, feature: string): TicketGap[] {
+export function checkFeatureTickets(cwd: string, feature: string, only?: string): TicketGap[] {
   const scratch = join(cwd, '.scratch');
   if (!directoryExists(scratch)) return [];
   const featureTickets = list(join(scratch, feature)).sort((a, b) => a.number - b.number);
@@ -109,6 +113,7 @@ export function checkFeatureTickets(cwd: string, feature: string): TicketGap[] {
   };
   const results: TicketGap[] = [];
   for (const { number: num, path } of featureTickets) {
+    if (only && `${feature}/${nn(num)}` !== only) continue;
     const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
     if (truncated) continue;
     const text = bytes.toString('utf8');

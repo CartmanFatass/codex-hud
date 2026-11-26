@@ -18,7 +18,7 @@ import { stripAnsi } from '../../render/colors.js';
 import { activeBarStyle, displayConfig, type BarStyle } from '../../render/hud-config.js';
 import { monitorText } from '../../render/monitor-text.js';
 import { formatTokenCount } from '../../render/lines/activity-line.js';
-import type { MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
+import type { MachineWorkSignal } from '../../collectors/work-summary-snapshot.js';
 import type { LocalLoad } from '../../collectors/local-load.js';
 import { readEvenQuotaNotices } from '../../collectors/even-quota.js';
 import { onAdvisorUpdate, readAdvisorNotice, readAdvisorRuleNotice } from '../../collectors/advisor-shadow.js';
@@ -533,7 +533,7 @@ export function createP10kFooter(
   }
   let capturedLoaded: LoadedCounts = { mcp: 0, skills: 0 };
   /** Machine-wide readings, pushed by the Work segment's timer. */
-  let work: MachineWorkCounts | undefined;
+  let work: MachineWorkSignal | undefined;
   let localLoad: LocalLoad | undefined;
   let evenQuota: bar.BarFacts['evenQuota'];
   let advisor: bar.BarFacts['advisor'];
@@ -760,7 +760,7 @@ export function createP10kFooter(
     requestStarted: subscription.requestStarted,
     requestWindows: subscription.requestWindows,
     /** Work signals also refresh idle ledger balances (other workers or cycle rollover); no new timer. */
-    setWork(counts: MachineWorkCounts | undefined, load?: LocalLoad) {
+    setWork(counts: MachineWorkSignal | undefined, load?: LocalLoad) {
       work = counts;
       localLoad = load;
       evenQuota = current ? readEvenQuotaNotices(getHudHome(env), current.sessionManager.getCwd(), Date.now(), env) : undefined;

@@ -602,7 +602,7 @@ export interface HudData {
   evenQuota?: import('./collectors/even-quota.js').EvenQuotaNotice[];
   advisor?: { skill: string; at: number };
   /** What this pane's HUD jobs ask of the person and what they just did (`render/work-summary.ts`). */
-  work?: import('./collectors/work-summary-snapshot.js').MachineWorkCounts;
+  work?: import('./collectors/work-summary-snapshot.js').MachineWorkSignal;
   localLoad?: import('./collectors/local-load.js').LocalLoad;
   bridgeHealth?: {
     state: 'connected' | 'pending' | 'disconnected' | 'unresponsive' | 'unavailable';

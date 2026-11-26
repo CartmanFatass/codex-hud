@@ -84,6 +84,28 @@ test('Claude launcher uses TypeScript for a live even quota notice and native ca
   assert.doesNotMatch(run(launcher, [], env, agy).toString(), /imp fast: quota/);
 });
 
+test('native and TypeScript bars agree on the verified unattended marker', { skip: !hasNative }, t => {
+  const env = { ...environment(receipt(t)), NO_COLOR: '1' };
+  setup(env.HUD_HOME);
+  const put = (name, value) => fs.writeFileSync(join(env.HUD_HOME, name), JSON.stringify(value), { mode: 0o600 });
+  const boot_id = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+  const id = { pid: process.pid, start, boot_id };
+  const check = on => {
+    const line = rust(env, base);
+    assert.deepEqual(line, ts(env, base));
+    assert.equal(line.toString().includes('Unatt'), on);
+  };
+  put('unattended.json', { enabled: true });
+  put('unattended.pid.json', { ...id, start: '0' });
+  check(false);
+  put('unattended.pid.json', { ...id, boot_id: 'synthetic-other-boot' });
+  check(false);
+  put('unattended.pid.json', id);
+  check(true);
+  put('unattended.json', { enabled: false });
+  check(false);
+});
+
 test('Claude keeps native rendering with advisor shadow on unless a notice is live', { skip: !hasNative }, (t) => {
   const env = { ...environment(receipt(t)), NO_COLOR: '1' };
   setup(env.HUD_HOME);

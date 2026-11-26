@@ -13,7 +13,7 @@ import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.j
 import { takeLease, type LandLease } from '../roles/lease.js';
 import type { CommandResult, Launch } from './land-custodian.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
-import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, landOwnerGone, readLand, setLandStep, writeLand, type LandFlow, type LandRerun } from './land-state.js';
+import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, landOwnerGone, readLand, setLandStep, SPEC_CHANGE_REFUSAL, writeLand, type LandFlow, type LandRerun } from './land-state.js';
 import { canRepairSealedStep } from '../workflows/engine.js';
 import { runLock, stopRequested } from '../workflows/store.js';
 import { reapWorktree } from './managed-worktree.js';
@@ -257,6 +257,10 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       await git(main, ['worktree', 'remove', '--force', '--', old.path], 120000);
     }
   }
+  const protectSpec = async (base: string, tip: string) => {
+    if (f.protected_spec && await git(main, ['diff', '--name-only', '--no-renames', base, tip, '--', 'docs/spec.md']))
+      throw Error(SPEC_CHANGE_REFUSAL);
+  };
   async function prepare() {
     f.state = 'running'; step('prepare');
     await checkSource(f);
@@ -278,6 +282,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       endStep();
     }
     const tested = await head(integration);
+    await protectSpec(f.base_sha, tested);
     await gate(tested, await tree(tested));
     return who;
   }
@@ -345,6 +350,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         target = current;
         landedPaths = await touched(target, landed);
       }
+      await protectSpec(target, landed);
       const published = await tree(landed);
       for (const row of members) row.published_tree = published;
       const regate = published !== f.tested_tree && !await metadataOnly(main, f.tested_tree!, published);
@@ -545,7 +551,8 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         if (!(e instanceof CommandError) || (!conflict && !f.step.startsWith('gate['))) throw e;
         const prior = f.repairs?.at(-1);
         if (prior) prior.outcome = `failed at ${f.step}`;
-        if (e instanceof CommandTimeout || !canRepairSealedStep(f.repairs?.length ?? 0)) throw e;
+        // Unattended repairs return to the lead; never publish a substitute for the approved commit.
+        if (f.protected_spec || e instanceof CommandTimeout || !canRepairSealedStep(f.repairs?.length ?? 0)) throw e;
         checkCancel(); await checkSource(f);
         f.error = e.message; f.tail = e.tail;
         // Only the helper-created scratch checkout is disposable, never the source or main.

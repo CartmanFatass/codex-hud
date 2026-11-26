@@ -1,6 +1,6 @@
 import { renderBar, type BarQuotaWindow } from '../render/layout/bar-fields.js';
 import { displayConfig } from '../render/hud-config.js';
-import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
+import type { MachineWorkSignal } from '../collectors/work-summary-snapshot.js';
 import { fitMachineWork } from '../render/work-summary.js';
 import type { LocalLoad } from '../collectors/local-load.js';
 import type { EvenQuotaNotice } from '../collectors/even-quota.js';
@@ -20,7 +20,7 @@ export function renderAntigravity(
   input: unknown,
   width: number,
   options: StatuslineSessionOptions,
-  work?: MachineWorkCounts,
+  work?: MachineWorkSignal,
   localLoad?: LocalLoad,
   now = Date.now(),
   evenQuota?: EvenQuotaNotice[],

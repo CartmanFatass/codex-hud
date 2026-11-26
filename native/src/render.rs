@@ -659,6 +659,10 @@ fn machine_load(work: MachineWork, display: &Display, now: f64) -> Option<Segmen
         .filter(|(_, count)| *count > 0)
         .map(|((_, glyphs), count)| format!("{}{count}", glyphs[set]))
         .collect();
+    let marker = "Unatt";
+    if work.unattended {
+        groups.insert(0, marker.to_owned());
+    }
     let queue =
         (work.queued > 0).then(|| format!("{}{}", ["◷", "Q", "\u{F017}"][set], work.queued));
     let mut forms = Vec::new();
@@ -691,10 +695,14 @@ fn machine_load(work: MachineWork, display: &Display, now: f64) -> Option<Segmen
         }
         groups.push(badge);
     }
+    let short = work.unattended && groups.len() > 1;
     let roles = groups.join(" ");
     groups.extend(queue);
     (!groups.is_empty()).then(|| {
         forms.extend([groups.join("  "), groups.join(" "), roles]);
+        if short {
+            forms.push(marker.to_owned());
+        }
         Segment::new(
             Field::Notice,
             (110, 235),

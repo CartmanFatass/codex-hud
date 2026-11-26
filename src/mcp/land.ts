@@ -21,7 +21,7 @@ export function validLandConfig(home: string, root: string): LandConfig {
     throw Error('Invalid or missing project land config: expected base, gate, after, push and optional wrapper and timeout_s');
   return c;
 }
-export async function startLand(home: string, id: string, job: Pick<Job, 'job' | 'cwd' | 'worktree'> | null, state: string | null, pane: string | null, task: boolean, ticketQueue?: string, retry?: string) {
+export async function startLand(home: string, id: string, job: Pick<Job, 'job' | 'cwd' | 'worktree'> | null, state: string | null, pane: string | null, task: boolean, ticketQueue?: string, retry?: string, approvedHead?: string) {
   const wt = job?.worktree;
   if (!job || job.job !== id || !wt || wt.root !== job.cwd)
     throw Error('hud_land requires a managed worktree job');
@@ -45,6 +45,7 @@ export async function startLand(home: string, id: string, job: Pick<Job, 'job' |
       !managedReceiptMatches(id, { ...job, worktree: wt }))
     throw Error('Source is no longer the registered job worktree');
   const source_sha = tree.head;
+  if (approvedHead && source_sha !== approvedHead) throw Error('Source changed after unattended lead approval');
   const graph = loadGraph(fs.readFileSync(join(BUNDLED_ROOT, 'workflows/land.toml'), 'utf8'), 'toml', {
     roles: new Map(), bindings: { job: id }, landSource: id,
   });
@@ -52,7 +53,8 @@ export async function startLand(home: string, id: string, job: Pick<Job, 'job' |
     const won = readLand(home, flow);
     if (won) return { result: won };
     const now = new Date().toISOString();
-    const f: LandFlow = { flow, job: id, pane, task, ...(ticketQueue && { ticket_queue: ticketQueue }), wt, config: c, source_sha, pid, start,
+    const f: LandFlow = { flow, job: id, pane, task, ...(ticketQueue && { ticket_queue: ticketQueue }),
+      ...(approvedHead && { protected_spec: true, single: true }), wt, config: c, source_sha, pid, start,
       state: loaded ? 'queued' : 'failed', step: loaded ? 'main-checkout lease' : 'load land helper', created_at: now, updated_at: now,
       workflow: { flow, pane: pane ?? '', state: 'working', epoch: 0, streak: 0, settled: 0, failures: 0,
         steps: { land: { state: 'waiting' } }, notices: {} } };

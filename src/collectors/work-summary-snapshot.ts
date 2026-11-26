@@ -10,6 +10,7 @@ import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.j
 import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { isProcAlive, isValidPid, procStat } from '../utils/proc.js';
 import { jobRow } from './thin-jobs.js';
+import { unattendedOn } from '../unattended/state.js';
 
 export const WORK_SUMMARY_FILE = 'display/work-summary.v1.json';
 export const WORK_SUMMARY_VERSION = 1;
@@ -29,6 +30,7 @@ export interface MachineLandWork {
   oldest: { project: string; step: string; step_started_at: number; gate?: [number, number] };
 }
 export interface MachineWorkCounts extends Pick<WorkSummaryScope, 'running' | 'roles'> { queued: number; land?: MachineLandWork; }
+export type MachineWorkSignal = (MachineWorkCounts & { unattended?: true }) | { unattended: true; roles?: never };
 export interface WorkSummarySnapshot {
   version: 1;
   producer: WorkSummaryProducer;
@@ -197,9 +199,11 @@ export function readFreshWorkSummary(home: string, pane: string | null, now = Da
 }
 
 /** Display only a complete, fresh machine census, never a pane-local substitute. */
-export function readMachineWork(home: string, now: number): MachineWorkCounts | undefined {
+export function readMachineWork(home: string, now: number): MachineWorkSignal | undefined {
   const global = readFreshWorkSummary(home, null, now)?.snapshot.global;
-  return global && { running: global.running, queued: global.queued, roles: global.roles, ...(global.land && { land: global.land }) };
+  const unattended = unattendedOn(home) ? { unattended: true as const } : undefined;
+  return global ? { running: global.running, queued: global.queued, roles: global.roles, ...(global.land && { land: global.land }), ...unattended }
+    : unattended;
 }
 
 export function createWorkSummaryPublisher(home: string, producer: WorkSummaryProducer, cache: JobIndexCache = getJobIndexCache(home)) {

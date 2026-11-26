@@ -15,6 +15,8 @@ import {
 } from '../render/settings-confirmation.js';
 import { withDisplaySettings } from '../settings-runtime.js';
 import { loadSettings, saveSettings, type HudSettings } from '../settings.js';
+import { setUnattended } from '../unattended/control.js';
+import { readControl, unattendedOn } from '../unattended/state.js';
 import type { PanelPlace } from '../render/monitor-reload-codec.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 
@@ -61,6 +63,30 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
   let help: MonitorState | undefined;
   let leave: (SettingsConfirmationState & { destination?: string }) | null = null;
   let confirmationFrame: SettingsConfirmationFrame | undefined;
+  let unattended = unattendedOn(getHudHome()), toggling = false;
+  const observeUnattended = () => { unattended = unattendedOn(getHudHome()); };
+  const toggleUnattended = async (target: SettingsPageState) => {
+    if (toggling) return;
+    toggling = true;
+    const home = getHudHome();
+    try {
+      const enabling = !unattendedOn(home);
+      if (enabling && !readControl(home)?.objectives.length) {
+        target.message = t('Select Objectives first with hud unattended on --objective <id>');
+      } else {
+        await setUnattended(home, enabling);
+        target.message = t(enabling ? 'Unattended started' : 'Unattended stop requested');
+      }
+    } catch (err) {
+      target.message = t('Unattended: {reason}', { reason: String(err) });
+    } finally {
+      toggling = false;
+      observeUnattended();
+      // Navigation may replace the draft state during the asynchronous command.
+      if (page && SETTING_ROWS[page.selected]?.key === 'unattended') page.message = target.message;
+      effects.repaint();
+    }
+  };
 
   const applyDraft = (): boolean => {
     const draftPage = page;
@@ -96,8 +122,10 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
   return {
     get open() { return page !== null; },
     isDirty: () => page !== null && settingsDirty(page),
+    observeUnattended,
     place: () => page && { selected: page.selected, offset: page.offset },
     show(settings: HudSettings) {
+      observeUnattended();
       let decisionApi = settings.decisionApi;
       try { decisionApi = loadSettings().decisionApi; } catch { /* Keep the loaded draft. */ }
       page = { draft: { ...settings, roleCaps: { ...settings.roleCaps }, decisionApi }, decisionKeys: availableDecisionKeys(), ...presets(), selected: 0, offset: 0, message: '' };
@@ -108,7 +136,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
         // Help is drawn over Settings without changing Settings or the underlying tab.
         return withDisplaySettings(page.draft, () => paintHelp(help!, page!.draft.mouse));
       }
-      settingsFrame = withDisplaySettings(page.draft, () => renderSettingsPage(page!, width, height, facts()));
+      settingsFrame = withDisplaySettings(page.draft, () => renderSettingsPage(page!, width, height, { ...facts(), unattended }));
       page = settingsFrame.state;
       if (!leave) return settingsFrame.lines;
       confirmationFrame = renderSettingsConfirmation(settingsFrame.lines, leave, width, height, 1, page);
@@ -161,6 +189,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
             message: t('Group defaults ready; Save to apply'),
           };
         } else if (result.action === 'save') applyDraft();
+        else if (result.action === 'unattended') void toggleUnattended(page);
       }
       effects.repaint();
       return;

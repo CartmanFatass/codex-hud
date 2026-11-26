@@ -1,5 +1,5 @@
 /** Passive machine-wide status. Never owns a footer or starts a summary producer. */
-import { readMachineWork, type MachineWorkCounts } from '../../collectors/work-summary-snapshot.js';
+import { readMachineWork, type MachineWorkSignal } from '../../collectors/work-summary-snapshot.js';
 import { getHudHome } from '../../hud-home.js';
 import { readBarSettings } from '../../bar-settings.js';
 import { formatMachineWork } from '../../render/work-summary.js';
@@ -17,7 +17,7 @@ export function createPiSegment(options: {
   env: NodeJS.ProcessEnv;
   now?: () => number;
   schedule?: (callback: () => void, ms: number) => () => void;
-  onSignals?: (counts: MachineWorkCounts | undefined, localLoad?: LocalLoad) => void;
+  onSignals?: (counts: MachineWorkSignal | undefined, localLoad?: LocalLoad) => void;
   /** The HUD-owned footer already shows these readings. */
   statusVisible?: () => boolean;
 }) {

@@ -53,6 +53,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud setup --apply PLAN [--cwd DIR]  Write project worker setup from a plan\n' +
           '       hud setup --remove [--cwd DIR]  Drop project registration\n' +
           '       hud tickets sync [--cwd DIR]  Mirror GitHub parent/sub-issues into .scratch/\n' +
+          '       hud unattended --help     Keep selected Objectives moving without a main session\n' +
           '       hud watch [--all]         Stream job change lines for this pane (or all jobs)\n' +
           '       hud act answer|try|retry|stop|pause|resume  Owner actions from a command (--help)\n' +
           '       hud council allow         Authorize one council for 30 minutes\n' +
@@ -67,7 +68,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
       );
       return 0;
     }
-    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|watch|act|council|board|doctor|stats|day|codex|codex-hud|uninstall\n');
+    io.stderr('invalid_command: hud panel|statusline|import|trust|setup|tickets|unattended|watch|act|council|board|doctor|stats|day|codex|codex-hud|uninstall\n');
     return 2;
   } catch (error) {
     if (error instanceof CliError) {

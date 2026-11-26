@@ -248,6 +248,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const nativeInspector = () => !settingsFlow.open && !state.help && state.subpage?.kind === 'native-inspector';
   const workingTree = () => projectShown(state, settingsFlow.open) && state.project.view.kind === 'tree';
   const collectStep = async () => {
+    if (settingsFlow.open) settingsFlow.observeUnattended();
     state = framePlace(state);
     let session: Awaited<ReturnType<typeof finder.check>> = null;
     let stale = false;

@@ -7,6 +7,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
+import { isProcAlive, procStat, readBootId } from '../../dist/utils/proc.js';
+import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
+import { readMachineWork } from '../../dist/collectors/work-summary-snapshot.js';
+import { homeRows } from '../../dist/render/home-view.js';
+import { machineWorkForms } from '../../dist/render/work-summary.js';
+import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { loadGraph } from '../../dist/workflows/graph.js';
 import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
@@ -27,13 +33,16 @@ async function project(t, { secondBlocker = '01', count = 2 } = {}) {
   fs.mkdirSync(join(f.root, '.hud'));
   fs.writeFileSync(join(f.root, '.hud/project.json'), JSON.stringify({ land: { base: 'base', gate: ['true'], after: [], push: false } }));
   fs.writeFileSync(join(f.root, '.hud/brief.md'), 'Synthetic standing brief.\n');
+  fs.writeFileSync(join(f.root, '.hud/objectives.md'), '## selected: Selected\n**State:** active\n**Features:** sample\n\n## other: Other\n**State:** active\n');
+  fs.mkdirSync(join(f.root, 'docs'));
+  fs.writeFileSync(join(f.root, 'docs/spec.md'), '# Synthetic spec\n');
   fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: f.root }] }));
   const issues = join('.scratch', 'sample', 'issues');
   fs.mkdirSync(join(f.root, issues), { recursive: true });
   const ticketPath = n => join(issues, `0${n}-synthetic.md`);
   for (let n = 1; n <= count; n++) fs.writeFileSync(join(f.root, ticketPath(n)),
     `# 0${n}: Synthetic ${n}\n\n**Status:** ready-for-agent\n**Owner try:** no\n**Live try:** none\n**Blocked by:** ${n === 2 ? secondBlocker : 'none'}\n\n**What to build:** Synthetic change ${n}\n\n- [ ] Checked\n\n## Comments\n`);
-  git(f.root, 'add', '.scratch', '.hud');
+  git(f.root, 'add', '.scratch', '.hud', 'docs');
   git(f.root, 'commit', '-qm', 'synthetic tickets');
   const home = f.env.HUD_HOME;
   const flow = id => read(join(home, 'flows', `${id}.json`));
@@ -47,9 +56,10 @@ async function project(t, { secondBlocker = '01', count = 2 } = {}) {
     }, 15_000);
     return flow(id).tickets.map(x => x.job);
   };
-  const settle = async (id, { report = 'Synthetic finished report.\n' } = {}) => {
-    const receipt = job(id), root = receipt.worktree.root, file = `${receipt.ticket.replace('/', '-')}.txt`;
-    fs.writeFileSync(join(root, file), 'Synthetic implementation.\n');
+  const settle = async (id, { report = 'Synthetic finished report.\n', file, body = 'Synthetic implementation.\n' } = {}) => {
+    const receipt = job(id), root = receipt.worktree.root;
+    file ??= `${receipt.ticket.replace('/', '-')}.txt`;
+    fs.writeFileSync(join(root, file), body);
     git(root, 'add', file); git(root, 'commit', '-qm', file);
     await until(() => Date.now() > Date.parse(receipt.pi_sent_at ?? receipt.created_at) + 1, t.signal);
     writeFixtureFile(join(dir(id), 'report.md'), report);
@@ -242,6 +252,119 @@ test('pane-less unattended ticket queue dispatches, lands, reviews, accepts, and
   const done = await f.end(flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* done/);
+});
+
+function unattended(f) {
+  const cmd = (...args) => JSON.parse(execFileSync(process.execPath, [resolve('bin/hud'), 'unattended', ...args], {
+    cwd: f.root, env: f.env, encoding: 'utf8', timeout: 18_000,
+  }));
+  const status = () => cmd('status');
+  const findRun = async ticket => {
+    const index = join(f.home, 'unattended-runs.json');
+    let q;
+    await until(() => {
+      const ids = fs.existsSync(index) ? read(index) : [];
+      q = ids.filter(id => fs.existsSync(join(f.home, 'flows', `${id}.json`)))
+        .map(f.flow).find(q => q.unattended?.ticket === ticket && q.tickets.some(t => t.job));
+      return !!q;
+    }, 15_000);
+    return { flow: q.flow, worker: q.tickets[0].job };
+  };
+  const decide = async (flow, kind, report) => {
+    await until(() => f.flow(flow).active_lead?.kind === kind, 15_000);
+    await f.settleLead(f.flow(flow).active_lead.job, report);
+  };
+  const accept = async flow => {
+    await until(() => Boolean(f.flow(flow).review_job), 15_000);
+    await f.settleReview(f.flow(flow).review_job);
+    await decide(flow, 'accept');
+    const done = await f.end(flow);
+    assert.equal(done.state, 'completed', JSON.stringify(done));
+    assert.equal(done.steps.accept.answer, 'finish');
+  };
+  return { cmd, status, findRun, decide, accept };
+}
+
+test('unattended on updates one process and lands both checked tickets without a main session', { timeout: 60_000 }, async t => {
+  const f = await project(t), u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  assert.equal(u.status().on, false);
+  const firstOn = u.cmd('on', '--objective', 'other');
+  assert.equal(firstOn.on, true);
+  assert.equal(firstOn.start, procStat(firstOn.pid)?.start);
+  assert.equal(firstOn.boot_id, readBootId());
+  for (const file of ['unattended.json', 'unattended.pid.json']) assert.equal(fs.statSync(join(f.home, file)).mode & 0o777, 0o600);
+  await f.stopMcp();
+  const updated = u.cmd('on', '--objective', 'selected', '--objective', 'other');
+  assert.equal(updated.pid, firstOn.pid);
+  assert.deepEqual(updated.objectives, ['selected', 'other']);
+  for (const n of [1, 2]) {
+    const { flow, worker } = await u.findRun(`sample/0${n}`);
+    const q = f.flow(flow);
+    assert.equal(q.pane, '');
+    assert.equal(q.origin_mcp, undefined);
+    assert.match(q.escalation_rule, /only.*user-visible feature.*docs\/spec\.md/);
+    await f.settle(worker);
+    await u.decide(flow, 'preland');
+    await u.accept(flow);
+    assert.match(f.git(f.root, 'show', `base:${f.ticketPath(n)}`), /\*\*Status:\*\* done/);
+  }
+  assert.equal(u.status().runs.filter(q => q.state === 'completed').length, 2);
+  assert.ok(machineWorkForms(readMachineWork(f.home, Date.now()), Date.now()).some(form => form.includes('Unatt')));
+});
+
+test('one unattended policy hand-back appears on Home; off leaves the next run alone and admits no new work', { timeout: 60_000 }, async t => {
+  const f = await project(t, { secondBlocker: 'none' }), u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  await f.stopMcp();
+  const { pid, start } = u.cmd('on', '--objective', 'selected');
+  const first = await u.findRun('sample/01');
+  await f.settle(first.worker);
+  await u.decide(first.flow, 'preland', 'Decision: escalate\nReason: Requires removing the synthetic menu.\nOwner approval: feature-deletion\n');
+  assert.equal((await f.end(first.flow)).state, 'paused');
+  assert.equal(f.flow(first.flow).tickets[0].land, undefined);
+  const second = await u.findRun('sample/02');
+  assert.deepEqual(u.status().handbacks.map(q => q.ticket), ['sample/01']);
+  const now = Date.now(), portfolio = await new HomePortfolioCollector(f.home).read([], {}, now);
+  assert.deepEqual(portfolio.unattended, { objectives: ['selected'], running: 1, handbacks: 1 });
+  assert.equal(portfolio.requests[0].item.request, first.flow);
+  const rows = homeRows(portfolio, 80, now, 24, false, undefined, { sorted: [], overdue: 0, today: 0 });
+  assert.match(stripAnsi(rows[0].text), /Unattended · Runs: 1 · Hand-backs: 1 · selected/);
+  assert.ok(rows.every(r => visualLength(r.text) === 80));
+  assert.ok(rows.some(r => stripAnsi(r.text).includes('synthetic menu')));
+  assert.equal(u.cmd('off').on, false);
+  await until(() => !isProcAlive(pid, start), 5000);
+  assert.equal(f.flow(second.flow).state, 'working');
+  const later = fs.readFileSync(join(f.root, f.ticketPath(2)), 'utf8').replace('# 02:', '# 03:');
+  fs.writeFileSync(join(f.root, f.ticketPath(3)), later);
+  await f.settle(second.worker);
+  await u.decide(second.flow, 'preland');
+  await u.accept(second.flow);
+  assert.match(f.git(f.root, 'show', `base:${f.ticketPath(2)}`), /\*\*Status:\*\* done/);
+  assert.deepEqual(u.status().runs.map(q => q.ticket).sort(), ['sample/01', 'sample/02']);
+  const off = await new HomePortfolioCollector(f.home).read([], {}, Date.now());
+  assert.equal(off.unattended, undefined);
+  assert.equal(off.requests.length, 1);
+});
+
+test('unattended ticket check blocks drafts without Live try; a ready spec edit cannot land even after lead approval', { timeout: 45_000 }, async t => {
+  const f = await project(t, { count: 1 }), u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  const ticket = join(f.root, f.ticketPath(1)), valid = fs.readFileSync(ticket, 'utf8');
+  fs.writeFileSync(ticket, valid.replace('**Live try:** none\n', ''));
+  u.cmd('on', '--objective', 'selected');
+  await until(() => {
+    const file = join(f.home, 'unattended-diagnostics.json');
+    return fs.existsSync(file) && read(file).some(d => d.ticket === 'sample/01' && /missing Live try/.test(d.reason));
+  }, 8_000);
+  assert.deepEqual(u.status().runs, []);
+  fs.writeFileSync(ticket, valid);
+  const { flow, worker } = await u.findRun('sample/01');
+  await f.settle(worker, { file: 'docs/spec.md', body: '# Unauthorized spec change\n' });
+  await u.decide(flow, 'preland');
+  assert.equal((await f.end(flow)).handback.owner_approval, 'spec-change');
+  assert.equal(f.git(f.root, 'show', 'base:docs/spec.md'), '# Synthetic spec');
+  assert.deepEqual(u.status().handbacks.map(q => q.ticket), ['sample/01']);
 });
 
 test('to: main question hand-back auto-resumes on hud_respond and Blockers: pauses without waking main', { timeout: 45_000 }, async t => {

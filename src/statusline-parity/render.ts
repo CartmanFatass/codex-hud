@@ -4,7 +4,7 @@ import { monitorText } from '../render/monitor-text.js';
 import { displayConfig } from '../render/hud-config.js';
 import * as bar from '../render/layout/bar-fields.js';
 import { shortModel } from '../render/providers.js';
-import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
+import type { MachineWorkSignal } from '../collectors/work-summary-snapshot.js';
 import type { LocalLoad } from '../collectors/local-load.js';
 import { record } from './storage.js';
 import type { ParitySettings } from './settings.js';
@@ -77,7 +77,7 @@ export function renderParity(
   evidence: ParityEvidence,
   now: number,
   env: NodeJS.ProcessEnv = {},
-  work?: MachineWorkCounts,
+  work?: MachineWorkSignal,
   localLoad?: LocalLoad
 ): string {
   const v = record(input),

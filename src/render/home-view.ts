@@ -101,7 +101,7 @@ function projectHeader(v: ProjectView, width: number): MonitorRow {
   return { ...boardRow(fit(pair(body, right, width), width)), ...projectTarget(v) };
 }
 
-function requestRows({ project, index, item }: HomeRequest, width: number, now: number): MonitorRow[] {
+function requestRows({ project, index, item, files }: HomeRequest, width: number, now: number): MonitorRow[] {
   const ink = theme.board;
   const name = monitorText(project.name), id = monitorText(item.objective ?? ''), lead = `${askMark()} `;
   const divider = id ? ` ${ink.muted(mark('›', '>'))} ` : '';
@@ -117,9 +117,9 @@ function requestRows({ project, index, item }: HomeRequest, width: number, now: 
   const head = `${lead}${ink.text(truncateAnsi(name, nameWidth))}${divider}${ink.text(truncateAnsi(id, idWidth))}`;
   const prose = monitorText((item.sentence ?? item.value).replace(/\s+/g, ' ').trim());
   const itemId = `home:wait:${project.root}:${item.request ?? index}`;
-  const homeTarget = { root: project.root, index, request: ownerRequestKey(item) };
+  const target = files ? { files } : { homeTarget: { root: project.root, index, request: ownerRequestKey(item) } };
   return [pair(head, right, width), ...sentenceRows(prose, width, 2, 2).map(ink.text)]
-    .map((text) => ({ text: fit(text, width), item: itemId, homeTarget }));
+    .map((text) => ({ text: fit(text, width), item: itemId, ...target }));
 }
 
 function objectiveRows(v: ProjectView, objective: Objective, width: number) {
@@ -253,8 +253,17 @@ export function homeRows(portfolio: HomePortfolio | undefined, width: number, no
   todayFacts: TodayFacts | undefined, schedule: ScheduleView): MonitorRow[] {
   const ink = theme.board;
   if (!portfolio) return [boardRow(fit(t('Loading…'), width))];
-  const { requests, projects } = portfolio;
-  const top = requests.length ? [section(t('Waiting'), width, String(requests.length)), ...requests.flatMap((r) => requestRows(r, width, now))] : [];
+  const { requests, projects, unattended } = portfolio;
+  const top: MonitorRow[] = [];
+  if (unattended) {
+    const { objectives, running, handbacks } = unattended;
+    const prefix = t('Unattended · Runs: {running} · Hand-backs: {handbacks}', { running, handbacks });
+    const compact = t('Unatt. {running} run / {handbacks} back', { running, handbacks });
+    const ids = monitorText(objectives.join(', '));
+    const left = cells(prefix) + Math.min(16, cells(ids)) + 3 <= width ? prefix : compact;
+    top.push(boardRow(fit(ink.active(left) + (cells(left) + 3 < width ? ` · ${ink.text(ids)}` : ''), width)));
+  }
+  if (requests.length) top.push(section(t('Waiting'), width, String(requests.length)), ...requests.flatMap((r) => requestRows(r, width, now)));
   top.push(section(t('Projects'), width, width < 56 ? t('done/tickets') : ''));
   const withCards = (rows: MonitorRow[]) => {
     const cards = homeCardRows(todayFacts, schedule, projects, width, now, room - rows.length);

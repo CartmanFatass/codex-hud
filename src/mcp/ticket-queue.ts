@@ -13,6 +13,7 @@ import { loadGraph } from '../workflows/graph.js';
 import { runVisible } from '../workflows/scope.js';
 import { freezeGraph, runDir } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
+import { ESCALATION_RULE, type UnattendedItem } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
 import { checkFeatureTickets, ticketReadiness } from './local-tickets.js';
 import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
@@ -37,7 +38,7 @@ function ticketClosed(path: string) {
   } catch { return false; }
 }
 export async function startTicketQueue(home: string, cwd: string, pane: string | null, task: boolean,
-  args: Record<string, unknown>, dispatcher?: TicketQueue['dispatcher']) {
+  args: Record<string, unknown>, dispatcher?: TicketQueue['dispatcher'], unattended?: { flow: string; item: UnattendedItem }) {
   const { feature, max_parallel, cancel, escalation_rule, handback_to, lead_preset } = args;
   if (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature)) throw Error('invalid_arguments: feature');
   if (max_parallel !== undefined && (typeof max_parallel !== 'number' || !Number.isSafeInteger(max_parallel) || max_parallel < 1))
@@ -58,6 +59,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       .filter(q => q.root === root && q.feature === feature);
     const prior = queues.find(q => q.state === 'working');
     if (prior) {
+      if (unattended) return null;
       if (!runVisible(prior, pane, root)) throw Error(`Ticket queue ${prior.flow} is owned by another pane`);
       if (cancel) cancelTicketQueue(home, prior);
       wakeWorkflow(home, prior);
@@ -66,17 +68,18 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     if (cancel) return null;
     if (!registeredProject(home, root).registered) throw Error('hud_tickets run requires a registered project');
     validLandConfig(home, root);
-    const ticketGaps = checkFeatureTickets(root, feature);
+    const ticketGaps = checkFeatureTickets(root, feature, unattended?.item.ticket);
     if (ticketGaps.length) {
       throw Error(`ticket_check_failed: ${ticketGaps.map(g => `${g.ticket}: ${g.gaps.join(', ')}`).join('; ')}`);
     }
     fs.mkdirSync(join(home, 'flows'), { mode: 0o700, recursive: true });
-    const { queued } = ticketReadiness(root, jobCache, feature);
-    const latest = queues.sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-    const resumed = latest && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;
-    const limit = max_parallel ?? resumed?.max_parallel ?? capForRole(loadConcurrencySettings(), 'imp');
-    const effectiveHandbackTo = handback_to ?? resumed?.handback_to;
-    const effectiveRule = escalation_rule?.trim() ?? resumed?.escalation_rule;
+    const { tickets, queued } = ticketReadiness(root, jobCache, unattended ? undefined : feature);
+    if (unattended && !tickets.some(t => t.ticket === unattended.item.ticket && t.path === unattended.item.path)) return null;
+    const latest = queues.filter(q => !q.unattended).sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    const resumed = !unattended && latest && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;
+    const limit = unattended ? 1 : max_parallel ?? resumed?.max_parallel ?? capForRole(loadConcurrencySettings(), 'imp');
+    const effectiveHandbackTo = unattended ? 'lead' : handback_to ?? resumed?.handback_to;
+    const effectiveRule = unattended ? ESCALATION_RULE : escalation_rule?.trim() ?? resumed?.escalation_rule;
     const effectivePreset = lead_preset?.trim() ?? resumed?.lead_preset;
     const workspace = resolvedWorkspace ?? resumed?.workspace;
     template ??= fs.readFileSync(join(BUNDLED_ROOT, 'workflows/ticket-queue.toml'), 'utf8');
@@ -89,8 +92,10 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       if (effectiveHandbackTo) acceptStep.to = effectiveHandbackTo;
       if (effectiveRule) acceptStep.escalation_rule = effectiveRule;
       if (effectivePreset) acceptStep.preset = effectivePreset;
+      // A landed commit can't be held. New owner matters belong on distinct, unlanded follow-up tickets.
+      if (unattended) acceptStep.options = ['finish', 'repair'];
     }
-    const flow = `q${randomBytes(8).toString('hex')}`;
+    const flow = unattended?.flow ?? `q${randomBytes(8).toString('hex')}`;
     const now = new Date().toISOString();
     const origin = pane ? procStat(process.pid) : null;
     const q: TicketQueue = { flow, root, cwd: root, project_root: root, feature, pane: pane ?? '',
@@ -100,6 +105,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       ...(origin && { origin_mcp: { pid: process.pid, start: origin.start } }),
       max_parallel: limit, created_at: now, updated_at: now,
       template: 'ticket-queue', host: 'detached', cost: graph.cost, cost_reasons: graph.cost_reasons,
+      ...(unattended && { unattended: unattended.item }),
       ...(effectiveHandbackTo && { handback_to: effectiveHandbackTo }),
       ...(effectiveRule && { escalation_rule: effectiveRule }),
       ...(effectivePreset && { lead_preset: effectivePreset }),
@@ -111,7 +117,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       dispatcher: resumed ? resumed.dispatcher : dispatcher,
       state: 'working', tickets: resumed?.tickets.filter(item => item.landed || (!launchFailed(home, item.job) && !ticketClosed(item.path)))
         .map(item => ({ ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow })) ?? [] };
-    if (queued.length) q.queued = queued;
+    if (!unattended && queued.length) q.queued = queued;
     fs.mkdirSync(runDir(home, flow), { mode: 0o700, recursive: true });
     freezeGraph(home, flow, graph);
     writeTicketQueue(home, q, true);
@@ -126,7 +132,8 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
   const matchesQuestion = (q?.handback?.kind === 'question' && q.handback.job === jobId && q.handback.question === request) ||
     (q?.handback?.kind === 'escalate' && q.handback.job === jobId && q.handback.question === request) ||
     q?.reason?.includes(`(${jobId}): worker question ${request} `);
-  if (!q || (q.state !== 'failed' && q.state !== 'paused') || !runVisible(q, pane, cwd) || !matchesQuestion) return undefined;
+  // An owner answer can resume the worker, but must not implicitly restart unattended landing.
+  if (!q || q.unattended || (q.state !== 'failed' && q.state !== 'paused') || !runVisible(q, pane, cwd) || !matchesQuestion) return undefined;
   try { return (await startTicketQueue(home, q.root, pane ?? (q.pane || null), false, { feature: q.feature, max_parallel: q.max_parallel }))?.flow; }
   catch { return undefined; }
 }

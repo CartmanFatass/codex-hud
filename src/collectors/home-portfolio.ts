@@ -1,4 +1,6 @@
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { queueFile } from '../mcp/ticket-queue-state.js';
+import { readUnattendedStatus } from '../unattended/state.js';
 import type { ListedProject } from '../roles/projects.js';
 import type { ObjectiveRecord } from './objectives.js';
 import { ResultReceipts, resultDate } from './result-receipts.js';
@@ -15,8 +17,11 @@ export interface HomeProject extends ListedProject {
   advisor?: { skill: string; path: string; session: string; at: number };
   advisorRules?: AdvisorRuleHit;
 }
-export interface HomeRequest { project: HomeProject; item: ProjectItem; index: number }
-export interface HomePortfolio { projects: HomeProject[]; requests: HomeRequest[]; recentAdvice?: AdviceEvent[] }
+export interface HomeRequest { project: HomeProject; item: ProjectItem; index: number; files?: string[] }
+export interface HomePortfolio {
+  projects: HomeProject[]; requests: HomeRequest[]; recentAdvice?: AdviceEvent[];
+  unattended?: { objectives: string[]; running: number; handbacks: number };
+}
 
 const priorities: Record<ObjectiveRecord['priority'], number> = { high: 1, normal: 0, low: -1 };
 const priority = (p: HomeProject) => priorities[p.snapshot?.objectives?.priority ?? 'normal'];
@@ -110,9 +115,22 @@ export class HomePortfolioCollector {
       }
     }
     // Build requests in the original list order so project-block sorting cannot affect request ties.
-    const requests = projects.flatMap((project) => project.snapshot?.waiting.map((item, index) => ({ project, item, index })) ?? []);
+    const requests: HomeRequest[] = projects.flatMap((project) => project.snapshot?.waiting.map((item, index) => ({ project, item, index })) ?? []);
+    let unattended: HomePortfolio['unattended'];
+    try {
+      const status = readUnattendedStatus(this.home);
+      if (status.on && status.control) unattended = { objectives: status.control.objectives, running: status.running.length, handbacks: status.handbacks.length };
+      for (const q of status.handbacks) {
+        const item = q.unattended!;
+        const project = projects.find(p => p.root === q.root) ?? { root: q.root, name: basename(q.root), registrationIndex: list.length };
+        requests.push({ project, index: -1, files: [item.path, queueFile(this.home, q.flow)], item: {
+          label: 'unattended', value: `${item.ticket}: ${q.reason ?? q.handback?.owner_approval}`,
+          request: q.flow, objective: item.objective, at: Date.parse(q.updated_at), waitedOn: true,
+        } });
+      }
+    } catch { /* Unreadable service receipts give no display evidence. */ }
     requests.sort((a, b) => compareOwnerRequests(a.item, b.item, priority(a.project), priority(b.project)));
     const recentAdvice = this.advice.read(now);
-    return { projects: projects.sort(compareProjects), requests, ...(recentAdvice.length && { recentAdvice }) };
+    return { projects: projects.sort(compareProjects), requests, ...(unattended && { unattended }), ...(recentAdvice.length && { recentAdvice }) };
   }
 }

@@ -16,9 +16,9 @@ const CALL_FEATURES: Record<string, string> = {
   'quiet-job': 'Quiet job', 'sonic-thinking': 'Sonic thinking', 'imp-routing': 'Imp routing', prewalk: 'Prewalk', 'pool-pick': 'Pool pick',
   'advisor-shadow': 'Advisor shadow',
 };
-export type SettingKey = keyof HudSettings;
+export type SettingKey = keyof HudSettings | 'unattended';
 export type SettingGroup = 'Display' | 'Panel' | 'Models' | 'Workers' | 'Codex';
-export type SettingsAction = 'back' | 'save' | 'reset';
+export type SettingsAction = 'back' | 'save' | 'reset' | 'unattended';
 export interface SettingRow {
   key: SettingKey;
   role?: string;
@@ -90,6 +90,8 @@ export const SETTING_ROWS: readonly SettingRow[] = [
   },
   { key: 'mouse', group: 'Panel', label: 'Mouse', values: [true, false], help: 'Click and scroll the panel', advanced: true },
   { key: 'openPreviews', group: 'Panel', label: 'Open previews', values: [true, false], help: 'Open report HTML previews in the default browser' },
+  { key: 'unattended', group: 'Panel', label: 'Unattended', values: [false, true],
+    help: 'Toggle immediately for the Objectives selected with hud unattended on --objective <id>' },
   {
     key: 'decisionApi', group: 'Models', label: 'Decision API', values: ['gemini', 'openai', 'anthropic', 'typesafe'],
     help: 'Primary for Jev and execution decisions; automatic fallback uses another keyed provider',
@@ -187,7 +189,7 @@ function visualGroup(index: number): SettingGroup | 'Advanced' {
   return index === ADVANCED || SETTING_ROWS[index]?.advanced ? 'Advanced' : SETTING_ROWS[index].group;
 }
 export function rowValue(row: SettingRow, settings: HudSettings): SettingValue {
-  return row.get ? row.get(settings) : (settings[row.key] as SettingValue);
+  return row.key === 'unattended' ? false : row.get ? row.get(settings) : (settings[row.key] as SettingValue);
 }
 export function withRowValue(settings: HudSettings, row: SettingRow, value: SettingValue): HudSettings {
   return { ...settings, ...(row.set ? row.set(value, settings) : { [row.key]: value }) };
@@ -254,6 +256,7 @@ export function renderSettingsPage(
   height: number,
   health?: {
     decisionCalls?: { lastHour: number; byFeature: Record<string, number> };
+    unattended?: boolean;
   }
 ): SettingsFrame {
   width = Math.max(0, Math.floor(width));
@@ -267,8 +270,8 @@ export function renderSettingsPage(
     content: { text: string; index?: number; back?: number; counter?: boolean }[] = [];
   const pushRow = (i: number) => {
     const row = SETTING_ROWS[i],
-      value = rowValue(row, state.draft),
-      changed = rowValue(row, original) !== value,
+      value = row.key === 'unattended' ? health?.unattended === true : rowValue(row, state.draft),
+      changed = row.key !== 'unattended' && rowValue(row, original) !== value,
       active = rowValue(row, defaults) !== value;
     const rawLabel = row.advanced ? `${t(row.group)} · ${t(row.label)}` : t(row.label);
     const displayLabel = row.advanced
@@ -462,6 +465,7 @@ export function handleSettingsInput(
       return { state: next };
     }
     const row = SETTING_ROWS[next.selected];
+    if (row.key === 'unattended') return { state: next, action: 'unattended' };
     if (isPoolKey(row.key)) {
       const cfg = POOL_ROWS[row.key];
       const presets = next[cfg.presets] ?? [], index = next[cfg.index] ?? 0, preset = presets[index];

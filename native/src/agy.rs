@@ -62,6 +62,11 @@ impl Slot {
             data.push(0);
         };
         field(entry.as_os_str().as_bytes());
+        field(if state::unattended_on(&home) {
+            b"unattended"
+        } else {
+            b"off"
+        });
         for name in [
             "NO_COLOR",
             "COLORTERM",

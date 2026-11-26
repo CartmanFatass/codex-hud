@@ -265,6 +265,17 @@ test('Settings s saves through the standalone decoder', (t) => {
   assert.equal(handleSettingsConfirmation({ choice: 'cancel' }, input('c'), dialog).action, 'cancel');
 });
 
+test('Settings makes Unattended a live action and does not put it in the display draft', () => {
+  const draft = defaultSettings();
+  const selected = SETTING_ROWS.findIndex(r => r.key === 'unattended');
+  const state = { draft, original: draft, selected, offset: 0, message: '' };
+  const frame = renderSettingsPage(state, 80, 35, { unattended: true });
+  assert.match(plainFrame(frame).join('\n'), /Unattended.*on/);
+  const out = handleSettingsInput(state, { type: 'key', key: 'enter' }, frame);
+  assert.equal(out.action, 'unattended');
+  assert.deepEqual(out.state.draft, draft);
+});
+
 test('Settings keeps draft confirmation, selected help, and the execution decision counter', () => {
   const draft = { ...defaultSettings(), decisionCallsPerHour: 600 },
     original = { ...draft, decisionCallsPerHour: 2000 };

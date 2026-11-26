@@ -339,7 +339,33 @@ pub fn transcript(home: &Path, path: Option<&str>) -> Option<Transcript> {
     Some(Transcript { value: v, identity })
 }
 
+pub fn unattended_on(home: &Path) -> bool {
+    let active = || -> Option<()> {
+        let control = read(&home.join("unattended.json"), 128 * 1024, true, true)??;
+        if control.get("enabled").bool() != Some(true) {
+            return None;
+        }
+        let id = read(&home.join("unattended.pid.json"), 1024, true, true)??;
+        let pid = id
+            .get("pid")
+            .count()
+            .filter(|n| (2..=i32::MAX as u64).contains(n))?;
+        let boot = fs::read_to_string("/proc/sys/kernel/random/boot_id").ok()?;
+        if id.get("boot_id").str()? != boot.trim() {
+            return None;
+        }
+        let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        let mut fields = stat.rsplit_once(") ")?.1.split_whitespace();
+        if matches!(fields.next()?, "Z" | "X" | "x") {
+            return None;
+        }
+        (id.get("start").str()? == fields.nth(18)?).then_some(())
+    };
+    active().is_some()
+}
+
 pub struct MachineWork {
+    pub unattended: bool,
     pub roles: Vec<(String, u64)>,
     pub queued: u64,
     pub land: Option<LandWork>,
@@ -464,6 +490,7 @@ pub fn work(home: &Path, now: f64) -> Option<MachineWork> {
     let mut roles = Vec::new();
     scope_counts(global, |role, n| roles.push((role.to_owned(), n)))?;
     Some(MachineWork {
+        unattended: unattended_on(home),
         roles,
         queued: global.get("queued").count()?,
         land: match global.field("land") {

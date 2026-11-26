@@ -7,6 +7,7 @@ import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { DEFAULT_RESUME_S } from '../mcp/worker-resume.js';
+import { readRunIndex } from '../unattended/state.js';
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -82,7 +83,7 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
   try {
     inAbsoluteDir(join(home, 'flows'), (dir) => {
       const jobs = new Map<string, string[]>();
-      const names = fs.readdirSync(dir);
+      const names = fs.readdirSync(dir), unattended = new Set(readRunIndex(home));
       for (const name of names) {
         if (/^[bj][a-f0-9]{16}\.json$/.test(name)) {
           if (fs.lstatSync(join(dir, name)).mtimeMs < cutoff) void pruneExpiredWorkflow(home, name.slice(0, -5), cutoff).catch(() => {});
@@ -94,7 +95,8 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
             if (stat.isFile() && stat.mtimeMs < cutoff) {
               // Terminal queue IDs are never reused. Remove sidecars and workflow dir with their receipt.
               const receipt = readJsonBounded(path, stat.size) as { state?: unknown } | null;
-              if (receipt?.state === 'completed' || receipt?.state === 'failed' || receipt?.state === 'cancelled') {
+              if (!unattended.has(name.slice(0, -5)) && (receipt?.state === 'completed' || receipt?.state === 'failed' ||
+                  receipt?.state === 'cancelled' || (receipt?.state === 'paused' && 'unattended' in receipt))) {
                 const sub = join(dir, name.slice(0, -5)), subStat = fs.lstatSync(sub, { throwIfNoEntry: false });
                 if (subStat?.isDirectory()) {
                   let cleaned = false;

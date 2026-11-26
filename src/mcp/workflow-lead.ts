@@ -8,6 +8,9 @@ import { answerWorkerQuestion, closeJob } from './mcp/operations.js';
 import { jobFiles } from './paths.js';
 import { directory, findJob, save } from './store/job-store.js';
 import type { RunDecision, RunTodoItem, TicketQueue } from './ticket-queue-state.js';
+import type { OwnerApproval } from '../unattended/state.js';
+
+const approvalFormat = 'For escalate, include `Owner approval: feature-deletion` or `Owner approval: spec-change` and explain the specific change in Reason. Do not use escalate for operational failures.';
 
 export const DEFAULT_ESCALATION_RULE =
   'Escalate to main only for owner matters that block: scope change, value trade-off, visible deletion, or irreversible act.';
@@ -45,6 +48,7 @@ export interface ParsedLeadReport {
   decision?: string;
   reason?: string;
   answer?: string;
+  ownerApproval?: OwnerApproval;
   todos: string[];
 }
 
@@ -69,7 +73,9 @@ export function parseLeadReport(reportText: string, allowedChoices: readonly str
     if (combined) answer = combined;
   }
 
-  return { decision, reason, answer, todos: extractTodoLines(reportText) };
+  const approval = /^[ \t]*(?:[-*] )?(?:\*\*)?Owner approval:(?:\*\*)?[ \t]*(feature-deletion|spec-change)[ \t]*\r?$/im.exec(reportText)?.[1];
+  const ownerApproval = decision === 'escalate' && reason ? approval?.toLowerCase() as OwnerApproval | undefined : undefined;
+  return { decision, reason, answer, ...(ownerApproval && { ownerApproval }), todos: extractTodoLines(reportText) };
 }
 
 export function appendTodos(q: TicketQueue, items: readonly RunTodoItem[]): boolean {
@@ -170,6 +176,7 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
     `Respond via hud_report with \`Decision: <${choices.join('|')}>\`, \`Reason: <one line>\`, and optional \`Todo: <item>\` lines for non-blocking doubts/follow-ups.`,
     'If choosing `repair`, add the repair ticket(s) via `hud_tickets` (with `live_try`) before reporting.',
     'Do not edit docs/spec.md or land outside this run.',
+    ...(q.unattended ? ['The ticket already landed after approval. If the review finds work requiring owner approval, use repair to file a separate ready follow-up; it will be reviewed before it can land. File repairs for this same Objective. Never create an Objective or call hud_land.'] : []),
   );
   return lines.join('\n') + '\n';
 }
@@ -210,8 +217,27 @@ export function buildQuestionPacket(
     'Respond via hud_report with either:',
     '- `Decision: answer`, `Reason: <one line>`, and `Answer: <answer for the worker>` (plus optional `Todo:` lines), OR',
     '- `Decision: escalate` and `Reason: <why this blocks on the owner per the escalation rule>`.',
+    ...(q.unattended ? [approvalFormat, 'Never create an Objective, edit docs/spec.md or call hud_land.'] : []),
   );
   return lines.join('\n') + '\n';
+}
+
+export function buildPrelandPacket(q: TicketQueue, item: TicketQueue['tickets'][number], job: Job, head?: string, failure?: string) {
+  const info = ticketSummaryLines(item.path);
+  return [
+    `# Unattended Ticket Review (${q.flow})`,
+    `Ticket: ${item.ticket} | Objective: ${q.unattended!.objective}`,
+    `Ticket file: ${item.path}`,
+    ...(info.goal ? [`Ticket goal: ${info.goal.slice(0, 4000)}`] : []),
+    `Worker report: ${join(directory(job.job), jobFiles.report)}`,
+    ...(head ? [`Inspect the committed changes at ${head} in the worker checkout: ${job.cwd}`] : []),
+    ...(failure ? [`The workflow cannot land this attempt: ${failure.slice(0, 2000)}`] : []),
+    `Escalation rule: ${q.escalation_rule}`,
+    'Inspect the ticket, report and committed changes before deciding. Do not edit the worktree, docs/spec.md or land.',
+    'Use hud_report: `Decision: finish` to authorize this exact commit if checks passed and neither owner matter is required, `Decision: repair` if it needs further work, or `Decision: escalate` only under the escalation rule. Include a one-line `Reason:`.',
+    'For repair, file a ready follow-up using hud_tickets (with live_try) for this same Objective, not blocked by the failed ticket, before reporting. Do not create an Objective.',
+    approvalFormat,
+  ].join('\n') + '\n';
 }
 
 /** Close a lead session through normal HUD closure (herdr, exact identity); adds no new kill sites. */

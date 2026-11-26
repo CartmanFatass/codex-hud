@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { basename, join } from 'node:path';
-import type { MachineWorkCounts } from '../collectors/work-summary-snapshot.js';
+import type { MachineWorkSignal } from '../collectors/work-summary-snapshot.js';
 import type { LocalLoad } from '../collectors/local-load.js';
 import { readEvenQuotaNotices } from '../collectors/even-quota.js';
 import { readAdvisorNotice, readAdvisorRuleNotice } from '../collectors/advisor-shadow.js';
@@ -64,7 +64,7 @@ export async function collectAndRenderParity(
   settings: ParitySettings,
   env: NodeJS.ProcessEnv,
   now = Date.now(),
-  work?: MachineWorkCounts,
+  work?: MachineWorkSignal,
   localLoad?: LocalLoad
 ): Promise<string> {
   const value = record(input),

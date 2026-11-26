@@ -1,5 +1,6 @@
 /** Ticket-queue workflow steps on the workflow driver. Job, review, lead and land receipts fence every effect. */
 import * as fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { failedAttempt } from '../collectors/thin-jobs.js';
 import { readDone, readTurn, receiptForTurn } from '../roles/cli-turn.js';
@@ -7,6 +8,8 @@ import { checkBinding, CHECK_TIMEOUT_MS, readCheckReceipt, sameChecks } from '..
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import { isProcAlive } from '../utils/proc.js';
+import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
+import type { OwnerApproval } from '../unattended/state.js';
 import { driveWorkflow } from '../workflows/driver.js';
 import type { Run, Tick } from '../workflows/engine.js';
 import type { Graph, Step } from '../workflows/graph.js';
@@ -14,9 +17,9 @@ import { directRecipient } from '../workflows/scope.js';
 import { freezeGraph, runDir, runLock, stopRequested } from '../workflows/store.js';
 import { dispatchJob } from './dispatch/orchestrator.js';
 import type { Job, JobStatus } from './job-contracts.js';
-import { activeLand, landAttempt, landOutcome, readLand, retryableLand } from './land-state.js';
+import { activeLand, landAttempt, landOutcome, readLand, retryableLand, SPEC_CHANGE_REFUSAL } from './land-state.js';
 import { startLand } from './land.js';
-import { ticketReadiness } from './local-tickets.js';
+import { checkFeatureTickets, ticketReadiness } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { piReportSettlement } from './pi-read-settlement.js';
 import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/job-store.js';
@@ -25,7 +28,7 @@ import {
   type TicketHandbackKind, type TicketQueue, type TicketQueueItem,
 } from './ticket-queue-state.js';
 import {
-  appendTodos, applyLeadQuestionAnswer, buildAcceptPacket, buildQuestionPacket, buildReviewBrief,
+  appendTodos, applyLeadQuestionAnswer, buildAcceptPacket, buildPrelandPacket, buildQuestionPacket, buildReviewBrief,
   closeLeadJob, extractAssumedLines, MAX_REPAIR_ROUNDS, parseLeadReport, recordDecision,
   WORKFLOW_WORKER_RULE, WORKFLOW_WORKER_RULE_NO_ASK,
 } from './workflow-lead.js';
@@ -96,6 +99,7 @@ export interface TicketProblem {
   job?: string;
   question?: string;
   land?: string;
+  ownerApproval?: OwnerApproval;
 }
 
 function computeRemaining(q: TicketQueue): string[] {
@@ -119,19 +123,26 @@ function terminalNotice(q: TicketQueue, keyPrefix: 'end' | 'pause' = 'end') {
  * - other problems (land/check/worker/dispatch/to:main question): failed receipt with terminal notice. */
 export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
   const step = problem?.step ?? q.handback?.step ?? 'tickets';
+  q.queued = undefined;
+  q.remaining = computeRemaining(q);
+  if (q.unattended && !problem?.ownerApproval) {
+    delete q.handback;
+    q.state = 'failed';
+    q.notices = terminalNotice(q);
+    return;
+  }
   q.handback = {
     step,
-    choices: ['resume', 'stop'],
+    choices: q.unattended ? ['manual'] : ['resume', 'stop'],
     ...(problem && {
       kind: problem.kind,
       ...(problem.ticket && { ticket: problem.ticket }),
       ...(problem.job && { job: problem.job }),
       ...(problem.question && { question: problem.question }),
       ...(problem.land && { land: problem.land }),
+      ...(problem.ownerApproval && { owner_approval: problem.ownerApproval }),
     }),
   };
-  q.queued = undefined;
-  q.remaining = computeRemaining(q);
   if (problem?.kind === 'blocker' || problem?.kind === 'assumption') {
     q.state = 'paused';
     q.no_wake = true;
@@ -165,8 +176,8 @@ function tickQuestionLead(q: TicketQueue, state: { problem?: TicketProblem }): T
   if (!active || active.kind !== 'question') return null;
   const leadJob = findJob(active.job);
   const flowId = q.flow;
-  const escalateProblem = (reason: string): TicketProblem => ({
-    kind: 'escalate', step: active.step, ticket: active.ticket, job: active.worker_job, question: active.question, reason,
+  const escalateProblem = (reason: string, ownerApproval?: OwnerApproval): TicketProblem => ({
+    kind: 'escalate', step: active.step, ticket: active.ticket, job: active.worker_job, question: active.question, reason, ownerApproval,
   });
   if (!leadJob) {
     delete q.active_lead;
@@ -238,7 +249,7 @@ function tickQuestionLead(q: TicketQueue, state: { problem?: TicketProblem }): T
         const why = parsed.decision === 'escalate'
           ? (parsed.reason ? `question ${active.question} escalated: ${parsed.reason}` : `question ${active.question} escalated by lead`)
           : `question lead (${leadJob.job}) did not provide a valid answer`;
-        state.problem = escalateProblem(`${active.ticket} (${active.worker_job}): ${why}`);
+        state.problem = escalateProblem(`${active.ticket} (${active.worker_job}): ${why}`, parsed.ownerApproval);
       }
       return 0;
     } };
@@ -249,6 +260,7 @@ function tickQuestionLead(q: TicketQueue, state: { problem?: TicketProblem }): T
 function tickTicketQueue(
   q: TicketQueue,
   step: Extract<Step, { kind: 'batch' }>,
+  graph: Pick<Graph, 'steps'>,
   state: { problem?: TicketProblem },
 ): Tick {
   if (!step.tickets) throw Error('ticket-queue batch step requires a tickets source');
@@ -282,6 +294,8 @@ function tickTicketQueue(
         item.landed = true; item.base_moves = land.base_moves; changed = true;
       } else if (!activeLand(land)) {
         if (item.dispatch_queue && land.ticket_queue !== q.flow && retryableLand(land)) retry = land.flow;
+        else if (q.unattended && land.error === SPEC_CHANGE_REFUSAL) note({ kind: 'escalate', ticket: item.ticket,
+          job: item.job, land: land.flow, reason: SPEC_CHANGE_REFUSAL, ownerApproval: 'spec-change' });
         else note({ kind: 'land', ticket: item.ticket, job: item.job, land: land.flow, reason: `${item.ticket} land ${land.flow}: ${landOutcome(land)}` });
       }
       if (!retry) continue;
@@ -329,6 +343,21 @@ function tickTicketQueue(
     }
   }
 
+  if (q.unattended && !problem?.ownerApproval) {
+    const candidate = problem ? q.tickets.find(t => t.ticket === problem?.ticket && t.job) : clean[0]?.item;
+    const job = candidate?.job && findJob(candidate.job);
+    if (candidate && job) {
+      const head = job.worktree && spawnSync('git', [...SAFE_GIT_ARGS, 'rev-parse', '--verify', 'HEAD'], {
+        cwd: job.worktree.root, env: safeGitEnv(process.env), encoding: 'utf8', timeout: 5000,
+      }).stdout?.trim();
+      const source = head && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(head) ? head : undefined;
+      const failure = problem?.reason ?? (!source ? 'Verified worker commit unavailable' : undefined);
+      if (failure || candidate.approved_head !== source) return tickHandbackStep(q, 'preland', {
+        kind: 'handback', needs: [], from: [], optional: false, to: 'lead',
+        ask: 'Inspect the ticket before landing', options: ['finish', 'repair', 'escalate'],
+      }, graph, state, { item: candidate, job, source, failure });
+    }
+  }
   if (problem) {
     state.problem = problem;
     return { state: 'failed', reason: problem.reason, changed: true };
@@ -388,7 +417,7 @@ function tickTicketQueue(
     return { state: 'running', changed: true, effect: async () => {
       const results = await Promise.allSettled(clean.map(async ({ item, job, state: jobState, retry }) => {
         try {
-          const land = await startLand(hudHome, job.job, job, jobState, pane, false, flowId, retry);
+          const land = await startLand(hudHome, job.job, job, jobState, pane, false, flowId, retry, q.unattended ? item.approved_head : undefined);
           return { ticket: item.ticket, job: job.job, land: land.flow };
         } catch (error) {
           throw { ticket: item.ticket, job: job.job, reason: `${item.ticket} (${job.job}): cannot start land: ${errorLine(error)}` };
@@ -420,7 +449,9 @@ function tickTicketQueue(
   if (atCapacity && !q.queued?.length) {
     return { state: 'running', changed, ...(recheck !== undefined && { recheckMs: recheck }) };
   }
-  const { tickets: eligible, queued } = ticketReadiness(q.root, jobCache, step.tickets);
+  const readiness = ticketReadiness(q.root, jobCache, q.unattended ? undefined : step.tickets);
+  const eligible = q.unattended ? readiness.tickets.filter(t => t.ticket === q.unattended!.ticket && t.path === q.unattended!.path) : readiness.tickets;
+  const queued = q.unattended ? [] : readiness.queued;
   if (JSON.stringify(queued) !== JSON.stringify(q.queued ?? [])) {
     q.queued = queued.length ? queued : undefined;
     changed = true;
@@ -436,6 +467,10 @@ function tickTicketQueue(
   const next = item ? [] : eligible.filter(t => !q.tickets.some(own => own.ticket === t.ticket));
   if (next.length) {
     const { ticket, path } = next[0];
+    if (q.unattended && checkFeatureTickets(q.root, q.feature, ticket).length) {
+      state.problem = { kind: 'queue', ticket, reason: `${ticket}: failed ticket check before dispatch` };
+      return { state: 'failed', reason: state.problem.reason, changed: true };
+    }
     if (next.some((entry, i) => i > 0 && entry.ticket === ticket)) {
       state.problem = { kind: 'queue', ticket, reason: `${ticket}: ambiguous ticket number` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
@@ -452,7 +487,9 @@ function tickTicketQueue(
 
   const launching = item, queueId = owner(q, launching), reqKey = requestKey(q, launching);
   const flowId = q.flow, root = q.root, pane = livePane(q), workspace = q.workspace, dispatcher = q.dispatcher;
-  const runNote = step.ask === false ? WORKFLOW_WORKER_RULE_NO_ASK : WORKFLOW_WORKER_RULE;
+  const runNote = q.unattended
+    ? `${WORKFLOW_WORKER_RULE}\nUnattended rule: ${q.escalation_rule} Ask the lead before proceeding if this ticket needs owner approval.`
+    : step.ask === false ? WORKFLOW_WORKER_RULE_NO_ASK : WORKFLOW_WORKER_RULE;
   return { state: 'running', changed: true, effect: async () => {
     let job: string | undefined, err: string | undefined;
     const canAdmit = () => {
@@ -600,6 +637,7 @@ function tickHandbackStep(
   step: Extract<Step, { kind: 'handback' }>,
   graph: Pick<Graph, 'steps'>,
   state: { problem?: TicketProblem },
+  preland?: { item: TicketQueueItem; job: Job; source?: string; failure?: string },
 ): Tick {
   if (stopRequested(hudHome, q.flow)) {
     q.state = 'cancelled';
@@ -622,13 +660,15 @@ function tickHandbackStep(
   }
 
   const round = q.repair_rounds ?? 0;
-  const reqKey = `ticket-queue:${q.flow}:lead:${key}:${round}`;
-  let active = q.active_lead?.kind === 'accept' && q.active_lead.step === key && q.active_lead.round === round
+  const kind = preland ? 'preland' : 'accept';
+  const reqKey = `ticket-queue:${q.flow}:lead:${key}:${round}${preland ? `:${preland.failure ? 'failure' : preland.source}` : ''}`;
+  const activeStep = preland ? reqKey : key;
+  let active = q.active_lead?.kind === kind && q.active_lead.step === activeStep && q.active_lead.round === round
     ? q.active_lead : undefined;
   if (!active) {
     const recovered = jobs().find(j => j.request_key === reqKey);
     if (recovered) {
-      active = q.active_lead = { job: recovered.job, kind: 'accept', step: key, round };
+      active = q.active_lead = { job: recovered.job, kind, step: activeStep, round };
     }
   }
   const flowId = q.flow;
@@ -689,8 +729,21 @@ function tickHandbackStep(
             at: new Date().toISOString(),
           });
           delete cur.active_lead;
-          if (parsed.decision === 'repair') {
-            if ((cur.repair_rounds ?? 0) >= MAX_REPAIR_ROUNDS) {
+          if (preland) {
+            if (parsed.decision === 'finish' && !preland.failure && preland.source) {
+              const item = cur.tickets.find(t => t.job === preland.job.job);
+              if (item) item.approved_head = preland.source;
+            } else {
+              state.problem = { kind: parsed.decision === 'escalate' ? 'escalate' : 'worker', step: key,
+                ticket: preland.item.ticket, job: preland.job.job, ownerApproval: parsed.ownerApproval,
+                reason: parsed.reason ?? preland.failure ?? 'Lead did not approve the worker commit' };
+            }
+          } else if (parsed.decision === 'repair') {
+            if (cur.unattended) {
+              cur.steps ??= {};
+              cur.steps[key] = { state: 'done', answer: 'repair' };
+              cur.verdict = `repair: ${parsed.reason ?? 'follow-up requested'}`;
+            } else if ((cur.repair_rounds ?? 0) >= MAX_REPAIR_ROUNDS) {
               state.problem = {
                 kind: 'escalate', step: key, job: leadJob.job,
                 reason: `max repair rounds (${MAX_REPAIR_ROUNDS}) reached${parsed.reason ? `: ${parsed.reason}` : ''}`,
@@ -712,7 +765,7 @@ function tickHandbackStep(
             }
           } else if (parsed.decision === 'escalate' || !parsed.decision) {
             state.problem = {
-              kind: 'escalate', step: key, job: leadJob.job,
+              kind: 'escalate', step: key, job: leadJob.job, ownerApproval: parsed.ownerApproval,
               reason: parsed.decision === 'escalate'
                 ? (parsed.reason ? `escalated: ${parsed.reason}` : 'escalated by lead')
                 : `lead (${leadJob.job}) did not declare a valid decision (${step.options.join('|')})`,
@@ -732,7 +785,7 @@ function tickHandbackStep(
 
   const root = q.root, pane = livePane(q), workspace = q.workspace, dispatcher = q.dispatcher;
   const preset = step.preset ?? q.lead_preset;
-  const packet = buildAcceptPacket(q, step);
+  const packet = preland ? buildPrelandPacket(q, preland.item, preland.job, preland.source, preland.failure) : buildAcceptPacket(q, step);
   return { state: 'running', changed: true, effect: async () => {
     const canAdmit = () => {
       const cur = readTicketQueue(hudHome, flowId);
@@ -757,7 +810,7 @@ function tickHandbackStep(
       await runLock(hudHome, flowId, () => {
         const cur = readTicketQueue(hudHome, flowId);
         if (!cur || cur.state !== 'working') return;
-        cur.active_lead = { job: leadId!, kind: 'accept', step: key, round };
+        cur.active_lead = { job: leadId!, kind, step: activeStep, round };
         writeTicketQueue(hudHome, cur);
       });
     }
@@ -813,7 +866,7 @@ export async function driveTicketQueue(id: string) {
       return graph;
     },
     tick: (q, key, step, plan) => {
-      if (step.kind === 'batch') return tickTicketQueue(q, step, state);
+      if (step.kind === 'batch') return tickTicketQueue(q, step, plan, state);
       if (step.kind === 'job') return tickJobStep(q, key, step, state);
       if (step.kind === 'handback') return tickHandbackStep(q, key, step, plan, state);
       throw Error(`unsupported ticket-queue step ${step.kind}`);

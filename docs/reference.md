@@ -652,6 +652,16 @@ Older archive lines may omit the new fields.
 It stores neither the brief nor the report body; append failures do not delay deletion, and HUD does not expire the archive.
 In the same housekeeping pass, once a job directory is gone, the watcher prunes its settled land receipts and sidecars in `$HUD_HOME/flows/` after a day without changes.
 
+### Unattended service
+
+From a registered project with a working land configuration and herdr/worker harnesses, run `hud unattended on --objective <id> [--objective <id>...]`. The IDs are local to that project. A second `on` replaces the selection without starting another service. `hud unattended status` shows the exact process identity, selected Objectives, runs, policy hand-backs and scheduler diagnostics. Settings → Panel → Unattended uses the last selection; the CLI sets the selection the first time. Neither activity nor presence can switch the service on. It survives main and MCP exit, but does not auto-start after reboot.
+
+Each run owns one eligible ticket so a held item does not stop unrelated tickets, even in the same feature. HUD uses an explicit `Objective:` link or, if absent, the feature's unique Objective, and requires that Objective to be selected and active. Tickets must pass the normal ticket check, including `Live try:`. The lead answers questions and checks the exact commit before it can land. Only a required deletion of a user-visible feature or a change to `docs/spec.md` becomes an owner request; the landing path also refuses any spec change independently of the lead. Unattended landings use the normal gate, but any repair needs a fresh ticket and lead approval instead of substituting an unapproved commit. The independent reviewer and lead acceptance still follow the landing; a needed follow-up can be filed as another checked ticket in the same Objective. `Owner try: yes` retains the normal explicit owner acceptance marker.
+
+The pre-land lead receives the Objective and ticket IDs, ticket and report paths, the ticket goal (up to 4,000 characters), worker checkout and candidate commit if known, and any settlement or landing refusal (up to 2,000 characters), plus the policy and report format. It can inspect the checkout under the normal project-access rules.
+
+Home shows the selected Objectives, running count and hand-backs, and the bar shows `Unatt` in the notice zone. Open a Home hand-back to see the ticket and run record. Resolve it with the normal manual workflow (for example, review and land it yourself or mark the ticket `wontfix`); it stays visible after turning the service off. Operational failures are not owner requests; inspect them in `status` and handle the failed ticket or its repair separately. `hud unattended off` stops new runs without stopping or signalling the active runs; they retain their normal workflow steps.
+
 ## Claude Code mod
 
 `integrations/claude-mod/` is a Claude Code function-hooks plugin (`hud-mod`) that keeps the main session's context lean.
