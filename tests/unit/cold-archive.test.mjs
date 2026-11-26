@@ -223,7 +223,7 @@ test('early raw-log pruning moves logs into raw member and later expiry merges r
   assert.ok(exists(join(f.home, 'archive', 'cold', '2030-01', `${id}.text.tar.zst`)));
 });
 
-test('terminal q*.json runs are archived as their own text member before unlink, compatible with .archived marker', (t) => {
+test('terminal ticket queues keep their text member and only unlink after the fact event is confirmed', (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-cold-queue-')));
   cleanupFixture(t, { root });
   const home = join(root, 'hud');
@@ -238,7 +238,7 @@ test('terminal q*.json runs are archived as their own text member before unlink,
   const receiptBytes = Buffer.from(JSON.stringify({
     flow: flowId,
     state: 'completed',
-    project: '/synthetic/proj',
+    root: '/synthetic/proj',
     feature: 'cold-archive',
     created_at: '2030-02-10T07:00:00.000Z',
     updated_at: updated,
@@ -252,18 +252,23 @@ test('terminal q*.json runs are archived as their own text member before unlink,
   const graphFile = put(join(flows, flowId, 'graph.json'), graphBytes);
   const endNotice = put(join(flows, flowId, 'end-1.noticed'), noticeBytes);
   const sidecarFile = put(join(flows, `${flowId}.json.noticed`), sidecarBytes);
-  // Marker written by imp-daily-facts/02 before unlink must not break cold archiving.
-  put(join(flows, `${flowId}.json.archived`), '');
+  const marker = put(join(flows, `${flowId}.json.archived`), '');
+  const events = join(home, 'events', '2030-02.jsonl');
+  const member = join(home, 'archive', 'cold', '2030-02', `${flowId}.text.tar.zst`);
   for (const p of [receiptFile, graphFile, endNotice, sidecarFile]) fs.utimesSync(p, oldSec, oldSec);
 
   pruneLandFlows(home, now);
+  assert.ok(exists(member), 'an unconfirmed event claim does not block the cold archive');
+  assert.ok(exists(receiptFile), 'an unconfirmed event claim prevents unlink');
+  assert.ok(!exists(events));
 
+  fs.unlinkSync(marker); // This synthetic claim never attempted an append.
+  pruneLandFlows(home, now);
+  assert.deepEqual(fs.readFileSync(events, 'utf8').trimEnd().split('\n').map(line => JSON.parse(line).flow), [flowId]);
   assert.equal(exists(receiptFile), false);
   assert.equal(exists(join(flows, flowId)), false);
   assert.equal(exists(sidecarFile), false);
 
-  const member = join(home, 'archive', 'cold', '2030-02', `${flowId}.text.tar.zst`);
-  assert.ok(exists(member), 'standalone queue text member created');
   assert.equal(modeOf(member), 0o600);
   const entries = new Map(decodeTarZst(fs.readFileSync(member)).map((e) => [e.name, e.data]));
   assert.ok(entries.get(`${flowId}.json`)?.equals(receiptBytes));
@@ -420,7 +425,9 @@ test('archive write failure keeps source across all prune paths and repeated swe
   put(join(dir, 'report.md'), reportBytes);
 
   const flowId = 'q00000000000000f1';
-  const qFile = put(join(f.home, 'flows', `${flowId}.json`), JSON.stringify({ flow: flowId, state: 'completed', updated_at: ended }));
+  const qFile = put(join(f.home, 'flows', `${flowId}.json`), JSON.stringify({
+    flow: flowId, root: '/synthetic/project', feature: 'sample', state: 'completed', created_at: ended, updated_at: ended, tickets: [],
+  }));
   fs.utimesSync(qFile, endedMs / 1000, endedMs / 1000);
 
   const blocker = put(join(f.home, 'archive', 'cold'), 'blocking regular file');
@@ -437,6 +444,7 @@ test('archive write failure keeps source across all prune paths and repeated swe
   assert.ok(exists(join(dir, 'report.md')));
   assert.ok(exists(join(dir, 'stdout.jsonl')));
   assert.ok(exists(qFile), 'queue flow kept when cold archive fails');
+  assert.ok(!exists(join(f.home, 'events')), 'queue event waits for the cold archive');
   assert.match(f.log(), /keep j[0-9a-f]{16} cold archive:/);
 
   // 2) Remove blocker, simulate rmSync EBUSY on first sweep so a second sweep runs against existing archive members.

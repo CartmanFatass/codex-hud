@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { basename, dirname, join } from 'node:path';
 import test from 'node:test';
+import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { sonicState } from '../../dist/worker/sonic-jobs.js';
 import { fixture, hour } from '../helpers/job-retention-fixture.mjs';
 
@@ -64,6 +66,68 @@ test('later scans drop only clean raw logs after the configured or default windo
     assert.ok(!exists(dir));
     assert.ok(archive.some((row) => row.job === basename(dir)), dir);
   }
+});
+
+test('expired ticket queues archive only structured facts before unlinking and never append twice', (t) => {
+  const { home } = fixture(t);
+  const flow = 'q0000000000000001', worker = 'j0000000000000001';
+  const created_at = '2029-12-30T00:00:00.000Z', updated_at = '2029-12-31T00:00:00.000Z';
+  const project = join(home, 'synthetic-project'), feature = 'sample', state = 'completed';
+  const tickets = [{ ticket: 'sample/01', role: 'imp', job: worker, land: 'f0000000000000001', landed: true, round: 0 }];
+  const decisions = [{ step: 'tickets', kind: 'assumption', job: 'j0000000000000002', decision: 'continue',
+    at: created_at, ticket: 'sample/01', worker_job: worker }];
+  const reviews = [{ round: 0, job: 'j0000000000000003', findings: { blocker: 0, major: 1, minor: 2 },
+    reviewed: { base: 'a'.repeat(40), head: 'b'.repeat(40) } }];
+  const secret = 'Synthetic prose must not be archived';
+  const receipt = put(join(home, 'flows', `${flow}.json`), JSON.stringify({
+    flow, root: join(project, 'subdir'), project_root: project, feature, state, created_at, updated_at,
+    reason: secret, verdict: secret, todo: [{ text: secret }],
+    tickets: tickets.map(item => ({ ...item, path: secret, failed: { reason: secret } })),
+    decisions: decisions.map(item => ({ ...item, reason: secret, close_error: secret })),
+    reviews: reviews.map(item => ({ ...item, summary: secret, reviewed: { ...item.reviewed, summary: secret } })),
+  }));
+  fs.utimesSync(receipt, new Date(updated_at), new Date(updated_at));
+  const marker = `${receipt}.archived`;
+  const otherEvent = { v: 1, kind: 'objective' };
+  const other = put(join(home, 'other.jsonl'), JSON.stringify(otherEvent) + '\n');
+  const archive = join(home, 'events', '2029-12.jsonl');
+  fs.mkdirSync(dirname(archive));
+  fs.symlinkSync(other, archive);
+  pruneLandFlows(home, now);
+  assert.ok(exists(receipt), 'an append failure must keep the receipt');
+  assert.ok(!exists(marker), 'a known no-write failure permits a retry');
+  assert.equal(fs.readFileSync(other, 'utf8'), JSON.stringify(otherEvent) + '\n');
+  fs.unlinkSync(archive);
+  put(archive, JSON.stringify(otherEvent) + '\n');
+  fs.chmodSync(archive, 0o644);
+
+  const readEvents = () => fs.readFileSync(archive, 'utf8').trimEnd().split('\n').map(JSON.parse);
+  const expected = [otherEvent, { v: 1, kind: 'ticket_queue', flow, project, feature, state, created_at,
+    updated_at, repair_rounds: 0, tickets, decisions, reviews }];
+  let eventsBeforeUnlink;
+  const unlink = fs.unlinkSync;
+  const mock = t.mock.method(fs, 'unlinkSync', path => {
+    if (basename(path) !== basename(receipt)) return unlink(path);
+    eventsBeforeUnlink = readEvents();
+    throw Object.assign(new Error('Synthetic unlink failure'), { code: 'EACCES' });
+  });
+  syncBuiltinESMExports();
+  try {
+    pruneLandFlows(home, now);
+    assert.ok(exists(receipt));
+    assert.equal(fs.statSync(marker).mode & 0o777, 0o600);
+    assert.equal(fs.statSync(archive).mode & 0o777, 0o600);
+    assert.deepEqual(eventsBeforeUnlink, expected);
+    pruneLandFlows(home, now);
+    assert.deepEqual(readEvents(), expected);
+  } finally {
+    mock.mock.restore();
+    syncBuiltinESMExports();
+  }
+  pruneLandFlows(home, now);
+  assert.ok(!exists(receipt));
+  assert.ok(!exists(marker));
+  assert.deepEqual(readEvents(), expected);
 });
 
 test('scratch retention only prunes old top-level entries under registered, non-symlinked paths', async (t) => {

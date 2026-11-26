@@ -113,6 +113,61 @@ function sameInode(a: fs.Stats, b: fs.Stats | undefined): boolean {
   return a.dev === b?.dev && a.ino === b.ino;
 }
 
+function sameReceipt(path: string, stat: fs.Stats) {
+  const current = fs.lstatSync(path, { throwIfNoEntry: false });
+  return sameInode(stat, current) && stat.ctimeMs === current?.ctimeMs;
+}
+
+function archiveTicketQueue(home: string, path: string, stat: fs.Stats, q: TicketQueue, now: number): boolean {
+  const marker = `${path}.archived`;
+  let claim: number;
+  try { claim = fs.openSync(marker, 'wx', 0o600); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    const prior = fs.lstatSync(marker, { throwIfNoEntry: false });
+    return Boolean(prior?.isFile() && prior.size === 1); // Only a confirmed append permits unlinking.
+  }
+  let wrote = false;
+  try {
+    // A concurrent scan may have removed both the receipt and its marker since our read.
+    if (!sameReceipt(path, stat)) return false;
+    const line = Buffer.from(JSON.stringify({
+      v: 1, kind: 'ticket_queue', flow: q.flow, project: q.project_root ?? q.root, feature: q.feature,
+      state: q.state, created_at: q.created_at, updated_at: q.updated_at, repair_rounds: q.repair_rounds ?? 0,
+      tickets: q.tickets.map(({ ticket, role, job, land, landed, round }) => ({ ticket, role, job, land, landed, round })),
+      decisions: (q.decisions ?? []).map(({ step, kind, job, decision, at, ticket, worker_job }) =>
+        ({ step, kind, job, decision, at, ticket, worker_job })),
+      reviews: (q.reviews ?? []).map(({ round, job, findings, reviewed }) => ({ round, job,
+        findings: findings && { blocker: findings.blocker, major: findings.major, minor: findings.minor },
+        reviewed: reviewed && { base: reviewed.base, head: reviewed.head },
+      })),
+    }) + '\n');
+    const month = new Date(epoch(q.updated_at) ?? now).toISOString().slice(0, 7);
+    return inAbsoluteDir(home, hud => {
+      const events = join(hud, 'events');
+      fs.mkdirSync(events, { recursive: true, mode: 0o700 });
+      return inDirectory(events, dir => {
+        const { O_WRONLY, O_APPEND, O_CREAT, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
+        const fd = fs.openSync(join(dir, `${month}.jsonl`), O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0o600);
+        try {
+          if (!fs.fstatSync(fd).isFile()) return false;
+          fs.fchmodSync(fd, 0o600);
+          const written = fs.writeSync(fd, line);
+          wrote = written > 0;
+          if (written !== line.length) return false;
+          return fs.writeSync(claim, '1') === 1;
+        } finally { fs.closeSync(fd); }
+      });
+    });
+  } finally {
+    try { fs.closeSync(claim); }
+    finally {
+      // A known no-write failure can retry; an interrupted or partial append must leave the receipt intact.
+      if (!wrote) fs.unlinkSync(marker);
+    }
+  }
+}
+
 // Resume/retry can reactivate even a completed batch. Recheck expiration under its state lock.
 async function pruneExpiredWorkflow(home: string, id: string, cutoff: number) {
   const release = await tryAbstractLock('flow-state', `${home}\0${id}`);
@@ -167,13 +222,13 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
             const flowId = name.slice(0, -5);
             const path = join(dir, name), stat = fs.lstatSync(path);
             if (stat.isFile() && stat.mtimeMs < cutoff) {
-              // Terminal queue IDs are never reused. Archive to cold store before removing sidecars and workflow dir.
+              // Terminal queue IDs are never reused. Archive the full receipt and its facts before cleanup.
               const receipt = readJsonBounded(path, stat.size) as TicketQueue | null;
               if (!unattended.has(flowId) && !hasOpenHold(receipt) && (receipt?.state === 'completed' || receipt?.state === 'failed' ||
                   receipt?.state === 'cancelled' || (receipt?.state === 'paused' && 'unattended' in receipt))) {
                 const entries: TarEntry[] = [];
                 const receiptRead = readPinnedRegular(path);
-                if (!receiptRead) continue;
+                if (!receiptRead || !sameInode(stat, receiptRead.stat) || stat.ctimeMs !== receiptRead.stat.ctimeMs) continue;
                 entries.push({ name, data: receiptRead.data, mode: 0o600, mtime: Math.floor(receiptRead.stat.mtimeMs / 1000) });
                 const sidecarSuffixes = ['cancel', 'noticed', 'observed'] as const;
                 for (const suffix of sidecarSuffixes) {
@@ -196,6 +251,7 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
                 }
                 const ts = epoch(receipt?.updated_at) ?? epoch(receipt?.created_at) ?? stat.mtimeMs;
                 archiveFlowCold(home, flowId, entries, ts);
+                if (!archiveTicketQueue(home, path, stat, receipt, now) || !sameReceipt(path, stat)) continue;
                 if (subFiles !== null) {
                   let cleaned = false;
                   inDirectory(sub, run => {
@@ -206,11 +262,13 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
                   });
                   if (cleaned) fs.rmdirSync(sub);
                 }
+                if (!sameReceipt(path, stat)) continue;
                 fs.unlinkSync(path);
+                fs.rmSync(`${path}.archived`, { force: true });
                 for (const suffix of sidecarSuffixes) fs.rmSync(`${path}.${suffix}`, { force: true });
               }
             }
-          } catch { /* Missing, unreadable queue receipt or cold archive failure: leave it alone. */ }
+          } catch { /* Missing or unreadable queue receipt, or archive failure: leave it alone. */ }
           continue;
         }
         const match = /^f([a-f0-9]{16})(?:-[1-9]\d*)?(?:\.json(?:\.(?:cancel|noticed|observed|gate-[1-9]\d*(?:-rerun)?\.log))?)?$/.exec(name);

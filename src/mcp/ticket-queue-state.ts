@@ -31,7 +31,7 @@ export interface RunTodoItem {
 }
 export interface RunDecision {
   step: string; kind: 'question' | 'accept' | 'ambiguity' | 'assumption' | 'blocker'; job: string; decision: string; reason?: string; at: string;
-  ticket?: string; question?: string; close_error?: string;
+  ticket?: string; worker_job?: string; question?: string; close_error?: string;
 }
 export interface ActiveLead {
   job: string; kind: 'question' | 'accept' | 'ambiguity' | 'assumption' | 'blocker'; step: string; round: number;
@@ -50,6 +50,8 @@ export interface ReviewRecord {
 }
 export interface TicketQueueItem {
   ticket: string; path: string; role: 'imp' | 'frontend-imp'; job?: string; land?: string; landed?: true; base_moves?: number;
+  /** Repair round at admission (0 for the initial round; absent on legacy records). */
+  round?: number;
   /** Declared dependency refs recorded at admission (empty array = root; absent on legacy records). */
   blockers?: string[];
   /** ISO timestamp when this ticket landed. */

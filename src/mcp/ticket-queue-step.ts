@@ -69,12 +69,24 @@ function assumptionTrigger(assumed: string[], scopeAssumptions: string[]) {
   if (assumed.length > 3) return `report has ${assumed.length} Assumed: lines (limit 3)`;
 }
 
-function verifiedSourceHead(job: Job) {
-  const res = job.worktree && spawnSync('git', [...SAFE_GIT_ARGS, 'rev-parse', '--verify', 'HEAD'], {
-    cwd: job.worktree.root, env: safeGitEnv(process.env), encoding: 'utf8', timeout: 5000,
+const commitSha = /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/;
+function resolveCommit(cwd: string, ref: string) {
+  const res = spawnSync('git', [...SAFE_GIT_ARGS, 'rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], {
+    cwd, env: safeGitEnv(process.env), encoding: 'utf8', timeout: 5000,
   });
-  const head = res?.status === 0 ? res.stdout?.trim() : undefined;
-  return head && /^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(head) ? head : undefined;
+  const sha = res.status === 0 ? res.stdout?.trim() : undefined;
+  return sha && commitSha.test(sha) ? sha : undefined;
+}
+
+function verifiedSourceHead(job: Job) {
+  return job.worktree && resolveCommit(job.worktree.root, 'HEAD');
+}
+
+function milestoneReviewRange(q: TicketQueue): Job['reviewed'] {
+  if (!q.start_head || !commitSha.test(q.start_head)) return;
+  const base = resolveCommit(q.root, q.start_head);
+  const head = base && resolveCommit(q.root, 'HEAD');
+  if (base && head) return { base, head };
 }
 
 type SettlementVerdict = { assumed?: string[]; tries?: string[] } & (
@@ -370,7 +382,7 @@ function tickPendingAnswer(q: TicketQueue, state: { problem?: TicketProblem }): 
       if (delivery.ok) {
         const at = new Date().toISOString();
         recordDecision(cur, {
-          step: pending.step, kind: 'question', job: pending.lead_job,
+          step: pending.step, kind: 'question', job: pending.lead_job, worker_job: pending.worker_job,
           decision: 'answer', at,
           ...(pending.ticket && { ticket: pending.ticket }),
           question: pending.question,
@@ -392,7 +404,7 @@ function tickPendingAnswer(q: TicketQueue, state: { problem?: TicketProblem }): 
       }
       const why = `question ${pending.question} answer delivery failed (${delivery.reason})`;
       recordDecision(cur, {
-        step: pending.step, kind: 'question', job: pending.lead_job,
+        step: pending.step, kind: 'question', job: pending.lead_job, worker_job: pending.worker_job,
         decision: 'delivery_failed', reason: why, at: new Date().toISOString(),
         ...(pending.ticket && { ticket: pending.ticket }),
         question: pending.question,
@@ -502,7 +514,7 @@ function tickQuestionLead(q: TicketQueue, state: { problem?: TicketProblem }): T
           if (!cur || cur.state !== 'working') return;
           recordUnclosedLead(cur, leadJob.job, closeRes.reason ?? 'close refused');
           recordDecision(cur, {
-            step: active.step, kind: 'question', job: leadJob.job,
+            step: active.step, kind: 'question', job: leadJob.job, worker_job: active.worker_job,
             decision: parsed.decision ?? 'invalid',
             ...(parsed.reason && { reason: parsed.reason }),
             close_error: closeRes.reason ?? 'close refused',
@@ -536,7 +548,7 @@ function tickQuestionLead(q: TicketQueue, state: { problem?: TicketProblem }): T
         if (delivery?.ok) {
           const at = new Date().toISOString();
           recordDecision(cur, {
-            step: active.step, kind: 'question', job: leadJob.job,
+            step: active.step, kind: 'question', job: leadJob.job, worker_job: active.worker_job,
             decision: 'answer',
             ...(parsed.reason && { reason: parsed.reason }),
             at,
@@ -559,7 +571,7 @@ function tickQuestionLead(q: TicketQueue, state: { problem?: TicketProblem }): T
           } else {
             const why = `question ${active.question} answer delivery failed (${delivery.reason})`;
             recordDecision(cur, {
-              step: active.step, kind: 'question', job: leadJob.job,
+              step: active.step, kind: 'question', job: leadJob.job, worker_job: active.worker_job,
               decision: 'delivery_failed', reason: why, at: new Date().toISOString(),
               ...(active.ticket && { ticket: active.ticket }),
               ...(active.question && { question: active.question }),
@@ -568,7 +580,7 @@ function tickQuestionLead(q: TicketQueue, state: { problem?: TicketProblem }): T
           }
         } else {
           recordDecision(cur, {
-            step: active.step, kind: 'question', job: leadJob.job,
+            step: active.step, kind: 'question', job: leadJob.job, worker_job: active.worker_job,
             decision: parsed.decision ?? 'invalid',
             ...(parsed.reason && { reason: parsed.reason }),
             at: new Date().toISOString(),
@@ -737,7 +749,7 @@ function tickAmbiguityLead(q: TicketQueue, state: { problem?: TicketProblem }): 
         if (!closeRes.ok) recordUnclosedLead(cur, leadJob.job, closeRes.reason ?? 'close refused');
         appendTodos(cur, parsed.todos.map(text => ({ source: `lead (${leadJob.job})`, kind: 'lead' as const, text })));
         recordDecision(cur, {
-          step: active.step, kind: 'ambiguity', job: leadJob.job,
+          step: active.step, kind: 'ambiguity', job: leadJob.job, worker_job: active.worker_job,
           decision: parsed.decision ?? 'invalid',
           ...(parsed.reason && { reason: parsed.reason }),
           ...(!closeRes.ok && { close_error: closeRes.reason ?? 'close refused' }),
@@ -899,7 +911,7 @@ function tickAssumptionLead(q: TicketQueue, state: { problem?: TicketProblem }):
         if (!closeRes.ok) recordUnclosedLead(cur, leadJob.job, closeRes.reason ?? 'close refused');
         appendTodos(cur, parsed.todos.map(text => ({ source: `lead (${leadJob.job})`, kind: 'lead' as const, text })));
         recordDecision(cur, {
-          step: active.step, kind, job: leadJob.job,
+          step: active.step, kind, job: leadJob.job, worker_job: active.worker_job,
           decision: parsed.decision ?? 'invalid',
           ...(parsed.reason && { reason: parsed.reason }),
           ...(!closeRes.ok && { close_error: closeRes.reason ?? 'close refused' }),
@@ -1263,9 +1275,10 @@ function tickTicketQueue(
   }
   if (next.length) {
     const { ticket, path, role, blockers } = next[0];
+    const round = q.repair_rounds ?? 0;
     if (next.some((entry, i) => i > 0 && entry.ticket === ticket)) {
       if (q.unattended) {
-        const dup: TicketQueueItem = { ticket, path, role: 'imp', blockers: blockers ? [...blockers] : [] };
+        const dup: TicketQueueItem = { ticket, path, role: 'imp', round, blockers: blockers ? [...blockers] : [] };
         failItem(dup, `${ticket}: ambiguous ticket number`, 'queue');
         q.tickets.push(dup);
         return { state: 'running', changed: true };
@@ -1273,7 +1286,7 @@ function tickTicketQueue(
       state.problem = { kind: 'queue', ticket, reason: `${ticket}: ambiguous ticket number` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
-    item = { ticket, path, role, blockers: blockers ? [...blockers] : [] };
+    item = { ticket, path, role, round, blockers: blockers ? [...blockers] : [] };
     q.tickets.push(item); // Intent committed by the driver before dispatch so the request key is recoverable.
     changed = true;
   }
@@ -1431,11 +1444,12 @@ function tickJobStep(
       const meta = readReportMeta(dir, sig);
       const reviews = q.reviews ?? [];
       if (!reviews.some(r => r.job === job.job)) {
+        const reviewed = job.reviewed ?? milestoneReviewRange(q);
         reviews.push({
           round, job: job.job,
           ...(meta?.summary && { summary: meta.summary }),
           ...(job.findings && { findings: job.findings }),
-          ...(job.reviewed && { reviewed: job.reviewed }),
+          ...(reviewed && { reviewed }),
         });
         q.reviews = reviews;
       }

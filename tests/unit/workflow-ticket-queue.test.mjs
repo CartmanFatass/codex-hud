@@ -108,6 +108,7 @@ test('ticket queue keeps going after origin MCP and pane exit; lead opens in pro
   assert.equal(initial.host, 'detached');
   assert.equal(initial.workspace, 'w4E');
   assert.equal(initial.steps.tickets.state, 'running');
+  assert.equal(initial.tickets[0].round, 0);
   assert.equal(f.job(first).workflow, flow);
   assert.equal(f.job(first).ticket_queue, flow);
   assert.equal(fs.statSync(join(f.home, 'flows', flow, 'graph.json')).mode & 0o777, 0o600);
@@ -132,9 +133,13 @@ test('ticket queue keeps going after origin MCP and pane exit; lead opens in pro
   const reviewJob = f.flow(flow).review_job;
   assert.equal(f.job(reviewJob).role, 'reviewer');
   assert.equal(f.job(reviewJob).herdr_pane, undefined);
+  assert.equal(f.job(reviewJob).reviewed, undefined);
+  const reviewHead = f.git(f.root, 'rev-parse', 'HEAD');
+  assert.notEqual(reviewHead, initial.start_head);
   await f.settleReview(reviewJob);
 
   await until(() => f.flow(flow).active_lead?.kind === 'accept', 15_000);
+  assert.deepEqual(f.flow(flow).reviews[0].reviewed, { base: initial.start_head, head: reviewHead });
   const leadId = f.flow(flow).active_lead.job;
   const leadReceipt = f.job(leadId);
   assert.equal(leadReceipt.role, 'lead');
@@ -650,6 +655,7 @@ test('unattended repair admits repair tickets inside the same run, bounded to 2 
     if (round < 2) {
       const repairTicket = `sample/0${round + 4}`;
       const rw = await u.ticketJob(flow, repairTicket);
+      assert.equal(f.flow(flow).tickets.find(x => x.job === rw).round, round + 1);
       await f.settle(rw);
     }
   }
@@ -730,13 +736,14 @@ test('retention prunes expired terminal receipts and pins open held item job and
   const flows = join(home, 'flows'), dir = join(flows, flow), receipt = join(flows, `${flow}.json`);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(join(dir, 'graph.json'), JSON.stringify({ version: 1, name: 'ticket-queue' }));
-  fs.writeFileSync(receipt, JSON.stringify({ flow, state: 'completed' }));
+  const at = new Date().toISOString();
+  fs.writeFileSync(receipt, JSON.stringify({ flow, root: home, feature: 'sample', created_at: at, updated_at: at, state: 'completed', tickets: [] }));
   fs.writeFileSync(`${receipt}.noticed`, '');
   const ticketFile = join(home, '01-held.md');
   fs.writeFileSync(ticketFile, goodTicket(1));
   const heldReceipt = join(flows, `${heldFlow}.json`);
   fs.writeFileSync(heldReceipt, JSON.stringify({
-    flow: heldFlow, root: home, feature: 'selected', state: 'completed',
+    flow: heldFlow, root: home, feature: 'selected', created_at: at, updated_at: at, state: 'completed',
     unattended: { objective: 'selected' },
     tickets: [{ ticket: 'sample/01', path: ticketFile, role: 'imp', job: 'j0000000000000001', held: { reason: 'spec change', at: new Date().toISOString() } }],
   }));
@@ -744,6 +751,8 @@ test('retention prunes expired terminal receipts and pins open held item job and
   const old = new Date(Date.now() - 48 * 3600_000);
   fs.utimesSync(receipt, old, old);
   fs.utimesSync(heldReceipt, old, old);
+  const archived = () => fs.readFileSync(join(home, 'events', `${at.slice(0, 7)}.jsonl`), 'utf8')
+    .trimEnd().split('\n').map(line => JSON.parse(line).flow);
 
   // While the hold is open, its source job is pinned and pruneLandFlows keeps the held receipt.
   assert.ok(pinnedQueueJobs(home).held.has('j0000000000000001'));
@@ -752,6 +761,7 @@ test('retention prunes expired terminal receipts and pins open held item job and
   assert.equal(fs.existsSync(`${receipt}.noticed`), false);
   assert.equal(fs.existsSync(dir), false);
   assert.equal(fs.existsSync(heldReceipt), true);
+  assert.deepEqual(archived(), [flow]);
 
   // Once the ticket is closed (wontfix), hold clears -> job is unpinned and unindexed receipt can be pruned.
   fs.writeFileSync(ticketFile, goodTicket(1, { status: 'wontfix' }));
@@ -759,6 +769,7 @@ test('retention prunes expired terminal receipts and pins open held item job and
   fs.writeFileSync(join(home, 'unattended-runs.json'), JSON.stringify([]));
   pruneLandFlows(home, Date.now());
   assert.equal(fs.existsSync(heldReceipt), false);
+  assert.deepEqual(archived(), [flow, heldFlow]);
 });
 
 test('unattended scope and >3 assumptions go to a temporary lead: continue lands, deletion/spec hold becomes owner hold, non-deletion hold becomes repair', { timeout: 60_000 }, async t => {
@@ -789,6 +800,7 @@ test('unattended scope and >3 assumptions go to a temporary lead: continue lands
   await f.settleLead(lead1, 'Decision: continue\nReason: Wording change within current spec, no deletion.\n');
   await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.landed === true, 15_000);
   assert.ok(f.job(lead1).reaped_at, 'assumption lead closed immediately after decision');
+  assert.equal(f.flow(flow).decisions.find(d => d.job === lead1)?.worker_job, w1);
 
   // 2. Scope-tagged assumption -> temporary lead -> Decision: hold naming deletion -> owner hold!
   await f.settle(w2, {
