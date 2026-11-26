@@ -1,6 +1,6 @@
 # 23: Fork: right-edge non-modal dock (overlay and push, single-instance server toggle)
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Live try:** after install, `herdr dock toggle -- /usr/bin/env sh -c cat` opens a right-edge overlay without resizing the focused pane and a second call closes it
 **Blocked by:** 21

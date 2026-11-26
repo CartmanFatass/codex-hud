@@ -1,6 +1,6 @@
 # 20: Fork: the sidebar state slot draws a pane's icon token in the state colour
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** yes
 **Blocked by:** none
 **Objective:** herdr-fork

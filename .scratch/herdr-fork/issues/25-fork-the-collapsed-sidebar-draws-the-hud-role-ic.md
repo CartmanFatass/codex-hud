@@ -1,6 +1,6 @@
 # 25: Fork: the collapsed sidebar draws the HUD role icon too
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** yes
 **Live try:** after install, collapse the herdr sidebar with workers running: each worker row shows its role icon in the state colour
 **Blocked by:** none

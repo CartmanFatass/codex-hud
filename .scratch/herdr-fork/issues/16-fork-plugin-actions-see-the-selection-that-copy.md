@@ -1,6 +1,6 @@
 # 16: Fork: plugin actions see the selection that copy-on-select just copied
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** yes
 **Blocked by:** none
 **Objective:** herdr-fork

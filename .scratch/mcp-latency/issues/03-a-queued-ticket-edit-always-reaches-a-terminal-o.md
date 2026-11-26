@@ -1,6 +1,6 @@
 # 03: A queued ticket edit always reaches a terminal outcome even when its drain helper fails
 
-**Status:** done
+**Status:** wontfix
 **Live try:** While a hud_land of a MyHUD job runs, call hud_tickets add for a scratch feature in a temp project and kill the spawned `workflow-runner --ticket-edits` helper; after the land finishes, without another submission, hud_read on the receipt shows completed (ticket file and commit present) or failed with a reason, never stuck queued
 **Blocked by:** 02
 **Objective:** unattended
