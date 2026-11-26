@@ -313,7 +313,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
         if (client.state !== state) push(client, state);
       }
     }, 20);
-    cleanups.push(async () => {
+    // Keep Herdr available until MCP exits: a tool reply does not wait for sidebar metadata.
+    cleanups.unshift(async () => {
       clearInterval(simulation);
       for (const proc of agents) proc.kill('SIGKILL');
       for (const socket of sockets) socket.destroy();

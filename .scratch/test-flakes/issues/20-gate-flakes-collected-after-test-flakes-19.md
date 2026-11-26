@@ -1,6 +1,6 @@
 # 20: Gate flakes collected after test-flakes/19
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Live try:** none
 **Blocked by:** none
@@ -14,7 +14,9 @@
 - `MCP tasks: batch responses deliver per-job compact notices with check-wait, changes fallback and disconnect fallback` (tests/unit/thin-mcp-batch.test.mjs) — flow `f698c9aad9433b9d8`, log `~/.hud/flows/f698c9aad9433b9d8.json.gate-2.log`
 - `the MCP entry, dispatch and worker modules resolve and share job receipts` (tests/unit/mcp-internals.test.mjs) — flow `f698c9aad9433b9d8`, log `~/.hud/flows/f698c9aad9433b9d8.json.gate-2.log`
 
-- [ ] Each listed case passes 20 consecutive runs under parallel load
-- [ ] No assertion or product bound weakened
+- [x] Each listed case passes 20 consecutive runs under parallel load
+- [x] No assertion or product bound weakened
 
 ## Comments
+
+- Landed in this commit (replay base ddbeb06b20e539cd33e1033e8ca08b9becfcf66b); gate 5/5 passed.
