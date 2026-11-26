@@ -12,12 +12,12 @@ import { runDetailRows } from './execution-run-detail.js';
 import { executionRows } from './execution-view.js';
 import { workflowDetailRows } from './execution-workflow.js';
 import { findMetroStation, renderMetroLegend } from './execution-metro.js';
-import { activeFilter, type RowNav } from './monitor-state.js';
+import { activeFilter, missingObjectiveTarget, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
 import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { projectHeaderRows, projectLinks } from './inbox-project.js';
 import { PROJECT_STRIP_MORE, projectStripRow } from './project-strip.js';
-import { isRequestMoreItem, requestAreaRows, type ScopedRequest } from './request-area.js';
+import { isRequestMoreItem, requestAreaRows, requestsAreaExpanded, type ScopedRequest } from './request-area.js';
 import { boardCursor, boardRow, section, kvRows, subTopRow, footRow, footerLayout, mark, type FooterHints } from './workboard-rows.js';
 import { modelInput, pickOf } from './model-input.js';
 import { theme, visualLength } from './colors.js';
@@ -221,9 +221,7 @@ export function renderWorkboardFrame(
   };
   const showHomeRequests = home;
   const showProjectRequests = (project && !list && page !== 'waiting') || Boolean(objective) || Boolean(feat);
-  const requestsExpanded = showHomeRequests || ((Boolean(objective) || Boolean(feat)) && state.activeTab === 'home')
-    ? Boolean(state.home.requestsExpanded)
-    : state.project.folded.has('waiting:more');
+  const requestsExpanded = requestsAreaExpanded(state);
   const scopedRequests: ScopedRequest[] = showHomeRequests
     ? (input.homePortfolio
       ? input.homePortfolio.requests.map((r) => ({
@@ -290,7 +288,7 @@ export function renderWorkboardFrame(
       ?? objPortfolio?.name
       ?? (!objRoot || !input.projectDisplayRoot || input.projectDisplayRoot === objRoot ? input.projectName : undefined)
     : undefined;
-  const objResultAt = objDetail
+  const objResultAt = objDetail && !objDetail.target.unavailable
     ? objProject?.objectives?.resultDates?.[objDetail.target.objective.id]
       ?? objPortfolio?.resultDates?.get(objDetail.target.objective.id)
     : undefined;
@@ -314,7 +312,7 @@ export function renderWorkboardFrame(
     const found = snap?.objectives?.objectives.find((o) => o.id === worker.objective!.id);
     return found
       ? { root, objective: found, blocked: found.state !== 'done' && blockedObjectives(snap!.waiting).has(found.id) }
-      : { root, objective: { id: worker.objective.id, title: worker.objective.title, state: 'active' as const, features: [], evidence: [] }, blocked: false };
+      : missingObjectiveTarget(root, worker.objective);
   })();
   const activeRun = runDetail ? input.execution?.runs?.find((r) => r.flow === runDetail.flow) : undefined;
   const crumb = help ? t('Help') : objective ? t('Objective') : runDetail ? `${t('Run')} · ${monitorText(activeRun ? `${activeRun.label} ${activeRun.flow.slice(0, 8)}` : runDetail.flow.slice(0, 8))}` : native ? t('Native subagents') : jobs ? t('Jobs')
@@ -555,7 +553,7 @@ export function renderWorkboardFrame(
         : project ? (page === 'waiting' ? ['o file', 'Esc back']
           : cursor === ACCEPT_ALL ? ['⏎ accept all', 'Esc back']
           : selectedReq && page ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open', 'Esc back']
-          : page === 'tickets' ? ['⏎ details', 'Esc back', 'o file']
+          : page === 'tickets' ? [...(selected?.featureTarget ? ['⏎ open'] : selected ? ['⏎ details'] : []), 'Esc back', ...(selected?.files ? ['o file'] : [])]
           : page || list ? ['⏎ open', 'Esc back']
           : [...(isRequestMoreItem(selectedReq?.item) ? [reqFoldHint] : selected?.objectiveTarget ? ['⏎ details'] : cursor?.startsWith('project:fold:')
             ? [state.project.folded.has(cursor.slice(13)) ? '⏎ fold' : '⏎ expand'] : cursor ? ['⏎ open'] : []),

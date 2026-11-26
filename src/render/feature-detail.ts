@@ -40,6 +40,36 @@ export function findProjectFeature(project: ProjectSnapshot | undefined, slug: s
     ?? project?.unlinked?.find((f) => f.slug === slug);
 }
 
+const MIN_ANCESTOR = 4;
+
+/** Keep the feature slug intact within `width - 2`; shorten or omit ancestors first. */
+function fitFeatureCrumb(ancestors: readonly string[], slugLabel: string, sep: string, width: number): string {
+  const maxCrumb = Math.max(0, width - 2);
+  const sepWidth = visualLength(sep);
+  const ancestorRoom = maxCrumb - visualLength(slugLabel);
+  let kept = [...ancestors];
+  if (kept.length === 2) {
+    const textRoom = ancestorRoom - 2 * sepWidth;
+    if (textRoom < 2 * MIN_ANCESTOR) {
+      kept = kept.slice(1);
+    } else {
+      let a = visualLength(kept[0]!), b = visualLength(kept[1]!);
+      while (a + b > textRoom) {
+        if (a >= b && a > MIN_ANCESTOR) a--;
+        else if (b > MIN_ANCESTOR) b--;
+        else break;
+      }
+      kept = [truncateAnsi(kept[0]!, a), truncateAnsi(kept[1]!, b)];
+    }
+  }
+  if (kept.length === 1) {
+    const textRoom = ancestorRoom - sepWidth;
+    if (textRoom < MIN_ANCESTOR) kept = [];
+    else kept = [truncateAnsi(kept[0]!, textRoom)];
+  }
+  return [...kept, slugLabel].join(sep);
+}
+
 /** Crumb ending in the feature slug; the project name leaves below 56 columns. */
 export function featureCrumb(
   detail: FeatureDetail,
@@ -52,10 +82,11 @@ export function featureCrumb(
   const slugLabel = monitorText(slug);
   const objLabel = objectiveId ? monitorText(objectiveId) : '';
   const projLabel = truncateAnsi(monitorText(projectName || basename(root) || t('Project')), 16);
-  const parts = width >= 56
-    ? [projLabel, ...(objLabel ? [objLabel] : []), slugLabel]
-    : [...(objLabel ? [objLabel] : []), slugLabel];
-  const crumb = parts.join(sep);
+  const ancestors = [
+    ...(width >= 56 ? [projLabel] : []),
+    ...(objLabel ? [objLabel] : []),
+  ];
+  const crumb = fitFeatureCrumb(ancestors, slugLabel, sep, width);
 
   const feature = findProjectFeature(project, slug);
   const ratio = feature ? ticketProgressText(linkedTicketProgress(new Map([[feature.slug, feature]]), [feature.slug])) : '';

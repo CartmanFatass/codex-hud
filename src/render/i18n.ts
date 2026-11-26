@@ -800,6 +800,7 @@ const ZH: Record<string, string> = {
   'Needs you': '需要你处理',
   Objectives: '目标',
   Objective: '目标',
+  'Current record unavailable': '当前目标记录不可用',
   active: '进行中',
   Result: '结果',
   'Some objectives could not be read': '部分目标无法读取',

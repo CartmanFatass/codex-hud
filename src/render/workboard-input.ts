@@ -6,7 +6,7 @@ import { backFromSubpage, CONTROL_VIEWS, copyControlTab, controlRoleItem, contro
 import { monitorRowAt } from './monitor-input.js';
 import { ACCEPT_ALL, projectPageOf, projectListOpen } from './project-view.js';
 import { PROJECT_STRIP_MORE } from './project-strip.js';
-import { isRequestMoreItem } from './request-area.js';
+import { isRequestMoreItem, REQUEST_FOLD, usesHomeRequestsFold } from './request-area.js';
 import type { RoleFact } from '../roles/role-control.js';
 import { openQuickModel, roleModelIndex } from './chain-input.js';
 import { openBatchAction, openJobAction } from './job-actions.js';
@@ -416,17 +416,17 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     return result();
   };
   const toggleRequestsMore = (item: string) => {
-    if ((objective || feature) && next.activeTab === 'project') {
-      const folded = new Set(next.project.folded);
-      if (!folded.delete('waiting:more')) folded.add('waiting:more');
-      next.project = { ...next.project, folded };
-      next.subpage = { ...sub!, cursor: item, revealed: undefined };
-    } else {
+    if (usesHomeRequestsFold(next)) {
       next.home = {
         ...frame.state.home,
         requestsExpanded: !frame.state.home.requestsExpanded,
-        ...(!sub ? { cursor: item, revealed: undefined } : {}),
+        cursor: item,
+        revealed: undefined,
       };
+    } else {
+      const folded = new Set(next.project.folded);
+      if (!folded.delete(REQUEST_FOLD)) folded.add(REQUEST_FOLD);
+      next.project = { ...next.project, folded };
       if (objective || feature) next.subpage = { ...sub!, cursor: item, revealed: undefined };
     }
     return result();

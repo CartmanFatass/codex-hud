@@ -569,4 +569,42 @@ test('Objective page: crumb, prose with result age, features in every activity s
     assert.equal(backToExec.subpage, undefined);
     assert.equal(backToExec.activeTab, 'execution');
   }
+
+  // 4. Inspector Objective whose current record is missing shows id/title and unavailable note (not active or empty Features/Evidence), in EN and ZH.
+  const workerMissingObj = {
+    ...baseWorker,
+    projectRoot: f.cwd,
+    objective: { id: 'retired-goal', title: 'Retired synthetic objective from receipt' },
+  };
+  const boardMissingObj = {
+    ...f.board,
+    lanes: f.board.lanes.map((l) => l.id === baseWorker.laneId ? { ...l, workers: l.workers.map((w) => w.id === baseWorker.id ? workerMissingObj : w) } : l),
+    workers: f.board.workers.map((w) => w.id === baseWorker.id ? workerMissingObj : w),
+  };
+  for (const lang of ['en', 'zh']) for (const width of [40, 62]) {
+    const drawMissing = (state, themeName = 'none') => f.render(width, lang, state, 14, data, true, 'unicode', themeName, {
+      workboard: boardMissingObj,
+      projectDisplayRoot: f.cwd,
+      projectName: 'orchard',
+      projects: choices,
+      projectActivity,
+    });
+    const inspMissing = drawMissing(inspectorState);
+    const fact = inspMissing.workboard.rows.find((r) => r.item === 'inspector:objective');
+    assert.equal(fact?.objectiveTarget?.unavailable, true);
+    assert.equal(fact?.objectiveTarget?.objective.id, 'retired-goal');
+    assert.equal(fact?.objectiveTarget?.objective.title, 'Retired synthetic objective from receipt');
+    assert.equal('state' in fact.objectiveTarget.objective, false);
+
+    const openedMissing = key(inspMissing, 'enter');
+    assert.equal(openedMissing.state.subpage?.kind, 'objective');
+    const missingFrame = drawMissing(openedMissing.state);
+    assert.ok(missingFrame.lines.every((line) => visualLength(line) === width && !line.includes('\x1b')));
+    const lines = plain(missingFrame);
+    const text = lines.join('\n');
+    assert.match(lines[0], /^‹ orchard › retired-goal\s*$/);
+    assert.match(text, /Retired synthetic objective/);
+    assert.match(text, lang === 'zh' ? /当前目标记录不可用/ : /Current record unavailable/);
+    assert.doesNotMatch(text, lang === 'zh' ? /进行中|功能 ─|依据 ─/ : /\bactive\b|Features ─|Evidence ─/);
+  }
 });

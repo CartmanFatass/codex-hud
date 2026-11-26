@@ -173,7 +173,7 @@ console.log(JSON.stringify({result: operation === 'pane get' ? {pane: {workspace
   const ticketRow = (frame) => frame.workboard.rows.find((r) => r.files?.[0] === f.paths.working);
   let frame = f.render(80, 'en', featurePage());
   assert.doesNotMatch(plain(frame).join('\n'), /Criterion|first criterion landed/, 'a ticket starts closed');
-  frame.state.project.nav.cursor = ticketRow(frame).item;
+  frame = f.render(80, 'en', { ...frame.state, project: { ...frame.state.project, nav: { ...frame.state.project.nav, cursor: ticketRow(frame).item } } });
   const before = plain(frame);
   const opened = send(frame, '\r');
   assert.equal(opened.action, undefined, 'Enter shows the ticket here; it does not open an editor');

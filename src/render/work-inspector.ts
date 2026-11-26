@@ -4,7 +4,7 @@ import type { OwnerWorker } from '../collectors/workboard-types.js';
 import { projectWorkJob } from '../collectors/work-job.js';
 import type { SubagentTree } from '../types.js';
 import type { MonitorRow } from './monitor.js';
-import type { ObjectiveTarget } from './monitor-state.js';
+import { missingObjectiveTarget, type ObjectiveTarget } from './monitor-state.js';
 import { flowSummary, jobDetailRows, requestLines, stemLines, workPhaseText, quietDecisionSummary } from './work-job-detail.js';
 import { failed, renderJobRow } from './work-job-row.js';
 import { jobRows } from './work-jobs.js';
@@ -145,11 +145,7 @@ export function workInspectorRows(
               `${worker.objective.id} · ${worker.objective.title}`,
               {
                 item: 'inspector:objective',
-                objectiveTarget: objectiveTarget ?? {
-                  root: worker.projectRoot ?? '',
-                  objective: { id: worker.objective.id, title: worker.objective.title, state: 'active', features: [], evidence: [] },
-                  blocked: false,
-                },
+                objectiveTarget: objectiveTarget ?? missingObjectiveTarget(worker.projectRoot ?? '', worker.objective),
               },
             ]
           : ['Objective', ''],

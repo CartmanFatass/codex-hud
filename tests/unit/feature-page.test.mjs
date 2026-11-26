@@ -355,6 +355,8 @@ test('Feature page: ticket states, completion order, status fitting, Inspector/i
 
     // 7. Entry from Tickets page (`t`) -> Feature page, and Esc returns to Tickets page at exact feature row.
     const ticketsFrame = draw(onPage('tickets', { project: { nav: { cursor: 'project:fold:feature:nav-redesign' } } }), 24);
+    assert.match(plain(ticketsFrame).at(-1), zh ? /⏎ 打开/ : /⏎ open/);
+    assert.doesNotMatch(plain(ticketsFrame).at(-1), zh ? /o 文件/ : /o file/);
     const fromTickets = key(ticketsFrame, 'enter');
     assert.equal(fromTickets.state.subpage?.kind, 'feature');
     assert.equal(fromTickets.state.subpage?.target.slug, 'nav-redesign');
@@ -364,6 +366,29 @@ test('Feature page: ticket states, completion order, status fitting, Inspector/i
     assert.equal(backTickets.state.subpage, undefined);
     assert.equal(backTickets.state.project.view.kind, 'tickets');
     assert.equal(backTickets.state.project.nav.cursor, 'project:fold:feature:nav-redesign');
+  }
+
+  // 8. A Feature crumb with a long Objective id keeps the full slug visible at 40 and 62 columns.
+  for (const [slug, width] of [
+    ['nav-redesign', 40],
+    ['nav-redesign', 62],
+    ['very-long-feature-slug-thirty-two', 40],
+  ]) {
+    const featWithLongObj = f.render(width, 'en', {
+      ...onPage(),
+      subpage: {
+        kind: 'feature',
+        target: { root: f.cwd, slug, objectiveId: 'very-long-objective-identifier-that-would-clip-the-slug' },
+        scroll: 0,
+      },
+    }, 16, { ...data, waiting: [] }, true, 'unicode', 'none', {
+      projectDisplayRoot: f.cwd,
+      projectName: 'orchard',
+      projects: choices,
+    });
+    assert.ok(featWithLongObj.lines.every((line) => visualLength(line) === width && !line.includes('\x1b')));
+    const crumbLine = plain(featWithLongObj)[0];
+    assert.ok(crumbLine.includes(slug), `width ${width} keeps full slug "${slug}" in "${crumbLine}"`);
   }
 });
 

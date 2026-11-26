@@ -898,13 +898,9 @@ Working jobs and managed worktrees are linked at read time, never written back t
 Ticket claims use a bounded lookup of the newest 64 top-level jobs and up to 64 of their children. The Objective activity notes reuse Execution's bounded recent job and run evidence.
 **Tickets page**: one row per `.scratch` feature, with resolved/total (including dropped tickets as resolved) and the oldest open ticket's status.
 **Accept all** appears here when there are pending tries. Select it and press Enter (or click the selected row) to accept all observed pending tickets in the displayed project in one `$HUD_HOME/tries.jsonl` record. If the read is partial, only the tickets found are included. The action does not write to project files; `hud watch` and MCP `changes` receive one line. Old records remain readable.
-Open a feature to see its tickets in lanes by state, one row each (`◐ hp 06 Projects list  imp 12m  1/3`: state mark, the feature's code, number and title; on the right what matters for the lane, then checked/total).
-**For you** comes first: tickets waiting on a person (`needs-triage`, `needs-info`, `ready-for-human`) with their latest comment under the row, whatever else holds them.
-**Working** holds tickets with active work or a fresh claim; pending owner tries have a **to try** lane.
-**Ready** holds work that can start; **Queued** starts folded and holds tickets waiting on ordinary predecessors or known cross-feature blockers.
-**Stalled** is for genuine blockers.
-Dependency rows name their blockers (`← 03 ●`, the mark that of the blocker); **Done** also starts folded.
-Enter on a ticket shows its checklist (✓ / ○) and latest comment (the last bullet under `## Comments`) under it, a second Enter folds it; `o` opens the ticket file.
+Press Enter on a feature row to open its **Feature** sub-page: stacked ticket bar, count legend, and **Tickets** ordered **to try → working → blocked → ready → queued** (by number) **→ done** (newest first) **→ dropped**, with blockers (`← NN`) and observed live or ≤ 24 h job status on the right of each ticket row.
+On a ticket with a live or retained job, Enter opens that job's Inspector (`g`, `P` and `H` control a live job's tab); without one, Enter expands or folds the ticket's checklist (`✓` / `○`) and `Landed` / latest comment (`## Comments`) inline. `o` always opens the ticket file.
+`/` filters the Tickets list by feature slug or ticket number, title, status or blocker; the active filter survives opening a Feature (and its Inspector) and returns on Esc, and clears when leaving Tickets.
 
 **Control tab.**
 Control is a main tab after Project.

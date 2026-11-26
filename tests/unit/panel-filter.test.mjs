@@ -94,3 +94,100 @@ test('every row is exactly the panel\'s width with the bar up, in English and Ch
   assert.equal(tabState(place.state)?.filter?.query, 'inspector');
   assert.match(drive(f, place.state).bar(), /^\/ inspector +1 match · esc clear$/);
 });
+
+test('Tickets filter survives Feature (and its Inspector) round trip with same row and scroll, and clears when leaving Tickets', async (t) => {
+  const f = await busy(t);
+  const at = (min) => NOW - min * 60_000;
+  const makeFeature = (slug, title) => ({
+    slug,
+    at: at(10),
+    tickets: [{
+      number: '01',
+      title,
+      path: `/synthetic/${slug}/01-item.md`,
+      state: 'ready',
+      at: at(10),
+      status: 'ready-for-agent',
+      checked: 0,
+      total: 1,
+      blockers: [],
+      items: [{ done: false, text: `Verify ${slug}` }],
+    }],
+  });
+  const tickets = [
+    makeFeature('alpha-other', 'Unrelated task'),
+    ...Array.from({ length: 8 }, (_, i) => makeFeature(`match-feat-${i + 1}`, `Match alpha task ${i + 1}`)),
+    makeFeature('zeta-other', 'Another unrelated task'),
+  ];
+  const data = { ...f.data, tickets, waiting: [] };
+  const worker = f.board.workers[0];
+  const execJob = {
+    target: { kind: 'worker', laneId: worker.laneId, workerId: worker.id },
+    dir: '/synthetic/job-match-7',
+    tab: false,
+  };
+  const renderWith = (state, height = 9) =>
+    f.render(52, 'en', height, state, data, { projectActivity: [{ ticket: 'match-feat-7/01', kind: 'live', jobId: worker.id, at: at(2), state: 'working', execJob }] });
+  let frame = renderWith(page('tickets'));
+  const send = (input) => {
+    for (const one of typeof input === 'string' ? decoder.push(Buffer.from(input)) : [input]) {
+      const out = handleMonitorInput(frame.state, one, { tree: TREE, frame, nowMs: NOW });
+      frame = renderWith(out.state);
+    }
+    return frame;
+  };
+
+  // Tickets feature row footer advertises open (not dead o file).
+  assert.match(plain(frame).at(-1), /⏎ open {2}Esc back {2}\/ filter {2}\? help/);
+  assert.doesNotMatch(plain(frame).at(-1), /o file/);
+
+  // Filter to the 8 matching features, keep the filter, and scroll down to match-feat-7 (past viewport height).
+  send('/');
+  for (const ch of 'match-feat') send(ch);
+  send('\r');
+  assert.equal(frame.state.project.filter?.query, 'match-feat');
+  assert.equal(frame.state.project.filter?.editing, false);
+  for (let i = 0; i < 6; i++) send({ type: 'key', key: 'down' });
+  const beforeCursor = frame.state.project.nav.cursor;
+  const beforeScroll = frame.state.project.nav.scroll;
+  const beforeList = frame.workboard.rows.filter((r) => r.featureTarget).map((r) => r.featureTarget.slug);
+  assert.equal(beforeCursor, 'project:fold:feature:match-feat-7');
+  assert.ok(beforeScroll > 0, `scrolled into filtered list (got ${beforeScroll})`);
+  assert.equal(beforeList.length, 8);
+
+  // Open Feature -> filter is kept in state while hidden on Feature; Esc from Inspector -> Feature -> Tickets restores exact state.
+  send('\r');
+  assert.equal(frame.state.subpage?.kind, 'feature');
+  assert.equal(frame.state.subpage?.target.slug, 'match-feat-7');
+  assert.equal(frame.state.project.filter?.query, 'match-feat');
+  assert.doesNotMatch(plain(frame).at(-1), /\/ filter/);
+
+  // Open the ticket's job Inspector from the Feature page, then Esc back twice.
+  send('\r');
+  assert.equal(frame.state.subpage?.kind, 'inspector');
+  assert.equal(frame.state.project.filter?.query, 'match-feat');
+  send({ type: 'key', key: 'escape' });
+  assert.equal(frame.state.subpage?.kind, 'feature');
+  assert.equal(frame.state.project.filter?.query, 'match-feat');
+  send({ type: 'key', key: 'escape' });
+
+  // Returned to Tickets with the exact query, filtered list, selected row and scroll.
+  assert.equal(frame.state.subpage, undefined);
+  assert.equal(projectPageOf(frame.state), 'tickets');
+  assert.deepEqual(frame.state.project.filter, { query: 'match-feat', editing: false });
+  assert.equal(frame.state.project.nav.cursor, beforeCursor);
+  assert.equal(frame.state.project.nav.scroll, beforeScroll);
+  assert.deepEqual(frame.workboard.rows.filter((r) => r.featureTarget).map((r) => r.featureTarget.slug), beforeList);
+  assert.match(plain(frame)[1], /^\/ match-feat +8 matches · esc clear$/);
+
+  // Leaving Tickets via the crumb clears the filter.
+  const backCrumb = frame.controls.find((c) => c.kind === 'board-back');
+  const leftViaCrumb = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: backCrumb.x, y: backCrumb.y }, { tree: TREE, frame, nowMs: NOW });
+  assert.equal(projectPageOf(leftViaCrumb.state), undefined);
+  assert.equal(leftViaCrumb.state.project.filter, undefined);
+
+  // Leaving Tickets via tab switch also clears the filter.
+  const leftViaTab = handleMonitorInput(frame.state, { type: 'key', key: 'tab' }, { tree: TREE, frame, nowMs: NOW });
+  assert.notEqual(leftViaTab.state.activeTab, 'project');
+  assert.equal(leftViaTab.state.project.filter, undefined);
+});

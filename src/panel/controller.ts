@@ -549,18 +549,29 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
         const cachedSnap = root ? visits.snapshot(root) ?? portfolio?.projects.find((p) => p.root === root)?.snapshot : undefined;
         const freshRecord = cachedSnap?.objectives ?? (root ? readObjectives(root) : undefined);
         const freshObj = freshRecord?.objectives.find((o) => o.id === objective.id);
-        const resolved = freshObj ?? objective;
-        const blocked = freshObj && cachedSnap
-          ? freshObj.state !== 'done' && blockedObjectives(cachedSnap.waiting).has(freshObj.id)
-          : detail.target.blocked;
-        state = {
-          ...state,
-          subpage: {
-            ...detail,
-            target: { root, objective: resolved, blocked },
-            evidence: collectObjectiveEvidence(resolved, root, jobPipeline.home),
-          },
-        };
+        if (freshObj) {
+          const blocked = cachedSnap
+            ? freshObj.state !== 'done' && blockedObjectives(cachedSnap.waiting).has(freshObj.id)
+            : detail.target.blocked;
+          state = {
+            ...state,
+            subpage: {
+              ...detail,
+              target: { root, objective: freshObj, blocked },
+              evidence: collectObjectiveEvidence(freshObj, root, jobPipeline.home),
+            },
+          };
+        } else if (detail.target.unavailable) {
+          state = { ...state, subpage: { ...detail, evidence: [] } };
+        } else {
+          state = {
+            ...state,
+            subpage: {
+              ...detail,
+              evidence: collectObjectiveEvidence(detail.target.objective, root, jobPipeline.home),
+            },
+          };
+        }
       }
       if (resourcesShown(state) && !resourcesShown(previous)) reloadExp();
       if (workingTree() && (!wasWorkingTree || priorRoot !== shownRoot())) void scheduler.refreshGit();

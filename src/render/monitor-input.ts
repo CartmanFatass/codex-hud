@@ -5,7 +5,7 @@ import { harnessAddInput, workboardInput } from './workboard-input.js';
 import { presetInputKey } from './preset-input.js';
 import { chainInputKey, quickModelKey } from './chain-input.js';
 import { jobModalInput } from './job-actions.js';
-import { clearFilter, filterInput, filterScope } from './filter.js';
+import { clearFilter, filterInput, filterRetentionScope, filterScope } from './filter.js';
 import { expInput } from './exp-view.js';
 import { resourcesShown } from './main-tabs.js';
 import { hasUnsavedDraft } from './monitor-state.js';
@@ -30,8 +30,13 @@ export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, c
   const ready = state.control.notice?.kind === 'harness'
     ? { ...state, control: { ...state.control, notice: undefined } } : state;
   const out = route(ready, input, ctx);
-  // Leaving filtered Project diagnostics clears the query.
-  return filterScope(out.state) !== filterScope(state) ? { ...out, state: clearFilter(out.state) } : out;
+  // Leaving filtered Project diagnostics clears the query; a Feature sub-page opened from Tickets keeps it.
+  if (filterRetentionScope(out.state) !== filterRetentionScope(state)) return { ...out, state: clearFilter(out.state) };
+  if (!filterScope(out.state) && out.state.project.filter?.editing) {
+    const query = out.state.project.filter.query;
+    return { ...out, state: query ? { ...out.state, project: { ...out.state.project, filter: { query, editing: false } } } : clearFilter(out.state) };
+  }
+  return out;
 }
 function route(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {
   const key =

@@ -373,3 +373,98 @@ test('spec ordering, four-request cap with 另 N 个请求 expand/fold, Up from 
   assert.equal(projectPageOf(fromObj.state), 'waiting');
   assert.equal(fromObj.state.project.view.request, 'r5');
 });
+
+test('Objective and Feature opened via Execution -> Inspector expand/fold more requests without changing Home flag', async (t) => {
+  const dir = fs.mkdtempSync(join(tmpdir(), 'hud-req-exec-subpage-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const hud = join(dir, 'hud'), alpha = join(dir, 'alpha');
+  const put = (file, body) => {
+    fs.mkdirSync(join(file, '..'), { recursive: true });
+    fs.writeFileSync(file, typeof body === 'string' ? body : JSON.stringify(body));
+  };
+  put(join(alpha, '.hud/objectives.md'), '**Stance:** active · **Priority:** high\n\n## core: Core work\n**State:** active\n**Features:** nav-fix\n');
+  put(join(alpha, '.scratch/nav-fix/issues/01-item.md'), '# 01: Fix navigation state\n**Status:** ready-for-agent\n**Blocked by:** none\n\n- [ ] Done\n');
+  put(join(alpha, 'docs/handoff/STATE.md'), [
+    '## Waiting for the owner',
+    '- 2026-11-20 [r1] Request one (objective core) (work waits)',
+    '- 2026-11-21 [r2] Request two (objective core)',
+    '- 2026-11-22 [r3] Request three (objective core)',
+    '- 2026-11-23 [r4] Request four (objective core)',
+    '- 2026-11-24 [r5] Fifth alpha request (objective core)',
+  ].join('\n') + '\n');
+  put(join(hud, 'projects.json'), { version: 1, projects: [{ root: alpha }] });
+
+  const snapAlpha = await new ProjectCollector(alpha, hud).collect(true, BOARD, NOW);
+  const worker = {
+    id: 'thin-job:j0000000000000901',
+    laneId: 'thin-job:package:nav-fix',
+    role: 'imp',
+    state: 'working',
+    displayId: 'j0000000',
+    task: 'Fix navigation state',
+    startedAt: NOW - 60_000,
+    settledAt: null,
+    homeNeedsHuman: false,
+    projectRoot: alpha,
+    objective: { id: 'core', title: 'Core work' },
+  };
+  const board = { ...BOARD, lanes: [{ id: worker.laneId, label: 'nav-fix', workers: [worker] }], workers: [worker] };
+  const draw = (state) => drawWith({
+    state, width: 62, height: 28, workboard: board,
+    project: snapAlpha, projectDisplayRoot: alpha, projectName: 'alpha',
+  }, { lang: 'en', theme: 'none' });
+  const send = (frame, input) => handleMonitorInput(frame.state, typeof input === 'string' ? keyOf(input) : input, { frame, nowMs: NOW });
+
+  // Open Objective via Execution -> Inspector -> Objective.
+  const insp = draw(withState(initialMonitorState(), {
+    activeTab: 'execution',
+    subpage: {
+      kind: 'inspector',
+      target: { kind: 'worker', laneId: worker.laneId, workerId: worker.id },
+      from: 'execution',
+      cursor: 'inspector:objective',
+      scroll: 0,
+    },
+  }));
+  let obj = draw(send(insp, '\r').state);
+  assert.equal(obj.state.activeTab, 'execution');
+  assert.equal(obj.state.subpage?.kind, 'objective');
+  assert.equal(obj.workboard.requests.length, 5, '4 requests + 1 more-requests fold row');
+  assert.doesNotMatch(plain(obj).join('\n'), /Fifth alpha request/);
+
+  // Up to 'more requests' and Enter expands in place; Home's requestsExpanded stays unchanged.
+  obj = draw(send(obj, '\x1b[A').state);
+  assert.equal(obj.state.subpage.cursor, PROJECT_REQUEST_MORE);
+  obj = draw(send(obj, '\r').state);
+  assert.equal(obj.workboard.requests.length, 6, 'all 5 requests + fewer row');
+  assert.match(plain(obj).join('\n'), /Fifth alpha request/);
+  assert.equal(obj.state.home.requestsExpanded, undefined, 'Home flag unchanged');
+
+  // Mouse click on 'fewer' folds back on Objective; Home's flag still unchanged.
+  const objMoreCtrl = obj.controls.find((c) => c.kind === 'request-more');
+  assert.ok(objMoreCtrl, 'request-more control present');
+  obj = draw(send(obj, { type: 'mouse', button: 'left', x: objMoreCtrl.x, y: objMoreCtrl.y }).state);
+  assert.equal(obj.workboard.requests.length, 5);
+  assert.doesNotMatch(plain(obj).join('\n'), /Fifth alpha request/);
+  assert.equal(obj.state.home.requestsExpanded, undefined, 'Home flag unchanged');
+
+  // Open Feature from that Objective (still under activeTab: 'execution') and test click + Enter on 'more requests'.
+  obj = draw({ ...obj.state, subpage: { ...obj.state.subpage, cursor: 'objective:feature:nav-fix' } });
+  let feat = draw(send(obj, '\r').state);
+  assert.equal(feat.state.activeTab, 'execution');
+  assert.equal(feat.state.subpage?.kind, 'feature');
+  assert.equal(feat.workboard.requests.length, 5);
+  assert.doesNotMatch(plain(feat).join('\n'), /Fifth alpha request/);
+
+  const featMoreCtrl = feat.controls.find((c) => c.kind === 'request-more');
+  assert.ok(featMoreCtrl, 'request-more control present on Feature');
+  feat = draw(send(feat, { type: 'mouse', button: 'left', x: featMoreCtrl.x, y: featMoreCtrl.y }).state);
+  assert.equal(feat.workboard.requests.length, 6);
+  assert.match(plain(feat).join('\n'), /Fifth alpha request/);
+  assert.equal(feat.state.home.requestsExpanded, undefined, 'Home flag unchanged');
+
+  feat = draw(send(feat, '\r').state);
+  assert.equal(feat.workboard.requests.length, 5);
+  assert.doesNotMatch(plain(feat).join('\n'), /Fifth alpha request/);
+  assert.equal(feat.state.home.requestsExpanded, undefined, 'Home flag unchanged');
+});

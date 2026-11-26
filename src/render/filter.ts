@@ -2,17 +2,31 @@
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { WorkbenchInput } from '../utils/workbench-input.js';
 import type { MonitorOutcome, MonitorRow, MonitorState } from './monitor.js';
-import { activeFilter, projectPage, type ViewFilter } from './monitor-state.js';
+import { activeFilter, projectPage, type SubpageState, type ViewFilter } from './monitor-state.js';
 import { boardRow, mark, type FooterHints } from './workboard-rows.js';
 import { monitorText, pair } from './monitor-text.js';
 import { theme } from './colors.js';
 import { t } from './i18n.js';
 
 const FILTER_MAX = 48;
+function rootSubpage(sub?: SubpageState): SubpageState | undefined {
+  let cur = sub;
+  while (cur && 'back' in cur && cur.back) cur = cur.back;
+  return cur;
+}
 export function filterScope(state: MonitorState): string | undefined {
   if (state.help || state.subpage || state.activeTab !== 'project') return undefined;
   const page = projectPage(state.project.view);
   return page === 'tickets' ? `${page}|${state.selectedProject ?? ''}` : undefined;
+}
+/** Scope that preserves the Tickets filter: Tickets itself and a Feature sub-page (and its child sub-pages) opened from it. */
+export function filterRetentionScope(state: MonitorState): string | undefined {
+  if (state.activeTab !== 'project') return undefined;
+  const page = projectPage(state.project.view);
+  if (page !== 'tickets') return undefined;
+  const root = rootSubpage(state.subpage);
+  if (root && root.kind !== 'feature') return undefined;
+  return `${page}|${state.selectedProject ?? ''}`;
 }
 export function clearFilter(state: MonitorState): MonitorState {
   if (state.project.filter) return { ...state, project: { ...state.project, filter: undefined } };

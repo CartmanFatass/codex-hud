@@ -1,17 +1,29 @@
 /** Scoped pinned owner-request area below tabs and strip. Pure: no I/O. */
 import { ownerRequestKey, type ProjectItem } from '../collectors/project-board.js';
-import type { MonitorRow } from './monitor.js';
+import type { MonitorRow, MonitorState } from './monitor.js';
 import { theme, truncateAnsi, visualLength as cells } from './colors.js';
 import { cutSentence, fit, monitorText, pair } from './monitor-text.js';
 import { compactAge, mark, stateMark } from './workboard-rows.js';
 import { t } from './i18n.js';
 
 export const REQUEST_CAP = 4;
+export const REQUEST_FOLD = 'waiting:more';
 export const HOME_REQUEST_MORE = 'home:wait:more';
-export const PROJECT_REQUEST_MORE = 'project:fold:waiting:more';
+export const PROJECT_REQUEST_MORE = `project:fold:${REQUEST_FOLD}`;
 
 export const isRequestMoreItem = (item?: string): boolean =>
   item === HOME_REQUEST_MORE || item === PROJECT_REQUEST_MORE;
+
+/** Home's cross-project requests use Home's fold flag; Project and Objective/Feature sub-pages use Project's. */
+export const usesHomeRequestsFold = (state: Pick<MonitorState, 'activeTab' | 'subpage'>): boolean =>
+  !state.subpage && state.activeTab === 'home';
+
+export const requestsAreaExpanded = (
+  state: Pick<MonitorState, 'activeTab' | 'subpage' | 'home' | 'project'>,
+): boolean =>
+  usesHomeRequestsFold(state)
+    ? Boolean(state.home.requestsExpanded)
+    : state.project.folded.has(REQUEST_FOLD);
 
 export interface ScopedRequest {
   root: string;

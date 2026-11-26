@@ -29,9 +29,11 @@ export function objectiveCrumb(
   projectName: string | undefined,
   width: number,
 ): { crumb: string; right: string } {
-  const { root, objective, blocked } = detail.target;
-  const label = truncateAnsi(monitorText(projectName || basename(root) || t('Project')), 16);
-  const crumb = `${label} ${mark('›', '>')} ${monitorText(objective.id)}`;
+  const { target } = detail;
+  const label = truncateAnsi(monitorText(projectName || basename(target.root) || t('Project')), 16);
+  const crumb = `${label} ${mark('›', '>')} ${monitorText(target.objective.id)}`;
+  if (target.unavailable) return { crumb, right: '' };
+  const { objective, blocked } = target;
   const stateText = blocked ? `${t(objective.state)} · ${t('blocked')}` : t(objective.state);
   const ratio = ticketProgressText(linkedTicketProgress(featureMap(project), objective.features));
   const candidates = [
@@ -104,13 +106,21 @@ export function objectiveDetailRows(
   activity: readonly TicketActivity[] = [],
   resultAt?: number,
 ): MonitorRow[] {
-  const { root, objective } = detail.target;
+  const { target } = detail;
   const ink = theme.board;
   const rows: MonitorRow[] = [];
 
-  for (const line of sentenceRows(monitorText(objective.title), width, 3, 2)) {
+  for (const line of sentenceRows(monitorText(target.objective.title), width, 3, 2)) {
     rows.push(boardRow(fit(line, width)));
   }
+  if (target.unavailable) {
+    rows.push(boardRow(''));
+    for (const line of sentenceRows(t('Current record unavailable'), width, 3, 2)) {
+      rows.push(boardRow(fit(ink.muted(line), width)));
+    }
+    return rows;
+  }
+  const { root, objective } = target;
   if (objective.next) {
     for (const line of sentenceRows(monitorText(objective.next), width, 3, 2, ink.active(mark('›', '>', '\uF054')))) {
       rows.push(boardRow(fit(line, width)));

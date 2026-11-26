@@ -49,7 +49,16 @@ export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | und
   }
 };
 
-export interface ObjectiveTarget { root: string; objective: Objective; blocked: boolean }
+export type ObjectiveRef = Pick<Objective, 'id' | 'title'>;
+export type ObjectiveTarget =
+  | { root: string; objective: Objective; blocked: boolean; unavailable?: false }
+  | { root: string; objective: ObjectiveRef; blocked: false; unavailable: true };
+export const missingObjectiveTarget = (root: string, ref: ObjectiveRef): ObjectiveTarget => ({
+  root,
+  objective: { id: ref.id, title: ref.title },
+  blocked: false,
+  unavailable: true,
+});
 export interface ObjectiveDetail extends RowNav {
   kind: 'objective';
   target: ObjectiveTarget;
