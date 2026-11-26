@@ -169,7 +169,7 @@ test('ordinary owner holds keep expired jobs, reports and worktrees until resolv
   cleanupFixture(t, { root: home });
   const hud = join(home, 'hud'), flows = join(hud, 'flows'), main_root = initRepo(home);
   fs.mkdirSync(flows, { recursive: true });
-  const at = new Date(Date.now() - 48 * 3600_000).toISOString();
+  const oldMs = Date.now() - 48 * 3600_000, at = new Date(oldMs).toISOString(), oldDate = new Date(oldMs);
   const putQueue = q => writeFixtureFile(join(flows, `${q.flow}.json`), JSON.stringify(q));
   const seed = (n, held) => {
     const job = `j000000000000000${n}`, flow = `q000000000000000${n}`, path = join(home, `ticket-${n}.md`);
@@ -179,16 +179,34 @@ test('ordinary owner holds keep expired jobs, reports and worktrees until resolv
       tickets: [{ ticket: `synthetic-${n}/01`, path, job, role: 'imp', ...(held && { held: { at, reason: 'Owner approval', owner_approval: 'feature-deletion' } }) }],
     };
     putQueue(q);
-    return { job, dir, q };
+    return { job, dir, path, q };
   };
-  const resolved = seed(1, true), stopped = seed(2, true), superseded = seed(3, true), ordinary = seed(4, false);
-  const name = `imp-${resolved.job.slice(-6)}`, root = join(home, 'demo-wt', name), branch = `wt/${name}`;
-  const base_head = git(main_root, 'rev-parse', 'HEAD');
-  git(main_root, 'worktree', 'add', '-qb', branch, root, base_head);
-  const receipt = join(resolved.dir, 'job.json');
-  writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt, 'utf8')), cwd: root, reaped_at: at,
-    worktree: { main_root, root, branch, base_head },
-  }));
+  const resolved = seed(1, true), stopped = seed(2, true), superseded = seed(3, true), ordinary = seed(4, false), missingTicket = seed(5, true);
+  const attachWorktree = (entry) => {
+    const name = `imp-${entry.job.slice(-6)}`, root = join(home, 'demo-wt', name), branch = `wt/${name}`;
+    const base_head = git(main_root, 'rev-parse', 'HEAD');
+    git(main_root, 'worktree', 'add', '-qb', branch, root, base_head);
+    const receipt = join(entry.dir, 'job.json');
+    writeFixtureFile(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt, 'utf8')), cwd: root, reaped_at: at,
+      worktree: { main_root, root, branch, base_head },
+    }));
+    return root;
+  };
+  const resolvedWt = attachWorktree(resolved);
+  const missingWt = attachWorktree(missingTicket);
+
+  // Unattended hold with a missing ticket keeps existing unattended semantics (releases pin).
+  const unattendedJob = 'j0000000000000006', unattendedFlow = 'q0000000000000006', unattendedTicket = join(home, 'ticket-6.md');
+  const unattendedDir = writeJob(hud, unattendedJob, '', 'imp', { state: 'closed', ended_at: at, output_written: true }, true);
+  putQueue({ flow: unattendedFlow, state: 'completed', root: main_root, feature: 'selected', created_at: at,
+    unattended: { objective: 'selected' },
+    tickets: [{ ticket: 'selected/01', path: unattendedTicket, job: unattendedJob, role: 'imp', held: { at, reason: 'spec change' } }],
+  });
+  writeFixtureFile(join(hud, 'unattended-runs.json'), JSON.stringify([unattendedFlow]));
+
+  // Simulate a branch switch hiding the ordinary held item's ticket file during the scan.
+  fs.unlinkSync(missingTicket.path);
+
   const scan = () => {
     const watcher = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
       env: { ...process.env, HOME: home, HUD_HOME: hud }, encoding: 'utf8', timeout: 10000,
@@ -197,21 +215,37 @@ test('ordinary owner holds keep expired jobs, reports and worktrees until resolv
   };
 
   scan();
-  for (const { dir } of [resolved, stopped, superseded]) {
+  for (const { dir } of [resolved, stopped, superseded, missingTicket]) {
     assert.ok(fs.existsSync(join(dir, 'job.json')));
     assert.ok(fs.existsSync(join(dir, 'report.md')));
   }
-  assert.ok(fs.existsSync(root), 'hold protects a checkout otherwise eligible for cleanup');
+  assert.ok(fs.existsSync(resolvedWt), 'hold protects a checkout otherwise eligible for cleanup');
+  assert.ok(fs.existsSync(missingWt), 'a temporarily missing ticket file keeps the ordinary hold and checkout pinned');
   assert.equal(fs.existsSync(ordinary.dir), false, 'a completed job without a hold still ages out');
+  assert.equal(fs.existsSync(unattendedDir), false, 'unattended hold semantics for missing ticket files are unchanged');
 
-  // The matching land resolves the first hold even if the ticket status did not change.
-  const land = `f${resolved.job.slice(1)}`;
-  writeFixtureFile(join(flows, `${land}.json`), JSON.stringify({ flow: land, job: resolved.job, state: 'completed', step: 'done' }));
+  // Once a manual land completes while the paused queue still holds the item, release the checkout
+  // but retain the job report and aged land receipt until the queue is superseded or stopped.
+  const land = `f${resolved.job.slice(1)}`, landFile = join(flows, `${land}.json`);
+  writeFixtureFile(resolved.path, '**Status:** ready-for-human\n');
+  writeFixtureFile(landFile, JSON.stringify({ flow: land, job: resolved.job, state: 'completed', step: 'done' }));
+  fs.utimesSync(landFile, oldDate, oldDate);
   putQueue({ ...stopped.q, state: 'cancelled' });
   putQueue({ ...superseded.q, superseded_by: 'q0000000000000009' }); // The successor need not still be on disk.
+  // Positive closure without a matching land releases the previously missing-ticket hold.
+  writeFixtureFile(missingTicket.path, '**Status:** wontfix\n');
   scan();
-  for (const { dir } of [resolved, stopped, superseded]) assert.equal(fs.existsSync(dir), false);
-  assert.equal(fs.existsSync(root), false);
+  assert.equal(fs.existsSync(resolvedWt), false, 'completed manual land releases the checkout');
+  assert.ok(fs.existsSync(join(resolved.dir, 'report.md')), 'paused queue retains the report until resume, stop or supersession');
+  assert.ok(fs.existsSync(landFile), 'paused queue retains the aged land receipt until resume, stop or supersession');
+  for (const { dir } of [stopped, superseded, missingTicket]) assert.equal(fs.existsSync(dir), false);
+  assert.equal(fs.existsSync(missingWt), false);
+
+  // Superseding (or stopping) the paused queue releases both the retained job report and aged land receipt.
+  putQueue({ ...resolved.q, superseded_by: 'q000000000000000a' });
+  scan();
+  assert.equal(fs.existsSync(resolved.dir), false);
+  assert.equal(fs.existsSync(landFile), false);
 });
 
 test('watcher preserves a shared worktree while a continuation job is active and removes it once both finish', { timeout: 30000 }, async (t) => {

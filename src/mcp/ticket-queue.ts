@@ -6,8 +6,7 @@ import { herdrId } from '../roles/herdr-run.js';
 import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { roleRegistry } from '../roles/roster.js';
 import { readObjectives } from '../collectors/objectives.js';
-import { ticketFileEvidence } from '../collectors/ticket-evidence.js';
-import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
+import { readJsonFile } from '../utils/atomic-fs.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
 import { procStat } from '../utils/proc.js';
@@ -15,7 +14,7 @@ import { loadGraph } from '../workflows/graph.js';
 import { runVisible } from '../workflows/scope.js';
 import { freezeGraph, runDir, runLock } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
-import { ESCALATION_RULE, isOpenTicketRun } from '../unattended/state.js';
+import { ESCALATION_RULE, isOpenTicketRun, ticketClosed } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
 import { completedLandForJob } from './land-state.js';
 import { checkFeatureTickets, checkTicketPaths, declaredReadyTickets, ticketObjectiveOwner, ticketReadiness } from './local-tickets.js';
@@ -87,13 +86,6 @@ function launchFailed(home: string, job: string | undefined) {
   if (!job) return false;
   try { return JSON.parse(fs.readFileSync(join(home, 'jobs', job, 'STATUS.json'), 'utf8'))?.exit_reason === 'dispatch_failed'; }
   catch { return false; }
-}
-/** A ticket closed since the queue failed (landed through another job, or set aside) is no longer the queue's to follow. */
-function ticketClosed(path: string) {
-  try {
-    const status = ticketFileEvidence(readFileBounded(path, 64 * 1024).bytes.toString('utf8')).status ?? '';
-    return /^(?:done|wontfix|ready-for-human)$/i.test(status);
-  } catch { return false; }
 }
 /** Cancel a working or paused ticket-queue run without signalling any process, keeping holds and evidence intact. */
 export async function cancelTicketQueueRun(

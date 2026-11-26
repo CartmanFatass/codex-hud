@@ -10,7 +10,7 @@ import type { LandFlow } from '../mcp/land-state.js';
 import { jobFiles } from '../mcp/paths.js';
 import { DEFAULT_RESUME_S } from '../mcp/worker-resume.js';
 import type { TicketQueue } from '../mcp/ticket-queue-state.js';
-import { hasOpenHold, readRunIndex } from '../unattended/state.js';
+import { hasOpenHold, pinnedQueueJobs, readRunIndex } from '../unattended/state.js';
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -123,9 +123,11 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
         const job = `j${match[1]}`, files = jobs.get(job);
         if (files) files.push(name); else jobs.set(job, [name]);
       }
+      const pinned = jobs.size ? pinnedQueueJobs(home) : null;
       for (const [job, names] of jobs) {
         try {
-          // Keep all attempts until the job (and its archive read) is gone.
+          // Keep all attempts until the job (and its archive read) is gone, or while an open ordinary queue still needs its land evidence.
+          if (pinned && (pinned.held.has(job) || pinned.evidence.has(job))) continue;
           if (fs.lstatSync(join(home, 'jobs', job), { throwIfNoEntry: false })) continue;
           const files = names.map(name => {
             const path = join(dir, name);

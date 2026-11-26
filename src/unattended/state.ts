@@ -54,13 +54,24 @@ export function unattendedOn(home: string): boolean {
   catch { return false; }
 }
 
-export function itemClosed(path: string): boolean {
+function ticketClosedState(path: string): boolean | undefined {
   try {
     return unchanged(path, () => {
       const { bytes, truncated } = readFileBounded(path, 64 * 1024);
       return !truncated && /^(?:done|wontfix|ready-for-human)$/i.test(ticketFileEvidence(bytes.toString('utf8')).status ?? '');
-    }) ?? true;
-  } catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT'; }
+    });
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? undefined : false;
+  }
+}
+
+export function itemClosed(path: string): boolean {
+  return ticketClosedState(path) ?? true;
+}
+
+/** Positive closure evidence for ordinary holds and resume: a missing or unreadable path is not closed. */
+export function ticketClosed(path: string): boolean {
+  return ticketClosedState(path) === true;
 }
 
 export function openHoldsInRun(q: TicketQueue): UnattendedHandback[] {
@@ -127,14 +138,22 @@ export function readOpenHolds(home: string, root?: string): UnattendedHandback[]
   }
 }
 
-export function pinnedHeldJobs(home: string, pass = workflowHeaders(home)): Set<string> {
-  const pinned = new Set<string>();
+export interface PinnedQueueJobs {
+  /** Unresolved holds: keep worktree checkout, raw logs, job directory and land receipts. */
+  held: Set<string>;
+  /** Resolved/landed items still owned by an open ordinary queue: keep job directory (report) and land receipts, not worktree/logs. */
+  evidence: Set<string>;
+}
+
+export function pinnedQueueJobs(home: string, pass = workflowHeaders(home)): PinnedQueueJobs {
+  const held = new Set<string>();
+  const evidence = new Set<string>();
   try {
     for (const q of indexedRuns(home)) {
       for (const item of q.tickets ?? []) {
         if (!item.job) continue;
-        if (item.held && !itemClosed(item.path)) pinned.add(item.job);
-        else if ((q.state === 'paused' || q.state === 'cancelled') && q.held && !item.landed && !itemClosed(item.path)) pinned.add(item.job);
+        if (item.held && !itemClosed(item.path)) held.add(item.job);
+        else if ((q.state === 'paused' || q.state === 'cancelled') && q.held && !item.landed && !itemClosed(item.path)) held.add(item.job);
       }
     }
   } catch { /* Unreadable index gives no extra pins. */ }
@@ -144,16 +163,26 @@ export function pinnedHeldJobs(home: string, pass = workflowHeaders(home)): Set<
       const q = pass.header<TicketQueue>(file);
       if (!q || q.unattended || !isOpenTicketRun(q) || q.superseded_by || queueCancelled(home, q)) continue;
       for (const item of q.tickets ?? []) {
-        if (!item.job || !item.held || item.landed || itemClosed(item.path)) continue;
-        // Keep the evidence until resolution is recorded. A successor may still be processing the hold.
-        let landed = false;
+        if (!item.job) continue;
+        if (item.landed) {
+          evidence.add(item.job);
+          continue;
+        }
+        if (!item.held) continue;
+        // Keep manual-land evidence until a successor consumes it or the run stops/supersedes.
+        let landed: boolean | 'error' = false;
         try { landed = !!completedLandForJob(home, item.job, pass); }
-        catch { /* Unreadable land evidence does not clear a hold. */ }
-        if (!landed) pinned.add(item.job);
+        catch { landed = 'error'; }
+        if (landed === true) evidence.add(item.job);
+        else if (landed === 'error' || !ticketClosed(item.path)) held.add(item.job);
       }
     } catch { /* Ignore an unreadable queue, not other holds. */ }
   }
-  return pinned;
+  return { held, evidence };
+}
+
+export function pinnedHeldJobs(home: string, pass = workflowHeaders(home)): Set<string> {
+  return pinnedQueueJobs(home, pass).held;
 }
 
 export function readUnattendedStatus(home: string) {

@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { JOB_RETENTION_MS } from '../../dist/runtime/work-retention.js';
+import { pinnedHeldJobs } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -200,7 +202,7 @@ test('an assumption lead hold records head/sig; same-report resume stays paused 
   assert.equal(done.verdict, 'finish: Verified corrected turn.');
 });
 
-test('a single held ticket manually landed before resume is reviewed and accepted by the successor', { timeout: 60_000 }, async t => {
+test('a single held ticket manually landed before resume survives retention past JOB_RETENTION_MS and is reviewed and accepted by the successor', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-synthetic.md': goodTicket(1, { ownerTry: 'yes' }) } });
   const runArgs = { op: 'run', feature: 'sample', cwd: f.root };
   const { flow } = await f.call('hud_tickets', runArgs);
@@ -217,21 +219,96 @@ test('a single held ticket manually landed before resume is reviewed and accepte
   assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* ready-for-human/);
   assert.equal(f.flow(flow).tickets[0].landed, undefined, 'the paused run has not observed the land');
 
+  // Seed an unrelated completed job so the shifted retention pass proves ordinary retention ran.
+  const expiredJob = 'j00000000000000e1', expiredDir = f.dir(expiredJob), nowIso = new Date().toISOString();
+  fs.mkdirSync(expiredDir, { recursive: true });
+  writeFixtureFile(join(expiredDir, 'job.json'), JSON.stringify({ job: expiredJob, role: 'imp', cwd: f.root, created_at: nowIso, reaped_at: nowIso }));
+  writeFixtureFile(join(expiredDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, ended_at: nowIso, settled_at: nowIso }));
+  writeFixtureFile(join(expiredDir, 'report.md'), 'Expired report.\n');
+
+  const shiftImport = `data:text/javascript,${encodeURIComponent(`const realNow = Date.now; Date.now = () => realNow() + ${2 * JOB_RETENTION_MS};`)}`;
+  const runFutureRetention = async () => {
+    await until(() => Boolean(f.job(job).reaped_at) && !fs.existsSync(join(f.home, 'watch.pid')), 15_000);
+    const watcher = spawnSync(process.execPath, ['--import', shiftImport, resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
+      env: f.env, encoding: 'utf8', timeout: 15_000,
+    });
+    assert.equal(watcher.status, 0, watcher.stderr || String(watcher.error));
+  };
+
+  // Retention pass past JOB_RETENTION_MS must prune ordinary expired jobs while keeping the manual land receipt and source report.
+  const reportPath = join(f.dir(job), 'report.md');
+  const landPath = join(f.home, 'flows', `${manual.flow}.json`);
+  await runFutureRetention();
+  assert.equal(fs.existsSync(expiredDir), false, 'ordinary completed job without a hold ages out');
+  assert.ok(fs.existsSync(reportPath), 'source job report survives retention until successor consumes it');
+  assert.ok(fs.existsSync(landPath), 'manual land receipt survives retention until successor consumes it');
+
   const resumed = await f.call('hud_tickets', runArgs);
   assert.notEqual(resumed.flow, flow);
   await until(() => Boolean(f.flow(resumed.flow).review_job), 15_000);
   const q = f.flow(resumed.flow);
   assert.deepEqual(q.tickets.map(x => [x.ticket, x.job, x.land, x.landed, x.held]), [['sample/01', job, manual.flow, true, undefined]]);
-  assert.match(fs.readFileSync(join(f.dir(q.review_job), 'brief.md'), 'utf8'), /Landed tickets and design intent:\s+- sample\/01:/);
+  const reviewBrief = fs.readFileSync(join(f.dir(q.review_job), 'brief.md'), 'utf8');
+  assert.match(reviewBrief, /Landed tickets and design intent:\s+- sample\/01:/);
+  assert.ok(reviewBrief.includes(reportPath), 'review brief cites the retained worker report');
+  assert.ok(fs.existsSync(reportPath), 'report cited by review still exists');
   await f.settleReview(q.review_job);
   await until(() => f.flow(resumed.flow).active_lead?.kind === 'accept', 15_000);
   const lead = f.flow(resumed.flow).active_lead.job;
-  assert.match(fs.readFileSync(join(f.dir(lead), 'brief.md'), 'utf8'), /Tickets, Live Try & Reports\s+- sample\/01:/);
+  const acceptBrief = fs.readFileSync(join(f.dir(lead), 'brief.md'), 'utf8');
+  assert.match(acceptBrief, /Tickets, Live Try & Reports\s+- sample\/01:/);
+  assert.ok(acceptBrief.includes(reportPath), 'accept brief cites the retained worker report');
+  assert.ok(fs.existsSync(reportPath), 'report cited by accept still exists');
   await f.settleLead(lead, 'Decision: finish\nReason: Verified manual land.\n');
   const done = await f.end(resumed.flow);
   assert.equal(done.state, 'completed');
   assert.equal(done.verdict, 'finish: Verified manual land.');
   assert.match(done.notices['end-0'], /Landed: sample\/01\./);
+
+  // Once the successor completes, normal retention releases both the retained report and land receipt.
+  await runFutureRetention();
+  assert.equal(fs.existsSync(f.dir(job)), false, 'source job directory is released after successor completes');
+  assert.equal(fs.existsSync(landPath), false, 'manual land receipt is released after successor completes');
+});
+
+test('a temporarily missing ticket file keeps an ordinary hold pinned across retention and resume', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: { '01-synthetic.md': goodTicket(1) } });
+  const flow = 'q0000000000000002', job = 'j0000000000000002';
+  const flows = join(f.home, 'flows'), oldAt = new Date(Date.now() - 48 * 3600_000).toISOString();
+  const ticketFile = join(f.root, f.ticketPath(1));
+  fs.mkdirSync(flows, { recursive: true });
+  fs.mkdirSync(f.dir(job), { recursive: true });
+  writeFixtureFile(join(f.dir(job), 'job.json'), JSON.stringify({
+    job, role: 'imp', cwd: f.root, ticket: 'sample/01', ticket_queue: flow, created_at: oldAt, reaped_at: oldAt,
+  }));
+  writeFixtureFile(join(f.dir(job), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, ended_at: oldAt, settled_at: oldAt }));
+  writeFixtureFile(join(f.dir(job), 'report.md'), 'Held report.\n');
+  writeFixtureFile(join(flows, `${flow}.json`), JSON.stringify({
+    flow, root: f.root, pane: f.env.HERDR_PANE_ID, feature: 'sample', task: false, max_parallel: 1,
+    state: 'paused', created_at: oldAt, updated_at: oldAt,
+    tickets: [{
+      ticket: 'sample/01', path: ticketFile, role: 'imp', job,
+      held: { reason: 'Owner approval', at: oldAt, owner_approval: 'feature-deletion' },
+    }],
+  }));
+
+  // Simulate a branch switch hiding the ticket file during a retention pass.
+  fs.unlinkSync(ticketFile);
+  assert.ok(pinnedHeldJobs(f.home).has(job), 'retention treats a missing ticket file as not closed');
+  const watcher = spawnSync(process.execPath, [resolve('packages/hud-mcp/bin/hud-watch.mjs')], {
+    env: f.env, encoding: 'utf8', timeout: 15_000,
+  });
+  assert.equal(watcher.status, 0, watcher.stderr || String(watcher.error));
+  assert.ok(fs.existsSync(join(f.dir(job), 'report.md')), 'held job survives retention while ticket file is missing');
+
+  // Resume agrees the item is not closed: it carries the held item forward and pauses awaiting resolution.
+  const resumed = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root });
+  const pausedAgain = await f.end(resumed.flow);
+  assert.equal(pausedAgain.state, 'paused');
+  assert.equal(pausedAgain.tickets.length, 1);
+  assert.equal(pausedAgain.tickets[0].job, job);
+  assert.ok(pausedAgain.tickets[0].held);
+  assert.match(pausedAgain.reason, /stays held.*hud_land/);
 });
 
 test('resume does not treat closed held tickets as landed without a completed receipt for their own job', { timeout: 30_000 }, async t => {

@@ -45,7 +45,7 @@ import { isProcAlive, isValidPid } from '../utils/proc.js';
 import { hasLocalHerdrTarget, isShellLaunchedWorker, probeHerdrTarget, request, SHELL_WORKER_UNSUPPORTED, TAB_PROBE_INTERVAL_MS, tabProbeBackoff } from './herdr-socket.js';
 import { pruneDisplayFiles } from './display-retention.js';
 import { JOB_RETENTION_MS, pruneJobLogs, pruneLandFlows, pruneProjectScratch } from './work-retention.js';
-import { pinnedHeldJobs } from '../unattended/state.js';
+import { pinnedQueueJobs } from '../unattended/state.js';
 import { pruneLegacyTrustBackups } from '../utils/trust-backups.js';
 import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 
@@ -711,7 +711,7 @@ function scan(retryWatch = false) {
   };
   const listedIds = jobCache.listJobIds({ onError: (error) => { throw error; } });
   const liveIds = new Set(listedIds);
-  const heldJobs = pinnedHeldJobs(home, flows);
+  const { held: heldJobs, evidence: evidenceJobs } = pinnedQueueJobs(home, flows);
   const orphans = new Set<string>();
   const watch = (dir: string, pid: number) => { nearest = Math.min(nearest, runners.watch(dir, pid)); };
   for (const id of listedIds) {
@@ -755,6 +755,7 @@ function scan(retryWatch = false) {
         knownWorktreeRoots.add(job.worktree.main_root);
       }
       const held = heldJobs.has(id);
+      const retained = held || evidenceJobs.has(id);
       if (held) markBusy(job); // A continuation may share a held source worktree.
       if (isShellLaunchedWorker(session?.fields) && !job?.reaped_at) {
         markBusy(job);
@@ -1078,7 +1079,7 @@ function scan(retryWatch = false) {
       if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
       const closedAt = Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs);
       const now = Date.now();
-      if (!landing && !checkingReport && !resumable && !launchUnknown && !held && closedAt + JOB_RETENTION_MS < now && (!tab || job?.reaped_at)) {
+      if (!landing && !checkingReport && !resumable && !launchUnknown && !retained && closedAt + JOB_RETENTION_MS < now && (!tab || job?.reaped_at)) {
         if (job && now <= closedAt + 7 * JOB_RETENTION_MS && hasLocalPiSession(dir, job, status, piLocalFiles)) continue;
         // Preserve legacy Pi history. CLI and browser keep theirs in their own stores.
         if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
