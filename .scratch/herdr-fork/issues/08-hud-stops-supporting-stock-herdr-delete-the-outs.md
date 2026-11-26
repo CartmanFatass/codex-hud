@@ -12,3 +12,7 @@
 - [ ] Live: one claude, one agy and one pi tab job on the installed fork start, report and close
 
 ## Comments
+
+## Comments
+
+- 2026-11-26 main: the milestone review (docs/reviews/2026-11-26-worker-stage-milestone.md, "Deletion boundary") narrows this ticket. Keep `tab-shell.ts`, `tab-owner.ts` and the stock reaper/close reconciliation: browser jobs (`harness-bro.ts`, `browser-runner.ts`) and the split Pi helper shell still use them. Delete only what the review's Delete list names. Starts after the review-fix job lands (it touches `reap-tab.ts`).
