@@ -194,7 +194,7 @@ async function run(args) {
           console.log(`Removing ${name}`);
           fs.rmSync(path, { recursive: true, force: true });
         }
-      });
+      }, undefined, { exclusive: true });
     }
     const main = Boolean(publishFrom) || target === 'main';
     const dist = join(root, main ? 'dist' : 'dist-test');
@@ -208,7 +208,7 @@ async function run(args) {
         reuseDir,
         onCargoUnavailable: () => console.warn('HUD build: Cargo unavailable; the TS statusline stays in use.'),
       });
-      return withDistLock(() => publish(source, stage, dist, true, native));
+      return withDistLock(() => publish(source, stage, dist, true, native), undefined, { exclusive: true });
     };
     try {
       if (publishFrom) {

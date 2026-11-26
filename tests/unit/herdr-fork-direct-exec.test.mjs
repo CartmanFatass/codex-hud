@@ -522,7 +522,8 @@ test('direct starts report sidebar titles and role tokens once, without touching
 });
 
 test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling exit ignored, pane.exited clean & crash', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t, { failedRetentionMs: 250 });
+  // Keep cli-supervisor on the real clock so crash ended_at matches hud-watch's retention deadline.
+  const f = await fixture(t, { failedRetentionMs: 250, clockScale: 1 });
   const fork = await startForkHerdr(t, f, { reusedTabId: true, hiddenTabs: true, hiddenTabsPeek: true });
   writeCliRole(f, 'forkcli', 60, true, 'claude');
 
@@ -574,7 +575,12 @@ test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling 
   ];
   assert.deepEqual(tabActions(), expectedActions);
 
-  await until(() => cliState(dir1)?.supervisor_pid && cliState(dir1)?.pid === entry1.pid && cliState(dir1)?.pid_start_time === String(entry1.pid_start_time), t.signal);
+  await until(() =>
+    cliState(dir1)?.supervisor_pid &&
+    cliState(dir1)?.pid === entry1.pid &&
+    cliState(dir1)?.pid_start_time === String(entry1.pid_start_time) &&
+    cliState(dir1)?.agent_session_id === entry1.agent_session.value &&
+    fork.hasWatcher(), t.signal);
   assert.equal(fork.socketRequests.some((r) => r.method === 'pane.process_info'), false);
 
   // Sibling pane exit & close in the SAME launch_id (different terminal_id) must NOT retire the live root worker!
@@ -604,7 +610,11 @@ test('fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling 
   assert.deepEqual(await pinJobTab(dir1, f.env), { ok: false, reason: 'tab closed' });
   assert.deepEqual(await hideJobTab(dir1, f.env), { ok: false, reason: 'tab closed' });
   assert.deepEqual(tabActions(), expectedActions, 'a stale receipt cannot change the replacement tab');
-  await until(() => cliState(dir2)?.supervisor_pid && cliState(dir2)?.pid === entry2.pid && fork.hasWatcher(), t.signal);
+  await until(() =>
+    cliState(dir2)?.supervisor_pid &&
+    cliState(dir2)?.pid === entry2.pid &&
+    cliState(dir2)?.agent_session_id === entry2.agent_session.value &&
+    fork.hasWatcher(), t.signal);
 
   fork.emitTabClosedRaw(entry2.tab_id, entry1.launch_id);
   await new Promise((r) => setTimeout(r, 150));

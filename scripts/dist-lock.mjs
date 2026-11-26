@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
-import { createServer } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -57,10 +57,16 @@ export function publishGeneration(kind, stamp) {
   } catch { /* An unavailable receipt must not affect the service. */ }
 }
 
+const distLockName = (kind, root = releaseRoot) =>
+  `\0myhud-${kind}-${createHash('sha256').update(fs.realpathSync(root)).digest('hex')}`;
+
 export async function acquireBuildLock(kind, root = releaseRoot) {
-  const name = `\0myhud-${kind}-${createHash('sha256').update(fs.realpathSync(root)).digest('hex')}`;
+  const name = distLockName(kind, root);
   // Linux/WSL releases abstract sockets even after SIGKILL. No files or daemon to clean up.
-  const lock = createServer((socket) => socket.destroy());
+  const lock = createServer((socket) => {
+    socket.on('error', () => {});
+    socket.end('W\n');
+  });
   const deadline = performance.now() + 15_000;
   for (;;) {
     const listening = once(lock, 'listening');
@@ -77,14 +83,99 @@ export async function acquireBuildLock(kind, root = releaseRoot) {
   }
 }
 
+function joinSharedReader(name, timeoutMs) {
+  return new Promise((resolve) => {
+    const socket = createConnection(name);
+    let settled = false;
+    let buf = '';
+    const finish = (joined) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.removeListener('data', onData);
+      socket.removeListener('error', onFail);
+      socket.removeListener('end', onFail);
+      socket.removeListener('close', onFail);
+      if (joined) {
+        socket.on('error', () => {});
+        resolve(socket);
+      } else {
+        socket.destroy();
+        resolve(null);
+      }
+    };
+    const onFail = () => finish(false);
+    const onData = (chunk) => {
+      buf += chunk.toString('utf8');
+      const nl = buf.indexOf('\n');
+      if (nl !== -1) finish(buf.slice(0, nl) === 'R');
+    };
+    const timer = setTimeout(onFail, Math.max(1, timeoutMs));
+    socket.on('data', onData);
+    socket.on('error', onFail);
+    socket.on('end', onFail);
+    socket.on('close', onFail);
+  });
+}
+
+async function acquireSharedDistLock(root) {
+  const name = distLockName('dist', root);
+  const peers = new Set();
+  let accepting = true;
+  let onDrained;
+  const lock = createServer((socket) => {
+    socket.on('error', () => {});
+    if (!accepting) {
+      socket.end('W\n');
+      return;
+    }
+    peers.add(socket);
+    socket.once('end', () => socket.destroy());
+    socket.once('close', () => {
+      peers.delete(socket);
+      if (!accepting && peers.size === 0) onDrained?.();
+    });
+    socket.write('R\n');
+  });
+  const deadline = performance.now() + 15_000;
+  for (;;) {
+    const listening = once(lock, 'listening');
+    lock.listen(name);
+    try {
+      await listening;
+      return async () => {
+        accepting = false;
+        if (peers.size > 0) {
+          await new Promise((done) => {
+            onDrained = done;
+            if (peers.size === 0) done();
+          });
+        }
+        lock.close();
+      };
+    } catch (error) {
+      if (error.code !== 'EADDRINUSE') throw error;
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) throw new Error('Timed out waiting for the HUD dist lock');
+      const peer = await joinSharedReader(name, Math.min(500, remaining));
+      if (peer) return () => { peer.destroy(); };
+      const left = deadline - performance.now();
+      if (left <= 0) throw new Error('Timed out waiting for the HUD dist lock');
+      await delay(Math.min(10, left));
+    }
+  }
+}
+
 // Take the same lock on both sides: a check alone can race the first rename.
-// Release it after the startup imports, never hold it while running a command.
-export async function withDistLock(load, root = releaseRoot) {
-  const lock = await acquireBuildLock('dist', root);
+// Readers share the lock concurrently; publishers take it exclusively.
+export async function withDistLock(load, root = releaseRoot, { exclusive = false } = {}) {
+  const release = exclusive
+    ? await acquireBuildLock('dist', root).then((lock) => () => lock.close())
+    : await acquireSharedDistLock(root);
   try {
     return await load();
   } finally {
-    lock.close();
+    await release();
   }
 }
 

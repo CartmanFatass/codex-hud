@@ -789,13 +789,19 @@ for (const refused of [false, true]) {
     // The launch receipt says working before the supervisor subscribes. Wait for its
     // agent lookup to bind the fixture subscription, or the final idle push can be lost.
     await until(() => cliState(dir)?.agent_session_id, t.signal, 'CLI supervisor did not discover the worker');
+    assert.deepEqual((await call.rpc('ping')).result, {});
     assert.equal((await f.call('hud_send', { job: job.job, text: 'Synthetic second prompt.' })).sent, true);
     const second = cliToken(dir);
     writeFixtureFile(join(f.env.HOME, refused ? 'rejected-prompt' : 'hold-prompt-result'), '');
-    const sending = f.call('hud_send', { job: job.job, text: 'Synthetic third prompt.' });
+    let sendResult;
+    const sending = f.call('hud_send', { job: job.job, text: 'Synthetic third prompt.' }).then((reply) => (sendResult = reply));
     let third;
     try {
-      await until(() => (third = cliToken(dir)) !== second, t.signal);
+      await until(() => {
+        if ((third = cliToken(dir)) !== second) return true;
+        assert.equal(sendResult, undefined, `hud_send settled before advancing turn: ${JSON.stringify(sendResult)}`);
+        return false;
+      }, t.signal);
       assert.equal((await call('hud_report', { text: 'Too old.', turn: first })).isError, true);
       assert.deepEqual(resultValue(await call('hud_report', { text: 'Second turn finished.', turn: second })),
         { path: join(dir, 'report.md') });

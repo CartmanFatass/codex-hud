@@ -125,7 +125,7 @@ async function isolatedLand(t, gate) {
       fs.renameSync(`${file}.next`, file);
     }
     const now = new Date(); fs.utimesSync(join(dist, 'index.js'), now, now);
-  }, install);
+  }, install, { exclusive: true });
   return { ...f, dist, publish };
 }
 

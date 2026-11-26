@@ -1,6 +1,6 @@
 # 14: Gate flakes collected after test-flakes/13
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Live try:** none
 **Blocked by:** none
@@ -14,7 +14,9 @@
 - `hud_report during a pending CLI prompt belongs to the old turn (delivered)` (tests/unit/thin-mcp-worker-tools.test.mjs) — flow `fb62c3b381dcb8d27`, log `~/.hud/flows/fb62c3b381dcb8d27.json.gate-1.log`
 - `fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling exit ignored, pane.exited clean & crash` (tests/unit/herdr-fork-direct-exec.test.mjs) — flow `f41e5093437cf6530`, log `~/.hud/flows/f41e5093437cf6530.json.gate-1.log`
 
-- [ ] Each listed case passes 20 consecutive runs under parallel load
-- [ ] No assertion or product bound weakened
+- [x] Each listed case passes 20 consecutive runs under parallel load
+- [x] No assertion or product bound weakened
 
 ## Comments
+
+- Landed in this commit (replay base f2b86b8a8f45d1cfd936fd458cda09fda3f1def9); gate 5/5 passed.

@@ -102,7 +102,7 @@ export function isShellLaunchedWorker(fields?: { primary?: string; directExec?: 
 
 async function pingHudHerdr(env: NodeJS.ProcessEnv, signal?: AbortSignal) {
   if (!herdrEndpoint(env)) return null;
-  const reply = await request('ping', {}, { timeoutMs: 500, signal, env }).catch(() => null);
+  const reply = await request('ping', {}, { signal, env }).catch(() => null);
   const pong = reply?.result;
   return !reply?.error && pong && isHudHerdrVersion(pong.version) ? pong : null;
 }
@@ -121,12 +121,12 @@ export async function herdrWorkerPreflight(env = process.env): Promise<string | 
 }
 
 export async function hasHerdrHiddenTabs(env = process.env): Promise<boolean> {
-  const reply = await request('ping', {}, { timeoutMs: 500, env }).catch(() => null);
+  const reply = await request('ping', {}, { env }).catch(() => null);
   return !reply?.error && reply?.result?.capabilities?.hidden_tabs === true;
 }
 
 export async function hasHerdrHiddenTabsPeek(env = process.env): Promise<boolean> {
-  const reply = await request('ping', {}, { timeoutMs: 500, env }).catch(() => null);
+  const reply = await request('ping', {}, { env }).catch(() => null);
   return !reply?.error && reply?.result?.capabilities?.hidden_tabs_peek === true;
 }
 

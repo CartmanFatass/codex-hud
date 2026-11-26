@@ -202,7 +202,13 @@ syncBuiltinESMExports();`;
   const { flow } = await f.call('hud_land', { job });
   let firstRead, firstReceipt;
   try {
-    await until(() => fs.existsSync(seen), 15000);
+    await until(() => {
+      if (fs.existsSync(seen)) return true;
+      const state = f.flowState(flow);
+      assert.notEqual(state.state, 'failed', JSON.stringify(state));
+      assert.notEqual(state.state, 'cancelled', JSON.stringify(state));
+      return false;
+    }, t.signal);
     firstRead = await f.call('hud_read', { job: flow });
     firstReceipt = JSON.parse(fs.readFileSync(join(jobDir(f), 'job.json'), 'utf8'));
   } finally {
