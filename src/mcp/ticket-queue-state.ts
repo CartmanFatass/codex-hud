@@ -20,6 +20,7 @@ export interface TicketHandback {
 }
 export interface TicketItemHold {
   reason: string; at: string; kind?: TicketHandbackKind; owner_approval?: OwnerApproval;
+  head?: string; report_sig?: string;
 }
 export interface TicketItemFailure {
   reason: string; at: string; kind?: TicketHandbackKind;
@@ -154,10 +155,12 @@ export function ticketQueueNotice(q: TicketQueue) {
   const todo = q.state === 'completed' && q.todo?.length ? ` Todo: ${q.todo.length}.` : '';
   const heldCount = q.tickets.filter(item => item.held).length;
   const held = heldCount ? ` Held: ${heldCount}.` : '';
+  const heldHint = q.state === 'paused' && !q.unattended && heldCount && !/\bhud_land\b/.test(reason ?? '')
+    ? ' Manual resolution required: worker correction, hud_land, or stop.' : '';
   const reply = q.state === 'paused' && q.handback && q.steps?.[q.handback.step]?.state === 'asking'
     ? ` Reply: hud_respond job=${q.flow} answer=<${q.handback.choices.join('|')}>[: reason].` : '';
   return `${q.flow} (ticket queue ${q.feature}) — ${reason ?? q.state}. Landed: ${landed.join(', ') || 'none'}.` +
-    verdict + todo + held +
+    verdict + todo + held + heldHint +
     (base_moves ? ` Base moves absorbed: ${base_moves}.` : '') +
     (q.state === 'completed' ? '' : ` Still running: ${q.remaining?.join(', ') || 'none'}.`) +
     reply;

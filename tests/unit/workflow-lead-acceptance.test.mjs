@@ -118,21 +118,140 @@ for (const { label, handback_to, report } of [
   });
 }
 
-test('an assumption lead hold for visible deletion becomes an owner hand-back in an ordinary queue', { timeout: 45_000 }, async t => {
+test('an assumption lead hold records head/sig; same-report resume stays paused with resolution notice; corrected turn re-judges and lands', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-scope.md': goodTicket(1) } });
-  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root });
+  const runArgs = { op: 'run', feature: 'sample', cwd: f.root };
+  const { flow } = await f.call('hud_tickets', runArgs);
   const [first] = await f.jobs(flow, 1);
   await f.settle(first, { report: 'Done.\nAssumed: [scope] removed the old command.\n' });
+  const initialHead = f.git(f.job(first).worktree.root, 'rev-parse', 'HEAD');
   await until(() => f.flow(flow).active_lead?.kind === 'assumption', 15_000);
-  const lead = f.flow(flow).active_lead.job;
-  await f.settleLead(lead, 'Decision: hold\nReason: Deletes a user-visible command.\nOwner approval: feature-deletion\n');
+  const lead1 = f.flow(flow).active_lead.job;
+  await f.settleLead(lead1, 'Decision: hold\nReason: Deletes a user-visible command.\nOwner approval: feature-deletion\n');
   const paused = await f.end(flow);
   assert.equal(paused.state, 'paused');
   assert.equal(paused.handback.kind, 'escalate');
   assert.equal(paused.handback.owner_approval, 'feature-deletion');
   assert.equal(paused.tickets[0].land, undefined);
   assert.equal(paused.tickets[0].held.owner_approval, 'feature-deletion');
+  assert.equal(paused.tickets[0].held.head, initialHead);
+  assert.ok(paused.tickets[0].held.report_sig, 'hold records report signature');
+  assert.equal(paused.review_job, undefined);
+  assert.equal(paused.verdict, undefined);
   assert.equal(Object.keys(paused.notices).length, 1);
+  const initialSig = paused.tickets[0].held.report_sig;
+
+  // Resuming with the same report keeps the item held and pauses with the manual-resolution notice; no review/accept/finish.
+  const sameResume = await f.call('hud_tickets', runArgs);
+  assert.notEqual(sameResume.flow, flow);
+  const stillPaused = await f.end(sameResume.flow);
+  assert.equal(stillPaused.state, 'paused', JSON.stringify(stillPaused));
+  assert.equal(stillPaused.handback.kind, 'escalate');
+  assert.equal(stillPaused.handback.owner_approval, 'feature-deletion');
+  assert.equal(stillPaused.tickets[0].land, undefined);
+  assert.equal(stillPaused.tickets[0].landed, undefined);
+  assert.equal(stillPaused.tickets[0].held.owner_approval, 'feature-deletion');
+  assert.equal(stillPaused.tickets[0].held.head, initialHead);
+  assert.equal(stillPaused.tickets[0].held.report_sig, initialSig);
+  assert.equal(stillPaused.review_job, undefined);
+  assert.equal(stillPaused.verdict, undefined);
+  assert.equal(stillPaused.steps.review.state, 'waiting');
+  assert.equal(stillPaused.steps.accept.state, 'waiting');
+  const leadsAfterSame = fs.readdirSync(join(f.home, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id)).map(f.job).filter(j => j.role === 'lead');
+  assert.equal(leadsAfterSame.length, 1, 'same-report resume must not launch review/accept or duplicate leads');
+  const readSame = await f.call('hud_read', { job: sameResume.flow });
+  assert.equal(readSame.changes.length, 1);
+  assert.match(readSame.changes[0], /worker correction.*hud_land.*stop/i);
+  assert.deepEqual(readSame.landed, []);
+
+  // A new worker turn that still triggers an assumption is re-judged (never blanket-approved) and can hold again.
+  const sentAt2 = new Date().toISOString();
+  writeFixtureFile(join(f.dir(first), 'job.json'), JSON.stringify({ ...f.job(first), pi_sent_at: sentAt2 }));
+  await f.settle(first, { body: 'Updated synthetic implementation.\n', report: 'Updated.\nAssumed: [scope] altered output contract.\n' });
+  const head2 = f.git(f.job(first).worktree.root, 'rev-parse', 'HEAD');
+  assert.notEqual(head2, initialHead);
+  const rejudgeResume = await f.call('hud_tickets', runArgs);
+  await until(() => f.flow(rejudgeResume.flow).active_lead?.kind === 'assumption', 15_000);
+  const lead2 = f.flow(rejudgeResume.flow).active_lead.job;
+  assert.notEqual(lead2, lead1);
+  await f.settleLead(lead2, 'Decision: hold\nReason: Still requires a docs/spec.md change.\nOwner approval: spec-change\n');
+  const heldAgain = await f.end(rejudgeResume.flow);
+  assert.equal(heldAgain.state, 'paused', JSON.stringify(heldAgain));
+  assert.equal(heldAgain.tickets[0].held.owner_approval, 'spec-change');
+  assert.equal(heldAgain.tickets[0].held.head, head2);
+  assert.notEqual(heldAgain.tickets[0].held.report_sig, initialSig);
+  assert.equal(heldAgain.verdict, undefined);
+
+  // Worker publishes a clean corrected report -> resume un-holds, re-judges, lands, reviews and accepts cleanly.
+  const sentAt3 = new Date().toISOString();
+  writeFixtureFile(join(f.dir(first), 'job.json'), JSON.stringify({ ...f.job(first), pi_sent_at: sentAt3 }));
+  await f.settle(first, { body: 'Restored synthetic command.\n', report: 'Restored the old command cleanly.\nRemoves: none\n' });
+  const cleanResume = await f.call('hud_tickets', runArgs);
+  await until(() => f.flow(cleanResume.flow).tickets[0]?.landed === true, 15_000);
+  assert.equal(f.flow(cleanResume.flow).tickets[0].held, undefined);
+  await until(() => Boolean(f.flow(cleanResume.flow).review_job), 15_000);
+  await f.settleReview(f.flow(cleanResume.flow).review_job);
+  await until(() => f.flow(cleanResume.flow).active_lead?.kind === 'accept', 15_000);
+  await f.settleLead(f.flow(cleanResume.flow).active_lead.job, 'Decision: finish\nReason: Verified corrected turn.\n');
+  const done = await f.end(cleanResume.flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.tickets[0].landed, true);
+  assert.equal(done.tickets[0].held, undefined);
+  assert.equal(done.verdict, 'finish: Verified corrected turn.');
+});
+
+test('an ordinary run with a landed ticket and a held item never reaches review or finish; head-only change re-judges on resume', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, {
+    tickets: {
+      '01-clean.md': goodTicket(1),
+      '02-held.md': goodTicket(2, { blocked: 'none' }),
+    },
+  });
+  const runArgs = { op: 'run', feature: 'sample', max_parallel: 2, cwd: f.root };
+  const { flow } = await f.call('hud_tickets', runArgs);
+  const [first, second] = await f.jobs(flow, 2);
+  await f.settle(first);
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.landed === true, 15_000);
+  await f.settle(second, { report: 'Done.\nAssumed: [scope] removed legacy flag.\n' });
+  await until(() => f.flow(flow).active_lead?.kind === 'assumption', 15_000);
+  const lead1 = f.flow(flow).active_lead.job;
+  await f.settleLead(lead1, 'Decision: hold\nReason: Deletes a user-visible flag.\nOwner approval: feature-deletion\n');
+  const paused = await f.end(flow);
+  assert.equal(paused.state, 'paused');
+  assert.equal(paused.tickets.find(x => x.ticket === 'sample/01').landed, true);
+  assert.equal(paused.tickets.find(x => x.ticket === 'sample/02').held.owner_approval, 'feature-deletion');
+  assert.equal(paused.review_job, undefined);
+  assert.equal(paused.verdict, undefined);
+
+  // Resuming with sample/02 unchanged must stay paused and never advance to review/accept/finish despite sample/01 landing.
+  const sameResume = await f.call('hud_tickets', runArgs);
+  const stillPaused = await f.end(sameResume.flow);
+  assert.equal(stillPaused.state, 'paused', JSON.stringify(stillPaused));
+  assert.equal(stillPaused.tickets.find(x => x.ticket === 'sample/01').landed, true);
+  assert.equal(stillPaused.tickets.find(x => x.ticket === 'sample/02').held.owner_approval, 'feature-deletion');
+  assert.equal(stillPaused.review_job, undefined);
+  assert.equal(stillPaused.verdict, undefined);
+  const readSame = await f.call('hud_read', { job: sameResume.flow });
+  assert.match(readSame.changes[0], /worker correction.*hud_land.*stop/i);
+
+  // Moving only the worker worktree HEAD (same report) un-holds and re-judges via a new assumption lead.
+  const wt2 = f.job(second).worktree.root;
+  fs.writeFileSync(join(wt2, 'sample-02.txt'), 'Restored legacy flag.\n');
+  f.git(wt2, 'add', 'sample-02.txt');
+  f.git(wt2, 'commit', '-qm', 'Restore legacy flag');
+  const headResume = await f.call('hud_tickets', runArgs);
+  await until(() => f.flow(headResume.flow).active_lead?.kind === 'assumption', 15_000);
+  const lead2 = f.flow(headResume.flow).active_lead.job;
+  assert.notEqual(lead2, lead1);
+  await f.settleLead(lead2, 'Decision: continue\nReason: Legacy flag restored in new commit.\n');
+  await until(() => f.flow(headResume.flow).tickets.find(x => x.ticket === 'sample/02')?.landed === true, 15_000);
+  await until(() => Boolean(f.flow(headResume.flow).review_job), 15_000);
+  await f.settleReview(f.flow(headResume.flow).review_job);
+  await until(() => f.flow(headResume.flow).active_lead?.kind === 'accept', 15_000);
+  await f.settleLead(f.flow(headResume.flow).active_lead.job, 'Decision: finish\nReason: Both tickets landed cleanly.\n');
+  const done = await f.end(headResume.flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.deepEqual(done.tickets.filter(x => x.landed).map(x => x.ticket).sort(), ['sample/01', 'sample/02']);
 });
 
 test('a scope assumption on main hand-back pauses without waking main; one resume accepts that report and lands', { timeout: 45_000 }, async t => {

@@ -181,8 +181,55 @@ function recordUnclosedLead(q: TicketQueue, jobId: string, reason: string) {
   (q.unclosed_leads ??= []).push({ job: jobId, reason, at: new Date().toISOString() });
 }
 
-function holdItem(item: TicketQueueItem, reason: string, kind?: TicketHandbackKind, ownerApproval?: OwnerApproval) {
-  item.held = { reason, at: new Date().toISOString(), ...(kind && { kind }), ...(ownerApproval && { owner_approval: ownerApproval }) };
+function holdItem(
+  item: TicketQueueItem,
+  reason: string,
+  kind?: TicketHandbackKind,
+  ownerApproval?: OwnerApproval,
+  evidence?: { head?: string; report_sig?: string },
+) {
+  delete item.approved_assumptions_head;
+  delete item.approved_assumptions_sig;
+  item.held = {
+    reason, at: new Date().toISOString(),
+    ...(kind && { kind }),
+    ...(ownerApproval && { owner_approval: ownerApproval }),
+    ...(evidence?.head && { head: evidence.head }),
+    ...(evidence?.report_sig && { report_sig: evidence.report_sig }),
+  };
+}
+
+function heldResolutionReason(item: TicketQueueItem) {
+  const detail = item.held?.reason ? ` (${item.held.reason.slice(0, 140)})` : '';
+  return `${item.ticket}${item.job ? ` (${item.job})` : ''} stays held${detail} — manual resolution required: worker correction, hud_land, or stop`;
+}
+
+function heldItemChanged(item: TicketQueueItem): boolean {
+  const held = item.held;
+  if (!held || !item.job || (!held.head && !held.report_sig)) return false;
+  const job = findJob(item.job);
+  if (!job) return false;
+  const dir = directory(job.job);
+  const { row, status } = readRow(job, false, null);
+  const currentHead = verifiedSourceHead(job);
+  if (held.head && currentHead && currentHead !== held.head) return true;
+  if (status && cleanStates.includes(status.state)) {
+    const currentSig = declaredReport(dir, job, status);
+    return Boolean(held.report_sig && currentSig !== held.report_sig);
+  }
+  return status
+    ? !failedAttempt(row) && row.state !== 'stopped' && !fs.existsSync(join(dir, jobFiles.stopRequested))
+    : job.dispatch_exit_code === null;
+}
+
+function heldBlockProblem(q: TicketQueue, step: string): TicketProblem | undefined {
+  if (q.unattended) return undefined;
+  const held = q.tickets.find(t => t.held);
+  if (!held) return undefined;
+  return {
+    kind: 'escalate', step, ticket: held.ticket, job: held.job,
+    ownerApproval: held.held!.owner_approval, reason: heldResolutionReason(held),
+  };
 }
 
 function failItem(item: TicketQueueItem, reason: string, kind?: TicketHandbackKind) {
@@ -850,7 +897,7 @@ function tickAssumptionLead(q: TicketQueue, state: { problem?: TicketProblem }):
           } else if (parsed.decision === 'hold' || parsed.decision === 'escalate') {
             const approval = assumptionOwnerApproval(parsed);
             if (approval && parsed.reason) {
-              holdItem(entry, parsed.reason, 'assumption', approval);
+              holdItem(entry, parsed.reason, 'assumption', approval, { head: active.head, report_sig: active.report_sig });
               if (!cur.unattended) state.problem = {
                 kind: 'escalate', step: active.step, ticket: entry.ticket, job: entry.job,
                 ownerApproval: approval, reason: `${entry.ticket}: ${parsed.reason}`,
@@ -955,7 +1002,28 @@ function tickTicketQueue(
   let pendingAssumption: { item: TicketQueueItem; job: Job; head: string; sig: string; trigger: string; assumed: string[] } | undefined;
 
   for (const item of q.tickets) {
-    if (!item.job || item.landed || item.held || item.failed) continue;
+    if (item.landed || item.failed) continue;
+    if (item.held) {
+      if (q.unattended) continue;
+      const heldLand = item.job ? landAttempt(hudHome, item.job).prior : null;
+      if (heldLand && (heldLand.state === 'completed' || activeLand(heldLand))) {
+        delete item.held;
+        changed = true;
+      } else if (heldItemChanged(item)) {
+        delete item.held;
+        changed = true;
+      } else {
+        note({
+          kind: 'escalate',
+          ticket: item.ticket,
+          job: item.job,
+          ownerApproval: item.held.owner_approval,
+          reason: heldResolutionReason(item),
+        });
+        continue;
+      }
+    }
+    if (!item.job) continue;
     const recorded = item.land ? readLand(hudHome, item.land) : null;
     // A resumed queue follows any newer attempt, including one started manually after the handoff.
     const land = !item.land || (item.dispatch_queue && recorded?.ticket_queue !== q.flow)
@@ -1173,6 +1241,11 @@ function tickTicketQueue(
   }
   if (!item) {
     if (active || queued.length) return { state: 'running', changed, ...(recheck !== undefined && { recheckMs: recheck }) };
+    const heldProblem = heldBlockProblem(q, 'tickets');
+    if (heldProblem) {
+      state.problem = heldProblem;
+      return { state: 'failed', reason: heldProblem.reason, changed: true };
+    }
     if (q.repair_admitted_base !== undefined && q.tickets.length <= q.repair_admitted_base) {
       const msg = `repair round ${q.repair_rounds ?? 1} admitted no repair tickets`;
       if (q.unattended) holdRun(q, msg, 'escalate');
@@ -1241,6 +1314,11 @@ function tickJobStep(
     return { state: 'cancelled', changed: true };
   }
   if (state.problem) return { state: 'failed', reason: state.problem.reason, changed: true };
+  const heldProblem = heldBlockProblem(q, key);
+  if (heldProblem) {
+    state.problem = heldProblem;
+    return { state: 'failed', reason: heldProblem.reason, changed: true };
+  }
   if (!q.tickets.some(t => t.landed)) return { state: 'done', changed: true };
 
   const activeLeadTick = tickQuestionLead(q, state);
@@ -1378,6 +1456,11 @@ function tickHandbackStep(
     return { state: 'cancelled', changed: true };
   }
   if (state.problem) return { state: 'failed', reason: state.problem.reason, changed: true };
+  const heldProblem = heldBlockProblem(q, key);
+  if (heldProblem) {
+    state.problem = heldProblem;
+    return { state: 'failed', reason: heldProblem.reason, changed: true };
+  }
   if (key === 'accept' && !q.tickets.some(t => t.landed || t.failed)) return { state: 'done', changed: true };
 
   const target = step.to ?? q.handback_to ?? 'lead';
@@ -1511,9 +1594,14 @@ function tickHandbackStep(
               kind: 'escalate', step: key, job: leadJob.job, ownerApproval: parsed.ownerApproval, reason: msg,
             };
           } else {
-            cur.steps ??= {};
-            cur.steps[key] = { state: 'done', answer: parsed.decision };
-            cur.verdict = verdict;
+            const heldProblem = heldBlockProblem(cur, key);
+            if (heldProblem) {
+              state.problem = heldProblem;
+            } else {
+              cur.steps ??= {};
+              cur.steps[key] = { state: 'done', answer: parsed.decision };
+              cur.verdict = verdict;
+            }
           }
           writeTicketQueue(hudHome, cur);
         });

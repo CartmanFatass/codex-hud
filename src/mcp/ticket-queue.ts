@@ -248,7 +248,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
         .map(item => ({
           ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow,
           // Approve the report that caused the pause, not whatever the worker has published since.
-          ...(handback?.assumption && handback.ticket === item.ticket && handback.job === item.job && {
+          ...(handback?.assumption && !item.held && handback.ticket === item.ticket && handback.job === item.job && {
             approved_assumptions_head: handback.assumption.head,
             approved_assumptions_sig: handback.assumption.report_sig,
           }),
@@ -388,6 +388,14 @@ export async function answerTicketQueueHandback(
       cur.notices = cur.task ? {} : { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
       writeTicketQueue(home, cur);
       return { ok: true, queue: cur, resumed: false };
+    }
+    if (!cur.unattended && parsed.choice === 'finish' && cur.tickets.some(t => t.held)) {
+      const held = cur.tickets.find(t => t.held)!;
+      return {
+        ok: false,
+        code: 'invalid_choice',
+        error: `Cannot finish ${id} while ${held.ticket} is held — manual resolution required: worker correction, hud_land, or stop`,
+      };
     }
     const verdict = parsed.reason ? `${parsed.choice}: ${parsed.reason}` : parsed.choice;
     recordDecision(cur, {
