@@ -1,6 +1,7 @@
 # 05: The ticket queue runs as a workflow template
 
-**Status:** needs-triage
+**Status:** ready-for-agent
+**Objective:** unattended
 **Owner try:** no
 **Blocked by:** 04
 
@@ -12,3 +13,5 @@
 ## Comments
 
 - 2026-11-25 main: deferred by the owner (D-2026-11-25-08): complex workflows wait until one is designed on the engine. Not ready for agents.
+
+- 2026-11-26 main: revived for the unattended service (D-2026-11-26-02, unattended/01). Owner's hand-back rule for unattended runs: the lead escalates only an item that would delete a user-visible feature or change the spec; everything else (failures, owner-try acceptance, worker questions) the lead handles within its authority. A run must not depend on the main session being alive.
