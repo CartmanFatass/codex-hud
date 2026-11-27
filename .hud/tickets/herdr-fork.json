@@ -291,7 +291,7 @@
     {
       "number": 30,
       "title": "fork: the pane right-click menu lists pane plugin actions",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "After install, right-click an unfocused worker pane, choose Investigate this, and check the composer opens on that pane's visible text.",
       "approved_removals": [],
@@ -314,9 +314,15 @@
           "done": false
         }
       ],
-      "comments": [],
+      "comments": [
+        {
+          "at": "2026-11-27T08:38:18.617Z",
+          "author": "main",
+          "text": "Landed manually as herdr-hud eb2552af (queue land failed: worker edited the fork uncommitted); installed in the fork build and superseded by later installs."
+        }
+      ],
       "created_at": "2026-11-27T06:39:46.019Z",
-      "updated_at": "2026-11-27T06:39:46.019Z"
+      "updated_at": "2026-11-27T08:38:18.617Z"
     },
     {
       "number": 31,

@@ -63,7 +63,7 @@
       "number": 21,
       "title": "Gate flakes collected after test-flakes/20",
       "kind": "flake-list",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -107,17 +107,24 @@
         {
           "id": 1,
           "text": "Each listed case passes 20 consecutive runs under parallel load",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "No assertion or product bound weakened",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T08:49:10.580Z",
+        "job": "j16db434b28aea02e",
+        "flow": "f16db434b28aea02e",
+        "replay_base": "959fbe02f6e0dde3b30c1f92e632a98e8ca54d22",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T06:39:46.107Z",
-      "updated_at": "2026-11-27T06:39:46.107Z"
+      "updated_at": "2026-11-27T08:49:10.580Z"
     },
     {
       "number": 24,

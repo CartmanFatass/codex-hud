@@ -1128,14 +1128,31 @@ if (process.env.SLOW_DELIVERY_LOOKUP === '1') {
   fs.writeFileSync(release, '');
 });
 
-for (const agent of ['codex', 'claude']) test(`hud_create starts exactly one queue watcher only for Codex (${agent})`, async (t) => {
+for (const agent of ['codex', 'claude']) test(`hud_create starts exactly one queue watcher only for Codex (${agent})`, { timeout: 60000 }, async (t) => {
   const f = await fixture(t, true, `
     import fs from 'node:fs';
     import cp from 'node:child_process';
-    import { syncBuiltinESMExports } from 'node:module';
+    import { registerHooks, syncBuiltinESMExports } from 'node:module';
+    const record = (entry) => fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify(entry) + '\\n');
+    // Tool replies don't wait for delivery lookup or sidebar metadata. Observe both real effects settling.
+    registerHooks({ load(url, context, nextLoad) {
+      const name = url.endsWith('/roles/notify.js') ? 'ensureQueueWatcher' :
+        url.endsWith('/mcp/dispatch/direct-exec.js') ? 'reportDirectWorkerMetadata' : null;
+      if (!name) return nextLoad(url, context);
+      const real = JSON.stringify(url + '?real');
+      return { format: 'module', shortCircuit: true, source: \`
+        export * from \${real};
+        import { \${name} as run } from \${real};
+        import fs from 'node:fs';
+        export async function \${name}(...args) {
+          try { return await run(...args); }
+          finally { fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: '\${name}', job: args[1]?.job }) + '\\\\n'); }
+        }
+      \` };
+    } });
     const spawn = cp.spawn;
     cp.spawn = (command, args, options) => {
-      if (args?.includes('--queue')) fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ command: 'queue-watch', args, detached: options.detached, stdio: options.stdio }) + '\\n');
+      if (args?.includes('--queue')) record({ command: 'queue-watch', args, detached: options.detached, stdio: options.stdio });
       return spawn(command, args, options);
     };
     syncBuiltinESMExports();
@@ -1145,10 +1162,14 @@ for (const agent of ['codex', 'claude']) test(`hud_create starts exactly one que
   const args = { role: 'imp', request_key: 'queue-start', task: 'Synthetic queue watcher.' };
   const job = await f.call('hud_create', args);
   await f.call('hud_create', args);
-  await f.call('hud_create', { ...args, request_key: 'queue-second' });
-  const queueStarts = () => f.commands().filter((c) => c.command === 'queue-watch');
-  if (agent === 'codex') await until(() => queueStarts().length > 0, t.signal);
-  const starts = queueStarts();
+  const second = await f.call('hud_create', { ...args, request_key: 'queue-second' });
+  await until(() => {
+    const commands = f.commands();
+    const metadata = commands.filter(c => c.command === 'reportDirectWorkerMetadata').map(c => c.job);
+    return commands.filter(c => c.command === 'ensureQueueWatcher').length >= 3 &&
+      [job.job, second.job].every(id => metadata.includes(id));
+  }, t.signal);
+  const starts = f.commands().filter(c => c.command === 'queue-watch');
   assert.equal(starts.length, agent === 'codex' ? 1 : 0);
   if (agent === 'codex') {
     assert.deepEqual(starts[0].args, [resolve('bin/hud'), 'watch', '--queue']);

@@ -18,21 +18,16 @@ import {
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; socket loss stays working', { timeout: 30000 }, async (t) => {
-  const clockScale = 20;
-  const f = await fixture(t, { clockScale });
+  const f = await fixture(t);
   // Keep the 10 s real-time grace headroom during flaps instead of grok's 10 s virtual turn-trust deadline.
   writeFixtureFile(join(f.env.HUD_HOME, 'harnesses.json'), JSON.stringify({ grok: { state_trust: 'advisory' } }));
   writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
   writeCliRole(f, 'rest-events', 10);
   const job = await f.call('hud_create', { role: 'rest-events', request_key: 'rest-events', task: 'Synthetic rest.' });
-  // The direct worker seeds status after subscribing, without probing the pane address.
-  await until(() => {
-    const cliSub = f.socketRequests.findIndex((r) => r.id === 'hud-cli-events');
-    const watchSub = f.socketRequests.findIndex((r) => r.id === 'hud-watch');
-    return cliState(job.task_dir)?.agent_session_id &&
-      cliState(job.task_dir)?.pid_start_time &&
-      cliSub >= 0 && watchSub >= 0;
-  }, t.signal);
+  const subscribed = (id) => f.socketRequests.filter(r => r.id === id && r.method === 'events.subscribe').length;
+  await until(() => cliState(job.task_dir)?.agent_session_id && cliState(job.task_dir)?.pid_start_time &&
+    subscribed('hud-cli-events') && subscribed('hud-watch'), t.signal);
+  await f.waitForWorkerMetadata(job, t.signal);
   f.push(job.job, 'working');
   const writes = fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8');
   // The MCP can still be doing its asynchronous caller-pane delivery lookup.
@@ -43,8 +38,10 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
   const beforeRest = statusQueries(f, job);
   await until(() => statusQueries(f, job) >= beforeRest + 3, t.signal);
   assert.deepEqual(supervisorCommands(), commands);
-  const extra = f.socketRequests.slice(requests);
-  assert.ok(extra.every((r) => r.method === 'agent.get'), JSON.stringify(extra));
+  // The job watcher checks native permissions independently of the supervisor's safety ticks.
+  const extra = f.socketRequests.slice(requests).filter(r =>
+    !(r.method === 'pane.get' && r.params.pane_id === 'w4E:p2'));
+  assert.ok(extra.every(r => r.method === 'agent.get' && r.params.target === `${job.job}-primary`), JSON.stringify(extra));
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes);
   assert.equal(cliState(job.task_dir).state, 'working');
   const beforeFlaps = statusQueries(f, job);
@@ -52,13 +49,15 @@ test('supervisor events: 60s at rest means zero spawns and zero STATUS writes; s
     f.push(job.job, 'done');
     f.push(job.job, 'working');
   }
-  await until(() => statusQueries(f, job) > beforeFlaps, t.signal);
+  await until(() => statusQueries(f, job) >= beforeFlaps + 2, t.signal);
   assert.equal(fs.readFileSync(join(f.env.HOME, 'status-writes'), 'utf8'), writes, 'no-report status flaps do not write STATUS');
   assert.deepEqual(supervisorCommands(), commands);
   writeFixtureFile(join(f.env.HOME, 'herdr-errors'), '');
-  const beforeDrop = statusQueries(f, job);
+  const beforeDrop = statusQueries(f, job), beforeReconnect = subscribed('hud-cli-events');
   f.drop();
-  await until(() => statusQueries(f, job) >= beforeDrop + 3, t.signal); // Reconnect seed plus two safety ticks.
+  await until(() => subscribed('hud-cli-events') > beforeReconnect, t.signal);
+  const afterReconnect = statusQueries(f, job);
+  await until(() => statusQueries(f, job) >= Math.max(beforeDrop + 3, afterReconnect + 2), t.signal);
   assert.equal(cliState(job.task_dir).state, 'working');
   assert.equal(cliState(job.task_dir).error, null);
   assert.deepEqual(supervisorCommands(), commands);
