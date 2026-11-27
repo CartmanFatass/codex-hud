@@ -3,7 +3,8 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
-import { recordUnattendedAcceptance } from '../../dist/mcp/local-tickets.js';
+import { prepareLandRecords, recordLanding } from '../../dist/mcp/land-records.js';
+import { recordUnattendedAcceptance, unfinishedAcceptance } from '../../dist/mcp/local-tickets.js';
 import { landedNewest } from '../../dist/render/project-view.js';
 import { writeReportMeta, cachedReportSignature } from '../../dist/roles/report-meta.js';
 import { taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
@@ -97,7 +98,7 @@ for (const [label, ownerTry, expectedStatus] of [
   const rec1 = doc.tickets.find(t => t.number === 1);
   assert.equal(rec1.status, expectedStatus);
   assert.deepEqual(rec1.acceptance.map(item => item.done), [true, true]);
-  assert.equal(rec1.comments[0]?.text, 'preserve me');
+  assert.deepEqual(rec1.comments.map(c => c.text), ['preserve me']);
   assertLandingRecord(f, ticket, beforeBase, done.landed_sha);
   assert.equal(f.git(f.remote, 'show', 'base:STATE.md') + '\n', initialState);
   const project = await new ProjectCollector(f.main, f.home, f.env, f.env.HOME).collect(true, EMPTY_BOARD, Date.now());
@@ -150,6 +151,9 @@ for (const source of ['report', 'lead', 'owner try']) test(`land lists and leave
   assert.equal(record.landing.flow, flow);
   assert.equal(record.landing.replay_base, f.flowState(flow).base_sha);
   assert.deepEqual(record.acceptance.map(item => [item.id, item.done]), [[id, false], [2, true]]);
+  assert.equal(record.comments.length, 1);
+  assert.equal(record.comments[0].author, 'land');
+  assert.ok(record.comments[0].text.includes(`#${id} Test the \`fallback\` path.`), JSON.stringify(record.comments));
   const project = await new ProjectCollector(f.main, f.home, f.env, f.env.HOME).collect(true, EMPTY_BOARD, Date.now());
   const row = project.ledger.find(r => r.id === 'FEATURE-01');
   assert.equal(row?.state, ownerTry ? 'try' : 'todo');
@@ -451,4 +455,151 @@ test('a main commit touching the landing ticket path during the gate replays wit
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), state.landed_sha);
   assert.match(f.git(f.remote, 'show', `base:${ticket}`), /Concurrent ticket note/);
   assertLandingRecord(f, ticket, movedBase, state.landed_sha);
+});
+
+test('land parses numbered Not done heading, comments once on partial landing, and deduplicates comment on replay', async t => {
+  const f = await checkout(t, ['true']), dir = jobDir(f);
+  const ticket = '.hud/tickets/feature.json';
+  const receipt = join(dir, 'job.json');
+  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
+  fs.writeFileSync(join(dir, 'report.md'), [
+    '## 1. Files changed',
+    '- tracked',
+    '',
+    '## 3. Not done',
+    '- item 1',
+    '',
+    '## 4. Open questions',
+    'None.',
+    '',
+  ].join('\n'));
+  seedJsonTickets(f, 'feature', [{
+    number: 1, title: 'Numbered heading ticket', status: 'ready-for-agent', owner_try: false, what: 'Partial work.',
+    acceptance: [
+      { id: 1, text: 'Finish the remaining check.', done: false },
+      { id: 2, text: 'Finish the first check.', done: false },
+    ],
+  }]);
+  f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed ticket');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.deepEqual(done.unfinished_acceptance, [{ id: 1, text: 'Finish the remaining check.' }]);
+  assert.ok(done.changes.find(line => line.includes(flow))?.includes('Acceptance left unticked: #1 Finish the remaining check.'));
+
+  const fetched = await f.call('hud_tickets', { op: 'get', ticket: 'feature/01' });
+  assert.equal(fetched.ticket.status, 'ready-for-agent');
+  assert.deepEqual(fetched.ticket.acceptance.map(item => [item.id, item.done]), [[1, false], [2, true]]);
+  assert.equal(fetched.ticket.comments.length, 1);
+  assert.equal(fetched.ticket.comments[0].author, 'land');
+  assert.ok(fetched.ticket.comments[0].text.includes('#1 Finish the remaining check.'), JSON.stringify(fetched.ticket.comments));
+
+  // Replaying the landing (same flow, retry flow for same job, and repeated hud_land) does not add a second comment.
+  const flowState = f.flowState(flow);
+  const realMain = fs.realpathSync(f.main);
+  const sameFlowEntries = prepareLandRecords(f.main, f.home, [flowState]).get(realMain);
+  await recordLanding(f.main, f.home, sameFlowEntries, flowState.base_sha, 1, [], [], '2026-11-27T10:00:00.000Z', { sweep: false });
+  const retryFlowEntries = prepareLandRecords(f.main, f.home, [{ ...flowState, flow: `${flow}-2` }]).get(realMain);
+  await recordLanding(f.main, f.home, retryFlowEntries, flowState.base_sha, 1, [], [], '2026-11-27T10:01:00.000Z', { sweep: false });
+  assert.equal((await f.call('hud_land', { job })).flow, flow);
+
+  const afterReplay = await f.call('hud_tickets', { op: 'get', ticket: 'feature/01' });
+  assert.equal(afterReplay.ticket.status, 'ready-for-agent');
+  assert.deepEqual(afterReplay.ticket.acceptance.map(item => [item.id, item.done]), [[1, false], [2, true]]);
+  assert.equal(afterReplay.ticket.comments.length, 1, JSON.stringify(afterReplay.ticket.comments));
+  assert.equal(afterReplay.ticket.comments[0].text, fetched.ticket.comments[0].text);
+});
+
+test('land leaves explicit ID lists unticked, keeps ticket and dependents open, and comments once', async t => {
+  const f = await checkout(t, ['true']), dir = jobDir(f);
+  const ticket = '.hud/tickets/feature.json';
+  const receipt = join(dir, 'job.json');
+  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
+  fs.writeFileSync(join(dir, 'report.md'), [
+    '## 3. Not done',
+    '- Acceptance items 1 and 2 are unfinished',
+    '',
+    '## 4. Checks',
+    '- Acceptance item 3 passed.',
+    '',
+  ].join('\n'));
+  seedJsonTickets(f, 'feature', [
+    {
+      number: 1, title: 'Multi-item ticket', status: 'ready-for-agent', owner_try: false, what: 'Multiple checks.',
+      acceptance: [
+        { id: 1, text: 'First unfinished check.', done: false },
+        { id: 2, text: 'Second unfinished check.', done: false },
+        { id: 3, text: 'Completed check.', done: false },
+      ],
+    },
+    {
+      number: 2, title: 'Dependent ticket', status: 'ready-for-agent', owner_try: false, what: 'Waits on 01.',
+      blocked_by: ['feature/01'],
+      acceptance: [{ id: 1, text: 'After 01.', done: false }],
+    },
+  ]);
+  f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed tickets');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.deepEqual(done.unfinished_acceptance, [
+    { id: 1, text: 'First unfinished check.' },
+    { id: 2, text: 'Second unfinished check.' },
+  ]);
+  const notice = done.changes.find(line => line.includes(flow)) ?? '';
+  assert.ok(notice.includes('Acceptance left unticked: #1 First unfinished check.; #2 Second unfinished check.'), notice);
+
+  const [rec1] = JSON.parse(f.git(f.remote, 'show', `base:${ticket}`)).tickets;
+  assert.equal(rec1.status, 'ready-for-agent');
+  assert.deepEqual(rec1.acceptance.map(item => [item.id, item.done]), [[1, false], [2, false], [3, true]]);
+  assert.equal(rec1.comments.length, 1);
+  assert.equal(rec1.comments[0].author, 'land');
+  assert.ok(rec1.comments[0].text.includes('#1 First unfinished check.; #2 Second unfinished check.'), JSON.stringify(rec1.comments));
+
+  const ready = await f.call('hud_tickets', { op: 'ready' });
+  assert.equal(ready.tickets.some(entry => entry.ticket === 'feature/01'), true);
+  assert.equal(ready.tickets.some(entry => entry.ticket === 'feature/02'), false);
+});
+
+test('land with empty numbered Not done section still ticks all items without adding a comment', async t => {
+  const f = await checkout(t, ['true']), dir = jobDir(f);
+  const ticket = '.hud/tickets/feature.json';
+  const receipt = join(dir, 'job.json');
+  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
+  fs.writeFileSync(join(dir, 'report.md'), '## 3. Not done\n\n## 4. Open questions\n- Acceptance item 1 was verified.\n');
+  seedJsonTickets(f, 'feature', [{
+    number: 1, title: 'Complete ticket', status: 'ready-for-agent', owner_try: false, what: 'Done.',
+    acceptance: [{ id: 1, text: 'First check.', done: false }, { id: 2, text: 'Second check.', done: false }],
+  }]);
+  f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed ticket');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.unfinished_acceptance, undefined);
+  const [rec1] = JSON.parse(f.git(f.remote, 'show', `base:${ticket}`)).tickets;
+  assert.equal(rec1.status, 'done');
+  assert.deepEqual(rec1.acceptance.map(item => item.done), [true, true]);
+  assert.deepEqual(rec1.comments, []);
+});
+
+test('unfinishedAcceptance recognises explicit ID lists without matching unrelated numbers', () => {
+  const items = [
+    { id: 1, text: 'First item', done: false },
+    { id: 2, text: 'Second item', done: false },
+    { id: 3, text: 'Third item', done: false },
+  ];
+  const ids = (notes) => unfinishedAcceptance(items, notes).map(item => item.id);
+  assert.deepEqual(ids(['Acceptance items 1 and 2 are unfinished']), [1, 2]);
+  assert.deepEqual(ids(['items 1, 2']), [1, 2]);
+  assert.deepEqual(ids(['items 1, 2, and 3 are pending']), [1, 2, 3]);
+  assert.deepEqual(ids(['Acceptance criteria #1, #2 & #3']), [1, 2, 3]);
+  assert.deepEqual(ids(['- #1 and #2: still pending']), [1, 2]);
+  assert.deepEqual(ids(['item 1: 2 tests failed']), [1]);
+  assert.deepEqual(ids(['1. Leave item 2 unticked']), [2]);
+  assert.deepEqual(ids(['items 1 and 2/3 done']), [1]);
+  assert.deepEqual(ids(['items 1, 2026-11-27']), [1]);
+  assert.deepEqual(ids(['None.']), []);
 });

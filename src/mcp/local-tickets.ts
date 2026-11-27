@@ -510,14 +510,27 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
 }
 
 const acceptanceName = (text: string) => text.replace(/`|\*\*/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+const acceptanceIdToken = '#?\\d+\\b(?![./-]\\d)';
+const acceptanceIdSep = '(?:\\s*,\\s*(?:(?:and|&)\\s+)?|\\s+(?:and|&)\\s+)';
+const acceptanceIdList = `${acceptanceIdToken}(?:${acceptanceIdSep}${acceptanceIdToken})*`;
+const bareAcceptanceIds = new RegExp(
+  `^(?:[-*+] (?:\\[ \\] )?)?(?:(#\\d+\\b(?![./-]\\d)(?:${acceptanceIdSep}${acceptanceIdToken})*)(?=[.:;\\s]|$)|(\\d+\\b(?![./-]\\d)(?:${acceptanceIdSep}${acceptanceIdToken})*)(?=:|$))`,
+);
+const namedAcceptanceIds = new RegExp(
+  `\\b(?:acceptance(?:\\s+(?:items?|criteri(?:on|a)|ids?)(?:\\s+ids?)?)?|items?(?:\\s+ids?)?)(?::\\s*|\\s+)(${acceptanceIdList})`,
+  'g',
+);
+const addAcceptanceIds = (ids: Set<number>, raw: string) => {
+  for (const match of raw.matchAll(/\d+/g)) ids.add(Number(match[0]));
+};
 
 export function unfinishedAcceptance(items: readonly AcceptanceItem[], notes: readonly string[]) {
   const ids = new Set<number>();
   const names = notes.map(acceptanceName).filter(note => !/^(?:[-*] )?(?:none|nothing|n\/a)[.!]?$/.test(note));
   for (const note of names) {
-    const bare = /^(?:[-*+] (?:\[ \] )?)?(?:#(\d+)(?=[.:\s]|$)|(\d+)(?=:|$))/.exec(note);
-    if (bare) ids.add(Number(bare[1] ?? bare[2]));
-    for (const match of note.matchAll(/\b(?:acceptance(?:\s+(?:item|criterion))?|item(?:\s+id)?)\s+#?(\d+)\b/g)) ids.add(Number(match[1]));
+    const bare = bareAcceptanceIds.exec(note);
+    if (bare) addAcceptanceIds(ids, bare[1] ?? bare[2]);
+    for (const match of note.matchAll(namedAcceptanceIds)) addAcceptanceIds(ids, match[1]);
   }
   return items.flatMap(({ id, done, text }) => {
     if (done) return [];

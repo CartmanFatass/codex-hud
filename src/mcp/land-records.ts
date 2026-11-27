@@ -14,7 +14,13 @@ import type { Job } from './job-contracts.js';
 import type { LandFlow } from './land-state.js';
 import { registeredTicketRepo, unfinishedAcceptance, unregisteredRepoReason } from './local-tickets.js';
 import { jobFiles } from './paths.js';
+import { REPORT_MARKDOWN_HEADING_PREFIX } from './report-notes.js';
 import { readTicketQueue } from './ticket-queue-state.js';
+
+const notDoneHeader = new RegExp(
+  `^(?:${REPORT_MARKDOWN_HEADING_PREFIX}|[-*][ \\t]+|(\\d+\\.)[ \\t]+)?(?:\\*\\*)?(?:Not done|Anything in the brief you did not do, and why\\.?)(?:\\*\\*)?(?::(?:\\*\\*)?[ \\t]*(.*))?$`,
+  'i',
+);
 
 function notDoneNotes(dir: string): string[] {
   let report: string;
@@ -30,13 +36,13 @@ function notDoneNotes(dir: string): string[] {
   let open = false, numberedIndent: number | undefined;
   for (const raw of report.split(/\r?\n/)) {
     const line = raw.trim();
-    // Accept both a Not done heading and item 3 of the existing worker report template.
-    const header = /^(?:(?:#{1,6}|[-*]|(\d+\.))\s+)?(?:\*\*)?(?:Not done|Anything in the brief you did not do, and why\.?)(?:\*\*)?(?::(?:\*\*)?\s*(.*))?$/i.exec(line);
+    // Accept Not done headings (including numbered Markdown headings) and numbered report items.
+    const header = notDoneHeader.exec(line);
     if (header) {
       open = true;
       numberedIndent = header[1] ? raw.length - raw.trimStart().length : undefined;
       if (header[2]) notes.push(header[2]);
-    } else if (/^#{1,6}\s|^(?:\*\*)?(?:Blockers|Try|Assumed|Removes|Todo)(?:\*\*)?:/i.test(line) ||
+    } else if (/^#{1,6}\s|^(?:[-*]\s+)?(?:\*\*)?(?:Blockers|Try|Assumed|Removes|Todo)(?:\*\*)?:/i.test(line) ||
                (numberedIndent !== undefined && /^\d+\.\s/.test(line) && raw.length - raw.trimStart().length <= numberedIndent)) {
       open = false;
     } else if (open && line) {
@@ -97,6 +103,17 @@ function handEditError(rel: string) {
   return new Error(`Cannot record landing in ${rel}: uncommitted hand edit present; commit or revert it and retry hud_land`);
 }
 
+function partialLandingComment(row: LandFlow, unfinished: readonly { id: number; text: string }[]): string {
+  const items = unfinished.map(({ id, text }) => `#${id} ${text.replace(/\s+/g, ' ').trim()}`).join('; ');
+  return `Partial landing (${row.flow}, job ${row.job}): acceptance left unticked: ${items}`;
+}
+
+function hasPartialLandingComment(comments: readonly { author: string; text: string }[], row: LandFlow, text: string): boolean {
+  return comments.some(c =>
+    c.author === 'land' && (c.text === text || c.text.startsWith(`Partial landing (${row.flow},`) || c.text.includes(`job ${row.job}):`)),
+  );
+}
+
 function applyJsonLanding(doc: TicketFeatureDoc, { row, ref, notes, commit }: LandRecordEntry, replayBase: string, gates: number, at: string) {
   const ticket = doc.tickets.find(t => t.number === ref.number);
   if (!ticket) return;
@@ -105,6 +122,12 @@ function applyJsonLanding(doc: TicketFeatureDoc, { row, ref, notes, commit }: La
   ticket.status = ticket.owner_try ? 'ready-for-human' : unfinished.length ? 'ready-for-agent' : 'done';
   delete ticket.claimed_at;
   for (const item of ticket.acceptance) if (!skip.has(item.id)) item.done = true;
+  if (unfinished.length) {
+    const comment = partialLandingComment(row, unfinished);
+    if (!hasPartialLandingComment(ticket.comments, row, comment)) {
+      ticket.comments.push({ at, author: 'land', text: comment });
+    }
+  }
   ticket.landing = { at, job: row.job, flow: row.flow, replay_base: replayBase, gates, ...(commit && { commit }) };
   ticket.updated_at = at;
   return unfinished;

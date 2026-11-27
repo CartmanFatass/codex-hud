@@ -14,9 +14,20 @@ const detailNamesDecision = /\b(?:decid(?:e[ds]?|ing)|decision|approv(?:e[ds]?|i
 const noneModifier = /^(?:(?:that\s+)?(?:requir(?:e[ds]?|ing)|need(?:s|ed|ing)?)\s+(?:an?\s+)?owner\s+(?:decision|decisions|approval|sign-?off|input|action)(?:\s+(?:before\s+(?:this\s+can\s+)?land(?:ing)?|to\s+land))?|(?:for\s+(?:the\s+)?owner|before\s+(?:this\s+can\s+)?land(?:ing)?|blocking\s+land(?:ing)?))\b/i;
 const noOwnerDecisionClause = /^no\s+(?:owner\s+(?:decision|decisions|approval|sign-?off|input|action|blocker|blockers)|blockers?)(?:\s+(?:is\s+|are\s+)?(?:needed|required|pending|before\s+(?:this\s+can\s+)?land(?:ing)?|to\s+land))?\s*[.!]?$/i;
 
-const noteHeaderWithColon = /^([ \t]*)(?:([-*])[ \t]+|(#{1,6})[ \t]+(?:\d+\.[ \t]+)?)?(?:\*\*)?(Blockers|Try)(?:\*\*)?:(?:\*\*)?([^\r\n]*)$/i;
-const noteHeadingNoColon = /^([ \t]*)(#{1,6})[ \t]+(?:\d+\.[ \t]+)?(?:\*\*)?(Blockers|Try)(?:\*\*)?[ \t]*$/i;
-const knownReportField = /^[ \t]*(?:[-*][ \t]+|#{1,6}[ \t]+(?:\d+\.[ \t]+)?)?(?:\*\*)?(?:Blockers|Try|Removes|Assumed|Todo|Decision|Reason|Answer|Owner approval)(?:\*\*)?:|^[ \t]*#{1,6}[ \t]+(?:\d+\.[ \t]+)?(?:\*\*)?(?:Blockers|Try)(?:\*\*)?[ \t]*$/i;
+export const REPORT_MARKDOWN_HEADING_PREFIX = '#{1,6}[ \\t]+(?:\\d+\\.[ \\t]+)?';
+
+const noteHeaderWithColon = new RegExp(
+  `^([ \\t]*)(?:([-*])[ \\t]+|(${REPORT_MARKDOWN_HEADING_PREFIX}))?(?:\\*\\*)?(Blockers|Try)(?:\\*\\*)?:(?:\\*\\*)?([^\\r\\n]*)$`,
+  'i',
+);
+const noteHeadingNoColon = new RegExp(
+  `^([ \\t]*)(${REPORT_MARKDOWN_HEADING_PREFIX})(?:\\*\\*)?(Blockers|Try)(?:\\*\\*)?[ \\t]*$`,
+  'i',
+);
+const knownReportField = new RegExp(
+  `^[ \\t]*(?:[-*][ \\t]+|${REPORT_MARKDOWN_HEADING_PREFIX})?(?:\\*\\*)?(?:Blockers|Try|Removes|Assumed|Todo|Decision|Reason|Answer|Owner approval)(?:\\*\\*)?:|^[ \\t]*${REPORT_MARKDOWN_HEADING_PREFIX}(?:\\*\\*)?(?:Blockers|Try)(?:\\*\\*)?[ \\t]*$`,
+  'i',
+);
 const markdownHeading = /^[ \t]*#{1,6}[ \t]+/;
 const horizontalRule = /^[ \t]*(?:[-*_][ \t]*){3,}$/;
 const bulletLine = /^([ \t]*)(?:[-*]|\d+\.)[ \t]+(.*)$/;

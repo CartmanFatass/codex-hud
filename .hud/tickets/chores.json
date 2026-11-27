@@ -578,7 +578,7 @@
     {
       "number": 41,
       "title": "Flake auto-land authority comes only from the collector's flag, and a settled flake never loops",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -592,37 +592,44 @@
         {
           "id": 1,
           "text": "Test: a manually dispatched worktree job with request_key `flakes:investigate`, a clean report and a commit is not auto-landed and stays available to hud_land",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: a promoted flake job (auto_land: true) still lands by itself",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: a settled flake job whose only question timed out is evaluated (lands on a clean report; hands back to main on a Blockers line) instead of waiting",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Test: a flake job with a genuinely open question does not trigger repeated immediate watcher rescans (bounded scan count over a fixed window)",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T10:12:31.433Z",
+        "job": "j35d233570b818e71",
+        "flow": "f35d233570b818e71",
+        "replay_base": "ff43b74d4dd6fae2ee583a9cf3dbbdc3e20f85f2",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T09:55:57.004Z",
-      "updated_at": "2026-11-27T09:55:57.004Z"
+      "updated_at": "2026-11-27T10:12:31.433Z"
     },
     {
       "number": 42,
       "title": "Land keeps reported-unfinished items open for numbered headings and ID lists, and comments on the ticket",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -636,32 +643,39 @@
         {
           "id": 1,
           "text": "Test: a report with `## 3. Not done` then `- item 1` lands the JSON ticket with item 1 unticked, status ready-for-agent, and the land notice lists it",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: `Acceptance items 1 and 2 are unfinished` leaves both unticked and the ticket not done (check resulting JSON status, ticks and notice, not only the parser)",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: a partial landing appends exactly one ticket comment naming the remaining items; replaying the landing does not add a second",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Test: an empty Not done section still ticks all items as today",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T10:12:31.433Z",
+        "job": "j25ad9f4ebbd1b3b2",
+        "flow": "f25ad9f4ebbd1b3b2",
+        "replay_base": "ff43b74d4dd6fae2ee583a9cf3dbbdc3e20f85f2",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T09:55:57.004Z",
-      "updated_at": "2026-11-27T09:55:57.004Z"
+      "updated_at": "2026-11-27T10:12:31.433Z"
     },
     {
       "number": 43,
