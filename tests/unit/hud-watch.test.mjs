@@ -1109,7 +1109,7 @@ test('mod watcher does not replay old settled unread jobs from other callers acr
 import fs from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'pane' && args[1] === 'list') {
-  const panes = JSON.parse(fs.readFileSync(${JSON.stringify(panesFile)}, 'utf8')).map((pane_id) => ({ pane_id }));
+  const panes = JSON.parse(fs.readFileSync(${JSON.stringify(panesFile)}, 'utf8')).map(pane_id => ({ pane_id, agent: 'pi', cwd: process.cwd() }));
   console.log(JSON.stringify({ result: { panes } }));
 }
 `, { mode: 0o700 });
@@ -1210,7 +1210,7 @@ test('mod sleep-resume folds old adopted unread jobs into one summary line and d
   const past = new Date(now - 12 * 3600_000), projectCwd = process.cwd();
   fs.writeFileSync(join(f.home, 'bin/herdr'), `#!${process.execPath}
 const args = process.argv.slice(2);
-if (args[0] === 'pane' && args[1] === 'list') console.log(JSON.stringify({ result: { panes: [{ pane_id: ${JSON.stringify(pane)} }] } }));
+if (args[0] === 'pane' && args[1] === 'list') console.log(JSON.stringify({ result: { panes: [{ pane_id: ${JSON.stringify(pane)}, agent: 'claude', cwd: process.cwd() }] } }));
 `, { mode: 0o700 });
   for (let i = 1; i <= 20; i++) {
     const dir = writeJob(f.home, `j${i.toString(16).padStart(16, '0')}`, otherPane, 'old',

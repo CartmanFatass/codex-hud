@@ -59,7 +59,7 @@ test('adoptProjectJobs uses abstract-lock (job-adopt) without flock', async (t) 
   fs.mkdirSync(fakeBin, { recursive: true });
   fs.writeFileSync(
     join(fakeBin, 'herdr'),
-    `#!${process.execPath}\nconsole.log(JSON.stringify({ result: { panes: [{ pane_id: 'w4E:p1' }] } }));\n`,
+    `#!${process.execPath}\nconsole.log(JSON.stringify({ result: { panes: [{ pane_id: 'w4E:p1', agent: 'pi', cwd: ${JSON.stringify(root)} }] } }));\n`,
     { mode: 0o700 }
   );
   // PATH has only fakeBin — no flock binary is reachable.

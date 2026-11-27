@@ -466,7 +466,7 @@ test('jobRow JobRowExtras, failureUnobserved statusAt, and adoptProjectJobs reus
   const herdrPath = join(fakeBin, 'herdr');
   fs.writeFileSync(
     herdrPath,
-    '#!/bin/sh\nprintf \'{"result":{"panes":[{"pane_id":"w4E:p1"}]}}\\n\'\n',
+    `#!/bin/sh\nprintf '{"result":{"panes":[{"pane_id":"w4E:p1","agent":"pi","cwd":${JSON.stringify(home)}}]}}\\n'\n`,
     { mode: 0o700 }
   );
   let jobOpens = 0;

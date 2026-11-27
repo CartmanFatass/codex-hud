@@ -459,7 +459,7 @@ test('MCP adopts same-project orphan jobs in one scan and pushes questions to th
   await f.call('hud_read');
   assert.deepEqual(adopted.map(ownerOf), ['w4E:p8', 'w4E:p7'], 'incomplete pane list cannot transfer ownership');
 
-  const lists = () => f.commands().filter(({ args }) => args[0] === 'pane' && args[1] === 'list').length;
+  const lists = () => f.socketRequests.filter(req => req.method === 'pane.list').length;
   const before = lists();
   paneList(f, 'w4E:p1', 'wOTHER:p1');
   const handoff = await f.call('hud_read');
@@ -480,6 +480,35 @@ test('MCP adopts same-project orphan jobs in one scan and pushes questions to th
   assert.deepEqual(await once(pi, 'close'), [0, null]);
   assert.deepEqual(f.commands().filter(({ args }) => args[0] === 'agent' && args[1] === 'prompt')
     .map(({ args }) => args[2]), ['w4E:p1', 'w4E:p1']);
+});
+
+test('a listed shell cannot adopt a working job before its permission appears', async t => {
+  const f = await fixture(t), orphan = waitFixtureJob(f, 1, 'working', 'w4E:p8');
+  writeFixtureFile(join(f.env.HOME, 'pane-list.json'), JSON.stringify({ result: { panes: [{ pane_id: 'w4E:p1', cwd: f.root }] } }));
+  await f.call('hud_read');
+  assert.equal(ownerOf(orphan), 'w4E:p8');
+  writeFixtureFile(join(orphan.dir, 'SESSION.txt'), 'LEFT=w4E:p1\n');
+  paneList(f, 'w4E:p1');
+  await f.call('hud_read');
+  assert.equal(ownerOf(orphan), 'w4E:p8', 'a listed worker agent is not a main either');
+});
+
+test('a fallback watch receives a batch member question even while the original pane is listed', { timeout: 10000 }, async t => {
+  const f = await fixture(t), member = waitFixtureJob(f, 1, 'working', 'w4E:p8'), flow = 'b0000000000000001';
+  paneList(f, 'w4E:p1', 'w4E:p8');
+  writeFixtureFile(join(member.dir, 'job.json'), JSON.stringify({ ...member.receipt, batch_flow: flow }));
+  fs.mkdirSync(join(f.env.HUD_HOME, 'flows'), { recursive: true });
+  writeFixtureFile(join(f.env.HUD_HOME, 'flows', `${flow}.json`), JSON.stringify({ flow, pane: 'w4E:p8', project_root: f.root,
+    origin_mcp: { pid: process.pid, start: 'stale' }, state: 'working', notices: {} }));
+  const child = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { cwd: f.root, env: f.env, stdio: ['ignore', 'pipe', 'inherit'] });
+  const exited = once(child, 'exit');
+  t.after(async () => { child.kill(); await exited; });
+  let output = '';
+  child.stdout.setEncoding('utf8').on('data', text => { output += text; });
+  await until(() => fs.existsSync(join(f.env.HUD_HOME, 'watchers/w4E:p1.pid')), t.signal);
+  const ask = await workerClient(t, f, member.dir, '0')('hud_ask', { question: 'Which layout?', default: 'Rows.' });
+  assert.match(ask.content[0].text, /delivered by hud watch/);
+  await until(() => output.includes(`reply: hud_respond job=${member.job} request_id=q1`), 3000);
 });
 
 test('hud watch adopts on catch-up and delivers an already pending question', async (t) => {
@@ -737,6 +766,7 @@ syncBuiltinESMExports();`
     dir = join(f.env.HUD_HOME, 'jobs', job);
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
   const receipt = { job, role: 'imp', cwd: f.root, created_at: '2026-01-01', dispatch_exit_code: 0, stderr_tail: '' };
+  paneList(f, f.env.HERDR_PANE_ID); // The unbound receipt needs a verified project main to answer.
   // Atomic like the real writers: the polled hud_read must never see a half-written file.
   const put = (name, value) => writeFixtureFile(join(dir, name), JSON.stringify(value));
   const save = () => put('job.json', receipt);

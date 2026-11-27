@@ -14,13 +14,12 @@ import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { excerptTargetSupported, jobProjectRoot } from './selection-excerpts.js';
 import { herdrEndpoint, request as herdrRequest, watchHerdrPane, type HerdrReply } from '../runtime/herdr-socket.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
-import { isProcAlive } from '../utils/proc.js';
+import { directRecipient } from '../workflows/scope.js';
 import { herdrId, herdrResult, isRecord, runCommand, runHerdr } from './herdr-run.js';
 import { getJobIndexCache } from './job-index-cache.js';
 import { jobCallerPane } from './job-pane.js';
 import {
   notify,
-  notifyOutcome,
   PROMPT_QUIET_MS,
   PROMPT_RETRY_TTL_MS,
   recordPromptExpiry,
@@ -429,7 +428,7 @@ export async function resolveSelectionTarget(
       return null;
     }
     const candidates = panes.filter(
-      (p) => p.agent && MAIN_AGENTS.has(p.agent) && !workerPanes.has(p.pane_id) && p.label !== 'hud panel'
+      (p) => isMainAgentPane(p, workerPanes)
     );
     const rootCache = new Map<string, string>();
     const rootOf = (cwd?: string): string | null => {
@@ -837,7 +836,7 @@ export async function deliverSelection(
   if (sent.retryPrompt) {
     return { ok: false, error: 'Main session not ready for guarded typing. Selection not sent.', retryPrompt: sent.retryPrompt };
   }
-  if (notifyOutcome(sent) !== 'refused') {
+  if (sent.outcome !== 'refused') {
     return { ok: true, delivered: 'direct', detail: sent.detail };
   }
   return {
@@ -985,8 +984,8 @@ export interface LivePaneSnapshot {
 }
 
 export type RecipientResolution =
-  | { kind: 'pane'; pane: string; originLive: boolean; watching: boolean }
-  | { kind: 'none'; originLive: false }
+  | { kind: 'pane'; pane: string; watching: boolean }
+  | { kind: 'none' }
   | { kind: 'unknown' };
 
 export function liveWorkerPanes(home: string, panes: readonly LivePane[], env: NodeJS.ProcessEnv = process.env): Set<string> {
@@ -994,14 +993,13 @@ export function liveWorkerPanes(home: string, panes: readonly LivePane[], env: N
   const currentSocket = herdrEndpoint(env);
   const cache = getJobIndexCache(home);
   const workers = new Set<string>();
-  for (const { id } of cache.listJobDirsByMtime().dirs.slice(0, MAX_JOBS_SCAN)) {
-    const receipt = cache.readJob<Job>(id);
-    if (receipt.status !== 'ok' || receipt.value.job !== id) continue;
+  for (const id of cache.listJobIds()) {
     const fields = cache.readSession(id)?.fields;
     if (!fields) continue;
-    const reaped = Boolean(receipt.value.reaped_at);
     for (const wp of [fields.left, fields.right]) {
-      if (wp && herdrId(wp) && paneMatchesSession(wp, paneById.get(wp), fields, currentSocket, reaped)) workers.add(wp);
+      if (!wp || !paneById.has(wp)) continue;
+      const receipt = cache.readJob<Job>(id);
+      if (paneMatchesSession(wp, paneById.get(wp), fields, currentSocket, receipt.status === 'ok' && !!receipt.value.reaped_at)) workers.add(wp);
     }
   }
   return workers;
@@ -1016,31 +1014,39 @@ const isMainAgentPane = (p: LivePane, workerPanes: ReadonlySet<string>) =>
   !!p.agent && MAIN_AGENTS.has(p.agent) && p.label !== 'hud panel' && !workerPanes.has(p.pane_id);
 
 export type NoticeOrigin = {
+  job?: string;
   pane?: string | null; origin_mcp?: { pid: number; start: string }; project_root?: string | null; workspace?: string;
 };
 
 /** Share one lazy snapshot across a scan. Pull/answer can take the own-origin fast path. */
 export function noticeResolver(home: string, env = process.env, load = () => loadLivePanes(home, env)) {
   let snapshot: Promise<LivePaneSnapshot> | undefined;
-  return async (origin: NoticeOrigin, reader?: { pane: string | null; cwd: string }): Promise<RecipientResolution> => {
-    const pane = herdrId(origin.pane) && (!origin.origin_mcp || isProcAlive(origin.origin_mcp.pid, origin.origin_mcp.start)) ? origin.pane : null;
-    const target = (pane: string, originLive: boolean): RecipientResolution =>
-      ({ kind: 'pane', pane, originLive, watching: !reader && watching(pane, home) });
-    if (pane && reader?.pane === pane) return target(pane, true);
-    const none = { kind: 'none', originLive: false } as const;
+  return async (origin: NoticeOrigin, reader?: { pane: string | null; cwd: string; use?: 'read' | 'wake' | 'adopt' }): Promise<RecipientResolution> => {
+    const pane = herdrId(origin.pane) && directRecipient(origin) ? origin.pane : null;
+    const target = (pane: string): RecipientResolution => ({ kind: 'pane', pane, watching: !reader && watching(pane, home) });
+    if (pane && reader?.pane === pane && reader.use !== 'adopt') return target(pane);
+    const none = { kind: 'none' } as const;
     const root = origin.project_root && sharedRoot(origin.project_root);
     if (reader && (!reader.pane || !root || (root !== reader.cwd && root !== sharedRoot(reader.cwd)))) return none;
     const live = await (snapshot ??= load()).catch(() => null);
     if (!live?.panes) return { kind: 'unknown' };
     const { panes, workerPanes } = live;
     const mains = panes.filter(p => isMainAgentPane(p, workerPanes));
-    if (pane && mains.some(p => p.pane_id === pane)) return reader ? none : target(pane, true);
+    if (pane && mains.some(p => p.pane_id === pane) && reader?.pane !== pane) return reader ? none : target(pane);
     const candidates = mains.filter(p => {
       const cwd = p.foreground_cwd ?? p.cwd;
-      return (!reader || p.pane_id === reader.pane) && root && cwd && (cwd === root || sharedRoot(cwd) === root);
+      return (!reader || reader.use === 'wake' || p.pane_id === reader.pane) && root && cwd && (cwd === root || sharedRoot(cwd) === root);
     });
     const score = (p: LivePane) => (watching(p.pane_id, home) ? 4 : 0) + (origin.workspace && p.workspace_id === origin.workspace ? 2 : 0);
     const best = candidates.sort((a, b) => score(b) - score(a) || a.pane_id.localeCompare(b.pane_id))[0];
-    return best ? target(best.pane_id, false) : none;
+    return best && (!reader || best.pane_id === reader.pane) ? target(best.pane_id) : none;
   };
+}
+
+/** Pull, adoption and answers use the same main-pane proof as push. Connection ownership never comes from disk. */
+export function noticeReader(home: string, pane: string | null, cwd: string, env = process.env, load?: () => Promise<LivePaneSnapshot>, owned?: ReadonlySet<string>) {
+  const resolve = noticeResolver(home, env, load);
+  // A question wake (unlike a claimed permission) has no marker: only the push-selected watcher emits it.
+  return async (origin: NoticeOrigin, use: 'read' | 'wake' | 'adopt' = 'read') => (!!origin.job && !!owned?.has(origin.job)) ||
+    (await resolve(origin, { pane, cwd, use })).kind === 'pane';
 }

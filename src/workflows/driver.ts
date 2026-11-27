@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { notify, notifyOutcome } from '../roles/notify.js';
+import { notify } from '../roles/notify.js';
 import { noticeResolver } from '../roles/select-send.js';
 import { beginNotice, isDeliveryClaimable, settleNotice } from '../utils/delivery-record.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
@@ -63,7 +63,7 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
               if (!beginNotice(event)) continue;
               try {
                 const sent = await notify(resolved.pane, event.line, home);
-                settleNotice(event, notifyOutcome(sent), sent.via ?? 'herdr-prompt', sent.detail || sent.error?.message);
+                settleNotice(event, sent.outcome, sent.via ?? 'herdr-prompt', sent.detail || sent.error?.message);
               } catch (err) { settleNotice(event, 'indeterminate', 'herdr-prompt', String(err)); }
             }
           }

@@ -3,35 +3,32 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
 import { isAutoLandFlakeJob } from '../mcp/flake-admission.js';
-import { pruneFlakeBlockJobs, readFlakeBlockJobs } from '../mcp/flake-block-index.js';
+import { flakeBlockIndex, pruneFlakeBlockJobs, readFlakeBlockJobs } from '../mcp/flake-block-index.js';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { activeLand, isFlowId, landFile, landNoticeLine, readLand, type LandFlow } from '../mcp/land-state.js';
 import { isTicketQueueId, liveQueueTask, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { claimPermissionNotice, permissionNoticeable, permissionNoticeMarker, permissionStatus, type PermissionEntry } from '../mcp/worker-permissions.js';
-import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
-import { noticeResolver, type NoticeOrigin } from '../roles/select-send.js';
+import { dirStampOf, getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
+import { noticeReader, type NoticeOrigin } from '../roles/select-send.js';
 import { readJsonBounded } from '../utils/atomic-fs.js';
 import { claimDelivery, isDeliveryActive, isDeliveryClaimable, readDeliveryRecord, type DeliveryNotice } from '../utils/delivery-record.js';
+import { fileSignature } from '../utils/file-signature.js';
 import { reportReadHint } from '../utils/report-summary.js';
 import { composedActive, isComposedId, type ComposedRun } from './composed-state.js';
-import { workflowHeaders } from './header-scan.js';
-import { jobNoticeOrigin } from './scope.js';
+import { headerScanner, workflowHeaders, type HeaderPass } from './header-scan.js';
+import { jobNoticeOrigin, runVisible } from './scope.js';
 import { currentNoticeKey, noticeEvents, noticeMarker, type Outbox } from './store.js';
 
-export function noticeReader(home: string, pane: string | null, cwd: string, env = process.env, load?: Parameters<typeof noticeResolver>[2]) {
-  const resolve = noticeResolver(home, env, load);
-  return (origin: NoticeOrigin) => resolve(origin, { pane, cwd });
-}
+export { noticeReader };
 type Pull = ReturnType<typeof noticeReader>;
 const permissionJob = (job: Job | null, id: string): job is Job =>
   job?.job === id && !job.scout_only && !job.council && !job.headless && !job.bro && !job.jev && !job.reaped_at;
 
 export async function permissionEvents(home: string, pull: Pull, all = false,
-  sampled?: { jobs: readonly Job[]; rows: readonly { job: string; permission?: PermissionEntry }[] }) {
+  sampled?: { jobs: readonly (Job | string)[]; rows?: readonly { job: string; permission?: PermissionEntry }[] }) {
   const cache = getJobIndexCache(home), events: DeliveryNotice[] = [];
   // MCP already scanned the receipt inventory and sampled its own job rows in this call.
-  const observed = new Map(sampled?.rows.map(row => [row.job, row]));
-  let pending = false, retry = false;
+  const observed = new Map(sampled?.rows?.map(row => [row.job, row])), retry: string[] = [];
   // The cached ID index and permission ledgers suffice to rule out quiet jobs; do not load their receipts.
   for (const candidate of sampled?.jobs ?? cache.listJobIds()) {
     const id = typeof candidate === 'string' ? candidate : candidate.job;
@@ -46,16 +43,14 @@ export async function permissionEvents(home: string, pull: Pull, all = false,
     if (!permissionJob(job, id)) continue;
     const status = cache.readStatus<JobStatus>(id);
     if (status.status !== 'ok' || !['working', 'waiting_orchestrator', 'blocked'].includes(status.value.state)) continue;
-    retry = true; // Refusals, lease expiry and pane changes need no new permission ledger write.
-    if (!reclaimable) { pending = true; continue; } // An in-flight notice is not a reason to list panes.
-    const recipient = all ? 'pane' : (await pull(jobNoticeOrigin(home, job))).kind;
-    pending ||= recipient !== 'none';
-    if (recipient === 'pane') {
+    if (!all && !await pull(jobNoticeOrigin(home, job))) continue;
+    retry.push(id); // Retry relevant refusals and in-flight claims without a ledger write.
+    if (reclaimable) {
       const event = claimPermissionNotice(dir, entry, all);
       if (event) events.push(event);
     }
   }
-  return { events, pending, retry };
+  return { events, pending: !!retry.length, retry };
 }
 
 function flakeBlock(home: string, id: string) {
@@ -75,15 +70,13 @@ function flakeBlock(home: string, id: string) {
   return { job, marker, epoch, line: `${id}: auto-land blocked: ${reason} | ${reportReadHint(id)}` };
 }
 
-async function flakeBlockEvents(home: string, pull: Pull) {
-  let ids: string[];
-  try { ids = readFlakeBlockJobs(home); } catch { return []; }
+async function flakeBlockEvents(home: string, pull: Pull, ids: string[]) {
   const prunable = (block: ReturnType<typeof flakeBlock>) => block === null || (!!block && readDeliveryRecord(block.marker).state === 'accepted');
   const prune = new Set<string>(), events: DeliveryNotice[] = [];
   for (const id of ids) {
     const block = flakeBlock(home, id);
     if (prunable(block)) prune.add(id);
-    else if (block && isDeliveryClaimable(block.marker) && (await pull(jobNoticeOrigin(home, block.job))).kind === 'pane' && claimDelivery(block.marker, block.epoch)) {
+    else if (block && isDeliveryClaimable(block.marker) && await pull(jobNoticeOrigin(home, block.job)) && claimDelivery(block.marker, block.epoch)) {
       events.push({ ...block, current: () => {
         const latest = flakeBlock(home, id);
         if (latest === undefined) throw Error('flake handback unavailable');
@@ -109,27 +102,36 @@ const queueOutbox = (raw: unknown): Outbox | null => {
 };
 
 export function taskNoticeSource(home: string, pane: string | null, cwd: string) {
-  return async (pull = noticeReader(home, pane, cwd), mode: 'task' | 'task-read' | 'batch' = 'task') =>
-    (await workflowEvents(home, pane, false, cwd, false, pull, mode)).events;
+  const scan = headerScanner(), dir = join(home, 'flows');
+  let listing: { stamp: string; pass: HeaderPass; outstanding: Map<string, string[]> } | undefined;
+  let indexStamp: string | null = null, blocks: string[] = [];
+  return async (pull = noticeReader(home, pane, cwd), mode: 'task' | 'task-read' | 'batch' = 'task') => {
+    const st = fs.lstatSync(dir, { bigint: true, throwIfNoEntry: false }), stamp = st ? dirStampOf(st) : 'missing';
+    const current = listing?.stamp === stamp ? listing : (listing = { stamp, pass: scan(home), outstanding: new Map() });
+    const retry = new Set<string>(), files = current.outstanding.get(mode) ?? current.pass.files;
+    const { events } = await workflowEvents(home, pane, false, cwd, false, pull, mode, { ...current.pass, files }, retry);
+    current.outstanding.set(mode, [...retry]);
+    if (mode !== 'batch') try {
+      const sig = fileSignature(flakeBlockIndex(home));
+      if (sig !== indexStamp) { blocks = sig ? readFlakeBlockJobs(home) : []; indexStamp = sig; }
+      events.push(...await flakeBlockEvents(home, pull, blocks));
+    } catch { /* Recheck an unavailable handback index on the next drain. */ }
+    return events;
+  };
 }
 
 /** One flow scan for watch and MCP, with their existing task/observer visibility rules. */
 export async function workflowEvents(home: string, pane: string | null, all = false, cwd = process.cwd(), modStartedAt: number | false = false,
-  pull = noticeReader(home, pane, cwd), mode: 'watch' | 'task' | 'task-read' | 'batch' = 'watch') {
+  pull = noticeReader(home, pane, cwd), mode: 'watch' | 'task' | 'task-read' | 'batch' = 'watch', pass = workflowHeaders(home), retry?: Set<string>) {
   const events: DeliveryNotice[] = [];
   let pending = false;
-  const pass = workflowHeaders(home);
   const collect = async (origin: NoticeOrigin, run: Outbox, active: boolean, path?: string, project?: (raw: unknown) => Outbox | null) => {
     const keys = Object.keys(run.notices ?? {}).filter(key => currentNoticeKey(run, key));
     const marker = (key: string) => noticeMarker(home, run.flow, key, all, path);
-    if (!keys.some(key => isDeliveryClaimable(marker(key), undefined, run.epoch ?? key))) {
-      if (!pending && (all || origin.pane === pane))
-        pending = active || keys.some(key => isDeliveryActive(marker(key), undefined, run.epoch ?? key));
-      return;
-    }
-    const recipient = all ? 'pane' : (await pull(origin)).kind;
-    pending ||= recipient !== 'none';
-    if (recipient === 'pane') events.push(...noticeEvents(home, run, all, path, project));
+    const outstanding = keys.some(key => isDeliveryActive(marker(key), undefined, run.epoch ?? key));
+    if (retry && outstanding && runVisible(origin, pane, cwd)) retry.add(`${run.flow}.json`);
+    if ((all || origin.pane === pane) && (active || outstanding)) pending = true;
+    if (outstanding && (all || await pull(origin))) { pending = true; events.push(...noticeEvents(home, run, all, path, project)); }
   };
   for (const file of pass.files) {
     if (!file.endsWith('.json')) continue;
@@ -145,20 +147,28 @@ export async function workflowEvents(home: string, pane: string | null, all = fa
     } else if (isFlowId(id)) {
       const path = landFile(home, id);
       const end = readDeliveryRecord(`${path}.${all ? 'observed' : 'noticed'}`);
-      if (!end.reclaimable) { pending ||= end.state === 'claimed' || end.state === 'sending'; continue; }
+      if (!end.reclaimable && end.state !== 'claimed' && end.state !== 'sending') continue;
       const f = readLand(home, id, pass);
-      if (!f?.wt || f.task || f.ticket_queue || (mode.startsWith('task') && (!f.auto_land || f.state !== 'failed'))) continue;
-      const live = activeLand(f), outbox = landOutbox(f);
+      if (!f?.wt || f.task || f.ticket_queue) continue;
+      const origin = { ...f.workflow, pane: f.pane, project_root: f.wt.main_root }, live = activeLand(f);
+      if (mode.startsWith('task') && (!f.auto_land || f.state !== 'failed')) {
+        if (f.auto_land && live && runVisible(origin, pane, cwd)) retry?.add(file); // Helper death can precede the terminal header.
+        continue;
+      }
+      const outbox = landOutbox(f);
       if (outbox && (modStartedAt === false || f.state === 'failed' || Date.parse(f.updated_at) > modStartedAt))
-        await collect({ ...f.workflow, pane: f.pane, project_root: f.wt.main_root }, outbox, false, path, landOutbox);
+        await collect(origin, outbox, false, path, landOutbox);
       else if (live && (all || f.pane === pane)) pending = true;
     } else if (isTicketQueueId(id)) {
       const q = pass.header<TicketQueue>(file);
-      if (!q || (q.state !== 'working' && liveQueueTask(home, q))) continue;
+      if (!q) continue;
+      if (q.state !== 'working' && liveQueueTask(home, q)) {
+        if (retry && runVisible({ ...q, project_root: q.project_root ?? q.root }, pane, cwd)) retry.add(file);
+        continue;
+      }
       const outbox = queueOutbox(q);
       if (outbox) await collect({ ...q, project_root: q.project_root ?? q.root }, outbox, q.state === 'working', landFile(home, id), queueOutbox);
     }
   }
-  if (mode.startsWith('task')) events.push(...await flakeBlockEvents(home, pull));
   return { lines: events.map(e => e.line), events, pending };
 }

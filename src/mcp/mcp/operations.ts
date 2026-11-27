@@ -18,8 +18,7 @@ import { recordQuestionAnswer, recordStopOrigin } from '../../roles/job-archive.
 import { JOB_ID_RE } from '../../roles/job-index-cache.js';
 import { packageJobFilter, projectJobFilter } from '../../roles/job-project.js';
 import { takeLease } from '../../roles/lease.js';
-import { ensureQueueWatcher, notifyOutcome, paneInfo, watching, notify } from '../../roles/notify.js';
-import { noticeResolver } from '../../roles/select-send.js';
+import { ensureQueueWatcher, paneInfo, watching, notify } from '../../roles/notify.js';
 import { piSwitches } from '../../roles/roster.js';
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import { reapWorkerTree, tabTreeGrant } from '../../roles/worker-tree.js';
@@ -76,6 +75,14 @@ import {
   updateTask, ensureBatchTimer, stopBatchDelivery, drainBatchChanges,
 } from './tasks.js';
 
+const sessionReader = () => noticeReader(hudHome, callerPane, process.cwd(), process.env, undefined, session.createdJobs);
+const eligibleJob = (job: Job | null, pull = sessionReader()) => !!job && !job.scout_only && !isWorker && pull(jobNoticeOrigin(hudHome, job));
+async function screenNotices(row: JobRow, pull = sessionReader(), job?: Job) {
+  if ((!row.permission && !row.question_ids.length) || await eligibleJob(job ?? findJob(row.job), pull)) return true;
+  delete row.permission; row.question_ids = []; row.open_questions = 0;
+  return false;
+}
+
 function compactRow(row: JobRow) {
   const reason = row.blocked || row.state === 'waiting_orchestrator' || row.display_state === 'failed' ? row.reason : null;
   return {
@@ -96,6 +103,7 @@ function compactRow(row: JobRow) {
 async function peekJob(job: Job, { lines, detail }: Args, scan: JobScan) {
   const dir = directory(job.job);
   const { row } = readRow(job, false, scan, 'best-effort');
+  await screenNotices(row);
   const summary = {
     status: compactRow(row),
     ...readJobProgress(dir),
@@ -117,17 +125,18 @@ function listReportSummary(row: JobRow) {
   return summary ? { summary: [...summary].slice(0, 120).join('') } : {};
 }
 
-function listJobs(recent: boolean, scan: JobScan) {
+async function listJobs(recent: boolean, scan: JobScan) {
   const newest = scan.all().filter(projectJobFilter(process.cwd())).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const children = new Map<string, number>();
   for (const { parent_job } of newest) {
     if (parent_job) children.set(parent_job, (children.get(parent_job) ?? 0) + 1);
   }
   const childCount = (id: string) => children.has(id) ? { child_count: children.get(id) } : {};
-  const recentLimit = 20;
+  const recentLimit = 20, pull = sessionReader();
   if (recent) {
-    const rows = newest.slice(0, recentLimit).map((job) => {
+    const rows = await Promise.all(newest.slice(0, recentLimit).map(async (job) => {
       const { row } = readRow(job, !isWorker, scan, 'best-effort');
+      await screenNotices(row, pull, job);
       return {
         job: row.job,
         ...(row.parent_job ? { parent_job: row.parent_job } : {}),
@@ -146,18 +155,19 @@ function listJobs(recent: boolean, scan: JobScan) {
         created_at: job.created_at,
         ...listReportSummary(row),
       };
-    });
+    }));
     return { jobs: rows };
   }
-  const candidates = newest.flatMap((job, index) => {
+  const candidates = (await Promise.all(newest.map(async (job, index) => {
     if (job.parent_job) return [];
     // Scanning beyond recent history must not widen the list's quota side effects.
     const { row } = readRow(job, !isWorker && index < recentLimit, scan, 'best-effort');
     const active = row.display_state === 'working' || row.display_state === 'queued';
     if (!active && !(ownsJob(job) && row.report_unread)) return [];
+    await screenNotices(row, pull, job);
     return [{ row, active, compact: { ...compactRow(row), ...childCount(row.job),
       ...(job.instructions_from && { instructions_from: job.instructions_from }) } }];
-  });
+  }))).flat();
   // Keep active work visible. Spend the remaining space on the newest unread reports,
   // reserving room for the single count of those that didn't fit.
   let budget = 2048 - Buffer.byteLength(JSON.stringify({
@@ -258,8 +268,9 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args, scan
     targets: watchTargets,
     timeoutMs: Math.max(0, deadline - performance.now()),
     isTransientError: (error) => error instanceof SyntaxError,
-    check: ({ timedOut }) => {
-      const rows = first && ids !== undefined ? initial : sample();
+    check: async ({ timedOut }) => {
+      const rows = first && ids !== undefined ? initial : sample(), pull = sessionReader();
+      await Promise.all(rows.map(row => screenNotices(row, pull)));
       first = false;
       const next = result(rows, timedOut);
       return next.ready || next.timed_out ? { done: true, value: next } : { done: false };
@@ -444,10 +455,10 @@ function observation(
   detail: boolean,
   git: GitSummary | undefined,
   offset: number,
-  preRead?: ReturnType<typeof readRow>
+  preRead: ReturnType<typeof readRow>, showNotices: boolean
 ) {
   const dir = directory(job.job);
-  const { row, status, job: currentJob } = preRead ?? readRow(job, !isWorker, undefined, 'best-effort');
+  const { row, status, job: currentJob } = preRead;
   const reportPath = join(dir, jobFiles.report);
   const page = full ? readReportPage(reportPath, offset) : null;
   const report = full ? page : row.report_unread ? slice(reportPath, 65536) : null;
@@ -478,7 +489,7 @@ function observation(
       ...(detail || row.blocked ? { blocked: row.blocked } : {}),
       ...(detail || exit_reason ? { exit_reason } : {}),
       ...(full && status?.quiet_decision && typeof status.quiet_decision === 'object' ? { quiet_decision: status.quiet_decision } : {}),
-      ...(full ? { permission: permissionStatus(dir).latest } : row.permission ? { permission: row.permission } : {}),
+      ...(full && showNotices ? { permission: permissionStatus(dir).latest } : row.permission ? { permission: row.permission } : {}),
       ...(row.permission ? { permission_notice: permissionNotice(row.job, row.permission) } : {}),
       ...(detail ? jobDiagnostics(currentJob) : {}),
       ...readGit(git, full),
@@ -828,6 +839,7 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
             polled = readRow(settledCouncil.job, !isWorker, null, 'best-effort');
           }
         }
+        let showNotices = await screenNotices(polled.row);
         initial ??= polled.row;
         if (!timedOut && !isReady(polled.row)) return { done: false };
         const obsJob = polled.job;
@@ -841,11 +853,12 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
             .sort((a, b) => b.created_at.localeCompare(a.created_at)));
           // Async gitSummary yielded; re-read job and status fresh before observing.
           polled = readRow(findJob(job.job) ?? obsJob, !isWorker, null, 'best-effort');
+          showNotices = await screenNotices(polled.row);
           // The fresh read disagrees with the quick one (answered or continued meanwhile): wait, never spin.
           if (!timedOut && !isReady(polled.row)) return { done: false, minDelayMs: 50 };
         }
         if (polled.row.state === 'queued') polled.row.queue_position = scan.position(job.job);
-        const { value: result, row: currentRow } = observation(polled.job, full, detail, summary, offset, polled);
+        const { value: result, row: currentRow } = observation(polled.job, full, detail, summary, offset, polled, showNotices);
         const collected = ('report' in result || 'digest' in result) && result.report_exists;
         const observed = result.blocked || failedAttempt(currentRow);
         if (!isWorker && (collected || observed)) {
@@ -920,22 +933,23 @@ async function respondTicketQueue(args: Args, batch: boolean) {
   return { ok: true, ...ticketQueueView(res.queue) };
 }
 
-async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[], answeredBy: AnswerActor = 'orchestrator') {
+async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[], answeredBy?: AnswerActor) {
   const id = required(args, 'job');
   const job = findJob(id);
   if (!job) return { ok: false, code: 'job_not_found' };
   const dir = directory(job.job);
   const request = required(args, 'request_id');
-  if (PERMISSION_ID.test(request)) {
-    if (isWorker || answeredBy !== 'orchestrator') return { ok: false, code: 'permission_not_open' };
-    const recipient = await noticeResolver(hudHome)(jobNoticeOrigin(hudHome, job), { pane: callerPane, cwd: process.cwd() });
-    if (job.scout_only || recipient.kind !== 'pane') return { ok: false, code: 'permission_not_open' };
+  const permission = PERMISSION_ID.test(request);
+  if (!permission && !/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
+  // Panel answers and a queue's delegated answer are not MCP notice readers.
+  if (answeredBy ? permission : !await eligibleJob(job))
+    return { ok: false, code: permission ? 'permission_not_open' : 'question_not_open' };
+  if (permission) {
     return answerWorkerPermission(hudHome, dir, job, request, required(args, 'answer'));
   }
-  if (!/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
   const answer = required(args, 'answer');
   if (args.by !== undefined && args.by !== 'owner') throw new Error('invalid_arguments: by');
-  const actor: AnswerActor = args.by === 'owner' ? 'owner' : answeredBy;
+  const actor: AnswerActor = args.by === 'owner' ? 'owner' : answeredBy ?? 'orchestrator';
   ensureWatcher();
   fs.mkdirSync(join(dir, jobFiles.qa), { recursive: true, mode: 0o700 });
   if (job.headless && job.role !== 'sonic') {
@@ -1168,30 +1182,28 @@ export async function syncPanelDelivery() {
     if (!ownerDelivery) {
       const cwd = process.cwd(), matches = projectJobFilter(cwd);
       const taskNotices = taskNoticeSource(hudHome, callerPane, cwd);
-      let nextPermissionScan = 0;
+      let nextPermissionScan = 0, retry: string[] = [];
       const permissionChanges = callerPane ? watchJobChanges(hudHome, notice => { if (notice) nextPermissionScan = 0; }) : undefined;
       const delivery = panelDelivery(hudHome, callerPane, cwd, id => {
         const job = findJob(id);
         return !!job && ownsJob(job) && matches(job);
       }, async message => {
         const sent = await notify(callerPane, message, hudHome);
-        return { outcome: notifyOutcome(sent), via: sent.via, reason: sent.detail || sent.error?.message };
+        return { outcome: sent.outcome, via: sent.via, reason: sent.detail || sent.error?.message };
       }, async push => {
         const watched = watching(callerPane, hudHome);
         if (watched) nextPermissionScan = 0;
         if (watched && push) return [];
-        const pull = noticeReader(hudHome, callerPane, cwd);
+        const pull = sessionReader();
         const flows = await taskNotices(pull, watched ? 'batch' : push ? 'task' : 'task-read');
         if (watched) return flows;
         permissionChanges?.attach();
-        if (push && performance.now() < nextPermissionScan) return flows;
-        nextPermissionScan = performance.now() + 30_000; // Reconcile if a jobs watch missed a change.
-        let retry = true;
-        try {
-          const perms = await permissionEvents(hudHome, pull);
-          retry = perms.retry;
-          return [...flows, ...perms.events];
-        } finally { if (retry) nextPermissionScan = 0; }
+        const quiet = push && performance.now() < nextPermissionScan;
+        if (quiet && !retry.length) return flows;
+        if (!quiet) nextPermissionScan = performance.now() + 30_000; // Reconcile a missed jobs change.
+        const perms = await permissionEvents(hudHome, pull, false, quiet ? { jobs: retry } : undefined);
+        retry = perms.retry;
+        return [...flows, ...perms.events];
       });
       ownerDelivery = { ...delivery, async stop() { permissionChanges?.close(); await delivery.stop(); } };
     }
@@ -1219,9 +1231,10 @@ export async function withChanges(value: unknown, markExhaustion: boolean, scan:
     const changes = [...(await ownerDelivery?.changes() ?? []), ...await drainBatchChanges()];
     return changes.length ? { ...value, changes } : value;
   }
-  const cwd = process.cwd(), pull = noticeReader(hudHome, callerPane, cwd);
+  const cwd = process.cwd(), pull = sessionReader();
   const flows = await workflowEvents(hudHome, callerPane, false, cwd, false, pull);
   const rows = sessionRows(markExhaustion, scan);
+  await Promise.all(rows.map(row => screenNotices(row, pull)));
   const changes = [...jobChanges(session.cursor, rows), ...tries.changes(cwd), ...answers.changes(new Set(rows.map(row => row.job)), cwd)];
   session.cursor = new Map(rows.map(row => [row.job, row]));
   const perms = watching(callerPane, hudHome) ? [] : (await permissionEvents(hudHome, pull, false, { jobs: scan.all(), rows })).events;

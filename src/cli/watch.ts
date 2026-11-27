@@ -10,12 +10,12 @@ import { getHudHome } from '../hud-home.js';
 import { watchJobChanges } from '../collectors/job-changes.js';
 import { collectSessionJobRows, watchJobsInBackground } from '../collectors/job-snapshot.js';
 import { noticeReader, permissionEvents, workflowEvents } from '../workflows/events.js';
-import { notifyOutcome, PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, recordPromptExpiry, registerWatcher, type NotifyResult } from '../roles/notify.js';
+import { PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, recordPromptExpiry, registerWatcher, type NotifyResult } from '../roles/notify.js';
 import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { reportMainPaneGroup } from '../runtime/pane-group.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
-import { liveWorkerPanes, type LivePaneSnapshot } from '../roles/select-send.js';
+import type { LivePaneSnapshot } from '../roles/select-send.js';
 import { beginNotice, releaseDelivery, revertDeliveryClaim, settleNotice, type DeliveryNotice, type DeliveryOutcome, type DeliveryVia } from '../utils/delivery-record.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
@@ -63,9 +63,8 @@ function appendBuffered(held: BatchItem[], incoming: BatchItem[]) {
   return incoming;
 }
 async function collectObligations(home: string, pane: string | null, cwd: string, env: NodeJS.ProcessEnv, all = false, modStartedAt: number | false = false,
-  panes?: LivePaneSnapshot['panes']) {
-  const pull = noticeReader(home, pane, cwd, env, panes === undefined ? undefined
-    : async () => ({ panes, workerPanes: panes ? liveWorkerPanes(home, panes, env) : new Set() }));
+  panes?: LivePaneSnapshot) {
+  const pull = noticeReader(home, pane, cwd, env, panes && (async () => panes));
   const flows = await workflowEvents(home, pane, all, cwd, modStartedAt, pull);
   const perms = await permissionEvents(home, pull, all);
   return { events: [...flows.events, ...perms.events], pending: flows.pending || perms.pending };
@@ -81,7 +80,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
   };
   const notices = rows.flatMap<Notice>((row) => {
     const old = prev.get(row.job);
-    if (row.permission || row.ticket_queue) return [];
+    if (row.ticket_queue) return [];
     const questions = row.question_ids.filter((id) => !old?.question_ids.includes(id)).map((id) => {
           const file = join(home, 'jobs', row.job, 'qa', `${id}.md`);
           const buffer = Buffer.alloc(2048);
@@ -96,7 +95,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
             .split(/^(?:Options:\s*$|Default if unanswered:|Context:|Answer:)/m, 1)[0];
           return { line: `[${one(tag)}] QUESTION ${id}: ${one(question)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)}${q.context ? ` | context: ${one(q.context)}` : ''} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}` };
         });
-    if (row.land_turn || ((row.workflow || row.batch_flow) && !row.blocked)) return questions;
+    if (row.permission || row.questionsOnly || row.land_turn || ((row.workflow || row.batch_flow) && !row.blocked)) return questions;
     if (row.auto_land && !row.auto_land_blocked && !row.blocked &&
         row.display_state !== 'failed' && row.display_state !== 'stopped' &&
         row.state !== 'waiting_orchestrator') return questions;
@@ -544,7 +543,7 @@ export async function watchCommand(
           if (queue) {
             const sent: NotifyResult = retry ? await retry(line, signal)
               : await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
-            const outcome = notifyOutcome(sent);
+            const outcome = sent.outcome;
             if (!stopped && outcome === 'refused' && sent.retryPrompt) {
               typedPending = { retry: sent.retryPrompt, items: appendBuffered(bufferAgain(items), batches.slice(i + 1).flat()),
                 until: retry ? fallback!.until : performance.now() + PROMPT_RETRY_TTL_MS };

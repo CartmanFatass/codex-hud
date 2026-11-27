@@ -1168,6 +1168,29 @@ if (args[0] === 'pane' && args[1] === 'get') {
   assert.equal(fs.existsSync(join(permDir, `${seenIds.at(-1)}.noticed`)), true, 'latest entry marker kept');
 });
 
+test('a pane-less connection can read and answer its own permission but not a foreign one', { timeout: 15000 }, async t => {
+  const { f, herdr, job, env, dir, wait, startWatch } = await permissionWorker(t);
+  herdr.update('blocked', prompt('git push'));
+  startWatch();
+  await wait(() => permissionStatus(dir).active?.action === 'main');
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { trackCreatedJob } from ${JSON.stringify(resolve('dist/mcp/mcp/session-state.js'))};
+    import { call } from ${JSON.stringify(resolve('dist/mcp/mcp/operations.js'))};
+    import { scanForCall } from ${JSON.stringify(resolve('dist/mcp/store/job-store.js'))};
+    const job = ${JSON.stringify(job.job)}, args = { job, request_id: ${JSON.stringify(permissionStatus(dir).active.id)}, answer: 'decline' };
+    for (const owned of [false, true]) {
+      if (owned) trackCreatedJob(job);
+      const read = await call('hud_read', { job }, scanForCall());
+      const reply = await call('hud_respond', args, scanForCall());
+      console.log(JSON.stringify([!!read.permission_notice, reply.ok]));
+    }
+  `], { cwd: dirname(f.home), env: { ...env, HERDR_PANE_ID: '' }, stdio: ['ignore', 'pipe', 'inherit'] });
+  let output = '';
+  child.stdout.on('data', chunk => { output += chunk; });
+  assert.deepEqual(await once(child, 'close'), [0, null]);
+  assert.deepEqual(output.trim().split('\n').map(line => JSON.parse(line)), [[false, false], [true, true]]);
+});
+
 for (const gone of ['pane', 'queue MCP']) test(`worker permission falls back when its origin ${gone} exits, and the new main can answer`, { timeout: 25_000 }, async t => {
   const otherMain = 'w0:p9';
   let originAlive = true;

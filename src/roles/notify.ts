@@ -25,7 +25,6 @@ export type NotifyResult = Delivery & {
   via?: DeliveryVia;
 };
 
-export const notifyOutcome = (result: NotifyResult) => result.outcome;
 type Pane = { agent?: string; agent_status?: string; agent_session?: { kind?: string; value?: string } };
 type Options = { signal?: AbortSignal };
 

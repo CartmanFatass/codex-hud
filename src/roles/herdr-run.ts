@@ -280,24 +280,6 @@ export function tabInfo(stdout: string): ListedTab | null {
   };
 }
 
-export interface ListedPane {
-  readonly paneId: string;
-  readonly tabId: string | null;
-}
-
-/** Live `herdr pane list` puts rows in `result.panes` (`pane_id`, `tab_id`). */
-export function listedPanes(stdout: string): ListedPane[] | null {
-  const result = herdrResult(stdout);
-  if (!result || !Array.isArray(result.panes)) return null;
-  const panes: ListedPane[] = [];
-  for (const entry of result.panes) {
-    if (!isRecord(entry) || !herdrId(entry.pane_id)) return null;
-    const tabId = herdrId(entry.tab_id) ? entry.tab_id : null;
-    panes.push({ paneId: entry.pane_id, tabId });
-  }
-  return panes;
-}
-
 const STATUSES = new Set(['idle', 'working', 'blocked', 'done', 'unknown']);
 
 export function agentStatus(stdout: string): string | null {

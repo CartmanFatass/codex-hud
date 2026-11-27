@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { watchCommand } from '../../dist/cli/watch.js';
-import { classifyCodexQueueOutcome, notify, notifyOutcome } from '../../dist/roles/notify.js';
+import { classifyCodexQueueOutcome, notify } from '../../dist/roles/notify.js';
 import { claimQueueTask, queueTaskFile, readQueueTask } from '../../dist/mcp/ticket-queue-state.js';
 import { countProjectWaitingRuns, executionSnapshot } from '../../dist/collectors/execution.js';
 import { collectWorkSummary, createWorkSummaryPublisher, readMachineWork } from '../../dist/collectors/work-summary-snapshot.js';
@@ -204,7 +204,7 @@ test('taskNoticeSource and panelDelivery retry a failed push without touching fl
     if (calls === 1) return { outcome: 'refused' };
     pushed.push(msg);
     return { outcome: 'sent' };
-  }, () => source(origin => resolveNotice(origin, { pane: MAIN_PANE, cwd: root })));
+  }, () => source(async origin => (await resolveNotice(origin, { pane: MAIN_PANE, cwd: root })).kind === 'pane'));
   t.after(() => delivery.stop());
 
   // Tick 1 fails and releases the marker; tick 2 retries cleanly even though flows/ mtime did not change.
@@ -596,9 +596,9 @@ test('with live origin pane a second project main does not claim its pause notic
   const snapshot = async () => ({ panes: [{ pane_id: MAIN_PANE, agent: 'claude', cwd: root },
     { pane_id: OTHER_PANE, agent: 'pi', cwd: root }], workerPanes: new Set() });
   const resolver = noticeResolver(f.home, process.env, snapshot);
-  const read = origin => resolver(origin, { pane: OTHER_PANE, cwd: root });
+  const read = async origin => (await resolver(origin, { pane: OTHER_PANE, cwd: root })).kind === 'pane';
   const watchEvents = () => workflowEvents(f.home, OTHER_PANE, false, root, false, read);
-  assert.equal((await read(liveRun)).kind, 'none');
+  assert.equal(await read(liveRun), false);
   assert.equal((await resolver(liveRun, { pane: MAIN_PANE, cwd: root })).kind, 'pane');
 
   // Prime second main's taskNoticeSource and scan workflowEvents while origin is alive -> claims nothing.
@@ -840,13 +840,13 @@ if (args[0] === 'pane' && args[1] === 'get') {
   fs.writeFileSync(modeFile, 'ok');
   const sentOk = await notify(MAIN_PANE, 'sent check', f.home, { queue: true, env });
   assert.equal(sentOk.outcome, 'sent');
-  assert.equal(notifyOutcome(sentOk), 'sent');
+  assert.equal(sentOk.outcome, 'sent');
   assert.equal(sentOk.uncertain, undefined);
 
   fs.writeFileSync(modeFile, 'refused_json');
   const refusedJson = await notify(MAIN_PANE, 'refused json', f.home, { queue: true, env });
   assert.equal(refusedJson.outcome, 'refused');
-  assert.equal(notifyOutcome(refusedJson), 'refused');
+  assert.equal(refusedJson.outcome, 'refused');
   assert.equal(refusedJson.retry, true);
   assert.equal(refusedJson.uncertain, undefined);
 
@@ -858,7 +858,7 @@ if (args[0] === 'pane' && args[1] === 'get') {
   fs.writeFileSync(modeFile, 'unknown_fail');
   const indeterminateFail = await notify(MAIN_PANE, 'unknown fail', f.home, { queue: true, env });
   assert.equal(indeterminateFail.outcome, 'indeterminate');
-  assert.equal(notifyOutcome(indeterminateFail), 'indeterminate');
+  assert.equal(indeterminateFail.outcome, 'indeterminate');
   assert.equal(indeterminateFail.uncertain, true);
   assert.equal(indeterminateFail.retry, false);
 
@@ -976,7 +976,7 @@ if (args[0] === 'pane' && args[1] === 'get') {
     fs.writeFileSync(codexModeFile, mode);
     const res = await notify(MAIN_PANE, `indeterminate ${mode}`, f.home, { queue: true, env });
     assert.equal(res.outcome, 'indeterminate', mode);
-    assert.equal(notifyOutcome(res), 'indeterminate', mode);
+    assert.equal(res.outcome, 'indeterminate', mode);
     assert.equal(res.uncertain, true, mode);
     assert.equal(res.retry, false, mode);
     assert.match(res.detail ?? '', /did not fall back to typing/);

@@ -6,7 +6,7 @@ import { jobFiles } from '../mcp/paths.js';
 import { recordQuestionTimeout } from '../roles/job-archive.js';
 import { notify, recordPromptExpiry, taskDelivery, watching, PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, type NotifyResult } from '../roles/notify.js';
 import { noticeResolver } from '../roles/select-send.js';
-import { jobNoticeOrigin } from '../workflows/scope.js';
+import { directRecipient, jobNoticeOrigin } from '../workflows/scope.js';
 import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
@@ -97,16 +97,6 @@ export function readQuestionAnswer(q: PublishedQuestion, deadlineMs = Infinity):
   }
 }
 
-export function orchestratorPane(dir: string): string {
-  try {
-    const line = fs.readFileSync(join(dir, jobFiles.session), 'utf8').split('\n').find((row) => row.startsWith('ORCH='));
-    return line?.slice(5) ?? '';
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    return '';
-  }
-}
-
 function readReceipt(dir: string, fallback: Job): Job {
   try {
     const job = readJsonFile(join(dir, jobFiles.job)) as Job;
@@ -171,10 +161,9 @@ export async function notifyQuestion(
   const receipt = readReceipt(dir, job);
   const home = dirname(dirname(resolve(dir)));
   const origin = jobNoticeOrigin(home, receipt);
-  origin.pane ||= orchestratorPane(dir);
   if (receipt.scout_only === true) pushed = 'handled by scouted dispatch';
   else if (receipt.ticket_queue) pushed = 'handled by the ticket queue';
-  else if (origin.pane && taskDelivery(dir, origin.pane)) pushed = 'delivered by MCP task';
+  else if (origin.pane && directRecipient(origin) && taskDelivery(dir, origin.pane)) pushed = 'delivered by MCP task';
   else if (origin.pane || origin.project_root) {
     const resolved = await noticeResolver(home)(origin);
     signal?.throwIfAborted();

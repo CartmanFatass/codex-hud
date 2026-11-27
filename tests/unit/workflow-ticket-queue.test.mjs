@@ -23,7 +23,7 @@ import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { MAX_TICKET_BYTES, readJsonTicketFeature, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
 import { pinnedQueueJobs, readOpenHolds } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
-import { fallbackRole, resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
+import { fallbackRole, paneList, resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { collectDeliveredNotices, goodTicket, readJson, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
@@ -1001,6 +1001,7 @@ test('to: main question hand-back auto-resumes on hud_respond; the successor can
 
   // Origin main exits; a fresh project main in another pane answers and resumes the queue.
   await f.stopMcp();
+  paneList(f, 'w4E:p9');
   const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
     cwd: f.root, env: { ...f.env, HERDR_PANE_ID: 'w4E:p9' }, stdio: ['pipe', 'pipe', 'inherit'],
   });

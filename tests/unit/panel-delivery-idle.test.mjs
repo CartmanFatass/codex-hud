@@ -50,6 +50,15 @@ test('a quiet panel timer neither loads job receipts nor lists panes nor writes 
   fs.writeFileSync(marker, accepted);
   const inode = fs.statSync(marker).ino;
 
+  const flows = join(home, 'flows');
+  fs.mkdirSync(flows);
+  const flow = 'f0000000000000001';
+  fs.writeFileSync(join(flows, `${flow}.json`), JSON.stringify({ flow, pane, wt: { main_root: root }, state: 'completed', auto_land: true }));
+  const other = 'j0000000000000002', otherDir = join(home, 'jobs', other);
+  fs.mkdirSync(otherDir);
+  fs.writeFileSync(join(otherDir, 'job.json'), JSON.stringify({ job: other, role: 'imp', cwd: home, project_root: home, herdr_pane: foreign, created_at: at }));
+  for (const file of ['permissions.json', 'STATUS.json']) fs.copyFileSync(join(dir, file), join(otherDir, file));
+
   const { session } = await import('../../dist/mcp/mcp/session-state.js');
   const ops = await import('../../dist/mcp/mcp/operations.js');
   session.taskClient = true;
@@ -59,6 +68,7 @@ test('a quiet panel timer neither loads job receipts nor lists panes nor writes 
 
   const receipts = t.mock.method(JobIndexCache.prototype, 'readJob');
   const inventory = t.mock.method(JobIndexCache.prototype, 'listJobIds');
+  const listings = t.mock.method(fs, 'readdirSync'), stats = t.mock.method(fs, 'lstatSync');
   const writes = t.mock.method(fs, 'writeFileSync');
   const unlinks = t.mock.method(fs, 'unlinkSync');
   syncBuiltinESMExports();
@@ -66,9 +76,19 @@ test('a quiet panel timer neither loads job receipts nor lists panes nor writes 
     t.mock.timers.tick(1000);
     await new Promise(setImmediate);
     assert.equal(inventory.mock.callCount(), 1, 'first tick checks the permission inventory');
+    assert.deepEqual(receipts.mock.calls.map(call => call.arguments[0]), [other], 'accepted marker needs no receipt');
+    listings.mock.resetCalls(); stats.mock.resetCalls();
+    receipts.mock.resetCalls();
     t.mock.timers.tick(1000);
     await new Promise(setImmediate);
-    assert.equal(inventory.mock.callCount(), 1, 'unchanged permission inventory is not rescanned');
+    await t.test('settled flow history costs no directory enumeration on the second tick', () => {
+      assert.equal(listings.mock.callCount(), 0);
+      assert.ok(!stats.mock.calls.some(call => String(call.arguments[0]).startsWith(flows + '/')), 'no historical header or marker probes');
+    });
+    await t.test('a different project’s pending permission does not bypass the quiet gate', () => {
+      assert.equal(inventory.mock.callCount(), 1);
+      assert.equal(receipts.mock.callCount(), 0);
+    });
     await ops.ownerDelivery.stop();
     assert.equal(receipts.mock.callCount(), 0);
     assert.equal(paneRequests, 0);
@@ -85,6 +105,7 @@ test('a quiet panel timer neither loads job receipts nor lists panes nor writes 
     assert.equal(fs.statSync(marker).ino, inode);
     assert.equal(fs.readFileSync(marker, 'utf8'), accepted);
   } finally {
+    listings.mock.restore(); stats.mock.restore();
     writes.mock.restore();
     unlinks.mock.restore();
     syncBuiltinESMExports();

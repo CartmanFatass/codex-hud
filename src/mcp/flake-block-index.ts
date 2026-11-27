@@ -7,7 +7,7 @@ import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 
 const MAX_JOBS = 512;
 const MAX_BYTES = 16 * 1024;
-const indexFile = (home: string) => join(home, 'flake-block-index.json');
+export const flakeBlockIndex = (home: string) => join(home, 'flake-block-index.json');
 const lockFile = (home: string) => join(home, 'flake-block-index.lock');
 
 function runFlock(args: string[], fd: number): number | null {
@@ -47,7 +47,7 @@ export function withFlakeBlockIndexLock<T>(home: string, fn: () => T): Promise<T
 
 export function readFlakeBlockJobs(home: string): string[] {
   try {
-    const ids = readJsonBounded(indexFile(home), MAX_BYTES);
+    const ids = readJsonBounded(flakeBlockIndex(home), MAX_BYTES);
     if (!Array.isArray(ids)) throw new Error('invalid flake block index');
     return ids.slice(0, MAX_JOBS).filter((id): id is string => typeof id === 'string' && JOB_ID_RE.test(id));
   } catch (err) {
@@ -60,7 +60,7 @@ export function readFlakeBlockJobs(home: string): string[] {
  * Keep claims in the index: a failed delivery can release its marker. */
 export function indexFlakeBlockJob(home: string, id: string): void {
   const ids = readFlakeBlockJobs(home).filter(candidate => candidate !== id);
-  writeJsonPrivate(indexFile(home), [id, ...ids].slice(0, MAX_JOBS));
+  writeJsonPrivate(flakeBlockIndex(home), [id, ...ids].slice(0, MAX_JOBS));
 }
 
 /** Best-effort synchronous prune serialized with `withFlakeBlockIndexLock`.
@@ -71,7 +71,7 @@ export function pruneFlakeBlockJobs(home: string, shouldPrune: (id: string) => b
     if (!current.length) return false;
     const next = current.filter(id => !shouldPrune(id));
     if (next.length === current.length) return false;
-    writeJsonPrivate(indexFile(home), next);
+    writeJsonPrivate(flakeBlockIndex(home), next);
     return true;
   });
   return res.acquired && res.value;

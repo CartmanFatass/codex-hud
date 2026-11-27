@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { jobRowReportMeta, readJobProgress, type JobRow } from '../../collectors/thin-jobs.js';
 import { questionFields } from '../../collectors/work-artifacts.js';
 import { checkBinding, readCheckReceipt, sameChecks, CHECKS_FILE, CHECK_TIMEOUT_MS } from '../../roles/job-checks.js';
-import { taskDelivery, notify, notifyOutcome } from '../../roles/notify.js';
+import { taskDelivery, notify } from '../../roles/notify.js';
 import { writeJsonPrivate, readJsonBounded, readDirSafe, writePrivateFile } from '../../utils/atomic-fs.js';
 import { procStat } from '../../utils/proc.js';
 import { reportReadHint } from '../../utils/report-summary.js';
@@ -315,10 +315,9 @@ async function pushBatchNotices() {
       if (!session.taskClient || session.resumeRefusal) break;
       try {
         const sent = await notify(callerPane, item.text, hudHome);
-        const outcome = notifyOutcome(sent);
-        if (outcome !== 'refused') {
+        if (sent.outcome !== 'refused') {
           batchPending.delete(id);
-          if (outcome === 'sent') recordBatchNotice(item, id, 'push');
+          if (sent.outcome === 'sent') recordBatchNotice(item, id, 'push');
         }
       } catch { /* Retry on next tick or deliver via withChanges. */ }
     }

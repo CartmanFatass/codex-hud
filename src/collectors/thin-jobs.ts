@@ -14,7 +14,8 @@ import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js
 import { previewNotice, readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
 import { reportReadHint } from '../utils/report-summary.js';
 import { adoptProjectJobs } from '../roles/job-project.js';
-import { listLivePanes } from '../roles/select-send.js';
+import { loadLivePanes, noticeReader, type LivePaneSnapshot } from '../roles/select-send.js';
+import { jobNoticeOrigin } from '../workflows/scope.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
 import { ticketTitleReader } from './ticket-title.js';
 import { objectiveLink } from './objectives.js';
@@ -214,6 +215,7 @@ export interface ThinJobScope {
 }
 export interface JobRow extends Partial<JobProgress> {
   job: string;
+  questionsOnly?: true;
   land_turn?: true;
   ticket_queue?: true;
   auto_land?: true;
@@ -402,31 +404,16 @@ const evidenceText = (store: ArtifactStore | null, seenSet?: Set<string>) => (pa
 export const jobSupersession = (home: string, jobs: Receipt[], cwd: string) =>
   supersession(home, jobs, evidenceText(null), cwd);
 
-export function adoptionAttention(home: string, jobs: Receipt[], cwd: string, jobCache?: JobIndexCache) {
+export function adoptionAttention(home: string, jobs: Receipt[], cwd: string, cache = getJobIndexCache(home)) {
   const superseded = jobSupersession(home, jobs, cwd);
-  return (dir: string, job: Record<string, unknown>) => jobOwesCaller(dir, job, superseded, jobCache);
+  return (dir: string, job: Job) => jobOwesCaller(dir, job, superseded, cache);
 }
-function jobOwesCaller(dir: string, job: Record<string, unknown>, superseded: (job: Receipt) => boolean, jobCache?: JobIndexCache): boolean {
-  let status: Partial<JobStatus> | null = null;
-  let statusAt: number | null | undefined;
-  if (jobCache) {
-    const res = jobCache.readJson<Partial<JobStatus>>(join(dir, jobFiles.status));
-    if (res.status === 'ok') {
-      status = res.value;
-      statusAt = res.at;
-    } else if (res.status === 'missing') {
-      status = null;
-      statusAt = null;
-    } else if (res.status === 'truncated') {
-      status = JSON.parse(fs.readFileSync(join(dir, jobFiles.status), 'utf8'));
-    } else {
-      throw res.error;
-    }
-  } else {
-    try { status = JSON.parse(fs.readFileSync(join(dir, jobFiles.status), 'utf8')); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  }
-  const row = jobRow(job, status, { dir, cache: jobCache });
+function jobOwesCaller(dir: string, job: Job, superseded: (job: Receipt) => boolean, cache: JobIndexCache): boolean {
+  const res = cache.readStatus<JobStatus>(job.job);
+  if (res.status === 'error' || res.status === 'invalid') throw res.error;
+  const status = res.status === 'ok' ? res.value : res.status === 'truncated' ? JSON.parse(fs.readFileSync(join(dir, jobFiles.status), 'utf8')) : null;
+  const statusAt = res.status === 'missing' ? null : res.at;
+  const row = jobRow(job, status, { dir, cache });
   if (row.ticket_queue || row.permission || (failedAttempt(row) && superseded(job))) return false;
   const autoLanding = Boolean(row.auto_land && !row.auto_land_blocked);
   const reportOwed = !row.parent_job && !row.land_turn && !autoLanding && row.report_unread;
@@ -524,7 +511,7 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   const lines: string[] = [];
   for (const row of rows) {
     const old = prior.get(row.job);
-    if (row.permission) continue;
+    if ((row.questionsOnly || row.permission) && !row.question_ids.some(id => !old?.question_ids.includes(id))) continue;
     if ((row.workflow || row.batch_flow) && !row.question_ids.some(id => !old?.question_ids.includes(id)) && !(row.blocked && !old?.blocked)) continue;
     if (row.ticket_queue || (row.land_turn && !row.question_ids.some(id => !old?.question_ids.includes(id)))) continue;
     if (row.auto_land && !row.auto_land_blocked &&
@@ -627,13 +614,29 @@ export function readThinJobRows(home: string, scope: { pane?: string | null }): 
 
 export async function readSessionJobRows(home: string, pane: string, cwd: string, env: NodeJS.ProcessEnv) {
   const cache = getJobIndexCache(home);
-  const receipts = watchReceipts(cache);
+  let receipts = watchReceipts(cache);
   // Capture the initial pane state before yielding, so writes just after watch starts are changes, not catch-up.
-  let rows = watchRows(cache, pane, receipts), panes: Awaited<ReturnType<typeof listLivePanes>> | undefined;
+  let rows = watchRows(cache, pane, receipts), panes: LivePaneSnapshot | undefined;
+  const load = async () => panes ??= await loadLivePanes(home, env), eligible = noticeReader(home, pane, cwd, env, load);
   const jobs = receipts.map(({ job }) => job), adopted = new Set<string>();
   if (await adoptProjectJobs(home, pane, cwd, jobs.filter(job => !job.ticket_queue), env, adoptionAttention(home, jobs, cwd, cache),
-    cache, id => adopted.add(id), async hasAttention => hasAttention() ? panes = await listLivePanes(env) : null)) {
-    rows = watchRows(cache, pane, watchReceipts(cache), adopted);
+    cache, id => adopted.add(id), async hasAttention => hasAttention() ? load() : undefined)) {
+    receipts = watchReceipts(cache);
+    rows = watchRows(cache, pane, receipts, adopted);
+  }
+  const own = new Map(rows.map(row => [row.job, row]));
+  for (const receipt of receipts) {
+    const { job, dir, id } = receipt, row = own.get(id);
+    if (job.scout_only || job.ticket_queue || job.council) continue;
+    let ids: readonly string[];
+    try { ids = row?.question_ids ?? filterTimedOutQuestions(cache.readQa(dir).openIds, job.timed_out_questions); } catch { continue; }
+    if (!ids.length) continue;
+    if (!await eligible(jobNoticeOrigin(home, job), 'wake')) {
+      if (row) { row.question_ids = []; row.open_questions = 0; }
+    } else if (!row) {
+      const status = cache.readStatus<JobStatus>(id);
+      rows.push({ ...jobRow(job, status.status === 'ok' ? status.value : null, { questionIds: ids }), questionsOnly: true, notice_mtime: receipt.receiptAt });
+    }
   }
   return { rows, panes };
 }

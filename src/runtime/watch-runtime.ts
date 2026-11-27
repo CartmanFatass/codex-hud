@@ -34,7 +34,7 @@ import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process
 import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
 import { claimPermissionNotice, observeWorkerPermission, permissionNoticeable, permissionNoticeMarker, permissionStatus, permissionTarget, type PermissionEntry } from '../mcp/worker-permissions.js';
-import { notify as notifyPane, notifyOutcome, watching as paneWatching } from '../roles/notify.js';
+import { notify as notifyPane, watching as paneWatching } from '../roles/notify.js';
 import { noticeResolver, type NoticeOrigin } from '../roles/select-send.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
 import { createWorkSummaryPublisher } from '../collectors/work-summary-snapshot.js';
@@ -270,9 +270,8 @@ function enqueueNoticeDelivery(
     shouldSchedule = true;
     try {
       const sent = await notifyPane(resolved.pane, claimed.line, home, { signal: controller.signal });
-      const outcome = notifyOutcome(sent);
-      settleNotice(claimed, outcome, sent.via ?? 'herdr-prompt', sent.detail || sent.error?.message);
-      if (outcome === 'refused' && !controller.signal.aborted && herdrEndpoint()) {
+      settleNotice(claimed, sent.outcome, sent.via ?? 'herdr-prompt', sent.detail || sent.error?.message);
+      if (sent.outcome === 'refused' && !controller.signal.aborted && herdrEndpoint()) {
         const attempts = (retries.get(marker)?.attempts ?? 0) + 1;
         retries.set(marker, { at: Date.now() + Math.min(30_000, 500 * 2 ** Math.min(attempts - 1, 6)), attempts });
       } else retries.delete(marker);
