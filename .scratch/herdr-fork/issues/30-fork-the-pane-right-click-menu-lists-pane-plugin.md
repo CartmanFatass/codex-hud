@@ -2,6 +2,7 @@
 
 **Status:** ready-for-agent
 **Owner try:** no
+**Live try:** After install, right-click an unfocused worker pane, choose Investigate this, and check the composer opens on that pane's visible text.
 **Blocked by:** none
 
 **What to build:** Repo: ~/projects/herdr-hud (the herdr fork). fine-interact/02 shipped the MyHUD plugin action `hud.select-send.investigate` with `contexts = ["pane"]`, but herdr's pane right-click menu (src/client/shell/context_menu.rs ~55-82, `ClientContextMenuTarget::Pane`) does not list plugin actions, so "Investigate this" is unreachable from the mouse. Add every registered plugin action whose contexts include `pane` to that menu (after the built-in items, separated), invoking it with the right-clicked pane as the target even when that pane is not focused. Never touch ~/.local/bin/herdr or the running herdr server; main installs the tested build.
