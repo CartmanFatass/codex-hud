@@ -19,9 +19,9 @@ import {
 } from '../../dist/roles/cold-archive.js';
 import { writeReportMeta } from '../../dist/roles/report-meta.js';
 import { pruneJobLogs, pruneLandFlows } from '../../dist/runtime/work-retention.js';
-import { decodeTarZst, encodeTarZst } from '../../dist/utils/tar-zst.js';
+import { streamTarZstFile, streamTarZstFileSync, TarZstFrameWriter } from '../../dist/utils/tar-zst.js';
 import { workflowEvents } from '../../dist/workflows/events.js';
-import { destination, fixture as retentionFixture, hour, realSession, until } from '../helpers/job-retention-fixture.mjs';
+import { destination, expired, fixture as retentionFixture, hour, realSession, until } from '../helpers/job-retention-fixture.mjs';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { fixture as mcpFixture } from '../helpers/thin-mcp-harness.mjs';
@@ -46,7 +46,62 @@ async function runCli(args, env) {
   return { code, out, err };
 }
 
-test('tar-zst round-trips binary, UTF-8, empty and long-path entries byte-identically and rejects unsafe paths', () => {
+function writeTarZstFile(filePath, entries, frameBytes) {
+  fs.mkdirSync(dirname(filePath), { recursive: true });
+  const fd = fs.openSync(filePath, 'w', 0o600);
+  try {
+    const writer = new TarZstFrameWriter(fd, frameBytes);
+    for (const entry of entries) {
+      writer.beginEntry({ name: entry.name, size: entry.data.length, mode: entry.mode, mtime: entry.mtime });
+      if (entry.data.length > 0) writer.writeEntryData(entry.data);
+      writer.endEntry();
+    }
+    writer.finish();
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function readTarZstFileSync(filePath) {
+  const entries = [];
+  let current = null;
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const stat = fs.fstatSync(fd);
+    streamTarZstFileSync(fd, stat.size, {
+      onEntryStart(meta) { current = { meta, chunks: [] }; },
+      onEntryData(chunk) { current.chunks.push(Buffer.from(chunk)); },
+      onEntryEnd() {
+        const data = current.chunks.length === 1 ? current.chunks[0] : Buffer.concat(current.chunks);
+        entries.push({ name: current.meta.name, data, mode: current.meta.mode, mtime: current.meta.mtime });
+        current = null;
+      },
+    });
+  } finally {
+    fs.closeSync(fd);
+  }
+  return entries;
+}
+
+async function readTarZstFileAsync(filePath) {
+  const entries = [];
+  let current = null;
+  const ok = await streamTarZstFile(filePath, {
+    onEntryStart(meta) { current = { meta, chunks: [] }; },
+    onEntryData(chunk) { current.chunks.push(Buffer.from(chunk)); },
+    onEntryEnd() {
+      const data = current.chunks.length === 1 ? current.chunks[0] : Buffer.concat(current.chunks);
+      entries.push({ name: current.meta.name, data, mode: current.meta.mode, mtime: current.meta.mtime });
+      current = null;
+    },
+  });
+  assert.equal(ok, true);
+  return entries;
+}
+
+test('tar-zst streaming writer/reader round-trips binary, UTF-8, empty and long-path entries byte-identically and rejects unsafe paths', async (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-tar-zst-rt-')));
+  cleanupFixture(t, { root });
   const longName = `flows/${'segment-'.repeat(18)}gate-1.log`;
   const utf8Name = 'qa/问题-1.md';
   const bin = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
@@ -56,18 +111,20 @@ test('tar-zst round-trips binary, UTF-8, empty and long-path entries byte-identi
     { name: longName, data: Buffer.from('Synthetic long path content.\n'), mode: 0o600, mtime: 1700000002 },
     { name: utf8Name, data: Buffer.from('Synthetic UTF-8 问题 body.\n'), mode: 0o600, mtime: 1700000003 },
   ];
-  const compressed = encodeTarZst(entries);
-  const decoded = decodeTarZst(compressed);
-  assert.equal(decoded.length, entries.length);
-  for (let i = 0; i < entries.length; i++) {
-    assert.equal(decoded[i].name, entries[i].name);
-    assert.ok(decoded[i].data.equals(entries[i].data), `byte mismatch for ${entries[i].name}`);
-    assert.equal(decoded[i].mtime, entries[i].mtime);
+  const archivePath = join(root, 'roundtrip.tar.zst');
+  writeTarZstFile(archivePath, entries, 4096);
+  for (const decoded of [readTarZstFileSync(archivePath), await readTarZstFileAsync(archivePath)]) {
+    assert.equal(decoded.length, entries.length);
+    for (let i = 0; i < entries.length; i++) {
+      assert.equal(decoded[i].name, entries[i].name);
+      assert.ok(decoded[i].data.equals(entries[i].data), `byte mismatch for ${entries[i].name}`);
+      assert.equal(decoded[i].mtime, entries[i].mtime);
+    }
   }
   for (const bad of ['../escape', '/abs/path', 'a/../b', 'a\\b', 'a\0b', '']) {
-    assert.throws(() => encodeTarZst([{ name: bad, data: Buffer.from('x') }]));
+    assert.throws(() => writeTarZstFile(join(root, 'bad.tar.zst'), [{ name: bad, data: Buffer.from('x') }]));
   }
-  assert.throws(() => encodeTarZst([
+  assert.throws(() => writeTarZstFile(join(root, 'dup.tar.zst'), [
     { name: 'dup.txt', data: Buffer.from('a') },
     { name: 'dup.txt', data: Buffer.from('b') },
   ]));
@@ -208,7 +265,7 @@ test('early raw-log pruning moves logs into raw member and later expiry merges r
 
   const rawPath = join(f.home, 'archive', 'cold', '2030-01', `${id}.raw.tar.zst`);
   assert.ok(exists(rawPath), 'early raw member created');
-  const earlyEntries = new Map(decodeTarZst(fs.readFileSync(rawPath)).map((e) => [e.name, e.data]));
+  const earlyEntries = new Map(readTarZstFileSync(rawPath).map((e) => [e.name, e.data]));
   assert.ok(earlyEntries.get('stdout.jsonl')?.equals(stdoutBytes));
   assert.ok(earlyEntries.get('stderr.log')?.equals(stderrBytes));
 
@@ -218,7 +275,7 @@ test('early raw-log pruning moves logs into raw member and later expiry merges r
   assert.equal(second.child.exitCode, 0, second.stderr());
   assert.equal(exists(dir), false);
 
-  const finalRaw = new Map(decodeTarZst(fs.readFileSync(rawPath)).map((e) => [e.name, e.data]));
+  const finalRaw = new Map(readTarZstFileSync(rawPath).map((e) => [e.name, e.data]));
   assert.ok(finalRaw.get('stdout.jsonl')?.equals(stdoutBytes), 'early stdout preserved');
   assert.ok(finalRaw.get('stderr.log')?.equals(stderrBytes), 'early stderr preserved');
   assert.ok(finalRaw.get('sessions/extra.jsonl')?.equals(extraSessionBytes), 'remaining session merged');
@@ -272,7 +329,7 @@ test('terminal ticket queues keep their text member and only unlink after the fa
   assert.equal(exists(sidecarFile), false);
 
   assert.equal(modeOf(member), 0o600);
-  const entries = new Map(decodeTarZst(fs.readFileSync(member)).map((e) => [e.name, e.data]));
+  const entries = new Map(readTarZstFileSync(member).map((e) => [e.name, e.data]));
   assert.ok(entries.get(`${flowId}.json`)?.equals(receiptBytes));
   assert.ok(entries.get(`${flowId}/graph.json`)?.equals(graphBytes));
   assert.ok(entries.get(`${flowId}/end-1.noticed`)?.equals(noticeBytes));
@@ -479,7 +536,7 @@ syncBuiltinESMExports();`);
   assert.ok(fs.readFileSync(textPath).equals(firstTextBytes), 'repeated sweep does not duplicate or rewrite text member');
   assert.ok(fs.readFileSync(rawPath).equals(firstRawBytes), 'repeated sweep does not duplicate or rewrite raw member');
 
-  const textEntries = decodeTarZst(fs.readFileSync(textPath));
+  const textEntries = readTarZstFileSync(textPath);
   assert.equal(new Set(textEntries.map((e) => e.name)).size, textEntries.length, 'no duplicate entry names');
   assert.ok(textEntries.find((e) => e.name === 'report.md')?.data.equals(reportBytes));
 
@@ -712,8 +769,8 @@ test('streaming multi-frame encode/merge/extract handles both sides of frame bou
   // If an existing single-frame archive exceeds maxSyncFrameBytes, mergeColdMember refuses cleanly without corrupting the member.
   const idLegacy = 'j000000000000b003';
   const legacyPath = join(home, 'archive', 'cold', month, `${idLegacy}.raw.tar.zst`);
-  const legacyBytes = encodeTarZst([{ name: 'stdout.jsonl', data: Buffer.alloc(16 * 1024, 0x7a) }]);
-  put(legacyPath, legacyBytes);
+  writeTarZstFile(legacyPath, [{ name: 'stdout.jsonl', data: Buffer.alloc(16 * 1024, 0x7a) }]);
+  const legacyBytes = fs.readFileSync(legacyPath);
   assert.throws(
     () => mergeColdMember(home, month, idLegacy, 'raw', [{ name: 'stderr.log', data: Buffer.from('new\n') }], undefined, { maxSyncFrameBytes: 4096 }),
     /maxOutputLength|Cannot create|limit|zstd_frame_too_large/i,
@@ -889,4 +946,251 @@ test('hud archive extract drops --force, refuses existing paths, and never write
   assert.equal(modeOf(join(cleanOut, 'qa')), 0o700);
   assert.equal(modeOf(join(cleanOut, 'qa', 'q1.md')), 0o600);
   assert.equal(fs.readFileSync(join(cleanOut, 'qa', 'q1.md'), 'utf8'), 'Sensitive question\n');
+});
+
+test('hud_read returns digest and full pages for a pruned report.md at the old 64 MiB boundary', { timeout: 60000 }, async (t) => {
+  const f = await mcpFixture(t);
+  const id = 'j000000000000e001';
+  const dir = join(f.env.HUD_HOME, 'jobs', id);
+  const ended = '2030-07-01T10:00:00.000Z';
+  const endedMs = Date.parse(ended);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const jobReceipt = {
+    job: id,
+    role: 'imp',
+    cwd: f.root,
+    project_root: f.root,
+    created_at: '2030-07-01T09:00:00.000Z',
+    reaped_at: ended,
+    dispatch_exit_code: 0,
+    model: 'synthetic/model',
+    thinking: 'high',
+    place: 'claude synthetic',
+    cli: { agent: 'claude' },
+  };
+  const statusReceipt = { state: 'closed', ended_at: ended, settled_at: ended, output_written: true };
+
+  // Build report.md itself at/above 64 MiB (not a large sibling entry) plus job/status/meta JSON.
+  const headerText = '# Boundary Report\n\nVerdict: pass\nBlockers: none\n\n';
+  const tailText = '\nSynthetic UTF-8 tail across boundary: 合成报告尾部😀-END.\n';
+  const headerBuf = Buffer.from(headerText, 'utf8');
+  const tailBuf = Buffer.from(tailText, 'utf8');
+  const targetReportBytes = 64 * 1024 * 1024 + 512;
+  const bodyBytes = targetReportBytes - headerBuf.length - tailBuf.length;
+  const lineBuf = Buffer.from('Synthetic report line 0123456789abcdef0123456789abcdef0123456789\n', 'utf8');
+  const chunkBuf = Buffer.allocUnsafe(1024 * 1024);
+  for (let off = 0; off < chunkBuf.length; off += lineBuf.length) {
+    lineBuf.copy(chunkBuf, off, 0, Math.min(lineBuf.length, chunkBuf.length - off));
+  }
+
+  const reportPath = join(dir, 'report.md');
+  const hash = createHash('sha256');
+  const fd = fs.openSync(reportPath, 'w', 0o600);
+  try {
+    fs.writeSync(fd, headerBuf);
+    hash.update(headerBuf);
+    let remaining = bodyBytes;
+    while (remaining > 0) {
+      const part = remaining >= chunkBuf.length ? chunkBuf : chunkBuf.subarray(0, remaining);
+      fs.writeSync(fd, part);
+      hash.update(part);
+      remaining -= part.length;
+    }
+    fs.writeSync(fd, tailBuf);
+    hash.update(tailBuf);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const reportSha = hash.digest('hex');
+  const reportStat = fs.statSync(reportPath);
+  assert.equal(reportStat.size, targetReportBytes);
+
+  put(join(dir, 'job.json'), JSON.stringify(jobReceipt, null, 2));
+  put(join(dir, 'STATUS.json'), JSON.stringify(statusReceipt));
+  writeReportMeta(dir, `${reportStat.mtimeMs}:${reportStat.size}:${reportSha}`, {
+    summary: 'Verified 64 MiB+ report digest summary.',
+    files: ['src/roles/cold-archive.ts'],
+  });
+
+  const archived = archiveJobCold(f.env.HUD_HOME, dir, id, jobReceipt, statusReceipt, endedMs + 25 * hour);
+  assert.equal(archived.wroteText, true);
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(exists(dir), false);
+
+  // Lowered-bound check: whole-entry read rejects report.md, while slice streaming succeeds with full SHA-256.
+  await assert.rejects(
+    () => readColdJobText(f.env.HUD_HOME, id, { names: ['report.md'], maxEntryBytes: 1024, maxTotalBytes: 1024 }),
+    /cold_entry_too_large:report\.md/,
+  );
+  const sliced = await readColdJobText(f.env.HUD_HOME, id, {
+    names: ['report-meta.json'],
+    slices: { 'report.md': { offset: 0, length: headerBuf.length } },
+    maxEntryBytes: 4096,
+    maxTotalBytes: 4096,
+  });
+  assert.equal(sliced?.slices.get('report.md')?.size, targetReportBytes);
+  assert.equal(sliced?.slices.get('report.md')?.sha256, reportSha);
+  assert.ok(sliced?.slices.get('report.md')?.data.equals(headerBuf));
+
+  // Digest read returns metadata-verified summary, verdict, blockers, and exact byte count (not job_not_found).
+  const digest = await f.call('hud_read', { job: id });
+  assert.equal(digest.archived, true);
+  assert.equal(digest.job, id);
+  assert.equal(digest.report_exists, true);
+  assert.equal(digest.digest.result, 'Verified 64 MiB+ report digest summary.');
+  assert.equal(digest.digest.verdict, 'pass');
+  assert.equal(digest.digest.blockers, 'none');
+  assert.equal(digest.digest.report_bytes, targetReportBytes);
+
+  // Full paged read: page 1, page 2, and final page near the 64 MiB boundary.
+  const page1 = await f.call('hud_read', { job: id, mode: 'full' });
+  assert.equal(page1.archived, true);
+  assert.equal(page1.report_truncated, true);
+  assert.equal(page1.report_bytes, targetReportBytes);
+  assert.ok(typeof page1.next_offset === 'number' && page1.next_offset > 0);
+  assert.equal(page1.report_meta.summary, 'Verified 64 MiB+ report digest summary.');
+  assert.ok(page1.report.startsWith(headerText));
+
+  const page2 = await f.call('hud_read', { job: id, mode: 'full', offset: page1.next_offset });
+  assert.equal(page2.archived, true);
+  assert.equal(page2.report_truncated, true);
+  assert.ok(page2.next_offset > page1.next_offset);
+  assert.ok(page2.report.length > 0);
+
+  const tailOffset = targetReportBytes - tailBuf.length;
+  const lastPage = await f.call('hud_read', { job: id, mode: 'full', offset: tailOffset });
+  assert.equal(lastPage.archived, true);
+  assert.equal(lastPage.report_truncated, undefined);
+  assert.equal(lastPage.next_offset, undefined);
+  assert.equal(lastPage.report_bytes, targetReportBytes);
+  assert.equal(lastPage.report, tailText);
+});
+
+test('stuck failed-retention job does zero cold I/O on unrelated STATUS refreshes and retries on input change or housekeeping', { timeout: 60000 }, async (t) => {
+  const f = retentionFixture(t);
+  const open = f.job({ state: 'working' });
+  const stuckInput = f.job(expired(), { reaped_at: expired().ended_at });
+  const stuckHousekeep = f.job(expired(), { reaped_at: expired().ended_at });
+
+  const inputSession = realSession(stuckInput, 'sessions', { type: 'session', cwd: '/synthetic/stuck-input' });
+  const housekeepSession = realSession(stuckHousekeep, 'sessions', { type: 'session', cwd: '/synthetic/stuck-housekeep' });
+
+  const inputConflict = join(f.pi, 'sessions', '--synthetic-stuck-input--', basename(inputSession.source));
+  const housekeepConflict = join(f.pi, 'sessions', '--synthetic-stuck-housekeep--', basename(housekeepSession.source));
+  put(inputConflict, 'existing target blocking input-retry job\n');
+  put(housekeepConflict, 'existing target blocking housekeep-retry job\n');
+
+  const phaseFile = join(f.home, 'cold-phase');
+  const perfOffsetFile = join(f.home, 'perf-offset');
+  const countsFile = join(f.home, 'cold-phase-counts.json');
+  const scansFile = join(f.home, 'scan-count');
+  writeFixtureFile(phaseFile, 'init');
+  writeFixtureFile(perfOffsetFile, '0');
+
+  const probe = `
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const coldPrefix = process.env.HUD_HOME + '/archive/cold';
+const jobsDir = process.env.HUD_HOME + '/jobs';
+const phaseFile = ${JSON.stringify(phaseFile)};
+const perfOffsetFile = ${JSON.stringify(perfOffsetFile)};
+const countsFile = ${JSON.stringify(countsFile)};
+const scansFile = ${JSON.stringify(scansFile)};
+const counts = { init: 0, refresh: 0, input: 0, preHousekeep: 0, housekeep: 0 };
+let scans = 0;
+const origPerfNow = performance.now.bind(performance);
+performance.now = () => {
+  let offset = 0;
+  try { offset = Number(fs.readFileSync(perfOffsetFile, 'utf8')) || 0; } catch {}
+  return origPerfNow() + offset;
+};
+const currentPhase = () => {
+  try { return fs.readFileSync(phaseFile, 'utf8').trim() || 'init'; } catch { return 'init'; }
+};
+const check = (p) => {
+  if (typeof p === 'string' && p.startsWith(coldPrefix)) {
+    const phase = currentPhase();
+    counts[phase] = (counts[phase] ?? 0) + 1;
+  }
+};
+const readdir = fs.readdirSync, lstat = fs.lstatSync, openSync = fs.openSync;
+fs.readdirSync = (p, ...a) => { check(p); return readdir(p, ...a); };
+fs.lstatSync = (p, ...a) => {
+  if (p === jobsDir) {
+    scans++;
+    fs.writeFileSync(scansFile, String(scans));
+  }
+  check(p);
+  return lstat(p, ...a);
+};
+fs.openSync = (p, ...a) => { check(p); return openSync(p, ...a); };
+process.on('exit', () => {
+  fs.writeFileSync(countsFile, JSON.stringify(counts));
+});
+syncBuiltinESMExports();`;
+
+  const readScans = () => (exists(scansFile) ? Number(fs.readFileSync(scansFile, 'utf8')) : 0);
+  const { child, exited, stderr } = f.start(probe);
+
+  // 1) Initial startup scan snapshots both stuck jobs and fails preserveSessions on both.
+  await until(() => child.exitCode !== null || (
+    exists(join(f.home, 'watch.log')) &&
+    f.log().includes(`keep ${basename(stuckInput)} session preservation:`) &&
+    f.log().includes(`keep ${basename(stuckHousekeep)} session preservation:`)
+  ), t.signal);
+  assert.equal(child.exitCode, null, stderr());
+  assert.ok(exists(stuckInput), 'stuckInput kept when native preservation fails');
+  assert.ok(exists(stuckHousekeep), 'stuckHousekeep kept when native preservation fails');
+
+  // 2) Unrelated STATUS.json updates on the working job trigger rescans with ZERO cold-archive reads/writes.
+  writeFixtureFile(phaseFile, 'refresh');
+  for (let i = 0; i < 10; i++) {
+    const before = readScans();
+    writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'working', progress: `step ${i}` }));
+    await until(() => child.exitCode !== null || readScans() > before, t.signal);
+    assert.equal(child.exitCode, null, stderr());
+  }
+  assert.ok(exists(stuckInput));
+  assert.ok(exists(stuckHousekeep));
+
+  // 3) Changing stuckInput's own inputs (after clearing its Pi target conflict) retries and prunes stuckInput only.
+  writeFixtureFile(phaseFile, 'input');
+  fs.unlinkSync(inputConflict);
+  writeFixtureFile(join(stuckInput, 'report.md'), 'Updated synthetic report triggering own-input retry.\n');
+  await until(() => child.exitCode !== null || !exists(stuckInput), t.signal);
+  assert.equal(child.exitCode, null, stderr());
+  assert.deepEqual(fs.readFileSync(inputConflict), inputSession.bytes, 'stuckInput session moved to native store');
+  assert.ok(exists(stuckHousekeep), 'stuckHousekeep still untouched by stuckInput retry');
+
+  // 4) Clearing stuckHousekeep's external Pi target without touching stuckHousekeep still does zero cold I/O on unrelated refreshes...
+  writeFixtureFile(phaseFile, 'preHousekeep');
+  fs.unlinkSync(housekeepConflict);
+  for (let i = 0; i < 3; i++) {
+    const before = readScans();
+    writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'working', progress: `pre-hk ${i}` }));
+    await until(() => child.exitCode !== null || readScans() > before, t.signal);
+    assert.equal(child.exitCode, null, stderr());
+  }
+  assert.ok(exists(stuckHousekeep), 'stuckHousekeep waits for housekeeping when its own inputs did not change');
+
+  // 5) ...and retries on the next housekeeping pass, pruning stuckHousekeep with snapshot-before-move.
+  writeFixtureFile(phaseFile, 'housekeep');
+  writeFixtureFile(perfOffsetFile, String(60 * 60_000));
+  writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'working', progress: 'trigger housekeep' }));
+  await until(() => child.exitCode !== null || !exists(stuckHousekeep), t.signal);
+  assert.equal(child.exitCode, null, stderr());
+  assert.deepEqual(fs.readFileSync(housekeepConflict), housekeepSession.bytes, 'stuckHousekeep session moved on housekeeping pass');
+
+  // Shut down cleanly and inspect per-phase cold-archive I/O counts.
+  writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  await exited;
+  assert.equal(child.exitCode, 0, stderr());
+
+  const counts = JSON.parse(fs.readFileSync(countsFile, 'utf8'));
+  assert.ok(counts.init > 0, 'initial scan archived stuck jobs before failing preservation');
+  assert.equal(counts.refresh, 0, 'zero cold-archive reads or writes during unrelated STATUS refreshes');
+  assert.ok(counts.input > 0, 'own-input change retried snapshot-before-move');
+  assert.equal(counts.preHousekeep, 0, 'zero cold-archive reads or writes before housekeeping pass');
+  assert.ok(counts.housekeep > 0, 'housekeeping pass retried snapshot-before-move');
 });

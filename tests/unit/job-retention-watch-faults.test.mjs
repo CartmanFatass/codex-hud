@@ -54,7 +54,10 @@ test('permanent watch failure still scans and exits with no open jobs', { timeou
 test('permanently failing session preservation warns once per minute per job, not per scan', { timeout }, async (t) => {
   const f = fixture(t, DEGRADED_MS), open = f.job({ state: 'working' });
   const bad = [f.job(expired()), f.job(expired())];
-  for (const dir of bad) realSession(dir, 'sessions', { type: 'session' });
+  const sources = bad.map((dir) => realSession(dir, 'sessions', { type: 'session' }).source);
+  const touchSources = (ms) => {
+    for (const source of sources) fs.utimesSync(source, ms / 1000, ms / 1000);
+  };
   // The watcher reads this file as its clock; write it atomically so a read never sees it empty.
   const clock = join(f.home, 'clock'), now = Date.now();
   const setClock = (ms) => writeFixtureFile(clock, String(ms));
@@ -71,10 +74,12 @@ Date.now = () => Number(fs.readFileSync(${JSON.stringify(clock)}, 'utf8'));`);
   assert.equal(child.exitCode, null, 'working job keeps degraded scans running');
   for (const dir of bad) assert.equal(warnings(dir).length, 1, 'repeated failures within a minute are suppressed');
   setClock(now + 59999);
+  touchSources(now + 59999);
   const before = scans();
   await until(() => scans() >= before + 2, t.signal);
   for (const dir of bad) assert.equal(warnings(dir).length, 1, 'still suppressed just before one minute');
   setClock(now + 60000);
+  touchSources(now + 60000);
   await until(() => bad.every((dir) => warnings(dir).length >= 2), t.signal);
   for (const dir of bad) assert.equal(warnings(dir).length, 2, 'each job warns again after one minute');
   writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));

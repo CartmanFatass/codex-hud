@@ -367,8 +367,13 @@ function parseColdJson<T>(buf: Buffer | undefined): T | null {
   } catch { return null; }
 }
 
-function parseColdReportMeta(metaBuf: Buffer | undefined, reportBuf: Buffer | undefined): ReportMeta | undefined {
-  if (!metaBuf || !reportBuf || metaBuf.length > 16 * 1024) return undefined;
+const REPORT_HEAD_BYTES = 65536;
+
+function parseColdReportMeta(
+  metaBuf: Buffer | undefined,
+  report: { size: number; sha256: string } | undefined,
+): ReportMeta | undefined {
+  if (!metaBuf || !report || metaBuf.length > 16 * 1024) return undefined;
   try {
     const meta = JSON.parse(metaBuf.toString('utf8'));
     if (
@@ -379,8 +384,7 @@ function parseColdReportMeta(metaBuf: Buffer | undefined, reportBuf: Buffer | un
       (meta.skip_checks_reason !== undefined && typeof meta.skip_checks_reason !== 'string') ||
       (meta.files !== undefined && (!Array.isArray(meta.files) || !meta.files.every((p: unknown) => typeof p === 'string')))
     ) return undefined;
-    const hash = createHash('sha256').update(reportBuf).digest('hex');
-    if (!meta.report_sig.endsWith(`:${reportBuf.length}:${hash}`)) return undefined;
+    if (!meta.report_sig.endsWith(`:${report.size}:${report.sha256}`)) return undefined;
     const fields = normalizeReportMeta(meta);
     const { at, report_sig, preview } = meta;
     if (validPreviewPath(preview?.source) && [preview.path, preview.stamp, preview.error].every((v: unknown) => v === undefined || typeof v === 'string')) {
@@ -394,22 +398,27 @@ async function readColdJobObservation(id: string, full: boolean, detail: boolean
   let cold: Awaited<ReturnType<typeof readColdJobText>>;
   try {
     cold = await readColdJobText(hudHome, id, {
-      names: [jobFiles.job, jobFiles.status, jobFiles.report, jobFiles.reportMeta],
+      names: [jobFiles.job, jobFiles.status, jobFiles.reportMeta],
+      slices: {
+        [jobFiles.report]: full
+          ? { offset, length: REPORT_PAGE_BYTES + 1 }
+          : { offset: 0, length: REPORT_HEAD_BYTES },
+      },
     });
   } catch { return null; }
   if (!cold) return null;
   const archivedJob = parseColdJson<Job>(cold.entries.get(jobFiles.job));
   const archivedStatus = parseColdJson<Partial<JobStatus>>(cold.entries.get(jobFiles.status));
-  const reportBuf = cold.entries.get(jobFiles.report) ?? null;
-  const reportMeta = reportBuf ? parseColdReportMeta(cold.entries.get(jobFiles.reportMeta), reportBuf) : undefined;
+  const reportSlice = cold.slices.get(jobFiles.report);
+  const reportMeta = parseColdReportMeta(cold.entries.get(jobFiles.reportMeta), reportSlice);
   const state = typeof archivedStatus?.state === 'string' ? archivedStatus.state : null;
   const reason = typeof archivedStatus?.reason === 'string' ? archivedStatus.reason : null;
   const exit_reason = typeof archivedStatus?.exit_reason === 'string' ? archivedStatus.exit_reason : null;
-  const page = full && reportBuf
-    ? paginateReportSlice(reportBuf.subarray(Math.min(offset, reportBuf.length), Math.min(offset + REPORT_PAGE_BYTES + 1, reportBuf.length)), reportBuf.length, offset)
+  const page = full && reportSlice
+    ? paginateReportSlice(reportSlice.data, reportSlice.size, offset)
     : null;
-  const head = !full && reportBuf
-    ? { text: reportBuf.subarray(0, 65536).toString('utf8'), truncated: reportBuf.length > 65536, bytes: reportBuf.length }
+  const head = !full && reportSlice
+    ? { text: reportSlice.data.toString('utf8'), truncated: reportSlice.size > REPORT_HEAD_BYTES, bytes: reportSlice.size }
     : null;
   return {
     job: id,
@@ -424,7 +433,7 @@ async function readColdJobObservation(id: string, full: boolean, detail: boolean
     ...(detail || reason ? { reason } : {}),
     ...(detail || exit_reason ? { exit_reason } : {}),
     ...(detail && archivedJob ? jobDiagnostics(archivedJob) : {}),
-    report_exists: reportBuf !== null,
+    report_exists: reportSlice !== undefined,
     ...(full && reportMeta ? { report_meta: reportMeta } : {}),
     ...(head ? {
       digest: reportDigest(head, id, state, reportMeta, undefined),

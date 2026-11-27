@@ -51,8 +51,20 @@ export interface ColdArchiveWriteOptions {
   maxSyncFrameBytes?: number;
 }
 
+export interface ColdEntrySliceRequest {
+  offset?: number;
+  length: number;
+}
+
+export interface ColdEntrySlice {
+  size: number;
+  sha256: string;
+  data: Buffer;
+}
+
 export interface ReadColdJobTextOptions {
   names?: readonly string[];
+  slices?: Readonly<Record<string, ColdEntrySliceRequest>>;
   maxEntryBytes?: number;
   maxTotalBytes?: number;
 }
@@ -470,28 +482,16 @@ export function archiveJobCold(
   return { wroteText: textRes.written, wroteRaw: rawRes.written, month };
 }
 
-/** Archive flow files owned by a job (f* land flows + gate logs, or j* council/prewalk flows) into <job>.text.tar.zst. */
-export function archiveJobFlowsCold(
-  home: string,
-  jobId: string,
-  entries: readonly TarInput[],
-  timestampMs: number,
-  options?: ColdArchiveWriteOptions,
-): { path: string; written: boolean } {
-  const month = findExistingMonth(home, jobId) ?? monthFromMs(timestampMs);
-  return mergeColdMember(home, month, jobId, 'text', entries, timestampMs, options);
-}
-
-/** Archive a standalone flow (q*, b*, w*, te*, or an orphan f* gate log) into its own <flow>.text.tar.zst. */
+/** Archive flow entries into <ownerId>.text.tar.zst (either a job j* or a standalone flow q* / b* / w* / te* / f*). */
 export function archiveFlowCold(
   home: string,
-  flowId: string,
+  ownerId: string,
   entries: readonly TarInput[],
   timestampMs: number,
   options?: ColdArchiveWriteOptions,
 ): { path: string; written: boolean } {
-  const month = findExistingMonth(home, flowId) ?? monthFromMs(timestampMs);
-  return mergeColdMember(home, month, flowId, 'text', entries, timestampMs, options);
+  const month = findExistingMonth(home, ownerId) ?? monthFromMs(timestampMs);
+  return mergeColdMember(home, month, ownerId, 'text', entries, timestampMs, options);
 }
 
 /** Enforce retention.coldRawCapGB by deleting oldest *.raw.tar.zst members first; never deletes text members. */
@@ -559,46 +559,87 @@ export function listColdArchive(home: string, options: { month?: string } = {}):
   return items;
 }
 
-/** Stream entries from <id>.text.tar.zst, optionally filtering to specific names so huge sibling entries never consume memory. */
+/** Stream entries from <id>.text.tar.zst, optionally filtering to specific names or bounded byte slices so huge entries never consume memory. */
 export async function readColdJobText(
   home: string,
   id: string,
   options: ReadColdJobTextOptions = {},
-): Promise<{ path: string; month: string; entries: Map<string, Buffer> } | null> {
+): Promise<{ path: string; month: string; entries: Map<string, Buffer>; slices: Map<string, ColdEntrySlice> } | null> {
   const found = findColdMember(home, id, 'text');
   if (!found) return null;
   const wanted = options.names ? new Set(options.names) : null;
+  const sliceRequests = options.slices ? new Map(Object.entries(options.slices)) : null;
   const maxEntryBytes = options.maxEntryBytes ?? DEFAULT_TEXT_ENTRY_LIMIT;
   const maxTotalBytes = options.maxTotalBytes ?? DEFAULT_TEXT_TOTAL_LIMIT;
   const entries = new Map<string, Buffer>();
+  const slices = new Map<string, ColdEntrySlice>();
   let keptTotalBytes = 0;
+  let curMode: 'skip' | 'full' | 'slice' = 'skip';
   let curName: string | null = null;
+  let curSize = 0;
+  let curPos = 0;
+  let curSliceStart = 0;
+  let curSliceEnd = 0;
+  let curHash: ReturnType<typeof createHash> | null = null;
   let curChunks: Buffer[] = [];
   const ok = await streamTarZstFile(found.path, {
     onEntryStart(meta) {
+      const sliceReq = sliceRequests?.get(meta.name);
+      if (sliceReq) {
+        const offset = Math.max(0, Math.floor(sliceReq.offset ?? 0));
+        const length = Math.max(0, Math.floor(sliceReq.length));
+        curMode = 'slice';
+        curName = meta.name;
+        curSize = meta.size;
+        curPos = 0;
+        curSliceStart = offset;
+        curSliceEnd = offset + length;
+        curHash = createHash('sha256');
+        curChunks = [];
+        return;
+      }
       if (wanted && !wanted.has(meta.name)) {
+        curMode = 'skip';
         curName = null;
         return;
       }
       if (meta.size > maxEntryBytes) throw new Error(`cold_entry_too_large:${meta.name}`);
       if (keptTotalBytes + meta.size > maxTotalBytes) throw new Error(`cold_read_limit_exceeded:${meta.name}`);
       keptTotalBytes += meta.size;
+      curMode = 'full';
       curName = meta.name;
       curChunks = [];
     },
     onEntryData(chunk) {
-      if (curName !== null) curChunks.push(Buffer.from(chunk));
+      if (curMode === 'full') {
+        curChunks.push(Buffer.from(chunk));
+      } else if (curMode === 'slice') {
+        curHash!.update(chunk);
+        const nextPos = curPos + chunk.length;
+        const start = Math.max(curSliceStart, curPos);
+        const end = Math.min(curSliceEnd, nextPos);
+        if (end > start) curChunks.push(Buffer.from(chunk.subarray(start - curPos, end - curPos)));
+        curPos = nextPos;
+      }
     },
     onEntryEnd() {
-      if (curName !== null) {
+      if (curMode === 'full' && curName !== null) {
         entries.set(curName, curChunks.length === 1 ? curChunks[0]! : Buffer.concat(curChunks));
-        curName = null;
-        curChunks = [];
+      } else if (curMode === 'slice' && curName !== null) {
+        slices.set(curName, {
+          size: curSize,
+          sha256: curHash!.digest('hex'),
+          data: curChunks.length === 1 ? curChunks[0]! : Buffer.concat(curChunks),
+        });
       }
+      curMode = 'skip';
+      curName = null;
+      curChunks = [];
+      curHash = null;
     },
   });
   if (!ok) return null;
-  return { path: found.path, month: found.month, entries };
+  return { path: found.path, month: found.month, entries, slices };
 }
 
 /** Descend component-by-component from a pinned directory fd with O_NOFOLLOW, then create the leaf file exclusively (0600). */

@@ -3,11 +3,10 @@ import * as fs from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { projectRegistryRoots } from '../roles/projects.js';
-import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
+import { readJsonBounded, readRegularNoFollow, writePrivateFile } from '../utils/atomic-fs.js';
 import type { TarEntry, TarFileEntry, TarInput } from '../utils/tar-zst.js';
 import {
   archiveFlowCold,
-  archiveJobFlowsCold,
   archiveJobRawEntries,
   COLD_ID_RE,
   enforceColdRawCap,
@@ -50,21 +49,8 @@ function inAbsoluteDir<T>(path: string, use: (dir: string, fd: number) => T): T 
 }
 
 function readPinnedRegularEntry(path: string, name: string): TarEntry | null {
-  let fd: number;
-  try {
-    fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ELOOP') return null;
-    throw error;
-  }
-  try {
-    const stat = fs.fstatSync(fd);
-    if (!stat.isFile()) return null;
-    return { name, data: fs.readFileSync(fd), mode: 0o600, mtime: Math.floor(stat.mtimeMs / 1000) };
-  } finally {
-    fs.closeSync(fd);
-  }
+  const read = readRegularNoFollow(path);
+  return read ? { name, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) } : null;
 }
 
 function statPinnedRegular(path: string, name: string): { stat: fs.Stats; entry: TarFileEntry } | null {
@@ -224,8 +210,7 @@ async function pruneExpiredWorkflow(home: string, id: string, cutoff: number) {
           entries.push(pinned.entry);
         }
         const ts = epoch(b.updated_at) ?? epoch(b.created_at) ?? stat.mtimeMs;
-        if (id.startsWith('j')) archiveJobFlowsCold(home, id, entries, ts);
-        else archiveFlowCold(home, id, entries, ts);
+        archiveFlowCold(home, id, entries, ts);
         for (const f of files) fs.unlinkSync(join(batch, f));
         fs.rmdirSync(join(dir, id)); fs.unlinkSync(receipt);
       });
@@ -243,8 +228,7 @@ function pruneOrphanGateLog(home: string, dir: string, name: string, flow: strin
     findColdMember(home, job, 'text') || findColdMember(home, job, 'raw');
   const pinned = statPinnedRegular(path, owned ? `flows/${name}` : name);
   if (!pinned || !sameInode(stat, pinned.stat) || stat.ctimeMs !== pinned.stat.ctimeMs) return true;
-  if (owned) archiveJobFlowsCold(home, job, [pinned.entry], stat.mtimeMs);
-  else archiveFlowCold(home, flow, [pinned.entry], stat.mtimeMs);
+  archiveFlowCold(home, owned ? job : flow, [pinned.entry], stat.mtimeMs);
   if (!fs.lstatSync(receipt, { throwIfNoEntry: false }) && sameReceipt(path, stat)) fs.unlinkSync(path);
   return true;
 }
@@ -364,7 +348,7 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
             }
           }
           if (entries.length) {
-            archiveJobFlowsCold(home, job, entries, latestReceiptTs ?? (maxMtime || now));
+            archiveFlowCold(home, job, entries, latestReceiptTs ?? (maxMtime || now));
           }
           for (const { path, stat } of files) {
             try {

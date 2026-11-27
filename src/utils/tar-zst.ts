@@ -7,7 +7,6 @@ import * as zlib from 'node:zlib';
 const BLOCK = 512;
 const MAX_USTAR_NAME = 100;
 const MAX_USTAR_SIZE = 0o77777777777; // 8 GiB - 1
-const DEFAULT_MAX_DECOMPRESS_BYTES = 128 * 1024 * 1024;
 export const DEFAULT_ZSTD_FRAME_BYTES = 2 * 1024 * 1024;
 export const DEFAULT_MAX_SYNC_FRAME_BYTES = 64 * 1024 * 1024;
 const ZSTD_STREAM_CHUNK_BYTES = 256 * 1024;
@@ -159,21 +158,6 @@ function buildEntryHeaders(name: string, size: number, mode: number, mtime: numb
     : name.replace(/[^\x20-\x7e]/g, '_').slice(0, MAX_USTAR_NAME);
   out.push(buildHeader(shortName, size, mode, mtime, '0'));
   return out;
-}
-
-export function encodeTar(entries: readonly TarEntry[]): Buffer {
-  const seen = new Set<string>();
-  const chunks: Buffer[] = [];
-  for (const entry of entries) {
-    if (!isSafeTarPath(entry.name)) throw new Error(`invalid_tar_path:${entry.name}`);
-    if (seen.has(entry.name)) throw new Error(`duplicate_tar_path:${entry.name}`);
-    seen.add(entry.name);
-    const mode = entry.mode ?? 0o600;
-    const mtime = entry.mtime !== undefined && Number.isFinite(entry.mtime) ? Math.max(0, Math.floor(entry.mtime)) : 0;
-    chunks.push(...buildEntryHeaders(entry.name, entry.data.length, mode, mtime, seen.size), entry.data, padBlock(entry.data.length));
-  }
-  chunks.push(Buffer.alloc(BLOCK * 2));
-  return Buffer.concat(chunks);
 }
 
 /** Synchronous streaming tar + multi-frame zstd writer with bounded memory. */
@@ -451,43 +435,6 @@ export class TarStreamParser {
     this.padRemaining = pad;
     this.state = 'data';
   }
-}
-
-export function decodeTar(buf: Buffer): TarEntry[] {
-  const entries: TarEntry[] = [];
-  let current: { meta: TarEntryMeta; chunks: Buffer[] } | null = null;
-  const parser = new TarStreamParser({
-    onEntryStart(meta) {
-      current = { meta, chunks: [] };
-    },
-    onEntryData(chunk) {
-      current!.chunks.push(Buffer.from(chunk));
-    },
-    onEntryEnd() {
-      const item = current!;
-      current = null;
-      const data = item.chunks.length === 1 ? item.chunks[0]! : Buffer.concat(item.chunks);
-      entries.push({ name: item.meta.name, data, mode: item.meta.mode, mtime: item.meta.mtime });
-    },
-  });
-  parser.push(buf);
-  parser.finish();
-  return entries;
-}
-
-export function encodeTarZst(entries: readonly TarEntry[], options: { frameBytes?: number } = {}): Buffer {
-  const tar = encodeTar(entries);
-  const frameBytes = options.frameBytes ?? DEFAULT_ZSTD_FRAME_BYTES;
-  if (tar.length <= frameBytes) return zstd.zstdCompressSync(tar);
-  const frames: Buffer[] = [];
-  for (let offset = 0; offset < tar.length; offset += frameBytes) {
-    frames.push(zstd.zstdCompressSync(tar.subarray(offset, Math.min(offset + frameBytes, tar.length))));
-  }
-  return Buffer.concat(frames);
-}
-
-export function decodeTarZst(zst: Buffer, maxOutputLength = DEFAULT_MAX_DECOMPRESS_BYTES): TarEntry[] {
-  return decodeTar(zstd.zstdDecompressSync(zst, { maxOutputLength }));
 }
 
 /** Stream a concatenated-frame zstd file synchronously, one RFC 8878 frame at a time. */
