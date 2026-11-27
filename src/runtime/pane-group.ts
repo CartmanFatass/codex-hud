@@ -20,7 +20,12 @@ export async function reportMainPaneGroup(
   const paneId = env.HERDR_PANE_ID;
   const endpoint = herdrEndpoint(env);
   if (!herdrId(paneId) || !endpoint) return;
-  const home = hudHome ?? getHudHome(env), session = `${home}\0${endpoint}`;
+  const home = hudHome ?? getHudHome(env);
+  const name = registeredProjectName(home, cwd);
+  const group = name ? monitorText(name.replace(/\s+/g, ' ')).trim() : '';
+  // Unregistered main sessions must not contact herdr from delegation or footer startup.
+  if (!group) return;
+  const session = `${home}\0${endpoint}`;
   if (!sidebar.has(session)) {
     if (sidebar.size >= MAX_REPORTED) sidebar.clear();
     sidebar.add(session);
@@ -29,9 +34,6 @@ export async function reportMainPaneGroup(
       else sidebar.delete(session);
     }).catch(() => sidebar.delete(session));
   }
-  const name = registeredProjectName(home, cwd);
-  const group = name ? monitorText(name.replace(/\s+/g, ' ')).trim() : '';
-  if (!group) return;
   const key = `${endpoint}\0${paneId}\0${group}`;
   if (reported.has(key)) return;
   if (reported.size >= MAX_REPORTED) reported.clear();

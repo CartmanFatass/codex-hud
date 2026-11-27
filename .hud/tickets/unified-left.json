@@ -56,7 +56,7 @@
     {
       "number": 2,
       "title": "HUD publishes the sidebar projection on change and opens pages from sidebar clicks",
-      "status": "ready-for-agent",
+      "status": "done",
       "role": "imp",
       "owner_try": false,
       "live_try": "Main: with the fork from unified-left/01 installed, file and resolve a synthetic owner request and watch the crown; click each launcher item.",
@@ -70,27 +70,34 @@
         {
           "id": 1,
           "text": "Unit tests: projection built from fixture state matches Home's requests and runs; unchanged state sends nothing",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: editing a fixture STATE.md waiting item updates the projection without a timer",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: hud_activate targets open the matching page and step",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Live try by main on the installed fork: an owner request appears in the crown within a second and clears when resolved",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T19:23:20.314Z",
+        "job": "j16252544ba9fc223",
+        "flow": "f16252544ba9fc223-2",
+        "replay_base": "1c400506d70b96794710a18dd37a25f2ed82b6fd",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T18:04:42.556Z",
-      "updated_at": "2026-11-27T18:04:42.556Z"
+      "updated_at": "2026-11-27T19:23:20.314Z"
     },
     {
       "number": 3,
@@ -175,7 +182,7 @@
     {
       "number": 5,
       "title": "fork: the dock as a center ◆ HUD tab, hidden on navigation, pinnable at wide widths; narrow header summary",
-      "status": "ready-for-agent",
+      "status": "done",
       "role": "imp",
       "repo": "~/projects/herdr-hud",
       "owner_try": false,
@@ -190,32 +197,40 @@
         {
           "id": 1,
           "text": "Fork tests: center placement shows the tab over the pane surface and hides on workspace/agent/tab focus without stopping the terminal",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Fork tests: pin works at >=112 columns and is refused below",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Fork test: narrow header row 2 renders the projection summary",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Fork tests: existing edge placements unchanged",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "Fork gate passes; report names the built binary",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T19:10:42.383Z",
+        "job": "j5be71b52611f5705",
+        "flow": "f5be71b52611f5705",
+        "replay_base": "ba8e2617a7399a0677934906a53619efd172104b",
+        "gates": 4,
+        "commit": "70c00b3d279cce64699ad8ebb69e17e941cda9e1"
+      },
       "comments": [],
       "created_at": "2026-11-27T18:04:42.556Z",
-      "updated_at": "2026-11-27T18:05:01.476Z"
+      "updated_at": "2026-11-27T19:10:42.383Z"
     },
     {
       "number": 6,
