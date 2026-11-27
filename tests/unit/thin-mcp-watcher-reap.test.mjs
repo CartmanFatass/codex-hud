@@ -273,6 +273,8 @@ for (const fault of ['rename', 'open']) test(`pi reap: --done snapshot ${fault} 
   const f = await fixture(t, true, '', 200);
   const worker = fakeCliWithChild(t, f);
   const job = await f.call('hud_create', { role: 'imp', request_key: `pi-done-${fault}`, task: 'Synthetic task.' });
+  // runProgress is synchronous; let the fixture answer the background sidebar RPC first.
+  await f.waitForWorkerMetadata(job, t.signal);
   const child = await worker.start(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], true);
   const start = procStat(child).start;
   t.after(() => { if (procStat(child)?.start === start) process.kill(child, 'SIGKILL'); });

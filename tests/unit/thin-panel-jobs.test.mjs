@@ -182,7 +182,9 @@ test('a queued land names the job it waits on: its ticket id, else the holder’
   f.job(91, 'HOLD', 'HOLD-07: keep the lease', 'closed', 3, 3);
   f.job(92, 'WAIT', 'WAIT-02: land behind it', 'closed', 3, 3);
   const flowFile = join(f.env.HUD_HOME, 'flows', 'f0000000000000092.json');
-  const waiting = async () => (await f.pipeline.refresh(), f.pipeline.workboard(f.tree).workers.find((w) => w.flow?.state === 'queued').flow);
+  // Project each written receipt directly: this tests the label, not when the panel's watch invalidates its cache.
+  const waiting = async () => buildWorkboard(f.tree, (await collectJobLanes(f.env.HUD_HOME,
+    { project: null, pane: f.env.HERDR_PANE_ID })).lanes).workers.find((w) => w.flow?.state === 'queued').flow;
   f.put(flowFile, wait('f0000000000000091'), 0);
   let flow = await waiting();
   assert.equal(flow.waitsOn, 'HOLD-07');

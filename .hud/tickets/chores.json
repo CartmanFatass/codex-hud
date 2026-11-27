@@ -534,7 +534,7 @@
     {
       "number": 40,
       "title": "The quiet-without-a-report notice uses native AGY activity too",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "Run an AGY imp that waits on a long background test run and confirm no quiet notice arrives",
       "approved_removals": [],
@@ -546,27 +546,34 @@
         {
           "id": 1,
           "text": "Test: an AGY job with recent native step activity or a running background task and herdr status done is not set waiting_orchestrator",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: an AGY job with no native activity for the idle grace still gets the quiet notice",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: a queue item whose worker was quiet and then publishes a report continues instead of failing the run",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T09:41:15.502Z",
+        "job": "jfc1cbeb47911a847",
+        "flow": "ffc1cbeb47911a847",
+        "replay_base": "38fe1a55adf6d979ed4c473d498f98a8286138e7",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T08:53:12.874Z",
-      "updated_at": "2026-11-27T08:53:12.874Z"
+      "updated_at": "2026-11-27T09:41:15.502Z"
     }
   ]
 }

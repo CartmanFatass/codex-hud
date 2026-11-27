@@ -1126,6 +1126,8 @@ if (process.env.SLOW_DELIVERY_LOOKUP === '1') {
   assert.equal(reply.sent, true);
   await until(() => lookups() === 2, t.signal);
   fs.writeFileSync(release, '');
+  // Replies above must beat the held lookups, but teardown must not race the separate sidebar RPC.
+  await f.waitForWorkerMetadata(job, t.signal);
 });
 
 for (const agent of ['codex', 'claude']) test(`hud_create starts exactly one queue watcher only for Codex (${agent})`, { timeout: 60000 }, async (t) => {

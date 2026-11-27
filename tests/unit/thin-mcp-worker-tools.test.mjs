@@ -731,13 +731,17 @@ test('hud_report binds a fresh report to the turn token in the current CLI promp
 
 test('a blocked CLI send is not queued and the worker can still report with its original token', async (t) => {
   const f = await fixture(t);
-  writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
+  // Keep the fake client working without auto-reporting. Its blocked state survives resubscription.
+  writeFixtureFile(join(f.env.HOME, 'hold-turn'), '');
   writeCliRole(f, 'blocked-send', 20, true, 'claude');
   const job = await f.call('hud_create', { role: 'blocked-send', task: 'Synthetic first turn.' });
+  assert.notEqual(job.ok, false, JSON.stringify(job));
   const dir = job.task_dir, turn = cliToken(dir);
-  await until(() => cliState(dir)?.agent_session_id, t.signal);
-  f.push(job.job, 'blocked');
-  await until(() => cliState(dir)?.blocked, t.signal);
+  await until(() => cliState(dir)?.agent_session_id && cliState(dir)?.state === 'working', t.signal,
+    'CLI supervisor did not observe the first turn');
+  const blocked = join(f.env.HOME, 'cli-blocked');
+  writeFixtureFile(blocked, '');
+  await until(() => cliState(dir)?.blocked, t.signal, 'CLI supervisor did not observe the blocked prompt');
   const marker = join(f.env.HOME, 'blocked-prompt');
   writeFixtureFile(marker, '');
   const refused = await f.call('hud_send', { job: job.job, text: 'Synthetic refused follow-up.' });
@@ -746,8 +750,8 @@ test('a blocked CLI send is not queued and the worker can still report with its 
   assert.equal(refused.queued, false);
   assert.match(refused.error, /blocked on a client prompt/);
   fs.unlinkSync(marker);
-  f.push(job.job, 'working');
-  await until(() => cliState(dir)?.state === 'working', t.signal);
+  fs.unlinkSync(blocked);
+  await until(() => cliState(dir)?.state === 'working', t.signal, 'CLI supervisor did not observe the prompt clearing');
   const call = workerClient(t, f, dir);
   assert.deepEqual(resultValue(await call('hud_report', { text: 'Synthetic original report.', turn })),
     { path: join(dir, 'report.md') });

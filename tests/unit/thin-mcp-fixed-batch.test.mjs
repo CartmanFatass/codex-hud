@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { execFile, execFileSync } from 'node:child_process';
 import { cachedReportSignature, writeReportMeta } from '../../dist/roles/report-meta.js';
 import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
+import { isProcAlive } from '../../dist/utils/proc.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { tmpdir } from 'node:os';
@@ -234,19 +235,27 @@ test('batch code jobs keep per-job worktrees and report-declared files in the in
   const index = () => batchIndex(f.env.HUD_HOME, flow);
   const roots = [];
   for (let k = 0; k < 2; k++) {
-    await until(() => index().items[k].job, t.signal);
+    await until(() => {
+      const { batch, items } = index();
+      assert.notEqual(batch.state, 'paused', JSON.stringify(items));
+      return items[k].job;
+    }, t.signal, `batch item ${k + 1} was not dispatched`);
     const dir = join(f.env.HUD_HOME, 'jobs', index().items[k].job);
     roots.push(read(join(dir, 'job.json')).worktree.root);
     fs.writeFileSync(join(dir, 'report.md'), 'Synthetic code report.');
     writeReportMeta(dir, cachedReportSignature(dir), { files: [`result-${k}.txt`] });
     writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
   }
-  await until(() => index().batch.state === 'completed', t.signal);
+  await until(() => index().batch.state === 'completed', t.signal, 'code batch did not complete');
   const result = await f.call('hud_read', { job: flow });
   assert.deepEqual(result.items.map(i => i.files), [['result-0.txt'], ['result-1.txt']]);
   assert.equal(new Set(roots).size, 2); assert.ok(roots.every(root => root !== f.root));
+  // The index reaches completed before the runner publishes the outer receipt and releases the state lock.
+  const { pid, start } = index().batch;
+  assert.ok(pid && start, 'batch runner recorded its identity');
+  await until(() => !isProcAlive(pid, start), t.signal, 'completed batch runner did not exit');
   pruneLandFlows(f.env.HUD_HOME, Date.now() + JOB_RETENTION_MS + 60_000);
-  await until(() => !fs.existsSync(result.result_index), t.signal);
+  await until(() => !fs.existsSync(result.result_index), t.signal, 'expired batch result index was not pruned');
 });
 
 test('breaker uses consecutive failures or 20% (minimum two); repeats and post-pause failures do not wake', () => {
