@@ -610,12 +610,12 @@ test('hud_create renders a cross-repo ticket from the caller tracker, not the ta
 
 test('ready names an unregistered ticket repo for JSON and legacy Markdown tickets', async t => {
   const f = await fixture(t), repo = initRepo(f.root);
-  const draft = { title: 'Tracker ticket', blocked_by: [], acceptance: ['Checked'], what: 'Tracker goal.', repo };
+  const draft = { title: 'Tracker ticket', blocked_by: [], acceptance: ['Checked'], what: 'Tracker goal.' };
   await f.call('hud_tickets', { op: 'add', feature: 'json', tickets: [draft] });
+  await f.call('hud_tickets', { op: 'update', feature: 'json', ticket: 1, repo });
   const issues = join(f.root, '.scratch/legacy/issues');
   fs.mkdirSync(issues, { recursive: true });
-  fs.writeFileSync(join(issues, '01-sample.md'), '# 01: Legacy sample\n**Status:** ready-for-agent\n**Blocked by:** none\n');
-  await f.call('hud_tickets', { op: 'update', feature: 'legacy', ticket: 1, repo });
+  fs.writeFileSync(join(issues, '01-sample.md'), `# 01: Legacy sample\n**Status:** ready-for-agent\n**Blocked by:** none\n**Repo:** ${repo}\n`);
   const ready = () => f.call('hud_tickets', { op: 'ready' });
   const blocked = await ready();
   assert.deepEqual(blocked.tickets, []);

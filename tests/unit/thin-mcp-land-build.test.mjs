@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { until } from '../helpers/thin-mcp-harness.mjs';
-import { checkout, job, jobDir } from '../helpers/thin-mcp-land.mjs';
+import { checkout, job, jobDir, seedJsonTickets } from '../helpers/thin-mcp-land.mjs';
 
 async function buildableCheckout(t, { gate = ['npm run build'], after = ['npm run build'], native = false } = {}) {
   const f = await checkout(t, gate, { after });
@@ -45,9 +45,12 @@ async function buildableCheckout(t, { gate = ['npm run build'], after = ['npm ru
 
 test('after npm run build is skipped via staged publish when inputs match, even with a folded ticket commit', async t => {
   const f = await buildableCheckout(t);
-  const dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', receipt = join(dir, 'job.json');
+  const dir = jobDir(f), receipt = join(dir, 'job.json');
+  const ticket = seedJsonTickets(f, 'feature', [{
+    number: 1, title: 'Example', status: 'ready-for-agent', owner_try: false,
+    acceptance: [{ id: 1, text: 'done', done: false }],
+  }]);
   fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
-  f.put(f.main, ticket, '# 01: Example\n**Status:** ready-for-agent\n**Owner try:** no\n- [ ] done\n');
   f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed ticket');
   f.git(f.worktree, 'rebase', 'base');
   const { flow } = await f.call('hud_land', { job });

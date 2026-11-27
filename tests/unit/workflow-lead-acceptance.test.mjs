@@ -669,10 +669,8 @@ test('a scope assumption on main hand-back pauses asking and wakes main; hud_res
   await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 
   // hud_respond stop cancels a report-gate pause cleanly.
-  const stopIssues = join(f.root, '.scratch', 'stopgate', 'issues');
-  fs.mkdirSync(stopIssues, { recursive: true });
-  fs.writeFileSync(join(stopIssues, '01-stop.md'), goodTicket(1));
-  f.git(f.root, 'add', '.scratch');
+  f.writeJsonTicket(1, {}, 'stopgate');
+  f.git(f.root, 'add', '.hud/tickets/stopgate.json');
   f.git(f.root, 'commit', '-qm', 'stopgate feature');
   const { flow: stopFlow } = await f.call('hud_tickets', { op: 'run', feature: 'stopgate', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   const [stopJob] = await f.jobs(stopFlow, 1);
@@ -776,11 +774,9 @@ test('hud_tickets run superseding a paused run keeps an in-flight land and adopt
   await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 
   // Also verify: a non-held in-flight land that already completed (closing the ticket) while the predecessor was paused is adopted, not dropped.
-  const doneIssues = join(f.root, '.scratch', 'donepause', 'issues');
-  fs.mkdirSync(doneIssues, { recursive: true });
-  fs.writeFileSync(join(doneIssues, '01-completed-while-paused.md'), goodTicket(1));
-  fs.writeFileSync(join(doneIssues, '02-paused.md'), goodTicket(2, { blocked: 'none' }));
-  f.git(f.root, 'add', '.scratch');
+  f.writeJsonTicket(1, {}, 'donepause');
+  f.writeJsonTicket(2, { blocked: 'none' }, 'donepause');
+  f.git(f.root, 'add', '.hud/tickets/donepause.json');
   f.git(f.root, 'commit', '-qm', 'donepause feature');
   fs.rmSync(gateStarted, { force: true });
   fs.rmSync(gateRelease, { force: true });
@@ -1044,10 +1040,8 @@ test('configurable escalation_rule reaches lead packet; escalate wakes main once
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
 
   // Separate feature with handback_to: main wakes main directly at accept with zero lead jobs.
-  const mainIssues = join(f.root, '.scratch', 'direct', 'issues');
-  fs.mkdirSync(mainIssues, { recursive: true });
-  fs.writeFileSync(join(mainIssues, '01-direct.md'), goodTicket(1));
-  f.git(f.root, 'add', '.scratch');
+  f.writeJsonTicket(1, {}, 'direct');
+  f.git(f.root, 'add', '.hud/tickets/direct.json');
   f.git(f.root, 'commit', '-qm', 'direct feature');
   const { flow: directFlow } = await f.call('hud_tickets', { op: 'run', feature: 'direct', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   const [dJob] = await f.jobs(directFlow, 1);
@@ -1128,10 +1122,8 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
   assert.equal(afterDone.code, 'no_pending_handback');
 
   // 2. escalate (newline reason) pauses for the owner like a lead escalation.
-  const escIssues = join(f.root, '.scratch', 'esc', 'issues');
-  fs.mkdirSync(escIssues, { recursive: true });
-  fs.writeFileSync(join(escIssues, '01-esc.md'), goodTicket(1));
-  f.git(f.root, 'add', '.scratch');
+  f.writeJsonTicket(1, {}, 'esc');
+  f.git(f.root, 'add', '.hud/tickets/esc.json');
   f.git(f.root, 'commit', '-qm', 'escalate feature');
   const { flow: escFlow } = await f.call('hud_tickets', { op: 'run', feature: 'esc', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   const [escJob] = await f.jobs(escFlow, 1);
@@ -1441,7 +1433,7 @@ test('subject-bearing tickets handback records worker_job while run-wide accept 
       flow, root: f.root, cwd: f.root, project_root: f.root, feature: 'sample', pane: f.env.HERDR_PANE_ID,
       task: false, max_parallel: 1, created_at: now, updated_at: now, state: 'paused',
       steps: { [handback.step]: { state: 'asking', changed_at: now } },
-      handback, tickets: [{ ticket: 'sample/01', path: join(f.root, '.scratch/sample/issues/01-synthetic.md'), role: 'imp', job: subjectWorker }],
+      handback, tickets: [{ ticket: 'sample/01', path: join(f.root, f.ticketPath(1)), role: 'imp', job: subjectWorker }],
     }, true);
   };
 
