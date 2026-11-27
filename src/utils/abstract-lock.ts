@@ -2,6 +2,13 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+export class AbstractLockTimeoutError extends Error {
+  constructor(readonly scope: string) {
+    super(`abstract lock timeout (${scope})`);
+    this.name = 'AbstractLockTimeoutError';
+  }
+}
+
 export function abstractAddress(scope: string, key: string): string {
   // Keep the full address under sockaddr_un's 108-byte limit.
   if (!/^[a-z0-9-]{1,24}$/.test(scope)) throw new Error(`invalid abstract lock scope: ${scope}`);
@@ -46,7 +53,7 @@ export async function withAbstractLock<T>(
       }
     }
     const left = deadline - performance.now();
-    if (left <= 0) throw new Error(`abstract lock timeout (${scope})`);
+    if (left <= 0) throw new AbstractLockTimeoutError(scope);
     await sleep(Math.min(left, 3 + Math.random() * 7), undefined, { signal });
   }
 }

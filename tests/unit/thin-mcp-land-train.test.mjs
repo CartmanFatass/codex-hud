@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { tryAbstractLock, withAbstractLock } from '../../dist/utils/abstract-lock.js';
+import { stopChild } from '../helpers/process-cleanup.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { assertLandingRecord, checkout, job, jobDir, repair, settle } from '../helpers/thin-mcp-land.mjs';
 
@@ -148,4 +153,83 @@ test('land train timings count one paid gate for a synthetic three-job queue ins
   assert.equal(solo.length, 3);
   assert.ok([...shared, ...solo].every(e => e.ok && e.ms >= 150));
   t.diagnostic(`Fake gate, 3 jobs: ${shared[0].ms} ms in 1 shared run; ${solo.reduce((ms, e) => ms + e.ms, 0)} ms in 3 single runs.`);
+});
+
+async function grabAbstractLock(scope, key, signal) {
+  for (;;) {
+    signal?.throwIfAborted();
+    const release = await tryAbstractLock(scope, key);
+    if (release) return release;
+    await sleep(5, undefined, { signal });
+  }
+}
+
+test('four queued lands keep waiting across a land-queue lock hold longer than the default timeout and land in order', { timeout }, async t => {
+  const f = await trainCheckout(t);
+  const jobs = ['alpha', 'beta', 'gamma', 'delta'].map(name => f.add(name));
+  const blocker = await f.start(job);
+  await until(() => fs.existsSync(join(f.env.HOME, 'started')), t.signal);
+  const flows = [];
+  for (const { id } of jobs) {
+    const flow = await f.start(id);
+    assert.equal(f.flowState(flow).state, 'queued');
+    flows.push(flow);
+    await sleep(5, undefined, { signal: t.signal });
+  }
+  await until(() => flows.every(flow => f.flowState(flow).step.startsWith('waiting for ')), t.signal);
+
+  const queueKey = `${f.home}\0${f.main}`;
+  let releaseQueue = await grabAbstractLock('land-queue', queueKey, t.signal);
+  t.after(() => releaseQueue?.());
+  // Exceed takeLease wait_s (1s) + default abstract-lock timeout (1s) so every waiter retries instead of failing.
+  await sleep(2200, undefined, { signal: t.signal });
+  for (const flow of flows) assert.equal(f.flowState(flow).state, 'queued', JSON.stringify(f.flowState(flow)));
+  await releaseQueue();
+  releaseQueue = undefined;
+
+  // Hold flow-state on the second candidate while the train claims: land-queue must stay free during runLock waits.
+  let releaseFlow = await grabAbstractLock('flow-state', `${f.home}\0${flows[1]}`, t.signal);
+  t.after(() => releaseFlow?.());
+  fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+  await until(() => Boolean(f.flowState(flows[0]).boarded), t.signal);
+  assert.equal(await withAbstractLock('land-queue', queueKey, () => 'free', { timeoutMs: 250 }), 'free');
+  await sleep(1100, undefined, { signal: t.signal });
+  for (const flow of flows.slice(2)) assert.equal(f.flowState(flow).state, 'queued', JSON.stringify(f.flowState(flow)));
+  await releaseFlow();
+  releaseFlow = undefined;
+
+  const [first, ...rows] = await f.complete([blocker, ...flows]);
+  assert.equal(f.git(f.main, 'log', '--format=%s', '--reverse', `${first.landed_sha}..base`), 'alpha\nbeta\ngamma\ndelta');
+  assert.deepEqual(rows.map(row => row.train), flows.map(() => flows[0]));
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), rows.at(-1).landed_sha);
+});
+
+test('a crashed land-queue holder releases the lock and a waiting land recovers', { timeout }, async t => {
+  const f = await checkout(t, ['true']);
+  const queueKey = `${f.home}\0${f.main}`;
+  const lockUrl = new URL('../../dist/utils/abstract-lock.js', import.meta.url).href;
+  const holder = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { tryAbstractLock } from ${JSON.stringify(lockUrl)};
+    const release = await tryAbstractLock('land-queue', process.argv[1] + '\\0' + process.argv[2]);
+    if (!release) process.exit(2);
+    process.stdout.write('locked\\n');
+    setInterval(() => {}, 1000);
+  `, f.home, f.main], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const holderExited = once(holder, 'exit');
+  t.after(() => stopChild(holder, holderExited));
+  let out = '';
+  holder.stdout.setEncoding('utf8').on('data', chunk => { out += chunk; });
+  await until(() => out.includes('locked\n'), t.signal);
+  assert.equal(await tryAbstractLock('land-queue', queueKey), undefined);
+
+  const { flow } = await f.call('hud_land', { job });
+  await sleep(1300, undefined, { signal: t.signal });
+  assert.equal(f.flowState(flow).state, 'queued', JSON.stringify(f.flowState(flow)));
+
+  holder.kill('SIGKILL');
+  await holderExited;
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow).state), t.signal);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
 });

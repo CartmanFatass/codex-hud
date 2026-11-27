@@ -8,7 +8,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { isDeepStrictEqual } from 'node:util';
-import { withAbstractLock } from '../utils/abstract-lock.js';
+import { AbstractLockTimeoutError, withAbstractLock } from '../utils/abstract-lock.js';
 import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.js';
 import { takeLease, type LandLease } from '../roles/lease.js';
 import type { CommandResult, Launch } from './land-custodian.js';
@@ -124,7 +124,8 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
   let f = own, members = [own], integration = scratch(own.flow), publishing = false;
   const ref = `refs/heads/${c.base}`, lease = { home, cwd: main, holder: own.flow };
   // A queued helper can update its receipt without the checkout lease; serialize that with boarding.
-  const queueLock = <T>(run: () => T) => withAbstractLock('land-queue', `${home}\0${main}`, run);
+  const queueLock = <T>(run: () => T, timeoutMs?: number) =>
+    withAbstractLock('land-queue', `${home}\0${main}`, run, timeoutMs === undefined ? undefined : { timeoutMs });
   const cancelled = (row: LandFlow) => stopRequested(home, row.flow);
   const step = (name: string) => {
     const at = new Date().toISOString();
@@ -244,31 +245,41 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
   let acquired = false;
   let custodianFailed = false;
   const acquire = async () => {
+    const checkQueue = (r: { granted: true } | { granted: false; held_by: { holder: string } }) => queueLock(() => {
+      const latest = readLand(home, own.flow);
+      if (!latest || !activeLand(latest)) return false;
+      if (latest.state !== 'queued' || latest.pid !== process.pid) return !acquired;
+      Object.assign(own, latest);
+      if (cancelled(own)) {
+        own.state = 'cancelled'; own.error = 'Cancelled before fast-forward'; writeLand(home, own);
+        return false;
+      }
+      if (r.granted) return true;
+      const { holder } = r.held_by;
+      const blocker = isFlowId(holder) ? readLand(home, holder) : null;
+      const gate = blocker && /^gate\[(\d+)\]:/.exec(blocker.step);
+      const since = blocker ? Date.parse(blocker.step_started_at ?? blocker.updated_at) : NaN;
+      const waiting = !blocker ? 'main-checkout lease' : gate && Number.isFinite(since)
+        ? `waiting for ${holder} (gate step ${gate[1]}, ${Math.max(0, Math.floor((Date.now() - since) / 60000))} min)`
+        : `waiting for ${holder}`;
+      if (own.step !== waiting) step(waiting);
+      return true;
+    });
     while (!acquired) {
-      const r = await takeLease({ name: 'main-checkout', wait_s: 1 }, lease);
+      let r: Awaited<ReturnType<typeof takeLease>>;
+      try { r = await takeLease({ name: 'main-checkout', wait_s: 1 }, lease); }
+      catch (e) { if (e instanceof AbstractLockTimeoutError) continue; throw e; }
       if (!('granted' in r)) continue;
       acquired = r.granted;
-      const live = await queueLock(() => {
-        const latest = readLand(home, own.flow);
-        if (!latest || !activeLand(latest)) return false;
-        if (latest.state !== 'queued' || latest.pid !== process.pid) return !acquired;
-        Object.assign(own, latest);
-        if (cancelled(own)) {
-          own.state = 'cancelled'; own.error = 'Cancelled before fast-forward'; writeLand(home, own);
-          return false;
+      for (;;) {
+        try {
+          if (!await checkQueue(r)) return false;
+          break;
+        } catch (e) {
+          if (!(e instanceof AbstractLockTimeoutError)) throw e;
+          if (!acquired) break;
         }
-        if (r.granted) return true;
-        const { holder } = r.held_by;
-        const blocker = isFlowId(holder) ? readLand(home, holder) : null;
-        const gate = blocker && /^gate\[(\d+)\]:/.exec(blocker.step);
-        const since = blocker ? Date.parse(blocker.step_started_at ?? blocker.updated_at) : NaN;
-        const waiting = !blocker ? 'main-checkout lease' : gate && Number.isFinite(since)
-          ? `waiting for ${holder} (gate step ${gate[1]}, ${Math.max(0, Math.floor((Date.now() - since) / 60000))} min)`
-          : `waiting for ${holder}`;
-        if (own.step !== waiting) step(waiting);
-        return true;
-      });
-      if (!live) return false;
+      }
     }
     return true;
   };
@@ -513,12 +524,13 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     if (!ids.length) return false;
     const base = await head(main);
     await checkMain(base);
-    const claimed = await queueLock(async () => {
-      const queue = [...ids.map(id => readLand(home, id)).filter(eligible), own]
-        .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.flow.localeCompare(b.flow));
-      if (queue.length < 2) return [];
-      const rows: { row: LandFlow; boarded: LandFlow }[] = [];
-      for (const candidate of queue) await runLock(home, candidate.flow, () => {
+    const queue = [...ids.map(id => readLand(home, id)).filter(eligible), own]
+      .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.flow.localeCompare(b.flow));
+    if (queue.length < 2) return false;
+    const claimed: { row: LandFlow; boarded: LandFlow }[] = [];
+    // Keep land-queue short: acquire per-flow runLock outside queueLock so nested waits never stall waiters.
+    try {
+      for (const candidate of queue) await runLock(home, candidate.flow, () => queueLock(() => {
         const row = readLand(home, candidate.flow);
         if (!eligible(row)) return;
         // Point at the checkout owner before the train can touch Git. Retain the
@@ -529,15 +541,16 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
           boarded.workflow.steps.land = { state: 'running', admitted: true };
         }
         setLandStep(boarded, 'prepare'); writeLand(home, boarded);
-        rows.push({ row, boarded });
-      });
-      if (rows.length < 2) {
-        for (const { row } of rows) await runLock(home, row.flow, () => writeLand(home, row));
-        return [];
-      }
-      return rows;
-    });
-    if (!claimed.length) return false;
+        claimed.push({ row, boarded });
+      }, 5_000));
+    } catch (e) {
+      for (const { row } of claimed) await runLock(home, row.flow, () => queueLock(() => writeLand(home, row), 5_000)).catch(() => {});
+      throw e;
+    }
+    if (claimed.length < 2) {
+      for (const { row } of claimed) await runLock(home, row.flow, () => queueLock(() => writeLand(home, row), 5_000));
+      return false;
+    }
     const tips = new Map<LandFlow, string>();
     integration = scratch(`${own.flow}-train`);
     let made = false, cleanupBlocked = false;
