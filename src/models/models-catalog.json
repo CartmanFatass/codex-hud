@@ -14,7 +14,6 @@
       "offlineModels": [
         "openai/gpt-6.1-sol",
         "openai/gpt-6-astra",
-        "mistral/deepseek-v4-1-flash-1017",
         "arena/gpt-6.1-sol"
       ],
       "thinking": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]

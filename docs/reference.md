@@ -1514,7 +1514,7 @@ They report native session failures and approvals through tmux, optionally deskt
 `NAME=VALUE`, optional quotes/export, no interpolation; environment wins per name, no implicit client/jev key import.
 Sonic registers `deepseek_search` and `deepseek_fetch` when `DEEPSEEK_SEARCH_API_KEY` is present in this file. To migrate an old raw key, run `hud import preview --deepseek-key --from ~/.config/deepseek-search/api-key`, then replace `preview` with `apply`. Existing keys win. Search sends the query, optional original question, count and content flag to DeepSeek; fetch sends the page URL. Neither tool attaches the brief. Treat results as untrusted web content.
 
-Known keys include `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, and `TYPESAFE_API_KEY`. Anthropic is an exception to the environment override: HUD reads `ANTHROPIC_API_KEY` only from `$HUD_HOME/credentials.env`.
+Known keys include `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, and `TYPESAFE_API_KEY`. Anthropic is an exception to the environment override: HUD reads `ANTHROPIC_API_KEY` only from `$HUD_HOME/credentials.env`.
 
 **Decision API.**
 `$HUD_HOME/config.json` has `decisions.primary` (default `openai`) and optional `decisions.fallback`: `gemini`, `openai`, `anthropic`, or `typesafe`.

@@ -279,6 +279,31 @@
       "comments": [],
       "created_at": "2026-11-27T15:31:42.445Z",
       "updated_at": "2026-11-27T15:31:42.445Z"
+    },
+    {
+      "number": 28,
+      "title": "hud_respond cannot answer Claude prompts with a countdown line",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Observed 2026-11-27 on job jf9d58d8952e4d5c6 (Claude Code worker, unattended session): the permission prompt carries `⚠ Claude Code will automatically block this request in 1:57, to avoid holding up an unattended session`, and the time ticks every second. `hud_respond` with the notice's request_id returned `prompt_changed`; the re-issued request id then returned `option_unavailable`; main had to press Enter through `herdr pane send-keys`. The prompt identity/verification that guards key delivery must ignore this countdown line (treat the line as volatile: strip or normalise the `in M:SS` part before hashing and comparing), while still refusing when the command text, options or selected option change.\n\nOut of scope: other prompt kinds, the delivery-state redesign.\nSize: small; one watcher/permission test with a prompt whose countdown changes between capture and delivery.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A Claude permission prompt whose countdown text changes between notice and answer is still answered by `hud_respond approve` with the notice's request_id, and the key lands.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A prompt whose command text or selected option changed is still refused with `prompt_changed`.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T15:47:46.732Z",
+      "updated_at": "2026-11-27T15:47:46.732Z"
     }
   ]
 }

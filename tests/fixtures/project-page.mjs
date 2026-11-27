@@ -50,7 +50,7 @@ export async function projectFixture(root, { progressTickets = true } = {}) {
   put(join(home, '.claude/agents/user-agent.md'), '# Synthetic user agent');
   put(join(cwd, '.claude/agents/project-agent.md'), '# Synthetic project agent');
   put(join(home, '.codex/agents/codex-agent.toml'), 'model = "synthetic"');
-  put(join(hud, 'credentials.env'), '# Synthetic names and values only\nMISTRAL_API_KEY=NEVER_RENDER_MISTRAL_VALUE\nOPENAI_API_KEY=""\nTYPESAFE_API_KEY=NEVER_RENDER_TYPESAFE_VALUE\nexport SYNTHETIC_KEY=NEVER_RENDER_OTHER_VALUE\n');
+  put(join(hud, 'credentials.env'), '# Synthetic names and values only\nOPENAI_API_KEY=""\nTYPESAFE_API_KEY=NEVER_RENDER_TYPESAFE_VALUE\nexport SYNTHETIC_KEY=NEVER_RENDER_OTHER_VALUE\n');
   for (const name of ['pi', 'google-chrome', 'jev-ask']) {
     put(join(bin, name), '#!/bin/sh\nexit 99\n');
     fs.chmodSync(join(bin, name), 0o700);

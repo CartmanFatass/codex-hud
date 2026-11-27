@@ -264,13 +264,13 @@ test('pi footer prices provider-prefixed gateway model ids from the built-in cat
       type: 'message' as const,
       message: {
         role: 'assistant',
-        model: 'mistral/deepseek-v4-1-flash-1017',
+        model: 'ds/deepseek-v4.1-flash-1017',
         usage: { input: 1_000_000, output: 1_000_000, cacheRead: 1_000_000, cacheWrite: 0, cost: { total: 0 } },
       },
     },
   ];
-  f.ctx.model!.id = 'mistral/deepseek-v4-1-flash-1017';
-  f.ctx.model!.provider = 'mistral';
+  f.ctx.model!.id = 'ds/deepseek-v4.1-flash-1017';
+  f.ctx.model!.provider = 'ds';
   f.ctx.sessionManager.getLeafId = () => 'prefixed-leaf';
   f.ctx.sessionManager.getEntries = () => entries;
   f.ctx.sessionManager.getBranch = () => entries;

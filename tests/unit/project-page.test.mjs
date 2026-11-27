@@ -114,7 +114,6 @@ test('Project frames: real synthetic project, roles, agents, credentials, STATE 
   assert.doesNotMatch(JSON.stringify(f.data), /NEVER_RENDER/);
   assert.deepEqual(f.data.keys, [
     ['GEMINI_API_KEY', false],
-    ['MISTRAL_API_KEY', true],
     ['OPENAI_API_KEY', false],
     ['TYPESAFE_API_KEY', true],
     ['SYNTHETIC_KEY', true],
@@ -185,7 +184,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   assert.match(text, /^▸ Healthy ─+ 5$/m);
   assert.match(text, /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general$/m);
   assert.match(text, /^Optional roles ─+\n {2}⊘ pro +Off\n {2}⊘ flow +Off$/m);
-  assert.match(text, /^▸ Files ─+ keys 3\/5 · browser ✓$/m);
+  assert.match(text, /^▸ Files ─+ keys 2\/4 · browser ✓$/m);
   assert.doesNotMatch(text, /openai\/gpt-6\.2-sol|project-agent\.md|▸ agents/);
   frame.state.control.roles.nav.cursor = 'project:fold:healthy';
   frame = render(press(frame, 'enter').state);
@@ -194,7 +193,7 @@ test('Control plane page: what needs the owner first, healthy roles and files fo
   frame.state.control.roles.nav.cursor = 'project:fold:files';
   frame = render(press(frame, 'enter').state);
   assert.match(plain(frame).join('\n'), /▸ agents/);
-  assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md/);
+  assert.doesNotMatch(plain(frame).join('\n'), /project-agent\.md|MISTRAL_API_KEY/);
   frame.state.control.roles.nav.cursor = 'project:fold:agents';
   frame = render(press(frame, 'enter').state);
   for (const name of ['user-agent.md', 'project-agent.md', 'codex-agent.toml'])
@@ -617,7 +616,7 @@ test('changed/oversized sources, missing milestone and source fallback never inv
   );
   f.put(
     join(f.hud, 'credentials.env'),
-    "MISTRAL_API_KEY=\nOPENAI_API_KEY=   \nTYPESAFE_API_KEY=''\nOTHER_NAME=synthetic\n"
+    "OPENAI_API_KEY=   \nTYPESAFE_API_KEY=''\nOTHER_NAME=synthetic\n"
   );
   let data = await f.collector.collect(true, f.board, NOW + 1);
   assert.deepEqual(
@@ -634,7 +633,6 @@ test('changed/oversized sources, missing milestone and source fallback never inv
   assert.doesNotMatch(noMilestone, /M1|M3b|▸ M|\[M1\]|\(M3b\)|0\/\d/);
   assert.deepEqual(data.keys, [
     ['GEMINI_API_KEY', false],
-    ['MISTRAL_API_KEY', false],
     ['OPENAI_API_KEY', false],
     ['TYPESAFE_API_KEY', false],
     ['OTHER_NAME', true],

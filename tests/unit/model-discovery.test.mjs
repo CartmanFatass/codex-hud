@@ -147,7 +147,6 @@ test('pi/agy/grok discovery caches under $HUD_HOME/display for a day, merges in 
     'arena/arena-fresh-1',
     'openai/gpt-6.1-sol',
     'openai/gpt-6-astra',
-    'mistral/deepseek-v4-1-flash-1017',
     'arena/gpt-6.1-sol',
     'custom/typed-pi',
   ]);
@@ -181,7 +180,6 @@ test('failed, missing, slow, oversized or symlinked model discovery without a la
   assert.deepEqual(catalog.pi.models, [
     'openai/gpt-6.1-sol',
     'openai/gpt-6-astra',
-    'mistral/deepseek-v4-1-flash-1017',
     'arena/gpt-6.1-sol',
   ]);
   assert.deepEqual(catalog.cli.models.agy, ['gemini-4-argon-high', 'gemini-4-hydrogen-high', 'gemini-3.8-flash-high']);

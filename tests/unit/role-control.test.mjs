@@ -299,7 +299,7 @@ test('c/C select from the role row and keep its cursor when attention changes; m
   await s.press('C');
   assert.equal(s.frame().state.control.roles.nav.cursor, item);
   assert.equal(s.assignment('imp').preset, 'default');
-  assert.match(s.text(), /sonic → (?:mistral\/)?deepseek-v4-1-flash-1017/);
+  assert.match(s.text(), /sonic → (?:ds\/)?deepseek-v4\.1-flash-1017/);
   s.session.state = select(s.session.state, 'project:role:sonic');
   await s.press('c');
   assert.equal(fs.existsSync(join(s.hud, 'roles/sonic.json')), false, 'no presets writes nothing');

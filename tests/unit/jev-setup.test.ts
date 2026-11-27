@@ -75,7 +75,7 @@ test('preview is byte/tree read-only; apply imports settings and env existing-wi
   fs.writeFileSync(join(f.hud, 'hud-settings.json'), JSON.stringify({ theme: 'latte' }));
   fs.writeFileSync(
     join(f.hud, 'jev.env'),
-    `OPENAI_API_KEY=${secrets[0]}\nGEMINI_API_KEY=unique-gemini-525\nTYPESAFE_API_KEY=unique-typesafe-520\nMISTRAL_API_KEY=unique-mistral-521\nTEXT_MODEL_FOO=literal-522\nOTHER_SECRET=hidden-523\n`
+    `OPENAI_API_KEY=${secrets[0]}\nGEMINI_API_KEY=unique-gemini-525\nTYPESAFE_API_KEY=unique-typesafe-520\nMISTRAL_API_KEY=unique-mistral-521\nMISTRAL_BASE_URL=https://synthetic-mistral.invalid/\nTEXT_MODEL_FOO=literal-522\nOTHER_SECRET=hidden-523\n`
   );
   fs.writeFileSync(
     join(f.hud, 'credentials.env'),
@@ -104,6 +104,7 @@ test('preview is byte/tree read-only; apply imports settings and env existing-wi
     'unique-gemini-525',
     'unique-typesafe-520',
     'unique-mistral-521',
+    'https://synthetic-mistral.invalid/',
     'literal-522',
     'hidden-523',
     'existing-wins-524',
@@ -111,6 +112,7 @@ test('preview is byte/tree read-only; apply imports settings and env existing-wi
     assert.ok(!f.output().includes(secret), 'preview leaked a value');
   for (const name of ['OPENAI_API_KEY', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'skip existing: theme'])
     assert.ok(f.output().includes(name), name);
+  assert.doesNotMatch(f.output(), /MISTRAL_(?:API_KEY|BASE_URL)/);
   const destination = join(f.hud, 'hud-settings.json');
   // Another writer can update the destination between preview and apply.
   fs.writeFileSync(destination, JSON.stringify({ theme: 'latte', impEvenPool: ['first', 'second'], roleCaps: { imp: 6 } }));
@@ -125,9 +127,10 @@ test('preview is byte/tree read-only; apply imports settings and env existing-wi
   assert.equal(creds.openaiApiKey, 'existing-wins-524');
   assert.equal(creds.geminiApiKey, 'unique-gemini-525');
   assert.equal(creds.typesafeApiKey, 'unique-typesafe-520');
-  assert.equal(creds.mistralApiKey, 'unique-mistral-521');
   assert.equal(creds.textModel.TEXT_MODEL_FOO, 'literal-522');
-  assert.match(fs.readFileSync(join(f.hud, 'credentials.env'), 'utf8'), /CUSTOM=" literal \$\{UNEXPANDED\} "/);
+  const storedCredentials = fs.readFileSync(join(f.hud, 'credentials.env'), 'utf8');
+  assert.match(storedCredentials, /CUSTOM=" literal \$\{UNEXPANDED\} "/);
+  assert.doesNotMatch(storedCredentials, /^MISTRAL_(?:API_KEY|BASE_URL)=/m);
   const config = JSON.parse(fs.readFileSync(join(f.hud, 'config.json'), 'utf8'));
   assert.deepEqual(config, { jev: { profile: '/existing/profile' }, decisions: { primary: 'openai' } });
   const backups = fs.readdirSync(f.hud).filter((n) => n.includes('.bak.'));

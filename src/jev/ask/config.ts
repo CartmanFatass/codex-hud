@@ -20,8 +20,6 @@ export interface JevCredentials {
   anthropicApiKey?: string;
   typesafeApiKey?: string;
   typesafeModel?: string;
-  mistralApiKey?: string;
-  mistralBaseUrl?: string;
   textModel: Record<string, string>;
 }
 export function readHudConfig(file: string): Record<string, unknown> {
@@ -97,8 +95,6 @@ const CREDENTIAL_FIELDS = {
   ANTHROPIC_API_KEY: 'anthropicApiKey',
   TYPESAFE_API_KEY: 'typesafeApiKey',
   TYPESAFE_MODEL: 'typesafeModel',
-  MISTRAL_API_KEY: 'mistralApiKey',
-  MISTRAL_BASE_URL: 'mistralBaseUrl',
 } as const;
 export function readCredentialsEnv(file: string): JevCredentials {
   const creds: JevCredentials = { textModel: {} };

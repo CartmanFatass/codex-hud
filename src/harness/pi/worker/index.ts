@@ -4,7 +4,6 @@ import { roleRuntime } from './role-runtime.js';
 import { workerTools } from './tools.js';
 import { installGuard } from './guard.js';
 import { workerJob } from '../../../worker/tools.js';
-import { mistralBudget } from './mistral-budget.js';
 import { webSearch } from './web-search.js';
 import { trackTps } from './tps.js';
 import { writePrivateFile } from '../../../utils/atomic-fs.js';
@@ -23,7 +22,6 @@ export async function installWorker(pi: WorkerPi, agentQueue?: WorkerAgentQueue)
   if (contract.guard) installGuard(pi, contract.guard, dir, job.project_root);
   if (!job.selection_advisor) webSearch(pi, dirname(dirname(dir)));
   roleRuntime(pi, contract, undefined, Boolean(job.selection_advisor));
-  mistralBudget(pi, dir);
   if (contract.tps) trackTps(pi);
   if (isTab && contract.tab) {
     // Tab lifecycle is tab-only and lazily imported so headless workers never load it.

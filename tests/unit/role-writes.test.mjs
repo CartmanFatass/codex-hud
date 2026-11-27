@@ -43,11 +43,9 @@ test('placeCatalog returns shipped defaults and merges HUD_HOME catalog addition
   assert.deepEqual(base.pi.models, [
     'openai/gpt-6.1-sol',
     'openai/gpt-6-astra',
-    'mistral/deepseek-v4-1-flash-1017',
     'arena/gpt-6.1-sol',
   ]);
   assert.deepEqual(base.pi.thinking, ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
-  // Which models the Control plane's picker offers: arena whole, mistral's deepseek, anthropic's opus, openai's gpt-6 series.
   assert.deepEqual(base.pi.offline, base.pi.models);
   assert.deepEqual(base.cli.agents, ['agy', 'claude', 'codex', 'grok']);
   assert.deepEqual(base.cli.models, {
@@ -102,7 +100,6 @@ test('placeCatalog returns shipped defaults and merges HUD_HOME catalog addition
   assert.deepEqual(extended.pi.models, [
     'openai/gpt-6.1-sol',
     'openai/gpt-6-astra',
-    'mistral/deepseek-v4-1-flash-1017',
     'arena/gpt-6.1-sol',
     'custom/pi-next',
   ]);

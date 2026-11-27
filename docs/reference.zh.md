@@ -1444,7 +1444,7 @@ Version 2 含会话、项目、上下文、额度、tokens、代理、注意事�
 `$HUD_HOME/credentials.env` 必须是普通 0600 文件，不跟随 symlink/FIFO。
 `NAME=VALUE` 可有引号／export，不插值。
 环境逐项优先，不隐式导入客户端／jev 密钥。
-已知 key 包括 `MISTRAL_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`、`TYPESAFE_API_KEY`。
+已知 key 包括 `OPENAI_API_KEY`、`GEMINI_API_KEY`、`TYPESAFE_API_KEY`。
 
 **决策 API。**
 `$HUD_HOME/config.json` 的 `decisions.primary` 默认 openai，`decisions.fallback` 可选， 值为 gemini/openai/typesafe。

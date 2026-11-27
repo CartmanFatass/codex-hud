@@ -6,13 +6,12 @@ import test from 'node:test';
 import { importCommand } from '../../dist/cli/import.js';
 import { readContract } from '../../dist/harness/pi/worker/contract.js';
 import { roleRuntime } from '../../dist/harness/pi/worker/role-runtime.js';
-import { mistralBudget } from '../../dist/harness/pi/worker/mistral-budget.js';
 import { trackTps } from '../../dist/harness/pi/worker/tps.js';
 import { webSearch } from '../../dist/harness/pi/worker/web-search.js';
 import { piWorkerArgv } from '../../dist/mcp/dispatch/pi-worker-argv.js';
 import { rolePlacesFixture, until } from '../helpers/thin-mcp-harness.mjs';
 
-const model = 'mistral/deepseek-v4-1-flash-1017';
+const model = 'ds/deepseek-v4.1-flash-1017';
 const job = { job: 'j1111111111111111', role: 'sonic', model, thinking: 'high', headless: true };
 const protocol = ['hud_report', 'hud_progress', 'hud_lease'];
 const legacyTools = ['bash', 'deepseek_fetch', 'deepseek_search', 'edit', 'find', 'grep', 'hud_lease', 'hud_progress', 'hud_report', 'ls', 'read', 'write'];
@@ -52,7 +51,7 @@ test('native Sonic argv and private contract round trip, checkout and installed 
 });
 
 test('headless role section, active tools, model and thinking match the legacy probe', () => {
-  const pi = host(), ctx = { model: { provider: 'mistral', id: model.split('/')[1] } };
+  const pi = host(), ctx = { model: { provider: 'ds', id: model.split('/')[1] } };
   roleRuntime(pi, { ...job, instructions: 'sonic' }, reason => { throw Error(reason); });
   pi.hooks.session_start({}, ctx);
   const opts = { sections: {}, skills: [{ name: 'helper-pane' }, { name: 'kept' }] };
@@ -62,23 +61,6 @@ test('headless role section, active tools, model and thinking match the legacy p
   assert.deepEqual(opts.skills, [{ name: 'kept' }]);
   assert.throws(() => pi.hooks.session_start({}, { model: { provider: 'other', id: ctx.model.id } }), /Requested model/);
   pi.getThinkingLevel = () => 'off'; assert.throws(() => pi.hooks.session_start({}, ctx), /Requested thinking/);
-});
-
-test('Mistral budget archives only older images privately, preserves history, and aborts before oversize send', t => {
-  const dir = temp(t), pi = host(); mistralBudget(pi, dir);
-  const apply = pi.hooks.before_provider_request;
-  const content = Array.from({ length: 21 }, (_, i) => ({ type: 'image_url', imageUrl: `data:image/png;base64,${Buffer.from([i]).toString('base64')}` }));
-  const ctx = { model: { provider: 'mistral', api: 'mistral-conversations' }, abort: assert.fail };
-  const event = { payload: { messages: [{ content }] } };
-  assert.equal(apply(event, { model: { provider: 'other' } }), undefined);
-  const sent = apply(event, ctx).messages[0].content;
-  assert.equal(sent[0].type, 'text'); assert.deepEqual(sent.slice(1), content.slice(1)); assert.equal(content[0].type, 'image_url');
-  const files = fs.readdirSync(join(dir, 'mistral-images')); assert.equal(files.length, 1);
-  const file = join(dir, 'mistral-images', files[0]); assert.ok(sent[0].text.includes(file));
-  assert.deepEqual(fs.readFileSync(file), Buffer.from([0])); assert.equal(fs.statSync(file).mode & 0o777, 0o600);
-  let aborted = false;
-  assert.throws(() => apply({ payload: { messages: [], extra: 'x'.repeat(8 * 1024 * 1024) } }, { ...ctx, abort() { aborted = true; } }), /too large/);
-  assert.equal(aborted, true);
 });
 
 test('explicit private key import and DeepSeek search/fetch: only public tool inputs leave; errors do not quote upstream bodies', async t => {
