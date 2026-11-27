@@ -440,7 +440,8 @@ export async function answerTicketQueueHandback(
       const decisionKind: RunDecision['kind'] = handback.kind === 'blocker' ? 'blocker'
         : handback.kind === 'assumption' ? 'assumption' : 'accept';
       if (handback.assumption && handback.ticket && handback.job) {
-        const item = cur.tickets.find(t => !t.held && t.ticket === handback.ticket && t.job === handback.job);
+        const item = cur.tickets.find(t => !t.held && t.ticket === handback.ticket &&
+          (t.job === handback.job || t.repair_job === handback.job));
         if (item) {
           item.approved_assumptions_head = handback.assumption.head;
           item.approved_assumptions_sig = handback.assumption.report_sig;

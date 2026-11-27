@@ -611,6 +611,46 @@
       "comments": [],
       "created_at": "2026-11-27T06:39:46.114Z",
       "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 15,
+      "title": "Repair unattended/11: resume of a repair-job assumption pause records the approval; land records read Not done from the approved report",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/11"
+      ],
+      "what": "Reviewer finding raised during chores run q69ce631dff1b534b about the unattended/11 landing (0ddc8cea, d874dc5e). (a) A `handback_to: main` scope-assumption pause names the repair job (`src/mcp/ticket-queue-step.ts` ~1164-1165), but `hud_respond resume` matches only `t.job` (`src/mcp/ticket-queue.ts` ~443): the resume is reported as accepted, no approval is recorded, and the queue pauses again on the same assumption. Match the job the pause names (repair or original) and record the approval against that report signature. (b) `prepareLandRecords` reads `Not done` only from `row.job`'s report (`src/mcp/land-records.ts` ~79-91), not from the approved replacement (repair) report, so an unfinished acceptance item can be ticked. Read the report whose commit is being landed. Verify the line numbers at HEAD first.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a handback_to main run paused on a repair job's scope assumption resumes once on hud_respond resume and does not pause again for the same report",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a land after a repair ticks only acceptance items the repair report does not list under Not done",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Full suite passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T12:29:06.194Z",
+        "job": "j0853b52ae92a237f",
+        "flow": "f0853b52ae92a237f",
+        "replay_base": "1eacd78054eedb432f85a699a1a6702eca6120e4",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T12:16:05.647Z",
+      "updated_at": "2026-11-27T12:29:06.194Z"
     }
   ]
 }

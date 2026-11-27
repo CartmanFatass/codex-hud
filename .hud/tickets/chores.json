@@ -1081,6 +1081,107 @@
       "comments": [],
       "created_at": "2026-11-27T11:48:49.590Z",
       "updated_at": "2026-11-27T12:04:54.443Z"
+    },
+    {
+      "number": 52,
+      "title": "Helpers of a workflow run's reviewer, lead and land steps fold into the run instead of flooding Recent",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "After a ticket queue whose milestone reviewer started several hud_sonic helpers has settled, open Execution: Recent shows no separate helper rows for that run; Run Detail shows `+N sonic` on the review (and lead/land) step rows, Enter lists each helper's ask, Esc returns to the same row.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Follow-up to chores/48 and chores/50 (named by the chores/50 worker and the lead of run q69ce631dff1b534b). Observed 2026-11-27 on the panel: Execution Recent holds ~290 rows in 24 h; most visible ones are sonic helpers whose `parent_job` is the queue's reviewer (e.g. reviewer jobs j07ff6cea6f157c6c, j57643d748cab8a7b, ja71e1243913dbba2), each a separate row. chores/50 counts helpers only on queue ticket rows; helpers of reviewers, leads, earlier attempts and batch, council, graph, land or scouting members keep their own Recent rows. Fix: a settled helper whose parent belongs to a workflow run (any step) is not its own Recent row; the parent's Run Detail row (review, acceptance/lead, land repair, earlier attempt) carries the muted `+N sonic` count and opens the same helper Inspector chores/50 built. Same exceptions as chores/48: a failed child or one with an open question keeps its row; a child with no reachable parent row keeps its row. While here, check `belongsToRun` in `src/collectors/execution.ts` and remove it if it is dead. Update docs/reference.md where Recent/Run Detail are described.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a settled run whose reviewer and lead each started settled sonic helpers yields no helper rows in Recent, and the review and acceptance step rows in Run Detail carry the counts",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: Enter on such a step row lists the helpers' asks; a failed helper still has its own Recent row",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "belongsToRun is used or removed",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md describes the fold for step rows",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T12:16:01.648Z",
+      "updated_at": "2026-11-27T12:16:01.648Z"
+    },
+    {
+      "number": 53,
+      "title": "Unreadable-QA flake refusal reaches a Claude MCP task session without hud watch",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/49"
+      ],
+      "what": "Milestone review j07ff6cea6f157c6c finding 1 (run q69ce631dff1b534b). A collector-created flake job has no task on main's connection. Its QA refusal is persisted to job.json before any land flow exists (`src/mcp/land-flakes.ts` ~783-814); the job watcher logs it (`src/runtime/watch-runtime.ts` ~557-569), but task-client delivery scans flow receipts, not job rows (`src/workflows/events.ts` ~12-47), and the `withChanges` branch returns before `jobChanges` (`src/mcp/mcp/operations.ts` ~1183-1196). So a Claude task session without `hud watch` never learns why the job did not land. Route the existing persisted refusal to the task-client notice path too. No change to land admission. While here, delete `openQuestions()` in `src/mcp/store/job-store.ts` (~233) if it still has no caller. Verify line numbers at HEAD first.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a task-client main session with no hud watch gets exactly one notice for the persisted QA refusal with the job ID, reason and read hint, no repeat on the next scan, and no land flow is created",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "openQuestions() is removed or has a caller",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Full suite passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T12:17:08.264Z",
+      "updated_at": "2026-11-27T12:17:08.264Z"
+    },
+    {
+      "number": 54,
+      "title": "A land-repair replacement worker does not re-claim a partially landed flake ticket",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/46"
+      ],
+      "what": "Milestone review j07ff6cea6f157c6c finding 2 (run q69ce631dff1b534b). `dispatchLandRepair` copies the original ticket into the replacement job (`src/mcp/dispatch/orchestrator.ts` ~155-158, ~909-925, ~1855-1881). When the source report leaves an acceptance item under Not done and the replacement fixes a failing gate, the completed partial land belongs to the source (`src/mcp/land-records.ts` ~75-97). `src/mcp/flake-admission.ts` ~65-77 releases the source's claim, but the settled replacement has no land receipt under its own ID, so it adds the same ticket back to `claimedTickets`; `hud_tickets ready` then omits it (`src/mcp/local-tickets.ts` ~489-491) until retention and a follow-up queue cannot pick it up. Treat a land-repair job as part of its owning land attempt, not an independent dispatch. Verify line numbers at HEAD first.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: admission stays blocked while the land repair runs and reopens after the confirmed partial land, with both the source and repair job receipts retained",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "hud_tickets ready lists the partially landed flake ticket after the repair settles",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Full suite passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T12:17:08.264Z",
+      "updated_at": "2026-11-27T12:17:08.264Z"
     }
   ]
 }

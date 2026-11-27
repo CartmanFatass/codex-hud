@@ -165,7 +165,9 @@ test('a report blocker goes to the assumption lead even with final acceptance to
 });
 
 for (const changesHead of [true, false]) test(`ordinary land repair sends ${changesHead ? 'a changed commit with a blocker' : 'a fresh report on the same commit with an assumption'} back to triage`, { timeout: 45_000 }, async t => {
-  const f = await setupWorkflowProject(t, { count: 1 });
+  const f = await setupWorkflowProject(t, {
+    tickets: { '01-repair.md': goodTicket(1).replace('- [ ] Checked', '- [ ] Common path\n- [ ] Fallback path') },
+  });
   const gate = changesHead ? 'grep -q fixed docs/spec.md' : 'test -f "$HOME/synthetic-gate-green"';
   const config = join(f.root, '.hud/project.json');
   fs.writeFileSync(config, JSON.stringify({ land: { base: 'base', gate: [gate], after: [], push: false } }));
@@ -174,7 +176,7 @@ for (const changesHead of [true, false]) test(`ordinary land repair sends ${chan
   const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root });
   const [job] = await f.jobs(flow, 1);
   const declaration = changesHead ? 'Blockers: The owner must decide the mode.' : 'Assumed: [scope] retain the existing mode.';
-  await f.settle(job, { report: `${declaration}\n` });
+  await f.settle(job, { report: `${declaration}\n\n## Not done\n- Acceptance item 1: common path unchecked.\n` });
   const checkout = f.job(job).worktree.root;
   const approved = { head: f.git(checkout, 'rev-parse', 'HEAD'), report_sig: reportSignature(f.dir(job)), job };
   const kind = changesHead ? 'blocker' : 'assumption';
@@ -195,7 +197,7 @@ for (const changesHead of [true, false]) test(`ordinary land repair sends ${chan
   } else {
     fs.writeFileSync(join(f.env.HOME, 'synthetic-gate-green'), 'green');
   }
-  const report = `Synthetic repair finished.\n${declaration}\n`;
+  const report = `Synthetic repair finished.\n${declaration}\n\n## Not done\n- Acceptance item 2: fallback path unchecked.\n`;
   await f.settleReport(repair, report);
   const head = f.git(checkout, 'rev-parse', 'HEAD');
   assert.equal(head !== approved.head, changesHead);
@@ -216,6 +218,10 @@ for (const changesHead of [true, false]) test(`ordinary land repair sends ${chan
   assert.deepEqual(finished.approval, { head, report_sig: secondLead.report_sig, job: repair });
   assert.equal(finished.protected_spec, undefined, 'ordinary approvals do not impose the unattended spec restriction');
   assert.equal(finished.state, 'completed');
+  assert.deepEqual(finished.unfinished_acceptance, [{ id: 2, text: 'Fallback path' }]);
+  const record = f.ticketRecord(1, 'sample', 'base');
+  assert.equal(record.status, 'ready-for-agent');
+  assert.deepEqual(record.acceptance.map(({ id, done }) => [id, done]), [[1, true], [2, false]]);
 });
 
 test('a blocker escalation holds just its ticket and dependent; an independent try-note ticket dispatches and lands before resume', { timeout: 60_000 }, async t => {
@@ -748,6 +754,51 @@ test('a scope assumption on main hand-back pauses asking and wakes main; hud_res
   assert.equal(stopped.state, 'cancelled');
   assert.match(stopped.reason, /stopped: Owner rejected scope change\./);
   assert.equal(f.flow(stopFlow).steps.tickets.state, 'cancelled');
+});
+
+test('one main resume approves a repair scope assumption and lands that report in the same run', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const config = join(f.root, '.hud/project.json');
+  writeFixtureFile(config, JSON.stringify({ land: { base: 'base', gate: ['test -f fixed'], after: [], push: false } }));
+  f.git(f.root, 'commit', '-qam', 'Configure synthetic gate');
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, handback_to: 'main' });
+  const [job] = await f.jobs(flow, 1);
+  await f.settle(job, { report: 'Assumed: [scope] retain the existing mode.\n' });
+  const initial = await f.end(flow);
+  assert.equal(initial.handback.kind, 'assumption');
+  assert.equal(initial.handback.job, job);
+  assert.equal((await f.call('hud_respond', { job: flow, answer: 'resume' })).ok, true);
+
+  const attempt = () => {
+    const land = f.flow(flow).tickets[0].land;
+    return land && f.flow(land).repairs?.[0];
+  };
+  await until(() => attempt()?.outcome === 'waiting for worker', t.signal);
+  const repair = attempt().job, checkout = f.job(repair).cwd;
+  assert.notEqual(repair, job);
+  writeFixtureFile(join(checkout, 'fixed'), 'Synthetic repair.\n');
+  f.git(checkout, 'add', 'fixed'); f.git(checkout, 'commit', '-qm', 'Fix synthetic gate');
+  await f.settleReport(repair, 'Assumed: [scope] add a fallback mode.\n');
+
+  const head = f.git(checkout, 'rev-parse', 'HEAD'), sig = reportSignature(f.dir(repair));
+  const paused = await f.end(flow);
+  assert.equal(paused.state, 'paused');
+  assert.equal(paused.handback.kind, 'assumption');
+  assert.equal(paused.handback.job, repair);
+  assert.deepEqual(paused.handback.assumption, { head, report_sig: sig });
+  const resumed = await f.call('hud_respond', { job: flow, answer: 'resume' });
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.flow, flow);
+  await until(() => {
+    const q = f.flow(flow);
+    assert.equal(q.state, 'working', JSON.stringify(q));
+    return q.tickets[0].landed;
+  }, t.signal);
+  const q = f.flow(flow), item = q.tickets[0];
+  assert.equal(item.approved_assumptions_head, head);
+  assert.equal(item.approved_assumptions_sig, sig);
+  assert.deepEqual(f.flow(item.land).approval, { head, report_sig: sig, job: repair });
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 });
 
 test('a Blockers-line report-gate pause on main hand-back (without lead) leaves tickets asking, wakes main, and hud_respond resume lands it', { timeout: 45_000 }, async t => {

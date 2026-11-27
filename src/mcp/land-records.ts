@@ -88,7 +88,9 @@ export function prepareLandRecords(mainRoot: string, home: string, members: read
       if (registeredTicketRepo(home, tracker) !== tracker) throw Error(unregisteredRepoReason(tracker));
       groups.set(tracker, group = []);
     }
-    group.push({ row, ref, notes: [...notDoneNotes(dir), ...leadNotes(home, row, job, job.ticket)] });
+    // The original job owns the ticket; a replacement may supply the report for the landed commit.
+    const reportJob = row.approval?.job ?? row.repairs?.at(-1)?.job ?? row.job;
+    group.push({ row, ref, notes: [...notDoneNotes(join(home, 'jobs', reportJob)), ...leadNotes(home, row, job, job.ticket)] });
   }
   return groups;
 }
