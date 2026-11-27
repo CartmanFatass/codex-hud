@@ -651,7 +651,7 @@ A CLI supervisor matches root exit events by launch and terminal identity. If it
 Each CLI dispatch and `hud_send` starts a turn (`turn.json`). If Herdr refuses the send before input, HUD keeps the worker's previous turn.
 If Herdr sees no activity from a new Claude Code tab's first prompt after five seconds, HUD checks the tab's current input box. If the launch prompt is still there (including at 0% context), HUD presses Enter once without pasting again. If the same draft is still in the idle input box after the retry, HUD records a launch failure instead of a quiet worker. Unattended lead launches use the same check; ambiguous input does not receive a key.
 `hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
-An undeclared report follows the quiet rule using herdr's turn status. Antigravity's status includes its in-turn background work; HUD does not separately scan CLI workers for background children.
+An undeclared report follows the quiet rule using herdr's turn status. Antigravity's status includes its in-turn background work, and for an AGY job the CLI supervisor's quiet clock also uses native AGY session activity (recent updates to the recorded session's `transcript_full.jsonl` step log or an open background task recorded there keep the job working and stop the quiet clock); HUD does not separately scan CLI workers for background children.
 A continuation invalidates an old receipt; rewriting a declared report requires a fresh receipt for that turn.
 If a rewritten report stays quiet for the role's grace, it goes to `waiting_orchestrator` without settling or calling the Decision API.
 Terminal output does not affect the receipt.
@@ -659,7 +659,7 @@ With a matching CLI receipt, closure follows a confirmed turn end or the 10-seco
 Open questions and uncollected sonic results do block it.
 The watcher reaps the worker and descendants with captured ancestry, records that unverified processes were left alone, and retries unresolved cleanup on the slow tick.
 Herdr's status alone never fails a live worker.
-A turn quiet past the idle grace without a report gets one Decision API choice among fixed actions (keep waiting, one fixed prompt to write the report, `failed` only with a quota line on screen, or hand to the main session); below 0.8 confidence or on any error it goes to the main session.
+A turn quiet past the idle grace without a report gets one Decision API choice among fixed actions (keep waiting, one fixed prompt to write the report, `failed` only with a quota line on screen, or hand to the main session); below 0.8 confidence or on any error it goes to the main session. Ticket queues do not fail an item or run on an advisory quiet-without-a-report notice while the live worker can still publish a report.
 Anything unclear is `waiting_orchestrator` with a reason.
 CLI `state_trust` has two levels: `advisory` keeps those timings, while `turn`, after herdr has been seen `working` in the current turn and is now `done` or `idle`, settles a stable new report in 2 s or reaches the no-report quiet decision after 10 s (the post-decision wait is unchanged).
 The default is `turn` for `agy`, `claude`, `codex` and `grok`; set, for example, `{"grok":{"state_trust":"advisory"}}` in `$HUD_HOME/harnesses.json` to override one agent without replacing its other defaults.

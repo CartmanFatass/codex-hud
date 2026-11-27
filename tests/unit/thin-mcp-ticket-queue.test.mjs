@@ -744,3 +744,30 @@ test('Execution projects a lead-answered review question as working at the answe
   await f.call('hud_tickets', { op: 'run', feature: 'sample', cancel: true, cwd: f.root });
   await until(() => f.flow(flow).state !== 'working', 15_000);
 });
+
+test('a queue item whose worker was quiet and then publishes a report continues instead of failing the run', { timeout: 30_000 }, async t => {
+  const f = await project(t);
+  const { flow } = await f.start(1);
+  const [first] = await f.jobs(flow, 1);
+  // Worker receives an advisory quiet-without-a-report notice while still running.
+  writeFixtureFile(join(f.dir(first), 'STATUS.json'), JSON.stringify({
+    ...f.status(first),
+    state: 'waiting_orchestrator',
+    blocked: false,
+    reason: 'quiet without a report; hud_send to continue or hud_close to stop',
+    quiet_decision: { choice: 'still-working', probability: 0.63, action: 'needs-human', at: new Date().toISOString() },
+  }));
+  await new Promise(resolve => setTimeout(resolve, 500));
+  assert.equal(f.flow(flow).state, 'working');
+  assert.equal(f.flow(flow).tickets[0].failed, undefined);
+
+  // Worker later clears the quiet notice by publishing its declared report.
+  await f.settle(first);
+  const [, second] = await f.jobs(flow, 2);
+  await f.settle(second);
+  const [, , third] = await f.jobs(flow, 3);
+  await f.settle(third);
+  const done = await f.end(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.deepEqual(done.tickets.map(item => item.landed), [true, true, true]);
+});

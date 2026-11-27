@@ -100,6 +100,7 @@ export interface Judgment {
 }
 export const REPORT_READ_EXIT = 'closed after report read';
 export const REPORT_SETTLED_EXIT = 'closed after declared report';
+export const QUIET_WITHOUT_REPORT = 'quiet without a report; hud_send to continue or hud_close to stop';
 
 export type PaneExit = { exitCode: number | null; signal: string | null };
 
@@ -129,6 +130,8 @@ export interface Facts {
   tick?: boolean;
   agentMissing?: boolean;
   workingAt?: number | null;
+  nativeActivityAt?: number | null;
+  nativeActive?: boolean;
   done?: DoneReceipt | null;
   tabClosed?: boolean;
   decision?: QuietDecision & { failReason?: string };
@@ -176,7 +179,18 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     if (next.declared) next.quietSince = null;
   }
   next.declared = declared;
-  if (reportChanged || (next.quietSince !== null && (facts.workingAt ?? -Infinity) > next.quietSince)) next.quietSince = null;
+  const sentAt = Date.parse(facts.turn.sent_at);
+  const nativeAt = typeof facts.nativeActivityAt === 'number' && Number.isFinite(facts.nativeActivityAt) && facts.nativeActivityAt >= sentAt
+    ? facts.nativeActivityAt : null;
+  const activityAt = Math.max(facts.workingAt ?? -Infinity, nativeAt ?? -Infinity);
+  const refreshedActivity = next.quietSince !== null && activityAt > next.quietSince;
+  if (reportChanged || refreshedActivity) {
+    next.quietSince = null;
+    if (refreshedActivity) {
+      next.quietHandled = false;
+      next.decisionWait = false;
+    }
+  }
   next.reportSig = facts.reportSig;
   const end = (state: Judgment['state'], reason: string, quit = false): Judgment => ({
     ...next, state, exitReason: reason, outputWritten: report,
@@ -220,10 +234,11 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     if (!declared && facts.status === 'working') return { ...next, state: 'idle_grace' };
     return end('closed', readReport ? REPORT_READ_EXIT : 'settled', true);
   }
-  const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= Date.parse(facts.turn.sent_at)
+  const trustedEnd = facts.stateTrust === 'turn' && (facts.workingAt ?? -Infinity) >= sentAt
     && (facts.status === 'done' || facts.status === 'idle');
   const legacyReport = report && !facts.closeAtReport;
-  const quiet = declared || (facts.status !== 'working' && (facts.status !== null || legacyReport));
+  const nativeActive = !declared && facts.nativeActive === true;
+  const quiet = declared || (!nativeActive && facts.status !== 'working' && (facts.status !== null || legacyReport));
   next.quietSince = quiet ? (next.quietSince ?? now) : null;
   if (next.quietSince === null) return { ...next, state: 'working', quietHandled: false, decisionWait: false };
   if (legacyReport || collectSonic || awaitingReceipt) {
@@ -243,7 +258,8 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
     return { ...next, state: 'idle_grace', outputWritten: true, settledAt: now,
       deadline: now + facts.graceMs, wakeAt: now + facts.graceMs };
   }
-  const due = next.quietSince + (trustedEnd && !next.decisionWait ? 10_000 : facts.graceMs);
+  const baseDue = next.quietSince + (trustedEnd && !next.decisionWait ? 10_000 : facts.graceMs);
+  const due = nativeAt !== null && !next.decisionWait ? Math.max(baseDue, nativeAt + facts.graceMs) : baseDue;
   next.reason = !newTurn ? prev?.reason ?? null : null;
   if (now < due && !facts.decision && !next.quietHandled) return { ...next, state: 'working', wakeAt: due };
   const decision = facts.decision;
@@ -254,7 +270,7 @@ export function judge(prev: Judgment | null, facts: Facts, now: number): Judgmen
   }
   if (decision || next.quietHandled) return {
     ...next, state: 'waiting_orchestrator', quietHandled: true,
-    reason: 'quiet without a report; hud_send to continue or hud_close to stop',
+    reason: QUIET_WITHOUT_REPORT,
   };
   return { ...next, state: 'working', action: 'decide' };
 }

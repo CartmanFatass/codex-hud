@@ -383,3 +383,65 @@ test('reportPromptSent persists across supervisor restart via hud_send', { timeo
   assert.equal(server.requests.at(-1).input[0].content[2].data.facts.report_prompt_already_sent, true);
   assert.equal(cliState(job.task_dir).quiet_decision.action, 'needs-human');
 });
+
+test('an AGY job with recent native step activity or a running background task and herdr status done is not set waiting_orchestrator', { timeout: 25000 }, async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  writeCliRole(f, 'agy-native-active', 1.5, false, 'agy');
+  const server = await fakeDecisionServer(t, () => decisionAnswer('needs-human', 0.95));
+  configureFakeDecision(f, server.baseUrl);
+  const job = await f.call('hud_create', { role: 'agy-native-active', request_key: 'agy-native-active', task: 'Synthetic AGY native activity.' });
+  await until(() => cliState(job.task_dir)?.agent_session_id, t.signal);
+  const sid = cliState(job.task_dir).agent_session_id;
+  const logsDir = join(f.env.HOME, '.gemini', 'antigravity-cli', 'brain', sid, '.system_generated', 'logs');
+  const log = join(logsDir, 'transcript_full.jsonl');
+  fs.mkdirSync(logsDir, { recursive: true });
+  // 1. Running AGY background task keeps the job working even when herdr reports done past idle grace.
+  fs.writeFileSync(log, JSON.stringify({
+    type: 'GENERIC', status: 'RUNNING',
+    content: `Tool is running as a background task with task id: ${sid}/task-42`,
+  }) + '\n');
+  f.push(job.job, 'working');
+  f.push(job.job, 'done');
+  const q1 = statusQueries(f, job);
+  await until(() => statusQueries(f, job) >= q1 + 2, t.signal);
+  assert.equal(cliState(job.task_dir).state, 'working');
+  assert.equal(server.requests.length, 0);
+
+  // 2. Background task finishes and recent step-log updates keep the job working past turn-trust 10 s.
+  fs.appendFileSync(log, JSON.stringify({
+    type: 'SYSTEM_MESSAGE', status: 'DONE',
+    content: `Task id "${sid}/task-42" finished with result:\nCommand exited with code 0.`,
+  }) + '\n');
+  const stepTicker = setInterval(() => {
+    try { fs.appendFileSync(log, JSON.stringify({ type: 'GENERIC', status: 'DONE', content: 'synthetic step' }) + '\n'); }
+    catch { /* fixture tearing down */ }
+  }, 300);
+  t.after(() => clearInterval(stepTicker));
+  const q2 = statusQueries(f, job);
+  await until(() => statusQueries(f, job) >= q2 + 2, t.signal);
+  clearInterval(stepTicker);
+  assert.equal(cliState(job.task_dir).state, 'working');
+  assert.equal(server.requests.length, 0);
+});
+
+test('an AGY job with no native activity for the idle grace still gets the quiet notice', { timeout: 20000 }, async (t) => {
+  const f = await fixture(t);
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+  writeCliRole(f, 'agy-native-quiet', 0.5, false, 'agy');
+  const server = await fakeDecisionServer(t, () => decisionAnswer('needs-human', 0.95));
+  configureFakeDecision(f, server.baseUrl);
+  const job = await f.call('hud_create', { role: 'agy-native-quiet', request_key: 'agy-native-quiet', task: 'Synthetic AGY silent worker.' });
+  await until(() => cliState(job.task_dir)?.agent_session_id, t.signal);
+  const sid = cliState(job.task_dir).agent_session_id;
+  const logsDir = join(f.env.HOME, '.gemini', 'antigravity-cli', 'brain', sid, '.system_generated', 'logs');
+  const log = join(logsDir, 'transcript_full.jsonl');
+  fs.mkdirSync(logsDir, { recursive: true });
+  fs.writeFileSync(log, JSON.stringify({ type: 'GENERIC', status: 'DONE', content: 'synthetic step' }) + '\n');
+  f.push(job.job, 'working');
+  f.push(job.job, 'done');
+  // No further native activity: once the idle grace passes, the quiet notice arrives.
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
+  assert.match(cliState(job.task_dir).reason, /quiet without a report; hud_send to continue or hud_close to stop/);
+  assert.equal(server.requests.length, 1);
+});

@@ -39,6 +39,16 @@ if (/\/(hud-cli|hud-watch|hud-progress)\.mjs$/.test(script)) {
       if (args[1].endsWith('/STATUS.json')) fs.appendFileSync(join(process.env.HOME, 'status-writes'), args[1] + '\n');
       return rename(...args);
     };
+    const lstat = fs.lstatSync;
+    fs.lstatSync = (path, ...args) => {
+      const stat = lstat(path, ...args);
+      if (stat && typeof path === 'string' && path.endsWith('/transcript_full.jsonl') && stat.mtimeMs >= anchor) {
+        return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, {
+          mtimeMs: anchor + (stat.mtimeMs - anchor) * scale,
+        });
+      }
+      return stat;
+    };
   }
   if (script.endsWith('/hud-progress.mjs')) {
     const fault = join(process.env.HOME, 'progress-snapshot-enospc');

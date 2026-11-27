@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { hasLocalHerdrTarget, request, SHELL_WORKER_UNSUPPORTED } from './herdr-socket.js';
 import { sonicChildren, sonicCollectPrompt } from '../worker/sonic-jobs.js';
+import { agyTranscriptPath, readAgyNativeActivity, type AgyActivityCursor } from '../harness/agy/transcript.js';
 
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 
@@ -75,7 +76,8 @@ export async function main() {
   let stop = false, close = false, openQuestions = false, diskDirty = true, sendInFlight = false;
   let socket: ReturnType<typeof createConnection>, lines: ReturnType<typeof createInterface>;
   let reconnectTimer: NodeJS.Timeout, debounce: NodeJS.Timeout, deadline: NodeJS.Timeout, tickTimer: NodeJS.Timeout;
-  let dirWatch: fs.FSWatcher | undefined, qaWatch: fs.FSWatcher | undefined;
+  let dirWatch: fs.FSWatcher | undefined, qaWatch: fs.FSWatcher | undefined, agyWatch: fs.FSWatcher | undefined, agyWatchDir: string | undefined;
+  const agyCursor: AgyActivityCursor = { path: '', ino: 0, offset: 0, openTasks: new Set() };
   let stopped = false, busy = false, pending = false, tickPending = false, seedPending = false, reconnectMs = 5000, generation = 0;
   let quietQuestions = 0, reportPromptSent = Boolean(turn.report_prompt_sent), rowStamp: string | undefined;
   const lifecycle = new AbortController();
@@ -97,7 +99,7 @@ export async function main() {
     lifecycle.abort();
     for (const timer of [reconnectTimer, debounce, deadline, tickTimer]) clearTimeout(timer);
     clearImmediate(immediate);
-    dirWatch?.close(); qaWatch?.close(); lines?.close(); socket?.destroy();
+    dirWatch?.close(); qaWatch?.close(); agyWatch?.close(); lines?.close(); socket?.destroy();
   }
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
@@ -124,6 +126,26 @@ export async function main() {
       qaWatch.on('error', () => { qaWatch?.close(); qaWatch = undefined; });
     } catch { /* The safety tick retries a missing watch. */ }
   }
+  function watchAgyLog() {
+    if (cli.agent !== 'agy' || !current.agent_session_id) return;
+    const logPath = agyTranscriptPath(current.agent_session_id);
+    const logsDir = logPath ? dirname(logPath) : undefined;
+    if (!logsDir || !fs.existsSync(logsDir)) return;
+    if (agyWatch && agyWatchDir === logsDir) return;
+    agyWatch?.close(); agyWatch = undefined; agyWatchDir = undefined;
+    try {
+      agyWatch = fs.watch(logsDir, (_event, filename) => {
+        const file = filename?.toString();
+        if (file && file !== 'transcript_full.jsonl') return;
+        if (status !== 'working' || activeEffect?.kind === 'read' || activeEffect?.kind === 'decide') {
+          cancelQuiet();
+          wake();
+        }
+      });
+      agyWatchDir = logsDir;
+      agyWatch.on('error', () => { agyWatch?.close(); agyWatch = undefined; agyWatchDir = undefined; });
+    } catch { /* The safety tick retries a missing watch. */ }
+  }
   const refreshQuiet: string[] = [jobFiles.report, jobFiles.turn, DONE_FILE, jobFiles.qa, jobFiles.closeRequested];
   const refreshDisk = [...refreshQuiet, jobFiles.job, jobFiles.sonic, jobFiles.stopRequested];
   function watchDir() {
@@ -145,7 +167,7 @@ export async function main() {
   function tick() {
     if (stopped) return;
     diskDirty = true;
-    watchDir(); watchQa();
+    watchDir(); watchQa(); watchAgyLog();
     if (fs.existsSync(stopFile)) terminalWake();
     else wake(true);
     tickTimer = setTimeout(tick, 30000);
@@ -240,19 +262,24 @@ export async function main() {
     const st = fs.statSync(output, { bigint: true, throwIfNoEntry: false });
     const nextStamp = st?.isFile() ? fileStampOf(st) : null;
     if (nextStamp !== stamp) { signature = reportSignature(dir); stamp = nextStamp; }
+    const agyNative = cli.agent === 'agy' && current.agent_session_id
+      ? readAgyNativeActivity(current.agent_session_id, agyCursor)
+      : { activityAt: null, runningTask: false };
+    if (cli.agent === 'agy' && current.agent_session_id) watchAgyLog();
     return { turn, reportSig: signature, reportRead: reportWasRead(receipt, st?.isFile() ? statsMtimeMs(st.mtimeNs) : null, nextStamp),
       closeAtReport: job.resume_s !== undefined,
       alive: workerAlive(current.pid ?? null, current.pid_start_time ?? null), paneExit, directExec: true, status, statusAt,
       sonic: sonicChildren(dir),
       stop, close, openQuestions, canContinue: cli.can_continue, graceMs, stateTrust: cli.state_trust,
-      tick: isTick, agentMissing, workingAt, done };
+      tick: isTick, agentMissing, workingAt, nativeActivityAt: agyNative.activityAt, nativeActive: agyNative.runningTask, done };
   }
   function stillQuiet(before: ReturnType<typeof collect>, latest: ReturnType<typeof collect>) {
     return !sendInFlight && !latest.stop && !latest.close && !latest.paneExit && latest.alive !== false &&
       latest.turn.seq === before.turn.seq && latest.turn.sent_at === before.turn.sent_at &&
       latest.reportSig === before.reportSig && latest.done?.at === before.done?.at &&
       latest.status === before.status && latest.workingAt === before.workingAt && !latest.openQuestions &&
-      !latest.sonic.open && !latest.sonic.uncollected.length;
+      !latest.sonic.open && !latest.sonic.uncollected.length &&
+      !latest.nativeActive && latest.nativeActivityAt === before.nativeActivityAt;
   }
   function write(result: Judgment) {
     const terminal = ['closed', 'failed', 'stopped'].includes(result.state);

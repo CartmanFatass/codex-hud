@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { binScript } from '../../dist/mcp/paths.js';
 import { reapWorkerTree, rememberWorkerTree } from '../../dist/roles/worker-tree.js';
-import { judge, procStat, withDonePrompt, workerAlive } from '../../dist/mcp/cli-judge.js';
+import { judge, procStat, QUIET_WITHOUT_REPORT, withDonePrompt, workerAlive } from '../../dist/mcp/cli-judge.js';
+import { readAgyNativeActivity } from '../../dist/harness/agy/transcript.js';
 
 test('Claude and Codex CLI finishing prompts stay unchanged', () => {
   const turn = { seq: 1, sent_at: '2026-11-22T00:00:00.000Z', report_sig: null };
@@ -384,4 +385,87 @@ test('judge: turn trust preserves outage, question and working-flap boundaries',
   assert.equal(judge(prev, { ...observed, openQuestions: true }, 3000).state, 'waiting_orchestrator');
   assert.equal(judge(prev, { ...observed, workingAt: 2999 }, 3000).wakeAt, 5000);
   assert.equal(judge(prev, { ...observed, reportSig: 'rewritten' }, 3000).wakeAt, 5000);
+});
+
+test('judge: native AGY step activity and running background tasks stop the quiet clock, but silence for idle grace still notices', () => {
+  const base = { ...facts, stateTrust: 'turn', workingAt: 0, status: 'done' };
+  // Running background task keeps the job working and quietSince null even far past idle grace.
+  let prev = judge(initial, { ...base, nativeActive: true }, 1_000);
+  assert.equal(prev.state, 'working');
+  assert.equal(prev.quietSince, null);
+  assert.equal(prev.action, null);
+  prev = judge(prev, { ...base, nativeActive: true }, 2_000_000);
+  assert.equal(prev.state, 'working');
+  assert.equal(prev.quietSince, null);
+  assert.equal(prev.action, null);
+
+  // Recent native step activity holds past turn-trust 10 s until nativeActivityAt + graceMs.
+  let stepPrev = judge(initial, { ...base, nativeActivityAt: 1_000 }, 1_000);
+  assert.equal(stepPrev.state, 'working');
+  assert.equal(stepPrev.wakeAt, 601_000);
+  assert.equal(judge(stepPrev, { ...base, nativeActivityAt: 1_000 }, 11_000).state, 'working');
+  assert.equal(judge(stepPrev, { ...base, nativeActivityAt: 1_000 }, 600_999).action, null);
+
+  // Newer step activity advances the deadline again.
+  stepPrev = judge(stepPrev, { ...base, nativeActivityAt: 200_000 }, 200_000);
+  assert.equal(stepPrev.state, 'working');
+  assert.equal(stepPrev.wakeAt, 800_000);
+
+  // No native activity for the idle grace reaches decide -> waiting_orchestrator.
+  const decide = judge(stepPrev, { ...base, nativeActivityAt: 200_000 }, 800_000);
+  assert.equal(decide.action, 'decide');
+  const waiting = judge(decide, { ...base, nativeActivityAt: 200_000, decision: { action: 'needs-human' } }, 800_000);
+  assert.equal(waiting.state, 'waiting_orchestrator');
+  assert.equal(waiting.reason, QUIET_WITHOUT_REPORT);
+
+  // New native activity or a new background task clears waiting_orchestrator back to working.
+  const resumed = judge(waiting, { ...base, nativeActivityAt: 850_000 }, 850_000);
+  assert.equal(resumed.state, 'working');
+  assert.equal(resumed.quietHandled, false);
+  assert.equal(resumed.wakeAt, 1_450_000);
+  assert.equal(judge(waiting, { ...base, nativeActive: true }, 850_000).state, 'working');
+
+  // A declared report still settles even with recent native activity or an open background task.
+  assert.equal(judge(initial, { ...declared, status: 'done', nativeActivityAt: 1_000, nativeActive: true }, 1_000).state, 'idle_grace');
+});
+
+test('readAgyNativeActivity tracks transcript mtime and open background tasks incrementally', (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'hud-agy-activity-'));
+  const priorHome = process.env.HOME;
+  process.env.HOME = home;
+  t.after(() => {
+    if (priorHome === undefined) delete process.env.HOME;
+    else process.env.HOME = priorHome;
+    rmSync(home, { recursive: true, force: true });
+  });
+  const sid = 'synthetic-agy-session-1';
+  const cursor = { path: '', ino: 0, offset: 0, openTasks: new Set() };
+  assert.deepEqual(readAgyNativeActivity(sid, cursor), { activityAt: null, runningTask: false });
+
+  const logsDir = join(home, '.gemini', 'antigravity-cli', 'brain', sid, '.system_generated', 'logs');
+  const log = join(logsDir, 'transcript_full.jsonl');
+  fs.mkdirSync(logsDir, { recursive: true });
+  fs.writeFileSync(log, JSON.stringify({ type: 'GENERIC', status: 'DONE', content: 'synthetic step' }) + '\n');
+  const first = readAgyNativeActivity(sid, cursor);
+  assert.equal(typeof first.activityAt, 'number');
+  assert.equal(first.runningTask, false);
+
+  fs.appendFileSync(log, JSON.stringify({
+    type: 'GENERIC', status: 'RUNNING',
+    content: `Created At: 2026-11-27T00:00:00-08:00\nTool is running as a background task with task id: ${sid}/task-10`,
+  }) + '\n');
+  assert.equal(readAgyNativeActivity(sid, cursor).runningTask, true);
+
+  // Progress reminder and planner prose must not close the running task.
+  fs.appendFileSync(log, [
+    JSON.stringify({ type: 'SYSTEM_MESSAGE', status: 'DONE', content: `sender=${sid}/task-10 content=Background command is still running after 120s: synthetic` }),
+    JSON.stringify({ type: 'PLANNER_RESPONSE', status: 'DONE', content: `Waiting until Task id "${sid}/task-10" finished with result.` }),
+  ].join('\n') + '\n');
+  assert.equal(readAgyNativeActivity(sid, cursor).runningTask, true);
+
+  fs.appendFileSync(log, JSON.stringify({
+    type: 'SYSTEM_MESSAGE', status: 'DONE',
+    content: `sender=${sid}/task-10 content=Task id "${sid}/task-10" finished with result:\nCommand exited with code 0.`,
+  }) + '\n');
+  assert.equal(readAgyNativeActivity(sid, cursor).runningTask, false);
 });

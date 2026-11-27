@@ -54,6 +54,9 @@ const receiptFor = (q: TicketQueue, item: TicketQueueItem) => jobs().find(job =>
 const livePane = (q: TicketQueue) => q.pane && directRecipient(q) ? q.pane : undefined;
 const trustDispatchFailed = (job: Job, status: JobStatus | null | undefined) =>
   status?.exit_reason === 'untrusted_cwd' || job.dispatch_code === 'untrusted_cwd';
+const isQuietNotice = (status: JobStatus | null | undefined, reason: string | null | undefined) =>
+  !status?.blocked && status?.state === 'waiting_orchestrator' &&
+  typeof reason === 'string' && reason.startsWith('quiet without a report');
 const leadEnabled = (root: string) =>
   roleRegistry(hudHome, root, process.env, undefined, undefined, BUNDLED_ROOT).roles().has('lead');
 
@@ -1174,6 +1177,7 @@ function tickTicketQueue(
     } else if (fs.existsSync(join(directory(job.job), jobFiles.stopRequested))) flag('worker', 'worker stop requested');
     else if (failedAttempt(row)) flag('worker', row.reason ?? row.display_state);
     else if (row.permission) continue; // The watcher has handed this menu to main; the worker can still resume.
+    else if (isQuietNotice(status, row.reason)) continue; // A quiet notice is advisory; the live worker can still publish a report.
     else if (!answered && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')) {
       const left = permissionRecheckMs(job, status, statusAt);
       if (left > 0) recheck = Math.min(recheck ?? left, left);
@@ -1513,6 +1517,7 @@ function tickJobStep(
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
     if (row.permission) return { state: 'running', changed: false };
+    if (isQuietNotice(status, row.reason)) return { state: 'running', changed: false };
     if (!answered && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')) {
       const left = permissionRecheckMs(job, status, statusAt);
       if (left > 0) return { state: 'running', changed: false, recheckMs: left };
