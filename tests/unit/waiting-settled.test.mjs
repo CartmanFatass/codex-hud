@@ -59,6 +59,19 @@ test('an owner request waits on sample/01 stays settled after sample/01 moves to
     'Ambiguous archived ticket (waits on sample/03)',
   ]);
   assert.equal(fs.readFileSync(statePath, 'utf8'), stateText, 'owner prose must not be rewritten');
+
+  // With sample.json or a sample-done* sibling unreadable, waits on sample/01 must stay open.
+  for (const broken of ['sample', 'sample-done-2']) {
+    const brokenPath = join(cwd, `.hud/tickets/${broken}.json`);
+    const clean = fs.readFileSync(brokenPath, 'utf8');
+    fs.writeFileSync(brokenPath, '{ broken json\n');
+    try {
+      const res = await new ProjectCollector(cwd, hud, { HOME: home }, home).collect('home', { lanes: [], workers: [] }, Date.now());
+      assert.ok(res.waiting.some((w) => w.value === 'Settled archived ticket (waits on sample/01)'), `${broken}: waits on sample/01 must stay open`);
+    } finally {
+      fs.writeFileSync(brokenPath, clean);
+    }
+  }
 });
 
 test('the collector drops settled waiting items from every count', async (t) => {

@@ -5,9 +5,9 @@ import { targetKey } from '../collectors/ticket-evidence.js';
 import { ticketIds } from '../collectors/ticket-rollup.js';
 import { worktreeGit } from '../collectors/worktrees.js';
 import { planTicketEdit } from '../tickets/archive.js';
-import { isHandEditedInMain, sweepTicketWrites, type GitRunner } from '../tickets/commit.js';
+import { checkArchiveFiles, commitArchiveFiles, isHandEditedInMain, type GitRunner } from '../tickets/commit.js';
 import {
-  parseTicketRef, readReconciledTicketWriteState, storedTicket, TicketFeatureFull, ticketRef, ticketWriteRelPath, ticketWriteSha,
+  parseTicketRef, readTicketWrites, storedTicket, TicketFeatureFull, ticketRef, ticketWriteRelPath,
   withTicketStoreLock, type TicketFeatureDoc,
 } from '../tickets/store.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
@@ -143,9 +143,9 @@ async function planLanding(
   gates: number,
   at: string,
   git: GitRunner,
-  objectiveFile?: ObjectiveFileInput | (() => ObjectiveFileInput),
+  opts?: { objectiveFile?: ObjectiveFileInput | (() => ObjectiveFileInput); allowArchive?: boolean },
 ) {
-  const { writes, groups } = readReconciledTicketWriteState(home, main);
+  const writes = readTicketWrites(home, main);
   const docs = new Map<string, TicketFeatureDoc>();
   const checked = new Set<string>();
   const pending: { row: LandFlow; ticket: string; items: ReturnType<typeof unfinishedAcceptance> }[] = [];
@@ -165,18 +165,13 @@ async function planLanding(
     if (stored?.doc.mirror) continue;
     const feature = stored?.doc.feature ?? ref.feature;
     await check(feature);
-    for (const group of groups) if (group.includes(feature)) for (const key of group) {
-      const rel = ticketWriteRelPath(key);
-      if (ticketWriteSha(main, rel) !== writes[key]) throw handEditError(rel);
-      await check(key);
-    }
     if (!stored?.record) continue;
     const doc = docs.get(feature) ?? stored.doc;
     const unfinished = applyJsonLanding(doc, entry, replayBase, gates, at)!;
     docs.set(feature, doc);
     if (unfinished.length) pending.push({ row: entry.row, ticket: ticketRef(feature, ref.number), items: unfinished });
   }
-  try { return { ...planTicketEdit(main, home, [...docs.values()], undefined, objectiveFile), pending }; }
+  try { return { ...planTicketEdit(main, home, [...docs.values()], undefined, opts), pending }; }
   catch (error) {
     if (error instanceof TicketFeatureFull) {
       throw new Error(`Cannot record landing in ${ticketWriteRelPath(error.feature)}: ${error.message}`, { cause: error });
@@ -194,12 +189,16 @@ export async function checkLandingRecords(
   gates: number,
   filters: string[],
   at: string,
-  opts?: { locked?: boolean; objectiveFile?: ObjectiveFileInput | (() => ObjectiveFileInput) },
+  opts?: { locked?: boolean; objectiveFile?: ObjectiveFileInput | (() => ObjectiveFileInput); sweep?: false },
 ): Promise<{ archived: boolean; objectiveEdited: boolean }> {
   const realMain = fs.realpathSync(mainRoot);
   const git: GitRunner = (args) => worktreeGit(realMain, [...filters, ...args]);
   const run = async () => {
-    const plan = await planLanding(realMain, home, entries, replayBase, gates, at, git, opts?.objectiveFile);
+    const plan = await planLanding(realMain, home, entries, replayBase, gates, at, git, {
+      objectiveFile: opts?.objectiveFile,
+      allowArchive: opts?.sweep !== false,
+    });
+    if (plan.archived.length) await checkArchiveFiles(realMain, home, plan.files, git, handEditError);
     return { archived: plan.moved.size > 0, objectiveEdited: plan.objectiveEdited };
   };
   return opts?.locked ? run() : withTicketStoreLock(realMain, () => withObjectiveLock(realMain, run));
@@ -224,10 +223,18 @@ export async function recordLanding(
   const realMain = fs.realpathSync(mainRoot);
   const git: GitRunner = (args) => worktreeGit(realMain, [...filters, ...args]);
   const run = async () => {
-    const { moved, publish, pending } = await planLanding(realMain, home, entries, replayBase, gates, at, git);
-    publish();
-    const swept = opts?.sweep === false ? undefined
-      : await sweepTicketWrites(realMain, home, git, { mode: 'amend', identity, expectedTip: opts?.expectedTip });
+    const { files, moved, publish, pending } = await planLanding(realMain, home, entries, replayBase, gates, at, git, {
+      allowArchive: opts?.sweep !== false,
+    });
+    const swept = opts?.sweep === false
+      ? (publish(), undefined)
+      : await commitArchiveFiles(realMain, home, files, git, {
+          mode: 'amend',
+          identity,
+          expectedTip: opts?.expectedTip,
+          sweepPending: true,
+          handEditError,
+        });
     for (const { row, ticket, items } of pending) {
       const path = ticketWriteRelPath(parseTicketRef(moved.get(ticket) ?? ticket)!.feature);
       if (!swept || swept.paths.includes(path)) row.unfinished_acceptance = items;

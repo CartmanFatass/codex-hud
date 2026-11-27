@@ -3,12 +3,12 @@ import { join } from 'node:path';
 import { scanScratch } from '../cli/tickets.js';
 import { OBJECTIVE_SLUG, readObjectives } from '../collectors/objectives.js';
 import { localProjectRoots } from '../roles/projects.js';
-import { writeTicketEdit } from '../tickets/archive.js';
+import { runTicketEdit, type TicketEditWriter } from '../tickets/archive.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import {
   canonicalTicketRef, legacyTicketPaths, normalizeHomePaths, parseTicketRef, readJsonTicketFeature, readTicketFeature, resolveArchivedTicket,
   splitRemovals, storedTicket, ticketFeaturePath, ticketNumber, ticketRef, TICKET_FEATURE, TICKET_KINDS, TICKET_ROLES,
-  TICKET_STATUSES, withTicketStoreLock, type TicketFeatureDoc, type TicketRecord,
+  TICKET_STATUSES, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { extractWhatAndLiveTry, repoFieldValue, unlinkedWarning } from './local-tickets.js';
 
@@ -79,7 +79,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
   const markdown = (feature: string) => !readJsonTicketFeature(mainRoot, feature) && legacyTicketPaths(mainRoot, feature).length > 0;
   const legacyError = (feature: string) =>
     new Error(`Feature "${feature}" still uses legacy Markdown tickets; run "hud tickets migrate" first`);
-  const json = <T>(edit: () => Promise<T>) => withTicketStoreLock(mainRoot, edit);
+  const json = <T>(edit: (write: TicketEditWriter) => Promise<T>) => runTicketEdit(mainRoot, home, 300, edit);
   let objectiveIds: Set<string> | undefined;
   const objectiveId = (value: unknown) => {
     if (typeof value !== 'string' || !new RegExp(OBJECTIVE_SLUG).test(value)) return invalid('objective');
@@ -140,7 +140,8 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     if (input.comment !== undefined) ticket.comments.push({ at, author, text: text(input.comment, 'comment') });
   };
 
-  const addJson = async (feature: string) => {
+  const addJson = async (feature: string, write: TicketEditWriter) => {
+    objectiveIds = undefined;
     let doc = writable(feature);
     if (!doc) {
       guardMirror();
@@ -171,14 +172,15 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       return ticket;
     });
     const links = new Map(tickets.flatMap(ticket => ticket.objective ? [[ticket.objective, new Set([feature])] as const] : []));
-    const moved = await writeTicketEdit(mainRoot, home, [doc], links);
+    const { moved } = await write([doc], links);
     const warning = unlinkedWarning(mainRoot, feature);
     return { ok: true, tickets: tickets.map(({ number }) => ({ number, path: editedPath(feature, number, moved) })), ...(warning && { warning }) };
   };
 
   const editedPath = (feature: string, number: number, moved: ReadonlyMap<string, string>) =>
     ticketFeaturePath(mainRoot, parseTicketRef(moved.get(ticketRef(feature, number)))?.feature ?? feature);
-  const updateJson = async (feature: string, item: Record<string, unknown>) => {
+  const updateJson = async (feature: string, item: Record<string, unknown>, write: TicketEditWriter) => {
+    objectiveIds = undefined;
     if (!ticketNumber(item.ticket)) return invalid('ticket');
     if (!has(item, editFields)) return invalid(`update requires one of: ${editFields.join(', ')}`);
     const stored = storedTicket(mainRoot, ticketRef(feature, item.ticket));
@@ -218,7 +220,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     let path = ticketFeaturePath(mainRoot, doc.feature);
     if (JSON.stringify(ticket) !== base) {
       ticket.updated_at = at;
-      path = editedPath(doc.feature, ticket.number, await writeTicketEdit(mainRoot, home, [doc]));
+      path = editedPath(doc.feature, ticket.number, (await write([doc])).moved);
     }
     return { ok: true, number: ticket.number, path };
   };
@@ -226,14 +228,14 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     if (args.updates !== undefined) return invalid('updates');
     const feature = featureSlug(args.feature);
     if (markdown(feature)) throw legacyError(feature);
-    return json(() => addJson(feature));
+    return json((write) => addJson(feature, write));
   }
   // Preserve project-wide protection for a GitHub Markdown mirror.
   guardMirror();
   if (args.updates === undefined) {
     const { feature, number } = resolveTicketTarget(args.feature, args.ticket);
     if (markdown(feature)) throw legacyError(feature);
-    return json(async () => updateJson(feature, { ...args, feature, ticket: number }));
+    return json((write) => updateJson(feature, { ...args, feature, ticket: number }, write));
   }
   if (args.ticket !== undefined || has(args, editFields) || !Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
   const sharedFeature = args.feature === undefined ? undefined : featureSlug(args.feature);
@@ -258,11 +260,9 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       jsonItems.push({ index, feature: resolved.feature, item: { ...item, feature: resolved.feature, ticket: resolved.number } });
     } catch (error) { failed(index, feature, ticket, error); }
   }
-  if (jsonItems.length) await json(async () => {
-    for (const { index, feature, item } of jsonItems) {
-      try { updates[index] = { feature, ...await updateJson(feature, item) }; }
-      catch (error) { failed(index, feature, item.ticket, error); }
-    }
-  });
+  for (const { index, feature, item } of jsonItems) {
+    try { updates[index] = { feature, ...await json((write) => updateJson(feature, item, write)) }; }
+    catch (error) { failed(index, feature, item.ticket, error); }
+  }
   return { updates };
 }

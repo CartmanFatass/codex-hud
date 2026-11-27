@@ -1,10 +1,12 @@
+import { inspectObjectives, readObjectives } from '../collectors/objectives.js';
+import { worktreeGit } from '../collectors/worktrees.js';
 import { planFeatureLinks, withObjectiveLock, type ObjectiveFileInput } from '../mcp/local-objectives.js';
-import { inspectObjectives, objectivePath, readObjectives } from '../collectors/objectives.js';
-import { writeFileAtomic } from '../utils/atomic-fs.js';
+import { neutralizeFilters } from '../utils/git-safety.js';
+import { commitArchiveFiles, withMainCheckoutLease } from './commit.js';
 import {
-  extendsPendingWriteGroup, isTicketArchive, matchArchivedTicket, OBJECTIVE_WRITE_KEY, parseTicketRef, prepareTicketWrites,
+  isTicketArchive, matchArchivedTicket, OBJECTIVE_WRITE_KEY, parseTicketRef, prepareTicketWrites,
   readJsonTicketFeature, readTicketFeature, serializeTicketFeature, TicketFeatureFull, ticketFeatureSlugs, ticketRef,
-  validateTicketFeature, type TicketFeatureDoc, type TicketRecord, type TicketWrite,
+  validateTicketFeature, withTicketStoreLock, type TicketFeatureDoc, type TicketRecord, type TicketWrite,
 } from './store.js';
 
 const closed = (ticket: TicketRecord) => ticket.status === 'done' || ticket.status === 'wontfix';
@@ -19,15 +21,18 @@ export function planTicketEdit(
   home: string,
   edited: readonly TicketFeatureDoc[],
   links: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
-  objectiveFile?: ObjectiveFileInput | (() => ObjectiveFileInput),
+  options?: { objectiveFile?: ObjectiveFileInput | (() => ObjectiveFileInput); allowArchive?: boolean },
 ) {
   let docs = new Map(edited.map(doc => [doc.feature, validateTicketFeature(doc)]));
   const changed = new Set(docs.keys());
   const overfull = new Set([...docs.values()].filter(doc => !fits(doc)).map(doc => doc.feature));
+  if (overfull.size && options?.allowArchive === false) throw new TicketFeatureFull([...overfull][0]);
+  const archived = [...overfull];
   const moved = new Map<string, string>();
   const archives = new Map<string, Set<string>>();
   let objectiveLoaded = false;
   let resolvedObjectiveFile: ObjectiveFileInput | undefined;
+  const objectiveFile = options?.objectiveFile;
   const getObjectiveFile = () => {
     if (!objectiveLoaded) {
       objectiveLoaded = true;
@@ -85,9 +90,9 @@ export function planTicketEdit(
           const dest: TicketFeatureDoc = existing ?? { version: 1, feature: slug, objective: source.objective, spec_path: source.spec_path, tickets: [] };
           const trial = new Map(docs);
           trial.set(feature, { ...current, tickets: current.tickets.filter(t => t !== record) });
-          const archived = !record.objective && source.objective && dest.objective !== source.objective
+          const archivedRecord = !record.objective && source.objective && dest.objective !== source.objective
             ? { ...record, objective: source.objective } : record;
-          trial.set(slug, { ...dest, spec_path: dest.spec_path ?? source.spec_path, tickets: [...dest.tickets, archived] });
+          trial.set(slug, { ...dest, spec_path: dest.spec_path ?? source.spec_path, tickets: [...dest.tickets, archivedRecord] });
           const destMatch = matchArchivedTicket(feature, archiveCandidates(trial, ticket.number));
           if (destMatch.status !== 'matched' || destMatch.slug !== slug) break;
           const touched = new Set([feature, slug]);
@@ -124,23 +129,42 @@ export function planTicketEdit(
     return { key, bytes: serializeTicketFeature(doc), mirror: !!doc.mirror };
   });
   const objective = links.size || archives.size ? planFeatureLinks(root, links, archives, getObjectiveFile()) : undefined;
-  const extendPendingObjective = Boolean(objective && !archives.size && extendsPendingWriteGroup(root, home, OBJECTIVE_WRITE_KEY));
-  if (objective && (archives.size || extendPendingObjective)) files.push({ key: OBJECTIVE_WRITE_KEY, ...objective });
-  const publish = prepareTicketWrites(root, home, files, archives.size > 0);
-  return {
-    moved,
-    publish,
-    objective: archives.size || extendPendingObjective ? undefined : objective,
-    objectiveEdited: Boolean(objective && archives.size),
-  };
+  if (objective) files.push({ key: OBJECTIVE_WRITE_KEY, ...objective });
+  const publish = archives.size ? () => { throw new Error('Archive moves must commit immediately'); } : prepareTicketWrites(root, home, files);
+  return { files, moved, archived, publish, objectiveEdited: Boolean(objective && archives.size) };
 }
 
-/** Caller holds the tickets lock across the read, edit and write. */
+/** Single-phase non-archiving write; caller holds the tickets lock. */
 export function writeTicketEdit(root: string, home: string, docs: readonly TicketFeatureDoc[], links?: ReadonlyMap<string, ReadonlySet<string>>) {
   return withObjectiveLock(root, () => {
-    const plan = planTicketEdit(root, home, docs, links);
-    if (plan.objective) writeFileAtomic(objectivePath(root), plan.objective.bytes, { mode: plan.objective.mode });
+    const plan = planTicketEdit(root, home, docs, links, { allowArchive: false });
     plan.publish();
     return plan.moved;
   });
+}
+
+export type TicketEditWriter = (docs: readonly TicketFeatureDoc[], links?: ReadonlyMap<string, ReadonlySet<string>>) =>
+  Promise<{ moved: Map<string, string>; committed: boolean }>;
+
+/** Run under `tickets` -> `objective` without a checkout lease; on overflow release, take `main-checkout`, re-plan and commit. */
+export async function runTicketEdit<T>(
+  mainRoot: string, home: string, wait_s: number, edit: (write: TicketEditWriter, archivedPass: boolean) => T | Promise<T>,
+): Promise<T> {
+  try {
+    return await withTicketStoreLock(mainRoot, () => edit(async (docs, links) =>
+      ({ moved: await writeTicketEdit(mainRoot, home, docs, links), committed: false }), false));
+  } catch (error) {
+    if (!(error instanceof TicketFeatureFull)) throw error;
+  }
+  return (await withMainCheckoutLease(mainRoot, home, { wait_s, holderPrefix: 'tickets-archive' }, (root) =>
+    withTicketStoreLock(root, () => withObjectiveLock(root, () => edit(async (docs, links) => {
+      const plan = planTicketEdit(root, home, docs, links, { allowArchive: true });
+      if (!plan.archived.length) { plan.publish(); return { moved: plan.moved, committed: false }; }
+      const filters = await neutralizeFilters(worktreeGit, root);
+      await commitArchiveFiles(root, home, plan.files, (args) => worktreeGit(root, [...filters, ...args]), {
+        mode: 'commit', message: `tickets: archive ${plan.archived.join(', ')}`,
+      });
+      return { moved: plan.moved, committed: true };
+    }, true))),
+  ))!;
 }

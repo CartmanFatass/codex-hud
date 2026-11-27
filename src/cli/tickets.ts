@@ -82,17 +82,20 @@ async function showTickets(args: readonly string[], io: HudIO): Promise<number> 
   if (args.length !== 1) throw new CliError(SHOW_USAGE);
   const id = parseTicketRef(args[0]), feature = id?.feature ?? args[0];
   if (!TICKET_FEATURE.test(feature)) throw new CliError(SHOW_USAGE);
-  const { sources } = scanTicketStore(process.cwd());
+  const { sources, unreadable, scanTruncated } = scanTicketStore(process.cwd());
   let source = sources.get(feature);
   const entries = source ? ('doc' in source ? source.doc.tickets : source.legacy) : [];
   let selected = id ? entries.filter(({ number }) => number === id.number) : entries;
   if (id && !selected.length) {
-    const sourceMirror = Boolean(source && 'doc' in source && source.doc.mirror);
-    const resolved = matchArchivedTicket(feature, [...sources].flatMap(([slug, candidate]) => {
-      if (!('doc' in candidate)) return [];
-      const ticket = candidate.doc.tickets.find(t => t.number === id.number);
-      return [{ slug, mirror: !!candidate.doc.mirror, value: ticket ? { candidate, ticket } : undefined }];
-    }), sourceMirror);
+    const sourceBlocked = scanTruncated || unreadable.has(feature) || Boolean(source && 'doc' in source && source.doc.mirror);
+    const resolved = matchArchivedTicket(feature, [
+      ...[...sources].flatMap(([slug, candidate]) => {
+        if (!('doc' in candidate)) return [];
+        const ticket = candidate.doc.tickets.find(t => t.number === id.number);
+        return [{ slug, mirror: !!candidate.doc.mirror, value: ticket ? { candidate, ticket } : undefined }];
+      }),
+      ...[...unreadable].map(slug => ({ slug, unreadable: true })),
+    ], sourceBlocked);
     if (resolved.status === 'matched') {
       source = resolved.value.candidate;
       selected = [resolved.value.ticket];

@@ -238,6 +238,7 @@ export function isTicketArchive(feature: string, sibling: string): boolean {
 export interface ArchiveCandidate<T> {
   slug: string;
   mirror?: boolean;
+  unreadable?: boolean;
   value?: T;
 }
 
@@ -246,19 +247,23 @@ export type ArchiveMatch<T> =
   | { status: 'ambiguous' }
   | { status: 'matched'; slug: string; value: T };
 
-/** Resolve `feature` across already-loaded non-mirror archive siblings, rejecting ambiguous matches. */
+/** Resolve `feature` across already-loaded non-mirror archive siblings, rejecting ambiguous matches or incomplete families. */
 export function matchArchivedTicket<T>(
   feature: string,
   candidates: Iterable<ArchiveCandidate<T>>,
-  sourceMirror = false,
+  sourceBlocked = false,
 ): ArchiveMatch<T> {
-  if (sourceMirror) return { status: 'missing' };
+  if (sourceBlocked) return { status: 'missing' };
   let found: { slug: string; value: T } | undefined;
+  let ambiguous = false;
   for (const candidate of candidates) {
-    if (candidate.mirror || candidate.value === undefined || !isTicketArchive(feature, candidate.slug)) continue;
-    if (found) return { status: 'ambiguous' };
-    found = { slug: candidate.slug, value: candidate.value };
+    if (!isTicketArchive(feature, candidate.slug)) continue;
+    if (candidate.unreadable) return { status: 'missing' };
+    if (candidate.mirror || candidate.value === undefined) continue;
+    if (found) ambiguous = true;
+    else found = { slug: candidate.slug, value: candidate.value };
   }
+  if (ambiguous) return { status: 'ambiguous' };
   return found ? { status: 'matched', ...found } : { status: 'missing' };
 }
 
@@ -294,28 +299,22 @@ export const OBJECTIVE_WRITE_KEY = '@objectives';
 export const isTicketWriteKey = (key: string) => key === OBJECTIVE_WRITE_KEY || TICKET_FEATURE.test(key);
 export const ticketWriteRelPath = (key: string) => key === OBJECTIVE_WRITE_KEY ? '.hud/objectives.md' : `.hud/tickets/${key}.json`;
 
-export function readTicketWriteState(home: string, mainRoot: string): { writes: Record<string, string>; groups: string[][] } {
+export function readTicketWrites(home: string, mainRoot: string): Record<string, string> {
   try {
     const { bytes, truncated } = readFileBounded(ticketWritesPath(home, mainRoot), MAX_WRITE_RECORD_BYTES);
     if (truncated) throw new Error('Ticket write record exceeds 128 KiB');
     const value = JSON.parse(bytes.toString('utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid ticket write record');
-    const writes = Object.fromEntries(Object.entries(value).flatMap(([key, digest]) =>
+    return Object.fromEntries(Object.entries(value).flatMap(([key, digest]) =>
       isTicketWriteKey(key) && typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest) ? [[key, digest] as const] : []).slice(-MAX_WRITES));
-    const groups = value['@groups'] ?? [];
-    if (!Array.isArray(groups) || groups.some(group => !Array.isArray(group) || group.length < 2 ||
-      group.some(key => typeof key !== 'string' || !Object.hasOwn(writes, key)))) throw new Error('Invalid ticket write groups');
-    return { writes, groups };
   } catch (error) {
-    if (missing(error)) return { writes: {}, groups: [] };
+    if (missing(error)) return {};
     throw error;
   }
 }
 
-export const readTicketWrites = (home: string, mainRoot: string) => readTicketWriteState(home, mainRoot).writes;
-
-function ticketWriteRecord(writes: Record<string, string>, groups: string[][]) {
-  const bytes = JSON.stringify({ ...writes, ...(groups.length && { '@groups': groups }) }) + '\n';
+function ticketWriteRecord(writes: Record<string, string>) {
+  const bytes = JSON.stringify(writes) + '\n';
   if (Buffer.byteLength(bytes) > MAX_WRITE_RECORD_BYTES) throw new Error('Ticket write record exceeds 128 KiB');
   return bytes;
 }
@@ -327,17 +326,16 @@ function saveTicketWrites(home: string, mainRoot: string, bytes: string) {
 /** Caller holds the tickets lock. Remove entries whose stored digest matches what was committed/cleaned. */
 export function pruneTicketWrites(home: string, mainRoot: string, matched: ReadonlyMap<string, string>) {
   if (!matched.size) return;
-  const { writes, groups } = readTicketWriteState(home, mainRoot);
+  const writes = readTicketWrites(home, mainRoot);
   for (const [key, digest] of matched) if (writes[key] === digest) delete writes[key];
-  const kept = groups.map(group => group.filter(key => Object.hasOwn(writes, key))).filter(group => group.length > 1);
-  saveTicketWrites(home, mainRoot, ticketWriteRecord(writes, kept));
+  saveTicketWrites(home, mainRoot, ticketWriteRecord(writes));
 }
 
 /** A later land/commit uses this same lock around reading and sweeping the write record. */
 export const withTicketStoreLock = <T>(mainRoot: string, fn: () => T | Promise<T>) =>
   withAbstractLock('tickets', mainRoot, fn, { timeoutMs: 10_000 });
 
-function isCleanInGitSync(mainRoot: string, rel: string, mode?: 'creating' | 'tracked'): boolean {
+function isCleanInGitSync(mainRoot: string, rel: string): boolean {
   const opts = { cwd: mainRoot, env: safeGitEnv(process.env), encoding: 'utf8' as const, timeout: 5000 };
   const cfg = spawnSync('git', [...SAFE_GIT_ARGS, ...FILTER_CONFIG_ARGS], opts);
   let filters: string[];
@@ -349,12 +347,10 @@ function isCleanInGitSync(mainRoot: string, rel: string, mode?: 'creating' | 'tr
   } else {
     return false;
   }
-  if (mode === 'creating' && spawnSync('git', [...SAFE_GIT_ARGS, ...filters, 'check-ignore', '-q', '--', rel], opts).status !== 1) return false;
   const st = spawnSync('git', [...SAFE_GIT_ARGS, ...filters, 'status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', rel], opts);
   if (st.status !== 0 || st.stdout) return false;
   const ls = spawnSync('git', [...SAFE_GIT_ARGS, 'ls-files', '-v', '-z', '--', rel], opts);
   if (ls.status !== 0) return false;
-  if (mode === 'tracked') return ls.stdout === `H ${rel}\0`;
   return !(ls.stdout ?? '').split('\0').some(row => /^[a-zS] /.test(row));
 }
 
@@ -367,40 +363,17 @@ export function ticketWriteSha(realMain: string, rel: string): string | undefine
   } catch { /* Unknown bytes cannot authorize a sweep. */ }
 }
 
-/** True when `key` belongs to a pending write group and the file on disk still matches its recorded digest. */
-export function extendsPendingWriteGroup(mainRoot: string, home: string, key: string): boolean {
-  const { writes, groups } = readTicketWriteState(home, mainRoot);
-  if (!groups.some(group => group.includes(key))) return false;
-  const expected = writes[key];
-  return expected !== undefined && ticketWriteSha(fs.realpathSync(mainRoot), ticketWriteRelPath(key)) === expected;
-}
-
-function isSweepEligibleBeforeWrite(mainRoot: string, rel: string, recordedSha: string | undefined, archive: boolean): boolean {
+function isSweepEligibleBeforeWrite(mainRoot: string, rel: string, recordedSha: string | undefined): boolean {
   const path = join(mainRoot, rel);
-  if (!fs.lstatSync(path, { throwIfNoEntry: false })) return !archive || isCleanInGitSync(mainRoot, rel, 'creating');
+  if (!fs.lstatSync(path, { throwIfNoEntry: false })) return true;
   const sha = ticketWriteSha(fs.realpathSync(mainRoot), rel);
   return sha !== undefined && (sha === recordedSha || isCleanInGitSync(mainRoot, rel));
-}
-
-/** Use committed hand edits as the new baseline without touching the working tree or ledger during planning. */
-export function readReconciledTicketWriteState(home: string, mainRoot: string) {
-  const { writes, groups } = readTicketWriteState(home, mainRoot);
-  const retired = new Map<string, string>();
-  if (!groups.length) return { writes, groups, retired };
-  const realMain = fs.realpathSync(mainRoot);
-  for (const key of new Set(groups.flat())) {
-    const rel = ticketWriteRelPath(key), actual = ticketWriteSha(realMain, rel);
-    if (actual === undefined || actual === writes[key] || !isCleanInGitSync(mainRoot, rel, 'tracked')) continue;
-    retired.set(key, writes[key]);
-    delete writes[key];
-  }
-  return { writes, groups: groups.map(group => group.filter(key => !retired.has(key))).filter(group => group.length > 1), retired };
 }
 
 export interface TicketWrite { key: string; bytes: string; mode?: number; mirror?: boolean; }
 
 /** Low-level publication for the archive planner only. Caller holds the tickets lock. */
-export function prepareTicketWrites(mainRoot: string, home: string, files: readonly TicketWrite[], archive = false) {
+export function prepareTicketWrites(mainRoot: string, home: string, files: readonly TicketWrite[]) {
   directory(join(mainRoot, '.hud'));
   directory(ticketDir(mainRoot));
   if (!files.length) return () => {};
@@ -410,52 +383,20 @@ export function prepareTicketWrites(mainRoot: string, home: string, files: reado
   if (!local.length) return () => {
     for (const file of paths) writeFileAtomic(join(mainRoot, file.rel), file.bytes, { dotPrefix: true });
   };
-  const { writes, groups } = readReconciledTicketWriteState(home, mainRoot);
-  const archiveKeys = new Set(archive ? local.map(file => file.key) : []);
+  const writes = readTicketWrites(home, mainRoot);
   for (const { key, rel, bytes } of local) {
-    const eligible = isSweepEligibleBeforeWrite(mainRoot, rel, Object.hasOwn(writes, key) ? writes[key] : undefined, archive);
-    if (archive && !eligible) throw new Error(`Cannot archive tickets in ${rel}: uncommitted hand edit present; commit or revert it and retry`);
-    if (eligible) {
+    if (isSweepEligibleBeforeWrite(mainRoot, rel, Object.hasOwn(writes, key) ? writes[key] : undefined)) {
       delete writes[key];
       writes[key] = hash(bytes);
-    } else if (!groups.some(group => group.includes(key))) delete writes[key];
-    // A hand edit must not dissolve a pending archive group: its old digest will fence the whole set.
+    } else delete writes[key];
   }
-  const retained = groups.filter(group => {
-    if (!group.some(key => archiveKeys.has(key))) return true;
-    for (const key of group) {
-      if (!archiveKeys.has(key)) {
-        const rel = ticketWriteRelPath(key);
-        if (ticketWriteSha(fs.realpathSync(mainRoot), rel) !== writes[key]) {
-          throw new Error(`Cannot archive tickets in ${rel}: pending archive has an uncommitted hand edit`);
-        }
-      }
-      archiveKeys.add(key);
-    }
-    return false;
-  });
-  if (archiveKeys.size > MAX_WRITES) throw new Error('Ticket archive write set exceeds 256 files');
-  if (archiveKeys.size > 1) retained.push([...archiveKeys]);
-  const newest = [...Object.keys(writes).filter(key => !archiveKeys.has(key)), ...archiveKeys];
-  const expired = new Set(newest.slice(0, Math.max(0, newest.length - MAX_WRITES)));
-  // Evict a pending group together, never only its source or only its destination.
-  const kept = retained.filter(group => {
-    if (!group.some(key => expired.has(key))) return true;
-    for (const key of group) expired.add(key);
-    return false;
-  });
-  for (const key of expired) delete writes[key];
-  if (files.length === 1 && !archive && !Object.hasOwn(writes, files[0].key) && !fs.existsSync(ticketWritesPath(home, mainRoot))) {
-    return () => writeFileAtomic(join(mainRoot, paths[0].rel), paths[0].bytes, { dotPrefix: true });
-  }
-  const receipt = ticketWriteRecord(writes, kept);
-  // Nest staging hooks so every temporary file exists before the receipt is recorded and renames begin.
-  const publish = (i: number): void => {
-    const file = paths[i];
-    if (!file) { saveTicketWrites(home, mainRoot, receipt); return; }
-    writeFileAtomic(join(mainRoot, file.rel), file.bytes, { dotPrefix: true, mode: file.mode, beforeRename: () => publish(i + 1) });
+  const keys = Object.keys(writes);
+  for (const key of keys.slice(0, Math.max(0, keys.length - MAX_WRITES))) delete writes[key];
+  const receipt = Object.keys(writes).length || fs.existsSync(ticketWritesPath(home, mainRoot)) ? ticketWriteRecord(writes) : undefined;
+  return () => {
+    for (const file of paths) writeFileAtomic(join(mainRoot, file.rel), file.bytes, { dotPrefix: true, mode: file.mode });
+    if (receipt !== undefined) saveTicketWrites(home, mainRoot, receipt);
   };
-  return () => publish(0);
 }
 
 export function legacyTicketPaths(root: string, feature: string) {

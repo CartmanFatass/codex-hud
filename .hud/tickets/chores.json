@@ -481,6 +481,61 @@
       "comments": [],
       "created_at": "2026-11-27T15:30:50.828Z",
       "updated_at": "2026-11-27T15:56:59.214Z"
+    },
+    {
+      "number": 66,
+      "title": "Ticket archive: commit archive moves immediately; delete pending write groups; complete-family lookup",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/64"
+      ],
+      "what": "Implement the one-ticket build brief in oracle report jf97748fe19929a56 §3 (read it with `hud_read({job: \"jf97748fe19929a56\", mode: \"full\"})`; it is the spec, including the invariants in §2). Main chose candidate A (2026-11-27) after three reviews in a row found majors in the archive (j1b0f5df80f74cd93, j93033c2fe4271edc, jab4c33393980dadd).\n\nIn short:\n- An archive move is never left pending: when a write would cross 64 KiB, acquire `main-checkout` lease → `tickets` lock → `objective` lock, re-plan from fresh disk state, write all touched files and commit them in one commit (`tickets: archive <feature>`); local `hud_land` folds it into its amended commit. Wait 300 s in `hud_tickets` and `recordUnattendedAcceptance`; `collectGateFlakes` uses 0 and defers to its existing retry. Uncommitted hand edits on any touched file refuse before anything is written; a Git failure restores the pre-write bytes and index.\n- Ordinary single-file edits under the cap stay lease-free and Git-free, as today.\n- `ticket-writes.json` becomes a flat key → sha256 map. Delete `@groups`, `extendsPendingWriteGroup`, `readReconciledTicketWriteState`, group fencing and the related git-mode helpers.\n- `matchArchivedTicket` returns missing when the source feature or any archive sibling is unreadable (or the scan is truncated); `ticket-rollup.ts`, `ticket-store.ts` and `cli/tickets.ts` use it.\n- Update `docs/reference.md` (and `.zh`).\nOut of scope: the oracle's two separate hardening items, external-tracker archive commits.\nSize: net deletion (oracle estimate ~75 added / ~120 removed in src) plus test updates in the ticket commit/store suites. Stop and report if it grows past ~1.5×.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A non-overflowing add/update stays lease-free and Git-free while a land holds the main-checkout lease.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A cap-crossing add, gate-flake add and unattended finish each commit source, shard, ref rewrites and Objective link in one commit; `git restore` of the shard afterwards keeps the moved tickets retrievable.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A cap-crossing local `hud_land` produces one amended commit and keeps incoming `.hud/objectives.md` rules.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "An uncommitted hand edit on any archive-touched file refuses before any file is written.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "With `sample.json` or a `sample-done*` sibling unreadable, a dependency `Replaced by sample/NN` stays blocked in `ready` (matching `get`), `waitSettled` stays open, and `hud tickets show` fails.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "No `@groups` code remains in src.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T17:25:54.284Z",
+        "job": "jef0cac645b5c2c8e",
+        "flow": "fef0cac645b5c2c8e",
+        "replay_base": "fe09e08cc1dc5dc8668ddd869a02c7ce8df496a3",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T16:52:20.167Z",
+      "updated_at": "2026-11-27T17:25:54.284Z"
     }
   ]
 }

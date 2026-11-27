@@ -452,7 +452,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
           c.gate.length,
           trackerFilters.get(tracker)!,
           at,
-          { locked: true, ...(tracker === mainRoot && incomingObjectives ? { objectiveFile: incomingObjectives } : {}) },
+          { locked: true, ...(tracker === mainRoot && incomingObjectives ? { objectiveFile: incomingObjectives } : {}), ...(tracker !== mainRoot ? { sweep: false as const } : {}) },
         );
         if (objectiveEdited && tracker === mainRoot && landedPaths.includes('.hud/objectives.md')) {
           throw new Error('Cannot archive tickets while the same land changes .hud/objectives.md; land the Objective edit separately');

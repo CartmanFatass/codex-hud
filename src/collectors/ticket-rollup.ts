@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { matchArchivedTicket, parseTicketRef } from '../tickets/store.js';
+import { matchArchivedTicket, parseTicketRef, type ArchiveCandidate } from '../tickets/store.js';
 import { targetKey } from './ticket-evidence.js';
 import type { LedgerSlice, ProjectTicket, TicketFeature } from './project-board.js';
 
@@ -17,7 +17,7 @@ const key = (feature: string, n: string) => targetKey(`${feature}/${n}`);
 export function ticketIds(text: string): string[] {
   return Array.from(text.matchAll(/(?<![\w/-])([a-z0-9]+(?:-[a-z0-9]+)*)[-/](\d+)(?![\w-])/gi), m => key(m[1], m[2]));
 }
-type RollupFeature = TicketFeature & { source?: 'json' | 'mirror' };
+type RollupFeature = TicketFeature & { source?: 'json' | 'mirror'; unreadable?: string };
 
 export class TicketRollup {
   private index = new Map<string, ProjectTicket>();
@@ -38,11 +38,14 @@ export class TicketRollup {
   resolveReplacement(id: string): string | undefined {
     if (this.index.has(id)) return id;
     const ref = parseTicketRef(id);
-    if (!ref || this.features.some(f => f.slug === ref.feature && f.source === 'mirror')) return;
-    const match = matchArchivedTicket(ref.feature, this.features.flatMap(({ slug, source }) => {
+    if (!ref) return;
+    const sourceBlocked = this.features.some(f => f.slug === ref.feature && (f.source === 'mirror' || !!f.unreadable));
+    const match = matchArchivedTicket<string>(ref.feature, this.features.flatMap(({ slug, source, unreadable }): ArchiveCandidate<string>[] => {
+      if (unreadable) return [{ slug, unreadable: true }];
+      if (source !== 'json') return [];
       const candidate = `${slug}/${ref.number}`;
-      return source === 'json' && this.index.has(candidate) ? [{ slug, value: candidate }] : [];
-    }));
+      return [{ slug, value: this.index.has(candidate) ? candidate : undefined }];
+    }), sourceBlocked);
     return match.status === 'matched' ? match.value : undefined;
   }
   link(job: { ticket?: string | number; slice?: string; package?: string; target_hint?: string }, material: string, receipt: NonNullable<ProjectTicket['job']>) {

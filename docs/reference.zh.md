@@ -561,6 +561,9 @@ MCP 重启后，同一调用方仍可在任务有效期内查询已有的工作�
 `update` 可单条更新（`feature`、`ticket` 及 `status`／`owner_try`／`tick`／`blocked_by`），也可传 `updates: [{feature?, ticket, status?, owner_try?, tick?, blocked_by?}]` 按输入顺序批量更新并返回逐项结果（每项可覆盖 `feature`，单项错误不阻塞其余项）；
 `sync` 执行 `hud tickets sync`。
 验收项编号无效时会提示有效范围，整条工单更新都不会写入，即使同一次更新中的其他编号有效。
+单文件写入未超过 64 KiB 上限时直接持 `tickets` 锁写入、不申请 `main-checkout` 租约也不执行 Git，并在 `$HUD_HOME/projects/<hash>/ticket-writes.json`（扁平 `key -> sha256` 映射，0600）记录可清扫的摘要，供后续 `hud_land` 或 `hud_tickets({op: "commit"})`／`hud tickets commit` 提交。
+当写入超过 64 KiB 触发归档时，HUD 不会留下未提交的归档分片：在 `hud_land` 之外会先释放 `tickets` 锁，按 `main-checkout` 租约 → `tickets` 锁 → `objective` 锁顺序从最新磁盘状态重新规划（`hud_tickets` 和无人值守验收等待最多 300 秒，门禁波动收集使用 0 秒并在忙碌时延后重试），将源功能、归档分片、重写的引用与目标链接在一次 `tickets: archive <feature>` 提交中原子提交；本地 `hud_land` 则并入单次 `--amend` 提交（跨仓外部跟踪器若自身超限则在快进前拒绝）。任一归档涉及文件存在未提交手改、被 Git 忽略或仓库无 `HEAD` 时，在写入任何文件前拒绝；若提交失败且 `HEAD` 未移动，自动恢复写入前文件内容与索引。
+用原编号 `feature/NN` 查询归档工单（含 `ready` 的 `Replaced by`、`waits on` 检查和 `hud tickets show`）时，若源功能或任一归档兄弟文件不可读（或目录扫描截断），则拒绝回退匹配。
 
 其他客户端的 MCP 工具响应还带 `changes`：自上次响应以来本窗格派出的任务每次状态变化一行（没有则省略）。
 面板、状态栏、pi 页脚、MCP 与 `hud watch` 用同一个 `jobRow` 推导任务状态，所以结论一致。

@@ -21,6 +21,8 @@ interface TicketScan {
   stamp: number;
   features: TicketFeature[];
   partial: boolean;
+  scanTruncated: boolean;
+  unreadable: ReadonlySet<string>;
   sources: ReadonlyMap<string, TicketSource>;
   resolve: (ticket: string, feature?: string) => string | undefined;
   lookup: (ticket: string, feature?: string) => TicketLookup | undefined;
@@ -76,11 +78,13 @@ class TicketStore {
     const jsonStat = hud?.isDirectory() ? probe(jsonDir) : hud === undefined ? undefined : null;
     const json = names(jsonDir, jsonStat, MAX_FEATURES + 1, (entry) => /^[a-z0-9-]+\.json$/.test(entry.name));
     const canonical = new Set((json ?? []).map((name) => name.slice(0, -5)));
-    let partial = !json || json.length > MAX_FEATURES;
+    const scanTruncated = !json || json.length > MAX_FEATURES;
+    let partial = scanTruncated;
+    const unreadable = new Set<string>();
     for (const name of (json ?? []).slice(0, MAX_FEATURES)) {
       const slug = name.slice(0, -5), source = `.hud/tickets/${name}`, path = join(root, source), st = probe(path);
       const doc = body(path, st, (bytes) => validateTicketFeature(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), slug));
-      if (!doc) { partial = true; continue; }
+      if (!doc) { partial = true; unreadable.add(slug); continue; }
       groups.push({ slug, source: { doc }, path, at: st!.mtimeMs });
     }
 
@@ -154,14 +158,17 @@ class TicketStore {
       if (index.has(direct)) return direct;
       const directSource = sources.get(ref.feature);
       if (directSource && 'legacy' in directSource && directSource.legacy.some(t => t.number === ref.number)) return;
-      const sourceMirror = Boolean(directSource && 'doc' in directSource && directSource.doc.mirror);
-      const resolved = matchArchivedTicket(ref.feature, [...sources].flatMap(([slug, source]) =>
-        'doc' in source ? [{ slug, mirror: !!source.doc.mirror, value: index.has(`${slug}/${ref.number}`) ? `${slug}/${ref.number}` : undefined }] : [],
-      ), sourceMirror);
+      const sourceBlocked = scanTruncated || unreadable.has(ref.feature) || Boolean(directSource && 'doc' in directSource && directSource.doc.mirror);
+      const resolved = matchArchivedTicket(ref.feature, [
+        ...[...sources].flatMap(([slug, source]) =>
+          'doc' in source ? [{ slug, mirror: !!source.doc.mirror, value: index.has(`${slug}/${ref.number}`) ? `${slug}/${ref.number}` : undefined }] : [],
+        ),
+        ...[...unreadable].map(slug => ({ slug, unreadable: true })),
+      ], sourceBlocked);
       return resolved.status === 'matched' ? resolved.value : undefined;
     };
     const scan: TicketScan = {
-      stamp: ++revision, features: features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug)), partial, sources,
+      stamp: ++revision, features: features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug)), partial, scanTruncated, unreadable, sources,
       resolve: resolveRef,
       lookup: (ticket, feature) => {
         const key = resolveRef(ticket, feature);

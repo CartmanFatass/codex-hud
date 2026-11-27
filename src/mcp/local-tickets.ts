@@ -12,10 +12,10 @@ import { projectJobFilter } from '../roles/job-project.js';
 import { localProjectRoots, projectList, projectRoot } from '../roles/projects.js';
 import {
   compactHomePath, expandHomePath, legacyTicketRepo, LEGACY_TICKET_HEADER_END, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature,
-  renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs, withTicketStoreLock,
+  renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs,
   TicketFeatureFull, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
-import { writeTicketEdit } from '../tickets/archive.js';
+import { runTicketEdit } from '../tickets/archive.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
@@ -568,11 +568,11 @@ export async function recordUnattendedAcceptance(
   verdict: string,
 ): Promise<UnattendedAcceptanceResult> {
   const { mainRoot } = localProjectRoots(root);
-  const { persisted, failed, firstChanged } = await withTicketStoreLock(mainRoot, async () => {
+  const { persisted, failed, firstChanged, committed } = await runTicketEdit(mainRoot, home, 300, async (write, archivedPass) => {
     const tickets = landed();
     const persisted: string[] = [];
     const failed: UnattendedAcceptanceFailure[] = [];
-    if (!tickets.length) return { persisted, failed, firstChanged: undefined as string | undefined };
+    if (!tickets.length) return { persisted, failed, firstChanged: undefined as string | undefined, committed: false };
     const at = new Date().toISOString();
     const summary = normalizeHomePaths(verdict).replace(/\s+/g, ' ').trim().slice(0, 400);
     let firstTicket: string | undefined;
@@ -608,15 +608,18 @@ export async function recordUnattendedAcceptance(
     }
 
     // Plan the whole batch so an archive can rewrite references in other edited documents.
+    let committed = false;
     while (dirtyDocs.size) {
       try {
-        await writeTicketEdit(mainRoot, home, [...dirtyDocs.values()].map(({ doc }) => doc));
+        const res = await write([...dirtyDocs.values()].map(({ doc }) => doc));
+        committed = res.committed;
         for (const { tickets: docTickets } of dirtyDocs.values()) {
           persisted.push(...docTickets);
           firstTicket ??= docTickets[0];
         }
         break;
       } catch (error) {
+        if (!archivedPass && error instanceof TicketFeatureFull) throw error;
         const message = error instanceof Error ? error.message : String(error);
         const full = error instanceof TicketFeatureFull ? dirtyDocs.get(error.feature) : undefined;
         if (full) {
@@ -630,9 +633,10 @@ export async function recordUnattendedAcceptance(
         }
       }
     }
-    return { persisted, failed, firstChanged: firstTicket };
+    return { persisted, failed, firstChanged: firstTicket, committed };
   });
 
+  if (committed) return { persisted, failed, committed: true };
   if (firstChanged) {
     try {
       const res = await commitTicketWrites(mainRoot, home, { wait_s: 0, message: `tickets: ${firstChanged} accept` });

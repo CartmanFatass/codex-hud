@@ -9,8 +9,8 @@ import { collectGateFlakes } from '../../dist/mcp/land-flakes.js';
 import { retryableLand } from '../../dist/mcp/land-state.js';
 import { recordUnattendedAcceptance } from '../../dist/mcp/local-tickets.js';
 import { takeLease } from '../../dist/roles/lease.js';
-import { sweepTicketWrites } from '../../dist/tickets/commit.js';
-import { MAX_TICKET_BYTES, readJsonTicketFeature, readTicketWrites, readTicketWriteState, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
+import { commitArchiveFiles, sweepTicketWrites } from '../../dist/tickets/commit.js';
+import { MAX_TICKET_BYTES, readJsonTicketFeature, readTicketWrites, serializeTicketFeature, ticketFeaturePath, ticketWritesPath } from '../../dist/tickets/store.js';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { checkout, job, jobDir, settle } from '../helpers/thin-mcp-land.mjs';
 
@@ -55,6 +55,9 @@ test('production ticket writes go through the archive planner, not the removed r
   const rawPublishers = fs.readdirSync('src', { recursive: true }).filter(rel => rel.endsWith('.ts') &&
     /\b(?:prepareTicketWrites|writeTicketFeature)\b/.test(fs.readFileSync(join('src', rel), 'utf8')));
   assert.deepEqual(rawPublishers.sort(), ['tickets/archive.ts', 'tickets/store.ts']);
+  const groupRefs = fs.readdirSync('src', { recursive: true }).filter(rel => rel.endsWith('.ts') &&
+    /@groups/.test(fs.readFileSync(join('src', rel), 'utf8')));
+  assert.deepEqual(groupRefs, [], 'no @groups code may remain in src');
 });
 
 for (const ownerTry of [false, true]) test(`landing a JSON ticket folds landing record, status and ticks into one commit (owner_try=${ownerTry})`, { timeout: 25_000 }, async t => {
@@ -117,7 +120,7 @@ function nearCap(feature, tickets, slack = 16) {
   return doc;
 }
 
-for (const fullArchive of [false, true]) test(`an overflowing repair add archives eligible tickets and sweeps one write set (full archive=${fullArchive})`, { timeout: 25_000 }, async t => {
+for (const fullArchive of [false, true]) test(`an overflowing repair add archives eligible tickets and commits immediately in one commit (full archive=${fullArchive})`, { timeout: 25_000 }, async t => {
   const f = await checkout(t, ['true'], { after: [] });
   const archive = fullArchive ? 'sample-done-2' : 'sample-done';
   const replacementNote = { at, author: 'owner', text: 'Replaced by sample/03' };
@@ -130,6 +133,7 @@ for (const fullArchive of [false, true]) test(`an overflowing repair add archive
     ] },
     ...(fullArchive ? [nearCap('sample-done', [record(8, 'done')])] : []),
   ]);
+  const baseBeforeAdd = f.git(f.main, 'rev-parse', 'HEAD');
   const call = (op, args) => f.call('hud_tickets', { op, ...args });
   const assertReady = async () => assert.ok((await call('ready')).tickets.some(t => t.ticket === 'other/01'));
   await assertReady();
@@ -147,34 +151,28 @@ for (const fullArchive of [false, true]) test(`an overflowing repair add archive
   assert.deepEqual(open.repairs, [`${archive}/01`]);
   assert.deepEqual(closed.blocked_by, [`${archive}/01`]);
   assert.match(fs.readFileSync(objective, 'utf8'), new RegExp(`^\\*\\*Features:\\*\\* sample, ${archive}$`, 'm'));
+  // Archive move committed immediately in one commit; nothing left pending.
+  const paths = ['.hud/objectives.md', `.hud/tickets/${archive}.json`, '.hud/tickets/other.json', '.hud/tickets/sample.json'].sort();
+  assert.equal(f.git(f.main, 'rev-list', '--count', `${baseBeforeAdd}..HEAD`), '1');
+  assert.equal(f.git(f.main, 'log', '-1', '--format=%s'), 'tickets: archive sample');
+  assert.deepEqual(f.git(f.main, 'show', '--format=', '--name-only', 'HEAD').split('\n').sort(), paths);
+  assert.equal(f.git(f.main, 'status', '--porcelain', '--', ...paths), '');
+  assert.deepEqual(readTicketWrites(f.home, f.main), {});
+
+  // `git restore` on the shard keeps moved tickets retrievable.
+  const archivePath = ticketFeaturePath(f.main, archive);
+  fs.writeFileSync(archivePath, fs.readFileSync(archivePath, 'utf8').replace('Ticket 1', 'Temporary edit'));
+  f.git(f.main, 'restore', '--', `.hud/tickets/${archive}.json`);
   const found = await call('get', { ticket: 'sample/01' });
   assert.equal(found.feature, archive);
   assert.equal(found.ticket.status, 'wontfix');
+  assert.equal(found.ticket.title, 'Ticket 1');
   assert.equal(scanTicketStore(f.main).lookup('sample/01').title, 'Ticket 1');
   assert.equal((await call('add', { feature: 'sample', tickets: [draft('Next slice', { blocked_by: ['sample/01'] })] })).tickets[0].number, 5);
   assert.deepEqual((await call('get', { ticket: 'sample/05' })).ticket.blocked_by, [`${archive}/01`]);
-  const paths = ['.hud/objectives.md', `.hud/tickets/${archive}.json`, '.hud/tickets/other.json', '.hud/tickets/sample.json'].sort();
-  const archivePath = ticketFeaturePath(f.main, archive), bytes = fs.readFileSync(archivePath, 'utf8');
-  fs.writeFileSync(archivePath, bytes.replace('Ticket 1', 'Hand-edited title'));
-  const refused = await call('commit', {});
-  assert.equal(refused.committed, false);
-  assert.deepEqual(refused.skipped.sort(), paths, 'a hand edit fences the full archive set');
-  if (fullArchive) {
-    fs.writeFileSync(archivePath, bytes);
-    assert.deepEqual((await call('commit', {})).paths.sort(), paths);
-  } else {
-    const ownerBytes = fs.readFileSync(archivePath);
-    f.git(f.main, 'add', archivePath);
-    f.git(f.main, 'commit', '-qm', 'Owner edits the archived title');
-    const swept = await call('commit', {});
-    assert.deepEqual(swept.paths.sort(), paths.filter(path => path !== `.hud/tickets/${archive}.json`));
-    assert.equal(swept.skipped, undefined);
-    assert.deepEqual(fs.readFileSync(archivePath), ownerBytes);
-    assert.deepEqual(readTicketWriteState(f.home, f.main), { writes: {}, groups: [] });
-  }
 });
 
-test('gate-flake collection can create or extend a running list at the feature cap', { timeout: 25_000 }, async t => {
+test('gate-flake collection commits archives immediately and defers non-blockingly when main-checkout lease is held', { timeout: 25_000 }, async t => {
   const f = await checkout(t, ['true'], { after: [] });
   seedArchiveProject(f, [
     nearCap('new-list', [record(1, 'done'), record(2, 'ready-for-agent')]),
@@ -182,14 +180,41 @@ test('gate-flake collection can create or extend a running list at the feature c
   ]);
   const config = join(f.main, '.hud/project.json');
   const initial = JSON.parse(fs.readFileSync(config, 'utf8'));
+
+  // When main-checkout lease is held, a cap-crossing flake add defers with wait_s: 0 without writing anything.
+  fs.writeFileSync(config, JSON.stringify({ ...initial, flakes: { feature: 'new-list' } }));
+  const lease = { home: f.home, cwd: f.main, holder: 'synthetic-land' };
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  const beforeDefer = fs.readFileSync(ticketFeaturePath(f.main, 'new-list'), 'utf8');
+  try {
+    const t0 = performance.now();
+    const deferred = await collectGateFlakes(f.home, f.main, [
+      { name: 'Synthetic flaky case', file: 'tests/unit/example.test.mjs', step: 'gate[1]', flow: 'f0000000000000099' },
+    ], null);
+    assert.ok(performance.now() - t0 < 2000, 'flake archive deferral must not wait on busy lease');
+    assert.equal(deferred.pending?.stage, 'edit');
+    assert.match(deferred.pending?.error ?? '', /main-checkout lease is busy/);
+    assert.equal(fs.readFileSync(ticketFeaturePath(f.main, 'new-list'), 'utf8'), beforeDefer);
+    assert.equal(fs.existsSync(ticketFeaturePath(f.main, 'new-list-done')), false);
+  } finally {
+    await takeLease({ name: 'main-checkout', release: true }, lease);
+  }
+
   for (const [feature, created, number] of [['new-list', true, 3], ['open-list', false, 2]]) {
     fs.writeFileSync(config, JSON.stringify({ ...initial, flakes: { feature } }));
+    const base = f.git(f.main, 'rev-parse', 'HEAD');
     const result = await collectGateFlakes(f.home, f.main, [
       { name: 'Synthetic flaky case', file: 'tests/unit/example.test.mjs', step: 'gate[1]', flow: 'f0000000000000099' },
     ], null);
     assert.equal(result.pending, undefined, JSON.stringify(result));
     assert.equal(result.created, created);
     assert.equal(result.ticket, `${feature}/0${number}`);
+    assert.equal(f.git(f.main, 'rev-list', '--count', `${base}..HEAD`), '1');
+    assert.equal(f.git(f.main, 'log', '-1', '--format=%s'), `tickets: archive ${feature}`);
+    assert.deepEqual(f.git(f.main, 'show', '--format=', '--name-only', 'HEAD').split('\n').sort(), [
+      '.hud/objectives.md', `.hud/tickets/${feature}-done.json`, `.hud/tickets/${feature}.json`,
+    ]);
+    f.git(f.main, 'restore', '--', `.hud/tickets/${feature}-done.json`);
     assert.deepEqual(readJsonTicketFeature(f.main, `${feature}-done`).tickets.map(t => t.number), [1]);
     const latest = readJsonTicketFeature(f.main, feature).tickets.at(-1);
     assert.equal(latest.number, number);
@@ -305,60 +330,81 @@ test('cap-crossing land with an unrelated objectives.md change lands when shard 
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), relinkedBase);
 });
 
-test('archive Objective links sweep with HUD writes, fence hand edits, and allow land after the owner commits', { timeout: 35_000 }, async t => {
+test('uncommitted hand edits on any archive-touched file refuse before writing, clean Objective links sweep flatly, and Git commit failures roll back disk and index', { timeout: 35_000 }, async t => {
   const f = await checkout(t, ['true'], { after: [] });
-  const objective = seedArchiveProject(f, [nearCap('sample', [record(1, 'done'), record(2, 'ready-for-agent')])]);
+  const objective = seedArchiveProject(f, [
+    nearCap('sample', [record(1, 'done'), record(2, 'ready-for-agent')]),
+    { version: 1, feature: 'other', tickets: [record(1, 'done', { blocked_by: ['sample/01'] })] },
+  ]);
+  const samplePath = ticketFeaturePath(f.main, 'sample');
+  const otherPath = ticketFeaturePath(f.main, 'other');
+  const shardPath = ticketFeaturePath(f.main, 'sample-done');
+  const cleanSample = fs.readFileSync(samplePath, 'utf8');
+  const cleanOther = fs.readFileSync(otherPath, 'utf8');
+  const cleanObj = fs.readFileSync(objective, 'utf8');
 
-  // 1. Archive into new shard sample-done (updates .hud/objectives.md), then ordinary add links other to selected.
+  // 1. Hand edit on source, ref-rewritten feature, or Objective each refuse before any file is written.
+  for (const [label, path, clean, edited, rel] of [
+    ['source', samplePath, cleanSample, cleanSample.replace('Ticket 2', 'Hand edit 2'), '.hud/tickets/sample.json'],
+    ['ref-rewritten feature', otherPath, cleanOther, cleanOther.replace('Ticket 1', 'Hand other 1'), '.hud/tickets/other.json'],
+    ['objectives', objective, cleanObj, cleanObj + '\n<!-- hand edit -->\n', '.hud/objectives.md'],
+  ]) {
+    const headBefore = f.git(f.main, 'rev-parse', 'HEAD');
+    fs.writeFileSync(path, edited);
+    const { result } = await f.rpc('tools/call', {
+      name: 'hud_tickets',
+      arguments: { op: 'add', feature: 'sample', tickets: [draft(`Blocked by ${label}`)] },
+    });
+    assert.equal(result.isError, true, `${label} hand edit must refuse`);
+    assert.match(result.content[0].text, new RegExp(rel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.equal(fs.existsSync(shardPath), false, `${label} refusal must not create shard`);
+    assert.equal(fs.readFileSync(samplePath, 'utf8'), path === samplePath ? edited : cleanSample);
+    assert.equal(fs.readFileSync(otherPath, 'utf8'), path === otherPath ? edited : cleanOther);
+    assert.equal(fs.readFileSync(objective, 'utf8'), path === objective ? edited : cleanObj);
+    assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), headBefore);
+    fs.writeFileSync(path, clean);
+  }
+
+  // 2. Cap-crossing hud_land with a hand edit on .hud/objectives.md also refuses before fast-forward.
+  const objHand = cleanObj + '\n<!-- land hand edit -->\n';
+  fs.writeFileSync(objective, objHand);
+  const landBase = f.git(f.main, 'rev-parse', 'HEAD');
+  setJobTicket(f, 'sample/02');
+  const { flow: refusedLand } = await f.call('hud_land', { job });
+  await until(() => f.flowState(refusedLand).state === 'failed', t.signal);
+  assert.match(f.flowState(refusedLand).error, /Cannot record landing in \.hud\/objectives\.md: uncommitted hand edit present/);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), landBase);
+  assert.equal(fs.existsSync(shardPath), false);
+  assert.equal(fs.readFileSync(objective, 'utf8'), objHand);
+  fs.writeFileSync(objective, cleanObj);
+
+  // 3. Git commit failure after --intent-to-add restores pre-write bytes, deletes new shard, and resets index.
+  const failingGit = async (args) => {
+    if (args.includes('commit')) throw new Error('synthetic git commit failure');
+    return worktreeGit(f.main, args);
+  };
+  await assert.rejects(
+    () => commitArchiveFiles(f.main, f.home, [
+      { key: 'sample', bytes: cleanSample.replace('Ticket 2', 'Rolled back 2') },
+      { key: 'sample-done', bytes: serializeTicketFeature({ version: 1, feature: 'sample-done', tickets: [record(1, 'done')] }) },
+    ], failingGit, { mode: 'commit', message: 'tickets: archive sample' }),
+    /synthetic git commit failure/,
+  );
+  assert.equal(fs.readFileSync(samplePath, 'utf8'), cleanSample);
+  assert.equal(fs.existsSync(shardPath), false);
+  assert.equal(f.git(f.main, 'status', '--porcelain', '--', '.hud/tickets'), '');
+
+  // 4. Clean archive commits immediately; a later ordinary add with objective sweeps @objectives flatly.
   await f.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('Overflow slice')] });
-  await f.call('hud_tickets', { op: 'add', feature: 'other', objective: 'selected', tickets: [draft('Linked feature')] });
+  assert.equal(f.git(f.main, 'log', '-1', '--format=%s'), 'tickets: archive sample');
+  await f.call('hud_tickets', { op: 'add', feature: 'third', objective: 'selected', tickets: [draft('Linked feature')] });
+  assert.ok(readTicketWrites(f.home, f.main)['@objectives']);
+  assert.ok(readTicketWrites(f.home, f.main).third);
   const committed = await f.call('hud_tickets', { op: 'commit' });
   assert.equal(committed.committed, true, JSON.stringify(committed));
-  assert.equal(committed.skipped, undefined, JSON.stringify(committed));
-  assert.deepEqual(committed.paths.sort(), [
-    '.hud/objectives.md', '.hud/tickets/other.json', '.hud/tickets/sample-done.json', '.hud/tickets/sample.json',
-  ]);
-  assert.match(f.git(f.main, 'show', 'HEAD:.hud/objectives.md'), /^\*\*Features:\*\* sample, sample-done, other$/m);
-
-  // 2. Archive into a new shard (sample-done-2), then a real hand edit to .hud/objectives.md stays fenced even after another add.
-  const fullShard = nearCap('sample-done', [record(1, 'done')]);
-  const fullSample = nearCap('sample', [record(2, 'done'), record(3, 'ready-for-agent')]);
-  fs.writeFileSync(ticketFeaturePath(f.main, 'sample-done'), serializeTicketFeature(fullShard));
-  fs.writeFileSync(ticketFeaturePath(f.main, 'sample'), serializeTicketFeature(fullSample));
-  f.git(f.main, 'add', '.hud/tickets/sample-done.json', '.hud/tickets/sample.json');
-  f.git(f.main, 'commit', '-qm', 'Refill sample and sample-done');
-
-  await f.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('Second overflow')] });
-  const handEdited = fs.readFileSync(objective, 'utf8') + '\n<!-- owner hand edit -->\n';
-  fs.writeFileSync(objective, handEdited);
-  await f.call('hud_tickets', { op: 'add', feature: 'third', objective: 'selected', tickets: [draft('After hand edit')] });
-
-  const fenced = await f.call('hud_tickets', { op: 'commit' });
-  assert.equal(fenced.committed, true, JSON.stringify(fenced));
-  assert.deepEqual(fenced.paths, ['.hud/tickets/third.json']);
-  assert.deepEqual(fenced.skipped?.sort(), [
-    '.hud/objectives.md', '.hud/tickets/sample-done-2.json', '.hud/tickets/sample.json',
-  ]);
-  assert.doesNotMatch(f.git(f.main, 'show', 'HEAD:.hud/objectives.md'), /owner hand edit/);
-  assert.match(fs.readFileSync(objective, 'utf8'), /owner hand edit/);
-
-  // 3. Follow the land error's recovery instructions. Only the remaining HUD members should be swept.
-  setJobTicket(f, 'sample/03');
-  const { flow: refused } = await f.call('hud_land', { job });
-  await until(() => f.flowState(refused).state === 'failed', t.signal);
-  assert.match(f.flowState(refused).error, /Cannot record landing in \.hud\/objectives\.md: uncommitted hand edit present; commit or revert it and retry hud_land/);
-  const ownerBytes = fs.readFileSync(objective);
-  f.git(f.main, 'add', '.hud/objectives.md');
-  f.git(f.main, 'commit', '-qm', 'Owner edits Objectives');
-  const { flow: retry } = await f.call('hud_land', { job });
-  await until(() => ['completed', 'failed'].includes(f.flowState(retry).state), t.signal);
-  const landed = f.flowState(retry);
-  assert.equal(landed.state, 'completed', JSON.stringify(landed));
-  assert.deepEqual(fs.readFileSync(objective), ownerBytes);
-  assert.deepEqual(f.git(f.main, 'diff', '--name-only', 'HEAD^', 'HEAD').split('\n').sort(),
-    ['.hud/tickets/sample-done-2.json', '.hud/tickets/sample.json', 'tracked']);
-  assert.equal(readJsonTicketFeature(f.main, 'sample').tickets[0].landing.flow, retry);
-  assert.deepEqual(readTicketWriteState(f.home, f.main), { writes: {}, groups: [] });
+  assert.deepEqual(committed.paths.sort(), ['.hud/objectives.md', '.hud/tickets/third.json']);
+  assert.match(f.git(f.main, 'show', 'HEAD:.hud/objectives.md'), /^\*\*Features:\*\* sample, sample-done, third$/m);
+  assert.deepEqual(readTicketWrites(f.home, f.main), {});
 });
 
 test('planner leaves a ticket in source when its number already exists in the archive family so old refs stay unique', { timeout: 25_000 }, async t => {
@@ -397,13 +443,15 @@ test('a cap-crossing write moves every eligible ticket and the next small write 
   assert.deepEqual(readJsonTicketFeature(f.main, 'sample').tickets.map(item => item.number), [4, 5]);
   assert.deepEqual(readJsonTicketFeature(f.main, 'sample-done').tickets.map(item => item.number), [1, 2, 3]);
 
-  await f.call('hud_tickets', { op: 'commit' });
+  assert.deepEqual(await f.call('hud_tickets', { op: 'commit' }), { ok: true, committed: false, paths: [] });
   // Make ticket 4 eligible, then perform a small write; it must NOT rerun archiving.
   await f.call('hud_tickets', { op: 'update', ticket: 'sample/04', status: 'done' });
   await f.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('Small follow-up')] });
   assert.deepEqual(readJsonTicketFeature(f.main, 'sample').tickets.map(item => item.number), [4, 5, 6]);
   assert.deepEqual(readJsonTicketFeature(f.main, 'sample-done').tickets.map(item => item.number), [1, 2, 3]);
-  assert.deepEqual(readTicketWriteState(f.home, f.main).groups, []);
+  const rawWrites = JSON.parse(fs.readFileSync(ticketWritesPath(f.home, f.main), 'utf8'));
+  assert.equal(Object.hasOwn(rawWrites, '@groups'), false);
+  assert.deepEqual(Object.keys(rawWrites), ['sample']);
 });
 
 test('gate-time hud_tickets edits fold with the landing into one commit; dirty HUD writes never block land; hand edits are never swept', { timeout: 30_000 }, async t => {
@@ -697,6 +745,7 @@ test('unattended acceptance writes accepted receipt to JSON store and attempts n
     nearCap('huge', [record(1, 'ready-for-human')]),
   ]);
   const hugePath = ticketFeaturePath(f.main, 'huge'), nearCapBytes = fs.readFileSync(hugePath);
+  const acc3Base = f.git(f.main, 'rev-parse', 'HEAD');
   const flow3 = 'q00000000000000a3';
   const acc3 = await recordUnattendedAcceptance(f.main, f.home, () => ['sample/02', 'other/01', 'huge/01']
     .map(ticket => ({ ticket, path: ticketFeaturePath(f.main, ticket.split('/')[0]) })), flow3, 'finish: Verified the slices.');
@@ -704,6 +753,12 @@ test('unattended acceptance writes accepted receipt to JSON store and attempts n
   assert.equal(acc3.committed, true);
   assert.deepEqual(acc3.failed, [{ ticket: 'huge/01', error: 'Ticket feature huge exceeds 64 KiB' }]);
   assert.deepEqual(fs.readFileSync(hugePath), nearCapBytes);
+  assert.equal(f.git(f.main, 'rev-list', '--count', `${acc3Base}..HEAD`), '1');
+  assert.equal(f.git(f.main, 'log', '-1', '--format=%s'), 'tickets: archive sample');
+  assert.deepEqual(f.git(f.main, 'show', '--format=', '--name-only', 'HEAD').split('\n').sort(), [
+    '.hud/objectives.md', '.hud/tickets/other.json', '.hud/tickets/sample-done.json', '.hud/tickets/sample.json',
+  ]);
+  f.git(f.main, 'restore', '--', '.hud/tickets/sample-done.json');
   assert.deepEqual(readJsonTicketFeature(f.main, 'sample-done').tickets.map(t => t.number), [1]);
   assert.equal(readJsonTicketFeature(f.main, 'sample').tickets[0].accepted.flow, flow3);
   const [other] = readJsonTicketFeature(f.main, 'other').tickets;
@@ -798,4 +853,52 @@ test('sweepTicketWrites amend refuses when HEAD moved from expectedTip', { timeo
   );
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), headBefore);
   assert.match(f.git(f.main, 'status', '--porcelain', '--', '.hud/tickets/tipcheck.json'), /^\?\?/);
+});
+
+test('unreadable source or archive sibling blocks Replaced by in ready (matching get), keeps waitSettled open, and fails hud tickets show', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  seedArchiveProject(f, [
+    { version: 1, feature: 'sample', objective: 'selected', tickets: [record(2, 'ready-for-agent')] },
+    { version: 1, feature: 'sample-done', objective: 'selected', tickets: [record(1, 'done'), record(3, 'done')] },
+    { version: 1, feature: 'sample-done-2', objective: 'selected', tickets: [record(4, 'done')] },
+    { version: 1, feature: 'other', tickets: [
+      record(1, 'ready-for-agent', { blocked_by: ['other/02'] }),
+      record(2, 'wontfix', { comments: [{ at, author: 'owner', text: 'Replaced by sample/03' }] }),
+    ] },
+  ]);
+  const showTicket = async (arg) => {
+    const cwd = process.cwd();
+    let out = '', err = '';
+    try {
+      process.chdir(f.main);
+      const code = await cliMain(['tickets', 'show', arg], { env: f.env, stdout: s => { out += s; }, stderr: s => { err += s; } });
+      return { code, out, err };
+    } finally {
+      process.chdir(cwd);
+    }
+  };
+
+  // Baseline: complete readable family resolves Replaced by, scanTicketStore, get, and hud tickets show.
+  assert.ok((await f.call('hud_tickets', { op: 'ready' })).tickets.some(item => item.ticket === 'other/01'));
+  assert.equal((await f.call('hud_tickets', { op: 'get', ticket: 'sample/03' })).feature, 'sample-done');
+  assert.equal(scanTicketStore(f.main).resolve('sample/1'), 'sample-done/1');
+  assert.equal((await showTicket('sample/01')).code, 0);
+
+  for (const brokenSlug of ['sample', 'sample-done-2']) {
+    const brokenPath = ticketFeaturePath(f.main, brokenSlug);
+    const clean = fs.readFileSync(brokenPath, 'utf8');
+    fs.writeFileSync(brokenPath, '{ broken json\n');
+    try {
+      const ready = await f.call('hud_tickets', { op: 'ready' });
+      assert.equal(ready.tickets.some(item => item.ticket === 'other/01'), false, `${brokenSlug}: other/01 must stay blocked`);
+      assert.ok(ready.blocked?.some(item => item.ticket === 'other/01'), `${brokenSlug}: other/01 listed in blocked`);
+      const getRes = await f.rpc('tools/call', { name: 'hud_tickets', arguments: { op: 'get', ticket: 'sample/03' } });
+      assert.equal(getRes.result.isError, true, `${brokenSlug}: get must fail`);
+      assert.equal(scanTicketStore(f.main).resolve('sample/1'), undefined, `${brokenSlug}: resolve must refuse fallback`);
+      const shown = await showTicket('sample/01');
+      assert.notEqual(shown.code, 0, `${brokenSlug}: hud tickets show must fail`);
+    } finally {
+      fs.writeFileSync(brokenPath, clean);
+    }
+  }
 });
