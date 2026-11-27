@@ -127,6 +127,13 @@ export function readProcComm(pid: number): string | null {
   catch { return null; }
 }
 
+/** Read `/proc/<pid>/cwd` link target; null if missing or unreadable. */
+export function readProcCwd(pid: number): string | null {
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  try { return fs.readlinkSync(`/proc/${pid}/cwd`); }
+  catch { return null; }
+}
+
 /** Read the owner UID of `/proc/<pid>`; null if missing or unreadable. */
 export function readProcUid(pid: number): number | null {
   if (!Number.isInteger(pid) || pid <= 0) return null;

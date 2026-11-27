@@ -3,13 +3,13 @@ import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import { createServer } from 'node:net';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { jobChanges, readThinJobRows, readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { collectWorkSummary } from '../../dist/collectors/work-summary-snapshot.js';
-import { classifyPermission, permissionProof } from '../../dist/mcp/permission-policy.js';
+import { classifyPermission, permissionProof, provePermission } from '../../dist/mcp/permission-policy.js';
 import { parsePermissionPrompt, permissionStatus } from '../../dist/mcp/worker-permissions.js';
 import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
@@ -22,6 +22,7 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 
 const pane = 'w1:p2', main = 'w1:p1';
 const prompt = (command, highlighted = 1) => `Historical output\n╭─────────────────╮\n Bash command\n\n   ${command}\n\n Do you want to proceed?\n ${highlighted === 1 ? '❯' : ' '} 1. Yes\n ${highlighted === 2 ? '❯' : ' '} 2. Yes, and don't ask again\n ${highlighted === 3 ? '❯' : ' '} 3. No\n\n Esc to cancel · Tab to amend\n╰─────────────────╯\n`;
+const filePrompt = (heading, question, extra = '') => `╭─────────────────╮\n ${heading}\n${extra ? `\n${extra}\n` : ''}\n ${question}\n ❯ 1. Yes\n   2. Yes, allow all edits during this session\n   3. No\n\n Esc to cancel\n╰─────────────────╯\n`;
 
 async function syntheticHerdr(t, f, holdSubscribe) {
   const endpoint = join(dirname(f.home), 'permissions.sock');
@@ -81,17 +82,29 @@ async function syntheticHerdr(t, f, holdSubscribe) {
     changeAfterRead: text => { afterRead = text; }, sendMode: mode => { sendMode = mode; } };
 }
 
-async function permissionWorker(t, { holdSubscribe = false } = {}) {
+async function permissionWorker(t, opts = {}) {
   const f = fixture(t);
-  const herdr = await syntheticHerdr(t, f, holdSubscribe);
-  const dir = f.job(null, { role: 'imp', created_at: new Date().toISOString(), cwd: dirname(f.home), herdr_pane: main,
+  const herdr = await syntheticHerdr(t, f, opts.holdSubscribe);
+  const worktree = opts.withWorktree ? join(dirname(f.home), 'worktree') : undefined;
+  if (worktree) fs.mkdirSync(worktree, { recursive: true });
+  const dir = f.job(null, { role: 'imp', created_at: new Date().toISOString(), cwd: opts.jobCwd ?? worktree ?? dirname(f.home), herdr_pane: main,
+    ...(worktree ? { worktree: { root: worktree } } : {}),
     cli: { agent: 'claude', can_continue: true, idle_grace_s: 600 }, ticket_queue: 'synthetic-run' });
   const scratch = join(dir, 'scratchpad');
   fs.mkdirSync(scratch);
   const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+  const temp = opts.withTemp ? join('/tmp', `hud-perm-test-${job.job}`) : undefined;
+  if (temp) {
+    fs.mkdirSync(temp, { recursive: true });
+    t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  }
   const env = { ...process.env, HUD_HOME: f.home, HOME: join(dirname(f.home), 'home'), HERDR_PANE_ID: main,
     HERDR_SOCKET_PATH: herdr.endpoint, HUD_MCP_JSON: '1' };
-  const worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore', env: { ...process.env, HUD_JOB_DIR: dir, S: scratch } });
+  const worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], {
+    stdio: 'ignore',
+    cwd: opts.workerCwd ?? worktree ?? dirname(f.home),
+    env: { ...process.env, HUD_JOB_DIR: dir, S: scratch, ...(temp ? { TMPDIR: temp } : {}) },
+  });
   const exited = once(worker, 'exit');
   t.after(() => stopChild(worker, exited));
   await until(() => procStat(worker.pid)?.start, t.signal);
@@ -105,7 +118,7 @@ async function permissionWorker(t, { holdSubscribe = false } = {}) {
     herdr.update('working', 'No native prompt');
     await wait(() => !permissionStatus(dir).active);
   };
-  return { f, herdr, dir, scratch, job, env, rows, wait, unblocked, startWatch: (extra = '') => f.start(preload + extra) };
+  return { f, herdr, dir, scratch, worktree, temp, job, env, rows, wait, unblocked, startWatch: (extra = '') => f.start(preload + extra) };
 }
 
 test('initial subscribe ack reconciles a missing tab without revisiting an answered prompt', { timeout: 15000 }, async t => {
@@ -327,4 +340,252 @@ test('native approval layouts pin one-time action and reject stale, wrapped and 
   assert.deepEqual(parsePermissionPrompt(codex, 'codex').options.map(option => option.value), ['approve', 'decline']);
   const pi = 'Command approval required\nCommand: rm -f $S/*.png\n❯ 1. Allow once\n2. Decline\nEnter to select · Esc to cancel';
   assert.equal(parsePermissionPrompt(pi, 'pi').command, 'rm -f $S/*.png');
+
+  const claudeEdit = filePrompt('Edit file /tmp/wt/src/app.ts', 'Do you want to make this edit to app.ts?', '   -const a = 1;\n   +const a = 2;');
+  assert.deepEqual(parsePermissionPrompt(claudeEdit, 'claude').target, { kind: 'file_edit', paths: ['/tmp/wt/src/app.ts'], cwd: undefined });
+  const claudeWrite = filePrompt('Create file src/new.ts', 'Do you want to create src/new.ts?');
+  assert.deepEqual(parsePermissionPrompt(claudeWrite, 'claude').target, { kind: 'file_create', paths: ['src/new.ts'], cwd: undefined });
+  const codexEdits = 'Would you like to make the following edits?\nCwd: /tmp/wt\nM src/a.ts (+2 -1)\nA src/b.ts\n› 1. Yes, proceed (y)\n2. No, and tell Codex what to do differently (esc)\nPress enter to confirm or esc to cancel';
+  assert.deepEqual(parsePermissionPrompt(codexEdits, 'codex').target, { kind: 'file_edit', paths: ['src/a.ts', 'src/b.ts'], cwd: '/tmp/wt' });
+  const codexDelete = 'Would you like to make the following edits?\nD src/old.ts\n› 1. Yes, proceed (y)\n2. No, and tell Codex what to do differently (esc)\nPress enter to confirm or esc to cancel';
+  assert.equal(parsePermissionPrompt(codexDelete, 'codex').target, undefined);
+  const piEdit = 'Edit approval required\nCwd: /tmp/wt\nFile: src/app.ts\n❯ 1. Allow once\n2. Decline\nEnter to select · Esc to cancel';
+  assert.deepEqual(parsePermissionPrompt(piEdit, 'pi').target, { kind: 'file_edit', paths: ['src/app.ts'], cwd: '/tmp/wt' });
+});
+
+test('watcher auto-approves widened low-risk prompts within one pass and names the operation', { timeout: 20000 }, async t => {
+  const { herdr, dir, scratch, worktree, wait, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true, withTemp: true });
+  fs.mkdirSync(join(scratch, 'out'), { recursive: true });
+  fs.writeFileSync(join(scratch, 'out', 'a.png'), 'synthetic a');
+  fs.writeFileSync(join(scratch, 'out', 'b.txt'), 'synthetic b');
+  fs.mkdirSync(join(scratch, 'extra'), { recursive: true });
+  fs.writeFileSync(join(scratch, 'extra', 'c.json'), '{}');
+  fs.mkdirSync(join(worktree, 'src'), { recursive: true });
+  fs.writeFileSync(join(worktree, 'a'), 'synthetic file');
+  fs.writeFileSync(join(worktree, 'src', 'app.ts'), 'export const x = 1;\n');
+  const cases = [
+    { screen: prompt(`S=${scratch}; rm -rf $S/out $S/extra`), match: /Local path check: verified rm \(-r, -f\) in the job’s task scratchpad/ },
+    { screen: prompt(`mkdir -p ${worktree}/tmp/x && cp a b && mv b tmp/x/c`), match: /Local path check: verified mkdir, cp, mv in the job’s worktree/ },
+    { screen: filePrompt(`Edit file ${worktree}/src/app.ts`, 'Do you want to make this edit to src/app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
+    { screen: filePrompt('Edit file src/app.ts', 'Do you want to make this edit to app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
+    { screen: prompt('npm run build'), match: /Local path check: verified npm run in the job’s worktree/ },
+  ];
+
+  herdr.update('blocked', cases[0].screen);
+  startWatch();
+
+  let expectedKeys = 0;
+  for (let i = 0; i < cases.length; i++) {
+    const { screen, match } = cases[i];
+    if (i > 0) herdr.update('blocked', screen);
+    expectedKeys++;
+    await until(() => herdr.keys.length === expectedKeys && permissionStatus(dir).active?.outcome === 'answered', i === 0 ? 5000 : 3000);
+    const entry = permissionStatus(dir).active;
+    assert.equal(entry.action, 'approve');
+    assert.match(entry.reason, match);
+    assert.doesNotMatch(entry.reason, /regenerable PNG cleanup/i);
+    await unblocked();
+  }
+});
+
+test('watcher sends high-risk, escaping, sensitive, substituted and sudo prompts to main with recommendation and action', { timeout: 20000 }, async t => {
+  const { herdr, dir, scratch, worktree, rows, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true });
+  const outside = join(dirname(worktree), 'outside-target');
+  fs.mkdirSync(outside, { recursive: true });
+  fs.symlinkSync(outside, join(worktree, 'escape'));
+  fs.writeFileSync(join(worktree, 'a'), 'synthetic');
+
+  const risky = [
+    prompt('git push'),
+    prompt('git fetch'),
+    prompt('curl -X POST https://example.invalid'),
+    prompt('npm install left-pad'),
+    prompt('cp a ~/.local/bin/x'),
+    prompt('rm -f ~/.local/bin/x'),
+    prompt(`cp a ${worktree}/escape/x`),
+    filePrompt(`Edit file ${worktree}/escape/app.ts`, 'Do you want to make this edit to app.ts?'),
+    filePrompt(`Edit file ${worktree}/.env`, 'Do you want to make this edit to .env?'),
+    filePrompt(`Edit file ${worktree}/server.key`, 'Do you want to make this edit to server.key?'),
+    filePrompt(`Edit file ${worktree}/.git/config`, 'Do you want to make this edit to config?'),
+    prompt('mkdir -p $(pwd)/x'),
+    prompt('mkdir -p `pwd`/x'),
+    prompt(`sudo rm -rf ${scratch}/out`),
+  ];
+
+  herdr.update('blocked', risky[0]);
+  startWatch();
+
+  for (let i = 0; i < risky.length; i++) {
+    if (i > 0) herdr.update('blocked', risky[i]);
+    await until(() => permissionStatus(dir).active?.action === 'main', i === 0 ? 5000 : 3000);
+    const entry = permissionStatus(dir).active;
+    assert.equal(entry.outcome, 'pending');
+    assert.deepEqual(herdr.keys, []);
+    const notice = jobChanges([], rows()).join('\n');
+    assert.match(notice, /recommends.*hud_respond.*"answer":"approve".*"answer":"decline"/);
+    await unblocked();
+  }
+});
+
+test('relative paths and worktree build commands require verifiable cwd, never job.cwd alone', { timeout: 15000 }, async t => {
+  const f = fixture(t);
+  // Worker process cwd stays outside worktree even though job.cwd is worktree.
+  const { herdr, dir, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true, workerCwd: dirname(f.home) });
+  const screens = [
+    prompt('npm run build'),
+    prompt('cp a b'),
+    filePrompt('Edit file src/app.ts', 'Do you want to make this edit to app.ts?'),
+  ];
+  herdr.update('blocked', screens[0]);
+  startWatch();
+  for (let i = 0; i < screens.length; i++) {
+    if (i > 0) herdr.update('blocked', screens[i]);
+    await until(() => permissionStatus(dir).active?.action === 'main', i === 0 ? 5000 : 3000);
+    assert.deepEqual(herdr.keys, []);
+    await unblocked();
+  }
+});
+
+test('decision model receives only structural facts without raw args or absolute paths, and cannot approve unproven prompts', async t => {
+  const f = fixture(t), task = f.job(null), worktree = join(dirname(f.home), 'wt-facts');
+  const scratch = join(task, 'scratchpad');
+  fs.mkdirSync(scratch, { recursive: true });
+  fs.mkdirSync(join(worktree, 'src'), { recursive: true });
+  fs.writeFileSync(join(worktree, 'alpha.txt'), 'synthetic');
+
+  const proofs = [
+    provePermission(`S=${scratch}; rm -rf $S/output-dir-99`, { task }),
+    provePermission(`mkdir -p ${worktree}/custom-dir-77/x && cp alpha.txt beta-output.txt`, { task, worktree, cwd: worktree }),
+    provePermission('npm run build:custom-script-name', { task, worktree, cwd: worktree }),
+    provePermission({ kind: 'file_edit', paths: [join(worktree, 'src', 'my-module-file.ts')] }, { task, worktree }),
+  ];
+  for (const proof of proofs) {
+    assert.ok(proof);
+    let captured;
+    const decide = async (_home, _settings, key, input) => {
+      assert.equal(key, 'worker-permission');
+      captured = input;
+      const probs = Object.fromEntries(input.choices[0].choices.map(({ value }) => [value, value === 'approve' ? 1 : 0]));
+      return { result: { provider: 'anthropic', answers: [{ name: 'permission', kind: 'choice', choice: 'approve', probabilities: probs, confidence: 1 }] } };
+    };
+    const decision = await classifyPermission(f.home, proof, decide);
+    assert.equal(decision.action, 'approve');
+    const serialized = JSON.stringify(captured);
+    for (const forbidden of [task, scratch, worktree, 'output-dir-99', 'custom-dir-77', 'alpha.txt', 'beta-output.txt', 'build:custom-script-name', 'my-module-file.ts']) {
+      assert.ok(!serialized.includes(forbidden), `model input leaked ${forbidden}: ${serialized}`);
+    }
+    assert.equal(captured.facts.verified, true);
+    assert.ok(Array.isArray(captured.facts.operations) && captured.facts.operations.length > 0);
+  }
+
+  // Model "approve" without local proof MUST still go to main.
+  const alwaysApprove = async (_home, _settings, _key, input) => {
+    assert.equal(input.facts.verified, false);
+    assert.deepEqual(input.facts.operations, []);
+    const probs = Object.fromEntries(input.choices[0].choices.map(({ value }) => [value, value === 'approve' ? 1 : 0]));
+    return { result: { provider: 'anthropic', answers: [{ name: 'permission', kind: 'choice', choice: 'approve', probabilities: probs, confidence: 1 }] } };
+  };
+  assert.equal((await classifyPermission(f.home, undefined, alwaysApprove)).action, 'main');
+});
+
+test('widened local proof allows spec verbs and rejects forbidden flags, escapes and dangerous tools', t => {
+  const f = fixture(t), task = f.job(null), worktree = join(dirname(f.home), 'wt-policy');
+  const scratch = join(task, 'scratchpad');
+  const temp = join('/tmp', `hud-perm-unit-${basename(task)}`);
+  fs.mkdirSync(scratch, { recursive: true });
+  fs.mkdirSync(join(worktree, 'src'), { recursive: true });
+  fs.mkdirSync(temp, { recursive: true });
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  fs.writeFileSync(join(worktree, 'src', 'a.ts'), 'export const a = 1;\n');
+  fs.writeFileSync(join(worktree, 'archive.tar.gz'), 'synthetic');
+  fs.writeFileSync(join(worktree, 'bundle.zip'), 'synthetic');
+  fs.symlinkSync(dirname(f.home), join(worktree, 'escape-link'));
+  const roots = { task, scratch, temp, worktree, cwd: worktree };
+
+  const allowed = [
+    `S=${scratch}; rm -rf $S/out`,
+    `mkdir -p ${worktree}/tmp/x && touch ${worktree}/tmp/x/f && cp src/a.ts tmp/x/b.ts && mv tmp/x/b.ts tmp/x/c.ts`,
+    `ln -s a.ts src/a-link.ts`,
+    `chmod 755 src/a.ts`,
+    `chmod u+x src/a.ts`,
+    `tar -xzf archive.tar.gz -C ${scratch}`,
+    `unzip -q bundle.zip -d ${temp}`,
+    `ls -la src && cat src/a.ts | head -n 5 | wc -l`,
+    `tail -n 10 src/a.ts`,
+    `grep -n export src/a.ts`,
+    `rg export src`,
+    `find src -name '*.ts'`,
+    `find ${scratch} -name '*.png' -delete`,
+    `diff -u src/a.ts src/a.ts`,
+    `node src/a.ts`,
+    `node --test src/a.ts`,
+    `npm run build`,
+    `npx tsc --noEmit`,
+    `cargo build --release`,
+    `cargo test`,
+    `git status -s && git diff --stat && git log -n 5 --oneline`,
+    `git show HEAD`,
+    `git add src/a.ts && git commit -m "synthetic fix"`,
+    `git restore src/a.ts`,
+    `git stash list`,
+    `git rebase main`,
+    `cat src/a.ts > ${scratch}/copy.txt`,
+    `cat src/a.ts 2>/dev/null`,
+    `cd ${worktree} && npm run test:unit`,
+  ];
+  for (const cmd of allowed) {
+    assert.ok(provePermission(cmd, roots), `expected allowed: ${cmd}`);
+  }
+
+  const denied = [
+    'chmod 4755 src/a.ts',
+    'chmod u+s src/a.ts',
+    'ln -s /etc/passwd src/bad-link',
+    'ln -s ../../../../etc/passwd src/bad-link',
+    'ln src/a.ts src/hard-link',
+    'tar --to-command=sh -xf archive.tar.gz -C ' + scratch,
+    'tar -xzf archive.tar.gz -C /tmp',
+    'unzip bundle.zip -d /tmp',
+    'find src -delete',
+    'find src -exec rm {} ;',
+    'rg --pre sh foo src',
+    'node -e "process.exit(0)"',
+    'npm install pkg',
+    'npx evil-pkg',
+    'cargo install ripgrep',
+    'pip install requests',
+    'git push',
+    'git fetch',
+    'git pull',
+    'git clone https://example.invalid/repo.git',
+    'git config user.name x',
+    'git -c core.sshCommand=sh status',
+    'git rebase -x sh main',
+    'git stash drop',
+    'curl -X POST https://example.invalid',
+    'wget https://example.invalid',
+    'ssh host ls',
+    'scp a host:/tmp/a',
+    'sudo ls',
+    'eval "ls"',
+    'source src/a.ts',
+    'env',
+    'printenv',
+    'cat src/a.ts | sh',
+    'cat src/a.ts | bash',
+    'cat src/a.ts > /tmp/outside-file',
+    'cat src/a.ts > ~/.bashrc',
+    `cat ${worktree}/.env`,
+    `cat ${worktree}/credentials.json`,
+    `cp ${worktree}/escape-link/x src/y`,
+    `rm -f ${task}/job.json`,
+    `cp src/a.ts ${task}/permissions.json`,
+  ];
+  for (const cmd of denied) {
+    assert.equal(provePermission(cmd, roots), undefined, `expected denied: ${cmd}`);
+  }
+  assert.equal(provePermission({ kind: 'file_edit', paths: [join(task, 'permissions.json')] }, roots), undefined);
+  assert.equal(provePermission({ kind: 'file_edit', paths: [join(worktree, '.git', 'HEAD')] }, roots), undefined);
+  assert.equal(provePermission({ kind: 'file_edit', paths: [join(worktree, 'escape-link', 'x.ts')] }, roots), undefined);
+  assert.ok(provePermission({ kind: 'file_create', paths: [join(worktree, 'new-dir', 'sub', 'file.ts')] }, roots));
 });

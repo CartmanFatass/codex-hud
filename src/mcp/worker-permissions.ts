@@ -4,20 +4,26 @@ import { basename, isAbsolute, join } from 'node:path';
 import { hasLocalHerdrTarget, request } from '../runtime/herdr-socket.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
-import { isProcAlive, readProcEnviron } from '../utils/proc.js';
+import { isProcAlive, readProcCwd, readProcEnviron } from '../utils/proc.js';
 import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import { jobFiles } from './paths.js';
-import { classifyPermission, permissionDirectory, permissionProof, type PermissionDecision } from './permission-policy.js';
+import { classifyPermission, provePermission, type PermissionDecision, type PermissionTarget } from './permission-policy.js';
 
 const MAX_LOG = 12;
 const MAX_LEDGER_BYTES = 65_536;
 const FOOTER = /^(?:(?:Enter to (?:select|confirm) · )?(?:(?:Tab\/arrow keys|↑\/↓|↑↓|arrows|arrow keys) to navigate · )?Esc to cancel|Enter to (?:select|confirm) · (?:Esc to cancel|Tab to amend)(?: · Esc to cancel)?|Press enter to confirm or esc to cancel)(?:\s*·\s*(?:Tab to amend|Ctrl\+e to explain))*$/i;
-const CLAUDE_TITLE = /^(?:Bash command|(?:Edit|Write|Create) file(?: .+)?|Do you want to allow this connection\?)$/i;
-const OTHER_TITLE = /^(?:Permission required|Permission request|Tool approval required|Command approval required|Allow command\?|Would you like to (?:run the following command|make the following edits)\?)$/i;
+const CLAUDE_TITLE = /^(?:Bash command|(?:Edit|Write|Create) file(?::?\s+.+)?|Do you want to allow this connection\?)$/i;
+const OTHER_TITLE = /^(?:Permission required|Permission request|Tool approval required|Command approval required|(?:Edit|Write|Create|File) approval required|(?:Edit|Write|Create) file(?::?\s+.+)?|Allow command\?|Would you like to (?:run the following command|make the following edits)\?)$/i;
+const CWD_LINE = /^(?:Cwd|Working directory|Directory):\s+(.+)$/i;
+const FILE_LINE = /^(?:File|Path):\s+(.+)$/i;
+const CLAUDE_FILE_TITLE = /^(Edit|Write|Create) file(?::?\s+(.+))?$/i;
+const CLAUDE_FILE_QUESTION = /^Do you want to (?:make this edit to|create|overwrite) (.+)\?$/i;
+const CODEX_EDIT_LINE = /^(?:(?:\*\*\*\s+)?(?:Update|Add)\s+File:\s+|(?:Edit|Write|Create|Modify|Update|Add)(?:\s+file)?:\s+|(?:File|Path):\s+|[MAU]\s+)?([^\s]+)(?:\s+\(\+\d+\s+-\d+\))?$/i;
+const PI_FILE_LINE = /^(Edit|Write|Create|File|Path):\s+(.+)$/i;
 export const PERMISSION_ID = /^perm-[a-f0-9]{16}$/;
 type Option = { label: string; value?: 'approve' | 'decline' };
-type Prompt = { text: string; command?: string; options: Option[]; selected: number };
+type Prompt = { text: string; command?: string; target?: PermissionTarget; options: Option[]; selected: number };
 type Capture = Prompt | 'unrecognized' | null | undefined;
 export type PermissionEntry = PermissionDecision & {
   id: string; key: string; launch: string; pane: string; at: string; text: string;
@@ -63,12 +69,146 @@ export function parsePermissionPrompt(screen: string, harness: string): Prompt |
   if (options.length < 2 || options.length > 6) return manual;
   const footer = body.slice(i).join(' ');
   if (!FOOTER.test(footer)) return manual;
-  const command = harness === 'claude' && /^Bash command$/i.test(body[0]) && question === 2 && firstOption === 3 ? body[1]
-    : harness === 'codex' && /^Would you like to run the following command\?$/i.test(body[0]) && firstOption === 2 && body[1].startsWith('$ ')
-      ? body[1].slice(2)
-      : harness === 'pi' && /^Command approval required$/i.test(body[0]) && firstOption === 2 && body[1].startsWith('Command: ')
-        ? body[1].slice('Command: '.length) : undefined;
-  return { text: [...body.slice(0, firstOption), ...options.map((option, i) => `${i + 1}. ${option.label}`), footer].join('\n'), command, options, selected };
+  const parsedTarget = parsePromptTarget(harness, body, question, firstOption);
+  return {
+    text: [...body.slice(0, firstOption), ...options.map((option, i) => `${i + 1}. ${option.label}`), footer].join('\n'),
+    command: parsedTarget.command,
+    target: parsedTarget.target,
+    options,
+    selected,
+  };
+}
+
+function fileOpKind(verb: string): 'file_edit' | 'file_write' | 'file_create' {
+  const lower = verb.toLowerCase();
+  return lower === 'create' ? 'file_create' : lower === 'write' ? 'file_write' : 'file_edit';
+}
+
+function extractSingleCwd(lines: string[]): { cwd?: string; rest: string[] } | null {
+  let cwd: string | undefined;
+  const rest: string[] = [];
+  for (const line of lines) {
+    const match = CWD_LINE.exec(line);
+    if (match) {
+      if (cwd !== undefined) return null;
+      cwd = match[1].trim();
+    } else {
+      rest.push(line);
+    }
+  }
+  return { cwd, rest };
+}
+
+function parsePromptTarget(harness: string, body: string[], question: number, firstOption: number): { command?: string; target?: PermissionTarget } {
+  const heading = body[0];
+  if (harness === 'claude') {
+    if (firstOption !== question + 1) return {};
+    const split = extractSingleCwd(body.slice(1, question));
+    if (!split) return {};
+    if (/^Bash command$/i.test(heading)) {
+      if (split.rest.length !== 1) return {};
+      const command = split.rest[0];
+      return { command, target: { kind: 'shell', command, cwd: split.cwd } };
+    }
+    const fileHeading = CLAUDE_FILE_TITLE.exec(heading);
+    if (fileHeading) {
+      let path = fileHeading[2]?.trim();
+      let cwd: string | undefined;
+      if (path) {
+        if (split.rest.length === 0) cwd = split.cwd;
+      } else if (split.rest.length === 1) {
+        cwd = split.cwd;
+        path = FILE_LINE.exec(split.rest[0])?.[1]?.trim() ?? split.rest[0];
+      } else if (split.rest.length > 1) {
+        const labeled = split.rest.map(line => FILE_LINE.exec(line)?.[1]?.trim()).filter((v): v is string => !!v);
+        if (labeled.length === 1 && FILE_LINE.test(split.rest[0])) path = labeled[0];
+      }
+      const qPath = CLAUDE_FILE_QUESTION.exec(body[question])?.[1]?.trim();
+      if (qPath) {
+        if (path) {
+          if (qPath !== path && basename(qPath) !== basename(path) && !path.endsWith(`/${qPath}`)) return {};
+        } else if (split.rest.length === 0 && isAbsolute(qPath)) {
+          cwd = split.cwd;
+          path = qPath;
+        }
+      }
+      if (!path) return {};
+      return { target: { kind: fileOpKind(fileHeading[1]), paths: [path], cwd } };
+    }
+    return {};
+  }
+
+  const end = question > 0 && question < firstOption ? question : firstOption;
+  const split = extractSingleCwd(body.slice(1, end));
+  if (!split) return {};
+
+  if (harness === 'codex') {
+    if (/^Would you like to run the following command\?$/i.test(heading)) {
+      if (split.rest.length !== 1 || !split.rest[0].startsWith('$ ')) return {};
+      const command = split.rest[0].slice(2);
+      return { command, target: { kind: 'shell', command, cwd: split.cwd } };
+    }
+    if (/^Would you like to make the following edits\?$/i.test(heading)) {
+      if (!split.rest.length || split.rest.length > 32) return {};
+      const paths: string[] = [];
+      for (const line of split.rest) {
+        if (/^(?:(?:\*\*\*\s+)?Delete\s+File:|Delete(?:\s+file)?:|D\s+)/i.test(line)) return {};
+        const match = CODEX_EDIT_LINE.exec(line);
+        if (!match?.[1]) return {};
+        paths.push(match[1]);
+      }
+      return { target: { kind: 'file_edit', paths, cwd: split.cwd } };
+    }
+    return {};
+  }
+
+  if (harness === 'pi') {
+    if (/^(?:Command approval required|Allow command\?|Tool approval required|Permission required|Permission request)$/i.test(heading)) {
+      let command: string | undefined;
+      let ok = true;
+      for (const line of split.rest) {
+        if (/^Tool:\s+(?:bash|shell|command)$/i.test(line)) continue;
+        if (line.startsWith('Command: ')) {
+          if (command !== undefined) { ok = false; break; }
+          command = line.slice('Command: '.length);
+        } else {
+          ok = false; break;
+        }
+      }
+      if (ok && command !== undefined) return { command, target: { kind: 'shell', command, cwd: split.cwd } };
+    }
+    const fileHeading = CLAUDE_FILE_TITLE.exec(heading);
+    const approvalHeading = /^(Edit|Write|Create|File) approval required$/i.exec(heading);
+    if (fileHeading || approvalHeading || /^(?:Tool approval required|Permission required|Permission request)$/i.test(heading)) {
+      let kind: 'file_edit' | 'file_write' | 'file_create' | undefined = fileHeading
+        ? fileOpKind(fileHeading[1])
+        : approvalHeading && approvalHeading[1].toLowerCase() !== 'file' ? fileOpKind(approvalHeading[1]) : undefined;
+      const paths: string[] = [];
+      if (fileHeading?.[2]) paths.push(fileHeading[2].trim());
+      for (const line of split.rest) {
+        const toolMatch = /^Tool:\s+(edit|write|create)$/i.exec(line);
+        if (toolMatch) {
+          const toolKind = fileOpKind(toolMatch[1]);
+          if (kind && kind !== toolKind) return {};
+          kind = toolKind;
+          continue;
+        }
+        const pathMatch = PI_FILE_LINE.exec(line);
+        if (!pathMatch) return {};
+        const label = pathMatch[1].toLowerCase();
+        if (label === 'edit' || label === 'write' || label === 'create') {
+          const lineKind = fileOpKind(label);
+          if (kind && kind !== lineKind) return {};
+          kind = lineKind;
+        }
+        paths.push(pathMatch[2].trim());
+      }
+      if (kind && paths.length > 0 && paths.length <= 32) {
+        return { target: { kind, paths, cwd: split.cwd } };
+      }
+    }
+  }
+  return {};
 }
 
 function validLedger(value: Ledger | undefined): value is Ledger {
@@ -147,27 +287,35 @@ async function capture(home: string, job: Job, binding: Binding, signal?: AbortS
   return parsePermissionPrompt(text, harness) ?? 'unrecognized';
 }
 
+function findClaudeScratchpad(uid: number, sess: string, target: PermissionTarget): string | undefined {
+  const re = new RegExp(`/tmp/claude-${uid}/[A-Za-z0-9_.-]+/${sess}/scratchpad(?=/|$|\\s|['";&|])`);
+  const text = target.kind === 'shell' ? target.command : target.paths.join('\n');
+  return re.exec(text)?.[0];
+}
+
 function proofFor(dir: string, job: Job, status: Partial<JobStatus> | null, binding: Binding, prompt: Prompt) {
   const { pid, pidStart } = binding.fields;
   if (!pidStart || !isProcAlive(Number(pid), pidStart)) return;
   const env = readProcEnviron(Number(pid));
-  if (!env || env.HUD_JOB_DIR !== dir || env.BASH_ENV || env.ENV || env['BASH_FUNC_rm%%']) return;
-  const target = permissionDirectory(prompt.command);
-  if (!target) return;
+  if (!env || env.HUD_JOB_DIR !== dir || env.BASH_ENV || env.ENV || env.CDPATH ||
+      Object.keys(env).some(key => key.startsWith('BASH_FUNC_'))) return;
+  if (!prompt.target) return;
   const sess = status?.agent_session_id;
   const uid = process.getuid?.();
-  const nativeScratch = job.cli?.agent === 'claude' && uid !== undefined && sess && /^[\w-]{8,100}$/.test(sess) &&
-    target.startsWith(`/tmp/claude-${uid}/`) && target.endsWith(`/${sess}/scratchpad`) && target.split('/').length === 6 ? target : undefined;
+  const nativeScratch = job.cli?.agent === 'claude' && uid !== undefined && sess && /^[\w-]{8,100}$/.test(sess)
+    ? findClaudeScratchpad(uid, sess, prompt.target) : undefined;
   const worktree = job.worktree?.root && (!job.worktree.owner || job.worktree.owner === job.job) ? job.worktree.root : undefined;
   const ownScratch = worktree ? join(worktree, 'scratchpad') : undefined;
   const temp = env.TMPDIR && isAbsolute(env.TMPDIR) && /^(?:\/tmp|\/dev\/shm)\//.test(env.TMPDIR) &&
     basename(env.TMPDIR).includes(job.job) ? env.TMPDIR : undefined;
-  // Relative command paths are accepted only with explicit shell cwd evidence; job.cwd is not that evidence.
-  return permissionProof(prompt.command, { task: dir, scratch: nativeScratch ?? ownScratch, temp, worktree });
+  // Relative command/file paths require explicit prompt cwd or live worker /proc/<pid>/cwd inside the worktree; never job.cwd.
+  const cwd = prompt.target.cwd ?? readProcCwd(Number(pid)) ?? undefined;
+  if (!isProcAlive(Number(pid), pidStart)) return;
+  return provePermission(prompt.target, { task: dir, scratch: nativeScratch ?? ownScratch, temp, worktree, cwd });
 }
 
 const fingerprint = (binding: Binding, prompt: Prompt) => hash(JSON.stringify([
-  binding.fields.left, binding.fields.launchId, binding.fields.terminalId, prompt.text, prompt.command,
+  binding.fields.left, binding.fields.launchId, binding.fields.terminalId, prompt.text, prompt.command, prompt.target,
 ]));
 const permissionId = (key: string, prior?: string) => `perm-${hash(`${key}\0${Date.now()}\0${prior ?? ''}`).slice(0, 16)}`;
 function appendEntry(state: Ledger, binding: Binding, prompt: Prompt, decision: PermissionDecision) {
@@ -255,7 +403,7 @@ export async function observeWorkerPermission(home: string, dir: string, job: Jo
     if (!entry.options.length) {
       requireManual(entry, 'The visible permission layout could not be verified.');
     } else if (decision.action === 'approve') {
-      if (proof !== proofFor(dir, job, status, binding, observed)) {
+      if (!proof || proof.fingerprint !== proofFor(dir, job, status, binding, observed)?.fingerprint) {
         requireManual(entry, 'Local path evidence changed before answering.');
       } else {
         const result = await sendAnswer(home, dir, job, binding, state, entry, 'approve', observed, signal);
