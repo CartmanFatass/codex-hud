@@ -142,10 +142,11 @@ export function readOpenHolds(home: string, root?: string): QueueHandback[] {
   catch { /* Unreadable index does not hide ordinary holds. */ }
   const pass = workflowHeaders(home), latest = new Map<string, TicketQueue>();
   for (const file of pass.files) {
-    if (!file.endsWith('.json') || !isTicketQueueId(file.slice(0, -5))) continue;
+    const id = file.slice(0, -5);
+    if (!file.endsWith('.json') || !isTicketQueueId(id)) continue;
     try {
       const q = pass.header<TicketQueue>(file);
-      if (!q || q.unattended || (root && q.root !== root)) continue;
+      if (q?.flow !== id || q.unattended || (root && q.root !== root)) continue;
       // Older failed receipts may predate the superseded_by marker on question hand-offs.
       const key = `${q.root}\0${q.feature}`, prior = latest.get(key);
       if (!prior || q.created_at > prior.created_at || prior.superseded_by === q.flow) latest.set(key, q);
@@ -180,10 +181,11 @@ export function pinnedQueueJobs(home: string, pass = workflowHeaders(home)): Pin
     }
   } catch { /* Unreadable index gives no extra pins. */ }
   for (const file of pass.files) {
-    if (!file.endsWith('.json') || !isTicketQueueId(file.slice(0, -5))) continue;
+    const id = file.slice(0, -5);
+    if (!file.endsWith('.json') || !isTicketQueueId(id)) continue;
     try {
       const q = pass.header<TicketQueue>(file);
-      if (!q || !isOpenTicketRun(q) || !currentOrdinaryHoldRun(home, q)) continue;
+      if (q?.flow !== id || !isOpenTicketRun(q) || !currentOrdinaryHoldRun(home, q)) continue;
       for (const item of q.tickets ?? []) {
         const unresolved = !item.landed && item.held;
         const adopted = item.held_land && (!item.landed || item.held_land === item.land);

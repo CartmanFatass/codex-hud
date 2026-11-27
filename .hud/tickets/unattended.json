@@ -452,7 +452,7 @@
     {
       "number": 11,
       "title": "Ordinary-queue item holds keep their approval fence through land, survive successor runs and stay out of ready lists",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "Start an ordinary ticket queue on a scratch feature with three tickets: one whose report has an owner-decision blocker (lead escalates, item held), one independent that lands, and one whose land gate fails once and is repaired; then answer an unrelated to:main question to start a successor run. hud_tickets ready and the project board never list the held ticket; the successor shows one actionable notice for the hold; the repaired land goes back through blocker triage if its commit changed.",
       "approved_removals": [],
@@ -462,27 +462,34 @@
         {
           "id": 1,
           "text": "A land repair that changes the approved commit of a blocker- or assumption-approved item sends it back to triage instead of publishing (test, ordinary run)",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "A successor run started while an item is held carries exactly one actionable notice for that hold, naming the current flow (test)",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "hud_tickets ready and the project board exclude tickets held in an ordinary run (test)",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "npm test, npm run test:mjs and check:fixtures pass",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T10:59:53.094Z",
+        "job": "j7e443af993a5d210",
+        "flow": "f7e443af993a5d210-3",
+        "replay_base": "5fc7859f1223f036a75f5e880bf2621dddb43e53",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T06:39:46.114Z",
-      "updated_at": "2026-11-27T06:39:46.114Z"
+      "updated_at": "2026-11-27T10:59:53.094Z"
     },
     {
       "number": 12,
