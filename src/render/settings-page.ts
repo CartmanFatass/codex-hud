@@ -3,7 +3,7 @@ import type { WorkbenchInput } from '../utils/workbench-input.js';
 import { truncateAnsi, theme, visualLength, coloredBar } from './colors.js';
 import { t } from './i18n.js';
 import { fit, monitorText } from './monitor-text.js';
-import { PANEL_WIDTHS } from '../utils/pane-width.js';
+import { PANEL_HEIGHTS, PANEL_WIDTHS } from '../utils/pane-width.js';
 import { BAR_STYLES, THEMES } from './hud-config.js';
 import { section, subTopRow, footRow, mark } from './workboard-rows.js';
 import { stemLines } from './work-job-detail.js';
@@ -73,6 +73,18 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     key: 'dockMode', group: 'Panel', label: 'Dock mode', values: ['overlay', 'push'],
     help: 'Overlay keeps the main pane width; Push makes room for the dock',
     format: (value) => value === 'push' ? 'dock: push' : String(value),
+  },
+  {
+    key: 'dockSide', group: 'Panel', label: 'Side', values: ['right', 'left', 'bottom'],
+    help: 'Edge where the herdr dock attaches',
+  },
+  {
+    key: 'dockHeight',
+    group: 'Panel',
+    label: 'Height',
+    values: PANEL_HEIGHTS,
+    help: 'Requested height of the bottom herdr dock',
+    format: (value) => t('{n} rows', { n: Number(value) }),
   },
   {
     key: 'notify',
@@ -195,6 +207,7 @@ const isPoolKey = (key: SettingKey | undefined): key is PoolKey => !!key && Obje
 function mainIndices(draft: HudSettings): readonly number[] {
   return MAIN_INDICES.filter(i => {
     const key = SETTING_ROWS[i].key;
+    if (key === 'dockHeight' && draft.dockSide !== 'bottom') return false;
     return !isPoolKey(key) || draft[POOL_ROWS[key].placement] === 'even';
   });
 }
@@ -231,7 +244,7 @@ export function settingsDirty(state: Pick<SettingsPageState, 'draft' | 'original
 }
 const RESET_FIELDS: Record<SettingGroup, readonly (keyof HudSettings)[]> = {
   Display: ['theme', 'barStyle', 'icons', 'language'],
-  Panel: ['treeWidth', 'dockMode', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'openPreviews'],
+  Panel: ['treeWidth', 'dockHeight', 'dockMode', 'dockSide', 'notify', 'notifyDesktop', 'refreshMs', 'mouse', 'openPreviews'],
   Models: ['decisionCallsPerHour', 'quietJobDecision', 'sonicAutoThinking', 'autoPrewalk', 'poolPick', 'advisorShadow', 'impPlacement', 'impEvenPool', 'sonicPlacement', 'sonicEvenPool'],
   Workers: ['roleCaps', 'impOverflow'],
   Codex: ['statusline'],
@@ -273,7 +286,11 @@ export function renderSettingsPage(
   width = Math.max(0, Math.floor(width));
   height = Math.max(0, Math.floor(height));
   const clamped = clampSelected(state.selected), clampedKey = SETTING_ROWS[clamped]?.key;
-  const selected = isPoolKey(clampedKey) && state.draft[POOL_ROWS[clampedKey].placement] !== 'even' ? clamped - 1 : clamped,
+  const selected =
+    (isPoolKey(clampedKey) && state.draft[POOL_ROWS[clampedKey].placement] !== 'even') ||
+    (clampedKey === 'dockHeight' && state.draft.dockSide !== 'bottom')
+      ? clamped - 1
+      : clamped,
     advanced = isAdvancedOpen({ selected, advanced: state.advanced }),
     original = state.original ?? { ...state.draft, roleCaps: { ...state.draft.roleCaps } },
     defaults = defaultSettings();

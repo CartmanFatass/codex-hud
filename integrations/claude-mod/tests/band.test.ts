@@ -43,14 +43,14 @@ test('the band follows the panel language and is cut to the columns it has, its 
 });
 
 /** The Open press: argv (nothing run for the model) and the toast the owner sees. */
-function presses(on: On, pane: string | undefined, surface: (typeof surfaces)[number]) {
+function presses(on: On, pane: string | undefined, surface: (typeof surfaces)[number], panelStdout = 'HUD panel opened\n') {
   const runs: string[][] = [], toasts: string[] = [];
   mock.env(on, { HUD_HOME: '/state', ...(pane ? { HERDR_PANE_ID: pane } : {}) });
   on('state.get', () => ({ value: { value: state, version: 1 } }));
   on('session.cwd', () => ({ value: '/demo' }));
   on('process.run', (_, e) => {
     runs.push([...e.argv]);
-    return { value: { exitCode: 0, stdout: 'HUD panel opened\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
+    return { value: { exitCode: 0, stdout: panelStdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
   });
   on('ui.toast', (_, e) => { toasts.push(e.text); return { value: undefined }; });
   return async ($: Engine, key: string) => {
@@ -62,8 +62,8 @@ function presses(on: On, pane: string | undefined, surface: (typeof surfaces)[nu
 }
 
 for (const surface of ['terminal', 'desktop'] as const) {
-  test(`Open shows the dock without toggling an open panel closed, and only in herdr, on ${surface}`, async ($, on) => {
-    expect(await presses(on, 'w4E:p1', surface)($, 'open')).toEqual({ runs: [['hud', 'panel', 'open']], toasts: ['HUD panel opened'] });
+  test(`Open shows a closed or collapsed dock without toggling an open panel closed, and only in herdr, on ${surface}`, async ($, on) => {
+    expect(await presses(on, 'w4E:p1', surface, 'HUD panel shown\n')($, 'open')).toEqual({ runs: [['hud', 'panel', 'open']], toasts: ['HUD panel shown'] });
   });
 
   test(`Open outside a herdr pane starts nothing, on ${surface}`, async ($, on) => {

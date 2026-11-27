@@ -50,7 +50,7 @@ codexH() { hud codex "$@"; }
 codexH
 ```
 
-The panel is opt-in: `/hud` toggles the same right-edge herdr dock in Claude, Codex and pi; it never opens at launch.
+The panel is opt-in: `/hud` shows or collapses the same herdr dock in Claude, Codex and pi (keeping its process and state alive); it never opens at launch.
 Uninstall with `hud uninstall` or `./install --uninstall`; `--with names` removes only those extensions, leaving core commands intact.
 HUD data and unrelated owner settings remain.
 Claude settings follow symlinks with a one-time plain backup; Codex backs up resolved `config.toml` before official MCP commands and warns if comments are dropped.
@@ -69,10 +69,12 @@ See [installer extensions](../install.d/README.md) for backups and multiple Code
 hud --help
 hud --version             # print the version, build commit and build time
 hud panel --help
-hud panel                 # toggle the shared herdr dock; outside herdr, run here
+hud panel                 # show or collapse the shared herdr dock; outside herdr, run here
+hud panel open|hide       # expand/open or collapse the shared dock without stopping it
+hud panel close           # stop the shared dock process
 hud panel --here          # run in this terminal without touching the dock
 hud panel --width 64      # override the width if this toggle opens the dock
-hud panel status          # report whether the shared dock is open
+hud panel status          # report whether the shared dock is shown, hidden, or closed
 hud statusline --help
 hud import --help
 hud trust <dir>           # add the directory to grok, agy and claude trust lists
@@ -762,7 +764,7 @@ The panel uses the shared herdr dock.
 - **Owner commands.**
   In an owner session (not a worker's) the mod declares slash commands that run at once, even mid-turn, and print for the owner only: their output is shown and goes in no model request, and no MCP schema is added.
   The exception is `/council <request>`: it authorizes one council and submits the request to the main session.
-  `/hud` toggles the dock and reports whether it opened or closed (in herdr; elsewhere the command handles it). `/hud on`, `/hud off` and `/hud status` open, close or report its state.
+  `/hud` shows or collapses the dock without stopping it and reports its state (`opened`, `shown`, `hidden`, or `closed`; in herdr, elsewhere the command handles it). `/hud on` opens or expands it, `/hud off` collapses it, `/hud close` stops its process, and `/hud status` reports `shown`, `hidden`, or `closed`.
   `/jobs` lists running jobs and unread reports and `/jobs <id>` peeks one, without marking a report read.
   `/answer <job> <qN> <answer>`, `/try` (Accept all), `/retry <job>` and `/stop <job>` run `hud act`, so they do what the panel does: an answer writes `qa/qN.answer.md` once, resumes a headless job and tells the main session (`ANSWERED qN from panel`); a retry records the request for the main session to decide; `/stop` asks first unless the job is finished.
   `/land <job>` starts the land flow itself with `hud_land` on the session's HUD connection, asking first when the job's report is unread.
@@ -1160,7 +1162,7 @@ In the panel `w` (Home or Project, not in a picker or Settings) does the same fo
 
 ## The panel
 
-In herdr, the running HUD fork must advertise the `dock` capability. `/hud` or `hud panel` toggles one shared right-edge panel for the whole herdr session, not one per pane or harness. `hud panel open`, `close` and `status` act on that same dock. If the running fork has no dock, upgrade it or run `hud panel --here`; outside herdr `hud panel` already uses the current terminal. HUD-managed workers cannot run the panel (`panel_worker_forbidden`).
+In herdr, the running HUD fork must advertise the `dock` capability. `/hud` or `hud panel` shows or collapses one shared docked panel for the whole herdr session (right by default, or left/bottom via Settings), keeping the running process and its UI state across collapses. `hud panel open` opens or expands a collapsed dock, `hud panel hide` collapses it, `hud panel close` stops its process, and `hud panel status` reports `shown`, `hidden`, or `closed`. While collapsed, the panel pauses its periodic collection and refreshes once when shown again. If the running fork has no dock, upgrade it or run `hud panel --here`; outside herdr `hud panel` already uses the current terminal. HUD-managed workers cannot run the panel (`panel_worker_forbidden`).
 
 The dock stays open across tab and workspace changes. Session-specific views use the caller that opened it; switching clients doesn't rebind the running panel. Close and reopen it from another session to change that binding. Opening a file or commit from within the dock creates a regular tab in the active workspace.
 
@@ -1283,7 +1285,7 @@ Press `n` or click **subagents** from Jobs or a job Inspector to inspect the cal
 | Group | Rows |
 |---|---|
 | Display | Theme, Language; in **Advanced**: Bar style, Icons |
-| Panel | Width, Dock mode, Notifications, Open previews; in **Advanced**: Refresh, Mouse |
+| Panel | Width, Dock mode, Side (and Height when bottom), Notifications, Open previews; in **Advanced**: Refresh, Mouse |
 | Models | Decision API, Quiet job, Sonic auto-thinking, Auto prewalk, Pool pick, Imp placement (and Even pool in even mode); in **Advanced**: Decision cap (with hourly counter) |
 | Workers | All in **Advanced**: imp cap (`roleCaps.imp`, default 3), general cap (`roleCaps.general`, default 3), imp→general overflow (`impOverflow`, default on) |
 | Codex | Bar on launch |
@@ -1295,8 +1297,8 @@ Dirty leave asks Save and leave / Discard changes / Continue editing (default); 
 Theme and Icons preview in the draft itself.
 No Reset all or picture.
 
-Width presets: 40/48/56(default)/64/80/100; saved 16–200 load, 0 means default. Herdr clamps the requested width to the available space.
-**Dock mode** (`dockMode`) defaults to `overlay`: the panel covers the right edge without resizing the main pane or reflowing its text. `push` makes room by shrinking the main pane. Saving either a changed mode or width applies both to the open dock immediately. Neither setting resizes a terminal running `hud panel --here`.
+Width presets: 40/48/56(default)/64/80/100; saved 16–200 load, 0 means default. Bottom **Height** (`dockHeight`, shown when **Side** is `bottom`) defaults to 12 rows (presets 6/8/10/12/16/20/24; saved 2–100 load). Dragging the dock divider in herdr persists the clamped size from `dock.resized` back into `treeWidth` (right/left) or `dockHeight` (bottom), so drag and Settings share one saved value. Herdr clamps the requested size to the available space.
+**Dock mode** (`dockMode`) defaults to `overlay`: the panel covers its edge without resizing the main pane or reflowing its text. `push` makes room by shrinking the main pane. **Side** (`dockSide`) defaults to `right` and can be set to `right`, `left` or `bottom`. Saving a changed mode, side, width or height applies it to the open dock immediately via `dock.configure`. None of these settings resize a terminal running `hud panel --here`.
 
 **Open previews** (`openPreviews`, on by default) opens copied report previews in the default browser with `explorer.exe` and `wslpath -w` on WSL, or `xdg-open` elsewhere.
 Off still copies the file and gives its path in the notice.
@@ -1430,9 +1432,10 @@ Panel controls affect the shared herdr dock; footer controls affect the current 
 
 | Command | Action |
 |---|---|
-| `/hud`, `/hud toggle` | Toggle the panel (it never opens automatically) |
-| `/hud on`, `/hud off` | Open/close the panel, independently of the footer |
-| `/hud status` | Report panel state |
+| `/hud`, `/hud toggle` | Show or collapse the panel without stopping it (it never opens automatically) |
+| `/hud on`, `/hud off` | Open/expand or collapse the panel, independently of the footer |
+| `/hud close` | Stop the shared dock process |
+| `/hud status` | Report panel state (`shown`, `hidden`, or `closed`) |
 | `/hud reconnect` | Rebind after a canceled session transition; preserves this session's footer on/off choice |
 | `/hud help` | Show panel/footer command help |
 | `/hud footer on`, `/hud footer off` | Restore/hide the entire HUD footer and editor ribbon, session-local |

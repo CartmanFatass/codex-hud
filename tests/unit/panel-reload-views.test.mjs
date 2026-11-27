@@ -156,14 +156,15 @@ test('Jobs and Inspector never rewrite hud-settings.json, even when it contains 
   }
 });
 
-test('saving Width and Dock mode configures the live dock; reload leaves its size alone', async (t) => {
+test('saving Width, Dock mode and Side configures the live dock; dock.resized persists size; reload leaves its size alone', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'panel-reload-dock-'));
   const env = { HERDR_DOCK: '1', HERDR_PANE_ID: undefined, HUD_DOCK_CALLER_PANE: 'w4E:p1', HERDR_SOCKET_PATH: join(dir, 'dock.sock') };
   const dock = await listenDock(t, env.HERDR_SOCKET_PATH);
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  await herdrRequest('dock.open', { mode: 'overlay', width: 40 }, { env }); // an opening width override
+  await herdrRequest('dock.open', { mode: 'overlay', side: 'right', width: 40, height: 12 }, { env }); // an opening width override
   const f = live(t, (state) => ({ state, settings: { selected: SETTING_ROWS.findIndex((r) => r.key === 'treeWidth'), offset: 0 } }), { env });
   await until(() => f.output().includes('Settings'), 'Settings did not open');
+  await until(() => dock.subscribers() === 1, 'panel did not subscribe to dock.resized');
   const configs = () => dock.operations().filter(({ method }) => method === 'dock.configure').map(({ params }) => params);
   assert.deepEqual(configs(), [], 'opening the panel leaves the override in place');
   f.child.stdin.write('\x1b[Cs');
@@ -172,11 +173,28 @@ test('saving Width and Dock mode configures the live dock; reload leaves its siz
   await until(() => configs().length === 2, 'push was not applied: ' + f.stderr());
   f.child.stdin.write('\x1b[Ds');
   await until(() => configs().length === 3, 'overlay was not applied: ' + f.stderr());
-  const expected = [{ mode: 'overlay', width: 64 }, { mode: 'push', width: 64 }, { mode: 'overlay', width: 64 }];
+  // Down to Side (right -> left -> bottom) applies dock.configure live.
+  f.child.stdin.write('\x1b[B\x1b[Cs');
+  await until(() => configs().length === 4, 'left side was not applied: ' + f.stderr());
+  f.child.stdin.write('\x1b[Cs');
+  await until(() => configs().length === 5, 'bottom side was not applied: ' + f.stderr());
+  const expected = [
+    { mode: 'overlay', side: 'right', width: 64, height: 12 },
+    { mode: 'push', side: 'right', width: 64, height: 12 },
+    { mode: 'overlay', side: 'right', width: 64, height: 12 },
+    { mode: 'overlay', side: 'left', width: 64, height: 12 },
+    { mode: 'overlay', side: 'bottom', width: 64, height: 12 },
+  ];
   assert.deepEqual(configs(), expected);
-  assert.deepEqual(dock.state(), { shown: true, mode: 'overlay', width: 64 });
+  assert.deepEqual(dock.state(), { shown: true, hidden: false, mode: 'overlay', side: 'bottom', width: 64, height: 12 });
   const saved = loadSettings(f.env);
-  assert.deepEqual([saved.dockMode, saved.treeWidth], ['overlay', 64]);
+  assert.deepEqual([saved.dockMode, saved.dockSide, saved.treeWidth, saved.dockHeight], ['overlay', 'bottom', 64, 12]);
+  // Dragging the dock emits dock.resized and persists width (right/left) and height (bottom).
+  dock.emitResized('left', 72);
+  await until(() => loadSettings(f.env).treeWidth === 72, 'dragged width was not persisted');
+  dock.emitResized('bottom', 15);
+  await until(() => loadSettings(f.env).dockHeight === 15, 'dragged bottom height was not persisted');
+  assert.deepEqual([loadSettings(f.env).treeWidth, loadSettings(f.env).dockHeight], [72, 15]);
   f.appendBuild('\n// saved dock settings build');
   await until(() => f.events().filter((e) => e.start).length === 2 &&
     f.output().match(/\x1b\[\?1049h/g)?.length === 2, 'panel did not replace itself');

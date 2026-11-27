@@ -14,6 +14,8 @@ import {
   forceAdaptivePoll,
 } from '../../dist/collectors/adaptive-poll.js';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { listenDock } from '../fakes/herdr-dock.mjs';
+import { request as herdrRequest } from '../../dist/runtime/herdr-socket.js';
 
 const LIVE_BASE_MS = 200;
 const LIVE_MAX_MS = 5 * LIVE_BASE_MS;
@@ -312,3 +314,29 @@ test(
     ]);
   }
 );
+
+test('live docked panel stops periodic collection while collapsed and refreshes once on show', { timeout: 15000 }, async (t) => {
+  const f = fixture(t, 1, LIVE_BASE_MS);
+  f.put(join(f.dir, 'STATUS.json'), { state: 'working' });
+  const sock = join(f.root, 'dock.sock');
+  f.env.HERDR_SOCKET_PATH = sock;
+  f.env.HERDR_DOCK = '1';
+  delete f.env.HERDR_PANE_ID;
+  f.env.HUD_DOCK_CALLER_PANE = 'w4E:p1';
+  await listenDock(t, sock);
+  await herdrRequest('dock.open', { mode: 'overlay', side: 'right', width: 56, height: 12 }, { env: f.env });
+  const p = live(t, f);
+  await p.until(() => p.collections().length >= 2, 5000);
+  // Collapse the dock via dock.hide.
+  const hiddenReply = await herdrRequest('dock.hide', {}, { env: f.env });
+  assert.equal(hiddenReply?.result?.hidden, true);
+  // Wait one tick for any in-flight collection to settle, then verify zero collections across > 3 intervals.
+  await new Promise((r) => setTimeout(r, LIVE_BASE_MS + 100));
+  const atCollapse = p.collections().length;
+  await new Promise((r) => setTimeout(r, LIVE_BASE_MS * 3.5));
+  assert.equal(p.collections().length, atCollapse, 'collapsed panel ran no periodic collection');
+  // Show the dock again: refreshes once promptly.
+  const shownReply = await herdrRequest('dock.show', {}, { env: f.env });
+  assert.equal(shownReply?.result?.shown, true);
+  await p.until(() => p.collections().length >= atCollapse + 1, 2000);
+});

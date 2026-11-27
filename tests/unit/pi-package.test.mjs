@@ -254,22 +254,26 @@ test('pi /hud controls the same session-bound dock as hud panel without closing 
     argv: [path.join(f.binding.release, 'bin/hud'), 'panel', '--here', '--harness', 'pi', '--session', 'session-a', '--source', c.source],
     cwd: f.cwd, env: { HUD_HOME: f.binding.hudHome, HUD_SETTINGS_PATH: path.join(f.binding.hudHome, 'hud-settings.json'),
       HUD_DOCK_CALLER_PANE: 'w4E:p1', CODEX_HOME: f.env.CODEX_HOME, CLAUDE_CONFIG_DIR: f.env.CLAUDE_CONFIG_DIR,
-      PI_CODING_AGENT_DIR: f.env.PI_CODING_AGENT_DIR }, mode: 'push', width: 80,
+      PI_CODING_AGENT_DIR: f.env.PI_CODING_AGENT_DIR }, mode: 'push', side: 'right', width: 80, height: 12,
   }});
-  assert.equal(await command('status'), 'HUD: open');
-  assert.equal(await command('on'), 'HUD: open');
-  assert.equal(await command('off'), 'HUD: closed');
-  assert.equal(await command('toggle'), 'HUD: opened');
+  assert.equal(await command('status'), 'HUD: shown');
+  assert.equal(await command('on'), 'HUD: shown');
+  assert.equal(await command('off'), 'HUD: hidden');
+  assert.equal(await command('status'), 'HUD: hidden');
+  assert.equal(await command('toggle'), 'HUD: shown');
   const output = [];
   assert.equal(await main(['panel', '--root', 'synthetic/session'], { env: f.env,
     stdout: (text) => { output.push(text); }, stderr: assert.fail }), 0);
-  assert.deepEqual(output, ['HUD panel closed\n'], 'the shell toggles the dock that pi opened');
+  assert.deepEqual(output, ['HUD panel hidden\n'], 'the shell collapses the dock that pi opened');
+  assert.equal(await command(''), 'HUD: shown');
+  assert.equal(await command('close'), 'HUD: closed');
+  assert.equal(await command('status'), 'HUD: closed');
   assert.equal(await command(''), 'HUD: opened');
   assert.equal(await command('off', context(f, h, 'other').ctx), 'HUD: session_unbound; use /hud reconnect');
   await h.emit('session_shutdown', c.ctx);
   assert.equal(dock.state().shown, true);
   assert.deepEqual(dock.operations().map(({ method }) => method), [
-    'dock.open', 'dock.status', 'dock.open', 'dock.close', 'dock.toggle', 'dock.toggle', 'dock.toggle',
+    'dock.open', 'dock.status', 'dock.open', 'dock.hide', 'dock.status', 'dock.toggle', 'dock.toggle', 'dock.toggle', 'dock.close', 'dock.status', 'dock.toggle',
   ]);
   assert.equal(h.calls.messages, 0);
 });

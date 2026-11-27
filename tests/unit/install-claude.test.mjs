@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const commandLine = 'Run `hud panel` once with Bash to toggle the HUD dock. Report whether it opened or closed, or report the error without retrying.\n';
+const commandLine = 'Run `hud panel` once with Bash (`hud panel` for bare/toggle, `open` for on, `hide` for off, `close` to stop, `status` to check) and report the state it prints, or report the error without retrying.\n';
+const prevCommandLine = 'Run `hud panel` once with Bash to toggle the HUD dock. Report whether it opened or closed, or report the error without retrying.\n';
 const legacyCommandLine = 'Run `hud panel` with Bash and report the pane id it prints.\n';
 
 test('Claude install maintains the global statusline and reverses only its changes', (t) => {
@@ -111,6 +112,9 @@ process.exit(process.argv[3] === 'remove' ? 1 : 0);
     );
     assert.equal(fs.readFileSync(backup, 'utf8'), originalBytes, 'reinstall keeps the original backup');
     assert.equal(fs.readFileSync(commandFile, 'utf8'), commandLine, 'reinstall upgrades only the known legacy command');
+    fs.writeFileSync(commandFile, prevCommandLine);
+    run('--skip-build');
+    assert.equal(fs.readFileSync(commandFile, 'utf8'), commandLine, 'reinstall upgrades previous toggle-only command');
 
     fs.writeFileSync(legacy, JSON.stringify({ statusLine: hudLine }));
     assert.match(run('--uninstall').stderr, /keeping existing skill not owned by HUD: .*to-tickets/);

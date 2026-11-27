@@ -16,7 +16,7 @@ import {
 import { withDisplaySettings } from '../settings-runtime.js';
 import { loadSettings, saveSettings, settingsPatch, type HudSettings } from '../settings.js';
 import { herdrEndpoint, request as herdrRequest } from '../runtime/herdr-socket.js';
-import { DEFAULT_WIDTH } from '../utils/pane-width.js';
+import { DEFAULT_HEIGHT, DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { setUnattended } from '../unattended/control.js';
 import { readControl, unattendedOn } from '../unattended/state.js';
 import type { PanelPlace } from '../render/monitor-reload-codec.js';
@@ -102,7 +102,11 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
     try {
       const previous = effects.current();
       const settings = saveSettings(patch, draftPage.original);
-      const dockChanged = settings.treeWidth !== previous.treeWidth || settings.dockMode !== previous.dockMode;
+      const dockChanged =
+        settings.treeWidth !== previous.treeWidth ||
+        settings.dockHeight !== previous.dockHeight ||
+        settings.dockMode !== previous.dockMode ||
+        settings.dockSide !== previous.dockSide;
       if (settings.impOverflow !== previous.impOverflow || JSON.stringify(settings.roleCaps) !== JSON.stringify(previous.roleCaps)) {
         wakeWatcherIfQueued();
       }
@@ -113,9 +117,14 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
       effects.setMouseTracking(settings.mouse);
       if (dockChanged && process.env.HERDR_DOCK === '1' && herdrEndpoint()) {
         // A PTY resize repaints through the normal terminal resize event.
-        void herdrRequest('dock.configure', { mode: settings.dockMode, width: settings.treeWidth || DEFAULT_WIDTH })
+        void herdrRequest('dock.configure', {
+          mode: settings.dockMode,
+          side: settings.dockSide,
+          width: settings.treeWidth || DEFAULT_WIDTH,
+          height: settings.dockHeight || DEFAULT_HEIGHT,
+        })
           .then((reply) => {
-            if (reply?.result?.type === 'dock' && reply.result.shown) return;
+            if (reply?.result?.type === 'dock' && (reply.result.shown || reply.result.hidden)) return;
             if (page?.original === settings) {
               page.message = t('Saved; could not update the dock');
               effects.repaint();
@@ -136,6 +145,18 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
     get open() { return page !== null; },
     isDirty: () => page !== null && settingsDirty(page),
     observeUnattended,
+    /** Adopt external persisted dock-size updates (e.g. from drag resize) without clobbering unsaved edits. */
+    syncExternal(saved: HudSettings, keys: readonly ('treeWidth' | 'dockHeight')[]) {
+      if (!page || !keys.length) return;
+      const original = { ...(page.original ?? page.draft) };
+      const draft = { ...page.draft };
+      for (const key of keys) {
+        if (draft[key] === original[key]) draft[key] = saved[key];
+        original[key] = saved[key];
+      }
+      page = { ...page, draft, original };
+      effects.repaint();
+    },
     place: () => page && { selected: page.selected, offset: page.offset },
     show(settings: HudSettings) {
       observeUnattended();

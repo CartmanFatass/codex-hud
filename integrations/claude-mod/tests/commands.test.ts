@@ -33,7 +33,10 @@ function session(on: On, mcp: Record<string, unknown>, env: Record<string, strin
   });
   on('process.run', (_, e) => {
     runs.push([...e.argv]);
-    const panelState = e.argv[2] === 'status' ? 'open' : e.argv[2] === 'close' ? 'closed' : 'opened';
+    const panelState = e.argv[2] === 'status' || e.argv[2] === 'open' ? 'shown'
+      : e.argv[2] === 'hide' ? 'hidden'
+      : e.argv[2] === 'close' ? 'closed'
+      : 'opened';
     return { value: { exitCode: 0, stdout: e.argv[1] === 'panel' ? `HUD panel ${panelState}\n` : `done: ${e.argv.slice(2).join(' ')}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } };
   });
   on('tool.call', { tool: 'AskUserQuestion' }, (_, e) => {
@@ -80,13 +83,19 @@ test('every answer is for the owner to see and joins no model request', async ($
   expect(f.runs.length).toBe(3);
 });
 
-test('/hud controls the shared dock and reports its state without a model turn', async ($, on) => {
+test('/hud controls the shared dock (off collapses, close stops) and reports its state without a model turn', async ($, on) => {
   const f = session(on, {});
   await $.session.start(start);
   expect(await run($, 'hud')).toMatchObject({ text: 'HUD panel opened', isTextDisplayOnly: true });
-  expect(await run($, 'hud', 'status')).toMatchObject({ text: 'HUD panel open', isTextDisplayOnly: true });
-  expect(await run($, 'hud', 'off')).toMatchObject({ text: 'HUD panel closed', isTextDisplayOnly: true });
-  expect(f.runs).toEqual([['hud', 'panel'], ['hud', 'panel', 'status'], ['hud', 'panel', 'close']]);
+  expect(await run($, 'hud', 'status')).toMatchObject({ text: 'HUD panel shown', isTextDisplayOnly: true });
+  expect(await run($, 'hud', 'off')).toMatchObject({ text: 'HUD panel hidden', isTextDisplayOnly: true });
+  expect(await run($, 'hud', 'on')).toMatchObject({ text: 'HUD panel shown', isTextDisplayOnly: true });
+  expect(await run($, 'hud', 'toggle')).toMatchObject({ text: 'HUD panel opened', isTextDisplayOnly: true });
+  expect(await run($, 'hud', 'close')).toMatchObject({ text: 'HUD panel closed', isTextDisplayOnly: true });
+  expect(f.runs).toEqual([
+    ['hud', 'panel'], ['hud', 'panel', 'status'], ['hud', 'panel', 'hide'],
+    ['hud', 'panel', 'open'], ['hud', 'panel'], ['hud', 'panel', 'close'],
+  ]);
   expect(await run($, 'hud', 'footer reset')).toEqual({ text: 'the skill ran' });
 });
 

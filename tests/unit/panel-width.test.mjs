@@ -28,21 +28,39 @@ test('only a changed Decision API rewrites config; malformed config is never des
   assert.equal(readFileSync(file, 'utf8'), '{ broken');
 });
 
-test('Width and Dock mode belong to Panel; legacy widths still load', (t) => {
+test('Width, Dock mode, Side and bottom Height belong to Panel; legacy widths still load', (t) => {
   const env = fixture(t);
-  const width = SETTING_ROWS.find((r) => r.key === 'treeWidth'), dock = SETTING_ROWS.find((r) => r.key === 'dockMode');
+  const width = SETTING_ROWS.find((r) => r.key === 'treeWidth');
+  const dock = SETTING_ROWS.find((r) => r.key === 'dockMode');
+  const side = SETTING_ROWS.find((r) => r.key === 'dockSide');
+  const height = SETTING_ROWS.find((r) => r.key === 'dockHeight');
   assert.equal(width.group, 'Panel');
   assert.deepEqual(width.values, [40, 48, 56, 64, 80, 100]);
   assert.equal(dock.group, 'Panel');
   assert.deepEqual(dock.values, ['overlay', 'push']);
-  assert.deepEqual([defaultSettings().treeWidth, defaultSettings().dockMode], [56, 'overlay']);
-  const edited = { ...defaultSettings(), treeWidth: 80, dockMode: 'push' };
+  assert.equal(side.group, 'Panel');
+  assert.deepEqual(side.values, ['right', 'left', 'bottom']);
+  assert.equal(height.group, 'Panel');
+  assert.deepEqual(height.values, [6, 8, 10, 12, 16, 20, 24]);
+  assert.deepEqual(
+    [defaultSettings().treeWidth, defaultSettings().dockHeight, defaultSettings().dockMode, defaultSettings().dockSide],
+    [56, 12, 'overlay', 'right'],
+  );
+  const edited = { ...defaultSettings(), treeWidth: 80, dockHeight: 16, dockMode: 'push', dockSide: 'bottom' };
   const reset = resetSettingsGroup(edited, 'Panel');
-  assert.deepEqual([reset.treeWidth, reset.dockMode], [56, 'overlay']);
+  assert.deepEqual([reset.treeWidth, reset.dockHeight, reset.dockMode, reset.dockSide], [56, 12, 'overlay', 'right']);
   assert.deepEqual(resetSettingsGroup(edited, 'Codex'), edited);
   for (const width of [32, 0, 16, 200, 201]) {
     writeFileSync(env.HUD_SETTINGS_PATH, JSON.stringify({ treeWidth: width }));
     assert.equal(loadSettings(env).treeWidth, width === 201 ? 56 : width);
+  }
+  for (const dockHeight of [1, 2, 15, 100, 101]) {
+    writeFileSync(env.HUD_SETTINGS_PATH, JSON.stringify({ dockHeight }));
+    assert.equal(loadSettings(env).dockHeight, dockHeight < 2 || dockHeight > 100 ? 12 : dockHeight);
+  }
+  for (const dockSide of ['right', 'left', 'bottom', 'top']) {
+    writeFileSync(env.HUD_SETTINGS_PATH, JSON.stringify({ dockSide }));
+    assert.equal(loadSettings(env).dockSide, dockSide === 'top' ? 'right' : dockSide);
   }
   assert.equal(panelWidth(0, 160), 56);
   assert.equal(panelWidth(100, 100), 59);

@@ -142,7 +142,10 @@ test('Collapsed navigation walks only visible rows plus ADVANCED; PageDown/PageU
   for (const [impPlacement, sonicPlacement] of [['fixed', 'fixed'], ['even', 'fixed'], ['auto', 'even']]) {
     const expectedVisible = [
       ...SETTING_ROWS.flatMap((row, i) =>
-        row.advanced || (row.key === 'impEvenPool' && impPlacement !== 'even') || (row.key === 'sonicEvenPool' && sonicPlacement !== 'even')
+        row.advanced ||
+        row.key === 'dockHeight' ||
+        (row.key === 'impEvenPool' && impPlacement !== 'even') ||
+        (row.key === 'sonicEvenPool' && sonicPlacement !== 'even')
           ? [] : [i]),
       ADVANCED,
     ];

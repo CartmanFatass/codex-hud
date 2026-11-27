@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Sourced by ./install; REPO, HUD_HOME and BIN_DIR are exported by core.
-hud_claude_command_line='Run `hud panel` once with Bash to toggle the HUD dock. Report whether it opened or closed, or report the error without retrying.'
+hud_claude_command_line='Run `hud panel` once with Bash (`hud panel` for bare/toggle, `open` for on, `hide` for off, `close` to stop, `status` to check) and report the state it prints, or report the error without retrying.'
+hud_claude_prev_command_line='Run `hud panel` once with Bash to toggle the HUD dock. Report whether it opened or closed, or report the error without retrying.'
 hud_claude_legacy_command_line='Run `hud panel` with Bash and report the pane id it prints.'
 
 hud_claude_settings() {
@@ -97,7 +98,7 @@ hud_ext_install() {
   mkdir -p -- "$config/commands"
   local current_command=''
   [[ ! -f "$command_file" ]] || current_command="$(cat -- "$command_file")"
-  if [[ -f "$command_file" && "$current_command" != "$hud_claude_command_line" && "$current_command" != "$hud_claude_legacy_command_line" ]]; then
+  if [[ -f "$command_file" && "$current_command" != "$hud_claude_command_line" && "$current_command" != "$hud_claude_prev_command_line" && "$current_command" != "$hud_claude_legacy_command_line" ]]; then
     printf 'Warning: keeping existing command file: %s\n' "$command_file" >&2
   else
     printf '%s\n' "$hud_claude_command_line" > "$command_file"
@@ -115,7 +116,7 @@ hud_ext_uninstall() {
   if [[ -f "$command_file" ]]; then
     local current_command
     current_command="$(cat -- "$command_file")"
-    if [[ "$current_command" == "$hud_claude_command_line" || "$current_command" == "$hud_claude_legacy_command_line" ]]; then
+    if [[ "$current_command" == "$hud_claude_command_line" || "$current_command" == "$hud_claude_prev_command_line" || "$current_command" == "$hud_claude_legacy_command_line" ]]; then
       rm -- "$command_file"
     fi
   fi

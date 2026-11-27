@@ -18,6 +18,10 @@ type CollectionHost = {
   worktreeSources(): Parameters<WorktreeCollector['refresh']>[0];
   onWorktrees(snapshot: WorktreesSnapshot): void;
   onWorktreeError(error: unknown): void;
+  /** When docked in herdr, probes whether the dock is currently collapsed (hidden). */
+  isHidden?: () => Promise<boolean>;
+  /** Called once when transitioning from collapsed back to shown. */
+  onShow?: () => void;
 };
 
 /** Owns the timers, single-flight flags and adaptive collection epoch, not the snapshots. */
@@ -26,23 +30,84 @@ export function createCollectionScheduler(refreshMs: number, host: CollectionHos
   let collectTimer: ReturnType<typeof setTimeout> | undefined;
   let repaintTimer: ReturnType<typeof setTimeout> | undefined;
   let gitTimer: ReturnType<typeof setInterval> | undefined;
-  let collectEvery = 0;
+  let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+  let collectEvery = refreshMs;
   let collectClock = 0;
   let adaptive = createAdaptivePollState(refreshMs);
   let collectionEpoch = 0;
   let collecting = false;
   let collectingGit = false;
   let gitAgain = false;
+  let paused = false;
+  let probing = false;
 
   const invalidate = () => {
     adaptive = forceAdaptivePoll(adaptive);
     collectionEpoch++;
   };
-  const collect = async (force = false) => {
+  const clearWorkTimers = () => {
+    if (gitTimer) { clearInterval(gitTimer); gitTimer = undefined; }
+    if (collectTimer) { clearTimeout(collectTimer); collectTimer = undefined; }
+    if (repaintTimer) { clearTimeout(repaintTimer); repaintTimer = undefined; }
+  };
+  const scheduleResumeProbe = () => {
+    if (!paused || host.isClosed() || resumeTimer || !host.isHidden) return;
+    const delay = Math.max(50, Math.min(250, collectEvery || refreshMs));
+    resumeTimer = setTimeout(() => {
+      resumeTimer = undefined;
+      void probeResume();
+    }, delay);
+  };
+  const pause = () => {
+    if (paused || host.isClosed()) return;
+    paused = true;
+    clearWorkTimers();
+    scheduleResumeProbe();
+  };
+  const resume = () => {
+    if (!paused || host.isClosed()) return;
+    paused = false;
+    if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = undefined; }
+    host.onShow?.();
+    void runCollect(true, true);
+    void refreshGit();
+    scheduleRepaint();
+    gitTimer = setInterval(() => void refreshGit(), 3000);
+  };
+  const probeResume = async () => {
+    if (!paused || host.isClosed() || probing || !host.isHidden) return;
+    probing = true;
+    let hidden = true;
+    try {
+      hidden = await host.isHidden();
+    } catch {
+      hidden = false;
+    } finally {
+      probing = false;
+    }
+    if (host.isClosed() || !paused) return;
+    if (hidden) scheduleResumeProbe();
+    else resume();
+  };
+  const runCollect = async (force = false, skipHiddenCheck = false) => {
     if (force) invalidate();
     if (host.isClosed() || collecting) return;
+    if (paused) {
+      if (force) void probeResume();
+      return;
+    }
+    if (!skipHiddenCheck && host.isHidden) {
+      let hidden = false;
+      try { hidden = await host.isHidden(); } catch { hidden = false; }
+      if (host.isClosed()) return;
+      if (hidden) {
+        pause();
+        return;
+      }
+      if (paused || collecting) return;
+    }
     const ready = await host.pollReload();
-    if (host.isClosed()) return;
+    if (host.isClosed() || paused) return;
     if (ready) {
       await host.restart();
       return;
@@ -57,56 +122,76 @@ export function createCollectionScheduler(refreshMs: number, host: CollectionHos
         collecting = false;
       }
     });
+    if (host.isClosed() || paused) return;
     if (epoch === collectionEpoch) {
       adaptive = recordAdaptivePoll(adaptive, host.observation());
       if (collectTimer) clearTimeout(collectTimer);
       let due = adaptive.nextDueAt;
       if (adaptive.intervalMs === collectEvery)
         due += (collectEvery - ((due - collectClock) % collectEvery)) % collectEvery;
-      if (!host.isClosed()) collectTimer = setTimeout(() => void collect(), Math.max(1, due - Date.now()));
-    } else if (!host.isClosed()) void collect(true);
+      collectTimer = setTimeout(() => void runCollect(), Math.max(1, due - Date.now()));
+    } else void runCollect(true);
   };
+  const collect = (force = false) => runCollect(force, false);
   /** (Re)arm collection at the refresh setting; a no-op while it is unchanged. */
-  const armCollect = (refreshMs: number) => {
-    if (host.isClosed() || (collectTimer && collectEvery === refreshMs)) return;
+  const armCollect = (nextRefreshMs: number) => {
+    if (host.isClosed()) return;
+    if (paused) {
+      collectEvery = nextRefreshMs;
+      return;
+    }
+    if (collectTimer && collectEvery === nextRefreshMs) return;
     if (collectTimer) clearTimeout(collectTimer);
-    collectEvery = refreshMs;
+    collectEvery = nextRefreshMs;
     collectClock = Date.now();
     adaptive = createAdaptivePollState(collectEvery);
-    collectTimer = setTimeout(() => void collect(), collectEvery);
+    collectTimer = setTimeout(() => void runCollect(), collectEvery);
   };
   const scheduleRepaint = () => {
-    if (host.isClosed()) return;
+    if (host.isClosed() || paused) return;
+    if (repaintTimer) clearTimeout(repaintTimer);
     repaintTimer = setTimeout(() => {
+      repaintTimer = undefined;
+      if (host.isClosed() || paused) return;
       host.repaint();
       scheduleRepaint();
     }, host.repaintDelay());
   };
   const refreshGit = async () => {
-    if (host.isClosed()) return;
+    if (host.isClosed() || paused) return;
     if (collectingGit) {
       gitAgain = true;
       return;
     }
     if (!host.isWorkingTreeOpen()) return;
+    if (host.isHidden) {
+      let hidden = false;
+      try { hidden = await host.isHidden(); } catch { hidden = false; }
+      if (host.isClosed()) return;
+      if (hidden) {
+        pause();
+        return;
+      }
+      if (paused || collectingGit || !host.isWorkingTreeOpen()) return;
+    }
     collectingGit = true;
     const candidates = host.worktreeSources();
     const requestKey = JSON.stringify(candidates);
     try {
       const snapshot = await timeAsync('git.worktrees', () => worktreeCollector.refresh(candidates));
-      if (host.isClosed()) return;
+      if (host.isClosed() || paused) return;
       if (requestKey !== JSON.stringify(host.worktreeSources())) {
         gitAgain = true;
         return;
       }
       host.onWorktrees(snapshot);
     } catch (err) {
-      if (host.isClosed() || requestKey !== JSON.stringify(host.worktreeSources())) return;
+      if (host.isClosed() || paused || requestKey !== JSON.stringify(host.worktreeSources())) return;
       host.onWorktreeError(err);
       host.onWorktrees({ sourcePath: null, entries: [], updatedAt: Date.now(), error: 'Worktree read failed' });
     } finally {
       collectingGit = false;
-      if (gitAgain && !host.isClosed()) {
+      if (gitAgain && !host.isClosed() && !paused) {
         gitAgain = false;
         void refreshGit();
       }
@@ -114,17 +199,18 @@ export function createCollectionScheduler(refreshMs: number, host: CollectionHos
   };
   return {
     collect, armCollect, refreshGit, invalidate,
-    start(refreshMs: number) {
-      void collect();
+    isPaused: () => paused,
+    wake: () => { if (paused) void probeResume(); },
+    start(nextRefreshMs: number) {
+      void runCollect();
       void refreshGit();
-      armCollect(refreshMs);
+      armCollect(nextRefreshMs);
       scheduleRepaint();
       gitTimer = setInterval(() => void refreshGit(), 3000);
     },
     stop() {
-      if (gitTimer) clearInterval(gitTimer);
-      if (collectTimer) clearTimeout(collectTimer);
-      if (repaintTimer) clearTimeout(repaintTimer);
+      clearWorkTimers();
+      if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = undefined; }
     },
   };
 }

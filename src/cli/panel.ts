@@ -4,7 +4,7 @@ import { callerSession } from '../collectors/claude-caller-session.js';
 import { makeSourceId } from '../core/identity.js';
 import { hasHerdrDock, herdrEndpoint, request as herdrRequest } from '../runtime/herdr-socket.js';
 import { defaultSettings, loadSettings, settingsPath } from '../settings.js';
-import { DEFAULT_WIDTH } from '../utils/pane-width.js';
+import { DEFAULT_HEIGHT, DEFAULT_WIDTH } from '../utils/pane-width.js';
 import { getHudHome } from '../hud-home.js';
 import { resolveHudEnv } from '../utils/hud-env.js';
 import type { Harness } from '../core/types/identity.js';
@@ -15,11 +15,13 @@ import { v8HeapArgs } from '../../scripts/dist-lock.mjs';
 import { CliError } from './private-home.js';
 
 const PANEL_HELP = `Usage: hud panel [toggle|open] [--width N] [--root <namespace/session-id>]
-       hud panel close|status
+       hud panel hide|close|status
        hud panel --here [--root <namespace/session-id>]
        hud panel [--here] --harness claude|pi|codex --session ID --source ABS
 
-Toggle the shared right-edge HUD in herdr, or run it here outside herdr.
+Show or collapse the shared HUD dock in herdr, or run it here outside herdr.
+\`hide\` collapses the dock without stopping it; \`close\` stops its process.
+\`status\` reports shown, hidden, or closed.
 --here runs in the current terminal without using the dock.
 --width overrides saved Settings → Panel → Width for this opening (default 56).
 --root selects observations only, never execution/control identity.
@@ -78,8 +80,8 @@ export function panelRoot(args: readonly string[]): string | null {
   return panelSelection(args).root;
 }
 
-export type PanelOperation = 'open' | 'close' | 'toggle' | 'status';
-const panelOperations: readonly string[] = ['open', 'close', 'toggle', 'status'];
+export type PanelOperation = 'open' | 'hide' | 'close' | 'toggle' | 'status';
+const panelOperations: readonly string[] = ['open', 'hide', 'close', 'toggle', 'status'];
 
 function requirePanelOwner(env: NodeJS.ProcessEnv): void {
   if (env.HUD_JOB_DIR !== undefined) throw new CliError('panel_worker_forbidden');
@@ -93,7 +95,7 @@ export async function controlPanelDock(operation: PanelOperation, env: NodeJS.Pr
   selection: readonly string[];
   width?: number;
   isCurrent?: () => boolean;
-}): Promise<'opened' | 'open' | 'closed'> {
+}): Promise<'opened' | 'shown' | 'hidden' | 'closed'> {
   requirePanelOwner(env);
   if (!herdrEndpoint(env) || !(await hasHerdrDock(env))) throw new CliError('panel_dock_unavailable', 1);
   if (launch.isCurrent && !launch.isCurrent()) throw new CliError('stale_context');
@@ -119,15 +121,17 @@ export async function controlPanelDock(operation: PanelOperation, env: NodeJS.Pr
     }
     params = {
       executable: launch.node, argv: [join(launch.release, 'bin/hud'), 'panel', '--here', ...launch.selection],
-      cwd: launch.cwd, env: dockEnv, mode: settings.dockMode,
+      cwd: launch.cwd, env: dockEnv, mode: settings.dockMode, side: settings.dockSide,
       width: Math.min(65535, launch.width ?? (treeWidth || DEFAULT_WIDTH)),
+      height: settings.dockHeight || DEFAULT_HEIGHT,
     };
   }
   const reply = await herdrRequest(`dock.${operation}`, params, { env });
   const result = reply?.result;
   if (reply?.error || result?.type !== 'dock' || typeof result.shown !== 'boolean')
     throw new CliError(reply?.error?.code ?? 'panel_dock_request_failed', 1);
-  return !result.shown ? 'closed' : result.action === 'opened' ? 'opened' : 'open';
+  if (result.shown) return result.action === 'opened' ? 'opened' : 'shown';
+  return result.hidden ? 'hidden' : 'closed';
 }
 
 /** Use the dock or run the installed panel entry in the foreground. */
@@ -147,7 +151,7 @@ export async function panelCommand(io: HudIO, args: readonly string[] = []): Pro
     rest.splice(at, 2);
   }
   const here = rest[0] === '--here';
-  const query = op === 'close' || op === 'status';
+  const query = op === 'hide' || op === 'close' || op === 'status';
   if ((op && here) || (query && args.length !== 1)) throw new CliError('invalid_arguments');
   const selection = here ? rest.slice(1) : rest;
   const bound = query || selection.length ? undefined : await callerSession(io.env);

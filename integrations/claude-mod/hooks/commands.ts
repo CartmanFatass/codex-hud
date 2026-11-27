@@ -26,7 +26,7 @@ export async function act($: EngineInterface, ...argv: string[]): Promise<string
 }
 
 /** Control the dock only in herdr; elsewhere `hud panel` would take the terminal. */
-async function panel($: EngineInterface, operation?: 'open' | 'close' | 'status'): Promise<string | undefined> {
+async function panel($: EngineInterface, operation?: 'open' | 'hide' | 'close' | 'status'): Promise<string | undefined> {
   if (await $.env.get('HUD_JOB_DIR') !== undefined) return 'panel_worker_forbidden';
   if (!(await $.env.get('HERDR_PANE_ID')) && !(await $.env.get('HERDR_SOCKET_PATH'))) return undefined;
   const done = await $.process.run(['hud', 'panel', ...(operation ? [operation] : [])], { cwd: await $.session.cwd(), timeoutMs: 15_000 }).catch(() => undefined);
@@ -81,8 +81,9 @@ export function registerCommands(on: On) {
   });
   on('command.run', { command: 'hud' }, async ($, e, next) => {
     const verb = e.args.trim();
-    if (verb && !['on', 'off', 'toggle', 'status'].includes(verb)) return next(e);
-    const state = await panel($, verb === 'on' ? 'open' : verb === 'off' ? 'close' : verb === 'status' ? 'status' : undefined);
+    if (verb && !['on', 'off', 'close', 'toggle', 'status'].includes(verb)) return next(e);
+    const op = verb === 'on' ? 'open' : verb === 'off' ? 'hide' : verb === 'close' ? 'close' : verb === 'status' ? 'status' : undefined;
+    const state = await panel($, op);
     return state ? show(state) : next(e);
   });
   // command.register exposes a local command, not a Skill. Only a composer-origin run can grant.

@@ -27,8 +27,10 @@ import { projectListOpen } from '../render/project-view.js';
 import { projectList } from '../roles/projects.js';
 import { roleRegistry } from '../roles/roster.js';
 import { parseRosterRoot, formatRosterRoot } from '../roles/selection.js';
-import { defaultSettings } from '../settings.js';
+import { defaultSettings, saveSettings, type HudSettings } from '../settings.js';
 import { runtimeSettings, applyDisplaySettings } from '../settings-runtime.js';
+import { herdrEndpoint, request as herdrRequest, watchHerdrDockResized } from '../runtime/herdr-socket.js';
+import { clampDockHeight, clampDockWidth } from '../utils/pane-width.js';
 import { buildSnapshot, SnapshotWriter } from '../snapshot.js';
 import type { SubagentTree } from '../types.js';
 import { getCodexHome, getSessionsDir } from '../utils/codex-path.js';
@@ -209,7 +211,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   };
 
   const render = () => {
-    if (isClosed() || (place && !collected)) return;
+    if (isClosed() || scheduler.isPaused() || (place && !collected)) return;
     const source = state, painted = framePlace(source);
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
     const control = projectControlShown(painted, settingsFlow.open), chosen = shownRoot();
@@ -486,8 +488,37 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     });
   };
 
+  const inHerdrDock = process.env.HERDR_DOCK === '1' && Boolean(herdrEndpoint());
+  const checkDockHidden = async (): Promise<boolean> => {
+    const reply = await herdrRequest('dock.status', {}, { timeoutMs: 500 });
+    return reply?.result?.type === 'dock' && reply.result.hidden === true && !reply.result.shown;
+  };
+  let resizeSaveTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingDockResize: Partial<Pick<HudSettings, 'treeWidth' | 'dockHeight'>> = {};
+  const flushDockResize = () => {
+    if (resizeSaveTimer) {
+      clearTimeout(resizeSaveTimer);
+      resizeSaveTimer = undefined;
+    }
+    const patch = pendingDockResize;
+    pendingDockResize = {};
+    const keys = Object.keys(patch) as Array<'treeWidth' | 'dockHeight'>;
+    if (!keys.length) return;
+    const changed = keys.filter((key) => settings[key] !== patch[key]);
+    if (!changed.length) return;
+    try {
+      settings = saveSettings(patch, settings);
+    } catch {
+      settings = { ...settings, ...patch };
+    }
+    settingsFlow.syncExternal(settings, changed);
+  };
+  let stopDockWatch: (() => void) | undefined;
+
   const scheduler = createCollectionScheduler(settings.refreshMs, {
     isClosed,
+    isHidden: inHerdrDock ? checkDockHidden : undefined,
+    onShow: () => { lastPaint = null; },
     pollReload: () => lifecycle.pollReload(() => settingsFlow.isDirty() || blocksReload(framePlace(state))),
     restart: () => lifecycle.restart({ state: framePlace(state), openedAt, settings: settingsFlow.place() }),
     collectStep,
@@ -592,13 +623,33 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   };
   await lifecycle.run(settings.mouse, {
     input: dispatch,
-    resize: repaintAll,
+    resize: () => {
+      if (scheduler.isPaused()) {
+        scheduler.wake();
+        return;
+      }
+      repaintAll();
+    },
     start() {
       render();
       syncModelListDiscovery();
+      if (inHerdrDock) {
+        stopDockWatch = watchHerdrDockResized(process.env, (side, size) => {
+          if (isClosed()) return;
+          const patch = side === 'bottom'
+            ? { dockHeight: clampDockHeight(size) }
+            : { treeWidth: clampDockWidth(size) };
+          pendingDockResize = { ...pendingDockResize, ...patch };
+          if (resizeSaveTimer) clearTimeout(resizeSaveTimer);
+          resizeSaveTimer = setTimeout(flushDockResize, 50);
+        });
+      }
       scheduler.start(settings.refreshMs);
     },
     dispose() {
+      stopDockWatch?.();
+      stopDockWatch = undefined;
+      flushDockResize();
       jobPipeline.dispose();
       execution.dispose();
       finder.stop();

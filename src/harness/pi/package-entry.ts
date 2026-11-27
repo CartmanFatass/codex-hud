@@ -234,7 +234,7 @@ export function installPiPackage(
     footer?.settled();
   });
   registerHud?.('hud', {
-    description: 'Local HUD panel: on|off|toggle|status|reconnect|help; footer on|off or footer <segment options>',
+    description: 'Local HUD panel: on|off|close|toggle|status|reconnect|help; footer on|off or footer <segment options>',
     async handler(args, ctx) {
       const trimmed = args.trim();
       if (/^footer(?:\s|$)/.test(trimmed)) {
@@ -258,14 +258,14 @@ export function installPiPackage(
         return;
       }
       let message: string;
-      // Bare /hud toggles the panel; the panel never opens by itself.
+      // Bare /hud toggles the panel (show/collapse); the panel never opens by itself.
       const command = trimmed || 'toggle';
       try {
-        if (!['on', 'off', 'toggle', 'status', 'reconnect', 'help'].includes(command))
-          message = 'unknown_subcommand; use on|off|toggle|status|reconnect|help';
+        if (!['on', 'off', 'close', 'toggle', 'status', 'reconnect', 'help'].includes(command))
+          message = 'unknown_subcommand; use on|off|close|toggle|status|reconnect|help';
         else if (command === 'help')
           message =
-            'Panel: bare /hud toggles the shared herdr dock; on|off|toggle|status|reconnect|help. Footer: footer on|off restores/hides the HUD frame independently; footer <segment options>. Reconnect rebinds a canceled transition.';
+            'Panel: bare /hud shows or collapses the shared herdr dock; on|off|close|toggle|status|reconnect|help (off collapses, close stops). Footer: footer on|off restores/hides the HUD frame independently; footer <segment options>. Reconnect rebinds a canceled transition.';
         else if (command === 'reconnect') {
           await start(ctx);
           message = active ? 'reconnected' : 'session_unbound';
@@ -275,7 +275,7 @@ export function installPiPackage(
           else if (!s || !current(s) || ctx.sessionManager !== s.ctx.sessionManager) message = 'session_unbound; use /hud reconnect';
           else if (!isPiTui(ctx)) message = 'panel_noninteractive; role_tools_available';
           else if (!herdrEndpoint(env)) message = 'panel_dock_unavailable; use hud panel --here';
-          else message = await panel(s, command === 'on' ? 'open' : command === 'off' ? 'close' : (command as PanelOperation));
+          else message = await panel(s, command === 'on' ? 'open' : command === 'off' ? 'hide' : (command as PanelOperation));
         }
       } catch (error) {
         message = reason(error);
