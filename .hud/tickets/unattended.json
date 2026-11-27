@@ -114,7 +114,7 @@
     {
       "number": 24,
       "title": "Repair unattended/16+19: escalated questions get a real answer path; wrapped Blockers and landed evidence read whole",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -130,12 +130,19 @@
         {
           "id": 1,
           "text": "Tests cover each of findings 7, 12, 13.",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T13:43:53.162Z",
+        "job": "j44a0dbc7a11e3564",
+        "flow": "f44a0dbc7a11e3564",
+        "replay_base": "4656b24aa940fedd2d1c72d86e9d835bf10d5d25",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T13:23:16.962Z",
-      "updated_at": "2026-11-27T13:23:16.962Z"
+      "updated_at": "2026-11-27T13:43:53.162Z"
     }
   ]
 }

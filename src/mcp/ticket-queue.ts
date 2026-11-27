@@ -23,8 +23,9 @@ import { BUNDLED_ROOT, jobFiles } from './paths.js';
 import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
-  blockerHandbackItem, cancelTicketQueue, clearItemHold, isTicketQueueId, MAX_REPAIR_ROUNDS, prepareTicketQueueRepair, queueIds, readTicketQueue, recordDecision,
-  syncBlockerHandback, ticketQueueNotice, ticketQueueView, writeTicketQueue, type RunDecision, type TicketQueue, type TicketQueueItem,
+  blockerHandbackItem, cancelTicketQueue, clearItemHold, escalatedQuestion, isTicketQueueId, MAX_REPAIR_ROUNDS, prepareTicketQueueRepair,
+  questionReply, queueIds, readTicketQueue, recordDecision, syncBlockerHandback, ticketQueueNotice, ticketQueueView,
+  writeTicketQueue, type RunDecision, type TicketQueue, type TicketQueueItem,
 } from './ticket-queue-state.js';
 
 let template: string | undefined;
@@ -373,6 +374,27 @@ function handbackStepKeys(home: string, q: TicketQueue): string[] {
   return Object.keys(q.steps ?? {});
 }
 
+function reopenPausedQueue(q: TicketQueue, step: string, at: string) {
+  q.epoch = (q.epoch ?? 0) + 1;
+  q.steps ??= {};
+  q.steps[step] = { state: 'running', changed_at: at };
+  delete q.handback;
+  delete q.reason;
+  delete q.remaining;
+  delete q.pid;
+  delete q.start;
+  q.streak = 0; q.settled = 0; q.failures = 0;
+  q.notices = {};
+  q.state = 'working';
+}
+
+async function wakeReopenedQueue(home: string, q: TicketQueue) {
+  // Wait briefly if the exiting runner from the prior pause still holds the driver lock.
+  try { await withAbstractLock('flow-runner', `${home}\0${q.flow}`, () => {}, { timeoutMs: 2_000 }); }
+  catch { /* Best-effort wait; watcher still recovers if busy. */ }
+  wakeWorkflow(home, q);
+}
+
 /** Answer an item hold in a working queue or a paused run-level hand-back. */
 export async function answerTicketQueueHandback(
   home: string,
@@ -416,6 +438,10 @@ export async function answerTicketQueueHandback(
       ok: false, code: 'superseded_run', error: `Ticket queue ${id} was superseded by ${successor}; its hand-back is no longer answerable`,
     });
     if (cur.superseded_by) return superseded(cur.superseded_by);
+    const question = cur.state === 'paused' ? escalatedQuestion(cur.handback) : undefined;
+    if (question && (cur.unattended || !parseHandbackAnswer(answer, ['stop']))) {
+      return { ok: false, code: 'invalid_choice', error: `${questionReply(question.job, question.question)}; do not resume the queue directly` };
+    }
     const step = cur.handback?.step;
     if (cur.state !== 'paused' || !step || !cur.handback?.choices?.length || cur.steps?.[step]?.state !== 'asking') {
       const detail = cur.state === 'paused' && cur.handback?.kind ? `paused for ${cur.handback.kind}` : `state: ${cur.state}`;
@@ -459,17 +485,7 @@ export async function answerTicketQueueHandback(
         ...(parsed.reason && { reason: parsed.reason }),
         at,
       });
-      cur.epoch = (cur.epoch ?? 0) + 1;
-      cur.steps ??= {};
-      cur.steps[step] = { state: 'running', changed_at: at };
-      delete cur.handback;
-      delete cur.reason;
-      delete cur.remaining;
-      delete cur.pid;
-      delete cur.start;
-      cur.streak = 0; cur.settled = 0; cur.failures = 0;
-      cur.notices = {};
-      cur.state = 'working';
+      reopenPausedQueue(cur, step, at);
       writeTicketQueue(home, cur);
       return { ok: true, queue: cur, resumed: true };
     }
@@ -614,10 +630,7 @@ export async function answerTicketQueueHandback(
   const result = await withTicketAdmission(home, queue.root, queue.feature, queue.unattended?.objective,
     () => runLock(home, id, settle));
   if (result.ok && result.resumed) {
-    // Wait briefly if the exiting runner from the prior pause still holds the driver lock.
-    try { await withAbstractLock('flow-runner', `${home}\0${id}`, () => {}, { timeoutMs: 2_000 }); }
-    catch { /* Best-effort wait; watcher still recovers if busy. */ }
-    wakeWorkflow(home, result.queue);
+    await wakeReopenedQueue(home, result.queue);
   } else if (result.ok && result.queue.state === 'paused' && Object.keys(result.queue.notices ?? {}).length) {
     ensureJobWatcher(home);
   }
@@ -629,11 +642,32 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
   const q = queueIds(home).map(id => readTicketQueue(home, id)).filter(q => q !== null)
     .sort((a, b) => b.created_at.localeCompare(a.created_at))
     .find(q => q.tickets.some(item => item.job === jobId || item.repair_job === jobId) || q.review_job === jobId);
-  const matchesQuestion = (q?.handback?.kind === 'question' && q.handback.job === jobId && q.handback.question === request) ||
-    (q?.handback?.kind === 'escalate' && q.handback.job === jobId && q.handback.question === request) ||
+  const matchesQuestion = ((q?.handback?.kind === 'question' || q?.handback?.kind === 'escalate') &&
+    q.handback.job === jobId && q.handback.question === request) ||
     q?.reason?.includes(`(${jobId}): worker question ${request} `);
   // An owner answer can resume the worker, but must not implicitly restart unattended landing.
   if (!q || q.unattended || (q.state !== 'failed' && q.state !== 'paused') || !runVisible(q, pane, cwd) || !matchesQuestion) return undefined;
+  if (escalatedQuestion(q.handback)) {
+    // Reopen the same step, especially review: starting a successor would replace the reviewer we just answered.
+    const reopened = await withTicketAdmission(home, q.root, q.feature, undefined, () => runLock(home, q.flow, () => {
+      const cur = readTicketQueue(home, q.flow);
+      const handback = cur?.handback;
+      if (!cur || cur.state !== 'paused' || cur.superseded_by || !handback || handback.kind !== 'escalate' ||
+          handback.job !== jobId || handback.question !== request) return;
+      if (admissionQueues(home, q.root, q.feature).some(other => other.flow !== cur.flow &&
+          (other.state === 'working' || other.created_at > cur.created_at))) return;
+      const at = new Date().toISOString();
+      const item = cur.tickets.find(t => t.ticket === handback.ticket && (t.repair_job ?? t.job) === jobId);
+      if (item) item.answered_at = item.changed_at = at;
+      recordDecision(cur, { step: handback.step, kind: 'question', job: 'main', decision: 'answer', worker_job: jobId,
+        ...(handback.ticket && { ticket: handback.ticket }), question: request, at });
+      reopenPausedQueue(cur, handback.step, at);
+      writeTicketQueue(home, cur);
+      return cur;
+    }));
+    if (reopened) await wakeReopenedQueue(home, reopened);
+    return reopened?.flow;
+  }
   await runLock(home, q.flow, () => {
     const cur = readTicketQueue(home, q.flow);
     if (!cur || cur.unattended || (cur.state !== 'failed' && cur.state !== 'paused')) return;

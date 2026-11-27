@@ -57,6 +57,9 @@ export interface LandFlow {
   flake_collection?: LandFlakeCollection;
   timings?: LandTiming[];
 }
+/** The source job owns the ticket; the approved or final repair job supplies the landed report. */
+export const landReportJob = (land: LandFlow) => land.approval?.job ?? land.repairs?.at(-1)?.job ?? land.job;
+
 export const isFlowId = (id: unknown): id is string => typeof id === 'string' && /^f[a-f0-9]{16}(?:-[1-9]\d*)?$/.test(id);
 export const retryableLand = (f: LandFlow) => !f.landed_sha && !f.publish_pending && (f.state === 'failed' || f.state === 'cancelled');
 export const activeLand = (f: LandFlow) => f.state === 'queued' || f.state === 'running';

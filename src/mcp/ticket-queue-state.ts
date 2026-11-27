@@ -19,6 +19,15 @@ export interface TicketHandback {
   request_id?: string;
   assumption?: { head: string; report_sig: string };
 }
+export function escalatedQuestion(handback?: Pick<TicketHandback, 'kind' | 'job' | 'question'>) {
+  if (handback?.kind === 'escalate' && handback.job && handback.question) {
+    return { job: handback.job, question: handback.question };
+  }
+}
+
+export const questionReply = (job: string, question: string) =>
+  `Answer the worker: hud_respond job=${job} request_id=${question} answer=<answer>`;
+
 export interface TicketItemHold {
   reason: string; at: string; kind?: TicketHandbackKind; owner_approval?: OwnerApproval;
   head?: string; report_sig?: string; request_id?: string;
@@ -213,8 +222,11 @@ export function ticketQueueNotice(q: TicketQueue) {
   const held = heldCount ? ` Held: ${heldCount}.` : '';
   const heldHint = q.state === 'paused' && !q.unattended && heldCount && !/\bhud_land\b/.test(reason ?? '')
     ? ' Manual resolution required: worker correction, hud_land, or stop.' : '';
-  const reply = q.state === 'paused' && q.handback && q.steps?.[q.handback.step]?.state === 'asking'
-    ? ` Reply: hud_respond job=${q.flow} answer=<${q.handback.choices.join('|')}>[: reason].` : '';
+  const question = q.state === 'paused' ? escalatedQuestion(q.handback) : undefined;
+  const reply = question ? ` ${questionReply(question.job, question.question)}.${q.unattended ? ''
+    : ` To stop the queue: hud_respond job=${q.flow} answer=stop.`}`
+    : q.state === 'paused' && q.handback && q.steps?.[q.handback.step]?.state === 'asking'
+      ? ` Reply: hud_respond job=${q.flow} answer=<${q.handback.choices.join('|')}>[: reason].` : '';
   return `${q.flow} (ticket queue ${q.feature}) — ${reason ?? q.state}. Landed: ${landed.join(', ') || 'none'}.` +
     verdict + todo + held + heldHint +
     (base_moves ? ` Base moves absorbed: ${base_moves}.` : '') +

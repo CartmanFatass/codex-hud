@@ -9,8 +9,9 @@ import type { AnswerResult } from '../collectors/panel-actions.js';
 import { storedTicket } from '../tickets/store.js';
 import { parseRemovalList, ticketApprovedRemovals } from './local-tickets.js';
 import { jobFiles } from './paths.js';
-import { directory, findJob, readCachedStatus, save } from './store/job-store.js';
-import { MAX_REPAIR_ROUNDS, recordDecision, type RunTodoItem, type TicketQueue } from './ticket-queue-state.js';
+import { landReportJob, readLand } from './land-state.js';
+import { directory, findJob, hudHome, readCachedStatus, save } from './store/job-store.js';
+import { MAX_REPAIR_ROUNDS, recordDecision, type RunTodoItem, type TicketQueue, type TicketQueueItem } from './ticket-queue-state.js';
 import type { OwnerApproval } from '../unattended/state.js';
 import { declaresNone, extractAssumedLines, extractReportNotes } from './report-notes.js';
 
@@ -140,10 +141,24 @@ function ticketSummaryLines(q: TicketQueue, item: Pick<TicketQueue['tickets'][nu
   }
 }
 
-export function buildReviewBrief(q: TicketQueue, stepTask: string): string {
+function landedEvidence(item: TicketQueueItem) {
+  let job = item.job;
+  if (item.land) {
+    const land = readLand(hudHome, item.land);
+    // Don't cite the original as landed evidence when the actual receipt isn't available.
+    job = land?.state === 'completed' && land.job === item.job ? landReportJob(land) : undefined;
+  }
+  if (!job) return {};
+  const dir = directory(job);
+  const checks = join(dir, jobFiles.checks);
+  return { job, report: join(dir, jobFiles.report), checks: fs.existsSync(checks) ? checks : undefined };
+}
+
+export function buildReviewBrief(q: TicketQueue, stepTask: string) {
   const landed = q.tickets.filter(t => t.landed);
   const crossRepo = landed.some(item => item.repo && item.repo !== q.root);
   const local = landed.some(item => !item.repo || item.repo === q.root);
+  const fromJobs: string[] = [];
   const lines = [
     stepTask,
     '',
@@ -153,12 +168,13 @@ export function buildReviewBrief(q: TicketQueue, stepTask: string): string {
     'Landed tickets and design intent:',
     ...landed.map(item => {
       const info = ticketSummaryLines(q, item);
-      const report = item.job ? join(directory(item.job), jobFiles.report) : 'no report';
+      const { job, report, checks } = landedEvidence(item);
+      if (job && report && fs.existsSync(report)) fromJobs.push(job);
       const target = item.repo && item.repo !== q.root ? ` | target repo: ${item.repo} | land: ${item.land ?? 'none'}` : '';
-      return `- ${item.ticket}: ${info.goal ?? item.path}${target} | report: ${report}`;
+      return `- ${item.ticket}: ${info.goal ?? item.path}${target} | report: ${report ?? 'no report'}${checks ? ` | checks: ${checks}` : ''}`;
     }),
   ];
-  return lines.join('\n') + '\n';
+  return { task: lines.join('\n') + '\n', fromJobs: fromJobs.slice(-16) };
 }
 
 export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'handback' }>): string {
@@ -181,13 +197,11 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
     '## Tickets, Live Try & Reports',
     ...(landed.length ? landed.map(item => {
       const info = ticketSummaryLines(q, item);
-      const jobDir = item.job ? directory(item.job) : undefined;
-      const reportRef = jobDir ? join(jobDir, jobFiles.report) : 'none';
-      const checksRef = jobDir && fs.existsSync(join(jobDir, jobFiles.checks)) ? ` | checks: ${join(jobDir, jobFiles.checks)}` : '';
+      const { report, checks } = landedEvidence(item);
       return `- ${item.ticket}: ${info.goal ?? item.path}` +
         (info.liveTry ? ` | Live try: ${info.liveTry}` : '') +
         (item.repo && item.repo !== q.root ? ` | target repo: ${item.repo} | land: ${item.land ?? 'none'}` : '') +
-        ` | ticket: ${item.path} | report: ${reportRef}${checksRef}`;
+        ` | ticket: ${item.path} | report: ${report ?? 'none'}${checks ? ` | checks: ${checks}` : ''}`;
     }) : ['- (none landed)']),
   ];
 

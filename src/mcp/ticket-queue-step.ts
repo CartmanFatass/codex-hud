@@ -32,7 +32,7 @@ import { piReportSettlement } from './pi-read-settlement.js';
 import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
-  blockerHandbackItem, clearItemHold, prepareTicketQueueRepair, readTicketQueue, syncBlockerHandback,
+  blockerHandbackItem, clearItemHold, escalatedQuestion, prepareTicketQueueRepair, questionReply, readTicketQueue, syncBlockerHandback,
   ticketQueueNotice, writeTicketQueue,
   type TicketHandback, type TicketHandbackKind, type TicketQueue, type TicketQueueItem,
 } from './ticket-queue-state.js';
@@ -366,11 +366,12 @@ export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
   };
   q.queued = undefined;
   q.remaining = computeRemaining(q);
+  const question = escalatedQuestion(problem);
   if (q.unattended && (q.held || problem?.ownerApproval || problem?.kind === 'blocker' || problem?.kind === 'escalate')) {
-    const manual = Boolean(q.held || problem?.ownerApproval);
+    const manual = Boolean(q.held || problem?.ownerApproval || question);
     q.handback = {
       step,
-      choices: manual ? ['manual'] : ['resume', 'stop'],
+      choices: question ? [] : manual ? ['manual'] : ['resume', 'stop'],
       ...(problem && {
         kind: problem.kind,
         ...(problem.ticket && { ticket: problem.ticket }),
@@ -394,7 +395,7 @@ export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
   }
   q.handback = {
     step,
-    choices: ['resume', 'stop'],
+    choices: question ? ['stop'] : ['resume', 'stop'],
     ...(problem && {
       kind: problem.kind,
       ...(problem.ticket && { ticket: problem.ticket }),
@@ -471,7 +472,7 @@ function tickPendingAnswer(q: TicketQueue, state: { problem?: TicketProblem }): 
       delete cur.pending_answer;
       if (cur.unattended && pending.ticket) {
         const entry = cur.tickets.find(t => t.ticket === pending.ticket);
-        if (entry) holdItem(entry, why, 'question');
+        if (entry) holdItem(entry, `${why}. ${questionReply(pending.worker_job, pending.question)}`, 'question');
       } else {
         if (cur.unattended) holdRun(cur, `${pending.step} (${pending.worker_job}): ${why}`, 'question');
         state.problem = {
@@ -500,20 +501,19 @@ function tickQuestionLead(q: TicketQueue, state: { problem?: TicketProblem }): T
   const applyHoldOrEscalate = (cur: TicketQueue, why: string, kind: TicketHandbackKind, ownerApproval?: OwnerApproval) => {
     if (cur.unattended && active.ticket) {
       const entry = cur.tickets.find(t => t.ticket === active.ticket);
-      if (entry) { holdItem(entry, why, kind, ownerApproval); return; }
+      if (entry) {
+        const reply = active.worker_job && active.question ? `. ${questionReply(active.worker_job, active.question)}` : '';
+        holdItem(entry, `${why}${reply}`, kind, ownerApproval);
+        return;
+      }
     }
     if (cur.unattended) holdRun(cur, `${label} (${active.worker_job}): ${why}`, kind, ownerApproval);
     state.problem = escalateProblem(`${label} (${active.worker_job}): ${why}`, ownerApproval);
   };
   if (!leadJob) {
     delete q.active_lead;
-    if (q.unattended && active.ticket) {
-      const entry = q.tickets.find(t => t.ticket === active.ticket);
-      if (entry) { holdItem(entry, `question lead (${active.job}) receipt missing`, 'question'); return { state: 'running', changed: true }; }
-    }
-    if (q.unattended) holdRun(q, `question lead (${active.job}) receipt missing`, 'question');
-    state.problem = escalateProblem(`question lead (${active.job}) receipt missing`);
-    return { state: 'failed', reason: state.problem.reason, changed: true };
+    applyHoldOrEscalate(q, `question lead (${active.job}) receipt missing`, 'question');
+    return state.problem ? { state: 'failed', reason: state.problem.reason, changed: true } : { state: 'running', changed: true };
   }
   const { row, status } = readRow(leadJob, false, null);
   const failed = failedAttempt(row) || row.state === 'stopped' || fs.existsSync(join(directory(leadJob.job), jobFiles.stopRequested));
@@ -672,7 +672,10 @@ function dispatchQuestionLead(
       const why = `question ${question} remains open after lead (${existing.job}) already settled`;
       if (q.unattended && ticket) {
         const entry = q.tickets.find(t => t.ticket === ticket);
-        if (entry) { holdItem(entry, why, 'question'); return { state: 'running', changed: true }; }
+        if (entry) {
+          holdItem(entry, `${why}. ${questionReply(workerJob.job, question)}`, 'question');
+          return { state: 'running', changed: true };
+        }
       }
       if (q.unattended) holdRun(q, `${ticket ?? step} (${workerJob.job}): ${why}`, 'question');
       state.problem = { kind: 'escalate', step, ticket, job: workerJob.job, question, reason: `${ticket ?? step} (${workerJob.job}): ${why}` };
@@ -727,7 +730,10 @@ function dispatchQuestionLead(
           const cur = readTicketQueue(hudHome, flowId);
           if (!cur || cur.state !== 'working') return;
           const entry = cur.tickets.find(t => t.ticket === ticket);
-          if (entry) { holdItem(entry, err!, 'question'); writeTicketQueue(hudHome, cur); }
+          if (entry) {
+            holdItem(entry, `${err}. ${questionReply(workerJob.job, question)}`, 'question');
+            writeTicketQueue(hudHome, cur);
+          }
         });
       } else {
         state.problem = { kind: 'escalate', step, ticket, job: workerJob.job, question, reason: err };
@@ -1562,12 +1568,8 @@ function tickJobStep(
   }
 
   const flowId = q.flow, root = q.root, pane = livePane(q), workspace = q.workspace, dispatcher = q.dispatcher;
-  const task = buildReviewBrief(q, step.task ?? 'Milestone two-axis review per docs/delegation.md step 5.');
+  const { task, fromJobs } = buildReviewBrief(q, step.task ?? 'Milestone two-axis review per docs/delegation.md step 5.');
   const runNote = step.ask === false ? WORKFLOW_WORKER_RULE_NO_ASK : undefined;
-  const fromJobs = q.tickets
-    .filter(item => item.landed && item.job && fs.existsSync(join(directory(item.job), jobFiles.report)))
-    .map(item => item.job!)
-    .slice(-16);
   return { state: 'running', changed: true, effect: async () => {
     const canAdmit = () => {
       const cur = readTicketQueue(hudHome, flowId);

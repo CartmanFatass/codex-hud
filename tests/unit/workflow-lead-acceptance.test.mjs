@@ -198,6 +198,7 @@ for (const changesHead of [true, false]) test(`ordinary land repair sends ${chan
     fs.writeFileSync(join(f.env.HOME, 'synthetic-gate-green'), 'green');
   }
   const report = `Synthetic repair finished.\n${declaration}\n\n## Not done\n- Acceptance item 2: fallback path unchecked.\n`;
+  for (const id of [job, repair]) writeFixtureFile(join(f.dir(id), 'checks.json'), '{"state":"done","results":[]}');
   await f.settleReport(repair, report);
   const head = f.git(checkout, 'rev-parse', 'HEAD');
   assert.equal(head !== approved.head, changesHead);
@@ -222,6 +223,22 @@ for (const changesHead of [true, false]) test(`ordinary land repair sends ${chan
   const record = f.ticketRecord(1, 'sample', 'base');
   assert.equal(record.status, 'ready-for-agent');
   assert.deepEqual(record.acceptance.map(({ id, done }) => [id, done]), [[1, true], [2, false]]);
+  assert.equal(record.landing.job, job, 'ticket attribution stays with the source worker');
+
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  const reviewer = f.flow(flow).review_job;
+  const reviewBrief = fs.readFileSync(join(f.dir(reviewer), 'brief.md'), 'utf8');
+  assert.deepEqual(f.job(reviewer).from_jobs, [repair]);
+  assert.ok(reviewBrief.includes(`report: ${join(f.dir(repair), 'report.md')} | checks: ${join(f.dir(repair), 'checks.json')}`));
+  assert.ok(reviewBrief.includes(`${repair} report: ${JSON.stringify(join(f.dir(repair), 'report.md'))}`), 'review context references the repair report');
+  assert.ok(!reviewBrief.includes(f.dir(job)));
+
+  await f.settleReview(reviewer);
+  await until(() => f.flow(flow).active_lead?.kind === 'accept', 15_000);
+  const packet = fs.readFileSync(join(f.dir(f.flow(flow).active_lead.job), 'brief.md'), 'utf8');
+  assert.match(packet, /- sample\/01: Synthetic change 1/);
+  assert.ok(packet.includes(`report: ${join(f.dir(repair), 'report.md')} | checks: ${join(f.dir(repair), 'checks.json')}`));
+  assert.ok(!packet.includes(f.dir(job)));
 });
 
 test('a blocker escalation holds just its ticket and dependent; an independent try-note ticket dispatches and lands before resume', { timeout: 60_000 }, async t => {
@@ -321,7 +338,7 @@ test('extractReportNotes parses heading/empty Blockers, qualified none, try note
     { blockers: [], tries: ['owner live try remains: reopen the panel'] },
   );
   assert.deepEqual(
-    extractReportNotes('Blockers: owner live try remains: reopen the panel and observe\n'),
+    extractReportNotes('- **Blockers:** owner live try remains: reopen the panel\n  and observe\n- **Removes:** none\n'),
     { blockers: [], tries: ['owner live try remains: reopen the panel and observe'] },
   );
   assert.deepEqual(
@@ -333,7 +350,7 @@ test('extractReportNotes parses heading/empty Blockers, qualified none, try note
     { blockers: [], tries: ['owner live try remains: look at the status bar'] },
   );
   assert.deepEqual(
-    extractReportNotes('Blockers: owner live try remains: reopen the panel and pick which layout ships\n'),
+    extractReportNotes('Blockers: owner live try remains: reopen the panel\n  and pick which layout ships\nRemoves: none\n'),
     { blockers: ['owner live try remains: reopen the panel and pick which layout ships'], tries: [] },
   );
   assert.deepEqual(
@@ -370,7 +387,7 @@ test('extractReportNotes parses heading/empty Blockers, qualified none, try note
   );
 });
 
-test('mixed try-detail Blockers joined by and or semicolon go to the lead instead of landing silently', { timeout: 60_000 }, async t => {
+test('mixed try-detail Blockers with a Markdown wrap or semicolon go to the lead instead of landing silently', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: {
     '01-mixed-and.md': goodTicket(1),
     '02-mixed-semi.md': goodTicket(2, { blocked: 'none' }),
@@ -379,7 +396,7 @@ test('mixed try-detail Blockers joined by and or semicolon go to the lead instea
   const [job1, job2] = await f.jobs(flow, 2);
 
   const andLine = 'owner live try remains: reopen the panel and pick which layout ships';
-  await f.settle(job1, { report: `Done.\nBlockers: ${andLine}\nRemoves: none\n` });
+  await f.settle(job1, { report: `Done.\nBlockers: ${andLine.replace(' and ', '\n  and ')}\nRemoves: none\n` });
   await until(() => f.flow(flow).active_lead?.kind === 'blocker' && f.flow(flow).active_lead.ticket === 'sample/01', 15_000);
   const lead1 = f.flow(flow).active_lead.job;
   assert.ok(fs.readFileSync(join(f.dir(lead1), 'brief.md'), 'utf8').includes(`Worker Blockers: lines:\n- ${andLine}`));
@@ -1107,6 +1124,59 @@ test('worker and reviewer questions use temporary leads with no hud_land; owner-
   const mainRead = await f.call('hud_read', { job: flow });
   assert.equal(mainRead.changes.length, 1);
   assert.match(mainRead.changes[0], /Verdict: finish: Clean acceptance\. Todo: 1\./);
+});
+
+test('question lead escalations at tickets and review resume only after answering the specific worker', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root });
+  const [worker] = await f.jobs(flow, 1);
+
+  async function escalateAndAnswer(step, job, epoch) {
+    const question = join(f.dir(job), 'qa', 'q1.md');
+    writeFixtureFile(question, '# Question q1\n\nWhich synthetic layout should ship?\n');
+    await until(() => f.flow(flow).active_lead?.kind === 'question', 15_000);
+    const lead = f.flow(flow).active_lead;
+    assert.equal(lead.worker_job, job);
+    await f.settleLead(lead.job, 'Decision: escalate\nReason: The owner needs to pick a layout.\n');
+
+    const paused = await f.end(flow);
+    assert.equal(paused.state, 'paused');
+    assert.equal(paused.steps[step].state, 'asking');
+    assert.deepEqual(paused.handback.choices, ['stop']);
+    assert.equal(paused.handback.job, job);
+    assert.equal(paused.handback.question, 'q1');
+    const target = `hud_respond job=${job} request_id=q1`;
+    const notice = paused.notices[`pause-${epoch}`];
+    assert.ok(notice.includes(target));
+    assert.doesNotMatch(notice, /answer=<resume/);
+    const refusesResume = await f.call('hud_respond', { job: flow, answer: 'resume' });
+    assert.equal(refusesResume.code, 'invalid_choice');
+    assert.ok(refusesResume.error.includes(target));
+    assert.equal(f.flow(flow).epoch, epoch);
+    assert.equal(f.flow(flow).state, 'paused');
+
+    const response = await f.call('hud_respond', { job, request_id: 'q1', answer: 'Use the compact layout.' });
+    assert.equal(response.queue_resumed, flow);
+    assert.equal(fs.readFileSync(join(f.dir(job), 'qa', 'q1.answer.md'), 'utf8'), 'Use the compact layout.');
+    const reopened = f.flow(flow);
+    assert.equal(reopened.state, 'working');
+    assert.equal(reopened.steps[step].state, 'running');
+    assert.equal(reopened.epoch, epoch + 1);
+    assert.equal(reopened.active_lead, undefined);
+    assert.ok(reopened.decisions.some(d => d.step === step && d.kind === 'question' && d.decision === 'answer' &&
+      d.job === 'main' && d.worker_job === job && d.question === 'q1'));
+  }
+
+  await escalateAndAnswer('tickets', worker, 0);
+  await f.settle(worker);
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  const reviewer = f.flow(flow).review_job;
+  await escalateAndAnswer('review', reviewer, 1);
+  assert.equal(f.flow(flow).review_job, reviewer);
+  await f.settleReview(reviewer);
+  await until(() => f.flow(flow).active_lead?.kind === 'accept', 15_000);
+  await f.settleLead(f.flow(flow).active_lead.job);
+  assert.equal((await f.end(flow)).state, 'completed');
 });
 
 test('failed question delivery retries up to bound instead of looping on closed lead; refused lead close is not presented as closed', { timeout: 60_000 }, async t => {

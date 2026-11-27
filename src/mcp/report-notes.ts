@@ -154,10 +154,18 @@ export function extractReportNotes(reportText: string): { blockers: string[]; tr
     const indent = (colonMatch?.[1] ?? headingMatch?.[1] ?? '').length;
     const isListHeader = Boolean(colonMatch?.[2]);
     const field = (colonMatch?.[4] ?? headingMatch?.[3] ?? '').toLowerCase() as 'blockers' | 'try';
-    const inlineValue = colonMatch ? cleanInlineNote(colonMatch[5]) : '';
+    const inlineValue = colonMatch?.[5].trim() ?? '';
 
-    if (inlineValue) {
-      recordEntry(field, inlineValue);
+    if (cleanInlineNote(inlineValue)) {
+      const parts = [inlineValue];
+      while (i + 1 < lines.length) {
+        const next = lines[i + 1];
+        if (!next.trim() || next.match(/^[ \t]*/)![0].length <= indent ||
+            knownReportField.test(next) || markdownHeading.test(next) || horizontalRule.test(next)) break;
+        parts.push(next.trim());
+        i++;
+      }
+      recordEntry(field, parts.join(' '));
       continue;
     }
 

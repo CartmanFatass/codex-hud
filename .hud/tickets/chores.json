@@ -6,7 +6,7 @@
     {
       "number": 54,
       "title": "A land-repair replacement worker does not re-claim a partially landed flake ticket",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -29,7 +29,7 @@
         {
           "id": 3,
           "text": "Full suite passes",
-          "done": false
+          "done": true
         }
       ],
       "landing": {
@@ -44,10 +44,15 @@
           "at": "2026-11-27T12:57:30.086Z",
           "author": "land",
           "text": "Partial landing (ff1dad1084c5d3013, job jf1dad1084c5d3013): acceptance left unticked: #3 Full suite passes"
+        },
+        {
+          "at": "2026-11-27T13:34:38.917Z",
+          "author": "main",
+          "text": "main: #3 is covered by the land gate (full suite, 5 gates) of ff1dad1084c5d3013; marked done."
         }
       ],
       "created_at": "2026-11-27T12:17:08.264Z",
-      "updated_at": "2026-11-27T12:57:30.086Z"
+      "updated_at": "2026-11-27T13:34:38.917Z"
     },
     {
       "number": 56,
@@ -78,6 +83,131 @@
       "comments": [],
       "created_at": "2026-11-27T13:07:36.037Z",
       "updated_at": "2026-11-27T13:17:45.502Z"
+    },
+    {
+      "number": 57,
+      "title": "A live run member keeps its folded helpers in Run Detail",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Review j3a3a4af9a6d30f96 #1. `src/collectors/execution.ts` folds a settled helper out of Recent when its parent is live (`reachable` accepts `liveSet`), but the `otherSteps` loop skips a parent with `settledAt === null`, so a live batch item's helper shows nowhere in its run. Build the `otherSteps` row for a live parent from its recorded state (running); keep the 24 h cutoff for settled parents only. While here, replace the `seenRepairJob` set with a comparison against `ticket.jobId` (`isLastForJob` already picks one repair per ID); keep the source-row exclusion. Add a unit test: a running batch imp with one settled sonic helper.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A running batch member with a settled sonic helper: the helper has no Recent row and Run Detail shows a selectable `+1 sonic` row for the member whose Inspector lists the helper's ask",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Settled-parent behaviour and the 24 h cutoff for settled parents are unchanged",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Unit test covers the live batch member case",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T13:35:15.922Z",
+      "updated_at": "2026-11-27T13:35:15.922Z"
+    },
+    {
+      "number": 58,
+      "title": "A repaired graph check does not take its build's helpers",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Review j3a3a4af9a6d30f96 #2. When `dispatchLandRepair` repairs in place it returns the source worker ID (`src/mcp/dispatch/orchestrator.ts` ~1862-1866) and `tickCheck` keeps it on the check cursor (`src/mcp/composed-step.ts` ~328-365). `readFixedExecutionRun` (`src/collectors/execution-runs.ts` ~1229-1237) marks only land nodes as `borrowedJob`, so the check node wins the fold in `src/collectors/execution.ts` and the build's helpers move to it. Mark a check node whose job ID equals its input step's job ID as borrowing it; a check with a distinct replacement job still owns that job's helpers. Add unit tests for a check with an in-place repair cursor and one with a distinct replacement job.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A graph check whose repair cursor reuses the build job ID shows no folded helpers; the build node keeps them",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A check repaired by a distinct replacement job shows that job's helpers on the check node",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Unit tests cover both cursors",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T13:35:15.922Z",
+      "updated_at": "2026-11-27T13:35:15.922Z"
+    },
+    {
+      "number": 59,
+      "title": "An indexed flake refusal is delivered even when job.json exceeds 64 KiB",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Review j3a3a4af9a6d30f96 #3. `flakeBlockEvents` (`src/workflows/events.ts` ~30-33) reads indexed receipts with `cache.readJob` and skips every non-`ok` result; the cache caps JSON at 65,536 bytes (`src/roles/job-index-cache.ts`), while the watcher supports larger receipts (`src/runtime/watch-runtime.ts` ~85-96). An indexed refusal on an oversized receipt never produces a notice. Handle the `truncated` result for indexed IDs only (for example a bounded full read of that one receipt, or store the recipient fields needed for delivery with the index entry), without scanning job directories. Keep the `.noticed` once-only claim, recipient and no-land-flow rules. Also prune index entries whose refusal is already noticed or whose job dir is gone, so a quiet tick stays O(pending) (lead jf3d19db9344daa4e).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A valid refusal on a job.json larger than 64 KiB produces exactly one task-client notice, and none once a land flow exists",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No job-directory enumeration is added to the notice tick; noticed or vanished entries are pruned from the index",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Unit test mirrors the existing refusal test with an oversized receipt",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T13:35:15.922Z",
+      "updated_at": "2026-11-27T13:35:15.922Z"
+    },
+    {
+      "number": 60,
+      "title": "A ticket write that would cross the 64 KiB feature cap archives done tickets instead of failing",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Run q817cf4916491d787 lost its repair round because `hud_tickets add` on `chores` failed with \"Ticket feature chores exceeds 64 KiB\"; main then split by hand twice (chores-done on 2026-11-26/27, chores-done-2 in bdb22016). Long-lived features grow past the cap every ~30 tickets. Keep the cap. When an add, update, comment, landing record or repair add would push `<feature>` over it, HUD first moves that feature's done/wontfix tickets that no open ticket in any feature names in `blocked_by` (and never the highest-numbered ticket, because the next number is the last ticket's number + 1 in `src/mcp/ticket-store-ops.ts` ~147) into the archive sibling `<feature>-done` or, if that is full, the next `<feature>-done-N` with room (create it; same objective). Rewrite `blocked_by`/`repairs` refs to moved tickets in every feature, add the new sibling to the objective's Features line in `.hud/objectives.md`, and do it under the tickets lock in one write set that the sweep/commit path treats as HUD-written. If nothing can move, fail as today. `hud_tickets get`/ref resolution for `<feature>/NN` must still find a moved ticket (search the feature's archive siblings) so existing refs such as `chores/46` in reports keep working. Update docs/reference.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: an add that would cross the cap succeeds, moves eligible done tickets to `<feature>-done` (or the next `-done-N` when full), keeps the highest-numbered ticket, and the next add gets the next number",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: open tickets' blocked_by/repairs refs to moved tickets are rewritten, and `hud_tickets get` with `feature/NN` finds a moved ticket",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: a land's ticket record that would cross the cap archives instead of failing the land",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "The objective's Features line lists the new sibling; docs/reference.md describes archiving",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T13:35:30.885Z",
+      "updated_at": "2026-11-27T13:35:30.885Z"
     }
   ]
 }

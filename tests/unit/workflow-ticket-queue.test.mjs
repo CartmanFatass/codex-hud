@@ -523,7 +523,54 @@ test('unattended does not reap a question lead that never started', { timeout: 3
   assert.ok(!f.fakeLog().some(c => c.command === 'hud-reap' && c.args[0] === f.dir(lead.job)));
   assert.equal(done.unclosed_leads, undefined);
   assert.match(done.tickets[0].held.reason, /question lead failed.*hud trust/);
+  assert.ok(done.tickets[0].held.reason.includes(`hud_respond job=${worker} request_id=q1`));
 });
+
+for (const step of ['review', 'accept']) {
+  test(`unattended ${step} escalation does not offer a replaying queue resume`, { timeout: 45_000 }, async t => {
+    const f = await setupWorkflowProject(t, { count: 1, tickets: { '01-synthetic.md': goodTicket(1, { ownerTry: 'yes' }) } });
+    const u = unattended(f);
+    f.onCleanup(() => u.cmd('off'));
+    u.cmd('on', '--objective', 'selected');
+    const flow = await u.findRun('selected');
+    await f.settle(await u.ticketJob(flow, 'sample/01'));
+    const report = 'Decision: escalate\nReason: The owner needs to pick a layout.\n';
+    let reviewer;
+    if (step === 'review') {
+      await until(() => Boolean(f.flow(flow).review_job), 15_000);
+      reviewer = f.flow(flow).review_job;
+      writeFixtureFile(join(f.dir(reviewer), 'qa', 'q1.md'), '# Question q1\n\nWhich synthetic layout should ship?\n');
+      await until(() => f.flow(flow).active_lead?.kind === 'question', 15_000);
+      await f.settleLead(f.flow(flow).active_lead.job, report);
+    } else {
+      await u.accept(flow, report);
+    }
+
+    const paused = await f.end(flow);
+    assert.equal(paused.state, 'paused');
+    assert.equal(paused.handback.step, step);
+    assert.doesNotMatch(paused.notices['pause-0'], /answer=<resume/);
+    const rejected = await f.call('hud_respond', { job: flow, answer: 'resume' });
+    assert.equal(rejected.ok, false);
+    if (reviewer) {
+      const target = `hud_respond job=${reviewer} request_id=q1`;
+      assert.deepEqual(paused.handback.choices, []);
+      assert.ok(paused.notices['pause-0'].includes(target));
+      assert.ok(rejected.error.includes(target));
+      const response = await f.call('hud_respond', { job: reviewer, request_id: 'q1', answer: 'Use the compact layout.' });
+      assert.equal(response.ok, true);
+      assert.equal(response.queue_resumed, undefined);
+      assert.equal(fs.readFileSync(join(f.dir(reviewer), 'qa', 'q1.answer.md'), 'utf8'), 'Use the compact layout.');
+    } else {
+      assert.deepEqual(paused.handback.choices, ['manual']);
+      assert.equal(paused.handback.question, undefined);
+      assert.doesNotMatch(paused.notices['pause-0'], /Answer the worker/);
+    }
+    assert.equal(f.flow(flow).state, 'paused');
+    assert.equal(f.flow(flow).verdict, undefined);
+    assert.equal(f.ticketRecord(1).status, 'ready-for-human');
+  });
+}
 
 test('unattended reserves a paused Objective and does not re-admit its failed job under another Objective', { timeout: 35_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: {
