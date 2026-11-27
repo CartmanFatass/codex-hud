@@ -4,7 +4,7 @@ Applies to every worker job in this repository, after its own task.
 
 - Rules from `docs/ARCHITECTURE.md` §8 are inlined below; open `docs/ARCHITECTURE.md` only when your change needs
   subsystem detail. `docs/spec.md` is the product boundary.
-- Run every build and test through `/home/fires/projects/MyHUD/tmp/env.sh <command>` (temporary HOME, HUD_HOME,
+- Run every build and test through `~/projects/MyHUD/tmp/env.sh <command>` (temporary HOME, HUD_HOME,
   CODEX_HOME); `tmp/` is not in worktrees, so use this absolute path and do not copy it. Never run tests against the
   real home.
 - Build with `npm run build && npm run build:test`, then run the tests for the code you touched. The full suite
