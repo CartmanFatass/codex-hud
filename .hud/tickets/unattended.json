@@ -283,7 +283,7 @@
     {
       "number": 28,
       "title": "hud_respond cannot answer Claude prompts with a countdown line",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -293,17 +293,97 @@
         {
           "id": 1,
           "text": "A Claude permission prompt whose countdown text changes between notice and answer is still answered by `hud_respond approve` with the notice's request_id, and the key lands.",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "A prompt whose command text or selected option changed is still refused with `prompt_changed`.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T16:09:27.116Z",
+        "job": "j1ff1e0d5d04ce2bd",
+        "flow": "f1ff1e0d5d04ce2bd",
+        "replay_base": "66508ec96bfa018bc96b56729ce0946d352eeae5",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T15:47:46.732Z",
+      "updated_at": "2026-11-27T16:09:27.116Z"
+    },
+    {
+      "number": 29,
+      "title": "One delivery-state record and call-time recipient lookup for notices and permission hand-offs",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "unattended/27"
+      ],
+      "repairs": [
+        "unattended/26"
+      ],
+      "what": "Implement section 1.1–1.3 of oracle design j4b2631efe93fb5fb (read it with `hud_read({job: \"j4b2631efe93fb5fb\", mode: \"full\"})`; it is the spec for this ticket), except the MCP task-reload part (next ticket). Main decisions taken from it (main, 2026-11-27): permission routing fork A (one job-level `perm-<id>.noticed` path for every job kind; delete `syncPermissionNotices`), `sending` state fork A.\n\nIn short:\n- `.noticed`/`.observed` become atomic 0600 JSON records `{v, state, epoch, pid?, start?, via?, reason?, at, expires?}` with states pending (absent) / claimed / sending / accepted / unknown / abandoned; legacy 0-byte files read as accepted; never write 0-byte files. Unknown is never read as delivered nor as not-sent.\n- One `resolveRecipient` at call time (origin pane live → origin; else any live main-agent pane of the same project root; listing failure → leave pending). No stored pane routing tables (owner rule: look up panes at call time).\n- `hud_respond` on `perm-*` allowed for a project main when the origin pane is gone (`operations.ts` ~925).\n- Deletions: `syncPermissionNotices` (`ticket-queue-step.ts` ~75–104); `codexQueueRefusalText` and substring checks in `src/roles/notify.ts` (refusal only on structured codes, ENOENT, pre-exec usage exit 2); the permission branch of `jobChanges` (`thin-jobs.ts` ~526–529) and `verbose && !first ? [] :` in `watch.ts` ~485; `FOREIGN_NOTICED_PRUNE_MS` and bare `existsSync` delivery checks (`events.ts`, `watch-runtime.ts` ~240). Antigravity stop: commit `sent.accepted` claims before releasing the rest.\n- Update `docs/reference.md` (and `.zh`) where delivery/permission routing is described.\nOut of scope: MCP `flowTasks` reload authority (next ticket), the oracle's unrequested hardening list, permission classification (unattended/27).\nSize: oracle estimate ~+175/−140 source lines over ~9 files, ~150 test lines in existing suites. Stop and report if it grows past ~1.5×.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A worker started before its main pane exits hits a permission prompt: another live main pane in the same project receives the approve/decline notice and can answer it with `hud_respond`; `syncPermissionNotices` no longer exists.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "`codex queue` exit 1 with stderr containing `permission denied` or `no such file` is treated as unknown and the notice is not typed again.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "`hud watch --verbose` emits a post-startup permission once and nothing for it after a restart while it is still blocked.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Stopping an Antigravity queue watch after the mailbox accepted an item keeps that item accepted and releases only the unaccepted ones.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "A flake-block index entry is pruned only on accepted delivery or a missing/landed source, never while a claim is in flight; no 60 s foreign-claim timer remains.",
           "done": false
         }
       ],
       "comments": [],
-      "created_at": "2026-11-27T15:47:46.732Z",
-      "updated_at": "2026-11-27T15:47:46.732Z"
+      "created_at": "2026-11-27T16:03:52.535Z",
+      "updated_at": "2026-11-27T16:03:52.535Z"
+    },
+    {
+      "number": 30,
+      "title": "MCP task reload keeps only receipts this process owns",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/26"
+      ],
+      "what": "Finding 5 of review jaf9f426dbdf5c418, designed in oracle report j4b2631efe93fb5fb §1.3 (read it with `hud_read`). On hot reload, `src/mcp/mcp/server.ts` ~320–330 rebuilds a missing flow-task caller receipt from `landTasks: Set<string>` using `flow.epoch` and `created_at + TASK_TTL`, which `tasks.ts` then accepts, including for cancel. Replace `landTasks` with `flowTasks: Map<id, {id, epoch?, expiresAt}>` in `snapshot()`; delete the fabrication. Legacy Set entries (one upgrade reload) backfill only from an unexpired queue task marker matching this process's pid, start time and the flow epoch; otherwise the task is unknown. `tasks/get` and `tasks/cancel` on an unknown task answer `unknownTask` (point to `hud_read`); cancel additionally needs in-memory connection authority.\nOut of scope: notice/permission delivery records (other ticket), the oracle's unrequested hardening list.\nSize: ~+35/−25 source lines in server.ts, tasks.ts, task-bounds.ts, operations.ts; one reload unit test.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "After `snapshot()` → reload with a missing caller receipt and a foreign or absent `flows/<q>/task.json`, both `tasks/get` and `tasks/cancel` report the task unknown and nothing is cancelled.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A task this process owns survives a reload with the same epoch and expiry.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T16:03:52.535Z",
+      "updated_at": "2026-11-27T16:03:52.535Z"
     }
   ]
 }

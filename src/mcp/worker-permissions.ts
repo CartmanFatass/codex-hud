@@ -15,6 +15,8 @@ const MAX_LEDGER_BYTES = 65_536;
 const PERMISSION_LOCK_TIMEOUT_MS = 10_000;
 const FOOTER = /^(?:(?:Enter to (?:select|confirm) · )?(?:(?:Tab\/arrow keys|↑\/↓|↑↓|arrows|arrow keys) to navigate · )?Esc to cancel|Enter to (?:select|confirm) · (?:Esc to cancel|Tab to amend)(?: · Esc to cancel)?|Press enter to confirm or esc to cancel)(?:\s*·\s*(?:Tab to amend|Ctrl\+e to explain))*$/i;
 const CLAUDE_TITLE = /^(?:Bash command|(?:Edit|Write|Create) file(?::?\s+.+)?|Do you want to allow this connection\?)$/i;
+const CLAUDE_COUNTDOWN = /^⚠\uFE0F? Claude Code will automatically block this request in \d+:[0-5]\d, to avoid holding up an unattended session$/;
+const BOTTOM_BORDER = /^[╰╯─━—]+$/;
 const OTHER_TITLE = /^(?:Permission required|Permission request|Tool approval required|Command approval required|(?:Edit|Write|Create|File) approval required|(?:Edit|Write|Create) file(?::?\s+.+)?|Allow command\?|Would you like to (?:run the following command|make the following edits)\?)$/i;
 const CWD_LINE = /^(?:Cwd|Working directory|Directory):\s+(.+)$/i;
 const FILE_LINE = /^(?:File|Path):\s+(.+)$/i;
@@ -55,7 +57,7 @@ export function parsePermissionPrompt(screen: string, harness: string): Prompt |
   if (!lines.some(line => title.test(line))) return null;
   const headings = lines.flatMap((line, i) => CLAUDE_TITLE.test(line) || OTHER_TITLE.test(line) ? [i] : []);
   const body = lines.slice(headings[0]).filter(Boolean);
-  while (/^[╰╯─━—]+$/.test(body.at(-1) ?? '')) body.pop();
+  while (BOTTOM_BORDER.test(body.at(-1) ?? '')) body.pop();
   const text = body.join('\n');
   if (Buffer.byteLength(text) > 3500) return manual(body[0].slice(0, 120), oversized);
   // On a confirmed block, an earlier complete menu (or a heading in a preview) makes the current menu ambiguous.
@@ -68,8 +70,13 @@ export function parsePermissionPrompt(screen: string, harness: string): Prompt |
   const box = preceding.findIndex(line => /^(?:╭[─━—]+╮|╰[─━—]+╯)$/.test(line));
   if (box > 0 && preceding[box].startsWith('╭')) return unknownLayout();
   const question = body.findIndex(line => /^(?:Do you want to (?:proceed|allow this connection|make this edit(?: to .+)?|create .+|overwrite .+)\?|Allow this (?:tool|command|edit)\?)$/i.test(line));
-  const firstOption = body.findIndex(line => /^(?:[❯›>]\s*)?1[.)]\s+/.test(line));
+  let firstOption = body.findIndex(line => /^(?:[❯›>]\s*)?1[.)]\s+/.test(line));
   if (firstOption < 1 || (harness === 'claude' && (question < 0 || question >= firstOption))) return unknownLayout();
+  // Treat the native countdown as menu chrome, never as part of a command preview or option label.
+  if (harness === 'claude' && firstOption === question + 2 && CLAUDE_COUNTDOWN.test(body[question + 1])) {
+    body.splice(question + 1, 1);
+    firstOption--;
+  }
   const options: Option[] = [];
   let selected = -1;
   let i = firstOption;
@@ -83,7 +90,15 @@ export function parsePermissionPrompt(screen: string, harness: string): Prompt |
     options.push({ label, value });
   }
   if (options.length < 2 || options.length > 6 || selected < 0) return unknownLayout();
-  const footer = body.slice(i).join(' ');
+  const footerLines = body.slice(i);
+  if (harness === 'claude') {
+    const countdown = footerLines.findIndex(line => CLAUDE_COUNTDOWN.test(line));
+    if (countdown !== -1) {
+      footerLines.splice(countdown, 1);
+      while (BOTTOM_BORDER.test(footerLines.at(-1) ?? '')) footerLines.pop();
+    }
+  }
+  const footer = footerLines.join(' ');
   if (!FOOTER.test(footer)) return unknownLayout();
   const parsedTarget = parsePromptTarget(harness, body, question, firstOption);
   if (parsedTarget.manualReason) return manual(text, parsedTarget.manualReason);

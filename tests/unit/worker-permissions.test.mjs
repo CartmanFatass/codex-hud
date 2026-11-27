@@ -257,6 +257,38 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
     assert.equal(card().homeNeedsHuman, false);
     assert.equal(card().permissionWaitingMain, true);
   }
+
+  const countdown = time => `⚠ Claude Code will automatically block this request in ${time}, to avoid holding up an unattended session`;
+  const timed = time => prompt('npm run build').replace(' ❯ 1. Yes', ` ${countdown(time)}\n ❯ 1. Yes`);
+  const notify = async screen => {
+    await unblocked();
+    herdr.update('blocked', screen);
+    await wait(() => permissionStatus(dir).active?.action === 'main');
+    const { id } = permissionStatus(dir).active;
+    await wait(() => notice.includes(`"request_id":"${id}","answer":"approve"`));
+    return id;
+  };
+
+  const id = await notify(timed('1:57'));
+  // Tick after the notice and again before delivery's fresh capture.
+  herdr.update('blocked', timed('1:56'));
+  herdr.changeAfterRead(timed('1:55'));
+  const approval = await respond(id, 'approve');
+  assert.equal(approval.written, true, JSON.stringify(approval));
+  assert.equal(permissionStatus(dir).active.id, id);
+  assert.deepEqual(herdr.keys, [['Enter'], ['Enter'], ['Down', 'Down', 'Enter'], ['Enter']]);
+
+  const withTrailer = (screen, time) => `${screen} ${countdown(time)}\n`;
+  for (const [change, screen] of [
+    ['command', prompt('npm run release')],
+    ['selection', prompt('npm run build', 2)],
+    ['option label', prompt('npm run build').replace('3. No', '3. Decline')],
+  ]) {
+    const requestId = await notify(withTrailer(prompt('npm run build'), '1:57'));
+    herdr.changeAfterRead(withTrailer(screen, '1:56'));
+    assert.equal((await respond(requestId, 'approve')).code, 'prompt_changed', change);
+    assert.equal(herdr.keys.length, 4);
+  }
 });
 
 test('an answered permission does not hide the next CLI block on the bar or panel', t => {
