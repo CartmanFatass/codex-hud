@@ -95,6 +95,8 @@ export interface TicketQueue extends RunScope {
   verdict?: string;
   state: 'working' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'stopped'; tickets: TicketQueueItem[];
   reason?: string; remaining?: string[];
+  /** Display workset, independent of which tickets the queue may dispatch or wait for. */
+  future?: { ticket: string; title: string; role: TicketQueueItem['role']; blockers: string[]; waiting_on?: string[] }[];
   queued?: { ticket: string; blockers: string[] }[];
   blocked?: { ticket: string; blockers: string[] }[];
   dispatcher?: Job['dispatcher'];

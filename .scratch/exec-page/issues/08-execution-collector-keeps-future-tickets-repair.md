@@ -1,19 +1,21 @@
 # 08: Execution collector keeps future tickets, repair rounds, answers and composed/batch state true to the run
 
-**Status:** ready-for-agent
+**Status:** done
 **Live try:** Run a small queue with two same-feature tickets where 02 is blocked_by 01; open the Execution tab before 02 starts and check that 02 shows as a future station after 01, and that Enter on it opens an inspection.
 **Blocked by:** none
 **Objective:** interaction
 
 **What to build:** Repair from milestone review jc66ed72a3e7bc2c0 (findings 1, 2, 3, 5, 6, 7, 9). Producer side only (src/mcp writers and src/collectors/execution-runs.ts); renderer fixes are exec-page/09. (1, blocker) Same-feature future tickets vanish: TicketRollup classifies a ticket whose blocker is in the same feature as `queued` with no cross blocker, and src/mcp/local-tickets.ts:369–383 returns it in none of tickets/queued/blocked, so the queue record (ticket-queue-step.ts:1243–1256) and the map lack it until admission. Keep the run's display workset (every ticket of the run not yet admitted, with its declared blocked_by edges) separately from dispatch eligibility, without changing which tickets get admitted. (2) A landed/failed/held item or one with landed_sha returns before its land repairs are read (execution-runs.ts:400–413,431–440), so repair rounds and their targets disappear once the host ticket lands. Carry the ordered repair attempts independent of the host stage. (3) `waiting_orchestrator` after main answered takes the asking branch (execution-runs.ts:482–487,504–508) and ignores answered_at and the answer-file time. Tell an open question from a delivered answer not yet picked up (ticket-queue-step.ts:1104–1107); the station leaves `?` and changedAt is the answer time. (5) A composed batch step projects as `kind: 'pool'` with no counts (execution-runs.ts:1060–1076) although composed-step.ts:110–143 keeps the member states in cursor.items; project the recorded counts (planned items from the graph before dispatch). (6) The active repair job overwrites the host ticket's jobId/execJob (execution-runs.ts:443–452); keep the source worker on the host station and the repair job on the repair station. (7) Composed steps: worker STATUS overrides the step cursor (execution-runs.ts:279–295,1051–1068), so a lead that escalated (composed-step.ts:234–255, hand-back step `asking`) shows as done; and for a composed `land` step step.job is a step key resolved through run.steps[step.job].job (composed-step.ts:201), not a job id. Use the cursor for workflow state and resolve the real job separately for inspection. (9) A stalled batch pilot (batch-step.ts:48–54 records i.stall and pauses, item stays `running`) is projected as working (execution-runs.ts:795–798,821–831); use current pause/stall evidence, and do not treat a historical stall as current after resume. Old records still parse. Collector-level tests per case, each built from records the real writers produce (finding 1: a real local queue with 02 blocked_by 01, collected before 02 is admitted).
 
-- [ ] A queue over two same-feature tickets with 02 blocked_by 01, collected before 02 is admitted, carries 02 as a future station with the edge 01→02; admission order is unchanged (existing queue tests pass).
-- [ ] A repaired ticket that then lands, fails or is held keeps all its repair rounds as distinct stations with their job targets while the run is open.
-- [ ] A worker in waiting_orchestrator after main's answer is not asking, and the station's changedAt is the answer time; tested before STATUS changes to working.
-- [ ] A working composed batch step projects member counts from cursor.items or the graph; no count is invented when none is recorded.
-- [ ] With a same-role replacement repair, the host ticket station targets the original worker and the repair station targets the replacement.
-- [ ] A lead that finished with an escalation shows the hand-back step as asking, not done; a composed land step resolves its retained job through run.steps.
-- [ ] A paused, stalled batch pilot projects as stalled/paused, and after resume as working again.
-- [ ] Records written before this change still parse.
+- [x] A queue over two same-feature tickets with 02 blocked_by 01, collected before 02 is admitted, carries 02 as a future station with the edge 01→02; admission order is unchanged (existing queue tests pass).
+- [x] A repaired ticket that then lands, fails or is held keeps all its repair rounds as distinct stations with their job targets while the run is open.
+- [x] A worker in waiting_orchestrator after main's answer is not asking, and the station's changedAt is the answer time; tested before STATUS changes to working.
+- [x] A working composed batch step projects member counts from cursor.items or the graph; no count is invented when none is recorded.
+- [x] With a same-role replacement repair, the host ticket station targets the original worker and the repair station targets the replacement.
+- [x] A lead that finished with an escalation shows the hand-back step as asking, not done; a composed land step resolves its retained job through run.steps.
+- [x] A paused, stalled batch pilot projects as stalled/paused, and after resume as working again.
+- [x] Records written before this change still parse.
 
 ## Comments
+
+- Landed in this commit (replay base 1b6ee5ab6878f2e2590cdc69ec4b6266cf3d48f0); gate 5/5 passed.

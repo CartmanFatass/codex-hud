@@ -372,7 +372,7 @@ export interface ReadinessOptions {
 export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: string, options?: ReadinessOptions) {
   const { mainRoot: root } = localProjectRoots(cwd);
   const features = readTicketFeatures(root);
-  if (!features.length) return { tickets: [], queued: [], blocked: [] };
+  if (!features.length) return { tickets: [], queued: [], blocked: [], future: [] };
   const rollup = new TicketRollup(features), matches = projectJobFilter(root, dir => localProjectRoots(dir).mainRoot);
   for (const id of jobs.listJobIds({ onError: error => { throw error; } })) {
     const receipt = jobs.readJob<Job>(id);
@@ -415,6 +415,12 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
     }),
     blocked: candidates.flatMap(({ t, ticket }) =>
       t.state === 'blocked' && t.blockers.length ? [{ ticket, blockers: t.blockers }] : []),
+    // The display workset includes same-feature waits and other ready tickets that dispatch cannot take yet.
+    future: candidates.flatMap(({ t, ticket }) =>
+      t.state === 'ready' || t.state === 'queued' || t.state === 'blocked' ? [{
+        ticket, title: t.title, role: t.role, blockers: declaredBlockers.get(t) ?? [],
+        ...(t.blockers.length && { waiting_on: t.blockers }), ...(t.objective && { objective: t.objective }),
+      }] : []),
   };
 }
 

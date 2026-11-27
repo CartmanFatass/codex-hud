@@ -4,12 +4,14 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
+import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
 import { readTicketFeature, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
 import { runLock } from '../../dist/workflows/store.js';
 import { fixture, fallbackRole, taskCall, taskRpc, until, resultValue } from '../helpers/thin-mcp-harness.mjs';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
+import { setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 async function project(t, { thirdBlocker = 'none', frontend = false, crossProject = false, done = [], upstream = [] } = {}) {
@@ -141,6 +143,54 @@ test('ticket queue lands two ready tickets, resumes after a runner crash, and re
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
 });
 
+test('Execution collects a future same-feature dependency and keeps repair rounds after its blocker lands', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t);
+  const config = '.hud/project.json';
+  const projectConfig = read(join(f.root, config));
+  projectConfig.land.gate = ['test -f fix-1 && test -f fix-2'];
+  writeFixtureFile(join(f.root, config), JSON.stringify(projectConfig));
+  f.git(f.root, 'add', config); f.git(f.root, 'commit', '-qm', 'Synthetic gate');
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 2, cwd: f.root });
+  const [first] = await f.jobs(flow, 1);
+  assert.deepEqual(f.flow(flow).tickets.map(t => t.ticket), ['sample/01']);
+  const collect = () => readExecutionRuns(f.home, { root: f.root, pane: null }, new Map()).find(r => r.flow === flow);
+  const station = ticket => collect().metro.stations.find(s => s.id === `sample/${ticket}`);
+  const future = station('02');
+  assert.equal(future.state, 'waiting');
+  assert.equal(future.jobId, undefined);
+  assert.deepEqual(future.blockers, ['sample/01']);
+  assert.ok(collect().metro.edges.some(e => e.from === 'sample/01' && e.to === 'sample/02'));
+  await f.settle(first);
+  const land = () => {
+    const id = f.flow(flow).tickets[0].land;
+    return id && f.flow(id);
+  };
+  const repairs = [];
+  for (const round of [1, 2]) {
+    const attempt = () => land()?.repairs?.[round - 1];
+    await until(() => attempt()?.outcome === 'waiting for worker', 15_000);
+    const job = attempt().job, receipt = f.job(job);
+    assert.notEqual(job, first);
+    assert.equal(receipt.role, f.job(first).role);
+    repairs.push(job);
+    const host = station('01');
+    assert.equal(host.jobId, first);
+    assert.equal(host.repairs[round - 1].jobId, job);
+    const fix = `fix-${round}`;
+    fs.writeFileSync(join(receipt.cwd, fix), 'Synthetic repair.\n');
+    f.git(receipt.cwd, 'add', fix); f.git(receipt.cwd, 'commit', '-qm', fix);
+    await f.settleReview(job);
+  }
+  await f.jobs(flow, 2);
+  assert.deepEqual(f.flow(flow).tickets.map(t => t.ticket), ['sample/01', 'sample/02']);
+  assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* done/);
+  await until(() => f.flow(flow).tickets[0].landed, 15_000);
+  const landed = station('01');
+  assert.equal(landed.state, 'done');
+  assert.equal(landed.jobId, first);
+  assert.deepEqual(landed.repairs.map(r => [r.id, r.jobId]), [['sample/01↻', repairs[0]], ['sample/01↻2', repairs[1]]]);
+});
+
 test('ticket queue runs ready work and releases a queued ticket when another feature lands', { timeout: 45_000 }, async t => {
   const f = await project(t, { thirdBlocker: 'upstream/01', done: [2], upstream: ['ready-for-agent'] });
   const { flow, queued } = await f.start(1);
@@ -241,6 +291,7 @@ test('ticket queue hands back on a worker question without stopping its peer', {
   const qa = join(f.dir(first), 'qa');
   fs.mkdirSync(qa, { recursive: true });
   writeFixtureFile(join(qa, 'q1.md'), '# Question q1 from Synthetic\n\nChoose a synthetic path.\n');
+  writeFixtureFile(join(f.dir(first), 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator' }));
   const stopped = await f.end(flow);
   assert.equal(stopped.state, 'failed');
   assert.match(stopped.reason, /worker question q1/);
@@ -256,8 +307,14 @@ test('ticket queue hands back on a worker question without stopping its peer', {
   const batch = await f.call('hud_respond', { answers: [{ job: first, request_id: 'q1', answer: 'Take the synthetic path.' }] });
   const answered = { queue_resumed: batch.queues_resumed?.[0] };
   assert.match(answered.queue_resumed, /^q[0-9a-f]{16}$/);
-  assert.equal(f.flow(answered.queue_resumed).state, 'working');
-  assert.deepEqual(f.flow(answered.queue_resumed).tickets.map(x => x.job), [first, peer]);
+  const resumed = f.flow(answered.queue_resumed);
+  assert.equal(resumed.state, 'working');
+  assert.deepEqual(resumed.tickets.map(x => x.job), [first, peer]);
+  assert.equal(f.status(first).state, 'waiting_orchestrator', 'the worker has not yet picked up the answer');
+  const run = readExecutionRuns(f.env.HUD_HOME, { root: f.root, pane: null }, new Map()).find(r => r.flow === resumed.flow);
+  const station = run.metro.stations.find(s => s.jobId === first);
+  assert.equal(station.state, 'working');
+  assert.equal(station.changedAt, Date.parse(resumed.tickets[0].answered_at));
 });
 
 test('a note sent to a working queue job keeps the job in its queue', { timeout: 30_000 }, async t => {

@@ -10,7 +10,10 @@ import { saveBatch, settleItem } from '../../dist/mcp/batch-state.js';
 import { answerComposed } from '../../dist/mcp/composed-workflow.js';
 import { ticketReadiness } from '../../dist/mcp/local-tickets.js';
 import { resumeQueueAfterAnswer } from '../../dist/mcp/ticket-queue.js';
-import { readTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
+import { readTicketQueue, writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
+import { setLandStep, writeLand } from '../../dist/mcp/land-state.js';
+import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
+import { answerJobQuestion } from '../../dist/collectors/panel-actions.js';
 import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { advance } from '../../dist/workflows/engine.js';
 
@@ -333,6 +336,7 @@ test('Execution collector projects metro stations, edges, change times, gate ste
       a: { state: 'done', changed_at: ago(14) },
       b: { state: 'running', job: pScout, changed_at: ago(3) },
       c: { state: 'waiting' },
+      d: { state: 'waiting' },
     },
   });
   putJson(join(flows, g1, 'graph.json'), {
@@ -341,6 +345,7 @@ test('Execution collector projects metro stations, edges, change times, gate ste
       a: { kind: 'check', needs: [] },
       b: { kind: 'job', role: 'sonic', needs: ['a'] },
       c: { kind: 'handback', needs: ['a', 'b'] },
+      d: { kind: 'batch', role: 'sonic', manifest: 'legacy.json', needs: ['c'] },
     },
   });
 
@@ -478,8 +483,13 @@ test('Execution collector projects metro stations, edges, change times, gate ste
     ['a', 'worker', 'done', agoMs(14)],
     ['b', 'worker', 'working', agoMs(3)],
     ['c', 'accept', 'waiting', undefined],
+    ['d', 'pool', 'waiting', undefined],
   ]);
-  assert.deepEqual(graphRun.metro.edges, [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }, { from: 'b', to: 'c' }]);
+  assert.deepEqual(graphRun.metro.edges, [{ from: 'a', to: 'b' }, { from: 'a', to: 'c' }, { from: 'b', to: 'c' }, { from: 'c', to: 'd' }]);
+  const legacyPool = graphRun.metro.stations.find(s => s.id === 'd');
+  assert.equal(legacyPool.kind, 'pool');
+  assert.equal(legacyPool.count, undefined);
+  assert.equal(legacyPool.pool, undefined);
   assert.equal(graphRun.metro.lastChangedId, 'b');
   const reducedGraph = reduceMetroLanes(graphRun.metro);
   assert.equal(reducedGraph.reduced, true);
@@ -513,7 +523,10 @@ test('repair rounds: round two preserves round one with a distinct station id in
   const jRep1 = addJob(2, 'done', { ticket: 'rep/01' }, { started_at: ago(12), settled_at: ago(9) });
   const jRep2 = addJob(3, 'working', { ticket: 'rep/01' }, { started_at: ago(2) });
   const fQueue = id('f', 1);
-  putJson(join(flows, `${fQueue}.json`), {
+  const qRep = id('q', 10);
+  fs.mkdirSync(flows, { recursive: true });
+  const land = {
+    ticket_queue: qRep,
     flow: fQueue, job: jSrc, pane: '', task: false,
     wt: { root: project, main_root: project, branch: 'wt/01' },
     config: { base: 'main', gate: ['build', 'unit', 'lint'], after: [], push: false },
@@ -524,9 +537,9 @@ test('repair rounds: round two preserves round one with a distinct station id in
       { step: 'gate[2]: unit', job: jRep2, outcome: 'waiting for worker', started_at: ago(2), changed_at: ago(2) },
     ],
     timings: [{ step: 'cherry-pick', ok: true, ms: 5 }, { step: 'gate[2]: unit', ok: false, ms: 20 }],
-  });
-  const qRep = id('q', 10);
-  putJson(join(flows, `${qRep}.json`), {
+  };
+  writeLand(hud, land);
+  const queue = {
     flow: qRep, root: project, project_root: project, feature: 'rep', pane: '', task: false, max_parallel: 2,
     created_at: ago(30), updated_at: ago(2), state: 'working',
     steps: { tickets: { state: 'running', changed_at: ago(30) }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
@@ -534,7 +547,8 @@ test('repair rounds: round two preserves round one with a distinct station id in
       { ticket: 'rep/01', path: join(project, '.scratch/rep/01.md'), role: 'imp', job: jSrc, land: fQueue, blockers: [] },
       { ticket: 'rep/02', path: join(project, '.scratch/rep/02.md'), role: 'imp', job: addJob(4, 'working', { ticket: 'rep/02' }, { started_at: ago(10) }), blockers: [] },
     ],
-  });
+  };
+  writeTicketQueue(hud, queue);
 
   // Legacy standalone land flow in round 2 WITHOUT started_at/changed_at on repairs, reusing the same worker job.
   const jSolo = addJob(5, 'working', { role: 'imp' }, { started_at: ago(3) });
@@ -570,6 +584,46 @@ test('repair rounds: round two preserves round one with a distinct station id in
   assert.equal(t1.repair.id, 'rep/01↻2');
   assert.equal(qRun.tickets[0].landRepairs.length, 2);
   assert.equal(qRun.metro.lastChangedId, 'rep/01↻2');
+  assert.equal(t1.jobId, jSrc, 'the active replacement does not take over the host station');
+  assert.equal(t1.execJob.target.workerId, `thin-job:${jSrc}`);
+  assert.deepEqual(t1.repairs.map(r => r.execJob.target.workerId), [`thin-job:${jRep1}`, `thin-job:${jRep2}`]);
+
+  const workers = new Map(execution.board().lanes.flatMap(l => l.workers).map(w => [w.id.replace(/^thin-job:/, ''), w]));
+  const collect = () => readExecutionRuns(hud, { root: project, pane: null }, workers, NOW)
+    .find(r => r.flow === qRep).metro.stations.find(s => s.id === 'rep/01');
+  const assertTerminal = (state, repairState) => {
+    const station = collect();
+    assert.equal(station.state, state);
+    assert.equal(station.jobId, jSrc);
+    assert.deepEqual(station.repairs.map(r => [r.id, r.state, r.jobId, r.execJob.target.workerId]), [
+      ['rep/01↻', 'failed', jRep1, `thin-job:${jRep1}`],
+      ['rep/01↻2', repairState, jRep2, `thin-job:${jRep2}`],
+    ]);
+  };
+  const item = queue.tickets[0];
+  const failure = { kind: 'land', reason: 'Synthetic repair refused', at: ago(1) };
+  // Failed while still on a repair step: the last repair is terminal despite land.step.
+  writeLand(hud, { ...land, state: 'failed', error: failure.reason,
+    repairs: [land.repairs[0], { ...land.repairs[1], outcome: failure.reason, changed_at: failure.at }] });
+  assertTerminal('failed', 'failed');
+  item.failed = failure;
+  writeTicketQueue(hud, queue);
+  assertTerminal('failed', 'failed');
+  delete item.failed;
+  item.held = { ...failure, kind: 'escalate', owner_approval: 'spec-change' };
+  writeTicketQueue(hud, queue);
+  assertTerminal('held', 'failed');
+  delete item.held;
+  const landed = { ...land, landed_sha: 'c'.repeat(40), landed_at: ago(1),
+    repairs: [land.repairs[0], { ...land.repairs[1], outcome: 'gate passed', changed_at: ago(1) }] };
+  setLandStep(landed, 'records', ago(1));
+  writeLand(hud, landed);
+  writeTicketQueue(hud, queue);
+  assertTerminal('done', 'done'); // landed_sha is visible before the queue sees completion.
+  writeLand(hud, { ...landed, state: 'completed' });
+  Object.assign(item, { landed: true, landed_at: landed.landed_at });
+  writeTicketQueue(hud, queue);
+  assertTerminal('done', 'done');
 
   // Inline / reduced layout data retains both repair rounds and keeps the repaired station lowest in its column.
   const reduced = reduceMetroLanes(qRun.metro);
@@ -778,13 +832,13 @@ test('answer times: answerComposed, main-answered queue resume, and departure qa
   putJson(join(depDir, 'job.json'), {
     job: jDep, cwd: project, project_root: project, role: 'imp', headless: true, dispatch_exit_code: 0, created_at: ago(25),
   });
-  putJson(join(depDir, 'STATUS.json'), { state: 'working', started_at: ago(20) });
+  putJson(join(depDir, 'STATUS.json'), { state: 'waiting_orchestrator', started_at: ago(20) });
   fs.writeFileSync(join(depDir, 'brief.md'), '# dep/01: Departure answer ticket\n');
   fs.mkdirSync(join(depDir, 'qa'), { recursive: true });
   const qPath = join(depDir, 'qa', 'q1.md');
   const aPath = join(depDir, 'qa', 'q1.answer.md');
   fs.writeFileSync(qPath, '# Question\n\nPick a retention window?\n\nOptions:\n- 1h\n- 24h\n\nDefault if unanswered: 1h\n');
-  fs.writeFileSync(aPath, '24h\n');
+  assert.deepEqual(answerJobQuestion(hud, jDep, 'q1', '24h'), { ok: true, written: true });
   const depAnswerMs = Math.floor((Date.now() - 2 * 60_000) / 1000) * 1000;
   fs.utimesSync(qPath, new Date(depAnswerMs - 60_000), new Date(depAnswerMs - 60_000));
   fs.utimesSync(aPath, new Date(depAnswerMs), new Date(depAnswerMs));
@@ -821,8 +875,14 @@ test('answer times: answerComposed, main-answered queue resume, and departure qa
   const depWorker = [...execution.board().lanes.flatMap((l) => l.workers)].find((w) => w.id === `thin-job:${jDep}`);
   assert.equal(depWorker.files.find((f) => f.kind === 'question').state, 'departure');
   const depRun = byFlow.get(qDep);
+  assert.equal(depRun.metro.stations.find((s) => s.id === 'dep/01').state, 'working');
   assert.equal(depRun.metro.stations.find((s) => s.id === 'dep/01').changedAt, depAnswerMs);
   assert.equal(depRun.metro.lastChangedId, 'dep/01');
+  const bareStation = () => readExecutionRuns(hud, { root: project, pane: null }, new Map(), collectNow)
+    .find(r => r.flow === qDep).metro.stations.find(s => s.id === 'dep/01');
+  assert.equal(bareStation().changedAt, depAnswerMs, 'the collector can fall back to the answer file without a worker row');
+  fs.writeFileSync(join(depDir, 'qa', 'q2.md'), 'A new question');
+  assert.equal(bareStation().state, 'asking', 'a prior answer does not hide a new open question');
 });
 
 test('batch pool change time: failed pilot stays lastChangedStationId over unstarted pool, and legacy batch records still parse', async (t) => {

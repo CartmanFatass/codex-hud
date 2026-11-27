@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { batchIndex, failuresByReason, settleItem } from '../../dist/mcp/batch-state.js';
+import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { fixture, sonicTask, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 
 const read = path => JSON.parse(fs.readFileSync(path));
@@ -97,6 +98,32 @@ test('pilot failure pauses once; retry_failed keeps the manifest, creates a new 
   await until(() => { const s = snapshot(); for (const i of s.items) if (i.job && i.state === 'running') release(i.job); return !s.batch.totals.running; }, t.signal);
   assert.equal(snapshot().batch.state, 'stopped'); assert.equal(snapshot().batch.totals.waiting, 0);
   assert.equal(snapshot().items[2].state, 'cancelled'); assert.equal(snapshot().items[2].job, undefined);
+});
+
+test('Execution shows a stalled pilot only while that stall is the current batch pause', { timeout: 30_000 }, async t => {
+  const f = await fixture(t);
+  const { index } = setup(f, ['sample']);
+  const { flow } = await f.call('hud_create', { role: 'sonic', max_parallel: 1, items: [{ task: 'Pilot' }, { task: 'Tail' }] });
+  const snapshot = () => index(flow);
+  const collect = () => readExecutionRuns(f.env.HUD_HOME, { root: f.root, pane: null }, new Map()).find(r => r.flow === flow);
+  const pilot = run => run.metro.stations.find(s => s.id === 'pilot');
+  await until(() => snapshot().items[0].job, t.signal);
+  const status = join(f.env.HUD_HOME, 'jobs', snapshot().items[0].job, 'STATUS.json');
+  await until(() => fs.existsSync(status), t.signal);
+  writeFixtureFile(status, JSON.stringify({ state: 'waiting_orchestrator', blocked: true }));
+  await until(() => snapshot().batch.state === 'paused', t.signal);
+  const paused = collect();
+  assert.equal(paused.state, 'paused');
+  assert.equal(snapshot().items[0].state, 'running');
+  assert.equal(pilot(paused).state, 'stalled');
+  assert.equal(pilot(paused).changedAt, snapshot().batch.pilot_changed_at);
+  assert.ok(snapshot().items[0].stall);
+  await f.call('hud_create', { batch: flow, action: 'resume' });
+  assert.ok(snapshot().items[0].stall, 'historical stall remains after resume');
+  assert.equal(collect().state, 'working');
+  assert.equal(pilot(collect()).state, 'working');
+  await f.call('hud_create', { batch: flow, action: 'pause' });
+  assert.equal(pilot(collect()).state, 'working', 'an unrelated pause does not revive a historical stall');
 });
 
 test('a scouted imp pilot reports quota refusal without rotating out of its frozen preset', { timeout: 30_000 }, async t => {

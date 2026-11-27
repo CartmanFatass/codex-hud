@@ -269,7 +269,7 @@ function objectiveWorkset(home: string, q: TicketQueue) {
   const objective = unattended!.objective;
   const objectives = readObjectives(root)?.objectives ?? [];
   const selected = objectives.find(o => o.id === objective && o.state === 'active');
-  if (!selected) return { tickets: [], queued: [], blocked: [] };
+  if (!selected) return { tickets: [], queued: [], blocked: [], future: [] };
   const excluded = openRunTickets(home, root, flow);
   for (const item of q.tickets) if (item.failed || item.held) excluded.add(item.ticket);
   const readiness = ticketReadiness(root, jobCache, undefined, { home, excludeTickets: excluded });
@@ -278,6 +278,7 @@ function objectiveWorkset(home: string, q: TicketQueue) {
     tickets: readiness.tickets.filter(belongs),
     queued: readiness.queued.filter(belongs),
     blocked: readiness.blocked.filter(belongs),
+    future: readiness.future.filter(t => !excluded.has(t.ticket) && belongs(t)),
   };
 }
 
@@ -1257,6 +1258,12 @@ function tickTicketQueue(
     q.blocked = blocked.length ? blocked : undefined;
     changed = true;
   }
+  const admitted = new Set(q.tickets.map(t => t.ticket));
+  const future = workset.future.filter(t => !admitted.has(t.ticket));
+  if (JSON.stringify(future) !== JSON.stringify(q.future)) {
+    q.future = future;
+    changed = true;
+  }
   if (atCapacity) {
     return { state: 'running', changed, ...(recheck !== undefined && { recheckMs: recheck }) };
   }
@@ -1288,6 +1295,7 @@ function tickTicketQueue(
         const dup: TicketQueueItem = { ticket, path, role: 'imp', round, blockers: blockers ? [...blockers] : [] };
         failItem(dup, `${ticket}: ambiguous ticket number`, 'queue');
         q.tickets.push(dup);
+        q.future = future.filter(t => t.ticket !== ticket);
         return { state: 'running', changed: true };
       }
       state.problem = { kind: 'queue', ticket, reason: `${ticket}: ambiguous ticket number` };
@@ -1295,6 +1303,7 @@ function tickTicketQueue(
     }
     item = { ticket, path, role, round, blockers: blockers ? [...blockers] : [] };
     q.tickets.push(item); // Intent committed by the driver before dispatch so the request key is recoverable.
+    q.future = future.filter(t => t.ticket !== ticket);
     changed = true;
   }
   if (!item) {

@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
+import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { panelDelivery } from '../../dist/mcp/panel-delivery.js';
 import { taskNoticeSource } from '../../dist/workflows/events.js';
 import { saveHeader } from '../../dist/workflows/store.js';
@@ -20,6 +21,8 @@ const graph = steps => ({ name: 'synthetic-recipe', version: 1, steps });
 const task = { kind: 'job', role: 'sonic', task: 'Read synthetic inputs' };
 const batch = (role, n, task = 'Read synthetic input') => ({ kind: 'batch', role, items: Array.from({ length: n }, () => ({ task })) });
 const reply = (f, job, answer, request_id = 'h-accept') => f.call('hud_respond', { job, request_id, answer });
+const stations = (f, run, workers = new Map()) =>
+  readExecutionRuns(f.home, { root: f.root, pane: null }, workers).find(r => r.flow === run).metro.stations;
 const sample = graph({
   build: { kind: 'job', role: 'imp', isolation: 'worktree', task: 'Build synthetic feature' },
   verify: { kind: 'check', job: 'build', needs: ['build'], run: ['node', '-e', 'process.exit(+!require("node:fs").existsSync("feature.txt"))'] },
@@ -130,7 +133,16 @@ for (const format of ['json', 'toml']) test(`main composes, checks, reviews, ans
   assert.equal(fs.existsSync(join(f.root, 'feature.txt')), false);
   assert.equal((await call(f, 'control', { run: p.run, action: 'resume' })).code, 'handback_answer_required');
   assert.equal((await reply(f, p.run, 'invalid')).code, 'invalid_answer');
+  assert.equal((await f.call('hud_lease', { name: 'main-checkout' })).granted, true);
   assert.equal((await reply(f, p.run, 'land')).written, true);
+  await until(() => f.flow(p.run).steps.publish.land, 10_000);
+  const buildWorker = { id: `thin-job:${build}`, laneId: 'synthetic', settledAt: Date.now() };
+  const publish = stations(f, p.run, new Map([[build, buildWorker]])).find(s => s.id === 'publish');
+  assert.equal(publish.state, 'working', 'the land step is running even though its source worker settled');
+  assert.equal(publish.jobId, build);
+  assert.equal(publish.execJob.target.workerId, buildWorker.id);
+  assert.equal(publish.changedAt, Date.parse(f.flow(p.run).steps.publish.changed_at));
+  await f.call('hud_lease', { name: 'main-checkout', release: true });
   await until(() => f.flow(p.run).state === 'completed' || f.flow(p.run).state === 'paused', 15_000);
   const end = f.flow(p.run);
   assert.equal(end.state, 'completed', JSON.stringify(end));
@@ -399,6 +411,49 @@ test('the default lead hand-back closes its decision session before selecting a 
   assert.equal(state().steps.accept.decision_reason, 'Synthetic result is ready.');
   assert.equal(state().steps.unused.state, 'skipped');
   assert.ok(f.job(lead).reaped_at);
+});
+
+test('Execution uses the composed hand-back cursor after its lead escalates', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  put(join(f.env.HOME, 'hold-turn'), '');
+  const p = await call(f, 'plan', { graph: graph({ accept: { kind: 'handback', ask: 'Continue?', options: ['continue', 'skip'] } }) });
+  assert.equal((await start(f, p)).state, 'working');
+  const state = () => f.flow(p.run);
+  await until(() => state().steps.accept.job, 15_000);
+  const lead = state().steps.accept.job;
+  await f.settleLead(lead, 'Decision: escalate\nReason: Main must make a synthetic choice.\n');
+  await until(() => state().state === 'paused', 15_000);
+  assert.ok(f.job(lead).reaped_at);
+  const accept = stations(f, p.run).find(s => s.id === 'accept');
+  assert.equal(accept.state, 'asking');
+  assert.equal(accept.jobId, lead);
+  assert.equal(accept.changedAt, Date.parse(state().steps.accept.changed_at));
+});
+
+test('Execution shows planned and recorded members of a composed batch', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  const p = await call(f, 'plan', { graph: graph({
+    accept: { kind: 'handback', to: 'main', ask: 'Start?', options: ['continue', 'skip'] },
+    read: { ...batch('sonic', 3), needs: ['accept'], when: { step: 'accept', is: 'continue' }, max_parallel: 1 },
+  }) });
+  assert.equal((await start(f, p)).state, 'working');
+  const state = () => f.flow(p.run);
+  const pool = () => stations(f, p.run).find(s => s.id === 'read');
+  await until(() => state().state === 'paused', 10_000);
+  assert.equal(state().steps.read.items, undefined);
+  assert.equal(pool().kind, 'pool');
+  assert.equal(pool().state, 'waiting');
+  assert.equal(pool().count, 3);
+  assert.deepEqual(pool().pool, { waiting: 3 });
+  assert.equal((await reply(f, p.run, 'continue')).written, true);
+  await until(() => state().steps.read.items?.[0].job, 15_000);
+  const first = state().steps.read.items[0].job;
+  put(join(f.dir(first), 'release-sonic'), '');
+  await until(() => state().steps.read.items?.[1].job, 15_000);
+  assert.equal(pool().state, 'working');
+  assert.equal(pool().count, 3);
+  assert.deepEqual(pool().pool, { done: 1, working: 1, waiting: 1 });
 });
 
 test('a composed council uses its bound grant without consuming the standalone grant', { timeout: 35_000 }, async t => {

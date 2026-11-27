@@ -260,8 +260,12 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
         }
         return [next];
       }) ?? [] };
-    if (readiness?.queued.length) q.queued = readiness.queued;
-    if (readiness?.blocked.length) q.blocked = readiness.blocked;
+    if (readiness) {
+      const admitted = new Set(q.tickets.map(t => t.ticket));
+      q.future = readiness.future.filter(t => !admitted.has(t.ticket));
+      if (readiness.queued.length) q.queued = readiness.queued;
+      if (readiness.blocked.length) q.blocked = readiness.blocked;
+    }
     fs.mkdirSync(runDir(home, flow), { mode: 0o700, recursive: true });
     freezeGraph(home, flow, graph);
     if (resumed?.state === 'paused') {
