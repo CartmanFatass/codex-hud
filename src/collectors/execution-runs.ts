@@ -163,7 +163,7 @@ export interface WorkflowNode {
   readonly reason?: string;
   readonly jobId?: string;
   readonly execJob?: ExecutionRunJobTarget;
-  /** True when `jobId` is borrowed from another step (such as a graph `land` step). */
+  /** True when `jobId` is borrowed from another step, e.g. by `land` or an in-place `check` repair. */
   readonly borrowedJob?: true;
   /** Settled helpers of this step's job, counted here instead of taking Recent rows. */
   readonly children?: readonly EndedExecutionJob[];
@@ -1225,15 +1225,16 @@ function readFixedExecutionRun(
   };
   const nodes: WorkflowNode[] = stepEntries.map(([key, step]) => {
     const cursor = cursors[key];
+    const inputJobId = step.kind === 'land' || step.kind === 'check' ? cursors[step.job]?.job : undefined;
     // A settled worker can still leave its workflow step running or asking.
-    const jobId = step.kind === 'land' ? cursors[step.job]?.job : cursor?.job;
+    const jobId = step.kind === 'land' ? inputJobId : cursor?.job;
     const worker = jobId ? workers.get(jobId) : undefined;
     const changedAt = step.kind === 'batch'
       ? maxTime(parseTime(cursor?.changed_at), batchMembersChangedAt(cursor?.items))
       : parseTime(cursor?.changed_at) ?? undefined;
     return { key, state: cursorState(cursor), blockers: step.needs, reason: cursor?.reason,
       role: step.kind === 'job' || step.kind === 'batch' ? step.role : undefined,
-      jobId, ...(step.kind === 'land' && jobId ? { borrowedJob: true as const } : {}),
+      jobId, ...(jobId && jobId === inputJobId ? { borrowedJob: true as const } : {}),
       execJob: jobTargetFor(home, worker, jobId), since: worker?.startedAt ?? undefined,
       changedAt };
   });

@@ -1023,6 +1023,40 @@ test('graph helpers fold onto the owning node instead of a waiting land step reu
   assert.deepEqual([back.subpage.kind, back.subpage.cursor], ['run-detail', 'project:run-node:build']);
 });
 
+for (const inPlace of [true, false]) {
+  test(`graph check helpers fold correctly after ${inPlace ? 'an in-place' : 'a replacement'} repair`, async (t) => {
+    const f = foldFixture(t), flow = 'w0000000000000058';
+    const build = f.writeJob(1, '# Build feature\n', 20, { role: 'imp', workflow: flow });
+    const buildHelper = f.writeJob(2, 'Read-only: inspect build callers\n', 21, { parent_job: build });
+    const repair = inPlace ? build : f.writeJob(3, '# Repair check\n', 8, { role: 'imp', workflow: flow, retry_of: build });
+    const repairHelper = inPlace ? undefined : f.writeJob(4, 'Read-only: inspect check failure\n', 9, { parent_job: repair });
+    putJson(join(f.hud, 'flows', `${flow}.json`), {
+      flow, template: 'composed', cwd: f.project, project_root: f.project, pane: PANE,
+      state: 'working', created_at: ago(30), updated_at: ago(5),
+      steps: {
+        build: { state: 'done', job: build, changed_at: ago(20) },
+        verify: { state: 'running', job: repair, repairs: 1, repair_pending: false, admitted: true, changed_at: ago(5) },
+      },
+    });
+    putJson(join(f.hud, 'flows', flow, 'graph.json'), {
+      version: 1, name: 'build-verify',
+      steps: {
+        build: { kind: 'job', role: 'imp', isolation: 'worktree', needs: [], from: [], optional: false, task: 'Build feature' },
+        verify: { kind: 'check', job: 'build', run: ['npm', 'test'], repair: 1, needs: ['build'], from: [], optional: false },
+      },
+    });
+
+    const { view } = await f.collect();
+    const [buildNode, verifyNode] = view.runs[0].nodes.flat();
+    assert.equal(buildNode.key, 'build');
+    assert.equal(verifyNode.key, 'verify');
+    assert.equal(verifyNode.jobId, repair);
+    assert.deepEqual(buildNode.children?.map((c) => c.jobId), [buildHelper]);
+    assert.deepEqual(verifyNode.children?.map((c) => c.jobId), inPlace ? undefined : [repairHelper]);
+    assert.deepEqual(view.endedJobs, [], 'helpers fold into the graph run, not Recent');
+  });
+}
+
 test('a helper folds only when its questions are known to be closed', async (t) => {
   const f = foldFixture(t);
   const parent = f.writeJob(1, '# 01: Parent worker\n', 10, { role: 'imp' });
