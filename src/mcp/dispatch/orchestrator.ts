@@ -70,7 +70,7 @@ import {
 import { keyLock } from '../store/key-lock.js';
 import { readTicketQueue } from '../ticket-queue-state.js';
 import { DEFAULT_RESUME_S, resumeDeadline, resumeIdentity, closedReport, type NativeResume } from '../worker-resume.js';
-import { jobCwd, required, readBriefFile, assembleContext, type Args } from './context.js';
+import { jobCwd, required, readBriefFile, assembleContext, formatBriefText, type Args } from './context.js';
 import { cleanupDirectResume } from './direct-exec.js';
 import { dispatchBro } from './harness-bro.js';
 import { failCli, dispatchCli, supervisorPid, supervisorAlive, spawnCliSupervisor } from './harness-cli.js';
@@ -1306,20 +1306,19 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
 
 function writeBrief(job: Job, dir: string, task: string, block: string, first: boolean) {
   const place = job.place!;
-  let brief = `${task}${place.harness === 'bro' ? '\n' : '\n\n'}${block}`;
-  if (job.preview) brief += `Write the HTML preview to ${JSON.stringify(job.preview)} relative to your cwd before reporting.\n`;
-  if (place.harness === 'pi') brief += 'Finish with `hud_report`.\n';
-  else if (place.harness === 'cli' && !cliWorkerTools(place.agent!)) {
+  let cliFooter: string | undefined;
+  if (place.harness === 'cli' && !cliWorkerTools(place.agent!)) {
     const command = (bin: string) => `node ${JSON.stringify(join(bundled, 'bin', `${bin}.mjs`))}`;
     const own = `--dir ${JSON.stringify(dir)}`;
-    brief += 'This harness uses the commands below instead of the worker tools named in your role.\n' +
+    cliFooter = 'This harness uses the commands below instead of the worker tools named in your role.\n' +
       `Write your report to ${join(dir, jobFiles.report)}; then run the --done command from the prompt you are answering.\n` +
       `Ask the orchestrator with: ${command('hud-ask')} ${own} --question "..." --default "..."\n`;
-    if (job.role !== 'sonic') brief +=
+    if (job.role !== 'sonic') cliFooter +=
       `Sonic command: ${command('hud-sonic')} start ${own} --task <text> | --task-file <file>\n` +
       `Collect: ${command('hud-sonic')} wait ${own} --job <id>\n`;
-    brief += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
+    cliFooter += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
   }
+  const brief = formatBriefText(task, block, place.harness, { preview: job.preview, cliFooter });
   // Standing brief and context references follow the task; labels read the brief's opening lines.
   writePrivateFile(join(dir, jobFiles.brief), brief, { exclusive: first, mkdir: false });
 }

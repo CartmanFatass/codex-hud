@@ -8,7 +8,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { panelDelivery } from '../../dist/mcp/panel-delivery.js';
+import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { WORKFLOW_WORKER_RULE_NO_ASK } from '../../dist/mcp/workflow-lead.js';
+import { SONIC_LEDGER_VERSION } from '../../dist/workflows/composed-state.js';
 import { SONIC_BYTES_LIMIT } from '../../dist/workflows/graph.js';
 import { taskNoticeSource } from '../../dist/workflows/events.js';
 import { noticeEvents, saveHeader } from '../../dist/workflows/store.js';
@@ -374,28 +376,37 @@ test('a cheap workflow remeasures aggregate Sonic inputs when a later step is ad
   assert.deepEqual(fs.readdirSync(join(f.home, 'jobs')).filter(name => /^j[0-9a-f]{16}$/.test(name)), [first]);
 });
 
-test('the exact bare Sonic limit pauses but the exact dispatched task and file fit', { timeout: 30_000 }, async t => {
+test('a cheap Sonic step charges the whole assembled brief including standing brief', { timeout: 30_000 }, async t => {
   const f = await setupWorkflowProject(t, { count: 0 });
   sonicTask(f);
-  const file = join(f.root, 'sample.txt'), task = 'Read `sample.txt`';
-  put(file, Buffer.alloc(SONIC_BYTES_LIMIT - Buffer.byteLength(task)));
-  const p = await call(f, 'plan', { graph: graph({ read: { kind: 'job', role: 'sonic', task } }) });
+  const standingPath = join(f.root, '.hud', 'brief.md');
+  put(standingPath, 'Synthetic standing brief.\n'.repeat(160));
+  f.git(f.root, 'add', '.hud/brief.md'); f.git(f.root, 'commit', '-qm', 'Larger synthetic standing brief');
+  const file = join(f.root, 'sample.txt'), readTask = 'Read `sample.txt`';
+  const finalTask = `${readTask}\n\n${WORKFLOW_WORKER_RULE_NO_ASK}`;
+  const specBytes = fs.statSync(join(f.root, 'docs', 'spec.md')).size; // Named by the worker rule.
+  // Fits under 2 MiB when standing brief and dispatch wrapper are ignored, but exceeds it with the whole assembled input.
+  put(file, Buffer.alloc(SONIC_BYTES_LIMIT - Buffer.byteLength(finalTask) - specBytes));
+  const p = await call(f, 'plan', { graph: graph({ read: { kind: 'job', role: 'sonic', task: readTask } }) });
   assert.equal(p.cost, 'cheap');
-  assert.equal(p.scale.read.input_bytes, SONIC_BYTES_LIMIT);
   await start(f, p);
   await until(() => f.flow(p.run).state === 'paused', t.signal);
   assert.match((await call(f, 'status', { run: p.run })).reason, /Sonic input bytes across the run.*re-plan/);
   assert.equal(f.flow(p.run).sonic_input_bytes, 0);
+  assert.equal(f.flow(p.run).sonic_ledger_version, SONIC_LEDGER_VERSION);
   assert.equal(f.flow(p.run).steps.read.job, undefined);
-  const finalTask = `${task}\n\n${WORKFLOW_WORKER_RULE_NO_ASK}`;
-  const specBytes = fs.statSync(join(f.root, 'docs', 'spec.md')).size; // Named by the worker rule.
-  fs.truncateSync(file, SONIC_BYTES_LIMIT - Buffer.byteLength(finalTask) - specBytes);
+  const expectedBrief = `${finalTask}\n\nRead the project standing brief: ${JSON.stringify(standingPath)}.\n\nFinish with \`hud_report\`.\n`;
+  const standingBytes = fs.statSync(standingPath).size;
+  const exactFileBytes = SONIC_BYTES_LIMIT - Buffer.byteLength(expectedBrief) - specBytes - standingBytes;
+  fs.truncateSync(file, exactFileBytes);
   assert.equal((await call(f, 'control', { run: p.run, action: 'resume' })).state, 'working');
   await until(() => f.flow(p.run).steps.read.job || f.flow(p.run).state === 'paused', t.signal);
   assert.equal(f.flow(p.run).state, 'working', JSON.stringify(f.flow(p.run)));
   assert.equal(f.flow(p.run).sonic_input_bytes, SONIC_BYTES_LIMIT);
   const job = f.flow(p.run).steps.read.job;
-  assert.equal(fs.readFileSync(join(f.dir(job), 'brief.md'), 'utf8').slice(0, f.job(job).task_length), finalTask);
+  const writtenBrief = fs.readFileSync(join(f.dir(job), 'brief.md'), 'utf8');
+  assert.equal(writtenBrief, expectedBrief);
+  assert.equal(Buffer.byteLength(writtenBrief) + specBytes + standingBytes + exactFileBytes, SONIC_BYTES_LIMIT);
   put(join(f.dir(job), 'release-sonic'), '');
   await until(() => f.flow(p.run).state === 'completed', t.signal);
 });
@@ -420,11 +431,50 @@ test('Sonic charges a prerequisite report once it exists', { timeout: 30_000 }, 
   const status = await call(f, 'status', { run: p.run });
   assert.equal(status.state, 'paused');
   const check = join(f.home, 'flows', p.run, 'verify.check.json');
-  const total = Buffer.byteLength(`${readTask}\n\n${WORKFLOW_WORKER_RULE_NO_ASK}\n\nWorkflow results: ${check}`) +
-    [check, join(f.root, 'docs', 'spec.md'), join(f.root, 'sample.txt'), join(f.dir(build), 'report.md')]
+  const standing = join(f.root, '.hud', 'brief.md');
+  const report = join(f.dir(build), 'report.md');
+  const assembled = `${readTask}\n\n${WORKFLOW_WORKER_RULE_NO_ASK}\n\nWorkflow results: ${check}\n\n` +
+    `Read the project standing brief: ${JSON.stringify(standing)}.\n\n` +
+    `## Context References\n\nRead these files for task context:\n\n- ${build} report: ${JSON.stringify(report)}\n\n` +
+    'Finish with `hud_report`.\n';
+  const total = Buffer.byteLength(assembled) +
+    [check, standing, join(f.root, 'docs', 'spec.md'), join(f.root, 'sample.txt'), report]
       .reduce((n, file) => n + fs.statSync(file).size, 0);
   assert.equal(status.reason, `${total} Sonic input bytes across the run (limit ${SONIC_BYTES_LIMIT}); re-plan or reduce inputs`);
   assert.equal(status.steps.read.job, undefined);
+});
+
+test('a cheap worktree Sonic job measures committed HEAD inputs and pauses when over limit or unestablishable', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  const file = join(f.root, 'input.txt');
+  put(file, Buffer.alloc(SONIC_BYTES_LIMIT));
+  f.git(f.root, 'add', 'input.txt'); f.git(f.root, 'commit', '-qm', 'Large committed input');
+  // Locally shorten the working copy so plan sees a tiny file while HEAD still holds 2 MiB.
+  put(file, 'short\n');
+  const p = await call(f, 'plan', { graph: graph({ read: { kind: 'job', role: 'sonic', isolation: 'worktree', task: 'Read `input.txt`' } }) });
+  assert.equal(p.cost, 'cheap');
+  await start(f, p);
+  await until(() => f.flow(p.run).state === 'paused', t.signal);
+  const paused = await call(f, 'status', { run: p.run });
+  assert.equal(paused.state, 'paused');
+  assert.match(paused.reason, /Sonic input bytes across the run.*re-plan/);
+  assert.equal(paused.steps.read.job, undefined);
+  assert.deepEqual(fs.existsSync(join(f.home, 'jobs')) ? fs.readdirSync(join(f.home, 'jobs')) : [], []);
+  assert.equal(fs.existsSync(`${f.root}-wt`), false);
+
+  const nonGit = await fixture(t);
+  sonicTask(nonGit);
+  put(join(nonGit.root, 'sample.txt'), 'small');
+  const p2 = await call(nonGit, 'plan', { graph: graph({ read: { kind: 'job', role: 'sonic', isolation: 'worktree', task: 'Read `sample.txt`' } }) });
+  assert.equal(p2.cost, 'cheap');
+  await start(nonGit, p2);
+  const run2 = () => JSON.parse(fs.readFileSync(join(nonGit.env.HUD_HOME, 'flows', `${p2.run}.json`), 'utf8'));
+  await until(() => run2().state === 'paused', t.signal);
+  const paused2 = await call(nonGit, 'status', { run: p2.run });
+  assert.match(paused2.reason, /could not be established.*HEAD/i);
+  assert.equal(paused2.steps.read.job, undefined);
+  assert.deepEqual(fs.existsSync(join(nonGit.env.HUD_HOME, 'jobs')) ? fs.readdirSync(join(nonGit.env.HUD_HOME, 'jobs')) : [], []);
 });
 
 test('a cheap Sonic step waits in the workflow at the role cap and remeasures before starting', { timeout: 30_000 }, async t => {
@@ -480,7 +530,7 @@ for (const browser of [false, true]) test(`a legacy queued cheap Sonic job is fe
     assert.deepEqual(JSON.parse(fs.readFileSync(path, 'utf8')).attempts, []);
   });
 
-test('resuming a cheap workflow with earlier Sonic admission and no ledger pauses for re-plan', { timeout: 30_000 }, async t => {
+for (const mode of ['missing', 'legacy-populated', 'current']) test(`resuming a cheap workflow verifies Sonic ledger version (${mode})`, { timeout: 30_000 }, async t => {
   const f = await setupWorkflowProject(t, { count: 0 });
   sonicTask(f);
   const p = await call(f, 'plan', { graph: graph({
@@ -491,19 +541,134 @@ test('resuming a cheap workflow with earlier Sonic admission and no ledger pause
   assert.equal(p.cost, 'cheap');
   await start(f, p);
   await until(() => f.flow(p.run).steps.a.job, t.signal);
-  assert.ok(f.flow(p.run).sonic_input_bytes > 0, 'a fresh run starts accounting at zero');
+  const charged = f.flow(p.run).sonic_input_bytes;
+  assert.ok(charged > 0, 'a fresh run starts accounting at zero');
+  assert.equal(f.flow(p.run).sonic_ledger_version, SONIC_LEDGER_VERSION);
   put(join(f.dir(f.flow(p.run).steps.a.job), 'release-sonic'), '');
   await until(() => f.flow(p.run).handback?.request_id === 'h-accept' && !f.flow(p.run).pid, t.signal);
-  const legacy = f.flow(p.run);
-  delete legacy.sonic_input_bytes;
-  saveHeader(f.home, legacy);
+  if (mode !== 'current') {
+    const legacy = f.flow(p.run);
+    delete legacy.sonic_ledger_version;
+    if (mode === 'missing') delete legacy.sonic_input_bytes;
+    else legacy.sonic_input_bytes = 123;
+    saveHeader(f.home, legacy);
+  }
   assert.equal((await reply(f, p.run, 'land')).written, true);
-  await until(() => f.flow(p.run).state === 'paused' || f.flow(p.run).steps.b.job, t.signal);
-  const status = await call(f, 'status', { run: p.run });
-  assert.equal(status.state, 'paused');
-  assert.match(status.reason, /Earlier Sonic input bytes.*re-plan/);
-  assert.equal(status.steps.b.job, undefined);
-  assert.equal(f.flow(p.run).sonic_input_bytes, undefined);
+  if (mode === 'current') {
+    await until(() => f.flow(p.run).steps.b.job || f.flow(p.run).state === 'paused', t.signal);
+    assert.equal(f.flow(p.run).state, 'working', JSON.stringify(f.flow(p.run)));
+    assert.ok(f.flow(p.run).sonic_input_bytes > charged);
+    put(join(f.dir(f.flow(p.run).steps.b.job), 'release-sonic'), '');
+    await until(() => f.flow(p.run).state === 'completed', t.signal);
+  } else {
+    await until(() => f.flow(p.run).state === 'paused' || f.flow(p.run).steps.b.job, t.signal);
+    const status = await call(f, 'status', { run: p.run });
+    assert.equal(status.state, 'paused');
+    assert.match(status.reason, /Earlier Sonic input bytes.*re-plan/);
+    assert.equal(status.steps.b.job, undefined);
+    assert.equal(f.flow(p.run).sonic_input_bytes, mode === 'missing' ? undefined : 123);
+    assert.equal(f.flow(p.run).sonic_ledger_version, undefined);
+  }
+});
+
+test('pre-input Sonic refusals reverse byte charges on job and batch steps while unknown outcomes keep them', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  const file = join(f.root, 'sample.txt');
+  put(file, Buffer.alloc(1_200_000));
+  for (const kind of ['job', 'batch']) {
+    const step = kind === 'job' ? { kind: 'job', role: 'sonic', task: 'Read `sample.txt`' } : batch('sonic', 1, 'Read `sample.txt`');
+    const p = await call(f, 'plan', { graph: graph({ read: step }) });
+    assert.equal(p.cost, 'cheap');
+    // Switch pi off after planning so dispatch refuses with no_available_place before any receipt.
+    setHarnessDisabled(f.home, 'pi', true);
+    await start(f, p);
+    await until(() => f.flow(p.run).state === 'paused' && !f.flow(p.run).pid, t.signal);
+    assert.equal(f.flow(p.run).sonic_input_bytes, 0, `${kind} refusal reverses its byte charge`);
+    assert.equal(f.flow(p.run).steps.read.state, 'failed');
+    assert.match(f.flow(p.run).reason, /off \(pi\)/);
+    setHarnessDisabled(f.home, 'pi', false);
+    assert.equal((await call(f, 'control', { run: p.run, action: 'retry_failed' })).state, 'working');
+    const jobId = () => kind === 'job' ? f.flow(p.run).steps.read.job : f.flow(p.run).steps.read.items?.[0].job;
+    await until(() => jobId() || f.flow(p.run).state === 'paused', t.signal);
+    assert.ok(jobId(), `${kind} retry_failed launches instead of pausing at 2 MiB: ${JSON.stringify(f.flow(p.run))}`);
+    assert.ok(f.flow(p.run).sonic_input_bytes > 1_200_000);
+    put(join(f.dir(jobId()), 'release-sonic'), '');
+    await until(() => f.flow(p.run).state === 'completed', t.signal);
+  }
+  // Unknown outcome (interrupted dispatch without a job receipt) keeps its charge and pauses on retry_failed.
+  const u = await call(f, 'plan', { graph: graph({
+    accept: { kind: 'handback', to: 'main', ask: 'Proceed?', options: ['go', 'skip'] },
+    read: { kind: 'job', role: 'sonic', task: 'Read `sample.txt`', needs: ['accept'] },
+  }) });
+  assert.equal(u.cost, 'cheap');
+  await start(f, u);
+  await until(() => f.flow(u.run).handback?.request_id === 'h-accept' && !f.flow(u.run).pid, t.signal);
+  const interrupted = f.flow(u.run);
+  interrupted.steps.accept.state = 'done';
+  delete interrupted.handback;
+  interrupted.sonic_input_bytes = 1_200_000;
+  interrupted.sonic_ledger_version = SONIC_LEDGER_VERSION;
+  interrupted.steps.read = { state: 'running', admitted: true };
+  saveHeader(f.home, interrupted);
+  assert.equal((await call(f, 'control', { run: u.run, action: 'resume' })).state, 'working');
+  await until(() => f.flow(u.run).state === 'paused' && !f.flow(u.run).pid, t.signal);
+  assert.equal(f.flow(u.run).steps.read.state, 'failed');
+  assert.equal(f.flow(u.run).sonic_input_bytes, 1_200_000);
+  assert.equal((await call(f, 'control', { run: u.run, action: 'retry_failed' })).state, 'working');
+  await until(() => f.flow(u.run).state === 'paused' || f.flow(u.run).steps.read.job, t.signal);
+  const guard = await call(f, 'status', { run: u.run });
+  assert.equal(guard.state, 'paused');
+  assert.match(guard.reason, /Sonic input bytes across the run.*re-plan/);
+  assert.equal(guard.steps.read.job, undefined);
+});
+
+test('a one-item breaker-first batch pauses once, skips on one resume, and reruns on retry_failed', { timeout: 30_000 }, async t => {
+  const f = await fixture(t, { failedRetentionMs: 60_000 });
+  sonicTask(f);
+  const jobsDir = join(f.env.HUD_HOME, 'jobs');
+  const flow = id => JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'flows', `${id}.json`), 'utf8'));
+  const release = (job, fail = false) => {
+    if (fail) put(join(jobsDir, job, 'fail-sonic'), '');
+    put(join(jobsDir, job, 'release-sonic'), '');
+  };
+  const recipe = { ...graph({ items: batch('sonic', 1), after: { ...task, needs: ['items'] } }), policy: { breaker: 'first' } };
+
+  const p1 = await call(f, 'plan', { graph: recipe });
+  assert.equal((await start(f, p1)).state, 'working');
+  await until(() => flow(p1.run).steps.items.items?.[0].job, t.signal);
+  release(flow(p1.run).steps.items.items[0].job, true);
+  await until(() => flow(p1.run).state === 'paused' && !flow(p1.run).pid, t.signal);
+  const paused1 = await call(f, 'status', { run: p1.run });
+  assert.match(paused1.reason, /pilot failed/);
+  assert.equal(paused1.steps.items.state, 'failed');
+  assert.equal(paused1.steps.items.items[0].state, 'failed');
+  assert.equal(Object.keys(flow(p1.run).notices).filter(k => k.startsWith('pause-')).length, 1);
+  assert.equal((await call(f, 'control', { run: p1.run, action: 'resume' })).state, 'working');
+  await until(() => flow(p1.run).state !== 'working', t.signal);
+  const done1 = await call(f, 'status', { run: p1.run });
+  assert.equal(done1.state, 'completed', JSON.stringify(done1));
+  assert.equal(done1.steps.items.state, 'skipped');
+  assert.equal(done1.steps.after.state, 'skipped');
+  assert.equal(Object.keys(flow(p1.run).notices).filter(k => k.startsWith('pause-')).length, 1);
+
+  const p2 = await call(f, 'plan', { graph: recipe });
+  assert.equal((await start(f, p2)).state, 'working');
+  await until(() => flow(p2.run).steps.items.items?.[0].job, t.signal);
+  const firstJob = flow(p2.run).steps.items.items[0].job;
+  release(firstJob, true);
+  await until(() => flow(p2.run).state === 'paused' && !flow(p2.run).pid, t.signal);
+  assert.equal(flow(p2.run).steps.items.state, 'failed');
+  assert.equal((await call(f, 'control', { run: p2.run, action: 'retry_failed' })).state, 'working');
+  await until(() => flow(p2.run).steps.items.items?.[0].job && flow(p2.run).steps.items.items[0].job !== firstJob, t.signal);
+  assert.equal(flow(p2.run).steps.items.items[0].attempt, 1);
+  release(flow(p2.run).steps.items.items[0].job);
+  await until(() => flow(p2.run).steps.after.job, t.signal);
+  release(flow(p2.run).steps.after.job);
+  await until(() => flow(p2.run).state === 'completed', t.signal);
+  const done2 = await call(f, 'status', { run: p2.run });
+  assert.equal(done2.steps.items.state, 'done');
+  assert.equal(done2.steps.after.state, 'done');
 });
 
 test('a stopped job with a written report completes its composed step', { timeout: 30_000 }, async t => {

@@ -12,6 +12,8 @@ import type { Job } from '../mcp/job-contracts.js';
 
 export const isComposedId = (id: unknown): id is `w${string}` => typeof id === 'string' && /^w[a-f0-9]{16}$/.test(id);
 export const SONIC_INPUT_UNKNOWN = 'Earlier Sonic input bytes could not be accounted for; re-plan';
+/** v1 was unversioned bare-task/prefix accounting; v2 counts the assembled brief, standing brief, declared results and checkout files. */
+export const SONIC_LEDGER_VERSION = 2;
 export const workflowGrants = runGrantStore('workflow-grant');
 export type CheckResult = { exit_code: number | null; tail: string; error?: string };
 export type Item = { job?: string; state: 'waiting' | 'running' | 'done' | 'failed'; attempt: number; reason?: string; stall?: string };
@@ -21,7 +23,7 @@ export type ComposedCursor = Cursor & { attempt?: number; job?: string; land?: s
 export type Handback = { request_id: string; step: string; ask: string; choices: string[]; refs: string[] };
 export interface ComposedRun extends Run, RunScope {
   template: 'composed'; cwd: string; hash: string; created_at: string; dispatcher?: Job['dispatcher']; workspace?: string; pid?: number; start?: string;
-  cost: Graph['cost']; grant?: OwnerGrant; input_admitted?: true; sonic_input_bytes?: number;
+  cost: Graph['cost']; grant?: OwnerGrant; input_admitted?: true; sonic_input_bytes?: number; sonic_ledger_version?: number;
   steps: Record<string, ComposedCursor>; answers: Record<string, string>;
   handback?: Run['handback'] & Partial<Handback>;
 }

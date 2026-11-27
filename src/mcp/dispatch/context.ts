@@ -80,16 +80,98 @@ function sonicFactsPrefix(task: unknown): string {
     : SONIC_FACTS_EN;
 }
 
+function inside(base: string, path: string) {
+  const rel = relative(base, path);
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('outside its root');
+}
+
+function standingBriefReference(standingPath: string): string {
+  // A heading here could replace the title of a task written without one.
+  return `Read the project standing brief: ${JSON.stringify(standingPath)}.\n\n`;
+}
+
+function contextReferenceLine(label: string, prefix?: string): string {
+  return prefix ? `${prefix}\n- ${label}` : `- ${label}`;
+}
+
+function contextBlock(reference: string, sections: string[], inline: boolean): string {
+  const block = !sections.length ? '' : inline
+    ? `\n## Context\n\n${sections.join('\n\n')}\n`
+    : `## Context References\n\nRead these files for task context:\n\n${sections.join('\n')}\n\n`;
+  return reference + block;
+}
+
+export function formatBriefText(
+  task: string,
+  block: string,
+  harness: 'pi' | 'cli' | 'bro',
+  options: { preview?: string; cliFooter?: string } = {},
+): string {
+  let brief = `${task}${harness === 'bro' ? '\n' : '\n\n'}${block}`;
+  if (options.preview) brief += `Write the HTML preview to ${JSON.stringify(options.preview)} relative to your cwd before reporting.\n`;
+  if (harness === 'pi') brief += 'Finish with `hud_report`.\n';
+  else if (options.cliFooter) brief += options.cliFooter;
+  return brief;
+}
+
+/** Shared non-inline brief assembly for workflow admission and sizing against the exact dispatched brief. */
+export function assembleDispatchedBrief(
+  args: { task: string; from_jobs?: string[] },
+  project: { root: string; registered: boolean },
+  harness: 'pi' | 'cli' | 'bro' = 'pi',
+): { brief: string; files: string[]; standing?: StandingBriefRef } | { ok: false; error: string } {
+  const files: string[] = [];
+  const sections: string[] = [];
+  let reference = '';
+  let standing: StandingBriefRef | undefined;
+  if (project.registered) {
+    const standingPath = join(project.root, '.hud', 'brief.md');
+    try {
+      const path = fs.realpathSync(standingPath);
+      inside(project.root, path);
+      if (!fs.statSync(path).isFile()) throw new Error('not a regular file');
+      reference = standingBriefReference(standingPath);
+      standing = { path, label: standingPath };
+      files.push(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+        return { ok: false, error: `${standingPath} must resolve to a readable text file inside ${project.root}` };
+    }
+  }
+  const fromJobs = args.from_jobs ?? [];
+  if (fromJobs.length) {
+    const sonicPrefix = sonicFactsPrefix(args.task);
+    let source = 'from_jobs';
+    try {
+      const base = fs.realpathSync(jobsRoot);
+      for (const value of fromJobs) {
+        source = `from_jobs: ${JSON.stringify(value)}`;
+        if (!/^j[0-9a-f]{16}$/.test(value)) throw new Error('invalid job id');
+        const path = fs.realpathSync(resolve(jobsRoot, join(value, jobFiles.report)));
+        inside(base, path);
+        if (!fs.statSync(path).isFile()) throw new Error('not a regular file');
+        let sonic = false;
+        try { sonic = findJob(value)?.role === 'sonic'; } catch { /* Corrupt receipt leaves sonic false. */ }
+        if (path !== standing?.path) {
+          const label = `${value} report: ${JSON.stringify(path)}`;
+          sections.push(contextReferenceLine(label, sonic ? sonicPrefix : undefined));
+        }
+        files.push(path);
+      }
+    } catch {
+      return { ok: false, error: `${source} must resolve to a readable UTF-8 text file inside ${jobsRoot}` };
+    }
+  }
+  const block = contextBlock(reference, sections, false);
+  return { brief: formatBriefText(args.task, block, harness), files, standing };
+}
+
 export async function assembleContext(args: Args, cwd: string, inline: boolean, project: { root: string; registered: boolean },
   repairOf?: string, poolFiles: readonly string[] = []) {
   const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
   const sections: string[] = [];
   const contextInputs: { name: string; bytes: number }[] = [];
   let remaining = 256 * 1024;
-  const inside = (base: string, path: string) => {
-    const rel = relative(base, path);
-    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('outside its root');
-  };
   const append = async (path: string, label: string, prefix?: string) => {
     const file = await readContextFile(path, inline ? Math.min(64 * 1024, remaining) : undefined);
     if (!file) return null;
@@ -99,7 +181,7 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
       for (const run of file.content.matchAll(/`+/g)) length = Math.max(length, run[0].length + 1);
       const fence = '`'.repeat(length);
       sections.push(`${prefix ? `${prefix}\n\n` : ''}### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
-    } else sections.push(prefix ? `${prefix}\n- ${label}` : `- ${label}`);
+    } else sections.push(contextReferenceLine(label, prefix));
     return file.bytes;
   };
   let standing: string | undefined;
@@ -115,8 +197,7 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
           return { ok: false, code: 'context_too_large', error: standingPath } as const;
       } else {
         if (!(await fs.promises.stat(path)).isFile()) throw new Error('not a regular file');
-        // A heading here could replace the title of a task written without one.
-        reference = `Read the project standing brief: ${JSON.stringify(standingPath)}.\n\n`;
+        reference = standingBriefReference(standingPath);
       }
       standing = path;
       standingLabel = standingPath;
@@ -176,13 +257,10 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
       return { ok: false, code: 'invalid_arguments', error: `pick: ${label} must be a readable UTF-8 text file` } as const;
     }
   }
-  const block = !sections.length ? '' : inline
-    ? `\n## Context\n\n${sections.join('\n\n')}\n`
-    : `## Context References\n\nRead these files for task context:\n\n${sections.join('\n')}\n\n`;
   return {
     metadata,
     contextInputs,
-    block: reference + block,
+    block: contextBlock(reference, sections, inline),
     standing: standing && standingLabel ? { path: standing, label: standingLabel } satisfies StandingBriefRef : undefined,
   };
 }
