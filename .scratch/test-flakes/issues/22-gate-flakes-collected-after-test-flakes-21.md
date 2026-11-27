@@ -1,6 +1,6 @@
 # 22: Gate flakes collected after test-flakes/21
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Live try:** none
 **Blocked by:** none
@@ -14,7 +14,9 @@
 - `direct-exec resume that starts a new turn still records failure on subsequent crash` (tests/unit/herdr-fork-direct-exec.test.mjs) — flow `fcfab854a4bf7124e`, log `~/.hud/flows/fcfab854a4bf7124e.json.gate-1.log`
 - `a cheap worktree Sonic job measures committed HEAD inputs and pauses when over limit or unestablishable` (tests/unit/workflow-composed.test.mjs) — flow `fef6bf14dfb953546`, log `~/.hud/flows/fef6bf14dfb953546.json.gate-1.log`
 
-- [ ] Each listed case passes 20 consecutive runs under parallel load
-- [ ] No assertion or product bound weakened
+- [x] Each listed case passes 20 consecutive runs under parallel load
+- [x] No assertion or product bound weakened
 
 ## Comments
+
+- Landed in this commit (replay base 86796d4387381d4248d199c83026b28d8be43371); gate 5/5 passed.

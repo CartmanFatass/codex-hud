@@ -415,14 +415,14 @@ async function startForkHerdr(t, f, opts = {}) {
     subscribers,
     tabs,
     emit,
-    hasWatcher: () => [...subscribers].some((c) => c.types.has('tab.closed') && !c.pane),
+    hasWatcher: () => [...subscribers].some((c) => c.types.has('tab.closed') && c.types.has('pane.exited') && c.types.has('pane.closed') && !c.pane),
+    hasSupervisor: (paneId) => [...subscribers].some((c) => c.pane === paneId && c.types.has('pane.exited')),
     dropWatchers() {
       for (const c of [...subscribers]) {
         if (!c.pane) c.conn.destroy();
       }
     },
     emitPaneExited(entry, exitCode, signal = null, { closeOnZero = true } = {}) {
-      try { entry.child.kill('SIGKILL'); } catch {}
       emit('pane.exited', {
         type: 'pane_exited',
         pane_id: entry.pane_id,
@@ -442,6 +442,7 @@ async function startForkHerdr(t, f, opts = {}) {
           terminal_id: entry.terminal_id,
         });
       }
+      try { entry.child.kill('SIGKILL'); } catch {}
     },
     emitSiblingPaneExited(entry, exitCode, signal = null) {
       emit('pane.exited', {
@@ -664,10 +665,7 @@ test('fork Pi tab worker: native pi worker extension, sibling exit ignored, clea
   assert.equal(session1.TERMINAL_ID, entry1.terminal_id);
   assert.equal(cliState(dir1).session_id, 'pi-sess-1');
 
-  await until(() => fork.subscriptions.some((s) =>
-    s.subscriptions?.some((x) => x.type === 'tab.closed') &&
-    s.subscriptions?.some((x) => x.type === 'pane.exited') &&
-    s.subscriptions?.some((x) => x.type === 'pane.closed')), t.signal);
+  await until(() => fork.hasWatcher(), t.signal);
 
   // Sibling pane exit/close in the same launch_id must NOT retire the live Pi root worker.
   fork.emitSiblingPaneExited(entry1, 1, null);
@@ -1018,7 +1016,7 @@ test('direct-exec CLI and Pi wait for interactive_ready before sending exactly o
     assert.deepEqual(await pinJobTab(dir, f.env), { ok: false, reason: 'tab pinning unavailable' });
     assert.deepEqual(await hideJobTab(dir, f.env), { ok: false, reason: 'hidden tabs unavailable' });
     assert.equal(fork.socketRequests.some((r) => r.method === 'tab.set_hidden'), false);
-    await until(() => cliState(dir)?.supervisor_pid, t.signal);
+    await until(() => cliState(dir)?.supervisor_pid && fork.hasSupervisor(entry.pane_id) && fork.hasWatcher(), t.signal);
     writeFixtureFile(join(dir, 'report.md'), 'CLI ready report.\n');
     fork.emitPaneExited(entry, 0, null);
     await until(() => cliState(dir)?.state === 'closed' && Boolean(readCloseReaped(res)), t.signal);
@@ -1092,7 +1090,7 @@ test('direct-exec CLI and Pi wait for interactive_ready before sending exactly o
     const dir = res.task_dir;
     const session = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
     const entry = fork.tabs.get(session.LAUNCH_ID);
-    await until(() => cliState(dir)?.supervisor_pid, t.signal);
+    await until(() => cliState(dir)?.supervisor_pid && fork.hasSupervisor(entry.pane_id) && fork.hasWatcher(), t.signal);
     writeFixtureFile(join(dir, 'report.md'), 'Codex ready report.\n');
     fork.emitPaneExited(entry, 0, null);
     await until(() => cliState(dir)?.state === 'closed' && Boolean(readCloseReaped(res)), t.signal);
@@ -1843,7 +1841,8 @@ test('direct-exec resume failure before input restores closed reported job, reco
 });
 
 test('direct-exec resume that starts a new turn still records failure on subsequent crash', { timeout: 60000 }, async (t) => {
-  const f = await fixture(t, { failedRetentionMs: 250 });
+  // Keep cli-supervisor on the real clock so crash ended_at matches hud-watch's retention deadline.
+  const f = await fixture(t, { failedRetentionMs: 250, clockScale: 1 });
   const sessionId = 'synthetic-agy-resumed-session';
   const fork = await startForkHerdr(t, f, {
     onAgentGet(entry) {
@@ -1856,7 +1855,7 @@ test('direct-exec resume that starts a new turn still records failure on subsequ
   const dir = first.task_dir;
   const session1 = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
   const entry1 = fork.tabs.get(session1.LAUNCH_ID);
-  await until(() => cliState(dir)?.supervisor_pid && cliState(dir)?.agent_session_id === sessionId && fork.hasWatcher(), t.signal);
+  await until(() => cliState(dir)?.supervisor_pid && cliState(dir)?.agent_session_id === sessionId && fork.hasSupervisor(entry1.pane_id) && fork.hasWatcher(), t.signal);
 
   const report = workerClient(t, f, dir);
   const firstToken = cliToken(dir);
@@ -1878,7 +1877,7 @@ test('direct-exec resume that starts a new turn still records failure on subsequ
   const session2 = Object.fromEntries(fs.readFileSync(join(dir, 'SESSION.txt'), 'utf8').trim().split('\n').map((l) => l.split('=')));
   const entry2 = fork.tabs.get(session2.LAUNCH_ID);
   assert.ok(entry2 && entry2.launch_id !== entry1.launch_id);
-  await until(() => cliState(dir)?.supervisor_pid && cliState(dir)?.pid === entry2.pid, t.signal);
+  await until(() => cliState(dir)?.supervisor_pid && cliState(dir)?.pid === entry2.pid && fork.hasSupervisor(entry2.pane_id) && fork.hasWatcher(), t.signal);
   assert.equal(cliState(dir).state, 'working');
 
   // Crash during the resumed turn MUST record failure as today.

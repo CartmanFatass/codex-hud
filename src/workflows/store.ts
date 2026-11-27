@@ -5,7 +5,7 @@ import { writeJsonPrivate } from '../utils/atomic-fs.js';
 import type { Graph } from './graph.js';
 
 export const runDir = (home: string, id: string) => join(home, 'flows', id);
-export const runLock = <T>(home: string, id: string, fn: () => T) => withAbstractLock('flow-state', `${home}\0${id}`, fn);
+export const runLock = <T>(home: string, id: string, fn: () => T) => withAbstractLock('flow-state', `${home}\0${id}`, fn, { timeoutMs: 10_000 });
 export const driverLock = (home: string, id: string) => tryAbstractLock('flow-runner', `${home}\0${id}`);
 export const saveHeader = (home: string, header: { flow: string }, exclusive = false) => writeJsonPrivate(`${runDir(home, header.flow)}.json`, header, { exclusive });
 export const freezeGraph = (home: string, id: string, graph: Pick<Graph, 'version' | 'name' | 'steps' | 'policy'>) => writeJsonPrivate(join(runDir(home, id), 'graph.json'), graph, { exclusive: true });

@@ -1573,6 +1573,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   recorded.stderr_tail = failure?.stderr_tail ?? result.stderr;
   save(latest);
   const ok = result.exit_code === 0;
+  ensureWatcher();
   if (ok && pending.length) clearHeadlessSends(dir);
   if (carryTask && activeTasks.get(id) === carryTask) {
     if (ok) {

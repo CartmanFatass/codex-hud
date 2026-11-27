@@ -149,6 +149,7 @@ function warn(kind: string, message: string) {
 let watcher: fs.FSWatcher | undefined, flowsWatcher: fs.FSWatcher | undefined, settingsWatcher: fs.FSWatcher | undefined, timer: NodeJS.Timeout;
 let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   queued = false,
+  queuedRetryWatch = false,
   stopped = false;
 type Retry = { ownership: string; readClose: boolean; readCloseRootReaped?: boolean; at: number; attempts: number; outcome: string; snapshot?: WorkerTreeSnapshot };
 type ReapInput = { id: string; dir: string; job: Job | null; status: Partial<JobStatus>; session: SessionEntry | null; tab: string;
@@ -1400,16 +1401,23 @@ function scan(retryWatch = false) {
   for (const marker of [...flowNoticeRetries.keys()]) if (!seenFlowNoticeMarkers.has(marker)) flowNoticeRetries.delete(marker);
   const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0 || permissionChecks.size > 0 || flowNoticeChecks.size > 0;
   if ((open || hasInFlight || nearest !== Infinity) && !watching) nearest = Math.min(nearest, Date.now() + degradedMs);
-  if (nearest !== Infinity) timer = setTimeout(() => scan(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
+  if (nearest !== Infinity) timer = setTimeout(() => schedule(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
   if (!queued && !open && !hasInFlight && nearest === Infinity) {
     stopScheduling();
     notify('idle');
   }
 }
-function schedule() {
-  if (queued || stopped) return;
+function schedule(retryWatch = false) {
+  if (stopped) return;
+  if (retryWatch) queuedRetryWatch = true;
+  if (queued) return;
   queued = true;
-  setImmediate(() => { queued = false; scan(); });
+  setImmediate(() => {
+    const retry = queuedRetryWatch;
+    queued = false;
+    queuedRetryWatch = false;
+    scan(retry);
+  });
 }
 function ensureSettingsWatch() {
   if (settingsWatcher || stopped) return;
@@ -1465,7 +1473,7 @@ function startWatch() {
       jobChanges.stop();
       workSummary.markDegraded();
       clearTimeout(timer);
-      timer = setTimeout(() => scan(true), degradedMs);
+      timer = setTimeout(() => schedule(true), degradedMs);
     });
   } catch (error) { warn('watch error', `watch error: ${(error as Error).message}`); }
 }
@@ -1494,6 +1502,27 @@ export function openRuntime(emit: typeof notify) {
     },
     // A subscription ack carries no permission-state change. Keep the per-pane check schedule.
     reconcileTabs() { checkAllTabs = true; schedule(); },
+    hasOpenWork() {
+      try {
+        for (const id of jobCache.listJobIds({ onError: (error) => { throw error; } })) {
+          const dir = join(jobs, id);
+          const job = readJson<Job>(join(dir, jobFiles.job));
+          const status = readJson<JobStatus>(join(dir, jobFiles.status));
+          const state = status?.state;
+          if (!status && job && (job.dispatch_exit_code === null || job.dispatch_exit_code === 0)) return true;
+          if (state && !['done', 'closed', 'failed', 'stopped'].includes(state)) return true;
+          const session = jobCache.readSession(id);
+          if (session?.fields.tab && !job?.reaped_at && !isShellLaunchedWorker(session.fields)) {
+            const ownership = reapOwner(session, status);
+            const retry = reapRetries.get(id);
+            if (!(retry?.ownership === ownership && retry.at === Infinity)) return true;
+          }
+        }
+        return false;
+      } catch {
+        return true;
+      }
+    },
     pause() {
       if (stopped) return null;
       // Stop admitting scans; don't rely on a 30 s tick landing between two reaps.

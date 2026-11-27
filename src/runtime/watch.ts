@@ -1,5 +1,5 @@
 /** The ready PID and handoff state live across scan-engine rebuilds via execve. */
-import { watcherReady } from '../mcp/watch-pid.js';
+import { ensureJobWatcher, watcherReady } from '../mcp/watch-pid.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import { binScript } from '../mcp/paths.js';
@@ -126,21 +126,25 @@ export async function openWatcher(probe: boolean) {
       peer.on('close', () => { lines.close(); unavailable('socket closed'); });
     });
   }
-  async function finish(reason: string) {
+  async function finish(reason: string, idle = false) {
     if (stopping) return;
     stopping = true;
     probeAbort?.abort();
     buildWatch?.close();
     disconnect();
+    // On idle exit, unlink watch.pid before re-checking for newly created/resumed work
+    // so an overlapping ensureJobWatcher cannot observe our stale PID and skip spawning.
+    if (idle && ownsPid()) unlinkIfPresent(pidFile);
     await runtime.shutdown();
     await switching;
-    if (ownsPid()) fs.unlinkSync(pidFile);
+    if (ownsPid()) unlinkIfPresent(pidFile);
+    if (idle && !reloading && runtime.hasOpenWork()) ensureJobWatcher(home);
     log(`exit pid=${process.pid}: ${reason}`);
     if (reason.startsWith('signal=')) process.exit(0);
   }
   function event(type: string) {
     if (type === 'subscribe') subscribe();
-    if (type === 'idle') void finish('no open jobs or failed deadlines');
+    if (type === 'idle') void finish('no open jobs or failed deadlines', true);
   }
   function watchBuild(onChange: () => void) {
     // Successful builds replace or touch index.js. Watch its directory, not the replaced inode.

@@ -109,7 +109,7 @@ export async function main() {
     if (busy) return;
     clearTimeout(debounce);
     if (urgentWake) immediate ??= setImmediate(run);
-    else debounce = setTimeout(run, 250);
+    else debounce = setTimeout(() => { if (!stopped) immediate ??= setImmediate(run); }, 250);
   }
   function terminalWake() {
     diskDirty = true;
