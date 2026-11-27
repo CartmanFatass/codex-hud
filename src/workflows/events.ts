@@ -23,6 +23,8 @@ export function noticeReader(home: string, pane: string | null, cwd: string, env
   return (origin: NoticeOrigin) => resolve(origin, { pane, cwd });
 }
 type Pull = ReturnType<typeof noticeReader>;
+const permissionJob = (job: Job | null, id: string): job is Job =>
+  job?.job === id && !job.scout_only && !job.council && !job.headless && !job.bro && !job.jev && !job.reaped_at;
 
 export async function permissionEvents(home: string, pull: Pull, all = false,
   sampled?: { jobs: readonly Job[]; rows: readonly { job: string; permission?: PermissionEntry }[] }) {
@@ -33,7 +35,7 @@ export async function permissionEvents(home: string, pull: Pull, all = false,
   // The cached ID index and permission ledgers suffice to rule out quiet jobs; do not load their receipts.
   for (const candidate of sampled?.jobs ?? cache.listJobIds()) {
     const id = typeof candidate === 'string' ? candidate : candidate.job;
-    if (!JOB_ID_RE.test(id)) continue;
+    if (!JOB_ID_RE.test(id) || (typeof candidate !== 'string' && !permissionJob(candidate, id))) continue;
     const dir = join(home, 'jobs', id), row = observed.get(id);
     const entry = row ? row.permission : permissionStatus(dir, cache).active;
     if (!permissionNoticeable(entry)) continue;
@@ -41,7 +43,7 @@ export async function permissionEvents(home: string, pull: Pull, all = false,
     if (!reclaimable && state !== 'claimed' && state !== 'sending') continue;
     const loaded = typeof candidate === 'string' ? cache.readJob<Job>(id) : undefined;
     const job = typeof candidate !== 'string' ? candidate : loaded?.status === 'ok' ? loaded.value : null;
-    if (job?.job !== id || job.scout_only || job.council || job.headless || job.bro || job.jev || job.reaped_at) continue;
+    if (!permissionJob(job, id)) continue;
     const status = cache.readStatus<JobStatus>(id);
     if (status.status !== 'ok' || !['working', 'waiting_orchestrator', 'blocked'].includes(status.value.state)) continue;
     retry = true; // Refusals, lease expiry and pane changes need no new permission ledger write.

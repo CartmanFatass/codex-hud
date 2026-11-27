@@ -35,18 +35,19 @@ export function packageJobFilter(cwd: string, label: string, preset?: string) {
 /** Missing/malformed herdr evidence cannot transfer ownership. Never use a workspace-filtered list. */
 export async function adoptProjectJobs(home: string, pane: string, cwd: string, jobs: JobOwner[], env: NodeJS.ProcessEnv,
   owesCaller: (dir: string, job: Record<string, unknown>) => boolean, cache?: JobIndexCache, onAdopt?: (id: string) => void,
-  list?: () => ReturnType<typeof listLivePanes>) {
+  list?: (hasAttention: () => boolean) => ReturnType<typeof listLivePanes>) {
   const other = jobs.filter((job) => herdrId(jobCallerPane(job)) && jobCallerPane(job) !== pane);
   if (!other.length) return false;
   const matches = projectJobFilter(cwd);
   const root = join(home, 'jobs');
   const candidates = other.filter(matches);
-  if (!candidates.some(job => {
+  if (!candidates.length) return false;
+  const hasAttention = () => candidates.some(job => {
     if (typeof job.job !== 'string' || !JOB_ID_RE.test(job.job)) return false;
     try { return owesCaller(join(root, job.job), job); }
     catch { return false; }
-  })) return false;
-  const listed = list ? (await list())?.map(row => row.pane_id)
+  });
+  const listed = list ? (await list(hasAttention))?.map(row => row.pane_id)
     : await runHerdr(['pane', 'list'], env, { budgetMs: 1000 }).then(result => result.ok ? listedPanes(result.stdout)?.map(row => row.paneId) : null);
   if (!listed) return false;
   const live = new Set(listed);

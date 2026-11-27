@@ -632,7 +632,7 @@ export async function readSessionJobRows(home: string, pane: string, cwd: string
   let rows = watchRows(cache, pane, receipts), panes: Awaited<ReturnType<typeof listLivePanes>> | undefined;
   const jobs = receipts.map(({ job }) => job), adopted = new Set<string>();
   if (await adoptProjectJobs(home, pane, cwd, jobs.filter(job => !job.ticket_queue), env, adoptionAttention(home, jobs, cwd, cache),
-    cache, id => adopted.add(id), async () => panes = await listLivePanes(env))) {
+    cache, id => adopted.add(id), async hasAttention => hasAttention() ? panes = await listLivePanes(env) : null)) {
     rows = watchRows(cache, pane, watchReceipts(cache), adopted);
   }
   return { rows, panes };
