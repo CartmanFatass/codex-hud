@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "feature": "anthropic-decisions",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Anthropic (Claude Haiku 5.5) as an optional Decision API provider",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-24: one API key store ($HUD_HOME/credentials.env) serves every project; the Anthropic key and the OpenAI API key are optional model providers wherever HUD needs model judgement. HUD's Decision API has Gemini, OpenAI and TypeSafe (src/jev/decide.ts decideProviderId, docs/reference.md around 'Automatic fallback'). Add `anthropic` as a fourth provider: reads ANTHROPIC_API_KEY from credentials.env (readCredentialsEnv in src/jev/ask/config.ts, never another location), model claude-haiku-5-5, structured output through the Messages API `output_config: {format: {type: 'json_schema', ...}}` with `output_config.effort: 'low'`, called with Node's built-in fetch like the other providers (no new dependency: the SDK would vendor 29 MB / ~4,000 files into the offline release; main session 2026-11-24). Settings -> Models offers it as a primary choice; automatic fallback order becomes Gemini -> OpenAI -> Anthropic -> TypeSafe; a `stop_reason: 'refusal'` counts as a refused answer (no fallback), as other providers' refusals do. Defaults unchanged: nothing switches to Anthropic unless chosen or used as fallback. Do not log or print key values; name variables only.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "decideProviderId and the fallback chain accept anthropic; missing key reports ANTHROPIC_API_KEY by name",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A unit test with stubbed fetch covers a valid decision, a refusal and a timeout",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Settings -> Models lists Anthropic; docs/reference.md names it in the provider list and fallback order",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "No new dependency in package.json; the vendored lock stamp is unchanged",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "The land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.978Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d55453a6f4a09469b555d420161af79bbec1b816",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.978Z",
+      "updated_at": "2026-11-27T06:39:45.978Z"
+    }
+  ]
+}

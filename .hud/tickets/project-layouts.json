@@ -1,0 +1,104 @@
+{
+  "version": 1,
+  "feature": "project-layouts",
+  "spec_path": ".scratch/project-layouts/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Project layout setting and the Board layout",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`.scratch/project-layouts/spec.md` (the setting, the Board column, the consistency rules);\ndesign `docs/design/project-ux/` direction B.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Settings → Panel → Project layout: Timeline | Board | Inbox (Inbox may render as Timeline until ticket 02), `projectLayout` in hud-settings, default Timeline, applied live like `panelLayout`.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Board hub: milestone map rows (cell per slice, `n/m`, age; `+N` when the row is full), `latest` line, one legend row, In flight, page rows as gauges; Split list and preview, and Classic.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Board Progress: the current milestone open into its slices in cell order (to-try slices as ID + brief sentence), older milestones as map rows, jobs outside the ledger, Next.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Board Control plane: one chain row per role; the selected role's places in the preview (Split) / under it on Enter (Classic); all place keys work there as today.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Board Projects list: one table row per project.",
+          "done": false
+        },
+        {
+          "id": 6,
+          "text": "Consistency rules 1–6 of the spec hold; EN/ZH strings; docs/reference.md; unit tests (40 columns EN and ZH: rows exactly 40 wide, no mid-word cut, counts equal Timeline's, place keys work from Board's preview); snapshots.",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:46.085Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.085Z",
+      "updated_at": "2026-11-27T06:39:46.085Z"
+    },
+    {
+      "number": 2,
+      "title": "The Inbox layout",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "project-layouts/01"
+      ],
+      "what": "`.scratch/project-layouts/spec.md` (the Inbox column, the consistency rules); design\n`docs/design/project-ux/` direction C.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Inbox hub: Needs you ranked (questions and STATE's waiting items, then to-try slices newest first, tickets asking for an answer, blocked slices, roles at their limit), the reason as one word on the right; header figures as spec rule 1; Running; `last accepted` line; page rows. Split list and preview, and Classic.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Inbox Progress: To try (every milestone, newest first, ID + brief sentence), Blocked, Working, Next, Done folded to one row.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Inbox Projects list: groups Needs you / Running / Quiet (a quiet project is one row).",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Control plane and Tickets as Timeline's.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Consistency rules 1–6 of the spec hold; EN/ZH strings; docs/reference.md; unit tests (40 columns EN and ZH, counts equal Timeline's, `Space`/`y`/`n` on Inbox to-try rows); snapshots.",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:46.086Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.086Z",
+      "updated_at": "2026-11-27T06:39:46.086Z"
+    }
+  ]
+}

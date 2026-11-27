@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "feature": "panel-tidy",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Home tells the truth and uses its spare rows",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Home's first screen agrees with the Project tab and does not sit blank. Owner, 2026-11-17, from a\nlive read of a 38 × 46 panel: Home said \"✓ 没有需要你处理的事 · 0 运行中\" while Project showed \"等你处理 5\"; Home's\nprogress block was titled \"里程碑 0.1.4\" but counted the whole ledger (60 to try / 38 accepted / 4 dropped, against 0.1.4's\n4 to try); about 37 of 46 rows were blank; the summary was cut after one row; the bottom said \"✓ 0 今日完成\".",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Home's top line counts STATE's \"Waiting for the owner\" items as well as job questions, e.g. `? 5 项等你处理 · 0 运行中`; ✓ shows only when both are zero. Enter (or a click) on it opens the Project hub's Waiting block.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Home's progress block counts the current milestone's slices exactly as the Project hub does (`currentRows` in `src/render/project-view.ts`); with no current milestone it is titled as the whole ledger, not a milestone.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "The progress summary wraps to up to three rows when spare rows allow; it shrinks before the bar does.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "A \"done today\" count of 0 is not shown.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "When cards and decisions leave most of Home empty, the spare rows show the waiting items (one row each) and the newest landed slices above the progress block; with live cards these shrink first, cards keep priority as today.",
+          "done": false
+        },
+        {
+          "id": 6,
+          "text": "Main-path frame tests (synthetic STATE) for the top line, the milestone counts and an idle Home.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.067Z",
+          "author": "legacy",
+          "text": "Status note: (565022bc)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.067Z",
+      "updated_at": "2026-11-27T06:39:46.067Z"
+    },
+    {
+      "number": 2,
+      "title": "Project hub uses its room and keeps Now about work",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "panel-tidy/01"
+      ],
+      "what": "The Project hub shows whole waiting items and a Now block that is about work in flight. Owner,\n2026-11-17: the hub had ~19 blank rows while each waiting item was cut to one row, losing the action at its end\n(\"Contr…\", \"reopen `/hud` i…\"); Now held only three `! MyHUD-xxx 未记入清单` rows (worktrees not in the ledger); the\nname row read `0.1.4 ▾ 1/4` with an unexplained `1/4`; the progress bar's ▓ (to try) and █ (accepted) were hard to tell\napart.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A waiting item wraps to two rows when the hub has spare rows; on a short panel it falls back to one cut row before Latest or the page rows give way. The Waiting header says how many of the items are tries.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Worktrees not in the ledger leave Now. The Working tree page row counts them (e.g. `3 个未登记工作树`) and its page lists them. An empty Now shows one muted row saying nothing is in progress.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "The name row's `1/4` says what it counts (e.g. `项目 1/4`), or is dropped if it adds nothing.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "The to-try and accepted inks on every progress bar differ clearly in every theme, not only by glyph.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Main-path frame tests (synthetic STATE and worktrees) for wrapping, Now without unlisted worktrees, and the Working tree count.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.067Z",
+          "author": "legacy",
+          "text": "Status note: (759b8688)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.067Z",
+      "updated_at": "2026-11-27T06:39:46.067Z"
+    },
+    {
+      "number": 3,
+      "title": "Skills reference moves into Help",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "The Skills tab's list becomes a section of Help (`?`), freeing the third main tab. Proposed by the\norchestrator on 2026-11-17 as a matter of taste: the list is a fixed reference opened rarely.\n\nOwner question: `docs/spec.md` (Skills tab, owner, 2026-11-17) makes Skills the third main tab after Project. Moving it\nchanges the spec and removes a visible tab. Keep the tab, or move it into Help?",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Help shows the same list with the same wrapping; Tab cycles Home ↔ Project.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.067Z",
+          "author": "legacy",
+          "text": "Status note: (2ee8d597)"
+        },
+        {
+          "at": "2026-11-27T06:39:46.067Z",
+          "author": "legacy",
+          "text": "Owner, 2026-11-17: move it into Help (spec updated)."
+        },
+        {
+          "at": "2026-11-27T06:39:46.067Z",
+          "author": "legacy",
+          "text": "Unblocked 2026-11-17: it touches the tabs and Help, not the hub files of 02."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.067Z",
+      "updated_at": "2026-11-27T06:39:46.067Z"
+    }
+  ]
+}

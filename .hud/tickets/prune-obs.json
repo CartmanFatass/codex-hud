@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "feature": "prune-obs",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Stop dead legacy observers and delete their modules",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Proposal docs/neon-proposal/01-prune-legacy-observers.md Slice 1 (PRUNE-OBS-01, :406-431): the panel main loop stops spawning herdr agent list and sweeping assoc/native-relations/jev-runtime/delegate.json; the 15 listed dead files go; live files trimmed. No user-visible change.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The 15 Slice 1 files are deleted and the 11 live files trimmed as the proposal lists",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A clean build (rm -rf dist dist-test packages/hud-mcp/dist) passes npm test and check:fixtures with zero visual change",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The panel no longer spawns `herdr agent list` (fake-herdr assertion)",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.087Z",
+      "updated_at": "2026-11-27T06:39:46.087Z"
+    },
+    {
+      "number": 2,
+      "title": "Drop or adapt the legacy tmp/tasks collector",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "prune-obs/01"
+      ],
+      "what": "Slice 2 (PRUNE-OBS-02, :433-451): task-observations.ts and pi-dispatch-status.ts go. Owner decision 1 (:534-545): plan A drops legacy tmp/tasks tasks from Home; plan B keeps a <=130-line readLegacyTasks adapter.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The owner's choice of plan A or B is implemented",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass from a clean build",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-21T00:00:00.000Z",
+          "author": "owner decision 1",
+          "text": "plan A. Legacy tmp/tasks tasks started by old scripts leave Home; no adapter."
+        }
+      ],
+      "created_at": "2026-11-21T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.087Z"
+    },
+    {
+      "number": 3,
+      "title": "Delete the orphaned core/ledger modules",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "prune-obs/01"
+      ],
+      "what": "Slice 3 (PRUNE-OBS-03, :453-475): the 15 core/ledger/link/wake/types files go and 9 files are trimmed. No user-visible change.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The listed files are deleted and trims applied",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass from a clean build",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.087Z",
+      "updated_at": "2026-11-27T06:39:46.087Z"
+    },
+    {
+      "number": 4,
+      "title": "Document the two live sources and guard against zombies",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "prune-obs/02",
+        "prune-obs/03"
+      ],
+      "what": "Slice 4 (PRUNE-OBS-04, :477-489): docs/ARCHITECTURE.md §4.5, an anti-zombie test, tests/fakes/pi.mjs guard.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "ARCHITECTURE describes thin jobs + native trees as the only live sources",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The anti-zombie test fails if a removed observer comes back",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.087Z",
+      "updated_at": "2026-11-27T06:39:46.087Z"
+    }
+  ]
+}

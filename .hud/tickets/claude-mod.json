@@ -1,0 +1,513 @@
+{
+  "version": 1,
+  "feature": "claude-mod",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A Claude Code mod keeps the main session's HUD context lean",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec §2.1.6 (22.23). A Claude Code mod (function-hooks plugin; API: the bundled plugin-authoring skill and its types) under integrations/claude-mod/ that slims what HUD adds to the main session's context, without changing what HUD's MCP returns to other clients: (1) a tool.call hook on mcp__hud__* that awaits the result and rewrites it to a compact text form (drop null/empty fields, collapse changed_files lists to a count plus first few, keep ids, state, summary, questions, read_hint); (2) merge duplicate job notices that reach the conversation in one turn into one row (session.append on the notification rows HUD causes; leave other rows untouched); (3) a tool.call guard that refuses Read/Bash reads of $HUD_HOME/jobs/*/report.md with a one-line hint to use hud_read (the convention says so). Measure on synthetic recorded HUD results/notices (fixtures; repo is public): bytes before vs after. Nothing in the mod may change what the model needs to act (job ids, states, question text and reply method, read hints).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "integrations/claude-mod/ validates with `claude plugin validate` and its tests pass with `claude plugin test` (fixtures for hud_read digest/full, hud_create, hud_land, a burst of notices)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Report states bytes before/after per fixture; total reduction ≥ 25% on the mixed fixture set (≥ 40% on notice bursts; owner bar lowered by the main session 2026-11-22 after measuring that HUD results are already lean) with no loss of ids, states, questions or hints (test asserts the kept fields)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Report read guard: a Read of a synthetic $HUD_HOME/jobs/<id>/report.md is refused with the hud_read hint; other reads untouched",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md + reference.zh.md describe the mod",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.988Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "c6864a4d6dba3e01a2406d190cef7405368d4489",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.988Z",
+      "updated_at": "2026-11-27T06:39:45.988Z"
+    },
+    {
+      "number": 2,
+      "title": "./install --with claude-mod installs and removes the mod",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "claude-mod/01"
+      ],
+      "what": "Spec §2.4 (22.23): the mod becomes an install extension. Register it through Claude Code's official plugin commands (a local folder marketplace pointing at integrations/claude-mod, then install), so a repo update reaches it with /reload-plugins; `hud uninstall` removes it. Keep the plain-backup rule for any client file edited.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Install then uninstall against a temp HOME leaves Claude settings as before apart from deliberate foreign edits",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Re-install is idempotent",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and test:release pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.989Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "5215288d484191e66448c5925e0caf7831bb2ed6",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.989Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 3,
+      "title": "Mod-owned event wake via hud watch --mod",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "claude-mod/01",
+        "claude-mod/02"
+      ],
+      "what": "Design: oracle report of job j173e9f379178e359, section 'Slice 1: Mod-Owned Wake' (pass it with from_jobs). `hud watch --mod` emits JSONL wake records (shared jobRow/actionable, 3 s settlement coalescing, questions immediate), registers a claude-mod watcher marker, exits after 10 min with nothing pending. The mod spawns it on demand (main session in herdr only, not workers, not `claude -p`), wakes an idle session with `$.prompt.submit`, merges events into one `$.session.append` note while busy, parks events on an aborted turn. While the watch is live hud-mcp creates no MCP tasks (batch `hud_create({ jobs })` works) and stops panel typing; absent or dead watch falls back to MCP tasks / `changes` unchanged. Spec §2.1.6 line on MCP tasks (22.25).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`hud watch --mod` emits `{type:\"wake\",lines}` JSONL from the shared row logic, writes the claude-mod marker, exits 0 after idle with nothing pending",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "With the mod watch live, hud-mcp skips MCP task creation, `hud_create({ jobs })` succeeds, panel typing is off; with it absent or dead, MCP tasks / `changes` / `hud_wait` behave as today",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`claude plugin validate` and `claude plugin test integrations/claude-mod` pass: idle wake submits once per batch; busy burst becomes one appended note; aborted turn parks without waking; workers and non-herdr sessions spawn nothing",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests for `--mod` output, idle exit, marker liveness, task stand-down; docs/reference.md + reference.zh.md updated (incl. the stale 'install does not register it yet' line)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Live: in a Claude main session with the mod, a dispatched sonic's report wakes the idle session exactly once and no task-notification row appears",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.989Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "aa5cde9cf17b2adcddeb2b9a1a3b9c4ccb0fa37a",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.989Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 4,
+      "title": "Band above the prompt and live toasts from the shared job rows",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "claude-mod/03"
+      ],
+      "what": "Design base: oracle report j173e9f379178e359, 'Slice 2: Band + Toast', narrowed by spec §4 (22.28, attention first; 2026-11-23). The band is for the owner, not the main session: it shows only what needs the owner now, otherwise nothing. `hud watch --mod` also emits a `band` record (only when it changes) with: STATE `Waiting for the owner` items for this project (first item text + count), and the count of slices waiting for the owner's Accept all (same count as the Project Inbox hub). No running-worker counts (the statusline has them), no job failures or worker questions (the main session handles those). The mod keeps the band in `$.state` and draws it on AbovePrompt with no I/O during render: 0 rows when nothing needs the owner or a survey is up, at most 2 rows sized to bodyColumns. One toast only when a new owner-needed item appears (never on catch-up, one per flush).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Band is empty when nothing needs the owner or `hasSurvey`; otherwise ≤2 rows within bodyColumns from `$.state` only, EN/ZH per panel language",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Band items agree with STATE Waiting (incl. `(waits on …)` drop rule) and the Inbox Accept all count in unit tests",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A toast fires only when a new owner-needed item appears, once per flush, none on initial catch-up",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "`claude plugin validate` / `claude plugin test` pass on terminal, desktop, vscode and mobile surfaces",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.989Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "11adc84deeb3b7233daac7e15314341e21b36d0d",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.989Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 5,
+      "title": "Slash commands and band buttons for owner actions without a model turn",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "claude-mod/04"
+      ],
+      "what": "Design: oracle report j173e9f379178e359, 'Slice 3: Slash Commands & Band Buttons' and its action matrix. New `hud act answer|try|retry|land` CLI reusing panel actions (no MCP schema change). Mod registers `/jobs`, `/answer`, `/try`, `/retry`, `/land`, `/stop` (immediate) and answers `/hud` itself by running `hud panel`; band rows get buttons (answer options, accept/flag try, retry, confirmed stop). Retry and slice land record intent (spec §2.2.6). Owner decided: an explicit `/land <job>` on a settled worktree job calls `hud_land({ job })` directly via `$.mcp.call` (confirm first with `$.ui.ask` if its report is unread); slice land from a band button and `/retry` record intent (spec §2.2.6, 22.25).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`/hud` opens the panel without a model turn; `/jobs` lists and `/jobs <id>` peeks without marking reports read; display-only output adds nothing to model requests",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Answering via `/answer` or a band button writes `qa/qN.answer.md` once, resumes headless jobs and logs a panel action so main hears it",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`/try`, `/retry`, `/land`, `/stop` (confirm on running jobs) follow spec §2.2.4/§2.2.6; no MCP schema bytes added",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "`claude plugin validate`, `claude plugin test` (commands and button presses on terminal and desktop) and `tests/unit/cli-act.test.mjs` pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.989Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "1cb93788811e8321460ae4de254be2511c7427ab",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-23T00:00:00.000Z",
+          "author": "claude-mod/04 narrowed the band to owner-needed items (Waiting + Accept all count). Band buttons follow that",
+          "text": "Accept all, and opening a Waiting item; answer/retry/stop stay slash commands, not band rows."
+        }
+      ],
+      "created_at": "2026-11-23T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 6,
+      "title": "Mechanical convention rules as hooks and a slimmer default convention",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "claude-mod/03"
+      ],
+      "what": "Design: oracle report j173e9f379178e359, 'Slice 4: Convention as Hooks' rule table. Main-session-only (`HUD_JOB_DIR` unset) fail-open hooks: explicit isolation on imp/frontend-imp creates (deny if missing, retries exempt), worktree→none rewrite for read-only roles, deny placement options on non-general roles, ask before `hud_close` of a running job, Grep on report.md guarded like Read, `hud_tickets add` needs explicit owner_try, flow ids refused by hud_land, `hud watch`/`hud_wait`/`wait_ms>0` refused while the mod watch is live. When `hud_roster` returns the default convention, the mod swaps in a short version (project/user conventions untouched). Add `.catch` fail-open to the existing slice-1 hooks. Land after claude-mod/05 to avoid register.ts conflicts, or keep hooks in their own file.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each rule covered in `claude plugin test`, including worker bypass and fail-open on unexpected input",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Default convention text shrinks by ≥55% in the mod's roster result; project or user conventions pass byte for byte",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A unit test keeps the short convention and hook set aligned with packages/hud-mcp/hud-convention.md",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "`claude plugin validate` reports no gating hook without `.catch`",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.989Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "dab52c5e3e61a17b15235466262e8a4e3ff22027",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.989Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 7,
+      "title": "Switching to mod delivery replays no history",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "claude-mod/03"
+      ],
+      "what": "Live check of claude-mod/03 (2026-11-23): after /reload-plugins the mod's first wake submitted ~30 old settled events (hours old, already handled via MCP tasks), and the next hud_create (no task, mod live, watcher_alive true) carried 36 `changes` lines of the same history. Both cost the main session's context and attention (spec §4, 22.28). Fix: (1) when a connection switches to mod delivery, start its changes cursor at the switch (events before it were delivered by tasks) and, while the mod watch is live, return no `changes` on tool results (the mod delivers them); (2) `hud watch --mod`'s first start in a session catches up only on items that still need action (open questions, unobserved failures) plus at most one summary line `N older unread reports — hud_read view:compact`, never one line per old settled job.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Reload with 30 old unread settled jobs: first wake has ≤1 summary line plus any open questions/failures",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "With the mod watch live, hud_* results carry no `changes`; with it dead, changes resume from the switch point, not from the start",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unit tests for both; `claude plugin test` passes",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Live: reload the mod in a session with old unread jobs; one short wake",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-23T00:00:00.000Z",
+          "author": "follow-up",
+          "text": "the first wake still listed every unobserved failure regardless of age (five 11-22 failures: four sonic children of closed imps and one aborted oracle). Catch-up now folds failures that ended before the mod cutoff into the same summary line (`N older unread reports, M older failures — hud_read view:compact`); fresh failures and blocks stay listed one per line."
+        }
+      ],
+      "created_at": "2026-11-23T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 8,
+      "title": "Mod re-announces a day-old job whose report was already read",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-23 08:49Z the mod woke the main session with `jc7501369ce13f2c2 imp: closed | closed after report read | Committed MONITOR-STATE-03 …`. That job was created 2026-11-22T09:02Z, its report read and closed at 09:32Z the same day; nothing in its dir changed today, and retention was deleting ~24 h-old closed jobs at the time (watch.log `delete … state=closed` every few minutes). Find which path emitted it (mod event cursor, retention/archive touching a row, jobs-revision change) and make retention, archive and deletion of an already-read or already-delivered job emit nothing. Spec §4 (22.28): notices only for what needs the owner/main session now.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Root cause named in the report with the code path",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A test: retention deleting or archiving a read, closed job produces no mod/watch event",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No change to delivery of genuinely new settlements",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-23T00:00:00.000Z",
+          "author": "~09",
+          "text": "15Z second instance: `jcc981204b6b6e7a5 general: closed | closed after declared report` (native-statusline/01 work-summary job, created 2026-11-22T21:27Z, settled 21:56Z, report never read but observed_at 22:17Z, landed long ago as 8154e38f). Nothing in its dir changed today; mod watch pid started 08:12Z. So it is not only read jobs: an old unread-but-observed job also re-surfaces as a live event hours later."
+        }
+      ],
+      "created_at": "2026-11-23T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 9,
+      "title": "First mod wake lists fresh unread reports instead of folding them",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-23: scan-fixes/06 (j0832e29597649ef6) and open-review-fixes/06 (jc85f76cee84bccae) settled at 07:56Z/07:53Z, minutes before /reload-plugins. The new mod's first wake (claude-mod/07) folded them into `23 older unread reports — hud_read view:compact`, so the main session missed two finished slices for about an hour. Fix: the first wake lists, one line each, unread settled reports of jobs this caller created that settled within the last 2 h (or since the previous mod watch's last delivery, if recorded), and folds only older ones into the summary line. Keep the ≤1 summary line rule for the rest.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Reload with 2 fresh (10 min old) and 30 old (hours) unread reports: first wake shows 2 lines + 1 summary line",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Fresh reports of other callers' jobs are not listed",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unit test plus `claude plugin test` pass",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.989Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 10,
+      "title": "A watcher reload after a land replays no old settled jobs",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found live 2026-11-25 ~11:53Z: right after hud_land of je7ef7190b801a766 finished (land `after` runs npm run build; ~/.hud/watch.log shows `reloaded pid=18640` at 11:48:33Z and 11:52:00Z), the Claude mod woke the main session with 18 one-line notices for jobs settled 1-3 days earlier, from other callers, unread but long handled (e.g. j9f55feffc7f77ed5 sonic failed 2026-11-22 19:31, j0817bad77928dded, j7544c49d0cc6a227, j57ca5048f4077813, j39fa0344b03dc64f). claude-mod/07 and 09 promise a first wake of at most one summary line for old unread reports and no replay of history. Find which path emitted them and fix it. Hypothesis to check, not assume: after a build reload the session watch restarts its scan state (empty prev map, lastScanAt -Infinity) but runs with catchup false, so src/cli/watch.ts actionable() treats every row in the bounded window as newly visible (the `notice_mtime < lastScanAt` retention guard never fires) and emits each. Note the earlier 11:48 reload did not produce a burst; explain why.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Root cause named in the report with the code path, and why the 11:48 reload did not replay",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A test: with 20 old settled unread jobs from other callers, a watcher/runtime reload (the same path a land's after-build triggers) emits no line per old job; at most the existing one summary line",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A job that genuinely settles during or right after the reload is still delivered once",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "claude-mod/07 and 09 tests still pass; claude plugin test passes if the mod changes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.989Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f4a58e13ec09f437087c355542e15ce15625f4a7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.989Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 11,
+      "title": "A large batch of jobs sharing a package wakes the orchestrator with rollups, not one line per job",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "On 2026-11-25 the main session created ~140 headless sonic jobs with `package: \"hmasd-label\"` (sonic cap 9, the rest queued). Every create, every `queued (#N)` position, every `still working at 10 min` checkpoint and every settled report produced its own line in the orchestrator wake (Claude mod `HUD events` messages; the same lines feed other delivery paths), so the session received hundreds of low-value wakes. Change orchestrator delivery so that jobs sharing a `package` with 3 or more live members (working or queued) are treated as a batch: (1) per-member `queued (#N)` and `still working` lines are not delivered; (2) per-member settled/closed lines are folded into one rollup line per package, delivered at most once per 5 minutes while the batch is live, e.g. `hmasd-label batch: 42 done, 2 failed, 9 running, 85 queued`; (3) a member that fails, stalls, asks a question or needs an answer is still delivered at once and individually (attention first); (4) when the last member settles, one final line with the totals and how to list unread reports. Jobs without a package or in packages below the threshold keep today's behaviour. No duplicate wakes, and a notice is still not a read (spec §2). Apply it wherever orchestrator wake lines are produced (Claude mod, pi delivery, watch fallback) through one shared path if one exists.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Batch members' queued and still-working lines are not delivered; their settlements arrive as at most one rollup per package per 5 minutes plus one final line.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Failure, stall and question events of batch members are delivered immediately and individually.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Jobs outside a batch are unchanged (existing notice tests pass).",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Tests cover threshold, rollup timing, failure passthrough and the final line.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Land gate passes.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.989Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    },
+    {
+      "number": 12,
+      "title": "The orchestrator is woken only for events it must act on",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner decision 2026-11-25: the main session is woken only when it has something to do. Today every single job's routine checkpoint (`still working at 10 min: tool ...`) and queue position (`queued (#N)`) produces its own orchestrator wake line, although main never acts on them: HUD's stall detection already delivers a failure, and `hud_create` already returns the queued state and position. Change the shared quiet watcher (Claude mod, pi, `hud watch` incl. `--queue`; same scope as claude-mod/11 in `src/cli/watch.ts` / `src/cli/watch-batches.ts`) so it delivers: report ready/settled, failed/stalled/stopped, questions, failing checks results, land/flow results, and batch rollups/final lines from claude-mod/11. Routine checkpoints and queue positions are no longer delivered as wakes; they stay visible in the panel, `hud_peek` and `hud_read`. Verbose watch keeps showing everything. Update docs/reference.md and any convention/skill text that tells the main session to expect checkpoint lines.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A single job's `still working` checkpoints and `queued (#N)` positions produce no orchestrator wake in quiet watch; they remain visible via hud_peek/panel.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Report-ready, failure/stall/stop, questions, failing checks and land/flow results still wake immediately.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Verbose watch unchanged; claude-mod/11 batch behaviour unchanged.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Tests cover the dropped and kept event kinds.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.989Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "da37452f1158eaebf48a0850a34e259e2ebe502d",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.989Z",
+      "updated_at": "2026-11-27T06:39:45.989Z"
+    }
+  ]
+}

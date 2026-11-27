@@ -1,0 +1,254 @@
+{
+  "version": 1,
+  "feature": "hud-setup",
+  "spec_path": ".scratch/hud-setup/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A bad role file is skipped, not fatal",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`roleRegistry` (`src/roles/roster.ts`) stops throwing `invalid_role` for one bad file. A file that\nfails validation (bad JSON, unknown harness, missing keys, wrong types) is left out of the roles and returned in an\n`invalid` list `{ path, reason }`. `hud_roster` shows that list; `hud_create` for a role that exists only as an invalid\nfile answers `unknown_role` naming the file. The Project tab's control plane lists invalid files with their reason.\nThis also stops an older MCP from losing every tool when a newer harness kind's role file appears.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "One bad file in `$HUD_HOME/roles` leaves every other role and tool working",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`hud_roster` lists `invalid: [{ path, reason }]`; reason is short and has no file contents",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Project tab control plane shows invalid files (fixtures updated)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests for each reason class",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in fca81428 (0.1.2). Tests: tests/unit/roster-invalid.test.mjs, project-page fixtures."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.029Z"
+    },
+    {
+      "number": 2,
+      "title": "A set-up project's own roles, hidden roles and convention",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "hud-setup/01"
+      ],
+      "what": "a project the owner set up is recorded in `$HUD_HOME/projects.json`\n(`{ \"version\": 1, \"projects\": [{ \"root\": \"/abs\", \"registered_at\": \"...\" }] }`). For a registered project (root = git\ntop level of the cwd, else the cwd, realpath), `roleRegistry` also reads `<root>/.hud/roles/*.json` after\n`$HUD_HOME/roles` (project wins by name); project role files must be `harness: \"pi\"` (others are invalid, as in 01).\nWhen `<root>/.hud/project.json` lists `roles`, only those roles exist for that project. The convention lookup puts\n`<root>/.hud/hud-convention.md` first. `hud_create` resolves against the job's `cwd`; `hud_roster` takes an optional\n`cwd` (default: the server's cwd). An unregistered directory's `.hud/` is ignored and `hud_roster` says\n`project_config_ignored: <root>`. The Project tab shows the same roster as `hud_roster` for its project.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Registered project: project roles added/overriding, unlisted roles hidden, project convention used",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Unregistered project with `.hud/`: nothing from it loads; roster says so",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Non-pi project role file is invalid, not loaded",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests on synthetic HUD_HOME and project dirs",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in fca81428 (0.1.2). Tests: tests/unit/project-roles.test.mjs."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.030Z"
+    },
+    {
+      "number": 3,
+      "title": "`hud setup --detect`",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "hud-setup/02"
+      ],
+      "what": "`hud setup --detect [--cwd DIR]` prints the JSON of `.scratch/hud-setup/spec.md` §2: project root and\nwhether it is registered, pi-role found, reference roles (shipped + `$HUD_HOME`), project roles, enabled roles,\nskills found under the skill roots (`$HUD_HOME/setup.json` `skill_roots`, default `~/.pi/agent/skills`,\n`~/.claude/skills`, `~/.agents/skills`; a skill = directory with `SKILL.md`, name from frontmatter), the project's\nworker skills per role, and broken links under `.hud/skills`. Read-only.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Output matches the spec shape; stable key order",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Writes nothing anywhere",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unit tests on synthetic HOME/HUD_HOME/project",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in fca81428 (0.1.2); detect also marks manual-only skills (disable-model-invocation). Tests: tests/unit/setup-detect.test.ts."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.030Z"
+    },
+    {
+      "number": 4,
+      "title": "`hud setup --apply PLAN` and `--remove`",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "hud-setup/03"
+      ],
+      "what": "`hud setup --apply PLAN.json [--cwd DIR]` writes a project's `.hud/` from a plan:\n`{ \"version\": 1, \"roles\": [names enabled], \"pi_roles\": { \"<name>\": { \"from\"?: \"<reference role>\", \"pi_role\"?,\n\"model\"?, \"thinking\"?, \"split\"?, \"can_continue\"?, \"skills\"?: [names] } }, \"skills\": { \"<name>\": \"/abs/skill/dir\" },\n\"agents\": { \"<role>\": \"<markdown>\" }, \"convention\": \"keep\" | \"copy-default\" }`. It writes `.hud/project.json`\n(roles, links it made), `.hud/roles/<name>.json` only where the role differs from its reference, symlinks\n`.hud/skills/<name>` → dir, `.hud/agents/<role>.md`, optionally `.hud/hud-convention.md` from the shipped one, and\nregisters the root in `$HUD_HOME/projects.json`. Prints what changed; the same plan again changes nothing. Never\nreplaces a file or link it did not make (reports and skips). `--remove` drops the registration only and leaves `.hud/`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Plan validated before any write; invalid plan writes nothing",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Idempotent; foreign files/links never replaced",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "After apply, `--detect` and `hud_roster` show the plan's roles",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests on synthetic dirs",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in fca81428 (0.1.2). Tests: tests/unit/setup-apply.test.ts."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.030Z"
+    },
+    {
+      "number": 5,
+      "title": "Pi workers get their role's skills and worker prompt",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "hud-setup/02"
+      ],
+      "what": "when `hud_create` dispatches a pi role from a registered project, each `skills` entry (a name under\n`<root>/.hud/skills/`, or an absolute path) becomes `--skill <dir>` after pi-role's `--`, and an existing\n`<root>/.hud/agents/<role>.md` becomes `--append-system-prompt <file>`. A broken link is skipped and named in the job's\nrecord; it does not fail the launch. `hud_read` shows the skills and prompt file the job got. Other harnesses: no change.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "pi argv carries `--skill` per skill and `--append-system-prompt` when the file exists",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Loading check without a model call (`PI_ROLE_DEBUG=exit`) lists the skill and the role section survives",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Broken link skipped and recorded",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Real pi job by the orchestrator in a set-up project",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in fca81428 (0.1.2); recorded on the job as role_skills, skipped_skills, worker_prompt. Real run: a pi imp job in a set-up project loaded its skill and followed its worker prompt."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.030Z"
+    },
+    {
+      "number": 6,
+      "title": "The `hud-setup` skill, install and docs",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "hud-setup/04",
+        "hud-setup/05"
+      ],
+      "what": "`integrations/skills/hud-setup/SKILL.md`: runs `hud setup --detect`, asks the owner the questions of\nspec §3 with the client's question tool (multi-select for roles and skills), writes the plan to a temp file, shows it\nin a few lines, runs `--apply`, reports. Install and uninstall handle it exactly like hud-delegate. Docs: reference\n(en/zh), hud-mcp README, `docs/releases/0.1.2.md`; spec stays as the owner wrote it.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Skill installed/removed with hud-delegate's mechanism (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Docs describe today's behaviour; synthetic examples",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Owner runs `/hud-setup` in a real project",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in fca81428 (0.1.2); archive test 70a58b45 checks the skill ships. Open: the owner's own /hud-setup run (STATE: HUD-SETUP try)."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.030Z"
+    }
+  ]
+}

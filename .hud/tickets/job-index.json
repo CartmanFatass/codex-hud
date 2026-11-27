@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "feature": "job-index",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Shared job-index mtime cache core",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/neon-proposal/08-shared-job-index-cache.md S1: new src/roles/job-index-cache.ts (JobIndexCache: stat-stamped entries, write-through invalidation, per-HUD_HOME isolation, LRU bound, dual-format stamp read) and tests/unit/job-index-cache.test.mjs. Write through the atomic-fs primitive from primitives/01 instead of a hand-rolled putJsonAtomic. Owner defaults: Q1 keep the display/thin-jobs.json factKeys whitelist, only upgrade the stamp with dual-format compatibility. No caller changes in this slice.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "All consistency/invalidation/isolation/LRU/old-stamp cases in the proposal's S1 list pass in temp HUD_HOME with synthetic jobs",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No caller wired yet; full build and test:mjs pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.038Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "0f3d19689957d458ad214e6555022b4e45bb366c"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.038Z",
+      "updated_at": "2026-11-27T06:39:46.038Z"
+    },
+    {
+      "number": 2,
+      "title": "MCP server reads jobs through the shared cache",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "job-index/01"
+      ],
+      "what": "Proposal 08 S2, paths now src/mcp/*: thin-main job scans, readRow, openQuestions, observation and withChanges read through JobIndexCache; thin-jobs.ts JobRowExtras extension; src/roles/job-project.ts. Owner default Q2: keep the strict lstat between adoptSessionJobs() and withChanges() on every call; drop only provable duplicates. Tool results unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "thin-mcp tests pass unchanged; new mcp-job-cache test asserts fewer syscalls for hud_read/hud_roster/hud_respond",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An answered question clears in the next hud_read changes (no stale window)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.038Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "1fe4da44353ec28b781eb3f98e7db05cdad13d69"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.038Z",
+      "updated_at": "2026-11-27T06:39:46.038Z"
+    },
+    {
+      "number": 3,
+      "title": "Collapse thin-jobs, hud-watch, watch and codex-statusline caches onto the shared one",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "job-index/01",
+        "job-index/02"
+      ],
+      "what": "Proposal 08 S3: remove hud-watch's hand-written cache, thin-jobs.ts module-level watchCache/seen/cacheHome/complete, jobRow's double stat of report.md, src/cli/watch.ts direct reads; codex-statusline reads both stamp formats. Panel-actions answer path uses the cache write-through. Retention (24 h) unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "thin-job-scan (incl. 1,000-job cold start and vanished dirs), thin-panel-jobs, hud-watch, job-retention tests pass",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Codex statusline reminder dot still clears after reading a job; net lines removed",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.038Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "6a4c18693d7ec15fa47d81e81ef6e5dcafab5417"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.038Z",
+      "updated_at": "2026-11-27T06:39:46.038Z"
+    },
+    {
+      "number": 4,
+      "title": "Remaining panel job readers use the shared cache",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "job-index/01"
+      ],
+      "what": "Proposal 08 S4: project-board.ts recentJobs()/liveCwds(), control-radar.ts job enumeration, and (owner default Q3: include) session-finder.ts codexWorkerSessionIds()/workerSessionCache read through JobIndexCache.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "project-* and control-radar tests pass; several ProjectCollectors in one panel share one parse per job",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Home/Project/Projects/Control show the same jobs as before on a synthetic HUD_HOME",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.038Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "5745f591814c10bf78333401109f260adced55a7"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.038Z",
+      "updated_at": "2026-11-27T06:39:46.038Z"
+    }
+  ]
+}

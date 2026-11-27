@@ -1,0 +1,361 @@
+{
+  "version": 1,
+  "feature": "scan-fixes",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "hud_sonic start accepts timeout_s instead of refusing it",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Session scan (sonic j52c7712b41ba4a70): 8 pi worker calls `hud_sonic {task, timeout_s}` failed with `start or wait for sonic, not both` (src/worker/tools.ts:254) because the description says 'timeout_s defaults to 480' as if it were a start option. Make start ignore-or-accept timeout_s (it has no meaning on start: drop it silently or keep it for the later wait), and word the description so timeout_s belongs to wait. Keep `wait` + `task` together an error, naming the field.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`hud_sonic {task, timeout_s}` starts the child",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`hud_sonic {task, wait}` still fails and the message names `wait`",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Tool description says timeout_s applies to wait",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit test covers both",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.096Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "783311a2fde80d929a52903c54adff5f9717c686",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.096Z",
+      "updated_at": "2026-11-27T06:39:46.096Z"
+    },
+    {
+      "number": 2,
+      "title": "A worker report sent in the gap before its next turn prompt is accepted, not lost",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Scan (sonic j2cfddd907cde7d8c F1): agy `hud_report` rejected with `use the turn token from the prompt you are answering` because HUD advanced the job turn before the turn-2 prompt was delivered (2 of 60 agy reports; worker re-sent the whole report). Accept the previous turn's token while the next prompt is not yet delivered (or park the report for that turn), so no finished report is refused.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Reproduced in a unit test: turn advanced, prompt not delivered, report with the old token is accepted for the old turn",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A report with a token older than that still fails as today",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No double settlement when the next prompt then arrives",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.096Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "76116df87826817eee8983f975667d83385a069f",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.096Z",
+      "updated_at": "2026-11-27T06:39:46.096Z"
+    },
+    {
+      "number": 3,
+      "title": "Sonic runner deaths leave a diagnosable record",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Scans (j5b0fbe7ad17f060f F5, j52c7712b41ba4a70 F2): 6 sonic children failed with `sonic runner exited without an exit receipt`; their sonic-session.jsonl ends `stopReason: aborted`, two died in the same millisecond when the parent imp's session restarted; all 27 headless stderr.log files are empty. Record the runner's exit code/signal and stderr on the receipt-missing path, write a partial report from the session tail when one exists, and name the cause ('parent session restarted' when the parent restarted).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Receipt-missing failures record exit code or signal and a stderr tail in STATUS/job record",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A child aborted by its parent's restart says so in exit_reason",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "If the sonic session has assistant text, a partial report.md marked partial is written",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests with a synthetic aborted runner",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.096Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "bc82d4a879e6ee091020ead5b1237a91997fd0e7",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.096Z",
+          "author": "legacy",
+          "text": "Likely cause (carbon review j91fa6e1950156406 #6): `src/roles/worker-tree.ts:126` exempts a child `sonic-run` session from the worker-tree reap only when `slot === 'headless'`; a tab worker's (`primary`) reap SIGTERMs live sonic children. Fix that first and confirm with a test; also check inherited heap caps (`scripts/dist-lock.mjs:48-52`) do not reach child pi processes (`src/mcp/sonic-process.ts:24`)."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.096Z",
+      "updated_at": "2026-11-27T06:39:46.096Z"
+    },
+    {
+      "number": 4,
+      "title": "Land failure evidence shows the failing assertion, not blank panel frames",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Scans (j5b0fbe7ad17f060f F3, j2cfddd907cde7d8c F3, j52c7712b41ba4a70 F4, j632148defd832215 F10): the 8 KiB gate excerpt and the 40-line repair tail are often blank TUI frame lines (one excerpt 83 of ~100 lines blank; repair tails cut before the assertion); land failure notices say only `failed: repair 1`. Strip blank/whitespace-only and rendered-frame lines before excerpting, always include the first failing test block (`not ok`/`✖` + assertion) of each failing file, and put the failing step and test names in the failure notice.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Excerpt and repair tail contain no whitespace-only runs; each failing test's name and assertion appear",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Failure notice names the step and up to 3 failing tests",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unit tests over a synthetic gate log with panel frames",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.096Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f06d5d9f5e57d3725b2a27acac06bb38904a717e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.096Z",
+      "updated_at": "2026-11-27T06:39:46.096Z"
+    },
+    {
+      "number": 5,
+      "title": "Failed launch error says which pane and retries once on a busy pane",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Scans: 595 of 631 jobs record herdr_pane w5D:p1 (the caller's pane) incl. headless ones; 4 launches failed `agent_pane_busy` when several were created in the same second; `exit_reason` sometimes holds a raw CLI JSON blob (6 jobs). Headless jobs should not record the caller's pane as their own; a pane-busy launch retries once after a short delay; exit_reason stores a short code with the JSON kept in stderr_tail.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Headless job records have no herdr_pane (or a field clearly marked caller_pane)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Simulated agent_pane_busy retries once then fails with a clear message",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "exit_reason is a short code; raw JSON only in stderr_tail",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.096Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "4bc0c78753defd0133c198fbc5b6b960b8abb57d",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.096Z",
+          "author": "legacy",
+          "text": "Also (carbon #6, fable #8): record the attempted agent args in launch diagnostics (src/mcp/dispatch/harness-cli.ts:184-187) and treat herdr `invalid_agent_argument` as a before-input failure (src/mcp/dispatch/proc.ts:56-63,138) so it falls through to the next place or the prompt-file fallback."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.096Z",
+      "updated_at": "2026-11-27T06:39:46.096Z"
+    },
+    {
+      "number": 6,
+      "title": "Small MCP contract fixes from the session scan",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "From the scans: (a) hud_report summary: schema maxLength 320 vs description '160 code points' — one number; (b) hud_tickets update `unknown acceptance item: 4` should list the valid range and validate the whole tick list before writing; (c) placement-option refusal on non-general roles names the offending field(s); (d) hud_roster shows imp routing presets (`hard: astra`) that hud_create refuses — say these are chosen by auto-route, not passable; (e) pi `hud-sonic-ready` notices are not sent for a child whose report the same session already collected with `hud_sonic wait` (37% redundant); (f) watch.log logs an unresolved worker-tree snapshot once per job, not every minute.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each of (a)-(f) fixed with a unit test or updated snapshot",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Tool schema bytes do not grow by more than 200 B total",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.096Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ce23cf3ab48ab9d4136317de55125539c4124e6b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.096Z",
+      "updated_at": "2026-11-27T06:39:46.096Z"
+    },
+    {
+      "number": 7,
+      "title": "Huge hud_read full results stay within the client's tool-result limit",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Main session: `hud_read {job, mode: full}` on a 57 KB oracle report exceeded Claude Code's tool-result limit and was spilled to a file; scan j632148defd832215 F9 saw ~40 KB cuts needing a second read. Return full report text up to a safe size (e.g. 24 KB) and for longer reports return the first part plus `report_path`, byte size and an offset/next hint so the rest can be read in pages (hud_read accepts an offset).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Report > limit returns a bounded first page, total size and a way to get the next page",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Paging to EOF reproduces the report exactly",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Reports under the limit are unchanged",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.096Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f2e905892dcbcb8be349b5722c7e1788417d0971",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.096Z",
+      "updated_at": "2026-11-27T06:39:46.096Z"
+    },
+    {
+      "number": 8,
+      "title": "Worktrees kept after landing say which paths kept them, and setup offers disposable globs",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Scans: bilingual 20/20 imp worktrees kept ('dirty' from ignored files like scripts/__pycache__/ and tests/evidence/), MyHUD 44 kept; reap sweep removed=0 kept=36. By design ignored files are kept unless `.hud/project.json` worktree.disposable globs match (src/mcp/managed-worktree.ts:216-254). Record the first few blocking paths in worktree_kept_reason, and have `hud setup` (and Settings if cheap) propose disposable globs from the ignored paths seen in kept worktrees for the owner to accept. No silent deletion of ignored files. Also a real bug (2026-11-23, flow f9fb00124014d9e2d): `matchesGlob(rel, 'dir/**')` does not match dot-named paths, so a worktree whose only leftovers were `.tsbuild/native/cargo/.rustc_info.json`, `.../.fingerprint/...` (native Rust build) was kept although `.tsbuild/**` is disposable. A disposable `dir/**` glob must cover every path under `dir/`, dotfiles included (e.g. match with dot segments allowed, or treat a trailing `/**` as a prefix).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "worktree_kept_reason lists up to 5 blocking paths",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`hud setup` shows proposed disposable globs from kept worktrees and writes them only when accepted",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Live: a bilingual-like synthetic worktree with only __pycache__ is reaped after accepting the glob",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A worktree whose only ignored leftovers are dot-named files under a disposable `dir/**` glob is removed after landing (unit test with `.tsbuild/x/.lock`)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.096Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "48b5c361b2a96116b8d841619a279ef46a7f8127",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.096Z",
+      "updated_at": "2026-11-27T06:39:46.096Z"
+    },
+    {
+      "number": 9,
+      "title": "Same-brief jobs are distinguishable on Home",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Three general jobs dispatched from one brief with different models all show `Open review: ho…` on Home and cannot be told apart (Home no longer shows the model, D-2026-11-22-24). When two or more visible rows share a title, append a short distinguishing tag (preset or model short name) to those rows only.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Rows with identical titles show a short model/preset tag; unique titles unchanged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Frames updated EN/ZH at 42 and 80 columns",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.096Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "4aa19e07ec25753949fb942d1ba01f9e15ee4a91",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.096Z",
+      "updated_at": "2026-11-27T06:39:46.096Z"
+    }
+  ]
+}

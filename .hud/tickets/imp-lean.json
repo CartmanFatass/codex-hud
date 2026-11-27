@@ -1,0 +1,262 @@
+{
+  "version": 1,
+  "feature": "imp-lean",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Worker entry and instructions stop pulling orchestrator docs",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/llm/imp-load-2026-11-22.md ranks 1, 4, 6 (instruction part), 7; D-2026-11-22-17. Archive the 2026-11-03 root AGENTS.md to docs/archive/root/ and write a ~25-line worker-safe AGENTS.md (read the brief and docs/ARCHITECTURE.md §8; do not read STATE, delegation, spec in full or archived docs unless the brief names them). Trim CLAUDE.md so the orchestrator read list is marked orchestrator-only. In packages/hud-mcp/instructions/{implementer,general,frontend-implementer}.md and integrations/pi/roles/implementer.md: drop the CodeGraph paragraphs (search with grep and read); git self-checks are `git status -s`, `git diff --stat`, `git diff --check` (no full diff dumps); batch independent reads in one turn and read large files by range; targeted tests while iterating, one full `npm test` at the end, repeat it only when a fix touched shared code; never poll with sleep loops. Keep the release-archive exclusion of .codegraph as is.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A fresh pi imp in a worktree gets no instruction that sends it to STATE.md, delegation.md or docs/archive",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No worker instruction mentions CodeGraph",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "b7852e69"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1024/1024 ×2, unit 92/92, fixtures OK)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.034Z"
+    },
+    {
+      "number": 2,
+      "title": "pi workers skip the MCP adapter when no server is configured; short briefs inline",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Ranks 3 and 6 (launcher part). In the pi dispatch path (src/mcp/thin-main.ts dispatchPi and the pi-role launch args), when the job does not set `mcp` and pi's MCP config lists no servers, start without the MCP adapter. When the brief is under 16 KB, put its text in the first user message so turn 1 is not a read of brief.md (the brief file stays on disk). Spec §2.1.4 switches line unchanged unless the default changes visibly; if it does, one sentence, told to the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With an empty pi MCP config a pi worker launches without the adapter; `mcp: true` still enables it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A short brief arrives inline and the worker does not read brief.md first",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "6fc6d5a3"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1027/1027 on run 2 (run 1: one unrelated CLI timing flake), unit 92/92, fixtures OK; live: briefs arrive inline, MCP adapter off once ~/.config/mcp/mcp.json was emptied)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.035Z"
+    },
+    {
+      "number": 3,
+      "title": "Child sonic results reach imp as a push; no zero-timeout polling",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Rank 5. When a sonic started by a worker via hud_sonic settles, deliver a ready notice into the parent pi session (same mechanism as the orchestrator answer message) and drop the `0 checks once` hint from hud_sonic's schema so workers wait or keep working instead of polling with timeout_s 0. Tell imp in its instructions to give sonic non-overlapping reads.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A worker that starts sonic and keeps editing receives the result without calling hud_sonic with timeout_s 0",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "3048f0d9"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1024/1024 ×2, unit 92/92, fixtures OK)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.035Z"
+    },
+    {
+      "number": 4,
+      "title": "Sonic works in few batched turns and cannot call hud_sonic",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/llm/workers-load-2026-11-22.md §3.1, D-2026-11-22-18. Omit hud_sonic from the worker tools of a sonic job (packages/hud-mcp/bin/worker-tools.mjs and the pi extension). packages/hud-mcp/instructions/sonic.md: batch read-only inspection (parallel reads or one compound shell command per turn, not many tiny sed/ls turns), soft budget of about 20 turns (then report facts gathered plus unchecked paths), report at most 60 lines. implementer.md (and reviewer/oracle where they use sonic): give sonic named files, symbols and questions, split broad surveys into narrow parallel sonics.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A sonic job's tool list has no hud_sonic",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Shipped sonic and caller instructions carry the batching, budget and narrow-brief rules",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "d647091e"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1024/1024 ×2, unit 92/92, fixtures OK)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.035Z"
+    },
+    {
+      "number": 5,
+      "title": "Reviewer keeps its context under 150k",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Workers study §3.2, D-2026-11-22-18. reviewer.md: start from the brief's diff --stat and design intent, read diffs file by file (never one multi-commit diff), hand caller/test/spec lookups to parallel narrow sonics, re-read nothing already read. Reviewer default stays gpt-6.2-sol max.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Shipped reviewer instructions carry the file-by-file and sonic-lookup rules",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "d647091e"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (same commit as 04)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.035Z"
+    },
+    {
+      "number": 6,
+      "title": "CLI workers load only the HUD MCP and get instructions as system prompt",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "imp-lean/02"
+      ],
+      "what": "Workers study §3.4 and §4 rank 3, D-2026-11-22-18. dispatchCli: Claude CLI workers start with --strict-mcp-config and only the HUD worker MCP plus servers the role file names (new optional role field, e.g. mcp_servers); Codex workers likewise only the HUD MCP plus named ones; agy as far as its CLI allows (say what it cannot). Pass role instructions as system prompt where the CLI supports it (claude --append-system-prompt) and inline briefs under 16 KB in the first message instead of 'Read <instructions> and then <brief>'. Reuses ticket 02's inline-brief helper. Spec §2.1.4 gets one sentence on worker MCP scope, told to the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A Claude CLI worker launched by HUD sees only the HUD MCP unless the role names more",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A short brief reaches a CLI worker inline; no startup read turns",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "8c763005"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1045/1045 on run 2; run 1 one statusline-agy load flake (dogfood-fixes/07))."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.035Z"
+    }
+  ]
+}

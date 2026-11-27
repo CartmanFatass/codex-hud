@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "feature": "home-cards",
+  "objective": "glance",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Home lists today's projects and folds the rest behind one key",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-24 (D-2026-11-24-02, `docs/spec.md` §2.2 Home): Home lists only the registered projects active today: any activity today (a job started, settled or landed today, or a STATE/Objective update today), a running or queued job, or an open owner request. Every other registered project folds into one row at the end of the project list: `其他 N 个项目` / `N other projects` with the expand key shown on the row (e.g. `a 展开`); one key (pick one free on Home, also listed in Help and the footer when the row is selected) and Enter on the row expand them in place in the sort order of home-portfolio/04, and the same key folds them again. The expanded state belongs to the panel session (not Settings) and resets when the panel restarts. With nothing active today, the fold row is the only project row. Requests keep their section. Follow the layout rules of `docs/design/home-portfolio/README.md` section 4. Update `docs/reference.md` Home.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a fixture with two projects active today and three not renders two blocks and one fold row naming 3; the key and Enter expand them in sort order; the key folds them again",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a project with an open request but no activity today is listed; a running job counts as active",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Every row stays exactly the panel width at 40 and 80 columns zh/en",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.022Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "271be598e20a31bb3885e94ee12f9d43f037e1a6",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.022Z",
+      "updated_at": "2026-11-27T06:39:46.022Z"
+    },
+    {
+      "number": 2,
+      "title": "hud_schedule: owner dates across projects",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Build the storage and MCP tool of the owner-settled design `docs/design/home-cards/README.md` section 5 (D-2026-11-24-02): `$HUD_HOME/schedule.json` (private, atomic 0600 write, abstract lock, version, seq, items with id/date `YYYY-MM-DD` or `YYYY-MM`/text ≤160/optional project and objective/created_at/done_at), bounds (≤200 open items, done items dropped 30 days after done_at, reads capped at 64 KiB), and a new MCP tool `hud_schedule` with ops `add`, `done`, `move`, `list` (each item with its stage: far, soon, today, overdue). The tool description carries the rules (the MCP owns the protocol): a schedule item says when, a request says someone waits; resolve with `done`. Register the tool in the HUD MCP surfaces the other tools use (main sessions of Claude Code, pi and Codex). Add one line to `packages/hud-mcp/hud-convention.md` only if a main session would otherwise not know the tool (mechanics only; update its digest test). No panel rendering in this ticket. Update `docs/reference.md`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: add with a day date and a month date, list sorted with stages, move, done removes it from list; a 201st open item is refused; a done item older than 30 days is dropped on the next write",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: an unregistered project or unknown Objective is refused at add",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.022Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d4de952b1c6bcdb0bbeb742a824bc133ee656da2",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.022Z",
+      "updated_at": "2026-11-27T06:39:46.022Z"
+    },
+    {
+      "number": 3,
+      "title": "Home Today and Schedule cards with the due badge",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "home-cards/01",
+        "home-cards/02"
+      ],
+      "what": "Build the cards of the owner-settled design `docs/design/home-cards/` (README sections 2-4, 6, 7; `sample.html` frames are the template; owner answers at the end of the README): Today (landings today across projects, newest 3 with project, ticket title and age, then `另 N 个`; finished and failed jobs by role icon; gate line first-pass vs retried, today only) and Schedule (open `hud_schedule` items sorted by date with countdowns, overdue in amber, today highlighted, project › Objective on a second row when linked, then `另 N 项`; a dim line for active projects quiet for over 2 weeks, skipping paused and maintenance), below the project list and its fold row, folding first in the fold order of section 6 when rows are short. The Home tab badge shows a calendar mark and the count of items due today or overdue, separate from `?N`. The panel only reads the schedule. i18n en/zh, icon sets, theme roles, layout rules of home-portfolio README section 4. Update `docs/reference.md` Home.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Render tests at 40, 50 and 80 columns zh/en over the design fixture: busy day, quiet day, and a short panel where the cards fold before any project block shrinks; every row exactly the width",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: an overdue item shows in amber and counts in the badge; a far item does not count; a done item is gone",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: the quiet line skips paused and maintenance projects",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.022Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "6649529f13001607ccc96e653d0708cb87ff7912",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.022Z",
+      "updated_at": "2026-11-27T06:39:46.022Z"
+    }
+  ]
+}

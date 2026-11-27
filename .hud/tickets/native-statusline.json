@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "feature": "native-statusline",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "The watcher publishes a work summary",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 01. Stage 2 row 01. hud-watch and hud-mcp write `$HUD_HOME/display/work-summary.v1.json` (private, atomic, size-bounded, versioned, with producer generation and observed-at) on meaningful job changes: per pane and global running/asking counts by role, enough for `src/render/work-summary.ts`. Absent or stale means unknown. The pi footer segment (`src/harness/pi/segment.ts`) reads it instead of scanning jobs, falling back to today's read when stale. Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Snapshot updates within 200 ms of a job state change; stale after the watcher exits is detected",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "pi segment refresh at 356 jobs drops from ~22 ms to <1 ms with a fresh snapshot",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "86e0ee7e56b6aa4c83c04639b8b969568525089a"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 2,
+      "title": "A Rust statusline renders the Claude line",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "native-statusline/01",
+        "perf-ts/06"
+      ],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 02. Stage 2 row 02 and its constraints (fresh stdin per call, buffered stdin replayed to the TS fallback, forward/admin/details modes stay TS, email suppression, quota publication, existing parity cache files). std-only crate under `native/`; `npm run build` builds it only when cargo exists and `native/` changed; polyglot `bin/hud-statusline` dispatches to it with TS fallback; a differential test renders the same fixtures through TS and Rust and must match byte for byte; release archive and `./install` carry the Linux x64 binary and fall back to TS without it. Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "p50 < 5 ms and < 5 MB RSS on the fixture (TS before/after in the report)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Differential parity passes on Claude, CJK, ANSI, NO_COLOR, malformed and oversize input",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Missing or broken binary falls back to TS with identical output",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land gate time with and without native changes reported",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "290eb95b001f2ea9315db3251f1347307fd6a74b"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 3,
+      "title": "Antigravity uses the native statusline",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "native-statusline/02"
+      ],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 03. Stage 2 row 03. The Antigravity statusline path uses the same binary and `bin/hud-statusline-cache.sh` is removed, keeping its tested staleness policy (caller PID and birth, config/build/env stamp, slot limits, fresh/stale caps, refresh lock, bounded pipe drain). Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Agy hit < 5 ms (from ~22 ms); staleness behaviour tests unchanged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Targeted agy statusline tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "e903dd6eaeacc1b51d2f27769b580eeb8ba2d3b3"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 4,
+      "title": "The agy hit stays under 5 ms on a busy machine",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Acceptance pass 2026-11-22: agy cache hit p50 7.4 ms direct / 8.5 ms via sh -c (n=50, load 3.5-5.5) vs the <5 ms target; native lookup alone ≈1 ms, sh -c baseline 1.4 ms, Claude native launcher 4.3 ms. The gap is the bash launcher work before exec (bin/hud-statusline → hud-statusline-native.sh: PID/birth verification, stdin handling). Move what the agy hit path does in bash into the binary (or exec the binary first and let it verify), keeping the staleness policy tests unchanged. Also: under HUD_THEME=none / NO_COLOR=1 one leading ESC[0m remains; drop it.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Agy hit p50 < 5 ms measured n=50 under tmp/env.sh with a parallel CPU load (state the load), before/after in the report",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "statusline-agy and native-statusline tests unchanged in what they assert and passing",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "NO_COLOR output has no escape sequences (test)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "693ca9b1da95905d8ee22e65c984472fd326a9a2",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    }
+  ]
+}

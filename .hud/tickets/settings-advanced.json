@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "feature": "settings-advanced",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Rarely changed Settings rows fold under \"Advanced\"",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "monitor-state/04"
+      ],
+      "what": "Proposal docs/neon-proposal/10-settings-advanced-fold.md with its §6 defaults (owner, 2026-11-22: \"do as your recommendation\"): the 10 rows in §3.1 fold under one global \"Advanced\" row (Call cap and Sonic auto-thinking stay visible); the fold is not remembered between opens; no tree-page.ts change. Update docs/reference.md and reference.zh.md (\"All groups are open …\" sentence). This is the spec's M5 candidate \"rarely changed Settings rows fold under Advanced\".\n\nLegacy Blocked by: monitor-state/04; land after primitives/04 or rebase on it (both edit src/render/settings-page.ts)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Settings opens with Advanced folded; Enter on it shows the 10 rows; EN/ZH frames updated",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.098Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "ac1950a4f79c552dc2803ae0a996b912ee43dbc3"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.098Z",
+      "updated_at": "2026-11-27T06:39:46.098Z"
+    }
+  ]
+}

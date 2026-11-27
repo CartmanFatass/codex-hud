@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "feature": "orch-lean-2",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A reloaded HUD refreshes the client's tool list",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/llm/post-change-load-2026-11-22.md Rank 3a: when the stdio MCP server hot-swaps to a newer dist build (DOGFOOD-FIXES-03, d8b1f67b) and the tool definitions changed, it sends notifications/tools/list_changed so Claude Code (and other clients that honour it) re-fetch tools without /mcp. Found live: ORCH-LEAN-05's batch forms never reached the main session because its cached hud_create/hud_tickets schemas predate them. The server advertises tools.listChanged in its capabilities.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "After a reload that changes a tool schema, the client receives tools/list_changed once and tools/list returns the new schemas",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No notification when the schemas are unchanged",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.059Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "099df7ed9ad522fad5ac2b5697819f51db0135f2"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.059Z",
+      "updated_at": "2026-11-27T06:39:46.059Z"
+    },
+    {
+      "number": 2,
+      "title": "CLI workers start with role text and brief in the first message",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/llm/post-change-load-2026-11-22.md Rank 5: agy neon imps still spend turn 1 reading instructions/implementer.md and .hud/brief.md, and every worker reads docs/ARCHITECTURE.md for the §8 rules. dispatchCli puts the role instructions and the project's .hud/brief.md into the first message for CLI agents that have no system-prompt flag (agy; keep --append-system-prompt / --rules where they exist), and the project's .hud/brief.md carries a short copy of ARCHITECTURE §8's rules (or a tight summary with the link) so routine slices need not open ARCHITECTURE.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A dispatched agy worker's first message contains its role instructions and the project brief; no turn-1 read of either",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "MyHUD .hud/brief.md states the §8 rules",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.059Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "9bd2698b5a70a6493b7d5dd3cb83e707e22697ef"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.059Z",
+      "updated_at": "2026-11-27T06:39:46.059Z"
+    },
+    {
+      "number": 3,
+      "title": "Ticket claims need no commit; hud_tickets lists ready tickets",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/llm/post-change-load-2026-11-22.md Rank 2 (owner agreed 2026-11-22): the main session stops committing `Status: claimed` before each dispatch. A ticket with a live job (hud_create ticket field) counts as claimed wherever claimed state is read (panel ticket lanes, HOME-PROGRESS rollup, hud_tickets); the file keeps ready-for-agent until hud_land records ready-for-human. Add hud_tickets({op: \"ready\"}) returning unblocked, unclaimed tickets (feature/NN, path, title, one-line what) so a dispatch can use brief_file. Update docs/delegation.md and the hud-delegate skill to drop the claim commit.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A ready-for-agent ticket with a working job shows as claimed in the panel and in hud_tickets without any file change",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_tickets op ready lists only unblocked tickets with no live job",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.059Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "b190db89fabb4141e1dcc0e517083ed311b897c3"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.059Z",
+      "updated_at": "2026-11-27T06:39:46.059Z"
+    },
+    {
+      "number": 4,
+      "title": "STATE keeps milestones; slice progress comes from tickets",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/llm/post-change-load-2026-11-22.md Rank 7 (owner agreed 2026-11-22): hud_land no longer appends a STATE.md slice row or makes a separate `Record landing` commit; it marks the ticket ready-for-human with the landed sha inside the landed commit (amend of the tested tip before fast-forward, or one commit on top — one commit per land either way). The panel's Progress, To-try and Project board read slice state from .scratch tickets (and existing STATE rows for history); docs/handoff/STATE.md is updated by the main session only at milestone boundaries and stays under 10 KB. Spec §2.2.4 and §5 sentences change accordingly (draft them; the main session tells the owner).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A land produces one commit on main and no STATE.md change; the ticket shows ready-for-human with the sha",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Home progress and To-try show the same slices as before on a synthetic project",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.059Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "b70dfa9ada8f8db6394fe2a52ef561408d8288c9"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.059Z",
+      "updated_at": "2026-11-27T06:39:46.059Z"
+    }
+  ]
+}

@@ -7,16 +7,15 @@ import { recordUnattendedAcceptance } from '../../dist/mcp/local-tickets.js';
 import { landedNewest } from '../../dist/render/project-view.js';
 import { writeReportMeta, cachedReportSignature } from '../../dist/roles/report-meta.js';
 import { taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
-import { assertLandingRecord, checkout, job, jobDir } from '../helpers/thin-mcp-land.mjs';
+import { assertLandingRecord, checkout, job, jobDir, seedJsonTickets } from '../helpers/thin-mcp-land.mjs';
 
 const EMPTY_BOARD = { revision: 'synthetic', lanes: [], workers: [], decisions: [], coverage: { incomplete: false, diagnostics: [], workspace: '' } };
 
 for (const dirty of [false, true]) test(`land ${dirty ? 'refuses to push dirty landed paths' : 'pushes only the approved commit'} after fast-forward`, async t => {
   const f = await checkout(t, ['true'], { after: ['while test ! -f "$HOME/release"; do sleep .05; done'] });
-  const receipt = join(jobDir(f), 'job.json'), ticket = '.scratch/feature/issues/01-example.md';
+  const receipt = join(jobDir(f), 'job.json');
   fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
-  fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
-  fs.writeFileSync(join(f.main, ticket), '# 01: Example ticket\n**Status:** claimed\n\n## Comments\n');
+  const ticket = seedJsonTickets(f, 'feature', [{ number: 1, title: 'Example ticket', status: 'claimed', acceptance: [] }]);
   f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed records');
   const { flow } = await f.call('hud_land', { job });
   await until(() => f.flowState(flow).step.startsWith('after[1]'), t.signal);
@@ -56,12 +55,11 @@ test('land fast-forwards a rebased worker branch with only its own commits beyon
   assert.equal(f.git(f.main, 'log', '--reverse', '--format=%s', `${base}..base`), 'first\nsecond');
 });
 
-for (const [label, ownerTryLine, expectedStatus] of [
-  ['omitted', '', 'done'],
-  ['yes', '**Owner try:** yes\n', 'ready-for-human'],
-  ['no', '**Owner try:** no\n', 'done'],
+for (const [label, ownerTry, expectedStatus] of [
+  ['false', false, 'done'],
+  ['true', true, 'ready-for-human'],
 ]) test(`land folds ${expectedStatus} and its record into one commit without STATE.md change (owner_try ${label})`, async t => {
-  const f = await checkout(t, ['true']), dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', file = join(dir, 'job.json');
+  const f = await checkout(t, ['true']), dir = jobDir(f), file = join(dir, 'job.json');
   // Squash the worker branch to one commit so we verify one commit on main per landed slice.
   f.git(f.worktree, 'reset', '--soft', f.base_head);
   f.git(f.worktree, 'commit', '-qm', 'single slice commit');
@@ -69,12 +67,19 @@ for (const [label, ownerTryLine, expectedStatus] of [
   fs.writeFileSync(join(dir, 'report.md'), '## Not done\n\n## Checks\n- Acceptance item 1 passed.\n');
   writeReportMeta(dir, cachedReportSignature(dir), { summary: 'Synthetic change.' });
   const initialState = '## Slices\n\n<!-- Row format -->\n\n- try · SAMPLE · SAMPLE-01 · Existing\n';
-  fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
-  fs.writeFileSync(join(f.main, ticket), `# 01: Example ticket\n**Status:** ready-for-agent\n${ownerTryLine}**Blocked by:** none\n- [ ] first\n- [ ] second\n\n## Comments\n- [ ] preserve me\n`);
-  fs.writeFileSync(join(f.main, '.scratch/feature/issues/02-legacy.md'),
-    `# 02: Legacy ticket\n**Status:** ready-for-human\n**Blocked by:** none\n\n## Comments\n- Landed ${f.base_head.slice(0, 8)}; gate 1/1 passed.\n`);
+  const ticket = seedJsonTickets(f, 'feature', [
+    {
+      number: 1, title: 'Example ticket', status: 'ready-for-agent', owner_try: ownerTry,
+      acceptance: [{ id: 1, text: 'first', done: false }, { id: 2, text: 'second', done: false }],
+      comments: [{ at: '2026-01-01T00:00:00.000Z', author: 'main', text: 'preserve me' }],
+    },
+    {
+      number: 2, title: 'Legacy ticket', status: 'ready-for-human', owner_try: true, acceptance: [],
+      landing: { at: '2026-01-01T00:00:00.000Z', job: 'j0000000000000001', flow: 'f0000000000000001', replay_base: f.base_head, gates: 1, commit: f.base_head.slice(0, 8) },
+    },
+  ]);
   fs.writeFileSync(join(f.main, 'STATE.md'), initialState);
-  f.git(f.main, 'add', '.scratch', 'STATE.md'); f.git(f.main, 'commit', '-qm', 'seed tickets and state');
+  f.git(f.main, 'add', '.hud/tickets', 'STATE.md'); f.git(f.main, 'commit', '-qm', 'seed tickets and state');
   const beforeBase = f.git(f.main, 'rev-parse', 'HEAD');
   fs.writeFileSync(join(f.main, 'owner'), 'unrelated staged edit'); f.git(f.main, 'add', 'owner');
   const { flow } = await f.call('hud_land', { job });
@@ -88,23 +93,24 @@ for (const [label, ownerTryLine, expectedStatus] of [
   assert.equal(f.git(f.remote, 'log', '-1', '--format=%s', 'base'), 'single slice commit');
   assert.equal(f.git(f.main, 'diff', '--cached', '--name-only'), 'owner');
   assert.deepEqual(f.git(f.remote, 'diff', '--name-only', beforeBase, 'base').split('\n').sort(), [ticket, 'tracked']);
-  const body = f.git(f.remote, 'show', `base:${ticket}`);
-  assert.match(body, new RegExp(`\\*\\*Status:\\*\\* ${expectedStatus}\\n${ownerTryLine ? '\\*\\*Owner try:\\*\\* (?:yes|no)\\n' : ''}\\*\\*Blocked by:\\*\\* none\\n- \\[x\\] first\\n- \\[x\\] second[\\s\\S]*- \\[ \\] preserve me`));
+  const doc = JSON.parse(f.git(f.remote, 'show', `base:${ticket}`));
+  const rec1 = doc.tickets.find(t => t.number === 1);
+  assert.equal(rec1.status, expectedStatus);
+  assert.deepEqual(rec1.acceptance.map(item => item.done), [true, true]);
+  assert.equal(rec1.comments[0]?.text, 'preserve me');
   assertLandingRecord(f, ticket, beforeBase, done.landed_sha);
   assert.equal(f.git(f.remote, 'show', 'base:STATE.md') + '\n', initialState);
   const project = await new ProjectCollector(f.main, f.home, f.env, f.env.HOME).collect(true, EMPTY_BOARD, Date.now());
   const latest = landedNewest(project).map(({ r }) => r);
   const fresh = latest.find(r => r.id === 'FEATURE-01');
   assert.equal(fresh?.landed, true);
-  assert.equal(fresh?.commit, undefined, 'the Markdown record says in this commit; the collector no longer mines patches for its SHA');
   assert.equal(fresh?.state, expectedStatus === 'done' ? 'accepted' : 'try');
   assert.equal(latest.find(r => r.id === 'FEATURE-02')?.state, 'try');
 });
 
-for (const store of ['Markdown', 'JSON']) for (const source of ['report', 'lead', 'owner try']) test(`land lists and leaves unticked the ${store} acceptance item named by ${source}`, async t => {
-  const f = await checkout(t, ['true']), dir = jobDir(f), json = store === 'JSON';
-  const ticket = json ? '.hud/tickets/feature.json' : '.scratch/feature/issues/01-example.md';
-  const id = json ? 7 : 1;
+for (const source of ['report', 'lead', 'owner try']) test(`land lists and leaves unticked the JSON acceptance item named by ${source}`, async t => {
+  const f = await checkout(t, ['true']), dir = jobDir(f);
+  const ticket = '.hud/tickets/feature.json', id = 7;
   const queue = 'q0000000000000001', lead = 'j0000000000000002', ownerTry = source === 'owner try';
   const receipt = join(dir, 'job.json');
   fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01',
@@ -124,19 +130,10 @@ for (const store of ['Markdown', 'JSON']) for (const source of ['report', 'lead'
     ? `## Not done\n- Acceptance item ${id}: fallback still pending.\n\n## Checks\n- Acceptance item 2 passed.\n`
     : ownerTry ? `3. **Not done:** #${id}: pending owner try.\n4. Open questions: none.\n` : '## Not done\n');
   const file = join(f.main, ticket);
-  if (json) {
-    const at = '2026-01-01T00:00:00.000Z';
-    fs.mkdirSync(join(f.main, '.hud/tickets'), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ version: 1, feature: 'feature', tickets: [{
-      number: 1, title: 'Example', status: 'ready-for-agent', owner_try: ownerTry, live_try: 'none',
-      approved_removals: [], blocked_by: [], what: 'Support a fallback.', comments: [], created_at: at, updated_at: at,
-      acceptance: [{ id, text: 'Test the `fallback` path.', done: false }, { id: 2, text: 'Test the common path.', done: false }],
-    }] }));
-  } else {
-    fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
-    fs.writeFileSync(file, `# 01: Example\n**Status:** ready-for-agent\n**Owner try:** ${ownerTry ? 'yes' : 'no'}\n**Blocked by:** none\n` +
-      '**What to build:** Support a fallback.\n\n- [ ] Test the `fallback` path.\n- [ ] Test the common path.\n');
-  }
+  seedJsonTickets(f, 'feature', [{
+    number: 1, title: 'Example', status: 'ready-for-agent', owner_try: ownerTry, what: 'Support a fallback.',
+    acceptance: [{ id, text: 'Test the `fallback` path.', done: false }, { id: 2, text: 'Test the common path.', done: false }],
+  }]);
   f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed ticket');
   // The commit subject alone must not let the board infer a completed ticket.
   f.git(f.worktree, 'commit', '--amend', '-qm', 'feature/01: implement');
@@ -148,18 +145,11 @@ for (const store of ['Markdown', 'JSON']) for (const source of ['report', 'lead'
   assert.ok(done.changes.find(line => line.includes(flow))?.includes(`Acceptance left unticked: #${id} Test the \`fallback\` path.`));
   const expectedStatus = ownerTry ? 'ready-for-human' : 'ready-for-agent';
   const body = f.git(f.remote, 'show', `base:${ticket}`);
-  if (json) {
-    const [record] = JSON.parse(body).tickets;
-    assert.equal(record.status, expectedStatus);
-    assert.equal(record.landing.flow, flow);
-    assert.equal(record.landing.replay_base, f.flowState(flow).base_sha);
-    assert.deepEqual(record.acceptance.map(item => [item.id, item.done]), [[id, false], [2, true]]);
-  } else {
-    assert.ok(body.includes(`**Status:** ${expectedStatus}\n`));
-    assert.ok(body.includes('- [ ] Test the `fallback` path.\n- [x] Test the common path.\n'));
-    assert.match(body, /Acceptance left unticked: #1\./);
-    assertLandingRecord(f, ticket, f.flowState(flow).base_sha, done.landed_sha);
-  }
+  const [record] = JSON.parse(body).tickets;
+  assert.equal(record.status, expectedStatus);
+  assert.equal(record.landing.flow, flow);
+  assert.equal(record.landing.replay_base, f.flowState(flow).base_sha);
+  assert.deepEqual(record.acceptance.map(item => [item.id, item.done]), [[id, false], [2, true]]);
   const project = await new ProjectCollector(f.main, f.home, f.env, f.env.HOME).collect(true, EMPTY_BOARD, Date.now());
   const row = project.ledger.find(r => r.id === 'FEATURE-01');
   assert.equal(row?.state, ownerTry ? 'try' : 'todo');
@@ -312,11 +302,10 @@ syncBuiltinESMExports();`;
 
 test('a main commit on unrelated paths including STATE.md during the gate replays tested commits and ticket update without rerunning the gate', async t => {
   const f = await checkout(t, ['echo run >> "$HOME/gate-count"; while test ! -f "$HOME/release"; do sleep .05; done']);
-  const dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', file = join(dir, 'job.json');
+  const dir = jobDir(f), file = join(dir, 'job.json');
   fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), ticket: 'feature/01', slice: 'FEATURE-01' }));
   fs.writeFileSync(join(dir, 'report.md'), 'Report'); writeReportMeta(dir, cachedReportSignature(dir), { summary: 'Synthetic change.' });
-  fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
-  fs.writeFileSync(join(f.main, ticket), '# 01: Example ticket\n**Status:** claimed\n- [ ] first\n\n## Comments\n');
+  const ticket = seedJsonTickets(f, 'feature', [{ number: 1, title: 'Example ticket', status: 'claimed', acceptance: [{ id: 1, text: 'first', done: false }] }]);
   fs.writeFileSync(join(f.main, 'STATE.md'), '## Slices\n\n<!-- Row format -->\n\n- try · SAMPLE · SAMPLE-01 · Existing\n');
   f.git(f.main, 'add', ticket, 'STATE.md'); f.git(f.main, 'commit', '-qm', 'seed records');
   const beforeBase = f.git(f.main, 'rev-parse', 'HEAD');
@@ -324,12 +313,11 @@ test('a main commit on unrelated paths including STATE.md during the gate replay
   const { taskId: flow } = await taskCall(rpc, 'hud_land', { job });
   await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
   // Commit an unrelated ticket and STATE.md milestone edit on main while the gate is running.
-  fs.mkdirSync(join(f.main, '.scratch/other/issues'), { recursive: true });
-  fs.writeFileSync(join(f.main, '.scratch/other/issues/02-unrelated.md'), '# 02: Unrelated\n**Status:** claimed\n');
+  const other = seedJsonTickets(f, 'other', [{ number: 2, title: 'Unrelated', status: 'claimed', acceptance: [] }]);
   fs.appendFileSync(join(f.main, 'STATE.md'), '\nMilestone boundary note\n');
   fs.mkdirSync(join(f.main, 'docs/handoff'), { recursive: true });
   fs.writeFileSync(join(f.main, 'docs/handoff/STATE.md'), 'Milestone handoff\n');
-  f.git(f.main, 'add', '.scratch/other/issues/02-unrelated.md', 'STATE.md', 'docs/handoff/STATE.md');
+  f.git(f.main, 'add', other, 'STATE.md', 'docs/handoff/STATE.md');
   f.git(f.main, 'commit', '-qm', 'unrelated ticket and state');
   const movedBase = f.git(f.main, 'rev-parse', 'HEAD');
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
@@ -351,7 +339,7 @@ test('a main commit on unrelated paths including STATE.md during the gate replay
   assert.equal(f.git(f.main, 'rev-parse', 'base'), state.landed_sha);
   assert.equal(f.git(f.remote, 'rev-list', '--count', `${movedBase}..base`), '2');
   assert.equal(f.git(f.main, 'merge-base', movedBase, state.landed_sha), movedBase);
-  assert.match(f.git(f.remote, 'show', 'base:.scratch/other/issues/02-unrelated.md'), /Unrelated/);
+  assert.match(f.git(f.remote, 'show', `base:${other}`), /Unrelated/);
   assertLandingRecord(f, ticket, movedBase, state.landed_sha);
   assert.match(f.git(f.remote, 'show', 'base:STATE.md'), /Milestone boundary note/);
   assert.doesNotMatch(f.git(f.remote, 'show', 'base:STATE.md'), /FEATURE-01/);
@@ -364,10 +352,9 @@ test('a main commit on unrelated paths including STATE.md during the gate replay
 for (const green of [true, false]) test(`land re-gates disjoint code changes and ${green ? 'pushes the gated candidate' : 'stops when they break the gate'}`, async t => {
   const f = await checkout(t, ['git rev-parse HEAD >> "$HOME/gate-heads"; while test ! -f "$HOME/release"; do sleep .05; done; test "$(tail -1 tracked)" = "$(cat contract)"']);
   // The source's change to tracked depends on a contract in a different file.
-  const receipt = join(jobDir(f), 'job.json'), ticket = '.scratch/feature/issues/01-example.md';
+  const receipt = join(jobDir(f), 'job.json');
   fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01' }));
-  fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
-  fs.writeFileSync(join(f.main, ticket), '# 01: Example ticket\n**Status:** claimed\n\n## Comments\n');
+  const ticket = seedJsonTickets(f, 'feature', [{ number: 1, title: 'Example ticket', status: 'claimed', acceptance: [] }]);
   fs.writeFileSync(join(f.main, 'contract'), 'second\n');
   f.git(f.main, 'add', 'contract', ticket); f.git(f.main, 'commit', '-qm', 'seed contract and ticket');
   const { flow } = await f.call('hud_land', { job });
@@ -441,15 +428,16 @@ for (const moves of [2, 3]) test(`land ${moves === 2 ? 'absorbs another move dur
 
 test('a main commit touching the landing ticket path during the gate replays without rerunning the gate and preserves the concurrent edit', async t => {
   const f = await checkout(t, ['echo run >> "$HOME/gate-count"; while test ! -f "$HOME/release"; do sleep .05; done']);
-  const dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', file = join(dir, 'job.json');
+  const dir = jobDir(f), file = join(dir, 'job.json');
   fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), ticket: 'feature/01', slice: 'FEATURE-01' }));
   fs.writeFileSync(join(dir, 'report.md'), 'Report'); writeReportMeta(dir, cachedReportSignature(dir), { summary: 'Synthetic change.' });
-  fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
-  fs.writeFileSync(join(f.main, ticket), '# 01: Example ticket\n**Status:** ready-for-agent\n- [ ] first\n\n## Comments\n');
+  const ticket = seedJsonTickets(f, 'feature', [{ number: 1, title: 'Example ticket', status: 'ready-for-agent', acceptance: [{ id: 1, text: 'first', done: false }] }]);
   f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed ticket');
   const { flow } = await f.call('hud_land', { job });
   await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
-  fs.appendFileSync(join(f.main, ticket), '- Concurrent ticket note\n');
+  const edited = JSON.parse(fs.readFileSync(join(f.main, ticket), 'utf8'));
+  edited.tickets[0].comments.push({ at: '2026-01-01T00:01:00.000Z', author: 'main', text: 'Concurrent ticket note' });
+  fs.writeFileSync(join(f.main, ticket), JSON.stringify(edited, null, 2) + '\n');
   f.git(f.main, 'commit', '-qam', 'edit ticket during gate');
   const movedBase = f.git(f.main, 'rev-parse', 'HEAD');
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');

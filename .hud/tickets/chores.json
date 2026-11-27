@@ -1,0 +1,465 @@
+{
+  "version": 1,
+  "feature": "chores",
+  "objective": "unattended",
+  "tickets": [
+    {
+      "number": 25,
+      "title": "Queue admission does not treat a wontfix blocker as satisfied",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "imp-daily-facts/02 (`Blocked by: ticket-store/01`) and ticket-store/04 were admitted while ticket-store/01 was wontfix and its replacement ticket-store/06 had not landed; leads flagged it three times on 2026-11-26. A blocker counts as satisfied only when it is done; a wontfix blocker blocks until a ticket that names it as superseded (or the blocker's own comment naming a replacement `feature/NN`) is done. A wontfix blocker with no replacement is reported in `hud_tickets ready` as a blocked reason the main session must fix by editing `blocked_by`, never silently ignored.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: blocker wontfix with replacement not done → ticket not ready; replacement done → ready",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: wontfix blocker without a replacement → not ready, `ready` shows the reason naming the blocker",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Same rule for cross-feature blockers and inside a running queue's admission",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.984Z",
+      "updated_at": "2026-11-27T06:39:45.984Z"
+    },
+    {
+      "number": 27,
+      "title": "Queue items can target another repository",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "herdr-fork tickets live in MyHUD's tracker but most change ~/projects/herdr-hud. A queue run started from MyHUD dispatched herdr-fork/30 into a MyHUD worktree; the worker edited herdr-hud's main checkout uncommitted, and the land failed with 'Source has no commits to land' (2026-11-27, run q7aba5d9564d1e161). Main had to commit and install by hand, and `hud_create` refuses a `brief_file` outside the target cwd. Add an optional ticket field `repo` (a registered project root, JSON and Markdown `**Repo:**`); queue admission dispatches that item with cwd = repo, isolation worktree there, the brief rendered from the ticket, and lands it with that repo's land block; the ticket record (done/landing) is still written in the tracker project. A ticket whose repo is not registered stays not-ready with that reason.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a ticket with repo B in tracker A is dispatched with cwd B in a B worktree and landed with B's land block; A's ticket becomes done with the landing recorded",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: unregistered repo → not ready, reason names it",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: hud_create with ticket A/NN and cwd B renders the brief from A's tracker",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.984Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "078bb2180697fafe8e8bbeb0e83b1c899af864e6",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.984Z",
+      "updated_at": "2026-11-27T06:39:45.984Z"
+    },
+    {
+      "number": 28,
+      "title": "Ticket writes never commit home-directory paths",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27: 50 committed tickets and review docs in this public repo carried absolute home-directory paths (`/home/<user>/.hud/jobs/<id>/report.md`, worktree paths), written by leads and main through hud_tickets add/update; main replaced them by hand (7048a416). Flake tickets already format paths inside $HOME as `~/` (chores/01). Apply the same normalisation to every hud_tickets add/update/comment text field (title, what, live_try, acceptance, comments) for JSON and Markdown, and to land-written ticket comments, before writing. Paths outside $HOME stay verbatim.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: add/update/comment with `$HOME/.hud/jobs/x/report.md` in what, acceptance and a comment stores `~/.hud/jobs/x/report.md` (JSON and Markdown)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a path outside $HOME is unchanged",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.984Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "23be81d9588a629504f702ecc729cb82d3f910a3",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.984Z",
+      "updated_at": "2026-11-27T06:39:45.984Z"
+    },
+    {
+      "number": 29,
+      "title": "A waiting land never fails on a land-queue lock timeout",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27 ~05:05Z three queued lands failed at once with `waiting for f19e4dd6188b00f6e (gate step 3, 0 min): abstract lock timeout (land-queue)` (unattended/13 ff4d4ccd31d0208eb-2, imp-daily-facts/07 f2d9ff6f38e77f4f4, ticket-store/09 fc93b02fed181360a) while another land held the gate. src/mcp/land-runner.ts:127 takes `withAbstractLock('land-queue', …)` with the default 1000 ms timeout (src/utils/abstract-lock.ts:34). Waiting lands call it every lease poll in `acquire` (~251) and `train()` (~516) holds it across per-candidate `runLock` calls (now up to 10 s after 810a146a), so with several waiters a poll times out and the exception fails the land. Fix: a lock timeout inside the waiting loop is a retry, never a land failure; keep the train claim's critical section short (no nested waits that can exceed the waiters' timeout) or give land-queue a timeout above its longest holder. Main re-queued the three lands by hand.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: four lands queued behind a gate, with a train claim holding land-queue longer than the default timeout, all keep waiting and none fails; they land in order after the gate",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a genuine land-queue holder crash still recovers (existing stale-lock behaviour unchanged)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.984Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "9c65a4b842036bc8efa5494170a01ee721be3d25",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.984Z",
+      "updated_at": "2026-11-27T06:39:45.984Z"
+    },
+    {
+      "number": 30,
+      "title": "Auto-dispatched flake jobs land by themselves",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "The flake collector (chores/01) promotes a full flake list and dispatches its imp automatically, but the settled job just sits in idle_grace until main calls hud_land: test-flakes/22 (ja1d6db839e689f0a) and test-flakes/23 (jb1845189b28cf985) on 2026-11-27 both waited for main. A promoted flake job is unattended work with fixed acceptance (each case passes 20 consecutive parallel runs, no weakened assertions): when it settles with a report and a commit, HUD starts its land through the project's land block itself and notifies main only on land failure. A report with Blockers or a scope assumption still goes to main instead of landing.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a promoted flake job settling with a commit and a clean report gets a land flow without any main call",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a flake report with a Blockers line or scope assumption does not land and notifies main",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.984Z",
+      "updated_at": "2026-11-27T06:39:45.984Z"
+    },
+    {
+      "number": 31,
+      "title": "A land waits for its repair worker's answered question instead of failing",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27: land ff4d4ccd31d0208eb-3 failed the moment its repair worker j927cfddb5c6d5ef6 asked main a question (`failed: cherry-pick (repair 1): … needs the main session: q1`). Main answered within minutes, the worker finished the repair and committed, but the land was already terminal, so main had to start a new land (-4) by hand. Same pattern earlier with je97ca49a97171be5 and j7f534f864a751fa0. While a repair worker has an open question the land stays in a waiting step (`repair 1: waiting for main (q1)`), and continues with the gate when the worker settles with a commit; it fails only if the worker fails, is closed, or the question goes unanswered past the normal question timeout.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: repair worker asks q1, main answers, worker commits: the same land flow runs the gate and lands",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: repair worker closed or failed while waiting: land fails with that reason",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:58:31.895Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ac5dc9807a84a2962841478dcc3c7708c0119857",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:58:31.895Z",
+      "updated_at": "2026-11-27T06:58:31.895Z"
+    },
+    {
+      "number": 32,
+      "title": "hud_tickets update accepts the single-ticket form again",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27: `hud_tickets {op: update, feature: \"herdr-fork\", ticket: 31, status: \"done\", tick: [1,2,3,4]}` returned `invalid_arguments: ticket`, while the same edit through `updates: [{feature, ticket: 31, …}]` succeeded. The single form worked earlier the same day (herdr-fork/30), so a recent ticket-store change (likely 02/07/08) broke it. Restore the single form for Markdown and JSON features with the same validation and result as `updates`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: single-form update with feature + numeric ticket + status/tick succeeds for a Markdown and a JSON feature",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: single form and updates[] produce identical files",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:27.936Z",
+      "updated_at": "2026-11-27T06:39:27.936Z"
+    },
+    {
+      "number": 33,
+      "title": "A restarted queue run supersedes the older run of the same feature",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Restart a paused feature run with hud_tickets run and confirm Execution shows only the new run",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27 live try: Execution showed \"2 运行中 22 等待中\". 20 of the 22 waiting runs were paused or failed runs whose feature already had a newer run started by `hud_tickets run` (restart after an escalation or report-gate pause). Main had to cancel each by hand. When `hud_tickets run` starts a run for a feature that already has a paused run, the older run must end as `superseded` (terminal, not counted as waiting, its todo/decisions carried into the new run as today). Failed runs whose feature has a newer run must not count as waiting either.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: starting a run for a feature with a paused run marks the old one terminal `superseded`, and the Execution waiting count drops by one",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a failed run older than a newer run of the same feature is not counted as waiting and does not render as a flow on Execution",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:27.936Z",
+      "updated_at": "2026-11-27T06:39:27.936Z"
+    },
+    {
+      "number": 34,
+      "title": "A tab worker whose first prompt was never submitted gets its Enter resent",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Start a lead with the submit key swallowed once and confirm it starts on its own",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27: two lead sessions (Claude Code, opus) sat 20 and 32 minutes in `waiting_orchestrator` (\"quiet without a report\"). Their panes showed the brief prompt typed into the input box but never submitted (context 0%). One `herdr pane send-keys <pane> Enter` started both. The launch path must verify the first prompt was submitted (the input box no longer holds it, or the client shows activity) and resend Enter once within a few seconds; if that also fails, report a launch failure instead of a quiet worker. The unattended service should treat \"prompt still in the input box, context 0%\" as this case.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a fake Claude pane that drops the first Enter receives one resend and the job starts",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: when the resend also fails the job reports a launch failure, not quiet without a report",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:27.936Z",
+      "updated_at": "2026-11-27T06:39:27.936Z"
+    },
+    {
+      "number": 35,
+      "title": "Execution does not call an actively working AGY imp stalled",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Run an AGY imp for 20 minutes and confirm Execution never shows it stalled while it works",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27: Execution showed ticket-store/05's imp (AGY, Gemini Neon) as `◍ 停滞 18分` while its pane showed it editing files and running tests (3/5 steps). The stall label must come from evidence the AGY harness actually produces (pane activity or its native step log), not only from hud-progress heartbeats it rarely writes.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: an AGY job with recent native step-log or pane activity and no progress heartbeat is shown as working",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a job with neither for the stall window still shows stalled",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:27.936Z",
+      "updated_at": "2026-11-27T06:39:27.936Z"
+    },
+    {
+      "number": 36,
+      "title": "A needs-triage ticket is not shown as blocked",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Open nav-redesign on the Feature page and confirm 15 shows the triage word",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27 live try: the Feature page showed nav-redesign/15 (Status: needs-triage, Blocked by: none) as `受阻` / blocked. needs-triage must render as its own state word (e.g. `待分拣` / `triage`) and must not count toward blocked counts on Feature, Objective or Project rows.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a needs-triage ticket with no blockers renders the triage state word in EN and ZH and is not counted as blocked",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:27.936Z",
+      "updated_at": "2026-11-27T06:39:27.936Z"
+    },
+    {
+      "number": 37,
+      "title": "Recent lists a cancelled queue run as cancelled, not landed",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Cancel a run with a landed item and check its Recent row",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27 live try: after main cancelled 20 superseded paused runs, Execution's Recent section showed them as `队列 workflow · 3 张工单 · 已落地` (landed) because some of their tickets had landed. A cancelled or superseded run must show its own end state (`已取消` / `cancelled`, or `已被取代` / `superseded` once chores/33 lands) with the landed count as a detail (e.g. `3 张工单 · 已取消 · 2 已落地`), never the bare landed word.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a cancelled run with landed items renders the cancelled state word in EN and ZH in Recent, with the landed count as a detail",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a completed run still renders landed",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:58:31.899Z",
+      "updated_at": "2026-11-27T06:58:31.899Z"
+    },
+    {
+      "number": 38,
+      "title": "A headless sonic that answers in chat without hud_report keeps its answer",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Twice on 2026-11-26/27 a luna sonic (pi, openai/gpt-6-luna) finished its lookup, wrote the full answer as its final assistant message and exited without calling hud_report (latest j95360f77506837ee, child of reviewer j37c5c8f52507c874). HUD failed the job with \"pi exited without a declared report\" and the parent lost a correct answer; main had to dig it out of stdout.jsonl. When a headless sonic settles (agent_settled, not aborted, exit 0) with no declared report but a non-empty final assistant text, HUD publishes that text as the report, marked `salvaged: final message without hud_report` in the digest and with the usual unverified-facts prefix for the parent. No nudge or extra turn is sent (cli-workers/09 rule). Aborted runs, provider errors and empty final text still fail as today.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a fake headless sonic that settles with final text and no hud_report yields a done job whose report is that text with the salvaged marker",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: aborted, errored or empty-final-text runs still fail with the current reason",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: the parent's collection notice for a salvaged sonic shows the marker",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:58:31.899Z",
+      "updated_at": "2026-11-27T06:58:31.899Z"
+    },
+    {
+      "number": 39,
+      "title": "A late answer to a question never fails a job that already reported",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27: imp jf33687c6d908554c (pi tab, herdr-fork/32) asked q2 at 22:33, kept working, committed and published a valid report (q2 moot). Main's answer landed at 22:43:07; it was delivered as a new turn, the turn ended without a new report, and at 22:43:14 `src/harness/pi/worker/tab-lifecycle.ts` settled the job `failed: output missing, empty or unchanged`. hud_land then refused the job (state failed) and main had to land by hand. An answer that arrives after the worker published a report for the turn that asked must not turn a reported job into failed: either deliver it without starting a turn that needs a new report, or settle that turn as `settled` when the earlier declared report stands (answer recorded as moot).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: question asked, report published, answer arrives afterwards -> job stays done/idle_grace with the report, and hud_land accepts it",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a question answered before the report still resumes the turn as today",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:58:31.899Z",
+      "updated_at": "2026-11-27T06:58:31.899Z"
+    }
+  ]
+}

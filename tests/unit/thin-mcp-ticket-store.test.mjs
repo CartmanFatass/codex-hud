@@ -6,7 +6,7 @@ import test from 'node:test';
 import { main } from '../../dist/cli/hud.js';
 import { scanTicketStore } from '../../dist/collectors/ticket-store.js';
 import { collectGateFlakes } from '../../dist/mcp/land-flakes.js';
-import { landedTicket, recordUnattendedAcceptance, ticketReadiness } from '../../dist/mcp/local-tickets.js';
+import { recordUnattendedAcceptance, ticketReadiness } from '../../dist/mcp/local-tickets.js';
 import { JobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { takeLease } from '../../dist/roles/lease.js';
 import { normalizeHomePaths, parseMarkdownRepairRefs, readTicketWrites, serializeTicketFeature, ticketWritesPath, validateTicketFeature } from '../../dist/tickets/store.js';
@@ -148,9 +148,10 @@ test('an add returns its JSON ticket number while the land gate is still running
   assert.equal(f.flowState(flow).state, 'completed');
 });
 
-test('a mixed update applies both Markdown and JSON items without the main-checkout lease and commits via hud_tickets commit', { timeout: 20_000 }, async t => {
+test('a mixed update refuses legacy Markdown items while applying JSON items without the main-checkout lease', { timeout: 20_000 }, async t => {
   const f = await checkout(t, ['true']);
-  const { rel, path } = seedMarkdown(f);
+  const { path } = seedMarkdown(f);
+  const originalMd = fs.readFileSync(path, 'utf8');
   const call = (op, args) => f.call('hud_tickets', { op, feature: 'sample', cwd: f.worktree, ...args });
   const { tickets: [added] } = await call('add', { tickets: [draft('JSON ticket')] });
   const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
@@ -161,24 +162,23 @@ test('a mixed update applies both Markdown and JSON items without the main-check
       { ticket: 1, status: 'done' },
       { feature: 'legacy', ticket: 1, tick: [1] },
     ] }));
-    assert.deepEqual(updates, [
-      { ok: true, feature: 'legacy', number: 1, path },
-      { ok: true, feature: 'sample', number: 1, path: added.path },
-      { ok: true, feature: 'legacy', number: 1, path },
-    ]);
+    assert.equal(updates[0].ok, false);
+    assert.match(updates[0].error, /still uses legacy Markdown tickets; run "hud tickets migrate" first/);
+    assert.deepEqual(updates[1], { ok: true, feature: 'sample', number: 1, path: added.path });
+    assert.equal(updates[2].ok, false);
+    assert.match(updates[2].error, /still uses legacy Markdown tickets; run "hud tickets migrate" first/);
     assert.equal((await call('get', { ticket: 1 })).ticket.status, 'done');
-    assert.match(fs.readFileSync(path, 'utf8'), /Status:\*\* claimed[\s\S]*- \[x\]/);
+    assert.equal(fs.readFileSync(path, 'utf8'), originalMd, 'legacy Markdown file stays untouched');
     const flowsDir = join(f.home, 'flows');
     assert.deepEqual(fs.existsSync(flowsDir) ? fs.readdirSync(flowsDir).filter(name => /^te/.test(name)) : [], []);
   } finally { await takeLease({ name: 'main-checkout', release: true }, lease); }
   const committed = await call('commit', {});
   assert.equal(committed.committed, true);
-  assert.deepEqual(committed.paths, ['.hud/tickets/sample.json', rel]);
-  assert.match(f.git(f.main, 'show', `HEAD:${rel}`), /Status:\*\* claimed[\s\S]*- \[x\]/);
-  assert.equal(f.git(f.main, 'status', '--porcelain', '--', rel, '.hud/tickets/sample.json'), '');
+  assert.deepEqual(committed.paths, ['.hud/tickets/sample.json']);
+  assert.equal(f.git(f.main, 'status', '--porcelain', '--', '.hud/tickets/sample.json'), '');
 });
 
-test('hud_tickets add/update validates and stores repairs on JSON and Markdown features', { timeout: 20_000 }, async t => {
+test('hud_tickets add/update validates and stores repairs on JSON features and refuses writes to legacy Markdown', { timeout: 20_000 }, async t => {
   const f = await checkout(t, ['true']);
   seedMarkdown(f);
   const call = (op, args) => f.call('hud_tickets', { op, cwd: f.worktree, ...args });
@@ -198,7 +198,7 @@ test('hud_tickets add/update validates and stores repairs on JSON and Markdown f
   assert.deepEqual((await call('get', { ticket: 'sample/03' })).ticket.repairs, ['sample/02']);
   assert.equal((await call('get', { ticket: 'sample/01' })).ticket.repairs, undefined);
 
-  // Update repairs to another valid ref (including cross-feature Markdown) and clear with [].
+  // Update repairs to another valid ref (including cross-feature legacy Markdown reader fallback) and clear with [].
   await call('update', { feature: 'sample', ticket: 3, repairs: ['sample/02', 'legacy/01'] });
   assert.deepEqual((await call('get', { ticket: 'sample/03' })).ticket.repairs, ['sample/02', 'legacy/01']);
   await call('update', { feature: 'sample', ticket: 3, repairs: [] });
@@ -218,21 +218,9 @@ test('hud_tickets add/update validates and stores repairs on JSON and Markdown f
       created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
   }), /Invalid ticket store field: feature\.tickets\[0\]\.repairs\[0\]/);
 
-  // Markdown path: add, update, read back, and reject unknown/malformed repairs.
-  await call('add', { feature: 'legacy', tickets: [draft('Legacy B')] });
-  const mdRepair = await call('add', {
-    feature: 'legacy',
-    tickets: [{ ...draft('Fix Legacy B'), repairs: ['legacy/02'] }],
-  });
-  assert.equal(mdRepair.ok, true);
-  assert.match(fs.readFileSync(mdRepair.tickets[0].path, 'utf8'), /^\*\*Repairs:\*\* legacy\/02$/m);
-  assert.deepEqual((await call('get', { ticket: 'legacy/03' })).ticket.repairs, ['legacy/02']);
-  await call('update', { feature: 'legacy', ticket: 3, repairs: ['legacy/01', 'sample/02'] });
-  assert.deepEqual((await call('get', { ticket: 'legacy/03' })).ticket.repairs, ['legacy/01', 'sample/02']);
-  await call('update', { feature: 'legacy', ticket: 3, repairs: [] });
-  assert.equal((await call('get', { ticket: 'legacy/03' })).ticket.repairs, undefined);
-  assert.match(await rpcErr('add', { feature: 'legacy', tickets: [{ ...draft('Bad'), repairs: ['legacy/99'] }] }), /unknown repairs ticket: legacy\/99/);
-  assert.match(await rpcErr('add', { feature: 'legacy', tickets: [{ ...draft('Bad'), repairs: ['legacy/1'] }] }), /invalid_arguments: repairs/);
+  // Legacy Markdown feature refuses writes until migrated.
+  assert.match(await rpcErr('add', { feature: 'legacy', tickets: [draft('Legacy B')] }), /still uses legacy Markdown tickets; run "hud tickets migrate" first/);
+  assert.match(await rpcErr('update', { feature: 'legacy', ticket: 1, status: 'done' }), /still uses legacy Markdown tickets; run "hud tickets migrate" first/);
 });
 
 test('repairs and flake-list cases are collected in full and hud tickets show matches hud_create brief byte for byte', { timeout: 20_000 }, async t => {
@@ -310,26 +298,19 @@ test('parseMarkdownRepairRefs skips standalone none sentinel and keeps none-pref
   );
 });
 
-test('none-theme/01 Markdown repair ref survives add, both readers, and queue admission while Repairs: none yields no repairs', { timeout: 30_000 }, async t => {
+test('none-theme/01 Markdown repair ref survives both fallback readers and queue admission while Repairs: none yields no repairs', { timeout: 30_000 }, async t => {
   const withRepairsLine = (body, value) => body.replace('**Blocked by:** none\n', `**Blocked by:** none\n**Repairs:** ${value}\n`);
   const f = await setupWorkflowProject(t, {
+    legacy: true,
     extraFeatures: {
       'none-theme': {
         '01-base.md': withRepairsLine(goodTicket(1, { status: 'done', title: 'Base theme slice' }), 'none (not a repair)'),
         '02-no-repairs.md': withRepairsLine(goodTicket(2, { status: 'ready-for-agent', title: 'Unrelated theme slice' }), 'none'),
+        '03-repair.md': withRepairsLine(goodTicket(3, { status: 'ready-for-agent', title: 'Repair none-theme 01' }), 'none-theme/01'),
       },
     },
     objectives: '## selected: Selected\n**State:** active\n**Features:** sample, none-theme\n',
   });
-
-  const add = await f.call('hud_tickets', {
-    op: 'add',
-    feature: 'none-theme',
-    cwd: f.root,
-    tickets: [{ ...draft('Repair none-theme 01'), live_try: 'none', repairs: ['none-theme/01'] }],
-  });
-  assert.equal(add.ok, true);
-  assert.match(fs.readFileSync(add.tickets[0].path, 'utf8'), /^\*\*Repairs:\*\* none-theme\/01$/m);
 
   // Reader 1: src/tickets/store.ts (readLegacyTicket via hud_tickets get).
   assert.deepEqual((await f.call('hud_tickets', { op: 'get', ticket: 'none-theme/03', cwd: f.root })).ticket.repairs, ['none-theme/01']);
@@ -420,41 +401,16 @@ test('hud_tickets add/update/comment and land-written ticket comments normalize 
   assert.equal(rawJson.includes(`${f.env.HOME}/`), false, 'stored JSON must not contain $HOME/ paths');
   assert.equal(rawJson.includes(outsidePath), true);
 
-  // Markdown add.
-  const mdAdd = await call('add', {
-    feature: 'legacy',
-    tickets: [{
-      title: `Markdown ${homePath}`,
-      what: `Read ${homePath} and ${outsidePath}.`,
-      live_try: `Try ${homePath} and ${outsidePath}`,
-      acceptance: [`Check ${homePath}`, `Keep ${outsidePath}`],
-      blocked_by: [],
-    }],
-  });
-  assert.equal(mdAdd.ok, true);
-  const mdPath = mdAdd.tickets[0].path;
-  const mdBody = fs.readFileSync(mdPath, 'utf8');
-  assert.equal(mdBody.includes(f.env.HOME), false, 'stored Markdown must not contain $HOME paths');
-  assert.match(mdBody, /^# 02: Markdown ~\/\.hud\/jobs\/x\/report\.md$/m);
-  assert.match(mdBody, /^\*\*Live try:\*\* Try ~\/\.hud\/jobs\/x\/report\.md and \/var\/tmp\/outside\/jobs\/x\/report\.md$/m);
-  assert.match(mdBody, /^\*\*What to build:\*\* Read ~\/\.hud\/jobs\/x\/report\.md and \/var\/tmp\/outside\/jobs\/x\/report\.md\.$/m);
-  assert.match(mdBody, /^- \[ \] Check ~\/\.hud\/jobs\/x\/report\.md$/m);
-  assert.match(mdBody, /^- \[ \] Keep \/var\/tmp\/outside\/jobs\/x\/report\.md$/m);
-
-  // Land-written Markdown ticket comments and unattended acceptance comments (JSON and Markdown).
+  // Unattended acceptance comments normalize $HOME paths in JSON.
   const procHome = process.env.HOME;
   assert.ok(procHome, 'test runner must have HOME set');
   const procHomePath = `${procHome}/.hud/jobs/x/report.md`;
-  const { body: landed } = landedTicket(mdBody, 2, `Landed; report ${procHomePath} and ${outsidePath}.`, []);
-  assert.match(landed, /^- Landed; report ~\/\.hud\/jobs\/x\/report\.md and \/var\/tmp\/outside\/jobs\/x\/report\.md\.$/m);
-  assert.equal(landed.includes(procHomePath), false);
 
   const acc = await recordUnattendedAcceptance(
     f.main,
     f.home,
     () => [
       { path: join(f.main, '.hud/tickets/norm-json.json'), ticket: 'norm-json/01' },
-      { path: mdPath, ticket: 'legacy/02' },
     ],
     'q00000000000000c1',
     `finish: verified ${procHomePath} and ${outsidePath}`,
@@ -462,9 +418,6 @@ test('hud_tickets add/update/comment and land-written ticket comments normalize 
   assert.deepEqual(acc.failed, []);
   const { ticket: acceptedJson } = await call('get', { ticket: 'norm-json/01' });
   assert.equal(acceptedJson.accepted?.verdict, `finish: verified ~/.hud/jobs/x/report.md and ${outsidePath}`);
-  const acceptedMd = fs.readFileSync(mdPath, 'utf8');
-  assert.match(acceptedMd, /^- Accepted by unattended lead \(q00000000000000c1\): finish: verified ~\/\.hud\/jobs\/x\/report\.md and \/var\/tmp\/outside\/jobs\/x\/report\.md$/m);
-  assert.equal(acceptedMd.includes(procHomePath), false);
 });
 
 test('hud_tickets single-form update accepts numeric, numeric-string and feature/NN targets for Markdown and JSON and matches updates[]', { timeout: 25_000 }, async t => {

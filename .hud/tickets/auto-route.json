@@ -1,0 +1,367 @@
+{
+  "version": 1,
+  "feature": "auto-route",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A pi worker runs headless and keeps its session",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec §2.1.2 \"A headless worker…\" (22.22). Survey 2026-11-22: 95 of 185 worker jobs (51%) ran brief-to-report with no question, send or repair, but each held a herdr tab; the owner saw 9 tabs. Add a run mode `headless` for continuable roles on the pi harness (imp, general). Selected by `hud_create({ mode: \"headless\" })` for now; 03 makes it automatic. A headless job opens no tab. It runs pi in its non-interactive JSON mode with a session file in the job dir (not `--no-session`), output appended to a job-dir log, and the same worker MCP tools as a tab worker (hud_report, hud_progress, hud_ask, hud_lease, hud_sonic). It settles on its report like a tab worker and is closed at once (close-on-delivery). `hud_ask` ends the turn and marks the job asking. `hud_respond` then resumes the session (`pi --session <file>`) with the answer as the next message. `hud_send` resumes it the same way, within `resume_s` and otherwise as a repair job, and so do land repairs. Stop (`hud_close`, panel stop) kills the process tree. Reuse headless sonic's spawn/supervision and close-on-delivery's resume helper; do not fork either.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A synthetic headless imp job runs to a report with no herdr tab and settles closed with its session file kept",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_ask → hud_respond resumes the same session and the job reports; hud_send after the report resumes within resume_s",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A land repair of a headless job resumes its session headless",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Stop kills the process tree; progress shows on the card as for tab jobs",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Targeted thin-mcp/sonic/close-resume tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.980Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "e33c2515353f844fd216243bd6be917bc18f3713"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.980Z",
+      "updated_at": "2026-11-27T06:39:45.980Z"
+    },
+    {
+      "number": 2,
+      "title": "Claude and agy workers run headless",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "auto-route/01"
+      ],
+      "what": "Extend 01's headless mode to the claude and agy CLI harnesses (owner 2026-11-22: Codex and Grok deferred) using their non-interactive modes (survey 2026-11-22): claude `-p --output-format stream-json` with `--resume`/`--session-id`; agy `-p --output-format stream-json` with `--conversation`. Each run is one turn per process. The session id is recorded and every resume (answer, send, repair) starts a new process on that session. The worker MCP config is passed as for tab CLI workers (claude `--mcp-config`; agy as its tab launch does). Roles with only a CLI place (general on agy, frontend-imp on claude) can then run headless.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each harness: synthetic fake-bin headless job runs, reports, and resumes on hud_respond and hud_send with the recorded session id",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Worker MCP tools are available in each headless run",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted CLI launch/turn tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.980Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "b6df17f1f59edceb8ad3609565ebd4d5a98a8a3a"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.980Z",
+      "updated_at": "2026-11-27T06:39:45.980Z"
+    },
+    {
+      "number": 3,
+      "title": "The Decision API routes imp work by tier and mode",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "auto-route/01"
+      ],
+      "what": "Spec §2.1.4 \"Imp routing\" (22.22). Settings toggle \"Imp routing\" (off by default), which needs the Decision API like Sonic auto-thinking and reuses its client, budget and fallback code.\n\nTiers live in the role file, not in code. Add an optional `routing` block to the role-file schema:\n\n```json\n\"routing\": {\n  \"light\":    { \"preset\": \"hydrogen\", \"use\": \"mechanical work on an existing pattern: text or doc edits, one or two files, a single test fix, a small bug\" },\n  \"standard\": { \"use\": \"an ordinary end-to-end slice\" },\n  \"hard\":     { \"preset\": \"astra\", \"use\": \"cross-module, concurrency or process lifecycle, repeated conflicts\" },\n  \"modes\": { \"headless\": \"likely one shot with no owner watching\", \"tab\": \"likely questions, long runs, or the owner wants to watch\" }\n}\n```\n\n`standard` has no preset: it is the role's active preset (the owner's Control choice). Ship this block in the shipped `imp` role file; adding it to the owner's `~/.hud/roles/imp.json` is the main session's job, not yours. A tier missing from the block is not offered to the Decision API; a role file without the block is never routed. Do not hard-code tier presets or models anywhere in src/.\n\nWhen on, an `imp` create asks the Decision API for `{tier, mode, reason}`. The input is the brief, ticket text, context-file names and sizes, and the block's `use` texts. Then:\n- Run the tier's preset chain. If none of its places is available (harness off, quota exhausted, pre-input launch failure), fall to standard and record `fallback`.\n- Headless only when the chosen place's harness supports headless today (pi after 01; claude and agy after 02); otherwise tab, recorded as `mode_reason`.\n- Overflow to `general` runs the routed chain (see role-overrides/01 for the unrouted case).\n- `retry_of` keeps the tier without a new decision; a land repair of a light job runs as standard.\n- Failure, timeout or the toggle off: active preset in a tab, `source: \"default\"`.\n\nRecord `route: {tier, mode, reason, source: \"decision\"|\"default\", fallback?}` in job.json. Show it in the create result and `hud_read`. Document the block in docs/reference.md and docs/reference.zh.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With a stub Decision API: a one-file doc brief routes light+headless (tab while agy lacks headless); a cross-module brief routes hard+tab",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A role file without `routing`, or missing the `light` tier, never yields that tier",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unavailable tier preset falls to standard with `fallback`; API error or timeout falls back to default+tab and says so",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Overflow keeps the routed chain; retry keeps the tier; a light job's land repair runs standard",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "job.json and hud_read carry the route; targeted tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.980Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "fc2f5dd40cf251397117eee4d0ec59b2be6a8fd2"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "owner",
+          "text": "once this lands, the main session turns Imp routing on in the owner's own Settings (`~/.hud/hud-settings.json`); the shipped default stays off."
+        },
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "capability check (Artificial Analysis)",
+          "text": "Sol scores 57/56/55/53 at max/xhigh/high/medium, and Hydrogen 54/51/41 at xhigh/high/medium. Per index task, Sol (max) takes 10.2 min and Hydrogen (xhigh) 16.9 min, and Hydrogen emits about 5× the output tokens. Hydrogen is no faster per task than Sol; its gain is a second provider's quota. Never route below high effort. Pilot: Hydrogen landed perf-ts/08 first time (13 min, single file plus tests)."
+        },
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "owner ruled that only `general` takes `preset`/`on`/`model`/`thinking` (ticket role-overrides/01), so every `imp` create is routed when the toggle is on; the router applies the tier presets internally."
+        },
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "compatibility pass",
+          "text": "tiers moved from code to the role file's `routing` block; standard follows the owner's active preset; headless follows harness support; unavailable tier falls to standard; overflow keeps the routed chain."
+        },
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "answer to q1",
+          "text": "the Decision API returns enumerated choices only, so the one-line reason is the chosen tier's and mode's `use` texts from the role file (no second call). An explicit `mode` on create always wins; routing then picks only the tier. Without an explicit mode, every fallback runs in a tab."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.980Z"
+    },
+    {
+      "number": 4,
+      "title": "Cards show the route and a headless job's output",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "auto-route/01",
+        "auto-route/03"
+      ],
+      "what": "On Home and in the Inspector, a job's card shows its route compactly: a tier mark (light, standard or hard) and a headless mark, with the reason in the Inspector. A headless job has no tab, so the focus action on its card opens its output log in the Inspector, showing the last lines and following live, instead of failing. Statusline zones stay unchanged. Follow the home-compact design's mark grammar.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tier and headless marks render within panel width rules in both languages",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Focus on a headless card shows its live output; stop still works",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.980Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "1b01dca83ac0801dca118a93b5e51984048989af"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.980Z",
+      "updated_at": "2026-11-27T06:39:45.980Z"
+    },
+    {
+      "number": 5,
+      "title": "Milestone review fixes for routing and headless workers",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Fix every blocking finding in `docs/reviews/2026-11-22-auto-route-milestone.md` in one pass (spec 1-5, simplicity 1-3, plus its \"What can be deleted\" list). The review names files and lines; the design intent it was judged against is in `tmp/tasks/review-auto-route/brief.md`. In short:\n- Explicit `mode: \"tab\"` and `mode: \"headless\"` both win while routing; routing then asks only for the tier; the continuability check applies only to headless.\n- Placement flags (model/thinking) in caller `pi_args` are rejected for roles other than `general`; a `retry_of` that changes role does not carry general's one-job overrides.\n- A standard/headless route that cannot launch falls back to the active preset in a tab when mode was not explicit (pre-input only; never replay after input may have reached a worker).\n- Inspector output parses Antigravity's `event` records and tells \"no output yet\" (zero bytes) from \"nothing displayable\".\n- A headless Claude or Antigravity question ends the turn through the runner (keep the native session), not by trusting the model's next reply; `hud_respond` then resumes.\n- Unrouted headless jobs fall through to the next compatible place on a pre-input rejection like tab jobs do; the one-shot exception stays for sonic only; direct and queued creates share the rule.\n- An expired follow-up to an overflow job keeps imp's launch role and chain.\n- Headless pi session identity compares canonical cwd paths.\n- Deletions: the blanket headless break, the `retrySource` shadow, the 40-vs-12 output line limit (one shared limit).\nLeave the review's optional list alone.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each blocking finding has one main-path test that fails before and passes after",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Targeted tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.980Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "cebf64285e59b79ac5184488d810e8f2a6f9753b"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.980Z",
+      "updated_at": "2026-11-27T06:39:45.980Z"
+    },
+    {
+      "number": 6,
+      "title": "A message sent to a working headless job runs as its next turn",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-split/03"
+      ],
+      "what": "Found live 2026-11-22: with routing on, imp jobs start headless, and hud_send (single or {jobs} fan-out) to a working headless job returns not_continuable (sendJob: no primary pane), so the main session cannot steer most working imps. A tab worker queues the message for after its current step; a headless worker should do the same: record the message in the job dir and, when the current turn ends, resume the native session with it as the next turn (same resume path as a post-report send within resume_s). One process per turn stays.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_send and hud_send({jobs}) to a working headless pi, claude or agy job return ok with queued, not not_continuable",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "When the current turn ends (report or plain turn end), the session resumes with the queued message(s) in send order; nothing is dropped if the turn ends asking (delivered with the hud_respond resume)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The caller's MCP task stays current and wakes at the final report, as for a tab job's queued send (FANOUT-TASK)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Synthetic fake-bin tests for pi and one CLI harness; docs/reference.md (+ zh) headless paragraph says follow-ups to a working headless job run after its current turn",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.980Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "3c4dadcd77ee35bb47f139d6a286218128728c20"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.980Z",
+      "updated_at": "2026-11-27T06:39:45.980Z"
+    },
+    {
+      "number": 7,
+      "title": "Two gate-flaky process tests hold under load",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "auto-route/06"
+      ],
+      "what": "Land gate 2026-11-22 (native-statusline/03, 98867eaf): tests/unit/thin-mcp-headless.test.mjs 'hud_close and panel stop reap the live headless worker and its detached child' failed once and passed on the immediate rerun. Find whether the test races (fixed sleeps, process-exit timing) or the reap itself can miss the detached child; fix the real cause. Same for the second flake, land gate 2026-11-22 (auto-route/06, 7ec6a3e3): tests/unit/thin-mcp-cli-process.test.mjs 'supervisor preserves the watcher tab-close fact when its own push socket was lost'.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Cause named in the report for each test (test timing vs real gap)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Each test passes 20 consecutive runs under parallel load (node --test with the full mjs set or a CPU stressor)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "If the reap can miss a child, the fix is in the reap path, not a longer timeout; same for the supervisor tab-close fact",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.980Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "cfd0dbd56492a83afd7d33fe7b349234b90b8e39"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.980Z",
+      "updated_at": "2026-11-27T06:39:45.980Z"
+    },
+    {
+      "number": 8,
+      "title": "A headless worker's question does not kill its running sonic children",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found live 2026-11-22: land-log/01's headless imp (jfac82c255bad0b73) started sonic j9f55feffc7f77ed5, then called hud_ask; its turn ended at 19:31:12 and the sonic runner died in the same second with no exit receipt (state failed, 'sonic runner exited without an exit receipt', no stderr). Two sonics of a headless imp that never asked survived. So ending a headless turn (ask, or plain turn end) reaps the worker's process tree including detached sonic children. A sonic child is its own job: it must keep running across the parent's turn end, and its result must reach the parent on its next turn (hud_sonic wait / the ready message, as for a pi tab worker; IMP-LEAN-03).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic test: a headless pi worker starts a sonic child, then asks; the child keeps running and settles with its report",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "On the parent's resume (hud_respond), hud_sonic wait returns the child's report; a child that settled while the parent was idle is delivered as a ready message on the next turn",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Stop (hud_close / panel stop) of the parent still kills the children; a parent that reports and closes leaves no orphan runner",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The same holds for a headless CLI (claude or agy) worker if they can start sonic children",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.980Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "451fee56f3ddf619980b320b40d05be8c9da74bb"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.980Z",
+      "updated_at": "2026-11-27T06:39:45.980Z"
+    }
+  ]
+}

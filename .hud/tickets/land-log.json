@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "feature": "land-log",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A land keeps the failing output of a gate test",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: land flow records (~/.hud/flows/<flow>.json `reruns`) keep only failing test names, so a flake that passes on the immediate rerun can only be diagnosed by reproducing it. When a gate command fails (first run or rerun), keep a bounded excerpt of that run's failure output (the failing tests' assertion/error blocks, else the last lines; cap ~8 KiB per rerun) next to the flow record, private 0600, and point to it from the rerun entry and the terminal notice. hud_read of the flow shows the path.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A synthetic gate with a test that fails once then passes leaves an excerpt containing that test's assertion message, linked from reruns",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Excerpt is bounded and private (0600); an excerpt is swept if its flow record is removed",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A green gate writes no excerpt",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md + reference.zh.md land paragraph mention the excerpt",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.039Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "70929c350d2efcf6a8fd51c6cc3cf33179d02c3f"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.039Z",
+      "updated_at": "2026-11-27T06:39:46.039Z"
+    },
+    {
+      "number": 2,
+      "title": "A ticket's landing record names the commit on main",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Acceptance pass 2026-11-22: the landing sha written into the ticket file (c055516e for hud-doctor/01, 70929c35 for land-log/01) is the worker's pre-replay tip, not an ancestor of main (merge-base --is-ancestor fails), so it does not resolve on main. The ticket record is folded into the landed commit itself, so it cannot contain its own sha: record the replay base + 'this commit' wording, or write a stable reference that resolves (e.g. the flow id plus the landed subject), and make hud_read/panel resolve it to the real landed sha from the flow record.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "After a synthetic land, the ticket's landing line resolves to a commit on main (or to the flow whose landed_sha is on main), test asserts it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Existing landed tickets need no migration; the panel's Latest list still shows them",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.039Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "14d9dd1b763336d965943cd7253288951fe2d478"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.039Z",
+      "updated_at": "2026-11-27T06:39:46.039Z"
+    },
+    {
+      "number": 3,
+      "title": "A land repair does not fail on the worker's pre-turn state",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Live 2026-11-22: panel-polish/02's land (flow f32c448e14d394e42) hit a docs/reference conflict and sent the repair to its tab CLI worker (frontend-imp on claude) at 04:04:42.882Z; the flow failed at 04:04:43.494Z with 'j32c448e14d394e42 needs the main session' although the worker had no question and was already repairing (hud doctor: state working, turn 2 sent 04:04:42.882, no questions). In src/mcp/land-repair.ts the wait loop's first read sees the row from before the new turn (blocked / waiting_orchestrator from the settled previous turn) and throws. Fix: judge only status written for the repair turn (e.g. require the turn seq/sent_at of the repair send, or status updated after `started`), so a stale pre-turn state cannot fail the flow; a real question during the repair still hands back to the main session.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic test: a CLI worker whose previous turn ended waiting_orchestrator/blocked gets a land repair; the flow waits and lands when the repair report arrives",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A question asked during the repair turn still fails the flow with 'needs the main session: q<n>'",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted land tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.039Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d229fe67b91320435601a298ac0fe62e4382d66c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.039Z",
+      "updated_at": "2026-11-27T06:39:46.039Z"
+    }
+  ]
+}

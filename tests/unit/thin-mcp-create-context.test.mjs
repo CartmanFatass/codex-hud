@@ -329,8 +329,16 @@ test('hud_create stamps the main ticket against the linked checkout Objective re
   };
   const path = join(cwd, '.hud/objectives.md');
   put(join(main, '.hud/objectives.md'), goal('main-goal', 'Main goal') + goal('branch-goal', 'Fallback goal'));
-  const ticketPath = '.scratch/sample/issues/01-demo.md';
-  put(join(main, ticketPath), ticket('main-goal'));
+  const at = '2026-01-01T00:00:00.000Z';
+  const ticketPath = '.hud/tickets/sample.json';
+  put(join(main, ticketPath), JSON.stringify({
+    version: 1, feature: 'sample',
+    tickets: [{
+      number: 1, title: 'Synthetic sample', status: 'ready-for-agent', owner_try: false, live_try: 'none',
+      approved_removals: [], blocked_by: [], objective: 'main-goal', what: 'Synthetic sample',
+      acceptance: [], comments: [], created_at: at, updated_at: at,
+    }],
+  }, null, 2) + '\n');
   git(main, 'add', '--', ticketPath);
   git(main, 'commit', '-qm', 'Track sample ticket');
   put(path, goal('branch-goal', 'Checkout goal'));
@@ -524,9 +532,9 @@ test('legacy ready tickets are dispatchable and live jobs claim them in MCP, Hom
   assert.equal(fs.readFileSync(first.path, 'utf8'), original);
   writeFixtureFile(join(live, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
   assert.deepEqual((await ready()).tickets.map(row => row.ticket), ['alpha/01']);
-  await f.call('hud_tickets', { op: 'update', feature: 'alpha', ticket: 1, status: 'ready-for-human' });
+  legacy('alpha', 1, draft.title, 'ready-for-human');
   assert.deepEqual((await ready()).tickets, []);
-  await f.call('hud_tickets', { op: 'update', feature: 'alpha', ticket: 1, status: 'done' });
+  legacy('alpha', 1, draft.title, 'done');
   assert.deepEqual((await ready()).tickets, [{ ticket: 'beta/01', path: second.path, title: 'Second slice', what: draft.what }]);
 });
 

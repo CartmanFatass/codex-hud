@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
-import { join, relative, isAbsolute, resolve } from 'node:path';
-import { scanScratch, slugify, ticketsCommand } from '../cli/tickets.js';
-import { OBJECTIVE_SLUG, objectiveLink, readObjectives, type Objective } from '../collectors/objectives.js';
+import { isAbsolute, join } from 'node:path';
+import { ticketsCommand } from '../cli/tickets.js';
+import { objectiveLink, readObjectives, type Objective } from '../collectors/objectives.js';
 import type { ProjectTicket } from '../collectors/project-board.js';
 import { STATE_BYTES } from '../collectors/state-ledger.js';
 import { targetKey, ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
@@ -9,27 +9,18 @@ import { SETTLED_JOB_STATES, TicketRollup, ticketJobState } from '../collectors/
 import { getHudHome } from '../hud-home.js';
 import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
-import { localProjectRoots, projectList, projectRoot, sharedRoot } from '../roles/projects.js';
+import { localProjectRoots, projectList, projectRoot } from '../roles/projects.js';
 import {
-  canonicalTicketRef, legacyTicketRepo, LEGACY_TICKET_HEADER_END, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature,
-  renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs, TICKET_STATUSES, withTicketStoreLock,
-  writeLegacyTicket, writeTicketFeature, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
+  legacyTicketRepo, LEGACY_TICKET_HEADER_END, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature,
+  renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs, withTicketStoreLock,
+  writeTicketFeature, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { isRunningListTicket, readFlakesConfig, runningListAdmission } from './flake-admission.js';
 import type { Job } from './job-contracts.js';
-import { linkFeature } from './local-objectives.js';
 
-export type TicketEdit = { ticket: string; path: string; before?: string; after: string; mode?: number };
-export type TicketEdits = {
-  read(path: string): string;
-  stage(edit: TicketEdit): Promise<void>;
-};
-
-const number = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 const nn = (value: number) => String(value).padStart(2, '0');
 function invalid(field: string): never {
   throw new Error(`invalid_arguments: ${field}`);
@@ -72,10 +63,6 @@ export function extractWhatAndLiveTry(rawWhat: unknown, rawLiveTry: unknown): { 
     return { what: rest || invalid('what'), liveTry: line(punctMatch[2], 'live_try') };
   }
   return { what };
-}
-function status(value: unknown): string {
-  const label = TICKET_STATUSES.find((label) => label === value);
-  return label ?? invalid('status');
 }
 function directoryExists(path: string): boolean {
   const st = fs.lstatSync(path, { throwIfNoEntry: false });
@@ -142,7 +129,6 @@ export function routingTicketText(root: string, ticket: unknown): string | undef
 
 // Shared metadata lines may use ·, but the ticket title and prose aren't fields.
 const objectiveField = /^([ \t]*(?:\*\*[^:\r\n]+:\*\*[^·\r\n]*·[ \t]*)*?\*\*Objective:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
-const repairsField = /^([ \t]*(?:\*\*[^:\r\n]+:\*\*[^·\r\n]*·[ \t]*)*?\*\*Repairs:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
 const ticketHeader = (text: string) => text.split(LEGACY_TICKET_HEADER_END, 1)[0];
 
 export function ticketObjectiveId(path: string) {
@@ -523,39 +509,6 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
   };
 }
 
-function ownerTry(value: unknown): 'yes' | 'no' {
-  if (typeof value !== 'boolean') return invalid('owner_try');
-  return value ? 'yes' : 'no';
-}
-function withStatus(body: string, label: string, ticket: number): string {
-  const field = /((?:^|·)[ \t]*\*\*Status:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
-  if (!field.test(body)) throw new Error(`missing Status field in ticket: ${ticket}`);
-  return body.replace(field, (_, prefix, _old, suffix) => `${prefix}${label}${suffix}`);
-}
-function headerField(body: string, field: RegExp, label: string, value: string, ticket: number): string {
-  if (field.test(body)) return body.replace(field, (_, prefix, _old, suffix) => `${prefix}${value}${suffix}`);
-  const statusLine = /^[^\r\n]*\*\*Status:\*\*[^\r\n]*$/im;
-  if (!statusLine.test(body)) throw new Error(`missing Status field in ticket: ${ticket}`);
-  const eol = body.includes('\r\n') ? '\r\n' : '\n';
-  return body.replace(statusLine, (line) => `${line}${eol}**${label}:** ${value}`);
-}
-function withOwnerTry(body: string, value: 'yes' | 'no', ticket: number): string {
-  const field = /((?:^|·)[ \t]*\*\*Owner try:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
-  return headerField(body, field, 'Owner try', value, ticket);
-}
-function withObjective(body: string, id: string, ticket: number): string {
-  const header = ticketHeader(body);
-  return headerField(header, objectiveField, 'Objective', id, ticket) + body.slice(header.length);
-}
-function withRepairs(body: string, refs: string[], ticket: number): string {
-  const header = ticketHeader(body), rest = body.slice(header.length);
-  if (refs.length) return headerField(header, repairsField, 'Repairs', refs.join(', '), ticket) + rest;
-  const ownLine = /^[ \t]*\*\*Repairs:\*\*[^·\r\n]*\r?\n/im;
-  if (ownLine.test(header)) return header.replace(ownLine, '') + rest;
-  if (repairsField.test(header)) return header.replace(repairsField, (_, prefix, _old, suffix) => `${prefix}none${suffix}`) + rest;
-  return body;
-}
-
 const acceptanceName = (text: string) => text.replace(/`|\*\*/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 export function unfinishedAcceptance(items: readonly AcceptanceItem[], notes: readonly string[]) {
@@ -574,21 +527,6 @@ export function unfinishedAcceptance(items: readonly AcceptanceItem[], notes: re
   });
 }
 
-/** Acceptance is the checklist before Comments; checkboxes in discussion aren't acceptance. */
-export function landedTicket(original: string, ticket: number, comment: string, notes: readonly string[]) {
-  const start = original.search(/^## Comments[ \t]*\r?$/m);
-  const before = start < 0 ? original : original.slice(0, start);
-  const { ownerTry, items } = ticketFileEvidence(before);
-  const unfinished = unfinishedAcceptance(items.map((item, i) => ({ id: i + 1, ...item })), notes);
-  const skip = new Set(unfinished.map(({ id }) => id));
-  let index = 0;
-  const checked = before.replace(/^([ \t]*[-*] \[)([ xX])\]/gm, (match, prefix, mark) =>
-    !skip.has(++index) && mark === ' ' ? `${prefix}x]` : match);
-  const body = withStatus(checked, ownerTry ? 'ready-for-human' : unfinished.length ? 'ready-for-agent' : 'done', ticket);
-  const pending = unfinished.length ? `- Acceptance left unticked: ${unfinished.map(({ id }) => `#${id}`).join(', ')}.\n` : '';
-  return { body: (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${normalizeHomePaths(comment)}\n${pending}`, unfinished };
-}
-
 export interface UnattendedAcceptanceFailure {
   ticket: string;
   error: string;
@@ -601,7 +539,7 @@ export interface UnattendedAcceptanceResult {
   deferred?: boolean;
 }
 
-/** Record unattended lead acceptance in the ticket store (or legacy Markdown) and attempt a non-blocking commit at run end. */
+/** Record unattended lead acceptance in the JSON ticket store and attempt a non-blocking commit at run end. */
 export async function recordUnattendedAcceptance(
   root: string,
   home: string,
@@ -617,68 +555,31 @@ export async function recordUnattendedAcceptance(
     if (!tickets.length) return { persisted, failed, firstChanged: undefined as string | undefined };
     const at = new Date().toISOString();
     const summary = normalizeHomePaths(verdict).replace(/\s+/g, ' ').trim().slice(0, 400);
-    const scratch = join(mainRoot, '.scratch');
-    let scratchChecked = false;
-    let scratchMirror = false;
     let firstTicket: string | undefined;
     const dirtyDocs = new Map<string, { doc: TicketFeatureDoc; tickets: string[] }>();
 
-    for (const { path, ticket } of tickets) {
+    for (const { ticket } of tickets) {
       const ref = parseTicketRef(ticket);
       if (!ref) continue;
       try {
         const dirty = dirtyDocs.get(ref.feature);
         const doc = dirty?.doc ?? readJsonTicketFeature(mainRoot, ref.feature);
-        if (doc) {
-          if (doc.mirror) continue;
-          const record = doc.tickets.find(t => t.number === ref.number);
-          if (!record) continue;
-          if (record.accepted?.flow === flowId) {
-            persisted.push(ticket);
-            continue;
-          }
-          if (record.landing && record.acceptance.some(item => !item.done)) continue;
-          if (record.status !== 'wontfix') {
-            record.status = 'done';
-            delete record.claimed_at;
-          }
-          record.accepted = { at, by: 'lead', flow: flowId, ...(summary && { verdict: summary }) };
-          record.updated_at = at;
-          if (dirty) dirty.tickets.push(ticket);
-          else dirtyDocs.set(ref.feature, { doc, tickets: [ticket] });
-          continue;
-        }
-
-        // Legacy unmigrated Markdown ticket fallback.
-        if (!directoryExists(scratch)) continue;
-        if (!scratchChecked) {
-          scratchChecked = true;
-          try { scanScratch(scratch, true); }
-          catch (err) {
-            if (err instanceof Error && /GitHub mirror/i.test(err.message)) { scratchMirror = true; continue; }
-            throw err;
-          }
-        }
-        if (scratchMirror) continue;
-        const relFromScratch = relative(resolve(scratch), resolve(path));
-        if (!relFromScratch || relFromScratch.startsWith('..') || isAbsolute(relFromScratch)) continue;
-        const st = fs.lstatSync(path, { throwIfNoEntry: false });
-        if (!st || !st.isFile() || fs.realpathSync(path) !== resolve(path)) continue;
-        const original = fs.readFileSync(path, 'utf8');
-        const marker = `- Accepted by unattended lead (${flowId}):`;
-        if (original.includes(marker)) {
+        if (!doc || doc.mirror) continue;
+        const record = doc.tickets.find(t => t.number === ref.number);
+        if (!record) continue;
+        if (record.accepted?.flow === flowId) {
           persisted.push(ticket);
           continue;
         }
-        const start = original.search(/^## Comments[ \t]*\r?$/m);
-        const before = start < 0 ? original : original.slice(0, start);
-        const { status, unfinishedLanding } = ticketFileEvidence(original);
-        if (unfinishedLanding) continue;
-        const body = /^wontfix$/i.test(status ?? '') ? before : withStatus(before, 'done', ref.number);
-        const updated = (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n${marker} ${summary}\n`;
-        writeLegacyTicket(mainRoot, home, relative(mainRoot, fs.realpathSync(path)), updated, st.mode & 0o777);
-        persisted.push(ticket);
-        firstTicket ??= ticket;
+        if (record.landing && record.acceptance.some(item => !item.done)) continue;
+        if (record.status !== 'wontfix') {
+          record.status = 'done';
+          delete record.claimed_at;
+        }
+        record.accepted = { at, by: 'lead', flow: flowId, ...(summary && { verdict: summary }) };
+        record.updated_at = at;
+        if (dirty) dirty.tickets.push(ticket);
+        else dirtyDocs.set(ref.feature, { doc, tickets: [ticket] });
       } catch (error) {
         failed.push({ ticket, error: error instanceof Error ? error.message : String(error) });
       }
@@ -723,177 +624,4 @@ export async function syncTickets(cwd: string) {
   };
   await ticketsCommand(['sync', '--cwd', cwd], { env: process.env, stdout: capture, stderr: capture });
   return { ok: true, output };
-}
-
-export async function editLocalTickets(cwd: string, args: Record<string, unknown>, home: string, op: 'add' | 'update', edits: TicketEdits, mainRoot = sharedRoot(cwd)) {
-  const { feature } = args;
-  const scratch = join(cwd, '.scratch');
-  scanScratch(scratch, true);
-  let objectiveIds: Set<string> | undefined;
-  const objectiveId = (value: unknown) => {
-    if (typeof value !== 'string' || !new RegExp(OBJECTIVE_SLUG).test(value)) return invalid('objective');
-    objectiveIds ??= new Set(readObjectives(mainRoot)?.objectives.map(({ id }) => id));
-    if (!objectiveIds.has(value)) throw new Error(`unknown objective: ${value}`);
-    return value;
-  };
-  const resolveBlockers = (value: unknown, feat: string, known: Set<number>) => {
-    if (!Array.isArray(value)) return invalid('blocked_by');
-    const refs = value.map(ref => {
-      const match = typeof ref === 'string' && /^([a-z0-9-]+)\/(\d+)$/.exec(ref);
-      const n = match ? Number(match[2]) : ref;
-      if (!number(n)) return invalid('blocked_by');
-      const exists = match && match[1] !== feat
-        ? (readJsonTicketFeature(mainRoot, match[1])?.tickets ?? list(join(scratch, match[1]))).some(t => t.number === n) : known.has(n);
-      if (!exists) throw new Error(`unknown blocked_by ticket: ${ref}`);
-      return match ? `${match[1]}/${nn(n)}` : nn(n);
-    });
-    return refs.join(', ') || 'none';
-  };
-  const resolveRepairs = (value: unknown, feat: string, known: Set<number>) => {
-    if (!Array.isArray(value)) return invalid('repairs');
-    return value.map(raw => {
-      if (!canonicalTicketRef(raw)) return invalid(`repairs (invalid ticket reference: ${String(raw)}; expected <feature>/<NN>)`);
-      const ref = parseTicketRef(raw)!;
-      const exists = ref.feature === feat
-        ? known.has(ref.number)
-        : (readJsonTicketFeature(mainRoot, ref.feature)?.tickets ?? list(join(scratch, ref.feature))).some(t => t.number === ref.number);
-      if (!exists) throw new Error(`unknown repairs ticket: ${raw}`);
-      return raw;
-    });
-  };
-  if (op === 'add') {
-    if (args.updates !== undefined) return invalid('updates');
-    if (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature)) return invalid('feature');
-    const featureDir = join(scratch, feature),
-      issues = join(featureDir, 'issues');
-    const existing = list(featureDir);
-    const known = new Set(existing.map(t => t.number));
-    if (!Array.isArray(args.tickets) || !args.tickets.length) return invalid('tickets');
-    const shared = args.objective === undefined ? undefined : objectiveId(args.objective);
-    let next = existing.reduce((max, ticket) => Math.max(max, ticket.number), 0);
-    // Plan the entire batch before making directories or writing any ticket.
-    const plans = args.tickets.map((ticket: Record<string, unknown>) => {
-      if (!ticket || typeof ticket !== 'object' || Array.isArray(ticket)) return invalid('tickets');
-      if (!number(++next)) throw new Error('ticket numbering exhausted');
-      const title = line(ticket.title, 'title');
-      const { what, liveTry } = extractWhatAndLiveTry(ticket.what, ticket.live_try);
-      const label = ticket.status === undefined ? 'ready-for-agent' : status(ticket.status);
-      const tryLine = ticket.owner_try === undefined ? [] : [`**Owner try:** ${ownerTry(ticket.owner_try)}`];
-      const liveTryLine = liveTry === undefined ? [] : [`**Live try:** ${liveTry}`];
-      const approvedRemovalsLine = ticket.approved_removals === undefined ? [] : [`**Approved removals:** ${line(ticket.approved_removals, 'approved_removals')}`];
-      const blocked = resolveBlockers(ticket.blocked_by, feature, known);
-      const repairs = ticket.repairs === undefined ? [] : resolveRepairs(ticket.repairs, feature, known);
-      const repairsLine = repairs.length ? [`**Repairs:** ${repairs.join(', ')}`] : [];
-      const repoLine = ticket.repo === undefined ? [] : [`**Repo:** ${repoFieldValue(ticket.repo)}`];
-      if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');
-      const items = ticket.acceptance.map((item) => `- [ ] ${line(item, 'acceptance')}`);
-      const objective = ticket.objective === undefined ? shared : objectiveId(ticket.objective);
-      const body = [
-        `# ${nn(next)}: ${title}`,
-        '',
-        `**Status:** ${label}`,
-        ...tryLine,
-        ...liveTryLine,
-        ...approvedRemovalsLine,
-        `**Blocked by:** ${blocked}`,
-        ...repairsLine,
-        ...repoLine,
-        ...(objective === undefined ? [] : [`**Objective:** ${objective}`]),
-        '',
-        `**What to build:** ${line(what, 'what')}`,
-        '',
-        ...items,
-        ...(items.length ? [''] : []),
-        '## Comments',
-        '',
-      ].join('\n');
-      known.add(next);
-      return { number: next, path: join(issues, `${nn(next)}-${slugify(title, next)}.md`), body, objective };
-    });
-    for (const { number, path, body } of plans) await edits.stage({ ticket: `${feature}/${nn(number)}`, path, after: body });
-    // Link first: if the record cannot be edited, no ticket is written.
-    const linked = [...new Set(plans.flatMap(({ objective }) => objective ?? []))];
-    if (linked.length) await linkFeature(mainRoot, home, linked, feature);
-    const tickets = plans.map(({ number, path }) => ({ number, path }));
-    const warning = unlinkedWarning(mainRoot, feature);
-    return { ok: true, tickets, ...(warning && { warning }) };
-  }
-
-  const updateOne = async (feat: unknown, item: Record<string, unknown>) => {
-    if (typeof feat !== 'string' || !/^[a-z0-9-]+$/.test(feat)) return invalid('feature');
-    if (!number(item.ticket)) return invalid('ticket');
-    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined && item.repairs === undefined && item.owner_try === undefined && item.objective === undefined && item.repo === undefined)
-      return invalid('status, tick, blocked_by, repairs, owner_try, objective or repo');
-    const existing = list(join(scratch, feat));
-    const known = new Set(existing.map(t => t.number));
-    const matches = existing.filter(({ number }) => number === item.ticket);
-    if (!matches.length) throw new Error(`unknown ticket: ${item.ticket}`);
-    if (matches.length > 1) throw new Error(`ambiguous ticket: ${item.ticket}`);
-    const [ticket] = matches;
-    const original = edits.read(ticket.path);
-    const comments = original.search(/^## Comments[ \t]*\r?$/m);
-    let body = comments < 0 ? original : original.slice(0, comments);
-    if (item.tick !== undefined) {
-      if (!Array.isArray(item.tick) || !item.tick.every(Number.isSafeInteger)) return invalid('tick');
-      const box = /^([ \t]*[-*] \[)([ xX])\]/gm;
-      const count = body.match(box)?.length ?? 0;
-      const unknown = item.tick.find(n => n < 1 || n > count);
-      if (unknown !== undefined) {
-        throw new Error(`unknown acceptance item: ${unknown} (${count ? `valid range: 1-${count}` : 'no acceptance items'})`);
-      }
-      const tick = new Set(item.tick);
-      let index = 0;
-      body = body.replace(box, (match, prefix, mark) => tick.has(++index) && mark === ' ' ? `${prefix}x]` : match);
-    }
-    if (item.status !== undefined) body = withStatus(body, status(item.status), item.ticket);
-    if (item.owner_try !== undefined) body = withOwnerTry(body, ownerTry(item.owner_try), item.ticket);
-    if (item.blocked_by !== undefined) {
-      const field = /((?:^|·)[ \t]*\*\*Blocked by:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
-      if (!field.test(body)) throw new Error(`missing Blocked by field in ticket: ${item.ticket}`);
-      const refs = resolveBlockers(item.blocked_by, feat, known);
-      body = body.replace(field, (_, prefix, _old, suffix) => `${prefix}${refs}${suffix}`);
-    }
-    if (item.repairs !== undefined) body = withRepairs(body, resolveRepairs(item.repairs, feat, known), item.ticket);
-    if (item.objective !== undefined) body = withObjective(body, objectiveId(item.objective), item.ticket);
-    if (item.repo !== undefined) {
-      const header = ticketHeader(body);
-      const field = /((?:^|·)[ \t]*\*\*Repo:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
-      body = headerField(header, field, 'Repo', repoFieldValue(item.repo), item.ticket) + body.slice(header.length);
-    }
-    const updated = body + (comments < 0 ? '' : original.slice(comments));
-    await edits.stage({ path: ticket.path, ticket: `${feat}/${nn(ticket.number)}`, before: original, after: updated,
-      mode: fs.statSync(ticket.path).mode & 0o777 });
-    return { ok: true, ...ticket };
-  };
-
-  if (args.updates !== undefined) {
-    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined || args.repairs !== undefined || args.owner_try !== undefined || args.objective !== undefined || args.repo !== undefined)
-      return invalid('updates');
-    if (!Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
-    if (feature !== undefined && (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature))) return invalid('feature');
-    const updates = [];
-    for (const raw of args.updates) {
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-        updates.push({ ok: false, code: 'invalid_arguments', error: 'invalid_arguments: updates' });
-        continue;
-      }
-      const item = raw as Record<string, unknown>;
-      const feat = item.feature ?? feature;
-      try {
-        updates.push({ feature: feat as string, ...await updateOne(feat, item) });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        updates.push({
-          ...(typeof feat === 'string' ? { feature: feat } : {}),
-          ...(number(item.ticket) ? { ticket: item.ticket } : {}),
-          ok: false,
-          code: message.startsWith('invalid_arguments') ? 'invalid_arguments' : 'tool_error',
-          error: message,
-        });
-      }
-    }
-    return { updates };
-  }
-
-  return updateOne(feature, args);
 }

@@ -1,0 +1,225 @@
+{
+  "version": 1,
+  "feature": "role-bind",
+  "spec_path": ".scratch/role-bind/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A role is the work; it runs on its first available place",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "feature spec items 1–6, 8, 9: role files with `instructions` and an ordered `run` list (old files\nload unchanged), harness `jev` renamed `bro` (old files saying `jev` still load), `oracle` with three browser places\nand `flow` with `kind`, dispatch on the first available place, quota/rate-limit failure marks the place exhausted for\nan hour (stored under `$HUD_HOME`, read by roster and panel), `on` with the harness default table, CLI instructions\nchosen by role (implementer.md, new read-only reviewer.md), `unsupported_harness`, roster fields `run`, `runs_on`,\n`exhausted`. Delete the role files of item 8; update hud-delegate skill, reference (en/zh),\ndocs/releases/0.1.4.md and the tests that named them.\n\n**Size:** about 350 source lines\n\nLegacy role: agy-imp (gemini-4-hydrogen-high)\n\nLegacy Blocked by: none (PROJECT-HUB 02 landed)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`imp` with places [pi sol, agy hydrogen]: pi missing → agy is used; exhausted pi → agy; the failure text names it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`hud_create(role: \"imp\", on: \"agy\")` uses the table's model; `model` still wins",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "oracle's places reach jev-ask / jev-aistudio; flow `kind: video` reaches jev-flow video",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Old role files (incl. `harness: \"jev\"`) and `$HUD_HOME/roles` files load; deleted names are gone",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Tests with a fake herdr and fake tools, no real model calls",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Real runs by the orchestrator: `imp` on agy, `reviewer` on claude, an oracle question; recorded below",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "first agy session (j2341a54f3f7c0e5d) was quit mid-test by the supervisor bug (cli-workers 09);\na second agy session (jba3c4d2596162ff8) finished it. Landed as 5b0d5b37. Orchestrator changes: shipped `imp` and\n`reviewer` run on pi only (fallbacks are the owner's, under `$HUD_HOME/roles`), agy's shipped default is\ngemini-4-argon-high; tests adjusted. Full suite green (527), release rehearsal passes. Real runs wait for every\nclient's hud MCP to reconnect: older servers read the new role files as invalid."
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator, real runs after the MCP reconnect (synthetic repo /tmp/hud-realrun-0114)",
+          "text": "`imp` with `on: agy`\nran gemini-4-hydrogen-high from `$HUD_HOME/harnesses.json`, fixed the file, report, idle_grace (j61707701a17ba497);\n`reviewer` with `on: claude` (haiku, low) got reviewer.md and returned a two-axis read-only review, closed\n(j7acb233aff8921fa); `oracle` went to ChatGPT Pro through jev-ask and answered, closed (jb58cdca5cab816e1)."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.092Z"
+    },
+    {
+      "number": 2,
+      "title": "A place catalog and a safe write for the panel",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "role-bind/01"
+      ],
+      "what": "the data the control plane page needs to switch places: a catalog per harness (agents, models,\nthinking levels; shipped defaults, `$HUD_HOME/harnesses.json` additions) and functions that write a role's `run`\nlist to `$HUD_HOME/roles/<role>.json` (atomic, keeps unknown fields, refuses a symlink) and clear an exhausted mark.\nNo rendering.\n\n**Size:** about 150 source lines\n\nLegacy role: agy-imp (gemini-4-hydrogen-high)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Catalog lists what `hud_create` accepts for each harness",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Writing a run list then `hud_roster` shows it; unknown fields kept; symlink refused; shipped files never written",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Clearing a mark makes the place available again",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "implemented by imp on agy (j286e2ad9ab91088c), landed as de4dce7a; 11 tests;\nfull suite 533 green."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.094Z"
+    },
+    {
+      "number": 3,
+      "title": "The control plane page switches where each role runs",
+      "status": "done",
+      "role": "frontend-imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "role-bind/02",
+        "project-hub/03"
+      ],
+      "what": "feature spec item 7 on the Control plane page from PROJECT-HUB 01: groups (roles, browser tasks,\nharnesses), each role's place, fallbacks and exhausted marks; keys to cycle harness/model/thinking of the primary,\nadd/remove/reorder fallbacks and clear a mark, written through 02; EN/ZH, 40/80/120 columns; help and reference.\n\n**Size:** about 300 source lines, frames regenerated",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each role appears once with its place and fallbacks; browser tasks apart; harness availability visible",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A switch made in the panel is what the next `hud_create` uses (test through real input and the roster)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Enter/`o` still opens the role's source file",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "landed 19333df8 (480/480). Keys on a role row of the Control plane: p/P harness, m/M\nmodel, e/E thinking, + add fallback, - remove, K/J reorder, x clear exhausted mark, Enter/o open the file in force.\nA project `.hud/roles` file in force refuses edits. Model lists still come from the static catalog (ROLE-BIND 04)."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.094Z"
+    },
+    {
+      "number": 4,
+      "title": "Model lists come from the harnesses, the catalog is the fallback",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "role-bind/03"
+      ],
+      "what": "**Why:** owner 2026-11-14 asked how the selectable models are obtained. Today they are a hand-kept list\n(`packages/hud-mcp/catalog.json` + `$HUD_HOME/harnesses.json` `catalog`), which goes stale.\n\n**What to build:** `placeCatalog` models for pi, agy and grok come from the harness's own list command\n(`pi --list-models`, `agy models`, `grok models`), run only when the Control plane page opens or on its refresh key,\nnever on the refresh tick, bounded (timeout, output cap, no shell), cached under `$HUD_HOME/display` for about a\nday. claude and codex keep the catalog list (no list command). A failed or missing command falls back to the\ncatalog silently. The owner can type a model name on a role row (one-line input); a typed model is saved in the role\nand offered again. Model ids only: never read or show credentials or provider config beyond the id.\n\ninput pattern is not already there · **Size:** about 150 source lines\n\nLegacy role: imp (agy) for discovery + cache; the one-line input on the Control plane by frontend-implementer if the\n\nLegacy Blocked by: 03 (landed 19333df8)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "pi/agy/grok lists come from the harness, cached a day; claude/codex from the catalog; failure → catalog",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No list command runs on a normal refresh (test counts spawns)",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "A typed model is written to the role and shows in the cycle next time",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.094Z",
+          "author": "legacy",
+          "text": "Status note: (picker follow-up in PROJECT-UX phase 2)"
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "landed f2c17e05 (493/493): discovery for pi/agy/grok with a one-day cache, catalog\nfallback, `r` refresh on the Control plane, typed models from role files join the list. The typed-input box was\nnot built (no input pattern existed)."
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "owner",
+          "text": "cycling ~170 pi models is unusable. Model choice becomes a provider → model picker with\nfiltering; curated by default to arena (all), mistral (deepseek), anthropic (opus), openai (gpt-6 series), newest\nper family only, dated snapshots and old lines (o1…) hidden; include list overridable in\n`$HUD_HOME/harnesses.json` `catalog.pi.include`; a show-all toggle; the role's current model always shown. Built in\nPROJECT-UX phase 2 (frontend-implementer) together with the Control plane rework."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.094Z"
+    },
+    {
+      "number": 5,
+      "title": "`oracle` is a local advisor; `pro` is the browser role",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "**Why (owner 2026-11-14):** \"oracle was put under browser tasks; this logical role should be a local model; list GPT 6\nPro separately as pro.\" For this project the oracle runs on Fable for now.\n\n**What to build:**\n- New shipped role `pro` with the places the shipped `oracle` has today (bro: ChatGPT 6 Pro → Gemini → AI Studio\n  gemini-4-argon); it is in the Control plane's Browser tasks group with `flow`.\n- Shipped `oracle` becomes a local read-only advisor: `instructions: \"oracle\"`, `can_continue: false`, run\n  `[cli claude model fable, pi pi_role architect]`. Add `packages/hud-mcp/instructions/oracle.md` (read-only: answer\n  the brief's design question with facts and file:line, mark guesses, no edits/builds/commits, write the answer to the\n  report path). It is in the Roles group, not Browser tasks.\n- Everything that names oracle as a browser role follows (roster, Control plane groups, convention text, docs\n  `reference.md`/`.zh.md`, `.scratch/role-bind/spec.md` item 3, tests).\n\n**Size:** small (role files, one instructions file, group lists, tests)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`hud_roster` lists `oracle` (cli/claude fable, fallback pi architect) and `pro` (bro chatgpt 6 Pro, fallbacks)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Control plane: oracle under Roles, pro and flow under Browser tasks",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`hud_create role=pro` dispatches a browser task; `hud_create role=oracle` starts claude with `--model fable` (fake herdr), with the oracle instructions in the brief",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "landed b56129ce (497/497). The agy job settled to idle_grace with its report on its own: first clean agy settle after the 04/05 stopgap."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.094Z"
+    }
+  ]
+}

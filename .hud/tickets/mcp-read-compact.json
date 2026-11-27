@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "feature": "mcp-read-compact",
+  "spec_path": ".scratch/mcp-read-compact/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Return a compact actionable hud_read list; keep recent history on demand",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Implement [the list contract](../spec.md) in one vertical slice. A model polling `hud_read({})` should receive the IDs and facts it can act on, not a copy of its recent job history. Keep the old result available explicitly.\n\n\n**Delivery:** One `imp`, package `mcp-read-compact`, in its own worktree. No functional dependency on `mcp-next`; coordinate with its writers of `thin-main.ts`, `role-client.ts` and `thin-mcp.test.mjs` rather than racing their edits. Preserve landed features. Budget: roughly 100 production/schema lines and at most two new main-path tests, reusing existing fixtures. Build the HUD and MCP and run the affected thin-MCP tests (including pi schema parity) once on Node 24 with temporary homes. No self-review, new dependencies or benchmarking suite. If it requires a storage/lifecycle change or a broader tool rewrite, stop and report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Implement `view?: \"compact\" | \"recent\"` on the no-job path in `packages/hud-mcp/src/thin-main.ts`; keep the real MCP tool description/schema and `PI_ROLE_TOOLS` in `src/harness/pi/role-client.ts` in sync. Reject invalid/list-only argument combinations as specified. Keep the top-level `jobs` array in both modes.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Verify the actual `tools/call` response with synthetic data: 4 ordinary working jobs + 1 closed job with an unread report + 15 settled/handled jobs yields **5 short rows by default vs. the same 20 legacy rows in `recent`**. Ordinary rows have exactly `job`, `role`, `state`. The unread row survives a second poll with no changes; adding newer handled history cannot push it out of compact. Record both model-visible `content[0].text` UTF-8 byte sizes on the same quiet fixture and the percentage saved; bytes are not tokens.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Use existing cases to verify a pending question carries its `qN` ID, a block/wait or unobserved failure keeps its actionable reason, and an observed failure with no other pending item is history. Preserve once-only `changes` even for hidden rows and existing watcher metadata. Neither list reads report/question bodies, stamps `read_at`/`observed_at` nor triggers read-close. Single-job `wait_ms`, `report_unchanged` and `full:true` continue to work as before.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Migrate any in-tree history/full-row consumers to `view:\"recent\"` before flipping the default; keep legacy assertions (notably the STATUS parity table in `tests/unit/thin-mcp.test.mjs`) on that path instead of deleting coverage. Update `packages/hud-mcp/README.md`, `docs/reference.md` and the shipped `hud-delegate` list guidance. Do not change the panel or watch/event policy to make a test pass.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.044Z",
+          "author": "legacy",
+          "text": "Status note: (e629b295)"
+        },
+        {
+          "at": "2026-11-18T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "verified on universal-hud (e629b295), Node v24.22.1, temp homes: build, build:test, build:hud-mcp pass; thin-mcp + pi-package + hud-watch 148/148. Actual tools/call content[0].text on the quiet fixture (4 working, 1 closed sonic with unread report, 15 handled): default 327 bytes / 5 rows, recent 4,475 bytes / 20 rows, 92.69% saved (bytes, not tokens). Second quiet poll keeps report_unread:true and leaves the report unread; newer handled jobs push it out of recent, not compact; their changes still arrive once."
+        }
+      ],
+      "created_at": "2026-11-18T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.044Z"
+    }
+  ]
+}

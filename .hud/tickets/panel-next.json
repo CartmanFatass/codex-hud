@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "feature": "panel-next",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Read one try in place",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "panel-tidy/02"
+      ],
+      "what": "Owner and architect, 2026-11-17: the owner's bottleneck is trying landed work; a waiting item is a\nmilestone try with several checks whose end matters as much as its title. In the Project hub's Waiting block (and from\nHome's waiting rows), Enter on an item opens its whole text from STATE, scrollable, and Esc returns to the same row.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The whole bullet as STATE writes it, continuation lines included, in its own order and words (no generated checklist, no model call).",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Long text scrolls with the movement keys and the wheel; Esc or a crumb click returns with the cursor on the item.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Zero extra reads per refresh: the text comes from the STATE parse the hub already does (keep continuation lines in that parse if needed).",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Main-path frame test with a synthetic multi-line bullet at 38 columns, EN and ZH chrome.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.063Z",
+          "author": "legacy",
+          "text": "Status note: (7c96e9af)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.063Z",
+      "updated_at": "2026-11-27T06:39:46.063Z"
+    },
+    {
+      "number": 2,
+      "title": "Progress page shows only what is still to try",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "panel-next/01"
+      ],
+      "what": "Architect, 2026-11-17: \"what else hasn't been tried?\". On the Progress page, selecting the to-try\ncount filters the page to slices in state `try`, grouped by milestone (older milestones folded), with a visible way\nback to the full feed.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Filter by the ledger's exact state, never by matching prose.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "The filter shows in the crumb or header so the owner knows the page is filtered; Esc or the same key clears it.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Zero extra reads (the ledger is already parsed).",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Main-path frame test with a synthetic ledger across two milestones.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.063Z",
+          "author": "legacy",
+          "text": "Status note: (6c514fdb)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.063Z",
+      "updated_at": "2026-11-27T06:39:46.063Z"
+    },
+    {
+      "number": 3,
+      "title": "Control plane shows the selected place in full; Inspector shows how long a job ran",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Architect, 2026-11-17: let the owner check a preset without cycling it or opening a JSON file; and\n(orchestrator's item kept) show a job's run time where its endpoints are known.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Control plane: below the compact role list, the row under the cursor is shown in full: role, harness, model, thinking, and whether it is the place the next job uses, a fallback, or exhausted (with until). Long ids wrap, never cut. Data from the existing `ControlFacts`; no model-list command on cursor movement.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Inspector: a `ran` fact (`12m`, `1h05m`) from started → ended for a settled job, started → now for a running one; absent when either endpoint is unknown. No cost and no lane totals.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Main-path frame tests: one role with a fallback and an exhausted place; one settled and one running job.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.063Z",
+          "author": "legacy",
+          "text": "Status note: (ee4bc94f)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.063Z",
+      "updated_at": "2026-11-27T06:39:46.063Z"
+    }
+  ]
+}

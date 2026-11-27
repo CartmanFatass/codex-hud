@@ -220,7 +220,7 @@ test('pane-less unattended ticket queue dispatches, lands, reviews, accepts, and
   await f.settleLead(f.flow(flow).active_lead.job);
   const done = await f.end(flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));
-  assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* done/);
+  assert.equal(f.ticketRecord(1, 'sample', 'base')?.status, 'done');
 });
 
 for (const mode of ['ordinary', 'unattended']) {
@@ -364,7 +364,7 @@ test('unattended Objective run lands tickets in one run (N + 2 sessions), record
   await f.settle(w1, { report: 'Synthetic finished.\nRemoves: legacy-banner\n' });
   await until(() => f.flow(flow1).tickets.find(x => x.ticket === 'sample/01')?.landed === true, 15_000);
   // Owner try: yes landed as ready-for-human until lead acceptance.
-  assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* ready-for-human/);
+  assert.equal(f.ticketRecord(1, 'sample', 'base')?.status, 'ready-for-human');
 
   const w2 = await u.ticketJob(flow1, 'sample/02');
   await f.settle(w2, { report: 'Synthetic finished.\n- **Blockers:** NoNe!\nRemoves: NONE;\n' });
@@ -381,13 +381,14 @@ test('unattended Objective run lands tickets in one run (N + 2 sessions), record
   assert.equal(run1Jobs.length, 4, `expected N+2=4 sessions, got ${run1Jobs.map(j => j.role).join(', ')}`);
   assert.deepEqual(run1Jobs.map(j => j.role).sort(), ['imp', 'imp', 'lead', 'reviewer']);
 
-  // Durable acceptance recorded on landed Owner try: yes ticket (status done + run id/verdict comment).
-  const acceptedText = fs.readFileSync(join(f.root, f.ticketPath(1)), 'utf8');
-  assert.match(acceptedText, /\*\*Status:\*\* done/);
-  assert.match(acceptedText, new RegExp(`Accepted by unattended lead \\(${flow1}\\): finish: Verified both slices cleanly\\.`));
+  // Durable acceptance recorded on landed Owner try: yes ticket (status done + accepted receipt).
+  const accepted = f.ticketRecord(1);
+  assert.equal(accepted?.status, 'done');
+  assert.equal(accepted?.accepted?.flow, flow1);
+  assert.equal(accepted?.accepted?.verdict, 'finish: Verified both slices cleanly.');
   assert.equal(f.git(f.root, 'log', '-1', '--format=%s'), 'tickets: sample/01 accept');
-  assert.deepEqual(f.git(f.root, 'show', '--format=', '--name-only', 'HEAD').split('\n'), [f.ticketPath(1), f.ticketPath(2)]);
-  assert.equal(f.git(f.root, 'status', '--porcelain', '--', '.scratch'), '');
+  assert.deepEqual(f.git(f.root, 'show', '--format=', '--name-only', 'HEAD').split('\n'), ['.hud/tickets/sample.json']);
+  assert.equal(f.git(f.root, 'status', '--porcelain', '--', '.hud/tickets'), '');
 
   // Board (ProjectCollector) reads the durable acceptance as done, not try.
   const snap = await new ProjectCollector(f.root, f.home, f.env).collect(true, { workers: [], lanes: [] }, Date.now());
@@ -481,7 +482,7 @@ test('unattended holds an item whose imp dispatch refuses trust after preflight'
   f.onCleanup(() => u.cmd('off'));
   u.cmd('on', '--objective', 'selected');
   writeFixtureFile(join(f.env.HOME, '.gemini', 'antigravity-cli', 'settings.json'), '{}');
-  writeFixtureFile(join(f.root, f.ticketPath(1)), goodTicket(1));
+  f.writeJsonTicket(1);
   const flow = await u.findRun('selected');
   const job = await u.ticketJob(flow, 'sample/01');
   const done = await f.end(flow);
@@ -607,10 +608,13 @@ test('held item stays on Home, excludes itself and dependents from shared admiss
   await u.accept(flow);
   const done = await f.end(flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));
-  assert.match(f.git(f.root, 'show', `base:${f.ticketPath(3)}`), /\*\*Status:\*\* done/);
+  assert.equal(f.ticketRecord(3, 'sample', 'base')?.status, 'done');
 
   // Adding a fresh ready ticket after `off` starts no new run.
-  fs.writeFileSync(join(f.root, f.ticketPath(4)), goodTicket(4));
+  await f.call('hud_tickets', {
+    op: 'add', feature: 'sample', cwd: f.root,
+    tickets: [{ title: 'Synthetic 4', blocked_by: [], what: 'Synthetic change 4', acceptance: ['Checked'], live_try: 'none' }],
+  });
   await new Promise(r => setTimeout(r, 300));
   assert.deepEqual(u.status().runs.map(r => r.flow), [flow]);
 

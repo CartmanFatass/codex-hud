@@ -1,0 +1,470 @@
+{
+  "version": 1,
+  "feature": "pi-worker",
+  "objective": "pi-worker",
+  "spec_path": ".scratch/pi-worker/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Headless Sonic runs on HUD's own pi worker extension without pi-roles",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Design `.scratch/pi-worker/spec.md` (read whole; slice 1; owner approved removals R1–R4). HUD core builds the pi argv in process (no `pi-role`, no `--role-bundle`, no `--hud-*` flags) and writes a private per-job contract `<job>/pi-worker.json` read once by the extension via `HUD_JOB_DIR`. Add the worker extension (`src/harness/pi/worker/*` compiled to dist, thin `.mjs` entry; installed under `$HUD_HOME/pi-worker/` by core install, never `pi install`ed; checkout fallback for tests) with modules `contract`, `role-runtime` (verify model/thinking, fail fast; tool activation; role prompt section from `packages/hud-mcp/instructions/<name>.md` so the prompt matches today), `tools` (today's `hud.mjs` worker branch: hud_report/hud_progress/hud_lease for Sonic), `mistral-budget` (port of the owner's mistral-request-budget; images archived under the job dir), `web-search` (DeepSeek search/fetch; key from `~/.hud/credentials.env` `DEEPSEEK_SEARCH_API_KEY`, plus a one-time explicit `hud import` from the old key file), and a native writer of `tps` session entries in the same format pi-tps writes today (toktrack may read them; verify format). Add the in-code role defaults table keyed by today's `pi_role` names so role files that omit `model` keep today's model (the owner's sonic deepseek preset omits it). Lazy-load the dispatch graph in `src/worker/tools.ts` (orchestrator import costs ~80 ms). Route only headless Sonic through the new path; other roles stay on pi-role until later slices. No runtime legacy switch; rollback = revert.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Parity dump (role section, active tools, model, thinking) for headless Sonic matches the legacy path except the approved removals; test asserts it.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Unit tests: contract round trip, argv golden, role-runtime on a fake pi, Mistral budget and DeepSeek search with stubbed fetch, credentials import, tps entry format.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Live: ~10 real Sonic jobs incl. a web scout run on the new path with reports; cost probe (offline pi, temp HOME) reports pre-model startup before/after.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.074Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "4dbb54abeb0adcd4293fd1bd3f2645ed23412bc1",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "imp j9d0b51127341b4a9 committed d6787754 (worktree MyHUD-wt/pi-worker-41b4a9): real-pi parity\nmatched, offline startup median 398 → 265 ms, 77/77 + 85/85 focused tests. Held: land only after the hmasd Sonic\nbatch b8d86947d528de015 ends (it changes the Sonic launch path). After land, main: `hud import preview\n--deepseek-key --from <old key file>` then apply, then ~10 live Sonic jobs incl. a web scout, then project-lead\nacceptance."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.074Z"
+    },
+    {
+      "number": 2,
+      "title": "All headless pi roles run on the HUD worker extension with the read-only guard",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pi-worker/01"
+      ],
+      "what": "`.scratch/pi-worker/spec.md` slice 2. Port the pi-roles guard (`strict` for reviewer; `oracle` mode that also allows `/tmp`, `/dev/shm` and the job dir but blocks repo edits, git mutations, in-place edits, installs), session-mode `hud_ask` (persist, end turn, resume exact session, `HUD_RESUME_SESSION_ID` check), `hud_sonic` with ready notices, borrowed instructions for `general`, and the rest of the role defaults table. Route every headless pi job through the new path. Delete the test-only twins `integrations/pi/roles/*.md` and `integrations/pi/skills/helper-pane` and point fakes/tests at `packages/hud-mcp/instructions`. `pi_role` accepts only the five shipped names (R4) with a clear error.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Ported guard tests (reviewer strict, oracle mode allowances and blocks).",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Headless ask → hud_respond → resume works without pi-role; effective model/thinking correct for role files omitting fields, presets and borrowed instructions.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.075Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b8abfebbfdd23261dd06562eae2269ec4d519b18",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.075Z",
+      "updated_at": "2026-11-27T06:39:46.075Z"
+    },
+    {
+      "number": 3,
+      "title": "HUD core owns tab reaping and first-prompt stall recovery",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`.scratch/pi-worker/spec.md` slice 3. Port `pi-role-reap` faithfully into `src/` plus a `hud-reap` bin (same ownership checks: exact pid + start time, protected orchestrator/foreign panes, tab names, stop marker, idle `/quit` + grace, `--after-pid`; keep the stderr text the watcher parses; no pi-roles ledger writes, R1) and switch its three callers (`operations.ts`, `watch-runtime.ts`, `panel-pane.ts`) — it also reaps CLI tab workers. Port `prompt-stall.mjs` to an in-process function used by `harness-pi.ts` (at most one Enter, only for the just-started bound pane with the exact prompt in an idle editor). This code kills processes: ask for a separate reviewer pass in your report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Ported reap tests (protection, renamed tab refusal, idle vs working, pid reuse refusal, --after-pid) and prompt-stall tests; existing watcher-reap, panel and close suites pass with updated command assertions.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.075Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ea068894bfb28417e192dd841eda9d2030be9909",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "imp j3bd8576dccfd4ee1 committed 42e93cf9 (worktree MyHUD-wt/pi-worker-fd4ee1). Reviewer\nj689ee8785e0968d7: changes-required. Blockers: (1) CLI supervisor may stamp a replacement occupant's PID — prove\njob ownership before publishing, fail closed; (2) stale receipt can /quit or close a replacement tab (label match +\nno agent is not ownership; split-only path; session OR name) — require positive launch evidence (e.g. HUD_JOB_DIR).\nMajors: (3) stop before CLI PID discovery freezes cleanup; (4) resumed pi prompt counted delivered by a prior user\nturn — use a transcript boundary; (5) editor matcher accepts ambiguous buffers — decline Enter; (6) distinct\nownership-refused vs verified-cleanup outcome for descendants; (7) browser receipt path not canonicalized\n(symlinked HUD_HOME). Optional: document --after-pid tightening. Repair sent to the same imp; re-review required\nbefore land (process-killing code)."
+        },
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "fix 072a9d7a re-reviewed by jb91504b183e4bb03: changes-required. Fixed: #3, #4, #5, #6. Still\nblocking: (1) CLI discovery proves the shell, not the agent invocation — a same-named CLI restarted in the job shell\ninherits the UUID env and can be stamped and SIGTERMed; refuse unless evidence is specific to the agent launch.\n(2) Dead-PID Pi fallback (`reap-tab.ts:125–136`) still allows `/quit` on a reopened same-transcript Pi — remove it.\n(new) `reap-tab.ts:108–118` discards the shell PID's own foreground entry, so `exec vim` in the old pane gets its tab\nclosed — require the original shell at an interactive prompt or decline. Major: (7) `worker-tree.ts:58–61` compares\n`task_dir` verbatim, so an aliased older browser receipt skips both tree captures and `hud_close` can return 0 with a\ngrandchild alive — one canonical receipt check at both layers, mismatch is an issue, not a no-op. Second repair round\nto the same imp; another re-review before land."
+        },
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "repair 5abe6f23 re-reviewed by je20e15fcf0ec3567: changes-required. Fixed: Pi `/quit` (#2), tab\nclose by shell identity (#3), canonical receipt check (#4). Blocker (new, reproduced with a real `sonic-run`): the\nregistered-sonic exclusion in `worker-tree.ts:130–134` still compares jobs-root path strings literally, so a stop\nthrough a path alias captures and SIGTERMs a separately registered sonic child — use the same canonical comparison.\nPartly fixed (#1): CLI adoption is exact, but a completed contradictory foreground observation (different PGID,\nleader is the shell or another name) returns at `cli-supervisor.ts:168–169` without recording the refusal — report\nit, distinct from an aborted query. Third repair to the same imp; re-review before land."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.075Z"
+    },
+    {
+      "number": 4,
+      "title": "Tab pi workers run on the HUD worker extension with HUD's footer",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pi-worker/02",
+        "pi-worker/03"
+      ],
+      "what": "`.scratch/pi-worker/spec.md` slice 4. Port the tab lifecycle from pi-roles `dispatch.ts`/`dispatch-policy.ts` (STATUS writer, session link, sync/async ask steering, Sonic child collection prompt, idle grace 2/3 cache TTL ≤ 20 min and $0.50 warm cap unchanged, stop, auto-close via hud-reap) as a tab-only lazily loaded module; consolidate QA into `src/worker/qa.ts` (fs-watch wake, in-process notify). Tab UI entry mounts HUD's own footer (`createP10kFooter`) with native t/s; attach herdr's installed `herdr-agent-state` on herdr tabs; MCP adapter only on `mcp: true` (R2), installed under `$HUD_HOME/pi-worker/optional/`; `lens` opt-in. Removed in worker tabs (approved R3): `/role`, `/brief`, `/deepseek-*` slash commands, `PI_ROLES_KEEP_TAB`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Ported dispatch-policy/dispatch/async-ask/autoclose tests on a fake pi with fake timers; STATUS checked against the `JobStatus` contract; tab suites pass.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live: one reviewer tab and one imp tab: follow-up during idle grace, stop mid-turn, sync and async question, resume.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.075Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3e9b383f74aa67a21367ebe71b28cc58df25e6f1",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "context since herdr-fork/04 (26350ad3). Tab Pi now starts through the herdr fork's direct-exec `agent.start` (pi is the tab's PTY root; `src/mcp/dispatch/harness-pi.ts`, `direct-exec.ts`). Tab close after a clean exit belongs to the fork (`on_exit: close_on_zero`) plus HUD's `reapDirect` (`src/runtime/reap-tab.ts`) for retention and crashes. Do not port `pi-role-reap` or any tab-close logic from pi-roles; \"auto-close\" here means the worker extension ends pi cleanly when the job settles (native shutdown, exit 0). `PI_ROLES_KEEP_TAB=1` exists only to stop pi-roles' launch-blind reaper; drop it together with the pi-roles dispatch extension, and make sure no launch-blind reaper remains. herdr-fork/06 changes `waitDirectReady` in `direct-exec.ts` in parallel; leave that function alone. Live checks run on the installed fork (`herdr --version` ends `-hud.<sha>`); until herdr-fork/05+06 land, a fresh tab may lose its first prompt (main rescues it)."
+        },
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "imp j755529c775e4c41c (cb61cd65; its tab lost its binding in the 0409f9fa handoff, so main closed the tab after a PID/start check and set STATUS closed with the reason, backup STATUS.json.bak-main-repair); gate repair j393210afb320cf13 fixed two tests for the native tab launch; landed e8c381d5 (flow f755529c775e4c41c). Live on fork 0.9.5-hud.76b187b0 with general pi tab jobs: sync hud_ask answered (j4638e45d6c2c8fc5 q1), follow-up during idle grace resumed the same session (`continuation: resumed`), async hud_ask answered while the worker kept working (q2), stop mid-turn recorded `stopped / stop requested` and reaped (j169026ec1c52b6c0). A stopped job without a report is not continuable by design (`hud_send` resumes only closed-with-report jobs); resume was checked on the reported job."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.075Z"
+    },
+    {
+      "number": 5,
+      "title": "HUD no longer needs pi-roles installed",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pi-worker/04"
+      ],
+      "what": "`.scratch/pi-worker/spec.md` slice 5. Remove the legacy launch path and the `hud.mjs` worker branch (keep its main-session delegate), `pi-mcp-config.ts`, PATH checks for `pi-role`/`pi-role-reap`/`pi-dispatch` (roster, role-control, setup, doctor, install.d/herdr.sh), and update docs (reference, ARCHITECTURE, installer READMEs). The owner's interactive pi and `~/Fishpref/pi-roles` are not touched.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A synthetic install with no pi-roles on PATH runs Sonic, an imp tab and a reviewer headless job.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "grep of executable and installer paths finds no pi-roles names.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.075Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "947e75d5a33d5678125305a0875232a49a489e09",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "imp j22d7f22e6795fdc0 (8f6cc0cf, preset fast via the owner's even placement), landed 6c5da7ae (flow f22d7f22e6795fdc0). Owner approved the removal list first; the Project page's external role-file row also went (it only showed pi-roles files HUD no longer reads). Live on the owner's machine: sonic je3f027d43318bca5 (headless; citations and reads recorded), general pi tab j41d69e938847a521, reviewer j92335f087c1c9fb9 all launched as `pi` directly (no pi-role), reported and closed. Explicit `mode: headless` for reviewer is refused by the existing rule (role not continuable); the reviewer ran in its default mode."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.075Z"
+    },
+    {
+      "number": 6,
+      "title": "Resuming a closed tab job does not emit a false 'failed | tab closed' notice",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Observed twice on 2026-11-25 (job j3bd8576dccfd4ee1, imp on pi in a herdr tab): main sent `hud_send` to a closed tab job; the send resumed it (`continuation: resumed`) and the worker kept working in its tab, but the hud-mod wake immediately delivered `imp pi-worker: failed | tab closed | <old report summary>` while `hud_peek` showed `state: working`. Likely cause (verify, do not assume): the watcher's tab-close reaping (tests/unit/thin-mcp-watcher-reap.test.mjs: 'fails only a nonfinal job whose tab closes') sees the previous turn's tab/pane close after the resume has already made the job nonfinal, or the resume opens a new tab and the old one's close is attributed to the resumed job. Spec §2.1: silence or a display label cannot fail a live worker; a completion notice is not a read; no false failure. Fix so a tab close that belongs to a previous turn (or a tab the current turn does not run in) never fails or notifies the resumed job; a real close of the tab the current turn runs in still fails it as today. Out of scope: other notice kinds, reaping rules landed in pi-worker/03. Size: ~60 source lines, 1-2 tests.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a closed tab job is resumed by a send; the old turn's tab closes afterwards; no failed state and no failure notice for the job, and its next report settles normally",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: closing the tab the resumed turn runs in still fails the job as today",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Live try: hud_send to a closed imp tab job; the wake shows no 'failed | tab closed' line while the job works",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.075Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b81cb6be5b4db6e2768853e5041e5a1e087b70db",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.075Z",
+      "updated_at": "2026-11-27T06:39:46.075Z"
+    },
+    {
+      "number": 7,
+      "title": "Hotfix: CLI workers start again; the invocation witness survives the owner's shell rc",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Regression from pi-worker/03 (landed a34ee9fb), 2026-11-25: every CLI worker (claude, agy, codex, grok in herdr tabs) fails at dispatch with `error: unknown option '--hud-invocation=<uuid>'` (job j04ea7f4d3cd6234f, frontend-imp on claude). Cause: `harness-cli.ts` puts the witness shim dir first in the tab's PATH via `herdr tab create --env PATH=...`, then `herdr agent start ... -- <token> <args>`; the interactive zsh reads the owner's `~/.zshrc`, which prepends `~/.local/bin` (lines 15, 119), so `claude` resolves to the real binary and the argv token reaches it. Tests used shells without an rc. Fix in two commits, first one landable alone: (1) Hotfix: never put the token in the agent's argv. Carry it in the tab env (e.g. `HUD_INVOCATION_TOKEN`) that the shim checks; the witness file's exclusive create already makes it one-use. If the shim is bypassed, the real CLI starts normally and HUD finds no witness: it refuses adoption and reports it, as the fail-closed rule says. (2) Make the shim reachable after the owner's rc without editing any owner file: e.g. start the tab shell with a HUD-owned `ZDOTDIR` whose `.zshenv`/`.zshrc` source the owner's real ones (`$HOME/.zshenv`, `$HOME/.zshrc`, keeping their behaviour) and then put the witness dir first in PATH; other shells: decide the simplest equivalent or leave them on the refusal path and say so. Tests must use a shell rc that prepends a directory containing a fake agent (the real failure shape). Out of scope: any other pi-worker/03 rule. Size: ~80 source lines, 2-3 tests.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A CLI worker launched in a tab whose shell rc prepends the real agent's directory starts and runs; the agent's argv never contains a HUD token",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "With the shim reachable, the witness is published and the supervisor adopts exactly that PID; with the shim bypassed, the job runs, adoption is refused and the reason is reported",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No owner file (~/.zshrc, ~/.zshenv, ~/.bashrc) is written",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Live try (main): dispatch one frontend-imp job on claude and one general job on agy after landing; both start and settle",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.075Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "67ad815a48fd8954e156852faf5f0cb5be5977db",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.075Z",
+      "updated_at": "2026-11-27T06:39:46.075Z"
+    },
+    {
+      "number": 8,
+      "title": "Hotfix: a reused herdr tab ID never makes a new job look closed",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Observed 2026-11-25 20:33: fresh imp job j6daafb3598870be7 (pi) launched into herdr tab `w5M:t10` and the owner got `failed | tab closed` at once; the job kept working because pi then wrote its own STATUS. herdr reuses tab IDs (current tabs t1M..t1Y then t10). The watcher's `closedTabs` set (`src/runtime/watch-runtime.ts` ~L145, `rememberClosedTab`, `openRuntime().tab`, and the handoff `start(state, tabs)`) keeps an old close of `w5M:t10`, and `tabClosed = closedTabs.has(tab)` (~L679) then matches the new job's SESSION; with no pi pid yet the branch at ~L770 writes `failed / tab closed`. CLI jobs take the ~L705 path with the same stale fact and may be judged terminal; the reap path (~L483) also consults `closedTabs`. Fix the fact, not the symptom: a close counts for a job only if it happened after that job's tab receipt was created (e.g. close events carry a sequence/time and are compared with the launch receipt, or claiming a tab in a new receipt retires that ID from `closedTabs` in every watcher generation including the handoff). Cover pi fresh launch, CLI fresh launch, resume into a reused ID, and a real close after launch still failing the job. Process-safety rules from pi-worker/03 stay as they are (exact PID+start, verified shell identity).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A close event for a tab ID recorded before a job's launch receipt never marks that job failed, for pi and CLI fresh launches and for resume",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A close of the job's own tab after launch still fails it and wakes main",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The watcher handoff (reload) cannot resurrect a stale close for a reused ID",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Tests reproduce the reused-ID case first (red before the fix)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.075Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7585ff0f946ff02cb05981028220d3eb2241788a",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.075Z",
+          "author": "legacy",
+          "text": "Accepted residuals (known liveness gaps until `herdr-fork/03-04`):\n- Receipts with an unmatched or missing `HERDR_SOCKET_PATH` endpoint are skipped by tab/pane probes.\n- A pane ID reused across a Herdr restart answers present to `pane.get`."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.075Z",
+      "updated_at": "2026-11-27T06:39:46.075Z"
+    },
+    {
+      "number": 9,
+      "title": "Hotfix: Claude CLI workers start again (the witness shim execs the PATH name, not the versioned realpath)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Observed 2026-11-25 20:37 and 20:39 after pi-worker/07 landed (b8abfebb): every frontend-imp job on claude fails with herdr's `timeout: timed out waiting for agent startup` (jobs j3a0711153840bab8, jeed4b400b88964c7); agy works (j62c48d2fc462b3ca, witness adopted). The shim did run and wrote witness.json, so claude started. Cause: `src/mcp/dispatch/harness-cli.ts:137` takes `real = executable(place.agent)` from `src/roles/roster.ts:114`, which returns `fs.realpathSync`. On this machine `~/.local/bin/claude` is a symlink to `~/.local/share/claude/versions/2.1.332`; the shim and `execWitness` (`src/runtime/cli-invocation.ts`) exec that versioned file, so the kernel names the process `2.1.332`, argv[0] is the versioned path, and herdr's `agent start --kind claude` never recognizes a claude agent. Fix: the launch execs the path as found on PATH (the symlink, e.g. `~/.local/bin/claude`) with argv[0] the agent name, in both the witness branch and the plain branch of the shim; keep `executable()`'s realpath for any caller that needs it (check each caller; don't change trust or identity checks that rely on the resolved file). Witness identity stays exact PID + start ticks. Add a test whose fake agent is a symlink to a versioned file name and assert the started process's `comm` and argv[0] are the agent name (red before the fix). Then main live-checks a claude job.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A CLI agent reached through a symlink to a versioned file runs with comm and argv[0] equal to the agent name, through the witness branch and the plain branch",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The witness still records the exact PID and start ticks of the agent process",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test with a symlinked versioned fake agent is red before the fix and green after",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.075Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "602cc8103d163c4b66d892135009f973022a8597",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.075Z",
+      "updated_at": "2026-11-27T06:39:46.075Z"
+    },
+    {
+      "number": 10,
+      "title": "Hotfix: finished job tabs close again when the owner's shell runs startup helpers",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Observed 2026-11-25: since pi-worker/03 landed (a34ee9fb, watcher reload 20:06:59Z) no finished job tab closes; every reap in `~/.hud/watch.log` ends `exit=1` and `hud-reap` says `original shell identity or idle foreground unverified; not closing` (`src/runtime/reap-tab.ts:172-174`). Cause: `confirmIdleShells` (`src/runtime/tab-shell.ts:46-50`) refuses when any active process other than the shell is in the shell's session. The owner's zsh (powerlevel10k) starts helpers in that session at shell startup: `gitstatusd` and two zsh async workers reparented to the session's subreaper. Real case, job j6daafb3598870be7, shell 2675221 start 3338768: helpers started at 3338778 and 3338846, the agent (pi 2676358) at 3338948; a later prompt helper is a zombie. Fix the rule, not by name: session members that started before the worker's recorded start (pi STATUS `pid_start_time`, CLI witness `start`) are shell startup, not worker leftovers, and do not block the close; anything started after the worker started that is still active still refuses (a background job the worker left). Decide and test what happens to prompt helpers the shell spawns after the worker exits (p10k redraws the prompt): they must not block forever, and must not open a hole for a worker's own background child (which starts while the worker runs). Never match by process name. Tests use a real zsh with an rc that starts a daemon at startup and a helper per prompt (precmd), like p10k (pi-worker/07 lesson: no bare-shell fixtures). Also make the watcher log carry the reaper's refusal reason (today stderr is lost and the log only says exit=1). Process-killing code: extra review before land.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A finished pi job and a finished CLI job in a real zsh tab whose rc starts a background daemon and per-prompt helpers are reaped and their tab closes",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A background process started by the worker while it ran still blocks the close",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No process is matched by name; identity stays exact PID + start ticks",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "watch.log shows the reaper's refusal reason on exit 1",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Land gate passes after a separate review",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.075Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "92d03d4b44cf0fbccb78bb2bf2b239983dc82ff8",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.075Z",
+      "updated_at": "2026-11-27T06:39:46.075Z"
+    }
+  ]
+}

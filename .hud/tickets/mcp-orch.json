@@ -1,0 +1,315 @@
+{
+  "version": 1,
+  "feature": "mcp-orch",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Launch facts: valid thinking per model, next place on a failed launch, worker HUD home",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Starts after WORKER-MCP lands (same launch path). The model facts record which thinking levels each model supports (today only a boolean, src/roles/model-discovery.ts:21); every dispatch maps an unsupported level to the nearest supported one and names it; a place whose launch fails before the worker takes any input is skipped for that dispatch and hud_create tries the next place in the same call, returning the places tried; in worker mode the HUD home comes from the job directory, so worker tools work under Codex without HUD_HOME forwarded. Spec §2.1 (owner 2026-11-21). Proposal: oracle report j61e7649cba37181c A1, A2, A8.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A sonic or imp dispatch with an unsupported thinking level launches with the nearest supported level and the result names it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A launch that fails before input falls through to the next available place in one hud_create call; the result lists the places tried and the real cause of each failure",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Worker tools resolve the HUD home from the job directory when HUD_HOME is unset",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Main-path tests for the three behaviours pass",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.043Z",
+      "updated_at": "2026-11-27T06:39:46.043Z"
+    },
+    {
+      "number": 2,
+      "title": "Derived keys, repair of a closed job, one send to several jobs, retry_of",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "request_key and message_key become optional: the HUD derives them (hash of pane, role, cwd and task; job and text for a send), an explicit key still wins. hud_send to a job closed by a read creates the repair job itself with the earlier brief and report as references and returns continued_as. hud_send accepts jobs: [...] and sends only to working jobs, naming those skipped. hud_create({retry_of}) copies a failed job's brief and options onto the next available place. Proposal A3, A6, A7.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_create and hud_send work without a key and a retry of the same call returns the same job or send",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_send to a closed job returns continued_as with a new job whose brief references the earlier brief and report",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "hud_send with jobs sends once per working job and lists skipped jobs",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "hud_create with retry_of re-dispatches a failed job's brief on the next place",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Main-path tests pass",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.044Z",
+      "updated_at": "2026-11-27T06:39:46.044Z"
+    },
+    {
+      "number": 3,
+      "title": "Standing brief and a convention without per-harness delivery text",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "A registered project's .hud/brief.md is referenced in every local brief after the task (never before it: the opening lines feed tab labels and panel titles) and inlined, bounded, in browser briefs through the existing context block. The convention's per-harness delivery lines (hud-convention.md about lines 23-37) move into tool results as a hint for the caller's own harness; the server remembers it already sent the convention so the model no longer passes convention_version. Proposal A4, A5.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A project with .hud/brief.md gets one reference line after the task in every local brief; tab labels are unchanged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_create and hud_roster results carry a delivery hint for the caller's harness only",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The convention no longer describes Claude, Codex and pi delivery; a second hud_roster in the same session omits the convention without convention_version",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Main-path tests pass",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.044Z",
+      "updated_at": "2026-11-27T06:39:46.044Z"
+    },
+    {
+      "number": 4,
+      "title": "Leases for shared resources",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Starts after WORKER-MCP (worker-mode tool list). hud_lease({name, release?}) in both modes: an exclusive file under $HUD_HOME/leases/ keyed by project root and name; the call waits a bounded time inside the caller's own turn and returns granted or held_by; a lease whose holder job is terminal or whose process is gone is reclaimed by the next caller. No resident process. Control shows a lease row (name, holder, waiting, age). Proposal B1.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Two workers asking for the same lease: one is granted, the other gets held_by and is granted after release",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A lease held by a closed or dead holder is reclaimed by the next caller",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The main session can hold and release a lease",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Control shows active leases",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Main-path tests pass",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.044Z",
+      "updated_at": "2026-11-27T06:39:46.044Z"
+    },
+    {
+      "number": 5,
+      "title": "Project scope and restart recovery",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Jobs belong to a project, not a pane: hud_read({}) and changes are scoped to the caller's project root; a session in the same project adopts jobs whose recorded pane is gone (questions then reach the new session); after a machine restart, a worker that herdr resumed in the job's tab is recognised and kept rather than recorded as failed (seen 2026-11-21: herdr resumed a pi imp and a Claude oracle, HUD had failed both and reaped nothing). Proposal B4 plus restart recovery.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_read({}) lists only the caller project's jobs",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A new session in the same project receives questions and events of jobs whose pane is gone",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A job whose worker herdr resumed after a restart is shown as working and settles normally",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Main-path tests pass",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-21T00:00:00.000Z",
+          "author": "MCPORCH-05, 86754046",
+          "text": "items 1, 2 and 4 landed. Item 3 (restart recovery) stopped under its stop rule:\nafter a reboot the watcher sees the dead supervisor and the old worker pid/start time and writes `failed: worker\nexited`, while herdr relaunched the session with a new pid. herdr 0.9.5 exposes tab/pane ids, agent name and an\noptional native session ref, but no proof that the process now in the pane is the job's worker with its settlement\nhooks; pane ids are server-scoped and receipts do not pin the server. A follow-up needs the HUD to record the herdr\nserver and the native session id at launch and to reattach the lifecycle writer only on a matching session."
+        },
+        {
+          "at": "2026-11-21T00:00:00.000Z",
+          "author": "RESTART-RECOVERY, job jed235679bed45e93",
+          "text": "an isolated herdr 0.9.5 stop/start smoke showed resumed agents\nkeep their exact `agent_session`, name and tab (new pids), but lose `HUD_JOB_DIR`; pi restarts as `pi --session\n<path>` without `--task-dir`, `--hud-worker-tools` or the HUD extension, Claude as `claude --resume <id>` without its\nflags; `resume_argv` did not change that. So identity can be proven, but the worker protocol cannot be restored by\nadopting the pid. Remaining option (owner decision): the HUD itself relaunches a recognised session with its bindings\n(pi `--session <path>` + the launch contract and job env; Claude `--resume <id>` + job env) in the job's tab."
+        },
+        {
+          "at": "2026-11-21T00:00:00.000Z",
+          "author": "owner decision",
+          "text": "option B, restarts stay manual. Item 3 is not built; the spec line now says so."
+        }
+      ],
+      "created_at": "2026-11-21T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.044Z"
+    },
+    {
+      "number": 6,
+      "title": "HUD-run checks bound to the report",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-orch/01"
+      ],
+      "what": "hud_create({checks: [commands]}): after the worker declared the turn finished, a short-lived helper started by the on-demand watcher runs each command in the job's directory with a timeout and writes checks.json (exit code, duration, output tail, report signature). A new turn or rewritten report makes it stale. hud_read and the event line carry the result; the Inspector and job card show a check chip. Commands come only from the main session. Checks never settle, accept or fail a job. Proposal B3.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A job with checks gets checks.json bound to its final report signature",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A repair turn marks earlier check results stale",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "hud_read and hud watch show pass or fail per check",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "No resident process beyond the watcher and its short-lived helper",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Main-path tests pass",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.044Z",
+      "updated_at": "2026-11-27T06:39:46.044Z"
+    },
+    {
+      "number": 7,
+      "title": "MCP tasks for Claude Code (verify first)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Pulled forward from the M5 candidates (spec). First verify, in a real Claude Code session, how MCP tasks wake the session, cancel and show in /tasks; report before building. Then one task per worker turn (hud_create, hud_send, hud_respond) ending at a report or question; the result is state, report path and a one-line summary, not a read; cancel closes the job; such clients do not see hud_wait, hud watch, changes or watcher_alive. Removes the 30-minute Monitor re-arm.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A written verification of Claude Code's wake, cancel and /tasks behaviour with MCP tasks",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "If verified: a Claude main session dispatches and is woken at report or question without hud watch",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Main-path tests pass",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-21T00:00:00.000Z",
+          "author": "verify phase (job j70542da6fda0ba80, probe in tmp/tasks/MCPORCH-07/probe/)",
+          "text": "Claude Code 2.1.330 ignores the\n2025-11-25 `params.task` flow but supports the 2026-07-28 `io.modelcontextprotocol/tasks` extension (`server/discover`,\nflat `resultType:\"task\"` from `tools/call`, `tasks/get` polled every 5 s). The turn ends at once, `/tasks` lists the\ntask, an idle session is woken with a `<task-notification>` carrying the result, a 620 s task worked, cancel from\n`/tasks` sends `tasks/cancel` twice. Unverified: wake across reconnect or process exit, durations beyond 10 minutes.\nBuild phase: MCPORCH-07b."
+        }
+      ],
+      "created_at": "2026-11-21T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.044Z"
+    },
+    {
+      "number": 8,
+      "title": "Coalesce settlement notices",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Settlement lines that arrive within a few seconds become one notice in hud watch and the other delivery paths (src/cli/watch.ts:20-21), so a large main-session context is woken once; questions stay immediate. Small.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Three settlements within the window produce one notice naming all three",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A question is delivered at once",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Main-path test passes",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.044Z",
+      "updated_at": "2026-11-27T06:39:46.044Z"
+    }
+  ]
+}

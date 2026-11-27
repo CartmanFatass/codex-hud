@@ -1,0 +1,748 @@
+{
+  "version": 1,
+  "feature": "workflow",
+  "objective": "engine",
+  "spec_path": ".scratch/workflow/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "One workflow engine runs the batch flow as its first shipped template",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec §2.1 (D-2026-11-25-05/06); design in `.scratch/workflow/spec.md` (read it whole; slice 1). Build the engine core by generalising the batch runner: graph types + TOML/JSON loader + validator (strict keys per kind, cycles, ancestor-only `from`, unknown/disabled roles, limits, cost class incl. the large-batch rule), run store under `$HUD_HOME/flows/` (header `<id>.json` as a superset of today's batch shape + `<id>/` dir, `writeJsonPrivate`, `withAbstractLock('flow-state', id)`, one driver via `tryAbstractLock('flow-runner', id)`), DAG scheduler, the shared failure policy (lifted from `settleItem`/`failuresByReason`: breaker `rate|first|none`, first failure of a reason wakes once, pause = implicit hand-back), one notice ledger (same keys/markers as today), a detached `workflow-runner` host that exits when paused/idle and is respawned by control calls and the watcher, and the `batch` step kind. Ship `packages/hud-mcp/workflows/batch.toml`; `hud_create({items})` and `hud_create({batch, action})` become shims over it with unchanged ids (`b…`), scale summary, pilot per preset, reserved slots (cap−2, non-batch first), `manifest.json`/`index.json`, `hud_read` view and notice text. `batch-runner` is replaced by `workflow-runner`. No new public MCP tool; `hud_create` schema size unchanged. Watcher: list active runs once per pass and parse a header only when its mtime changes. Performance is first-class: report runner cold start and watcher pass cost before/after.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Capture the batch notice strings and `hud_read` batch view as golden fixtures before changing code; they stay byte-identical.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`tests/unit/thin-mcp-fixed-batch.test.mjs` passes unchanged; new unit tests cover validation refusals, scheduling and the failure policy on a fake step kind, crash recovery (dispatched-without-job bound by request key, never reissued) and duplicate runner start.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A live 3-item Sonic batch (synthetic briefs) runs end to end through the engine with one end notice.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Runner cold start and watcher pass cost reported (before/after) in the report.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "6bf4f685916e9a153b4424a8e84e7a53cdcb4320",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "imp jbd90857fd49955de committed b61136ba (goldens) + e7782305 (engine; worktree\nMyHUD-wt/workflow-9955de). Kill/recovery and dispatcher-loss tests pass; fixed-batch suite unchanged; flow notice\nscan 4.39 → 1.71 ms. Held: land only after the hmasd batch b8d86947d528de015 ends (replaces the batch runner).\nAfter land, main runs a real-provider 3-item Sonic batch smoke."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 2,
+      "title": "Prewalk scouts run as the prewalk workflow template",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "workflow/01"
+      ],
+      "what": "`.scratch/workflow/spec.md` slice 2. Add the `job` step kind and an inline host (in the MCP, `host: \"mcp\"` recorded) plus watcher adoption of an orphaned inline run into a detached runner. Ship `prewalk.toml` (optional Sonic fan-out → target job, `from` scouts, breaker `none`, scouts outside the role cap, target id reserved before scouts). Both launch paths (`dispatchWithKey` and `startQueuedJob` in `src/mcp/dispatch/orchestrator.ts`) call the engine; remove the duplicated scout orchestration (`runPrewalkScouts`, `pendingScouts`, `scoutedCreates`). Behaviour unchanged: `scouting` status, `prewalk`/`scout_state`/`scout_error` receipt fields, the \"Scout failed\" brief note, owner pool picks, stop text, MCP task continuity.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`thin-mcp-prewalk` and scout tests pass unchanged.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A test kills the inline host mid-scout and the watcher adopts the run; the target still starts once.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Added time per scouted create measured and reported.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "686613ebdcecdef351943e5a3ccecce79bae3d14",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "scope (owner, D-2026-11-25-08): the engine ships only batch, prewalk, council and land templates; tickets 05-07 are deferred. workflow/02, 03 and 04 are built in parallel on the landed engine (4dbb54ab) and each adds a step kind: keep step-kind registration additive so the lands compose. Run the focused tests once at the end; the full gate is the land's job."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 3,
+      "title": "Council runs as a workflow template on the detached runner and survives an MCP restart",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "workflow/01"
+      ],
+      "what": "`.scratch/workflow/spec.md` slice 3. Observed 2026-11-25: an MCP restart at 17:40 orphaned council j84ec335faab925fb — all three members finished, the parent stayed `working` forever because `runCouncil` lives in the MCP process. Add the `council` step kind (member fan-out with per-seat presets, quorum ≥ 2, synthesis = main hand-off packet or a `pro`/Fable job) running on the detached host; ship `council.toml`. Keep parent `j…` id and receipt (`council_members` with job/digest/failure, `synthesizer`, `synthesis_job`), `memberInstruction`/`synthesisTemplate` text, \"Fewer than two member reports\", browser index, grant reserve/spend/release (`council-grant.ts`) unchanged. Generalise the grant module so later costly runs can use it (bound grants come in the composition ticket).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`thin-mcp-council.test.mjs` passes unchanged.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "New test: the MCP process exits while members run; members settle and the council parent closes with the member digests (main synthesis) without the MCP.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "eda4fb26807f7bf777e61b2f52bdb7b8d7a3e77a",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "scope (owner, D-2026-11-25-08): the engine ships only batch, prewalk, council and land templates; tickets 05-07 are deferred. workflow/02, 03 and 04 are built in parallel on the landed engine (4dbb54ab) and each adds a step kind: keep step-kind registration additive so the lands compose. Run the focused tests once at the end; the full gate is the land's job. Main test: a council survives an MCP restart (members finish, the synthesis hand-off still arrives). Generalise the grant module only as far as council needs, with a clean interface; no bound-grant work (06 deferred). No real model calls."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 4,
+      "title": "Land runs as a sealed land step of the workflow engine",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "workflow/01"
+      ],
+      "what": "`.scratch/workflow/spec.md` slice 4. Add the `land` step kind wrapping today's land helper whole (lease, train, gate + flaky rerun, ticket record, base moves, ff, after, push, cleanup are never split into replayable steps); the engine owns the record header, wake, stop intent, notices and the 2-repair bound. Ship `land.toml`; `hud_land` is a shim. Keep `f<job>[-n]` ids, `LandFlow` fields, `landNotice` text, gate log sidecars, attempt ids, `readJobFlow`/`collectLandWork` readers, and the never-replay rule. Replace the per-tick parse of every retained flow receipt (`landEvents`) with the engine's active-run scan.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The six `thin-mcp-land*` suites pass unchanged.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Kill tests: runner killed during gate and during repair; recovery neither replays publish nor loses the result.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "9a37797ba319f18ffe84d6e0581299a96f0188e8",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "scope (owner, D-2026-11-25-08): the engine ships only batch, prewalk, council and land templates; tickets 05-07 are deferred. workflow/02, 03 and 04 are built in parallel on the landed engine (4dbb54ab) and each adds a step kind: keep step-kind registration additive so the lands compose. Run the focused tests once at the end; the full gate is the land's job. Land is the critical path: the land helper stays whole and never-replay holds; the existing ticket queue keeps calling land through the `hud_land` shim (05 deferred)."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 5,
+      "title": "The ticket queue runs as a workflow template",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "workflow/04"
+      ],
+      "objective": "unattended",
+      "what": "`.scratch/workflow/spec.md` slice 5. Ticket queue = `batch` step with a ticket source, per-item `job → land`, policy `first`, no pilot. Keep `q…` ids, new id on resume with carried tickets, auto-resume after a `hud_respond` answer, the clean-settlement rules (declared report, no `Blockers:`, checks not skipped, not marked for main review, HUD checks passed), `ticketQueueNotice` text, cross-feature blocker waits. Retire `ticket-queue-runner`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`thin-mcp-ticket-queue.test.mjs` passes unchanged.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "1f5e08398fc265c3584d78d817f28d89e4521a84",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "deferred by the owner (D-2026-11-25-08): complex workflows wait until one is designed on the engine. Not ready for agents."
+        },
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "revived for the unattended service (D-2026-11-26-02, unattended/01). Owner's hand-back rule for unattended runs: the lead escalates only an item that would delete a user-visible feature or change the spec; everything else (failures, owner-try acceptance, worker questions) the lead handles within its authority. A run must not depend on the main session being alive."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 6,
+      "title": "Main composes and runs its own workflows with check and hand-back steps",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "Ask main to compose a small workflow (build -> check -> review -> hand-back -> land) on a scratch ticket: hud_workflow plan shows the frozen plan and cost class, start runs it, the hand-back appears as one wake line and answering it picks the branch; a costly plan is refused without a fresh owner grant.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`.scratch/workflow/spec.md` slice 6. Add `check` (argv or a named project command, no shell interpolation, cwd from a job step, exit code decides, optional repair to the source worker ≤ 2) and `handback` (pause with `{request_id, step, ask, choices, refs}`, one wake line, answered with `hud_respond({job: <run>, request_id, answer})`, written once, `when` edges select the branch). New `hud_workflow` MCP tool: plan (validate, scale, cost class, frozen hash; launches nothing) / start (main confirmation; costly runs need a fresh owner grant bound to the proposed run, the unbound `/council` grant covers only a standalone council) / status / control (pause, resume, stop, retry_failed). Templates from `$HUD_HOME/workflows/` and registered projects' `.hud/workflows/` (shipped names reserved). Cost: council, `pro`/`flow`, any `bro` place incl. fallbacks, large fan-out (Sonic > 50 items or > 2 MiB, other roles > 12). Update docs/reference.md and ARCHITECTURE.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The build → check → review → hand-back → land recipe runs end to end (synthetic repo) in TOML and JSON forms.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Validation refusals (cycle, non-ancestor ref, unknown role, shell placeholder) and grant refusals (costly without grant, grant for another run, split-batch bypass) are tested.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Reference docs list the tool and template locations.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "4533da53853ab3893961a089c6ab6b5a9377ba44",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "deferred by the owner (D-2026-11-25-08): complex workflows wait until one is designed on the engine. Not ready for agents."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 7,
+      "title": "Workflows end with a qualified acceptance session instead of waking main",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "workflow/05"
+      ],
+      "objective": "unattended",
+      "what": "Spec §2.1 (D-2026-11-25-07): main is the owner's discussion session and is decoupled from runs. A `handback` step goes by default to a qualified acceptance session, not main: a new shipped role `lead` (`packages/hud-mcp/roles/lead.json` + `instructions/lead.md`): a fresh Claude Code tab session on `claude-opus-5-5` at thinking high with the HUD MCP tools, i.e. the same model and powers as the main session (owner 2026-11-25). Owner: this is project-lead acceptance like the main session does today, NOT code review — code review stays with the independent `reviewer` role per the convention, and templates run it as a declared step where the convention calls for one (milestone review, process-killing code, installer, owner config); the lead acts on its findings. The lead receives the run's report refs, the declared choices and the acceptance criteria, decides one branch (finish / repair / continue) with reasons via its report, and its session is closed through herdr when it answers (normal HUD closure). Items the acceptance session is unsure of but that do not block (doubts, follow-ups, possible defects below the bar) go to `Todo:` lines in its report; the runner stores them on the run record, the end notice states the count, and `hud_read({job: <run>})` lists them for main to take to the owner later — they never wake main or stop the run (owner 2026-11-25: tickets are a clear dependency path suited to automatic progress; same-model acceptance keeps behaviour consistent; uncertain items go to todo; this cuts main's tool calls). It may escalate to main only for owner matters that block (scope, value trade-off, visible deletion, irreversible act) — an `escalate` choice that pauses the run and wakes main once. `to: \"main\"` stays available per step. The shipped ticket-queue template gains a closing acceptance step: after the last ticket lands, the lead accepts the feature as main does today: reads the reports and checks, tries it live where the brief or ticket says how, reads the milestone `reviewer` report — the template runs the independent reviewer (two-axis review per `docs/delegation.md` step 5) as a step before the final lead, so the lead never waits on it — and judges its findings, then finishes, or adds repair tickets and continues the queue (bounded: at most 2 repair rounds, then escalate). Owner 2026-11-25: a run is an independent work stream that never depends on the main session being alive; main only looks in. Test-version policy (owner 2026-11-25): the aim is that jobs in a run rarely ask and are sure of their task. (a) Before a run starts, a deterministic ticket check refuses to start and lists gaps when a ticket lacks a goal (`What to build`), acceptance items, valid `Blocked by` references, or a line saying how to try the result (or an explicit `Live try: none`). (b) Jobs in a run get a brief line: proceed on the ticket, spec and your own default; write each assumption as an `Assumed:` line (the runner moves these to the run's todo); ask only when no reasonable default is safe; report owner matters (scope, value trade-off, visible deletion, irreversible act) as `Blockers:`, which pauses the run without a wake. (c) Assumption breaker: a job report with more than three `Assumed:` lines, or one marked as about scope, pauses the run like a failed pilot (one notice on the run, no main wake). (d) A question that is asked goes to a temporary lead started for that question (questions within a short window may share one) — the important fallback; never to main and never to a resident lead. Ask-disabled jobs and hand-backs to `main` remain protocol options any template may choose (the engine is a free composition engine; defaults are template policy). A lead lives for ONE decision: the runner builds a compact packet from the run record (goal, declared choices, report/check/review refs, prior decisions and todo), starts the lead, takes its answer, and closes it; no lead stays alive between decisions (owner 2026-11-25: a long-lived lead would only move main into the workflow). The run record is the run's memory. Main receives only the one end notice (with the acceptance verdict line) and escalations. The lead job runs outside the batch/role cap reservations like scouts; it is cheap-class. The lead never lands outside its run's declared branches and never edits `docs/spec.md`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A run keeps going with the dispatching main session closed (pane gone, MCP gone): leads open in the project's herdr workspace, not the dead main pane; notices and escalations are stored on the run and delivered to the next main session of the project; tested by closing the dispatcher mid-run.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Ticket check refuses a run with gaps and lists them; `Assumed:` lines appear in the run todo; four assumptions (or one about scope) pause the run; a `Blockers:` owner matter pauses with no wake; an asked question starts a temporary lead that answers and closes.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Each lead is a separate short job: two hand-backs in one run start two leads, each closed after answering; no lead process is alive between decisions (asserted in the test).",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A composed run with a default hand-back is answered by a `lead` job (fake claude CLI in tests) and continues without any main wake; `to: main` still wakes main.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Ticket queue end-to-end (synthetic): tickets land, acceptance session runs, a repair round adds a ticket and continues, the second clean verdict finishes; main gets exactly one end notice; escalate wakes main once.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "reference.md and delegation.md describe the acceptance session.",
+          "done": true
+        },
+        {
+          "id": 7,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d3d17787524f385ad369dc04e16b1beab02ba89c",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "deferred by the owner (D-2026-11-25-08): complex workflows wait until one is designed on the engine. Not ready for agents."
+        },
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "revived for the unattended service (D-2026-11-26-02, unattended/01). Owner's hand-back rule for unattended runs: the lead escalates only an item that would delete a user-visible feature or change the spec; everything else (failures, owner-try acceptance, worker questions) the lead handles within its authority. A run must not depend on the main session being alive."
+        },
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "workflow/06 (main-composed graphs) stays deferred, so this no longer waits on it; the last acceptance item is checked on the ticket-queue template run instead of a composed run."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 8,
+      "title": "Engine milestone fixes: prewalk survives MCP disconnect, batch presets stay pinned, land retry and upgrade",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Fix the four blocking findings of `docs/reviews/2026-11-25-engine-milestone.md` in one pass (read it; file:line evidence there). (1) An orderly MCP disconnect (stdin close) must retire the host without stopping an accepted prewalk: cursor, scout jobs and reserved target stay adoptable; only an explicit job stop cancels. Test with stdin close during a live scout. (2) A fixed-batch member keeps its frozen preset in the reserved (prewalk) launch path: no even-pool replanning or quota rotation when `batch_flow` is set; a refused scouted pilot reports failure. Fix it by sharing one attempt/fallback decision between the direct and reserved launch loops in `src/mcp/dispatch/orchestrator.ts` (the review's optional item; the drift between them is the cause), leaving admission, task creation and caller hooks outside it. (3) Land: a witnessed Git refusal that provably left main unchanged clears `publish_pending` so a later `hud_land` can retry; host death, timeout or an unknown result keep the interlock. Test both. (4) Compatibility bootstrap `packages/hud-mcp/bin/land-runner.mjs`: do not send `ready` to a pre-upgrade caller it cannot serve; refuse before ready with an explicit incompatible-generation error the old ticket queue reports (simplest; no legacy-protocol emulation, no replay of legacy Git effects). Also delete the `pane!` assertion at `src/mcp/dispatch/orchestrator.ts:601` (review: unreachable, no new guard). Out of scope: the other optional items (tracked separately or dropped), workflow/05-07.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Stdin close of the MCP during a live prewalk scout: after restart the target launches once; an explicit stop still cancels",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Two-preset imp batch with scouts and a refused pilot reports the failure and never runs on the other preset; direct and reserved launches share one attempt/fallback decision",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Refused ff-merge with main unchanged: a new hud_land attempt runs; unknown result: no new attempt",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Old-generation land caller gets an explicit incompatible-generation failure, never a silent exit after ready",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "pane! assertion removed",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "126ef539c340f07c03e73f63955f69c8e03cc376",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.119Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 9,
+      "title": "A killed land helper never leaves its gate or after command running",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "From the engine milestone review (optional, predates the migration): gate and `after` commands run in their own process groups with the timeout enforced by a timer in the land helper (`src/mcp/land-runner.ts:31–52,154–159`). If the helper is SIGKILLed the lease becomes reclaimable (dead PID+start) but the command keeps running, and an `after` command keeps operating in the main checkout while the next land starts. The next lease acquirer (or recovery) must terminate the dead holder's recorded command group, identified by exact PID+start (pi-worker/03 rules: never kill by name or by a reusable PID), before it proceeds. Process-killing code: extra review before land.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "SIGKILL of the land helper during a gate command: the next land terminates that command group (exact PID+start) before starting its own gate; test proves the orphan is gone",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Same for an after command in main",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A reused PID with a different start time is never killed",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f4c14d46431dc116ab00a0fec454488fce0a9076",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.119Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 10,
+      "title": "Composed workflow repairs from the workflow/06 milestone review",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Via the real stdio MCP in a temp home (tmp/env.sh): plan a cheap build -> check -> hand-back -> land graph whose check fails once, confirm the check reruns only after the source worker's repair report; plan a 3-item batch with breaker first and a failing item, confirm the tail is not admitted (hud_workflow status).",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Fix the blocking findings of `docs/reviews/2026-11-26-workflow-06-milestone.md` (findings 2, 3, 6, 7, 8) in the main-composed workflow code landed by workflow/06 (783f9222, 2ea6a7e5). (a) Finding 6: a check-step repair sent in place to the source worker must wait for a fresh repair turn (new report signature / settlement after the send), not accept the worker's previous settled report; reuse the keyed-turn and report-signature checks in `src/mcp/land-repair.ts` instead of `observeJob` in `src/mcp/composed-step.ts`. (b) Finding 3: composed `batch` steps apply the run's circuit breaker per item before admitting the next item (as `src/mcp/batch-step.ts` does), with grouped failure evidence; reuse that settlement policy instead of the divergent loop in `composed-step.ts`. (c) Finding 2: a run classified cheap must not dispatch more than 2 MiB of Sonic input in total: re-measure at admission and refuse/pause the step with the cost reason when the current aggregate crosses the limit (no new grant path). (d) Finding 7: a composed notice (hand-back wake, end notice) whose delivery failed stays eligible for retry without waiting for unrelated flow activity (`src/workflows/events.ts` stamp cache vs. the claim removed in `panel-delivery.ts`). (e) Finding 8: decide step success with the shared settled-job predicate (`stopped` with a written report counts as done, as in `src/collectors/thin-jobs.ts` and `batch-step.ts`); delete the raw-state override. Keep the run/hash grant recheck, the queued cheap fence and the retiring-driver handoff. Out of scope: the owner-grant issuance boundary (finding 1), the shell basename denylist (4) and refused-dispatch grant refund (5).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A failed check repaired in place re-runs only after the source worker's fresh repair report; a test where the worker's prior report exists proves the check does not rerun early.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A composed batch with `breaker: first` (and `max_parallel: 1`) admits no further items after the first post-pilot failure; failures are grouped by reason in the run record.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A cheap-classified run whose Sonic inputs grow past 2 MiB after planning is refused or paused at admission with the cost reason; nothing over the limit is dispatched.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A hand-back wake whose first delivery fails is delivered on a later tick with no other flow activity; no duplicate wake when the first delivery succeeds.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "A step whose job ends `stopped` with a written report counts as done.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Existing workflow-composed, workflow-engine, batch and ticket-queue tests still pass; land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "11b09151c12d0f1ce87b9cc24580ddbc9080ad55",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.119Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 11,
+      "title": "Composed workflow repairs from the workflow/10 milestone review",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Via the real stdio MCP in a temp home (tmp/env.sh): plan a cheap graph with a Sonic step at the exact 2 MiB bare-task boundary and confirm hud_workflow status shows the cost pause; plan a breaker-first batch with max_parallel 2 where two post-pilot items fail a few seconds apart, confirm status lists both failures, no tail job, and retry_failed reruns both.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Fix the four major findings of the workflow/10 milestone review (report ~/.hud/jobs/j24aa78a55385cd7d/report.md) in the composed workflow code landed by workflow/10 (044cc3eb). (1) Cheap Sonic accounting charges the bare `step.task`/`item.task` in `admitSonicInput` (`src/mcp/composed-step.ts`), but the dispatched job gets the workflow worker rule appended and `create` adds `Workflow results:` paths and `from_jobs` reports. Measure the task and declared inputs actually being admitted, with one shared definition of the dispatched Sonic brief (no second copy); measure prerequisite outputs (from-step reports) once they exist. (2) A composed Sonic job that is queued behind a role cap (`src/mcp/dispatch/orchestrator.ts` queued launch path) can start on a project file that grew past what was charged: at dequeue, re-measure for `workflow_cheap` jobs and refuse/hold with the cost reason when the run's aggregate would cross 2 MiB (or hold at workflow admission until it can start). Keep the existing queued browser fence. (3) A cheap run resumed after the upgrade with Sonic steps already admitted but no `sonic_input_bytes` field must not treat earlier bytes as zero: pause for re-plan with the reason instead; a fresh run with no earlier Sonic admission still starts at zero. (4) A breaker pause must not freeze already-admitted batch siblings: while paused, keep reconciling composed batch members that are running (as the fixed batch does with `batchActive` in `src/mcp/batch-state.ts`) without admitting the tail, so `hud_workflow status`, `failure_groups` and `retry_failed` see every settled failure. Keep the fresh keyed in-place repair, shared `repairSettled`/`settledJobReport`, per-item settlement policy, run/hash grant recheck and retiring-driver handoff. Out of scope: workflow/06 findings 1, 4, 5.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A cheap Sonic step whose bare task plus named file is exactly at 2 MiB but whose dispatched brief (worker rule, result refs) exceeds it is paused with the cost reason; a dependent step with a substantial `from` report is charged that report.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A cheap composed Sonic job queued behind a full role cap whose input file grows past the limit while queued does not start over budget; the browser fence still holds.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A cheap run with an admitted Sonic step and no recorded `sonic_input_bytes` pauses for re-plan on resume; a fresh run starts at zero.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "With `max_parallel: 2` and `breaker: first`, two post-pilot items failing seconds apart both appear in `failure_groups` after settling, `retry_failed` selects both, and no tail item is admitted while paused.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Regression test for the quiet notice-cache branch: a notice primed while another reader holds the claim marker is delivered once on the next tick after the marker is released without changes under `flows/`.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Existing workflow-composed, workflow-engine, batch, land-repair and ticket-queue tests still pass; land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "21d49f2c7082b509a8035c703ac3783cebc961b1",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.119Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 12,
+      "title": "Composed workflow repairs from the workflow/11 milestone review",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Via the real stdio MCP in a temp home (tmp/env.sh) with a registered synthetic project that has a .hud/brief.md: plan a cheap graph with a Sonic step whose task plus file fits under 2 MiB only without the standing brief and confirm hud_workflow status shows the cost pause; plan a one-item breaker-first batch whose pilot fails, confirm one pause, resume once and confirm status shows the step skipped with no second pause.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Fix the five major findings of the workflow/11 milestone review (report ~/.hud/jobs/jcf731127851cd48f/report.md) in the composed workflow code landed by workflow/11 (56d58810), mainly `src/mcp/composed-step.ts`. (1) Cheap Sonic admission measures only the workflow task, named files and declared results; dispatch also adds the context-reference text and, for a registered project, the standing-brief reference to `.hud/brief.md` (`src/mcp/dispatch/context.ts:104-124`). Measure the assembled Sonic input the worker will actually be told to read (task + standing brief + declared files/reports) from one shared description of the dispatched input — reuse or expose the dispatch context assembly, do not keep a workflow-only approximation. Replace the task-prefix exact-fit test (`tests/unit/workflow-composed.test.mjs` around line 398) with a whole-input assertion against a registered project with a real `.hud/brief.md`. (2) A Sonic `job` step with `isolation: 'worktree'` is measured in `run.cwd`, but Sonic runs in the managed worktree populated from committed HEAD (`src/mcp/managed-worktree.ts`). Measure named files in the checkout the worker will use (e.g. committed HEAD content for worktree isolation, or measure after the worktree exists and before input is delivered), and hold/pause with the cost reason if that size cannot be established. (3) `verifySonicLedger` trusts any defined `sonic_input_bytes`, but workflow/10 (044cc3eb) persisted the same field with bare-task accounting. Version the ledger (e.g. a ledger version field written by the current accounting) and treat a run whose ledger lacks the current version and has earlier Sonic admissions as unknown: pause for re-plan with `SONIC_INPUT_UNKNOWN`; a fresh run still starts at zero. Add a companion test with a populated workflow/10-style ledger. (4) A witnessed pre-input refusal from dispatch (e.g. `no_available_place` before any receipt or input delivery, `src/mcp/dispatch/orchestrator.ts:780-789`) keeps its Sonic byte charge, so a later `retry_failed` can pause at the 2 MiB guard before the first worker ever launched. Reverse the charge on definite no-launch refusals (job steps and batch items); keep the charge for unknown outcomes (exceptions, interrupted dispatch). This is the cheap-run byte ledger, not the excluded owner-grant refund. (5) In `tickBatch`, the paused-run early return happens before the drained-cursor check, so a one-item `breaker: first` batch whose pilot failed stays `running`, and after one `resume` the terminal-failure branch pauses the run a second time. Finalize a drained batch cursor (no running, no waiting items) at settlement even when its last item tripped the breaker, keeping the original pause reason, so one resume skips the failed step and `retry_failed` stays a distinct choice. Keep the fresh keyed in-place repair, shared `repairSettled`/`settledJobReport`, per-item settlement policy, paused-sibling reconciliation, hold-at-admission role-cap path, legacy queued refusal, run/hash grant recheck, queued browser fence and retiring-driver handoff. Out of scope: workflow/06 findings 1, 4, 5; recursive charging of reports linked from a batch result index.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A cheap Sonic step in a registered project whose task plus named files fits under 2 MiB but whose assembled input including `.hud/brief.md` exceeds it pauses with the cost reason; the test asserts the whole assembled input, not a task prefix.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A cheap Sonic job with `isolation: 'worktree'` whose committed named file exceeds 2 MiB while the working copy is shortened pauses with the cost reason (or holds with a reason when the size cannot be established) and never launches.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A cheap run resumed with a populated workflow/10-style `sonic_input_bytes` (no current ledger version) and earlier Sonic admissions pauses for re-plan; a fresh run starts at zero; a current-version ledger is trusted.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A cheap Sonic step refused by dispatch before any receipt (e.g. `no_available_place`) has its byte charge reversed, and a later `retry_failed` launches it instead of pausing at the 2 MiB guard; an unknown outcome keeps the charge.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "A one-item `breaker: first` batch whose pilot fails pauses once; one `resume` skips the failed step without a second pause; `retry_failed` instead reruns the item.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Existing workflow-composed, workflow-engine, batch, land-repair and ticket-queue tests still pass; land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d3b0dc840f3b94efb00dfd63df567384865beb85",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.119Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 13,
+      "title": "Cheap-run Sonic sizing: one measurement of what is delivered, conservative on branches, no stuck runs",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "A cheap run whose task names `../data/<3 MiB synthetic file>` from a subdirectory cwd shows the cost pause. A required one-item batch fails during an independent `to: main` hand-back; after the answer the run pauses on the batch failure instead of staying `working`.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Main decision 2026-11-27 on escalation j3966b9f41d17cc62 (workflow/12 milestone review j20ff6d7d96604ca1, 5 majors). Final round on this ledger: simplify rather than add precision. (1) Measure what is actually delivered: size the populated worktree checkout (or the main checkout) after it exists and before input is delivered, and delete the Git blob / symlink / node_modules reconstruction in src/mcp/batch.ts (~54-197, `inputBytesAtHead`). (2) One resolver: dispatch and sizing (`measureSonicInput`, plan-time sizing in src/mcp/composed-workflow.ts) use one resolved reference list from the dispatch context assembly, so plan, admission and launch agree. (3) Relative names resolve from the launch cwd; every resolved path inside the project root counts (finding 2: today a named file outside cwd but inside the project is charged 0). (4) Conservative on branches: a Sonic cursor on a branch not yet ruled out counts; a branch ruled out by a recorded answer stops counting. Over-pausing is accepted; under-counting is not. (5) Liveness (finding 4, regression from workflow/12): when another decision owns the pause, a drained batch's failure stays outstanding and the run pauses on it after that answer; a run never sits at `working` with nothing that can move it. Prefer deleting code to adding cases. Lead acceptance after the next review: accept unless it finds a blocker or a normal-path defect; ledger edge cases become follow-up tickets, not another repair round.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: subdirectory cwd naming `../data/<3 MiB>` inside the project pauses for cost at plan and at admission with the same byte count",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: worktree Sonic step sized from the populated checkout (crlf / smudged file counted at checked-out size); the blob-reconstruction code is gone",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: plan, admission and dispatch use one reference list (a reference added at dispatch is never uncounted)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Test: a branch ruled out by a recorded answer is not charged; an undecided branch is",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Test: a required batch failing during an unrelated main hand-back pauses the run on the failure after the answer",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "83d73fd5177494577dcd3e8adfc2d4ee22fe6c4c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.119Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 14,
+      "title": "Batch breaker stays outstanding across an unrelated hand-back answer",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Via the real stdio MCP in a temp home (tmp/env.sh): run a two-item `breaker: first` batch next to an independent `to: main` hand-back, let the pilot fail before answering, answer the hand-back, and confirm in hud_workflow status that the run pauses on the pilot failure and item 2 has no job. Also cover workflow/13's pending live try: a cheap run whose task names `../data/<3 MiB synthetic file>` from a subdirectory cwd shows the cost pause.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "workflow/13"
+      ],
+      "what": "Fix the one major of the workflow/13 milestone review (~/.hud/jobs/j9be4631050469330/report.md). In `tickBatch` (`src/mcp/composed-step.ts`), an item that settles as failed while the run is paused for another step's hand-back is recorded (`settleBatchItem` in `src/workflows/policy.ts` skips `settlement` when `run.state !== 'working'`), but nothing re-evaluates the breaker after `answerComposed` (`src/mcp/composed-workflow.ts`) sets the run back to `working`. Then the admission guard only checks whether the pilot is *running*, so with `breaker: first` (or a `rate` trip) the next waiting item launches after a failed pilot that main never acknowledged. Fix: a failure that settles while the run is not working stays outstanding (smallest state, e.g. one cursor marker set at settlement). On the next tick where the run is `working`, before any admission, evaluate the breaker for it and pause with the usual reason (`pilot failed — …` / `failure circuit breaker — …`). Item 2 stays `waiting` with no job. Keep the original hand-back answerable, record the failed item immediately as today, and keep the drained-batch liveness path from workflow/13. No new accounting version, no new input resolver, no Sonic ledger changes. Prefer the smallest change; reuse `settlement`/`settleBatchItem` rather than a second breaker evaluator.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: extend the independent-hand-back scenario (tests/unit/workflow-composed.test.mjs ~704) to a two-item `breaker: first` batch; the pilot fails while main is deciding; after the answer, status shows the batch breaker pause and item 2 is still `waiting` with no job",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: after that breaker pause, `resume` / `retry_failed` behave as for a breaker pause raised while working (no double pause, tail admitted only after the control)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Existing one-item drained-batch hand-back liveness test still passes",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.119Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "387ad678fa5beef32597dc4f1ad44a1cfa9a0630",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.119Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    },
+    {
+      "number": 15,
+      "title": "Deferred batch breaker replays before any step admission",
+      "status": "needs-triage",
+      "owner_try": false,
+      "live_try": "Via the real stdio MCP in a temp home (tmp/env.sh): build -> approve(to: main) -> job, plus a later-declared two-item breaker-first batch; let the pilot fail before answering approve; after the answer hud_workflow status shows the breaker pause and neither the job nor item 2 has a job id.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Follow-up from the workflow/14 milestone review (/home/fires/.hud/jobs/j4cb7ad13080159e0/report.md, one major; accepted by lead as a narrow ordering edge). workflow/14 (f23f8995) replays `cursor.pending_settlements` only inside `tickBatch` (`src/mcp/composed-step.ts` ~226-236). `advance` (`src/workflows/engine.ts` ~54-80) visits steps in declaration order and returns on the first staged effect, so after `answerComposed` sets the run back to `working`, a step declared before the batch and unblocked by the answer (e.g. `build -> approve -> land` with `land` staging `startLand`) can be admitted before the batch's deferred pilot failure pauses the run. The batch tail stays protected; only the earlier-declared step slips through. Fix: move the existing deferred-settlement replay so it runs under the run lock before any new effect is selected in the pass (reuse `settleBatchItem`/`applySettlement`; no second breaker evaluator, no per-dispatch guards, no Sonic ledger change). Keep the original hand-back answerable and the drained-batch liveness path.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: graph with an ordinary job unblocked by an independent `to: main` hand-back, declared before a two-item `breaker: first` batch; the pilot fails while main decides; after the answer both the unblocked job and batch item 2 have no receipt and the run is paused with `pilot failed — …`",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Existing workflow/14 and one-item drained-batch hand-back tests still pass",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.119Z",
+      "updated_at": "2026-11-27T06:39:46.119Z"
+    }
+  ]
+}

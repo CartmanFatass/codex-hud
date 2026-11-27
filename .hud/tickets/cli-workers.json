@@ -1,0 +1,487 @@
+{
+  "version": 1,
+  "feature": "cli-workers",
+  "spec_path": ".scratch/cli-workers/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A grok role runs a brief end to end like pi imp",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "the owner registers a role whose harness is an interactive CLI (`harness: \"cli\"`, `agent: \"grok\"`,\nmodel, thinking, can_continue, idle grace, extra args) and dispatches it with `hud_create` like any pi role. The MCP\nopens the job's herdr tab, starts grok with the role's model/effort and its bypass flag (nothing else), checks for\nthe directory-trust dialog (decline and fail with a clear reason if shown), submits the brief prompt, and hands the\njob to a per-job supervisor that drives STATUS.json from herdr's status events as in the feature spec: working →\nidle_grace when report.md is written → `/quit` and closed when the grace ends unused; the existing watcher reaps the\ntab. The brief prompt points the worker at a harness-neutral implementer instruction file shipped with the HUD\n(pi-roles' implementer rules without pi-only tools) and at the brief. `hud_roster` and the Project tab show the role's\nharness, agent kind, model and thinking; `hud_create` accepts `model`/`thinking` overrides for CLI roles (pi launch\nswitches and `pi_args` stay pi-only). A `grok-imp` role (grok-4.7, high, can continue) ships with the HUD.\n\nSee `.scratch/cli-workers/spec.md` for the role file shape, per-kind facts, the STATUS keys and the lifecycle.\n\nLegacy Blocked by: None (can start immediately)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Role registry accepts and validates `cli` roles; invalid files are refused like today; pi and Jev roles unchanged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The kind-specific bits (flags, trust-dialog text and decline keys, start timeout, startup quirks) live in one small per-kind table, so adding a kind is a table row",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Launch passes only the model/effort, bypass and role `args`; no home/session/config flag or env override; no CLI config is written by the HUD",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Trust dialog → dialog declined, CLI gone, job `failed` with a reason naming the directory and the CLI",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "STATUS carries the spec's keys (no `session_id`); `pi-role-reap` reaps a closed CLI job and closes its tab",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "working → idle_grace → closed with a fake herdr in unit/integration tests (no real model calls in tests)",
+          "done": true
+        },
+        {
+          "id": 7,
+          "text": "One real grok job run by hand: report written, card shown in the panel, tab closed after grace (record it in the ticket comments)",
+          "done": false
+        },
+        {
+          "id": 8,
+          "text": "The existing test suite stays green",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-13T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "implemented by grok-4.7 high (direct herdr dispatch). Real run through the new MCP with an\nisolated HUD_HOME and a 60 s-grace grok role: create → report in 20 s → idle_grace → `/quit` at grace end → closed\n(settled) → watcher reaped with pi-role-reap, tab closed, watcher exited. grok's session stayed in its default\nstore; the job dir held no session files. Panel card not checked (isolated HUD_HOME). Rollout note: MCP servers\nstill running the previous code throw `invalid_role` on a bundled `cli` role file, so `grok-imp.json` is parked in\n`tmp/tasks/CLI-WORKERS-01/` until every client's hud MCP restarts on the new build."
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in cbe059a7 (0.1.1). Tests: thin-mcp, thin-panel-jobs, job-retention. Open: the real run used an isolated HUD_HOME, so the panel card part is left to the owner's CLI-WORKERS try."
+        }
+      ],
+      "created_at": "2026-11-13T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.991Z"
+    },
+    {
+      "number": 2,
+      "title": "CLI jobs continue, stop and fail like pi jobs",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cli-workers/01"
+      ],
+      "what": "during idle grace, `hud_send` continues a CLI job that can continue: the agent turns working, the\njob goes back to `working`, and the next done is judged against the report as it was when that turn started. While\nworking, `hud_send` types the message into the agent (queued, as for pi). `hud_close` on a working CLI job stops it\npromptly (pi-role-reap's SIGTERM via the recorded pid and start time) and the job ends `stopped`; on an idle-grace job\nit quits and closes. Closing the tab or the CLI exiting on its own ends the job `failed` (\"agent exited\" / \"tab\nclosed\"). If the supervisor process itself dies, the watcher notices on its next scan and marks the job failed\ninstead of keeping it open forever. The watcher's \"move job-dir session files into pi's store before deleting\" step\nruns for pi jobs only.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Continuation in grace, with a second report check, covered by tests with a fake herdr",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_close: working → stopped; idle_grace → closed; tab closed → failed; CLI exit → failed",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A dead supervisor is detected by the watcher and the job settles failed",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Session preservation skipped for non-pi jobs; pi behaviour unchanged (existing tests)",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in cbe059a7 (0.1.1); continuation, hud_close states, dead supervisor and session-preservation skip covered in thin-mcp tests."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.992Z"
+    },
+    {
+      "number": 3,
+      "title": "CLI workers can ask the orchestrator, and a stuck CLI asks for the owner",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cli-workers/01"
+      ],
+      "what": "a CLI worker asks a question by running the HUD's `hud-ask` command (named by absolute path in\nthe brief instructions). The question lands in the job's `qa/` in pi-roles' exact format, the orchestrator pane gets\npi-roles' one-line QUESTION notice, `hud_read` lists it, `hud_respond` answers it and the waiting command prints the\nanswer to the worker; with no answer in 20 minutes it prints the default and the worker carries on and records the\nopen question in its report. When herdr reports the CLI `blocked` mid-turn (an approval or question UI the bypass flag\ndid not cover), the panel shows the job as needing the owner and the orchestrator pane gets one line naming the job\nand pane; once the CLI works again the job is `working`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Question round trip with hud_respond, covered by a test (fake herdr for the notice)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Timeout path prints the default",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "blocked mid-turn → needs-owner on the card and one notice line; back to working afterwards",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The implementer instruction file tells the worker how to ask (and never to wait on a terminal prompt)",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in cbe059a7 (0.1.1); hud-ask round trip and timeout in thin-mcp tests; the Codex real run (06) asked a real question through hud-ask."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.992Z"
+    },
+    {
+      "number": 4,
+      "title": "An agy role works",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cli-workers/01"
+      ],
+      "what": "`agent: \"agy\"` roles run like grok roles: Antigravity's flags, its trust dialog (herdr `blocked`,\n`agent start` exits 1; declined with down + enter, launch fails with the reason), and its startup `done` before any\nprompt is never taken for a finished turn. Ships an `agy-imp` role (model left to the owner's choice of a strong\nGemini; document how to pick one with `agy models`).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "agy row in the per-kind table; startup done ignored (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Trust dialog path fails cleanly (test with fake herdr)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "One real agy job by hand, recorded in the comments",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-13T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "implemented by imp on grok-4.7 high. Real runs through the new MCP (isolated HUD_HOME,\ngemini-3.8-flash-low, 60 s grace): untrusted dir → launch failed \"agy has not trusted …\", and agy's\ntrustedWorkspaces did not gain the dir; trusted dir → report in 20 s → idle_grace → `/quit` → closed (settled) →\nreaped, tab closed, no session files in the job dir. Gap: `agent_session_id` stayed null (agy publishes it after the\nfirst prompt, the supervisor reads it once at start); fixed in 06."
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in cbe059a7 (0.1.1); the agent_session_id gap above fixed in 06."
+        }
+      ],
+      "created_at": "2026-11-13T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.992Z"
+    },
+    {
+      "number": 5,
+      "title": "A Claude Code role works",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cli-workers/01"
+      ],
+      "what": "`agent: \"claude\"` roles run like grok roles, so the owner can, for example, register a front-end\ndesign role on a Claude model. Claude's trust dialog is herdr `blocked` with the cursor on \"No, exit\": a bare Enter\ndeclines it; launch fails with the reason. The worker's own Claude statusline and the HUD MCP load inside it as in any\nClaude session; that is fine. The HUD's Claude caller binding (by the pane's own session id) keeps showing the main\nsession, not a worker's.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "claude row in the per-kind table; trust path fails cleanly (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An example role file in the docs (e.g. a design role on an Opus/Sonnet model)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "One real Claude job by hand (haiku, low effort), recorded in the comments",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-13T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "implemented by imp on grok-4.7 high. Real runs through the new MCP (isolated HUD_HOME,\nhaiku, effort low, 60 s grace): untrusted dir → launch failed \"claude has not trusted …\" and `~/.claude.json` did\nnot gain the dir; trusted dir → report in 12 s → idle_grace → `/quit` → closed (settled) → reaped, tab closed;\n`agent_session_id` recorded; the transcript stayed in Claude's own project store, no session files in the job dir.\n(The model listed the job dir instead of its cwd for the test prompt \"the current directory\": a wording issue of\nthe test task, not the launch — the process ran in the requested cwd.)"
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in cbe059a7 (0.1.1); example role in docs/reference.md."
+        }
+      ],
+      "created_at": "2026-11-13T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.992Z"
+    },
+    {
+      "number": 6,
+      "title": "A Codex role works, and the Codex bar never adopts a worker's rollout",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cli-workers/01"
+      ],
+      "what": "`agent: \"codex\"` roles run like grok roles. Codex shows a spinner for up to ~30 s at startup\n(phantom working → done): the launch waits for startup to settle before prompting (start timeout 90 s) and the\nstartup turn is never taken for a finished one. No trust dialog appears with the bypass flag. Which Codex account\nruns is whatever the owner's shell gives `codex` (the HUD sets no CODEX_HOME). The Codex bar's fallback that adopts\nthe newest rollout in the same directory must skip rollouts that belong to HUD CLI jobs (their `agent_session_id`),\nso a worker in the same repo never shows up as the main session.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "codex row in the per-kind table; startup spinner handled (test with fake herdr event sequence)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Bar fallback skips worker rollouts (unit test with synthetic rollouts)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "One real Codex job by hand (gpt-6-luna, low), recorded in the comments",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-13T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "implemented by imp on grok-4.7 high. Real run through the new MCP (isolated HUD_HOME,\ngpt-6-luna, low, 60 s grace): startup spinner waited out before the prompt; the worker asked a question with\n`hud-ask` (QUESTION line reached the orchestrator pane, answer file read back), wrote the report in 31 s →\nidle_grace → `/quit` → closed (settled) → reaped, tab closed; `agent_session_id` recorded; the rollout stayed under\nthe account home the owner's shell `codex()` function picked (`$CODEX_HOME/sessions/…`), nothing in the job dir."
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in cbe059a7 (0.1.1); bar fallback test: tests/unit/codex-bar-fallback.test.mjs."
+        }
+      ],
+      "created_at": "2026-11-13T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.992Z"
+    },
+    {
+      "number": 7,
+      "title": "Docs and the 0.1.1 notes describe CLI workers",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cli-workers/01",
+        "cli-workers/02",
+        "cli-workers/03",
+        "cli-workers/04",
+        "cli-workers/05",
+        "cli-workers/06"
+      ],
+      "what": "users can find out how to register a CLI role and what it does and does not do: the reference\n(en and zh), the hud-mcp README, the hud-delegate skill's role list and options, and the shipped convention mention\nCLI roles; `docs/spec.md` §2.1 carries the owner's 2026-11-13 decision (roles may run on interactive CLIs through\nherdr; the HUD drives their lifecycle from herdr status; harness behaviour and session places untouched); release notes\nfor 0.1.1 list the feature. STATE.md's ledger has the CLI-WORKERS line.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Docs describe today's behaviour only; synthetic examples",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "spec line added (owner-approved wording)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm run check (or the repo's doc checks) green",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in cbe059a7 (0.1.1): reference en/zh, ARCHITECTURE, hud-delegate skill, docs/releases/0.1.1.md, spec §2.1 owner line."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.992Z"
+    },
+    {
+      "number": 8,
+      "title": "`hud trust <dir>` adds a project to the CLIs' trust lists",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cli-workers/01",
+        "cli-workers/04",
+        "cli-workers/05"
+      ],
+      "what": "the owner runs `hud trust <dir>` once for a project; afterwards grok, agy and claude workers start\nthere without a trust dialog. The HUD writes each CLI's own trust file directly (owner, 2026-11-13), after a backup\nunder `$HUD_HOME`. Codex is skipped: the worker's bypass flag shows no dialog, and its home is picked by the owner's\nshell. The dispatch failure for an untrusted directory names `hud trust <cwd>`. Dispatch never trusts on its own.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "grok `~/.grok/trusted_folders.toml`, agy `~/.gemini/antigravity-cli/settings.json` `trustedWorkspaces`, claude `~/.claude.json` `projects[dir].hasTrustDialogAccepted` (honours `CLAUDE_CONFIG_DIR`)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Only adds; an existing entry is left alone; a missing file means \"not installed\" and is not created",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Backup before each edit; atomic write keeping the file mode; nothing else in the file changes",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests on a synthetic HOME; real run by the orchestrator: a fresh dir trusted, then grok, agy and claude jobs start",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved in e99d7acf (0.1.1). Tests: tests/unit/trust.test.ts. Real run: a fresh /tmp dir trusted, then grok, agy and claude jobs started there and settled; codex skipped (bypass flag, no dialog)."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.992Z"
+    },
+    {
+      "number": 9,
+      "title": "A CLI turn that ends without a report is not a failed job",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "role-bind/01"
+      ],
+      "what": "**Why:** herdr's `done` is a screen heuristic for \"the turn looks finished\". A CLI agent waiting on a background\ncommand (agy, 2026-11-14: tests in the background, \"Waiting for the test run to complete\") shows `done` too. The\nsupervisor treated `done` without a report as the end of the job, failed it and sent `/quit`, killing 18 minutes of\nwork in progress (ROLE-BIND 01, job j2341a54f3f7c0e5d).\n\n**What to build:** in `packages/hud-mcp/bin/hud-cli.mjs` the report is the completion signal; herdr's status only says\nwhether the agent is busy.\n- A turn that ends without a new report keeps the job open (`working`, card detail \"turn ended, no report yet\"); the\n  supervisor keeps waiting. A report that appears at any time (also while herdr says working or done) settles the\n  turn as today (idle grace or closed).\n- Background work counts as busy (owner 2026-11-14: Claude Code and agy park background processes and wake themselves\n  when they finish). At the start of each turn the supervisor records the CLI process's descendants (MCP servers and\n  other long-lived helpers); while any newer descendant is alive, or herdr says working, the job is busy and the\n  no-report clock does not run. A self-wake (herdr back to working) simply continues the turn.\n- If the agent stays quiet (herdr not working, no new descendants) with no report for the role's idle grace\n  (default 10 minutes), the job turns `waiting_orchestrator` with one notice line to the main session (\"quiet without\n  a report; hud_send to continue or hud_close to stop\"). If the agent wakes by itself afterwards, the job is working\n  again.\n- The HUD only observes here (owner 2026-11-14: do not interfere with the model's run): it sends the worker nothing\n  on its own (no nudge) and does not change the worker instructions for this; the main session decides what to say.\n  It never quits an agent because a report is missing; only stop, close, tab closed, agent exit or the post-report\n  grace end it.\n\n**Size:** about 50 source lines; fake-herdr tests in thin-mcp\n\nLegacy role: agy-imp (gemini-4-hydrogen-high)\n\nLegacy Blocked by: ROLE-BIND 01 (same files: hud-cli.mjs, thin-mcp.test.mjs)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "done without report → still open; a later report settles it (fake herdr: done → working → done + report)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "a live background child keeps the job busy: the no-report clock starts only when it ends",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "quiet past grace → waiting_orchestrator + one notice line; no prompt or `/quit` was sent; a self-wake returns to working",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "agent exit or tab closed still fail as today; the existing CLI tests keep passing (with the new expectations)",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "landed as 6f4afa7c. The first imp-on-agy job (j8874939f037d8c0f) was itself quit by this bug while agy\nran the tests in the background; the orchestrator ran them (65 pass) and reviewed the diff. Full suite 533 green.\nReal check with a 150 s command: see below."
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator, real check (jc9a2737d675a10e8, imp on agy, /tmp synthetic repo)",
+          "text": "a 150 s command; herdr\nreported the turn done while it slept, the job showed \"turn ended, no report yet\" instead of failing, agy woke\nwhen the command finished, wrote \"42\" and the job went to idle_grace."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.992Z"
+    },
+    {
+      "number": 10,
+      "title": "A quiet CLI job without a report gets one Decision API choice",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cli-workers/09"
+      ],
+      "what": "**Why:** owner 2026-11-14 (spec §2, \"One exception\"): the main session should not have to handle every CLI worker that\nstops without a report. Cost is not a concern; predictability is.\n\n**What to build:** at the point where ticket 09 turns a job `waiting_orchestrator` (\"quiet without a report\"), the\nsupervisor first asks the Decision API (the provider chosen in Settings, through `src/jev/`) one choice question with\nprobabilities. Input: the last 60 lines of the pane (`herdr pane read --source recent`), job state, whether a\nbackground child is alive, minutes quiet. Options and actions:\n- `still-working` (waiting on background work or thinking) → keep waiting one more idle grace, then ask again (at most\n  3 questions per job);\n- `finished-no-report` → send the fixed prompt \"Write your report to <path> now; if work remains, finish it first.\"\n  once per job, then wait as after any turn;\n- `failed` (quota/rate limit on screen) → only when the quoted screen line matches the quota regex\n  (`src/roles/exhausted.ts` `isQuotaFailure`): fail the job with that line as reason and mark the place exhausted\n  (ROLE-BIND); a `failed` choice whose line does not match → `needs-human` (owner 2026-11-14);\n- `needs-human` (a terminal prompt, a question, or unclear) → `waiting_orchestrator` with the notice, as 09.\nBelow 0.8 probability for the top option, without a key, over the call cap or on any error → `needs-human`. The\nchoice, its probability and the action go into STATUS (`quiet_decision`) and show on the card and in the Inspector.\nDecision calls count under a `quiet-job` feature in Settings' per-feature breakdown.\n\nAlso check whether `mistral/deepseek-v4-1-flash-1017` with reasoning off gives structured output and option\nprobabilities through the Mistral API; if it does, add it as a Decision API provider choice in Settings (keys from\n`~/.hud/credentials.env`); if not, record why in the comments and leave the providers as they are.\n\n**Size:** about 120 source lines; tests with a fake herdr and a fake\ndecision provider (no real calls)\n\nLegacy role: agy-imp (gemini-4-hydrogen-high)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each option leads to its action; a second `finished-no-report` never sends the prompt twice",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Low probability, no key, cap reached or provider error → needs-human, nothing sent to the worker",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`quiet_decision` in STATUS, on the card and in the Inspector; Settings breakdown counts `quiet-job`",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Mistral DeepSeek provider: added or the reason recorded",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "One real run by the orchestrator: an agy job told to start a long background command and stop; recorded below",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:45.992Z",
+          "author": "legacy",
+          "text": "Status note: (2117e2b5)"
+        },
+        {
+          "at": "2026-11-27T06:39:45.992Z",
+          "author": "legacy",
+          "text": "**Mistral DeepSeek check (`deepseek-v4-1-flash-1017`, reasoning off):** Tested live against `https://api.mistral.ai/v1` using `MISTRAL_API_KEY` from `~/.hud/credentials.env`. `POST /v1/decisions` returned `404` (`no Route matched with those values`). `POST /v1/chat/completions` with `model: \"deepseek-v4-1-flash-1017\"`, `reasoning_effort: \"none\"`, and `response_format: { type: \"json_schema\", strict: true, ... }` returned `200` (`reasoning_tokens: 0`, valid JSON `{\"choice\": \"failed\"}`), but adding `logprobs: true, top_logprobs: 5` returned `400` (`code: \"3051\"`, `\"Logprobs are not enabled for this model\"`). Structured output works, option probabilities do not, so Decision API providers remain unchanged (`gemini`, `openai`, `typesafe`)."
+        },
+        {
+          "at": "2026-11-27T06:39:45.992Z",
+          "author": "legacy",
+          "text": "**2026-11-14 owner ruling:** A `failed` choice only fails the job (and marks the place exhausted via `recordFailureExhaustion`) when `extractFailureScreenLine` matches `isQuotaFailure` (`src/roles/exhausted.ts`); otherwise `failed` falls back to `needs-human`."
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "landed 2117e2b5 (472/472). Real run j96e803f27c3b7243 (agy, gemini-4-hydrogen-high):\ntold to start `(sleep 90; …) &` and end its turn without a report. agy's tool shell killed the background command\nwhen the tool call returned (the probe file never appeared), so this run tested \"turn ended, no report, no\nbackground child\". After the idle grace the supervisor read the pane and asked the Decision API:\n`quiet_decision {choice: needs-human, probability: 0.35, action: needs-human}`, under the 0.8 bar, so the job went\n`waiting_orchestrator` and the notice reached the main session. Nothing was sent to the worker. Passed."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.992Z"
+    }
+  ]
+}

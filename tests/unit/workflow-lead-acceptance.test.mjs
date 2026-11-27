@@ -44,9 +44,9 @@ test('ticket check refuses a run with gaps including empty Approved removals and
   assert.match(error, /sample\/02:.*missing Live try.*empty Approved removals/);
   assert.equal(fs.existsSync(join(f.home, 'flows')), false);
 
-  // hud_tickets op: add supports optional approved_removals.
+  // hud_tickets op: add supports optional approved_removals and live_try extraction into JSON.
   const added = await f.call('hud_tickets', {
-    op: 'add', cwd: f.root, feature: 'sample',
+    op: 'add', cwd: f.root, feature: 'added',
     tickets: [
       { title: 'With removals', blocked_by: [], what: 'Remove old panel.', acceptance: ['Removed'], live_try: 'none', approved_removals: 'old-panel' },
       { title: 'Live try in multiline what', blocked_by: [], what: 'Update greeting text.\n\n**Live try:** run ./greet', acceptance: ['Updated'] },
@@ -56,19 +56,16 @@ test('ticket check refuses a run with gaps including empty Approved removals and
     ],
   });
   assert.equal(added.ok, true);
-  assert.match(fs.readFileSync(added.tickets[0].path, 'utf8'), /\*\*Approved removals:\*\* old-panel/);
-  const movedMulti = fs.readFileSync(added.tickets[1].path, 'utf8');
-  assert.match(movedMulti, /^\*\*Live try:\*\* run \.\/greet$/m);
-  assert.match(movedMulti, /^\*\*What to build:\*\* Update greeting text\.$/m);
-  const movedInline = fs.readFileSync(added.tickets[2].path, 'utf8');
-  assert.match(movedInline, /^\*\*Live try:\*\* none$/m);
-  assert.match(movedInline, /^\*\*What to build:\*\* Update banner text\.$/m);
-  const keptExplicit = fs.readFileSync(added.tickets[3].path, 'utf8');
-  assert.match(keptExplicit, /^\*\*Live try:\*\* run explicit$/m);
-  assert.match(keptExplicit, /\*\*What to build:\*\* Keep prose\. \*\*Live try:\*\* ignored/);
-  const proseOnly = fs.readFileSync(added.tickets[4].path, 'utf8');
-  assert.doesNotMatch(proseOnly, /^\*\*Live try:\*\*/m);
-  assert.match(proseOnly, /^\*\*What to build:\*\* Add a Live try: parser rule\.$/m);
+  const { feature: addedDoc } = await f.call('hud_tickets', { op: 'get', cwd: f.root, feature: 'added' });
+  assert.deepEqual(addedDoc.tickets[0].approved_removals, ['old-panel']);
+  assert.equal(addedDoc.tickets[1].live_try, 'run ./greet');
+  assert.equal(addedDoc.tickets[1].what, 'Update greeting text.');
+  assert.equal(addedDoc.tickets[2].live_try, 'none');
+  assert.equal(addedDoc.tickets[2].what, 'Update banner text.');
+  assert.equal(addedDoc.tickets[3].live_try, 'run explicit');
+  assert.equal(addedDoc.tickets[3].what, 'Keep prose.\n**Live try:** ignored');
+  assert.equal(addedDoc.tickets[4].live_try, 'none');
+  assert.equal(addedDoc.tickets[4].what, 'Add a Live try: parser rule.');
 });
 
 test('Assumed: lines move to run todo; four assumptions pause a main hand-back asking, wake main, and hud_respond resume lands the item', { timeout: 45_000 }, async t => {
@@ -448,7 +445,7 @@ test('a single held ticket manually landed before resume survives retention past
 
   const manual = await f.call('hud_land', { job });
   await until(() => f.flow(manual.flow).state === 'completed', 20_000);
-  assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* ready-for-human/);
+  assert.equal(f.ticketRecord(1, 'sample', 'base')?.status, 'ready-for-human');
   assert.equal(f.flow(flow).tickets[0].landed, undefined, 'the paused run has not observed the land');
 
   // Seed an unrelated completed job so the shifted retention pass proves ordinary retention ran.
@@ -925,7 +922,7 @@ test('worker and reviewer questions use temporary leads with no hud_land; owner-
   assert.deepEqual(done.decisions.map(d => d.job), [lead1, revLead, lead3]);
 
   // Outside unattended runs, Owner try: yes ticket stays ready-for-human!
-  assert.match(fs.readFileSync(join(f.root, '.scratch/sample/issues/01-question.md'), 'utf8'), /\*\*Status:\*\* ready-for-human/);
+  assert.equal(f.ticketRecord(1)?.status, 'ready-for-human');
   const mainRead = await f.call('hud_read', { job: flow });
   assert.equal(mainRead.changes.length, 1);
   assert.match(mainRead.changes[0], /Verdict: finish: Clean acceptance\. Todo: 1\./);
@@ -1156,10 +1153,8 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
   assert.equal(afterEsc.code, 'no_pending_handback');
 
   // 3. repair loops tickets -> review -> accept in the SAME run, bounded to 2 repair rounds.
-  const repIssues = join(f.root, '.scratch', 'rep', 'issues');
-  fs.mkdirSync(repIssues, { recursive: true });
-  fs.writeFileSync(join(repIssues, '01-rep.md'), goodTicket(1));
-  f.git(f.root, 'add', '.scratch');
+  f.writeJsonTicket(1, {}, 'rep');
+  f.git(f.root, 'add', '.hud/tickets/rep.json');
   f.git(f.root, 'commit', '-qm', 'repair feature');
   const { flow: repFlow } = await f.call('hud_tickets', { op: 'run', feature: 'rep', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   let prevReview;

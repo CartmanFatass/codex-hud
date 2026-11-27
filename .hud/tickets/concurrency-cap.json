@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "feature": "concurrency-cap",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Per-role concurrency caps queue extra jobs",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22: a soft per-role cap on concurrently working jobs, adjustable in Settings; defaults imp 3, general 3, other roles uncapped (sonic children and headless sonic not counted). Counted machine-wide over jobs in a working state (not idle_grace/done/closed). hud_create for a role at its cap does not fail: the job is created as `queued` with its full brief and options, the result and notice say queued and its position, and the watcher starts the oldest queued job of that role when a slot frees (first available place at start time). The panel shows queued jobs with position; hud_close on a queued job removes it. A batch create queues the items past the cap. Overflow (owner 2026-11-22): an `imp` create at its cap starts as `general` instead when general has a free slot (the general role is the backup implementer, so Gemini and GPT load stay balanced and at most 6 implementers run); the result says it overflowed. Only when both are full does it queue. Overflow is a Settings toggle, on by default, mapping imp→general only. Spec §2.1.4 / §2.2 sentences drafted for the main session to tell the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With imp cap 3 and three working imps, a fourth hud_create returns queued and starts by itself when one settles",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "With three working imps and fewer than three generals, an imp hud_create starts a general and says so",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Settings shows and changes the caps and the overflow toggle; a raised cap starts queued jobs at once",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.997Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "bad8926555b23544a47b46ac48d6c7bfae1bdde6"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.997Z",
+      "updated_at": "2026-11-27T06:39:45.997Z"
+    },
+    {
+      "number": 2,
+      "title": "Headless sonic jobs started by a main session count toward the sonic cap",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-25 set `roleCaps.sonic: 9` to keep wide sonic fan-outs (e.g. 60+ transcript-labelling jobs) from exhausting RAM (14 GB machine, ~150-300 MB per pi process) and provider rate limits. Today `isCountedJob` (src/roles/concurrency.ts:25-29) excludes every headless sonic, so the cap never applies. Count top-level headless sonic jobs (no parent_job, not scout_only) toward the sonic cap like any other role; keep worker sonic children (hud_sonic) and prewalk scouts excluded so a worker or a target never waits on its own helper. Extra sonic jobs queue oldest-first and start headless when a slot frees, through the same queue path other roles use; make sure the queued-start path supports headless sonic launch (mode, thinking decision, limits). Keep the shipped default uncapped for sonic (only the owner's setting sets 9). Update docs/reference.md (+zh) roleCaps sentence.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With roleCaps.sonic = 2, three main-session sonic creates: two run headless, the third reports queued with a position and starts headless when one settles",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Worker sonic children and prewalk scouts still start immediately regardless of the cap",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Default settings (no sonic cap) behave as today",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Targeted tests for concurrency and sonic launch pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.997Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "67e57c91ef483ec3869a151f9e6aa76084394f1a",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.997Z",
+      "updated_at": "2026-11-27T06:39:45.997Z"
+    }
+  ]
+}

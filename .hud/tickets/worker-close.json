@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "feature": "worker-close",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A live child process means the worker is still working",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner, 2026-11-17: agy is misjudged when it runs a background command: herdr may show idle while\nthe work goes on, and the supervisor can end or close a working job. Two live runs (`tmp/tasks/agy-bg-test/`, job\n`jd01d592a43b12e03` normal background, `j7715476d28018864` `IsDaemon: true`) showed the command always runs as a\ndescendant of the agy process (`agy → bash -c → sleep`), and disappears when it finishes; herdr showed `idle` for\n5–10 s with the child alive and still `working` after the job closed.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "For a CLI job, a live descendant process of the recorded worker pid (`STATUS.json` `pid`, matched with `pid_start_time`) means working: the turn is not settled, no quiet-job Decision API call is made, no \"write the report\" prompt is typed, and the job is not closed by the watcher.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Applies to every CLI agent; it only ever delays an end, never causes one.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Read from `/proc` inside the supervisor's existing judge/tick; no new poll loop, no new process spawns.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "When the last child exits, the existing rules resume within one tick.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Main-path tests with a fake CLI that spawns a long-lived child (temp HOME/HUD_HOME, no real agy): idle + report + live child → not settled; child exits → settles; quiet + live child → no Decision API call.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.118Z",
+          "author": "legacy",
+          "text": "Status note: (c4ac0183)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.118Z",
+      "updated_at": "2026-11-27T06:39:46.118Z"
+    },
+    {
+      "number": 2,
+      "title": "Close a settled job's worker once its report is read",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "worker-close/01"
+      ],
+      "what": "Owner, 2026-11-17 (option A): a finished worker no longer waits out its 10–30 minute idle window\nafter the main session has read the report. Reading it (`hud_read` marking `report_unread` false) closes the worker's\ntab and process the way the idle deadline does today; a repair is a new job.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A settled job (pi or CLI) whose report the main session has read is closed within one supervisor tick, with the same close path and STATUS outcome as an idle-deadline close (`exit_reason` says it was read).",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Unread reports keep today's idle deadline. A live child process (ticket 01) still blocks the close.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "`hud_send` to a job closed this way returns `not_continuable` as for any closed job.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md, the MCP README and `integrations/skills/hud-delegate/SKILL.md` (Repairs, step 6) say reading the report closes the worker; continuation is only for unread or still-working jobs.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Main-path tests (temp homes, fake CLI/pi): read → closed; unread → stays until deadline; read with a live child → stays.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.118Z",
+          "author": "legacy",
+          "text": "Status note: (a25fca5c)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.118Z",
+      "updated_at": "2026-11-27T06:39:46.118Z"
+    },
+    {
+      "number": 3,
+      "title": "Fix the worker-close review findings",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "worker-close/01",
+        "worker-close/02"
+      ],
+      "what": "Review: docs/reviews/2026-11-17-worker-close-review.md (verdict: fix first). One pass, in the same worktree.\n\nLegacy Blocked by: 01, 02 (both in wt/worker-close-02, not landed)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "**Only children started in the current turn count (finding 2).** Claude and Codex workers keep their MCP servers (hud-mcp, codegraph, playwright, …) as children for the whole session; they start at launch, before the first turn is sent. A live descendant counts as \"still working\" only if it started at or after the current turn's `sent_at` (process start tick vs `/proc/uptime`, as the pre-01 `newerChild` did), for settlement, the quiet decision and every close. Same rule for pi read-close (`hud-watch.mjs`), with the pi job's latest dispatch/send time as the turn start. A child of an earlier turn no longer holds a later turn open (accepted). Test: a fake CLI with a long-lived child started before the turn + idle + read report → closes; one started in the turn → stays.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "**Automatic read-close never stops a resumed worker (finding 1).** Read-close happens only when the read report is newer than the latest admitted send/continuation (no continuation after the report), and the reap aborts instead of taking pi-role-reap's working-worker SIGTERM path if the worker is working when it gets there (check right before, or a non-forcing reap mode). Explicit `hud_close` keeps force-stop. Test: an admitted continuation, then a read → no reap; worker turns working during the reap → not killed.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "**A failed read-close reap is retried (finding 3)** on the existing slow safety tick; no new loop.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "`docs/reference.zh.md` mirrors the English read-close and child wording.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Main-path tests, temp homes, fake workers only; `tmp/env.sh` build + cli-judge and thin-mcp suites pass.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.118Z",
+          "author": "legacy",
+          "text": "Status note: (af6e0e85)"
+        },
+        {
+          "at": "2026-11-27T06:39:46.118Z",
+          "author": "legacy",
+          "text": "Re-review 2026-11-17 (docs/reviews/2026-11-17-worker-close-review.md, second part): a partial reap failure\n(pi quits, Herdr fails to close the tab, or STATUS stays idle_grace with the worker gone) drops the retry and\nleaves the tab. Needs a Herdr outage during cleanup; follow-up if it shows up: keep the read-close cleanup pending\non the slow tick until it succeeds or the turn changes; allow cleanup when Herdr says agent missing and the pid\nis gone."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.118Z",
+      "updated_at": "2026-11-27T06:39:46.118Z"
+    }
+  ]
+}

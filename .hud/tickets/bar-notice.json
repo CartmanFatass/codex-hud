@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "feature": "bar-notice",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A bar notice says what the job is doing, not which model runs it",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "The notice zone of all three bars (Claude statusline, Codex tmux bar, pi footer) names the work,\nnot the model. Owner, 2026-11-17: the subagent display is not good enough; drop the model first. Today an item is\n`✓ oracle [6.2-astra · high]`; two imps collapse into `◐ imp ×2`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No model and no effort in any notice item, in every bar look (the Stacked look's second row included).",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A HUD job reads role + job title (the brief's heading, else the package), e.g. `◐ imp 状态栏TPS`.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "A Claude subagent reads its type + the short description its Agent call gave, e.g. `◐ Explore 找通知生成处`; a Codex subagent its name + task when known. Missing facts are left out, never guessed.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "A finished or failed item carries how long it ran, fixed at the moment it ended (`✓ imp 状态栏TPS 12m`); nothing in the zone ticks between refreshes.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "`×n` groups only items with the same kind and the same words; two different imp jobs show as two items.",
+          "done": false
+        },
+        {
+          "id": 6,
+          "text": "Narrow bars cut the title at a word before dropping the item; the role/type stays.",
+          "done": false
+        },
+        {
+          "id": 7,
+          "text": "Main-path tests per client with synthetic transcripts/jobs; frame snapshots updated only where intended.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:45.981Z",
+          "author": "legacy",
+          "text": "Status note: (41db1271)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:45.981Z",
+      "updated_at": "2026-11-27T06:39:45.981Z"
+    },
+    {
+      "number": 2,
+      "title": "The pinned need names the job; HUD jobs and subagents look different; an unread report shows",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "bar-notice/01"
+      ],
+      "what": "Owner, 2026-11-17 (notice items 4–6). Today a need is `! Work: 1 needs you`, English only, without\nsaying which job; a HUD job (own herdr tab) and a native subagent (inside this session) look alike; a finished job whose\nreport the owner has not read looks like any other finished job.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A pinned need names the job: `! imp 首页修正 asks`. Several: the first one plus `+2`; when even that does not fit, `! 3 needs`. Nothing pinned when nothing is open. Bar language rules unchanged (bars stay English-only except the job's own title).",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "HUD jobs and native subagents differ at a glance (a mark or ink; designer's choice), in every bar look.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "A settled HUD job whose report is unread carries an unread mark (e.g. `✓●`) until the report is read; read state comes from the same job reader the MCP uses (`report_unread`), no new polling.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Main-path tests: several needs at three widths, a HUD job beside a subagent, unread → read.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:45.981Z",
+          "author": "legacy",
+          "text": "Status note: (37cc5478)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:45.981Z",
+      "updated_at": "2026-11-27T06:39:45.981Z"
+    }
+  ]
+}

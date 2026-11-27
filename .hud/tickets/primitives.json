@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "feature": "primitives",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "One atomic file helper for all private writes",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/neon-proposal/05-consolidate-primitives-and-model-catalog.md S1: src/utils/atomic-fs.ts replaces the hand-written atomic writes and read helpers in src/ (0600 files, 0700 dirs). Runs after build-dedup/01. mcp-split/01 then builds its job contracts on this helper instead of adding job-io's second atomic layer.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The listed src writers use atomic-fs; modes are 0600/0700",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.083Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "8549d02ffb5211347f4e7a7a8d9c9a9dfb869549"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.083Z",
+      "updated_at": "2026-11-27T06:39:46.083Z"
+    },
+    {
+      "number": 2,
+      "title": "One /proc reader",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "05 S3: src/utils/proc.ts replaces the 7 hand-written /proc readers (worker-tree, cli-judge, daemon-binding, model-runtime-store, hud-notify, thin-main).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "All /proc reads go through proc.ts",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.083Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "a865f39eee3717cf9d8c0f135027046e3bb17f25"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.083Z",
+      "updated_at": "2026-11-27T06:39:46.083Z"
+    },
+    {
+      "number": 3,
+      "title": "hud-mcp sources and bins use the shared primitives",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "primitives/01",
+        "primitives/02"
+      ],
+      "what": "05 S2: thin-main, cli-judge, codex-statusline and the bins use atomic-fs and proc.ts; question files get mode 0600. Runs after async-watch.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No hand-written atomic write left in hud-mcp",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.083Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "e0747c7a697c3ad1d4e1db0d17bffe855fd66c0a"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.083Z",
+      "updated_at": "2026-11-27T06:39:46.083Z"
+    },
+    {
+      "number": 4,
+      "title": "One model catalog",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "primitives/01"
+      ],
+      "what": "05 S4: src/models/models-catalog.json + catalog.ts replace the 16 hard-coded model tables; packages/hud-mcp/catalog.json goes. Visible fixes: fable shows the Anthropic mark; the pi footer prices provider-prefixed ids. Owner defaults: codex ultra kept per model only (Q2 A); No $HUD_HOME/models.json: built-in catalog only (owner, 2026-11-22, Q1).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Every former table reads the catalog",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Control picker, footer prices and bar marks unchanged except the two named fixes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.083Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "d5b06d0a6836432e01722b892d558d5c62620704"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.083Z",
+      "updated_at": "2026-11-27T06:39:46.083Z"
+    }
+  ]
+}

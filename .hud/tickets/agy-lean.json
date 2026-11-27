@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "feature": "agy-lean",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Workers read a file once or in non-overlapping ranges",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Survey 2026-11-22 (sonic jd85b0ef85a0e5505): in agy worker conversations 67-70% of read bytes went to files read several times with overlapping ranges (thin-main.ts 12×). Add one line to the shared worker role text (spec: one role text across harnesses, so it applies to all workers): read a file whole once, or in ranges that do not overlap; re-read only after the file changed. Keep it one sentence; no other wording changes.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "One sentence added to the shared worker instructions (implementer, frontend-implementer, general; reviewer/oracle if they read code)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No other role text changes; tests that pin role text updated",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.977Z",
+      "updated_at": "2026-11-27T06:39:45.977Z"
+    },
+    {
+      "number": 2,
+      "title": "HUD MCP tool descriptions say the same in fewer bytes",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Survey 2026-11-22: agy reads HUD's MCP schemas from ~/.gemini/antigravity-cli/mcp/hud/*.json (12 files, ~10.9 KB, hud_create.json 3.3 KB) before its first MCP call in every conversation; Claude and Codex load the same descriptions. Trim tool and parameter descriptions without losing protocol facts the MCP owns (valid values, which parameter applies to which role/harness, defaults, side effects). Measure bytes per tool before and after.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Per-tool description bytes before/after in the report; total down ≥ 30%",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No parameter, enum value, default or side-effect statement lost (a test or a checked list in the report)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "MCP tool names and schemas' shapes unchanged; thin-mcp tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.977Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "8d62d7be8dc671a7efee6807568f45a650c55e52",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.977Z",
+      "updated_at": "2026-11-27T06:39:45.977Z"
+    },
+    {
+      "number": 3,
+      "title": "Facts: agy's missing instructions.md and settings for reminders and transcript copies",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Survey 2026-11-22: one agy conversation tried to read ~/.gemini/antigravity-cli/mcp/hud/instructions.md, which does not exist (a wasted call); agy injects a 570 B 'Reminder: work efficiently' 2-5× per conversation, doubles Created/Completed headers per result, and writes each transcript 2-3× on disk (0.5-1.5 MB per conversation, 501 dirs). Find: when agy writes instructions.md for an MCP server (from the server's MCP `instructions`?) and whether HUD's server should provide it; whether agy settings/flags can turn off the reminder or the duplicate transcript copies; how much disk the brain dir uses and whether agy prunes it. Facts only.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Report with sources (agy --help, settings schema, binary strings, file timestamps) for each question",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Clear yes/no on whether HUD should ship MCP instructions for agy",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.977Z",
+      "updated_at": "2026-11-27T06:39:45.977Z"
+    },
+    {
+      "number": 4,
+      "title": "agy sees HUD's MCP instructions through mcp/hud/instructions.md",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "agy-lean/03 facts (sonic j1cbc536c208ad272): agy tells its model that ~/.gemini/antigravity-cli/mcp/<server>/ may hold an instructions.md with best practices, but never writes it and does not surface the MCP initialize `instructions` HUD already sends (src/mcp/mcp/server.ts:74-77); agy models tried to read the missing file in 3 of 493 conversations. So an agy main session never sees HUD's server instructions. Have the agy install extension write HUD's main-session instructions (the same text as the initialize default variant, generated from one source) to that file, and remove it on uninstall. Verify agy keeps the file when it rewrites the tool schemas at session start.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Install writes mcp/hud/instructions.md from the same source as the initialize instructions (test: they match); uninstall removes it; re-install idempotent",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live check by the main session after install: a new agy session start leaves the file in place (stated in the report as pending if the worker cannot run agy)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and test:release pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.977Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d8597c2a383b46cd55b5a1eecd53a3b1d5b72308",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.977Z",
+      "updated_at": "2026-11-27T06:39:45.977Z"
+    }
+  ]
+}

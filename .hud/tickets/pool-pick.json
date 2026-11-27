@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "feature": "pool-pick",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "The Decision API picks entries from an owner pool for a role's job",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec §2.2 (Decision API uses, D-2026-11-24-04). A role file may declare `\"pool\": {\"dir\": \"<abs path>\", \"max\": 4, \"default\": [\"<file>.md\", ...]}` (first user: frontend-imp pointing at the owner's Personal Standards style pool; HUD reads it, owns none of it). On hud_create for that role: build an index of the pool (each `*.md` except README.md: file name, `# ` title, and the header lines before the first `## `, at most 400 bytes per entry; plus the first 8 KiB of README.md as selection rules; bounded to 64 entries / 48 KiB). If the brief already names any entry by file name or stem, make no call and record that. Otherwise, when the new Settings switch `poolPick` (Decision API group, default on) is on, call the Decision API the way `src/mcp/sonic-thinking.ts` does (brief as untrusted quoted data, first 4000 chars) for 1..max entry file names plus a one-line reason; drop unknown names. On switch off, failure or timeout, use `default`. Attach the picked files as references exactly like context_files (a read line for local workers, bounded inline for browser roles). Record `pool_pick {entries, reason, source: 'decision'|'brief'|'default', ms}` on the job record and the archive, and show it in the hud_create receipt so the main session can tell the owner in one line. Same timeout and fallback discipline as Sonic thinking; no call for roles without `pool`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A fixture pool and a brief with no entry named produce a Decision API request listing the entries (stubbed endpoint) and attach the returned files; unknown names are dropped",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A brief naming an entry makes no call and records source brief; switch off or endpoint failure records source default with the default files",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "pool_pick appears on job.json, the archive row and the hud_create receipt",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md describes the role-file pool field and the Settings switch in one paragraph; the MCP tool declaration budget test still passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.081Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "96b5df91ea125ce51c74701a090f3aa1832c0368",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.081Z",
+      "updated_at": "2026-11-27T06:39:46.081Z"
+    },
+    {
+      "number": 2,
+      "title": "Pool pick may attach nothing when the work already has an art direction",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pool-pick/01"
+      ],
+      "what": "Owner 2026-11-24: when a mature art direction already exists, the pick must be able to attach nothing; design its inputs, outputs and handling so it is dependable. Change pool-pick/01 as follows. Deterministic steps first, no model call: (1) role prewalk off or `poolPick` off: no pick, nothing attached. (2) The brief names pool entries: use them (`source: brief`). (3) The project declares an established look in `.hud/project.json` as `\"design\": \"<repo-relative path>\"`: attach that file as a reference instead of pool entries (`source: project`, `need: existing`). Otherwise one Decision API call, fixed choices only. Input: the brief (untrusted quoted data, first 4000 chars), the pool index (file, title, Kind, Status, Fits) and the README rules, plus two facts: the role and the project name (HUD infers nothing else about existing UI). Output choices: `need`: `existing` (the brief changes or extends a UI that already has its own look) or `new` (a new page, app or sample without a look); `kind`: `personal` or `showcase`; then ranked entry slots as in 01 (slot 1 required only when need is new; later slots may be NONE). Handling: need `existing` attaches nothing from the pool. need `new`: drop unknown entries, drop entries whose Kind contradicts the chosen kind (`either` always fits), keep pool order of dimensions; if nothing is left, attach nothing and record why. Decision API off, failing or timing out: attach nothing (`source: failed`); the frontend worker's skill already falls back to its quick default when the brief names no style. Remove the role-file `default` fallback from 01. Record `{type: 'pick', need, kind, entries, source, ms, dropped?}` (in the prewalk list once prewalk/01 lands; until then in `pool_pick`), and show one receipt line, e.g. `pick: none (existing look)` or `pick: personal · layout-swiss-editorial + theme-dark-near-black + colour-on-elements`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A stubbed decision answering need existing attaches nothing; need new with a kind-contradicting entry drops it and records it in dropped",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A project with `design` in .hud/project.json attaches that file and makes no call; a brief naming entries makes no call",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Decision API failure or switch off attaches nothing; the role-file default field is gone from code and docs",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The receipt shows the one-line pick summary; docs/reference.md describes need, kind and the project design field",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.081Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f3a796af68e078faf40aa141ca0b5338c1838480",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.081Z",
+      "updated_at": "2026-11-27T06:39:46.081Z"
+    }
+  ]
+}

@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "feature": "control-tab",
+  "spec_path": ".scratch/control-tab/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Control as its own main tab",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Control moves out of the Project hub into a main tab after Project (`首页 项目 控制 [EXP]`), using the data-driven tab list EXP-01 added. It shows the selected project's Control content as today (Needs attention, roles, Usage, Files), with the Roles landing from the sample (frames 1, 2a–2c: one row per role `imp [preset] → target`, Healthy folded, Usage and Files folded) but the existing edit keys kept for now. Project hub, Board and Inbox drop their Control page row; a Project Inbox role alert links to the role on Control. Saved Project/control locations reopen on Control. Discovery never runs on Home. See design.md §3 first two bullets.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tab reachable by ←→/Tab/click in EN/ZH at 40 cols, with and without EXP",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Control follows the project selected in Project (`[`/`]` there); Home's root unaffected",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Project layouts no longer list Control; Inbox alert opens the role on Control",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Old saved location restores to Control",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Roles landing and role rows match the sample frames 1, 2a–2c",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:45.997Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.997Z",
+      "updated_at": "2026-11-27T06:39:45.997Z"
+    },
+    {
+      "number": 2,
+      "title": "Harness switches end to end",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "control-tab/01"
+      ],
+      "what": "The Harnesses view on Control (`h`; sample frames 3a–3d, 7a–7c): Runner, CLI agents, Browser tools, Pi providers; Space/Enter toggles a switch, Del removes (= off), folded \"Off (N)\", `i` add-back list. Switches persist as `disabled` IDs (`pi`, `pi:<provider>`, `cli:<agent>`, `bro:<tool>`) in `$HUD_HOME/harnesses.json` (absent = on). One shared chain evaluation (states active/standby/off/exhausted/missing, provider attribution per design.md §2) used by the panel, `hud_roster` and `hud_create` (including `preset`, `on` and `model` overrides); no place → `no_available_place` before any job is created. Role files never change. See design.md §1 first two bullets, §2, §3 Harnesses bullet.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`cli:grok` and `pi:xai` off independently; runner off keeps provider switches",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "off + quota then restore; explicit `on` / `model` override on an off target refused, not rerouted",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "no cache / no discovery still dispatches (absent = on); unknown provider shown, not blocked",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "panel, roster and create agree on the sample scenario (`imp [daily] → agy` with xai off)",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "role files byte-identical after toggles",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:45.998Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.998Z",
+      "updated_at": "2026-11-27T06:39:45.998Z"
+    },
+    {
+      "number": 3,
+      "title": "Full pi model picker",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "control-tab/01"
+      ],
+      "what": "The model picker from sample frames 6a–6c: every model of the pi providers that are on (from `pi --list-models`, exact `provider/model`, duplicates only when identical), one list grouped by provider headers with counts, typed case-insensitive filter over the full ID with pinned query and match count, current vs cursor marks, middle ellipsis for long IDs with the whole ID under the cursor. Discovery on opening Control (stale/absent cache) or `r`, coalesced; last good result kept on failure with an age notice; no subprocess per key or tick. The `include` curation and Tab \"show all\" go. Works with the existing model-edit action until ticket 05 replaces it. See design.md §4.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "synthetic multi-provider table with same-named models, long IDs, a newly seen provider, off/restore",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "failed refresh keeps last good list; successful empty list distinguished",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "typing never spawns a command",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "40-col ZH/EN frames match the sample",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:45.998Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.998Z",
+      "updated_at": "2026-11-27T06:39:45.998Z"
+    },
+    {
+      "number": 4,
+      "title": "Presets on the role row",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "control-tab/01"
+      ],
+      "what": "On a role row `c`/`C` switch to the next/previous preset at once; `p` opens one filterable list of presets plus Custom (file chain); `N` new from the current chain, `R` rename, `D` delete with preview (sample frames 4a–4d). Persistence per design.md §1: `active_preset` selector (null = Custom), `hidden_presets` to suppress inherited names, only the changed preset written to the owner layer, project-pinned roles read-only with a lock row. Registry returns the effective run/preset after the merge; `hud_create(preset)` never mutates files. `I` (new from empty) and chain editing come in 05.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "two identical saved chains selectable by name",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "rename/delete an inherited preset survives relaunch; deleting the selected one falls back to the file chain with a preview",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "legacy role files (no selector) behave exactly as today",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "project-pinned role shows source + lock, no edit keys",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "40-col frames match the sample",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:45.998Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.998Z",
+      "updated_at": "2026-11-27T06:39:45.998Z"
+    },
+    {
+      "number": 5,
+      "title": "Direct chain editing",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "control-tab/02",
+        "control-tab/03",
+        "control-tab/04",
+        "model-picker/03"
+      ],
+      "what": "Enter on a role focuses its chain in place (Split preview / Classic expand). `I` starts an empty named draft; edits make a \"Not saved\" draft: `i` add a place via the one-sheet form (Target / Model / Thinking / Done, inline lists with filter, off targets unselectable, the 03 picker for pi models), Enter edits a place, `K`/`J` move, `Del` remove, `s` validate and save in one atomic write and select it, Esc / dirty-leave asks \"Discard edits?\". Advanced place options (skills, pi_args, args, split) are never stripped: replacing such a target is refused with file open offered. Remove legacy p/P harness cycling, e/E effort cycling and auto-added fallbacks; update reference EN/ZH and Help. Sample frames 5a–5e. See design.md §3 chain and sheet bullets.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "create empty → cancel writes nothing",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "create empty → pi model + CLI fallback → reorder → save → roster/create use that order",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "failed save keeps the draft; half a chain is never written",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "legacy keys gone from code, Help and reference",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "40-col frames match the sample",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:45.998Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.998Z",
+      "updated_at": "2026-11-27T06:39:45.998Z"
+    }
+  ]
+}

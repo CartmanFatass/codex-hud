@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "feature": "open-review-fixes",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Sonic children stop using the display-model budget and the job-directory windows",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Open reviews (fable j5c4cb51dc2240e9f #4, carbon j91fa6e1950156406 #2, astra j89d7a94587dc0669 #1): ~51% of job dirs are sonic children. They take 52-59% of card sentences and kind/outcome labels although Home never draws them (src/collectors/job-sentences.ts:257-260, decision-labels.ts:81-91), so the text model sits at its 240/h cap; and they fill the newest-200/64 directory windows (thin-jobs.ts:693, control-radar.ts:139, project-board.ts:284) so Home/Control 'done today' and Project lookups drop most of the day's imp jobs. Skip workers with a parent in sentence/label/recommendation updates; bound the windows by top-level jobs (children follow their parent). Also find why ~84% of job-sentences.json entries have empty text (carbon suspects reasoning_effort sent to the Mistral endpoint or reasoning text not stripped, src/collectors/small-model.ts:218-232) and fix it, with backoff on deterministic 4xx.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No sentence/label/recommendation request is made for a job with a parent (unit test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Directory windows count top-level jobs; a day with 300 children still shows every top-level job in Control today and Home",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Empty-sentence cause identified in the report and fixed; deterministic 4xx backs off",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Panel cadence/perf unchanged (existing perf tests pass)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.057Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7fa0d0920aab0b924bb276bb505299354171a600",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.057Z",
+      "updated_at": "2026-11-27T06:39:46.057Z"
+    },
+    {
+      "number": 2,
+      "title": "Claude CLI workers get the HUD worker tools loaded up front",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Scans and fable's review: Claude Code workers see hud_report/hud_progress/hud_sonic/hud_ask/hud_lease as deferred tools; ToolSearch for them returned empty 19/19 times, workers then guessed arguments (invalid_arguments) and started ~0 sonic children vs 1.6-2.8 for pi. Find how the Claude worker launch (src/mcp/cli-worker-startup.ts, harness-cli) can make these tools always loaded (Claude settings/env for tool search, or MCP server config), apply it to Claude worker launches only, and verify with a real headless claude worker that the first turn lists the five tools.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Report names the mechanism and its source (Claude docs/flags/env) and the change made",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live: a claude worker job's transcript shows the HUD worker tools available without a ToolSearch call",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Owner's own Claude settings untouched",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.057Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "727611971867367d678cdb1a7e094914ee4502e2",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.057Z",
+      "updated_at": "2026-11-27T06:39:46.057Z"
+    },
+    {
+      "number": 3,
+      "title": "Ticket scan counts every feature and marks partial totals",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Reviews: the ticket scan takes the newest 64 feature directories (src/collectors/project-board.ts:219-239) while this repo has 73+, so ticket meters undercount with no mark. Either scan all with a cheap stat-first pass or mark the total as partial; and $HUD_HOME/flows/ gets retention like jobs (no reader prunes it; 126 files in 1.5 days).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With >64 features the meter is complete or visibly marked partial",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "flows/ older than the job retention window are pruned by the existing retention pass",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unit tests",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.057Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "6c8b0238cda46f3dc9760ee29f5ea28a4c6c5fd9",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.057Z",
+      "updated_at": "2026-11-27T06:39:46.057Z"
+    },
+    {
+      "number": 4,
+      "title": "A replayed land re-gates when the published code tree differs from the tested one",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Astra review #2: hud_land can replay tested commits onto a newer base when paths are disjoint and fast-forward without a second gate (src/mcp/land-runner.ts:293-349); 33/116 attempts were replayed. Disjoint paths can still break (caller vs callee). Record the tested tree and the tree to publish; reuse green only for an identical tree or a ticket/STATE-metadata-only difference; otherwise re-run the gate once before fast-forward, and push the approved sha only.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Flow receipt records tested_tree and published_tree",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Replay with only metadata differences skips the gate; replay with a code difference re-gates",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Push publishes exactly the gated sha",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests with synthetic repos",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.057Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "acb1e185b254f5de67af3123d02bb07249fe458b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.057Z",
+      "updated_at": "2026-11-27T06:39:46.057Z"
+    },
+    {
+      "number": 5,
+      "title": "Install upgrades dependencies on lockfile change and selective uninstall keeps shared commands",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Reviews (carbon #9, astra #9): `install` runs `npm ci` only when node_modules is missing (install:64-75), so `git pull && ./install` keeps stale deps; selective uninstall unlinks core commands other extensions still use (install:48-59); re-running ./install without --with does a core-only build and leaves client integrations stale. Store the lockfile hash and run npm ci when it changes; keep core commands on selective uninstall; remember installed extensions in $HUD_HOME and upgrade them on a bare ./install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Changed package-lock.json triggers npm ci; unchanged does not",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Uninstalling one extension leaves core commands and other extensions working",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Bare ./install upgrades previously installed extensions",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Installer tests cover the three cases",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.057Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "010a42080abc5246bab32b0e1c1d83dfb195f633",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.057Z",
+      "updated_at": "2026-11-27T06:39:46.057Z"
+    },
+    {
+      "number": 6,
+      "title": "Model-facing text matches current lifecycle behaviour",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Reviews: src/roles/tool-definitions.ts:83 and integrations/skills/hud-delegate/SKILL.md:16,27,61 still teach read-driven closure and 'a tab for every job', while spec §2.1.5 closes declared workers at turn end and routing may run headless; docs/reference.md:422-423 still says ./install does not register the Claude mod. Fix the text, keep schema bytes flat or smaller.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tool definitions and hud-delegate skill describe turn-end closure and headless routing correctly",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "reference.md/zh install line fixed",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Tool schema bytes not larger than before",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.057Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "c84302b7f1140545dba84a2f692027dbe96db377",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.057Z",
+      "updated_at": "2026-11-27T06:39:46.057Z"
+    }
+  ]
+}

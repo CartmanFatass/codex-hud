@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { tryAbstractLock, withAbstractLock } from '../../dist/utils/abstract-lock.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
-import { assertLandingRecord, checkout, job, jobDir, repair, settle } from '../helpers/thin-mcp-land.mjs';
+import { assertLandingRecord, checkout, job, jobDir, repair, seedJsonTickets, settle } from '../helpers/thin-mcp-land.mjs';
 
 const timeout = 60_000;
 
@@ -62,11 +62,11 @@ async function trainCheckout(t, gate = 'true') {
 
 test('land train gates and pushes two queued jobs once, with a ticket record and receipt per job', { timeout }, async t => {
   const f = await trainCheckout(t);
-  const tickets = ['01', '02'].map(n => `.scratch/train/issues/${n}-sample.md`);
-  fs.mkdirSync(join(f.main, '.scratch/train/issues'), { recursive: true });
-  for (const [i, path] of tickets.entries())
-    fs.writeFileSync(join(f.main, path), `# 0${i + 1}: Sample\n**Status:** ready-for-agent\n**Owner try:** no\n- [ ] Work\n\n## Comments\n`);
-  f.git(f.main, 'add', '.scratch'); f.git(f.main, 'commit', '-qm', 'seed tickets');
+  const ticketFile = seedJsonTickets(f, 'train', [
+    { number: 1, title: 'Sample 1', status: 'ready-for-agent', owner_try: false },
+    { number: 2, title: 'Sample 2', status: 'ready-for-agent', owner_try: false },
+  ]);
+  f.git(f.main, 'add', ticketFile); f.git(f.main, 'commit', '-qm', 'seed tickets');
   const jobs = ['alpha', 'beta'].map((name, i) => f.add(name, { ticket: `train/0${i + 1}` }));
   const { blocker, flows } = await f.release(jobs);
   const [first, ...rows] = await f.complete([blocker, ...flows]);
@@ -80,7 +80,7 @@ test('land train gates and pushes two queued jobs once, with a ticket record and
     assert.equal(row.tested_sha, rows[0].tested_sha); assert.equal(row.published_sha, tip);
     assert.equal(row.tested_tree, f.git(f.main, 'rev-parse', `${row.tested_sha}^{tree}`));
     assert.equal(row.published_tree, f.git(f.remote, 'rev-parse', 'base^{tree}'));
-    assertLandingRecord(f, tickets[i], first.landed_sha, tip);
+    assertLandingRecord(f, ticketFile, first.landed_sha, tip, i + 1);
     assert.equal(fs.existsSync(jobs[i].root), false);
     const view = await f.call('hud_land', { job: row.job });
     assert.equal(view.flow, flows[i]); assert.equal(view.train, flows[0]);

@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "feature": "hud-doctor",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "hud doctor <jobId> prints one job's disk facts",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Proposal docs/neon-proposal/13-hud-doctor-job.md (owner 2026-11-22: do it). Read-only `hud doctor <jobId>`: identity, the shared reader's verdict (jobRow, never readRow which writes), raw STATUS.json (unknown fields as-is), turn/receipt validity for CLI jobs, open questions, checks bound to the current report, last progress, stop/close markers, supervisor/worker liveness, and a hints section of direct field comparisons. No writes, no network, no herdr, no panel page, no MCP tool. Missing/corrupt/oversize files show missing/unreadable. The proposal's line numbers are stale: current code wins (thin-main is split into src/mcp/{store,dispatch,mcp}/).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud doctor <id> prints the sections for a synthetic pi job, a CLI job with a stale receipt (hint names the fields), and a headless job",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Invalid id and missing job dir give a clear error and nonzero exit; corrupt JSON shows unreadable without crashing",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test proves no file under the job dir changes (mtime/content) after a run",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "hud help lists doctor; docs/reference.md + reference.zh.md describe it",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.029Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "c055516ed08d438095cd5acfe4ac53ee7b5fabac"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.029Z",
+      "updated_at": "2026-11-27T06:39:46.029Z"
+    }
+  ]
+}

@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "feature": "advisor",
+  "objective": "advisor",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Advisor shadow recommends a skill from the owner's libraries without touching the session",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec §2.2 advisor shadow (D-2026-11-24-06). Reference for the idea only: oh-my-pi's auto-prewalk judge (context = latest request + previous reply) at `tmp/refs/oh-my-pi/packages/coding-agent/src/auto-prewalk/classifier.ts:60-100`; do not copy its injection path. Settings: `advisorShadow` (default off) and `advisorSkillDirs` (list of absolute dirs; default empty). Index each `SKILL.md` under those dirs (frontmatter `name` and `description`, at most 300 bytes each; bounded to 200 skills / 64 KiB; rebuilt when a dir's mtime changes, never per message). Trigger: a new owner-typed message in a main (orchestrator) session HUD already tracks (Claude Code and pi first). Input to the Decision API, same discipline as `src/mcp/sonic-thinking.ts` (quoted untrusted data, fixed choices, own timeout): that message and the previous assistant reply, each at most 2000 chars with secrets scrubbed, plus the skill index. One fixed choice: a skill name or NONE, with the statement that NONE is the default unless a skill clearly fits what the owner is asking now. Skip the call when the message already names a skill path; at most one recommendation per owner message; the same skill is not recommended again in the same session within 30 minutes. Show, never inject: the bottom bars' notice zone shows `skill: <name>` for 10 minutes after the quota notices (Text and Nerd icon sets); the panel shows one line under the session's project, `<name> — <absolute SKILL.md path>`, and Enter or a click copies the path (OSC 52 to the terminal, `clip.exe` fallback on WSL). Nothing is written into any session, prompt or hook output. Record facts once: append `{kind: 'advice', session, skill, at, ms}` to the existing `$HUD_HOME/events/<YYYY-MM>.jsonl`, and the copy action to the existing panel actions log, so toktrack can later count recommendations and copies. No analysis in HUD.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With the switch on, a stubbed Decision API and a fixture skill dir, a new owner message yields one recommendation shown in the bar notice zone and the panel; NONE shows nothing",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Copying from the panel puts the absolute path on the clipboard (OSC 52 sequence asserted in a test) and logs the action; the advice event is appended",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No session transcript, hook output or prompt receives any advisor text (test greps the Claude hook and pi extension outputs)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Switch off makes no call and builds no index; dedupe and skip rules hold (tests); docs/reference.md describes the shadow in one paragraph",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Owner try: turn it on with the mattpocock skills dir, chat normally for a while, and copy one recommendation into a session",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.974Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "8ef7617b13b00a34554d9c70c5769834cd46a997",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.974Z",
+      "updated_at": "2026-11-27T06:39:45.974Z"
+    },
+    {
+      "number": 2,
+      "title": "Advisor shadow names the owner rules a main-session reply broke",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "advisor/01"
+      ],
+      "what": "Spec §2.2 advisor shadow (D-2026-11-24-07). Setting `advisorRulesFile` (absolute path; default empty = no rule checks), read under the same `advisorShadow` switch as ticket 01. Format: Markdown list lines `- R<n>: <one sentence>`; at most 30 rules / 8 KiB; other lines ignored; re-read when the file's mtime changes. Trigger: a main session's assistant reply ends (Claude Code Stop / pi agent end), at most once per reply. Input to the Decision API, same discipline as ticket 01 (quoted untrusted data, scrubbed, own timeout): the owner's latest message (at most 2000 chars) and the reply (its last 4000 chars), plus the rules. Output: one yes/no predicate per rule, 'did this reply clearly break the rule?', with the statement that no is the default unless the reply plainly breaks it. Batch all rules in one call. Show, never inject: the bar notice zone shows `rules: R2 R5` for 10 minutes (next to the skill item from 01, same icon-set handling); the panel line under the session's project lists each broken rule's id and sentence. Nothing reaches any session, prompt or hook output. Record once: append `{kind: 'rule_hits', session, rules: ['R2', ...], at, ms}` to `$HUD_HOME/events/<YYYY-MM>.jsonl` (only when at least one rule is hit; count calls with no hit as a number on the same month's advisor counters, not one event per reply).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With a fixture rules file and a stubbed Decision API flagging R2 and R5, the bar shows `rules: R2 R5` and the panel lists both sentences; no hit shows nothing",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Missing or oversized rules file disables rule checks without errors; mtime change reloads",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No session, prompt or hook output receives advisor text (same test as 01)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md describes the rules file format and the shadow display",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Owner try: turn on with the owner's approved rules file and watch for a few sessions",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.975Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "c9d7e9d11446a1f46efcaf26ed7c888edb014fd2",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.975Z",
+      "updated_at": "2026-11-27T06:39:45.975Z"
+    },
+    {
+      "number": 3,
+      "title": "Advisor injects its notes into the session (after the shadow trial)",
+      "status": "needs-info",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "advisor/01",
+        "advisor/02"
+      ],
+      "what": "Spec §2.2 (D-2026-11-24-07): a later, separate switch `advisorInject` (default off) delivers the shadow's skill recommendation and rule hits into the main session as one short, non-interrupting note on the next turn (Claude Code through the HUD mod's existing event channel; pi through the HUD pi extension), e.g. `HUD advisor: rules R2, R5 · skill tdd (<path>) — weigh, do not obey blindly`. Reference: oh-my-pi `tmp/refs/oh-my-pi/packages/coding-agent/src/advisor/advise-tool.ts:36-58` (advisory element, guidance attribute). Needs-info until the owner has tried the shadow (tickets 01 and 02) and says which items should be injected and how often.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Owner decides scope after the shadow trial; criteria to be written then",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.975Z",
+      "updated_at": "2026-11-27T06:39:45.975Z"
+    }
+  ]
+}

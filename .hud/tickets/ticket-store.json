@@ -1,0 +1,435 @@
+{
+  "version": 1,
+  "feature": "ticket-store",
+  "objective": "ticket-store",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "hud_tickets edits a typed per-feature JSON store without the land lease",
+      "status": "wontfix",
+      "owner_try": false,
+      "live_try": "During a running hud_land, call hud_tickets add on a scratch feature and see it return the new ticket number in under a second.",
+      "approved_removals": [],
+      "blocked_by": [
+        "chores-done/13",
+        "chores-done/14",
+        "chores-done/15"
+      ],
+      "what": "Design: docs/design/ticket-store/README.md §1, §2, §5 (D-2026-11-26-06). Build `src/tickets/store.ts`: schema validation for `TicketFeatureDoc`/`TicketRecord`, deterministic 2-space serializer, atomic write under `withAbstractLock('tickets', mainRoot)`, the `ticket-writes.json` hash record under `$HUD_HOME/projects/<hash>/`, and a per-feature read that falls back to `.scratch/<feature>/issues/*.md` when the JSON does not exist. Wire `hud_tickets` `ready`, `add`, `update` (status, blockers, ticks, owner_try, objective, plus new `comment` and spec-field edits) and a new `get` (one ticket or a feature) to the store; new features are created as JSON. These ops no longer take the `main-checkout` lease or run git. `hud_create({ticket})` renders the worker brief from the store with a pure `renderTicketBrief()` (no `brief_file` needed; an old `.scratch` `brief_file` from a queued item is ignored when the store has the ticket). Ticket-queue recovery matches items by `ticket`, not `path` (`src/mcp/ticket-queue-step.ts` ~1144, ~1199). Leave landing records, flakes and commits to ticket-store/02; leave collectors to /03.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`hud_tickets` add/update/get on a JSON feature finish without taking the main-checkout lease (test holds the lease and asserts the call returns with the new number)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "`hud_tickets` ready lists ready tickets from JSON and from not-yet-migrated `.scratch` features",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "`hud_create({ticket})` without brief_file gives the worker the rendered ticket; the rendered text matches a fixture",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "A queue item recorded with an old `.scratch` path still resumes by ticket id",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Typed edits reject unknown statuses, bad blocker refs and non-existent acceptance ids with a clear error",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.964Z",
+      "updated_at": "2026-11-27T06:41:20.964Z"
+    },
+    {
+      "number": 2,
+      "title": "Ticket landings fold into the landed commit; hud_tickets commit for the rest",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "Land a scratch ticket stored in JSON while another hud_tickets edit is made during its gate; git log shows one landed commit carrying both ticket changes and no separate tickets: commit.",
+      "approved_removals": [],
+      "blocked_by": [
+        "ticket-store/06"
+      ],
+      "what": "Design: docs/design/ticket-store/README.md §3. Move `recordLanding` from the integration worktree to right after `git merge --ff-only` in main, under the tickets lock: write `landing`, `status` (done, or ready-for-human with owner_try) and ticked acceptance into the newest main-checkout JSON, then `commit --amend --no-edit --only` the swept files (only those whose hash matches `ticket-writes.json`; never hand edits), and push the amended head. Add `.hud/tickets/*.json` and `.hud/objectives.md` to `isMetadataPath`. Reject worker diffs touching `.hud/tickets/**` in prepare/train. Move unattended acceptance (`accepted` receipt, non-blocking commit attempt at run end) and gate flakes (`kind: flake-list`, `cases[]`, promotion rule unchanged) to the store. Add `hud_tickets({op: \"commit\"})` and `hud tickets commit`. Remove `src/mcp/ticket-commits.ts` and the queued-receipt path from mcp-latency/02 once nothing uses them.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A land of a JSON-tracked ticket produces one landed commit containing the ticket's landing record; no separate tickets commit",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A dirty HUD-written ticket file in main never fails checkClean, ff-only or the gate; an owner hand edit to a ticket file is never swept into a commit",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A replay onto a ticket-amended head skips the gate as metadata-only",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unattended acceptance and gate flake collection write the JSON store",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "`hud_tickets commit` commits only HUD-written ticket files and leaves other staged and unstaged changes alone",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "ticket-commits.ts and the receipt queue are gone with their tests replaced",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.112Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "684331e2c71bd3af97ecb48be4e21fa9e51b6cfa",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.112Z",
+      "updated_at": "2026-11-27T06:39:46.112Z"
+    },
+    {
+      "number": 3,
+      "title": "Panel and board read tickets from the cached JSON store",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "Open the panel on MyHUD: Project/Feature pages show all features (no partial marker), Execution's workflow diagram shows ticket titles and blocker waves, and `o` on a ticket row opens its feature JSON.",
+      "approved_removals": [],
+      "blocked_by": [
+        "ticket-store/01",
+        "nav-redesign/07",
+        "nav-redesign/09"
+      ],
+      "what": "Design: docs/design/ticket-store/README.md §4. One stat-signature-cached reader in the collector layer (≤ 256 `.hud/tickets/*.json`, 64 KiB each, re-parse only changed files, nothing on the paint path, `.scratch` fallback per unmigrated feature). Switch `project-board.ts` ticket scan, `ticket-rollup.ts`, `ticket-evidence.ts`, `ticket-title.ts`, `execution-runs.ts` and `hud board` to it. Use `landing.at` instead of the `git log --patch` mining; give Execution titles and `blocked_by` edges for the waves in docs/design/tab-roles/README.md §3. `o` opens `.hud/tickets/<feature>.json` in `$EDITOR`. Add `hud tickets show <feature>[/<NN>]` printing Markdown via `renderTicketBrief()`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A project with more than 64 features shows all of them without partial (up to 256)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A warm collector pass does no ticket file reads (test counts reads)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Recently landed uses `landing.at` with no git subprocess",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Execution's workflow diagram gets titles and blocker waves for queued tickets",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "`o` opens the feature JSON; `hud tickets show` prints a ticket and a feature as Markdown",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.112Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3d330f8880fb5061881edaaaded961a3f64338a0",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.112Z",
+      "updated_at": "2026-11-27T06:39:46.112Z"
+    },
+    {
+      "number": 4,
+      "title": "hud tickets migrate converts Markdown tickets losslessly; sync writes JSON mirrors",
+      "status": "wontfix",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ticket-store/06"
+      ],
+      "what": "Design: docs/design/ticket-store/README.md §1, §5. Build `hud tickets migrate [--cwd <dir>] [--delete-legacy]`: convert every `.scratch/*/issues/*.md` variant in use (header lines, `resolved` → done, normalised blockers, checkbox acceptance, flake-list cases, Landed and unattended-acceptance lines, comments, Objective links) into `.hud/tickets/<feature>.json`, keep `.scratch/<feature>/spec.md` and prose notes, and verify a round trip (re-render and compare facts) before `--delete-legacy` deletes anything; refuse on any mismatch and list it. Update `hud tickets sync` to write `.hud/tickets/<slug>.json` with a `mirror` block and a git-ignore for mirror files, keeping today's mutual-exclusion guards.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Migrating a fixture tree covering every header and section variant yields JSON whose facts equal the parsed Markdown",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "--delete-legacy refuses and deletes nothing when any ticket fails the round trip",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Without --delete-legacy no Markdown is removed; running migrate twice is a no-op",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "sync writes a JSON mirror and still refuses to overwrite local tickets or edit a mirror locally",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T00:00:00.000Z",
+          "author": "main",
+          "text": "superseded by ticket-store/09 (repair carrying this slice); ticket-store/05 now waits on 07, 08 and 09."
+        }
+      ],
+      "created_at": "2026-11-27T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.112Z"
+    },
+    {
+      "number": 5,
+      "title": "Migrate MyHUD to the JSON store, delete the Markdown tickets, update docs and skills",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "After landing: `hud_tickets ready` and the panel's Feature page show the same tickets as before the migration; `.scratch/*/issues/` is gone and `.scratch/*/spec.md` remain.",
+      "approved_removals": [
+        "local markdown ticket files `.scratch/<feature>/issues/*.md` after lossless migration (owner 2026-11-26",
+        "d-2026-11-26-06",
+        "spec removed by this spec)"
+      ],
+      "blocked_by": [
+        "ticket-store/02",
+        "ticket-store/03",
+        "ticket-store/07",
+        "ticket-store/08",
+        "ticket-store/09"
+      ],
+      "what": "Design: docs/design/ticket-store/README.md §5. Start only when no ticket-queue run on MyHUD is working and toktrack already reads `.hud/tickets/*.json` (toktrack ticket in its own tracker; check its land first). Run `hud tickets migrate --delete-legacy` on MyHUD, keeping `.scratch/<feature>/spec.md` and prose notes. Remove the `.scratch` write paths and the Markdown fallback readers that no migrated project needs (keep the fallback only if another registered project still has `.scratch` tickets; say which in the report). Update `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` (claimed/done lifecycle, resolved → done), `integrations/tickets/method.md` (`hud_tickets guide`: get/ready/add/update/commit, no Markdown ticket template), `integrations/skills/hud-delegate/SKILL.md` (pass `ticket` without `brief_file`), `packages/hud-mcp/hud-convention.md`, `packages/hud-mcp/instructions/lead.md`, `docs/ARCHITECTURE.md` and `docs/reference.md`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "All MyHUD tickets exist in `.hud/tickets/*.json` with the same statuses, blockers and acceptance as before (count per status reported)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "`.scratch/*/issues/*.md` is deleted; spec.md and prose notes remain",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Docs and skills describe the JSON store and no longer tell anyone to edit ticket Markdown",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Full test suite passes",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.112Z",
+          "author": "legacy",
+          "text": "Main 2026-11-27 (herdr-fork is ~77 KB, over the 64 KiB cap): keep the cap. Before `--delete-legacy`, split herdr-fork: tickets whose status is done or wontfix and that no open ticket names as a blocker move to a new feature `herdr-fork-done` (same numbers kept in titles/comments for provenance; objectives list both); open tickets stay in herdr-fork. Open tickets whose Blocked by names no ticket ID get a real ticket ref or `none` first."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.112Z",
+      "updated_at": "2026-11-27T06:39:46.112Z"
+    },
+    {
+      "number": 6,
+      "title": "Repair ticket-store/01: land the JSON store from eace3355 with committed edits kept for unmigrated Markdown features",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "In a synthetic checkout, update a ticket on an unmigrated Markdown feature with hud_tickets, then hud_land that ticket: the land succeeds and git status is clean for the ticket path. Also, during a running hud_land, hud_tickets add on a scratch JSON feature returns the new number in under a second.",
+      "approved_removals": [],
+      "blocked_by": [
+        "chores-done/13",
+        "chores-done/14",
+        "chores-done/15"
+      ],
+      "what": "Supersedes ticket-store/01, whose implementation failed the assumption check (run q4d41eea7199f2815). Scope and design are unchanged: read ticket-store/01 (.scratch/ticket-store/issues/01-hud-tickets-edits-a-typed-per-feature-json-store.md) and docs/design/ticket-store/README.md §1, §2, §3 lock order, §5. Start point: the earlier worker's commit `eace3355` (branch `wt/imp-782109`, worktree ~/projects/MyHUD-wt/imp-782109) implements all of 01, and its tests pass. Cherry-pick it onto your worktree base and resolve conflicts; main has moved about 70 commits since then. Do not reimplement it. Defect to fix: in `src/mcp/ticket-store-ops.ts` (~line 77), a feature with no JSON goes through `legacy()`, which calls `applyTicketEdits(checkout, false, …)`. That writes `.scratch/<f>/issues/NN-*.md` in the main checkout with no commit and no `ticket-writes.json` hash. Two things follow. (a) A later hud_land of an edited Markdown ticket fails `checkClean` in `land-runner.ts` `publish()` (\"dirty or hidden changes on paths the landing touches\"), because `recordLanding` amends that same tracked path. (b) A Markdown ticket created by `add`, including lead repair tickets, stays untracked, so `recordLanding` never marks it landed. Every existing feature is Markdown until ticket-store/05, so this breaks every land. Fix: send add/update items for unmigrated Markdown features through the pre-slice path: the main-checkout lease plus one per-edit `tickets:` commit, or a queued receipt when the lease is busy (keep the receipt admission for Markdown only). Take that path before and outside `withTicketStoreLock`, so the lock order is always main-checkout → tickets. In a mixed `updates` batch, the Markdown items take that path and the JSON items stay lease-free. JSON features stay lease-free and git-free. Update docs/reference.md and integrations/tickets/method.md: unmigrated Markdown features keep committed edits (with receipts when busy) until migrated.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "All five acceptance items of ticket-store/01 hold on the landed code (JSON add/update/get lease-free under a held lease; mixed ready; hud_create({ticket}) renders the fixture; old-path queue item resumes by id; typed edits reject bad input)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_tickets update on an unmigrated Markdown ticket, then hud_land of that ticket in a synthetic checkout: the land succeeds and git status is clean for the ticket path (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "hud_tickets add on an unmigrated Markdown feature produces a committed ticket file, and a later land marks it landed (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The Markdown edit path never takes the main-checkout lease while holding the tickets lock (test or assertion on lock order)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "docs/reference.md and integrations/tickets/method.md state that Markdown features keep committed edits until migrated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.964Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "abd5636c20320c4c04a416817871570ae65c6eb8",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.964Z",
+      "updated_at": "2026-11-27T06:41:20.964Z"
+    },
+    {
+      "number": 7,
+      "title": "Repair ticket-store/03: one ticket schema and brief renderer for writer, collector, CLI and worker",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Write a feature through hud_tickets with one repair ticket (`repairs` set) and one flake-list ticket with `cases`, in a scratch project with `.hud/tickets/`. `hud tickets show <feature>` prints both tickets (Repairs line and cases included), `hud board` and the panel's Feature/Execution pages list every ticket in that feature, and `hud tickets show <feature>/<NN>` matches the brief hud_create gives the worker byte for byte.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "ticket-store/03"
+      ],
+      "what": "Milestone review jdda9ed49fe952627 finding 1 (~/.hud/jobs/jdda9ed49fe952627/report.md). `src/tickets/format.ts` is a second copy of the v1 schema and `renderTicketBrief()`; it does not declare `repairs` (written by `src/mcp/ticket-store-ops.ts:147-151`, accepted by `src/tickets/store.ts:95`) and its renderer omits flake-list `cases` that `store.ts:318-335` renders. Because the object validator rejects unknown fields, `src/collectors/ticket-store.ts:81-83` drops a whole feature as unreadable as soon as one ticket has `repairs`: the board loses sibling tickets, Execution loses store facts, and `hud tickets show` says the feature is not found. Fix: delete the duplicate. Keep exactly one schema/validator/serializer/`renderTicketBrief()` (in `store.ts` or `format.ts`, whichever keeps the collector free of MCP imports) and have the MCP writers, `src/collectors/ticket-store.ts`, `ticket-evidence.ts`, `src/cli/tickets.ts` and the hud_create brief path import it. No adapter layer.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Only one TicketFeatureDoc schema/validator and one renderTicketBrief() exist under src/; every reader and writer imports it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A feature written via the hud_tickets add path with a `repairs` ticket and a flake-list ticket with `cases` is collected in full (no partial/unreadable marker) and shown by `hud tickets show`",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: `hud tickets show <feature>/<NN>` output equals the brief text hud_create sends for the same ticket, including Repairs and cases",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.112Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f732205141c3252e1830424af0d7bcb7e9f9df90",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.112Z",
+      "updated_at": "2026-11-27T06:39:46.112Z"
+    },
+    {
+      "number": 8,
+      "title": "Repair ticket-store/02: hand edits never swept, landing records never silently skipped, acceptance and readiness failures surfaced",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "In a scratch JSON-store project: (a) hand-edit ticket A in its feature JSON, then let a HUD write update ticket B in the same feature and run `hud tickets commit`; `git show HEAD` contains B's change and not the owner's edit to A. (b) Leave a hand edit (valid, then malformed) in the feature of a ticket that hud_land is landing; the land either refuses before main moves, naming the file, or finishes with the ticket recorded done; it never reports a completed land while the ticket stays ready-for-agent, and never leaves publish_pending with no retry. (c) Break one feature JSON; `hud_tickets ready` reports that slug as unreadable/partial instead of plain ok with no tickets.",
+      "approved_removals": [],
+      "blocked_by": [
+        "ticket-store/07"
+      ],
+      "repairs": [
+        "ticket-store/02"
+      ],
+      "what": "Milestone review jdda9ed49fe952627 findings 2-5 plus the optional doc note (~/.hud/jobs/jdda9ed49fe952627/report.md). (2) The sweep hash only protects against hand edits made after the last HUD write: `src/mcp/local-tickets.ts:505-519,545-553` and `src/mcp/land-flakes.ts:515-518,578-585` read the owner's on-disk bytes, change another ticket, and `src/tickets/store.ts:198-208` records the hash of the combined document, so `src/tickets/commit.ts:94-123` then commits the owner's edit. Track whether the input bytes were sweep-eligible (on-disk hash matched `ticket-writes.json` or the file was clean in git) before writing; if not, write without marking the file sweepable. (3) `src/mcp/land-records.ts:51-60` silently skips the landing record when the landing feature has an uncommitted hand edit, yet `land-runner.ts:412-425` reports success, so the store keeps the ticket ready-for-agent and a queue could run it again; malformed hand-edited JSON throws after ff and leaves `publish_pending` (`land-state.ts:55`). Detect an unresolvable hand edit on the landing feature before moving main (refuse with a clear message naming the file), or make the records step durable and retryable; update `tests/unit/thin-mcp-ticket-commits.test.mjs:139-155`. (4) `src/mcp/ticket-queue-step.ts:1685-1693,1737-1744` swallows a failed acceptance write (e.g. a feature pushed over 64 KiB by the receipt) and records finish; keep \"receipt persisted, commit deferred\" as success, but a receipt that was not persisted must be retried or held with the ticket ID visible on the run. (5) `src/mcp/local-tickets.ts:353-365` turns a malformed canonical feature into `tickets: []` and `readyTickets` (:158-160) reports plain ok; keep healthy features available but return the unreadable slug(s) as a partial/diagnostic to readiness callers. Also remove the stale statements at `docs/reference.md:392,400` (priority queue for Markdown edits, separate main-checkout commit per flake). Optional if small: bind the post-ff amend in `src/tickets/commit.ts:131-155` to the expected tip.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: hand edit to ticket A, HUD write to ticket B, commit -> the owner's edit is absent from git and still on disk",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: land with a valid and with a malformed hand edit in the landing feature -> no land is reported complete with the ticket unrecorded, and no publish_pending without a retry path",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: acceptance receipt that cannot be persisted is retried or held with the ticket ID, not recorded as a clean finish",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Test: hud_tickets ready with one malformed feature returns the healthy features plus that slug flagged unreadable",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "docs/reference.md no longer promises a Markdown priority queue or a per-flake main-checkout commit",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.112Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "2a517ffc5cc3b25bf58f08137340db7d9bfe94e5",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.112Z",
+      "updated_at": "2026-11-27T06:39:46.112Z"
+    },
+    {
+      "number": 9,
+      "title": "Repair ticket-store/04: land hud tickets migrate and JSON sync mirrors on top of the JSON readers",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ticket-store/07"
+      ],
+      "repairs": [
+        "ticket-store/04"
+      ],
+      "what": "ticket-store/04 (job jf3e530677c655e15, commit 0dc26220 \"Add hud tickets migrate with round-trip verification and JSON sync mirrors\") failed its assumption check only because no reader on main read the JSON yet. ticket-store/03 and /06 have now landed, so readers check `.hud/tickets/<slug>.json` first and fall back to Markdown per feature. Start from 0dc26220, rebase it onto current main after ticket-store/07 (single schema), and use that one schema/serializer instead of any copy. Keep everything ticket-store/04 asks for (lossless `hud tickets migrate [--cwd] [--delete-legacy]` with round-trip verification; `hud tickets sync` writing `.hud/tickets/<slug>.json` with a `mirror` block plus git-ignore, existing mutual-exclusion guards). Add a test that a GitHub-mirrored feature written by `sync` still shows up in the collector, `hud board` and `hud_tickets ready`. Do not run migrate on MyHUD (that is ticket-store/05). Keep the 64 KiB cap; report features over it (herdr-fork) rather than raising it.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Migrating a fixture tree covering every header and section variant yields JSON whose facts equal the parsed Markdown",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "--delete-legacy refuses and deletes nothing when any ticket fails the round trip",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: a feature mirrored by `hud tickets sync` (JSON with mirror block) is listed by the collector, hud board and hud_tickets ready",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.112Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d5891a97b868936e6dd83e701b3bc901c95bc610",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.112Z",
+      "updated_at": "2026-11-27T06:39:46.112Z"
+    }
+  ]
+}

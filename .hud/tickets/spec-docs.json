@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "feature": "spec-docs",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Archive historical docs under docs/archive",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/neon-proposal/17-spec-and-docs-restructure.md Slice 1 (owner 2026-11-22: do 17; defaults Q4 A .rgignore hides docs/archive only, Q5 A docs/issues to docs/archive/issues and delete the empty docs/ANALYSIS-REPORT.md, Q6 A keep every review since 2026-11-10 in docs/reviews). git mv only (content unchanged, one commit for moves, a separate one for docs/README.md and docs/archive/README.md). Keep in place: docs/spec.md, docs/ARCHITECTURE.md, docs/reference*.md, docs/delegation.md, docs/handoff/STATE.md and its archive/, docs/agents/, docs/design/ files tests read, docs/probes the fixtures check reads, reviews since 11-10, docs/neon-proposal. Update every pointer (CLAUDE.md, AGENTS.md, STATE.md header, ISSUES.md, tests/check-fixtures.sh, tests/release-archive.test.mjs, .gitattributes). Recount the file list against the current tree.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "git log --follow works on moved files; no content change in the move commit",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No dangling relative link in kept docs (scripted check); npm test, check:fixtures and test:release pass",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.102Z",
+      "updated_at": "2026-11-27T06:39:46.102Z"
+    },
+    {
+      "number": 2,
+      "title": "Draft the restructured spec and decisions log, audited both ways",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Proposal 17 Slice 3: clause map of the current docs/spec.md (every clause S-NNN mapped KEEP / LOG / FLAG, kept in tmp/tasks, not committed), a structured docs/spec.md (current declarative contract only, numbered subsections, no meaning added or dropped) and docs/decisions-log.md (the dated owner decisions and history moved out, each spec rule pointing to its entry). FLAG errata F-1..F-6 listed for the owner, applied only as the owner ticks them (default Q1 A: align to the decisions already in force). Q2 A: decisions-log not in the release archive. Then a fresh oracle at its default audits forward (nothing dropped or weakened) and backward (nothing added). Committed on a branch only; nothing lands before the owner approves.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Clause map has no unmapped clause; oracle audit finds no dropped, weakened or added rule (or lists them)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Owner gets the new spec, the log, the errata table and the audit to approve",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "draft a15deee7 approved by the owner after two oracle audits (jobs of 2026-11-22); lands in 03."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.102Z"
+    },
+    {
+      "number": 3,
+      "title": "Land the approved spec; milestone ids like 0.2.0",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "spec-docs/01",
+        "spec-docs/02"
+      ],
+      "what": "Proposal 17 Slice 4 after the owner approves ticket 02: merge docs/spec.md and docs/decisions-log.md, point CLAUDE.md / docs/README.md at the log; Q3 A: src/collectors/project-board.ts milestone parsing also accepts 0.x.y ids so STATE's 'Milestone: 0.2.0' highlights in the ladder; spec §5 lists the current milestone.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Project ladder highlights 0.2.0 (synthetic test); spec under 32 KiB",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test, check:fixtures, test:release pass",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "owner approved the draft (wt/SPEC-DOCS-02 a15deee7, after two oracle audits) and resolved the ten FLAGs as main recommended (\"do as your recommendation\")",
+          "text": "- F-1: Project has no Control page; drop \"control\" from the Project hub page list.\n- F-2: backup skills live in Help (`?`); drop the \"Skills tab lists the whole inactive collection\" wording.\n- F-3: list the real tool set: hud_roster, hud_create, hud_read, hud_send, hud_respond, hud_close, hud_wait (hidden from MCP-task clients), hud_peek, hud_tickets, hud_lease, hud_statusline.\n- F-4: \"Inbox is deleted\" meant the old panel-level Inbox; the Project layout keeps Timeline (default), Board and Inbox.\n- F-5: keep the MCP tasks text only under MCP-ORCH; delete the M5 duplicate.\n- F-6: §5 lists 0.2.0 (MCP orchestration & Panel V2) as the current milestone; the collector accepts 0.x.y ids.\n- F-7: no count: \"pi gets the same worker tools natively\".\n- F-8: §2.1.6's per-response changes, watcher_alive and hud_wait apply to clients without MCP tasks; task clients get task completions instead.\n- F-9: the non-goal reads \"no general process-supervision platform\"; the per-job CLI supervisor and watcher are allowed.\n- F-10: the later rule wins: worker decisions are collected but not shown; delete the older decision display/title rules."
+        },
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed faceafcc. Spec 39.8 KB → 29.8 KB, no FLAG markers left; decisions log D-2026-11-22-01..; ladder accepts 0.x.y. Suite 952/952; release test passed in the imp's clean worktree."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.102Z"
+    }
+  ]
+}

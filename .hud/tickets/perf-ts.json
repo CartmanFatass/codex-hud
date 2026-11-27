@@ -1,0 +1,347 @@
+{
+  "version": 1,
+  "feature": "perf-ts",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "The panel runs as one process and backs off when idle",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 01. Replace the waiting spawn in `src/cli/compat.ts` foreground (used by `src/cli/panel.ts`) with an exec handoff where Node supports `process.execve`; keep spawn and signal forwarding as fallback; terminal restore, exit codes and hot reload (`src/utils/panel-reload.ts`) unchanged. In `src/panel/controller.ts` (~241-249) run the Codex `finder.check()` only when the selected harness is Codex or unset-with-Codex, so a Claude or pi panel neither scans Codex sessions nor pins adaptive poll at 1 s. Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`hud panel --here` leaves one Node process",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A Claude-harness panel does not call finder.check and its poll backs off when idle",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted panel/reload tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.073Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "c79b5308a4d444c9cc5890544cbc680cd97ca277"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.073Z",
+      "updated_at": "2026-11-27T06:39:46.073Z"
+    },
+    {
+      "number": 2,
+      "title": "Long-lived processes run with V8 heap caps",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "perf-ts/01"
+      ],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 02. Start the panel with `--max-old-space-size=128 --max-semi-space-size=4` and hud-watch and hud-mcp with `96/2` (through their launchers, overridable by an env var). Before choosing, run a 200-tick 400-job panel soak and a watcher/MCP soak per setting and confirm no OOM or GC-thrash CPU regression; pick the smallest caps that keep CPU within 10% of today. Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Soak numbers (RSS, PSS, CPU) for default vs chosen caps in the report",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An env override restores defaults",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted launcher tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.073Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "78ef2522885804ac17a09c73c65c38be881f8995"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.073Z",
+      "updated_at": "2026-11-27T06:39:46.073Z"
+    },
+    {
+      "number": 3,
+      "title": "Hot reload does not ratchet memory",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 03. hud-watch reloads after a rebuild by `process.execve` (as `src/utils/panel-reload.ts` does), keeping `watch.pid` and readiness semantics. In `packages/hud-mcp/bin/generation.mjs`, generation 0 no longer stays pinned on the main thread for hud-mcp (stdio owner keeps the pipe) and retired workers are terminated after they drain. A rebuild during a request still answers it. Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "15 synthetic reloads: watcher PSS stays within 10 MB of a fresh one",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud-mcp answers across a reload; retired worker threads exit",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted watch/mcp reload tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.073Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "5ebe7c69de39498384ea243acecc7c8558fab631"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.073Z",
+      "updated_at": "2026-11-27T06:39:46.073Z"
+    },
+    {
+      "number": 4,
+      "title": "Panel ticks skip unchanged work",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "perf-ts/01"
+      ],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 04. Memoize `ProjectCollector.collect()` (`src/collectors/project-board.ts`) on the `.scratch` and ledger stamps; skip `thin-jobs` `exportFacts()` and its JSON stringify when nothing changed (`src/collectors/thin-jobs.ts`); add an ASCII `charCodeAt` fast path to `visualWidth` and build strings without per-char concatenation (`src/render/colors.ts`); make `Intl.Segmenter` lazy (`src/render/monitor-text.ts`). Width results must stay identical (CJK, emoji, ANSI). Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "400-job fixture: panel tick ms before/after (target <8 ms from ~40)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "visualWidth/truncateAnsi results identical on the existing width fixtures",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted render/collector tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.073Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "c55c080045e21a1e3262f7f27927f950bb240ca9"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.073Z",
+      "updated_at": "2026-11-27T06:39:46.073Z"
+    },
+    {
+      "number": 5,
+      "title": "MCP calls do one scan and start no needless watcher",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 05. In hud-mcp: memoize project/shared git root lookups (`src/roles/projects.ts` spawnSync) with a short TTL keyed by cwd; scan `jobs/` once per tool call (adoptSessionJobs + rows share it); compute queue positions once per response with a lazy lookup (`src/mcp/thin-main.ts` readRow / changes cursor), using the global per-role FIFO; do not start a watcher for a read when the store has affirmative evidence of no live jobs, and coalesce concurrent launches while readiness is pending. Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "400-job fixture: hud_read and hud_roster ms before/after; 96 queued roster before/after",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Five empty reads start no watcher; a read with live jobs still ensures one",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted thin-mcp tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.073Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "5fbed2c5a2c510bebc772fb290c5deb5a3f98e84"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.073Z",
+      "updated_at": "2026-11-27T06:39:46.073Z"
+    },
+    {
+      "number": 6,
+      "title": "A land builds incrementally and once",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 06. Keep `tsc` build info (`--incremental`) outside the staged dist dirs in `scripts/build.mjs` so gate and after builds are warm; skip the `after: npm run build` when the integration checkout's tested build inputs match the landed tree exactly (publish through the existing staged publisher, never a partial copy over live dist). Record each gate step's wall time in the flow file. Do not change test concurrency in this slice. Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Flow files carry per-step timings",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Second build of an unchanged tree takes a few seconds; after-step skipped when inputs match, rebuilt when not",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted build/land tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.073Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "486aa90eaa76451455148a91a02245d54083627d"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.073Z",
+      "updated_at": "2026-11-27T06:39:46.073Z"
+    },
+    {
+      "number": 7,
+      "title": "Reap removes worktrees whose node_modules was checked out",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 07. Tracked files under `node_modules` make `populateWorktree` (`src/mcp/managed-worktree.ts`) check out a real `node_modules` dir, so no symlink is made and `dependencyLink()` makes reap refuse forever (about 16 dirs, ~750 MB under ../MyHUD-wt). Make reap treat a tracked-plus-ignored `node_modules` as removable dependency state (never untracked user files elsewhere), and make populate link the untracked rest when the tracked part exists. Include a one-time sweep of already-stale managed worktrees whose jobs are closed. Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A worktree with checked-out node_modules is reaped after its job closes; user files block reap as before",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Stale managed worktrees of closed jobs are removed on the next sweep",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted worktree tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.073Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "a6ee4d24cfb53dd189bce42ee9facaea5b129704"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.073Z",
+      "updated_at": "2026-11-27T06:39:46.073Z"
+    },
+    {
+      "number": 8,
+      "title": "The pi footer caches EXP off",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Plan `docs/llm/perf-rust-plan-2026-11-22.md`, row 08. `src/harness/pi/p10k-footer.ts` and `subscription.ts` reread EXP settings on every draw (120 reads per 120 paints with EXP off). Cache the observed disabled state as well as enabled, refresh only when settings, binding or proxy change or a watch is lost; keep demand-only refresh. Measure before and after on a synthetic fixture under `tmp/env.sh` and put both numbers in the report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "120 paced paints with EXP off read settings once",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Turning EXP on is picked up without restart",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted pi footer tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.073Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "cb08bb1d5ec6b920a064639c8ab5ec440fdc86f4"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.073Z",
+      "updated_at": "2026-11-27T06:39:46.073Z"
+    },
+    {
+      "number": 9,
+      "title": "Milestone review fixes for performance stage 1 and the native statusline",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Fix every blocking finding in `docs/reviews/2026-11-22-perf-milestone.md` in one pass (plan 1-4, simplicity 1-2, plus its \"What can be deleted\" list). The design intent it was judged against is in `tmp/tasks/review-perf/brief.md`. In short:\n- A real MyHUD land reuses its tested TypeScript build: compare the declaration inputs from `scripts/` and `packages/hud-mcp/bin/` (`dist-lock.d.mts`, `agy-events.d.mts`) between the two checkouts instead of rejecting them; the land fixture uses the real program shape.\n- A Claude statusline with no herdr pane shows no worker zone (TS and Rust); global counts stay for explicit global consumers.\n- `hud_respond` with several answers publishes the work summary once per call, not once per answer; dispatch admission keeps its fresh check.\n- Rust matches TS for the `zai` (GLM) mark colour, or declines that case to TS; add it to the differential fixtures.\n- pi's passive `Work:` status keeps `stalled`, `failed` and `report ready` on the fresh-snapshot path.\n- The pi footer's EXP-off cache watches the resolved settings target (symlinked dotfiles), or does not cache when the watch cannot cover the file it read.\n- Deletions: per-answer census rebuilds; `seenFacts` in `src/collectors/thin-jobs.ts` (use the `seenStamps` keys).\nAlso take the review's third optional item (split the ARM64-portable TS-bypass assertion from the x64 replay assertion in `tests/unit/native-statusline.test.mjs`); leave the other optional items.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each blocking finding has one main-path test that fails before and passes after",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Targeted tests pass, including the Rust/TS differential tests",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.073Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "2b1eef2efe5e03ec021825a40758db8d83499e38"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.073Z",
+      "updated_at": "2026-11-27T06:39:46.073Z"
+    }
+  ]
+}

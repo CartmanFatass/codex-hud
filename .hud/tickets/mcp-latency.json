@@ -1,0 +1,265 @@
+{
+  "version": 1,
+  "feature": "mcp-latency",
+  "objective": "unattended",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "MCP hot reload waits for idle instead of holding new calls behind in-flight ones",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "during a hud_land of a MyHUD job (which rebuilds dist), call hud_tickets guide and hud_peek from the main session: both return within a second",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Diagnosis job j728520f939adb5de (read its full report). Today packages/hud-mcp/bin/hud-mcp.mjs:34-40,69-76 starts a reload as soon as the build stamp changes and drains ALL outstanding calls before handing off; new stdin lines wait for the handoff, so a ticket edit waiting minutes on the main-checkout lease holds unrelated calls (guide, peek, even ping) for minutes (reproduced 121 s). Change: defer starting the reload until no call is in flight; keep dispatching new calls to the current generation meanwhile; reload on the next idle moment. Never migrate or replay a mutation. Adapt the existing 'rebuild drains overlapping' test in tests/unit/thin-mcp-reload.test.mjs: a changed stamp with one long call in flight leaves new guide/peek/ping answering in milliseconds, no call is replayed, the reload happens once idle and state is preserved.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With a stamp change and a long in-flight call, new unrelated calls answer within 50 ms on the old generation (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No call is replayed; the reload happens at the first idle moment and preserves state (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Existing reload tests pass; docs/ARCHITECTURE.md reload note updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.042Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7b5500f949b331575f6df107eddb3e34e800ee04",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.042Z",
+      "updated_at": "2026-11-27T06:39:46.042Z"
+    },
+    {
+      "number": 2,
+      "title": "Ticket edits under a held land lease return a queued receipt within 2 s and commit in order later",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "while a hud_land runs, call hud_tickets add for a scratch feature in a temp project: it returns queued within 2 s; after the land finishes the ticket file and commit appear and the receipt shows its number",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-latency/01"
+      ],
+      "what": "Diagnosis job j728520f939adb5de, proposal 2. Today src/mcp/ticket-commits.ts:16-32 waits for the main-checkout lease (held by land through gate, publish and cleanup, src/mcp/land-runner.ts:532-593) before planning or writing, so hud_tickets add/update block for minutes (647 s observed). Keep the synchronous fast path when the lease is free (unchanged reply). When the lease is held: admit the edit to an ordered, private, bounded durable queue under $HUD_HOME and return within 2 s `state: queued` with a receipt id (no assigned paths or per-item outcomes yet; say so in the reply). Admission must not wait behind another edit's lease wait. After the lease is granted, revalidate against the current checkout, apply with the existing path-only commit and hand-edit protections, and record the outcome on the receipt; recovery after an MCP restart applies each receipt at most once (no duplicate adds). Read the outcome with hud_read({job: <receipt>}) or a hud_tickets op the main session already uses, whichever adds less surface; a finished receipt also reaches the caller like other notices. Keep chores/02: edits never write into the main checkout while a land holds it. Update docs/reference.md (hud_tickets) and the tool description in as few words as the schema budget allows.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Lease free: add/update reply as today, under 2 s (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Lease held: reply `queued` with a receipt in under 2 s; a second edit is admitted without waiting behind the first (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "After the lease is released, queued edits apply in admission order with path-only commits; receipt shows assigned numbers/paths or the error (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "MCP restart with pending receipts applies each once, no duplicates (test)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "docs/reference.md and tool description updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.042Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3bba88d739d0d32f81e527ffc61f4289ab8149ad",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.042Z",
+      "updated_at": "2026-11-27T06:39:46.042Z"
+    },
+    {
+      "number": 3,
+      "title": "A queued ticket edit always reaches a terminal outcome even when its drain helper fails",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "While a hud_land of a MyHUD job runs, call hud_tickets add for a scratch feature in a temp project and kill the spawned `workflow-runner --ticket-edits` helper; after the land finishes, without another submission, hud_read on the receipt shows completed (ticket file and commit present) or failed with a reason, never stuck queued",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-latency/02"
+      ],
+      "what": "Repair from milestone review jd2fc9755a1a3a2b6 (finding 'accepted edit can remain queued indefinitely'). Today src/mcp/ticket-edit-queue.ts:29-40 `wake()` drops spawn errors and ignores an early helper exit. The detached runner can fail its dist import/lock (packages/hud-mcp/bin/workflow-runner.mjs:8-10), for example during the rebuild of the very land that caused the queueing. `settle()` can also throw out of `drainTicketEdits` when `takeLease` itself errors. Either way the receipt stays queued/active and nothing re-drives it: `hud_read` only reads the row (ticket-edit-queue.ts:42-46), and a hot swap skips `resumeTicketEdits` (src/mcp/mcp/server.ts:293-301). Only another submission or a cold MCP restart recovers it. Fix: the MCP that admitted (or still holds) pending receipts re-drives them on a bounded trigger, so no caller action is needed. Use the simplest of these: a recovery check when the drain mutex is free and the receipt is still active, run from the existing notice/idle path or a bounded timer, and/or on hot-swap start. When the helper exits without settling, re-wake it a bounded number of times. Past that bound, record a definite `failed` with the launch error. Never replay a receipt that is already `applying`; the existing commit-marker check still decides it. Also, while there, avoid re-parsing every retained terminal receipt on each admission and each drained item when only active ids are needed (optional simplification from the same review), but only if that stays small.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The first helper launch fails (or the helper exits before settling); after the lease is released, the receipt reaches completed or failed without another submission or a cold MCP restart (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An `applying` receipt is never applied twice by the re-drive; the commit-marker check decides it (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Re-wake attempts are bounded; past the bound the receipt is `failed` with the reason, and the caller gets the usual completion notice (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Existing thin-mcp-ticket-commits tests still pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.042Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "08f8dd05f47aa586e0950a4488e06ba35aab3ed4",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.042Z",
+      "updated_at": "2026-11-27T06:39:46.042Z"
+    },
+    {
+      "number": 4,
+      "title": "A ticket edit queued by a lead still reaches a terminal outcome after the lead's MCP swaps or exits",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "While a hud_land of a MyHUD job runs, have a lead in a queue run call hud_tickets add for a scratch feature in a temp project (gets `state: queued`), let the lead report and close, then kill the spawned `workflow-runner --ticket-edits` helper; with no main MCP restart and no further submission, hud_read on the receipt shows completed (ticket file and commit present) or failed with a reason, never stuck queued",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair from milestone review j2814424269891a3c (major finding). Leads may call the main hud_tickets handler (src/mcp/mcp/server.ts:192-200), and a lead's add/update admits a queued receipt and starts its supervisor (src/mcp/ticket-edit-queue.ts submitTicketEdit -> wake). But a lead's MCP has HUD_JOB_DIR set, so `worker` is truthy. Neither cold start (server.ts:297-300) nor hot swap (server.ts:326) calls resumeTicketEdits for it, and stop() aborts the supervisor unconditionally. A lead session also closes right after hud_report, which ends its supervisor. If the detached `workflow-runner --ticket-edits` helper then fails, which is the case ticket 03 covers, the receipt stays `queued` until some main MCP starts or reloads. Unattended runs need not have a main session open. This happens in practice: lead j66891978899adb94 reported with receipt te…2d2 still queued behind consecutive lands. Fix with the simplest of these: (a) give resume (cold start and hot swap) the same eligibility as admission (main or lead); and (b) so the receipt survives the lead closing, have the long-lived process that hosts the lead step (the queue workflow runner, src/mcp/workflow-runner.ts) re-drive active receipts for its project with the existing resumeTicketEdits/wake supervisor while the run is alive, then stop it when the run ends. Reuse the existing bounded wake, its attempt budget, and the commit-marker check. Add no second drainer and no new receipt API. Never replay an `applying` receipt.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A lead MCP that admitted a queued receipt resumes its supervision after a hot swap (and on cold start), using the same eligibility as admission (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "With no main MCP running, a lead-admitted receipt whose helper is killed reaches completed or failed after the lead MCP exits, while the queue run is alive, with no further RPC (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "An `applying` receipt is still decided by the commit-marker check and is never applied twice; existing thin-mcp-ticket-commits tests still pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.042Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "aa8ba0bd0833cfa7d839ad8d3fa7bae9c1702adc",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.042Z",
+      "updated_at": "2026-11-27T06:39:46.042Z"
+    },
+    {
+      "number": 5,
+      "title": "Ticket edits never starve behind back-to-back lands",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-26, observed live: ticket-edit receipts te…0c, 0d, 0e, 0f, 10 and 11 (adds for imp-daily-facts, cold-archive, workflow, unattended, chores and a select-send status update) stayed `queued` for over an hour while a chain of lands (f76537…, f50dc…, f0420…, fc0f02…) held the main-checkout lease back to back (\"waiting for <flow> (gate step 3)\"). An earlier receipt (0b) applied, so the drain works, but it never gets a turn: each land hands the lease to the next waiting land. Queue runs and main then act on stale ticket state (a run started before a status update dispatched a ticket against the intended dependency, a duplicate repair ticket landed, a ready ticket waited). Give queued ticket edits priority at every lease handoff: when a land releases or hands over the main-checkout lease and edits are pending, drain them (bounded: the pending batch at that moment, each a small commit) before the next land takes the lease. A land that is mid-gate is not interrupted. JSON-store features (ticket-store) are lease-free and unaffected; this covers Markdown features until their migration.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With two lands chained back to back and an edit queued during the first gate, the edit commits between the two lands (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Draining is bounded to the edits pending at the handoff; a steady stream of edits cannot starve lands (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A land waiting for the lease after the drain proceeds without a gate rerun caused by the edit commits beyond the usual base-move replay",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md states the order: running land, then pending edits, then the next land",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.042Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "1fe82d15bc9961ec8c40f90da17e2922b6f93ed3",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.042Z",
+      "updated_at": "2026-11-27T06:39:46.042Z"
+    },
+    {
+      "number": 6,
+      "title": "One handoff drain per train outcome; reset drain bookkeeping for the single fallback",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-latency/05"
+      ],
+      "what": "Repair for mcp-latency/05 (milestone review jeb31e6e4318ab7e2). In `src/mcp/land-runner.ts` `train()`, when a train partially succeeds and the lease-owning helper's own pick is excluded from `members`, `publish(who, tips)` already drains the handoff snapshot (via `drainHandoff()` at ~:463), then `train()` falls through and calls `drainPendingTicketEdits` again (~:567) before the owner's single attempt — two batches at one handoff, so an edit admitted during the first drain commits ahead of the waiting single. In reverse, `handoffDrained` stays true from that partial publish while the single runs under the same lease, so if the single exits via the failure/cancel `finally` (~:609) it skips its own pending batch. Fix: make one handoff decision per train outcome — reuse the drain a successful publish already did, drain exactly once on a clean unpublished fallback (no publish), and reset `handoffDrained = false` when the single attempt starts so its own exit drains. Delete the now-redundant direct second drain call. Keep CustodianError/publish_pending skips as they are.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A partial train where the lease owner's pick is excluded drains exactly one snapshot before the owner's single attempt; an edit admitted during the train's publish drain does not commit before the single attempt (regression test that forces the lease owner to be the excluded pick)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "After a partial train publish, a single attempt that then fails or is cancelled still drains its pending batch before releasing the lease (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A train that publishes nothing (clean fallback) drains once before the single attempt, as before",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The steady-stream boundedness test synchronizes at least one receipt admission inside the snapshot drain so it deterministically proves post-snapshot arrivals wait for the next turn",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.042Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ddbeb06b20e539cd33e1033e8ca08b9becfcf66b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.042Z",
+      "updated_at": "2026-11-27T06:39:46.042Z"
+    }
+  ]
+}

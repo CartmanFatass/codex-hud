@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "feature": "handoff",
+  "objective": "handoff",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A ticket queue waits for blockers in other features",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-24 accepted: the main session should be able to publish a feature's tickets and start its queue right away even when some tickets are blocked by another feature's tickets that have not landed yet (e.g. toktrack's web build waiting on `models-ux/02` and `projects-ux/02`); the queue holds those tickets and starts each one when its blockers are done, instead of the main session remembering to start the queue later. First find what happens today when `hud_tickets({op: \"run\"})` meets a `**Blocked by:** other-feature/NN` that is not done (`src/mcp/ticket-queue*.ts`, `src/mcp/local-tickets.ts`, the Project tab's Queued/Stalled rules in `docs/reference.md` ~751-759): whether it waits, skips, fails or completes the queue early. Then make it wait: a cross-feature blocker that is not `done` holds the ticket as Queued (shown so in the queue's state and the panel), the runner rechecks when any land completes (event-driven, no polling loop beyond what the runner already does), and starts it when every blocker is done. A blocker that is `wontfix` releases it; a blocker that does not exist is an error at `run` time as today. A queue whose only remaining tickets wait on other features stays alive and says what it waits on; it does not count as failed or completed. Update `docs/reference.md`. Budget about 80 source lines and 3 tests. Stop and report if it needs more.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a queue started with ticket A ready and ticket B blocked by another feature's not-done ticket runs A, keeps B queued and names the blocker; when the other feature's ticket lands, B starts",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a wontfix blocker releases the ticket; a queue with only cross-feature-waiting tickets stays alive and is neither failed nor completed",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.017Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3a9d1c1e6ca4d081354e8b8d5956950449d4ddbd",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.017Z",
+      "updated_at": "2026-11-27T06:39:46.017Z"
+    },
+    {
+      "number": 2,
+      "title": "Design previews open in the owner's browser on report",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-24 accepted: the main session copied a design sample to `tmp/preview/` and opened it with `explorer.exe` six times in one day (`docs/delegation.md` Design samples paragraph). Make it HUD's job. `hud_create` takes an optional `preview: \"<path relative to cwd>\"` (an HTML file the job will write). When the job's report is declared, HUD copies that file to `<project root>/tmp/preview/<job>/<basename>` (so it survives a worktree landing) and, when the owner's setting `openPreviews` is on (default on), opens it in the default browser: on WSL `explorer.exe \"$(wslpath -w <copy>)\"`, otherwise `xdg-open`; a failure to open is noted in the notice, never fatal. The report-ready notice and `hud_read` digest name the copy's path. A worker may also name the preview in its report (`preview:` meta) when the brief did not. A repair or resumed job that rewrites the file opens the new copy once. No preview for a missing file (say so in the notice). Update `docs/delegation.md` (the orchestrator no longer copies and opens samples by hand) and `docs/reference.md`; add the setting to Settings with its i18n. Budget about 100 source lines and 3 tests (copy + open command built for WSL and non-WSL with an injected opener; setting off copies but does not open; missing file noted).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a job created with `preview` copies the file to `tmp/preview/<job>/` on report and calls the opener once with the WSL path; with the setting off it copies without opening",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a missing preview file is named in the notice and nothing is opened",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.018Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "5aa6de0fddd9fba08d514521cc3efd2fc5135d0e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.018Z",
+      "updated_at": "2026-11-27T06:39:46.018Z"
+    },
+    {
+      "number": 3,
+      "title": "Docs-only jobs commit their own paths when the brief asks",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-24 accepted. Two workers asked the same question today because the role prompt says \"Elsewhere leave changes in the working tree\" while their briefs said to commit (design samples in the main checkout). toktrack patched it in its `.hud/brief.md`; make it the default for every project. In `packages/hud-mcp/instructions/implementer.md`, `frontend-implementer.md` and `general.md` (line ~19-24, the sentence with \"Elsewhere leave changes in the working tree\"), keep the default but add: when the brief asks a job without a managed worktree to commit, commit only the paths the job wrote, with a pathspec (`git add <paths> && git commit -m ... -- <paths>`), never others' changes; no push. Update any digest or snapshot test that pins these files. Keep the wording short; no other change.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The three instruction files carry the rule; their tests pass",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.018Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "bc317add935e25c483510e773951339c6b89a117",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.018Z",
+      "updated_at": "2026-11-27T06:39:46.018Z"
+    }
+  ]
+}

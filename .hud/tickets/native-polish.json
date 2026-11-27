@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "feature": "native-polish",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Nested Claude subagents always sit under their parent",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "on Home's `Claude · this session` lane, every nested Claude Code subagent is shown indented under\nthe subagent that started it, never as a top-level card, however long the parent's transcript has grown. Found in the\nowner's live test (2026-11-12): a nested Explore showed at top level because the call that started it sat 57 KB from\nthe end of its parent's transcript and only the last 32 KB is read. The parent's transcript is read forward from where\nthe last read stopped, remembering every subagent-starting call, with a per-pass byte cap and no new watcher.\n\nLegacy Blocked by: None (can start immediately)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A child whose starting call is far (> 64 KB) from the end of a long parent transcript is attached to its parent",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Reads stay incremental and bounded per pass; an unchanged transcript costs no body read",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A truncated/rotated parent transcript is re-read from the start, not misattributed",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Home frames at 80 and 120 columns, EN and ZH, show the nested child indented under its parent",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.050Z",
+      "updated_at": "2026-11-27T06:39:46.050Z"
+    },
+    {
+      "number": 2,
+      "title": "A Claude subagent that resumes after a background wait shows running again and gets a fresh result",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "native-polish/01"
+      ],
+      "what": "a Claude Code subagent that pauses to wait for its own background work looks finished for a\nmoment; when it continues, its card returns to running (◉) and, when it really finishes, its result line is written\nfrom its real last reply. Found in the owner's live test: a Haiku agent showed done while it waited for a background\n`sleep`, and its result line stayed \"waiting 40 seconds in the background\" after it had finished.\n\nLegacy Blocked by: 01 (uses 01's forward reading to see the messages after the pause)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A subagent whose transcript grows after it was marked finished shows running again",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Its final sentence is regenerated once for the new settlement (same 2-minute spacing and cap), not frozen on the interim text",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "An agent that really finished stays done; no extra model calls for unchanged transcripts",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.050Z",
+      "updated_at": "2026-11-27T06:39:46.050Z"
+    },
+    {
+      "number": 3,
+      "title": "Chinese sentences colour their keywords instead of showing brackets",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "in a Chinese panel, the model's keyword marks colour the word like in English; brackets never show.\nFound in the owner's live test: the model marked keywords with `「…」`, which showed literally\n(`「bar-fields.ts」以「835行」`). The prompt asks for `«…»` in every language, and `「…」` used as marks are read as\nplain keyword marks.\n\nLegacy Blocked by: None (can start immediately)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`「x」` marks in a model sentence paint like `«x»` and the brackets are not shown",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Ordinary quoted Chinese text that is not a mark pattern stays as written (no false colouring of a whole sentence)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The sentence prompt states the `«…»` grammar for Chinese output too",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "EN and ZH tests for job, native and decision-title sentences",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.050Z",
+      "updated_at": "2026-11-27T06:39:46.050Z"
+    },
+    {
+      "number": 4,
+      "title": "HUD job cards show a short title, not the raw dispatch text",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "a HUD job's card on Home, the progress board's slice block and the Inspector show a short title:\nthe brief's first heading (e.g. `CLAUDE-BIND: …`) or the model's short name, instead of the raw task text the job\nwas dispatched with (\"Read and carry out the brief /home/…\").\n\nLegacy Blocked by: None (can start immediately)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A job whose brief starts with a `# heading` shows that heading as its card title",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Without a heading, the model's short name (master switch on) or the first line of the task, cut to fit",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No extra file reads beyond the bounded brief read the panel already does; no extra model calls",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Home frames at 80 and 120 columns, EN and ZH",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.050Z",
+      "updated_at": "2026-11-27T06:39:46.050Z"
+    },
+    {
+      "number": 5,
+      "title": "`/hud` binds the caller's Claude session live, and CLAUDE-BIND's leftovers are cleared",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "an ordinary `/hud` (or `! hud panel`) from a Claude Code pane opens a panel whose Home shows\n`Claude · this session` with that session's subagents, verified on the owner's real herdr; the bindings in pi-roles\nthat the CLAUDE-BIND audit lists are fixed the same way (identity from herdr at use time); the stray pane record left\nby the first attempt is removed.\n\nLegacy Blocked by: CLAUDE-BIND landing (outside this feature)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Live check: `/hud` in a Claude pane binds that session; a nested Haiku test shows on Home",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "pi-roles bindings from the audit fixed in Fishpref",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No binding records left under the HUD home",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.050Z",
+      "updated_at": "2026-11-27T06:39:46.050Z"
+    }
+  ]
+}

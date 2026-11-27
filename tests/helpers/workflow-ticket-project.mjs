@@ -3,6 +3,8 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
+import { parseMarkdownTicket } from '../../dist/tickets/migrate.js';
+import { serializeTicketFeature } from '../../dist/tickets/store.js';
 import { cleanupFixture } from './process-cleanup.mjs';
 import { fixture, until } from './thin-mcp-harness.mjs';
 import { writeFixtureFile } from './thin-mcp-files.mjs';
@@ -43,6 +45,7 @@ export async function setupWorkflowProject(t, {
   count = 2,
   objectives = '## selected: Selected\n**State:** active\n**Features:** sample\n\n## other: Other\n**State:** active\n',
   spec = '# Synthetic spec\n',
+  legacy = false,
   fixtureOptions,
 } = {}) {
   const f = await fixture(t, { failedRetentionMs: 30_000, ...fixtureOptions });
@@ -61,26 +64,59 @@ export async function setupWorkflowProject(t, {
   }
   fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: f.root }] }));
 
-  const issues = join('.scratch', 'sample', 'issues');
-  fs.mkdirSync(join(f.root, issues), { recursive: true });
-  const ticketPath = (n, feat = 'sample') => join('.scratch', feat, 'issues', `${String(n).padStart(2, '0')}-synthetic.md`);
-  if (tickets) {
-    for (const [name, body] of Object.entries(tickets)) {
-      fs.writeFileSync(join(f.root, issues, name), body);
+  const legacyFeatures = new Set();
+  const at = '2026-01-01T00:00:00.000Z';
+  const seedFeature = (feat, files) => {
+    const entries = Object.entries(files);
+    if (!entries.length) return;
+    const parsed = [];
+    let useLegacy = legacy;
+    if (!useLegacy) {
+      for (const [name, body] of entries) {
+        const match = /^(\d+)-.+\.md$/.exec(name);
+        if (!match) { useLegacy = true; break; }
+        // Preserve raw Markdown when a test intentionally omits Live try or sets empty Approved removals to exercise validation gaps.
+        if (!/Live try:/i.test(body) || /\*\*Approved removals:\*\*[ \t]*$/im.test(body)) { useLegacy = true; break; }
+        const res = parseMarkdownTicket(body, Number(match[1]), feat, at);
+        if ('error' in res) { useLegacy = true; break; }
+        parsed.push(res.record);
+      }
     }
-  } else {
-    for (let n = 1; n <= count; n++) {
-      fs.writeFileSync(join(f.root, ticketPath(n)), goodTicket(n, { blocked: n === 2 ? secondBlocker : 'none' }));
+    if (useLegacy) {
+      legacyFeatures.add(feat);
+      const dirPath = join(f.root, '.scratch', feat, 'issues');
+      fs.mkdirSync(dirPath, { recursive: true });
+      for (const [name, body] of entries) fs.writeFileSync(join(dirPath, name), body);
+    } else {
+      fs.mkdirSync(join(f.root, '.hud', 'tickets'), { recursive: true });
+      fs.writeFileSync(join(f.root, '.hud', 'tickets', `${feat}.json`), serializeTicketFeature({ version: 1, feature: feat, tickets: parsed }));
     }
-  }
-  for (const [feat, files] of Object.entries(extraFeatures)) {
-    const dirPath = join(f.root, '.scratch', feat, 'issues');
-    fs.mkdirSync(dirPath, { recursive: true });
-    for (const [name, body] of Object.entries(files)) {
-      fs.writeFileSync(join(dirPath, name), body);
-    }
-  }
-  git(f.root, 'add', '.scratch', '.hud', ...(spec !== null ? ['docs'] : []));
+  };
+  const ticketPath = (n, feat = 'sample') =>
+    legacyFeatures.has(feat) ? join('.scratch', feat, 'issues', `${String(n).padStart(2, '0')}-synthetic.md`) : `.hud/tickets/${feat}.json`;
+  const ticketRecord = (n, feat = 'sample', rev) => {
+    const rel = `.hud/tickets/${feat}.json`;
+    const raw = rev ? git(f.root, 'show', `${rev}:${rel}`) : fs.readFileSync(join(f.root, rel), 'utf8');
+    return JSON.parse(raw).tickets.find(item => item.number === n);
+  };
+  const writeJsonTicket = (n, opts = {}, feat = 'sample') => {
+    const rel = `.hud/tickets/${feat}.json`, full = join(f.root, rel);
+    fs.mkdirSync(join(f.root, '.hud', 'tickets'), { recursive: true });
+    const doc = fs.existsSync(full) ? readJson(full) : { version: 1, feature: feat, tickets: [] };
+    const parsed = parseMarkdownTicket(goodTicket(n, opts), n, feat, at);
+    if ('error' in parsed) throw new Error(parsed.error);
+    doc.tickets = [...doc.tickets.filter(item => item.number !== n), parsed.record];
+    writeFixtureFile(full, serializeTicketFeature(doc));
+    return rel;
+  };
+  const sampleFiles = tickets ?? Object.fromEntries(Array.from({ length: count }, (_, i) => {
+    const n = i + 1;
+    return [`${String(n).padStart(2, '0')}-synthetic.md`, goodTicket(n, { blocked: n === 2 ? secondBlocker : 'none' })];
+  }));
+  seedFeature('sample', sampleFiles);
+  for (const [feat, files] of Object.entries(extraFeatures)) seedFeature(feat, files);
+  const toAdd = ['.hud', ...(legacyFeatures.size ? ['.scratch'] : []), ...(spec !== null ? ['docs'] : [])];
+  git(f.root, 'add', ...toAdd);
   git(f.root, 'commit', '-qm', 'synthetic tickets');
 
   const home = f.env.HUD_HOME;
@@ -134,5 +170,6 @@ export async function setupWorkflowProject(t, {
     return flow(id);
   };
   const fakeLog = () => fs.readFileSync(f.env.FAKE_LOG, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
-  return { ...f, dir, end, fakeLog, flow, git, home, issues, job, jobs, settle, settleCli, settleLead, settleReview, ticketPath };
+  const issues = join('.scratch', 'sample', 'issues');
+  return { ...f, dir, end, fakeLog, flow, git, home, issues, job, jobs, settle, settleCli, settleLead, settleReview, ticketPath, ticketRecord, writeJsonTicket };
 }

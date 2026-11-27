@@ -1,0 +1,719 @@
+{
+  "version": 1,
+  "feature": "nav-redesign",
+  "objective": "interaction",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Execution becomes its own top tab with the live count",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "open /hud panel, press Tab until 执行·N, check N matches hud_read's live jobs for MyHUD and that [ ] switches project on both 项目 and 执行",
+      "approved_removals": [
+        "the execution row in the project details list and the execution sub-page entry under project (moved to the new tab)"
+      ],
+      "blocked_by": [],
+      "what": "D-2026-11-26-04; template docs/design/nav-redesign/ (sample.html frames busy-62, idle-62, busy-40; README §2 Tabs, §6, §8, §11). MAIN_TABS gains `execution` between Project and Control: `首页 项目 执行·N 控制` (EN `Execution·N`), N = the current project's live jobs (running, waiting, queued), omitted at 0. The tab shows today's single-project Execution page for the panel's current project (the same project the Project tab shows; `[ ]` switch it on this tab too, keeping both tabs in step). PROJECT_PAGES loses `execution` and the Details list loses its Execution row; nothing else on the Project page changes in this ticket. Tab/Shift-Tab, Left/Right and click cycle four tabs. Keep the `?N` request badges. Update docs/reference.md (Keys, Execution page) EN/ZH strings, no-colour and narrow widths per ARCHITECTURE §8.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tabs read 首页 项目 执行·N 控制 with N the current project's live jobs, no count at 0; EN equivalent",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The Execution tab shows the current project's Execution page and follows [ ] together with the Project tab",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Project's Details list no longer has an Execution row; other rows unchanged",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Render and key tests at 40 and 62 columns, EN/ZH, no-colour; docs/reference.md updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "a58940d847d13f1a526e0f28dbaf386038f5c1c8",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 2,
+      "title": "Execution shows jobs and runs that ended in the last 24 hours",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "after a worker in MyHUD settles, open 执行 and see it under 刚结束 with 已落地/未落地/完成 matching hud_read and the land record; Enter opens its Inspector",
+      "approved_removals": [],
+      "blocked_by": [
+        "nav-redesign/01"
+      ],
+      "what": "D-2026-11-26-04; template README §6 and frames busy-62, idle-62, idle-40. Add a 刚结束 (EN `Recently ended`) section after open runs: one row per job or ticket-queue run of the current project that ended in the last 24 h, newest first: `mark icon title ··· result age`. Result from observed facts only: 已落地 (a land flow with a landed commit), 未落地 (worktree job ended, no landed commit), 完成 (nothing to land), 失败 / 已停止 (job state); no word when the landing record cannot be read. A run is one row (`队列 label · N 张工单`; 失败 if any ticket failed, else 已落地 if all landed, else 未落地) and its member jobs are not repeated. Enter on a job row opens the Inspector, on a run row the run detail. Data: a bounded 24 h list from job records (cap count, off the paint path, no model calls, existing header-scan helpers), landing from land flows; ended runs kept 24 h instead of 1 h (ENDED_MS in collectors/execution-runs.ts). The delegation tree moves to the end of the page. With no live job and no open run the page is only 刚结束 (no readout or empty sections); with nothing in 24 h either, today's empty line. Keep screen thumbnails at 6 rows.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "刚结束 lists the current project's jobs and runs ended within 24 h, newest first, with result word and age; a run is one row and its jobs are not repeated",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Result words come only from job state and land-flow records; unreadable landing shows no word",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Idle page shows only 刚结束; nothing at all shows today's empty line",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Enter opens Inspector / run detail; Esc returns to the row",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Collector is bounded and off the paint path; tests with synthetic job and flow records, EN/ZH, narrow, no-colour; docs/reference.md updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "42a6740d8b668ec4e4057b49c6e5460d86937b14",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 3,
+      "title": "Resident project strip replaces the folded project picker",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "open /hud panel on 项目, see MyHUD and other registered projects on one row with ● on projects that have live jobs; click another project and then +N",
+      "approved_removals": [
+        "the folded `▾ 项目 1/7` project picker header on the project tab (replaced by the strip",
+        "the projects list stays behind +n)"
+      ],
+      "blocked_by": [
+        "nav-redesign/01"
+      ],
+      "what": "D-2026-11-26-04; template README §2 Project strip, frames strip, ov-req-62, ov-quiet-62, 40-column frames. Under the tabs on 项目 and 执行 (not 首页 or 控制): one row ` mark name ` per registered project in the panel's project order (own project first, never re-sorted), marks `?` open owner request, else `●` live work, else none (idle muted); current project on the title surface; a rule fills the rest. Too wide: idle projects leave from the end into `+N`, then names shorten to 8 cells, only then marked projects fold and `+N` carries their strongest mark; the current project always stays. Click a name to switch; click or Enter on `+N` opens today's grouped Projects list. `[ ]` still switch. It replaces the `▾ 项目 1/7` header. Data: the light per-project facts (open request, live jobs) are read on every tab at the overview's 5 s cadence (today only while Home or the Projects list shows: panel/controller.ts:357-363), off the paint path.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "项目 and 执行 show the strip with marks, current highlighted, +N folding in the stated order; the ▾ picker header is gone",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Click switches project; +N opens the Projects list; [ ] unchanged",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Marks stay fresh on every tab within the 5 s cadence without extra reads while the panel is hidden",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Render tests at 40 and 62 columns with 7 synthetic projects, EN/ZH, no-colour; docs/reference.md updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "68b55fe453d772c8907c26bf7b089602d1775f72",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 4,
+      "title": "Owner requests scoped per tab, no rows when empty",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "with no open requests the Project tab starts with the Objectives right under the strip; add a synthetic request in a scratch project via hud_objective op request: it shows on 首页 and on that project's 项目 tab only (not on 执行 or 控制, not on another project's 项目), the strip shows `?` on that project; resolve it and every row disappears",
+      "approved_removals": [
+        "the separate 等你处理 section on home and 需要你处理 section on project (replaced by the scoped request rows with the same requests)"
+      ],
+      "blocked_by": [
+        "nav-redesign/03"
+      ],
+      "what": "D-2026-11-26-05 (supersedes the every-tab rule of D-2026-11-26-04); build reference docs/design/tab-roles/README.md §1, row shape from docs/design/nav-redesign/README.md §2 Request area and §11 item 1. Explicit owner requests only (never failures or completions, spec §2.2), pinned below tabs and strip: 首页 shows all registered projects' requests as `? project › Objective … 在等你 age`; 项目 and its sub-pages show only the selected project's requests as `? Objective … 在等你 age` (no project name); 执行 and 控制 show none. The sentence sits on the row when at least 24 cells remain, otherwise on a second row cut to one row. Order as spec §2.2 (work waits first, owner priority, oldest open). Four requests, then `另 N 个请求` (Enter expands in place). Enter opens today's request page (whole sentence, `o` opens the file); a try request opens its prepared scene. No request in scope: no row, no heading, no placeholder. Replaces Home's 等你处理 and Project's 需要你处理 sections. `?N` tab badges stay: 首页 counts all projects, 项目 counts the selected project. Up from the first body row reaches the last request row. Data reuses ticket 03's every-tab light facts.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "首页 shows all projects' requests, 项目 (and Objective/Feature pages) only the selected project's, 执行 and 控制 none; spec order; 40 columns still shows what is asked",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No request in scope: zero rows; Home's 等你处理 and Project's 需要你处理 sections are gone; ?N badges count per tab as stated",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Enter opens the request page; try requests open their scene; 另 N 个请求 expands",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Render and key tests EN/ZH, 40 and 62 columns, no-colour; docs/reference.md updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "6a57187ded1037b889d9b0365055a1ff46e89b5f",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.051Z",
+          "author": "legacy",
+          "text": "Rewritten 2026-11-26 for D-2026-11-26-05 (tab roles); held as needs-info until then."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 5,
+      "title": "Project overview: Objectives by activity with a subtitle, folds, header links, no job rows",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "open 项目 on MyHUD: Objectives with running work are on top with `● N 在跑`, pi-worker (done) sits in the folded row, no job rows anywhere on the page, the header shows 工单 工作区 文档 (no 进度); t opens Tickets and Esc returns",
+      "approved_removals": [
+        "the project details list rows (tickets",
+        "progress",
+        "worktree",
+        "docs summaries",
+        "header links instead)",
+        "the progress (进度",
+        "`p`) page (owner d-2026-11-26-05",
+        "the state.md link moves under 文档)",
+        "the project tab's job rows (jobs section",
+        "hub job rows",
+        "progress now jobs",
+        "working tree `editing` jobs",
+        "jobs live on 执行)"
+      ],
+      "blocked_by": [
+        "nav-redesign/02",
+        "nav-redesign/04"
+      ],
+      "what": "D-2026-11-26-05; build reference docs/design/tab-roles/README.md §1, §2, §4 (Project frame) plus docs/design/nav-redesign/README.md §3 for row columns. Header: stance, priority, update age and links `工单 工作区 文档` (keys t b d; each opens today's page unchanged with crumb and Esc back; 工作区 only with Git facts); the bottom Details list goes; the 进度 page and its `p` key go, its STATE.md link moves into 文档. Section `目标 ──── 完成/工单`; one row per open Objective `id bar done/total note` plus one muted subtitle row (`✓ result` when the tier-2 note has a dated result, else the title), dropped first when the viewport is short. Tiers (first met wins): 1 live job on a linked ticket (`● 2 在跑`, add `· 1 门禁` while landing), 2 a job or run ended in 24 h (`✓ 刚落地 slug`, `◒ 40分前结束·未落地`, `✗ 40分前失败`; ticket 02's ended list), 3 open request or a ticket to try (`? 在等你`, `◇ 等你试用`), 4 the rest (`空闲 6天`); folded: state done or paused, or every linked ticket done/dropped, into one `▸ 已完成/搁置 N` row that expands in place; an Objective with a live job or open request never folds; a last landing folds at once. Unlinked features stay one row. No job rows on the Project tab: remove the Jobs section, hub job rows, Working tree `editing` job lines (src/render/project-view.ts:402) — jobs are on 执行. Without objectives.md, Now/Next notes as today. Cursor starts on the first request, else the first Objective.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Objectives sort by the four tiers with the stated notes and one subtitle row; done/paused/all-done fold into one expandable row; live or requested never fold",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Header shows 工单 工作区 文档 with t b d; the bottom Details list and the 进度 page are gone; STATE.md is reachable from 文档",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No job rows anywhere on the Project tab or its Working tree page",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Render and key tests over a synthetic project covering every tier, EN/ZH, 40 and 62 columns, no-colour; docs/reference.md updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "044fc1da0f168226f03154a6942cc56dc7564d8a",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.051Z",
+          "author": "legacy",
+          "text": "Rewritten 2026-11-26 for D-2026-11-26-05 (tab roles); held as needs-info until then."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 6,
+      "title": "Objective page: title, next, result, features with activity notes, evidence",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "on 项目, Enter on the interaction Objective: its features show with bars and right-hand notes (e.g. `● 1 在跑`), no job rows; Enter on a feature opens its Feature page (or the ticket file until 07 lands); Esc returns to the overview row",
+      "approved_removals": [],
+      "blocked_by": [
+        "nav-redesign/05"
+      ],
+      "what": "D-2026-11-26-05; build reference docs/design/tab-roles/README.md §1–§2, row shapes from docs/design/nav-redesign/README.md §5 Objective. Enter on an Objective row (Project overview, and Home's goal/result row) opens a sub-page: crumb `‹ project › id` replacing tabs and strip (this project's requests stay on top, [ ] off), right side state and done/total tickets. Title (≤ 3 rows), next step `›`, result `✓` with age. `功能`: one row per linked feature `slug bar done/total note` (bar ≤ 24) with a right-hand activity note (`● 1 在跑`, `✓ 刚落地 02`, `◒ 1 未落地`, `◇ 1 待试用`), no nested job rows. `依据`: every evidence entry. Enter on a feature opens ticket 07's Feature page (until it lands: the feature's first unfinished ticket file); on evidence the file or commit as today. Esc returns to the row that opened the page with the same scroll. Inspector's Objective fact row becomes selectable and Enter on it opens this page.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Enter on an Objective (Project row or Home goal/result row) shows title, next, result, linked features with bars and activity notes, and all evidence; no job rows",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Enter on a feature or evidence opens it; Esc returns to the same row and scroll; Inspector's Objective row opens this page",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Tests with synthetic Objectives and features in each activity state, EN/ZH, 40 and 62 columns, no-colour; docs/reference.md updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "42f15de0584fd04abc831d98eb2121e3b7be917f",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.051Z",
+          "author": "legacy",
+          "text": "Rewritten 2026-11-26 for D-2026-11-26-05 (tab roles); held as needs-info until then."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 7,
+      "title": "Feature page: tickets by state with job status on the ticket row",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "from 项目 → interaction → nav-redesign, see the tickets with state marks and, on tickets built today, their job status on the same row; Enter on such a ticket opens its Inspector, o opens the ticket file",
+      "approved_removals": [],
+      "blocked_by": [
+        "nav-redesign/06"
+      ],
+      "what": "D-2026-11-26-05; build reference docs/design/tab-roles/README.md §2, row shapes from docs/design/nav-redesign/README.md §5 Feature. Enter on a feature row (Objective page, the Unlinked list, and the Tickets page `t`) opens: crumb ending in the slug (project name leaves below 56 columns); stacked bar with a legend of counts; `工单` ordered to-try → working → blocked → ready → queued (by number) → done (newest first), each one row with state mark, word, blockers (`← NN`) and, when a live or ≤ 24 h job exists, its observed status on the right (`◐ 工作中 14分`, `门禁 2/3`, `◒ 未落地 40分`, `✓ 已落地 30分`). No separate 运行中/刚结束 sections. Enter on a ticket with a live or retained job opens that job's Inspector; without one, Enter expands its checklist and Landed comment inline; `o` always opens the ticket file. `g P H` act on a live tab job's ticket row as on Execution. Esc returns to the feature row.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Feature page lists tickets in the stated order with marks, blockers and job status on the same row; no job sections",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Enter opens the Inspector for a ticket with a live/retained job, else expands checklist inline; o opens the file; g P H work; Esc returns",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Tests with a synthetic feature in every ticket state, EN/ZH, 40 and 62 columns, no-colour; docs/reference.md updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "a3ed77424fe12bc57c7094007a5289fd56fc8ee4",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.051Z",
+          "author": "legacy",
+          "text": "Rewritten 2026-11-26 for D-2026-11-26-05 (tab roles); held as needs-info until then."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 8,
+      "title": "Home key display: one-line goal and recent result per active project",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "open 首页: MyHUD shows its header, one goal line and (if recent) a result line, no progress bars; Enter on the goal opens the Objective page",
+      "approved_removals": [
+        "home's per-objective ticket bars and done/total counts",
+        "home's 未归入目标 row",
+        "the running count in 今日",
+        "the multi-row recent advice block on home (owner d-2026-11-26-05)"
+      ],
+      "blocked_by": [
+        "nav-redesign/04"
+      ],
+      "what": "D-2026-11-26-05; build reference docs/design/tab-roles/README.md §1 and §4 (Home frame and order). Home keeps: requests of all projects (ticket 04), 今日活跃项目 membership and order, `▸ N 个其他项目` (a), 日程, the opt-in Advisor line and the unattended status line. Each active project is at most 3 rows: header (`mark name · stance ── role load age`), current goal `▸ id (+N) one-line title` shown at every width 40–100 (today it hides below 80 columns, src/render/home-view.ts:158), and `✓ result excerpt age` when the result is at most 3 days old. Remove Home's per-Objective ticket bars and done/total and the 未归入目标 row (src/render/home-view.ts:147-201). 今日 becomes one line `今日 N 已落地 · M 失败` with no running count (src/render/home-cards.ts:32), zero rows when both are zero. Drop the multi-row Recent advice block (home-view.ts:240-258) if it is still shown. Enter on a goal or result row opens that Objective's page (ticket 06), on a project header the Project tab.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each active project shows header, one-line goal at 40, 62 and 80 columns, and a result line only when ≤ 3 days old; no ticket bars, counts or 未归入目标 on Home",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "今日 is one line without a running count, zero rows when empty; order and folds as §4",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Enter on goal/result opens the Objective page; on a header the Project tab",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Render tests EN/ZH, 40/62/80 columns, no-colour; docs/reference.md Home updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "1f97e8cd8f91bd8daee845e02974f83a3b0f682a",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 9,
+      "title": "Execution workflow diagram and one-place hot area",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "while a hud_tickets run works in MyHUD, open 执行: the queue shows as a wave diagram with the running tickets as nodes and the review/accept spine, each running worker once as a card with 3 screen rows; Enter on a node opens its Inspector",
+      "approved_removals": [
+        "the runs section's layout (replaced by 工作流 with the same data)",
+        "the bottom 派工关系 delegation tree (one-line child summary on cards instead)",
+        "screen thumbnails beyond 3 rows (owner d-2026-11-26-05)"
+      ],
+      "blocked_by": [
+        "nav-redesign/02"
+      ],
+      "what": "D-2026-11-26-05; build reference docs/design/tab-roles/README.md §1 and §3 (grammar and frames). Add 工作流 above 工作者 when any flow of the current project is open (working or paused), zero rows otherwise: one block per open flow (paused/held first, then working oldest first) for ticket-queue `q…`, batch `b…`, council and scouting prewalk `j…`, standalone land `f…` and `graph.json` flows, read through the existing header-scan cache off the paint path. Vertical waves: collapsed settled prefix `✓ 已落地 K: 01, 02`; one selectable row per node of the current wave (`├─ ◉ 03 Title ⚒ 工作中 14分`, `└─ ◉ 04 Title 门禁 2/3`); blocked waves `▼ ○ 05(←03,04) ─▶ ○ 06(←05)` (one wave per row when narrow); spine `▼ ○ ⚖ 评审 ─▶ ○ ★ 验收(lead) 待办 N · 挂起 N`; fixed flows as in §3 (land gate/repair/lease wait, council members → synthesis, batch pilot → pool counters → summary). Live: marks `○ ◉ ? ! ✓ ✗`, elapsed, gate index, lease wait, active lead, batch counters. Enter on a node opens its Inspector, on a flow header the Run Detail; `X` batch control works here. This replaces today's Runs section (its data stays). Hot-area de-duplication: a live job appears once (as a 工作流 node only if part of an open flow, and as its 工作者 card); screen thumbnails 6 → 3 rows (collectors/execution-screens.ts SCREEN_ROWS); the bottom 派工关系 tree goes and each parent card gains one line `ϟ 子任务: code 探路 ✓ · docs 探路 ✓` (full list stays in Inspector). 刚结束 collapses ended batch and council flows to one row like queue runs, and its collector scans job dirs down to the 24 h cutoff rather than a fixed 64-dir cap.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "工作流 renders open q/b/j/f flows in the stated wave grammar, zero rows when none; Enter opens Inspector / Run Detail; X works on batches (tests with synthetic flow records)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Each live job appears once on the page; thumbnails are 3 rows; 派工关系 is gone and parent cards show the one-line child summary (tests)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "刚结束 collapses ended batch/council flows to one row and covers the full 24 h window (tests)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "EN/ZH, 40 and 62 columns, no-colour; reads stay off the paint path; docs/reference.md Execution updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "1f60edeb6c14540ebf1c72f1e71c4f62cc157565",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 10,
+      "title": "Feature page ticket rows: per-ticket landing times, inspectable live jobs, state word kept",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "from 项目 → interaction → nav-redesign: a ticket landed before the last queue finished shows its own landing age (not the queue end); a ready/blocked ticket with a recent job still shows its state word next to the job status; Enter on a ticket marked working opens that job's Inspector",
+      "approved_removals": [],
+      "blocked_by": [
+        "nav-redesign/07"
+      ],
+      "what": "Repair of milestone review j3173891f358ab140 findings 1, 2, 3, 5 (nav-redesign/07). (1) src/collectors/execution.ts ~207–228 stamps every queue-run ticket's `ended` activity with `run.endedAt`, so a ticket landed yesterday reads 'landed 5m' when the queue finished 5 minutes ago, and old landings re-enter the ≤ 24 h window; this also feeds the Objective page activity note. Use the individual landing/settlement time (item.changedAt or the job/land receipt time) for both age and the 24 h eligibility. (2) Project resolves a ticket's job ID from target_hint/ticket filename/task text (src/collectors/ticket-rollup.ts:37–51) but execution.ts only keys ticket activity from `ticket`/`slice` receipt fields, so src/render/feature-detail.ts:149–154 shows 'working' from ticket.job with no execJob: Enter expands the checklist and g/P/H cannot reach the worker. Join the already-resolved ticket.job.id to the execution worker/target (jobTargetFor); do not infer a second identity in the renderer. (3) feature-detail.ts ~268–282: when a job observation exists the state word is dropped except for `try`. The ticket says each row carries state mark, word, blockers (← NN) and the job status; make the full-width candidate state word + blockers + status, and shorten (blockers, then word) only when the row runs out of cells. (4) feature-detail.ts:236 orders done tickets by max(file mtime, ledger time, job time), so editing an old ticket or a checkout reorders done. Prefer a dated landing/completion observation (ledger/land receipt/Landed comment); use file mtime only when none exists.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A unit test with a multi-ticket queue whose tickets landed at different times shows each ticket's own landing age and drops landings older than 24 h even when the queue ended recently; the Objective activity note uses the same times",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A ticket whose job is resolved only through target_hint/filename has its execJob on the Feature row: Enter opens its Inspector and g/P/H act on it (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "At 120 columns a ready ticket with a recent unlanded job and a blocked ticket with blockers both show their state word, blockers and job status; at 40 columns blockers drop before the word, the title and status stay readable (tests, EN/ZH, no-colour)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Done tickets order by landing/completion date; a done ticket with a newer file mtime but an older landing stays below a newer landing (test)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ddbeb06b20e539cd33e1033e8ca08b9becfcf66b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 11,
+      "title": "Feature/Objective navigation state: Tickets filter survives the round trip, request fold matches render, no fabricated Objective",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "on 项目 Tickets (t), filter with / to one feature, Enter on it, Esc: the filtered list and the same row return; from an Execution Inspector open the Objective row: with more than four requests, Enter on 'more requests' expands them; a crumb at 40 columns still shows the feature slug",
+      "approved_removals": [],
+      "blocked_by": [
+        "nav-redesign/07"
+      ],
+      "what": "Repair of milestone review j3173891f358ab140 findings 4, 6, 7 and its two minor items (nav-redesign/06–07). (4) src/render/monitor-input.ts:32–34 clears the Tickets `/` filter whenever filterScope changes, and src/render/filter.ts:13–16 returns no scope for sub-pages, so opening a Feature from a filtered Tickets list drops the query and Esc restores the old offset/revealed on the unfiltered list (selected feature can be off-screen). Keep the filter while a Feature sub-page opened from Tickets is open (and its Inspector), restore it on Esc; still clear it when actually leaving Tickets. (6) src/render/work-view.ts:224–226 reads state.project.folded 'waiting:more' when the underlying tab is not Home (e.g. Execution), but src/render/workboard-input.ts:418–431 toggles home.requestsExpanded unless the tab is Project, so 'more requests' on an Objective/Feature opened from the Execution Inspector does nothing visible and changes Home. Use one shared choice of state for render and input. (7) src/render/work-view.ts:309–317 and src/render/work-inspector.ts:150 build a placeholder Objective with state 'active', features [] and evidence [] when the linked record is missing; the page then claims 'active' and no evidence. Keep the receipt's id/title, show that the current record is unavailable (no state, no empty sections), and build the placeholder in one place. Minor: docs/reference.md ~894–900 still describes the old Tickets feature drill-down (For you/Working lanes, folded Done, Enter expands) contradicting line ~866 — rewrite it to the Feature page behaviour and make the Tickets footer hint say open/details for feature rows. Minor: src/render/feature-detail.ts:48–60 builds the whole crumb before clipping, so a long Objective id pushes the slug off a 40-column frame; reserve room for the slug and shorten/omit ancestors first. Leave the programmatic-only inline feature fold in project-view.ts in place (fixtures still use it).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Filter → open Feature → Esc restores the same query, list, row and scroll; leaving Tickets still clears the filter (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "On an Objective and a Feature opened via Execution → Inspector, with more than four requests, Enter/click on 'more requests' expands them and Home's flag is unchanged (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "An Inspector Objective whose record is missing shows its id/title and an unavailable note, not 'active' or empty Features/Evidence (test, EN/ZH)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A Feature crumb with a long Objective id keeps the full slug visible at 40 columns (test)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "docs/reference.md no longer describes the replaced Tickets drill-down; Tickets footer hint matches open/details",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "npm test, test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "9cc04e5447ff6f6e0f094b294f622640be7c45d7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 12,
+      "title": "Ticket activity: batch members keep their own settle time; a land repair asking for help is the row's status and Enter target",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "项目 → interaction → nav-redesign: tickets from one batch run show their own settle ages, not the batch end; a ticket whose land repair is waiting for an answer shows that repair and Enter opens its Inspector",
+      "approved_removals": [],
+      "blocked_by": [
+        "nav-redesign/10"
+      ],
+      "what": "Repair of milestone review ja67e5bad2d6abc9c findings 1, 2 and its second optional item (nav-redesign/10). (1) src/collectors/execution.ts ~281–291 emits an `ended` ticket activity at `run.endedAt` for every ticket-linked member of a finished non-queue run, on top of the worker's own observation (~293–306). A member that settled four hours ago reads as finished 5 minutes ago when the last member finished then, and old outcomes re-enter the ≤ 24 h window. Delete that per-member loop (keep the run end on the run itself); do not add another timestamp precedence rule. (2) src/collectors/execution.ts ~241–252 picks a standalone land's first `running` node, else its first node with progress. In src/collectors/execution-runs.ts ~893–912 an active repair waiting for an answer is `asking` while an earlier gate/repair still carries progress, so the ticket row shows the old gate/repair and Enter (and g/P/H) target the source job or previous attempt instead of the worker asking. Use the land receipt's current step and repair attempt for both the shown status and the execJob target. Optional (include): src/collectors/execution-runs.ts ~404–407 returns early for a legacy `{landed: true, land: …}` queue item without item timestamps, skipping the directly referenced land header read below; if that header is available use its `landed_at` before falling back to undated (no archive scan).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Two ticket-linked members of one non-queue run settling at different times each show their own age; a member settled > 24 h ago does not re-enter the window because the run ended recently (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A standalone land whose second repair (distinct job ID) is asking for an answer while an earlier gate/repair carries progress shows the asking repair's status, and its row's execJob is that repair worker (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A legacy landed queue item with a readable land header uses the header's landed_at; without it the item stays done and undated (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test, test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b132dbdcfe564684ed0009c22aa7fef54b366082",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 13,
+      "title": "Objective page record and evidence from one read; job Inspector → child keeps the Feature/Tickets return chain; Unlinked rows keyed by slug",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "on 项目 Tickets (t), filter to nav-redesign, Enter → a ticket with a job → its Inspector → a Sonic child (if any): child shows; Esc walks back to the filtered list on the same row; an open Objective page picks up a newly added result together with its evidence",
+      "approved_removals": [],
+      "blocked_by": [
+        "nav-redesign/11"
+      ],
+      "what": "Repair of milestone review ja67e5bad2d6abc9c findings 3, 4 and its first optional item (nav-redesign/11). (3) src/panel/controller.ts ~553–578 resolves Objective evidence once (preferring the cached Project record), while src/render/work-view.ts ~275–285 replaces the Objective prose from each fresh snapshot but keeps the old `detail.evidence`, which wins in src/render/objective-detail.ts ~176: a result and evidence added while the page is open show the new result without its evidence. Conversely, when an Inspector links an Objective from an old Project snapshot and the fresh read no longer contains that id, the renderer falls back to the old available target instead of 'Current record unavailable'. Resolve the displayed record and its openable evidence together whenever the matching Project read changes (evidence collection stays outside paint, §8), and distinguish not-yet-loaded from read-but-missing. (4) src/render/workboard-input.ts ~502–505 replaces an Inspector with `{kind, target, scroll}` when opening a Sonic/child job, dropping `from` and `back`: from filtered Tickets → Feature → ticket Inspector → child, this clears the Tickets filter, switches from the project-wide job board to the caller-pane board (src/panel/controller.ts ~121–135, 252), sends Esc to Jobs (src/render/monitor-state.ts ~185–189), and a child dispatched from another pane shows 'Job not available'. Preserve the project source and the Feature return chain when moving between job Inspectors. Optional (include): src/render/project-objectives.ts ~74–79 keys an Unlinked feature row's cursor id by its first unfinished ticket path, so Esc misses the row if that ticket lands during the visit; key the row by slug and keep the path for `o`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With an Objective page open, adding a result and an evidence entry to the Project record shows both; an Objective removed from a fresh read shows 'Current record unavailable' (EN/ZH); a not-yet-loaded record is not reported as missing (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Filtered Tickets → Feature → ticket Inspector → child job dispatched from a different pane: the child Inspector shows the job, and Esc steps back to the parent Inspector, the Feature page, then the same filtered Tickets row (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "An Unlinked feature row whose first unfinished ticket lands during the visit is still selected on Esc; o still opens a ticket file (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test, test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3143e6b841f4ce04457cc72085b37ffa10f1767c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 14,
+      "title": "Feature ticket rows: landing observation and its Inspector chosen together, JSON landing in the inline expansion, no synthetic Gate after publish",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "项目 → interaction → nav-redesign: a ticket whose newest attempt failed after an earlier landing shows the newest outcome and Enter opens that attempt; Enter on a landed JSON ticket with no live job expands its checklist plus a landing line (date/commit) even when a later comment exists; while a standalone land runs after-commands/push the ticket reads landed (or a neutral landing word), not Gate",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "nav-redesign/07",
+        "nav-redesign/10",
+        "nav-redesign/12"
+      ],
+      "what": "Repair of milestone review j33f06c3f3a8aed72 findings 1, 2, 3 and its optional item (nav-redesign/07, 10, 12). (1) src/render/feature-detail.ts ~153–194 (ticketJobEvidence) prefers a recent JSON `ticket.landingAt` over the newest ended job and attaches `fallbackExecJob` from the job list to that landing. Reachable: land with unfinished acceptance (ticket stays open), then a second attempt fails an hour later — the row still says 'landed' with the first attempt's age while Enter opens the failed retry. Select the observation and its execJob together: compare the stored landing with the newest ended observation by time; when the landing wins, target the job that landed (landing.job when it matches an ended/live entry) or none; never pair one attempt's status with another attempt's target. Do not add a new timestamp source. (2) src/collectors/ticket-evidence.ts ~65–81 (storedTicketEvidence) carries only `comments.at(-1)` for JSON tickets, and native JSON landings (src/mcp/land-records.ts ~90–100) write a structured `landing` without a comment, so the inline expansion (feature-detail.ts ~327–350) shows no landing evidence once the worker ages out, and a Landed comment followed by a later note disappears. Project the JSON `landing` (date, short commit when present, gates) into the expansion as a landing line, plus the latest comment when distinct; keep a retained Landed comment for legacy markdown tickets as today. No archive lookup. (3) src/collectors/execution-runs.ts ~973–980/1058–1060 supplies `landActivity` for every open standalone land even without gate/repair/lease progress; src/collectors/execution.ts ~241–249 turns it into a `gate` activity and feature-detail.ts ~105,160–170 renders 'Gate' and prefers it over the dated landing. The runner records `landed_at` (src/mcp/land-runner.ts ~438–505) before after-commands, push and cleanup, so a published land reads 'Gate' and the Objective note counts it at gate. Do not emit a gate activity for a land whose publication is recorded (landed_sha/landed_at or a publishing step); its recorded outcome (landed) applies. For a pre-publication step with no gate/repair/lease progress (pick/prepare), show a neutral landing word (existing 'landing'-style EN/ZH key, or a new t() entry) instead of 'Gate'; the Objective page note follows the same activity. Optional (include): src/render/project-objectives.ts ~29–36 drop the `jobId → single ticket` remap and group live entries by each entry's own normalized ticket, so a job linked to two tickets in different features counts in both.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A JSON ticket landed with unfinished acceptance, followed by a newer failed attempt, shows the failed outcome with that attempt's age and execJob; with no newer attempt it shows 'landed' and its execJob is the landing job or absent, never a different attempt (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Inline expansion of a JSON ticket with a `landing` and no live/retained job shows a landing line (date, commit when present) plus its latest distinct comment; a legacy markdown ticket with a Landed comment and a later note shows both (tests, EN/ZH, 40 and 62 columns, no-colour)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A standalone land with landed_at/landed_sha recorded and step after[…]/push/cleanup yields no gate activity: the Feature row reads landed and the Objective note does not count it at gate; a pick/prepare step without progress shows the neutral landing word, not Gate (tests)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Objective activity groups a job linked to tickets in two features under both features (test)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.051Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "23eaf5d0c7e924f39bf90b59e10963c0ee242305",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.051Z",
+      "updated_at": "2026-11-27T06:39:46.051Z"
+    },
+    {
+      "number": 15,
+      "title": "Follow-ups from the final nav-redesign review: land-prep label, legacy Landed dates, post-publish push failure",
+      "status": "needs-triage",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Accepted at finish (lead, repair rounds 2/2) from milestone review jab55f6b606d8a729; three in-scope majors left for later: (1) a land still in preparation reads \"at gate\" on the Objective page; show its real step. (2) A legacy `Landed` comment date is ignored by the Objective/Feature ordering; use it when no structured landing date exists. (3) A push failure after the landed commit is published shows the ticket as failed; show it landed with a push warning. Read the review report for file:line.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test for each of the three cases",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:58:31.968Z",
+      "updated_at": "2026-11-27T06:58:31.968Z"
+    }
+  ]
+}

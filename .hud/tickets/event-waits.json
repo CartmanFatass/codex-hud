@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "feature": "event-waits",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "One event-driven file wait for hud_read and hud_wait",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/neon-proposal/07-event-driven-waits-and-leases.md S1: src/utils/fs-wait.ts (fs.watch + fallback tick); hud_read({job, wait_ms}) and waitJobs use it instead of sleep polling (paths now src/mcp/thin-main.ts). Owner default Q3: waitJobs converts too. Tool results unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_read wait_ms and hud_wait wake within ~30 ms of the change",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No watcher leaks on abort; thin-mcp tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.008Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "e82c77ba794c23a10f62409060a1a23039a4d1c9"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.008Z",
+      "updated_at": "2026-11-27T06:39:46.008Z"
+    },
+    {
+      "number": 2,
+      "title": "Event-driven waits for hud_sonic and hud_ask",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "event-waits/01"
+      ],
+      "what": "07 S2: worker-tools waitSonic and ask use the shared wait; answers and child reports wake the worker at once instead of after 250-2000 ms.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_ask returns within ~30 ms of an answer file",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Worker tool outputs and exit codes unchanged",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.008Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "9ee27fba0c1952a3731dc9f06dc9f41b021e79c0"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.008Z",
+      "updated_at": "2026-11-27T06:39:46.008Z"
+    },
+    {
+      "number": 3,
+      "title": "Lease mutex without flock",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "event-waits/01"
+      ],
+      "what": "07 S3 (owner default B1): src/utils/abstract-lock.ts (Linux abstract socket, as exp-lock and hud-check already do) replaces spawnSync('flock') in src/roles/lease.ts; waits use the shared fs wait; docs drop the util-linux flock requirement. Supersedes async-watch's deferred S4.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_lease grants on release within ~30 ms with zero subprocesses",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A SIGKILLed holder is reclaimed within 1 s",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Control lease rows unchanged",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.008Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "b448985e5816fa2d3fab29a78d2f8ebb23613730"
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.008Z",
+          "author": "legacy",
+          "text": "Targeted checks: release-to-grant 17.3 ms, SIGKILL-to-grant 753.7 ms. No lock or wait subprocesses; the existing Git project lookup remains. Control lease rows passed in both layouts and languages."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.008Z",
+      "updated_at": "2026-11-27T06:39:46.008Z"
+    },
+    {
+      "number": 4,
+      "title": "job-project and exp-lock use the same lock",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "event-waits/03"
+      ],
+      "what": "07 S4 (owner default yes): src/roles/job-project.ts and src/collectors/exp-lock.ts converge on abstract-lock.ts.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "One lock primitive in the repo",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.008Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "2cdc7f010841931e579a8c28ae4c50d817ba1047"
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.008Z",
+          "author": "legacy",
+          "text": "Moved `src/roles/job-project.ts` (`job-adopt`), `src/collectors/exp-ledger.ts` (`exp-ledger`), and `src/collectors/exp-proxy-refresh.ts` (`exp-proxy`) onto `src/utils/abstract-lock.ts` and removed `src/collectors/exp-lock.ts`."
+        },
+        {
+          "at": "2026-11-27T06:39:46.008Z",
+          "author": "legacy",
+          "text": "Build, `npm run test:unit`, and targeted `.mjs` suites (`abstract-lock`, `exp-ledger`, `exp-proxy`, `exp-page`, `mcp-job-cache`, `job-supersession`, `thin-mcp-read-wait-send`, `thin-mcp-worker-tools`) passed; full `npm test` left to the land gate per brief."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.008Z",
+      "updated_at": "2026-11-27T06:39:46.008Z"
+    }
+  ]
+}

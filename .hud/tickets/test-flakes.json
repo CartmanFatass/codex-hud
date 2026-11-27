@@ -1,0 +1,1245 @@
+{
+  "version": 1,
+  "feature": "test-flakes",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Four gate flakes wait on events, not fixed deadlines",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Land gates 2026-11-22 each needed an immediate rerun for: (a) hud-watch-async 'read-close preflight: external close' and (b) job-retention 'an unreadable job.json counts as possibly open until it can be read' — both `AssertionError: watcher condition did not settle` from `until` in tests/helpers/job-retention-fixture.mjs:75 after ~5.1 s (excerpt: ~/.hud/flows/f87f184a7bbf6b792.json.gate-1.log); (c) sonic-process 'sonic checkpoints reach the caller and keep the original pi process running'; (d) fs-wait 'waitUntilFs wakes within 100 ms of a file change and closes all watchers'. Under the parallel full suite fixed deadlines (5 s settle, 100 ms wake) are too tight. For each: wait on the real event or scale the deadline to load, and if a test asserts latency (100 ms), keep the product promise but measure it in a way that load cannot break (e.g. relative to when the watcher was armed, or a separate perf check). Fix a real product gap in the product, not the test.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Cause named per test (fixture timing vs product)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Each of the four passes 20 consecutive runs alongside a parallel `npm run test:mjs` (command and counts in the report)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No test loses what it asserts; a latency claim stays tested",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "2315ca301a3461083a8dc66561084b97eed42dee",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 2,
+      "title": "Native renderer replay test holds under gate load",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "test-flakes/01 left native-statusline 'failed native renderer replays fresh stdin exactly' alone (spawnSync ETIMEDOUT at the file's own 7 s per-process watchdog; passed focused reruns). It failed again in the panel-polish/02 land gate 2026-11-22 (excerpt ~/.hud/flows/f32c448e14d394e42-3.json.gate-1.log, and fcb8fd4161ce2ac15.json.gate-1.log). Find whether the launcher is genuinely slow on that path under load (a product issue: measure the failed-native → TS replay path) or the 7 s watchdog is just too tight for a cold TS render under a parallel suite; fix accordingly.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Cause named with a timing of the failed-native replay path under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test passes 20 consecutive runs alongside npm run test:mjs",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "If the replay path is slow, the fix is in the launcher",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "30cd3ce6010addbf44f0d451fc9f9f15de9898a4",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 3,
+      "title": "Two more load-flaky files: mod stand-down and retention watch faults",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Recent land gates (flows fbbd51334f115571c, f9d8f30503e273059) needed reruns for `late Claude mod watch stands down new tasks, enables batch create, and stops main-pane typing` (tests/unit/thin-mcp-tasks-checks.test.mjs, 2 gates in a row) and two cases in tests/unit/job-retention-watch-faults.test.mjs ('watcher removes a 2-link loop in sessions and still scans expired jobs', 'transient startup failure: a working watch does not poll after recovery'; seen on earlier gates too). Same approach as test-flakes/01: find the fixed deadline or ordering assumption that breaks under parallel load, replace it with an event/condition wait, keep the assertion.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each named case passes 20 consecutive runs under parallel `npm run test:mjs` load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion weakened; report names each cause",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 4,
+      "title": "Watcher-reap read-close flake and install-claude umask dependence",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "(1) Land gate f2ce3cf718a51d534 needed a rerun for `read-close: rejected CLI quit keeps closed while the watcher retries terminal reap` (tests/unit/thin-mcp-watcher-reap.test.mjs); gate f4d39157cd57a8c2c needed it again plus three more: `watcher reaps an exited root without a snapshot once (missing or renamed tab), idles, then archives it at retention` (tests/unit/hud-watch-async.test.mjs), `Claude outside herdr shows no workers from another pane` (tests/unit/native-statusline.test.mjs), `question, follow-up and land repair reopen the same tabless pi session; expiry starts a headless repair` (tests/unit/thin-mcp-headless.test.mjs). Gate logs: ~/.hud/flows/f2ce3cf718a51d534.json.gate-1.log, ~/.hud/flows/f4d39157cd57a8c2c.json.gate-1.log. First look for a shared cause (a common test helper with a fixed deadline or poll interval) and fix it once there; then per-case. Same approach as test-flakes/01 and 03: find the fixed deadline or ordering assumption that breaks under parallel load, replace it with an event/condition wait, keep the assertion. (2) tests/unit/install-claude.test.mjs:114 expects mode 0640 and gets 0600 in worker environments (seen by two workers; the gate passes), so the expectation depends on the process umask. Make the test set or derive the umask so it passes under any umask, without weakening what it checks about the installed file's mode.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each of the four cases passes 20 runs under parallel load (e.g. alongside a full test:mjs) with no assertion weakened",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "install-claude.test.mjs passes with umask 022 and 077",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No production code change unless a real bug is found; if one is, the report names it",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "79115af3221ee91f3bb9c72419a99cfaa9fa51fe",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 5,
+      "title": "Three more gate flakes: git-safety, scripted watch lifecycle, panel reload",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Land gate fc85f76cee84bccae (gate-2 first run, log ~/.hud/flows/fc85f76cee84bccae.json.gate-2.log) failed then passed on rerun: `Claude: repository` (tests/unit/git-safety.test.mjs), `hud watch scripted lifecycle (quiet)` (tests/unit/hud-watch.test.mjs), `the live panel coalesces build bursts, retains jobs settled during its life, and keeps a broken build alive with a notice` (tests/unit/panel-reload.test.mjs). Same approach as test-flakes/01, 03, 04: find the fixed deadline or ordering assumption that breaks under parallel load, wait on the event or condition under the test's own signal (tests/helpers/until.mjs), keep every assertion.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each of the three cases passes 20 runs under parallel load with no assertion weakened",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No production change unless a real bug is found; if one is, the report names it",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-23T00:00:00.000Z",
+          "author": "legacy",
+          "text": "scope added via hud_send — gate fcf1b37affdc9254e also reran `a dead CLI supervisor hands its job to the orchestrator on the next scan; a live one and a pi job do not` (tests/unit/job-retention.test.mjs) and `worker checks share a 60-second deadline and timeouts kill the command process group` (tests/unit/worker-checks.test.mjs)."
+        }
+      ],
+      "created_at": "2026-11-23T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 6,
+      "title": "Gate flakes collected after test-flakes/05",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list; dispatch when it has a few entries or a case repeats. Same approach as test-flakes/04-05 (wait on events under the test's own signal via tests/helpers/until.mjs; keep every assertion). Cases: (1) `sonic stops as stalled and preserves its last progress in the digest` (tests/unit/sonic-process.test.mjs), gate f5a3bfcd187e55afa, log ~/.hud/flows/f5a3bfcd187e55afa.json.gate-1.log. (2) `bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM` (tests/unit/hud-watch.test.mjs), gate f12118da526549850, log ~/.hud/flows/f12118da526549850.json.gate-1.log. (3) `hud-watch updates work-summary.v1.json within 200 ms of job changes and staleness is detected on watcher exit` (tests/unit/work-summary-snapshot.test.mjs), gate f83b2d2a331a03651, log ~/.hud/flows/f83b2d2a331a03651.json.gate-1.log.",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/sonic-process.test.mjs",
+          "case_name": "sonic stops as stalled and preserves its last progress in the digest",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch.test.mjs",
+          "case_name": "bin/hud watch flushes already-failed arrivals and exits cleanly on SIGTERM",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/work-summary-snapshot.test.mjs",
+          "case_name": "hud-watch updates work-summary.v1.json within 200 ms of job changes and staleness is detected on watcher exit",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 runs under parallel load with no assertion weakened",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No production change unless a real bug is found; if one is, the report names it",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "c83c2b6b644a455f29699f8114e6c63358fa6c91",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 7,
+      "title": "Gate flakes collected after test-flakes/06",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list; dispatch when it has a few entries or a case repeats. Same approach as test-flakes/04-06 (wait on events under the test's own signal via tests/helpers/until.mjs; keep every assertion and product bound). Cases: (1) `working tabbed job with unreadable sessions stays open through housekeeping errors and is reaped` (tests/unit/job-retention.test.mjs), gate fc9eab8ce8a033339, log ~/.hud/flows/fc9eab8ce8a033339.json.gate-1.log. (2) `supervisor edges: stalled submission stays supervised; pre-input rejection closes its tab` (tests/unit/thin-mcp-cli-process.test.mjs), gate f255f4d29c99696bf, log ~/.hud/flows/f255f4d29c99696bf.json.gate-1.log. (3) `quiet past grace turns waiting_orchestrator without pane notices and self-wake returns to working` (tests/unit/thin-mcp-cli-turns.test.mjs), gate f255f4d29c99696bf-2, log ~/.hud/flows/f255f4d29c99696bf-2.json.gate-1.log.",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention.test.mjs",
+          "case_name": "working tabbed job with unreadable sessions stays open through housekeeping errors and is reaped",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-cli-process.test.mjs",
+          "case_name": "supervisor edges: stalled submission stays supervised; pre-input rejection closes its tab",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-cli-turns.test.mjs",
+          "case_name": "quiet past grace turns waiting_orchestrator without pane notices and self-wake returns to working",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 runs under parallel load with no assertion weakened",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No production change unless a real bug is found; if one is, the report names it",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "e34eaa3112b5bc78f06e63925f70eba27a8a4c5f",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 8,
+      "title": "Sweep fixed short waits in watcher and MCP tests",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "test-flakes/07"
+      ],
+      "what": "test-flakes/01-07 fixed ~20 gate flakes one by one; nearly every one was a fixed inner deadline (5-10 s or a 200-350 ms sleep) that breaks under parallel load. test-flakes/07's report (job j3b98819a7df56764, hud_read it) lists the remaining explicit sub-10 s waits by file:line across tests/unit/thin-mcp-*.test.mjs, job-retention*, hud-watch*, plus tests/helpers/job-retention-fixture.mjs:73 whose bare waits inherit a 5 s limit. Sweep them in one pass: helpers' default waits follow the enclosing test signal (60 s test timeout) instead of a short fixed limit; sleeps used as 'nothing happened' checks become waits on a later observable event (a watcher summary, a status query) as test-flakes/07 did. Keep every assertion and every product timing bound (e.g. 'within 200 ms', configured graces). Split into two commits if large (helpers first, then call sites).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No fixed sub-10 s wait remains as a correctness bound in the listed files unless it is a product bound, which the report lists with the reason",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Full `npm run test:mjs` passes 5 times in a row while 3 other test:mjs runs load the machine",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No assertion removed or weakened; test-only unless a real bug is found and named",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d48eb02cb57cb3776c3870c0da9a70bac6ef65c1",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 9,
+      "title": "thin-mcp-watcher-reap passes on rerun three times today",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`tests/unit/thin-mcp-watcher-reap.test.mjs` ('thin watcher starts once, catches up, respects grace and failed deadline, then exits') failed then passed on immediate rerun in land gates on 2026-11-24 (flows f2a419d33cd28586e, f6061bad8d153df80, and earlier in the day). Logs: `$HUD_HOME/flows/f2a419d33cd28586e.json.gate-1.log`, `$HUD_HOME/flows/f6061bad8d153df80.json.gate-1.log`. Find the timing assumption that breaks under the gate's `--test-concurrency=8` load and make the test deterministic (fake clock or event wait instead of wall-clock sleeps), without weakening what it checks. Also: `node bin/hud-dist.mjs advise --help` hung for over 2 minutes on 2026-11-24 instead of printing usage or exiting; make `hud advise` exit promptly when given no input or `--help` (it must stay silent on stdout/stderr when run by the statusline).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The watcher-reap test passes 30 runs in a row under `--test-concurrency=8` alongside the full unit suite",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`hud advise --help` and `hud advise` with no stdin exit within 1 s; detached runs from the statusline stay silent (test)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3fff85bf943597f9080e693cd9cf6b867e751422",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 10,
+      "title": "Supervisor rest test counts the watcher's subscribe-time pane.get",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`tests/unit/thin-mcp-cli-process.test.mjs:171` (\"supervisor events: 60s at rest …\") failed in two land gates on 2026-11-25 (f62da6fce5ec7a353, f9c65084a5e61a70c) and passed on rerun. Failure: the rest window saw `pane.get {pane_id}` before the expected `agent.get` calls (`assert.ok(extra.every(r => r.method === 'agent.get'))` at :198). Since herdr-fork/04 the watcher reconciles direct-exec roots (`runtime.reconcileTabs()` after its `hud-watch` subscribe reply, `probeDirectRoot` → `pane.get`), and the baseline waits only for the subscribe request to be sent, not for that reconciliation. Find the actual source of the `pane.get` and make the test wait for it to finish before snapshotting (or attribute requests to the supervisor vs watcher), without weakening the at-rest guarantee for the supervisor. If the request comes from the supervisor during rest, it is a product bug: fix the supervisor instead.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Report names the code path that issued the pane.get",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The test passes 30 consecutive runs under `TZ=UTC node tests/run-mjs.mjs 8`-level load (e.g. 8 parallel copies), with the supervisor's zero-spawn/zero-STATUS-write assertions unchanged",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "432a09923f8b7c98f6688663f8925516eddd48dc",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 11,
+      "title": "Gate flakes collected after test-flakes/10",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list; dispatch when it has a few entries or a case repeats. Same approach as test-flakes/04-06 (wait on events under the test's own signal via tests/helpers/until.mjs; keep every assertion and product bound). Cases: (1) `watcher polls after permanent startup failure, handles a newly settled job and exits` (tests/unit/job-retention-watch-faults.test.mjs; an earlier fix was test-flakes/03), gate feff4a7a7da010134 on 2026-11-26, log ~/.hud/flows/feff4a7a7da010134.json.gate-1.log. (2) `land train timings count one paid gate for a synthetic three-job queue instead of three` (tests/unit/thin-mcp-land-train.test.mjs), gate fc63a9336ac721a5f, log ~/.hud/flows/fc63a9336ac721a5f.json.gate-1.log; probably the same land-train test that fails in worker shells where GIT_EDITOR=false (passes in the gate): now seen in the gate too. (3) `oracle runs locally on claude fable with oracle.md and falls back to pi architect` (tests/unit/role-places.test.mjs), same gate.",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention-watch-faults.test.mjs",
+          "case_name": "watcher polls after permanent startup failure, handles a newly settled job and exits",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-land-train.test.mjs",
+          "case_name": "land train timings count one paid gate for a synthetic three-job queue instead of three",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/role-places.test.mjs",
+          "case_name": "oracle runs locally on claude fable with oracle.md and falls back to pi architect",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under load (tests/run-mjs.mjs with parallel workers)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Live try: none",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 12,
+      "title": "Gate flakes collected after test-flakes/11",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list; dispatch when it has a few entries or a case repeats. Same approach as test-flakes/04-06 and /11 (wait on the test's own signal via tests/helpers/until.mjs; keep every assertion and product bound). Cases: (1) `an open sonic child holds the real CLI supervisor; uncollected reports get one fixed prompt` (tests/unit/thin-mcp-quiet-decision.test.mjs), gate fcbf5afcb9206fe39 on 2026-11-26, log ~/.hud/flows/fcbf5afcb9206fe39.json.gate-1.log; repeated in gates fdcf6237e50d3083e, f4e11a395caf1968f and f32689254863c99d4. (2) `cli-supervisor guards pane-exit-only writes against SESSION replacement` (tests/unit/herdr-fork-direct-exec.test.mjs), gate f9537918e0da7e9fe, log ~/.hud/flows/f9537918e0da7e9fe.json.gate-1.log. (3) `land bounds a hung gate and kills children holding the output pipes` (tests/unit/thin-mcp-land-gate.test.mjs), gate f32689254863c99d4, log ~/.hud/flows/f32689254863c99d4.json.gate-1.log (custodian timing from workflow/09). (4) `hud_read wait_ms and hud_wait wake within 100 ms, resist sessions ELOOP, settle on timeout, and leak zero watchers` (tests/unit/thin-mcp-read-wait-send.test.mjs), gate fdcf6237e50d3083e.",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-quiet-decision.test.mjs",
+          "case_name": "an open sonic child holds the real CLI supervisor; uncollected reports get one fixed prompt",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/herdr-fork-direct-exec.test.mjs",
+          "case_name": "cli-supervisor guards pane-exit-only writes against SESSION replacement",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-land-gate.test.mjs",
+          "case_name": "land bounds a hung gate and kills children holding the output pipes",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-read-wait-send.test.mjs",
+          "case_name": "hud_read wait_ms and hud_wait wake within 100 ms, resist sessions ELOOP, settle on timeout, and leak zero watchers",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under load (tests/run-mjs.mjs with parallel workers)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Live try: none",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "6f7ed23a75ccb8315b7ece056f46fd770e2e6d8d",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 13,
+      "title": "Gate flakes collected after test-flakes/12",
+      "kind": "flake-list",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list; dispatch when it has a few entries or a case repeats. Same approach as test-flakes/11-12 (wait on the test's own signal via tests/helpers/until.mjs; keep every assertion and product bound; fix the product when it is a product bug). Cases: (1) tests/unit/thin-mcp-council.test.mjs, two different tests: `shipped council defaults to main synthesis and returns member digests and instructions` (gate fc1160458e4c531cc, log ~/.hud/flows/fc1160458e4c531cc.json.gate-1.log) and `shipped council runs three independent members and one browser synthesis; only the council notifies` (gate fdb813f60a81801ef, log ~/.hud/flows/fdb813f60a81801ef.json.gate-2.log). (2) `hud-mcp updates work-summary.v1.json on hud_respond without overriding a fresh matching hud-watch snapshot` (tests/unit/work-summary-snapshot.test.mjs), gate fdb813f60a81801ef.",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-land-flakes.test.mjs",
+          "case_name": "promoted list waiting behind an active flake imp is admitted after that imp is stopped or fails, without another flake land",
+          "flow": "fa86a2f51f78f4b90",
+          "log": "~/.hud/flows/fa86a2f51f78f4b90.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "case_name": "shipped council defaults to main synthesis and returns member digests and instructions",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "case_name": "shipped council runs three independent members and one browser synthesis; only the council notifies",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/work-summary-snapshot.test.mjs",
+          "case_name": "hud-mcp updates work-summary.v1.json on hud_respond without overriding a fresh matching hud-watch snapshot",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under 16-way load",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Live try: none",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 14,
+      "title": "Gate flakes collected after test-flakes/13",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-land-publish.test.mjs",
+          "case_name": "land publishes completed and done in one atomic flow write (clean worktree)",
+          "flow": "fb91cb6d28dbf6c54",
+          "log": "~/.hud/flows/fb91cb6d28dbf6c54.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-batch.test.mjs",
+          "case_name": "hud_send messages sends distinct texts and repairs in input order while keeping jobs fan-out",
+          "flow": "fb91cb6d28dbf6c54",
+          "log": "~/.hud/flows/fb91cb6d28dbf6c54.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-worker-tools.test.mjs",
+          "case_name": "hud_report during a pending CLI prompt belongs to the old turn (delivered)",
+          "flow": "fb62c3b381dcb8d27",
+          "log": "~/.hud/flows/fb62c3b381dcb8d27.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/herdr-fork-direct-exec.test.mjs",
+          "case_name": "fork CLI tab worker: direct exec, launch_id+terminal_id identity, sibling exit ignored, pane.exited clean & crash",
+          "flow": "f41e5093437cf6530",
+          "log": "~/.hud/flows/f41e5093437cf6530.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f2b86b8a8f45d1cfd936fd458cda09fda3f1def9",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 15,
+      "title": "Gate flakes collected after test-flakes/14",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/concurrency-cap.test.mjs",
+          "case_name": "main-session sonic jobs queue at the cap and start headless in order",
+          "flow": "fae34c72ae5df03fd",
+          "log": "~/.hud/flows/fae34c72ae5df03fd.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention.test.mjs",
+          "case_name": "watcher exits without expiry timers and deletes tabless and already-reaped jobs on next catch-up",
+          "flow": "f61bccbe5970196ac",
+          "log": "~/.hud/flows/f61bccbe5970196ac.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention.test.mjs",
+          "case_name": "watcher exits without expiry timers and deletes tabless and already-reaped jobs on next catch-up",
+          "flow": "f61bccbe5970196ac",
+          "log": "~/.hud/flows/f61bccbe5970196ac.json.gate-2.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention-watch-faults.test.mjs",
+          "case_name": "degraded watching polls for new jobs while a failed tab deadline keeps it alive",
+          "flow": "f61bccbe5970196ac",
+          "log": "~/.hud/flows/f61bccbe5970196ac.json.gate-2.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "6d113fdc41511dccb5ce4e4929b63a8a92f073df",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 16,
+      "title": "Gate flakes collected after test-flakes/15",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention.test.mjs",
+          "case_name": "watcher exits without expiry timers and deletes tabless and already-reaped jobs on next catch-up",
+          "flow": "f4c2bcb6cbdd1661c",
+          "log": "~/.hud/flows/f4c2bcb6cbdd1661c.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention-watch-faults.test.mjs",
+          "case_name": "degraded watching polls for new jobs while a failed tab deadline keeps it alive",
+          "flow": "f4c2bcb6cbdd1661c",
+          "log": "~/.hud/flows/f4c2bcb6cbdd1661c.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention.test.mjs",
+          "case_name": "watcher exits without expiry timers and deletes tabless and already-reaped jobs on next catch-up",
+          "flow": "f4c2bcb6cbdd1661c",
+          "log": "~/.hud/flows/f4c2bcb6cbdd1661c.json.gate-2.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention-watch-faults.test.mjs",
+          "case_name": "degraded watching polls for new jobs while a failed tab deadline keeps it alive",
+          "flow": "f4c2bcb6cbdd1661c",
+          "log": "~/.hud/flows/f4c2bcb6cbdd1661c.json.gate-2.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention.test.mjs",
+          "case_name": "watcher exits without expiry timers and deletes tabless and already-reaped jobs on next catch-up",
+          "flow": "f4c2bcb6cbdd1661c",
+          "log": "~/.hud/flows/f4c2bcb6cbdd1661c.json.gate-3.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/job-retention-watch-faults.test.mjs",
+          "case_name": "degraded watching polls for new jobs while a failed tab deadline keeps it alive",
+          "flow": "f4c2bcb6cbdd1661c",
+          "log": "~/.hud/flows/f4c2bcb6cbdd1661c.json.gate-3.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "035839016ecb60a02ca66b6a0e3d7707a1e163fa",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 17,
+      "title": "Gate flakes collected after test-flakes/16",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch-async.test.mjs",
+          "case_name": "overlapping watcher startups publish only one ready PID",
+          "flow": "f28764ba0cff47e21",
+          "log": "~/.hud/flows/f28764ba0cff47e21.json.gate-2.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch-async.test.mjs",
+          "case_name": "overlapping watcher startups publish only one ready PID",
+          "flow": "fd849ff4afdcc9fcd",
+          "log": "~/.hud/flows/fd849ff4afdcc9fcd.json.gate-2.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "339c5e01d4db6301e9ce4aade77ce6d6e1f79ff8",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 18,
+      "title": "Gate flakes collected after test-flakes/17",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch-async.test.mjs",
+          "case_name": "overlapping watcher startups publish only one ready PID",
+          "flow": "f5b4fc7306a2f3dd8",
+          "log": "~/.hud/flows/f5b4fc7306a2f3dd8.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch-async.test.mjs",
+          "case_name": "overlapping watcher startups publish only one ready PID",
+          "flow": "f5b4fc7306a2f3dd8",
+          "log": "~/.hud/flows/f5b4fc7306a2f3dd8.json.gate-2.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "66c7689cb61621054e5292b1b43538bbb8fbc764",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 19,
+      "title": "Gate flakes collected after test-flakes/18",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch-async.test.mjs",
+          "case_name": "overlapping watcher startups publish only one ready PID",
+          "flow": "fd0ba6e2c5ca1431e",
+          "log": "~/.hud/flows/fd0ba6e2c5ca1431e.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch-async.test.mjs",
+          "case_name": "overlapping watcher startups publish only one ready PID",
+          "flow": "fa9dfb98448f60238",
+          "log": "~/.hud/flows/fa9dfb98448f60238.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "03c350d814030e3d4bd6ea3c96a4cd3a3b528aa7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 20,
+      "title": "Gate flakes collected after test-flakes/19",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch-async.test.mjs",
+          "case_name": "overlapping watcher startups publish only one ready PID",
+          "flow": "f2852544b4cb525a5",
+          "log": "~/.hud/flows/f2852544b4cb525a5.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch-async.test.mjs",
+          "case_name": "overlapping watcher startups publish only one ready PID",
+          "flow": "f698c9aad9433b9d8",
+          "log": "~/.hud/flows/f698c9aad9433b9d8.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-batch.test.mjs",
+          "case_name": "MCP tasks: batch responses deliver per-job compact notices with check-wait, changes fallback and disconnect fallback",
+          "flow": "f698c9aad9433b9d8",
+          "log": "~/.hud/flows/f698c9aad9433b9d8.json.gate-2.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/mcp-internals.test.mjs",
+          "case_name": "the MCP entry, dispatch and worker modules resolve and share job receipts",
+          "flow": "f698c9aad9433b9d8",
+          "log": "~/.hud/flows/f698c9aad9433b9d8.json.gate-2.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ddbeb06b20e539cd33e1033e8ca08b9becfcf66b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 21,
+      "title": "Gate flakes collected after test-flakes/20",
+      "kind": "flake-list",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/hud-watch-async.test.mjs",
+          "case_name": "overlapping watcher startups publish only one ready PID",
+          "flow": "fecf56de5d9a3a52d",
+          "log": "~/.hud/flows/fecf56de5d9a3a52d.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-cli-process.test.mjs",
+          "case_name": "supervisor events: 60s at rest means zero spawns and zero STATUS writes; socket loss stays working",
+          "flow": "fa7e566f85d504f2d",
+          "log": "~/.hud/flows/fa7e566f85d504f2d.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/universal-pane-strip.test.mjs",
+          "case_name": "each Settings toggle mirrors only its main client at exact fork widths, and off restores the PTY",
+          "flow": "fa7e566f85d504f2d",
+          "log": "~/.hud/flows/fa7e566f85d504f2d.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-roster-presets.test.mjs",
+          "case_name": "hud_create starts exactly one queue watcher only for Codex (codex)",
+          "flow": "f4c8ee1a44a5a35e1",
+          "log": "~/.hud/flows/f4c8ee1a44a5a35e1.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 22,
+      "title": "Gate flakes collected after test-flakes/21",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/herdr-fork-direct-exec.test.mjs",
+          "case_name": "fork Pi tab worker: native pi worker extension, sibling exit ignored, clean exit & crash retention",
+          "flow": "f54e4d07f88b64b18",
+          "log": "~/.hud/flows/f54e4d07f88b64b18.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/herdr-fork-direct-exec.test.mjs",
+          "case_name": "direct-exec CLI and Pi wait for interactive_ready before sending exactly one agent.prompt (and codex unknown)",
+          "flow": "f54e4d07f88b64b18",
+          "log": "~/.hud/flows/f54e4d07f88b64b18.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/herdr-fork-direct-exec.test.mjs",
+          "case_name": "direct-exec resume that starts a new turn still records failure on subsequent crash",
+          "flow": "fcfab854a4bf7124e",
+          "log": "~/.hud/flows/fcfab854a4bf7124e.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/workflow-composed.test.mjs",
+          "case_name": "a cheap worktree Sonic job measures committed HEAD inputs and pauses when over limit or unestablishable",
+          "flow": "fef6bf14dfb953546",
+          "log": "~/.hud/flows/fef6bf14dfb953546.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "86796d4387381d4248d199c83026b28d8be43371",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 23,
+      "title": "Gate flakes collected after test-flakes/22",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-worker-tools.test.mjs",
+          "case_name": "hud_sonic accepts a project cwd relative to the parent and refuses paths outside the project",
+          "flow": "f5acc05806011084a",
+          "log": "~/.hud/flows/f5acc05806011084a.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-read-wait-send.test.mjs",
+          "case_name": "hud_read lists only the caller project, including its linked worktrees",
+          "flow": "f5acc05806011084a",
+          "log": "~/.hud/flows/f5acc05806011084a.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-tasks-checks.test.mjs",
+          "case_name": "MCP tasks: follow-up sends and live hud_respond carry on one task and extend TTL",
+          "flow": "f5acc05806011084a",
+          "log": "~/.hud/flows/f5acc05806011084a.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-cli-turns.test.mjs",
+          "case_name": "a blocked CLI turn needs the owner once, then returns to working",
+          "flow": "f2ec750bbed70fec0-2",
+          "log": "~/.hud/flows/f2ec750bbed70fec0-2.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:39:46.107Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.107Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d0995cafb79fb18a31cb14aedbbb8c879a02d804",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 24,
+      "title": "Gate flakes collected after test-flakes/23",
+      "kind": "flake-list",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-cli-turns.test.mjs",
+          "case_name": "hud_send: preserves the right turn on fast-ambiguous-prompt",
+          "flow": "f55b22044239c5054",
+          "log": "~/.hud/flows/f55b22044239c5054.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:58:41.952Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-worker-tools.test.mjs",
+          "case_name": "hud_report during a pending CLI prompt belongs to the old turn (delivered)",
+          "flow": "fc93b02fed181360a-2",
+          "log": "~/.hud/flows/fc93b02fed181360a-2.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:58:41.952Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-cli-turns.test.mjs",
+          "case_name": "hud_send: preserves the right turn on rejected-prompt",
+          "flow": "f7481730d0a511b32",
+          "log": "~/.hud/flows/f7481730d0a511b32.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:58:41.952Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/herdr-fork-direct-exec.test.mjs",
+          "case_name": "tab_visible roles omit hidden even on a capable fork",
+          "flow": "f9b9e560199e87481",
+          "log": "~/.hud/flows/f9b9e560199e87481.json.gate-1.log",
+          "recorded_at": "2026-11-27T06:58:41.952Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:58:41.952Z",
+      "updated_at": "2026-11-27T06:58:41.952Z"
+    }
+  ]
+}

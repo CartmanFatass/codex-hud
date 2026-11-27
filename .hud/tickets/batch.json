@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "feature": "batch",
+  "objective": "engine",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "One call submits a batch of jobs that runs within reserved slots and notifies main once",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "claude-mod/11"
+      ],
+      "what": "Spec §2.1 (D-2026-11-25-03): a batch is a fixed flow for many independent jobs of one role. Add a batch form to `hud_create` (e.g. `items: [{brief_file|task, package?...}]` with the role and shared options, optional `max_parallel`) that returns one batch flow ID (reuse the ticket-queue / land flow machinery under `$HUD_HOME/flows` if it fits). The batch runner starts items as ordinary jobs (each still a normal job record with its own report), never more than min(max_parallel, role cap − 2) at a time, and admission always serves queued non-batch jobs of that role before batch members, so two Sonic slots stay free for interactive work (scouts, hud_sonic, main-session sonic). `hud_read({job: <batch flow>})` shows totals (done, failed, running, waiting) and the item→job map. Main gets exactly one notice when the batch ends (totals + how to list unread reports), and failures, stalls and questions of members individually as they happen (reuse claude-mod/11's package rollup path; batch members are not announced per create/queue/checkpoint). Owner 2026-11-25: confirming the batch scale is the most important part of a batch. The hmasd batch failed because per-item input (120 KB chunks) did not fit one job at its warranted thinking level, and the 3 hand-picked pilots missed the haiku preset, so the fault surfaced only after ~140 jobs were queued. Keep the tool description within the MCP description size budget. Real use case to verify against: 140 Sonic labelling briefs in `tmp/tasks/HMASD-RESEARCH/briefs/` (use 3–4 of them for a live check, not the whole set).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "One hud_create call with items returns a batch flow ID; items become ordinary jobs with reports.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "At most min(max_parallel, cap−2) batch members run; a non-batch job of the role submitted during the batch starts before any waiting batch member.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Main receives one end notice and no per-member create/queued/checkpoint/settled lines. Failures never become their own storm: the first failure of each distinct reason is delivered at once; repeats are folded; a circuit breaker auto-pauses the batch (no new starts, running members finish) after 2 consecutive failures or failures reaching 20% of settled members (min 2) and sends one notice with failures grouped by reason (count, example job) and the resume/stop action; failures while paused are folded. One action retries all failed items as new members of the same batch. The result index records each item's failure reason. A batch of 20 whose members all fail produces at most 2 wakes. (Owner 2026-11-25.)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "hud_read on the batch flow shows totals and item→job mapping.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Scale is confirmed before the batch runs: submission returns a scale summary (item count, per-item input size max/median/total from the brief plus the files it names, role, placement presets the items will use, cap and max_parallel) and the batch starts with a pilot, one item on each placement preset; the remaining items start only after every pilot settles with a report. A failed or stalled pilot pauses the batch and notifies main with the failure, so a sizing error costs one item per preset, not the whole batch.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Each batch has its own state directory (under the batch flow, e.g. `$HUD_HOME/flows/<batch>/` or beside its flow file) holding the item manifest (brief path, input size), per-item state and job ID, and a result index (item → job, state, report path, files the job reported); main reads the batch result from this one index instead of collecting each job. HUD's batch runner is the coordinator: no model worker coordinates a batch (owner 2026-11-25). Items that change code keep today's per-job worktree rule.",
+          "done": true
+        },
+        {
+          "id": 7,
+          "text": "Tests cover admission order, reserved slots, end notice, breaker (consecutive and rate), reason grouping, folding while paused, retry-failed, the all-fail wake bound, the scale summary, the pilot gate and the result index; a live run with 3–4 briefs works.",
+          "done": true
+        },
+        {
+          "id": 8,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.982Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "efd2ba4fba03d1bffc6d203c2f2560244d5872db",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.982Z",
+      "updated_at": "2026-11-27T06:39:45.982Z"
+    },
+    {
+      "number": 2,
+      "title": "Main stops, pauses or resumes a whole batch in one call",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "batch/01",
+        "eng-hygiene/11"
+      ],
+      "what": "**Scope change 2026-11-25:** main-side pause/resume/stop/retry_failed are built in batch/01 (`hud_create({batch, action})`). This ticket keeps only the owner side: one panel key on the batch row and the CLI forms, calling the same controls.\n\n**What to build:** Spec §2.1 (D-2026-11-25-03): main can stop, pause or resume a batch as a whole. Stop: removes every waiting member (eng-hygiene/11's queued-cancel path), lets running members finish (or names how to stop them with owner approval), and ends the batch with its totals. Pause: no new members start; running ones finish; the batch shows paused. Resume: continues with the waiting members in order. Expose this on the batch flow ID through the existing tools (e.g. `hud_close({job: <batch flow>})` for stop, and a pause/resume op where flows already take ops) rather than a new tool if possible; the owner gets the same actions in one step: a batch row in the panel with one key for stop/pause/resume, and the CLI forms below. Owner note 2026-11-25: cancelling 100+ queued jobs took one manual confirmation per job; that must never happen again.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Stop on a batch flow removes all waiting members in one call and ends the batch with totals; running members are not killed without owner approval.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Pause stops new starts; resume continues in order; state is visible in hud_read.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The owner stops (and pauses/resumes) a whole batch with one action: one panel key on the batch row and one CLI command (`hud act stop <batch flow>`, plus `hud act stop --package <label> --queued` for jobs that were created one by one); never one confirmation per job.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Tests cover stop, pause, resume and a stop during a pause.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.982Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "874bc75338f1605521b2eb623edabdbe6918dbd2",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "the main-side controls already landed with workflow/01 (`hud_create({batch, action:\n'pause'|'resume'|'stop'|'retry_failed'})`, stop removes waiting members via the queued-cancel path; batches now\nrun on the workflow engine). This ticket keeps only the owner side: a batch row in the panel with one key for\nstop/pause/resume (confirmed once for the whole batch, never per member) and the CLI forms, both calling the same\nengine controls. No second control path."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.982Z"
+    }
+  ]
+}

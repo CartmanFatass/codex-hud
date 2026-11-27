@@ -1,0 +1,860 @@
+{
+  "version": 1,
+  "feature": "herdr-fork-done",
+  "objective": "herdr-fork",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "The herdr fork builds on this machine as 0.9.5-hud and never self-updates",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Plan: `.scratch/herdr-fork/plan.md` (read it). Repo: `~/projects/herdr-hud`, branch `hud` at upstream e8d7d970, remote `upstream` with push disabled; never push anywhere. Install Zig 0.16.0 user-local (e.g. `~/.local/opt/zig-0.16.0`, linked into `~/.local/bin`; verify the download checksum against ziglang.org's published index) and make the pinned Rust toolchain work (`rust-toolchain.toml` pins 1.96.1; rustup is present: install 1.96.1 or bump the pin to the installed 1.97.1, whichever builds). Lock self-update: `herdr update` and `herdr channel set` refuse with `self-update is disabled in the HUD herdr fork` (`src/update.rs` ~2184, `src/cli.rs` ~190), `version_check` defaults false (`src/config/model.rs`), build reports `0.9.5-hud.<sha>` (`src/build_info.rs`, `HERDR_BUILD_CHANNEL=hud`). Add `HUD-FORK.md` at the repo root: what the fork changes, how to build, how to install (main session only), how to take an upstream commit. Keep Apache-2.0 LICENSE/NOTICE and mark modified files per the license. Do not replace `~/.local/bin/herdr` and do not touch the running herdr server: install is main's step with owner confirmation.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`cargo build --release` succeeds in ~/projects/herdr-hud; the built binary prints 0.9.5-hud.<sha> for --version",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The built binary's `update` and `channel set` refuse with the fork message and change nothing",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Upstream's own test suite for the touched crates passes (`cargo test` or the justfile's test target), or the report lists pre-existing failures on unmodified upstream",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "HUD-FORK.md exists; LICENSE/NOTICE kept; nothing pushed; ~/.local/bin/herdr untouched",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "done in ~/projects/herdr-hud commit 042dbe83 (job jf644d80d2401c39b): 0.9.5-hud.042dbe83, Rust 1.96.1, Zig 0.16.0 checksum-verified at ~/.local/opt; Zig deps seeded via curl (local proxy breaks Zig HTTP). Pre-existing upstream failure tests/client_mode.rs sigwinch_refreshes_host_palette_without_resizing; 11 integration binaries not reached (incl. live_handoff): run before install."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.940Z"
+    },
+    {
+      "number": 2,
+      "title": "Fork: agent start execs the agent directly and returns its PID, start time and exit; declared kind; close on clean exit",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/01"
+      ],
+      "what": "Plan rows a, c, d in `.scratch/herdr-fork/plan.md`. `agent.start` gains a direct-exec mode (new tab, or pane split) taking executable, argv, cwd, env, label, kind and on_exit; it spawns the agent as the PTY root (no shell) and replies `{agent, tab, root_pane, pid, pid_start_time}` (start ticks from `process_start_token`). `pane.exited` carries `exit_code` and `signal` from the reaped `ExitStatus`. The declared kind is pinned on `TerminalState` so recognition never depends on the process name. `on_exit: close | close_on_zero | remain` (default close_on_zero for direct-exec starts); a `PaneDied` that removes a tab emits `tab.closed`. The shell-typed `agent.start` path stays as it is. Rust tests in the fork for each; a CLI form of the new start (`herdr agent start --exec ...` or similar) for HUD and manual use. Work in ~/projects/herdr-hud on branch `hud`; commit there; never push; do not install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Direct-exec start replies with pid and pid_start_time equal to /proc/<pid>/stat field 22 of the agent process, and the agent's parent is herdr (no shell)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "pane.exited reports exit_code / signal; with close_on_zero a clean exit closes the tab and emits tab.closed, a nonzero exit leaves it readable",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A declared kind is recognized even when the executable's basename differs (symlink to a versioned file)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Fork tests cover each; cargo build and the touched tests pass; nothing pushed or installed",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "merged on herdr-hud `hud` at 3027f8dd (02: 08c6fc1e, 03: 0aaeaedd; merge job j56d355e887263b01). Full suite 4,156 passed, 1 pre-existing upstream failure (client_mode sigwinch palette). Installed by main: ~/.local/bin/herdr = 0.9.5-hud.3027f8dd (sha256 3668a558…), stock kept as ~/.local/bin/herdr-0.9.5-upstream; live-handoff of the running server succeeded, all tabs kept, launch_id present."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.940Z"
+    },
+    {
+      "number": 3,
+      "title": "Fork: every tab carries a launch_id on its info and events, and IDs survive restarts without reuse",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/01"
+      ],
+      "what": "Plan row b in `.scratch/herdr-fork/plan.md`. Mint a unique `launch_id` per tab (format like TerminalId: `launch_<micros_hex><seq_hex>`), put it (and `terminal_id`) on `TabInfo`, `PaneInfo`, `AgentInfo` and on tab/pane created, closed and exited events, and return it from tab create and the direct-exec agent start. Persist the workspace/tab/pane numbering high-water marks in the session snapshot so a server restart never hands out a recently used ID. Leave the handoff wire format version alone unless a field must cross it (then keep live-handoff from 0.9.5 working). Rust tests. Work in ~/projects/herdr-hud on `hud`; commit; never push; do not install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "launch_id is present on tab info and on every tab/pane created/closed/exited event, and differs for two tabs that get the same public ID",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "After a server restart (snapshot restore) newly created tabs do not reuse IDs handed out before the restart",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "live-handoff from the stock 0.9.5 binary to the fork still transfers running panes (test or documented manual check)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Fork tests cover each; nothing pushed or installed",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "merged on herdr-hud `hud` at 3027f8dd (02: 08c6fc1e, 03: 0aaeaedd; merge job j56d355e887263b01). Full suite 4,156 passed, 1 pre-existing upstream failure (client_mode sigwinch palette). Installed by main: ~/.local/bin/herdr = 0.9.5-hud.3027f8dd (sha256 3668a558…), stock kept as ~/.local/bin/herdr-0.9.5-upstream; live-handoff of the running server succeeded, all tabs kept, launch_id present."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.940Z"
+    },
+    {
+      "number": 4,
+      "title": "HUD launches CLI and pi tab workers through the fork and deletes the outside inference",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/02",
+        "herdr-fork-done/03"
+      ],
+      "what": "After main installs the fork (owner-confirmed): HUD detects the fork (version suffix `-hud` or a capability field) and, on it, launches CLI and pi tab workers with direct-exec `agent.start` (explicit env from HUD's own process env plus job variables; declared kind; on_exit close_on_zero), records the returned pid/pid_start_time and launch_id as the job's identity, judges exit from `pane.exited` exit_code, and matches tab events by launch_id. On stock herdr today's path stays. Then delete the fork-path uses of the witness shim, ZDOTDIR wrapper, startup shell snapshot, tab-shell verification, closedTabs reconciliation and most of reap-tab (plan: HUD side). Keep worker-tree for headless and detached descendants. Live check by main on the installed fork: one claude, one agy, one pi tab job start, report, and their tabs close; a crashed worker's tab stays readable.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "On the fork, CLI and pi tab jobs start by direct exec with HUD-passed env; identity is the fork's pid + start; no shell in the worker tab",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A finished job's tab closes by itself (clean exit); a crashed one stays readable until HUD's failure retention closes it",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Tab events are matched by launch_id; a reused public tab ID never affects another job",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "On stock herdr the current path still works (test)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "The listed inference code is deleted from the fork path; land gate passes; process-safety review before land",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.940Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "dc11e8d8c6b42574f27be1b1de356a8809507826",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 26350ad3 (flow f62da6fce5ec7a353; gate repair j59a9e822a81e6288 updated the cancel reap argv test for `--launch`). Reviews: docs/reviews/2026-11-25-herdr-fork-04-review.md. Live check on fork 0.9.5-hud.3027f8dd: claude, agy, pi start direct (parent herdr), PID/start match /proc, tab launch_id matches SESSION. First prompt stalled for all three (fork direct-exec skips the managed launch lifecycle; HUD took idle as ready) → herdr-fork/05, /06. After a manual Enter, claude and pi reported and their tabs closed on the first reap."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.940Z"
+    },
+    {
+      "number": 5,
+      "title": "Fork: direct-exec agent.start enters the managed launch lifecycle (launch_pending → interactive_ready)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/04"
+      ],
+      "what": "Live check after herdr-fork/04 (2026-11-25): claude, agy and pi started through direct-exec all lost their first prompt. `start_agent_direct_exec` (src/app/agents.rs ~530-560) pins the declared kind and sets the name but never calls `TerminalState::begin_managed_agent`, so `launch_pending` is never true, `interactive_ready` never becomes true, and `agent.prompt` accepts input while the TUI is still starting (text lands in the editor, the delayed Enter is lost; agy printed it above its banner). The shell path (agents.rs:236-280) uses begin_managed_agent with AGENT_START_SETTLE_DELAY and the request timeout. Make direct-exec starts with a name use the same managed lifecycle (Pending until detection shows the declared kind settled, then Active), so `agent.get` reports launch_pending/interactive_ready and `agent.prompt` refuses with agent_not_ready while pending. Accept `timeout_ms` on direct-exec starts with the shell-path bounds. A managed timeout or kind mismatch must not kill or close the direct-exec process (it only clears pending/name as the shell path does); process exit keeps today's on_exit behaviour. Codex prompt-ready (`observe_codex_prompt_ready`) must work for direct-exec too. Work in ~/projects/herdr-hud on a branch from `hud` (e.g. hud-05), merge into `hud`; never push; do not install or touch ~/.local/bin/herdr or the running server.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Direct-exec start with a name: agent.get shows launch_pending=true right after start and interactive_ready=true once the declared agent is detected idle after the settle delay (Rust test with a fake agent)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "agent.prompt on a pending direct-exec agent returns agent_not_ready and writes nothing to the pane (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Managed timeout and kind mismatch on a direct-exec start leave the process running and the tab open; clean and nonzero exits keep the 02 on_exit behaviour (tests)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Codex prompt-ready detection makes a direct-exec codex interactive_ready (test)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "cargo build --release and the touched test modules pass; full suite shows no new failures vs 3027f8dd; merged on `hud`; nothing pushed or installed",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "imp j1fbaac0db8dd770f, hud-05 97982752 merged on `hud` at 0409f9fa (touched suites 35/35; full suite no new failures; pre-existing client_mode sigwinch palette failure). Note: `pinned_or_detected_agent` now prefers a detected agent over the declared kind, so a detected mismatch clears the managed name (process and tab kept); watch for false mismatches live. Installed by main with owner approval: ~/.local/bin/herdr = 0.9.5-hud.0409f9fa (sha256 d779942d…), previous fork kept as ~/.local/bin/herdr-0.9.5-hud.3027f8dd. Plain `herdr server live-handoff` failed (`handoff_failed`: the running server's own exe is \"(deleted)\" after the mv); `herdr server live-handoff --import-exe ~/.local/bin/herdr --expected-version 0.9.5-hud.0409f9fa` succeeded, all tabs kept, ping reports the new version."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.940Z"
+    },
+    {
+      "number": 6,
+      "title": "HUD: direct-exec readiness waits for interactive_ready before the first prompt",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/05"
+      ],
+      "what": "`waitDirectReady` (src/mcp/dispatch/direct-exec.ts:232) treats agent_status idle/done as ready; stock herdr `agent start` (herdr-hud src/cli/agent.rs:414-490) requires interactive_ready=true for idle/done, keeps polling while launch_pending, and accepts codex unknown only with interactive_ready. Mirror that for CLI and Pi direct launches: ready = (idle|done) && interactive_ready, or codex unknown && interactive_ready (keep the screen composer check as fallback); keep polling while launch_pending or not yet interactive; PID/start death stays agent_start_failed; deadline stays agent_not_ready with retained receipt (04 behaviour). Pass the kind's start timeout as `timeout_ms` to direct-exec agent.start. Lands only after the fork from herdr-fork/05 is installed (main installs); tests use the fake herdr.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fake herdr reporting idle without interactive_ready: no prompt is sent until interactive_ready=true; then exactly one agent.prompt (CLI and Pi tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Codex unknown with interactive_ready=true is ready; idle with launch_pending=true is not (tests)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Live on the installed fork: one claude, one agy and one pi job each run their first prompt without manual input, report, and their tab closes on its own",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.940Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "dd5e7f7c2991d130ff20e363c1e824cdc13bd986",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "main",
+          "text": "imp jccf1741554084dd1 (bd691d02), landed 55342479 (flow fccf1741554084dd1). Live on fork 0.9.5-hud.0409f9fa: claude ja8bc91fa5633311c, agy j3bd0fe6f652e0a76, pi j2cf11dfaff239fbf each ran the first prompt without manual input, reported, and their tabs closed on the first reap (exit=0). Two agy imps dispatched next reported `agent: agy, interactive_ready: true`. Tabs started before the handoff keep a stale terminal_id → herdr-fork/07."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.940Z"
+    },
+    {
+      "number": 7,
+      "title": "Fork: live-handoff keeps a direct-exec pane's identity and exit policy",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/05"
+      ],
+      "what": "Installing 0.9.5-hud.0409f9fa by live-handoff (2026-11-25) left the 06 imp's tab open after its job closed: handoff import (`src/persist/restore.rs` ~700-750) allocates a new terminal_id (`TerminalId::alloc()` at :709) and marks imported argv terminals `with_respawn_shell_on_exit()` (:713), so HUD's reaper saw `root pane terminal_id mismatch` and refused (correctly), and an exiting root would get a shell instead of the on_exit policy. launch_id already survives. On live-handoff import, keep for each imported pane: terminal_id, declared agent kind, agent name and managed phase (Active stays Active), exit_policy (no respawn shell for direct-exec roots; shell-typed panes keep today's behaviour), and pid/pid_start_time as reported by agent/pane info. Cold restore after a server stop is unchanged (processes are gone there). Work in ~/projects/herdr-hud on a branch from `hud` (hud-07), merge into `hud`; never push; never install, never touch ~/.local/bin/herdr or the running server; tests use their own sockets.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "live_handoff test: a direct-exec pane started with a name and close_on_zero keeps terminal_id, launch_id, declared kind, name, interactive_ready and exit policy after handoff; its clean exit then closes the tab and emits tab.closed with the same launch_id and terminal_id",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A shell-typed pane keeps today's handoff behaviour (existing tests pass)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "cargo build --release and live_handoff/restore suites pass; full suite no new failures vs 0409f9fa; merged on `hud`; nothing pushed or installed",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "general j35006739391c691b (imp overflow), hud-07 f45b14fb merged on `hud` at 76b187b0; live_handoff 25/25, restore 26/26, full suite no new failures (pre-existing client_mode sigwinch palette). Limitation: after a handoff the new server cannot waitpid the child, so a handed-off direct-exec pane under close_on_zero closes on PTY EOF even after a nonzero exit (documented in HUD-FORK.md). Install: owner chose to wait until no tab worker runs (the exporting server is still 0409f9fa, which does not carry the new fields)."
+        },
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "installed 0.9.5-hud.76b187b0 (sha256 200fbce5…; previous kept as ~/.local/bin/herdr-0.9.5-hud.0409f9fa) with no worker running. Live: pi tab j5182827d7415a483 running `sleep 60`, second live-handoff mid-run kept terminal_id term_661296dcdd1fb4, launch_id, name and interactive_ready; it reported and its tab closed on the first reap."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 8,
+      "title": "HUD stops supporting stock herdr: delete the outside-inference path",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/07"
+      ],
+      "what": "Spec §1 (25.09): HUD stops inferring what the fork provides once the fork provides it. With fork 0.9.5-hud.76b187b0 installed, remove the stock-herdr launch and reap path: `src/runtime/cli-invocation.ts` (shim, ZDOTDIR wrapper, witness, startup shell snapshot), `src/runtime/tab-shell.ts`, `src/runtime/tab-owner.ts`, the hud-cli exec-witness in `packages/hud-mcp/bin/hud-cli.mjs`, `retryBusyPane`/`HUD_TAB_LAUNCH`, stock branches of `reap-tab.ts`, stock close reconciliation in `watch-runtime.ts`/`watch.ts`/`cli-supervisor.ts`, and the `isHudHerdrFork` branches that choose them. Keep `src/roles/worker-tree.ts` (headless and detached descendants), `cli-kinds.ts`, `cli-judge.ts`. When the running herdr is not the fork (ping version lacks `-hud`), dispatch fails with one clear error naming the required fork, and `hud doctor` reports it; no fallback. The milestone review j5521aa747dd52730 lists what is safe to delete; follow its list.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "git grep finds no ZDOTDIR wrapper, exec-witness, tab-shell or HUD_TAB_LAUNCH in src/, packages/, integrations/",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Against a fake stock herdr (version without -hud) hud_create returns one error naming the fork and hud doctor reports it; against the fake fork all dispatch tests pass",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Live: one claude, one agy and one pi tab job on the installed fork start, report and close",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.944Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "87e748b73492a11b77108fdc0dfcd0fb47acbdf4",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "the milestone review (docs/reviews/2026-11-26-worker-stage-milestone.md, \"Deletion boundary\") narrows this ticket. Keep `tab-shell.ts`, `tab-owner.ts` and the stock reaper/close reconciliation: browser jobs (`harness-bro.ts`, `browser-runner.ts`) and the split Pi helper shell still use them. Delete only what the review's Delete list names. Starts after the review-fix job lands (it touches `reap-tab.ts`)."
+        },
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 77d7dcf1 (first try failed the gate on a missing `role` STATUS key; fixed in 894f345d). Live check on fork 0.9.5-hud.76b187b0: claude (jd235df55a6f7388d), agy (jba7eeeedde76ae3e) and pi (j90d6f5c3c7cda6a6) each got the first prompt without manual input, reported and closed; no tabs left."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 9,
+      "title": "Fork: hidden tabs",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/07"
+      ],
+      "what": "D-2026-11-26-01 step 1a (docs/fable-proposal/01-herdr-fork-final-plan.md §3). A tab carries a `hidden` flag, settable at `agent.start` (direct-exec) and `tab.create`, and later via a tab method. Hidden tabs are left out of the tab bar and next/previous tab navigation; the bar shows one count of hidden tabs. Focusing a hidden tab by API reveals it until it is hidden again. Persistence, live-handoff, exit policy and events are unchanged (it is an ordinary tab); `tab.list`/`tab.get` report `hidden`. Advertise a capability (ping capability field) so HUD can detect it. Fork changes in their own module with thin call sites. Work in ~/projects/herdr-hud on branch hud-09 from `hud`, merge into `hud`; never push; never install or touch ~/.local/bin/herdr or the running server.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: a hidden tab is absent from the rendered tab bar and next/previous, the bar shows the hidden count, tab.list reports hidden, reveal and hide round-trip",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Hidden flag survives live-handoff and cold restore; on_exit and tab.closed unchanged (tests)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "ping reports the capability; cargo build --release; full suite no new failures vs 76b187b0; merged on `hud`",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "imp ja376121ad29ffa60, 7fcd6ef8 on hud-09, merged on `hud` at d04b98fd. API: `tab.set_hidden {tab_id, hidden}`, `hidden` on `tab.create` and direct-exec `agent.start` (wins over focus), `tab.get/list` report `hidden`, `ping.capabilities.hidden_tabs`; `tab/pane/agent.focus` reveal. Rust 4,168 passed, only the pre-existing client_mode sigwinch failure; render benchmark unchanged within noise. Not installed yet (next install with 10 and 11)."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 10,
+      "title": "Fork: pane strip (one reserved row with a leased line)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/07"
+      ],
+      "what": "D-2026-11-26-01 step 1b. A pane can reserve one row at its top or bottom, outside the PTY (the PTY gets one row less). A client pushes one pre-rendered line (ANSI styled) with a lease; herdr clips, never wraps; when the lease expires or the client clears it, the row returns to the PTY. Reserving at start is allowed on direct-exec `agent.start`. HUD needs the pane's exact inner width after every resize: emit it on an event (or include it on an existing pane event). Capability flag in ping. Own module, thin call sites. Branch hud-10 from `hud`, merge into `hud`; never push; never install or touch the running server.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: reserved row reduces PTY rows by one; pushed line renders clipped at width; lease expiry returns the row; resize emits the new width",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Top and bottom strips; survives live-handoff with lease semantics documented in HUD-FORK.md",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "ping capability; release build; full suite no new failures; merged on `hud`",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.944Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 11,
+      "title": "Fork: guarded typing (agent.prompt that never touches a draft)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/07"
+      ],
+      "what": "D-2026-11-26-01 step 2c, moved into the first install. A guarded form of `agent.prompt` (flag or method): it types and submits only when the agent is idle and interactive_ready, the prompt line is empty, the pane is not scrolled back, and no key arrived from a client in the last few seconds (configurable, default 3 s); otherwise it refuses with a machine-readable reason (`draft_present`, `scrolled_back`, `recent_input`, `not_ready`). Prompt-line emptiness is per agent kind (claude, codex, agy, pi); where herdr cannot tell, it refuses with `prompt_unknown` rather than guessing. The guard's state is in memory only, never recorded or exported. Capability flag in ping. Branch hud-11 from `hud`, merge; never push; never install or touch the running server.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests per kind: empty idle prompt submits; a typed draft, scroll-back or a key 1 s ago refuses with its reason and writes nothing",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Unknown prompt state refuses with prompt_unknown; no guard state appears in snapshots, handoff or logs (tests)",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "ping capability; release build; full suite no new failures; merged on `hud`",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "merged on fork `hud` as 63555cf2 (e864c542). Merge conflicts were capability fields next to hidden_tabs; kept both, schema regenerated; unit suite 3601/3601 single-threaded (parallel runs race on shared env, as upstream expects nextest), api_ping 26/26, live_handoff tests pass singly (load flakes only). Not installed yet; live check of each kind after install with 09+10."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 12,
+      "title": "HUD: worker tabs start hidden; Inspector brings one forward",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/09"
+      ],
+      "what": "D-2026-11-26-01 step 1a, HUD side. When the running fork reports the hidden-tab capability, every interactive worker tab starts hidden (CLI and pi direct-exec). A role file setting (e.g. `tab_visible: true`) keeps that role's tabs visible. The Inspector's focus action reveals and focuses the job's tab; a second action hides it again. A crashed worker's tab stays hidden until failure retention ends. Nothing reveals a tab automatically. Document in docs/reference.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fake fork: dispatch passes hidden; a role with tab_visible does not; Inspector reveal/hide call the fork methods for the job's own tab (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Owner try: start three workers, the tab bar shows only a count; from Inspector bring one forward, type into it, send it back",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.944Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "feea030a97917e3ef4cd47efd6baecf789bae280",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "fork 0.9.5-hud.a26432a7 installed (live-handoff kept the main tab launch_id). Live: a claude worker (j3a436ad5853bbfba) and an imp started hidden; the main tab stayed visible; the hidden worker reported and its tab closed."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 14,
+      "title": "HUD: typed delivery to main sessions goes through guarded typing",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/11"
+      ],
+      "what": "D-2026-11-26-01 step 2c, HUD side. Every typed delivery into a main session (Antigravity when idle, Claude Code without tasks or the mod, the Codex queue-failure fallback, pi if typed) uses the fork's guarded prompt. A refusal waits and retries on the next change (no new wake path, no duplicate wakes); nothing is shown to the owner. Per client: switch only after a live check on that client; delete the old unguarded path for that client in this slice once its check passes.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fake fork: each refusal reason leads to a later retry and exactly one delivery; no duplicate wakes (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live per client (agy, claude without mod, codex fallback): an idle main session with an empty prompt receives the notice; with a half-typed draft it does not, and receives it after the draft is sent or cleared",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Owner try: type half a sentence in an idle Antigravity main session while a worker finishes: the draft is untouched and the notice arrives after it is sent or cleared",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.944Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "77d7dcf152d1beae349210f8fd7c8f08533cfce2",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.944Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 15,
+      "title": "Fork: make the declared-vs-detected kind path honest",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review 2026-11-26 item 2 (docs/reviews/2026-11-26-worker-stage-milestone.md): herdr-fork/05 made a detected kind win over the declared one, but the detector is pinned to the declaration (`src/pane.rs:3027–3047,3086–3112`, handoff `1016–1052`), so a conflicting root is never observed and the test injects a StateChanged after the suppressing stage. Choose the simpler honest form: either remove the dead detected-wins path and its test (declared kind is authoritative for direct-exec, as HUD always declares correctly), or detect a recognized conflicting ROOT kind during managed startup through the real detector path (never tool children). Recommendation: remove. Also document in HUD-FORK.md that a Blocked startup returns `agent_blocked` before `agent_not_ready`. Fork worktree on its own branch from `hud`; do not merge (main merges); never push or install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No code path or test claims a detected kind overrides the declaration unless the real detector can observe it (test through the detector, if kept)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "HUD-FORK.md documents the agent_blocked ordering; release build and full suite no new failures",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.944Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 16,
+      "title": "Fork: plugin actions see the selection that copy-on-select just copied",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner live try of select-send/01 (2026-11-26): with herdr's default `ui.copy_on_select = true`, mouse-up copies and clears the client selection (src/client/shell/mouse.rs:1759-1768), so a keybound `plugin_action` sends no `selection` (src/client/shell/actions.rs:215-245) and HUD's action sees an empty selection. Owner chose: keep copy-on-select, but remember the selection that was just copied for the pane and hand it to a plugin action invoked on that pane while the pane content revision is unchanged and within a short window (e.g. 30 s), and only until the next click or selection in any pane. Pass it exactly like a live selection (same `PaneSelectionReadParams` with the recorded content revision, so herdr's stale-content check still applies). Nothing else changes: copy behavior, highlight timing, non-plugin commands. Document in HUD-FORK.md. Fork worktree on its own branch from `hud`; do not merge (main merges); never push or install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: with copy_on_select on, select + release + keybound plugin action delivers the selected text; after a click, another selection, a content change or the window expiring it delivers none; copy_on_select off behaves as before",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "HUD-FORK.md documents the recent-selection rule; fmt, clippy -D warnings, schema check, unit tests single-threaded, api_ping, live_handoff, release build",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Live try: after install, select two lines in a pane with the mouse, release, press Ctrl+b a: the HUD composer opens with those lines",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.944Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 19,
+      "title": "HUD: herdr's sidebar shows each worker's kind instead of its job id",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26: herdr's left sidebar shows no worker kind. Its second agent row shows `display_agent`, else the agent `name`, else the kind (herdr src/client/shell/agent_sidebar.rs:275-280); HUD names direct-exec workers `<job>-primary`, so the row shows a job id. After a worker's direct start succeeds, HUD reports pane metadata through herdr's stock `pane.report_metadata` (`source: \"hud\"`, `display_agent`) as `<kind> · <preset or short model>` (e.g. `agy · neon`, `pi · fast`, `claude · opus`), plus tokens `hud_role`, `hud_ticket` for owners who customise sidebar rows. Main sessions untouched; a metadata failure never fails the job. Keep the managed `name` as is (HUD identity relies on it).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fake fork tests: claude/agy/pi direct starts report display_agent and tokens once; failure is logged, job continues; main sessions get nothing",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live try: start an agy and a pi worker: the sidebar's second row reads `agy · neon` / `pi · fast`",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.944Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "31f126ff0d655a42428291d59e8eb2fe3a89d6bb",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "owner: the vendor is not useful. Revised scope sent to j8e70a0deace0fa65: display_agent = short task title; tokens hud_role, hud_ticket, hud_icon (one glyph per HUD role: imp ◆, frontend-imp ◈, reviewer ◎, lead ★, sonic », oracle ◇, general ○, council ✦, other ·). herdr-fork/20 draws hud_icon in the state slot."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 20,
+      "title": "Fork: the sidebar state slot draws a pane's icon token in the state colour",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26: worker rows in herdr's left sidebar should show an icon for the worker's kind (HUD role) instead of the state dot. When a pane's metadata tokens contain `hud_icon` (reported by HUD via `pane.report_metadata`, herdr-fork/19), the agent row's `state_icon` token draws that glyph (first grapheme, width 1; fall back to the dot if wider or empty) with exactly the style the dot would have for the current state (colours, blink/attention). Panes without the token are unchanged. Document in HUD-FORK.md. Fork worktree on its own branch from `hud`; do not merge; never push or install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: a pane with hud_icon draws the glyph in each state's style; a wide or empty glyph falls back to the dot; panes without the token unchanged; render width unchanged",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Live try: with herdr-fork/19 landed and this installed, workers show their role icon coloured by state in the sidebar",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.949Z",
+      "updated_at": "2026-11-27T06:41:20.949Z"
+    },
+    {
+      "number": 21,
+      "title": "Fork: agy stays working across in-turn background work",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "after install, a live agy turn runs `sleep 6` in the background: herdr pane get keeps agent_status working through the wait and emits one change to idle/done within ~1.5 s after the turn ends",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26: herdr has long shown Antigravity (agy) as idle/done while agy runs background work, and HUD worked around it from outside (D-2026-11-17-05, D-2026-11-18-04, D-2026-11-19-01). Design from oracle job jb786b61850a1b98a (read its full report: section Q3 option 5 and Slice 1, file:line in the fork @017b2700). Build in the fork (~/projects/herdr-hud, branch `hud`; own worktree and branch from `hud`; do not merge, push or install): (1) src/detect/manifests/antigravity.toml: widen `esc_cancel_footer_working` to bottom_non_empty_lines 10 and `spinner_working` to 24 (task panel and tall prompts push the markers out today); blocked rules still win. (2) A lazy turn-scoped descendant hold for Agent::Antigravity only: stamp turn_start_tick on the transition into Working (or an accepted prompt / user input while idle); only when PendingIdleConfirmation is about to confirm Working -> Idle (visible_idle false), walk /proc children of the verified agy root (pid + start token; direct-exec child_pid/child_start_time or AgentJobTracker's process on shell panes) with the existing budget (512 pids, 25 ms); hold Working with a 1 s recheck while any non-zombie descendant started at or after the turn start lives; release on exit, agent exit, reset, or new user input on that pane (owner-chosen default: a human's new prompt releases a lingering daemon hold). Pre-turn descendants do not count but are walked through; turn-1 launch-window non-shell MCP helpers and npm exec / pnpm dlx / npx / uvx bootstrap chains (port of MyHUD src/mcp/cli-judge.ts bootstrap) are exempt while turn children under them count. Zero /proc walks while the screen already says Working, Blocked or confirmed Idle. (3) Capability `agy_background_work: true` on ping, schema artifact regenerated. (4) Hardening from the same report: `update.manifest_check` defaults to false so remote manifests never override the bundled antigravity.toml; `inspect_agy_prompt` (src/app/prompt_guard.rs) refuses Empty when the footer below the prompt shows `N task(s)`. (5) HUD-FORK.md documents all of it with the Apache-2.0 4(b) notices. Tests per the report's Slice 1 list; full fork test pass single-threaded (split around the known SIGPIPE case client_shell_attach_seeds_workspace), api_ping, live_handoff, release build.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "antigravity.toml windows widened; blocked dialogs still win (screen fixture tests: task panel, tall prompt)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "An in-turn agy descendant holds Working with 1 s rechecks and releases to idle/done within ~1.5 s of exit; pre-turn and launch-window MCP helpers do not hold; ephemeral <300 ms children do not flap (tests)",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "No /proc walk while the screen already matches Working, Blocked or confirmed Idle (test)",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "ping advertises agy_background_work; guarded prompt returns not_ready while held and when the footer shows N task(s); manifest_check defaults to false (tests)",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Full fork test pass, api_ping, live_handoff and release build green",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.949Z",
+      "updated_at": "2026-11-27T06:41:20.949Z"
+    },
+    {
+      "number": 22,
+      "title": "HUD trusts the fork's agy status and deletes its turn-child /proc workaround",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "a live agy worker whose brief runs a background `sleep 6` then hud_report: herdr shows working through the wait, HUD does not close early, and closes cleanly within ~2 s of turn end",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/21"
+      ],
+      "what": "Second half of the agy native-status fix (oracle job jb786b61850a1b98a, sections Q4 and Slice 2, file:line at MyHUD b184f001). Starts only after herdr-fork/21 is installed (main installs the fork). Require `capabilities.agy_background_work === true` in HUD's herdr capability check / doctor preflight like hidden_tabs and guarded_prompt (explicit fork-upgrade message; no /proc fallback kept, per spec §1: HUD stops inferring what the fork provides). Set packages/hud-mcp/harnesses.json agy.state_trust to \"turn\". Delete workerHasChild, bootstrap, firstInput / first_sent_at, readBootTimeMs, sampleChild, Facts.liveChild, action 'sample', backgroundChildAlive / background_child_alive in the quiet-decision payload, and the dead startupQuirk 'done-before-prompt', with their tests. Under closeAtReport && declared, close on herdr done/idle as now, or 10 s after declaredAt with an unchanged report signature and no open hud_ask, so a worker that leaves a daemon child running still closes promptly and worker-tree reaping cleans the daemon. Keep: worker-tree.ts and reapDirect close-time reaping, readProcChildren (daemon-binding uses it), the agy .agy-pending mailbox and PreInvocation hook, done receipts and the hud-progress --done fallback, tab-shell/tab-owner for bro and split pi helpers. Also drop the redundant second paneInfo spawn in notifyAgy now that guarded prompt checks state atomically, and simplify readProcChildren's unused options. Update docs/ARCHITECTURE.md and docs/reference.md. Behaviour note to keep in the report: claude/codex/grok workers rely on herdr's own detection plus done.json; an undeclared background child no longer holds a turn open (close still reaps it). Removes: no user-visible feature (internal workaround only).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "HUD refuses worker preflight with a fork-upgrade message when agy_background_work is absent (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "agy state_trust is turn; the listed workaround code and tests are gone; kept pieces intact",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "closeAtReport closes on done/idle or 10 s after a declared report with no open question, reaping a lingering daemon (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Touched suites pass via tmp/env.sh; docs updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.949Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d56e8c205fcbf343b4f3ddea81885af18af19e4b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.949Z",
+      "updated_at": "2026-11-27T06:41:20.949Z"
+    },
+    {
+      "number": 25,
+      "title": "Fork: the collapsed sidebar draws the HUD role icon too",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "after install, collapse the herdr sidebar with workers running: each worker row shows its role icon in the state colour",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner live try of herdr-fork/20 (2026-11-26): the expanded sidebar shows HUD role icons, the collapsed sidebar still shows only state dots. `render_collapsed_sidebar` (src/client/shell/sidebar.rs:47, agent rows ~:163) calls `status_icon(agent.agent_status, ...)` and never reads the agent's `hud_icon` metadata token. Use the same token helper the expanded row uses (src/ui/sidebar/tokens.rs HUD_ICON_TOKEN, first grapheme, width 1, fallback to the dot) with exactly the state style the dot would have. Workspace rows in the collapsed sidebar keep their dot. Test beside the existing hud_icon tests (each state style, fallback). Fork worktree on its own branch from `hud`; do not merge, push or install. Document in HUD-FORK.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Collapsed sidebar agent rows draw the hud_icon glyph in the state colour; panes without the token keep the dot (tests)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Workspace rows unchanged; layout widths unchanged (tests)",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Isolated fork tests for the touched module, clippy, fmt, release build pass",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.949Z",
+      "updated_at": "2026-11-27T06:41:20.949Z"
+    },
+    {
+      "number": 28,
+      "title": "Fork: select-send gets the just-copied text end to end (owner live failure of 16)",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "after install, drag-select a line in a worker pane with the mouse, press Ctrl+b a within 30 s: the HUD composer opens with that text",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner live try of herdr-fork/16 on the installed 0.9.5-hud.00caf385 (client and server both new, 2026-11-26): drag-select text with the mouse (copy_on_select default true), then `prefix+a` (keys.command plugin_action hud.select-send.send, plugin manifest contexts=[\"selection\"], MyHUD integrations/herdr/plugin) shows HUD's 'No selection to send' toast: the plugin's HERDR_PLUGIN_CONTEXT_JSON had neither selected_text nor selection. Each half has unit tests (server: src/app/custom_commands.rs plugin_command_delivers_copied_text_after_pane_content_changes; client: recent_copied_selection in src/client/shell/actions.rs:263-318, 690-740, mouse.rs:1755-1775), but nothing tests the chain. Reproduce end to end in the fork's client/headless test harness: drag-select in a pane, mouse up (copy request + response), then the prefix key, then the plugin_action key, through command.invoke to the plugin process env. Cover at least: selecting in the focused pane; selecting in a pane that was not focused before the drag (does mouse down focus it, or does `recent.pane_id != focused_pane_id` drop the text?); the prefix keypress and its timeout between copy and action; a pane whose content changes between copy and action; whether the plugin's `contexts = [\"selection\"]` gate refuses or strips copied text when there is no live selection. Find where the text is lost, fix it at that point (keep: copy behaviour, highlight timing, 30 s window, clear-on-next-click), and keep the end-to-end test. If the cause is outside herdr (e.g. the host terminal handles the drag and herdr never sees it), say so with the evidence instead of changing code. Document in HUD-FORK.md. Fork worktree on its own branch from `hud`; do not merge, push or install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "An end-to-end test drives drag-select, mouse up, prefix+a and asserts the plugin receives selected_text equal to the copied text (focused and previously unfocused pane)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "The cause is named with file:line; the fix keeps copy behaviour, the 30 s window and clear-on-next-click",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "fmt, clippy, isolated client/headless tests, release build pass",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.950Z",
+      "updated_at": "2026-11-27T06:41:20.950Z"
+    },
+    {
+      "number": 29,
+      "title": "fork: the drawn cursor stays visible on a cell the app already shows in reverse video",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "After install, the input prompt cursor is visible in a Claude Code pane inside herdr (focused and unfocused panes).",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner symptom (2026-11-26): no visible cursor in Claude Code panes inside herdr. Facts: `herdr pane read <pane> --format ansi` of a Claude Code pane shows the prompt `❯ ` followed by a reverse-video blank cell (`ESC[7m ESC[0m`), i.e. Claude Code draws its own block cursor. Herdr draws the terminal cursor by XOR-ing REVERSED on the cursor cell (`src/protocol/render_ansi.rs` ~205-222 and `frame_with_drawn_cursor` ~259-268). Hypothesis: Claude Code also leaves the real cursor visible on that same cell (for IME placement), so the two reversals cancel and nothing shows. This code is upstream herdr, not a fork change. Do: (1) confirm or refute the hypothesis with a test that feeds the terminal model a reverse-video cell and a visible cursor on it and checks the drawn frame/patch (both full frame and incremental patch paths, cursor moving onto and off the cell); also find where herdr chooses a drawn cursor versus the host terminal's real cursor and say which path the Claude pane uses. (2) Fix so a visible cursor on an already reversed cell is still visible (e.g. set rather than toggle REVERSED there, or another visible mark), without changing cursor drawing on normal cells and without leaving reversed residue when the cursor moves away. If the hypothesis is wrong, report the real cause with evidence before changing code. Record the behaviour in HUD-FORK.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A test reproduces the invisible cursor on a reverse-video cell before the fix",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "The cursor on a reversed cell is visible in both full-frame and patch rendering; moving off restores the app's own cell exactly",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Cursor drawing on ordinary cells is unchanged (existing tests pass)",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "HUD-FORK.md records the change",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.950Z",
+      "updated_at": "2026-11-27T06:41:20.950Z"
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "feature": "test-split",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Split thin-mcp.test.mjs into ten files behind a shared harness",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/neon-proposal/09-split-tests-for-parallel-speed.md S1: tests/helpers/thin-mcp-harness.mjs plus the ten tests/unit/thin-mcp-*.test.mjs files; delete tests/unit/thin-mcp.test.mjs. Pure move: every existing test case kept with its body unchanged (count them before and after; the sonic count was 158 top-level test( calls / 162 fixture uses), no production code change. Line refs in the proposal drift; check against the current file.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Same number of test cases before and after; none skipped or merged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "test:mjs passes and its wall time is reported before and after",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.111Z",
+      "updated_at": "2026-11-27T06:39:46.111Z"
+    },
+    {
+      "number": 2,
+      "title": "Fake CLI bins and a test clock shared by the MCP test files",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "test-split/01"
+      ],
+      "what": "Proposal 09 S2: tests/helpers/thin-mcp-fake-bin.mjs and thin-mcp-clock.mjs; harness shrinks; role-places.test.mjs drops its duplicate fixture (it spans :22-79 now); package.json gains test:mcp, test:panel, test:fast. Existing test, test:unit, test:mjs scripts unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "test:mcp, test:panel, test:fast run their subsets; test:mjs unchanged and green",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No test case removed",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.111Z",
+      "updated_at": "2026-11-27T06:39:46.111Z"
+    },
+    {
+      "number": 3,
+      "title": "Shorten long fixed waits with test-only timing overrides",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "test-split/01"
+      ],
+      "what": "Proposal 09 S3 with owner defaults Q1=A (optional params / HUD_* env overrides, production defaults byte-identical) and Q2=A (panel-backoff's 27 s case stays in the default suite, scaled through configurable refreshMs/max): src/cli/watch.ts, src/utils/panel-reload.ts, packages/hud-mcp/bin/hud-watch.mjs, src/collectors/adaptive-poll.ts; split panel-reload.test.mjs and job-retention.test.mjs; retime panel-backoff, hud-watch and thin-mcp-* tests.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Production defaults unchanged when no override is set (a test asserts it)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "test:mjs green three runs in a row; wall time reported",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.111Z",
+      "updated_at": "2026-11-27T06:39:46.111Z"
+    },
+    {
+      "number": 4,
+      "title": "Retime the remaining slow panel tests",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Proposal 09 S4 with owner default Q3=A (keep native node --test; add tests/run-mjs.mjs only if three full runs flake): src/cli/panel-pane.ts timing parameter; panel-caller, decision-labels, home-recommendation tests.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Production default unchanged without override",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "test:mjs green three runs in a row; wall time reported",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 58e7dfa2 (panel-reload-views merged with MONITOR-STATE-04 by hand). decision-labels 6.5→1.2 s, home-recommendation 6.7→0.8 s; three native green runs in the imp; main 952/952. Suite still ~70 s: the rest is subprocess-heavy MCP lifecycle tests (left for later)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.111Z"
+    }
+  ]
+}

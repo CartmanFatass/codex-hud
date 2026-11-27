@@ -1,0 +1,1016 @@
+{
+  "version": 1,
+  "feature": "chores-done",
+  "objective": "unattended",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Gate flakes collect themselves into the running flake ticket",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "chores-done/02"
+      ],
+      "what": "Owner 2026-11-26 (automate the orchestration chores). Today main copies every 'passed on immediate rerun' test from land notices into a test-flakes running-list ticket by hand and dispatches it when a case repeats. Automate: when a land gate passes only on rerun, the land flow appends the test name, file, flow id and log path to the newest open running-list ticket of the project's flake feature (configured in .hud/project.json, e.g. `\"flakes\": {\"feature\": \"test-flakes\"}`; absent = off), creating a new running-list ticket when the newest is done or claimed. When the same test appears a second time, or the list reaches four cases, the ticket becomes ready-for-agent and is dispatched as one imp job through the normal ticket path (one at a time). Ticket edits are committed per the ticket-commit rule (chores/02) or batched safely; never edit while a land holds the main checkout.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: a rerun-pass gate appends one entry; a repeat or the fourth case dispatches one job; an absent config does nothing; no edit while the main checkout lease is held",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live try: none (main watches the next flaky gate append itself)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.950Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "5ac79db61a9785aef723e64c036f7ea812265285",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.950Z",
+      "updated_at": "2026-11-27T06:41:20.950Z"
+    },
+    {
+      "number": 2,
+      "title": "Ticket edits by hud_tickets never block a land",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26. hud_tickets add/update (and HUD's own ticket writes such as done marks and comments) leave `.scratch/**` changes uncommitted in the main checkout; a later land then fails with 'Main checkout has dirty or hidden changes on paths the landing touches' (seen twice on 2026-11-26). Make HUD's ticket writes commit themselves (one small commit per call, message `tickets: <feature>/<NN> <op>`, only the ticket paths it wrote, under the main-checkout lease so a running land is never disturbed; queue them until the lease is free). Hand edits by main stay main's job.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: add/update commit only their ticket files; during a held land lease the commit waits and lands after; a land after hud_tickets update no longer fails on dirty ticket paths",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live try: none",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.950Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3f94dd1d0817e2f0f39c163dab45c32733f1f2d8",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.950Z",
+      "updated_at": "2026-11-27T06:41:20.950Z"
+    },
+    {
+      "number": 3,
+      "title": "Resuming a queue after an assumption hand-back accepts that report",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "main's next handback_to main queue that pauses on an assumption resumes into a land with one hud_tickets run call",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Seen 2026-11-26 on the first handback_to main queue (chores/02, runs q2876112b098b4035 then qb3c4a7a7396486b7): a scope-tagged Assumed: line paused the queue with kind assumption; main read the report, judged the assumptions fine and resumed with hud_tickets run; the resumed run re-judged the same settled report and paused again, so the only way through was a manual hud_land. Main's resume after an assumption hand-back is main's acceptance of exactly that report: record it on the item (the existing approved_assumptions_head / approved_assumptions_sig fields unattended/03 added) when the resumed queue is started from a paused run whose handback kind is assumption, and have the non-unattended settlement judge skip the assumption breaker for an item whose current report signature (and source head) match. A new worker turn (different report signature or head) is judged again. Blocker pauses stay as they are (a Blockers: line still needs a worker turn). Also check that hud_tickets run cancel works on a paused ordinary feature queue (it returned queue_not_running on the pre-unattended/03 MCP); if unattended/03 already covers it, add a test only.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A feature queue paused on a scope assumption, resumed once with hud_tickets run, lands that item without a second pause; the todo keeps the assumed lines",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A new worker turn after the resume is judged again by the assumption breaker",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Blocker pauses behave as before",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "hud_tickets run cancel on a paused ordinary feature queue cancels it (test)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.950Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b184f0012516328a0d26bf1007635cdb372ec0a4",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.950Z",
+      "updated_at": "2026-11-27T06:41:20.950Z"
+    },
+    {
+      "number": 4,
+      "title": "Flake collection repair: dispatch through ticket admission, named cases only, scoped keys, no silent drops",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "chores-done/01"
+      ],
+      "what": "Repair of chores/01 after the milestone review (reviewer job j42cd2d46ab80e99d, run q8b08879d49c9a03a; read its report for file:line). Fix all four: (1) BLOCKER: a promoted running-list ticket is dispatched with a standalone dispatchJob call (src/mcp/land-flakes.ts ~413-425) that the shipped defaults reject (auto-prewalk on, imp prewalk on) and pane-less unattended lands reject with herdr_required. Dispatch through the queue-capable ticket admission path instead (the same path hud_tickets run uses, pane-less capable), so no approximation of dispatch rules lives in land-flakes; verify with shipped settings (auto-prewalk on) and a pane-less land in tests (the thin-mcp harness disables auto-prewalk by default; the new test must not). (2) An unidentified failure (no parsed test case; land-runner substitutes the gate label) must not count toward the repeat rule; record it as evidence (command, flow, log) but only named tests repeat. (3) The dispatch request key must include the project identity and the attempt, and a failed or stopped earlier attempt must not return the old job as a successful admission. (4) A refused ticket edit (hand edit on the running list) or a dispatch refusal must not be silently dropped: keep the land green and the owner's edit intact, record the pending collection on the land receipt, and retry it idempotently from the recorded rerun on the next land or service wake (no gate rerun). Also fold the duplicated dedupe loop (land-flakes.ts ~374-401) into one pass.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A promoted running-list ticket starts one imp through ticket admission with shipped settings, from a pane and pane-less (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Unidentified gate failures are recorded but never trigger the repeat rule (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Dispatch keys are project- and attempt-scoped; a failed attempt does not block later admission (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A refused ticket edit or dispatch is recorded on the land receipt and retried idempotently later without a gate rerun (test)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "a3557ef998e90c401cea02f5f4612c1e1192b679",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 5,
+      "title": "Ticket-queue hand-backs to main can be answered, and runs refuse to start without the lead role",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "main answers the next accept hand-back of a handback_to main run with hud_respond",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Two gaps seen 2026-11-26. (1) A queue run with handback_to main pauses at the accept step with choices finish/repair/escalate (src/mcp/ticket-queue-step.ts ~1385-1395), but nothing lets main answer it: hud_respond only resumes worker questions, and hud_tickets run on a paused run restarts it with all steps waiting (re-running review). Add the answer path: hud_respond with job = the run ID (q...) and answer = one of the hand-back's choices (plus optional reason text after a colon or newline) settles the asking step exactly like a lead decision (finish records the verdict and ends the run; repair expects repair tickets added to the feature and loops tickets -> review -> accept within the same run, bounded like lead repair; escalate pauses with the reason for the owner). Wrong choice or no pending hand-back = clear error. Document it in docs/reference.md where handback_to main is described, and make the pause notice say how to answer. (2) Run q8439de016de0be74 (universal-bar) failed at accept with 'Role lead is not configured or is hidden in this project' after its ticket landed. hud_tickets run (and unattended on) must check at start that every role the run will need (imp, reviewer, and lead when the hand-back target is lead) is enabled in the project, and refuse with the exact fix (e.g. hud setup to enable lead) before dispatching anything.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_respond on a run paused at a main hand-back with finish / repair / escalate settles it as a lead decision would (tests for each)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An invalid choice or a run with no pending hand-back returns a clear error",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "hud_tickets run refuses to start when a needed role (including lead for a lead hand-back) is not enabled, naming the fix; nothing is dispatched (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md and the pause notice say how main answers",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "9ffaa81e61e0a21ce30aea024a642a4f8e53a319",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 6,
+      "title": "Lead-handback queues route assumption pauses to the temporary lead",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "the next lead-handback queue whose worker reports a scope assumption lands without a main wake",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Seen 2026-11-26: with handback_to lead, ordinary (non-unattended) queues still pause on every scope-tagged or more-than-three Assumed: report and wake main (home-tidy runs q51db309e76ba5885, q71df56305cab4911: two pauses for reasonable assumptions; main resumed each by hand). unattended/03 already routes these to a temporary one-decision lead, but only when q.unattended (src/mcp/ticket-queue-step.ts deferAssumptions ~960). Make the routing depend on the hand-back target instead: any queue whose effective hand-back is lead (default, or handback_to lead) sends assumption triggers to the same temporary lead (continue lands; hold for a visible deletion or spec change becomes an owner request; otherwise repair), and only handback_to main keeps the main breaker. Keep one code path with unattended. Update docs/reference.md (the sentence saying assumptions pause the run without waking main).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A non-unattended queue with lead hand-back sends a scope assumption to a temporary lead and lands on continue, with no main notice (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "handback_to main keeps the existing pause (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unattended behaviour unchanged (existing tests pass)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "a3557ef998e90c401cea02f5f4612c1e1192b679",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 7,
+      "title": "Settings save writes only the keys changed on the page",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Seen 2026-11-26: main set roleCaps.imp 6 and impEvenPool [neon, sol] in ~/.hud/hud-settings.json at 07:14; at 07:17 the panel's Settings page saved (the owner changed pane strips / tree width) and wrote back its whole draft loaded before 07:14 (src/panel/settings-flow.ts ~97 `saveSettings(draftPage.draft)`), silently restoring imp cap 3 and the old pool. saveSettings (src/settings.ts ~225) already merges a patch onto the current file, but the panel passes the full draft. Fix: the Settings page keeps the snapshot it opened with and saves only the keys whose values differ from that snapshot (deep compare for arrays/objects such as roleCaps: patch only the changed entries), so changes made meanwhile by other writers (CLI, main, another panel) survive; no change when nothing differs. Check other full-object writers of hud-settings.json (bar settings, statusline settings, hud import) for the same pattern and fix them the same way.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A Settings save after another writer changed an unrelated key keeps that key (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Changing one roleCaps entry in Settings keeps other roleCaps entries written meanwhile (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Other full-object writers of hud-settings.json patch only their keys (tests)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "55389a9cd9a2c0d5d7bb9f6ae4f8a91d6bd811a1",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 8,
+      "title": "A main-synthesized council ends once main reads it, and hud_close can end it",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "council j84ec335faab925fb no longer shows as working in hud_read after the fix lands",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Seen 2026-11-26: council j84ec335faab925fb (synthesizer main, created 2026-11-25 17:33, pi-worker design) still shows state working / 'Council in progress' a day later although all three members closed with reports and main used them; it counts as live work on Home and in hud_read's job list. hud_close on it fails with `hud-reap: ENOENT ... SESSION.txt` because a council parent has no session. Fix: with synthesizer main, the council parent becomes done (state closed, reason 'members collected by main') when every member has settled and main has read the council with hud_read (the call that returns the member digests and synthesis instructions); hud_close on a council parent closes it (and any still-running members through normal closure) instead of failing on a missing SESSION.txt. Existing stuck council records are settled by the same rule on the next watcher pass.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A synthesizer:main council whose members all settled closes after main's hud_read (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_close on a council parent closes it without the SESSION.txt error (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A stuck pre-existing council record with settled members and a prior read is settled on the next pass (test)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "316606a22a7895a8f8e9cf32e9ab7b42e4d481b7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 9,
+      "title": "Flake repair 2: a waiting promoted list keeps its place, and a persistent refusal does not self-wake the service",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "chores-done/04"
+      ],
+      "what": "Repair of chores/01 and chores/04 after milestone review jcb3010cb6270dbe6 (findings 2 and 4; read its report for file:line). (1) src/mcp/land-flakes.ts ~538-542 returns an empty outcome when another flake job is active, and ~625-634 then records the promotion as done with no admitted job. If that active imp fails or is stopped instead of landing, nothing drains the waiting ready-for-agent running-list ticket: clean lands return early (~601) and the service only scans pending receipts. Keep a durable waiting-dispatch state tied to the promoted ticket. Acknowledge it only when that ticket is admitted or resolved some other way (done/claimed/wontfix), and admit it once capacity frees, including when the active flake imp fails or is stopped. (2) src/unattended/service.ts ~116 retries pending collections before the unchanged-input check, and each refused retry rewrites flows/f*.json (attempts, updated_at). That file is a watched input (~183), so one hand edit on the running list causes continuous retries. A retry's own output must not trigger the next retry: skip receipt rewrites when the refusal is unchanged, or exclude the receipt change from the wake stamp, or gate retries on a real input change. Keep the land green and the owner's edit intact as chores/04 requires.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A promoted list that waits behind an active flake imp is admitted after that imp is stopped or fails, without another flake land (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The waiting state is acknowledged only on admission or independent resolution of the ticket (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "While the refusal stays unchanged, retry attempts and receipt writes stay bounded across service wakes; after the refusal clears, the collection appends/admits exactly once (test)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ef30f7ec52efaeaa0709a9ef9a35b8132563155e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 10,
+      "title": "Queue repair: role preflight covers the intended workset, and hud_respond cannot revive a superseded run",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "chores-done/05"
+      ],
+      "what": "Repair of chores/05 after milestone review jcb3010cb6270dbe6 (findings 3 and 5 and its deletion note; read the report for file:line). (1) The role preflight in src/mcp/ticket-queue.ts ~195-209 finds frontend-imp only among immediately dispatchable tickets, so a ready-for-agent frontend ticket blocked by an imp ticket passes preflight and fails after the first land. src/unattended/control.ts ~63 checks a fixed three-role list even when the selected Objective has a ready frontend ticket, which breaks the start-time promise in docs/reference.md. Derive the needed roles from the run's intended workset: every ready-for-agent ticket the run can reach, including blocked successors and, for unattended, the selected Objectives' tickets. Share the role parser with dispatch instead of keeping a second regex. (2) Starting hud_tickets run on a paused feature creates a successor run and leaves the old receipt paused with accept asking. answerTicketQueueHandback (~284-360) checks only the old receipt, so answering repair on the old pause notice can set it working next to its successor. Reject an answer to a superseded hand-back with a clear error (e.g. code superseded_run naming the successor), and fence both resume paths (hud_tickets run resume and hud_respond answer) with the same feature admission lock so only one run per feature can be working. (3) Optional if small: share the repair transition (cap check, new-work check, round increment, cursor reset) between the main answer path (ticket-queue.ts ~313-379) and lead accept (ticket-queue-step.ts ~1499-1531), leaving lead closure and main's retryable invalid-answer reply at the callers.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A feature with imp ticket 01 and a ready-for-agent frontend ticket 02 blocked by 01 is refused at start, before any dispatch, when frontend-imp is hidden, and the error names the fix (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Unattended start checks the frontend role when a selected Objective has a ready frontend ticket (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "hud_respond repair on a paused run that has a successor is rejected and the old run stays paused; at most one run per feature is ever working (test)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "cf6e0e464719d40cec854bd0d84c9d5ea0d7b2c7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 11,
+      "title": "Council repair: main's read of a main-synthesized council records 'members collected by main'",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "chores-done/08"
+      ],
+      "what": "Repair of chores/08 after milestone review jcb3010cb6270dbe6 (finding 1; read the report for file:line). In the ordinary sequence (hud_create council with synthesizer main, members finish, main calls hud_read), the detached runner (src/mcp/dispatch/council.ts ~110-126) closes the parent without a reason once the members settle. hud_read (src/mcp/mcp/operations.ts ~703-710) then skips settlement because the parent is already terminal, so 'members collected by main' is never recorded. Keep the detached completion and notification as they are (result ready without waiting for main). When main's hud_read returns the member digests and synthesis instructions, record the collection reason 'members collected by main' on a closed main-synthesized parent that has no reason yet. The stuck-parent path from chores/08 stays as it is.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Ordinary sequence create -> members settle -> hud_read records reason 'members collected by main' on the parent (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The existing stuck-parent and detached-completion tests still pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "82443076070a21868fa3b3d4b41f7a4ed20eb7f5",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 12,
+      "title": "Flake repair 3: retention keeps a land flow whose flake collection is still pending",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair of chores/04 and chores/09 after milestone review je1cb09e15e4334b8 (finding 1; read its report for file:line). pruneLandFlows (src/runtime/work-retention.ts ~124-150) deletes a flow family (receipt + gate logs) once the source job is gone and the land state is terminal, without looking at `flake_collection`. A green land whose collection is still pending (refused hand edit or dispatch waiting) therefore loses its only record when the source job ages out (src/runtime/watch-runtime.ts ~1080-1089), and a later clearance cannot collect it. Keep the flow receipt and the gate log(s) the pending collection references while `flake_collection.state` is pending; prune them normally once collection succeeds or the target ticket is independently resolved (done/claimed/wontfix). Keep a bound: the retained families are only those with pending collections.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A completed land older than the retention cutoff whose source job is gone and whose flake_collection is pending keeps its receipt and referenced gate log through pruneLandFlows",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "After the refusal clears, exactly one collection happens from the retained evidence (test: expired completed land, source job removed, clear refusal, assert one collection)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Once collection succeeds or the ticket is resolved, the next prune removes the family as before",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Existing retention tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "07b99ffb30221579b9da15190a000733682ec9b7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 13,
+      "title": "Flake repair 4: one eligibility authority for running-list admission and a bounded fallback retry",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair of chores/01, 04 and 09 after milestone review je1cb09e15e4334b8 (findings 2 and 3, the deletion note and the non-blocking test note; read its report for file:line). (1) With the flake feature under a selected active Objective, the unattended Objective queue (src/unattended/service.ts groupBySelectedObjective ~198-225, ticketReadiness in src/mcp/local-tickets.ts ~323-354) can admit a promoted running-list ticket that the flake collector deliberately left waiting behind an active flake imp (src/mcp/land-flakes.ts ~583-599), so two flake imps run at once. Give both automated admission paths one authority for running-list eligibility (a running-list ticket of the configured flake feature is not admissible while another flake job of that project is active), shared by the collector and Objective/queue readiness. (2) A dispatch refusal that clears without a filesystem change (all imp places quota-exhausted with `no_available_place`, cleared by hand in exhausted.json or expiring by time, src/roles/exhausted.ts ~147-177) never retries because the service gates retries on computeFlakeInputStamp. Add a bounded fallback retry for pending flake collections (e.g. at most one retry per pending receipt per fixed interval on service wakes), whose own writes do not trigger immediate retries (keep the no-write-on-unchanged-result check). With that fallback in place, remove the stamp parts that only existed to approximate refusal clearance (git-ref and all-job stats) where the fallback covers them, keeping the stamp metadata-only and cheap. (3) tests/unit/thin-mcp-land-flakes.test.mjs ~770 exceeded its 60 s deadline on the land gate (test-flakes/13): seed the waiting state for the recovery branches instead of running eight serial lands under one deadline.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: flake feature selected under an active Objective, imp cap above one, flake imp 01 working, list 02 promoted: 02 has no job until 01 stops, then exactly one job",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Collector and Objective/queue readiness use the same running-list eligibility function",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: dispatch refused with no_available_place, exhaustion cleared or expired with no new land, job or ticket edit: the pending collection is admitted within the bounded fallback interval",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A refused retry with an unchanged result writes nothing and does not trigger another immediate retry",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "computeFlakeInputStamp no longer stats every job and git ref when the fallback makes that redundant",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "The flake recovery test no longer runs eight serial lands under one 60 s deadline",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "46ae2a1c2dc0b75c494e1bef7f9d170d9a42a856",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 14,
+      "title": "Queue repair: resuming a held item re-judges a corrected worker turn",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair of chores/06 after milestone review je1cb09e15e4334b8 (finding 4; read its report for file:line). A lead's owner-only assumption hold sets item.held (src/mcp/ticket-queue-step.ts ~848-859). When the worker publishes a corrected report and main calls hud_tickets run on the paused feature, the successor copies held unchanged (src/mcp/ticket-queue.ts ~247-255) and the judge skips held items (~957-960), so a single-ticket run can go tickets -> review -> accept and finish with no land. Record the report signature and source head on the hold. On resume, an item whose current report signature or head differs from the hold's is un-held and judged again like a new turn (it may land, repair or hold again); an item with the same report stays held and the run stays paused with a notice that names the manual resolution required (worker correction, hud_land, or stop). Resume is never blanket approval of a held item. A run must not reach finish while an item is still held.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test past the initial hold: worker publishes a corrected report, hud_tickets run resumes, the item is re-judged and lands",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: resume with the same report keeps the item held and the run paused with the resolution notice; no review/accept with the held item unlanded",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A run with a held item never records finish",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Existing queue/lead/unattended tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "68b55fe453d772c8907c26bf7b089602d1775f72",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 15,
+      "title": "Settings repair: the first save with no settings file keeps the effective opening values",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair of chores/07 after milestone review je1cb09e15e4334b8 (finding 5; read its report for file:line). With no hud-settings.json, runtimeSettings (src/settings-runtime.ts ~5-19) opens with effective values (HUD_TREE_WIDTH, display theme/icons/bar). The Settings page then sends only the changed key, but saveSettings (src/settings.ts ~240-252) merges it onto defaultSettings() and persists and applies the result, so e.g. tree width 80 jumps to 56 and stays there. When the file is still absent at save time, use the effective opening values as the base; if another writer created the file meanwhile, merge against that file as now. Check the other settings writers fixed in chores/07 for the same first-save gap.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: no settings file, HUD_TREE_WIDTH=80, change only a pane-strip setting and save: saved and applied treeWidth stays 80 (and other effective display values are kept)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: file created by another writer between open and save: the save merges onto that file",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Existing stale-save tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3bba88d739d0d32f81e527ffc61f4289ab8149ad",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 16,
+      "title": "Queue follow-up: a manual land before resume keeps its item, and an ordinary owner hold pins its source job",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Follow-up of the chores run q795f54a98139d179 after milestone review j93556f4ef956c43a (findings 1 and 4; read its report for file:line). (1) Following the hold notice on an ordinary queue (hud_land the held job, wait for success, then hud_tickets run) drops the item: the land moves the ticket to done/ready-for-human, the item is not marked landed, and the successor filters it out via ticketClosed (src/mcp/ticket-queue.ts ~91-98, ~247-255). The resumed run then skips review and accept, and the milestone reports no landed ticket. Keep a held item whose own job has a matching completed land receipt and mark it landed so review/accept cover it. Do not infer a land from ticket status alone. (2) pinnedHeldJobs (src/unattended/state.ts ~112-140) iterates only unattended runs, so an ordinary queue's current, unresolved owner hold does not pin its source job. Retention can archive the job (src/runtime/watch-runtime.ts ~1039-1088), and then hud_land and the worker correction the notice offers are no longer possible. Pin the source job, report and worktree of a current, unresolved ordinary owner hold. Release the pin on resolution or stop, and do not pin superseded predecessors forever. Leave retention unchanged for ordinary completed jobs.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A single-ticket ordinary queue paused on a hold, then hud_land on the held job completed BEFORE hud_tickets run resume, resumes with the item landed and runs review and accept over it (test covers this order)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An item is treated as landed only from a completed land receipt for that item's job, never from ticket status alone",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "An ordinary paused queue's unresolved owner hold pins its source job past normal retention, and the pin is released when the hold resolves or the run stops or is superseded (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Ordinary completed jobs without a hold keep today's retention",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "dd9ecbad35470e5cb40762d5b1431c14d86505ce",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 17,
+      "title": "Flake follow-up: resolve pending dispatch against the receipt's ticket, use normal dependency resolution, back off scan errors",
+      "kind": "flake-list",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Follow-up of the chores run q795f54a98139d179 after milestone review j93556f4ef956c43a (findings 2 and 3, the deletion note and the non-blocking note; read its report for file:line). (1) Pending-dispatch retry and retention resolve the receipt's ticket by listing only the currently configured flakes.feature (src/mcp/land-flakes.ts ~298-302, ~492-501, ~604-633; src/runtime/work-retention.ts ~135-140). When the configured feature changes, a still-ready ticket under the old feature is marked done without a job. When config is removed, a wontfix ticket's family is never pruned. Separate the two questions. Resolution reads the specific ticket the receipt names, whatever the current config. Dispatch permission follows the current config: if collection is disabled, start no worker, but an independently resolved ticket still prunes. (2) inspectRunningListTicket (~311-313) treats any non-none Blocked by text as blocked, so a running list with a dependency that has already landed never dispatches. Use the normal dependency resolution that ticket readiness uses (src/collectors/ticket-rollup.ts ~90-97), keep the separate claim/terminal check for the receipt, and remove the second dependency rule. (3) findReadyRunningListTicket lists the feature once and then re-lists it for every ticket (~300, ~327-331). Pass the paths it already found instead. (4) If project registration disappears while a flake fallback is pending, scan throws before flakeRetryAt advances and the catch reschedules after 1 ms (src/unattended/service.ts ~140, ~276-279). Clear or back off the stale deadline on scan error.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Changing flakes.feature while a promoted ticket of the old feature waits neither marks it done without a job nor deletes its evidence; removing the config does not start a worker but lets an independently resolved (wontfix/done/claimed) ticket's family prune (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A running list whose Blocked by names a ticket that has landed (reference left in place) dispatches exactly one imp when it reaches its threshold (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The collector no longer keeps its own dependency regex and does not list the feature directory again for each ticket",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A scan error with a pending flake fallback backs off instead of rescheduling every 1 ms (test)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "dd9ecbad35470e5cb40762d5b1431c14d86505ce",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 18,
+      "title": "Queue repair: a manual land survives retention until resume, and a missing ticket file does not release an ordinary hold",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair of chores/16 after milestone review j3a2a5f54c81b5ff9 (findings 1 and 2; read ~/.hud/jobs/j3a2a5f54c81b5ff9/report.md for file:line). (1) Resume adopts a held item's manual land only from a live land receipt (src/mcp/ticket-queue.ts ~248-260 via completedLandForJob). Once that land completes, pinnedHeldJobs releases the job pin (src/unattended/state.ts ~145-152). Job retention is 1 day (src/runtime/work-retention.ts JOB_RETENTION_MS), so if the owner lands a held ticket and resumes more than a day later, the report and then the land receipt can be pruned (src/runtime/watch-runtime.ts ~1081-1088; work-retention.ts ~126-145). The closed ticket is then filtered out and a single-ticket run skips review and acceptance. Keep the evidence until the successor consumes it. Either record the matching job/land on the paused queue when it is observed, or retain the small land receipt and the source job report (not the whole checkout) while a current, unsuperseded, unstopped queue still holds that item. Release on resume consumption, stop or supersession. (2) pinnedHeldJobs uses itemClosed, which treats a missing ticket path as closed (state.ts ~57-64). Ordinary resume uses ticketClosed, which treats it as open (ticket-queue.ts ~91-98). If a branch switch temporarily hides the ticket, the pin can drop during a scan while resume still offers hud_land/correction on the job that was deleted. For ordinary holds, use the same positive closure evidence in retention and in resume: a missing or unreadable path is neither a stop nor a land. Leave unattended hold semantics unchanged unless they share the helper safely.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: ordinary single-ticket queue paused on a hold, hud_land completes, a retention pass runs with the clock advanced past JOB_RETENTION_MS, then hud_tickets run resumes. The item is landed and review and accept run over it, and the report they cite still exists",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "After the successor consumes the land (or the run is stopped/superseded), the retained receipt/report is released and normal retention applies",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: an ordinary held item whose ticket file is temporarily missing during a retention pass keeps its source job pinned. Retention and resume agree that the item is not closed",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Ordinary completed jobs without a hold keep today's retention, and unattended hold behaviour is unchanged",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ed014bd25d19ad293fd46bb0b4971c379d362156",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 19,
+      "title": "Flake repair: an unavailable checkout keeps a pending receipt, and the changed-feature branch drops its duplicate rollup",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair of chores/17 after milestone review j3a2a5f54c81b5ff9 (finding 3 and the deletion note; read ~/.hud/jobs/j3a2a5f54c81b5ff9/report.md for file:line). (1) inspectRunningListTicket maps a missing issues directory or ticket file to 'resolved' (src/mcp/land-flakes.ts ~202-210 listFeatureTickets returns [] for an absent dir; ~343-348; the ENOENT catch in inspectRunningListEntry). hasPendingFlakeCollection (~678-685) then returns false, so housekeeping deletes the pending receipt and gate log when the project checkout is only temporarily unavailable, with no job claim and no terminal status read. Distinguish unavailable evidence from observed resolution. Resolution needs a readable ticket with terminal/claimed/landed evidence or a job claim. An unreadable or missing checkout, issues dir or ticket keeps the family (and does not dispatch). (2) Deletion note: the changed-feature branch (~523-539) runs a full dependency rollup and duplicates the blocked/ready branches even though neither may dispatch. A claim/terminal check alone decides resolved vs 'waiting for configured flakes feature'; remove the rollup there. On the permitted-dispatch path, a missing rollup entry falls back to raw 'Blocked by' text (~324-326). Treat missing readiness evidence as non-dispatchable and remove that second rule.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a pending dispatch receipt whose project checkout or ticket file is unavailable keeps its receipt and gate log through a retention pass past the cutoff",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: with flakes config removed, a readable wontfix ticket still releases (prunes) the family",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The changed-feature branch no longer computes a dependency rollup. It returns resolved or waiting from the claim/terminal check alone (existing changed-feature tests still pass)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "On the dispatch path a ticket missing from the rollup is not dispatched, and the raw Blocked-by fallback is gone",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "c43f326fbb6ccd25ac04377b80127e46348b6d84",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 20,
+      "title": "Queue repair: pin only held manual-land evidence, not every landed job of an open queue",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair of chores/18 after milestone review j5e7baca99c4a7686 (major finding, deletion note and the optional test note; read ~/.hud/jobs/j5e7baca99c4a7686/report.md for file:line). (1) pinnedQueueJobs (src/unattended/state.ts ~164-170) adds every item.landed job of a working or paused ordinary queue to `evidence`. A milestone with handback_to main that lands its tickets normally and waits on an unanswered acceptance question is a paused queue with no hold (src/mcp/ticket-queue-step.ts ~1474-1483). Its job directories and land families, including gate logs, then skip normal retention for as long as the queue stays open (src/runtime/watch-runtime.ts ~1082-1088; src/runtime/work-retention.ts ~126-132). This breaks the chores/16 and /18 constraint that ordinary completed jobs keep today's retention. Narrow the evidence pin to a held item's matching manual land. Where review and acceptance need it, also pin the successor item that adopted that manual land, and nothing else. Release on consumption, stop or supersession as before. (2) Deletion: pinnedHeldJobs (state.ts ~184-186) is now only a test projection. Remove it and have tests assert on pinnedQueueJobs(home).held. (3) The satisfied-dependency test in tests/unit/thin-mcp-land-flakes.test.mjs (~1395, ~1433) uses job IDs containing `g`, which JobIndexCache.listJobIds filters out (src/roles/job-index-cache.ts JOB_ID_RE). Use valid hex IDs so the test exercises real claim visibility, and add a second retry before closing the first job so the exactly-once assertion is meaningful.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: an ordinary open queue (working, or paused on a main hand-back with no hold) with a normally landed, never-held item. A retention pass with the clock past JOB_RETENTION_MS archives that job directory and prunes its land family as today",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The existing manual land → retention past JOB_RETENTION_MS → resume test still passes. Review and accept cite a report that still exists, and the evidence is released after consumption, stop or supersession",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "pinnedHeldJobs is removed and its tests use pinnedQueueJobs(home).held",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The satisfied-dependency flake test uses valid hex job IDs and asserts that exactly one dispatch happens across two retries before the first job closes",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "488ebd79bccf9e1ccd2dd413990e1e36d5a97c0c",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:41:20.951Z",
+          "author": "legacy",
+          "text": "Landed in this commit (replay base 1587073ab383f5a8e1233f27fddfa83019a82a66); gate 5/5 passed."
+        }
+      ],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 21,
+      "title": "Queue repair: open ordinary queues pin only held items' jobs, not every landed item",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair from the chores run q4cb6b4851e0cf926 acceptance (lead j35b4c9db4f262115, reviewer major finding). `pinnedQueueJobs` keeps the job directory and land family of every landed item in any open ordinary queue, which breaks the chores/16 and chores/18 acceptance line \"ordinary completed jobs without a hold keep today's retention\". Pin only what chores/16 and /18 need: the source job of an unresolved owner hold on a paused ordinary queue (and a manually landed item's receipt needed for resume), released when the hold resolves or the run stops or is superseded. Landed items with no hold follow normal retention.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A landed item in an open ordinary queue without a hold is pruned on normal retention (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A held item's source job stays pinned until the hold resolves, the run stops or is superseded (existing chores/16 and /18 tests still pass)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "eff63c1f9a0e6eeb457cb1f8760e17db0806b5ee",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 22,
+      "title": "Land repair: a source worker that committed a fix is not judged 'output missing, empty or unchanged'",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-26, land f0420ffb9f71dede4 (unattended/05, job j0420ffb9f71dede4, pi gpt-6.2-sol): gate[3] failed; repair 1 resumed the source worker, which rebased, committed 897d5548 on wt/imp-1dede4 and wrote a new report (digest: 'Rebased and committed 897d5548 ... passed 58 targeted tests'). The land still recorded the repair outcome 'output missing, empty or unchanged', marked the land and the job failed, and hud_land then refuses the job (state failed). Main had to start a fresh imp job to carry the commits. Find why the repair settlement missed the new report/commit (stale report hash, receipt timing, resumed pi session, rebase changing the branch base) and fix it so a repair that commits and reports is accepted; a genuinely empty repair still fails. A wrongly failed job must not lose its branch.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Regression test reproducing this case (resumed pi source worker rebases, commits and rewrites its report) passes the repair step and retries the gate.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A repair turn with no new commit and no new report still fails as today.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "hud_land on a job failed only by a land repair verdict explains the next step instead of a bare state refusal (or the job keeps a landable state).",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "fac48037b2b88230731050be045e4ece1f83de8c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 23,
+      "title": "Provider billing/budget errors mark the place exhausted and fail over (pi turn errors, 402)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-27 00:37Z: every sonic on pi mistral/deepseek-v4-1-flash-1017 failed with 'pi exited without a declared report'. The real cause was in the pi session: the assistant turn stopped with stopReason error, errorMessage 'Mistral API error (402): {\"message\":\"Vibe budget exhausted.\",\"type\":\"billing_vibe_budget_exhausted\",\"code\":\"2304\"}'. HUD never marked the place exhausted, so dispatch kept choosing it although the role has haiku and luna fallbacks: (1) watch-runtime only checks status.exit_reason/error, which held the generic 'exited without a declared report', not the provider error; (2) QUOTA_ERROR in src/roles/exhausted.ts has no billing/budget/credit-balance/402 pattern. Main marked the place by hand for 12 h. Fix: when a pi (or CLI) worker ends without a report, read the last assistant turn's error from its session/stdout and use it as the failure reason; treat provider billing and budget exhaustion (HTTP 402, billing_*, 'budget exhausted', 'credit balance', 'payment required') as quota failures. Keep a reset hint when present; otherwise use a longer default for billing (e.g. 12 h) than for rate limits.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fixture: a pi sonic session ending with the Mistral 402 billing error marks pi:<model> exhausted and the job's exit_reason names the provider error; the next sonic dispatch uses the role's next run place.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Billing errors without a reset hint get the longer default; 429/rate-limit behaviour unchanged.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A worker that ends without a report and without a provider error keeps today's reason.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "47bbe706518e8d43902dc4ad3fef61864acf8abf",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 24,
+      "title": "Dispatch skips an exhausted first candidate",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "A live exhaustion mark in $HUD_HOME/exhausted.json does not stop the first candidate of a role's run list. 2026-11-26: `pi:mistral/deepseek-v4-1-flash-1017` was marked exhausted (402 budget) at 00:38Z, yet sonic j1fc9c73c7102143b launched on it at 00:41Z and failed with \"Invalid Mistral streaming event\". In src/mcp/dispatch/orchestrator.ts (~1200) the exhausted filter runs only under `if (!first)`; sonic uses fixed placement so the even planner's exhausted routing never applies. Fix: every candidate, first included, is skipped while its place key carries a live mark, for fixed and even placement and for sonic scouts; when every candidate is exhausted the job fails pre-input with a clear reason naming the marks. Also treat 402 / billing / budget-exceeded errors as quota failures (QUOTA_ERROR) if 99bbe2ad did not already cover the dispatch path.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A test: role with run [A, B], A marked exhausted, B not: the job launches on B without trying A (fixed placement and even placement, plus a prewalk scout)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A test: all candidates exhausted: pre-input failure whose reason names the exhausted keys; no launch attempted",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Expired marks are ignored (launch on A again after the mark's until passes)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "21d49f2c7082b509a8035c703ac3783cebc961b1",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    },
+    {
+      "number": 26,
+      "title": "Land ticks only acceptance items the worker did not report unfinished",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "hud_land ticked imp-daily-facts/02 acceptance item 1 although the worker's report said that item was unfinished (only `round` done; `repairs` waited on ticket-store/06), and the lead had asked not to tick it. The land record ticks items mechanically. Fix: items the report's `Not done` section or a lead todo names by acceptance text or id stay unticked; the land notice lists them; a ticket with unticked items lands as `ready-for-agent` with a comment, not `done`, unless the remaining item is an owner try.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: report `Not done` naming item 1 → land leaves item 1 unticked and the ticket not done; notice lists it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: report with an empty Not done → all items ticked as today",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.951Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "48bf6063d95f926ed746bc81078456ae721e67d0",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.951Z",
+      "updated_at": "2026-11-27T06:41:20.951Z"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "feature": "place-health",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Control's Dispatch today splits by place",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "primitives/03"
+      ],
+      "what": "Proposal docs/neon-proposal/16-per-place-dispatch-health.md with its §6 defaults (owner, 2026-11-22): local calendar day; a role gets per-place sub-rows (launches, launch failures, hand-offs to main, quota marks) only when it used 2+ places or had a failure or quota mark; no chain-row note; no inferred \"hang\" count, only recorded facts. Display only, no routing change. Spec wording as approved: \"today's per-role dispatch health, split by place\". Update reference.md / reference.zh.md Control Usage.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic jobs on two places show two sub-rows with the right counts; a single clean place shows none",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.080Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "c68b2026209b2e766207933fc014b2b22fb49f99"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.080Z",
+      "updated_at": "2026-11-27T06:39:46.080Z"
+    }
+  ]
+}

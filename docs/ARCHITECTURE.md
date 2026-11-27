@@ -183,7 +183,7 @@ The panel does not poll `herdr agent list`, scan workspace `tmp/tasks/`, or read
 Existing records are left in place.
 `CODEX_HUD_PANEL_ALL_DELEGATIONS` is ignored; it does not widen the pane scope.
 
-A job whose receipt names a `ticket` (`feature/NN`, or a `package` and a number) also gets `ticketTitle`, the heading of `<project_root>/.scratch/<feature>/issues/NN-*.md`: the first 512 bytes of one regular file in an unlinked directory, cached for 30 seconds per ticket (`ticket-title.ts`); a missing or unreadable file is no title.
+A job whose receipt names a `ticket` (`feature/NN`, or a `package` and a number) also gets `ticketTitle` from the cached ticket store (`ticket-title.ts` → `scanTicketStore`): `.hud/tickets/<feature>.json` first, falling back to legacy `.scratch/<feature>/issues/NN-*.md` for unmigrated projects; a missing or unreadable ticket yields no title.
 Jobs can display it without sending it to a model.
 
 `readThinJobs` selects up to 200 top-level jobs plus up to 200 of their children and filters to the caller's recorded pane.
@@ -220,7 +220,7 @@ A red gate gets one immediate rerun of the reported Node.js test files (or of th
 Full reads run only while Project is shown without a modal.
 Home reads the handoff and owner requests, not the control plane or working-tree diff.
 STATE, spec, try records, tickets and the newest 64 top-level jobs (plus up to 64 children) are signature-cached; the last 64 commit subjects are cached by checkout HEAD SHA.
-Tickets come from `.scratch/<feature>/issues/<NN>-<slug>.md` (64 feature directories, 512 files total, 64 KiB each).
+Tickets come from `.hud/tickets/<feature>.json` (up to 256 features, 64 KiB each, stat-signature-cached), falling back per feature to legacy `.scratch/<feature>/issues/<NN>-<slug>.md` (64 files per feature, 512 total) for unmigrated projects. Ticket writes are JSON-only under the per-project `tickets` lock, record file digests in private `$HUD_HOME/projects/<hash>/ticket-writes.json`, and sweep into Git on `hud_land` (post-fast-forward amend) or `hud_tickets commit`.
 Derive ticket states and resolve local and cross-feature dependencies before limiting detail to open features plus the newest finished ones up to 16.
 Tickets and landing evidence supply progress rows; STATE supplies the milestone, Now, Waiting and Next, not progress rows.
 No collector writes project files.

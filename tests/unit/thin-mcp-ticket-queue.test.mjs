@@ -36,20 +36,38 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
   fs.writeFileSync(join(f.root, '.hud/brief.md'), 'Synthetic standing brief.\n');
   fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: f.root }] }));
   if (frontend) fallbackRole(f, 'frontend-imp', [{ harness: 'pi', pi_role: 'implementer', split: false }]);
-  const issues = join('.scratch', 'sample', 'issues');
-  fs.mkdirSync(join(f.root, issues), { recursive: true });
-  const ticketPath = n => join(issues, `0${n}-synthetic.md`);
-  for (const n of [1, 2, 3]) fs.writeFileSync(join(f.root, ticketPath(n)),
-    `# 0${n}: Synthetic ${n}\n\n**Status:** ${done.includes(n) ? 'done' : 'ready-for-agent'}\n**Owner try:** no\n**Live try:** none\n**Blocked by:** ${n === 3 ? thirdBlocker : 'none'}\n` +
-    (n === 2 && frontend ? '**Role:** frontend-imp\n' : '') +
-    `\n**What to build:** Synthetic change ${n}\n\n- [ ] Checked\n\n## Comments\n`);
+  const at = '2026-01-01T00:00:00.000Z';
+  const parseBlockers = raw => !raw || /^none$/i.test(raw) ? [] : raw.split(/[,;]+/).map(s => {
+    const clean = s.trim();
+    return clean.includes('/') ? clean : `sample/${clean.padStart(2, '0')}`;
+  });
+  fs.mkdirSync(join(f.root, '.hud', 'tickets'), { recursive: true });
+  const ticketPath = (_n, feat = 'sample') => `.hud/tickets/${feat}.json`;
+  const ticketStatus = (n, feat = 'sample', rev = 'base') =>
+    JSON.parse(git(f.root, 'show', `${rev}:${ticketPath(n, feat)}`)).tickets.find(item => item.number === n)?.status;
+  fs.writeFileSync(join(f.root, ticketPath(1)), serializeTicketFeature({
+    version: 1, feature: 'sample',
+    tickets: [1, 2, 3].map(n => ({
+      number: n, title: `Synthetic ${n}`, status: done.includes(n) ? 'done' : 'ready-for-agent',
+      ...(n === 2 && frontend ? { role: 'frontend-imp' } : {}),
+      owner_try: false, live_try: 'none', approved_removals: [],
+      blocked_by: n === 3 ? parseBlockers(thirdBlocker) : [],
+      what: `Synthetic change ${n}`, acceptance: [{ id: 1, text: 'Checked', done: false }],
+      comments: [], created_at: at, updated_at: at,
+    })),
+  }));
   if (upstream.length) {
-    const dir = join(f.root, '.scratch', 'upstream', 'issues');
-    fs.mkdirSync(dir, { recursive: true });
-    upstream.forEach((status, i) => fs.writeFileSync(join(dir, `0${i + 1}-synthetic.md`),
-      `# 0${i + 1}: Upstream ${i + 1}\n\n**Status:** ${status}\n**Live try:** none\n**Blocked by:** none\n\n**What to build:** Synthetic upstream change.\n\n- [ ] Checked\n`));
+    fs.writeFileSync(join(f.root, ticketPath(1, 'upstream')), serializeTicketFeature({
+      version: 1, feature: 'upstream',
+      tickets: upstream.map((status, i) => ({
+        number: i + 1, title: `Upstream ${i + 1}`, status,
+        owner_try: false, live_try: 'none', approved_removals: [], blocked_by: [],
+        what: 'Synthetic upstream change.', acceptance: [{ id: 1, text: 'Checked', done: false }],
+        comments: [], created_at: at, updated_at: at,
+      })),
+    }));
   }
-  git(f.root, 'add', '.scratch', '.hud');
+  git(f.root, 'add', '.hud');
   git(f.root, 'commit', '-qm', 'synthetic tickets');
   const home = f.env.HUD_HOME;
   const flow = id => read(join(home, 'flows', `${id}.json`));
@@ -109,7 +127,7 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
     }, 20_000);
     return flow(id);
   };
-  return { ...f, dir, end, flow, git, job, jobs, settle, start, status, ticketPath };
+  return { ...f, dir, end, flow, git, job, jobs, settle, start, status, ticketPath, ticketStatus };
 }
 
 test('ticket queue lands two ready tickets, resumes after a runner crash, and releases the dependent', { timeout: 45_000 }, async t => {
@@ -133,12 +151,12 @@ test('ticket queue lands two ready tickets, resumes after a runner crash, and re
   assert.equal(f.flow(flow).tickets.length, 2);
   await f.call('hud_lease', { name: 'main-checkout', release: true });
   const [, , third] = await f.jobs(flow, 3);
-  assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* done/);
+  assert.equal(f.ticketStatus(1), 'done');
   assert.equal(f.job(third).ticket, 'sample/03');
   await f.settle(third);
   const done = await f.end(flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));
-  for (const n of [1, 2, 3]) assert.match(f.git(f.root, 'show', `base:${f.ticketPath(n)}`), /\*\*Status:\*\* done/);
+  for (const n of [1, 2, 3]) assert.equal(f.ticketStatus(n), 'done');
   const result = await f.call('hud_read', { job: flow });
   assert.deepEqual(result.landed, ['sample/01', 'sample/02', 'sample/03']);
   assert.deepEqual(result.changes, [`${flow} (ticket queue sample) — completed. Landed: sample/01, sample/02, sample/03. Verdict: finish: Accepted synthetic feature.`]);
@@ -233,7 +251,7 @@ test('Execution collects a future same-feature dependency and keeps repair round
   }
   await f.jobs(flow, 2);
   assert.deepEqual(f.flow(flow).tickets.map(t => t.ticket), ['sample/01', 'sample/02']);
-  assert.match(f.git(f.root, 'show', `base:${f.ticketPath(1)}`), /\*\*Status:\*\* done/);
+  assert.equal(f.ticketRecord(1, 'sample', 'base')?.status, 'done');
   await until(() => f.flow(flow).tickets[0].landed, 15_000);
   const landed = station('01');
   assert.equal(landed.state, 'done');
@@ -445,7 +463,7 @@ test('a recovered queue intent with an old scratch path dispatches by ticket ID'
   const home = f.env.HUD_HOME;
   const { flow, queued } = await f.start(1);
   assert.deepEqual(queued, [{ ticket: 'sample/03', blockers: ['upstream/01'] }]);
-  const legacyPath = join(f.root, f.ticketPath(3)), path = ticketFeaturePath(f.root, 'sample');
+  const legacyPath = join(f.root, '.scratch', 'sample', 'issues', '03-synthetic.md'), path = ticketFeaturePath(f.root, 'sample');
   await runLock(home, flow, () => {
     const persisted = f.flow(flow);
     assert.equal(persisted.tickets.length, 0);
@@ -470,7 +488,9 @@ test('a resumed queue drops a ticket that was closed since the queue failed', { 
   assert.equal((await f.end(flow)).state, 'failed');
   // The ticket landed through another job while the queue was stopped.
   const ticket = join(f.root, f.ticketPath(1));
-  fs.writeFileSync(ticket, fs.readFileSync(ticket, 'utf8').replace('ready-for-agent', 'done'));
+  const doc = read(ticket);
+  doc.tickets[0].status = 'done';
+  fs.writeFileSync(ticket, serializeTicketFeature(doc));
   const { flow: resumed } = await f.start(1);
   const [next] = await f.jobs(resumed, 1);
   assert.notEqual(next, first);

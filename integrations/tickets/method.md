@@ -4,7 +4,7 @@ Adapted from mattpocock/skills `skills/engineering/to-tickets` @5863806 (MIT). O
 
 Break a plan, spec, or conversation into **tickets**: tracer-bullet vertical slices, each declaring its blocking edges. Create tickets only when the work needs several implementer sessions; work one implementer can finish in one session needs only a single brief, no tickets.
 
-Publish as `docs/agents/issue-tracker.md` says. If it is missing, ask the owner where to publish (there is no tracker-setup skill). When the tracker is GitHub with a `.scratch/` mirror, use `gh` to write to GitHub only, never write `.scratch/`, and call `hud_tickets` with `op: sync` for the project to update the mirror.
+Publish as `docs/agents/issue-tracker.md` says. If it is missing, ask the owner where to publish (there is no tracker-setup skill). Local tickets live in `.hud/tickets/<feature>.json` and are edited only through `hud_tickets`; never create or edit Markdown ticket files. When the tracker is GitHub with a HUD mirror, use `gh` to write to GitHub only, never edit `.hud/tickets/` or `.scratch/` directly, and call `hud_tickets` with `op: "sync"` for the project to update the mirror.
 
 ## Process
 
@@ -29,34 +29,18 @@ A ticket whose acceptance cannot be written, or whose boundary depends on someth
 
 Publish blockers first in dependency order. Do not close or rewrite a parent issue. Open items in the spec keep derived tickets from `ready-for-agent`; otherwise label `ready-for-agent`.
 
-- **Local tickets:** call `hud_tickets` with `op: add`, the `feature` slug, and a `tickets` list. Give each draft a `title`, `blocked_by` (local ticket numbers or `feature/NN` references, or `[]`), `what`, `acceptance` (a list of items), `live_try` (a concrete instruction or `none`), optional `status` (default `ready-for-agent`), and optional `owner_try` (default `false`; set `true` only when the owner must try the result). The tool numbers the drafts in list order and returns the numbers and paths. New features use `.hud/tickets/<feature>.json`; edits do not wait for a land or make a Git commit on their own. The next `hud_land` folds HUD-written ticket files into the landed commit; when nothing lands, call `hud_tickets` with `op: commit` (or `hud tickets commit`).
-- **GitHub with `.scratch/` mirror:** publish the spec as the parent issue (if not already published), then create each ticket as a GitHub sub-issue of that parent (`gh issue create --parent N` or `gh issue edit N --add-sub-issue M`). Express blocking as native blocked-by edges or a single body line `Blocked by: #N, #M`. Never write `.scratch/`. After publishing, call `hud_tickets` with `op: sync`; sync reports the `<slug>` derived from the parent title and writes each mirrored ticket file to `.scratch/<slug>/issues/<N>-<slug>.md` (where `N` is the GitHub issue number).
+- **Local tickets (`.hud/tickets/<feature>.json`):** call `hud_tickets` with `op: "add"`, the `feature` slug, and a `tickets` list. Give each draft a `title`, `blocked_by` (local ticket numbers or `feature/NN` references, or `[]`), `what`, `acceptance` (a list of items), `live_try` (a concrete instruction or `none`), and optional `status` (default `ready-for-agent`), `owner_try` (default `false`; set `true` only when the owner must try the result), `kind`, `role`, `main_review`, `approved_removals`, `repairs`, or `objective`. The tool numbers the drafts in list order and writes `.hud/tickets/<feature>.json` (at most 64 KiB per feature). Edits do not wait for a land or make a Git commit on their own. The next `hud_land` folds HUD-written ticket files into the landed commit; when nothing lands, call `hud_tickets` with `op: "commit"` (or `hud tickets commit`).
+- **GitHub with HUD mirror:** publish the spec as the parent issue (if not already published), then create each ticket as a GitHub sub-issue of that parent (`gh issue create --parent N` or `gh issue edit N --add-sub-issue M`). Express blocking as native blocked-by edges or a single body line `Blocked by: #N, #M`. Never write mirror files by hand. After publishing, call `hud_tickets` with `op: "sync"`; sync reports the `<slug>` derived from the parent title, writes git-ignored `.hud/tickets/<slug>.json`, and keeps `.scratch/<slug>/spec.md`.
 
 For a local ticket tied to an Objective, pass `objective` to `add` (once for every draft, or per draft) or to `update`. The tool checks the ID against the project's `.hud/objectives.md`. The panel groups work by each Objective's `Features`, so `add` also appends the feature there (uncommitted, like `hud_objective`); `update` writes only the ticket field. An `add` without `objective` for a feature no Objective lists still writes the tickets and returns a `warning`.
 
-### 5. Ownership and HUD dispatch
+### 5. Operations and HUD dispatch
 
-- **Single writer:** the main session ticks acceptance after checking results; workers never edit ticket files or issues. For local tickets, call `hud_tickets` with `op: update`, `feature`, `ticket` (number), and `status`, `owner_try`, `blocked_by` (replacement blockers), and/or `tick` (1-based acceptance IDs). On JSON tickets, `update` can also append a `comment` or edit spec fields like `what` and `live_try`. Use `op: get` with the `feature` (and optionally `ticket`) to read the typed record. For GitHub with a `.scratch/` mirror, tick acceptance on the GitHub issue, then call `hud_tickets` with `op: sync` again—never edit mirror files.
+- **Read:** call `hud_tickets` with `op: "get"` and `feature` (for the full feature document) or `ticket: "<feature>/<NN>"` (for one typed record), or run `hud tickets show <feature>[/<NN>]` to print it as Markdown. Call `op: "ready"` to list unblocked `ready-for-agent` tickets with no live job.
+- **Single writer:** the main session ticks acceptance after checking results; workers never edit ticket files or issues (`hud_land` rejects worker diffs touching `.hud/tickets/**`). For local tickets, call `hud_tickets` with `op: "update"`, `feature`, `ticket` (number), and any of `status`, `owner_try`, `blocked_by`, `repairs`, `objective`, `tick` (1-based acceptance IDs), `comment`, `title`, `what`, `live_try`, `approved_removals`, `kind`, `role`, `main_review`, or `acceptance: [{id, text}]`. Batch multiple updates with `updates: [{feature?, ticket, ...}]`. Commit standalone HUD ticket edits with `op: "commit"`. For GitHub with a HUD mirror, tick acceptance on the GitHub issue, then call `hud_tickets` with `op: "sync"` again.
 - **Dispatching:**
-  - **Local tickets:** use `hud_tickets` with `op: ready` for dispatchable tickets. Pass the returned `ticket` (`<feature>/<NN>`) to `hud_create`; it supplies the brief without a `brief_file`. The live job claims the ticket without a file edit or commit.
-  - **GitHub with `.scratch/` mirror:** pass `package: "<slug>"` (the slug that sync reports from the parent title) to `hud_create` and name `.scratch/<slug>/issues/<N>-<slug>.md` or `#N` in the brief.
-
-<local-ticket-template>
-
-# NN: Ticket title
-
-**Status:** ready-for-agent
-**Owner try:** no
-**Blocked by:** none
-
-**What to build:** end-to-end behavior this ticket delivers, from the user's perspective.
-
-- [ ] Acceptance criterion 1
-- [ ] Acceptance criterion 2
-
-## Comments
-
-</local-ticket-template>
+  - **Local tickets:** call `hud_tickets` with `op: "ready"` for dispatchable tickets. Pass the returned `ticket` (`<feature>/<NN>`) to `hud_create` without `brief_file` or `task`; HUD renders the brief from `.hud/tickets/<feature>.json`. The live job claims the ticket without a file edit or commit.
+  - **GitHub with HUD mirror:** pass `ticket: "<slug>/<N>"` (using the `<slug>` that sync reports and the GitHub issue number `N`) to `hud_create`, or pass `package: "<slug>"` with a custom brief naming `#N`.
 
 <issue-template>
 

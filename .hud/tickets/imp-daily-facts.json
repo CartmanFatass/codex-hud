@@ -1,0 +1,414 @@
+{
+  "version": 1,
+  "feature": "imp-daily-facts",
+  "objective": "pivot",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Record provider served_model and land commit span in archive receipts",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Design: oracle report j4a570e7da6899cf2 (per-model daily performance, sections A-C). In src/roles/job-usage.ts (piTotals, resultUsage, transcriptUsage, Receipt), collect distinct non-<synthetic> response model IDs observed on assistant/result turns (pi provider/model + fast/ultrafast tier when present, claude message.model or result modelUsage keys, codex turn_context/session_meta model, agy PLANNER_RESPONSE model) as served_model (latest) and optional served_models (capped at 4 when >1 model served the job) in usage.json at settlement before pruneJobLogs deletes stdout.jsonl. In src/roles/job-land.ts, copy base_sha and source_sha onto JobLand so verified slice commit spans survive 1-day flows/f*.json pruning. Project served_model, served_models, and land.{base_sha, source_sha} onto archive/YYYY-MM.jsonl in src/roles/job-archive.ts and document in docs/reference.md. toktrack reads these for per-model daily trends and served-model change points (HUD records facts, toktrack analyses).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Pi, Claude, Codex and AGY settlement fixtures in tests/unit/job-usage-stats.test.mjs record exact response served_model (and served_models up to 4 when mixed), ignoring <synthetic> and leaving truncated/missing transcripts absent",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "archiveJobLand and archiveJob copy land.base_sha, land.source_sha, and usage.served_model onto the archive JSONL line (tests/unit/job-archive-diagnostics.test.mjs)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Older jobs or flows lacking those fields still serialize without fabricated defaults",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.032Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "5c22cfa059ab4be571dfdc4c984e1ad716a97503",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.032Z",
+      "updated_at": "2026-11-27T06:39:46.032Z"
+    },
+    {
+      "number": 2,
+      "title": "Archive expiring ticket-queue receipts to events JSONL and attribute repair tickets to slices",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ticket-store/01"
+      ],
+      "what": "Design: oracle report j4a570e7da6899cf2. Today pruneLandFlows (src/runtime/work-retention.ts:95-116) unlinks terminal flows/q*.json after 1 day with no archive, erasing lead acceptance and milestone review history. Add optional repairs: string[] (canonical <feature>/<NN> refs fixed by a repair ticket, validated like blocked_by) to TicketRecord and hud_tickets add (src/tickets/store.ts, src/roles/tool-definitions.ts), and require repairs when choosing Decision: repair in src/mcp/workflow-lead.ts and packages/hud-mcp/instructions/lead.md. Stamp round and optional repairs onto TicketQueueItem, worker_job onto RunDecision, and resolved {base: q.start_head, head} fallback onto ReviewRecord in src/mcp/ticket-queue-state.ts and src/mcp/ticket-queue-step.ts. In pruneLandFlows, claim q<id>.json.archived with wx and append one prose-free {v:1, kind:'ticket_queue', flow, project, feature, state, created_at, updated_at, repair_rounds, tickets, decisions, reviews} line to $HUD_HOME/events/YYYY-MM.jsonl (0600) before unlinking an expired q*.json receipt; document in docs/reference.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_tickets add validates optional repairs refs, rejects unknown/malformed refs, and ticket-queue admission copies round and repairs onto q.tickets[]",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "pruneLandFlows appends exactly one prose-free kind:'ticket_queue' event to events/YYYY-MM.jsonl before unlinking an expired terminal q*.json (no reason, verdict, summary or todo prose; failed unlink never duplicates the event)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Milestone review records resolved {base, head} commit SHAs on q.reviews[] from q.start_head..HEAD when the reviewer omitted reviewed",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.033Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "126161761018d7b8f0c858346a43dab21076c3f1",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.033Z",
+      "updated_at": "2026-11-27T06:39:46.033Z"
+    },
+    {
+      "number": 3,
+      "title": "Repair 01: served-model evidence uses response snapshots and never trusts truncated or masked history",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repairs imp-daily-facts/01 (milestone review je6beab56fe18b3fe findings 3-5). All in src/roles/job-usage.ts plus tests/unit/job-usage-stats.test.mjs. (3) piModel (~:90-96) reads only message.model; Pi's own usage-totals uses `responseModel ?? model`. Prefer a valid message.responseModel when present, then qualify with provider and fast/ultrafast tier as today. (4) The Codex rollout path (~:205-213) returns served models together with a cumulative event_msg/token_count total before checking window.cut || window.malformed, so a >1 MiB rollout whose discarded prefix used another model is archived as single-model. The Claude headless path (~:291-301) likewise treats one result with a known byte start as complete even when the assistant window was cut. Gate model collection separately from numeric totals: a cumulative count may still supply tokens, but served_model/served_models from a cut or malformed window must be omitted (unknown), never presented as full history. (5) An AGY stream result with input, output and result.model skips PLANNER_RESPONSE history entirely, and the stream/native merge (~:312-320) drops the native model list whenever the stream has any model. Keep token totals from one view (never add two views of the same traffic), but collect model evidence independently from both views through one bounded distinct-model accumulator (last-4, last-seen order, served_model = last). This replaces the all-or-nothing choice between model lists and the repeated normalize/expand passes in jobUsage, sum and the merge. No archive format change.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Pi fixture: two assistant messages with the same model alias but different responseModel snapshots yields both snapshots (provider-qualified, tier-suffixed) in served_models and the later one as served_model (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Codex fixture: rollout over the window bound whose cut prefix has model A and tail turn_context model B with a cumulative token_count still yields token totals but omits served_model/served_models (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Claude headless fixture with known byte start and a cut assistant window omits served-model history rather than reporting a partial list as complete (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "AGY fixture: stream result with input/output and result.model B plus native PLANNER_RESPONSE A then B yields served_models [A, B] and tokens counted once (test)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.033Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "6f0ba6d5386994b0741aadbce740d36bc75b89c6",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.033Z",
+      "updated_at": "2026-11-27T06:39:46.033Z"
+    },
+    {
+      "number": 4,
+      "title": "Repair 02: repair tickets name the slices they fix, and decisions keep their known subject worker",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repairs imp-daily-facts/02 (milestone review je6beab56fe18b3fe findings 1-2); its acceptance item 1 was deferred until ticket-store/06, which has now landed (7cff64d0). (1) Add optional repairs: string[] (canonical <feature>/<NN> refs, validated like blocked_by: reject malformed and unknown refs) to TicketRecord (src/tickets/store.ts) and to hud_tickets add/update (src/roles/tool-definitions.ts, src/mcp/ticket-store-ops.ts), on the landed JSON store and the Markdown path it still serves. Copy repairs onto q.tickets[] at admission (src/mcp/ticket-queue-step.ts, next to round) so the monthly ticket_queue event in src/runtime/work-retention.ts carries it. Require repairs when the lead chooses Decision: repair: src/mcp/workflow-lead.ts and packages/hud-mcp/instructions/lead.md say repair tickets must set repairs to the slice(s) they fix. Document the field in docs/reference.md. (2) Set worker_job on decisions whose subject worker is known: the main-resumed blocker in src/mcp/ticket-queue.ts (~:341, use item.job), the directly answered worker question (~:499, the jobId used to find the item), and the tickets-step handback (~:437) when cur.handback records a subject. Leave worker_job absent for genuinely run-wide acceptance.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_tickets add with repairs ['<feature>/<NN>'] targeting an existing slice B (with sibling A) stores it, and admission copies it onto q.tickets[]; the archived ticket_queue event line carries repairs naming B, not A (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_tickets add rejects an unknown or malformed repairs ref with a clear error (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "lead.md and workflow-lead.ts state that Decision: repair requires repair tickets with repairs set (test or doc check)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "main-resumed blocker, directly answered worker question and subject-bearing tickets handback decisions record worker_job; run-wide accept decisions do not (test)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.033Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f8161973fa8304b1394944ced59ea357ba5ea402",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.033Z",
+      "updated_at": "2026-11-27T06:39:46.033Z"
+    },
+    {
+      "number": 5,
+      "title": "Repair 03: served-model evidence skips Pi error turns and keeps AGY coverage and order",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "imp-daily-facts/03",
+        "imp-daily-facts/01"
+      ],
+      "what": "Repairs imp-daily-facts/03 (and the served-model purpose of /01): milestone review j39f809afec9bd794 Simplicity findings 1-3. All in src/roles/job-usage.ts plus tests/unit/job-usage-stats.test.mjs. No archive format change; numeric token accounting stays as it is. (1) Pi error/abort turns. piTotals (~:158-162) adds piModel(m, u) for every assistant row that has `usage`, and piModel falls back to `m.model` when `responseModel` is absent. Pi's OpenAI Responses emitter initialises `model: model.id` and zero usage before the request, then persists that message with `stopReason: \"error\"` or `\"aborted\"` on failure. A quota rejection after a successful turn therefore records a requested alias that served nothing as the latest served_model. Do not add a model observation for an assistant row whose stopReason is error/aborted unless it shows evidence of a response (a valid responseModel, or non-zero input/output usage). Keep the row's numeric usage handling unchanged. (2) AGY terminal result masking a cut native log. In recordJobUsage (~:314-339), an intact stdout result marks stream model evidence complete even when transcriptUsage returned early because the planner transcript was cut or malformed. Fixture: planner A then B with A in the discarded prefix of a >1 MiB transcript_full.jsonl, result B: settlement must keep the stream token totals but omit served_model/served_models (unknown), not publish B alone. Carry native model coverage (read, intact / cut-or-malformed / absent) out of transcriptUsage and through the merge; a terminal result establishes only the final model, not the full history, when the native view exists but is incomplete. (3) Continuation order. The merge replays prior-turn stream observations (prefix.usage models) after the new native observations, so for an intact first AGY turn with result A, a contiguous second turn whose result has no model, and a complete native transcript A then B, the output is [B,A] with served_model A. Keep the prior-turn prefix separate from current-terminal evidence: prior-turn observations go before the native history (or are superseded by it), and only the current turn's terminal evidence may follow the native observations. Add this two-settlement test next to the existing one-settlement A/B test.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A Pi assistant row with stopReason error/aborted, no responseModel and zero input/output usage adds no served-model observation; its numeric usage handling is unchanged (unit test: successful turn on model X, then an error turn on alias Y -> served_model X).",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An AGY job whose native transcript is cut or malformed while the stdout result is intact keeps stream token totals and omits served_model/served_models (unit test with A in the discarded >1 MiB prefix, result B).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Two-settlement AGY continuation (turn 1 result A; turn 2 model-less result; complete native A then B) records served_model B with order [A,B] (unit test).",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Existing job-usage-stats tests still pass; no archive or usage.json format change.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.033Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7bfec410e91a042b8820a8148ee13960da1826fc",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.033Z",
+      "updated_at": "2026-11-27T06:39:46.033Z"
+    },
+    {
+      "number": 6,
+      "title": "Repair 04: directly answered question dedupe keys on the subject job",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "imp-daily-facts/04"
+      ],
+      "what": "Repairs imp-daily-facts/04: milestone review j39f809afec9bd794 Spec finding. In src/mcp/ticket-queue.ts resumeQueueAfterAnswer (~:577-591) the alreadyRecorded checks ignore worker_job. Question numbers are allocated per job (src/worker/qa.ts:66-68), so when a milestone reviewer and a later repair-round reviewer both ask q1, the first `review/q1` answer suppresses the second reviewer's answer decision and the monthly ticket_queue event loses a known decision. Include the subject job in the duplicate key on both branches (ticket item: worker_job === jobId as well as ticket+question; review: worker_job === jobId as well as step+question). Keep repeat delivery for the same job and request idempotent. Decisions recorded before this field existed (no worker_job) should still count as duplicates for the same ticket+question so old receipts do not double-record.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Two different reviewer jobs on one run that both ask q1 and are answered directly each get their own answer decision with their own worker_job (unit test).",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A repeat answer for the same job and request records no second decision (unit test).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Existing workflow-ticket-queue and thin-mcp-ticket-queue tests still pass.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.033Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7bfec410e91a042b8820a8148ee13960da1826fc",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.033Z",
+      "updated_at": "2026-11-27T06:39:46.033Z"
+    },
+    {
+      "number": 7,
+      "title": "Repair /04: one ticket schema so repairs does not hide JSON features",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repairs imp-daily-facts/04: milestone review j4c5b4f646fa5086b Simplicity finding. src/tickets/format.ts keeps its own TicketRecord schema/validateTicketFeature (record object ~:75-86) that lacks `repairs`, while src/tickets/store.ts:93-95 (the writer) accepts it. The object() checker rejects unknown keys, so once any JSON ticket in .hud/tickets/<feature>.json carries a valid `repairs`, src/collectors/ticket-store.ts:80-85 skips the whole feature document (board shows it partial/missing) and src/cli/tickets.ts:37-38 `hud tickets show` reports the feature not found or unreadable, even for unaffected sibling tickets. Remove the duplicate schema instead of adding `repairs` to a second whitelist: the collector, CLI and writer must share one TicketRecord type, one validateTicketFeature, and one brief renderer (renderTicketBrief) that preserves and shows `repairs`. Keep format.ts free of heavy imports if the collector needs that (move the single definition to whichever module both can import cheaply). Add a unit test: a synthetic two-ticket JSON feature where the second ticket has repairs: ['sample/01'] is read by scanTicketStore (all tickets present, not partial) and by `hud tickets show` for both tickets. No store format change.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Exactly one ticket-feature schema/validator exists; src/tickets/format.ts and src/tickets/store.ts no longer each define a record whitelist.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A JSON feature with a valid `repairs` on one ticket is read in full by scanTicketStore and by `hud tickets show` (test covers sibling ticket too).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The rendered ticket brief shows the repairs refs when present.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.033Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "9c65a4b842036bc8efa5494170a01ee721be3d25",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.033Z",
+      "updated_at": "2026-11-27T06:39:46.033Z"
+    },
+    {
+      "number": 8,
+      "title": "Repair /06: legacy review answers must not suppress a later reviewer's answer",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repairs imp-daily-facts/06: milestone review j4c5b4f646fa5086b Spec finding. In src/mcp/ticket-queue.ts resumeQueueAfterAnswer, the review branch's alreadyRecorded check (~:587-591) treats any `review/q<N>` answer decision without worker_job as a duplicate. Sequence: a round-0 reviewer's q1 answer recorded before worker_job existed, then after upgrade the round-1 reviewer (different review_job) asks q1 and main answers it: no decision is recorded, so the monthly ticket_queue event loses it. Keep the ticket-item branch's legacy ticket+question rule unchanged (it is scoped by ticket). On the review branch, a decision without worker_job may count as a duplicate only when it cannot predate the current reviewer, e.g. its `at` is at or after the current review job's creation time (read from the job record), or an equivalent rule tied to the current review round; otherwise record the new decision with worker_job. Repeat delivery for the same job and request stays idempotent, and two modern reviewers both asking q1 still each record one decision. Add a test of the mixed-version sequence (legacy round-0 review/q1 decision without worker_job, then a different round-1 reviewer's q1 answer -> recorded once) plus legacy repeat delivery for the current reviewer (-> not double-recorded).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A legacy review answer decision without worker_job that predates the current reviewer job does not suppress that reviewer's answer decision.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Repeat delivery for the same reviewer job and question records one decision, including when the earlier record lacks worker_job and belongs to the current reviewer.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The ticket-item branch's legacy ticket+question rule is unchanged; unit test covers the mixed-version sequence.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.033Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "810a146a55ff0c0b6d76e6d880590a787eb55730",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.033Z",
+      "updated_at": "2026-11-27T06:39:46.033Z"
+    },
+    {
+      "number": 9,
+      "title": "Repair /04: one Markdown repair-ref parser keeps none-prefixed feature refs",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "imp-daily-facts/04"
+      ],
+      "what": "Repairs imp-daily-facts/04: milestone review jc672ee56962100ba Spec finding 1. The two Markdown readers of `**Repairs:**` (src/tickets/store.ts ~:314-319 and src/mcp/local-tickets.ts ~:335-340) each drop an item when `/^none\\b/` matches, and `\\b` matches before the hyphen, so a valid canonical ref such as `none-theme/01` (or `none/01`) passes add-time validation, is written to the header, and is then discarded on read: `get` loses it and queue admission archives the repair as unattributed. Replace both copies with one shared Markdown repair-ref parser (in a module both can import cheaply) that skips only the standalone sentinel `none` (optionally followed by a parenthetical note), keeps any canonical `<feature>/<NN>` ref including features named `none-...`, and resolves bare `NN`/`#NN` against the current feature as today. Add a unit test with a synthetic feature where a ticket's `**Repairs:**` is `none-theme/01` (with an existing `none-theme/01` ticket): it survives add -> read (both readers) -> queue admission onto q.tickets[].repairs; and a header of `none` still yields no repairs. No store format change.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "One shared Markdown repair-ref parser is used by src/tickets/store.ts and src/mcp/local-tickets.ts; the duplicate copies are gone",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A canonical `none-theme/01` repair ref survives add -> read in both readers -> admission onto q.tickets[].repairs (unit test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A `**Repairs:** none` header still yields no repairs (unit test)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.033Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d0995cafb79fb18a31cb14aedbbb8c879a02d804",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.033Z",
+      "updated_at": "2026-11-27T06:39:46.033Z"
+    },
+    {
+      "number": 10,
+      "title": "Repair /05: Codex served model needs response evidence for its turn",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "imp-daily-facts/05",
+        "imp-daily-facts/03",
+        "imp-daily-facts/01"
+      ],
+      "what": "Repairs imp-daily-facts/05 (and the served-model purpose of /03 and /01): milestone review jc672ee56962100ba Simplicity finding 2. In src/roles/job-usage.ts transcriptUsage Codex path (~:222-230) a model is added to served history straight from every `turn_context` (and `session_meta` as fallback). Those rows describe the request context, so an intact rollout whose turn has only user/developer input and lifecycle events and no response still publishes served_model, and a successful turn on model A followed by a response-less turn_context on B creates a false change point to B. Keep using turn_context/session_meta to identify the model, but add a turn's model to served history only when that turn shows response evidence (assistant output, or a metered response: token_usage_record or a token_count with last_token_usage attributed to that turn). A session_meta-only rollout that is metered must still publish its model. Leave numeric token accounting untouched. No archive format change. Add tests in tests/unit/job-usage-stats.test.mjs: (a) intact rollout with a turn_context but no response -> served_model/served_models omitted; (b) turn on A with a response, then a response-less turn_context on B -> served_model A, no B; (c) metered session_meta-only rollout -> served_model from session_meta.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A Codex turn_context model enters served history only when that turn has response evidence; numeric totals unchanged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Tests: response-less intact rollout omits served_model; A-served then unserved B context keeps served_model A without B; metered session_meta-only rollout still publishes its model",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.033Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d0995cafb79fb18a31cb14aedbbb8c879a02d804",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.033Z",
+      "updated_at": "2026-11-27T06:39:46.033Z"
+    }
+  ]
+}

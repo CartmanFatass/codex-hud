@@ -1,0 +1,593 @@
+{
+  "version": 1,
+  "feature": "exec-page",
+  "objective": "interaction",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Project gains an Execution page: running workers, live thumbnails, delegation tree",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/12"
+      ],
+      "what": "Spec display rule (26.02): execution detail is allowed on a separate single-project page, never on Home or multi-project views. In the /hud panel, Project gets an Execution page for that project: every running or waiting job (role, model/preset, state, elapsed, last progress line), a live thumbnail of each tab worker (last few screen lines from herdr `pane.read`, sampled outside paint at a bounded rate only while the page is open, exact-column frames, no I/O in paint), headless jobs show their last progress instead, and a delegation tree (main session → jobs → Sonic children and scouts, from job records). Keys: Enter opens Inspector for the job; one key reveals and focuses the worker's hidden tab (herdr-fork/12), another hides it again. EN/ZH, no-colour and narrow widths per ARCHITECTURE §8. Use the personal-frontend instrument-panel style for layout choices.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Frame tests at 60/100/140 columns with synthetic jobs (tab, headless, Sonic child): rows, thumbnails and tree render at exact width; no herdr call happens in paint and none while the page is closed",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Reveal/hide keys call the fork for the job's own tab only (fake fork test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Owner try: with three workers running in one project, open Execution: see each worker's live screen and who started whom; bring one forward and send it back",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.956Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b8ba3b2e7fb2788039a0e8ce96461d73e8e2a7ae",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "landed b5c5e7f3. Live on fork a26432a7 in the owner panel: Project > Execution showed the running imp card with a live 6-line screen that refreshed within seconds and the delegation tree (main pane -> imp); g revealed and focused the worker tab, H hid it and focus returned to the main tab."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.956Z"
+    },
+    {
+      "number": 2,
+      "title": "Execution page shows ticket-queue runs and where each ticket is",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "open /hud panel → Project → Execution while a hud_tickets run is working and check the run row, step marks and per-ticket stages match hud_read on the flow ID",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26 asked whether the workflow is visualized and chose this shape. Today a ticket-queue run (hud_tickets run or an unattended run: steps tickets -> review -> accept, per-ticket progress, held/failed items, lead decisions, todo) is visible only as JSON through hud_read on the flow ID or `hud unattended status`; Execution shows only per-job cards and the delegation tree. Add a Runs section at the top of the Execution page (single-project page only, per the spec display rule; Home and multi-project views unchanged; Home keeps showing only hand-backs). One row per ticket-queue run of this project that is working or paused, plus runs that ended within the last hour (same retention idea as fixed-batch rows): feature or Objective, short run ID, the three steps with state marks (waiting, running, done, with the lead verdict on accept), and elapsed time. Under each run one line per ticket with its stage: queued/blocked (blocked by what), worker running, settled, land gate running, landed, held (short reason, e.g. spec change, feature deletion, assumption), failed. Then one summary line: todo count, decisions count, held count, repair rounds when non-zero. Enter on a ticket line opens that job's Inspector; Enter on a run line opens the run's detail (decisions with reasons, todo text, review summary) in the existing Inspector style or a simple scroll view, whichever is less new surface. Data: read the run records under $HUD_HOME/flows (q*.json) with the existing header-scan/visibility helpers used for fixed-batch rows (runVisible, project scope), off the paint path, no model calls, no extra herdr reads. Pane-less (unattended) runs show for the project they belong to. EN/ZH, no-colour and narrow widths per ARCHITECTURE section 8; use the HUD role icons already used in the herdr sidebar (imp, reviewer, lead) where a role is shown. Keep it compact: attention first, detail on demand.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Execution shows a Runs section with one row per working, paused or recently ended ticket-queue run of the project, with tickets/review/accept step marks and the accept verdict",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Each run lists its tickets with their stage (queued/blocked, worker, land gate, landed, held with reason, failed)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Enter on a ticket line opens its job Inspector; Enter on a run line shows decisions, todo and review summary",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Run records are read off the paint path with the existing scan/visibility helpers; Home and multi-project views unchanged",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "EN/ZH, no-colour and narrow-width render tests with synthetic run records",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "446524d5fc063f77965c70c0ec4350701fc42e51",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 3,
+      "title": "Execution worker cards drop the 画面 screen rows and HUD stops their periodic screen reads",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26 (D-2026-11-26-09, docs/design/tab-roles/README.md §3a): the 画面 \"print window\" thumbnails on Execution worker cards (工作者) are not needed. Remove the screen rows, the \"画面每 2 秒读取一次\" note and every periodic pane read that exists only to feed them. Keep on-demand pane reads elsewhere (hud_peek lines, Inspector on request). Owner-approved visible removal: the 画面 rows only.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Execution worker cards render without 画面 rows or the read-interval note in EN and ZH at 40 and 62 columns; the freed rows go to the workflow section.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No periodic pane/screen read runs for Execution (verified by a test that counts reads over a watcher tick with Execution open).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "hud_peek lines and other on-demand reads still work.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md no longer describes the 画面 rows.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "dc6a8bc20a93ba93f963afcec59be682be169d39",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 4,
+      "title": "Run records carry what the metro map needs: ticket dependencies, per-station change time, gate steps",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Data for the Execution metro map (docs/design/metro-map/README.md \"What the build needs\" points 1, 4, 5, 6). TicketQueueItem records no blockers once a ticket starts (src/mcp/ticket-queue-state.ts), so started branches cannot be drawn. Keep every ticket's dependency edges on the run record (or read them from the ticket store) for started, landed, failed and held items; record a change time per station (landed, failed, held, answered, gate step change), not only the worker start (projectTicketItem `since`); expose land gate index/total so passed steps are known. Define how graphs the three lanes cannot hold (a dependency that skips a column, crossings, graph.json runs, large queues, prewalk scout flows) reduce to lanes: merge at a shared junction keeping order; the detail line names the blockers. Batch pools and councils project as station groups and member lanes.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The Execution collector returns, per open flow, stations (id, kind, state, change time) and edges, for queue runs (incl. started/landed/held/failed items), batches, councils, prewalk flows and lands.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Old run records without the new fields still render (edges fall back to wave order) and are not rewritten.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Lane reduction is a pure function with unit tests for chains, fan-out, fan-in, skip-a-column, crossing and >3 parallel cases.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "No new periodic reads; the collector stays within the panel's current refresh cost (measured before/after).",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "704e677bcad8ebb90641eb3eb21fbacd44f91eb9",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 5,
+      "title": "Execution draws each flow as a Hairline metro map with a station cursor and one detail line",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "Owner opens the Execution tab during a live queue run and reads progress from the map.",
+      "approved_removals": [],
+      "blocked_by": [
+        "exec-page/04"
+      ],
+      "what": "Owner picked C · Hairline (2026-11-26) from docs/design/metro-map/README.md + sample.html; spec in docs/design/tab-roles/README.md §3a (\"Chosen look\"). Replace the vertical-wave workflow rows with one map per open flow under its header: light `─│╭╮╰╯` travelled in `muted`, `╌╎` ahead in `frame`, one neutral line for all flows, colour only for state; glyphs, tokens, row budget, ASCII (icons=text) and no-colour rules exactly as the README's Hairline column. Keys: while the cursor is on a map ←/→ move between stations and ↑/↓ across lanes then leave the map; Tab/Shift-Tab always switch tabs; Enter on a station opens the Inspector, on the header Run Detail. Per-station cursor and per-cell mouse hits. Detail line: station under the cursor, else the one that changed last. Width: collapse settled stations to `●×N` and not-started waves, batch pool as one group, council members as lanes into the synthesis. Legend behind `?`. Exact-column frames per ARCHITECTURE §8.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Golden frames at 40, 62 and 80 columns, EN and ZH, colour/no-colour/ASCII, match the README's Hairline frames for the queue (3 parallel), failed + repair + gate, held, batch, council, long-run collapse and two-flows-plus-legend scenarios.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Keyboard and mouse: station cursor, lane moves, Tab switching, Enter targets, as described; covered by input tests.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The old wave rows and their glyphs `⚖ ★` are gone from Execution; docs/reference.md describes the map, keys and legend.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Render cost per frame stays within the panel's current budget (measured).",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "8c5a60336b60134c533cf6f74158cc1327a03eef",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 6,
+      "title": "Run records carry true station change times, every repair round and the acceptance seat",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "exec-page/05"
+      ],
+      "what": "Repair from milestone review jf5b434ceb903e6ef (findings 3–6). Fix the producer facts behind the Execution metro map (src/collectors/execution-runs.ts and the MCP state writers); no renderer work here. (a) Repair rounds: execution-runs.ts:298–337 keeps only repairs.at(-1). Keep the ordered repair attempts with distinct station ids (Hairline layout rule 5: round two sits on the same line after round one), including in the inline layout data. (b) Acceptance seat: execution-runs.ts:1090–1096 and :707–718 project any active_lead as the final acceptance worker. A lead judging an assumption or blocker during the tickets step (src/mcp/ticket-queue-step.ts:957) must not appear as acceptance or become its Enter target. Bind the accept station to the acceptance step and the seat recorded for it. (c) Answer times: answerComposed (src/mcp/composed-workflow.ts:175) sets the cursor done without updating changed_at. The main-answered queue question resume path (src/mcp/ticket-queue.ts:469–478) does not record the answer on the item, and the fallback at execution-runs.ts:350–355 accepts only `answered`, not a non-default answer marked `departure` (src/collectors/thin-jobs.ts:899). Record the transition time when the answer happens. (d) Batch pool change time: batch-state.ts:50–53,65–67 stamps updated_at on every save, and execution-runs.ts:801 uses it as the pool change time, so a failed pilot loses lastChangedStationId to the pool. Use actual station transitions. Old records without the new fields still parse. Collector-level tests cover each case.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Round two of a land repair keeps round one as its own station with a distinct id; both are present in the run's metro data in order.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A lead deciding a ticket-step assumption is not shown as the accept station; the accept station reflects only the acceptance step and its recorded seat.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Answering a composed-workflow question or a main-answered queue question (including a non-default `departure` answer) sets that station's changedAt to the answer time.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A failed pilot that pauses a batch before the tail starts is the batch's last-changed station, not the pool.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Records written before this change still parse (test with a legacy fixture).",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "npm test, npm run test:mjs and check:fixtures pass.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ddbeb06b20e539cd33e1033e8ca08b9becfcf66b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 7,
+      "title": "Execution renders the collector's metro data and Enter opens every selectable station",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Open the Execution tab during a live queue run with at least two independent tickets. Check that they branch in parallel from the trunk, that the detail line follows the newest landing or answer, and that Enter on a not-started ticket station opens an inspection.",
+      "approved_removals": [],
+      "blocked_by": [
+        "exec-page/06"
+      ],
+      "what": "Repair from milestone review jf5b434ceb903e6ef (findings 1–2 and its 'what to delete'). The blocker: src/render/execution-workflow.ts:26–30 sends every open run through metroFlowFromRun. That function reads `blockers` and rebuilds waves (src/render/execution-metro.ts:1137–1180), while the collector puts the dependency edges in `deps` and already builds run.metro (stations, edges, changedAt, lastChangedId) for queue, batch, council, prewalk, land and graph runs (src/collectors/execution-runs.ts). As a result, independent landed roots are drawn in series, the newest-change detail line follows worker start rather than changedAt, and a repair always shows the failed gate as 1/1 (execution-metro.ts:1111). Render run.metro when present, including reduceMetroLanes for skip and crossing edges, the real gate index/total, and every repair round from exec-page/06. Keep wave inference only for legacy runs without metro. Then delete the renderer's duplicate six-kind projection and its dependency, overflow and lane decisions, plus the unused workflowRows wrapper. Width fitting, glyph placement and hit geometry stay in the renderer. Enter, and a second click (src/render/workboard-input.ts:269–271,329–332), must open something on every selectable station. Retained worker jobs open the worker Inspector; batch pools, future tickets, the main hand-back and folded groups open an inspection built from run facts. A retained job must stay targetable even when another flow already references it (execution-metro.ts:1056–1060). Headers still open Run Detail. Replace the test that asserts Enter does nothing (tests/unit/execution-metro-render.test.mjs:619–620). Label main hand-back as main, not 'Lead acceptance' (execution-metro.ts:1206). The Hairline look, keys and golden frames from exec-page/05 stay the same except where a frame showed the wrong graph.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A new-format queue record (two independent landed roots, a worker depending only on the first, a failed gate at step 2 of 3, a newer landing than the latest worker start) passes through collection AND renderMonitor in one test. The frame shows the two roots as parallel branches, the worker downstream of the first root only, the failed gate as 2/3, and the default detail line on the newest change.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Skip-a-column and crossing graphs render through reduceMetroLanes in production (the function has a production caller).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Enter and a second click on a pool, future ticket, main hand-back or folded group open an inspection; on a retained worker they open its Inspector; on a header they open Run Detail. Input tests cover each.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Round one and round two repairs both render and are selectable.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Legacy runs without metro data still render through wave inference.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "The duplicate projection and the workflowRows wrapper are removed; render cost per frame is measured and reported.",
+          "done": true
+        },
+        {
+          "id": 7,
+          "text": "npm test, npm run test:mjs and check:fixtures pass.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "08ff1f0dcc696c425de41dfc6886efbb7c734bc7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 8,
+      "title": "Execution collector keeps future tickets, repair rounds, answers and composed/batch state true to the run",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Run a small queue with two same-feature tickets where 02 is blocked_by 01; open the Execution tab before 02 starts and check that 02 shows as a future station after 01, and that Enter on it opens an inspection.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair from milestone review jc66ed72a3e7bc2c0 (findings 1, 2, 3, 5, 6, 7, 9). Producer side only (src/mcp writers and src/collectors/execution-runs.ts); renderer fixes are exec-page/09. (1, blocker) Same-feature future tickets vanish: TicketRollup classifies a ticket whose blocker is in the same feature as `queued` with no cross blocker, and src/mcp/local-tickets.ts:369–383 returns it in none of tickets/queued/blocked, so the queue record (ticket-queue-step.ts:1243–1256) and the map lack it until admission. Keep the run's display workset (every ticket of the run not yet admitted, with its declared blocked_by edges) separately from dispatch eligibility, without changing which tickets get admitted. (2) A landed/failed/held item or one with landed_sha returns before its land repairs are read (execution-runs.ts:400–413,431–440), so repair rounds and their targets disappear once the host ticket lands. Carry the ordered repair attempts independent of the host stage. (3) `waiting_orchestrator` after main answered takes the asking branch (execution-runs.ts:482–487,504–508) and ignores answered_at and the answer-file time. Tell an open question from a delivered answer not yet picked up (ticket-queue-step.ts:1104–1107); the station leaves `?` and changedAt is the answer time. (5) A composed batch step projects as `kind: 'pool'` with no counts (execution-runs.ts:1060–1076) although composed-step.ts:110–143 keeps the member states in cursor.items; project the recorded counts (planned items from the graph before dispatch). (6) The active repair job overwrites the host ticket's jobId/execJob (execution-runs.ts:443–452); keep the source worker on the host station and the repair job on the repair station. (7) Composed steps: worker STATUS overrides the step cursor (execution-runs.ts:279–295,1051–1068), so a lead that escalated (composed-step.ts:234–255, hand-back step `asking`) shows as done; and for a composed `land` step step.job is a step key resolved through run.steps[step.job].job (composed-step.ts:201), not a job id. Use the cursor for workflow state and resolve the real job separately for inspection. (9) A stalled batch pilot (batch-step.ts:48–54 records i.stall and pauses, item stays `running`) is projected as working (execution-runs.ts:795–798,821–831); use current pause/stall evidence, and do not treat a historical stall as current after resume. Old records still parse. Collector-level tests per case, each built from records the real writers produce (finding 1: a real local queue with 02 blocked_by 01, collected before 02 is admitted).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A queue over two same-feature tickets with 02 blocked_by 01, collected before 02 is admitted, carries 02 as a future station with the edge 01→02; admission order is unchanged (existing queue tests pass).",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A repaired ticket that then lands, fails or is held keeps all its repair rounds as distinct stations with their job targets while the run is open.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A worker in waiting_orchestrator after main's answer is not asking, and the station's changedAt is the answer time; tested before STATUS changes to working.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A working composed batch step projects member counts from cursor.items or the graph; no count is invented when none is recorded.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "With a same-role replacement repair, the host ticket station targets the original worker and the repair station targets the replacement.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "A lead that finished with an escalation shows the hand-back step as asking, not done; a composed land step resolves its retained job through run.steps.",
+          "done": true
+        },
+        {
+          "id": 7,
+          "text": "A paused, stalled batch pilot projects as stalled/paused, and after resume as working again.",
+          "done": true
+        },
+        {
+          "id": 8,
+          "text": "Records written before this change still parse.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "1b6ee5ab6878f2e2590cdc69ec4b6266cf3d48f0",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 9,
+      "title": "Execution map keeps every station reachable and Station Detail scoped and clean",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Open the Execution tab at 40 columns on a run with more stations than fit; walk →/← to the last station and back, open Station Detail on a review and an accept station.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair from milestone review jc66ed72a3e7bc2c0 (findings 4, 8, 10 and the small deletions). Renderer side only; producer facts are exec-page/08. (4) Width fitting drops reachable stations: src/render/execution-metro.ts:800–815 returns a layout wider than `width` once the allowed folds run out, and :1180 omits off-screen nodes from key and mouse targets (40 columns, 22-step worker/reviewer chain: only s1–s19 reachable, no sign more exist). When the folds cannot fit everything, keep the rest reachable, e.g. a horizontal viewport that follows the cursor station with an edge marker showing more stations off-screen; never fold away review or active stations. Every line stays exactly `width` columns. (8) Station Detail shows the run's current hand-back, choices, hold and reason on any `accept` station (src/render/execution-run-detail.ts:331–342); show them only when they belong to that station's step (Run Detail keeps whole-run context). (10) execution-run-detail.ts:283 passes an already coloured role icon into kvRows, which escapes it (workboard-rows.ts:60), so the terminal theme prints literal escape text; pass plain text through kvRows and apply theme ink after sanitising (ARCHITECTURE §8). Also: a pool with no recorded counts must not print `(○×0)` (render unknown, not zero); remove the unused renderer `lane`/`lanes` hints and the identical arms of `(live.repair ? 'worker' : 'worker')`. Hairline look, keys and golden frames otherwise unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "At 40 columns a 22-step mixed worker/reviewer chain (and a 32-step graph) keeps every station reachable by ←/→ and by mouse; the frame shows that stations are off-screen; every line is exactly width columns.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Station Detail on a future accept station during a tickets-step blocker shows no hand-back, choices, hold or reason from that blocker.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Station Detail in the terminal theme prints no escape text; a test asserts no literal \\x1b in the frame.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A pool without counts renders no zero count.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Unused lane/lanes hints and the identical ternary arms are removed; existing golden frames still match except frames this ticket changes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "1b6ee5ab6878f2e2590cdc69ec4b6266cf3d48f0",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 10,
+      "title": "Execution collector projects review answers, composed pools, fast-forward picks and hand-back prompts truthfully",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair from milestone review jbfcf47999101544f (findings 4, 5, 6, 7 and the optional role note). Producer side only (src/collectors/execution-runs.ts and, where a transition time is missing, the src/mcp writers); renderer fixes are exec-page/11. (4) Active composed main hand-back: src/mcp/composed-step.ts:325–331 writes `{step, ask, choices}`, but execution-runs.ts:992,1137–1140 drops `handback`. Project the recorded hand-back on the run and normalize its prompt to `question` (src/render/execution-run-detail.ts:338–342 reads `question`), so Station Detail on the matching step shows the question and choices; it stays off unrelated stations as /09 intended. (5) Review question answered: the queue runner tells a delivered answer from an open question for the reviewer (src/mcp/ticket-queue-step.ts:1414–1417,1452–1455), but execution-runs.ts:280–298,1193–1201 treats the reviewer's `waiting_orchestrator` as asking. Share the same delivery check used for ticket workers (exec-page/08) for review stations: with an answer file and the lead's recorded `review` answer the station leaves `?` and changedAt is the answer time; a later open question still wins. (6) Composed batch pools: a composed pilot stall leaves item.state=running and records item.stall plus the current pause (composed-step.ts:163–180); execution-runs.ts:1090–1126 counts it as working. Use current stall evidence as the fixed batch path does (a historical stall after resume is not current). Pool changedAt must follow member transitions (start, settle, stall), not only cursor.changed_at; record a member transition time in the composed writer if none exists. (7) Standalone fast-forward land: land-runner.ts:298–313 skips `cherry-pick` for a fast-forward, and execution-runs.ts:911–918 then shows Pick as waiting while the gate runs. Treat a skipped/completed preparation as done (or skipped) once the land is past prepare; Pick is waiting only when preparation has not started. (Optional) execution-runs.ts:348–354 hard-codes repair role `imp`; use the retained repair job's role or the source job's role, absent evidence stays absent. Old records still parse. Collector-level tests per case, each built from records the real writers produce.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A paused composed `choose` main hand-back with ask \"Ship now?\" and choices ship/defer projects as a hand-back with question and choices on the matching step; Station Detail on that station shows them; other stations do not.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A reviewer in waiting_orchestrator with an answer file and the lead's recorded review answer projects review as not asking, changedAt = answer time; a newer open question still projects as asking.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A composed batch pilot stall projects as stalled/waiting, not working; after resume it is not stalled; pool changedAt advances when a member starts or settles while the step stays running.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A standalone fast-forward land in its gate step projects Pick as done/skipped, not waiting.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "A frontend-imp land repair projects the frontend-imp role, not imp.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Old records without new fields still parse; npm test passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "8e582d79d0d3c57485689a753a6021557a52a5aa",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 11,
+      "title": "Execution map keeps inline repairs as geometry, never empties, and shows lease wait as current",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Open the Execution tab during a live queue run with a ticket in a land repair; check the repair sits on the ticket's lane after it, the ticket keeps its failed state, and a lease wait shows ◷ as the current station.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair from milestone review jbfcf47999101544f (findings 1, 2, 3 and its 'what can be deleted'). Renderer side only (src/render/execution-metro.ts and tests); producer facts are exec-page/10. (1) inlineRepairGraph (execution-metro.ts:634–680) removes the host's repairs, sets the host state to `done`, inserts repair stations into the dependency graph and re-runs lane reduction. A failed or held first ticket with a retained repair then reports as done (Station Detail can say landed), and in a three-way branch the inline repair lands on a different lane than its host. Place inline repairs as geometry only, on the host's lane right after it (Hairline rule 5): the host keeps its state, target and logical edges. (2) resolveInlineRepairs (:783–791) converts one host per pass and returns an empty layout after eight passes; eight dependency waves with one retained repair each produce `lanes: 0, nodes: []`. Remove the fixed cutoff; each conversion consumes a known host, so termination follows from the host count (or, after (1), no re-reduction loop at all). (3) A repaired ticket requeued on the main-checkout lease (land-runner.ts:594–599) still paints the previous failed gate ahead of the current state (execution-metro.ts:943–956,1029–1034,1415–1417): collector state `lease`, frame `‹▮✗▯›` / `gate failed 2/3`. When land progress is a lease wait, show `◷` lease wait as the current station (Hairline rule 4) and keep the failed gate as history in Station Detail only. Delete: the renderer converts collector stations into a second schema (flowFromCollectorMetro) and back (toCollectorFlow) only to call reduceMetroLanes, rebuilding repair data on the way. Reduce the collector graph directly and attach presentation fields to the result, so station states have one authority. Keep the legacy queue fallback. Hairline look, keys, viewport and golden frames from /05–/09 otherwise unchanged; report the per-frame render cost at 40/62/80 columns (it was 1.775/0.907/0.990 ms after /07).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A failed (and a held) first ticket with a retained repair keeps its failed/held state and target in layout and Station Detail; its inline repair sits on the host's lane in a three-way branch.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Eight dependency waves of three tickets with one retained repair per wave render every station at 40 columns and stay reachable by ←/→.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A ticket whose land waits on the checkout lease after a failed gate and a settled repair shows ◷ lease wait as the current station, not a failed gate; Station Detail still shows the earlier failure.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "flowFromCollectorMetro/toCollectorFlow round-trip is gone; lane reduction runs on the collector graph; legacy queue fallback still renders.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Every line is exactly width columns; existing golden frames match except frames this ticket changes; npm test passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.009Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "38c59f0bc7622f64ef60d7a2106bd1d637f01fb5",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 12,
+      "title": "Execution map edge cases from milestone review jc4d4a86fe218e4a4",
+      "status": "needs-triage",
+      "owner_try": false,
+      "live_try": "Open the Execution tab during a live queue run where 01 has landed and 02 waits for a slot; the detail line shows no ←01 and Station Detail does not call 01 a blocker.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Follow-ups from milestone review jc4d4a86fe218e4a4 (5 majors, 0 blockers). The lead finished run qfccfb53c029ecd08 without them because each is an edge or transient case; see that report for the probes. (1) src/render/execution-metro.ts:573–602,657–673: the free-lane test ignores spurs already placed, so at 40 columns with 16 sequential tickets, where 02 and 03 each have two retained repair rounds, 02 round 2 and 03 round 1 share lane 1, x=6, and metroStationAt returns the wrong one. Reserve each spur's interval before placing the next one, and fall back to inline geometry or the viewport. Also delete the gap-2/gap-1 retries at :670–673 (the viewport exists; Hairline rule 3 stops at gap 3). (2) src/collectors/execution-runs.ts:327–337,973–999,1024–1051: during a standalone land (f…) lease wait after a repair, the collector emits a separate failed Gate station stamped with the current header time and ordered after Lease, so changed-last picks the old failure. Keep the failed timing inspectable, but do not let it paint as current or take a fresh transition time. Check both f… and q… flows. (3) execution-runs.ts:586–593,720–725, execution-metro.ts:938–939,1265–1272, execution-run-detail.ts:278–280: station blockers come from the declared deps, so with 01 landed and 02 waiting for a slot the map shows `not started ←01` and Station Detail lists 01 under 'Blocked by'. Keep the 01→02 wire; use the observed unresolved list (waiting_on) for the wait text and the Blocked-by row. (4) src/mcp/batch-step.ts:54–59, execution-runs.ts:887–890,913–949, execution-run-detail.ts:313–324: a stalled fixed-batch pilot (item left `running`) is counted as ◉×1 in the pool and shown as running on the Pilot line. Derive the display counts and the pilot detail from current stall evidence, as the composed path does; slot accounting stays unchanged. (5) execution-run-detail.ts:249–252,305–306: Station Detail appends 'Job not retained' to any jobId, even when the live station has an execJob target. Tell an available target from a job missing from the current snapshot, and do not claim it was pruned. Do not widen periodic scans.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Adjacent repair hosts with two rounds each get distinct hit cells at 40 columns (test asserts metroStationAt per station); gap-2/gap-1 retries removed.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A standalone land and a queue ticket in lease wait after a repaired gate failure both have lease wait as the changed-last/current station; the failure remains in Station Detail.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Before 01 lands the detail line shows ←01; after 01 lands with 02 waiting for a slot only the wire remains and Station Detail shows no Blocked-by 01.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "A stalled fixed-batch pilot is not counted as working in pool counts or the Pilot line; after resume it counts as working.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Station Detail never shows 'Job not retained' for a station whose job has an Inspector target.",
+          "done": false
+        },
+        {
+          "id": 6,
+          "text": "Every line exactly width columns; existing golden frames match except frames this ticket changes.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:58:31.922Z",
+      "updated_at": "2026-11-27T06:58:31.922Z"
+    }
+  ]
+}

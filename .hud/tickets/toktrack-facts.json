@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "feature": "toktrack-facts",
+  "spec_path": ".scratch/toktrack-facts/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Session ids, land repair causes and retention in job records",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec `.scratch/toktrack-facts/spec.md`, D-2026-11-23-01. (1) Record `sessions[]` (`{harness, id,\npath?}`) on `job.json` for every native session a job runs, for pi (session file; the job's `sessions/` links\nand headless session files), Claude Code, Codex and Antigravity workers, including repair continuations; copy it\ninto the archive line. (2) Extend the archived `land` with per-repair `{step_kind, step, outcome}` (`conflict`\nfor cherry-pick, `gate` otherwise) and per-rerun `{step, passed_unchanged}` taken from the flow records; keep the\nexisting counts. (3) Add `retry_of` to the archive line. (4) Retention keeps a job directory whose native session\nfile exists nowhere else (headless pi) for at least 7 days after it settles; nothing else changes. Synthetic data\nonly in tests.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Unit tests: sessions[] for a pi tab job, a headless sonic, a Claude CLI job and a repaired continuation",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Archive line carries sessions[], retry_of and per-repair / per-rerun causes for a flow with a conflict repair and a flaky rerun",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Retention test: headless job kept 7 days, a pi tab job whose session lives in `~/.pi` follows today's rule",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md (EN/ZH) describes the new archive fields",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.112Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b3168b92ce229f0f8e41447ca6080b596bd5e38f",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.112Z",
+      "updated_at": "2026-11-27T06:39:46.112Z"
+    },
+    {
+      "number": 2,
+      "title": "Experiment tag at hud_create",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "toktrack-facts/01"
+      ],
+      "what": "Spec `.scratch/toktrack-facts/spec.md`, D-2026-11-23-01. Optional `experiment` and `arm` strings\n(each ≤ 64 chars) on `hud_create`, single and batch, kept by `retry_of` and repairs, stored on `job.json` and in\nthe archive line. No panel display. Keep the tool-schema growth small (the MCP lean budget): one short\ndescription line.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Schema accepts and validates both fields; batch items too; retry and repair inherit them",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Archive line carries them; MCP schema bytes grow ≤ 200 B (existing schema-size test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "docs/reference.md (EN/ZH) one line",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.113Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "8bbd1ca7c87fc369095555128b434f67fe5ce6c0",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.113Z",
+      "updated_at": "2026-11-27T06:39:46.113Z"
+    },
+    {
+      "number": 3,
+      "title": "Archive keeps the flow and question facts toktrack reads",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec `docs/spec.md` §2.3 (evidence beyond the current run; D-2026-11-23-01). Job and flow directories expire after 24 hours (`src/runtime/work-retention.ts:58-105`, `watch-runtime.ts:806-818`), but the archive line misses facts toktrack's HUD pages read. In `src/roles/job-land.ts:60-63` and `src/roles/job-archive.ts:87-100`, add: the land flow's `created_at` and per-step outcomes, including flaky-rerun command names (toktrack `workflow.rs:196,213`, `facts.rs:112`); the job's `dispatcher` when known (`facts.rs:215`); `output_written`; and per-question asked/answered times (`workflow.rs:285`). Additive fields only, no report text. Details: `~/projects/MyHUD/tmp/tasks/spec-pivot/review-carbon.md` §2 item 5.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Unit test: an archived line for a landed job with a flaky rerun and one answered question carries flow `created_at`, step outcomes with the flaky command name, `output_written` and the question times",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Older archive lines without these fields still parse (existing archive tests)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "docs/reference.md (EN/ZH) describes the new archive fields; `npm test` passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.113Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "199f20a061343d6efd7aaa4a97a2aa6081cbe57e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.113Z",
+      "updated_at": "2026-11-27T06:39:46.113Z"
+    }
+  ]
+}

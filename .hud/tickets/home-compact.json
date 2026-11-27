@@ -1,0 +1,261 @@
+{
+  "version": 1,
+  "feature": "home-compact",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Home shows what matters and folds the rest into marks",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22: redesign Home so the important facts stay readable and secondary ones become icons, numbers, abbreviations and colour. Sonic is secondary: it is no longer shown as its own rows, only as an icon plus a number on its parent worker. Sample first (`docs/design/home-compact/sample.html`), then the build (job jac2f1a1c3b85ed15, general).\n\nOwner addenda the same day (sent to the job 2026-11-22):\n- The sonic mark on a worker counts only its sonic queries running now, never a cumulative total.\n- A finished card hides from Home 5 minutes after it settles: the default `cardHideMinutes` goes from 15 to 5 (`cardFoldMinutes` stays 5; Settings still changes both). Asking, failed and flow rules in `src/render/work-visibility.ts` stay.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Sample opened in the owner's browser and settled (owner 2026-11-22: \"这个方案很满意\")",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Sonic shows only as icon + running count on its parent worker",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Finished cards hide after 5 minutes by default",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Panel width rules (§8) hold; references updated in both languages",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "b4ee58e8"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "owner tries the real panel."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.023Z"
+    },
+    {
+      "number": 2,
+      "title": "One line per job on Home",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "home-compact/01"
+      ],
+      "what": "Owner 2026-11-22, looking at the landed compact Home (screenshot of a busy run, about 14 jobs): still too crowded. What the screenshot shows:\n- Every job takes 2–4 rows: a lane header with the ticket id and state, then a worker row, then for landing jobs a gate line and a report sentence.\n- Titles are the raw task text (`Implement .scratch/perf-t…`) instead of the ticket title.\n- Role words (`imp`, `general`) take room.\n- Each queued job takes two rows.\n\nTarget:\n- One row per job: state glyph, ticket id, short ticket title (from the ticket file when the job has one, else the brief title; never the raw task text), then role icon (the statusline table: `⚒ ✎ ✦ ◈ ⚖ ⚡ •`) with model mark and age on the right.\n- A lane header appears only when a lane holds more than one job.\n- A landing job gets at most one sub-row (`落地 · gate[3] test:mjs · 1分`). Its report sentence moves to the Inspector.\n- Queued jobs fold into one row (`◷ 排队 3 · perf-hygiene/07 · native-statusline/01 · perf-ts/08`).\n- Finished jobs within the hide window fold into one `✓ N` row unless a report is unread.\n- Asking and failed jobs keep their full card. The summary row, progress block and footer stay.\n\nSample first: update `docs/design/home-compact/sample.html` with a \"v2\" busy frame next to the current one, at 120/80/50 columns, ZH and EN. The build follows once the owner settles it.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Sample v2 opened for the owner and settled (owner 2026-11-22: \"接受设计\"; sample 0bd69fdc)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A busy fixture of 14 jobs fits in about 16 rows at 80 columns (today it takes about 38)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Titles come from ticket or brief titles; panel width rules hold; references are updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.023Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "709d7e08ce8c5c34001384ba1caa29027bac03cb"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.023Z",
+      "updated_at": "2026-11-27T06:39:46.023Z"
+    },
+    {
+      "number": 3,
+      "title": "Home rows drop the title; marks show progress and a short summary sits under each running job",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22 after using Home: the title after the worker is cut to nothing anyway, so drop it; the row should tell at a glance where the job is, whether it is healthy and whether it needs the owner. Design agreed with the owner (2026-11-22, \"可以\"):\n\n```\n◉ auto-route/08  ●●◐○○  ⚒◎◕ ▆∅ ⚡2   12m\n   正在给 ask 路径补 sonic 存活测试\n? panel-pol/02   问：参考文档冲突怎么合？     3m\n◉ land-log/03    ●●●●◐  ⚒◎◕ ▄∅      8m 静4m\n```\n\n1. State glyph + ticket id (short brief id when no ticket). No title.\n2. Stage strip, 5 fixed cells read ▸ edit ▸ test ▸ report ▸ land (● passed, ◐ current, ○ not reached), aligned in one column across rows. Derive stages from the activity the card already collects; during a land the 5th cell is current and gate/merge/push detail moves to the Inspector (no land sub-row on Home).\n3. Needs-the-owner overrides: asking, failed, unread report replace the strip with a short reason (`问：…`, `✗ gate 红`, `● 报告未读`) and colour the row.\n4. Executor as one short group: role icon + provider glyph + effort, then route tier and headless marks (`⚒◎◕ ▆∅`); full model only in the Inspector.\n5. `⚡N` running sonic children.\n6. Time: total age, plus silence (`静4m` / `quiet 4m`) only after 3 minutes without output, dim then amber past the stalled threshold.\nNarrowing drops, in order: route marks → model → role → ⚡N → silence; ticket id, override reason, stage strip and age stay.\nUnder each running job, by default, one dim summary line (two at ≥100 columns): the current sentence cut to fit, never the ticket title; none when there is no sentence yet. Settled jobs keep today's folds. Help (panel-polish/01's legend) gains the stage and silence marks. Not on the row: title, full model, provider text, worktree name.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Home job rows carry no title; ticket id, stage strip, executor group, ⚡N and time as above; every mark in Help in zh/en/ASCII",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Stage strips align in one column; a land shows on the strip's 5th cell, no land sub-row",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Asking/failed/unread rows show the reason in the strip's place and are coloured",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Silence shows only after 3 min, amber past the stalled threshold",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Running jobs show the one-line summary (two at ≥100 columns)",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "42/80/120-column golden frames in zh and en; npm test and check:fixtures pass; reference EN/ZH updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.023Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "93484a33feb45750744bd936275e756e180f5d1e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.023Z",
+      "updated_at": "2026-11-27T06:39:46.023Z"
+    },
+    {
+      "number": 4,
+      "title": "Measure, then maybe add diff size, test result and context fill to Home rows",
+      "status": "wontfix",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "home-compact/03"
+      ],
+      "what": "Second wave from the 2026-11-22 Home row design (owner: core first, these after measuring cost): (a) worktree diff size `Δ+140` (git per job; needs an mtime-keyed cache), (b) test result `✓21`/`✗2` (reliable only for jobs with declared checks), (c) context fill `▮▮▯` (pi has token data; Claude tab and agy may not). First measure the per-refresh cost and data coverage per harness, then decide which to add.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A short measurement note: cost per refresh for (a) with and without cache, coverage per harness for (b) and (c)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Decision recorded in this ticket before any build",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-23T00:00:00.000Z",
+          "author": "main session",
+          "text": "wontfix. D-2026-11-22-28 (attention first: show only the most important) came after this ticket; diff size, test counts and context fill are detail for a job you open, not for every Home row. Reopen if the owner asks for one of them."
+        }
+      ],
+      "created_at": "2026-11-23T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.023Z"
+    },
+    {
+      "number": 5,
+      "title": "Running jobs report their stage (read / edit / test) for the Home strip",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "home-compact/03"
+      ],
+      "what": "home-compact/03's stage strip needs a per-job stage that no collector provides today (frontend-imp j8a8ba270041f7d3d, 2026-11-22: tool kinds are not collected for thin jobs; only the Inspector reads transcripts). Add a bounded, incremental collector: for each running job, scan only the bytes appended since the last scan of the session/stdout file the panel already stats (pi session jsonl, headless stdout.jsonl, Claude/Codex/agy transcripts where available), classify the latest tool call as read / edit / test (e.g. read/grep/ls → read; edit/write → edit; bash running a test or build command → test), and expose it as the field home-compact/03's report specifies. Keep within §8 collection rules and the panel's performance budget.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A fixture per harness format sets the stage correctly from appended tool calls; a harness without readable transcripts leaves the field absent",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Incremental: a second refresh with no new bytes reads nothing (test); per-refresh cost measured with 6 running jobs and stated in the report",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Home strip shows real read/edit/test cells on the golden frames; npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.023Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b0e90f46d24465f48199b8876c00efd12f4cc2b6",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.023Z",
+      "updated_at": "2026-11-27T06:39:46.023Z"
+    },
+    {
+      "number": 6,
+      "title": "Nerd Font icons, role-first Home rows without model, and per-role worker counts",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22 (spec §2.2.9 line 22.24, D-2026-11-22-24) after trying the title-less Home. (1) Home job rows: no model, no effort, no route tier or headless marks (Inspector keeps them); the role icon comes first, before the ticket id; no running glyph (the blue ◉ goes; the state column shows only exceptions). (2) Icons: new default set `nerd` (Font Awesome glyphs in the BMP, which the owner's MesloLGS NF renders); keep `unicode` (today's set) and `text`; old values still load. Owner-picked glyphs, by codepoint: imp U+F0AD wrench, frontend-imp U+F1FC paint_brush, general U+F013 cog, oracle U+F0EB lightbulb, reviewer U+F002 search, sonic U+F0E7 bolt (replaces ⚡ in ⚡N); states: asking U+F059 question_circle (amber), failed U+F057 times_circle (red), unread report U+F0E0 envelope (green), done U+F058 check_circle, queued U+F252 hourglass_half, stalled U+F186 moon, stopped U+F04D stop. Write them as \\u escapes in source (literal PUA characters get lost in some tools). The role icon table is shared with the statuslines (TS and native Rust) and the pi footer: they follow the same setting. Stage strip ●◐○ stays. (3) Home top line right side: worker counts per role since this panel opened, every state counted (running, done, failed alike), e.g. `<imp> 5 <frontend> 2 <bolt> 7`; a panel restart starts from zero; no persistence. Help legend, reference EN/ZH and golden frames follow.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Home rows: role icon first, no model/effort/route marks, no running glyph; exceptions keep their state icon",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Icons setting nerd (default) / unicode / text; Nerd glyphs are the listed codepoints; statusline (TS and native) and pi footer use the same role icons per setting; text mode unchanged",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Top line right side counts workers per role since panel start in any state; restart resets (test with an in-memory panel)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Golden frames for nerd, unicode and text at 42/80 in zh and en; npm test and check:fixtures pass; reference and Help updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.023Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "0d943adbc4826046d96745229045f981965e65f0",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.023Z",
+      "updated_at": "2026-11-27T06:39:46.023Z"
+    }
+  ]
+}

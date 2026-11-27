@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "feature": "flows",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "hud_land: gate, fast-forward, build, push, clean up in one call",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "D-2026-11-22-19, spec §5 (22.19). New main-session tool `hud_land({ job })` for a settled job that ran with isolation:\"worktree\". Project config in `.hud/project.json` key `land`: `{ base, gate: [cmds], after: [cmds], push: bool }` (MyHUD: base universal-hud; gate build, build:test, test:mjs, test:mjs, test:unit, check:fixtures; after build; push true; commands run through the project's env wrapper if configured, e.g. `wrapper: \"tmp/env.sh\"`). Steps, run by HUD itself (no sonic; exit codes decide): fresh detached worktree at the base tip; cherry-pick base..HEAD of the job's worktree in order; run gate commands; on green fast-forward the base in the main checkout (refuse if the base moved or the checkout's touched paths are dirty), run `after`, push if configured, remove the integration and job worktrees and the job branch. State persists in `$HUD_HOME/flows/<id>.json` so a watcher restart resumes or reports. One land per checkout at a time (queue behind the main-checkout lease). Result for the main session: one notice with state, landed SHA or the failing step and its last 40 log lines. MCP-task clients get one task for the whole flow. Spec: add `hud_land` to the §2.1.1 tool list with one sentence.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A green job lands: base fast-forwarded, after commands run, pushed, worktrees and branch removed, one notice",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A conflicting or red job leaves the base untouched and the notice names the step and log tail",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A watcher restart mid-flow resumes or reports, never double-lands",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "eda6382a"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1034/1034 on run 2 (run 1: two timing asserts at load 18), unit 92/92, fixtures OK)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.015Z"
+    },
+    {
+      "number": 2,
+      "title": "hud_land repairs through the source imp, at most twice",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "flows/01"
+      ],
+      "what": "On conflict or a red gate, send the failing step and log tail to the source job when it is continuable and in grace (else hud_create the same role with retry_of), with the instruction to rebase onto the current base and commit; when that job settles, re-run the land from the gate. Stop after two repairs or on a question the worker asks (the question goes to the main session as usual). The notice reports each attempt in one line.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A red first gate goes to the imp, its fix lands without a main-session call",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "After two failed repairs the flow stops and hands back once",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.016Z",
+      "updated_at": "2026-11-27T06:39:46.016Z"
+    },
+    {
+      "number": 3,
+      "title": "hud_land records the landing in the ticket and STATE",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "flows/01"
+      ],
+      "what": "When the job carried `ticket` (`<feature>/<NN>`) the landed ticket becomes ready-for-human with its acceptance ticked and a landing comment (SHA, gate counts). When the project keeps a STATE ledger, append one `try` slice line from the job's signature-bound hud_report summary and the landed SHA, under the job's slice or package name. Commit these with pathspec and push with the landing. Projects without a ledger or ticket skip this step.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A land with ticket and slice updates both and commits them with pathspec",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A project without STATE or tickets lands without errors",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.016Z",
+      "updated_at": "2026-11-27T06:39:46.016Z"
+    },
+    {
+      "number": 4,
+      "title": "Scouted dispatch: a sonic dossier first",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "D-2026-11-22-19. `hud_create({ role, task, scout: \"<question>\" })`: HUD first runs a sonic job (role default) with the question and the task's context_files, then creates the target job with the sonic job in from_jobs; one notice/task covers both. If the scout fails, the target still starts, with the failure noted in its brief. Spec §2.1.4 one sentence.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_create with scout starts sonic, then the target with from_jobs set, without a main-session call",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.016Z",
+      "updated_at": "2026-11-27T06:39:46.016Z"
+    },
+    {
+      "number": 5,
+      "title": "Panel and docs show flows",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "flows/01",
+        "flows/04"
+      ],
+      "what": "Work cards of a landing or scouted job show the flow step (gate ▸ merge ▸ push, or scout ▸ run) and the final outcome; docs/reference(.zh).md, packages/hud-mcp/hud-convention.md (mechanics only), docs/delegation.md step 4 and the hud-delegate skill switch to hud_land and scout. Owner 2026-11-22: a sonic report reaching another worker through from_jobs (scout dossiers included) is prefixed with one line in the worker's language of the brief: \"Sonic facts: unverified starting points with file:line; its unchecked list is where it did not look; read yourself any code you base a decision on.\" Scout is for where/what/how-many questions; delegation.md and the skill say why/which/is-it-wrong questions (root cause, design, review) stay with the deciding model.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A running land shows its current step on the card in zh and en",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A worker given a sonic report via from_jobs sees the unverified-facts line before it",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "delegation.md and the skill name hud_land; npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.016Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "98150a6ef54b41adb5355812da8d6b98c069a2fe"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.016Z",
+      "updated_at": "2026-11-27T06:39:46.016Z"
+    }
+  ]
+}

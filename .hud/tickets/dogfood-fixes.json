@@ -1,0 +1,952 @@
+{
+  "version": 1,
+  "feature": "dogfood-fixes",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A worker's sonic child runs in the parent's cwd",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22 (FLOWS-01): a sonic started by an imp through hud_sonic used the HUD server's default cwd (the main checkout) instead of the parent job's cwd (its managed worktree), so it built and wrote logs in the owner's checkout. hud_sonic children default to the parent job's cwd; an explicit cwd must stay inside the parent's project.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A sonic started by a worker in a managed worktree runs in that worktree",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "c9f375e1"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1039/1039 on run 2; run 1 one unrelated statusline-agy load flake, see 07)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.003Z"
+    },
+    {
+      "number": 2,
+      "title": "Tests never leave hud-watch or hud-cli processes behind",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: eight hud-watch/hud-cli processes with HUD_HOME=/tmp/thin-mcp-*/hud_home survived finished test runs (some from an old worktree), likely after timeouts or failures. Fixture teardown kills every process it spawned (process group or recorded pids) on success, failure and timeout; add a guard test that fails when a fixture leaves a live child.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "After npm test (including a forced failing test) no process has a /tmp/thin-mcp-* HUD_HOME",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "be73d2f8ccffe4e08629094f756b15b9950f0f03"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 3,
+      "title": "A running HUD MCP server and watcher pick up a rebuilt HUD",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: the main session's hud MCP server and the watcher ran yesterday's code all day; every landed MCP/watcher change stayed inactive until a manual /mcp reconnect, and killing the server loses in-flight MCP task notices. Make the server and watcher notice a newer build (e.g. dist build stamp) and switch to it at a safe point without the client reconnecting and without losing MCP tasks (tasks are recoverable from job files) — e.g. a stable stdio front that restarts its worker half between calls, and a watcher that re-execs when idle. Design note first in the report if the approach changes the spec.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "After npm run build in the HUD checkout, the next tool call is served by the new code with no client action",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An MCP task started before the switch still completes with one notice",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The watcher runs the new code within a minute of a build",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "d8b1f67b"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (same gate; needs one /mcp reconnect to move off the pre-fix launcher)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 4,
+      "title": "hud_read({}) lists only what the main session needs",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: hud_read({view:'compact'}) returned ~130 rows, almost all closed child sonics (started by workers via hud_sonic) and old closed jobs with report_unread. The main session never reads a worker's child reports, so they are noise. Default and compact lists: active jobs of this session/project, plus settled jobs the main session dispatched whose report is unread; worker-started children appear only under their parent (count) and in view:'recent'; older settled-unread rows fold into one count line. Keep the listing under ~2 KB for a busy day.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A day with 100 closed child sonics lists none of them in hud_read({}); their parent shows a child count",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "41d5bcd9"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1040/1040 on one run; other run one hud-cli-async load flake)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 5,
+      "title": "The watcher comes back without waiting for the next dispatch",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: after the watcher process ended, nothing restarted it until the next hud_create (ensureWatcher runs only there), so a stop-requested job whose pid had died stayed 'working' and settlement waited. Call the same cheap ensureWatcher on hud_read, hud_send, hud_respond and hud_land too.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With no watcher running, a hud_read starts it and a dead stop-requested job settles",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "41d5bcd9"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1040/1040 on one run; other run one hud-cli-async load flake)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 6,
+      "title": "Notices point to hud_read, not to report files",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22: the main session cats $HUD_HOME/jobs/<id>/report.md because notices print the path, so reads go unrecorded (report_unread piles up, read-close never fires). No harness hooks (owner: not needed). MCP task results, watch/session notices and the default hud_read digest stop printing the report path; they name the job and the call to make (`hud_read job=<id>`, `mode: \"full\"` for the whole report). The path stays available in hud_read mode full. Shipped convention and the hud-delegate skill say to read reports with hud_read. Spec §5 MCP-ORCH result sentence: 'report path' becomes 'the hud_read call'.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No notice or default digest contains a report.md path",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "mode full still gives the path",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "41d5bcd9"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1040/1040 on one run; other run one hud-cli-async load flake)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 7,
+      "title": "Timing tests hold under parallel load",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: with several workers testing at once (load average 13–18), these failed once and passed on rerun: hud-watch-async.test.mjs:111 (checks within 500 ms, saw 501), statusline-agy.test.mjs:192 ('HUD unavailable' instead of the frame), thin-mcp-roster-presets.test.mjs:1086 (2 s lookup budget), thin-mcp-quiet-decision.test.mjs:112 (10 s test timeout), hud-cli-async.test.mjs:206 (watcher preempt race), thin-mcp-cli-turns.test.mjs:67, role-places, thin-mcp-watcher-reap.test.mjs:441. Make each deterministic or load-tolerant: wait on the event instead of wall-clock budgets where the budget is not the product contract; where it is (e.g. a latency promise), measure relative to a calibration or widen with a comment. No test deleted.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Two full npm test runs in parallel with a CPU hog (e.g. `stress`-like busy loops on all cores) pass",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 8,
+      "title": "A closed job whose worker is gone never shows as working",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: general job j288fb04c6c951215 was closed with hud_close while starting (it returned 'reaped'), its pi pid is dead, STATUS.json still says working with a STATUS.json.stop-requested marker, and hud_read({}) keeps listing it as working (with a child) hours later; the watcher log has no line for it. Find why close-during-startup leaves STATUS working and why the watcher skips it; a stop-requested job with a dead pid settles as stopped on the next watcher pass.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Closing a job during startup leaves it stopped/closed, never working",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A STATUS working + stop-requested + dead pid job settles on the next watcher pass",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "e0290351af19d0f54115aa2a9216a188eccf237c"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 9,
+      "title": "A failed land can be retried",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: the first live hud_land (FLOWS-04, flow fc83df390e83e1029) failed gate[3] on the known statusline-agy.test.mjs:192 flake under load 18–22. Calling hud_land again for the same job returned the stored failed flow at once (land.ts `if (prior) return prior`), so a failed land can never be retried and the caller gets a stale failure that looks like a fresh one. A second hud_land on a job whose flow is terminal and not landed starts a new run (the old record is kept or archived, not silently replaced); an active or landed flow is still returned as is. Also: when a gate test command fails, rerun only the failing test files once before calling it a failure or starting a repair; a rerun pass is recorded in the flow as a flake with the test names, not a failure.\nAlso found: land-runner.ts picks `wt.base_head..source`, so a worker branch rebased onto a newer base re-picks the base commits it absorbed (FLOWS-02-03 flow fa2b3cc44fc829656 failed cherry-pick on 8a219577, already on the base); pick only commits not reachable from the land base branch, and a source whose parent is the base head lands as a fast-forward.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A worker branch rebased onto the current base lands with only its own commits",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "hud_land after a failed or cancelled flow starts a fresh run; after an active or landed flow returns it",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "A gate test failure that passes on a rerun of the failing files lands and names the flaky tests in the notice",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "npm test and check:fixtures pass",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 10,
+      "title": "Continuing a closed CLI job keeps its worktree",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22 with an agy imp (toktrack job jce83401c4ba59339, worktree toktrack-wt/imp-a59339, commit 0b90916): hud_read closed it, then hud_send started continuation jc861c53af68a964d, which failed at once with agent_pane_busy (\"agent target pane w5D:p6R is not an available shell\") — the old pane was still being reaped. hud_create retry_of then started jbb5a15f6bb7214b3 in a fresh worktree from main, without the source job's commit, so the follow-up had to be told to cherry-pick it. A continuation (hud_send to a closed job, or retry_of a failed continuation) of a managed-worktree job runs in the source job's worktree when it still exists and is clean; a pane still being reaped is waited for (bounded) or a new pane is used, never a failed dispatch.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_send to a just-closed CLI worktree job continues in the same worktree without agent_pane_busy",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "retry_of a failed continuation keeps the source worktree",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "49e57b758f1e8bf2cd5543f3a0a0dd03c513b9de"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 11,
+      "title": "Land cleanup trusts its own landing",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: hud_land of DOGFOOD-FIXES-10 (flow fa4894b117bd7b9ff) fast-forwarded, pushed and recorded 49e57b75, then reported the whole flow as failed at step cleanup (\"worktree has unmerged commits\"): the cherry-picked commit's patch differed from the source (a ticket Status line had moved on main), so neither ancestry nor `git cherry` saw the source commit on the base. Land cleanup removes the source worktree and branch when the flow itself landed exactly the source's commits (its own record: source_sha, landed_sha) and the worktree is clean; if cleanup still cannot run after a push, the flow ends as landed with a cleanup note, never failed. The watcher's general rule stays as is.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A landing whose picked patch differs from the source still removes the clean source worktree",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A cleanup error after push reports landed with a note, not failed",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "554096a0f511edd419df1526dbabe97afa477f21"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 12,
+      "title": "The supervisor at-rest test holds under load",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: \"supervisor events: 60s at rest means zero spawns and zero STATUS writes; socket loss stays working\" (tests/unit/thin-mcp-cli-process.test.mjs) failed in two hud_land gates in a row (DOGFOOD-FIXES-02 be73d2f8, EVENT-WAITS-01 e82c77ba), passing on the immediate rerun both times, after DOGFOOD-FIXES-07 had already touched it. Find what it races on under load (fake clock vs real timers, a spawn or STATUS write counted from setup, socket-loss timing) and make it deterministic; the contract (no spawns and no STATUS writes at rest; socket loss keeps the job working) stays asserted. No test deleted.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The test passes 20 runs in a row alone and 3 full test:mjs runs with every core busy",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "7e154115f832ab8fbcde8fbb5e496f455c07f314"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 13,
+      "title": "A land survives unrelated commits on main",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found 2026-11-22: the main session committed a one-line ticket claim (8f6887a3) while EVENT-WAITS-02's land (flow f97322bb2f1896697) was in its gate; land-runner's checkMain(base) before the fast-forward fails on any move of main, so the whole gate is lost to an unrelated commit. The orchestrator commits tickets and STATE all day, so \"never commit during a gate\" is a constraint we keep breaking. When main has moved by the fast-forward step and none of the new main commits touch a path the landing touches, the runner replays its tested and records commits onto the new main (cherry-pick, no conflicts allowed) and fast-forwards without rerunning the gate; any overlap or conflict still stops with the current error. The notice names the replay.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A main commit on unrelated paths during the gate still lands, without a second gate run",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A main commit on an overlapping path during the gate still stops before the fast-forward",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "b797cb8e148a5ba8eff258bd75e14fc8ecbb5be6"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 14,
+      "title": "A hung gate test cannot stall every land",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-22 19:36Z: the OPTIONAL-ROLES-01 land's gate sat 45 min in `npm run test:mjs` because one child (`tests/unit/project-progress.test.mjs`, run with `--test-timeout=0`) never exited; five more lands queued behind the main-checkout lease and nothing reported. Killing that child let the gate continue. Fix both sides: (1) every land gate and after command runs under a per-command deadline (`land.timeout_s` in .hud/project.json, default 900 s) that kills the process tree and fails the step as `timeout` with the last output lines; a timed-out test file gets the same one rerun as a red file (DF-09); lands queued on the lease show `waiting for <flow> (gate step N, M min)` in hud_read and the panel. (2) test:mjs and test:unit run with a per-test timeout (e.g. `--test-timeout=60000`, longer only where a file declares it) so one hung test fails fast. (3) Find why project-progress.test.mjs hung under the gate (a child or watcher left open, a wait without a deadline) and fix it. (4) If the main session commits an unrelated ticket after a land has fast-forwarded and before it pushes, allow the checked-out base HEAD to have advanced, provided it still descends from the landed tip (including records) and the landed paths are clean. Push that HEAD and finish cleanup. (5) Reap detached fixture watchers after test timeouts and if a test run is killed, for both thin-MCP and role-places fixtures.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A synthetic gate command that never exits fails the land step as `timeout` after land.timeout_s and frees the lease",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A test that never resolves fails within the per-test timeout instead of hanging the run",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "project-progress.test.mjs passes 20 runs in a row under full parallel load",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A land pushes an advanced base HEAD after fast-forward, including records, and finishes cleanup; it refuses dirty landed paths",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "A killed test run leaves no watcher with either fixture's temporary HUD_HOME",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "dc9c20d3cb2dc47ea5ced14bafd249ce27cd8aee"
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.004Z",
+          "author": "legacy",
+          "text": "The live Progress tests removed the fixture before stopping the panel. A removal error skips later `node:test` teardown hooks, so the live panel and its pipes can outlast the test. Teardown now stops the child before removing its files, and the child wait is bounded independently. The focused regressions and `check:fixtures` passed; `npm test` is left to the land gate."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 15,
+      "title": "Load-sensitive tests pass under a loaded gate",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-22: two tests failed once under a loaded land gate and passed on the immediate rerun: the concurrency-cap test \"queued imp starts automatically…\" and the thin-mcp-quiet-decision test \"an open sonic child holds the real CLI supervisor…\". The statusline-workers land (4654c342) then needed a rerun of test:mjs with six red tests: fixture-process-cleanup \"SIGKILL of the node --test coordinator leaves no watcher…\"; thin-mcp-cli-launch-trust \"an agy worker prepends role instructions…\" and \"a claude role launches with its flags and settles through idle grace\"; thin-mcp-quiet-decision \"an open sonic child holds…\" and \"quiet without a report and an in-turn child…\"; thin-mcp-read-wait-send \"hud_wait all wakes after the last explicit target settles\". These look like fixed sleeps or polling windows racing the watcher under load. Replace each timing assumption with a wait on the event or file state the test asserts (bounded by a deadline), without changing product behaviour.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed test passes 20 runs in a row with the full suite running in parallel (or under `stress-ng`/a CPU-bound sibling)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No fixed sleep remains in either test's assertion path",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "92ae5407f7eca47c23baec6df0b4be5745f476f4"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 16,
+      "title": "A follow-up send never fails the running task",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22: every `hud_send` or `hud_respond` to a working job makes the job's earlier MCP task end as `failed — no longer current. Use hud_read…` (src/mcp/thin-main.ts `sampleTask`, fence check ~3218; send path ~2470), so the main session sees a false failure each time it adds instructions. An addendum is not a failure. Make a follow-up to a job that already has a live task carry on that one task: re-fence the existing task to the new turn and extend its TTL, and have the send/respond return without opening a second task (or open one and end the old one silently, if the protocol allows that). The result is exactly one terminal notice per job for the chain, sent when the job reports, fails, asks or stops. Keep today's behaviour where a task really is stale: the job moved to another pane, was replaced by a repair job, or the send failed before reaching the worker. In those cases the notice says what happened, in words that do not read as a worker failure. Cover single sends, `jobs` fan-out, batch `messages`, `hud_respond`/`answers`, and the scout task.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Create a job, then send it two follow-ups while it works: no failed or cancelled notice; one completed notice at its report, carrying the latest turn's summary",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`hud_respond` to an asking job continues the same task the same way",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A send to a job whose pane changed, or which became a repair job, still ends the old task with a clear non-failure message naming the successor",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Task TTL and batch notices still work; targeted thin-mcp task/send tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "97a258ea33cf74edddc2fc6e6590b8e79368d8bc"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 17,
+      "title": "A land runner survives a rebuild of dist",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-22: two lands (perf-hygiene/05 flow ffc20f4c322f2231e, dogfood-fixes/16 flow f25bd7ab7d7655046) failed at `repair 1` with `The requested module './abstract-lock.js' does not provide an export named 'abstractAddress'`. Each `dist/mcp/land-runner.js` started before another land's `after: npm run build` rebuilt `dist/` with ddfdb4c8 (which added `abstractAddress` and `runner-lifetime.js`). It then lazily imported the new `runner-lifetime.js` against its cached old `abstract-lock.js`. Any long-lived HUD process that imports from `dist/` after start (land-runner, hud-mcp, hud-watch, panel) can break this way whenever a land rebuilds. Fix it so a running process never mixes builds, choosing the simplest option. Two candidates: (a) load every module eagerly at start, with no dynamic `import()` of project modules after start; or (b) run land-runner (and any other per-flow process) from an immutable snapshot of `dist/` taken at spawn, while long-lived servers restart or reload as a whole when `dist/` changes (the watcher already reloads). A failed import in a runner fails the step with a clear \"HUD was rebuilt; retry the land\" message and leaves the flow retryable.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A test rebuilds a module that a running land-runner has not imported yet, and the flow still finishes (or fails with the retryable message, never a SyntaxError)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No dynamic import of a project module remains on the land-runner's repair path, or the runner runs from its snapshot",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted land tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "08aeec57914c111885ed96b233eb4558b6d4b64f"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 18,
+      "title": "MCP tasks survive a server restart",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-22: after the owner ran `/mcp` to reconnect hud (needed to load the landed dogfood-fixes/16), Claude Code polled every outstanding task (about ten: lands, creates, sends) and each came back `Unknown or expired task`. The jobs and flows kept running, but the main session lost every completion notice and had to poll by hand. Task state lives only in the hud-mcp process (`tasks`, `activeTasks`, `landTasks` in src/mcp/thin-main.ts). Persist enough per task under `$HUD_HOME` (private files with a TTL bound): task id, job or flow id, fence, createdAt, report/attention baselines and caller. A new server process then answers `tasks/get` and `tasks/result` for tasks it did not create, by re-reading the job or flow, and delivers the same single terminal notice. Expired TTL keeps today's reply. Land tasks (flow ids) are re-read from the flow file.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Start a create task and a land task, restart the server process, poll both by task id: working, then completed once the job reports or the flow ends, each with the same text a never-restarted server would give",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A task past its TTL still returns the expired reply; persisted task files are bounded and private",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted thin-mcp task tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "dc12a5dc20fad81069ae4fb8d5d11db686b57f6f"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 19,
+      "title": "The remaining load-flaky tests wait on state",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "dogfood-fixes/15 (landed a03fb09d) hardened 11 tests. Its own land gate still needed a rerun, for four others:\n- job-retention-watch-faults \"transient later error: a working watch does not poll after recovery\"\n- statusline-agy \"Antigravity quota follows the model id or display name without falling back to another family\"\n- thin-mcp-cli-turns \"supervisor events: a report with a missed status push settles on the safety tick\"\n- thin-mcp-cli-turns \"done without report keeps the job open and a later report settles it\"\n\nEarlier gates also flagged these, and 15 did not cover them:\n- hud-watch-async \"watcher dispatches at most four concurrent reaps…\"\n- sonic-process \"hud_report captures a detached helper before pi exits…\"\n- statusline-tps \"Claude statusline estimates the latest linked response…\"\n- thin-mcp-scout \"scouted create returns one MCP task…\"\n\nApply 15's pattern: wait on the asserted state with a deadline, using its shared helpers in tests/helpers.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed test passes 20/20 under parallel test:mjs load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No product change unless a real race is found (then report it)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "355a5575ebab467286cd2bb7dbfe3ef2b4b147b4"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "after landing (f4854555)",
+          "text": "new load-flaky tests seen in gates, not covered here: thin-mcp-headless \"question, follow-up and land repair reopen the same tabless pi session; expiry starts a headless repair\" and \"old report cannot settle a resumed turn…\"; thin-mcp-read-wait-send \"hud_read wait_ms and hud_wait wake within 100 ms…\"; concurrency-cap \"a headless sonic starts even when a legacy sonic fills the role cap\"; fixture-process-cleanup; hud-watch \"preserves a shared worktree while a continuation job is active\". Next flaky batch."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 20,
+      "title": "Batch creates in a task session use MCP tasks",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "role-overrides/01"
+      ],
+      "what": "Owner 2026-11-22: a worker question from a batch-created job arrived in the main session's prompt as typed text, so it looked like the owner had pasted it (\"这不是我贴的 不知道为什么没走mcp\"). Cause: `hud_create({jobs:[...]})` returns plain JSON, and in a task-capable session its items' notices are pushed into the caller pane with `notify` (`pushBatchNotices` in src/mcp/thin-main.ts). One tool call can carry only one MCP task.\n\nIn a session whose client supports MCP tasks, `hud_create` with `jobs` returns an error before creating anything: \"In a task session, send one hud_create per job as parallel calls; each gets its own MCP task.\" Sessions without task support keep batch create and its pane delivery as today. Say this positively in the `jobs` field description (\"batch create for sessions without MCP tasks; task sessions send parallel single creates\"). Remove the batch pane-push path only if nothing else uses it.\n\nLegacy Blocked by: role-overrides/01 (same `hud_create` code)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Task client: batch create errors and creates no job; single creates in parallel each return a task",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Non-task client: batch create unchanged",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted MCP task tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "1a56e565b2d826bd9d7ce86cc85677a855a834cb"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 21,
+      "title": "A worktree report with uncommitted work is sent back",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Twice on 2026-11-22 (perf-hygiene/05, auto-route/02) a worktree imp reported done with its changes uncommitted, and `hud_land` failed at prepare with \"Source has no commits to land\", costing a repair round. The brief already says to commit; the MCP should enforce it. When a job with `isolation: \"worktree\"` publishes its report (`hud_report` or the shell fallback) and its worktree has tracked or untracked changes outside git-ignored paths, the report is refused with one line: \"Commit your changes on <branch> first (git -c user.name='HUD worker' -c user.email=worker@hud.invalid commit -- <paths>), then report.\" A report from a worktree with no commits beyond its base and no changes stays allowed (a no-op job). Main-checkout jobs are unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Dirty worktree report is refused with the one-line hint; after a commit the same report goes through",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Clean worktree with commits, and clean with no commits, report as today",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted worker-tools tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "12baafaa67fbcbaecda4736955767fd537bfb9a2"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "root cause found",
+          "text": "the shipped implementer, frontend-implementer and general instructions said \"No git commit … leave the changes in the working tree\", contradicting `.hud/brief.md` and `hud_land`. Fixed in 5ccd6754 (commit on the managed worktree branch before reporting). This ticket stays as the guard for workers that still miss it."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 22,
+      "title": "Tests leave no temp dirs or watchers behind",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "On 2026-11-22 /tmp held 5,451 test temp dirs older than an hour (4,945 `thin-mcp-*`, 371 `role-places-*`, 18 `hud-pi-package-*`, 13 `job-retention-*`, a few watch/panel ones), about 1.5 GB of SSD writes kept, and one orphaned `hud-watch.mjs` from `tests/unit/pi-package.test.mjs` (HUD_HOME `/tmp/hud-pi-package-*`) had run for 72 minutes after its worktree was gone. Every test that makes a temp dir removes it in `after`/`t.after` (including on failure), and every test that starts a watcher or MCP child stops it and waits for exit. Find the leakers by running the suite once into a fresh `TMPDIR` and listing what remains; fix the helpers that create `thin-mcp-*` and `role-places-*` dirs first (one shared helper if they already share code). `fixture-process-cleanup.test.mjs` gets one check that a suite run leaves no `hud-watch` child with a temp `HUD_HOME`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A full `npm run test:mjs` into an empty TMPDIR leaves no directories behind (list any deliberate exception in the report)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "pi-package tests leave no watcher process",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "b42c480b714f12f943627017b096be329eda1f38"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 23,
+      "title": "A land that changes native/ publishes its binary on main",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "native-statusline/02 landed as 6ad0bf62, but afterwards the main checkout had no `dist/native/hud-statusline`; a manual `npm run build` then compiled it in 8.5 s. So the land's `after: npm run build` (or the tested-build reuse from perf-ts/06 and the artifact hand-off in `src/mcp/land-runner.ts`) skipped the native step, and the owner's Claude statusline kept running the TS path. Make a land whose commits change `native/` (or whose tested integration checkout built the native artifact) leave a hash-checked `dist/native/` on the main checkout, the same way `dist/` is published. When cargo is missing, the after step still succeeds and says once in the land result that the TS statusline stays in use.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A land fixture that changes `native/` leaves `dist/native/hud-statusline` and `source.sha256` on main",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A land without native changes keeps the existing artifact; no cargo on PATH gives one note, not a failure",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted land/build tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "9bbb5da2f8e888b82232040b9db09131ac7a0a54"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "after landing 90cba6ef",
+          "text": "the land of this very ticket (run by the pre-fix land runner) again left main without `dist/native/`; a manual `npm run build` restored it from cargo's cache in 0 s. Check on the next land that `dist/native/hud-statusline` survives; if it does not, reopen."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    },
+    {
+      "number": 24,
+      "title": "Resuming a closed CLI tab job does not flash 'supervisor exited' and end the caller's task",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Live 2026-11-22: hud_send to frontend-imp j8a8ba270041f7d3d (claude tab, closed after its report) resumed it as turn 2 at 05:09:59Z with a new supervisor (pid 1890832, alive) and worker (1890597, alive). The caller's MCP task nevertheless completed at once with 'waiting_orchestrator — supervisor exited; worker liveness unknown', then the job went back to working, so the main session will not be woken at turn 2's report. Cause (src/runtime/watch-runtime.ts ~575-605): the watcher read STATUS with the previous turn's supervisor pid, saw it dead, and wrote waiting_orchestrator before the new supervisor published its pid. The resume path must make the watcher ignore the old supervisor (e.g. publish the new supervisor pid / a resume marker before or atomically with the turn, or have the watcher skip a status older than the current turn's sent_at), and the caller's task must stay current until the new turn's report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic test: closed CLI job + hud_send resume; the watcher never writes 'supervisor exited' for the old pid; status goes straight to working",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The send's MCP task completes only at the new turn's report",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A genuinely dead supervisor during a turn still yields the existing waiting_orchestrator reason",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.004Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "cef93b79d3d099b36511885e3c9e9ea9f5485bb2",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.004Z",
+      "updated_at": "2026-11-27T06:39:46.004Z"
+    }
+  ]
+}

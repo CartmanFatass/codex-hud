@@ -1,0 +1,357 @@
+{
+  "version": 1,
+  "feature": "review-next",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "hud doctor with no job checks the whole install; hud --version",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Open reviews (fable #10, carbon #9, astra #9; reports j5c4cb51dc2240e9f, j91fa6e1950156406, j89d7a94587dc0669). Bare `hud doctor` runs a read-only preflight (<500 ms): Node version, herdr reachable, pi/pi-role/pi-role-reap on PATH, dist build stamp vs running MCP and watcher generation, package-lock vs node_modules, each client's HUD binding and which checkout/Node it resolves, registered projects' CLI trust, credentials.env mode 0600 (never read or print values), stuck leases, orphaned worktrees. One fix hint per failure, exit non-zero on failure. `hud --version` prints version, commit and build time. `hud doctor <jobId>` unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`hud doctor` lists each check pass/fail with one hint; no writes; never prints secrets",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`hud --version` prints version, commit, build time",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unit tests on a synthetic HUD_HOME with a few failures",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md + zh updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.092Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3c33c8c1b0ef0422b15a70c78095eda241cda01c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.092Z",
+      "updated_at": "2026-11-27T06:39:46.092Z"
+    },
+    {
+      "number": 2,
+      "title": "Shared docs stop causing land conflicts",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Reviews (fable #7, carbon): 31 of 46 land repairs were cherry-pick conflicts, mostly docs/reference.md, reference.zh.md and ARCHITECTURE.md whose paragraphs are single lines up to ~3 KB. Reflow these three files to one sentence per line (no wording change) and update tests that read them; change the standing brief (.hud/brief.md) so slices edit reference.zh.md only when they add a new section, and a translation pass per milestone syncs zh. This commit conflicts with every open worktree: dispatch it only when no worktree job touching docs is open, and land it at once.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Three docs reflowed one sentence per line; `git diff --word-diff` shows no wording change",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Tests reading the docs pass",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Brief rule for zh updated",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land with no open docs-touching worktree",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.092Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "8323d80e348bebd80269cb4762e91d12d06b0f07",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.092Z",
+      "updated_at": "2026-11-27T06:39:46.092Z"
+    },
+    {
+      "number": 3,
+      "title": "Per-job usage and outcome in the archive; hud stats and hud day",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Reviews (fable #6, carbon #4, astra #10). At settlement record, where the harness reports it, tokens (input/cache/output) and cost: pi session totals, Claude/agy/codex headless stream or transcript result lines; unknown stays unknown, never estimated. Extend the archive line (src/roles/job-archive.ts) with ticket, route tier/mode, question count, land outcome (attempts, reruns, repairs, sha), usage, and the worker's one-line summary (bounded, home paths stripped; spec §2.1 'no report text' allows the summary line — owner approved A–G 2026-11-23). Add `hud stats [--days N] [--by role|model|route|feature]` and `hud day [--project]` (landed tickets with one-line summaries, failures, flaky gate tests from flows, time and cost by role, coverage). Control → Usage reads the same.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Archive lines carry the new fields; old lines still parse",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`hud stats` and `hud day` render from archive + live jobs + flows with coverage shown",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unknown cost shown as unknown",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests on synthetic archives",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Live: `hud day` on the real HUD_HOME prints today's summary",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.092Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "5065fa4d39ddc0eed9c631f5e89492c44769a05e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.092Z",
+      "updated_at": "2026-11-27T06:39:46.092Z"
+    },
+    {
+      "number": 4,
+      "title": "Compact HUD tool results from the MCP itself for every client",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Reviews (fable §3, carbon #5): the Claude mod's compact `key: value` result (integrations/claude-mod/hooks/compact.ts) only helps Claude. Move the serializer into hud-mcp so Codex, pi and agy main sessions get the same compact results; keep JSON for errors and behind `HUD_MCP_JSON=1` for tests; the mod keeps merging and the report-read guard and stops re-compacting. Worker MCP results unchanged unless trivially shared.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "All main-session hud_* results are compact text; errors stay JSON",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Byte saving on the mod's existing sample ≥ same as today",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Tests that assert JSON use HUD_MCP_JSON=1 or parse the compact form",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "`claude plugin test integrations/claude-mod` passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.092Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "69c07e8d91d53b1fe5ccb6354647cca326ee74d1",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.092Z",
+      "updated_at": "2026-11-27T06:39:46.092Z"
+    },
+    {
+      "number": 5,
+      "title": "Worker report checks the branch still applies on the current base",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Fable #1: at `hud_report` for a worktree job with commits, run `git merge-tree --write-tree` of the job branch against the current base tip (src/worker/tools.ts finishReport, next to the uncommitted-changes refusal). On conflict refuse the report once, naming the paths: rebase onto <sha>, rerun tests, report again; a second report is accepted (land repair then handles it). Brief line in .hud/brief.md: rebase only when the report tool says so.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Conflicting branch: first report refused with paths and base sha; second accepted",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Clean branch: no change in behaviour or measurable delay (<300 ms)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unit tests with synthetic repos",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Brief updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.092Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b60384ec55ae6bbde1feabf26782ec4969a8708b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.092Z",
+      "updated_at": "2026-11-27T06:39:46.092Z"
+    },
+    {
+      "number": 6,
+      "title": "Worker report runs fast project checks before settling",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "review-next/05"
+      ],
+      "what": "Carbon #7: `.hud/project.json` may set `worker_checks` per role (e.g. imp: build + build:test, ≤60 s). When a code worker with commits calls hud_report, HUD runs them; if red, the report is refused with the error tail so the worker fixes it in the same turn; `skip_checks_reason` lets a blocked worker report anyway. Read-only roles and clean worktrees skip. This changes spec §2.1.6 'Checks never settle, accept or fail a job' (owner approved A–G 2026-11-23; main session updates the spec line when dispatching).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Red worker_checks refuse the report with a bounded error tail; green settle as today",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "skip_checks_reason accepted and shown in the digest",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "60 s cap enforced",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "MyHUD .hud/project.json sets build + build:test for imp/frontend-imp",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Unit tests",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.092Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "51416d469376effda8c35f97802dcc49bef0e08c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.092Z",
+      "updated_at": "2026-11-27T06:39:46.092Z"
+    },
+    {
+      "number": 7,
+      "title": "Land train: queued lands share one gate run",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Reviews (fable #5, carbon #1, astra). When a flow takes the main-checkout lease and others are queued, cherry-pick them in queue order into one integration checkout (skip any that conflict — they go the single path), gate once, then record, fast-forward and push together; on red, fall back to one-by-one (no repair from a train failure). One receipt per job, provenance kept. Builds on open-review-fixes/04 tested-vs-published tree rule. Spec §2.1.1 gains a sentence (main session edits it at dispatch).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Two or three queued clean jobs land with one gate run; receipts per job",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A conflicting job drops out of the train and lands alone",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Red train falls back to single lands",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Flow timings show the saving on a synthetic 3-job queue",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.092Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "c3784e555209af03624e348e07e12ec3a6af08f8",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.092Z",
+      "updated_at": "2026-11-27T06:39:46.092Z"
+    },
+    {
+      "number": 8,
+      "title": "Ticket queue runs a feature's ready tickets and lands clean settles",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "review-next/05",
+        "review-next/07"
+      ],
+      "what": "Reviews (fable #3, carbon #3, astra #3) and spec § MCP tasks fixed flows (ticket queue). `hud_tickets({op:'run', feature, max_parallel})` claims ready-for-agent tickets with no open blockers, dispatches imp/frontend-imp in worktrees within role caps, starts hud_land when a job settles cleanly (declared report, no open question, checks green, no Blockers: line, ticket not marked for main review), releases dependents after each land, and hands back to the main session once at the first judgement point (question, failed job, red check, land failing after two repairs) or when the batch is done, with one summary notice. Changes spec §2.1.5 'Main decides each step' for this authorized batch (owner approved A–G 2026-11-23; main session updates spec at dispatch).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A synthetic feature with 3 tickets (one blocked by another) runs, lands and releases in order with one final notice",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A question or red check stops the batch and hands back at once",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Cancel stops new dispatches; running jobs keep going",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Live run on a small real feature",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.092Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "151cb005a0af2afc7cfbd64b8ec9a9bab6a8f7d8",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.092Z",
+      "updated_at": "2026-11-27T06:39:46.092Z"
+    }
+  ]
+}

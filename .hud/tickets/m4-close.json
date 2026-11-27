@@ -1,0 +1,274 @@
+{
+  "version": 1,
+  "feature": "m4-close",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Home's progress block reads cleanly",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "the progress block HOME-PROGRESS added to Home's spare rows is tidied: it is clearly separated from\nthe decisions above it, the summary, milestone, stacked bar and legend sit in a compact, aligned arrangement (the\nlegend no longer wraps awkwardly; the bar does not need the full width), and open tickets read as a short list. The\nowner saw \"small layout problems\"; the frontend implementer judges and fixes them. Cards still always win the space.\n\nLegacy Blocked by: None (can start immediately)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Home frames at 80 and 120 columns, EN and ZH, tall and short panes, saved and checked cell-exact",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The block shrinks and disappears before any card is cut (unchanged rule)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Enter/click still opens Project at the right place",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.040Z",
+      "updated_at": "2026-11-27T06:39:46.040Z"
+    },
+    {
+      "number": 2,
+      "title": "Panel themes look different, the default is refined, and new themes are offered",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "today terminal, mocha and titanium all paint Home, Project and the Inspector with the same dark\nboard inks, so switching the theme shows no difference there. Each theme gets its own board inks; the default theme is\nrefined; three or four new themes are designed and added as choices in Settings. Colour still means demand on the\nowner (attention, danger, success), role colours stay on role words, and `none` emits no colour.\n\nLegacy Blocked by: None (can start immediately)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Every theme visibly differs on Home, Project and the Inspector (frames per theme)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Default refined; 3–4 new themes selectable in Settings, EN and ZH names",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Contrast stays readable on dark and light terminals as each theme intends; `none` has no escapes",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.040Z",
+      "updated_at": "2026-11-27T06:39:46.040Z"
+    },
+    {
+      "number": 3,
+      "title": "Opening the panel does not show finished Claude subagents as blocked",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "opening `/hud` in a long Claude session no longer shows long-finished subagents as blocked or\nstalled for the first minute while their transcripts are replayed; they keep their finished state (and hide by age)\nand cost no model call until replay catches up.\n\nLegacy Blocked by: None (in LIVE-FIX, running)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A finished agent whose transcript needs several passes is never shown running/unknown/blocked",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No model call for a card whose replay has not caught up",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.040Z",
+      "updated_at": "2026-11-27T06:39:46.040Z"
+    },
+    {
+      "number": 4,
+      "title": "The whole project passes a two-reviewer review",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "m4-close/01",
+        "m4-close/02",
+        "m4-close/03",
+        "m4-close/07",
+        "m4-close/08"
+      ],
+      "what": "two reviewers (Sol xhigh and DeepSeek max, in parallel, read-only) review the whole project, not\nonly the last diff: spec conformance (incl. scope creep) and simplicity/quality/cost (spec §4), with the delegation\nfinding bar.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Both reports archived in docs/reviews/ (local paths stripped)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Each finding triaged: fix (→ 05), accepted trade-off, or rejected with a reason",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved: reports in docs/reviews/2026-11-12-m4-review-{sol,ds}.md; findings triaged into M4-FIX / M4-PRUNE (05)."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.040Z"
+    },
+    {
+      "number": 5,
+      "title": "Every review finding is fixed until both reviewers accept",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "m4-close/04"
+      ],
+      "what": "the blocking findings of 04 are fixed in one slice; if anything changed, the reviewers check the\nfixes again until both verdicts are accept.\n\n\n\n\n**Owner decisions (2026-11-12):** Sol finding 3 (delete the unreachable retired ledger writer/reconciler, intents,\nsupervision and pi-owned runtime, plus code only they use) is approved. The imp lists the files and the user-visible\nfeatures they back (expected: none) before deleting, and keeps anything a shipping entry point still reaches.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Every blocking finding fixed or explicitly accepted by the owner",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Both reviewers' last verdict is accept; full test suite green",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved: fixes M4-FIX..M4-FIX7, GIT-SAFE, RELEASE-DOCS2; round 10 (docs/reviews/2026-11-12-m4-review10-*) both accept; suite green."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.040Z"
+    },
+    {
+      "number": 6,
+      "title": "The HUD ships as one release archive",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "m4-close/05"
+      ],
+      "what": "one `hud-<version>.tar.gz` built from the repo, with `./install` inside (core plus the Claude, pi,\nCodex, browser and herdr extensions as chosen), installable and uninstallable without the git checkout;\nuniversal-hud is merged into main and the version is tagged.\n\n\n\n\n**Owner (2026-11-12):** before the release, after both milestone reviewers accept, the architect role (Astra) reviews\nthe whole project once more (structure, boundaries, stability, cost). Its answer is advice: the orchestrator decides\nwhich points block, asks the owner on unclear trade-offs, and fixes the blocking ones before packaging.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The archive installs into a clean temp HOME and `hud uninstall` removes it; the owner's real setup is untouched by the test",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No secrets, local paths or synthetic-only fixtures leak into the archive",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "universal-hud merged into main, version tagged",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "resolved: RELEASE-ARCHIVE c00936e4 (npm run release, test:release rehearses install/uninstall in a temp HOME; first-party audit clean); Astra advice handled (docs/reviews/2026-11-12-m4-architect.md); v0.1.0 tagged and on main."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.040Z"
+    },
+    {
+      "number": 7,
+      "title": "The bottom bar themes match their approved concepts",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "the six bar themes (Gauge Plates, Tide, Micro Glyphs, Stacked, Headline, Triptych) on the Claude,\npi and Codex bars and pi's ribbon drift from the approved BAR-THEMES concepts. Each theme is brought back to its\nconcept: segment shapes, separators, meters, colour roles and spacing. The default `line` look and the one-line rule\n(Stacked is the only two-row exception) stay.\n\nLegacy Blocked by: None (can start immediately)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "For each theme, a side-by-side of the concept and the new render at 80 and 120 columns, with the remaining differences named and justified",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Claude statusline, pi footer/ribbon and Codex tmux bar all follow the corrected themes",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Bar tests and frames updated; bar render cost unchanged",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.040Z",
+      "updated_at": "2026-11-27T06:39:46.040Z"
+    },
+    {
+      "number": 8,
+      "title": "Home can be ordered by the model, with a short progress brief on top",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Settings offers a Home mode: Default (today's fixed order) or Recommended. In Recommended the\nDecision API ranks the current cards by how much they matter to the owner now; Home puts the important ones first and\nfolds the unimportant settled ones. A one- or two-sentence brief at the top of Home says where the work stands (what\nmoved, what waits on the owner, what is next). Cards that need the owner are never folded or demoted. Without a key,\nor when a call fails, Home falls back to Default silently.\n\nLegacy Blocked by: None (can start immediately). Blocks 04 (the review covers it).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Settings row Home mode: Default | Recommended (EN/ZH), saved; Default unchanged byte for byte",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Recommended: one batched ranking call per change of the card set/states, at most once per 2 minutes, cached",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Brief at the top of Home, 1–2 sentences, refreshed with the ranking; never invents facts beyond the cards",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Needs-you cards stay first and visible whatever the ranking",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "No key / failure / models off → Default, no error text on Home",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "EN and ZH, 80 and 120 columns",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.040Z",
+      "updated_at": "2026-11-27T06:39:46.040Z"
+    }
+  ]
+}

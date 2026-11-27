@@ -49,12 +49,12 @@
 **State:** active
 **Next:** 构建 fork（Zig 工具链、关闭自更新）；安装切换需 owner 确认
 **Evidence:** docs/spec.md, docs/decisions-log.md, tmp/tasks/herdr-fork/brief.md
-**Features:** herdr-fork
+**Features:** herdr-fork, herdr-fork-done
 
 ## unattended: 无人值守服务：你选定目标后，工单队列在没人时继续推进，只在删除或改 spec 时交回
 
 **State:** active
-**Features:** unattended, chores, mcp-latency
+**Features:** unattended, chores, chores-done, mcp-latency
 
 ## interaction: 单项目执行页、选中文字直达 job、通用状态栏和精细交互
 

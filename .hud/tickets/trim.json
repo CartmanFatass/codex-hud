@@ -1,0 +1,299 @@
+{
+  "version": 1,
+  "feature": "trim",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Project keeps only the Inbox layout",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner approved removal (D-2026-11-22-27). Remove Project layouts Timeline and Board (Classic and Split both); Inbox becomes the only Project layout, the Settings → Panel → Project layout option goes, a saved timeline/board value loads as inbox. Delete their renderers, i18n strings, fixtures and tests; keep everything Inbox uses. Update spec §2.2.4 lines (Timeline hub, Project layout setting, reference to docs/design/project-ux A/B) and docs/reference*.md. Before deleting, list in the report every user-visible element that disappears.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Project shows Inbox only, in Classic and Split; no layout setting",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Old saved values load as inbox",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Removed code, strings, fixtures and tests; panel tests pass",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Spec and reference updated; report lists the removed visible elements",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Frames at 40/80/120 EN/ZH unchanged for Inbox",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "081bf883731119a16c228790084410d1ab4b384c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 2,
+      "title": "Try flow shrinks to accept-all and flagged items",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "trim/01"
+      ],
+      "what": "Owner approved (D-2026-11-22-27): the per-slice try machinery goes — to-try view with y/n marks per slice, model-written try briefs and steps, the try Detail setting, to-try filter views, `m` land intent on a to-try slice, try briefs in `hud board`. Keep: one 'accept all' action that writes the existing tries.jsonl record, and a list of items the main session flagged (STATE Waiting). Update spec §2.2.4/§2.2.6 lines (y/n marks, board model try briefs, `m`), reference*.md, delegation docs if they mention owner per-slice try. Report lists every removed visible element.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No per-slice try marks, try briefs or `m`; accept-all and flagged list remain",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No model call is made for try briefs",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "tries.jsonl readers still work with old records",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Spec, reference updated; tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "c4d5ae72b88c561a2d8c9a2d584bd6a2cf3b442b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 3,
+      "title": "Status bars keep only the line and p10k themes",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner approved (D-2026-11-22-27): remove the BAR-THEMES Gauge Plates, Tide, Micro Glyphs, Stacked, Headline, Triptych from the Claude, Codex and pi bars and pi ribbon (TS and native). A saved removed theme loads as `line`. Delete their renderers, settings entries, fixtures and tests. Update spec §2.2.1 (BAR-THEMES lines) and reference*.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Only line and p10k selectable; old values load as line",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Native and TS outputs still byte-identical for line and p10k",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Removed code and tests; bar tests pass",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Spec and reference updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "0e07697ed808e154f083e641ef48ca9b2e311214",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 4,
+      "title": "Drop the job kind label and the Recommended Home ranking",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner approved (D-2026-11-22-27): remove the Decision API `kind` label (Inspector's two-word kind row) and Home's Recommended mode (model ranking/folding of cards and its progress line); Home keeps the deterministic Default order. Keep outcome labels, quiet repeated failures, question category, review severity and routing decisions. A saved Recommended setting loads as Default. Update spec §2.2.3 (Default or Recommended line) and §2.2.8 (labels list), reference*.md. Report the decision-call reduction expected from the call log.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No kind or home-ranking Decision API calls are made",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Home order is the Default order; setting removed; old value loads as default",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Inspector has no kind row",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Spec, reference updated; tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "8f10c89ce77a01ff1074a3a29fec0a5ae1ea5e16",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 5,
+      "title": "Help no longer lists backup skills",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner approved (D-2026-11-22-27): remove the backup-skills section from Help (`?`) with its collector, translations and wrapping code. Write `docs/optional-skills.md` listing the shipped uninstalled skills (name + one-line description, English) so the main session can still point to them; the skill files stay shipped. Update spec §2.2.9 and reference*.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Help has no backup-skills section; collector and strings removed",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "docs/optional-skills.md lists the shipped optional skills",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Spec, reference updated; tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "816f498c60249e3fe64ab0e616fbf3ae067863a8",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 6,
+      "title": "Tickets are the only slice ledger; STATE keeps notes",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "trim/02"
+      ],
+      "what": "Owner approved (D-2026-11-22-27). Panel progress (Project Progress bar/legend, to-do counts, Latest) reads tickets (and land records), not STATE `## Slices` rows; STATE.md keeps only `Milestone:`, `## Now`, `## Waiting for the owner`, `## Next` and short notes. Move the accepted slice rows of docs/handoff/STATE.md into docs/handoff/archive/ (one file), leave a one-line pointer. Update state-ledger/ticket-rollup collectors, spec §2.2.4 lines about STATE slices, docs/delegation.md and the hud-handoff skill if they tell the main session to maintain slice rows. Report the visible changes on Project.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Project progress and counts come from tickets; STATE slice rows are not read",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "STATE.md ≤ a few KB with the archive pointer",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Waiting items and Milestone still read from STATE",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Spec, delegation doc, skill text updated; tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "046f1d0d8c397e1b4ea4b5b535f1c5517e11d078",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 7,
+      "title": "A ticket counts as landed only from a real landing, and owner_try no never waits for Accept all",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-23 the owner's Accept all accepted TEST-FLAKES-08 although that ticket is still being worked on (job j1df094c3b4c948ac) and is `Owner try: no`. Cause in src/collectors/project-board.ts landedTickets (~l.419-449): every commit in the last 64 whose subject names a ticket id adds it to `landed`, so the main session's ticket-file commit `test-flakes/08: sweep fixed short waits` (only .scratch/ touched) made it `try` in ticket-rollup.ts derive (~l.58). Fix: (1) subject ids count as landing evidence only when the commit touches a path outside .scratch/ (the same rule the file-path branch already uses), or when the ticket file carries the land flow's recorded landing; (2) a landed ticket with `Owner try: no` becomes done (shown as landed), never `try`, so Accept all and the band count only owner-try tickets. Keep old try records readable.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A .scratch-only commit naming a ticket id does not mark it landed or try",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A landed owner_try:no ticket shows as done and is not counted by Accept all or the band",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Landed owner_try:yes tickets still show as try; existing tests and frames updated where they relied on the old rule",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "0d2b818c80a50e8643a03036daeb85f6dffd20b9",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    }
+  ]
+}

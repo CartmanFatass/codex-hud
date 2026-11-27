@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "feature": "select-send",
+  "objective": "interaction",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Send a pane selection with its source to the responsible main session",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "D-2026-11-26-01 step 3b (docs/fable-proposal/01-herdr-fork-final-plan.md §3). A HUD herdr plugin action on a selection (plugin actions already receive `selected_text` and `stale_content`) opens a small composer that shows the excerpt exactly as it will be sent, plus a question line. It goes, with its source (project, pane, job if the pane is a worker's, time), to the main session responsible for that pane's job, or the project's main session for other panes, through HUD's normal delivery path. If the content changed (`stale_content`), the composer shows the latest text before sending. The reply is that session's ordinary answer. Installed by the HUD installer as part of the herdr component.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: excerpt and source block delivered once to the right main session (worker pane → job's dispatcher; other pane → project main); stale content shows the new text before sending; empty selection does nothing",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Owner try: select two lines of a failing test in a worker's tab, ask \"is this from your last change?\": the main session receives the excerpt, the job it came from and the question",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.098Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7db58b1dd7323ebd9df8b9c2db1d989f5177ea47",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.098Z",
+          "author": "legacy",
+          "text": "Landed in this commit (replay base b5c5e7f3d528b33b2c710887fcc55a55e99a862a); gate 5/5 passed."
+        },
+        {
+          "at": "2026-11-27T06:39:46.098Z",
+          "author": "legacy",
+          "text": "Landed in this commit (replay base 6fa93f4f47c9b625e3b1d5e1a41a73756c323f90); gate 5/5 passed."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.098Z",
+      "updated_at": "2026-11-27T06:39:46.098Z"
+    },
+    {
+      "number": 2,
+      "title": "Send a selection directly to a working job, with the answer tied back to the excerpt",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Select text in a pane, press Ctrl+b a, pick a working job in the target list and send; the job's answer appears next to the excerpt on its card in the Inspector and on Execution, and picking a job that just ended shows \"ended\" and offers main.",
+      "approved_removals": [],
+      "blocked_by": [
+        "select-send/01"
+      ],
+      "what": "D-2026-11-26-02: for tasks that gain from closer interaction, the composer's target picker also lists the project's working jobs (role, ticket/package, state). Sending creates an excerpt record (id, excerpt, source, question, target job, time) in HUD_HOME and delivers it to the job as a message carrying the id (`hud_send` to a working job only: never reopens or repairs a closed job; a target that ended shows \"ended\" and offers main instead). The worker answers through its normal tools with the id (a `reply_to` field on `hud_report` progress or a dedicated small reply tool); only a matching id marks it answered. The excerpt card (Inspector of the target job, and the Execution page) shows queued / answered / target ended / delivery unknown, and the answer next to the original excerpt even after the source pane changed or closed.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests with two synthetic workers: cross-sent excerpts answered in reverse order map to the right excerpts; a closed target is never reopened; a reply without a matching id does not mark anything answered",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Owner try: select an error in one pane, send it to the worker changing that code, see its answer next to the excerpt ten minutes later",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.098Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "cec13a4eb3dd035036afa020d2cc1de9f1f17855",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.098Z",
+      "updated_at": "2026-11-27T06:39:46.098Z"
+    },
+    {
+      "number": 3,
+      "title": "Select-send falls back to the system clipboard (send what was just copied)",
+      "status": "wontfix",
+      "owner_try": true,
+      "live_try": "copy any text (in herdr, Windows Terminal or another app), press Ctrl+b a in a herdr pane: the composer opens with that text marked 来自剪贴板; confirm sends it to the main session",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26, after the copy-on-select memory (herdr-fork/16) failed live: 'can it just send the copied content; that is more general'. In the plugin action (src/roles/select-send.ts handleSelectionAction, src/cli/select-send.ts runSelectSendAction), take the text in this order: live selection (selected_text or selection coords, as today) → the system clipboard. Clipboard reader, first that exists and answers within 1.5 s: `wl-paste --no-newline` when WAYLAND_DISPLAY is set (on WSLg this mirrors the Windows clipboard), `xclip -selection clipboard -o` / `xsel -bo` when DISPLAY is set, `/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -Command Get-Clipboard -Raw` on WSL, `pbpaste` on macOS; strip a trailing CR/LF pair from PowerShell output; bound the read to the existing excerpt cap. A clipboard excerpt has no verified source: the composer shows it as `来自剪贴板` (EN `From clipboard`) with the focused pane as context only, never as a claimed source location, and the owner confirms before anything is sent (as today). Empty clipboard or no reader: the toast says `没有选中或复制的内容` (EN `Nothing selected or copied`). Make sure herdr invokes the action without a live selection (plugin manifest `contexts`), adjusting integrations/herdr/plugin/herdr-plugin.toml if needed. Tests use a synthetic reader via an env override (no real clipboard). Update docs/reference.md (select-send). Out of scope: changing herdr.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With no selection, the action reads the clipboard through the first available reader within 1.5 s and opens the composer with that text marked From clipboard (tests with a synthetic reader)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A live selection still wins over the clipboard; empty clipboard or no reader shows the new toast (tests)",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "The composer never presents a clipboard excerpt as from a pane location; nothing is sent without the owner's confirm (test)",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "EN/ZH strings; docs/reference.md updated",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.098Z",
+      "updated_at": "2026-11-27T06:39:46.098Z"
+    }
+  ]
+}

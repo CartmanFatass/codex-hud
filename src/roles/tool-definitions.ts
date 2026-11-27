@@ -214,7 +214,7 @@ export const ROLE_TOOLS = [
     next: text,
     result: text,
     evidence: { type: 'array', items: text, description: 'Repo paths, URLs or commit hashes.' },
-    features: { type: 'array', items: { ...text, pattern: FEATURE_SLUG }, description: '.scratch feature slugs.' },
+    features: { type: 'array', items: { ...text, pattern: FEATURE_SLUG }, description: 'Ticket feature slugs.' },
     stance: { ...text, enum: PROJECT_STANCES },
     priority: { ...text, enum: PROJECT_PRIORITIES },
     text,

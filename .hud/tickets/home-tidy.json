@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "feature": "home-tidy",
+  "objective": "interaction",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Home lists a project's live Objectives first",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "open /hud panel Home while a MyHUD ticket queue runs and check the Objective owning that feature is listed first under MyHUD",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26: Home's Objective ordering is wrong. Under MyHUD Home showed `engine` (last activity 19 h ago) and `pi-worker` (10/10, nothing left) while today's working Objectives (`unattended` with chores, `interaction` with exec-page / universal-bar) were folded into `+7`. Cause: src/render/home-view.ts projectView sorts open Objectives only by blocked-first and paused-last, so .hud/objectives.md file order decides the rest. New order for open (not done) Objectives: (1) blocked on an owner request, as now; (2) Objectives with a live or queued job, or a working ticket-queue / unattended run, in their features; (3) the rest by most recent activity in their features (latest landing, ticket change or result date, whichever the snapshot already carries; no new disk reads on paint); (4) Objectives whose listed features have no open ticket left (all done or wontfix) are not shown on Home at all (owner 2026-11-26: completed work can simply be hidden; the Project page still lists them, and a recent result line may still show for 3 days as today); (5) paused last. Ties keep file order. Same order in the Project page's Objective list if it uses the same helper. Row budget and the `+N` fold are unchanged; only which Objectives get the visible rows changes.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "An Objective with a live job or working run is shown before one with older activity, regardless of file order",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Among the rest, more recent activity sorts first; Objectives with no open tickets are hidden on Home (still listed on the Project page); paused stay last; blocked stay first",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Render tests with synthetic objectives cover each rule; no extra disk reads in paint",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.027Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f1359bac8a685fd3aab93660b8376db823d9b5b7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.027Z",
+      "updated_at": "2026-11-27T06:39:46.027Z"
+    },
+    {
+      "number": 2,
+      "title": "Home's Today card is one count line",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "open /hud panel Home and check the Today card is a single count line",
+      "approved_removals": [
+        "today card's per-item landing list",
+        "today card's per-role done/failed counts",
+        "today card's gate first-pass/retry line"
+      ],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26: the Today card's landing list is not useful on Home (attention first). Today it lists today's landed tickets one per row (`MyHUD Gate flakes collect… 4分`, `另 26 个`), then per-role done and failed counts (`完成 34 1 15 5 •2 87`, `失败 1 •2`) and the gate line (`闸门 一次过 13 · 重试 15`). Owner choice: the card becomes one line, e.g. `今天 29 落地 · 1 失败 · 3 在跑` (EN `Today 29 landed · 1 failed · 3 running`), zero parts omitted, the whole card omitted when all are zero. Remove the per-item list, per-role counts and gate line from the card and delete the collection/render code and tests only they use (keep whatever `hud day` and `hud stats` use; those commands stay the place for detail). Spec §2 Home keeps 'a Today card', so no spec change. Update docs/reference.md's Home section. The card keeps its fold-first behaviour when rows are short.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Home's Today card renders as one line with landed, failed and running counts (zero parts omitted; card omitted when all zero), EN/ZH",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The per-item landing list, per-role counts and gate line are gone from Home, with their now-unused collection code and tests",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`hud day` and `hud stats` output unchanged; docs/reference.md updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.027Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7f07802a640922a116ce35ffba2ab2f12a905334",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.027Z",
+      "updated_at": "2026-11-27T06:39:46.027Z"
+    },
+    {
+      "number": 3,
+      "title": "Home Today count line drops whole facts instead of cutting mid-label",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Run `hud panel --here --width 32` (and default width) with HUD_LANG/English settings where possible and check the Today line shows only whole count-and-label pairs, no `…`",
+      "approved_removals": [],
+      "blocked_by": [
+        "home-tidy/02"
+      ],
+      "what": "Milestone review jf05354b90f66a48a (major): src/render/home-cards.ts todayRow joins every nonzero Today fact and then cuts the whole line with fit(), so on narrow Home widths the line ends in an unlabeled number, a partial word or a dangling separator (EN 32 cols: `Today 29 landed · 1 failed · 3 …`; 40 cols with bounded scan: `Today ~29 landed · ~11 failed · 12 runn…`). This breaks the ARCHITECTURE §8 rule 'drop optional fields before cutting'. Fix: fit whole count-and-label pairs to the width, dropping whole facts when they do not fit, using the existing drop-before-cut pattern (sectionFacts in the same file) or a shared helper. Drop order is attention first: drop `landed` first, then `running`; keep `failed` longest. Keep the `~` marker on the kept counts. If not even `Today` + one whole fact fits, show `Today` plus whatever fits whole, or only `Today`, never a cut label. Applies to EN and ZH. Do not change the card's content, ordering at wide widths, fold behaviour or zero omission.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "At 32 columns, EN with 29 landed / 1 failed / 3 running renders only whole count-and-label pairs (no `…`, no unlabeled number, no trailing separator); failed is kept",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "At 40 columns, bounded scan 29/11/12 renders only whole pairs with the `~` markers kept",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "At 56 columns all three facts still render as today, EN and ZH",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Narrow-width regression tests in tests/unit/home-cards.test.mjs cover the three-count case for EN and ZH",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.027Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "06e7e2fd58d6434d217746b2e016d34cb5f70062",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.027Z",
+      "updated_at": "2026-11-27T06:39:46.027Z"
+    }
+  ]
+}

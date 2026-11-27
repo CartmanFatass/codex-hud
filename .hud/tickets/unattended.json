@@ -1,0 +1,609 @@
+{
+  "version": 1,
+  "feature": "unattended",
+  "objective": "unattended",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Unattended service: the owner switches it on for chosen Objectives and their ticket queues keep moving",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "workflow/05",
+        "workflow/07"
+      ],
+      "what": "Spec §2.1 (26.02), D-2026-11-26-02, owner 2026-11-26: an unattended service the owner sets up and switches on explicitly, never inferred from activity or presence. `hud unattended on --objective <id> [--objective <id>...]`, `off`, `status` (and the same toggle in panel Settings). While on, one resident service per machine (exact PID + start recorded in HUD_HOME; one instance; survives the main session and MCP closing) starts the ticket-queue workflow run (workflow/05) for each chosen Objective's ready tickets, starts a new run when tickets become ready, and lets runs end with the `lead` acceptance (workflow/07): the lead answers worker questions within its authority, repairs failures, runs the milestone reviewer, accepts owner-try items as main does today, and lands. It never opens new Objectives, never edits `docs/spec.md`. Hand-back (owner's choice): only an item that would delete a user-visible feature or change the spec stops; it becomes an owner request on Home and the service continues with other items. Off stops starting new runs and lets running jobs finish (no kill). Home shows one line while it is on (Objectives, running count, open hand-backs); the bar shows a compact marker. Results and hand-backs are what the owner reads on return; no activity tracking.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests (fake herdr/CLIs): on with one Objective runs its two ready tickets in one Objective run (N + 2 sessions) to landed with the dispatcher's main session gone; a held ticket (unapproved removal or spec change) stays on Home and excludes its dependents while an unrelated ready ticket in the same Objective run still lands; off starts nothing new and kills nothing",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "One instance per machine: a second `on` updates the chosen Objectives instead of starting another service; status reports PID, Objectives, runs and hand-backs",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Owner try: switch it on for a small Objective with two or three tickets, close the main session, come back to landed results and any hand-back on Home",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "776c1f02c5f5308e070cf25639b132a9f77a238f",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.114Z",
+          "author": "legacy",
+          "text": "Landed in this commit (replay base ccc3c9c7bbefe4fb405648367b23f83be4ea7459); gate 5/5 passed."
+        },
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main (owner-delegated acceptance)",
+          "text": "trial 3 on the synthetic project, service on unattended/03 code, run q0f016c4a0df7d92d: the clean ticket (07) landed without an owner hold, the spec ticket (08) was held for the owner while 07 continued, one milestone review and one lead acceptance (verdict finish), acceptance recorded on the ticket. Sessions: 2 imps + 1 question lead (08 escalated) + 1 reviewer + 1 lead. Home showed trial hand-backs to the owner earlier the same day. `off` let the process exit by itself."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 2,
+      "title": "Unattended trial fixes: Blockers none, trust preflight, one run per Objective, lead failures, Sonic in runs",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Main's live trial 2026-11-26 on a synthetic project (~/projects/hud-unattended-trial, Objective `trial`, run qaf94214f1780d1cd then q4ff95ad0b2742523; `hud unattended status` there shows the hand-backs) found: (1) a report line `Blockers: none` paused the run as a blocker (job jbecb068eeb099552); `none` (any case, optional punctuation) means no blocker, same for `Removes: none`. (2) Claude and agy were not trusted for the project, so the lead and an agy imp failed to dispatch; `hud unattended on` must check up front that the project is trusted for every harness the run's roles (imp places, reviewer, lead) can use and refuse with the exact `hud trust <dir>` line, and the scheduler must hold, not retry, an item whose dispatch failed for trust. (3) After run 1 paused, the service started run 2 for the same Objective and re-admitted greet/03, whose job in run 1 had failed: a paused or waiting run still counts as the Objective's active run; never admit a ticket that already has a job in any open run. (4) A lead that never started made closeLeadJob fail with `hud-reap: ENOENT ... SESSION.txt` (lead jbb775b1dc9b944f5): closing a never-started lead is a no-op success. (5) The imp reported `Sonic lookup could not start (herdr_required)` inside the run: workers started by a pane-less run must keep the herdr env they need for Sonic (find what is stripped, e.g. HERDR_PANE_ID removal in src/workflows/wake.ts, and keep the worker's own tab env). (6) The ticket check rejected `- [ ] Live try: none` in the acceptance list; accept a `Live try:` line anywhere in the ticket body, and make the refusal show the expected `**Live try:** none` line. (7) The land-config refusal `expected base, gate, after, push...` must name the missing or invalid field.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests for each of (1)-(7) with fake herdr/CLIs and temp homes",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live try: main reruns the synthetic trial: one run for the Objective, greet/01 lands, greet/02 starts after it and is accepted by the lead, greet/03 is held as a spec change on Home, exactly one reviewer and one lead acceptance",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "dd87722e9ca8bd0bc48d859e7976bc54ad333d84",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 3,
+      "title": "Unattended trial 2: scope assumptions go to a lead; unattended runs can be cancelled",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Main's second live trial 2026-11-26 (~/projects/hud-unattended-trial, run q9a4a94e1712eecb8). (1) A correct job (jd12cabdcb50ccc21) wrote `Assumed: scope — the requested wording replaces the old greeting text without removing the greeting feature.` and the assumption breaker held it for the owner. Workers label assumptions `scope` freely, so under the unattended escalation rule (owner hand-back only for visible deletion or spec change) a scope-tagged assumption, or more than three assumptions, goes to a temporary one-decision lead that answers continue (the item lands) or hold (with a reason that names deletion/spec, else repair); only the lead's deletion/spec verdict becomes an owner hold. Runs whose hand-back goes to main keep today's breaker. (2) There is no way to cancel an unattended run: `hud_tickets run cancel` filters unattended receipts out (src/mcp/ticket-queue.ts:59-60) and `cancelTicketQueue` only stops `working` runs, so main had to edit two paused receipts by hand. Add `hud unattended cancel <run>` (and accept it from main's `hud_tickets run cancel` with the run id) that cancels a working or paused run without signalling any process, leaves its holds and evidence visible, and frees the Objective for a new run. (3) `hud_tickets add` folds `what` into one line, so a `**Live try:**` written there is not on its own line; when `what` contains a `Live try:` field and no `live_try` is given, move it to the field line.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: scope-tagged assumption under unattended rule -> temporary lead -> continue lands; lead deletion/spec verdict -> owner hold; >3 assumptions same path; main-handback runs unchanged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Tests: cancel a paused and a working unattended run: state cancelled, no signal, holds stay, the Objective can start a new run",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Live try: main reruns the synthetic trial and the clean ticket lands without an owner hold",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ff0fb4a40cd4a985e171c3f95cdbcc22681c2508",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 4,
+      "title": "Runs never stall on a report's Blockers line: live-try notes are hints, the lead triages the rest, an owner matter holds only its ticket",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "Start a ticket queue on a scratch feature with two independent tickets whose fake worker reports say `Blockers: owner live try remains` and `Blockers: needs an owner decision on deleting X`: the first lands and its note appears in the run's todo; the second is held after the lead's escalation while the other ticket still lands; main gets one notice, not a pause of the whole run.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26: queue runs stalled because workers wrote \"owner live try remains\" on their `Blockers:` line and `hasReportBlockers` (src/mcp/workflow-lead.ts:39) paused the whole run for main (src/mcp/ticket-queue-step.ts:91-92, 321-324); three runs (nav-redesign, select-send, herdr-fork) stopped this way today. Owner rule: a pending live try or owner try is only a hint and never a blocking reason. Change: (1) The run rule text (workflow-lead.ts:23, :26) says `Blockers:` is only for an owner decision needed before this can land (scope, value trade-off, visible deletion, irreversible act); a pending live try or owner try goes on a `Try:` line or in the report and is never a blocker; write `Blockers: none` otherwise. (2) A Blockers line whose content is only about a live try / owner try / acceptance try is recorded as a todo note and does not stop the item. (3) Any other Blockers line goes to the lead exactly like a scope assumption (same packet, decisions recorded with kind `blocker`): the lead continues (text goes to todo) or escalates. (4) An escalated owner matter holds only that item and the items blocked by it, in every run mode (today only unattended runs hold a single item, ticket-queue-step.ts:1057-1061); independent items keep dispatching and landing; main gets one notice naming the held item; resuming answers that hold. Keep the hand-back record format compatible with `hud_respond` and the panel. Update docs/reference.md and the run-rule docs (packages/hud-mcp/instructions/lead.md if it describes blockers).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A report with `Blockers:` mentioning only a pending live try/owner try lands without pausing and the text appears in the run todo (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Any other Blockers line is judged by the lead; continue lets the item land (test with a fake lead decision)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "An escalated owner matter holds only that item and its dependents while an independent item in the same run lands (test, non-unattended run)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Worker run-rule text says live tries are never blockers",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Existing assumption hand-back tests still pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "abd8e222f835ce72d6c7e606d7d8e8b1e925f78d",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 5,
+      "title": "Low-risk worker permission prompts are answered automatically; the rest go to main with a recommendation",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none (main session verifies with a synthetic prompt in a scratch pane)",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26: a frontend-imp Claude pane stopped on a native permission prompt (rm of files in its own scratchpad with an unquoted variable path). HUD reported 'claude needs input in its pane' and the prompt waited for the owner. Such prompts are a typical unattended case: low-risk ones must be answered without the owner. When the watcher sees a worker (CLI or pi) waiting on a client permission prompt, HUD reads the prompt from the pane and classifies it. Low risk = the command or edit touches only the job's own worktree, task dir, scratchpad or a temp dir, is reversible or regenerable, and involves no network write, secrets, git push, install, or paths outside those roots. Low risk: HUD selects the approve option in the pane (herdr pane send-keys) and records the prompt, the decision and the reason on the job (one line in the inspector/timeline). Not low risk or unsure: the prompt goes to the main session (or the run's lead) as a job notice with the prompt text, HUD's recommendation and the exact answer action; the owner sees it only if main escalates. The classifier is the configured decision model with a fixed rule prompt and structured output (approve / hand to main, reason); without a decision model only the deterministic path check applies and everything else goes to main. Never auto-deny on the owner's behalf except a client's own timeout. Applies whether or not the unattended service is switched on (it answers for the worker, not for the owner).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A synthetic pane showing a Claude Code permission prompt for `rm -f $S/*.png` where S is the job scratchpad is approved automatically within one watcher pass; the job record shows the prompt, decision and reason.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A prompt for a command outside the job roots (e.g. writing ~/.local/bin, git push, curl POST) is not answered; main gets a notice with the prompt text, a recommendation and the answer action, and answering it presses the chosen option once.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Decision-model failure or timeout falls back to the deterministic path check; anything it cannot prove low-risk goes to main.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Each pane prompt is answered at most once (idempotent across watcher restarts); a prompt that disappears before the answer is recorded as gone, not answered.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Bar and panel stop showing an auto-answered prompt as owner load; prompts handed to main are shown as main load, not owner load.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Docs: docs/reference.md and ARCHITECTURE describe the rule, the roots and the record; synthetic fixtures only.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "404f386e1d45f43c02a4be5b6243641e25c0c787",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 6,
+      "title": "A run that pauses for main always wakes main",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-26: ticket queue q7479f30245134311 (unattended) paused with handback {kind: blocker, choices resume/stop} and a pause_notice, but its record's `notices` stayed empty and the main session got no wake; the owner noticed the stall in the panel first. Same for earlier blocker pauses. Every transition of a run into a state that waits on main (blocker, escalate, main hand-back, lead request with no ready tickets) must deliver exactly one notice to the dispatching main session (MCP task / watch line / typed delivery per the existing rules), retried until delivered, and record it in `notices`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic run paused on each waiting kind (blocker, escalate, hand-back to main, repair with no ready tickets) delivers one notice to the dispatcher and records it; a failed delivery retries on the next watcher pass without duplicates.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A run that resumes and pauses again delivers a new notice for the new pause.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Bar/panel show the paused run as main load until answered.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "9cc04e5447ff6f6e0f094b294f622640be7c45d7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 7,
+      "title": "Worker permission auto-approval covers every low-risk prompt the spec names, not only PNG cleanup",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "In a scratch herdr pane bound to a synthetic job (worktree, task dir, scratchpad, TMPDIR named after the job), show Claude Code prompts for (a) `rm -rf $S/out` inside the scratchpad, (b) `mkdir -p <worktree>/tmp/x && cp a b` inside the worktree, (c) an Edit file prompt for a file in the worktree, (d) `git push`, (e) `curl -X POST ...`, (f) `rm -f ~/.local/bin/x`: (a)-(c) are approved within one watcher pass with the decision on the job; (d)-(f) reach main as a notice with recommendation and answer action.",
+      "approved_removals": [],
+      "blocked_by": [
+        "unattended/08"
+      ],
+      "what": "unattended/05 (6614cc5d) made automatic approval cover only `rm -f <dir>/*.png` (optionally via `S=`) with a locally proven job-owned directory (src/mcp/permission-policy.ts permissionDirectory). docs/spec.md §2.1 (D-2026-11-26-10) and the 05 ticket say any worker prompt confined to the job's own worktree, task dir, scratchpad or temp, reversible or regenerable, with no network write, secrets, git push or install, is answered for the worker. Widen the local proof to that rule while keeping 05's safety shape (no shell, no general variable expansion, symlink/realpath and uid checks, sensitive-name exclusion, re-check before keying, answer once): (1) File edit/write/create prompts (Claude `Edit file`/`Write file`/`Create file`, Codex `make the following edits`, pi equivalents) whose target path, after realpath of the nearest existing parent, is inside one of the job's roots and not under `.git/` or a sensitive name. (2) Shell commands parsed into simple commands joined by `&&`, `;` or newlines, with no pipes to shells, command substitution, redirection outside the roots, `sudo`, `eval`, `source`, or env-dumping. Allowed verbs: file housekeeping (`rm` incl. `-r/-f`, `mkdir`, `touch`, `cp`, `mv`, `ln -s` within roots, `chmod` without setuid, `tar`/`unzip` extracting into roots) and read-only or local-build tools (`ls`, `cat`, `head`, `tail`, `grep`, `rg`, `find` without `-delete/-exec` outside roots, `wc`, `diff`, `node`/`npm run`/`npx tsc`/`cargo build|test` with cwd in the job worktree, `git` subcommands that do not touch remotes or config: status, diff, log, show, add, commit, restore, stash, rebase within the worktree). Every path argument (and `$S`-style variables whose value is read from the worker process environment as 05 already does) must resolve inside the roots. Anything with `push`, `fetch`/`pull`/`clone`, `curl`/`wget` with a write method or upload, `npm install`/`pip install`/`cargo install`, `ssh`/`scp`, writes under `~` outside the roots, or references to key/credential files goes to main. (3) Shell cwd evidence: relative paths are allowed only when the prompt or worker process gives a verifiable cwd inside the job worktree (keep 05's rule that job.cwd alone is not evidence). (4) Decision model: send only structural facts (operation kinds, verbs, which root each path falls in, flags like recursive/force), never raw arguments, env or absolute paths; the model may move an item from approve to main but never approve something the local proof did not prove. Update the fixed rule prompt and docs/ARCHITECTURE.md §5 / docs/reference.md for the changed model input. (5) Reason text names the actual proven operation (not 'regenerable PNG cleanup'). Keep everything else from 05 (ledger, notices, bar/panel load, answer path) unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic prompts for multi-file `rm -rf` in the scratchpad, `mkdir -p`/`cp`/`mv` within the worktree, a Claude Edit file prompt inside the worktree, and `npm run build` with worktree cwd are auto-approved within one watcher pass with a reason naming the operation (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Synthetic prompts for git push, git fetch, curl POST, npm install, a write to ~/.local/bin, a path reached through a symlink out of the roots, a `.env`/key file, command substitution and `sudo` go to main with recommendation and answer action (tests)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The decision model input contains no raw command arguments or absolute paths, and a model 'approve' without local proof still goes to main (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The existing unattended/05 tests (PNG cleanup, idempotency across restart, gone prompts, fallback) still pass",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "docs/reference.md and docs/ARCHITECTURE.md describe the widened rule and model input; synthetic fixtures only",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "66e5e24b6657bf64a35526f5ee4ab16a8d501455",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 8,
+      "title": "Permission auto-approval proves the real target and binds the key press to the prompt it classified",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "In a scratch herdr pane bound to a synthetic job, show (a) a Claude Bash prompt `S=<scratchpad>; rm -f $S/*.png` (approved once), (b) the same prompt relying on an `S` only present in the launch environment (goes to main), (c) a multiline command preview containing a line `Bash command` (goes to main), (d) a prompt whose menu changes between capture and send (no key pressed, goes to main); restart the watcher between (a)'s send and its settle and confirm no second key press.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review j059e4af7ec78077e of unattended/05 (6614cc5d) found the approve path unsafe; fix it before any widening. (1) Execution-context evidence: drop the launch-environment inference of `S` (src/mcp/worker-permissions.ts:141-157, proc environ of the harness is not the tool shell); a variable is accepted only when the same command assigns it a literal path. (2) Recoverability: deletion is auto-approved only inside the scratchpad or job temp dir, or for git-tracked paths in the job worktree (recoverable from git); deletions of untracked files in the task dir or worktree go to main (an original reference image in the task dir must not pass). (3) Prompt identity: reject layouts with more than one permission heading on the visible screen or a heading inside the command/preview block; treat them as manual (main). (4) Delivery binding: immediately before `pane.send_keys`, re-read and require the same fingerprint and the same selected option; if herdr exposes a request/generation id or a conditional send, use it. (5) Ledger: an entry that ended `uncertain` or `sending` is not re-armed by a reflow to another fingerprint while the pane stays blocked; ambiguous transitions go to main for manual reconciliation; two consecutive identical prompts are distinguished by an observed unblocked state or go to main. Keep spend-before-send, the per-job lock and the private bounded ledger.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Launch-environment-only variables and task-dir untracked deletions are not auto-approved; a same-command literal assignment in the scratchpad is (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A nested/duplicated heading or a menu that changes before delivery never gets a key press and reaches main (tests)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "After an uncertain send, a reflowed rendering of the still-open prompt is not answered again; an ambiguous transition reaches main (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Existing worker-permissions tests still pass",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "956ce6ce63b9658de051322659a74c3ed9333553",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 9,
+      "title": "A worker waiting on a native permission prompt never fails its queue item; unclassifiable prompts reach main",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Start a ticket queue (ordinary and unattended) on a scratch feature whose fake CLI worker blocks on a synthetic permission prompt: the item stays working while the watcher classifies; an approvable prompt is answered and the item lands; an oversized edit preview or unknown footer yields one main notice naming the pane, not an item failure or silent owner load.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review j059e4af7ec78077e: a blocked CLI is published as `waiting_orchestrator` (src/mcp/cli-judge.ts:198-200) and the queue flags that as a worker problem (src/mcp/ticket-queue-step.ts:1099-1100), so an ordinary run fails and an unattended item is marked failed while the permission watcher is still classifying a prompt it then answers. Also, a recognized native heading with an oversized preview or unknown footer returns `undefined` from capture (src/mcp/worker-permissions.ts:27-58,138,185-189): nothing is recorded, and an older answered entry can suppress the new block (src/collectors/thin-jobs.ts:297-302). Change: (1) the queue defers a generic worker failure while the job's pane is a native permission wait that the watcher has not yet reconciled (pending/observing record or a bounded grace), and treats a prompt handed to main as a main item, not a worker failure; (2) separate 'main must inspect this pane' from 'safe to map its options': a recognized heading that cannot be parsed safely creates a manual main entry and notice; (3) a new block after an answered entry is never hidden.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A queue item whose worker blocks on a synthetic permission prompt is not failed while classification is pending and lands after auto-approval (test, ordinary and unattended runs)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A recognized but unparseable prompt yields one main notice with the pane and no key press (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "An answered older entry does not hide a new blocked state on the bar/panel (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "31d0bed8d0ef04a45ad3c1621bffaf0451c7323c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 10,
+      "title": "Report Blockers parsing and item-hold resume close the gaps found in review",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none (fixture tests cover the parsing and resume cases; main verifies with one synthetic ticket queue)",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review j059e4af7ec78077e of unattended/04 (685632f2), src/mcp/workflow-lead.ts:37-52 and src/mcp/ticket-queue.ts:322-333. (1) A Markdown `Blockers:` heading or empty field followed by bullet/continuation lines currently yields zero blockers and lands without triage (regression vs the old check): read the continuation lines, or send an empty-but-not-`none` declaration to the lead; never treat it as clearance. (2) `none` followed only by a qualifier that restates there is no owner decision (`none requiring an owner decision.`, `none (owner live try remains)`, `none - only the live try`) counts as none, with any try part recorded as a try note; this is what paused run q7479f30245134311. (3) A pending-try phrase followed by detail (`owner live try remains: reopen the panel`) is a try note; mixed text that names an owner decision still goes to the lead. (4) Resuming an item hold requires the notice's `request_id`; drop the ID-less fallback to the first hand-back for item holds, keeping ID-less run-level acceptance unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Heading-plus-bullet Blockers naming an owner decision reaches the lead (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "`Blockers: none requiring an owner decision.` and `Blockers: none (owner live try remains)` land without a lead; the try part appears in run todo (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`owner live try remains: <detail>` is a try note; `live try remains and the owner must decide on deleting X` goes to the lead (test)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "hud_respond resume without request_id is refused for an item hold while two holds are open; with the id it resumes exactly that hold (test)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "9cc04e5447ff6f6e0f094b294f622640be7c45d7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 11,
+      "title": "Ordinary-queue item holds keep their approval fence through land, survive successor runs and stay out of ready lists",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Start an ordinary ticket queue on a scratch feature with three tickets: one whose report has an owner-decision blocker (lead escalates, item held), one independent that lands, and one whose land gate fails once and is repaired; then answer an unrelated to:main question to start a successor run. hud_tickets ready and the project board never list the held ticket; the successor shows one actionable notice for the hold; the repaired land goes back through blocker triage if its commit changed.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review j059e4af7ec78077e of unattended/04 (685632f2). (1) Ordinary queues pass no approved head to startLand (src/mcp/ticket-queue-step.ts:1186 passes `item.approved_head` only for unattended), so a land repair (src/mcp/land-runner.ts:569-585) can replace source_sha and publish a commit whose blocker/assumption approval was for another head. Carry the approval fence (head + report sig) through land for every run mode, and return changed evidence to triage; keep this separate from unattended's spec-file prohibition. (2) A successor run (src/mcp/ticket-queue.ts:234-262,469-479) copies the held item but starts with an empty outbox, so main loses the actionable resume notice; derive the hold notice from the durable item hold for the current flow. (3) `hud_tickets op:ready` and the project board use readOpenHolds, which reads only unattended runs (src/unattended/state.ts:77-79,125-136; src/mcp/local-tickets.ts:133-135,349-359; src/collectors/project-board.ts:694); include ordinary-run item holds.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A land repair that changes the approved commit of a blocker- or assumption-approved item sends it back to triage instead of publishing (test, ordinary run)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A successor run started while an item is held carries exactly one actionable notice for that hold, naming the current flow (test)",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "hud_tickets ready and the project board exclude tickets held in an ordinary run (test)",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 12,
+      "title": "Watcher startup: the initial subscribe ack must not clear permission outcomes and re-run a pass",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Found by imp-daily-facts/01's land repair (job jf3074c6b9a617d38): tests/unit/worker-permissions.test.mjs:99 failed in gate[3] (reads=7, \"The pane stayed blocked\" 45 ms after start). Cause: src/runtime/watch.ts:104 -> watch-runtime.ts:1437, the initial events.subscribe ack calls reconcileTabs() -> permissionsSeen.clear() right after pass 1 wrote outcome \"answered\", which immediately triggers pass 2 and can re-handle an answered prompt (also a real-world double-handling risk for unattended/05's permission path). Make the subscribe ack not discard recorded permission outcomes (or reconcile without clearing answered prompts), keeping the at-most-once answer rule.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Regression test: a permission prompt answered in pass 1 is not re-classified or re-sent when the initial subscribe ack arrives right after; worker-permissions.test.mjs passes 20/20 under 4-way parallel load.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Tab reconcile still drops outcomes for panes that really disappeared.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "eeffef5e0339161e202d575881e19c9033795729",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 13,
+      "title": "A run waiting for its lead's repair tickets resumes by itself once they are written",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-26/27, five times (chores, exec-page twice, cold-archive, nav-redesign, workflow): the lead decides repair and adds repair tickets with hud_tickets add, but the edit comes back as a queued receipt, so the accept step finds no ready tickets and the run stops with 'lead requested repair with no ready tickets'. Main then waits for the receipt and starts a new run by hand (resume via hud_respond is refused: no pending hand-back). Make the accept step keep the run in a waiting state bound to the lead's receipt ids (they are in the lead's report/tool calls) and admit the repair round automatically when those receipts complete; if a receipt fails, hand back to main with the reason. A run whose lead added no tickets at all still hands back as today.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic run: lead decides repair, its ticket add returns a queued receipt; when the receipt completes, the run admits the new tickets in the same run (repair round counted once) without main.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A failed receipt hands back to main with the receipt reason.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Main gets no 'no ready tickets' pause notice in the automatic case; the panel shows the run as waiting for ticket edits.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "A run started by `hud_tickets run` that supersedes an earlier run of the same feature carries its `repair_rounds`, so the two-round cap holds across manual restarts (today every restarted run reports \"repair round 0 of 2\"; cold-archive reached its fourth review this way).",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "23eaf5d0c7e924f39bf90b59e10963c0ee242305",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    },
+    {
+      "number": 14,
+      "title": "A run paused on a report gate is answerable and reaches its decider",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Two runs on 2026-11-26 paused on report gates and nobody could resume them: toktrack q8bce6bb52855af24 (`imp-daily/01: report has 4 Assumed: lines (limit 3)`, handback_to main, paused 21:36Z, main never woken) and MyHUD q4d41eea7199f2815 (`ticket-store/03: report has a Blockers: line`, handback_to lead, paused 00:02Z, no lead dispatched). Both had `state: paused` and a `handback {choices: [resume, stop], kind: assumption|blocker}`, but `steps.tickets.state` was `failed`, not `asking`, so `answerTicketQueueHandback` (src/mcp/ticket-queue.ts ~343) returned `no_pending_handback (paused for assumption|blocker)`. Main had to start a superseding run with `hud_tickets run`, which also dropped the in-flight ticket-store/06 land from the new run's jobs list. Same refusal for a lead escalation: workflow qbc31fee0742a97e8 paused `escalate` with choices [resume, stop] returned `no_pending_handback (paused for escalate)` (2026-11-27). Fix: a report-gate pause (assumption limit, Blockers line, scope assumption) or a lead escalation leaves the step `asking` so `hud_respond resume|stop` works; with handback_to lead the lead is dispatched for it, with handback_to main main gets the wake notice (unattended/06 path); restarting a run carries in-flight lands.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a run paused for an over-limit Assumed count accepts `hud_respond {job: q..., answer: \"resume\"}` and continues to land that item",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: same for a Blockers-line pause and a scope-assumption pause",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: handback_to lead dispatches a lead for a report-gate pause; handback_to main emits the main wake notice",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Test: `hud_tickets run` superseding a paused run keeps an in-flight land of the old run in the new run's jobs",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.114Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "21d49f2c7082b509a8035c703ac3783cebc961b1",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.114Z",
+      "updated_at": "2026-11-27T06:39:46.114Z"
+    }
+  ]
+}

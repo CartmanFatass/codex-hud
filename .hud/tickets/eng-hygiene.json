@@ -1,0 +1,544 @@
+{
+  "version": 1,
+  "feature": "eng-hygiene",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "CI covers the working branch, the native crate and the release archive",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": ".github/workflows/ci.yml only runs on push to main and pull requests, but work lands on universal-hud. It also never builds or tests native/ (Rust) and never runs tests/release-archive.test.mjs (npm run test:release). Extend CI so a push to universal-hud runs the same job as main, add a job that installs a stable Rust toolchain and runs cargo build and cargo test in native/, and run npm run test:release after npm test. Find out whether integrations/claude-mod/tests (they import claude-code/testing) can run outside Claude Code; if they can, add them, if not, say why in the report and do not add a stub. Do not change the local land gate in .hud/project.json.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A push to universal-hud triggers CI (on.push.branches includes it); main and pull_request triggers unchanged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A native job runs cargo build and cargo test in native/ with a pinned stable toolchain action and cargo cache",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm run test:release runs in CI and passes locally in a temp HUD home",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "claude-mod tests are either run in CI or the report states the blocker",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "actionlint (or a YAML parse) passes on the workflow; no other files change except a one-line note in docs/ARCHITECTURE.md if it describes CI",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "59719a3332130bb3a2556093ef2a640f77d41b50",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 2,
+      "title": "The land gate runs in half the time without weakening any test",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "hud_land's gate (.hud/project.json land.gate) takes about 70 s, mostly the tests/unit/*.mjs node --test run. About 19 test files wait on fixed sleeps (setTimeout with a constant, sleep(), delay()). First measure: run the gate's mjs command with --test-reporter=spec under TZ=UTC and record total wall time and the 15 slowest files. Then replace fixed waits in the slowest files with event waits (the repo's fs-wait helper, polling a condition with a deadline) or injected/fake clocks, so tests finish as soon as the condition holds. Never lower a timeout that guards a real condition, never delete or skip a test or an assertion, never raise test concurrency above the gate's 8. If a slow file is slow for a reason other than sleeping (real process spawn, build), list it and leave it.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Report has before/after wall time for the gate's mjs command (three runs each, median) and the before/after 15 slowest files",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Every changed test still fails when the behaviour it checks is broken (state how you checked at least three of them, e.g. by temporarily breaking the condition)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No test, assertion or file removed; no test.skip/todo added; concurrency unchanged",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The full gate command list passes three times in a row in the worktree (no new flakes)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Target: median mjs wall time at most half of the before median; if not reached, the report says what remains and why",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "100aa96d2ce9d4bb74e090d91e4f5c0360c4e2f4",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 3,
+      "title": "Entry docs and package metadata describe the current four-client HUD",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "package.json still describes 'Real-time statusline HUD for OpenAI Codex CLI'. README.md never mentions Antigravity (agy) as a client, nor the optional Claude mod, and lists main-session tools only partly. docs/ARCHITECTURE.md §2 repository map names src/mcp/thin-main.ts as the MCP surface, but that file is now a 4-line stub. Update: package.json description (keep name codex-hud, the package is not published); README client list and what each client gets (bar, panel, worker places) plus the optional claude-mod and the main-session tool list as in docs/reference.md; ARCHITECTURE §2 map rows so every path exists and names where its responsibility now lives. Take facts from code and docs/reference.md only; spec.md wins on conflict. Keep README's length within +40 lines; English only.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "package.json description names Claude Code, Codex, pi and Antigravity; name and version unchanged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "README names all four clients and the optional Claude mod, and its tool list matches docs/reference.md",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Every path in ARCHITECTURE §2 exists (checked by a script in the report) and each row names the current responsible module",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "No behaviour or code change; npm run build passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "8ec5e9ea59122e6bb39b810e728bf1dd3cd00593",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 4,
+      "title": "npm test passes on a fresh GitHub runner",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "First CI run on universal-hud (run 45608424975, after eng-hygiene/01) fails `npm test` in both matrix cells with the same four failures; they pass in the local land gate, so they depend on the environment (main's CI has failed since at least 2026-11-14). Failures: (1) tests/unit/daemon-binding-async.test.mjs:215 'tuiPidForPane runs tmux asynchronously' expects 4678, got null (runner likely has no tmux, or a different one); (2) tests/unit/git-safety.test.mjs:138 'Project: repository/unsafe/submodule' TypeError path argument undefined (the Project path reads some env or file the runner lacks; Changes/Claude/Codex/pi cases pass); (3) tests/unit/thin-mcp-ticket-queue.test.mjs:298 'ticket queue keeps going past an answered worker question' condition did not settle after 16 s; (4) tests/unit/vendored-lock-stamp.test.mjs:9 ENOENT node_modules/.hud-package-lock-hash, because npm ci deletes the vendored marker (eng-hygiene/01 found this and added `git restore -- node_modules` only before test:release). Reproduce in a fresh clone under a temp HOME with `npm ci`, no tmux/herdr/pi/claude on PATH and no ~/.hud, then fix each at its cause: make tests self-contained (fake binaries on a test PATH, explicit env), fix product code only if it is wrong outside the owner's machine, and move the CI restore step so the vendored marker exists for npm test. Another job (eng-hygiene/02) is replacing fixed sleeps in tests now; keep edits to thin-mcp-ticket-queue.test.mjs minimal.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each of the four failures reproduced in the clean environment and its cause named in the report",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "All four pass in that clean environment with NO_COLOR unset and =1; no test skipped or assertion removed; a skip-if-missing is not allowed where a fake binary works",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The same tests still pass in the normal local environment",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "ci.yml restores the vendored node_modules files before npm test; test:release still runs after it",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "eca6335ee6f85fd4b8d742d5bc5daf0a1e85796e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 5,
+      "title": "A land flow is never readable as completed while its step is still cleanup",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "CI run 45612067863 (colour cell) failed tests/unit/thin-mcp-land.test.mjs 'land cleanup removes clean source worktree when picked patch differs from source commit': after until(state in failed/completed) the hud_read of the flow returned state 'completed' with step 'cleanup' (expected 'done'). So the land runner (src/mcp/land-runner.ts and the flow record writer) can publish state completed before the cleanup step finishes and step done is written. Find the write order and make the terminal state and the final step (done, plus any cleanup_note and worktree_removed_at receipt) appear in one atomic flow write, so no reader sees completed with a non-final step. Do not change the semantics in the sibling test 'a cleanup error after push completes as landed with a cleanup note'.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Report names the write sequence that allowed completed+cleanup",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A deterministic test (hook or injected delay between the two writes, not a timing loop) fails before the fix and passes after",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "thin-mcp-land.test.mjs passes 5 runs in a row locally",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "13d1629e4edfedab166c701df66e05d920d92280",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 6,
+      "title": "The land gate's mjs step is not held up by one serial file",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "eng-hygiene/02"
+      ],
+      "what": "eng-hygiene/02 measured the gate's mjs step at ~187 s median on a 16-core machine (land records show 130-200 s). tests/unit/thin-mcp-land.test.mjs alone takes ~110-116 s (50 sequential tests, real git worktrees/rebases and 8 real `npm run build` calls) and, because tests/unit/*.mjs expands alphabetically, it starts ~70 s in and runs alone at the end. Remove that tail structurally: split thin-mcp-land.test.mjs into a few files by concern so they run in parallel, and where a land test only checks gate-runner semantics, replace the real `npm run build` gate command with a synthetic one (keep at least one test that runs a real build). Optionally order the glob so the slowest files start first, via a tiny script used by both package.json test:mjs and .hud/project.json land.gate. No test removed, no assertion weakened, no deadline shortened, concurrency unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Before/after median of three runs of the gate's mjs command, with the five slowest files after",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Every former thin-mcp-land test still exists by name in the split files; at least one test still runs a real npm run build",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "'hud_read names the land holding the lease and how long its gate step has run' (thin-mcp-land.test.mjs:349) failed once under load with `condition did not settle` after 18.9 s (~/.hud/flows/f23e2c0c383f2d633.json.gate-1.log line 2); its cause is named and fixed at the cause (no longer timeout, no retry)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The full gate passes three times in a row",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "If the land gate command list changes, .hud/project.json and package.json stay in sync and CI still runs the same set",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "619efb7b912552d4b744b5de2516ef81ae48de68",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 7,
+      "title": "Two gate tests that failed once under load pass deterministically",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "The land gate's first mjs run failed and an immediate rerun passed twice today. (1) tests/unit/thin-mcp-read-wait-send.test.mjs:647 'hud_read returns unread reports in idle grace, omits read bodies, supports full and observes a second report' failed after 350 ms with `TypeError: Cannot read properties of undefined (reading 'result')` (flow log ~/.hud/flows/f23e2c0c383f2d633.json.gate-1.log line 16): an MCP reply the test indexes was missing. (2) tests/unit/thin-mcp-quiet-decision.test.mjs:310 'low probability, cap reached, and provider error all fall back to needs-human without prompting worker' got null instead of 'finished-no-report' (~/.hud/flows/f3f889d660a50be5b.json.gate-1.log line 2). Find each cause (test race, harness reply matching, or a product race) and fix it at the cause: wait for the observed event or reply rather than adding retries, longer timeouts or sleeps. If the cause is in product code, fix the product. Do not touch thin-mcp-land.test.mjs (eng-hygiene/06 owns it).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Report names each cause with file:line",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Each test passes 20 consecutive runs under load (e.g. run it alongside the rest of tests/unit/*.mjs at concurrency 8, or with a CPU hog), and the report shows how you reproduced the failure before the fix if you could",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No timeout raised, no retry loop added, no assertion removed",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "bffe9648806a6dc68894ffc67b8dbca04caf9e5e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 8,
+      "title": "advisor-shadow's CLI exit test passes deterministically under gate load",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "tests/unit/advisor-shadow.test.mjs 'hud advise --help and no-stdin invocations exit within 1 s; detached statusline runs stay silent' (around line 960) failed on the land gate's first run three times on 2026-11-25 (measured 1117/1147 ms; latest log ~/.hud/flows/ff16b9489fe1315ca.json.gate-2.log) and passes alone. A 1 s wall-clock bound measured while 8 test files spawn processes conflates load with the behaviour. Find what the test is really guarding (a hang on missing stdin, a wait on --help) and assert that directly: e.g. exit happens without reading stdin / before any timer of the command's own fires, by observing the event or using the command's own clock, not wall time of a spawned process under load. Fix product code only if it really waits. No longer deadline, no retry, no assertion removed.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Report names what the 1 s bound was guarding and how the new assertion checks it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The test fails if the command waits on stdin or a timer (show by a temporary mutation)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Passes 20 times in a row alongside the full mjs suite or a CPU hog",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ac938be16c11a0f7572435fa21466feca3688d83",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 9,
+      "title": "The resumed-queue in-flight launch test passes on CI runners",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`tests/unit/thin-mcp-ticket-queue.test.mjs` test 'a resumed queue waits for a launch still in flight instead of failing it' failed on GitHub CI in 4 of the last 6 runs on universal-hud (runs 45652069659, 45651352954, 45651312871, 45648562443) and passes locally 3/3. It always fails at line 245: after the first ticket is settled, `f.jobs(flow, 2)` never sees the second job within its 15 s bound ('condition did not settle'). The test removes STATUS.json and sets dispatch_exit_code null on the first job to simulate a takeover mid-launch. Find why the queue does not start the second ticket on a slower runner (product bug in the queue's in-flight/settle detection, or a test that depends on timing) and fix the cause, not the bound. Reproduce under load locally (e.g. run the file with CPU stress or many parallel copies) before and after.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Root cause stated with evidence (log, trace or reproduction under load).",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Fix addresses the cause; no larger timeout as the fix.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "The test passes 20/20 locally under CPU load that made it fail before (or a stated reproduction showing equivalent stress).",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Land gate passes.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 10,
+      "title": "Headless sonic on haiku finishes or fails cleanly when pi auto-compaction starts",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "On 2026-11-25 all 7 headless sonic jobs placed on the `haiku` preset (pi, anthropic/claude-haiku-5-5, thinking raised to `max` by the Decision API; preset says `high`) hung and were marked `failed | stalled`: jbb50ae20971711f6, jdfb403f4986dfaac, j080fad16bd7d9733, j83a99d8087fd37bc, j08578c3d9bfdb057 (+ running ones). Each job's stdout.jsonl ends with a `context_edit` entry (`replacement: null`) followed by `compaction_start` (reason `overflow` or `threshold`) and never `compaction_end`; one haiku turn produced ~13k reasoning tokens with `stopReason: length` at ~296k context. deepseek and luna jobs on the same task (reading a ~120 KB file and writing a label file) all succeeded. Find where the hang is (pi core compaction with this model, a pi extension that edits context, HUD's thinking choice for sonic, or HUD's headless runner) and fix the cause in what HUD owns; if the cause is outside HUD (pi core), make HUD's behaviour safe (e.g. thinking choice or compaction settings for headless sonic) and record the upstream issue. Do not change the owner's sonic even pool.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Cause located with evidence from a job record or a reproduction.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A headless sonic job on haiku that reaches the compaction point either completes or ends with a clear failure reason within the stall window, shown by a test or a live run.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Land gate passes.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 11,
+      "title": "Queued jobs of a batch are cancelled in one hud_close call, distinct from closing a running worker",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "On 2026-11-25 the main session needed to cancel 39 queued (never started) sonic jobs of package `hmasd-label`. `hud_close` takes one `job`, so it took one call per job; after 13 calls Claude Code's permission classifier refused the rest as 'closing a running worker requires owner approval' although each job's STATUS was `queued` with no worker, and the owner would have had to approve each call (they ran a `hud act stop` loop instead). Change `hud_close` so that: (1) it also accepts `jobs: [id...]` and a selector `{package, state: \"queued\"}` (optionally `preset`) that removes only queued jobs and returns per-item results and counts; (2) running/working members are never closed by the batch form (reported as skipped); (3) the tool description, schema text and results say plainly that removing a queued job cancels work that never started and has no worker, separate from closing a running worker (single `job` keeps today's behaviour). Keep the tool description short (MCP description size is budgeted; check existing size tests). Mirror the batch form in `hud act stop` if cheap (e.g. `--package P --queued`).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "One hud_close call removes all queued jobs selected by `jobs` or `{package, state:'queued'}` and reports per-item results.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Working jobs are skipped, never closed, by the batch form.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Description/result wording distinguishes cancelling a queued job (no worker) from closing a running worker.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Tests cover jobs list, package selector, mixed states and the single-job path unchanged; MCP description size tests pass.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Land gate passes.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3cdea807d835f5991b26705ca6ba44ea4834b63e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 12,
+      "title": "Sonic auto thinking never raises a job above its preset's thinking level",
+      "status": "wontfix",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "With `sonicAutoThinking: true`, `src/mcp/sonic-thinking.ts` lets the Decision API pick any of none/low/high/max from the role's thinking choices, independent of the chosen preset. On 2026-11-25 every hmasd labelling job got `max` (thinking_source: decision) although all owner Sonic presets set `thinking: high` (`~/.hud/roles/sonic.json`: deepseek, haiku, luna high; fast low). On haiku, max produced ~13k reasoning tokens per turn, context overflow at ~296k tokens and pi compaction summaries (run at the session thinking level) that exceeded the stall window (see eng-hygiene/10). Owner decision 2026-11-25: haiku should run at high, not max. Make the preset's configured thinking the ceiling for automatic Sonic thinking: the decision may pick that level or lower, never higher; offer only levels ≤ the ceiling as choices (skip the decision call if only one remains). Record the ceiling in the job route/diagnostics so it is visible why a level was chosen. A preset without a thinking level keeps today's behaviour. Update docs/reference.md where Sonic thinking is described.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A Sonic job on a preset with thinking `high` never runs above high under auto thinking; choices offered to the Decision API exclude higher levels.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A preset with `low` caps at low; a preset without a level is unchanged.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Job diagnostics show the ceiling.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Tests cover the ceiling, a single remaining level (no decision call) and the unchanged path.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Land gate passes.",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-25T00:00:00.000Z",
+          "author": "owner",
+          "text": "wontfix. Thinking level is a difficulty judgement and `max` stays selectable; capping it or rewriting the criteria because of context hands hard tasks to low thinking. The fault was task sizing: the hmasd chunks (120 KB) were too large for one job at `max`. Fix = split the input (now ≤60 KB per chunk). The imp job jf38b039b7ed84dad was stopped without commits."
+        }
+      ],
+      "created_at": "2026-11-25T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    },
+    {
+      "number": 13,
+      "title": "Flaky: hud_report during a pending CLI prompt (refused) fails in the full gate",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Observed 2026-11-25: `tests/unit/thin-mcp-worker-tools.test.mjs` case `hud_report during a pending CLI prompt belongs to the old turn (refused)` failed in the land gate's full run (`TZ=UTC node tests/run-mjs.mjs 8`) on two consecutive lands and passed on the immediate rerun both times. Logs: `~/.hud/flows/f39c49a0977d143eb.json.gate-1.log` and `~/.hud/flows/f05b45100d93a978c.json.gate-1.log`. Find the root cause from the logs and the test (timing under 8-way load: the `until` on the third token, the `rejected-prompt` / `release-prompt-result` fixture files, or a product race in turn-token handling). If the product has a race a real user can hit, fix the product; if only the test races, make the test wait for the state it needs. No longer timeouts, retries or skips as the fix. Size: small.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Root cause named in the report with the log lines that show it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The case passes 30 consecutive runs under the gate's 8-way concurrency (or a load that reproduced the failure before the fix)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No timeout increase, retry or skip is the fix",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land gate passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.006Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "4d0b12bae769c87dcd8e292a402cf8c124f35e36",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.006Z",
+      "updated_at": "2026-11-27T06:39:46.006Z"
+    }
+  ]
+}

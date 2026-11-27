@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "feature": "flex-seat",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "general borrows any role's instructions for one job",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec §2.1.2/§2.1.4 (D-2026-11-22-29). `hud_create` gains `instructions: \"<role>\"`, accepted only for `general` (other roles reject it like placement options). The job keeps general's place resolution (preset/on/model/thinking, or general's run chain) and general's concurrency slot, but launches with the named role's instructions: on pi, that role's place pi_role (from its active run's first pi place, else its `instructions` name) and `--hud-instructions <role instructions>.md`; on CLI harnesses (agy, claude, codex), the bundled `<instructions>.md` of that role. Unknown or hidden role → invalid_arguments naming valid roles. Record `instructions_from` on the job and show it in hud_read. Retry and headless resume keep it. Keep the tool schema addition small (one short property line).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "general + instructions:imp on pi launches with pi_role implementer and implementer.md; on agy/claude CLI with implementer.md (fake-bin tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "non-general roles reject `instructions`; an unknown role is refused with the valid list",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "retry_of and headless resume keep the borrowed instructions; job record and hud_read show instructions_from",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "tool schema grows by at most ~80 bytes; docs/reference.md documents it",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.014Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b588894e610d63f937565bdb8ca56feda4977df1",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.014Z",
+      "updated_at": "2026-11-27T06:39:46.014Z"
+    },
+    {
+      "number": 2,
+      "title": "imp placement mode: fixed, even or auto",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec §2.1.4 (D-2026-11-22-30). Replace the imp routing on/off setting with a mode: `fixed` (active preset, as routing off today), `even` (rotate through owner-picked presets so each gets about the same number of imp jobs started in the last 24 h; ties go to the preset order in the role file; an unavailable preset is skipped and the result says so) and `auto` (today's routing, unchanged). Store mode and the even pool in the imp role file or Settings, wherever routing lives now; migrate an existing routing toggle (on→auto, off→fixed) on read without rewriting. Settings shows the mode and, for even, lets the owner pick the pool. Create result, card and job record show `placement: even` with the chosen preset (like the routed tier line today). Overflow to general, retry_of and land repair keep the place chosen at create.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "fixed/even/auto each pick the expected preset (unit tests, including even rotation by 24 h job count and skip of an unavailable preset)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "existing routing toggle migrates on read: on→auto, off→fixed, file not rewritten",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Settings shows and changes the mode and the even pool (EN/ZH); create result and card show the placement",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "overflow, retry and repair keep the create-time place",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.014Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "501829e5ca4c8267c936589d1f74b235d6bfc6b4",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.014Z",
+      "updated_at": "2026-11-27T06:39:46.014Z"
+    }
+  ]
+}

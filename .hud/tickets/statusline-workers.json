@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "feature": "statusline-workers",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "The statusline worker zone shows counts and marks, not titles",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner picked variant A of docs/design/statusline-workers/sample.html (2026-11-22), with one change: sonic shows no provider, model or effort, only `⚡` and its count (e.g. `⚡4`). Every other role: one group per provider + short model + effort with a count (`◎ sol-fast◕ 3  ▲ neon◕ 2  ✻ sonnet● 1  ⚡4`), no job titles anywhere; narrowing order as in the sample (drop model name, then effort glyph, leaving provider mark and count; `⚡N` never shrinks further). State marks as the README's \"State\" section. Applies to the hud-statusline (Claude Code, Codex, agy) and the pi footer's worker part. Follow the README's \"For whoever builds it\": a census of live workers (role, model id, effort, state) instead of the three-minute start events, so long-running workers stay counted; short names derived from the catalog (add neon, carbon and gpt-6.2-sol-fast entries); the LADDER rungs; rework the named frame tests and the notice rules in docs/reference.md and reference.zh.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Busy and quiet scenarios at 120/80/50 columns match the sample's A rows, with sonic as `⚡N`",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A worker running for 30 minutes is still counted",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.103Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "8887e9dac297b36a8aff70a1c3f5ebb4a90277f1"
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.103Z",
+          "author": "legacy",
+          "text": "### 2026-11-22: built (frontend implementer)"
+        },
+        {
+          "at": "2026-11-27T06:39:46.103Z",
+          "author": "legacy",
+          "text": "Worker zone built as variant A with sonic as `⚡N`: census in `workSignals`, groups and ladder in `bar-fields.ts`, short names from the catalog (`neon`, `carbon`, `gpt-6.2-sol-fast` added). Done: the named frame tests, `docs/reference.md`, `docs/reference.zh.md`, ARCHITECTURE §6, `docs/statusline/feature-coverage.md`, the design README \"As built\". `check:fixtures` passes and the targeted tests pass; the full `npm test` is left to the land gate (box stays open until it runs). Owner try: Claude statusline, Codex bar, agy and the pi footer with real jobs."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.103Z",
+      "updated_at": "2026-11-27T06:39:46.103Z"
+    },
+    {
+      "number": 2,
+      "title": "The worker zone shows only running workers",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22 after trying 01: the worker zone should permanently show only the workers that are running now, not a census that also keeps settled ones. Today `workSignals` (src/render/work-summary.ts) adds each worker settled within `NOTICE_MS` (3 min) with `✓`, `✓●` or `✗`. With close-on-delivery most workers settle quickly, so the zone mostly counts finished work. Change the worker zone (Claude statusline, Antigravity statusline, pi footer, and every caller of `workSignals`) to count only live workers: working, plus asking (`!`), which is still live and needs the owner. Drop the settled `✓`/`✓●`/`✗` marks from the zone and stop reading settled jobs for it (the `settledBefore: now - NOTICE_MS` reads in src/cli/statusline.ts). Sonic stays `⚡N` with N = running sonic queries. When nothing is running the zone is absent. Leave other notice-zone events (e.g. codex-statusline asks) as they are unless they render settled workers in the same zone. Update docs/reference.md and docs/reference.zh.md where they describe the zone.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A worker settled 10 s ago is not counted; a working and an asking worker are",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No `✓`, `✓●` or `✗` worker mark remains in the zone; `!` stays for asking",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "With only settled workers in the scope the zone renders nothing",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Claude, Antigravity and pi footer outputs agree on the same synthetic jobs",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Targeted statusline/bar/pi-footer tests pass; references updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.103Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "ed94ea94cbb97f6d7c103b372620f79d016aec44"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.103Z",
+      "updated_at": "2026-11-27T06:39:46.103Z"
+    },
+    {
+      "number": 3,
+      "title": "The worker zone shows one icon and count per role",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22: the worker zone is still too busy. Show only how many workers of each role are active now, one icon per role followed by its count, the same way sonic already shows `⚡N`. Provider marks, model short names and effort glyphs leave the zone, and so do the narrowing rungs. Active means live: working or asking (02's rule). Roles with no active worker are absent; with none at all the zone is absent.\n\nIcons (single cell where the terminal allows; ASCII fallback in brackets; colour = theme role):\n| role | icon | ascii |\n|---|---|---|\n| imp | `⚒` | `I` |\n| frontend-imp | `✎` | `F` |\n| general | `✦` | `G` |\n| oracle | `◈` | `O` |\n| reviewer | `⚖` | `R` |\n| sonic | `⚡` | `*` |\n| any other role | `•` | `.` |\n\nOrder: imp, frontend-imp, general, oracle, reviewer, other, sonic last; two spaces between groups, e.g. `⚒3  ✦2  ◈1  ⚡4`. If any worker is asking, a single `!N` (alert colour, N = asking workers across roles) follows the last group. Keep one icon table in code (e.g. `ROLE_GLYPHS` beside `EFFORT_GLYPHS`) so Home can reuse it later. Applies to the Claude statusline, the Antigravity statusline and the pi footer (every `workSignals`/`rosterSeg` caller); Home is unchanged. Update docs/reference.md and docs/reference.zh.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic jobs: 3 imp, 2 general, 1 oracle, 4 running sonic → `⚒3  ✦2  ◈1  ⚡4`; one asking imp adds `!1`",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No provider, model or effort text in the zone; ASCII mode prints `I3  G2  O1  *4`; `none` theme emits no escapes",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Claude, Antigravity and pi footer outputs agree; targeted bar/statusline/pi-footer tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.103Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "9418fe3dd75004448a1301bcb284033b83a96e9c"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.103Z",
+      "updated_at": "2026-11-27T06:39:46.103Z"
+    }
+  ]
+}

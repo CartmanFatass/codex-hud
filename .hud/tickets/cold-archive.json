@@ -1,0 +1,292 @@
+{
+  "version": 1,
+  "feature": "cold-archive",
+  "objective": "pivot",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Pruning moves jobs and flows into a compressed cold archive: text forever, raw transcripts capped",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26 (D-2026-11-26-11, docs/spec.md §2.3): HUD data is valuable; pruning must stop destroying it. Today src/runtime/work-retention.ts deletes job dirs after JOB_RETENTION_MS (1 day), prunes raw stdout/stderr after the resume window, and unlinks terminal flows/q*.json and f*.json (plus gate logs) after a day; only prose-free monthly fact rows survive in archive/YYYY-MM.jsonl. Change every prune path to move-then-delete: before removing a job dir, flow record or gate log, write it into `$HUD_HOME/archive/cold/YYYY-MM/` as two compressed members per job (Node 24 built-in zstd, no new dependency): `<job>.text.*` (job.json, STATUS.json, usage.json, brief.md, report.md, report-meta, qa/*, worker-tree, its f*/q* flow records and gate logs) and `<job>.raw.*` (stdout/stderr, sonic-session.jsonl and other session copies). Flow records not owned by one job (q* runs) get their own `<flow>.text.*`. Raw logs pruned early after the resume window go into the raw member, not the bin. Writes are atomic and idempotent (a re-run sweep never duplicates or truncates; a failed archive write keeps the source for the next sweep, as §2.3 already says). Cap: setting `retention.coldRawCapGB` (default 20): when the raw members exceed it, delete the oldest raw members first; text members are never deleted. Files 0600, dirs 0700. hud_read on a pruned job reads its report (digest and full) from the cold archive; `hud archive` (or an existing CLI verb) lists and extracts a job. Live retention, panel reads and watcher cost stay as today (no scan of the cold archive on refresh).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A pruned clean job leaves a text member with brief, report, records, its land flow and gate log, and a raw member with its logs; the live dir is gone; round-trip extraction is byte-identical.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Early raw-log pruning after the resume window moves the logs into the raw member instead of deleting them.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Terminal q*.json runs are archived as their own text member before unlink (compatible with imp-daily-facts/02's events line, which stays).",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "With the raw cap set low in a test, the oldest raw members are deleted first and no text member is ever deleted.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "hud_read job=<pruned job> returns the report digest and full pages from the cold archive.",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Archive write failure keeps the source and retries next sweep; repeated sweeps never duplicate members.",
+          "done": true
+        },
+        {
+          "id": 7,
+          "text": "Watcher refresh cost unchanged (measured); docs/reference.md and ARCHITECTURE describe layout, cap and reader.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.995Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "9cc04e5447ff6f6e0f094b294f622640be7c45d7",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.995Z",
+      "updated_at": "2026-11-27T06:39:45.995Z"
+    },
+    {
+      "number": 2,
+      "title": "Cold archive repair: close the remaining deletion paths and snapshot Pi sessions before they move",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cold-archive/01"
+      ],
+      "what": "Repair from milestone review j23ab25bbcd1130a6 (findings 1 and 3) of cold-archive/01 (spec §2.3, D-2026-11-26-11: every prune path is move-then-delete; a failed archive write keeps the source). Three paths still drop the last live copy without a cold write. (a) src/workflows/events.ts:63-68 unlinks an orphan `flows/<id>.json.gate-N[-rerun].log` from the notice scan as soon as its land receipt is missing. Remove that unlink from the notice scan (no archive I/O in the watcher/notice path) and let the archive-aware retention sweep in src/runtime/work-retention.ts move orphan gate logs into the owning job's text member (or a `<flow>.text` member when no job owns it) before deleting them, keeping the file when the write fails. (b) src/mcp/ticket-edit-queue.ts:195-198 evicts settled `flows/te*.json` receipts (plus `.noticed`/`.observed` sidecars) via pruneTicketEdit (src/mcp/ticket-edit-state.ts:39-42) at the MAX_RECEIPTS admission limit. Archive the receipt as its own `<te-id>.text` member before removing it; if the cold write fails, keep that receipt (admission must still proceed or fail with a clear error, never silently drop data). (c) src/runtime/watch-runtime.ts:440-458 and :1179-1184 rename job-local `sessions/*.jsonl` and `.dispatch/*/sessions/*.jsonl` into Pi's native store before archiveJobCold collects the tree. Keep the native-store preservation and its seven-day guard, but put the job-local session bytes into the job's raw member first (before the move), so `hud archive extract` restores them and a failed cold write leaves them at the source. Also delete the duplication the review named: merge `archiveJobFlowsCold`/`archiveFlowCold` into one lookup+merge and `readPinnedRegular`/`readRegularNoFollow` into one fd-based read. No new dependency; files 0600, dirs 0700; watcher refresh still does zero cold-archive I/O.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "An orphan gate log whose land receipt is gone is no longer unlinked by the notice scan; the retention sweep archives it (job text member or own flow member) and only then deletes it; with the archive write failing the log stays and is archived on the next sweep (test).",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Evicting a settled te* ticket-edit receipt at the receipt limit writes it to a cold text member first; with the cold write failing the receipt and its sidecars remain (test).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A Pi job with job-local sessions/*.jsonl and .dispatch/*/sessions/*.jsonl, when expired, has those files in its raw member (byte-identical through hud archive extract) and still in Pi's native store; with the cold write failing they remain in the job dir (test using a Pi-style job, not only a CLI job).",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "archiveJobFlowsCold/archiveFlowCold and readPinnedRegular/readRegularNoFollow each collapse to one implementation; existing cold-archive and retention tests stay green.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Watcher refresh test still asserts zero cold-directory operations.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.995Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "ebaa2dacb0eb2be2ac31dbce58ecc87c1de1de18",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.995Z",
+      "updated_at": "2026-11-27T06:39:45.995Z"
+    },
+    {
+      "number": 3,
+      "title": "Cold archive repair: writer and readers agree on member size; extraction never writes outside --out",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cold-archive/01"
+      ],
+      "what": "Repair from milestone review j23ab25bbcd1130a6 (findings 2 and 4) of cold-archive/01. (a) src/roles/cold-archive.ts:183 encodes entries without a size limit, while merge, report lookup and extraction reject decompressed tar payloads above 64 MiB (text) / 512 MiB (raw) (:13-14,161,377,402). A 513 MiB stdout can be archived and its source unlinked, then fail `hud archive extract`; an oversized text member makes a small report read as job_not_found (src/mcp/mcp/operations.ts:393-395,785-791). Make writer and readers agree: preferred is streaming encode/decode with bounded memory so large raw logs archive and extract; at minimum the writer must refuse (and keep the source for the next sweep, surfacing a diagnostic) any member HUD could not later read, measured including tar header/PAX overhead. hud_read report lookup must still find report.md in a text member regardless of other entries' sizes, or the writer must keep text members within the read bound. (b) src/cli/archive.ts:98-106 `--force` lets extraction write into an existing non-empty directory, and the lexical containment check in src/roles/cold-archive.ts:407-410 follows existing intermediate symlinks (e.g. a linked qa/). Drop the `--force` overwrite mode: extract only into a newly created private (0700) directory that must not already exist (or is created empty by HUD), and write entries without following symlinks. Update docs/reference.md usage for hud archive and the help text.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A raw member just above the old 512 MiB bound (and a text member just above 64 MiB), including tar overhead, either archives and round-trips byte-identically through hud archive extract, or is refused before the source is deleted with the source kept; both sides of the boundary are tested (tests may lower the bound via an internal knob to keep runtime small).",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_read job=<pruned job> returns the report when the text member also holds a large non-report entry, or the writer keeps such members readable (test).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "hud archive extract has no --force; extracting into an existing non-empty directory fails; an extraction where the target tree contains a symlinked intermediate directory never writes outside --out (test).",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md and the CLI help describe the final hud archive extract options.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.995Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "94ffc7fa194a998e0a78ab15e79493a067f14ccd",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.995Z",
+      "updated_at": "2026-11-27T06:39:45.995Z"
+    },
+    {
+      "number": 4,
+      "title": "Cold archive repair: pruned reports stay readable, failed retention stops re-archiving on every refresh, consolidations land",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cold-archive/03"
+      ],
+      "what": "Repair from milestone review j7c4405f51def6cbd (findings 1-3) of cold-archive/01-03 (spec §2.3, D-2026-11-26-11: hud_read on a pruned job reads its report from the cold archive; watcher cost stays as today; a failed archive write keeps the source). (a) Report readable after pruning: src/roles/cold-archive.ts publishes the text member with no report-size limit, but readColdJobText (:563-590) rejects any selected entry, or selected total, above 64 MiB, and src/mcp/mcp/operations.ts:393-399,792-796 turns that rejection into job_not_found. A report.md that live hud_read can page (e.g. 64 MiB plus job/status JSON) must stay readable (digest and full, paged like the live read) after the job dir is removed. Preferred: stream report.md from the member, hashing it and keeping only the digest head or the requested page, so memory stays bounded. Acceptable alternative: the writer refuses a text snapshot whose report HUD could not read back, keeps the source and surfaces a diagnostic. (b) No repeated cold I/O from a stuck retention: src/runtime/watch-runtime.ts:1213-1229 runs archiveJobCold before preserveSessions; when native preservation fails (existing Pi session target, cross-device rename) the job stays, and every later scan() triggered by any job's STATUS.json update repeats the snapshot, and mergeColdMember's unchanged check (src/roles/cold-archive.ts:250-288) re-reads and hashes member and source, so a large transcript blocks the watcher on every update. Keep the snapshot-before-move ordering, but retry a job whose retention failed only on a housekeeping pass or after that job's own inputs change, not on unrelated refreshes. (c) Consolidations /02 required that did not land: merge archiveJobFlowsCold and archiveFlowCold (src/roles/cold-archive.ts:474-495, identical bodies) into one function and drop the branch at src/runtime/work-retention.ts:226-227; make readPinnedRegularEntry (src/runtime/work-retention.ts:52-69) use readRegularNoFollow (src/utils/atomic-fs.ts:63-79) instead of repeating it, keeping the separate file-backed streaming path for large logs. Optional: if the whole-buffer tar encode/decode helpers in src/utils/tar-zst.ts have only test callers, delete them and point those round-trip tests at the production streaming writer/reader. No new dependency; files 0600, dirs 0700.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_read job=<pruned job> returns the digest and a full page of a report.md at the old 64 MiB boundary (tests may lower the bound via an internal knob), or the writer refuses that snapshot and keeps the source with a diagnostic; the test uses a large report itself, not a large sibling entry.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A retained job whose native session preservation fails is not re-archived (no cold-archive reads or writes) when a separate working job's STATUS.json updates and the watcher rescans; it is retried on a housekeeping pass or when its own inputs change (test extends the zero-cold-I/O check).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "archiveJobFlowsCold/archiveFlowCold are one function and readPinnedRegularEntry reuses readRegularNoFollow; existing cold-archive, job-retention and land-gate tests pass.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test, npm run test:mjs and check:fixtures pass.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.995Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d3b0dc840f3b94efb00dfd63df567384865beb85",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.995Z",
+      "updated_at": "2026-11-27T06:39:45.995Z"
+    },
+    {
+      "number": 5,
+      "title": "Cold archive repair: failed early raw prune stops retrying on unrelated refreshes, rejected Sonic session is raw, queue run dirs archive whole or keep the receipt",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "cold-archive/04"
+      ],
+      "what": "Repair from milestone review jaa2c92319593669d (findings 1-3) of cold-archive/01-04 (spec §2.3, D-2026-11-26-11: every prune path is move-then-delete; a failed archive write keeps the source; watcher cost stays as today; raw members are the only ones the cap may delete). (a) Failed early raw-log prune retries on every unrelated refresh: src/runtime/watch-runtime.ts:1198 calls pruneJobLogs (src/runtime/work-retention.ts:85-121) on every scan before the failed-retention gate, and pruneJobLogs returns false both for 'nothing to prune' and for an archive write failure. With an unwritable or full archive, each STATUS.json update of any other job re-enumerates the cold store and synchronously recompresses a large stdout just to fail again. Make pruneJobLogs distinguish failure from no work and gate its retry the same way as full retention: retry only on a housekeeping pass or after that job's own inputs change, never on unrelated refreshes; keep the source logs on failure. Preferred (the review's deletion suggestion): replace the recursive retentionInputStamp tree walk (watch-runtime.ts:470-509) with a failed-job set that is retried on housekeeping or marked dirty by that job's own watcher events, so a stuck job costs no tree walk on unrelated updates; drop the duplicated flow-name regexes it needs. (b) Rejected Sonic session escapes the raw cap: src/mcp/sonic-process.ts:167-174 renames a rejected continuation to `sonic-session.jsonl.rejected`, but isRawJobPath (src/roles/cold-archive.ts:97-105) only matches the unsuffixed name, so the transcript lands in the permanent text member and survives `retention.coldRawCapGB: 0`. Classify that writer-produced name (and any other suffixed copy of a session file HUD writes) as raw. (c) Queue run dir partly archived, then stranded: src/runtime/work-retention.ts:263-295 accepts only `handback-j<hex>` notice markers in a q* run directory, but pane-less ticket queues emit `handback-perm-<16 hex>` keys (src/mcp/ticket-queue-step.ts:73-90, PERMISSION_ID in src/mcp/worker-permissions.ts:24) whose `.noticed`/`.observed` files live beside `graph.json`. One such marker makes collection skip every subdirectory file, yet the receipt is still archived and unlinked, so `hud archive extract <q-id>` cannot restore graph.json and nothing triggers another sweep. Recognise the real notice-key grammar (derive it from the code that writes the keys rather than a third hand-written regex), use one predicate for both collection and cleanup, and keep the receipt (and its run dir) when the run directory could not be collected in full. No new dependency; files 0600, dirs 0700; watcher refresh still does zero cold-archive I/O.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With raw publication blocked, a closed job with a report and retained unchanged stdout.jsonl gets zero pruneJobLogs archive attempts (no cold-store reads or writes) while a separate active job's STATUS.json updates and the watcher rescans; the stdout stays; the prune succeeds on a housekeeping pass or after that job's own inputs change once the archive is writable.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A job whose `sonic-session.jsonl.rejected` exists archives it into the raw member, not the text member; `hud archive extract` restores it byte-identically while raw is present, and after raw eviction (coldRawCapGB 0) it is absent from the text member.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A terminal pane-less queue with graph.json and a `handback-perm-<hex>.noticed` marker archives graph.json and the marker into its `<q-id>.text` member before the receipt and run dir are removed; `hud archive extract <q-id>` restores graph.json. When the run dir holds a file retention cannot collect, the receipt and run dir both stay for the next sweep.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test, npm run test:mjs and check:fixtures pass.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.995Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7bfec410e91a042b8820a8148ee13960da1826fc",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.995Z",
+      "updated_at": "2026-11-27T06:39:45.995Z"
+    },
+    {
+      "number": 6,
+      "title": "Cold archive repair: oversized metadata never hides a report; failed unlink is gated",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repair from milestone review j4a44769453893d23 (findings 1-2 plus the optional minor) of cold-archive/01-05 (spec §2.3, D-2026-11-26-11: hud_read on a pruned job reads its report from the cold archive; watcher cost stays as today; a failed archive write keeps the source). (a) Oversized optional metadata must not hide an archived report. src/mcp/mcp/operations.ts:397-408 asks readColdJobText for report-meta.json as a fully buffered entry, and src/roles/cold-archive.ts:607-608 throws cold_entry_too_large / cold_read_limit_exceeded for any selected entry above the bound, which operations.ts turns into job_not_found for digest and full reads. Live reads ignore a report-meta.json above MAX_META_BYTES (src/roles/report-meta.ts:158) and still return the report. Make the cold read match: an optional selected entry (report-meta.json) whose size exceeds the live metadata limit is skipped (treated as absent), not a reason to abort; report.md is still returned. Keep one bound: reuse the live MAX_META_BYTES for the metadata entry. Preferred simplification the review named: keep one report-meta schema/normalization parser shared by parseColdReportMeta and readReportMeta, with only the signature check specific to the live file vs the streamed entry. (b) A failed source unlink must go through the failed-job retry gate. src/runtime/work-retention.ts:107-120 swallows any unlinkSync error after a successful raw publish and returns 'archived', so with a read-only job dir every unrelated STATUS refresh re-reads and hashes the same raw member and live log (and with retention.coldRawCapGB 0 recompresses and evicts it each time). Return 'failed' when a still-matching target's unlink fails with anything other than ENOENT, so src/runtime/watch-runtime.ts:1159-1161 adds the job to retentionFailures and retries only on housekeeping or that job's own input change. A replaced/changed log (inode/size/mtime mismatch) stays as today. (c) Minor: src/cli/archive.ts:25,35 prints the raw cap as GB while the setting and arithmetic use GiB (1024^3). Change the display label to GiB and align docs/reference.md wording for retention.coldRawCapGB to GiB. No config migration. No new dependency; files 0600, dirs 0700; watcher refresh still does zero cold-archive I/O. Main 2026-11-27: this is the last repair round for cold-archive (fifth review). Lead acceptance after the next review: accept unless it finds a blocker or a normal-path defect; remaining edge cases become follow-up tickets.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A pruned job with a small report.md and a report-meta.json larger than the live metadata limit returns its report via hud_read (digest and full); a unit test covers this selected-oversized-sidecar case, not only a large unselected sibling.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live and cold report-meta parsing share one schema/normalization path (or the report names why not), with signature checks kept per source.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "pruneJobLogs returns 'failed' when publication succeeds but unlinking a still-matching log fails with an error other than ENOENT; a test shows zero cold-archive I/O on unrelated refreshes after that failure and a successful retry on the housekeeping pass.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "hud archive output and docs/reference.md label the raw cap in GiB.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass in the land gate.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:45.995Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "12f1da6e975793b65993c0dd7c8bc0e951edf516",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:45.995Z",
+      "updated_at": "2026-11-27T06:39:45.995Z"
+    }
+  ]
+}

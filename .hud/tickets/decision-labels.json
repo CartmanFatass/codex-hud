@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "feature": "decision-labels",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A settled job's card shows its outcome",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "when a HUD job settles, the Decision API reads the first lines of its report and its final status\nand classifies the outcome: done / partial / failed / blocked, with a confidence. Home cards, the Inspector and the\nprogress board's slice block show it as a mark (e.g. a job whose report says live validation was not run shows\n\"partial\"). This ticket also builds the shared path every later ticket uses: decision calls for display labels go to\nGemini first (free tier; the owner's key), fail over to OpenAI, are cached by input revision, and share an hourly cap.\nThey do not follow the Settings \"Decision API\" row (that row is Jev's browser jobs). Display only: a label never\nchanges a job's state or steers a worker.\n\nLegacy Blocked by: None (GEMINI-DECIDE landed fe3aed6c)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "One decision call per settlement, input bounded to the report's head and the status; reopening the panel or an unchanged report makes no call",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Outcome mark on Home, in the Inspector and on the progress board, EN and ZH, 80 and 120 columns",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Master switch off or no decision key: no mark, no call",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Gemini 429 falls over to OpenAI; the hourly cap holds; tests with a fake decision endpoint",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.001Z",
+      "updated_at": "2026-11-27T06:39:46.001Z"
+    },
+    {
+      "number": 2,
+      "title": "Each job is labelled with its kind",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "decision-labels/01"
+      ],
+      "what": "each HUD job gets a kind from its brief's title and goal: ui, bug fix, feature, refactor, review,\nresearch, docs, chore (a job may carry more than one). The Inspector shows the kind. Settled jobs of the last 30 days\nthat have no label yet get one in the background, inside the shared hourly cap, newest first.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "One call per job, input bounded to the brief's title and goal; cached, so a job is labelled once",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Inspector shows the kind, EN and ZH",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Background backfill of the last 30 days, newest first, never above the hourly cap",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.001Z",
+      "updated_at": "2026-11-27T06:39:46.001Z"
+    },
+    {
+      "number": 3,
+      "title": "The Project tab shows which model fits which kind of work",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "decision-labels/01",
+        "decision-labels/02"
+      ],
+      "what": "a \"Model fit\" section on the Project tab: for each job kind, each role · model · thinking that ran\nit, with the number of runs, the outcome split (done / partial / failed / blocked) and the median duration. Read only\nfrom the labels of 01 and 02 and the jobs' own records; no model call of its own.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Section on the Project tab with kinds as groups and one row per role · model · thinking",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Counts and median duration match the labelled jobs in a synthetic fixture",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Unlabelled jobs are counted as \"unlabelled\", not dropped",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "EN and ZH, 80 and 120 columns",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.001Z",
+      "updated_at": "2026-11-27T06:39:46.001Z"
+    },
+    {
+      "number": 4,
+      "title": "A running job that is going in circles is marked",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "decision-labels/01"
+      ],
+      "what": "for a running card (a HUD job or a native subagent) that has been quiet for a few minutes, the\nDecision API reads its recent public activity (the last dozen tool calls and their result summaries, already read for\nits sentence) and judges whether it is progressing or repeating the same failure. A \"looping\" verdict shows a ⚠ on the\ncard with the confidence in the Inspector. At most one call per card per 5 minutes, only while it stays quiet.\nDisplay only: nothing is sent to the worker.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No call for a card that has new activity or was judged less than 5 minutes ago",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A synthetic session repeating one failing command is marked; a progressing one is not",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The mark clears when new, different activity arrives",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "EN and ZH, 80 and 120 columns",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.001Z",
+      "updated_at": "2026-11-27T06:39:46.001Z"
+    },
+    {
+      "number": 5,
+      "title": "Worker questions are sorted by what they need from the owner",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "decision-labels/01"
+      ],
+      "what": "each question a worker asks is classified as design trade-off / clarification / needs the owner's\nauthorisation / blocked. The panel shows the category on the question and on its \"decided for you\" row; questions\nthat need the owner's authorisation are listed first. Display only: the category never answers or delays a question.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "One call per question, input bounded to the question file; cached by its revision",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Category chip on pending questions and decided rows; authorisation questions sort first",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "EN and ZH, 80 and 120 columns",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.001Z",
+      "updated_at": "2026-11-27T06:39:46.001Z"
+    },
+    {
+      "number": 6,
+      "title": "Review findings are counted by severity",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "decision-labels/01"
+      ],
+      "what": "a review report's findings are classified as must fix / should fix / optional, whatever headings\nthe reviewer used. The progress board's slice block and the Inspector show the counts (e.g. \"2 must fix · 3 should\").\nOne call per review revision.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Findings are split from the review's list items, bounded in count and length; one call per review revision",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Counts on the progress board and in the Inspector; a review with no findings shows none",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "EN and ZH, 80 and 120 columns",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.001Z",
+      "updated_at": "2026-11-27T06:39:46.001Z"
+    }
+  ]
+}

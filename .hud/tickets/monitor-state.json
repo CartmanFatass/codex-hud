@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "feature": "monitor-state",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Overlay state, dead fields gone, one input guard",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/neon-proposal/04-monitor-state-machine.md S1: monitor-state.ts module, zombie MonitorState fields removed, OverlayState, one tree-page guard. Fixes the live panel dropping `/` filter input, `g` and Add back drafts on reload. Runs after prune-obs is done. Owner defaults: an open filter or confirm-stop blocks auto-reload.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`/`, `g` and Add back survive a panel reload",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "check:fixtures shows no frame change; npm test passes",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.049Z",
+      "updated_at": "2026-11-27T06:39:46.049Z"
+    },
+    {
+      "number": 2,
+      "title": "Control and EXP tab state; control-navigation goes",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "monitor-state/01"
+      ],
+      "what": "04 S2: ControlTabState/ExpTabState, ClassicSplitNav, delete control-navigation.ts.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Control and EXP keys behave as before in Classic and Split",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "check:fixtures and npm test pass",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.049Z",
+      "updated_at": "2026-11-27T06:39:46.049Z"
+    },
+    {
+      "number": 3,
+      "title": "Home, Project, subpages and pure render",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "monitor-state/02"
+      ],
+      "what": "04 S3 (may split S3a/S3b): nested Home/Project/Subpage/help/ViewPrefs state, immutable rendering, panel-state.ts deleted. Owner default: Home Split folds kept separate from Project folds.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Rendering no longer mutates state",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "check:fixtures and npm test pass",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed ee611bfe. Home and Project keep independent cursors, folds, filters and marks across tab switches; rendering no longer writes into panel state. A restart still carries one shared place (old reload format) until 04."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.049Z"
+    },
+    {
+      "number": 4,
+      "title": "Reload state v2 with migration",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "monitor-state/03"
+      ],
+      "what": "04 S4: ReloadStateV2 whitelist codec with v1/v0 migration; panel stops writing `modes`; dead settings keys changesPane/detailsPane/monitorModes/monitorPreferences removed (owner default).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A panel reloaded from a v1 payload keeps its place",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "v/f/Esc no longer rewrite hud-settings.json",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 603f8fd0 (import conflict with BUILD-DEDUP-04 merged by hand). Suite 951/951, release test green."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.049Z"
+    }
+  ]
+}

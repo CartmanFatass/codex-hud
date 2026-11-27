@@ -16,12 +16,41 @@ export function bindSourceTab(t, f) {
     `PID_START=${procStat(worker.pid).start}\nHERDR_SOCKET_PATH=${f.env.HERDR_SOCKET_PATH}\n`);
   return worker;
 }
-export function assertLandingRecord(f, ticket, replayBase, landed) {
+export function assertLandingRecord(f, ticket, replayBase, landed, num = 1) {
   const body = f.git(f.main, 'show', `base:${ticket}`);
-  const record = body.match(/^- Landed in this commit \(replay base ([0-9a-f]+)\); gate 1\/1 passed\.$/m);
-  assert.ok(record, body);
-  assert.equal(record[1], replayBase);
-  assert.equal(f.git(f.main, 'log', '--first-parent', '--format=%H', '-S', record[0], `${record[1]}..base`, '--', ticket), landed);
+  const doc = JSON.parse(body);
+  const record = doc.tickets.find(t => t.number === num);
+  assert.ok(record?.landing, body);
+  assert.equal(record.landing.replay_base, replayBase);
+  assert.equal(record.landing.gates, 1);
+  assert.ok(f.git(f.main, 'show', '--format=', '--name-only', landed).split('\n').includes(ticket), `expected ${ticket} in ${landed}`);
+}
+export function seedJsonTickets(f, feature, tickets) {
+  const at = '2026-01-01T00:00:00.000Z';
+  const rel = `.hud/tickets/${feature}.json`;
+  fs.mkdirSync(join(f.main, '.hud/tickets'), { recursive: true });
+  fs.writeFileSync(join(f.main, rel), JSON.stringify({
+    version: 1,
+    feature,
+    tickets: tickets.map((t, i) => ({
+      number: t.number ?? i + 1,
+      title: t.title ?? `Example ticket ${t.number ?? i + 1}`,
+      status: t.status ?? 'ready-for-agent',
+      ...(t.kind && { kind: t.kind }),
+      owner_try: t.owner_try ?? false,
+      live_try: t.live_try ?? 'none',
+      approved_removals: t.approved_removals ?? [],
+      blocked_by: t.blocked_by ?? [],
+      what: t.what ?? 'Synthetic work.',
+      ...(t.cases && { cases: t.cases }),
+      acceptance: t.acceptance ?? [{ id: 1, text: 'Work', done: false }],
+      ...(t.landing && { landing: t.landing }),
+      comments: t.comments ?? [],
+      created_at: t.created_at ?? at,
+      updated_at: t.updated_at ?? at,
+    })),
+  }, null, 2) + '\n');
+  return rel;
 }
 export function settle(f, id, text) {
   writeFixtureFile(join(jobDir(f, id), 'report.md'), text);

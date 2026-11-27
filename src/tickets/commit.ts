@@ -8,7 +8,7 @@ import { localProjectRoots } from '../roles/projects.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
 import {
-  pruneTicketWrites, readTicketWrites, sha256Bytes, TICKET_FEATURE, ticketWriteRelPath, withTicketStoreLock,
+  pruneTicketWrites, readTicketWrites, sha256Bytes, ticketWriteRelPath, withTicketStoreLock,
 } from './store.js';
 
 const MAX_SWEEP_BYTES = 256 * 1024;
@@ -67,12 +67,7 @@ export async function isHandEditedInMain(mainRoot: string, rel: string, expected
 }
 
 function defaultCommitMessage(keys: readonly string[]) {
-  const labels = keys.map(key => {
-    if (TICKET_FEATURE.test(key)) return key;
-    const match = /^\.scratch\/([a-z0-9-]+)\/issues\/(\d+)-/.exec(key);
-    return match ? `${match[1]}/${match[2]}` : key;
-  });
-  return labels.length === 1 ? `tickets: ${labels[0]}` : `tickets: ${labels.slice(0, 3).join(', ')}${labels.length > 3 ? ` (+${labels.length - 3})` : ''}`;
+  return keys.length === 1 ? `tickets: ${keys[0]}` : `tickets: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ` (+${keys.length - 3})` : ''}`;
 }
 
 /** Caller holds both `main-checkout` lease and `withTicketStoreLock(mainRoot)`. */

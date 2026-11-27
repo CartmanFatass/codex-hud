@@ -1,0 +1,326 @@
+{
+  "version": 1,
+  "feature": "mcp-next",
+  "spec_path": ".scratch/mcp-next/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Fine-grained MCP locks, pre-flight CLI trust check and parsed quota cooldowns",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §1. Remove the global mutation bottleneck in `packages/hud-mcp/src/thin-main.ts`, reject untrusted CLI directories before opening any herdr tab, and parse exact quota reset durations when marking places exhausted.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Key-scoped concurrency in `thin-main.ts`: replace the single server-wide `mutations` Promise queue with per-key serialization (`request_key` for `hud_create`, `job` id for `hud_send`, `hud_respond`, `hud_close`) so a slow CLI launch never blocks `hud_respond` on another job or parallel `hud_create` calls with distinct keys; keep `exhausted.json` updates safe.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Pre-flight CLI trust check: export a pure/read-only `isCliDirTrusted(agent, dir, env)` helper from `src/cli/trust.ts` (`codex` always true; `grok`, `agy`, `claude` checked against their local trust config files without following symlinks or modifying files; missing config file returns `false`). Call it in `dispatchCli` before `herdr tab create`, failing immediately with `code: 'untrusted_cwd'` and reason `<agent> has not trusted <cwd>; run hud trust <cwd>` without opening a tab (keep the screen-dialog check as defense-in-depth).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Parsed quota reset TTL in `src/roles/exhausted.ts`: add `parseQuotaResetMs(text, nowMs)` recognizing common duration/reset patterns (`try again in 18m`, `in 2h 15m`, `retry after 45s`, `resets at HH:MM UTC`, ISO timestamps), clamped to `[60_000, 24 * 3600_000]` and falling back to `EXHAUSTED_TTL_MS` (1 hour) when absent; `markExhausted` uses it automatically.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Unit tests covering parallel `hud_create` + `hud_respond` non-blocking behavior, zero-tab `untrusted_cwd` rejection, and `parseQuotaResetMs` duration parsing.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.042Z",
+          "author": "legacy",
+          "text": "Status note: (5a7b9631)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.042Z",
+      "updated_at": "2026-11-27T06:39:46.042Z"
+    },
+    {
+      "number": 2,
+      "title": "Per-job role preset selection in hud_create",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-next/01"
+      ],
+      "what": "`docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §2. Allow `hud_create` to pick a named role preset for a single job without editing `$HUD_HOME/roles/*.json`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Add optional `preset: { type: 'string' }` to `hud_create` inputSchema in `packages/hud-mcp/src/thin-main.ts` and `PI_ROLE_TOOLS` in `src/harness/pi/role-client.ts`, and include `'preset'` in `accepts_options` on `hud_roster` when a role has presets.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "When `preset` is passed to `hud_create` (mutually exclusive with `on`; passing both returns `invalid_arguments`), look up the named preset in the role's merged `presets` list (returning `code: 'invalid_arguments', error: 'unknown preset: <name>'` if missing), select its first available non-exhausted place, and allow `model` / `thinking` overrides on top.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Record `preset` in `job.json` and return it in `hud_read` job observations; role files on disk remain untouched.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Update `integrations/skills/hud-delegate/SKILL.md` and `docs/reference.md` (and `docs/reference.zh.md`), plus unit tests in `tests/unit/thin-mcp.test.mjs`.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.043Z",
+          "author": "legacy",
+          "text": "Status note: (421f61c9)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.043Z",
+      "updated_at": "2026-11-27T06:39:46.043Z"
+    },
+    {
+      "number": 3,
+      "title": "Multi-job event-driven hud_wait tool",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-next/02"
+      ],
+      "what": "`docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §3. Add `hud_wait` so main sessions can wait on several concurrent workers at once without blind serial polling.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Register `hud_wait` in `packages/hud-mcp/src/thin-main.ts` and `src/harness/pi/role-client.ts` (`PI_ROLE_TOOLS`) with parameters `jobs?: string[]` (defaults to all unsettled jobs of the caller session), `mode?: 'any' | 'all'` (default `'any'`), and `wait_ms?: integer` (`0..120000`, default `60000`).",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Implement event-driven waiting using `fs.watch` on `$HUD_HOME/jobs` (with a fallback safety poll), waking immediately when: in `'any'` mode, at least one target job is settled (`idle_grace`, `closed`, `done`, `failed`, `stopped`), `blocked`, `waiting_orchestrator`, or has `open_questions > 0`; in `'all'` mode, all target jobs have settled OR any target job has `open_questions > 0`, `blocked`, `waiting_orchestrator`, or `failed` (so questions/failures never wait behind slow siblings).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Return `{ ready: boolean, timed_out: boolean, triggered: string[], jobs: [...] }` with lightweight status summaries (and open questions preview) without implicitly stamping `read_at` (leaving `hud_read(job)` to read full reports and trigger read-close).",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Add unit tests in `tests/unit/thin-mcp.test.mjs` verifying `any` wake, `all` wake, early wake on question in `all` mode, and timeout.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.043Z",
+          "author": "legacy",
+          "text": "Status note: (4ca33e27)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.043Z",
+      "updated_at": "2026-11-27T06:39:46.043Z"
+    },
+    {
+      "number": 4,
+      "title": "Native silent event wake for pi main sessions and MCP watcher_alive status",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-next/01"
+      ],
+      "what": "`docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §4. Deliver async worker questions and settlements natively into pi main sessions without typing into the user's editor draft, and surface `watcher_alive` in MCP responses.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "In `packages/hud-mcp/src/thin-main.ts`, include `watcher_alive: boolean` (via `watching(callerPane, hudHome)` from `hud-notify.mjs`) on `hud_roster` and `hud_create` responses when `callerPane` is set, and remove the Claude-only `hint` when `watcher_alive` is already true.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "In the pi HUD package (`src/harness/pi/`), start a session-bound pane watcher when `HERDR_PANE_ID` is present and the session is not a HUD worker (`!env.HUD_JOB_DIR`): write `$HUD_HOME/watchers/<pane>.pid` (so `hud-notify.mjs` suppresses typed fallback) and watch `$HUD_HOME/jobs` + `tries.jsonl` for actionable events matching `watchCommand`'s `actionable()` rules.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Deliver actionable lines to the active pi session via `pi.sendMessage({ customType: 'hud-watch', content, display: true }, { deliverAs: 'followUp', triggerTurn: true })` (extend `PiPackageAPI` structural type accordingly), cleaning up the watcher and PID file on `fence()` / `session_shutdown`.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Add unit tests verifying pi native delivery, clean shutdown/fence unbinding, `hud-notify` suppression while active, and `watcher_alive` in MCP responses.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.043Z",
+          "author": "legacy",
+          "text": "Status note: (fff12673)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.043Z",
+      "updated_at": "2026-11-27T06:39:46.043Z"
+    },
+    {
+      "number": 5,
+      "title": "Zero-copy context assembly in hud_create (context_files and from_jobs)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-next/03"
+      ],
+      "what": "`docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §5. Let `hud_create` attach local files and upstream job reports directly into worker briefs without round-tripping large bodies through the main session's LLM output.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Add optional `context_files?: string[]` (max 32 paths, resolved against `cwd`) and `from_jobs?: string[]` (max 16 HUD job ids `j[0-9a-f]{16}`, resolving each `<job>/report.md`) to `hud_create` in `thin-main.ts` and `PI_ROLE_TOOLS`.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Validate every referenced path before dispatch: reject missing files, directories, NUL bytes, binary content, or symlinks/paths escaping outside `cwd` (for `context_files`) and `$HUD_HOME/jobs` (for `from_jobs`) with `code: 'invalid_arguments'`.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "For `pi` and `cli` places, prepend a structured `## Context References` markdown block to `brief.md` naming each file and upstream job report path so the worker reads them directly; record `context_files` and `from_jobs` in `job.json`.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "For `bro` (browser) places, read and inline the referenced files directly into `brief.md` under fenced sections (capped at 64 KiB per file and 256 KiB total, returning `code: 'context_too_large'` if exceeded).",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Add unit tests for local reference headers, browser inline splicing, size caps and path-escape rejections.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.043Z",
+          "author": "legacy",
+          "text": "Status note: (696d361b)"
+        },
+        {
+          "at": "2026-11-18T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "the pi/cli reference block sits right after the task, not at the top (docs/spec.md §2.1 names no place): the panel title, sentence goal and decision labels read the brief's opening lines."
+        }
+      ],
+      "created_at": "2026-11-18T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.043Z"
+    },
+    {
+      "number": 6,
+      "title": "Worker progress heartbeats (hud-progress) and read-only hud_peek tool",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-next/05"
+      ],
+      "what": "`docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §6. Give workers a zero-friction CLI to log milestone steps and give main sessions `hud_peek` to inspect live pane output and progress without disturbing job state.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Create `packages/hud-mcp/bin/hud-progress.mjs` (`node <hud>/bin/hud-progress.mjs [--dir <job-dir>] <message>`): validates `dir` under `$HUD_HOME/jobs`, sanitizes single-line text (≤240 chars), and atomically appends `{ at, text }` to `progress.jsonl` (retaining at most the newest 50 entries). Include a one-line optional usage hint in `pi` and `cli` `brief.md` footers.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Expose `progress` (latest up to 10 entries) and `latest_progress` in `thin-jobs.ts` (`OwnerWorker` / `JobRow` display metadata without spamming `jobChanges` on `working` steps) and in `hud_read(job)` observations.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Register read-only `hud_peek({ job, lines?: integer })` (`lines` 1..120, default 40) in `thin-main.ts` and `PI_ROLE_TOOLS`: reads `STATUS.json`, `progress.jsonl`, and (when `LEFT` pane exists in `SESSION.txt`) runs `herdr pane read <LEFT> --source recent` to return the tail lines. Never stamps `read_at` or `observed_at` and never triggers read-close.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Add unit tests for `hud-progress` rotation/validation, `hud_read` progress fields, and `hud_peek` non-mutating pane tail inspection.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.043Z",
+          "author": "legacy",
+          "text": "Status note: (2a464fdf)"
+        },
+        {
+          "at": "2026-11-18T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "took over panel-v2 04's milestone line (above), so the panel chain does not wait on this ticket. Progress stays out of the compact `hud_read({})` rows and `hud_wait` rows (MCP-READ-COMPACT: no ordinary working narration); it is in `hud_read(job)` and `hud_peek` only."
+        }
+      ],
+      "created_at": "2026-11-18T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.043Z"
+    },
+    {
+      "number": 7,
+      "title": "First-class managed worktree isolation in hud_create and hud-watch",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "mcp-next/06"
+      ],
+      "what": "`docs/spec.md` §2.1 & `.scratch/mcp-next/spec.md` §7. Automate clean per-job git worktree creation, `node_modules` linking, `git_summary` reporting and safe post-closure cleanup.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Add `isolation?: 'none' | 'worktree'` (default `'none'`) to `hud_create` in `thin-main.ts` and `PI_ROLE_TOOLS`. Refuse `'worktree'` on `bro` places or non-git `cwd`s with `invalid_arguments`.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "When `isolation === 'worktree'`, verify `cwd`'s git root, create branch `wt/<slug>-<job.slice(-6)>` and worktree at `<parent>/<repo>-wt/<slug>-<job.slice(-6)>` from `HEAD`, symlink `<main_root>/node_modules` when present and absent in the worktree, propagate CLI trust from `main_root` if `place.harness === 'cli'` and `main_root` is already trusted, dispatch the worker inside the worktree root, and record `worktree: { main_root, root, branch, base_head }` in `job.json`.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Enrich `hud_read(job)` with `git_summary: { branch, base_head, head, ahead_commits, changed_files, dirty }` (computed via `src/utils/git-safety.ts`) whenever `job.worktree` exists. Teach Project's worktree collector (`src/collectors/project-board.ts`) to recognize active/known HUD job worktrees so they are not flagged as unlisted drift.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "In `packages/hud-mcp/bin/hud-watch.mjs`, when a job with `job.worktree` is closed/reaped, check the worktree with safe git commands: remove the worktree and temporary branch (`git worktree remove` + `git branch -d`) ONLY when the worktree has zero uncommitted/untracked changes AND `HEAD` equals `base_head` or is already merged into `main_root`'s `HEAD`; otherwise keep the worktree intact and record `worktree_kept_reason` in `job.json`.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Add unit tests with a temporary git repo verifying creation, `node_modules` symlink, `git_summary`, clean worktree auto-removal, and dirty/unmerged preservation.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.043Z",
+          "author": "legacy",
+          "text": "Status note: (1fa7a742)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.043Z",
+      "updated_at": "2026-11-27T06:39:46.043Z"
+    }
+  ]
+}

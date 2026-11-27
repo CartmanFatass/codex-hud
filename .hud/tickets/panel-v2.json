@@ -1,0 +1,297 @@
+{
+  "version": 1,
+  "feature": "panel-v2",
+  "spec_path": ".scratch/panel-v2/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Panel micro-actions: Go-to-tab (g), inline QA reply (1–4 / d) and safe stop (X)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §1. Let the owner jump to a HUD job's herdr tab, answer simple multiple-choice/default worker questions in place, and safely reap a runaway job from the panel.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Go to worker tab (`g`): on Home (Classic or Split) and Inspector, when the selected target is a HUD thin job with a recorded `TAB` in `SESSION.txt`, pressing `g` invokes `herdr tab focus <TAB>` via a new helper in `src/cli/panel-pane.ts` (showing a brief status note if the tab is already gone). Note: preserve `gg` / `g` top-of-list navigation on non-job views or bind `g` to go-to-tab on job targets while `Home` key always jumps to top.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Quick QA reply (`d` / `1`–`4`): when an open HUD job question slab or Inspector question is expanded, display numbered options `[1] ...` and `[d] default: ...` hints; pressing `1`–`4` (matching an existing option) or `d` (when a non-empty `suggested` default exists) atomically writes `<job>/qa/qN.answer.md` (`flag: 'wx'`, mode `0600`) and appends a record so `hud watch` / MCP `changes` notify the main session of the owner's answer.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Safe job stop (`X`): pressing `X` (Shift+X) on an unsettled HUD job shows a one-line confirmation prompt (`Stop <role> <id>? y confirm · Esc cancel`); `y` / `Enter` writes `STATUS.json.close-requested` (when in `idle_grace`) and runs `pi-role-reap <dir>` asynchronously, refreshing the panel on completion.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Update EN/ZH i18n strings, Help (`?`) shortcuts, `docs/reference.md` / `docs/reference.zh.md`, and add unit tests for input actions and atomic QA writing.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.070Z",
+          "author": "legacy",
+          "text": "Status note: (b5d3b6b8)"
+        },
+        {
+          "at": "2026-11-18T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "a reply takes two keys, `r` and then `1`–`4`/`d`, so the tab keys `1`–`4` can never answer a question by accident (the answer file cannot be undone). This departs from spec §2.2's literal \"`1`–`4` or `d` on an expanded slab\". Kept until the owner decides."
+        }
+      ],
+      "created_at": "2026-11-18T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.070Z"
+    },
+    {
+      "number": 2,
+      "title": "Split layout V2: working cues, adjustable split ratio, focus auto-compact and scrollbar",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "panel-v2/01"
+      ],
+      "what": "`docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §2. Eliminate blind spots in Split Home's non-selected rows, make the list/preview split adjustable and focus-responsive, and draw a zero-width scrollbar on scrollable previews.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Non-selected working cues in `src/render/split-home.ts`: for active `working` lanes not currently under the cursor, surface compact keyword spans (from `modelSentence`) or `latestProgress` / factual verb in the row's middle slot when width allows (or a compact single sub-line when height allows), so parallel worker progress is visible at a glance.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Adjustable split ratio & focus auto-compact in `src/render/split-frame.ts` and `src/render/split-input.ts`: add `splitRatio` to `MonitorState` (persisted across panel self-reload), adjusted with `=` / `+` (grow list) and `-` (grow preview) or dragging the `rule` divider row with the mouse. When `state.splitFocus === 'preview'`, auto-compact the top list pane to at most 3 context rows around `scene.cursor` so the preview gets maximum vertical space; `Esc` restores the list height.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Zero-width preview scrollbar in `src/render/split-frame.ts`: when `scene.preview.length > previewRoom`, paint a subtle scrollbar track/thumb (`┃` for thumb, `│` or dim dot for track; ascii `#` / `|`) on the rightmost column (`width - 1`) of the preview rows without exceeding exact `width` cells.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Add EN/ZH strings and unit/frame tests in `tests/unit/split-layout.test.mjs`.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.070Z",
+          "author": "legacy",
+          "text": "Status note: (1d06dcf9)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.070Z",
+      "updated_at": "2026-11-27T06:39:46.070Z"
+    },
+    {
+      "number": 3,
+      "title": "Global live `/` filter across Home, Progress slices and Tickets",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "panel-v2/02"
+      ],
+      "what": "`docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §3. Add instant keyboard filtering (`/`) across Home cards/lanes, Project Progress slices and Project Tickets.\n\n  - **Home** (Classic & Split): matches worker/lane package, title, role, harness, model sentence keywords, or status word (`asking`, `failed`, `working`, `stalled`, `done`). Always preserves visibility ofmatched items even if older when `showAll` is active.\n  - **Project Progress**: filters ledger slices and unsliced jobs by slice ID, milestone, text, role or state (`try`, `working`, `blocked`, `accepted`, `todo`).\n  - **Project Tickets**: filters tickets across lanes by feature slug, ticket number, title, status or blocker.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Filter state & input bar: add `filterOpen?: boolean` and `filterQuery?: string` (scoped per view or cleared on tab/page switch) to `MonitorState` (preserved across panel self-reload). Pressing `/` opens a one-row `/ query▌  N matches` bar right under the header band, capturing typed characters and Backspace (like `model-input.ts`). `Enter` closes typing mode while keeping `filterQuery` active for arrow-key navigation and actions; `Esc` clears `filterQuery` (first `Esc` exits typing if open, or clears active filter before leaving page).",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Filtering rules (pure, case-insensitive substring):",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Update footer hints, Help (`?`), EN/ZH labels, and add unit tests covering `/` typing, live match counts, navigation over filtered items and `Esc` clear.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.070Z",
+          "author": "legacy",
+          "text": "Status note: (ca767fb1)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.070Z",
+      "updated_at": "2026-11-27T06:39:46.070Z"
+    },
+    {
+      "number": 4,
+      "title": "Worker activity sparklines, progress milestones and nested sonic subtrees",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "panel-v2/03"
+      ],
+      "what": "`docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §4. Visualize real-time worker activity cadence with a 10-minute sparkline, show `hud-progress` milestones, and render nested `sonic` child topologies cleanly under parent cards.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Activity sparkline collector (`src/collectors/`): maintain a lightweight rolling 10-bucket (1 minute per bucket) activity ring per active worker (thin jobs & native subagents) driven by observed transcript/session byte growth, `progress.jsonl` updates and `STATUS.json` / report writes. Render as a 10-cell sparkline (`▁▂▃▄▅▆▇█` in unicode, `..--==##` in text mode) in `work-inspector.ts` (`activity` / `pulse` row) and expanded running cards. A `progress.jsonl` write counts as activity when the file exists (it appears with mcp-next 06); the milestone text line itself is shown by mcp-next 06, not here.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Nested `sonic` subtrees on Home (Classic `work-lanes.ts` & Split `split-home.ts` preview): group child HUD jobs (`parentJobId`) directly beneath their parent job card as compact 1-line tree branches (`├─ ⚡ sonic · <short title>  <elapsed> <glyph>`, last child `└─`), showing live count (`⚡ 2 sonic`) on the parent card's right badge when folded.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Add EN/ZH translations and unit tests for sparkline bucket decay/rendering and parent-sonic tree rendering at 40 and 80 columns.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.070Z",
+          "author": "legacy",
+          "text": "Status note: (b3cf5852)"
+        },
+        {
+          "at": "2026-11-27T06:39:46.070Z",
+          "author": "legacy",
+          "text": "Orchestrator 2026-11-18 (owner: keep slices serial, adjust tickets as needed): the latest `hud-progress` milestone line moved to mcp-next 06, which creates `progress.jsonl` and `latest_progress`; this ticket no longer waits on the MCP chain."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.070Z",
+      "updated_at": "2026-11-27T06:39:46.070Z"
+    },
+    {
+      "number": 5,
+      "title": "Bounded safe Git --numstat diff bars in Inspector, Working tree and To-try previews",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §5. Show fast, safe per-file `--numstat` diff summaries with proportional `+ / -` bars when reviewing To-try slices, inspecting a job's worktree/commits, or viewing Working tree changes.\n\n  - Working tree dirty diff (`git diff HEAD --numstat`) for `ProjectCollector`'s `tree` page;\n  - Commit/range diff (`git show --numstat --format=` across the 1–5 commit hashes named on a `try` ledger slice);\n  - Job diff (`BASE..HEAD` plus working tree in `job.worktree.root` or `SESSION.txt` `BASE` when available) for Inspector.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Safe diff-stat reader (`src/collectors/diff-stat.ts`): built strictly on `src/utils/git-safety.ts` (read-only, `-c core.fsmonitor=false`, no filters/hooks/fetch, 5 s signature/time cache, max 12 files + `+N more files` summary). Supports:",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Pure renderer helper (`src/render/diff-stat-rows.ts`): fits at 40+ columns—path squeezed cleanly on the left, `+A -D` and a 5-cell green/red proportional block bar (`███░░` / `+++--`) on the right. Each file row carries `files: [absPath]` so `Enter` / `o` opens the file in `$EDITOR` tab.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Wire diff rows into: (a) Working tree page (Classic & Split preview), (b) To-try slice expanded/Split preview under acceptance steps, and (c) Inspector (`work-inspector.ts`) for HUD jobs with diff data.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Add unit tests with a synthetic temporary git repo verifying safe `--numstat` parsing, binary file handling (`- -`), 40-column exact-width formatting, and `o` file targets.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.070Z",
+          "author": "legacy",
+          "text": "Status note: (ec1fa8bd)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.070Z",
+      "updated_at": "2026-11-27T06:39:46.070Z"
+    },
+    {
+      "number": 6,
+      "title": "Control plane quota watermarks, pi spend and today's role dispatch radar",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §6. Give the Control plane proactive visibility into client quota watermarks, today's pi spend, and today's per-role dispatch health so the owner can switch presets before hitting walls.\n\n  - Client quotas: read latest known Claude / Codex quota percentages & reset times from `$HUD_HOME/display/state/*.json` snapshots when fresh (never invoking network calls);\n  - Pi today spend: sum today's input/output tokens and cost (when recorded in pi session headers/entries under `~/.pi/agent/sessions` or HUD display cache, bounded to today's modified files);\n  - Today's role health: scan newest 200 `$HUD_HOME/jobs` created today (local TZ) to tally per-role `{ total, ok, failed, quiet_escalated, avg_minutes }`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Control radar collector (`src/collectors/control-radar.ts`): read-only, bounded aggregation cached on 5 s ticks:",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Render a compact `Radar` / `Quota & today` section on the Control plane (`src/render/control-view.ts` and `src/render/split-project.ts` `controlPart`, e.g. a `split:radar` row + preview and inline summary on role previews) that fits cleanly at 40 and 80 columns, omitting absent metrics rather than showing fake zeroes.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Add EN/ZH translations and unit tests with synthetic state snapshots and job receipts.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.070Z",
+          "author": "legacy",
+          "text": "Status note: (12a9a868)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.070Z",
+      "updated_at": "2026-11-27T06:39:46.070Z"
+    },
+    {
+      "number": 7,
+      "title": "On-demand self-contained static HTML review board (hud board & panel w key)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "panel-v2/05"
+      ],
+      "what": "`docs/spec.md` §2.2 & `.scratch/panel-v2/spec.md` §7. Export a rich, zero-server, single-file static HTML board for reviewing project progress, To-try slices (briefs, steps, linked tickets, diff bars), active jobs and milestone reviews in a browser.\n\n  - Strictly escape all untrusted/external text (`& < > \" '`), zero external fonts/scripts/stylesheets/fetches (`Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'`);\n  - Responsive CSS (works from phone width up to wide desktop) with automatic `prefers-color-scheme` + a pure-CSS light/dark toggle (matching `docs/design/panel-v8/` craft);\n  - Sections: Header (project, branch, milestone stacked bar & counts), Waiting for Owner & Open Job Questions, To-Try Review Queue (cards with model brief, numbered acceptance steps, linked `.scratch/` ticket checklists, and `--numstat` diff bars), Active Workers, and Latest Milestone Review.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Pure HTML generator (`src/render/html-board.ts`): takes `ProjectSnapshot`, `WorkboardSnapshot`, diff stats and newest review markdown, producing one self-contained HTML5 document (`<!doctype html>`):",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "CLI command `hud board [--html] [--cwd DIR] [--out FILE] [--open]` in `src/cli/`: collects a one-shot snapshot, writes atomically (`0600` under `$HUD_HOME/display/board-<slug>.html` by default, or `--out`), prints the path, and when `--open` is passed tries `wslview` then `xdg-open` detached (non-fatal notice if neither exists).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Panel shortcut `w`: exports the shown project's HTML board, opens it (or shows the saved path in a brief notice banner), and adds `w` to Help (`?`) and EN/ZH i18n.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Add unit tests verifying CLI execution, CSP/HTML escaping against XSS payloads, zero external URLs, and To-try slice rendering.",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.070Z",
+          "author": "legacy",
+          "text": "Status note: (a5b47135)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.070Z",
+      "updated_at": "2026-11-27T06:39:46.070Z"
+    }
+  ]
+}

@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "feature": "panel-polish",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Help explains every Home mark; reference Hide-after default fixed",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Acceptance pass 2026-11-22 (report jc717a3cd4c2ba5b3, frames tmp/tasks/ACCEPT/frames/42-43): Help has no entry for ⚡N (running sonic children), the route tier marks ▂▄▆ and the headless mark ∅; ◷ means both 'stalled' and the '◷ queued N' fold; Help says `g job: go to its herdr tab` without the headless Inspector output. docs/reference.md:1047 says Hide after defaults to 15 while line 500, src/settings.ts and the tests say 5. Fix: Help lists each mark (zh+en, ASCII fallbacks), give stalled and queued distinct glyphs (pick one already in the icon table; update Home, docs and fixtures), Help's g line covers headless, reference says 5.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Help shows ⚡N, ▂▄▆, ∅, queued and stalled entries in zh and en, ASCII mode too",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "stalled and queued no longer share a glyph on Home",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "reference.md/zh Hide-after default reads 5",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.064Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "aef24476c040582e51bae9010ce8a6f32ae415b7"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.064Z",
+      "updated_at": "2026-11-27T06:39:46.064Z"
+    },
+    {
+      "number": 2,
+      "title": "Narrow panels cut marks before titles and never wrap Control rows",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Acceptance pass 2026-11-22 (frames 15, 17, 20): at 42 columns Home cut a title to 9 cells (`◉ auto-route/08 A headle… ⚒ ▆∅ ⚡2 0m`) although docs promise marks narrow before the title drops under 16 cells; Control → Usage → Dispatch today at 42 columns wraps `imp 31 jobs · … · avg` leaving `9m` alone on the next row, and cuts place names mid-word (`cli/agy (gemini-4…rogen-high)`). Fix both against the §8 width rules.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "At 42 and 48 columns a Home job row keeps ≥16 title cells while marks narrow (route marks and effort first) as docs/reference.md describes",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Dispatch today rows never wrap at 42 columns; place names cut at the end with …",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Golden frames for 42 columns added for both; npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.064Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d1b573ae7db04a4b85da1568b0d84cdf616ffa05",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.064Z",
+      "updated_at": "2026-11-27T06:39:46.064Z"
+    },
+    {
+      "number": 3,
+      "title": "Project hub Running shows one row per job with its own role",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Acceptance pass 2026-11-22 (frames 05, 44): the Project hub 'Running' block showed 7 rows for 3 jobs (worktree rows like `hud-doctor-01-44dd83 sonic 3分`, slice rows and job rows), and later `◐ auto-route-08-778c8c sonic 7m` named the imp's worktree with the sonic role while the imp job itself was missing. Running should list one row per running job (role, ticket title, age) with sonic children folded into the parent's ⚡N like Home.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A fixture with an imp in a worktree running two sonic children shows one Running row: imp role, ticket title, ⚡2",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No worktree-name or slice duplicate rows; a sonic never labels a worktree",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "zh and en frames; npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.064Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "11467e6da4d33f91cd4db52c02608d966d7f1fcd"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.064Z",
+      "updated_at": "2026-11-27T06:39:46.064Z"
+    },
+    {
+      "number": 4,
+      "title": "Home rows keep their order, wait lines name the job, and zh shows route reasons and titles",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "panel-polish/02",
+        "home-compact/03"
+      ],
+      "what": "Acceptance pass 2026-11-22 (frames 01-04, 14, 16, 23): working Home rows swapped places between consecutive frames; a land waiting for another shows the raw holder id (`waiting for ffac82c255bad0b73`) instead of the ticket it waits on; in zh the Inspector route reason stays English, the Latest row AUTO-ROUTE-07 shows an English title and 06/05 none; the Inspector 类型 row lists 6-7 kinds. Fix: a stable sort key for Home rows (e.g. created time, not changing fields); wait lines show the holder's ticket id/title; route reason and Latest titles go through the existing translation path (WaitingBriefs cache) in zh; 类型 shows at most the top 2 kinds.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Two renders with changed progress but the same jobs keep row order (test)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Wait line shows ticket id (fallback short title) of the lease holder",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "zh: route reason and Latest ticket titles appear translated (cached; no model call for zh text); 类型 shows ≤2 kinds",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.064Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f67e6e717ca5617f1c8f4beed722f82851414fef",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.064Z",
+      "updated_at": "2026-11-27T06:39:46.064Z"
+    }
+  ]
+}

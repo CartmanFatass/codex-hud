@@ -1,0 +1,154 @@
+{
+  "version": 1,
+  "feature": "agy-adapter",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "`./install --with agy` wires agy to the HUD and uninstalls cleanly",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Proposal docs/neon-proposal/25-agy-adapter.md §2.1 (owner, 2026-11-22: installation may edit agy's own config; delivery A+B). New `install.d/agy.sh` modelled on `install.d/claude.sh`:\n- registers the `hud` MCP with the official command (`agy mcp add --env HUD_MCP_SURFACE=roles hud \"$BIN_DIR/hud-mcp\"`);\n- adds `mcp(hud/*)` to `permissions.allow` and the HUD `statusLine` to `~/.gemini/antigravity-cli/settings.json`, keeping an owner's non-HUD statusline;\n- registers the HUD PreInvocation hook through an official agy mechanism, sourced from `$HUD_HOME`. The hook script can be a no-op stub until 03, and herdr's own hook stays untouched.\n- `--uninstall` reverses exactly what HUD wrote.\nAlso land the approved spec sentences:\n- §1: Antigravity joins the list.\n- §2.1.3: agy workers get the worker MCP, with the shell done-command fallback kept.\n- §2.1.6: a working agy session gets events through its PreInvocation hook; an idle one has them typed into its prompt.\n- §2.2.1: the agy statusline.\n- §2.4: the `agy` extension.\nUpdate reference.md and reference.zh.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Install then uninstall against a temp HOME with synthetic agy config files leaves them byte-identical, apart from deliberately foreign edits made in between",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Re-install is idempotent; an owner's own statusLine is kept",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test, check:fixtures and test:release pass",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 83e4f931. Official `agy mcp add` runs in a staged HOME and only the `hud` record is copied in (agy 1.5.14 reformats the file and widens 0640 to 0644). Hook: named `hud` PreInvocation entry in ~/.gemini/config/hooks.json (stub until 03). Suite 956/956, release green."
+        },
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "the owner's live install (`./install --with agy`, agy 1.5.14) failed on a 0-byte `~/.gemini/config/mcp_config.json`: the extension read it as malformed JSON. Fixed in 8084d45c (a blank config reads as an empty object; the HUD backup records it, so uninstall leaves the file in place); install-agy suite 5/5. Installed on the owner's HOME; in agy print mode `hud_roster` and `hud_read` ran through the registered MCP with only the `mcp(hud/*)` rule."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.976Z"
+    },
+    {
+      "number": 2,
+      "title": "agy workers report through the worker MCP",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "test-split/04"
+      ],
+      "what": "Proposal 25 §2.2.\n- `cliWorkerTools('agy')` is true: the brief's finishing line asks for `hud_report` with the turn token, and agy workers can use `hud_ask`, `hud_sonic`, `hud_progress` and `hud_lease`.\n- The finishing prompt keeps the shell fallback `hud-progress.mjs --done … [--summary] [--file]` for a first turn where the tools are not loaded yet. agy loads plugin and global MCP lazily, and in the 2026-11-22 probe the first turn did not see the tool.\n- Verify whether `eager: true` in mcp_config.json makes the tools available on turn one. Record the result; if it works, the 01 installer sets it.\n- The MCP side reads `_meta[\"antigravity.google/conversation_id\"]` as the session id.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A fake-agy CLI worker test settles through hud_report; another settles through the shell fallback; both bind to the right turn",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 9ce1fd81. agy workers finish with hud_report; shell fallback line kept. No launch change needed (HUD_JOB_DIR inherited). eager not tested live (needs an authenticated isolated HOME). herdr agent_session_id = _meta conversation_id by code reading. Suite 959/959."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.976Z"
+    },
+    {
+      "number": 3,
+      "title": "An agy main session gets job events (A+B) and the resume guard",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "agy-adapter/02"
+      ],
+      "what": "Proposal 25 §2.3, owner 2026-11-22: A+B.\n- The main-session tools work from agy as a client without MCP tasks.\n- The resume guard covers agy: `_meta` conversation_id is matched against STATUS `agent_session_id`.\n- **B:** the HUD PreInvocation hook script (registered by 01) finds the caller's undelivered job events and injects one short text via `injectSteps`, marking them delivered. With no events it prints `{}`, and it stays cheap and bounded.\n- **A:** an idle agy pane gets events typed through the existing herdr typed path, only while idle.\n- One delivery record is shared, so an event never arrives twice.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A synthetic hook payload with a pending event gets one injection, and a second run gets `{}`",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An idle fake-agy pane gets the typed event once, and a working one does not",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The resume guard refuses a resumed agy worker",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 93471a3e. Pending file $HUD_HOME/watchers/<pane>.agy-pending (0600, 16 KiB cap, flock + rename claim). Hook: 1.5 ms empty, ~50 ms with an event. Idle flush rides the watcher's existing wakes or its 30 s rescan, so an event that lands after a turn's last model call can wait up to ~30 s. Suite 967/967, release green."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.976Z"
+    },
+    {
+      "number": 4,
+      "title": "hud-statusline renders agy's payload, fast enough for 3 Hz",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Proposal 25 §2.4.\n- `hud-statusline` recognises `product: \"antigravity\"` and shows model, context % and tokens.\n- It renders the `quota` buckets as quota watermarks, the same form as Codex's \"5h 80% left\".\n- It skips transcript parsing for agy.\n- It never shows or stores `email`.\n- agy calls the command about every 300 ms while the screen changes. Measure the per-call cost and bring p50 to ≤ 30 ms, using the forward worker or a cache keyed on the input signature.\n- A failure prints a short degraded line and exits 0, so agy does not disable the statusline.\n- Use synthetic payload fixtures only. Shape: proposal 25 §1, re-probed with a session-only `--settings` statusLine if the quota bucket shape is needed.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic agy payloads (fresh session, mid-turn, quota present) render the expected lines in EN/ZH",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Timing reported before/after; npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 6833f789 4ef12ad3 . Stale-while-revalidate shell fast path: p50 ~17 ms (was ~88), ~0.75 node renders/s while streaming, cold ~105 ms. Quota uses the real 1.5.14 shape probed by main (gemini-*/3p-* buckets, remaining_fraction, reset_time); family follows the model. Suite 962/962. reference.zh.md not yet updated for the statusline."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.976Z"
+    }
+  ]
+}

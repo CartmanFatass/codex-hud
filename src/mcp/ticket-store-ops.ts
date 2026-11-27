@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { scanScratch } from '../cli/tickets.js';
 import { OBJECTIVE_SLUG, readObjectives } from '../collectors/objectives.js';
 import { localProjectRoots } from '../roles/projects.js';
@@ -7,10 +7,10 @@ import { commitTicketWrites } from '../tickets/commit.js';
 import {
   canonicalTicketRef, legacyTicketPaths, normalizeHomePaths, parseTicketRef, readJsonTicketFeature, readTicketFeature, serializeTicketFeature,
   splitRemovals, ticketFeaturePath, ticketNumber, ticketRef, TICKET_FEATURE, TICKET_KINDS, TICKET_ROLES,
-  TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket, writeTicketFeature, type TicketFeatureDoc, type TicketRecord,
+  TICKET_STATUSES, withTicketStoreLock, writeTicketFeature, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { linkFeature } from './local-objectives.js';
-import { editLocalTickets, extractWhatAndLiveTry, repoFieldValue, unlinkedWarning, type TicketEdit } from './local-tickets.js';
+import { extractWhatAndLiveTry, repoFieldValue, unlinkedWarning } from './local-tickets.js';
 
 function invalid(field: string): never { throw new Error(`invalid_arguments: ${field}`); }
 const text = (value: unknown, field: string) => typeof value === 'string' && value.trim() ? normalizeHomePaths(value.trim()) : invalid(field);
@@ -75,23 +75,8 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
   const { mainRoot } = localProjectRoots(cwd);
   const guardMirror = () => scanScratch(join(mainRoot, '.scratch'), true);
   const markdown = (feature: string) => !readJsonTicketFeature(mainRoot, feature) && legacyTicketPaths(mainRoot, feature).length > 0;
-  const legacy = async (input: Record<string, unknown>) => withTicketStoreLock(mainRoot, async () => {
-    const staged = new Map<string, TicketEdit>();
-    const result = await editLocalTickets(mainRoot, input, home, op, {
-      read: path => staged.get(path)?.after ?? fs.readFileSync(path, 'utf8'),
-      async stage(edit) {
-        if (edit.before === edit.after) return;
-        const prior = staged.get(edit.path);
-        if (prior) { prior.after = edit.after; return; }
-        staged.set(edit.path, edit);
-      },
-    }, mainRoot);
-    for (const edit of staged.values()) {
-      if (edit.before === edit.after) continue;
-      writeLegacyTicket(mainRoot, home, relative(mainRoot, edit.path), edit.after, edit.mode);
-    }
-    return result;
-  });
+  const legacyError = (feature: string) =>
+    new Error(`Feature "${feature}" still uses legacy Markdown tickets; run "hud tickets migrate" first`);
   const json = <T>(edit: () => Promise<T>) => withTicketStoreLock(mainRoot, edit);
   let objectiveIds: Set<string> | undefined;
   const objectiveId = (value: unknown) => {
@@ -236,28 +221,20 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
   if (op === 'add') {
     if (args.updates !== undefined) return invalid('updates');
     const feature = featureSlug(args.feature);
-    if (!markdown(feature)) return json(() => addJson(feature));
-    guardMirror();
-    if (Array.isArray(args.tickets) && args.tickets.some(raw => has(object(raw, 'tickets'), ['kind', 'role', 'main_review', 'comment'])))
-      throw new Error('kind, role, main_review and comment require a JSON ticket feature');
-    return legacy(args);
+    if (markdown(feature)) throw legacyError(feature);
+    return json(() => addJson(feature));
   }
   // Preserve project-wide protection for a GitHub Markdown mirror.
   guardMirror();
-  const checkMarkdown = (item: Record<string, unknown>) => {
-    if (has(item, specFields)) throw new Error('Comment and spec-field edits require a JSON ticket feature');
-  };
   if (args.updates === undefined) {
     const { feature, number } = resolveTicketTarget(args.feature, args.ticket);
-    const item = { ...args, feature, ticket: number };
-    if (!markdown(feature)) return json(async () => updateJson(feature, item));
-    checkMarkdown(item);
-    return legacy(item);
+    if (markdown(feature)) throw legacyError(feature);
+    return json(async () => updateJson(feature, { ...args, feature, ticket: number }));
   }
   if (args.ticket !== undefined || has(args, editFields) || !Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
   const sharedFeature = args.feature === undefined ? undefined : featureSlug(args.feature);
   type BatchItem = { index: number; feature: string; item: Record<string, unknown> };
-  const markdownItems: BatchItem[] = [], jsonItems: BatchItem[] = [];
+  const jsonItems: BatchItem[] = [];
   const updates: object[] = [];
   const failed = (index: number, feature: unknown, ticket: unknown, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -273,26 +250,9 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       const resolved = resolveTicketTarget(feature, ticket);
       feature = resolved.feature;
       ticket = resolved.number;
-      const normalized = { ...item, feature: resolved.feature, ticket: resolved.number };
-      const entry = { index, feature: resolved.feature, item: normalized };
-      if (markdown(resolved.feature)) {
-        checkMarkdown(normalized);
-        markdownItems.push(entry);
-      } else jsonItems.push(entry);
+      if (markdown(resolved.feature)) throw legacyError(resolved.feature);
+      jsonItems.push({ index, feature: resolved.feature, item: { ...item, feature: resolved.feature, ticket: resolved.number } });
     } catch (error) { failed(index, feature, ticket, error); }
-  }
-  if (markdownItems.length === args.updates.length) {
-    return legacy({ feature: sharedFeature, updates: markdownItems.map(({ item }) => item) });
-  }
-  if (markdownItems.length) {
-    try {
-      const result = await legacy({ feature: sharedFeature, updates: markdownItems.map(({ item }) => item) });
-      if ('updates' in result && result.updates) {
-        result.updates.forEach((outcome, i) => { updates[markdownItems[i].index] = outcome; });
-      }
-    } catch (error) {
-      for (const { index, feature, item } of markdownItems) failed(index, feature, item.ticket, error);
-    }
   }
   if (jsonItems.length) await json(async () => {
     for (const { index, feature, item } of jsonItems) {

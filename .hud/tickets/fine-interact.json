@@ -1,0 +1,479 @@
+{
+  "version": 1,
+  "feature": "fine-interact",
+  "objective": "interaction",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Advisor side window: discuss a selection with a temporary advisor",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "Select text, press Ctrl+b a, choose \"Ask an advisor\": a side window opens with an advisor answering about the excerpt; a follow-up continues it; closing hides it and the answer stays on the excerpt card.",
+      "approved_removals": [],
+      "blocked_by": [
+        "select-send/02"
+      ],
+      "what": "D-2026-11-26-02, lower priority. From the selection composer, \"Ask an advisor\" opens a herdr side window (overlay/popup per the fork's surfaces) with a temporary advisor job (role `oracle` by default, owner-configurable) briefed with only the excerpt, its source and the question; follow-ups in the window continue that job. Closing the window only hides it; the job's answer stays findable on the excerpt card; an explicit \"end\" closes the job. Opening twice on different excerpts gives two advisors; a busy popup (`ui_busy`) keeps the draft.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: open, ask, hide, reopen shows the same conversation; end closes the job; two excerpts give two advisor jobs; ui_busy keeps the draft",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Owner try: select a diff hunk, ask the advisor why it is needed, hide the window, come back to the answer",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "8c00dc5f8e5f4078e75220eddac043855c30cae0",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 2,
+      "title": "Hand a pane to a worker: menu action \"investigate this\"",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "On a pane with recent output, choose \"Investigate this\" from the pane menu and pick a working job: the job receives the pane output with its source and its answer shows on the excerpt card.",
+      "approved_removals": [],
+      "blocked_by": [
+        "select-send/02"
+      ],
+      "what": "D-2026-11-26-02, lower priority. A pane action (menu first; drag with a modifier only if it does not clash with text selection, split resizing or apps that take the mouse) sends the pane's recent visible output, its source and an owner line to a chosen working job via the select-send/02 path (excerpt record, id, answer tied back). Default owner line: \"Investigate this\".",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: the action sends the visible region once with its source to the chosen job; a closed target is refused",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Owner try: from a failing test pane choose \"investigate this\" on a worker; its answer appears next to the excerpt",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "5e2de88829846444513b9f3942f95d5ff250a5c9",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 3,
+      "title": "Pane annotations: a note on an excerpt delivered at the job's next turn",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "Select text, choose \"Note for next turn\" for a working job: the note shows on the excerpt card and arrives once in that job's next prompt, then shows as delivered.",
+      "approved_removals": [],
+      "blocked_by": [
+        "select-send/02"
+      ],
+      "what": "D-2026-11-26-02, lower priority. On a selection, \"Note for next turn\" attaches a short note to the excerpt record for a chosen job; HUD delivers it as part of that job's next prompt (not mid-turn), once, then marks it delivered. The note shows on the excerpt card; anchoring to the live screen (moving with content) is not built; the card keeps the original excerpt.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: a note is delivered exactly once with the job's next prompt and never mid-turn; a closed job's pending notes are shown as undelivered",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Owner try: annotate a log line for a running worker; on its next turn it addresses the note",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "a6da6428041ba5d9143e23eea1715a0029a413b2",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 4,
+      "title": "Advisor repair: excerpt-only native prompt, honest launch failure, no eviction of outstanding advisors",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Select text in a pane of a checkout whose .pi/APPEND_SYSTEM.md holds a sentinel, press Ctrl+b a, choose \"Ask an advisor\": the advisor answers about the excerpt and neither the sentinel nor the checkout path reaches it; force a launch failure (e.g. role pointed at a CLI that refuses the cwd): the composer keeps the draft and shows the failure.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review jd24d8862257fc92b findings 1, 6, 7 on fine-interact/01 (see ~/.hud/jobs/jd24d8862257fc92b/report.md). 1 (blocker, spec): `src/roles/selection-advisor.ts:26-34` launches the advisor with cwd = source project root; `pi-worker-argv.ts:75-77` disables context files, skills and tools but pi's native system prompt still loads a trusted checkout's `.pi/SYSTEM.md` / `.pi/APPEND_SYSTEM.md` (resource-loader) and states the cwd in the system message (system-prompt). That breaks the excerpt-only brief and Architecture §5's no-checkout-path promise. Isolate the native prompt on the initial AND resumed turns (e.g. a private empty advisor cwd under $HUD_HOME with a bound, or an explicit system-prompt override — pick the simplest that holds for resume) while the excerpt source is still recorded on the card. 6 (major): `orchestrator.ts:110-125,937-939,964-970` can return a failed launch row with both `ok: false` and `job`; `selection-advisor.ts:35` checks only `job`, and `src/cli/select-send.ts:342-346` then clears the question and switches to an unavailable advisor. Check the dispatch outcome before switching views; keep the editable draft and show the launch failure. 7 (major): `selection-excerpts.ts:123-137` protects pending notes but advisor cards are created `queued` and are evictable from the 64-card store, losing the hidden advisor's answer slot, reopen and /end. Keep the bound but never evict a card whose advisor turn is outstanding (job not settled); settled advisor history may still expire.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: assembled provider input (system + user) for a new and a resumed advisor turn, with a synthetic checkout path and a sentinel in .pi/APPEND_SYSTEM.md, contains neither the sentinel nor the checkout path",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a dispatch result with ok:false and a job keeps the composer draft, shows the failure and does not switch to the advisor view",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: filling the store with newer selections does not evict a card whose advisor turn is outstanding; settled advisor cards remain evictable",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Architecture §5 / reference.md state what the advisor receives",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d3b0dc840f3b94efb00dfd63df567384865beb85",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 5,
+      "title": "Investigate repair: fail instead of widening to scrollback; drop the default_question handoff",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "On a scrolled-up pane, invoke hud.select-send.investigate and pick a working job: the excerpt is exactly the visible viewport; with the visible read made to fail, the action refuses with a message instead of sending scrollback.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review jd24d8862257fc92b finding 5 and its deletion note, on fine-interact/02. `src/roles/select-send.ts:538-560` (`readPaneVisibleText`) retries `pane.read` with `source: 'recent'` after an error/timeout and labels either result \"visible region\"; in the fork `recent` is an 80-row transcript tail, not the viewport, so a scrolled pane can send off-screen output. For Investigate, fail the capture (clear message, nothing sent) when the visible region cannot be read. Keep the selection-mode refresh behaviour of select-send/02 working (it shares this reader; if it still needs a fallback, keep that separate from Investigate). Document pane capture separately from selected text in Architecture §5 and reference.md. Simplify: remove the Investigate-specific `default_question` handoff field, its parser and fallback; initialise the editable owner line from `DEFAULT_INVESTIGATE_LINE` when `mode === 'investigate'`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a visible-read error or timeout in investigate mode refuses and sends nothing; no recent fallback is used for Investigate",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: the owner line defaults to \"Investigate this\" without a default_question handoff field (field, parser and fallback removed)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Selection-mode refresh tests still pass",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Architecture §5 and reference.md describe pane capture separately from selected text",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d3b0dc840f3b94efb00dfd63df567384865beb85",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 6,
+      "title": "Next-turn note repair: deliver on pi's queued follow-up boundary",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Save a \"Note for next turn\" for a pi worker while it is answering, then queue the next question with Alt+Enter in its tab: when pi drains the queued question the note arrives with it once and the card shows delivered.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review jd24d8862257fc92b finding 4 on fine-interact/03. Notes are staged only in `before_agent_start` (`src/harness/pi/worker/tab-lifecycle.ts:499-512`). A follow-up queued with Alt+Enter while the worker is answering is drained by pi after the current response would stop (installed pi `dist/modes/interactive/interactive-mode.js` ~3838-3843, `dist/core/agent-session.js` ~1758-1770, agent-core `dist/agent-loop.js` ~191-203) without another `before_agent_start`, so the worker answers it without the note and the card stays pending. Cover that queued follow-up boundary (a new user prompt) while still excluding steers, tool steps and custom wakes. Delivered still means pi incorporated the note into that prompt, exactly once.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a note saved mid-turn is delivered once with a queued follow-up prompt and marked delivered",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a steer or tool step still does not consume the note; a fresh prompt still delivers it once",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d3b0dc840f3b94efb00dfd63df567384865beb85",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 7,
+      "title": "Advisor repair: path-free hud_report result for selection advisors",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Select text, press Ctrl+b a, choose \"Ask an advisor\", let it answer, then send a follow-up: the advisor answers the follow-up, and the captured/resumed request (probe or provider log) contains no report path or home directory.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review j65cc7a44c3a0636f finding 1 (~/.hud/jobs/j65cc7a44c3a0636f/report.md). A selection advisor answers with `hud_report`; `src/worker/tools.ts` (~169,205) returns `{path: <HUD_HOME>/jobs/<job>/report.md}` and `src/harness/pi/worker/tools.ts:160-161` serialises it into the model-visible tool result. pi keeps that tool result in history and resends it on resume, so an advisor follow-up sends a local absolute path (often including the home directory) to the provider, against Architecture §5's Selection advisor row. The Claude worker MCP wrapper (`src/mcp/mcp/server.ts:224-226`) serialises the same result. For selection-advisor jobs only (job.selection_advisor set), return a path-free acknowledgement (e.g. `{ok: true}` / 'Report recorded.') from hud_report in both the pi tool and the Claude MCP wrapper; keep the ordinary worker tool contract, warnings semantics and the on-disk report unchanged. Extend `tests/probes/selection-advisor-prompt.mjs` so its synthetic provider performs a real `hud_report` tool call on the first turn, then resumes with a follow-up, and asserts no HUD_HOME/job path appears in the resumed provider request.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A pi selection advisor's hud_report tool result contains no filesystem path; ordinary workers still receive `{path}`",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The Claude Code advisor's hud_report MCP result is path-free too; other Claude workers unchanged",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "The advisor prompt probe performs a real hud_report tool turn and a resumed follow-up, and asserts the resumed provider request carries no HUD_HOME or report path",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Architecture §5 / reference wording still accurate (update only if the projection description changes)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7bfec410e91a042b8820a8148ee13960da1826fc",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 8,
+      "title": "Next-turn note repair: Sonic collection reminder must not consume a note",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "Save a \"Note for next turn\" for a pi tab worker that has an outstanding Sonic; when HUD sends the Sonic collection reminder the card stays pending; then send the next question (fresh or Alt+Enter): the note arrives once with it and the card shows delivered.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review j65cc7a44c3a0636f finding 2 (~/.hud/jobs/j65cc7a44c3a0636f/report.md). In `src/harness/pi/worker/tab-lifecycle.ts` settleTurn (~437-463), when a completed Sonic child is uncollected HUD itself calls `pi.sendUserMessage(sonicCollectPrompt(...), {deliverAs:'followUp'})`. pi represents that as a role-user message, so it is recorded by the `Agent.prototype.followUp` wrap (queuedUserFollowUps, ~:26-35) or starts a turn with messageType 'user' in before_agent_start (~:519-522); the pending note is attached to the reminder and acknowledged (~:575-585), so the card says delivered before the owner sent another prompt. Exclude this HUD-generated wake by provenance (e.g. mark the reminder message / set a one-shot flag around HUD's own sendUserMessage so neither the followUp path nor before_agent_start stages notes for it), not by comparing prompt text. Fresh user prompts and Alt+Enter queued follow-ups keep delivering exactly once; steers and custom-role messages stay excluded.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A pending note survives a HUD Sonic collection reminder (both the queued-followUp path and the idle-agent new-turn path) and the card stays pending",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "After the reminder, a real fresh prompt or Alt+Enter follow-up delivers the note exactly once and the card shows delivered",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Exclusion is by provenance, not text matching; unit tests in tests/unit/pi-worker-tab.test.mjs cover reminder, then fresh prompt, and reminder, then queued follow-up",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "3c7d344fa591da30880697a2393f31db6a232c05",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 9,
+      "title": "Investigate repair: capture once and send the displayed snapshot",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "On a pane whose output keeps scrolling (e.g. a running log), invoke hud.select-send.investigate, pick a working job and press Enter once: the job receives exactly the viewport shown in the composer, without a 'Content changed' re-prompt.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Milestone review j65cc7a44c3a0636f finding 3 (~/.hud/jobs/j65cc7a44c3a0636f/report.md). Investigate already captures a valid `source:'visible'` snapshot and shows it, but `src/cli/select-send.ts` (~188, ~307-331) takes a baseline and rereads on every Enter via `refreshSelectionExcerpt` (`src/roles/select-send.ts` ~655-700): on a scrolling log pane the excerpt keeps being replaced and the owner can never send the displayed text; a failed confirmation-time read is treated as unchanged. Delete the Investigate baseline and submit-time refresh: capture once at open (refuse a failed capture as today), then confirm and send exactly the snapshot shown. Leave the coordinate/staleness refresh for text-selection mode unchanged. Also delete the now-dead `initialQuestion` in `src/render/select-send-composer.ts` (~53,60); the mode default suffices.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "In investigate mode no baseline is captured and no reread happens on Enter; the displayed snapshot is sent once",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A fixture that advances the pane viewport after the picker opens still sends the original displayed text exactly once on confirmation",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Text-selection mode keeps its staleness refresh (existing select-send tests pass)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Initial visible-read failure still refuses with nothing sent; `initialQuestion` removed with no callers left",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "7bfec410e91a042b8820a8148ee13960da1826fc",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 10,
+      "title": "Investigate repair: resolve the project from the captured pane's cwd",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "In a herdr worktree workspace for repo A, cd an ordinary shell pane into repo B (with a working job in B), choose \"Investigate this\" on that pane: the picker offers B's job and not A's, and the delivered excerpt and card name B as the source.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "fine-interact/02"
+      ],
+      "what": "Milestone review je170bf58fc15643b finding 1 (~/.hud/jobs/je170bf58fc15643b/report.md). The herdr pane menu (fork commit eb2552af, `src/client/shell/context_menu.rs:492-511`) passes the clicked pane id as `focused_pane_id`; `handleInvestigatePaneAction` (`src/roles/select-send.ts` ~933-954) copies it to `pane_id`. In `resolveSelectionTarget` (~512-521) `clickedOtherPane` is then false, so `ctx.worktree.checkout_path` (workspace repo A) wins over the clicked pane's own cwd (repo B), and `jobTargets.get(projectRoot)` offers only A's jobs: with only a B worker the picker says none; with an A worker the owner can send B's output labelled as A. Fix project resolution for Investigate (ctx.mode === 'investigate') on ordinary (non-worker) panes: use the captured pane's foreground_cwd, then cwd (from live pane info, falling back to the context's focused_pane_cwd for that pane), resolved through sharedRoot; use the workspace checkout / workspace_cwd only as fallback. Keep worker-receipt resolution (matchedJob path), text-selection mode's current order and the capture-once rule unchanged. No fork change is needed. Optional cleanup the review noted: remove `WorkerPi.sendUserMessage?` from `src/harness/pi/worker/host.ts:76` if it has no worker caller left (keep the main-session interface's API).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Investigate on an ordinary pane whose cwd is repo B inside a repo-A worktree workspace resolves source.projectRoot to B and offers B's working jobs only",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A two-repository fixture using the real menu context shape (clicked id as focused_pane_id and pane_id, both pane cwd and workspace worktree present) asserts B's job is offered, A's is absent, and the delivered source and excerpt card identify B",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Workspace checkout is used only when the captured pane has no known cwd (fixture)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Worker-receipt resolution, text-selection mode resolution and capture-once behaviour unchanged (existing select-send tests pass)",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "01823b69fe429fc7039593583975e449fa7fdd94",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 11,
+      "title": "Advisor repair: no native @-file expansion for Claude selection advisors",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "In a checkout containing NOTES.md with a sentinel line, select pane text containing `@NOTES.md` and an absolute `@/…/NOTES.md`, press Ctrl+b a, choose \"Ask an advisor\" with the advisor role on Claude: the advisor answers about the excerpt and does not quote the sentinel; a follow-up mentioning `@NOTES.md` is answered without the sentinel either.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "fine-interact/01",
+        "fine-interact/04"
+      ],
+      "what": "Milestone review jd151ec17fe5a0a58 finding 1 (blocker; ~/.hud/jobs/jd151ec17fe5a0a58/report.md). A Claude Code selection advisor is launched in the source checkout (`src/mcp/sonic-process.ts` spawn cwd = job.cwd = source project root, set in `src/roles/selection-advisor.ts:25-31`) with the excerpt + question (`src/mcp/dispatch/harness-cli.ts` ~138-142, `advisor ? task`) and later follow-ups (`resume.message`, from `continueSelectionAdvisor`) passed as ordinary prompt text. `cliWorkerStartup` (`src/mcp/cli-worker-startup.ts` ~92-94) sets `--tools '' --setting-sources '' --system-prompt`, but Claude Code (2.1.332) still preprocesses the user prompt in print mode: a file mention such as `@README.md` (or an absolute `@/path`) in a selected excerpt or follow-up is resolved and the file's contents attached to the provider request before any tool use. That breaks the excerpt-only promise of docs/ARCHITECTURE.md §5 (Selection advisor row) and fine-interact/01's brief (excerpt, its source and the question only). Fix, for Claude selection advisors only (job.selection_advisor set, place.agent === 'claude'), on BOTH the fresh turn and every resumed follow-up turn: no unselected file content and no resolved file path may reach the provider, for relative mentions (resolved against the checkout) and absolute/home mentions alike. Prefer a native Claude control that disables attachment/mention expansion; note `--bare` forces API-key auth (breaks OAuth) so is not acceptable unless you show it is not the case for this launch. If no native control exists, pick the simplest robust option, e.g. deliver the text through a channel Claude does not preprocess, or minimally neutralise `@` mention syntax in the advisor prompt text only (the model must still read the mention as the owner wrote it, e.g. visible characters preserved), and record the choice under Decisions. Running in an empty private cwd alone is NOT sufficient (absolute mentions still resolve). Ordinary Claude workers, Codex/pi advisors, the hud_report tool, path-free receipt (fine-interact/07), launch-failure handling (04) and same-session follow-ups must stay unchanged and working. If you find the excerpt-only promise cannot be kept for Claude advisors at all, stop and report it under Blockers (do not remove Claude as an advisor place yourself). Add a synthetic fixture/probe with no paid provider (e.g. point Claude at a local fake Anthropic endpoint via ANTHROPIC_BASE_URL + dummy key in the temporary HOME, or the narrowest equivalent that exercises the real CLI preprocessing): a synthetic checkout containing a file with a sentinel; an excerpt mentioning `@<that file>` (relative) and an absolute `@<path>`; assert the captured provider request carries the mention text but neither the sentinel nor the resolved path, on the first turn and on a resumed follow-up that also contains a mention. If the real CLI cannot be exercised offline, say so and cover the argv/prompt transformation in a unit test, naming that limit in the report. Optional cleanup from the same review: delete the unused `SELECT_SEND_INVESTIGATE_ACTION_ID` export in `src/roles/select-send.ts:32` if it still has no consumer. Update docs/ARCHITECTURE.md §5 / docs/reference.md only if the advisor input description changes.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A Claude selection advisor's provider request never contains the contents or resolved path of a file named by an @-mention in the excerpt, question or a follow-up (relative and absolute), on fresh and resumed turns",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Ordinary Claude workers and pi/Codex advisors launch exactly as before; advisor hud_report, path-free receipt and follow-ups still work",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A synthetic fixture/probe with a sentinel file proves it without a paid provider, or the report names why the real CLI could not be exercised and what covers it instead",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "npm test, npm run test:mjs and check:fixtures pass (land gate)",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "b639122c09c488387d489da8213842b8387aea8f",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    },
+    {
+      "number": 12,
+      "title": "Claude selection advisor sends no project memory",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "Ask about a selection with the Claude advisor from a project that has Claude auto-memory; the captured provider input (fixture or debug log) holds the excerpt and the owner line, no MEMORY.md or CLAUDE.md content.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "From fine-interact milestone review j21460b4c1de2305d (escalated by lead jd6fefb27177959fd, repair rounds used up): a Claude selection advisor still sends the source project's Claude auto-memory (MEMORY.md) to the provider, against the excerpt-only rule (Architecture §5, fine-interact/01). Main accepted the gap for now because the same provider already receives that memory in the owner's main Claude sessions; fix it here. Run the Claude advisor like the pi advisor after fine-interact/04: in a private empty temp cwd outside any project, with project instructions and auto-memory off, so only the excerpt and the owner line reach it. Prefer an existing Claude Code setting or flag over new machinery; if none disables auto-memory, the empty cwd (no project key) is enough.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: the Claude advisor launch cwd is a private temp dir outside the project and no project memory or instruction file is in its input",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: the pi advisor behaviour is unchanged",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.012Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "d0995cafb79fb18a31cb14aedbbb8c879a02d804",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.012Z",
+      "updated_at": "2026-11-27T06:39:46.012Z"
+    }
+  ]
+}

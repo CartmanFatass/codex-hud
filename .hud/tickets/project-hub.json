@@ -1,0 +1,189 @@
+{
+  "version": 1,
+  "feature": "project-hub",
+  "spec_path": ".scratch/project-hub/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Project is a hub with one page per section",
+      "status": "done",
+      "role": "frontend-imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "spec items 1, 4 and 6 with today's data. `MonitorState` gets the open Project page; the hub\nrenders the summary rows; Progress, Tickets, Working tree, Docs and Control plane become pages that render today's\nsections (Progress and Tickets unchanged for now; 03 redoes them). Esc/`‹` returns to the hub; per-page cursor and\nscroll survive reload; Home's progress block opens Progress, a Home ticket row opens Tickets. Help and\ndocs/reference(.zh).md describe the hub.\n\n**Size:** about 300 source lines, project-page tests and frames updated",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Hub at 40/80/120 columns EN/ZH, unicode and text icons (frames regenerated with `npm run snapshots:update`)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Enter opens each page, Esc and the crumb return; Tab/`1`/`2` keep switching Home ⇄ Project",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Page, cursor and scroll survive a panel reload",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Home's progress Enter lands on Progress; a ticket row on Tickets",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Collection still runs only while a Project page is visible",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "implemented by frontend-implementer, landed as 682dec52; one test outside its list\n(decision-labels) now opens the Progress page explicitly. Full suite green (508). Hub has no Tickets row when a\nproject has no tickets; the Working tree summary has no worktree count yet (03 may add it)."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.084Z"
+    },
+    {
+      "number": 2,
+      "title": "The project collector supplies ledger history, live jobs, ticket detail and the project list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "data only, in `src/collectors/project-board.ts` (and `src/roles/projects.ts` for the list); no\nrendering. `ProjectSnapshot` gains:\n- `ledger: { id, state, milestone, text, commit?, at? }[]` for every `## Slices` row in file order; `commit` is the\n  last 7–40 hex token in the row; `at` (ms) from one batched `git log --no-walk --format=%h%x00%ct` through the\n  existing safe Git path and five-second gate, only on full collection; unknown hashes get no `at`;\n- `active: { jobId, role, state, package?, title?, at?, asking }[]`: HUD jobs from the existing newest-64 lookup whose\n  cwd is inside the project root and whose state has not settled;\n- per ticket `items: { done: boolean, text: string }[]` (its checklist) and `comment?: string` (the last bullet under\n  `## Comments`, whitespace-joined, at most 600 characters);\n- `projectList(hudHome, panelRoot): { root, name }[]`: panel root first, then `projects.json` roots that exist,\n  realpath-deduplicated, at most 16; missing or bad file → only the panel root.\nThe collector already takes a cwd; keep it usable for any listed root. Today's fields stay as they are.\n\n**Size:** about 200 source lines; tests in a new\n`tests/unit/project-data.test.mjs` (do not edit project-page.test.mjs or the frames: 01 owns them)\n\nLegacy role: agy-imp (gemini-4-hydrogen-high)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Ledger rows with milestone, commit and date on a synthetic git repo; a row without a hash has no date",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Active jobs: only unsettled jobs under the root; settled and other-root jobs excluded",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Ticket items and latest comment parsed; no comment section → no `comment`",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "projectList: order, dedupe, missing dirs dropped, bad file tolerated",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Home-mode collection reads nothing new; Git still gated",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "implemented by agy-imp on gemini-4-hydrogen-high (job j440537c2d59f3ffa), landed as 5951a489;\n5 tests in tests/unit/project-data.test.mjs; full suite green (507). Rows without a known state are skipped from\n`ledger` as from the counts; jobs in idle_grace count as settled."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.085Z"
+    },
+    {
+      "number": 3,
+      "title": "Progress page, ticket detail and the project switch",
+      "status": "done",
+      "role": "frontend-imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "project-hub/01",
+        "project-hub/02"
+      ],
+      "what": "spec items 2, 3 and 5 on top of 01's pages and 02's data. Progress: Now / Next / To try / Done as\nthe feature spec says, two-line rows at narrow widths, folding per milestone. Tickets: feature meters, ticket\ndetail (checklist and latest comment) inside the panel, `o` to the editor. Switch: the hub's top row names the\nproject; `[` / `]` cycle `projectList`; the panel keeps one collector per visited root (at most 4, oldest dropped);\nthe choice survives reload; Home unchanged. Help, reference (en/zh) and docs/releases/0.1.3.md.\n\n**Size:** about 400 source lines, project-page tests and frames updated",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Progress shows what is in flight, what to try and what was done at 40/80/120 EN/ZH",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Ticket detail shows checklist and comment; `o` opens the file",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Switching projects changes every page; Home stays on the panel's project; a project without STATE.md works",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The choice survives reload; collection only for the shown project",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "implemented by frontend-implementer, landed as 162e8b1c; job-sentences test got the new\nsnapshot fields. Full suite green (514). Chips follow the ledger milestones; switching keeps the open page but\nresets cursor/folds; `o` opens the file where Enter folds."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.085Z"
+    },
+    {
+      "number": 4,
+      "title": "A projects list above the hub when there are several projects",
+      "status": "done",
+      "role": "frontend-imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "project-hub/03"
+      ],
+      "what": "feature spec item 7: the hub's name row `name ▾ i/n` opens a Projects list (two rows per project,\nordered panel project → waiting → running → recent), Enter opens that project's hub, Esc/`‹` returns; `2` opens the\nlast shown project's hub; one project shows no list. A light per-project overview in the collector (STATE, tickets,\nactive job count; signature-cached; no Git, no roles); full collection only for the shown project. EN/ZH, 40/80/120.\n\n**Size:** about 250 source lines, frames regenerated",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Several projects: list rows with milestone, `?` waiting, `◉` running, bar, last activity; order as specified",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "One project: no list, nothing changes",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Enter/Esc/`‹` and `2` behave as specified through real input; choice survives reload",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "The list collection reads no Git and re-reads only changed files",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "implemented by frontend-implementer, landed as a20019d4. Last activity is the newer of\nSTATE.md and the newest ticket file (ledger dates need Git); Esc on a hub opens the list only when the hub was\nopened from it, so Esc still hands keys back in an embedded panel. Full suite green (527), release rehearsal passes."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.085Z"
+    }
+  ]
+}

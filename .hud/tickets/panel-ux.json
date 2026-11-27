@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "feature": "panel-ux",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "To-try rows read as briefs, counts agree, number keys leave the tabs, direct answers, no divider drag",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`docs/spec.md` §2.2 (to-try sentence and micro-actions sentence, both changed by the owner on\n2026-11-19). From the owner's UI/UX review of the live panel (Split layout, zh, 40 columns).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "To-try rows (Split hub, Progress page, Home's to-try rows, Classic too): with the model on and a brief stored, the list row shows the slice ID and the brief's first sentence; the preview (Split) or expanded row (Classic) shows the whole brief, the numbered steps and, folded below them, the original ledger text. Model off or no brief yet: today's whole original text, wrapped. Nothing breaks inside a word or a path.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "One count, one form: the \"to try\" number on the Waiting row and on the Progress row count the same thing (today they read `1 待试用` and `2 待试用` side by side on the same panel). The Progress row keeps one form rather than flipping between `· 2 待试用` and a meter. A meter's `n/m` says what it counts (today `0/2` with an empty bar).",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Number keys no longer switch tabs (←→, Tab and a click still do). Whatever `3` opened stays reachable another way. The tab bar's count badges no longer look like key hints (today `项目 4` reads like tab 4).",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "On an expanded question slab `1`–`4` and `d` answer directly, without `r` first; `r` keeps only its other uses.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Drop the Split divider drag and terminal mouse mode 1002; clicks and the wheel stay; `=`/`-` stay.",
+          "done": false
+        },
+        {
+          "id": 6,
+          "text": "Help, footer hints, EN/ZH strings, unit tests and frame snapshots follow.",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:46.069Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.069Z",
+      "updated_at": "2026-11-27T06:39:46.069Z"
+    },
+    {
+      "number": 2,
+      "title": "One meaning per key, no repeated status, 40-column rows keep the identifying part, one language",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "panel-ux/01"
+      ],
+      "what": "the owner's UI/UX review 2026-11-19, items 5–8.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A key means one thing per page (today `n` flags and jumps to the next question; `+`/`-` resize Split and add/remove places); the footer shows the keys the selected row accepts.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A row does not show its state twice (`提问中 … 提问中 0分钟`, `完成` twice).",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "At 40 columns the identifying part survives: model short names, preset tags out of the role row, two lines before a middle cut (Control plane `gpt-6…sol`, `[defau…`; Home `评审中 ·…`).",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Fixed UI words follow the panel language (`Question:`, `unparseable JSON`, `雷达`, `（无 key）`); quota figures say used or left.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Seen live after 01: a Home job row shows `[完成] 完成 7分钟` (a bracketed keyword mark plus the state word again); a briefed to-try row with a long ID keeps only ~8 characters of its sentence (`SUPERVISOR-MCP  修复了 CLI wo…`): give the sentence the room it needs (for example its own line under the ID) while the row stays compact.",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:46.070Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.070Z",
+      "updated_at": "2026-11-27T06:39:46.070Z"
+    }
+  ]
+}

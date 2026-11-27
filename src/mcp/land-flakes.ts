@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
-import { scanScratch, slugify } from '../cli/tickets.js';
+import { scanScratch } from '../cli/tickets.js';
 import { targetKey, ticketFileEvidence } from '../collectors/ticket-evidence.js';
 import { worktreeGit } from '../collectors/worktrees.js';
 import { readDone, readTurn, receiptForTurn } from '../roles/cli-turn.js';
@@ -11,9 +11,9 @@ import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.
 import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
-import { CASES_HEADING, CHECKBOX_LINE, COMMENTS_HEADING, parseFlakeCases, type FlakeCase } from '../tickets/flake-cases.js';
+import { type FlakeCase } from '../tickets/flake-cases.js';
 import {
-  legacyTicketPaths, readJsonTicketFeature, ticketFeaturePath, withTicketStoreLock, writeLegacyTicket,
+  legacyTicketPaths, readJsonTicketFeature, ticketFeaturePath, withTicketStoreLock,
   writeTicketFeature, type FlakeCaseRecord, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
@@ -82,7 +82,6 @@ export interface CollectFlakesResult {
   pending?: CollectFlakesPending;
 }
 
-const STATUS_FIELD = /((?:^|·)[ \t]*\*\*Status:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
 const MAX_TICKET_BYTES = 256 * 1024;
 const MAX_FLOW_BYTES = 128 * 1024;
 const DISPATCH_CASE_THRESHOLD = 4;
@@ -159,82 +158,6 @@ function listFeatureTickets(scratchDir: string, feature: string): { number: numb
     const match = /^(\d+)-.+\.md$/.exec(entry.name);
     return match && entry.isFile() ? [{ number: Number(match[1]), path: join(issues, entry.name) }] : [];
   });
-}
-
-function appendCaseLines(original: string, lines: readonly string[], promote: boolean): string {
-  const eol = original.includes('\r\n') ? '\r\n' : '\n';
-  const commentsIdx = original.search(COMMENTS_HEADING);
-  let before = commentsIdx < 0 ? original : original.slice(0, commentsIdx);
-  const after = commentsIdx < 0 ? `${eol}## Comments${eol}` : original.slice(commentsIdx);
-
-  const casesMatch = CASES_HEADING.exec(before);
-  if (casesMatch) {
-    const headingEnd = before.indexOf('\n', casesMatch.index);
-    const sectionStart = headingEnd < 0 ? before.length : headingEnd + 1;
-    const rest = before.slice(sectionStart);
-    const nextHeading = rest.search(/^#/m);
-    const nextCheckbox = rest.search(CHECKBOX_LINE);
-    let sectionEndRel = rest.length;
-    if (nextHeading >= 0) sectionEndRel = Math.min(sectionEndRel, nextHeading);
-    if (nextCheckbox >= 0) sectionEndRel = Math.min(sectionEndRel, nextCheckbox);
-    const section = rest.slice(0, sectionEndRel).trimEnd();
-    const tail = rest.slice(sectionEndRel);
-    const head = before.slice(0, sectionStart);
-    const joined = section
-      ? `${section}${eol}${lines.join(eol)}`
-      : `${eol}${lines.join(eol)}`;
-    before = tail
-      ? `${head}${joined}${eol}${eol}${tail}`
-      : `${head}${joined}${eol}${eol}`;
-  } else {
-    const checkIdx = before.search(CHECKBOX_LINE);
-    const block = `### Cases${eol}${eol}${lines.join(eol)}`;
-    if (checkIdx >= 0) {
-      const prefix = before.slice(0, checkIdx).trimEnd();
-      const suffix = before.slice(checkIdx);
-      before = `${prefix}${eol}${eol}${block}${eol}${eol}${suffix}`;
-    } else {
-      before = `${before.trimEnd()}${eol}${eol}${block}${eol}${eol}`;
-    }
-  }
-
-  if (promote && STATUS_FIELD.test(before)) {
-    before = before.replace(STATUS_FIELD, (_, prefix, _old, suffix) => `${prefix}ready-for-agent${suffix}`);
-  }
-  return `${before}${after}`;
-}
-
-function buildRunningListTicket(
-  feature: string,
-  nextNum: number,
-  prevMaxNum: number,
-  lines: readonly string[],
-  promote: boolean,
-): { title: string; body: string } {
-  const title = prevMaxNum > 0
-    ? `Gate flakes collected after ${feature}/${nn(prevMaxNum)}`
-    : 'Gate flakes running list';
-  const body = [
-    `# ${nn(nextNum)}: ${title}`,
-    '',
-    `**Status:** ${promote ? 'ready-for-agent' : 'needs-triage'}`,
-    '**Owner try:** no',
-    '**Live try:** none',
-    '**Blocked by:** none',
-    '',
-    '**What to build:** Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).',
-    '',
-    '### Cases',
-    '',
-    ...lines,
-    '',
-    '- [ ] Each listed case passes 20 consecutive runs under parallel load',
-    '- [ ] No assertion or product bound weakened',
-    '',
-    '## Comments',
-    '',
-  ].join('\n');
-  return { title, body };
 }
 
 interface FeatureTicketEntry {
@@ -462,131 +385,38 @@ export async function collectGateFlakes(
         scanScratch(scratch, true);
         const { claimedTickets } = runningListAdmission(home, mainRoot, feature);
         const existingDoc = readJsonTicketFeature(mainRoot, feature);
-        const useLegacy = !existingDoc && legacyTicketPaths(mainRoot, feature).length > 0;
-
-        if (!useLegacy) {
-          if (existingDoc?.mirror) {
-            throw Error('refusing local ticket edits: GitHub mirror; edit issues with gh, then call hud_tickets with op: sync');
-          }
-          const doc: TicketFeatureDoc = existingDoc ?? { version: 1, feature, tickets: [] };
-          const path = ticketFeaturePath(mainRoot, feature);
-          const maxNum = doc.tickets.reduce((max, t) => Math.max(max, t.number), 0);
-          const desc = [...doc.tickets].sort((a, b) => b.number - a.number);
-
-          const seenEntries: { entry: FlakeCase; ticket: string; path: string }[] = [];
-          let newestRunning: TicketRecord | undefined;
-          for (const item of desc) {
-            if (item.kind !== 'flake-list') continue;
-            if (!newestRunning) newestRunning = item;
-            const ticket = `${feature}/${nn(item.number)}`;
-            for (const c of item.cases ?? []) {
-              seenEntries.push({ entry: recordToFlakeCase(c), ticket, path });
-            }
-          }
-
-          let openTarget: TicketRecord | undefined;
-          if (newestRunning) {
-            const key = targetKey(`${feature}/${nn(newestRunning.number)}`);
-            if ((newestRunning.status === 'needs-triage' || newestRunning.status === 'needs-info') &&
-                !newestRunning.landing && !newestRunning.accepted && !claimedTickets.has(key)) {
-              openTarget = newestRunning;
-            }
-          }
-
-          const targetCases = (openTarget?.cases ?? []).map(recordToFlakeCase);
-          const toAdd: GateFlake[] = [];
-          let matchedTarget: { ticket: string; path: string } | undefined;
-          for (const flake of flakes) {
-            const match = seenEntries.find(e => sameRecordedEntry(e.entry, flake));
-            if (match) {
-              matchedTarget ??= { ticket: match.ticket, path: match.path };
-              continue;
-            }
-            toAdd.push(flake);
-            seenEntries.push({ entry: { ...flake, log: formatLogPath(flake.log) }, ticket: '', path: '' });
-          }
-          if (!toAdd.length) {
-            return {
-              alreadyRecorded: true,
-              res: matchedTarget
-                ? { ticket: matchedTarget.ticket, path: matchedTarget.path, created: false, promoted: false }
-                : openTarget
-                  ? { ticket: `${feature}/${nn(openTarget.number)}`, path, created: false, promoted: false }
-                  : newestRunning
-                    ? { ticket: `${feature}/${nn(newestRunning.number)}`, path, created: false, promoted: false }
-                    : {},
-            };
-          }
-
-          const at = new Date().toISOString();
-          const newRecords = toAdd.map(f => toFlakeCaseRecord(f, at));
-          const allCases: FlakeCase[] = [...targetCases, ...newRecords.map(recordToFlakeCase)];
-          const promoted = shouldTriggerDispatch(allCases);
-
-          if (openTarget) {
-            const ticket = `${feature}/${nn(openTarget.number)}`;
-            openTarget.cases = [...(openTarget.cases ?? []), ...newRecords];
-            if (promoted) openTarget.status = 'ready-for-agent';
-            openTarget.updated_at = at;
-            writeTicketFeature(mainRoot, home, doc);
-            return { alreadyRecorded: false, res: { ticket, path, created: false, promoted } };
-          }
-
-          const nextNum = maxNum + 1;
-          const ticket = `${feature}/${nn(nextNum)}`;
-          const title = maxNum > 0
-            ? `Gate flakes collected after ${feature}/${nn(maxNum)}`
-            : 'Gate flakes running list';
-          doc.tickets.push({
-            number: nextNum,
-            title,
-            kind: 'flake-list',
-            status: promoted ? 'ready-for-agent' : 'needs-triage',
-            owner_try: false,
-            live_try: 'none',
-            approved_removals: [],
-            blocked_by: [],
-            what: FLAKE_LIST_WHAT,
-            cases: newRecords,
-            acceptance: FLAKE_LIST_ACCEPTANCE.map((text, i) => ({ id: i + 1, text, done: false })),
-            comments: [],
-            created_at: at,
-            updated_at: at,
-          });
-          writeTicketFeature(mainRoot, home, doc);
-          return { alreadyRecorded: false, res: { ticket, path, created: true, promoted } };
+        if (!existingDoc && legacyTicketPaths(mainRoot, feature).length > 0) {
+          throw Error(`Feature "${feature}" still uses legacy Markdown tickets; run "hud tickets migrate" first`);
         }
+        if (existingDoc?.mirror) {
+          throw Error('refusing local ticket edits: GitHub mirror; edit issues with gh, then call hud_tickets with op: sync');
+        }
+        const doc: TicketFeatureDoc = existingDoc ?? { version: 1, feature, tickets: [] };
+        const path = ticketFeaturePath(mainRoot, feature);
+        const maxNum = doc.tickets.reduce((max, t) => Math.max(max, t.number), 0);
+        const desc = [...doc.tickets].sort((a, b) => b.number - a.number);
 
-        // Legacy unmigrated Markdown flake feature fallback.
-        const existing = listFeatureTickets(scratch, feature).sort((a, b) => b.number - a.number);
-        const maxNum = existing[0]?.number ?? 0;
-
-        // Scan running-list tickets: find the newest one and collect recorded cases for idempotent retry.
         const seenEntries: { entry: FlakeCase; ticket: string; path: string }[] = [];
-        let newestRunning: { number: number; path: string; text: string } | undefined;
-        for (const item of existing) {
-          try {
-            const text = fs.readFileSync(item.path, 'utf8');
-            if (!isRunningListTicket(text)) continue;
-            if (!newestRunning) newestRunning = { ...item, text };
-            const ticket = `${feature}/${nn(item.number)}`;
-            for (const entry of parseFlakeCases(text)) {
-              seenEntries.push({ entry, ticket, path: item.path });
-            }
-          } catch { /* Ignore unreadable file. */ }
+        let newestRunning: TicketRecord | undefined;
+        for (const item of desc) {
+          if (item.kind !== 'flake-list') continue;
+          if (!newestRunning) newestRunning = item;
+          const ticket = `${feature}/${nn(item.number)}`;
+          for (const c of item.cases ?? []) {
+            seenEntries.push({ entry: recordToFlakeCase(c), ticket, path });
+          }
         }
 
-        let openTarget: { number: number; path: string; text: string } | undefined;
+        let openTarget: TicketRecord | undefined;
         if (newestRunning) {
-          const evidence = ticketFileEvidence(newestRunning.text);
-          const status = (evidence.status ?? '').trim().toLowerCase();
           const key = targetKey(`${feature}/${nn(newestRunning.number)}`);
-          if ((status === 'needs-triage' || status === 'needs-info') && evidence.landed === undefined && !claimedTickets.has(key)) {
+          if ((newestRunning.status === 'needs-triage' || newestRunning.status === 'needs-info') &&
+              !newestRunning.landing && !newestRunning.accepted && !claimedTickets.has(key)) {
             openTarget = newestRunning;
           }
         }
 
-        const targetCases = openTarget ? parseFlakeCases(openTarget.text) : [];
+        const targetCases = (openTarget?.cases ?? []).map(recordToFlakeCase);
         const toAdd: GateFlake[] = [];
         let matchedTarget: { ticket: string; path: string } | undefined;
         for (const flake of flakes) {
@@ -604,30 +434,49 @@ export async function collectGateFlakes(
             res: matchedTarget
               ? { ticket: matchedTarget.ticket, path: matchedTarget.path, created: false, promoted: false }
               : openTarget
-                ? { ticket: `${feature}/${nn(openTarget.number)}`, path: openTarget.path, created: false, promoted: false }
+                ? { ticket: `${feature}/${nn(openTarget.number)}`, path, created: false, promoted: false }
                 : newestRunning
-                  ? { ticket: `${feature}/${nn(newestRunning.number)}`, path: newestRunning.path, created: false, promoted: false }
+                  ? { ticket: `${feature}/${nn(newestRunning.number)}`, path, created: false, promoted: false }
                   : {},
           };
         }
 
-        const allCases: FlakeCase[] = [...targetCases, ...toAdd.map(f => ({ ...f, log: formatLogPath(f.log) }))];
+        const at = new Date().toISOString();
+        const newRecords = toAdd.map(f => toFlakeCaseRecord(f, at));
+        const allCases: FlakeCase[] = [...targetCases, ...newRecords.map(recordToFlakeCase)];
         const promoted = shouldTriggerDispatch(allCases);
-        const lines = toAdd.map(formatFlakeLine);
 
         if (openTarget) {
           const ticket = `${feature}/${nn(openTarget.number)}`;
-          const updated = appendCaseLines(openTarget.text, lines, promoted);
-          const mode = fs.statSync(openTarget.path).mode & 0o777;
-          writeLegacyTicket(mainRoot, home, relative(mainRoot, openTarget.path), updated, mode);
-          return { alreadyRecorded: false, res: { ticket, path: openTarget.path, created: false, promoted } };
+          openTarget.cases = [...(openTarget.cases ?? []), ...newRecords];
+          if (promoted) openTarget.status = 'ready-for-agent';
+          openTarget.updated_at = at;
+          writeTicketFeature(mainRoot, home, doc);
+          return { alreadyRecorded: false, res: { ticket, path, created: false, promoted } };
         }
 
         const nextNum = maxNum + 1;
         const ticket = `${feature}/${nn(nextNum)}`;
-        const { title, body } = buildRunningListTicket(feature, nextNum, maxNum, lines, promoted);
-        const path = join(scratch, feature, 'issues', `${nn(nextNum)}-${slugify(title, nextNum)}.md`);
-        writeLegacyTicket(mainRoot, home, relative(mainRoot, path), body);
+        const title = maxNum > 0
+          ? `Gate flakes collected after ${feature}/${nn(maxNum)}`
+          : 'Gate flakes running list';
+        doc.tickets.push({
+          number: nextNum,
+          title,
+          kind: 'flake-list',
+          status: promoted ? 'ready-for-agent' : 'needs-triage',
+          owner_try: false,
+          live_try: 'none',
+          approved_removals: [],
+          blocked_by: [],
+          what: FLAKE_LIST_WHAT,
+          cases: newRecords,
+          acceptance: FLAKE_LIST_ACCEPTANCE.map((text, i) => ({ id: i + 1, text, done: false })),
+          comments: [],
+          created_at: at,
+          updated_at: at,
+        });
+        writeTicketFeature(mainRoot, home, doc);
         return { alreadyRecorded: false, res: { ticket, path, created: true, promoted } };
       });
       alreadyRecorded = editRes.alreadyRecorded;

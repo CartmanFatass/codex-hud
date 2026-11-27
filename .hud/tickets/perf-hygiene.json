@@ -1,0 +1,268 @@
+{
+  "version": 1,
+  "feature": "perf-hygiene",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A dead worker tree stops the reap retry loop",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Verified 2026-11-22 20:18Z: ~/.hud/watch.log has 1,528 lines, 1,160 of them the same two jobs (j835a9f75107f99a7 failed, j288fb04c6c951215 stopped, 28 h old) logging \"worker-tree snapshot unresolved: recorded root exited before any matching ancestry snapshot could be recovered\" every 30 s; hud-watch pid 228205 never goes idle. Cause per an outside review: reapWorkerTree returns complete=false when the root PID is gone and no worker-tree.json snapshot exists (src/roles/worker-tree.ts:145-155); reapJob then retries in 30 s without setting reaped_at (src/runtime/watch-runtime.ts:256-290), and the 24 h retention needs `!tab || job.reaped_at` (:500-522), so such a job never ages out and the watcher rescans jobs, walks /proc and spawns pi-role-reap forever. Fix: when the root is gone and no snapshot can ever be recovered, there is nothing left to kill: record reaped_at with an `unresolved` note once (one log line), stop retrying, and let retention archive it. Keep retrying only while a live process could still belong to the job. Bound any remaining retry (e.g. 10 tries with backoff) and log each job at most once per state change.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A job whose root exited without a snapshot gets reaped_at after one attempt, logs once, and is archived by retention",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud-watch goes idle with only such jobs left",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.071Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "03d233d30554feb89842294f2498a699a2a0d0bb"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.071Z",
+      "updated_at": "2026-11-27T06:39:46.071Z"
+    },
+    {
+      "number": 2,
+      "title": "Panel, statusline and pi footer reads never block on a full jobs scan",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "perf-hygiene/01"
+      ],
+      "what": "Outside review 2026-11-22 (verify each claim with a measurement before changing code; drop what does not hold): readThinJobs (src/collectors/thin-jobs.ts:619-980) synchronously lstats every job dir (356 today), reads up to 200 jobs' STATUS/job/brief/report/qa and rewrites the 88 KB .hud/display/thin-jobs.json on any change; the pi package runs it every 5 s inside the pi process (src/harness/pi/segment.ts:38-54), blocking input and frames; session-finder's fallback (src/collectors/session-finder.ts:523-534) scans all STATUS.json files the same way. hud-watch (src/runtime/watch-runtime.ts:623) and hud watch / pi (src/cli/watch.ts:136) each hold a recursive fs.watch on ~/.hud/jobs. Fix: one shared, incremental job snapshot (JobIndexCache already exists: reuse it) read off the hot path; the pi footer reads a snapshot file the watcher keeps current instead of scanning, or scans asynchronously and only on change; thin-jobs.json is rewritten only when its content changes; one recursive watch per process tree where possible. Measure before/after: pi main-thread block per tick, ms per panel tick with 356 job dirs, inotify watch count.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The pi process never runs a synchronous full jobs scan on its main thread; measured block per tick before/after in the report",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Panel tick time with 356 synthetic job dirs before/after in the report",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.071Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "d9035e8bc5b4754b69feda39f12c7ce8fca3798e"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.071Z",
+      "updated_at": "2026-11-27T06:39:46.071Z"
+    },
+    {
+      "number": 3,
+      "title": "Daemon binding and statusline git stay off the event loop",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Outside review 2026-11-22 (verify with a measurement first; drop what does not hold): src/collectors/daemon-binding.ts:313-431 runs spawnSync('tmux', …) (1 s timeout) and a synchronous full-column `LIKE '%rpc.method=\"thread/%'` query over ~/.codex/logs_2.sqlite (97 MB + WAL today) from the bar's 1 s tick and the panel's finder.check(); src/statusline-parity/git.ts:22-45 runs several synchronous git commands every 2 s. Fix: async subprocesses with the existing budgets; the SQLite lookup runs only when the binding is unknown or stale, bounded (rowid/time window, LIMIT, an index-friendly predicate if one exists) and cached; statusline git reuses the 2 s cache without blocking a render. Read-only toward the Codex database, never vacuum or modify it. Report event-loop block per tick before/after.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "No spawnSync or synchronous SQLite scan on the bar/panel tick path; before/after block times in the report",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.071Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "c238a64c080d63e9363ace0823eae2163b5d1705"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.071Z",
+      "updated_at": "2026-11-27T06:39:46.071Z"
+    },
+    {
+      "number": 4,
+      "title": "Long-running processes keep bounded caches",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Outside review 2026-11-22 found module- or process-level maps that only grow (verify each; fix the real ones; the panel runs ~400 MB RSS today): collectGitStatus cache (src/collectors/git.ts:304-389, per cwd), readAgentTokens cache (src/collectors/agent-context.ts:56-194, per rolloutPath) and TokenRateTracker.tools (src/collectors/token-rate.ts:30), hud-mcp createdJobs / landTasks (src/mcp/thin-main.ts:2799, 2897, carried across hot reloads) and tasks kept to TASK_TTL, Notifier.lastFired (src/notify.ts:133-180), TryBriefs.hashes (src/collectors/try-brief.ts:62-85), closedTabs (src/runtime/watch.ts:20) and warnings (src/runtime/watch-runtime.ts:60), ProjectOverviews.pool (src/collectors/project-visits.ts:67-81) and homeTryDates (src/collectors/project-board.ts:147), session-finder's cachePut is FIFO not LRU (src/collectors/session-finder.ts:32-41). Give each a bound that matches its use: drop entries for settled/archived jobs and unseen paths, small LRU caps elsewhere, release a project's collector when it leaves the list. Report panel and hud-mcp RSS after a synthetic hour-long churn before/after.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each confirmed map has a bound and a test that churns past it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Panel and hud-mcp RSS before/after in the report",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.072Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "fdecc4da283c40ec3a8cb20c087f2e325ccf8dcf"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.072Z",
+      "updated_at": "2026-11-27T06:39:46.072Z"
+    },
+    {
+      "number": 5,
+      "title": "HUD home caches and backups have retention",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "perf-hygiene/01"
+      ],
+      "what": "Measured 2026-11-22 in ~/.hud: backups/trust 34 MB (562 files; src/cli/trust.ts:99-124 backs up .claude.json and friends on every grant, no limit), display/model-cache/decision-labels 8.5 MB (2,073 files, write-only, src/collectors/decision-labels.ts:59), display/statusline 2.8 MB (425 files, one per historical cwd/transcript, src/statusline-parity/storage.ts), display/state 61 leftover pid-*.json snapshots from unclean exits (src/snapshot.ts:325-337). Fix: trust keeps the newest N backups per file (e.g. 10) and skips a backup identical to the last; decision-label and statusline caches evict by age/LRU (e.g. 30 days, size cap), run by hud-watch's existing retention pass; dead-pid snapshots are removed when their pid is gone. Never delete the newest backup of any owner file.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each directory stays under its bound in a synthetic churn test; the newest trust backup of each file is always kept",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.072Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "daa1f0833fab0deed0701f4f5724af46c4fe0786"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.072Z",
+      "updated_at": "2026-11-27T06:39:46.072Z"
+    },
+    {
+      "number": 6,
+      "title": "The watcher learns of worker death by an event, not by a 30 s check",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "perf-hygiene/01"
+      ],
+      "what": "Owner 2026-11-22: \"watcher必须轮询吗 不能事件驱动吗\". hud-watch is already event-driven for job files (recursive fs.watch on STATUS/job/report/... in src/runtime/watch-runtime.ts:623) and sleeps on one timer set to the nearest deadline. The remaining periodic wake is `cliCheck` (30 s, HUD_WATCH_CLI_CHECK_MS): while any headless sonic or reap preflight is working, the watcher rescans every 30 s because the death of a process that is not its child leaves no file event (a SIGKILLed runner writes no sonic-exit.json). Replace that with a death event: each runner/supervisor the HUD starts (headless sonic runner, CLI supervisor, land runner) listens on an abstract Unix socket named after its job (src/utils/abstract-lock.ts already uses abstract sockets); the watcher connects once per live job and treats the socket's close as the death signal (the kernel closes it when the process dies, even on SIGKILL); herdr pane/tab-closed events stay as they are. Keep exactly one fallback timer for deadlines (retention, sonic checkpoints, retry backoff), never a fixed-interval scan. Pi workers launched through pi-roles: use the same socket if the runner owns one, else keep the current check only for those and say so.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With only working headless sonic jobs, the watcher makes no periodic scan; a SIGKILLed runner is noticed within 1 s through the socket close",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "strace/timer count shows no wake-ups between events and deadlines in an idle-but-working state (report the numbers)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.072Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "78d50dfa5e7085b1714bcfd6c1aba1d8614ec0bb"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.072Z",
+      "updated_at": "2026-11-27T06:39:46.072Z"
+    },
+    {
+      "number": 7,
+      "title": "Finished work leaves no logs or scratch behind",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec §2.1.5 \"Retention\" (22.22). Owner 2026-11-22: finished work need not be kept. Sonic `stdout.jsonl` files held 75–125 MB, 97% of `~/.hud/jobs`, and `tmp/tasks/` had grown to 5.7 GB; the main session cleaned the latter once by hand. (1) The watcher deletes `stdout.jsonl` and `stderr.log` of a job that settled cleanly (done or closed with a report) once its `resume_s` window has passed. Failed or stopped jobs keep them until the job directory itself goes. Anything that reads those files must tolerate their absence: archive facts, failure digests, the panel's output view. (2) The `.hud/project.json` `scratch` field (`{ \"paths\": [...], \"keep_days\": 7 }`, already added for this repo) makes the watcher remove top-level entries under each path whose newest file is older than `keep_days`. It runs at most hourly from the existing housekeeping pass (perf-hygiene/05), never follows symlinks, never leaves the project root, and logs one line with the count. Registered projects only. Document both in docs/reference.md and docs/reference.zh.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A clean sonic and a clean worker lose stdout.jsonl after resume_s; a failed one keeps it; digests and archive still work",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Scratch entries older than keep_days are removed, newer ones and symlink targets untouched, paths outside the root refused",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Targeted watch/retention tests pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.072Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "f625756adc61d65dbd91201524c55c08151827d9"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.072Z",
+      "updated_at": "2026-11-27T06:39:46.072Z"
+    }
+  ]
+}

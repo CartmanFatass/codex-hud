@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "feature": "claude-tail-first",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A long Claude subagent transcript shows its latest step at once",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Proposal docs/neon-proposal/11-claude-native-tail-first.md with its §6 defaults (owner, 2026-11-22): Claude subagent transcripts only (not main rollouts or Codex); a first-seen file over 64 KiB is read tail-first within a budget of 16 files per refresh; until the forward read reaches line one, order by the meta file's birthtime (missing birthtime sorts last); preview text never feeds the one-line summary (no new model calls). The spec's M5 candidate \"a transcript is read tail-first on open\".\n\nLegacy Blocked by: none (panel lane, after monitor-state/04)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A synthetic 5 MB subagent transcript shows its latest step in the first frame; nesting fills in after",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Refresh read budget respected (test); npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 3a9b7166. Synthetic 5 MB transcript: latest step on frame 1 (1–7 ms) vs ~4 s before; goldens unchanged. Suite 970/970."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.991Z"
+    }
+  ]
+}

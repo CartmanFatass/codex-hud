@@ -1,0 +1,248 @@
+{
+  "version": 1,
+  "feature": "ux-pass",
+  "spec_path": ".scratch/ux-pass/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "pi footer quota in Claude's style (M-S1 FOOTER-QUOTA)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`docs/design/ux-pass/model-selection.md` §4 S1. pi's 5h/7d subscription windows and the API ≈$ grant\nreading use Claude's quota segment: label, bar, percent used in the level colour, reset; `≈` marks an estimate.\nSettled decision 3 (percent means used).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the S1 Acceptance list",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "exact strings at 120, 80 and 36 columns as in S1",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 2,
+      "title": "change a model in 2 keys (M-S2 QUICK-MODEL)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`docs/design/ux-pass/model-selection.md` §4 S2. `m` on a role row (and on places) opens the picker;\npicking saves at once through the existing `preset-edit` `op: 'run'` writer; no chain focus, sheet, draft or `s`.\nMulti-place edits stay a draft.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the S2 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 3,
+      "title": "picker in the panel's own pane, one click sets (M-S3 PICKER-PANE)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ux-pass/02"
+      ],
+      "what": "`docs/design/ux-pass/model-selection.md` §4 S3. No herdr zoom (delete `src/cli/model-picker-zoom.ts`\nand its call sites); the picker takes the panel body at once; two columns from about 100 columns; one click sets;\nthe cursor never leaves the screen. Settled decisions 1 and 2.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the S3 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 4,
+      "title": "likely models first, ranked flat filter (M-S4 PICKER-ORDER)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ux-pass/03"
+      ],
+      "what": "`docs/design/ux-pass/model-selection.md` §4 S4. Browse view puts the current model, this role's\npreset models and the providers the roles use on the first screen; typing gives one ranked flat list. Settled\ndecision 4.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the S4 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 5,
+      "title": "one picker for CLI and AI Studio places (M-S5 PICKER-FLAT)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ux-pass/04"
+      ],
+      "what": "`docs/design/ux-pass/model-selection.md` §4 S5. CLI and AI Studio places open the same picker as a\nflat list (no groups, no facts strip), same keys and save rule; replaces the inline list `m` opens after 02.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the S5 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 6,
+      "title": "one footer rule everywhere (O-1 FOOTER)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "`docs/design/ux-pass/overall.md` §3 Slice 1. Row actions, then Enter with this row's verb, then Esc,\nthen page actions; `? help` last and never dropped; no movement or global keys. Settled overall decision 1.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the Slice 1 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 7,
+      "title": "Project hub, Progress and question slabs say a fact once (O-2 SAY-ONCE)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ux-pass/06"
+      ],
+      "what": "`docs/design/ux-pass/overall.md` §3 Slice 2, including change 4 (Split Progress rows show the\nslice's text, cut). Settled overall decision 2.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the Slice 2 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 8,
+      "title": "Help by tab, at the right place, complete (O-3 HELP)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ux-pass/07"
+      ],
+      "what": "`docs/design/ux-pass/overall.md` §3 Slice 3.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the Slice 3 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 9,
+      "title": "EXP in the panel's form (O-4 EXP-FORM)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ux-pass/06"
+      ],
+      "what": "`docs/design/ux-pass/overall.md` §3 Slice 4.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the Slice 4 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 10,
+      "title": "Harnesses shows exceptions only (O-5 HARNESS-ROWS)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ux-pass/06"
+      ],
+      "what": "`docs/design/ux-pass/overall.md` §3 Slice 5. Settled overall decision 4 (no `installed`/`listed`\non enabled rows).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the Slice 5 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    },
+    {
+      "number": 11,
+      "title": "top row, Esc and words (O-6 TOP-ROW)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "ux-pass/08"
+      ],
+      "what": "`docs/design/ux-pass/overall.md` §3 Slice 6. No `models on`, no `EXP exp`, Esc the same on every\ntab, Chinese `分`. Settled overall decisions 3 and 4.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "the Slice 6 Acceptance list",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.116Z",
+      "updated_at": "2026-11-27T06:39:46.116Z"
+    }
+  ]
+}

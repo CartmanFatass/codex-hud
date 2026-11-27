@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "feature": "home-progress",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Failed jobs leave Home once superseded",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/design/home-progress/README.md slice 1 HOME-SUPERSEDE with owner answers (D-2026-11-22-14): persist retry_of, stamp observed_at on retry; a failed/stopped job is superseded by a retry/repair, a newer job on the same target, or a landed slice/ticket; superseded failures leave Home, lane tops, hud_read({}) and Recommended (a reveals them muted); unhandled failures leave Home after 30 minutes; a stale AI brief never shows once its inputs changed.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A failed job whose retry landed is gone from Home at once and visible muted under a",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "An unhandled failure leaves Home after 30 minutes and hud_read({}) still reports it",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "e8945375"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1016/1016 ×2, unit 92/92, fixtures OK). Owner tries it on Home."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.026Z"
+    },
+    {
+      "number": 2,
+      "title": "Progress rollup and derived ticket states",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Design slice 2 ROLLUP-TRUTH: Home collector joins live jobs; whole-project ticket totals; feature tags roll into the current milestone; cross-feature <feature>/<NN> blockers; queued (waiting on an unfinished predecessor) apart from stalled; ticket working/try/done derived at read time from jobs, STATE, commits naming the ticket and accepted tries; hud_tickets accepts claimed/done and <feature>/<NN>; hud_create takes optional ticket/slice. Spec §2.1.7 and §2.2.4 sentences as told to the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A ticket whose slice landed shows to try without editing its file; accepted shows done",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A ticket waiting on an unfinished predecessor shows queued, not blocked",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.026Z",
+      "updated_at": "2026-11-27T06:39:46.026Z"
+    },
+    {
+      "number": 3,
+      "title": "Home rollup UI",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "home-progress/01",
+        "home-progress/02"
+      ],
+      "what": "Design slice 3 HOME-ROLLUP-UI: Home Progress row '<milestone> · N 待试用 · M 工作中'; milestone stacked bar and legend, one project ticket meter, one row per started feature, unstarted features folded into one row; Tickets page lanes ready / queued (folded) / stalled; EN and ZH strings and golden frames; spec §2.2.3 sentence as told to the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Home frames match docs/design/home-progress/sample.html in zh and en",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "98fbc7c4"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1024/1024 ×2, unit 92/92, fixtures OK)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.026Z"
+    },
+    {
+      "number": 4,
+      "title": "Panel text follows the display language",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "home-progress/03"
+      ],
+      "what": "Design slice 4 PANEL-LOCALE with owner answer 'translate': strip Slice/Ticket prefixes keeping -NN suffixes; <ID> · localized name from job sentences; to-try briefs also refresh on Home; WaitingBriefs: cached display-model translation of waiting items, open worker questions and open ticket titles not in the panel language, original folded below; convention: the orchestrator writes Waiting in the owner's language. Spec §2.2.4 and §2.2.8 sentences as told to the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "With language zh, English waiting items, worker questions and ticket titles show in Chinese with the original folded",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No model call for text already in the panel language",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "22bfbdbe"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1037/1037 ×2, unit 92/92, fixtures OK)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.026Z"
+    }
+  ]
+}

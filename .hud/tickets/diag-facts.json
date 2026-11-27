@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "feature": "diag-facts",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Archive the dispatch, worktree, stop and answer facts toktrack's workflow diagnostics need",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "toktrack design `docs/design/workflow-diagnostics/README.md` (section 'HUD facts to add') needs a few facts HUD has on the live job but drops at archive time or never writes. Copy into the archive row (`src/roles/job-archive.ts`), all optional so older rows read as unknown: `model_source`, `thinking_source`, `imp_preset`, `requested_on`, `requested_model` (what the caller asked for, from create options); `had_worktree`, `worktree_removed_at`, `worktree_kept_reason`. Record `stop_origin {actor: 'mcp'|'panel'|'pane_vanished', prior_state, at}` on job.json and the archive when a job is stopped or closed while working (MCP hud_close, panel stop, watcher finding the pane gone). Record `answered_by: 'orchestrator'|'owner'` per question in `questions[]`: hud_respond answers are `orchestrator`, panel answers are `owner`. Record each fact once; no new files or event streams; no analysis in HUD.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A dispatched, settled and archived job carries the requested and resolved placement fields and the worktree fields in its archive row",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Stopping a working job through hud_close, the panel, and a vanished pane records the three stop_origin actors (tests)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A question answered via hud_respond archives answered_by orchestrator; one answered from the panel archives owner",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md lists the new archive fields in one short paragraph",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.002Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "a1286a26c0019090bf5cd5b86f0242f2af6eb6cb",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.002Z",
+      "updated_at": "2026-11-27T06:39:46.002Z"
+    }
+  ]
+}

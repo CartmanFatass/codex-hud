@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "feature": "optional-roles",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "pro and flow are optional roles",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22: `pro` (web ChatGPT/Gemini/AI Studio) and `flow` (Google Flow images/video) leave the default roster and become optional roles: shipped but off until the owner turns them on (hud setup, Control, or a role file in $HUD_HOME/roles). Off roles are absent from hud_roster and refused by hud_create with a hint naming how to turn them on. Existing owner role files that define them keep working. Spec §2.1.2 sentence on pro changes (draft; the main session tells the owner).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A fresh HUD_HOME roster lists no pro or flow; turning one on lists it and hud_create works",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud_create role pro when off returns a clear hint",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.058Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "0c7a3fc1a1f4dd838fd14ea3ad8bbd89f565a0ba"
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.058Z",
+          "author": "legacy",
+          "text": "The fixture check passed. The full `npm test` run had three timeout cancellations; all three passed in an isolated serial rerun."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.058Z",
+      "updated_at": "2026-11-27T06:39:46.058Z"
+    }
+  ]
+}

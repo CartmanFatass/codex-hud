@@ -1,0 +1,231 @@
+{
+  "version": 1,
+  "feature": "pivot-m3",
+  "objective": "pivot",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Objective record, hud_objective tool and receipts, shown on Project",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec `docs/spec.md` §2.2 Project and §2.3, syntax D-2026-11-23-04 in `docs/decisions-log.md` (read both). Build the Objective record end to end. (a) Reader `src/collectors/objectives.ts`: parse a project's committed `.hud/objectives.md`: optional header line `**Stance:** active|paused|maintenance · **Priority:** high|normal|low` (absent priority = normal, absent stance = unknown), then `## <id>: <title>` sections with fields `**State:**` (required, `active|paused|done`), optional `**Features:**` (comma list of `.scratch` feature slugs), `**Next:**`, `**Result:**`, `**Evidence:**` (comma list of repo paths, URLs or commit hashes). IDs are lowercase slugs `[a-z0-9-]+`, unique per project. Unknown fields are kept and ignored; a malformed section is skipped with a diagnostic, never a crash. Bounded read like the STATE reader. (b) New MCP tool `hud_objective` (schema in `src/roles/tool-definitions.ts`, dispatch in `src/mcp/mcp/operations.ts`, template: `hud_tickets` op update / `src/mcp/local-tickets.ts editTickets`): `op: \"set\"` with `cwd`, `id`, and any of `title`, `state`, `next`, `result`, `evidence`, `features`; `op: \"project\"` with `stance`/`priority`. It creates or edits the file in place (atomic write, keeps other sections and unknown fields byte-for-byte), validates values, and does not commit. On a material change only (creation, state change, title change, a new `result` value) it appends one receipt line to `$HUD_HOME/events/<YYYY-MM>.jsonl` (0600, append): `{v:1, kind:\"objective\", project, id, title, change:\"created\"|\"state\"|\"title\"|\"result\", state, at}`. Next/evidence/features edits write no receipt. Not inside `$HUD_HOME/archive/` (toktrack reads every file there). (c) Project page (`src/render/project-view.ts`, `inbox-project.ts`): an Objectives section after `Needs you` listing each Objective's id, title and state (active first, then paused, done folded), with latest result and next step; when the file is absent, nothing new shows (STATE Now/Next stays as today). A fraction only when `Features` names a feature: its acceptance items checked/total. Strings in `src/render/i18n.ts` EN and ZH. Size budget about 600 lines incl. tests; stop and ask if the format cannot express something the spec requires. Non-goals: Home across projects (ticket 03), requests (02), job stamping (04), opening evidence (05).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: the reader parses a synthetic objectives.md with header, three Objectives (one per state), unknown fields and one malformed section",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: hud_objective set creates the file, edits one field without changing other bytes, and writes a receipt for creation, state and result changes but not for a Next edit",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Render test: Project shows the Objectives section at 120 columns in EN and ZH; no section without the file",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Docs: `docs/reference.md` documents the file and the tool briefly",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "`npm test` passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.079Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "15e5462110a3eb09952d2b1d4d7d42605ffbf72c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.079Z",
+      "updated_at": "2026-11-27T06:39:46.079Z"
+    },
+    {
+      "number": 2,
+      "title": "Owner requests get IDs, receipts and resolve through hud_objective",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m3/01"
+      ],
+      "what": "Spec §2.2 (Attention, requests) and §2.3 (request receipts), D-2026-11-23-04. Requests stay `## Waiting for the owner` bullets in `docs/handoff/STATE.md` (the collector is `src/collectors/project-board.ts:535`, ordering `compareOwnerRequests`/`requestOrder` :104-119). Add to `hud_objective`: `op: \"request\"` with `cwd`, `text`, optional `objective` (must exist in the project's objectives.md), optional `waits: true`; it appends `- <YYYY-MM-DD> [r<N>] <text> (objective <id>) (work waits)` (parts optional; N = next unused number in the project, scanning STATE and the events log) and records `{v:1, kind:\"request\", project, request:\"r<N>\", objective?, waits, change:\"opened\", at, by}`. `op: \"resolve\"` with `cwd`, `request`, optional `resolution` (`resolved`|`withdrawn`, default resolved), optional `note`: removes that bullet and records `change:\"resolved\"|\"withdrawn\"` with the time and `by` (caller harness/session as recorded elsewhere). Lines without an `[rN]` id keep working exactly as today (no receipts). The `[rN]` and `(objective …)` parts show in Home, Project inbox, the band and the HTML board as the id and Objective title (look it up), not as raw syntax. Hand removal of a bullet still clears it everywhere (no receipt). One decision counts once: resolving does not touch tickets. Size budget about 400 lines incl. tests.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: request then resolve round-trips STATE (other lines byte-identical) and writes opened/resolved receipts with ids",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: an unknown objective id or request id is an invalid_arguments error and changes nothing",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Render test: a request with id and objective shows the Objective title on Home, the Project inbox and the band text; legacy lines unchanged",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "`npm test` passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.079Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "4009cd9937014a2206e177da406933df3491d34a",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.079Z",
+      "updated_at": "2026-11-27T06:39:46.079Z"
+    },
+    {
+      "number": 3,
+      "title": "Portfolio Home: every registered project and cross-project requests",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m3/01",
+        "pivot-m3/02"
+      ],
+      "what": "Spec §2.2 Home bullets and §5 M3. Home today reads only the panel's cwd (`src/panel/controller.ts:184,200`, `src/render/home-view.ts:11-25`). Make Home a portfolio: first the owner requests of all registered projects (`src/roles/projects.ts projectList`, max 16 as today), ordered by `compareOwnerRequests` with project priority now taken from objectives.md (high > normal > low), each row naming its project; then one block per registered project: name, declared stance, priority when not normal, current goal (its active Objectives' titles, or STATE Now when no objectives.md), latest result with its date where known, and update time. Paused, idle (no running jobs) and unavailable (root missing) projects stay listed and identifiable; bound detail per project, never membership. Keep the existing pane load line. Enter on a request opens that project's waiting page; Enter on a project opens its Project tab (navigation only, no worker grant). Reads stay off the draw path: collect per project with the existing memo and file stamps, and only for Home. Band and badges keep their current-project scope (spec: Home, Project, band and badge show the same requests within their stated scopes). EN and ZH strings. Size budget about 600 lines incl. tests; perf: a Home tick with 8 registered projects and no file changes does no file reads beyond stats (test it).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Render test: Home with three synthetic registered projects (one paused, one with no objectives.md, one unavailable) at 120x40 and 200x55 in EN and ZH",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: requests from two projects order by waits, then project priority, then age",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: an unchanged Home tick with 8 projects only stats files",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Input test: Enter on a cross-project request opens that project's waiting page",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "`npm test` passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.079Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "93ed617a38ed62402a7c1cd5debc5b09b532d28c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.079Z",
+      "updated_at": "2026-11-27T06:39:46.079Z"
+    },
+    {
+      "number": 4,
+      "title": "Tickets link to Objectives; jobs and archive carry the link",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m3/01"
+      ],
+      "what": "Spec §2.3 second bullet. A ticket may carry `**Objective:** <id>` in its header. At `hud_create` with a `ticket` (`src/mcp/dispatch/orchestrator.ts:495-496,558-559`), read that field from the ticket file and stamp `objective: {id, title}` (title from the project's objectives.md at that moment) into job.json; carry it through `retry_of`, `hud_send` repairs, land repairs and Sonic children (inherit from the parent job); never guess from a title or package. Add `objective` to `projectJobFacts` (`src/roles/job-archive.ts:37-52`) so the archive line has it. Unattributed and older jobs stay unattributed. `hud_tickets` add/update accept an optional `objective` that writes the header field (validated against objectives.md). Inspector shows the Objective id and title when set. Size budget about 300 lines incl. tests.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a ticketed job stamps the Objective id and title; a retry and a repair keep it; a ticket without the field stamps nothing",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: the archive line carries `objective`",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: hud_tickets update with an unknown objective id fails without writing",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "`npm test` passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.079Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "a5bc860b920d7c10a5a7854db34aa2a3161b03a4",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.079Z",
+      "updated_at": "2026-11-27T06:39:46.079Z"
+    },
+    {
+      "number": 5,
+      "title": "Open an Objective's evidence from Home and Project",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m3/03"
+      ],
+      "what": "Spec §5 M3 Try (\"open its evidence\"). Objective rows on Project and Home expose their Evidence entries as files: repo paths open with the existing `open-files` action (`src/render/workboard-input.ts:307`, `src/panel/actions.ts:70-75`, `src/cli/panel-pane.ts` → `$EDITOR` in a herdr tab); a commit hash opens `git show <hash>` in a herdr tab the same way; a URL is shown in full on the detail line (no browser launch). A report under `$HUD_HOME/jobs/<id>/report.md` named as evidence opens like a path. Enter on an Objective row opens a small detail (id, title, state, next, result, evidence list with focusable entries; Esc closes) as other detail pages do; `o` opens the selected entry. Missing paths show as missing, not as errors. EN and ZH strings. Size budget about 300 lines incl. tests.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Input test: Enter on an Objective row opens its detail; `o` on a path entry emits open-files with the absolute path; on a commit emits the git-show action",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Render test: detail with a missing path, a commit and a URL at 120 columns",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`npm test` passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.079Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f500b924287ec012441f19fee858dde6a3294fc9",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.079Z",
+      "updated_at": "2026-11-27T06:39:46.079Z"
+    }
+  ]
+}

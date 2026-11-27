@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "feature": "worktree-overlap",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "hud_read names files another worktree job also changed",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "test-split/04"
+      ],
+      "what": "Proposal docs/neon-proposal/15-worktree-overlap-in-git-summary.md with its §6 defaults (owner, 2026-11-22): `git_summary` always carries `overlaps` ([] when none, null when its own summary failed); compare against other managed worktrees of the same checkout, including kept closed ones, with already-integrated changes filtered out; the main checkout's own uncommitted changes are not counted; no hint in hud_create or notices. Spec §isolation sentence gains, as approved: \"including files also changed in other managed worktrees of the same checkout\".\n\nLegacy Blocked by: test-split/04 (MCP lane; land before mcp-split/01)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Two synthetic worktree jobs editing the same file each list the other in hud_read; an integrated change is not listed",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "d8443bbf"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "(imp j59bce9185884f04c): `git_summary.overlaps` [{job, files, more?}], [] none, null own summary failed, `overlaps_incomplete` on partial coverage; integrated changes filtered by comparing sibling HEAD paths with main HEAD; bounded to 8 siblings, 200 candidates, 32 extra git calls (1 s each); ~+14 ms with 2 siblings. Main: 973/973, unit, check:fixtures green."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.122Z"
+    }
+  ]
+}

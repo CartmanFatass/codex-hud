@@ -229,10 +229,8 @@ test('repair with no ready tickets pauses and delivers one notice to watch; resu
   assert.equal(watchLines.filter((line) => line.includes(noWorkFlow)).length, 1);
 
   // 2. MCP task hand-back to main: pause -> resume (repair) -> pause again delivers a new pause notice for each epoch.
-  const mainIssues = join(f.root, '.scratch', 'taskmain', 'issues');
-  fs.mkdirSync(mainIssues, { recursive: true });
-  fs.writeFileSync(join(mainIssues, '01-first.md'), goodTicket(1));
-  f.git(f.root, 'add', '.scratch');
+  f.writeJsonTicket(1, {}, 'taskmain');
+  f.git(f.root, 'add', '.hud/tickets/taskmain.json');
   f.git(f.root, 'commit', '-qm', 'taskmain feature');
 
   // Stop the stdout watch so a fresh task-capable MCP client tests MCP task delivery cleanly.

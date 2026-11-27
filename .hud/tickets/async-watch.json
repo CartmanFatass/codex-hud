@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "feature": "async-watch",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Async reap in hud-watch with per-job isolation",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/neon-proposal/06-async-watcher-and-supervisor.md S1: the watcher reaps jobs with async, cancellable commands (bounded concurrency, kill grace), so one slow reap no longer freezes settlement, checks and other jobs for up to 135 s; graceful SIGTERM/SIGINT. Runs after build-dedup/01 (bin import paths). Owner defaults: no new env vars, hud-check only unref'd.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A 5 s reap of one job does not delay another job's settlement, checks or failure past 500 ms",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "SIGTERM exits 0, removes watch.pid, leaves no orphan pi-role-reap or herdr",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "watch.log keeps its reap lines; new exit=timeout|aborted|unavailable values",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "e049e601"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "(imp j4c69e5c29fb9a69e): up to 4 concurrent reaps, one task per job, per-repo serialized worktree cleanup, cancellable Pi read-close preflight; herdr-run gains signal/killGraceMs/killProcessGroup (watcher-only, own new group); measured during a 5 s reap: other settle 96 ms, checks 228 ms, tab-close failure 14 ms; SIGTERM exit 0 in 45 ms (TERM-resistant helper 2.0 s), no orphans. Main: 986/986, unit, check:fixtures."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.979Z"
+    },
+    {
+      "number": 2,
+      "title": "Async herdr calls in the CLI supervisor",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "async-watch/01"
+      ],
+      "what": "06 S2: hud-cli.mjs and quiet-decision use async herdr calls with an external abort signal, so a stop or closed tab aborts in-flight work at once; /quit cancelled by tab_closed records closed, not failed.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "stop-requested becomes stopped within 500 ms with zero Decision API calls",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A hung herdr call does not block the supervisor loop",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "f644b00a"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "(imp j6019dcfeb9a33bb0): hud-cli herdr calls async + cancellable; quiet-decision takes the abort signal; hud-watch defers the tab-close verdict while a live supervisor holds STATUS.json.quit-<pid>. stop → stopped in 104–110 ms with 0 Decision calls; hung read + tab close settles in 4–6 ms. Main: 995/995, unit, check:fixtures."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.979Z"
+    },
+    {
+      "number": 3,
+      "title": "Async notify and queue watcher start",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "async-watch/01"
+      ],
+      "what": "06 S3: hud-notify, worker-tools, thin-main and src/cli/watch.ts drop their remaining blocking spawns; ensureQueueWatcher is fire-and-forget; hud watch --queue answers within 500 ms when codex queue hangs. S4 (lease/job-project) is deferred.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_create/hud_send lose the 2 s sync block and hud_ask the long freeze",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "hud watch --queue exits within 500 ms with a hung codex queue",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "b8981a9f"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "(imp jf7461ead1217bfe9): hud-notify/agy-events/worker-tools/watch.ts/thin-main async; ensureQueueWatcher fire-and-forget; the first create reply reuses the tab-placement caller lookup. Synthetic: create 4362→466 ms, send 2060→64 ms, worker ping during hud_ask 1996→2 ms, watch --queue SIGTERM exit 3000→273 ms. Integration exposed a load race in the new hud_ask test (background watcher check vs the Codex stub); test fixed. Main: 998/998 twice, unit, check:fixtures."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.979Z"
+    },
+    {
+      "number": 4,
+      "title": "Focused review: process killing in the async watcher",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "async-watch/01",
+        "async-watch/02",
+        "async-watch/03"
+      ],
+      "what": "One reviewer job on the merged async-watch slices for process-killing safety (spec: killing processes needs review).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Reviewer report with findings; must-fix findings repaired",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "review docs/reviews/2026-11-22-async-watch-review.md (101cbfe4)",
+          "text": "5 blocking + 1 delete, fixed in 0bc03c05 (imp on 6.2-astra, jdf3e056ed80df9a3 → continuation j9fe69438c4ed89e7): watcher publishes its pid only when ready (startup guard under the dist lock); stop rechecked at the paid fetch boundary; agy mailbox flock async; group signals only after a live member with the per-spawn token is verified; read-close retry with tab gone. 7 new red/green tests. A loaded-run flake on main came from an assertion message reading a not-yet-written watch.log (b10b7237). Main: 1005/1005 twice, unit, check:fixtures."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:45.979Z"
+    }
+  ]
+}

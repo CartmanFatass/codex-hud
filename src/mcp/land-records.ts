@@ -1,19 +1,18 @@
 /** Pre-fast-forward validation and post-fast-forward landing record update + HUD ticket-write sweep in main. */
 import * as fs from 'node:fs';
-import { join, relative } from 'node:path';
-import { scanScratch } from '../cli/tickets.js';
+import { join } from 'node:path';
 import { targetKey } from '../collectors/ticket-evidence.js';
 import { ticketIds } from '../collectors/ticket-rollup.js';
 import { worktreeGit } from '../collectors/worktrees.js';
 import { isHandEditedInMain, sweepTicketWrites, type GitRunner } from '../tickets/commit.js';
 import {
-  legacyTicketPaths, parseTicketRef, readJsonTicketFeature, readTicketWrites, serializeTicketFeature, sha256Bytes,
-  withTicketStoreLock, writeLegacyTicket, writeTicketFeature, type TicketFeatureDoc,
+  parseTicketRef, readJsonTicketFeature, readTicketWrites, serializeTicketFeature, sha256Bytes,
+  withTicketStoreLock, writeTicketFeature, type TicketFeatureDoc,
 } from '../tickets/store.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
 import type { LandFlow } from './land-state.js';
-import { landedTicket, registeredTicketRepo, unfinishedAcceptance, unregisteredRepoReason } from './local-tickets.js';
+import { registeredTicketRepo, unfinishedAcceptance, unregisteredRepoReason } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { readTicketQueue } from './ticket-queue-state.js';
 
@@ -98,9 +97,6 @@ function handEditError(rel: string) {
   return new Error(`Cannot record landing in ${rel}: uncommitted hand edit present; commit or revert it and retry hud_land`);
 }
 
-const landingComment = (entry: LandRecordEntry, replayBase: string, gates: number) =>
-  `Landed in ${entry.commit ?? 'this commit'} (replay base ${replayBase}); gate ${gates}/${gates} passed.`;
-
 function applyJsonLanding(doc: TicketFeatureDoc, { row, ref, notes, commit }: LandRecordEntry, replayBase: string, gates: number, at: string) {
   const ticket = doc.tickets.find(t => t.number === ref.number);
   if (!ticket) return;
@@ -135,7 +131,7 @@ export async function checkLandingRecords(
     const writes = readTicketWrites(home, realMain);
     const checkedFeatures = new Map<string, TicketFeatureDoc | null>();
     for (const entry of entries) {
-      const { ref, notes } = entry;
+      const { ref } = entry;
       const rel = `.hud/tickets/${ref.feature}.json`;
       const full = join(realMain, rel);
       const st = fs.lstatSync(full, { throwIfNoEntry: false });
@@ -165,24 +161,6 @@ export async function checkLandingRecords(
       } else if (await isHandEditedInMain(realMain, rel, writes[ref.feature], git)) {
         throw handEditError(rel);
       }
-
-      // Legacy unmigrated Markdown ticket fallback.
-      const matches = legacyTicketPaths(realMain, ref.feature).filter(t => t.number === ref.number);
-      if (matches.length !== 1) continue;
-      try { scanScratch(join(realMain, '.scratch'), true); } catch { continue; }
-      const legacyFull = matches[0].path;
-      const legacySt = fs.lstatSync(legacyFull, { throwIfNoEntry: false });
-      if (!legacySt || !legacySt.isFile() || fs.realpathSync(legacyFull) !== legacyFull) continue;
-      const legacyRel = relative(realMain, legacyFull);
-      if (await isHandEditedInMain(realMain, legacyRel, writes[legacyRel], git)) {
-        throw handEditError(legacyRel);
-      }
-      try {
-        const original = fs.readFileSync(legacyFull, 'utf8');
-        landedTicket(original, ref.number, landingComment(entry, replayBase, gates), notes);
-      } catch (error) {
-        throw new Error(`Cannot record landing in ${legacyRel}: ${(error as Error).message}`, { cause: error });
-      }
     }
   };
   if (opts?.locked) await run();
@@ -211,7 +189,7 @@ export async function recordLanding(
     const writes = readTicketWrites(home, realMain);
     const pending: { row: LandFlow; path: string; items: ReturnType<typeof unfinishedAcceptance> }[] = [];
     for (const entry of entries) {
-      const { row, ref, notes } = entry;
+      const { row, ref } = entry;
       const rel = `.hud/tickets/${ref.feature}.json`;
       const full = join(realMain, rel);
       const st = fs.lstatSync(full, { throwIfNoEntry: false });
@@ -240,24 +218,6 @@ export async function recordLanding(
       } else if (await isHandEditedInMain(realMain, rel, writes[ref.feature], git)) {
         throw handEditError(rel);
       }
-
-      // Legacy unmigrated Markdown ticket fallback.
-      const matches = legacyTicketPaths(realMain, ref.feature).filter(t => t.number === ref.number);
-      if (matches.length !== 1) continue;
-      try { scanScratch(join(realMain, '.scratch'), true); } catch { continue; }
-      const legacyFull = matches[0].path;
-      const legacySt = fs.lstatSync(legacyFull, { throwIfNoEntry: false });
-      if (!legacySt || !legacySt.isFile() || fs.realpathSync(legacyFull) !== legacyFull) continue;
-      const legacyRel = relative(realMain, legacyFull);
-      if (await isHandEditedInMain(realMain, legacyRel, writes[legacyRel], git)) {
-        throw handEditError(legacyRel);
-      }
-      const original = fs.readFileSync(legacyFull, 'utf8');
-      const { body, unfinished } = landedTicket(original, ref.number, landingComment(entry, replayBase, gates), notes);
-      if (original === body) continue;
-      writeLegacyTicket(realMain, home, legacyRel, body, legacySt.mode & 0o777);
-      writes[legacyRel] = sha256Bytes(body);
-      if (unfinished.length) pending.push({ row, path: legacyRel, items: unfinished });
     }
 
     const swept = opts?.sweep === false ? undefined

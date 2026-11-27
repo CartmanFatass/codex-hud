@@ -1,0 +1,255 @@
+{
+  "version": 1,
+  "feature": "pivot-m1",
+  "objective": "pivot",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Decouple Inspector, project view and inbox from the card components",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec `docs/spec.md` §5 M1 and the approved \"Removed by this spec\" list (D-2026-11-23-03). This slice changes nothing visible; it prepares the deletions. Extract the Inspector detail and a flat one-row-per-job renderer out of `src/render/work-card.ts` / `work-lanes.ts`, so `src/render/work-inspector.ts`, `project-view.ts`, `inbox-project.ts` and the statusline fallback `src/render/work-summary.ts` no longer import them. Move the Control preset-editor strings from `src/render/split-i18n.ts` into `src/render/i18n.ts`, so `control-page.ts` no longer depends on Split. Facts with file:line: `~/projects/MyHUD/tmp/tasks/spec-pivot/review-carbon.md` §4 and `review-astra.md` (\"冲突与删除风险\").",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`work-inspector.ts`, `project-view.ts`, `inbox-project.ts`, `work-summary.ts` and `control-page.ts` import neither `work-card`, `work-lanes` nor `split-i18n` (grep in the report)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Panel, Inspector and Control render as before: existing render tests pass unchanged",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`npm test` passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.076Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "363c3797938a36959e6c0123650887cd9e43c041",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.076Z",
+      "updated_at": "2026-11-27T06:39:46.076Z"
+    },
+    {
+      "number": 2,
+      "title": "Home shows Waiting, Now/Next and a load line; plain Jobs open Inspector; Split and Changes go",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m1/01"
+      ],
+      "what": "Spec §2.2 and §5 M1; removal items 1–7 and 22. Current-project Home shows: explicit Waiting (STATE `## Waiting for the owner` and open owner requests), STATE Now/Next, and one scoped load line where known. A plain Jobs list (one row per job, no animation) opens the Inspector, which keeps reports, original worker questions and stop actions; the native-subagent tree loads only there on demand. Delete: worker cards as Home, card filter, inline expansion, on-card actions, package/brief lanes, native-subagent lanes, card auto-open/fold/hide and expiry settings, finished-job reveal, folded queued/read rows, stage animations, activity sparklines, \"cards win\", the spare-row board, latest accepted slices, the \"done today\" footer and the Home tasks/tickets setting; the Split list/preview layout, sizing/focus controls and layout selector (ignore a saved Split preference; keep Control's model picker); the standalone Changes entry (merge its Git/worktree facts into project diagnostics). Keep collectors, receipts and data; delete only display code and its settings. Coupling notes: `review-carbon.md` §4 (`controller.ts:270-306` subagent scan, `hud-status.ts:138`, `notify.ts:275`, `header.ts:54`, `scheduler.ts:85`) in `~/projects/MyHUD/tmp/tasks/spec-pivot/`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Render test: Home with an owner request, STATE Now/Next and running jobs shows Waiting, Now/Next and the load line, and no worker card",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a job row opens the Inspector with its report and original question; the subagent tree is not scanned until the Inspector asks",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A saved Split layout preference loads without error and is ignored; Control's model picker still works",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Removed settings in an existing settings file are ignored without error",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "`npm test` passes; docs/reference.md (EN/ZH) updated for removed panels and keys",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.076Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "dafdb0a8b99349bcac90031e1cf83cae0c37752c",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.076Z",
+      "updated_at": "2026-11-27T06:39:46.076Z"
+    },
+    {
+      "number": 3,
+      "title": "Remove display-side model text",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m1/02"
+      ],
+      "what": "Spec §2.2; removal items 8–14. Delete AI job and native-agent names, current-work/third lines, keyword colouring and the sentence-interval control; AI finished-result and failure sentences, including generated fallback or translation of worker summaries; model-judged outcome and confidence (keep declared verdicts, observed state and historical values); model looping warnings (keep execution-side quiet-job handling); automatic question categories and review-severity tallies; generated Inspector decision titles and rewrites; automatic translation of ordinary questions, ticket titles, route reasons, landed rows, owner requests and waiting items; and the Settings display-model controls (model-text master, model choice, call cap). Stop the background requests (`src/panel/model-services.ts:59-70`); delete `decision-labels.ts`, `decision-titles.ts` and `waiting-briefs.ts` if nothing on the execution side uses them. Keep the Decision API execution side (quiet-job, sonic thinking, imp auto routing) and the signed report summary. Readers to clean: `filter.ts:38-45`, `project-view.ts:317-320`, `work-inspector.ts:118,191` (`~/projects/MyHUD/tmp/tasks/spec-pivot/review-carbon.md` §4).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "grep: no display path calls the Decision API or a text model; the execution-side calls remain and their tests pass",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: the Inspector shows the worker's own question and report text, untranslated, with the declared summary",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Old settings with display-model keys load without error",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "`npm test` passes; reference.md (EN/ZH) updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.076Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "a6cd35f839c5faf49d303342613f71141fb92b9b",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.076Z",
+      "updated_at": "2026-11-27T06:39:46.076Z"
+    },
+    {
+      "number": 4,
+      "title": "Land records done; no routine ticket acceptance prompt",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m1/01"
+      ],
+      "what": "Spec §6 and removal items 19–21. `hud_land` records `done` by default (`src/mcp/local-tickets.ts:112`); `**Owner try:** yes` keeps `ready-for-human`. Remove the default Project/Claude band \"N to try / Accept all\" prompt (`src/cli/watch-band.ts:21-33`) and ticket-count percentages as project progress (`ticket-rollup.ts:57`; ticket detail keeps its denominators). Keep the explicit diagnostic Accept all, `/try`, `hud act try` and old records. Update `docs/agents/issue-tracker.md` and the `hud_tickets` guide where they describe the default.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: landing a ticket without an Owner try line records `done`; with `Owner try: yes` records `ready-for-human`",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: the band shows no try/Accept-all prompt for pending tickets; `/try` and `hud act try` still work on old records",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`npm test` passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.076Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "9972bfcc5c5d75b7f450f1f94ec0c428a19464dd",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.076Z",
+      "updated_at": "2026-11-27T06:39:46.076Z"
+    },
+    {
+      "number": 5,
+      "title": "Only explicit owner requests reach the owner",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m1/03",
+        "pivot-m1/04"
+      ],
+      "what": "Spec §2.2 owner requests; removal items 15–18. Routine worker completions and notices stop being owner alerts (orchestrator delivery stays). Worker questions, blocked tickets and exhausted roles stop being automatic owner Inbox items, including \"Needs you\" in the static export (`src/render/html-board.ts:165-181`). The bar's per-role worker icon counts, individual HUD job reminders and `!asking` stop counting as owner load (real native permission prompts stay). The Ticket Inbox with Running/last-accepted rows stops being Project's landing page (keep ticket and worktree diagnostics). Owner requests are explicit (STATE Waiting and orchestrator-written requests), ordered waited-on first, then project priority, then age. Keep `hud_respond`, answer delivery and task continuation (`src/mcp/mcp/operations.ts:711-748`).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test (M1 Try): a routine worker question reaches the main session but not \"Needs you\", the band or the export; an explicit owner request is visible; the worker's original question stays findable in Jobs → Inspector",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: request ordering is waited-on, then priority, then age",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`npm test` passes; reference.md (EN/ZH) updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.076Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "5da256ec7acc3a09794db9f48faba334f9661ada",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.076Z",
+      "updated_at": "2026-11-27T06:39:46.076Z"
+    },
+    {
+      "number": 6,
+      "title": "EXP folds into Control",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m1/01"
+      ],
+      "what": "Spec §2.2 main tabs (Home, Project, Control); removal item 23. Move the EXP tab's controls into Control without deleting ledgers or disabling configured features. Decouple the `experiments` gate (`src/settings.ts:29`) from the quota proxy refresh (`src/collectors/exp-proxy-refresh.ts:29`), pi EXP usage (`src/harness/pi/exp-usage.ts:93`), the p10k footer (`p10k-footer.ts:507`) and the Codex statusline (`codex-statusline.ts:105`), so each keeps working when the tab is gone; `exp.codex.enabled` becomes editable from Control (today only `exp-view.ts:228`).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: with an existing settings file that enabled experiments, the quota proxy, pi EXP usage, p10k footer and Codex line behave as before",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Control shows and edits the former EXP controls, including `exp.codex.enabled`; no EXP main tab",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`npm test` passes; reference.md (EN/ZH) updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.076Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "1fc51274522f1dca6acc92a9e4a29c7e9b66e079",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.076Z",
+      "updated_at": "2026-11-27T06:39:46.076Z"
+    }
+  ]
+}

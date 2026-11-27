@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "feature": "report-summary",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Better summaries from the report as it is (HUD side only)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/neon-proposal/18-structured-hud-report.md, owner 2026-11-22 layer A (no worker change). (1) sampleTask's wake Summary takes the first prose line (skip headings, list items, tables, rules, code fences). (2) JobSentences and DecisionLabels see the report's head plus its not-done / blocked / test-result sections (or its tail), bounded, instead of only the first 4 / 12 lines; outcome stays an independent Decision-API judgement. (3) A settled job's final result line is made at once, not held by the 2-minute spacing; the stale running sentence clears on settle. (4) src/roles/report-meta.ts: the signature-bound read/write helper (report_sig = mtime:size:sha256), and src/roles/job-checks.ts reuses its signature cache instead of its own.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic reports whose result is at the end (tests failed, items not done) give a partial/blocked-aware sentence input and a prose wake summary",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Final result line appears on the first tick after settle; no extra model calls per job",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test passes",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.088Z",
+      "updated_at": "2026-11-27T06:39:46.088Z"
+    },
+    {
+      "number": 2,
+      "title": "hud_report takes an optional one-line summary and file list",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "report-summary/01"
+      ],
+      "what": "Proposal 18 Slice 1 without outcome/verdict (owner 2026-11-22: self-grading dropped). packages/hud-mcp/bin/worker-tools.mjs hud_report gains optional summary (plain one line, normalised to <=160 code points, control/ANSI/BiDi stripped) and files (<=50 relative paths); written atomically (0600) to <job>/report-meta.json bound to report_sig, before done.json; a report without them removes the previous turn's meta. Same for pi's native tool (hud.mjs uses the same definition) and hud-progress.mjs --done (--summary, --file). Role instructions (implementer, frontend-implementer, reviewer, oracle, general, sonic) gain one line asking for a one-line summary and, for code roles, the files changed. This changes worker behaviour (owner approved).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "MCP hud_report, pi's tool and hud-progress --done all write report-meta.json; a rewritten report.md makes it read as absent",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Old calls without the fields behave exactly as before",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test passes",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.088Z",
+      "updated_at": "2026-11-27T06:39:46.088Z"
+    },
+    {
+      "number": 3,
+      "title": "Panel, notices and hud_read use the worker's summary",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "report-summary/02"
+      ],
+      "what": "Proposal 18 Slices 2-3 without outcome/verdict: a settled job with a matching summary in the panel's language shows it as its result line with no small-model call (other language: the model translates it, summary given as input); MCP task wake text, hud watch lines and hud_read (single job and list) carry summary and files; Inspector shows reported files when there is no git diff; / filter matches the summary; src/cli/watch.ts ignores report-meta.json writes. docs/ARCHITECTURE.md, reference.md, reference.zh.md, packages/hud-mcp/README.md updated; spec already updated (2026-11-22).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Same-language settled job: zero small-model calls for its result line; other language: one call with the summary as input",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Wake text, hud watch and hud_read show the summary; stale meta is ignored",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test passes",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.088Z",
+      "updated_at": "2026-11-27T06:39:46.088Z"
+    }
+  ]
+}

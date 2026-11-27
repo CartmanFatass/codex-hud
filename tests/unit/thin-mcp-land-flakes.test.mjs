@@ -16,7 +16,7 @@ import { runUnattendedScanStep } from '../../dist/unattended/service.js';
 import { controlPath } from '../../dist/unattended/state.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
-import { checkout } from '../helpers/thin-mcp-land.mjs';
+import { checkout, seedJsonTickets } from '../helpers/thin-mcp-land.mjs';
 
 const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 
@@ -332,22 +332,16 @@ test('flake collection runs after land completes and writes JSON store without t
   }
 });
 
-test('creates a new running-list ticket when newest is done or claimed, and appends to legacy hand-written running lists', { timeout: 25_000 }, async t => {
+test('creates a new running-list ticket when newest is done or claimed, and appends to open JSON running lists', { timeout: 25_000 }, async t => {
   const f = await checkout(t, ['true'], { after: [] });
   setFlakesConfig(f, { feature: 'test-flakes' });
 
-  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
-  fs.mkdirSync(issuesDir, { recursive: true });
-  // Seed a done ticket (01) and a claimed ticket (02).
-  fs.writeFileSync(join(issuesDir, '01-gate-flakes-running-list.md'), [
-    '# 01: Gate flakes running list', '', '**Status:** done', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
-    '', '**What to build:** Running list.', '', '- [x] Done', '', '## Comments', '',
-  ].join('\n'));
-  fs.writeFileSync(join(issuesDir, '02-gate-flakes-collected-after-test-flakes-01.md'), [
-    '# 02: Gate flakes collected after test-flakes/01', '', '**Status:** claimed', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
-    '', '**What to build:** Running list.', '', '- [ ] Pending', '', '## Comments', '',
-  ].join('\n'));
-  f.git(f.main, 'add', '.scratch');
+  const at = '2026-01-01T00:00:00.000Z';
+  const rel = seedJsonTickets(f, 'test-flakes', [
+    { number: 1, title: 'Gate flakes running list', kind: 'flake-list', status: 'done', what: 'Running list.' },
+    { number: 2, title: 'Gate flakes collected after test-flakes/01', kind: 'flake-list', status: 'claimed', what: 'Running list.' },
+  ]);
+  f.git(f.main, 'add', rel);
   f.git(f.main, 'commit', '-qm', 'seed flake tickets');
 
   const r1 = await collectGateFlakes(f.home, f.main, [{
@@ -358,26 +352,24 @@ test('creates a new running-list ticket when newest is done or claimed, and appe
   }], null);
   assert.equal(r1.created, true);
   assert.equal(r1.ticket, 'test-flakes/03');
-  assert.match(listTickets(f)[2].text, /# 03: Gate flakes collected after test-flakes\/02/);
+  assert.equal(listFlakeRecords(f)[2].title, 'Gate flakes collected after test-flakes/02');
 
-  // Seed a legacy hand-written running-list ticket (04) with 3 inline cases in What to build.
-  fs.writeFileSync(join(issuesDir, '04-gate-flakes-collected-after-test-flakes-03.md'), [
-    '# 04: Gate flakes collected after test-flakes/03',
-    '',
-    '**Status:** needs-triage',
-    '**Owner try:** no',
-    '**Blocked by:** none',
-    '',
-    '**What to build:** Running list; dispatch when it has a few entries or a case repeats. Cases: (1) `legacy one` (tests/unit/one.test.mjs), gate f1111111111111111. (2) `legacy two` (tests/unit/two.test.mjs) and `legacy three` (tests/unit/three.test.mjs), gate f2222222222222222.',
-    '',
-    '- [ ] Each listed case passes 20 consecutive runs',
-    '- [ ] Live try: none',
-    '',
-    '## Comments',
-    '',
-  ].join('\n'));
-  f.git(f.main, 'add', '.scratch');
-  f.git(f.main, 'commit', '-qm', 'seed legacy running list');
+  // Seed a newer open running-list ticket (04) with 3 existing cases so the 4th promotes it.
+  const doc = readFlakeDoc(f);
+  doc.tickets.push({
+    number: 4, title: 'Gate flakes collected after test-flakes/03', kind: 'flake-list', status: 'needs-triage',
+    owner_try: false, live_try: 'none', approved_removals: [], blocked_by: [], what: 'Running list.',
+    cases: [
+      { step: 'gate[1]', test: 'tests/unit/one.test.mjs', case_name: 'legacy one', flow: 'f1111111111111111', recorded_at: at },
+      { step: 'gate[1]', test: 'tests/unit/two.test.mjs', case_name: 'legacy two', flow: 'f2222222222222222', recorded_at: at },
+      { step: 'gate[1]', test: 'tests/unit/three.test.mjs', case_name: 'legacy three', flow: 'f2222222222222222', recorded_at: at },
+    ],
+    acceptance: [{ id: 1, text: 'Each listed case passes 20 consecutive runs', done: false }],
+    comments: [], created_at: at, updated_at: at,
+  });
+  fs.writeFileSync(join(f.main, rel), JSON.stringify(doc, null, 2) + '\n');
+  f.git(f.main, 'add', rel);
+  f.git(f.main, 'commit', '-qm', 'seed open running list');
 
   const dispatched = [];
   const r2 = await collectGateFlakes(f.home, f.main, [{
@@ -394,8 +386,9 @@ test('creates a new running-list ticket when newest is done or claimed, and appe
   assert.equal(r2.dispatchedJob, 'j0000000000000699');
   assert.equal(dispatched.length, 1);
   assert.equal(dispatched[0].ticket, 'test-flakes/04');
-  assert.match(listTickets(f)[3].text, /\*\*Status:\*\* ready-for-agent/);
-  assert.ok(listTickets(f)[3].text.includes('### Cases\n\n- `legacy four` (tests/unit/four.test.mjs)'));
+  const ticket04 = listFlakeRecords(f).find(item => item.number === 4);
+  assert.equal(ticket04.status, 'ready-for-agent');
+  assert.ok(ticket04.cases.some(c => c.case_name === 'legacy four' && c.test === 'tests/unit/four.test.mjs'));
 });
 
 test('promoted running-list ticket dispatches one imp with shipped settings (auto-prewalk on), from a pane and pane-less', { timeout: 60_000 }, async t => {
@@ -567,16 +560,12 @@ test('dispatch keys are project- and attempt-scoped and a failed earlier attempt
   }));
 
   // Verify a failed dispatch response (even with a job ID) is NOT treated as a successful admission.
-  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
-  fs.mkdirSync(issuesDir, { recursive: true });
-  const t01Path = join(issuesDir, '01-gate-flakes-running-list.md');
-  fs.writeFileSync(t01Path, [
-    '# 01: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
-    '', '**What to build:** Running list.', '', '### Cases', '',
-    '- `retry case` (sample/retry.test.mjs) — flow `f0000000000000901`, log `~/.hud/flows/f0000000000000901.json.gate-1.log`', '',
-    '- [ ] Each listed case passes 20 consecutive runs', '', '## Comments', '',
-  ].join('\n'));
-  f.git(f.main, 'add', '.scratch');
+  const rel = seedJsonTickets(f, 'test-flakes', [{
+    number: 1, title: 'Gate flakes running list', kind: 'flake-list', status: 'needs-triage', what: 'Running list.',
+    cases: [{ step: 'gate[1]', test: 'sample/retry.test.mjs', case_name: 'retry case', flow: 'f0000000000000901',
+      log: '~/.hud/flows/f0000000000000901.json.gate-1.log', recorded_at: '2026-01-01T00:00:00.000Z' }],
+  }]);
+  f.git(f.main, 'add', rel);
   f.git(f.main, 'commit', '-qm', 'seed flake 01');
 
   const seenKeys = [];
@@ -898,14 +887,11 @@ test('waiting-dispatch state is acknowledged only on admission or independent re
   }));
   fs.writeFileSync(join(activeDir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
 
-  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
-  fs.mkdirSync(issuesDir, { recursive: true });
-  fs.writeFileSync(join(issuesDir, '01-gate-flakes-running-list.md'), [
-    '# 01: Gate flakes running list', '', '**Status:** ready-for-agent', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
-    '', '**What to build:** Running list.', '', '### Cases', '',
-    '- `seed case` (sample/seed.test.mjs) — flow `f0000000000000c00`', '', '- [ ] Pass', '', '## Comments', '',
-  ].join('\n'));
-  f.git(f.main, 'add', '.scratch');
+  const rel = seedJsonTickets(f, 'test-flakes', [{
+    number: 1, title: 'Gate flakes running list', kind: 'flake-list', status: 'ready-for-agent', what: 'Running list.',
+    cases: [{ step: 'gate[1]', test: 'sample/seed.test.mjs', case_name: 'seed case', flow: 'f0000000000000c00', recorded_at: '2026-01-01T00:00:00.000Z' }],
+  }]);
+  f.git(f.main, 'add', rel);
   f.git(f.main, 'commit', '-qm', 'seed flake 01');
 
   const seedWaitingFlow = async (flowId, testName) => {
@@ -963,8 +949,9 @@ test('waiting-dispatch state is acknowledged only on admission or independent re
     assert.equal(f.flowState(r.flowId).flake_collection?.attempts, 1, 'unchanged wait does not bump attempts');
 
     // Independently resolve the ticket -> waiting state is acknowledged without dispatching a job.
-    const ticketFile = listTickets(f).find(item => item.name.startsWith(`${r.ticketNum}-`));
-    fs.writeFileSync(ticketFile.path, ticketFile.text.replace('**Status:** ready-for-agent', `**Status:** ${r.status}`));
+    const doc = readFlakeDoc(f);
+    doc.tickets.find(item => item.number === Number(r.ticketNum)).status = r.status;
+    fs.writeFileSync(join(f.main, rel), JSON.stringify(doc, null, 2) + '\n');
     const resolved = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID, {
       dispatch: async () => { throw Error('must not dispatch resolved ticket'); },
     });
@@ -1425,21 +1412,16 @@ test('running list whose Blocked by names a landed ticket (reference left in pla
   const f = await checkout(t, ['true'], { after: [] });
   setFlakesConfig(f, { feature: 'test-flakes' });
 
-  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
-  fs.mkdirSync(issuesDir, { recursive: true });
-  // Seed predecessor 01 (not landed yet) and open running list 02 blocked by test-flakes/01.
-  const t01Path = join(issuesDir, '01-prerequisite.md');
-  const t02Path = join(issuesDir, '02-gate-flakes-running-list.md');
-  fs.writeFileSync(t01Path, [
-    '# 01: Prerequisite', '', '**Status:** ready-for-agent', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
-    '', '**What to build:** Prerequisite fix.', '', '- [ ] Pass', '', '## Comments', '',
-  ].join('\n'));
-  fs.writeFileSync(t02Path, [
-    '# 02: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** test-flakes/01',
-    '', '**What to build:** Running list.', '', '### Cases', '',
-    '- `dep flake` (sample/dep.test.mjs) — flow `f0000000000000g01`', '', '- [ ] Pass', '', '## Comments', '',
-  ].join('\n'));
-  f.git(f.main, 'add', '.scratch');
+  const at = '2026-01-01T00:00:00.000Z';
+  const rel = seedJsonTickets(f, 'test-flakes', [
+    { number: 1, title: 'Prerequisite', status: 'ready-for-agent', what: 'Prerequisite fix.' },
+    {
+      number: 2, title: 'Gate flakes running list', kind: 'flake-list', status: 'needs-triage',
+      blocked_by: ['test-flakes/01'], what: 'Running list.',
+      cases: [{ step: 'gate[1]', test: 'sample/dep.test.mjs', case_name: 'dep flake', flow: 'f0000000000000g01', recorded_at: at }],
+    },
+  ]);
+  f.git(f.main, 'add', rel);
   f.git(f.main, 'commit', '-qm', 'seed prerequisite and blocked running list');
 
   // While 01 has not landed, reaching threshold promotes 02 but keeps dispatch pending (blocked).
@@ -1470,9 +1452,11 @@ test('running list whose Blocked by names a landed ticket (reference left in pla
   assert.deepEqual(dispatched, []);
 
   // Land 01 (status done, reference left untouched in 02): retry dispatches exactly one imp for 02.
-  fs.writeFileSync(t01Path, fs.readFileSync(t01Path, 'utf8')
-    .replace('**Status:** ready-for-agent', '**Status:** done')
-    .replace('- [ ] Pass', '- [x] Pass') + '\n- Landed: `abcdef1`\n');
+  const docAfterBlocked = readFlakeDoc(f);
+  docAfterBlocked.tickets[0].status = 'done';
+  docAfterBlocked.tickets[0].acceptance[0].done = true;
+  docAfterBlocked.tickets[0].landing = { at, job: 'j0000000000000001', flow: 'f0000000000000001', replay_base: 'abcdef1', gates: 1, commit: 'abcdef1' };
+  fs.writeFileSync(join(f.main, rel), JSON.stringify(docAfterBlocked, null, 2) + '\n');
   const retry = () => collectGateFlakes(f.home, f.main, [], f.env.HERDR_PANE_ID, {
     retryDispatch: true, pendingTicket: 'test-flakes/02', dispatch: fakeDispatch,
   });
@@ -1484,19 +1468,21 @@ test('running list whose Blocked by names a landed ticket (reference left in pla
   assert.equal(claimedRes.pending, undefined);
   assert.equal(claimedRes.dispatchedJob, undefined);
   assert.deepEqual(dispatched.map(d => d.ticket), ['test-flakes/02'], 'concurrent and later retries do not dispatch a duplicate');
-  assert.match(fs.readFileSync(t02Path, 'utf8'), /\*\*Blocked by:\*\* test-flakes\/01/, 'Blocked by reference left in place');
+  assert.deepEqual(readFlakeDoc(f).tickets[1].blocked_by, ['test-flakes/01'], 'Blocked by reference left in place');
 
   // Stop job 1 and verify a new running list 03 whose Blocked by already names landed 01
   // dispatches immediately on reaching its threshold (exactly one imp).
   fs.writeFileSync(join(f.home, 'jobs', admittedJobs[0], 'STATUS.json'),
     JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
-  const t03Path = join(issuesDir, '03-gate-flakes-running-list.md');
-  fs.writeFileSync(t03Path, [
-    '# 03: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** test-flakes/01',
-    '', '**What to build:** Running list.', '', '### Cases', '',
-    '- `ready dep flake` (sample/dep2.test.mjs) — flow `f0000000000000g03`', '', '- [ ] Pass', '', '## Comments', '',
-  ].join('\n'));
-  f.git(f.main, 'add', '.scratch');
+  const docWith03 = readFlakeDoc(f);
+  docWith03.tickets.push({
+    number: 3, title: 'Gate flakes running list', kind: 'flake-list', status: 'needs-triage',
+    owner_try: false, live_try: 'none', approved_removals: [], blocked_by: ['test-flakes/01'], what: 'Running list.',
+    cases: [{ step: 'gate[1]', test: 'sample/dep2.test.mjs', case_name: 'ready dep flake', flow: 'f0000000000000g03', recorded_at: at }],
+    acceptance: [{ id: 1, text: 'Pass', done: false }], comments: [], created_at: at, updated_at: at,
+  });
+  fs.writeFileSync(join(f.main, rel), JSON.stringify(docWith03, null, 2) + '\n');
+  f.git(f.main, 'add', rel);
   f.git(f.main, 'commit', '-qm', 'seed running list 03 with satisfied Blocked by');
 
   const directRes = await collectGateFlakes(f.home, f.main, [{
@@ -1509,7 +1495,7 @@ test('running list whose Blocked by names a landed ticket (reference left in pla
   assert.equal(directRes.pending, undefined);
   assert.equal(directRes.dispatchedJob, 'j0000000000000e92');
   assert.deepEqual(dispatched.map(d => d.ticket), ['test-flakes/02', 'test-flakes/03']);
-  assert.match(fs.readFileSync(t03Path, 'utf8'), /\*\*Blocked by:\*\* test-flakes\/01/, 'Blocked by reference left in place');
+  assert.deepEqual(readFlakeDoc(f).tickets[2].blocked_by, ['test-flakes/01'], 'Blocked by reference left in place');
 });
 
 test('unattended scan error with a pending flake fallback backs off instead of rescheduling every 1 ms', { timeout: 25_000 }, async t => {

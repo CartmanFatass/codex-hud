@@ -12,7 +12,6 @@ export const MAX_TICKET_BYTES = 64 * 1024;
 const MAX_SWEEP_INPUT_BYTES = 256 * 1024;
 const MAX_WRITES = 256;
 export const TICKET_FEATURE = /^[a-z0-9-]+$/;
-export const LEGACY_TICKET_PATH = /^\.scratch\/[a-z0-9-]+\/issues\/\d+-[^/]+\.md$/;
 export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'done', 'wontfix'] as const;
 export const TICKET_KINDS = ['impl', 'flake-list', 'research', 'prototype', 'grilling', 'task'] as const;
 export const TICKET_ROLES = ['imp', 'frontend-imp'] as const;
@@ -212,8 +211,8 @@ export function ticketWritesPath(home: string, mainRoot: string) {
 }
 const hash = (text: string | Buffer) => createHash('sha256').update(text).digest('hex');
 export const sha256Bytes = (data: string | Buffer) => hash(data);
-export const isTicketWriteKey = (key: string) => TICKET_FEATURE.test(key) || LEGACY_TICKET_PATH.test(key);
-export const ticketWriteRelPath = (key: string) => TICKET_FEATURE.test(key) ? `.hud/tickets/${key}.json` : key;
+export const isTicketWriteKey = (key: string) => TICKET_FEATURE.test(key);
+export const ticketWriteRelPath = (key: string) => `.hud/tickets/${key}.json`;
 export function readTicketWrites(home: string, mainRoot: string): Record<string, string> {
   try {
     const { bytes, truncated } = readFileBounded(ticketWritesPath(home, mainRoot), 128 * 1024);
@@ -290,27 +289,6 @@ export function writeTicketFeature(mainRoot: string, home: string, doc: TicketFe
     ...(updateWrites && {
       beforeRename: () => {
         // A failed publish cannot authorize sweeping old bytes with the new digest.
-        writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(writes.slice(-MAX_WRITES)), { dotPrefix: true });
-      },
-    }),
-  });
-  return path;
-}
-
-/** Caller holds the tickets lock. Write a legacy Markdown ticket and record its digest when sweep-eligible. */
-export function writeLegacyTicket(mainRoot: string, home: string, relPath: string, bytes: string, mode?: number) {
-  if (!LEGACY_TICKET_PATH.test(relPath)) throw new Error(`Invalid legacy ticket path: ${relPath}`);
-  const path = join(mainRoot, relPath);
-  const currentWrites = readTicketWrites(home, mainRoot);
-  const eligible = isSweepEligibleBeforeWrite(mainRoot, relPath, path, currentWrites[relPath]);
-  const writes = Object.entries(currentWrites).filter(([key]) => key !== relPath);
-  if (eligible) writes.push([relPath, hash(bytes)]);
-  const updateWrites = eligible || Object.hasOwn(currentWrites, relPath);
-  writeFileAtomic(path, bytes, {
-    dotPrefix: true,
-    ...(mode !== undefined && { mode }),
-    ...(updateWrites && {
-      beforeRename: () => {
         writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(writes.slice(-MAX_WRITES)), { dotPrefix: true });
       },
     }),

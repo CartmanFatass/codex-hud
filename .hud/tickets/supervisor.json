@@ -1,0 +1,322 @@
+{
+  "version": 1,
+  "feature": "supervisor",
+  "spec_path": ".scratch/supervisor/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "one job-row reader; `hud_create` tells the truth",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "extract the per-job state rule from `readThinJobs` into exported `jobRow(job, status)` (raw state, display\nstate, reason, blocked, open questions, report present) in `src/collectors/thin-jobs.ts`; the MCP's own `jobStatus`\nis deleted and uses it. `hud_create` returns the row of the job it made; a dispatch failure returns\n`ok: false, code: 'dispatch_failed', reason` (same request_key → same answer).\n\n**Size:** ~100 lines\n\nLegacy role: imp (agy)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fake herdr shows the trust sentence → `hud_create` result has ok false, dispatch_failed, the `hud trust` reason",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Retry with the same request_key returns the same failure",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "A table of STATUS files gives the same state through the panel reader and `hud_read`",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "landed with 01–03 (2c5d7e1d, 52b21b91, 458ef06b; 489/489)."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.105Z"
+    },
+    {
+      "number": 2,
+      "title": "`changes` in every MCP response; `hud_read` wakes on any change",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "supervisor/01"
+      ],
+      "what": "`jobChanges(prev, rows)` in `thin-jobs.ts`; the MCP server (one process per main session) keeps an in-memory\ncursor and adds `changes` (one line per changed job of this session since its last call) to every `hud_*` response.\n`hud_read wait_ms` returns on any change of the job, including `waiting_orchestrator`.\n\n**Size:** ~80 lines\n\nLegacy role: imp (agy)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "STATUS turns `waiting_orchestrator` → a waiting `hud_read` returns",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The next `hud_roster` carries that change once, and not again",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "landed with 01–03 (2c5d7e1d, 52b21b91, 458ef06b; 489/489)."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 3,
+      "title": "`hud watch`",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "supervisor/02"
+      ],
+      "what": "`hud watch` prints the `jobChanges` lines for jobs dispatched from the caller's pane (looked up at call time,\nnever stored), watching the job files the way `hud-watch.mjs` does; no new writes. The HUD convention gets one line\n(\"Claude Code: run `hud watch` under Monitor\"), and `hud_create`'s result repeats the hint. pi: its HUD extension\nposts the same lines into the session if pi's API allows; else record why. Nothing is typed into a pane.\n\n**Size:** ~100 lines\n\nLegacy role: imp (agy)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Temp HUD_HOME: three transitions and one `qa/q1.md` give four lines",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Real check by the orchestrator: Claude Code under Monitor, the owner closes a worker tab, the session reacts untold",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "landed with 01–03 (2c5d7e1d, 52b21b91, 458ef06b; 489/489)."
+        },
+        {
+          "at": "2026-11-27T06:39:46.107Z",
+          "author": "legacy",
+          "text": "The orchestrator now runs `hud watch` under Monitor itself (2026-11-14). pi: the HUD package contract has no send-message call, so pi relies on `changes` in MCP responses."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 4,
+      "title": "exit is a pid fact",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "replace `agentMissing()` as an exit test with a `/proc` check of the recorded pid and start time; herdr only\nwhen pid is null, and then three consecutive misses. pid gone with a report → `closed`.\n\n**Size:** ~60 lines\n\nLegacy role: imp (agy)\n\nLegacy Blocked by: QUIET-DECIDE landed",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "herdr errors for 60 s with the pid alive → still working",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "pid gone → failed; pid gone with a report → closed",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.107Z",
+          "author": "legacy",
+          "text": "Status note: (90ef78cd, as a stopgap; 08 replaces the loop)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 5,
+      "title": "the report settles at turn end",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "supervisor/04"
+      ],
+      "what": "idle grace or close starts only when the report is new, herdr is not working and no newer background child\nis alive; idle grace consults background children too; drop the `turn !== 'done'` → leave branch.\n\n**Size:** ~60 lines\n\nLegacy role: imp (agy)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Report written while working, a slice expires, then done → idle_grace with output_written true",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No `/quit` before done; a live background child holds the grace",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.107Z",
+          "author": "legacy",
+          "text": "Status note: (90ef78cd, as a stopgap; 08 replaces the loop)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 6,
+      "title": "supervisor death is not job death; dispatch stall still supervises",
+      "status": "wontfix",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "supervisor/05"
+      ],
+      "what": "`hud-watch.mjs`: supervisor gone with the worker pid alive → `waiting_orchestrator` (\"supervisor exited;\nworker still running\"); both gone → failed. A supervisor throw does the same. Dispatch: a stall or timeout after the\nprompt was submitted starts the supervisor; only a rejection before any input fails.\n\n**Size:** ~60 lines\n\nLegacy role: imp (agy)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Kill the fake supervisor with the worker alive → waiting_orchestrator; both gone → failed",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "`agent_prompt_stalled` after submit → job working under a supervisor",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "A dispatch that fails before input (e.g. trust declined) closes the tab it opened (2026-11-14: an `imp QUIET-DECIDE-check` tab stayed open with agy never started)",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.107Z",
+          "author": "legacy",
+          "text": "Status note: (superseded by 08-one-judge, owner 2026-11-14)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 7,
+      "title": "one announcer",
+      "status": "wontfix",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "supervisor/06"
+      ],
+      "what": "delete the supervisor's `notify` and the pane quota scan on \"agent exited\" (ticket 10 reads the screen and\nfails only on a quota line); `changes` and `hud watch` are the only announcers.\n\n**Size:** deletions\n\nLegacy role: imp (agy)\n\nLegacy Blocked by: 06, QUIET-DECIDE",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A worker whose task text mentions \"quota\" exits → its place is not marked exhausted",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.107Z",
+          "author": "legacy",
+          "text": "Status note: (superseded by 08-one-judge, owner 2026-11-14)"
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 8,
+      "title": "Explicit turns, one pure judge, event-driven (no polling loop) for CLI jobs (supersedes 06–07; replaces the loop 04–05 patched)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "**Why (owner 2026-11-14):** \"for agy, design the supervisor and the state judgment properly; event-by-event Monitor\ninterrupts are not the answer.\" Today a finished agy job is shown as quiet/asking (ROLE-BIND 04, SUPERVISOR 02 and\n03 all finished and were marked \"quiet without a report\"). Root cause: `hud-cli.mjs` infers everything from herdr's\nscreen status through nested waits (~500 lines); a report written while agy is still printing starts idle grace,\nthe grace loop sees `working` and treats it as a continuation, and re-baselines the report to the finished one.\nPatching each path (04–07) keeps the inference; this ticket removes it.\n\n**What to build:** rewrite the CLI supervisor's state handling as:\n1. **Explicit turns, not inferred ones.** Dispatch and every `hud_send` write `turn.json` in the job dir\n   (`{seq, sent_at, report_sig}`: the report's signature, i.e. mtime, size and hash, at send time). A report\n   counts for a turn when its signature differs from that turn's `report_sig`. Herdr status never starts a turn.\n2. **(Revised 2026-11-14: no fixed loop; see `../design-08.md`.)** Facts collected on wakes: pid alive (`/proc`, start time), herdr status (advisory only; errors ignored),\n   newer descendants since the turn began, report signature, stop/close request files, open questions, herdr\n   `blocked`, and the latest `turn.json`.\n3. **A pure `judge(prev, facts, now)` → next state**, table-tested:\n   - pid gone → `closed` if the turn's report is new, else `failed` (\"worker exited\");\n   - stop or close requested → `stopped` or `closed`;\n   - herdr `blocked` → `waiting_orchestrator` (blocked), as today;\n   - new report and quiet (herdr not `working` and no newer descendant) for 10 s in a row → settled:\n     `idle_grace` (can_continue) or close with `/quit`;\n   - no new report and quiet for the idle grace → the ticket 10 decision (unchanged);\n   - in `idle_grace`, a new `turn.json` seq → `working`; the deadline passes → close;\n   - anything else → `working`.\n4. The dead-supervisor watcher: a live worker pid → `waiting_orchestrator` (\"supervisor exited; worker still\n   running\"), not `failed`. A dispatch rejected before input closes the tab it opened.\n5. The supervisor's `notify` into the main pane and the pane quota scan on exit are deleted; `hud watch` and\n   `changes` announce.\n\n**Size:** net negative or about the same as today (the nested waits go)\n\nLegacy role: imp (agy)",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Table test of `judge` covering every row above",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Fake-herdr test of today's sequences: (a) report written while still `working`, then a long summary, then `done` → `idle_grace` with the report, never \"quiet\"; (b) tests running in the background with herdr `done` → still `working`, then the report → settled; (c) herdr flapping `working`/`done` every second → one settle, no notices; (d) `hud_send` in `idle_grace` → `working` with a new baseline; a report rewritten then settles again",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "herdr errors for 60 s with the pid alive → still `working`; pid gone → `failed`; pid gone with a new report → `closed`",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Supervisor killed with the worker alive → `waiting_orchestrator`; both gone → `failed`",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "At rest for 60 s (fake): zero spawns, zero STATUS writes",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "Real check by the orchestrator (incl. `strace -c` 60 s at rest): an agy imp writes its report and then prints a summary → `idle_grace` with no notice",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.107Z",
+          "author": "legacy",
+          "text": "Status note: (design: `.scratch/supervisor/design-08.md`, oracle; slices: judge → event shell → edges → real check)"
+        },
+        {
+          "at": "2026-11-14T00:00:00.000Z",
+          "author": "orchestrator",
+          "text": "Landed 4ffe4d7b + d880ee7b; fix 874411c0. Real agy run 1 stayed `working` 10 min after its report: herdr pushes\n`pane.agent_status_changed` (dotted) and the shell matched `pane_agent_status_changed`, so every push was dropped;\nthe fake herdr used the underscore form. Fixed in the commit \"match herdr's dotted push names\", plus the 30 s tick now\nre-reads status once (one socket request), with a missed-push regression test (fails without the fix).\nRun 2 (agy hydrogen high, `sleep 150` in the background, report then a ten-sentence summary): `working` through the\nbackground command, report 14:18:38Z, `idle_grace` 14:19:03Z, no quiet decision, two STATUS writes in total.\nNo strace on this machine; /proc instead: at rest 60 s → 0 CPU ticks, 24 reads / 9 writes, no children; whole active\nrun (~4 min) → 5 CPU ticks."
+        }
+      ],
+      "created_at": "2026-11-14T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    },
+    {
+      "number": 9,
+      "title": "`hud_send` restarts a dead supervisor for a live worker",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "supervisor/08"
+      ],
+      "what": "**Why:** owner 2026-11-14 (design-08 question 3). After a supervisor dies with the worker alive the job is\n`waiting_orchestrator`; nothing supervises it after the main session sends a continuation.\n\n**What:** `hud_send` to such a job (supervisor pid gone, worker pid alive) writes the turn and starts a new supervisor\nfrom the on-disk `turn.json` / `STATUS.json`. Explicit main-session action only; never an automatic restart.\n\n**Size:** small",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Dead supervisor + live worker + hud_send → a supervisor runs and the turn settles normally",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.107Z",
+      "updated_at": "2026-11-27T06:39:46.107Z"
+    }
+  ]
+}

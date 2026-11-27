@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "feature": "orch-lean",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Integration by sonic in a separate worktree, reap cherry-picked worktrees",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "docs/llm/orch-load-2026-11-22.md rank 1 (D-2026-11-22-15): a documented sonic integration job (docs/delegation.md + convention text) cherry-picks a slice into a fresh integration worktree, runs build, build:test, test:mjs twice, test:unit, check:fixtures, and reports at most 10 lines (pass/fail, failing test names, first error line); imp on conflict; the main session decides and pushes. The watcher also reaps closed clean worktrees whose commits are already on the base branch by patch identity (spec §2.1.3 sentence as told to the owner).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A cherry-picked, clean, closed worktree is reaped; a dirty or unpicked one is kept",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The integration brief template is in docs/delegation.md",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "8cf766b6"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "(imp on astra j408a4de6136d2eeb): rev-list --cherry-pick picks; later picks rechecked when the base sha changes (≤4/scan, 7 days); spec §2.1.3 sentence; integration template in docs/delegation.md. First integration by sonic (j67d04ce32de784c3, deepseek flash): clean pick, 1011/1011 twice, 92/92, fixtures OK; main fast-forwarded. tmp/wt-new.sh worktrees are not HUD-managed and are not reaped; use hud_create isolation: worktree for that."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.061Z"
+    },
+    {
+      "number": 2,
+      "title": "hud_read digest by default",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Rank 4: hud_read returns a digest by default (state, one-line result, changed files, verdict/blockers when the report gives them) with mode full for the whole report; batch reads with jobs[]. Spec sentence as told to the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A long report reads as a digest under 1 KB; mode full returns it whole",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "406fa959"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (test:mjs 1021/1021 ×2, unit 92/92, fixtures OK)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.061Z"
+    },
+    {
+      "number": 3,
+      "title": "Task notices wait for HUD checks and get shorter",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Rank 7: the MCP task completion for a job with checks is sent after its HUD checks finish; notices arriving within 3 s coalesce; the notice text drops to state, report path and one-line summary (~140 tokens). Spec §5 MCP-ORCH sentence as told to the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A job with checks wakes the session once, after the checks",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-22T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "65712e30"
+      },
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "legacy",
+          "text": "via sonic gate (same gate as 02; coalescing stays per task for MCP clients, 3 s batch on the watch path)."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.061Z"
+    },
+    {
+      "number": 4,
+      "title": "Owner panel actions reach MCP-task clients; retry and land intents",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "orch-lean/03"
+      ],
+      "what": "Rank 5: tries.jsonl marks and panel actions are delivered to MCP-task clients too (not only hud watch); r on a failed job and m on a to-try slice write an intent that reaches the main session, which decides (the panel never briefs or chains). Spec §2.1.4 and §2.2.6 sentences as told to the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Pressing y on a to-try slice reaches a Claude Code task session without hud watch",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "r and m write an intent the session receives; nothing is dispatched by the panel",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.061Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "e59e931992d651ec00e34a5b3d2f1e8b9a678e2d"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.061Z",
+      "updated_at": "2026-11-27T06:39:46.061Z"
+    },
+    {
+      "number": 5,
+      "title": "Batch forms for the mutating MCP tools",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "orch-lean/02"
+      ],
+      "what": "Rank 6: hud_create.jobs (with brief_file), hud_tickets.updates, hud_respond.answers, hud_send.messages; one call, per-item results. Spec §2.1.7 sentence as told to the owner.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Three creates in one call return three jobs with per-item errors",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.061Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 6,
+        "commit": "cd3f4e8becee8a89dbaf81fb23b877860dde4ace"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.061Z",
+      "updated_at": "2026-11-27T06:39:46.061Z"
+    }
+  ]
+}

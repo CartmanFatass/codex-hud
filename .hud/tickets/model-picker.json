@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "feature": "model-picker",
+  "spec_path": ".scratch/model-picker/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Model facts and picker keys",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Keep `pi --list-models`'s context, max-out, thinking and images per model in the existing discovery\ncache (one added field, same single call; old caches without it still load). The narrow picker shows the bottom strip\n(whole ID wrapped, ctx/out/think/img, state) and the per-row HUD state (`✗ 42m` exhausted with reset, `⊘` off, `?`\nunknown); providers that are off get one muted non-selectable line. `^R` refreshes inside the picker; the first Esc\nclears a typed filter, the next closes. Sample frames 2a–2d (strip, row facts, off line). See spec.md settled 4, 5, 7, 8.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "parser keeps the four columns from a synthetic table; an old cache without them still opens the picker",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "exhausted / off / unknown facts appear on the row and in the strip",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Esc clears the filter first, then closes; `^R` refreshes without a subprocess per key",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "40-col EN/ZH frames match the sample",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:46.047Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.047Z",
+      "updated_at": "2026-11-27T06:39:46.047Z"
+    },
+    {
+      "number": 2,
+      "title": "Visible entry, pinned rows, folds and mouse",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "model-picker/01",
+        "control-tab/04"
+      ],
+      "what": "Every place row in the Control role chain shows a clickable model field (`[model ▾]`, `[default ▾]`\nwhen unset) and the footer hint starts with `m model`. With an empty query the picker pins the current model and the\nmodels this role's presets use (tagged with the preset); pinned models also stay in their group. Narrow picker groups\nstart folded with counts and typing opens matching groups. Mouse per spec.md shared rules (click selects, Enter or a\nsecond click sets, wheel scrolls, header click folds). Sample frames 1a–1b, 2a–2c. See spec.md settled 2, 3.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "clicking the model field opens the picker on that place; `m` still does",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "pinned rows show current and this role's preset models only with an empty query",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "folded groups open when typing matches them; a header click folds and unfolds",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "mouse select / set / wheel work in Split and Classic",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "40-col EN/ZH frames match the sample",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:46.047Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.047Z",
+      "updated_at": "2026-11-27T06:39:46.047Z"
+    },
+    {
+      "number": 3,
+      "title": "Zoomed picker",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "model-picker/02"
+      ],
+      "what": "Opening the picker zooms the panel's own herdr pane (`herdr pane zoom --on` on the panel pane) and\nclosing restores it only if the picker zoomed it. At the zoomed size (about 120×36) draw the grouped list with the pi\ncolumns and HUD facts on the left, groups open, and the selected model's read-only detail on the right (full ID, all\ncolumns, state, whether current, which roles and presets use it, list age, what Enter does). Below about 100 columns,\noutside herdr, or when zoom is refused, the narrow picker is used. Sample frames 3a–3e. See spec.md settled 1, 3.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "zoom on open, restore on close only when the picker zoomed; an already zoomed pane stays zoomed",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "fallback to the narrow picker below ~100 columns, outside herdr, or on a refused zoom",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "detail shows used-by roles/presets and the provider-off case (frame 3e)",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "EN/ZH frames at 120×36 match the sample",
+          "done": false
+        }
+      ],
+      "accepted": {
+        "at": "2026-11-27T06:39:46.047Z",
+        "by": "owner",
+        "verdict": "accepted by the owner; see STATE ledger"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.047Z",
+      "updated_at": "2026-11-27T06:39:46.047Z"
+    }
+  ]
+}

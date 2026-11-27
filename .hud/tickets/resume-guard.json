@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "feature": "resume-guard",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "A worker resumed without HUD_JOB_DIR does not get main-session tools",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "From docs/neon-proposal/19-hud-restart-recovery.md §1 finding 2 only (owner 2026-11-22: restart recovery stays manual, add this guard). After a restart herdr resumes a worker without HUD_JOB_DIR; src/mcp/thin-main.ts:46-48 then sets isWorker=false and the resumed worker sees hud_create/hud_close/hud_send etc.; pi's hud.mjs installs the delegate surface. Guard: when hud-mcp (and the pi extension) start without HUD_JOB_DIR but the calling session matches a known worker job (agent_session_id / session file recorded in $HUD_HOME/jobs/*/STATUS.json, or the herdr pane recorded for a job whose state is not settled), refuse the main-session tools with a clear message naming the job and saying recovery is manual. No relaunch, no kill, no new resident work; one bounded lookup at server start.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Synthetic test: a session id recorded for a worker job gets no main-session tools and a clear refusal; a normal main session is unaffected",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No extra cost for main sessions beyond one bounded read at start; npm test passes",
+          "done": true
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-22T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 66401d79. Integration fix: the guard is silent on a clean miss or a missing jobs directory (it had printed on every main-session start, breaking 183 stderr-empty tests when run from Claude Code); the test harness drops the caller's CLAUDE_CODE_SESSION_ID."
+        }
+      ],
+      "created_at": "2026-11-22T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.089Z"
+    },
+    {
+      "number": 2,
+      "title": "A failed resume does not turn a closed, reported job into failed",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "2026-11-26: `hud_send` to closed agy job jeff4a7a7da010134 (report declared, commit on its worktree) tried to resume, agy \"did not open the recorded session\", and the job's state became `failed`. Its report and commit were intact, but `hud_land` now refuses it (expects idle_grace, done or closed), so main had to work around it. A resume that fails before the worker accepted any input must leave the job's prior settled state (closed with its report) unchanged and return the failure to the caller (`send_failed` with the reason), recording the failed attempt only as a diagnostic. A resume that did start a new turn keeps today's semantics.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a closed CLI job whose resume fails at session open stays closed with its report, hud_send returns send_failed with the reason, and hud_land still accepts it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a resume that fails after the new turn started still records failure as today",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.089Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "72d11e5b5601d4a71104ba1082d9431fb5054740",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "the acceptance line saying \"return send_failed\" was wrong; per spec the closed state is restored and the send falls back to repair (send_failed only when cleanup fails or the launch is unknown). Landed f4c14d46."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.089Z"
+    }
+  ]
+}

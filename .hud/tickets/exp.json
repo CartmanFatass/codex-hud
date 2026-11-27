@@ -1,0 +1,193 @@
+{
+  "version": 1,
+  "feature": "exp",
+  "spec_path": ".scratch/exp/spec.md",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "EXP 顶层 tab 与设置页",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "设置 → 面板 新增“实验功能”开关（默认关）。打开后顶栏多一个标“实验”的 EXP 主 tab，与 Home、Project 并列（←→/Tab/点击切换，数字键不切 tab）。页面分三组：Codex 原生栏（各本机 profile 的别名、最近一次观察到 MyHUD 原生栏的时间——本单显示“未接入”）、pi 订阅代理（选择/解绑一个已知本机 Codex profile、启停、间隔 5–60 分钟，默认 15）、API 赠额（anthropic-api、openai-api 各一行：启用、每期赠额、续期日与时区、校准“此刻剩余”）。上下选择、Enter 编辑、保存显示结果、Esc 取消不落盘；保存校准前显示“旧估算 → 新基准”。设置写 `$HUD_HOME/exp/config.json`，校准写 `$HUD_HOME/exp/ledger-<账>.jsonl` 的一行校准事件。未接通的读数一律显示“未接入”。见 `.scratch/exp/spec.md` 与 `docs/design/exp-usage-plan.md` §0–§2。",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "开关默认关；关时无 tab，打开后出现 EXP tab，重启面板后仍在",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "三组设置可编辑、保存、Esc 取消；重启后保留；不同项目看到同一份",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "profile 选项只来自本机已知的 Codex profile，不接受任意命令",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "校准写一行带时间的 JSONL 事件；文件权限 0600，目录 0700",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "40 列 EN/ZH、Split/Classic 每行等宽，不在词中截断",
+          "done": true
+        },
+        {
+          "id": 6,
+          "text": "本单不发任何网络请求，不改任何 CLI 配置",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.009Z",
+      "updated_at": "2026-11-27T06:39:46.009Z"
+    },
+    {
+      "number": 2,
+      "title": "Codex 原生 statusline",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "在现有 `hud-mcp` 增加 Codex 可发现的自定义 statusline 入口：`tools/list` 声明 `_meta[\"openai/ui\"].entrypoints`，`resources/read` 从请求 `_meta[\"com.openai/codex-statusline-state\"]` 读当前线程快照，返回 `application/json` UI tree。复用 MyHUD 的字段选择和宽度优先级（模型、上下文、配额优先来自该请求；工作提醒读本地缓存；无可靠数据的字段省略，不编造 TPS）。资源读取不启动 CLI、不扫描全部会话、不等网络，低于 Codex 的 1 秒超时。原有 MCP 工具协议和 `codexH` tmux 栏不变。EXP 页的“最近观察到”在 EXP 开启时由此入口记录时间（EXP 关时不记）。协议依据见 `docs/design/exp-usage-plan.md` §3 与核对依据链接（Codex 0.171.0）。",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "合成 `tools/list` / `resources/read` 请求验约；缺字段、窄宽度、两个 profile、切线程不串",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "资源响应不发 RPC、不等网络，耗时远低于 1 秒",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "原有 hud 工具与 `codexH` 栏行为不变",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "写明 owner 在 Codex 里 `/experimental`、`/statusline` 选择 MyHUD 的步骤（EXP 页显示同样步骤）",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.010Z",
+      "updated_at": "2026-11-27T06:39:46.010Z"
+    },
+    {
+      "number": 3,
+      "title": "pi 订阅代理",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "exp/01"
+      ],
+      "what": "EXP 里绑定一个 Codex profile 并启用后，pi 走 `openai` + OAuth 订阅时，footer 显示该 profile 的额度窗口近似值（`5h ≈72%`，有直报时直报 `5h 剩 72%` 优先）；`oapi` 和其它 provider 不借用。刷新：pi 会话绘制 footer 时若快照超过间隔，异步发起一次刷新——非阻塞单实例锁、指定 `CODEX_HOME` 调官方 app-server `account/rateLimits/read`、有总超时、原子替换 `$HUD_HOME/exp/proxy.json`；不加定时器、不读 token、不发推理请求。遵守 retry-after 与指数退避；未登录暂停并在 EXP 提示。换绑/解绑时在途旧结果不得写回；超过两次间隔未成功标旧；过了重置点没新值的窗口显示“待刷新”，不跳回 100%。见 `docs/design/exp-usage-plan.md` §0、§3。",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "可控时钟 + 假 RPC：首刷、退避、超时、过重置点、换绑竞态、关闭",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "多个 pi worker 同时绘制只产生一次请求",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "只在 openai OAuth 路线显示；换模型/换绑/解绑立即丢弃不适用读数",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "EXP 关闭或未绑定：零请求，footer 与现状一致",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.010Z",
+      "updated_at": "2026-11-27T06:39:46.010Z"
+    },
+    {
+      "number": 4,
+      "title": "API 赠额账本 · oapi 端到端",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "exp/01"
+      ],
+      "what": "pi 走 `oapi` 时，每个已完成请求的费用记入 `openai-api` 账：采集独立于 footer 渲染；优先使用明确的请求费用，否则按请求时的模型价格与 input/output/cache 分项估算（缓存不重复计），来源标已报告/按价估算/未计价；金额用整数微美元。以稳定的请求/响应 ID 去重（无 ID 用会话 + 条目标识），并发 worker、重载、会话恢复不重复扣。追加写 `$HUD_HOME/exp/ledger-openai-api.jsonl`；余额 = 本期最近基准（赠额或校准）− 基准之后的费用，读取时计算并缓存小快照。周期按续期日与时区，29–31 日短月取月末，不结转；校准后迟到但早于校准完成的请求只记历史。pi footer 显示 `API ≈$12.75`，超额显示 `≈$0`。EXP 页显示估算剩余、本期已计、未计价请求数和最近校准。见 `docs/design/exp-usage-plan.md` §0、§4。",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "合成请求：分项定价、未知价、占位 $0、重复请求、并发、校准后迟到事件、月末跨期",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "订阅路线与非 oapi 请求零扣款",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "不回填启用前历史；EXP 关闭后不再采集，账本保留",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "文件权限 0600；只存计费最少字段，不存对话、密钥、请求头",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.010Z",
+      "updated_at": "2026-11-27T06:39:46.010Z"
+    },
+    {
+      "number": 5,
+      "title": "API 赠额账本 · Anthropic",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "exp/04"
+      ],
+      "what": "用 04 的同一套账务接入 `anthropic-api`：只在确认 pi 走 Anthropic API key 路线时记账（Claude 订阅、第三方网关、无法归属的调用不扣），写 `$HUD_HOME/exp/ledger-anthropic-api.jsonl`。pi footer 在 Anthropic API 路线显示该账估算剩余；Claude Code 的订阅窗口显示不变。EXP 页两本账并列。见 `docs/design/exp-usage-plan.md` §4。",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "合成请求验证路线判定：API key 记账，订阅/网关/未知不记",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "两本账互不影响（同时有 oapi 与 anthropic 请求）",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Claude Code statusline 行为不变",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.010Z",
+      "updated_at": "2026-11-27T06:39:46.010Z"
+    }
+  ]
+}

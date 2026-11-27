@@ -1,0 +1,463 @@
+{
+  "version": 1,
+  "feature": "herdr-fork",
+  "objective": "herdr-fork",
+  "tickets": [
+    {
+      "number": 13,
+      "title": "HUD: codexH bar on the pane strip; tmux leaves Codex panes",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/10"
+      ],
+      "what": "D-2026-11-26-01 step 1b, HUD side. With the pane-strip capability, `codexH` (bin/codex-hud) starts Codex directly in the pane with a bottom strip and pushes its bar there at the exact width from the fork's width event, renewing the lease. Owner-approved removal: the tmux session inside Codex panes, its prefix keys and copy mode, `codex-hud-paste`, `codex-hud-resize`, tmux height and scrollback settings, and the bridge-health probe. The bar's content and look stay identical. Update docs (reference, install.d/README).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: the bar line pushed to the strip equals today's codexH bar at 40/80/120 columns; a resize pushes at the new width",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "git grep finds no tmux invocation in the codexH path",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Owner try: open Codex with codexH: same bar as today; mouse selection and scrollback behave as in any herdr pane; a bar code change shows after npm run build without restarting the session",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:41:20.944Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "06030559a2a32afaadc528e0a3ad13c80a08f833",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "implemented on wt/herdr-fork-13-d3083e (15a80f5e). Owner accepted (2026-11-26) that codexH now runs only inside herdr-hud (refuses in other terminals or an older fork, naming herdr-hud; CODEX_HUD_STATUSLINE=0 launches Codex without the bar) and that the tmux session flags --attach/--new-session/--kill/--list go with tmux. Land after the fork with pane_strip is installed, then live-check."
+        },
+        {
+          "at": "2026-11-26T00:00:00.000Z",
+          "author": "main",
+          "text": "landed 2e78b5f0. Live on fork a26432a7 with codex2 (CODEX_HOME=~/.codex): one strip row reserved (viewport 48 -> 47), codex-launch -> codex + bar sidecar, no tmux, pane.strip.set ok about once a second; owner confirmed the bar looks the same as before. Opening the panel is unchanged (`$hud` skill or `hud panel`)."
+        }
+      ],
+      "created_at": "2026-11-26T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:41:20.944Z"
+    },
+    {
+      "number": 17,
+      "title": "Fork: a hidden tab opened for a look hides again when focus leaves it",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26: opening a hidden tab (focus via tab.focus / pane.focus / agent.focus, or a click on the hidden count) should be a peek: when focus moves to another tab, the tab hides again. `tab.set_hidden {hidden:false}` stays an explicit pin that keeps it visible. Add a `peek` state to hidden tabs: focus on a hidden tab reveals it as peeked (tab.get/list report `hidden:false, peek:true`); leaving focus (another tab focused in that workspace, or the client switching workspace) restores `hidden:true` and clears peek; `tab.set_hidden` false clears peek (pinned), true hides. Peek is not persisted across cold restore (a peeked tab restores hidden); live-handoff carries it. Capability: `ping.capabilities.hidden_tabs_peek`. Document in HUD-FORK.md. Fork worktree on its own branch from `hud`; do not merge; never push or install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: focus a hidden tab -> visible with peek; focus another tab -> hidden again; set_hidden false while peeked -> stays visible after focus leaves; set_hidden true hides; cold restore of a peeked tab -> hidden; live-handoff keeps peek",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "HUD-FORK.md updated; fmt, clippy -D warnings, schema check, unit tests single-threaded, api_ping, live_handoff, release build",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Live try: none (checked with herdr-fork/18)",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.019Z",
+      "updated_at": "2026-11-27T06:39:46.019Z"
+    },
+    {
+      "number": 18,
+      "title": "HUD: g peeks at a worker tab; a pin key keeps it visible",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork/17"
+      ],
+      "what": "Owner 2026-11-26. With the fork's `hidden_tabs_peek` capability, Inspector and Execution `g` focus the worker's tab as a peek (it hides again when the owner leaves it); a new key `P` pins it visible (`tab.set_hidden false`); `H` hides as today. Help, footer hints and docs EN/ZH. Without the capability, keep today's behaviour.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fake fork tests: g sends focus only; P sends set_hidden false; H set_hidden true; all for the job's own tab only; older fork unchanged",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Live try: press g on a worker in Execution, switch back to the main tab: the worker tab disappears from the bar; press g then P: it stays",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.019Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "e2752a6e2367e522eae560bfe9f2cf1f512bd769",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.019Z",
+      "updated_at": "2026-11-27T06:39:46.019Z"
+    },
+    {
+      "number": 23,
+      "title": "Fork: right-edge non-modal dock (overlay and push, single-instance server toggle)",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "after install, `herdr dock toggle -- /usr/bin/env sh -c cat` opens a right-edge overlay without resizing the focused pane and a second call closes it",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork-done/21"
+      ],
+      "what": "D-2026-11-26-01 Step 2a, fork side. Feasibility (oracle job jf92ac005aa757331, read its full report): the modal popup_pane cannot host it; owner 2026-11-26 approved the larger change (~650-850 non-test Rust LOC), sequenced after herdr-fork/21. Build Shape A (server-projected session dock): new fork modules src/dock.rs and src/app/dock.rs plus thin call sites; AppState.dock outside Workspace/Tab layout; one session-wide dock hosting one direct-exec argv command (agent detection disabled, HERDR_DOCK=1, pane identity env stripped); API dock.toggle / open / close / configure / status decided atomically in the server, CLI `herdr dock ...`, capability `dock` on ping. Overlay mode keeps tab pane rects and PTY sizes unchanged and composites the dock with a 1-cell left border over the right edge; push mode shrinks the tab area and emits pane.resized. Project the dock as pane id `dock` at PaneSurfaceFrame.panes[0] (scroll none; omitted from ClientShellSnapshot.panes and pane.list) for click focus, mouse and wheel forwarding, PaneFocus, PaneFocusDirection right into / left out of the dock, PaneClose(dock), PaneDied cleanup. Must coexist with Copy mode, Settings and popup_pane (hud.select-send opens over the dock without ui_busy). Preserve the dock PTY, mode and width across server.live_handoff; cold restore starts closed. Leave endpoint.surface-delta.v1 and the endpoint method-shape fixture unchanged. Document in HUD-FORK.md with the Apache-2.0 4(b) notices; regenerate the schema artifact. Fork worktree on its own branch from `hud` after 21 is merged; do not merge, push or install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Burst of 10 dock.toggle calls leaves at most one dock runtime and no workspace split pane; PaneDied closes the dock (tests)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Overlay keeps the underlying pane's PTY size on open/toggle/close; push shrinks the tab by dock width + 1, emits pane.resized and restores on close or configure(overlay) (tests)",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Opening the dock cancels neither Settings nor Copy mode; a popup opens over the dock without ui_busy; mouse and directional focus route to the clicked or chosen side (tests)",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Dock survives live handoff; cold snapshot omits it; surface-delta and method-shape tests unchanged; ping advertises dock (tests)",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Full fork test pass single-threaded (split around the known SIGPIPE case), api_ping, live_handoff, release build",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:41:20.949Z",
+      "updated_at": "2026-11-27T06:41:20.949Z"
+    },
+    {
+      "number": 24,
+      "title": "HUD: /hud uses the herdr dock; delete split bookkeeping; overlay/push setting",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "toggle /hud ten times fast in Claude Code, Codex, pi and a shell pane: one panel, no orphan pane, main pane text does not reflow in overlay mode; switch Settings -> Panel -> Dock mode to push and back and see the main pane shrink and restore",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork/23"
+      ],
+      "what": "D-2026-11-26-01 Step 2a, HUD side (oracle job jf92ac005aa757331 section Q4 and Ticket 22 of its report). With capability `dock` on the running fork, `hud panel` (without --here), the Claude mod /hud, the Claude/Codex /hud command and skill, and pi /hud call dock.toggle / open / close / status over src/runtime/herdr-socket.ts; every client toggles the same right-edge panel. Refuse `hud panel` when HUD_JOB_DIR is set (panel_worker_forbidden). Add `dockMode: overlay | push` (default overlay) under Settings -> Panel, applied live with dock.configure on save together with the width. openCommandPane opens editor / git show tabs from inside the dock (HERDR_DOCK=1, no HERDR_PANE_ID). Delete the split bookkeeping: src/integrations/panel/README.md and receipt.ts (move displayTarget to src/cli/panel.ts), openPanelPane / closePanelPane / panelPaneExists / watchPanelCaller, TreeWidthKeeper / herdrWidthKeeper, pi per-session split tracking, and the split-only fakes and tests. Keep: who may open the panel (explicit /hud or hud panel only, worker exclusion, session binding), `hud panel --here` and the outside-herdr fallback, panel reload, job tab actions (focus, pin, hide, stop). Update docs/reference.md, install.d/README.md and the skill/command messages (report opened/closed, not a pane id). Removes: the panel as a tiled split pane (replaced by the dock; owner approved 2026-11-26).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud panel and pi /hud send dock.* requests with the configured dockMode and width; HUD_JOB_DIR refuses; --here still runs in the foreground (tests)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Saving dockMode or width in Settings calls dock.configure live; editor and git show tabs open from inside the dock (tests)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No split_reply_lost, PanelStore, TreeWidthKeeper, watchPanelCaller or openPanelPane left in src/",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "docs and client messages updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.019Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "4fd1123616402c37078816ef1e9b101df63d540a",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.019Z",
+      "updated_at": "2026-11-27T06:39:46.019Z"
+    },
+    {
+      "number": 26,
+      "title": "Fork: the agent sidebar groups panes by two metadata tokens, foldable",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "after install and HUD 27, workers of two projects and two features show as two big groups with small groups beneath; fold one and it stays folded after reattaching the client",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-26: the left sidebar should sort workers automatically into big groups (project) and small groups (task) that fold, so the logical relation is visible at a glance. Generic fork feature: when any agent pane's metadata tokens (pane.report_metadata, herdr-fork/19) carry `hud_group`, the expanded agent sidebar renders group header rows `▾ name N` (big) and, inside, `▾ name N` (small, from `hud_subgroup`, indented one cell), with the agent rows beneath in today's order; panes without `hud_group` stay ungrouped above the groups as today; panes with a group but no subgroup sit directly under the big group. A header shows the count and the strongest state colour of its hidden rows when folded. Click or Enter on a header folds/unfolds; fold state is a client preference keyed by group (and group/subgroup) name, kept across restarts like the worktree collapsed_groups, and pruned when a name has not been seen for 7 days. Without any hud_group token the sidebar is byte-identical to today. The collapsed (narrow) sidebar orders rows by group but draws no headers. Hit map, keyboard navigation and agent focus keep working across headers. Document in HUD-FORK.md. Fork worktree on its own branch from `hud`; do not merge, push or install.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Panes with hud_group/hud_subgroup render under foldable big and small group headers with counts; ungrouped panes unchanged; no tokens = identical output (tests)",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Fold by click and Enter; folded header shows count and strongest state colour; fold state persists across client restart and prunes after 7 days unseen (tests)",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Collapsed sidebar orders by group without headers; navigation and focus skip headers correctly (tests)",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "fmt, clippy, isolated sidebar/client tests, release build pass",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.019Z",
+          "author": "legacy",
+          "text": "Owner 2026-11-26 (clarification, binding): draw the hierarchy as a tree so belonging is visible at a glance, e.g.\n```\n▾ MyHUD            3\n├─▾ nav-redesign   2\n│ ├ ● imp  Execution tab\n│ └ ◐ imp  Recently ended\n└─▸ herdr-fork     1\n▸ herdr-hud        1\n```\nBox-drawing connectors (`├─ └─ │`) tie each row to its parent; `▾`/`▸` mark open/folded; folded nodes show their\ncount and strongest state colour. Keep the agent row's icon and title as today after the connector prefix; at narrow\nwidths connectors take at most 4 cells and the title truncates first. With `ui.ascii`/no box-drawing glyphs, fall back\nto `|- \\- |`."
+        },
+        {
+          "at": "2026-11-27T06:39:46.019Z",
+          "author": "legacy",
+          "text": "Owner 2026-11-26 (collapsed sidebar and order, binding): the collapsed sidebar shows belonging with separators and\nfolds, no tree: a solid rule `────` between big groups, a dotted rule `┈┈┈┈` between small groups; a group folded in\nthe expanded sidebar is one row in the collapsed one (`▸ N`, strongest state colour). Agent rows in the collapsed\nsidebar drop their index number (icon only); workspace rows keep their numbers (they match the workspace keys).\nOrder (stable, so rows do not jump): ungrouped panes first as today; big groups by first appearance in this server\nsession; small groups within a big group by first appearance; agent rows within a small group follow the configured\n`agent_panel_sort` (priority: blocked/waiting first; spaces: today's order). Attention is shown by colour (rows and\nfolded headers), never by reordering groups. Same order in the expanded and collapsed sidebar."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.019Z",
+      "updated_at": "2026-11-27T06:39:46.019Z"
+    },
+    {
+      "number": 27,
+      "title": "HUD: workers report project and task groups for the herdr sidebar",
+      "status": "ready-for-human",
+      "owner_try": true,
+      "live_try": "with workers of MyHUD (two features) and one herdr-fork worker running, the herdr sidebar shows MyHUD and herdr-hud groups with feature subgroups and the main session inside MyHUD",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork/26"
+      ],
+      "what": "Owner 2026-11-26, HUD half of herdr-fork/26. Where HUD reports pane metadata (src/mcp/dispatch/direct-exec.ts tokens: hud_role, hud_ticket, hud_icon), add `hud_group` = the job's registered project name (the same name the panel shows) and `hud_subgroup` = the ticket's feature slug (from `job.ticket` `feature/NN`), else the package label, else the parent job's subgroup for Sonic children and prewalk scouts, else omitted. Where a main session's pane is known to HUD (the Claude mod, the pi extension, or the statusline path that already knows its pane), report `hud_group` for that pane too so the main session sits in its project's group. Require the fork capability for grouped sidebar if herdr-fork/26 adds one; otherwise tokens are harmless on older forks. No new reads on the paint path. Update docs/reference.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Worker panes carry hud_group (project) and hud_subgroup (feature, package or parent's) in their metadata (tests over synthetic jobs)",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A main session pane known to HUD reports hud_group for its project (test)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "docs/reference.md describes the grouping",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.019Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "08f8dd05f47aa586e0950a4488e06ba35aab3ed4",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.019Z",
+      "updated_at": "2026-11-27T06:39:46.019Z"
+    },
+    {
+      "number": 30,
+      "title": "fork: the pane right-click menu lists pane plugin actions",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "After install, right-click an unfocused worker pane, choose Investigate this, and check the composer opens on that pane's visible text.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repo: ~/projects/herdr-hud (the herdr fork). fine-interact/02 shipped the MyHUD plugin action `hud.select-send.investigate` with `contexts = [\"pane\"]`, but herdr's pane right-click menu (src/client/shell/context_menu.rs ~55-82, `ClientContextMenuTarget::Pane`) does not list plugin actions, so \"Investigate this\" is unreachable from the mouse. Add every registered plugin action whose contexts include `pane` to that menu (after the built-in items, separated), invoking it with the right-clicked pane as the target even when that pane is not focused. Never touch ~/.local/bin/herdr or the running herdr server; main installs the tested build.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fork test: a registered `contexts = [\"pane\"]` action appears in the Pane context menu; an action without `pane` does not",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Fork test: choosing it on an unfocused pane invokes the action with that pane's id, not the focused pane's",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Fork test suite passes; the report names the built binary path for main to install",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.019Z",
+      "updated_at": "2026-11-27T06:39:46.019Z"
+    },
+    {
+      "number": 31,
+      "title": "fork: the dock collapses and expands without stopping its process",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "After install, open /hud, scroll or select something in the panel, collapse it with the keybinding and with the frame button, then expand it: the panel reappears instantly with the same state, and the main pane uses the full width while collapsed.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Repo: ~/projects/herdr-hud (dispatch with cwd there; land via its own land block). D-2026-11-27-01. Today `dock.toggle`/`dock.close` shut the dock terminal down (src/app/dock.rs close_dock → shutdown_terminal_runtime), so reopening is a cold start. Add a hidden state: `dock.hide` / `dock.show` and `dock.toggle` switching between shown and hidden while a dock exists (open it if none); `dock.close` still stops it. Hidden: the runtime keeps running and keeps its size, nothing is drawn, the tab area is full width in both overlay and push mode, mouse and keys never route to it. `dock.status` / the response report `shown`, `hidden` and the existing fields; live-handoff carries hidden. Add a clickable collapse mark on the dock frame and a default keybinding (prefix-based, configurable like other herdr bindings) that toggles hidden/shown. Wire protocol stays additive (old clients ignore the new fields). Never touch ~/.local/bin/herdr or the running server; main installs.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fork test: toggle on an open dock hides it with the same terminal id and runtime alive; toggle again shows it; close stops it",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Fork test: hidden dock gets no mouse/key routing and the tab area is full width in overlay and push",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Fork test: keybinding and frame mark toggle hidden; handoff preserves hidden",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Fork gate passes; report names the built binary",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.019Z",
+      "updated_at": "2026-11-27T06:39:46.019Z"
+    },
+    {
+      "number": 32,
+      "title": "fork: the dock resizes by dragging and docks to the right, left or bottom edge",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "After install, drag the dock's inner border to resize it, then switch the side to left and to bottom in HUD Settings; the width/height you dragged is kept after hide/show and after reopening.",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork/31"
+      ],
+      "what": "Repo: ~/projects/herdr-hud. D-2026-11-27-01. Width is only settable via `dock.configure` today, and the dock is fixed to the right edge (src/dock.rs inner_rect/tab_area). (a) Dragging the dock's inner border with the mouse resizes it (width for left/right, height for bottom), clamped so the main area keeps its current minimum; the drag emits a `dock.resized` event with the new size so HUD can persist it. (b) `DockOptions.side: right | left | bottom` (default right), applied live by `dock.configure`, in overlay and push; `size` stays meaningful per side (width for left/right, rows for bottom). Additive protocol; handoff carries side and size.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fork test: dragging the border changes the dock size and emits dock.resized with the new size; clamping keeps the main area minimum",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Fork test: side left/bottom place the dock and the push-mode tab area correctly; configure switches side live",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Fork gate passes; report names the built binary",
+          "done": true
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:58:31.933Z",
+      "updated_at": "2026-11-27T06:58:31.933Z"
+    },
+    {
+      "number": 33,
+      "title": "fork: the dock behaves like a pane for focus, copy mode and zoom",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "After install, move focus into the dock and back with herdr's directional focus keys, enter copy mode in the dock and copy a line, and zoom the dock to full screen and back.",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork/32"
+      ],
+      "what": "Repo: ~/projects/herdr-hud. D-2026-11-27-01: the owner wants the dock usable as an ordinary pane. Directional focus navigation (the same keys that move between panes) moves into the dock from the adjacent edge and back out; copy mode, search and selection work in the dock exactly as in a pane; zoom toggles the dock to the full terminal area and back (hidden state and side unchanged). Keep the existing rule that a server-side dock focus change does not interrupt local copy mode. No new HUD-side code in this ticket.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fork test: directional focus enters and leaves the dock for each side",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Fork test: copy mode and selection in the dock produce the same clipboard text as in a pane",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Fork test: zoom fills the terminal area and restores; hidden/side unchanged",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Fork gate passes; report names the built binary",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.019Z",
+      "updated_at": "2026-11-27T06:39:46.019Z"
+    },
+    {
+      "number": 34,
+      "title": "HUD: /hud collapses instead of stopping; Settings choose the dock side and keep the dragged size",
+      "status": "ready-for-agent",
+      "owner_try": true,
+      "live_try": "In Claude Code, Codex, pi and a shell pane: /hud shows and collapses the same panel instantly with its state kept; `hud panel close` stops it; Settings -> Panel -> Side moves it to left/bottom; a dragged size survives hide/show and a new session.",
+      "approved_removals": [],
+      "blocked_by": [
+        "herdr-fork/32"
+      ],
+      "what": "MyHUD side of D-2026-11-27-01, after the fork exposes hide/show, side and dock.resized. `hud panel` / every client's /hud (Claude mod, Claude/Codex command and skill, pi /hud) call `dock.toggle` = show/collapse; `hud panel open`, `close` (stops the panel) and `status` (reports shown/hidden/closed); `/hud off` collapses, `/hud close` stops. Bar/band `[Open]` shows a collapsed dock. Settings -> Panel gains Side (right/left/bottom, applied live via dock.configure); the panel persists the size from `dock.resized` into the existing width setting (plus a bottom height setting), so drag and Settings stay one value. A collapsed panel stops its own periodic collection work until shown again (lightweight rule), then refreshes once on show. docs/reference.md updated (zh in the translation pass).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: every /hud entry point sends dock.toggle; close stops; status reports shown/hidden/closed",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: Settings Side applies dock.configure live; dock.resized updates the saved size",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: a collapsed panel runs no periodic collection and refreshes once on show",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "npm test, npm run test:mjs and check:fixtures pass",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.019Z",
+      "updated_at": "2026-11-27T06:39:46.019Z"
+    }
+  ]
+}

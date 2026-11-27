@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "feature": "pivot-m2",
+  "objective": "pivot",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Machine-wide running and queued counts in every statusline",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Spec §5 M2. The work-summary snapshot (`src/collectors/work-summary-snapshot.ts:22-35,71-84`) publishes machine-wide `running` and a new `queued` count across all projects. The statusline (`src/cli/statusline.ts:159,170`) reads `global`, not the pane's own counts, labelled as machine scope. `asking` counts workers waiting on main; it is not shown as owner load (owner requests come later). Claude, pi and Codex lines show the same numbers.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test (M2 Try, counts): jobs running in two projects and one queued give the same running/queued in two panes' statuslines; starting the queued job changes both",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a pane with no own jobs still shows the machine counts",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "`npm test` passes; reference.md (EN/ZH) updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.078Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "f5c16bb6300e3de13f371e2d077809f5fb595d62",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.078Z",
+      "updated_at": "2026-11-27T06:39:46.078Z"
+    },
+    {
+      "number": 2,
+      "title": "Local CPU and RAM in the statusline",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "pivot-m2/01"
+      ],
+      "what": "Spec §5 M2. Show local CPU% and RAM (Linux/WSL guest, labelled as such) in the statuslines without blocking. CPU% needs a persisted prior `/proc/stat` sample, because each `hud statusline` call is a fresh process: keep one small sample file under `$HUD_HOME` and compute the delta; the first call after a gap shows no CPU% rather than a guess. RAM from `/proc/meminfo` (MemAvailable); add swap only when it is under pressure. No host (Windows) metrics.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: two calls with synthetic `/proc/stat` samples give the expected CPU%; a missing or stale sample shows no CPU%",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: RAM from a synthetic meminfo; swap appears only above the pressure threshold",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Measured: statusline wall time stays within its current budget (number in the report)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "`npm test` passes; reference.md (EN/ZH) updated",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.078Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "e5e2ec75dfb320ff17c2a441cca084c4d14d96e0",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.078Z",
+      "updated_at": "2026-11-27T06:39:46.078Z"
+    }
+  ]
+}

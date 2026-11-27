@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "feature": "statusline-tps",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Output tokens/s on Claude's statusline and Codex's bar",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Claude's statusline and Codex's tmux bar show the latest response's output tokens per second, as the\npi footer's `tps` band already does (`src/harness/pi/p10k-footer.ts`, `12.3 t/s`). Spec (owner, 2026-11-17): every\nstatus line shows output tokens/s.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Claude's statusline shows `N t/s` for the latest assistant response, from data the statusline already reads (stdin JSON and a bounded tail of the transcript); nothing new is scanned whole.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Codex's bar shows it from the existing output-rate estimate (`outputRate` in `src/snapshot.ts`), marked as an estimate (`~N t/s`).",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No rate known: the field is absent, never `0` or a guess.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "It is a bar field in every bar theme, drops early on a narrow bar, and keeps the statusline as fast as today.",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "One main-path test per client with a synthetic transcript/rollout.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-17T00:00:00.000Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 0,
+        "commit": "082bc807"
+      },
+      "comments": [
+        {
+          "at": "2026-11-17T00:00:00.000Z",
+          "author": "legacy",
+          "text": "Claude's rate includes request latency, so it is marked `~` too."
+        }
+      ],
+      "created_at": "2026-11-17T00:00:00.000Z",
+      "updated_at": "2026-11-27T06:39:46.103Z"
+    }
+  ]
+}

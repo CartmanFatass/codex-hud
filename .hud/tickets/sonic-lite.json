@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "feature": "sonic-lite",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Sonic runs headless as a one-shot query",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22: sonic is its own kind, not a herdr worker. Census (157 sonic jobs): 97.5% had no interaction, 0 hud_ask, 2 messages in, 1 lease use, 1 repair; startup 7 s median. Sonic runs headless (pi print/JSON mode, no herdr tab or pane) with a normal job record under $HUD_HOME/jobs: brief in, report out, progress and nesting under its parent still shown in the panel. No hud_ask, no continuation, no idle grace; a failure is final and the caller re-dispatches. hud_lease stays available. Spec: §2.1 says sonic is a headless query role outside the herdr worker rules (draft the sentences; the main session tells the owner).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "hud_create role sonic (main session or a worker child) settles with a report and opens no herdr tab",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "The panel shows a running and a settled headless sonic under its parent with progress",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.101Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "23610ad0fb3935aa9ddb895ab01bab90192a1144"
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T06:39:46.101Z",
+          "author": "legacy",
+          "text": "Verified headless print mode with local pi and a synthetic provider. The rebased change passes the full test suite and fixture checks, including a regression test that a legacy Sonic at its role cap does not queue a headless query."
+        }
+      ],
+      "created_at": "2026-11-27T06:39:46.101Z",
+      "updated_at": "2026-11-27T06:39:46.101Z"
+    },
+    {
+      "number": 2,
+      "title": "Sonic thinking can be none; lookups lean low; native tools",
+      "status": "done",
+      "owner_try": true,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Owner 2026-11-22: deepseek-v4-1-flash supports none/low/high/max. Add `none` to sonic's thinking_choices (packages/hud-mcp/roles/sonic.json) for running a given command and reporting its output, copying exact text, listing files; tighten the level purposes so narrow named-file lookups pick low (81% of survey sonics picked high after auto-thinking). sonic.md asks for native read/grep/find tools over bash where the harness has them (38.6 bash vs 0 grep per survey). Spec §2.1.4 level list updated (draft; the main session tells the owner).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "The Decision API can pick none, and a command-runner brief does",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "sonic.md names native read/grep tools",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.101Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "620260abaa2ff3af220f238d4a8b4c53396a6188"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.101Z",
+      "updated_at": "2026-11-27T06:39:46.101Z"
+    },
+    {
+      "number": 3,
+      "title": "Sonic checks for loops at 10 minutes and keeps going in the same session",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "sonic-lite/01"
+      ],
+      "what": "Owner 2026-11-22 asked whether the 10-minute headless cap fits and what happens to a long query cut off. Facts: of 25 recent sonic jobs with timings, p50 259 s, p90 497 s, 2 over 600 s (677 s and 1,490 s), both finished with outcome done; a fixed 10-minute kill would have failed them and thrown the work away. Owner's design: at 10 minutes do not kill; check whether the query is going round in circles, and if not let the same pi process keep going (same session, prompt cache kept), and never let it go quiet.\n\n- Checkpoint every 10 minutes (`check_s`, default 600). The check reads the recent pi JSON events: it is looping when the last window repeats the same tool calls with the same arguments, or shows no new tool target and no new hud_progress since the previous checkpoint. Looping: stop, settle failed `looping`. Otherwise: keep running and post a progress line (\"still working at 10 min: <last step>\") that reaches the caller like any progress, so a long query is never silent; the caller may still close it.\n- Separate stall rule: no stdout growth and no hud_progress for `stall_s` (default 180) stops it as `stalled`. Safety cap `max_s` (default 1800) stops it as `timeout`. All three are optional sonic role-file fields, shown in `hud_roster(detail:true)`.\n- A stopped query keeps its partial stdout; its digest carries the last progress line. Run pi with a session file in the job dir; `hud_create({role:\"sonic\", retry_of})` on a stopped query resumes that pi session (pi --session) with a short \"continue; you were stopped for <reason>\" message instead of a fresh start, so context and cache are reused; if the session cannot be resumed, fall back to a new query whose brief carries the original brief plus the partial result.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A query that keeps making progress runs past 10 minutes in the same process and posts a checkpoint progress line",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A synthetic query repeating the same tool call is stopped at the checkpoint as `looping`; a silent one as `stalled` after stall_s; max_s as `timeout`",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "retry_of on a stopped sonic resumes its pi session (fallback: partial result in the brief)",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "role-file values change the limits; npm test and check:fixtures pass",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T06:39:46.101Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "legacy",
+        "gates": 5,
+        "commit": "1001aa02bbf9094e6f326e7849183e46f37b7ea6"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:39:46.101Z",
+      "updated_at": "2026-11-27T06:39:46.101Z"
+    }
+  ]
+}
