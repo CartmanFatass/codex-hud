@@ -70,7 +70,11 @@ try {
     return result.content[0].text;
   };
   if (!advisor) await call('hud_progress', { message: 'Synthetic headless CLI progress.' });
-  if (advisor) await call('hud_report', { turn: /turn: (\\S+)/.exec(prompt)[1], text: 'Synthetic advisor answer.' });
+  if (advisor) {
+    const reported = await call('hud_report', { turn: /turn: (\\S+)/.exec(prompt)[1], text: 'Synthetic advisor answer.' });
+    assert.deepEqual(JSON.parse(reported), { ok: true });
+    assert.ok(!reported.includes(process.env.HUD_HOME) && !reported.includes(dir));
+  }
   else if (!resumed) {
     await call('hud_sonic', { task: 'Read a synthetic fact.' });
     if (prompt.includes('Synthetic plain turn.')) await until(() => fs.existsSync(join(dir, 'release-first')), Infinity); // Released or reaped by the test.
@@ -91,7 +95,8 @@ try {
     }
     // CLI reports need not have collected all children. Closing cannot leak this runner.
     if (prompt.startsWith('Check C.')) await call('hud_sonic', { task: 'Another synthetic fact.' });
-    await call('hud_report', { turn, text: 'Synthetic report: ' + prompt.split('\\n')[0] });
+    const reported = await call('hud_report', { turn, text: 'Synthetic report: ' + prompt.split('\\n')[0] });
+    assert.deepEqual(JSON.parse(reported), { path: join(dir, 'report.md') });
   }
 } finally { child.stdin.end(); }
 assert.deepEqual(await exited, [0, null]);
@@ -113,6 +118,7 @@ test('default selection advisor runs a report-only Claude Code turn', { timeout:
     if (status?.state === 'failed') assert.fail(fs.readFileSync(join(dir, 'stderr.log'), 'utf8'));
     return status?.state === 'closed';
   }, t.signal);
+  assert.equal(fs.readFileSync(join(dir, 'report.md'), 'utf8'), 'Synthetic advisor answer.');
   assert.equal(read(join(f.env.HUD_HOME, 'selection-excerpts.json'))[0].answer.text, 'Synthetic advisor answer.');
 });
 

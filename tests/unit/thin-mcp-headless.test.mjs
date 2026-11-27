@@ -78,7 +78,11 @@ if (fs.existsSync(join(home, 'hold-' + gate))) {
   } }));
 }
 if (advisor) {
-  await tools.hud_report.execute('report', { text: fresh ? 'The hunk removes the duplicate.' : 'The guard still runs once.' });
+  const reported = await tools.hud_report.execute('report', { text: fresh ? 'The hunk removes the duplicate.' : 'The guard still runs once.' });
+  assert.equal(reported.terminate, true);
+  assert.deepEqual(reported.details, { ok: true });
+  assert.equal(reported.content[0].text, JSON.stringify({ ok: true }));
+  assert.ok(!reported.content[0].text.includes(process.env.HUD_HOME) && !reported.content[0].text.includes(dir));
   emit('session_shutdown', {});
   process.exit(0);
 }
@@ -113,7 +117,10 @@ if (fresh && fs.existsSync(join(process.env.HOME, 'ask'))) {
     assert.ok(notices[0].content.includes(started.details.job + ' settled'));
     await tools.hud_sonic.execute('wait', { wait: [started.details.job] });
   }
-  await tools.hud_report.execute('report', { text: 'Synthetic report: ' + prompt });
+  const reported = await tools.hud_report.execute('report', { text: 'Synthetic report: ' + prompt });
+  assert.equal(reported.terminate, true);
+  assert.deepEqual(reported.details, { path: join(dir, 'report.md') });
+  assert.equal(reported.content[0].text, JSON.stringify({ path: join(dir, 'report.md') }));
 }
 emit('session_shutdown', {});
 `;

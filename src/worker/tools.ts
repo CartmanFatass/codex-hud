@@ -202,7 +202,8 @@ export async function finishReport({ dir, job }: Worker, turn: unknown, text?: s
     await publishMetadata(sig);
     if (job.headless) writeJsonPrivate(join(dir, DONE_FILE), { report_sig: sig }, { mkdir: false });
   }
-  return review.warnings.length ? { path, warnings: review.warnings } : { path };
+  const receipt = job.selection_advisor ? { ok: true as const } : { path };
+  return review.warnings.length ? { ...receipt, warnings: review.warnings } : receipt;
 }
 
 export async function startSonic({ dir, job: parent }: Pick<Worker, 'dir' | 'job'>, task: string, cwd?: unknown) {
