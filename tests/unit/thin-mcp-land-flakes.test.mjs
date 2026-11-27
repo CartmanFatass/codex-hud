@@ -1423,18 +1423,19 @@ test('running list whose Blocked by names a landed ticket (reference left in pla
   const retry = () => collectGateFlakes(f.home, f.main, [], f.env.HERDR_PANE_ID, {
     retryDispatch: true, pendingTicket: 'test-flakes/02', dispatch: fakeDispatch,
   });
-  const unblockedRes = await retry();
-  assert.equal(unblockedRes.pending, undefined);
-  assert.equal(unblockedRes.dispatchedJob, 'j0000000000000e91');
+  const results = await Promise.all([retry(), retry()]);
+  const admittedJobs = results.flatMap(res => res.dispatchedJob ? [res.dispatchedJob] : []);
+  assert.deepEqual(admittedJobs, ['j0000000000000e91']);
+  assert.ok(results.every(res => res.pending === undefined), 'both retries resolve once the ticket is claimed');
   const claimedRes = await retry();
   assert.equal(claimedRes.pending, undefined);
   assert.equal(claimedRes.dispatchedJob, undefined);
-  assert.deepEqual(dispatched.map(d => d.ticket), ['test-flakes/02'], 'the live claim prevents a duplicate dispatch on retry');
+  assert.deepEqual(dispatched.map(d => d.ticket), ['test-flakes/02'], 'concurrent and later retries do not dispatch a duplicate');
   assert.match(fs.readFileSync(t02Path, 'utf8'), /\*\*Blocked by:\*\* test-flakes\/01/, 'Blocked by reference left in place');
 
   // Stop job 1 and verify a new running list 03 whose Blocked by already names landed 01
   // dispatches immediately on reaching its threshold (exactly one imp).
-  fs.writeFileSync(join(f.home, 'jobs', unblockedRes.dispatchedJob, 'STATUS.json'),
+  fs.writeFileSync(join(f.home, 'jobs', admittedJobs[0], 'STATUS.json'),
     JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
   const t03Path = join(issuesDir, '03-gate-flakes-running-list.md');
   fs.writeFileSync(t03Path, [
