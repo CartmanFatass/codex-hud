@@ -302,9 +302,37 @@ const FRAMES = {
     '                                                            ',
     ' ⏎ inspect  g peek tab  q return to claude       switch=nav ',
   ],
+  // Minimal (100 × 24: today's 4c folded rail; HUD adds only ?N on top and a shape on folded runs)
+  C5: [
+    '?1 │  claude    tests   +                                                                  2 hidden ',
+    '───│ > how is the dock-ux queue doing?                                                              ',
+    '1 ×│                                                                                                ',
+    '2 ◐│ ● 01 landed. 02 failed at the gate.                                                            ',
+    '3 ○│ ● 03 asks whether push stays default.                                                          ',
+    '───│   Waiting for your answer.                                                                     ',
+    '  ○│                                                                                                ',
+    '▸×2│ ● lantern-ui runs audit in space 2.                                                            ',
+    '┈┈┈│                                                                                                ',
+    ' ◐◈│                                                                                                ',
+    ' ✓⚖│                                                                                                ',
+    '───│                                                                                                ',
+    '  ○│                                                                                                ',
+    '   │                                                                                                ',
+    '   │                                                                                                ',
+    '   │                                                                                                ',
+    '   │                                                                                                ',
+    '   │                                                                                                ',
+    '   │                                                                                                ',
+    '   │                                                                                                ',
+    '   │────────────────────────────────────────────────────────────────────────────────────────────────',
+    '   │ > █                                                                                            ',
+    '   │────────────────────────────────────────────────────────────────────────────────────────────────',
+    ' » │ harbor-api main ↑1 · ctx 42% · ?1 · ⚒2 ◈1 · WSL C14% M29%                                      ',
+  ],
 };
+FRAMES.A5 = FRAMES.B5 = FRAMES.C5;
 
-const STATES = ['expanded', 'deep page open', 'collapsed', 'narrow 60'];
+const STATES = ['expanded', 'deep page open', 'collapsed', 'narrow 60', 'minimal'];
 const PAGES = { A2: 'Execution', B2: 'Project › Tickets', C2: '◆ HUD · Execution' };
 const VARIANTS = [
   {
@@ -431,7 +459,9 @@ const LAYOUT = {
   C2: { split: 27, hud: TREE_C, focus: [5], body: 'hud' },
   C3: { split: 12, hud: [0, 1, 6, ...span(9, 12), 15], focus: [3] },
   C4: { body: 'hud' },
+  C5: { split: 3, hud: [0, 7], focus: [2] },
 };
+LAYOUT.A5 = LAYOUT.B5 = LAYOUT.C5;
 
 /** The `[from, to, zone]` segments of row `y`. */
 function segments(id, y) {
@@ -499,7 +529,7 @@ function render() {
   const columns = process.stdout.columns || 100, rows = process.stdout.rows || 25;
   const { key, title, idea } = VARIANTS[variant], id = `${key}${state + 1}`, frame = FRAMES[id];
   const width = frame[0].length, need = frame.length + 1;
-  const head = `Variant ${key} · ${STATES[state]} (${state + 1}/4)`;
+  const head = `Variant ${key} · ${STATES[state]} (${state + 1}/${STATES.length})`;
   const placed = []; // [row, column, text]
   if (columns < width || rows < need) {
     const lines = [head, `Terminal is ${columns}×${rows}; this frame needs ${width}×${need}.`,
