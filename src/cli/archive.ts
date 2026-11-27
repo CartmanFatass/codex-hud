@@ -22,7 +22,7 @@ function formatBytes(bytes: number): string {
 }
 
 function formatList(items: readonly ColdArchiveItem[], capGB: number): string {
-  if (!items.length) return `No cold archive entries (raw cap: ${capGB} GB).\n`;
+  if (!items.length) return `No cold archive entries (raw cap: ${capGB} GiB).\n`;
   let textTotal = 0;
   let rawTotal = 0;
   const lines = items.map((item) => {
@@ -32,7 +32,7 @@ function formatList(items: readonly ColdArchiveItem[], capGB: number): string {
     const rawCol = item.raw ? formatBytes(item.raw.size) : '-';
     return `${item.month}  ${item.id}  text=${textCol}  raw=${rawCol}`;
   });
-  lines.push(`Total: ${items.length} entries, text ${formatBytes(textTotal)}, raw ${formatBytes(rawTotal)} (cap ${capGB} GB)`);
+  lines.push(`Total: ${items.length} entries, text ${formatBytes(textTotal)}, raw ${formatBytes(rawTotal)} (cap ${capGB} GiB)`);
   return lines.join('\n') + '\n';
 }
 

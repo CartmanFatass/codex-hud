@@ -1,15 +1,17 @@
 # 06: Cold archive repair: oversized metadata never hides a report; failed unlink is gated
 
-**Status:** ready-for-agent
+**Status:** done
 **Live try:** none
 **Blocked by:** none
 
 **What to build:** Repair from milestone review j4a44769453893d23 (findings 1-2 plus the optional minor) of cold-archive/01-05 (spec §2.3, D-2026-11-26-11: hud_read on a pruned job reads its report from the cold archive; watcher cost stays as today; a failed archive write keeps the source). (a) Oversized optional metadata must not hide an archived report. src/mcp/mcp/operations.ts:397-408 asks readColdJobText for report-meta.json as a fully buffered entry, and src/roles/cold-archive.ts:607-608 throws cold_entry_too_large / cold_read_limit_exceeded for any selected entry above the bound, which operations.ts turns into job_not_found for digest and full reads. Live reads ignore a report-meta.json above MAX_META_BYTES (src/roles/report-meta.ts:158) and still return the report. Make the cold read match: an optional selected entry (report-meta.json) whose size exceeds the live metadata limit is skipped (treated as absent), not a reason to abort; report.md is still returned. Keep one bound: reuse the live MAX_META_BYTES for the metadata entry. Preferred simplification the review named: keep one report-meta schema/normalization parser shared by parseColdReportMeta and readReportMeta, with only the signature check specific to the live file vs the streamed entry. (b) A failed source unlink must go through the failed-job retry gate. src/runtime/work-retention.ts:107-120 swallows any unlinkSync error after a successful raw publish and returns 'archived', so with a read-only job dir every unrelated STATUS refresh re-reads and hashes the same raw member and live log (and with retention.coldRawCapGB 0 recompresses and evicts it each time). Return 'failed' when a still-matching target's unlink fails with anything other than ENOENT, so src/runtime/watch-runtime.ts:1159-1161 adds the job to retentionFailures and retries only on housekeeping or that job's own input change. A replaced/changed log (inode/size/mtime mismatch) stays as today. (c) Minor: src/cli/archive.ts:25,35 prints the raw cap as GB while the setting and arithmetic use GiB (1024^3). Change the display label to GiB and align docs/reference.md wording for retention.coldRawCapGB to GiB. No config migration. No new dependency; files 0600, dirs 0700; watcher refresh still does zero cold-archive I/O. Main 2026-11-27: this is the last repair round for cold-archive (fifth review). Lead acceptance after the next review: accept unless it finds a blocker or a normal-path defect; remaining edge cases become follow-up tickets.
 
-- [ ] A pruned job with a small report.md and a report-meta.json larger than the live metadata limit returns its report via hud_read (digest and full); a unit test covers this selected-oversized-sidecar case, not only a large unselected sibling.
-- [ ] Live and cold report-meta parsing share one schema/normalization path (or the report names why not), with signature checks kept per source.
-- [ ] pruneJobLogs returns 'failed' when publication succeeds but unlinking a still-matching log fails with an error other than ENOENT; a test shows zero cold-archive I/O on unrelated refreshes after that failure and a successful retry on the housekeeping pass.
-- [ ] hud archive output and docs/reference.md label the raw cap in GiB.
-- [ ] npm test, npm run test:mjs and check:fixtures pass in the land gate.
+- [x] A pruned job with a small report.md and a report-meta.json larger than the live metadata limit returns its report via hud_read (digest and full); a unit test covers this selected-oversized-sidecar case, not only a large unselected sibling.
+- [x] Live and cold report-meta parsing share one schema/normalization path (or the report names why not), with signature checks kept per source.
+- [x] pruneJobLogs returns 'failed' when publication succeeds but unlinking a still-matching log fails with an error other than ENOENT; a test shows zero cold-archive I/O on unrelated refreshes after that failure and a successful retry on the housekeeping pass.
+- [x] hud archive output and docs/reference.md label the raw cap in GiB.
+- [x] npm test, npm run test:mjs and check:fixtures pass in the land gate.
 
 ## Comments
+
+- Landed in this commit (replay base 12f1da6e975793b65993c0dd7c8bc0e951edf516); gate 5/5 passed.

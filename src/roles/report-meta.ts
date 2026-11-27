@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { reportSignature } from './cli-turn.js';
 import { jobFiles } from '../mcp/paths.js';
 
-const MAX_META_BYTES = 16 * 1024;
+export const MAX_META_BYTES = 16 * 1024;
 export const REPORT_LINE_LIMIT = 160;
 const signatures = new Map<string, { stamp: string; sig: string | null }>();
 
@@ -150,6 +150,30 @@ export function writeReportMeta(
   writePrivateFile(file, body, { mkdir: false });
 }
 
+/** Parse metadata from a bounded read, with the report signature checked by the caller. */
+export function parseReportMeta(body: string, matchesSignature: (sig: string) => boolean): ReportMeta | null {
+  try {
+    const meta = JSON.parse(body);
+    if (
+      meta?.v !== 1 ||
+      typeof meta.at !== 'string' ||
+      typeof meta.report_sig !== 'string' ||
+      (meta.summary !== undefined && typeof meta.summary !== 'string') ||
+      (meta.skip_checks_reason !== undefined && typeof meta.skip_checks_reason !== 'string') ||
+      (meta.files !== undefined &&
+        (!Array.isArray(meta.files) || !meta.files.every((p: unknown) => typeof p === 'string')))
+    )
+      return null;
+    if (!matchesSignature(meta.report_sig)) return null;
+    const { at, report_sig, preview } = meta;
+    const fields = normalizeReportMeta(meta);
+    if (validPreviewPath(preview?.source) && [preview.path, preview.stamp, preview.error].every(v => v === undefined || typeof v === 'string')) fields.preview = preview;
+    return fields.summary || fields.files || fields.skip_checks_reason || fields.preview ? { v: 1, at, report_sig, ...fields } : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Pass false only to recover the previous preview declaration while publishing a new report. */
 export function readReportMeta(dir: string, expectedSig?: string | null | false): ReportMeta | null {
   const file = join(dir, jobFiles.reportMeta);
@@ -168,22 +192,7 @@ export function readReportMeta(dir: string, expectedSig?: string | null | false)
     } finally {
       fs.closeSync(fd);
     }
-    const meta = JSON.parse(body);
-    if (
-      meta?.v !== 1 ||
-      typeof meta.at !== 'string' ||
-      typeof meta.report_sig !== 'string' ||
-      (meta.summary !== undefined && typeof meta.summary !== 'string') ||
-      (meta.skip_checks_reason !== undefined && typeof meta.skip_checks_reason !== 'string') ||
-      (meta.files !== undefined &&
-        (!Array.isArray(meta.files) || !meta.files.every((p: unknown) => typeof p === 'string')))
-    )
-      return null;
-    if (expectedSig !== false && meta.report_sig !== (expectedSig === undefined ? cachedReportSignature(dir) : expectedSig)) return null;
-    const { at, report_sig, preview } = meta;
-    const fields = normalizeReportMeta(meta);
-    if (validPreviewPath(preview?.source) && [preview.path, preview.stamp, preview.error].every(v => v === undefined || typeof v === 'string')) fields.preview = preview;
-    return fields.summary || fields.files || fields.skip_checks_reason || fields.preview ? { v: 1, at, report_sig, ...fields } : null;
+    return parseReportMeta(body, (sig) => expectedSig === false || sig === (expectedSig === undefined ? cachedReportSignature(dir) : expectedSig));
   } catch {
     return null;
   }

@@ -17,7 +17,7 @@ import {
   mergeColdMember,
   readColdJobText,
 } from '../../dist/roles/cold-archive.js';
-import { writeReportMeta } from '../../dist/roles/report-meta.js';
+import { MAX_META_BYTES, writeReportMeta } from '../../dist/roles/report-meta.js';
 import { pruneJobLogs, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { streamTarZstFile, streamTarZstFileSync, TarZstFrameWriter } from '../../dist/utils/tar-zst.js';
 import { workflowEvents } from '../../dist/workflows/events.js';
@@ -200,7 +200,14 @@ test('pruned clean job leaves private text and raw members with byte-identical r
   assert.equal(modeOf(rawMember), 0o600);
 
   fs.chmodSync(f.home, 0o700);
-  const list = await runCli(['list', '--json'], { ...process.env, HUD_HOME: f.home });
+  const env = { ...process.env, HUD_HOME: f.home };
+  const listed = await runCli(['list'], env);
+  assert.equal(listed.code, 0, listed.err);
+  assert.match(listed.out, /\(cap 20 GiB\)/);
+  const empty = await runCli(['list', '--month', '2030-02'], env);
+  assert.equal(empty.code, 0, empty.err);
+  assert.match(empty.out, /\(raw cap: 20 GiB\)/);
+  const list = await runCli(['list', '--json'], env);
   assert.equal(list.code, 0, list.err);
   const parsedList = JSON.parse(list.out);
   assert.equal(parsedList.items.length, 1);
@@ -501,6 +508,36 @@ test('hud_read returns report digest and full paginated pages for a pruned job f
   assert.deepEqual(missing, { ok: false, code: 'job_not_found' });
   const list = await f.call('hud_read', { view: 'recent' });
   assert.equal(list.jobs.some((row) => row.job === id), false);
+});
+
+test('hud_read returns a pruned report in digest and full mode with an oversized report-meta.json', async (t) => {
+  const f = await mcpFixture(t);
+  const id = 'j000000000000be01';
+  const dir = join(f.env.HUD_HOME, 'jobs', id);
+  const ended = '2030-03-01T10:00:00.000Z';
+  const job = { job: id, role: 'imp', cwd: f.root, created_at: ended, reaped_at: ended };
+  const status = { state: 'closed', ended_at: ended, output_written: true };
+  const report = 'Synthetic report without metadata.\n';
+  put(join(dir, 'job.json'), JSON.stringify(job));
+  put(join(dir, 'STATUS.json'), JSON.stringify(status));
+  put(join(dir, 'report.md'), report);
+
+  // The valid JSON is padded beyond even the old generic entry cap, where hud_read used to fail.
+  const metaPath = join(dir, 'report-meta.json');
+  writePatternFile(metaPath, 64 * 1024 * 1024 + 1, Buffer.from(' '));
+  fs.writeFileSync(metaPath, JSON.stringify({ v: 1, at: ended, report_sig: reportSignature(dir), summary: 'Ignored metadata.' }), { flag: 'r+' });
+  const archived = archiveJobCold(f.env.HUD_HOME, dir, id, job, status, Date.parse(ended) + 25 * hour);
+  assert.equal(archived.wroteText, true);
+  fs.rmSync(dir, { recursive: true });
+
+  const digest = await f.call('hud_read', { job: id });
+  assert.equal(digest.archived, true);
+  assert.equal(digest.report_exists, true);
+  assert.equal(digest.digest.result, report.trim());
+  const full = await f.call('hud_read', { job: id, mode: 'full' });
+  assert.equal(full.archived, true);
+  assert.equal(full.report, report);
+  assert.equal(full.report_meta, undefined);
 });
 
 test('archive write failure keeps source across all prune paths and repeated sweeps never duplicate or truncate', async (t) => {
@@ -1066,9 +1103,11 @@ test('hud_read returns digest and full pages for a pruned report.md at the old 6
   const sliced = await readColdJobText(f.env.HUD_HOME, id, {
     names: ['report-meta.json'],
     slices: { 'report.md': { offset: 0, length: headerBuf.length } },
+    skipOversizeEntries: { 'report-meta.json': MAX_META_BYTES },
     maxEntryBytes: 4096,
     maxTotalBytes: 4096,
   });
+  assert.ok(sliced?.entries.has('report-meta.json'), 'selected metadata under its cap is kept');
   assert.equal(sliced?.slices.get('report.md')?.size, targetReportBytes);
   assert.equal(sliced?.slices.get('report.md')?.sha256, reportSha);
   assert.ok(sliced?.slices.get('report.md')?.data.equals(headerBuf));
@@ -1107,22 +1146,23 @@ test('hud_read returns digest and full pages for a pruned report.md at the old 6
   assert.equal(lastPage.report, tailText);
 });
 
-test('failed full and early retention do zero cold I/O on unrelated STATUS refreshes and retry on input change or housekeeping', { timeout: 60000 }, async (t) => {
+test('failed full retention, raw publication, and raw unlink do zero cold I/O on unrelated STATUS refreshes and retry on input change or housekeeping', { timeout: 60000 }, async (t) => {
   const f = retentionFixture(t);
   const open = f.job({ state: 'working' });
   const old = expired();
   const stuckInput = f.job(old, { reaped_at: old.ended_at });
   const stuckHousekeep = f.job(old, { reaped_at: old.ended_at });
   const ended = new Date(Date.now() - hour).toISOString();
-  const stdout = Buffer.from('synthetic stdout retained after failed publication\n');
-  const early = ['input', 'housekeep'].map(kind => {
+  const stdout = Buffer.from('synthetic stdout retained after failed retention\n');
+  const early = ['input', 'housekeep', 'unlink'].map(kind => {
     const dir = f.job({ state: 'closed', ended_at: ended, output_written: true }, { resume_s: 60, reaped_at: ended });
     put(join(dir, 'usage.json'), JSON.stringify({ key: ended }));
     const log = put(join(dir, 'stdout.jsonl'), stdout);
-    const blocker = put(join(f.home, `block-raw-${kind}`), 'block raw publication');
+    const blocker = put(join(f.home, `block-raw-${kind}`), 'block raw retention');
     return { dir, log, blocker, raw: `${basename(dir)}.raw.tar.zst` };
   });
-  const [earlyInput, earlyHousekeep] = early;
+  const [earlyInput, earlyHousekeep, earlyUnlink] = early;
+  const unlinkRawPath = join(f.home, 'archive', 'cold', ended.slice(0, 7), earlyUnlink.raw);
   for (const dir of [stuckInput, stuckHousekeep]) put(join(dir, 'usage.json'), JSON.stringify({ key: old.ended_at }));
 
   const inputSession = realSession(stuckInput, 'sessions', { type: 'session', cwd: '/synthetic/stuck-input' });
@@ -1150,7 +1190,8 @@ const perfOffsetFile = ${JSON.stringify(perfOffsetFile)};
 const countsFile = ${JSON.stringify(countsFile)};
 const scansFile = ${JSON.stringify(scansFile)};
 const counts = { init: 0, refresh: 0, input: 0, preHousekeep: 0, housekeep: 0 };
-const rawBlockers = ${JSON.stringify(early.map(({ raw, blocker }) => [raw, blocker]))};
+const rawBlockers = ${JSON.stringify([earlyInput, earlyHousekeep].map(({ raw, blocker }) => [raw, blocker]))};
+const { log: unlinkLog, blocker: unlinkBlocker } = ${JSON.stringify(earlyUnlink)};
 const stuckDirs = ${JSON.stringify([stuckInput, stuckHousekeep, ...early.map(e => e.dir)])};
 let scans = 0, refreshWalks = 0;
 const origPerfNow = performance.now.bind(performance);
@@ -1191,6 +1232,14 @@ fs.lstatSync = (p, ...a) => {
   return lstat(p, ...a);
 };
 fs.openSync = (p, ...a) => { check(p); return openSync(p, ...a); };
+const unlinkSync = fs.unlinkSync;
+fs.unlinkSync = (p, ...a) => {
+  if (p.startsWith('/proc/self/fd/') && p.endsWith('/stdout.jsonl') && fs.existsSync(unlinkBlocker) && fs.realpathSync(p) === unlinkLog) {
+    fs.writeFileSync(unlinkBlocker + '.seen', 'blocked');
+    throw Object.assign(Error('synthetic source unlink failure'), { code: 'EACCES' });
+  }
+  return unlinkSync(p, ...a);
+};
 process.on('exit', () => {
   fs.writeFileSync(countsFile, JSON.stringify({ ...counts, refreshWalks }));
 });
@@ -1199,7 +1248,7 @@ syncBuiltinESMExports();`;
   const readScans = () => (exists(scansFile) ? Number(fs.readFileSync(scansFile, 'utf8')) : 0);
   const { child, exited, stderr } = f.start(probe);
 
-  // 1) Both early publications fail; full retention also fails to preserve the native sessions.
+  // 1) Two early publications fail, one published log fails to unlink, and full retention fails to preserve sessions.
   await until(() => child.exitCode !== null || (
     early.every(({ blocker }) => exists(`${blocker}.seen`)) &&
     exists(join(f.home, 'watch.log')) &&
@@ -1209,6 +1258,8 @@ syncBuiltinESMExports();`;
   assert.equal(child.exitCode, null, stderr());
   assert.ok(exists(stuckInput), 'stuckInput kept when native preservation fails');
   assert.ok(exists(stuckHousekeep), 'stuckHousekeep kept when native preservation fails');
+  assert.ok(exists(unlinkRawPath), 'raw member was published before source unlink failed');
+  assert.deepEqual(fs.readFileSync(earlyUnlink.log), stdout);
 
   // 2) Unrelated STATUS.json updates on the working job trigger rescans with ZERO cold-archive reads/writes.
   writeFixtureFile(phaseFile, 'refresh');
@@ -1238,6 +1289,7 @@ syncBuiltinESMExports();`;
   writeFixtureFile(phaseFile, 'preHousekeep');
   fs.unlinkSync(housekeepConflict);
   fs.unlinkSync(earlyHousekeep.blocker);
+  fs.unlinkSync(earlyUnlink.blocker);
   for (let i = 0; i < 3; i++) {
     const before = readScans();
     writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'working', progress: `pre-hk ${i}` }));
@@ -1246,12 +1298,13 @@ syncBuiltinESMExports();`;
   }
   assert.ok(exists(stuckHousekeep), 'stuckHousekeep waits for housekeeping when its own inputs did not change');
   assert.deepEqual(fs.readFileSync(earlyHousekeep.log), stdout);
+  assert.deepEqual(fs.readFileSync(earlyUnlink.log), stdout, 'failed unlink waits for housekeeping');
 
-  // 5) The next housekeeping pass retries both unchanged jobs.
+  // 5) The next housekeeping pass retries the unchanged jobs.
   writeFixtureFile(phaseFile, 'housekeep');
   writeFixtureFile(perfOffsetFile, String(60 * 60_000));
   writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'working', progress: 'trigger housekeep' }));
-  await until(() => child.exitCode !== null || (!exists(stuckHousekeep) && !exists(earlyHousekeep.log)), t.signal);
+  await until(() => child.exitCode !== null || (!exists(stuckHousekeep) && !exists(earlyHousekeep.log) && !exists(earlyUnlink.log)), t.signal);
   assert.equal(child.exitCode, null, stderr());
   assert.deepEqual(fs.readFileSync(housekeepConflict), housekeepSession.bytes, 'stuckHousekeep session moved on housekeeping pass');
   assert.ok(exists(earlyHousekeep.dir), 'housekeeping retried only the early raw log prune');

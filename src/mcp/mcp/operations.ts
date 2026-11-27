@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { AnswerResult } from '../../collectors/panel-actions.js';
 import { readJobProgress, jobRowReportMeta, jobChanges, failedAttempt, type JobRow } from '../../collectors/thin-jobs.js';
-import { normalizeReportMeta, validPreviewPath, type ReportMeta, type ReportMetaFields } from '../../roles/report-meta.js';
+import { MAX_META_BYTES, parseReportMeta, type ReportMetaFields } from '../../roles/report-meta.js';
 import { readColdJobText } from '../../roles/cold-archive.js';
 import { removeQueuedJob } from '../../roles/concurrency.js';
 import { councilGrants } from '../../roles/council-grant.js';
@@ -370,26 +370,9 @@ const REPORT_HEAD_BYTES = 65536;
 function parseColdReportMeta(
   metaBuf: Buffer | undefined,
   report: { size: number; sha256: string } | undefined,
-): ReportMeta | undefined {
-  if (!metaBuf || !report || metaBuf.length > 16 * 1024) return undefined;
-  try {
-    const meta = JSON.parse(metaBuf.toString('utf8'));
-    if (
-      meta?.v !== 1 ||
-      typeof meta.at !== 'string' ||
-      typeof meta.report_sig !== 'string' ||
-      (meta.summary !== undefined && typeof meta.summary !== 'string') ||
-      (meta.skip_checks_reason !== undefined && typeof meta.skip_checks_reason !== 'string') ||
-      (meta.files !== undefined && (!Array.isArray(meta.files) || !meta.files.every((p: unknown) => typeof p === 'string')))
-    ) return undefined;
-    if (!meta.report_sig.endsWith(`:${report.size}:${report.sha256}`)) return undefined;
-    const fields = normalizeReportMeta(meta);
-    const { at, report_sig, preview } = meta;
-    if (validPreviewPath(preview?.source) && [preview.path, preview.stamp, preview.error].every((v: unknown) => v === undefined || typeof v === 'string')) {
-      fields.preview = preview;
-    }
-    return fields.summary || fields.files || fields.skip_checks_reason || fields.preview ? { v: 1, at, report_sig, ...fields } : undefined;
-  } catch { return undefined; }
+) {
+  if (!metaBuf || !report) return undefined;
+  return parseReportMeta(metaBuf.toString('utf8'), (sig) => sig.endsWith(`:${report.size}:${report.sha256}`)) ?? undefined;
 }
 
 async function readColdJobObservation(id: string, full: boolean, detail: boolean, offset: number) {
@@ -397,6 +380,7 @@ async function readColdJobObservation(id: string, full: boolean, detail: boolean
   try {
     cold = await readColdJobText(hudHome, id, {
       names: [jobFiles.job, jobFiles.status, jobFiles.reportMeta],
+      skipOversizeEntries: { [jobFiles.reportMeta]: MAX_META_BYTES },
       slices: {
         [jobFiles.report]: full
           ? { offset, length: REPORT_PAGE_BYTES + 1 }

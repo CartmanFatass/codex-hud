@@ -65,6 +65,8 @@ export interface ColdEntrySlice {
 export interface ReadColdJobTextOptions {
   names?: readonly string[];
   slices?: Readonly<Record<string, ColdEntrySliceRequest>>;
+  /** Skip selected whole entries above these per-name byte limits. */
+  skipOversizeEntries?: Readonly<Record<string, number>>;
   maxEntryBytes?: number;
   maxTotalBytes?: number;
 }
@@ -77,7 +79,7 @@ export function monthFromMs(ms: number): string {
   return new Date(Number.isFinite(ms) ? ms : Date.now()).toISOString().slice(0, 7);
 }
 
-/** Read retention.coldRawCapGB from $HUD_HOME/config.json (default 20 GB). */
+/** Read retention.coldRawCapGB from $HUD_HOME/config.json (default 20 GiB). */
 export function coldRawCapGB(home: string): number {
   try {
     const raw = readJsonBounded(join(home, 'config.json'), CONFIG_LIMIT);
@@ -570,6 +572,7 @@ export async function readColdJobText(
   if (!found) return null;
   const wanted = options.names ? new Set(options.names) : null;
   const sliceRequests = options.slices ? new Map(Object.entries(options.slices)) : null;
+  const skipLimits = options.skipOversizeEntries ? new Map(Object.entries(options.skipOversizeEntries)) : null;
   const maxEntryBytes = options.maxEntryBytes ?? DEFAULT_TEXT_ENTRY_LIMIT;
   const maxTotalBytes = options.maxTotalBytes ?? DEFAULT_TEXT_TOTAL_LIMIT;
   const entries = new Map<string, Buffer>();
@@ -599,7 +602,8 @@ export async function readColdJobText(
         curChunks = [];
         return;
       }
-      if (wanted && !wanted.has(meta.name)) {
+      const skipLimit = skipLimits?.get(meta.name);
+      if ((wanted && !wanted.has(meta.name)) || (skipLimit !== undefined && meta.size > skipLimit)) {
         curMode = 'skip';
         curName = null;
         return;

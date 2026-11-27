@@ -106,15 +106,19 @@ export function pruneJobLogs(dir: string, job: Job, status: Partial<JobStatus>, 
       // Move-then-delete: a failed archive write keeps the raw logs for the next sweep.
       const res = archiveJobRawEntries(home, id, targets.map((t) => t.entry), ended);
       wrote = res.written;
+      let failed = false;
       for (const { name, stat: before } of targets) {
         try {
           const current = stat(name);
           if (current?.isFile() && sameInode(before, current) && current.size === before.size && current.mtimeMs === before.mtimeMs) {
             fs.unlinkSync(join(jobDir, name));
           }
-        } catch { /* Missing or replaced log; leave for next sweep. */ }
+        } catch (error) {
+          // A concurrent disappearance is fine; other failures use the watcher's retry gate.
+          if (!missing(error)) failed = true;
+        }
       }
-      return 'archived';
+      return failed ? 'failed' : 'archived';
     });
     if (wrote) {
       try { enforceColdRawCap(home); } catch { /* Best-effort cap trim; retry next raw archive write. */ }
