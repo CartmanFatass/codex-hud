@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { isAbsolute, join, relative, resolve } from 'node:path';
+import { agyTranscriptPath } from '../harness/agy/transcript.js';
 import type { Job, JobRoute, JobStatus } from '../mcp/job-contracts.js';
 import { isAutoLandFlakeJob } from '../mcp/flake-admission.js';
 import { jobFiles } from '../mcp/paths.js';
@@ -186,6 +187,14 @@ function latestSession(directory: string): OwnerWorker['sessionFile'] {
   } catch {
     return undefined;
   }
+}
+function agyActivityAt(sessionId: unknown): number | undefined {
+  const path = agyTranscriptPath(sessionId);
+  if (!path) return;
+  try {
+    const stat = fs.lstatSync(path, { throwIfNoEntry: false });
+    if (stat?.isFile() && stat.size > 0) return stat.mtimeMs;
+  } catch { /* Unreadable native log: no activity evidence. */ }
 }
 function headlessOutputAt(directory: string): number | undefined {
   try {
@@ -767,8 +776,8 @@ export function readThinJobs(
   const seenStamps = new Map<string, string>(), seenArtifacts = new Set<string>();
   restore(home, idx);
   const root = join(home, 'jobs');
-  // The worktree link is not among the persisted facts, so a project view reads receipts whole.
-  const readFact = (path: string, acceptFacts = true): { v: Record<string, unknown>; at: number } | null => {
+  // The worktree link and AGY session ID are not among the persisted facts; project views read full records.
+  const readFact = (path: string, acceptFacts = within === undefined): { v: Record<string, unknown>; at: number } | null => {
     const res = idx.readJson(path, { parse, acceptFacts });
     if (res.status === 'ok') { seenStamps.set(path, `ok:${res.stamp}`); return { v: res.value, at: res.at }; }
     if (res.status === 'truncated' || res.status === 'invalid') seenStamps.set(path, `${res.status}:${res.stamp}`);
@@ -1011,7 +1020,10 @@ export function readThinJobs(
     const route = job.route as Partial<JobRoute> | undefined;
     const sessionFile = state === 'working' ? latestSession(directory) : undefined;
     const outputAt = state === 'working' && job.headless === true ? headlessOutputAt(directory) : undefined;
-    const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, sessionFile?.at ?? 0, outputAt ?? 0, flow?.updatedAt ?? 0);
+    const agyAt = within !== undefined && state === 'working' && s.agent === 'agy'
+      ? Math.max(agyActivityAt(s.agent_session_id ?? s.session_id) ?? 0, when(row.latest_progress?.at) ?? 0)
+      : 0;
+    const activityAt = Math.max(created, status?.at ?? 0, report?.at ?? 0, phaseAt, sessionFile?.at ?? 0, outputAt ?? 0, flow?.updatedAt ?? 0, agyAt);
     const reportMeta = settledReportMeta(directory, report !== null, settledAt !== null);
     const sentence =
       reportMeta?.summary ||

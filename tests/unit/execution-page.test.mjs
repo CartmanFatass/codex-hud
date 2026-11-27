@@ -8,7 +8,9 @@ import { join, resolve } from 'node:path';
 import { executionJobs, fakeFork, IDS, NOW, PANE } from '../fixtures/execution-page.mjs';
 import { viewFor, withState } from '../fixtures/state-helpers.mjs';
 import { PanelExecution } from '../../dist/panel/execution.js';
-import { countProjectLiveJobs } from '../../dist/collectors/execution.js';
+import { countProjectLiveJobs, executionSnapshot } from '../../dist/collectors/execution.js';
+import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
+import { buildWorkboard } from '../../dist/collectors/workboard.js';
 import { focusJobTab, hideJobTab, pinJobTab } from '../../dist/cli/panel-pane.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
@@ -114,6 +116,47 @@ test('each live job has one card without screen rows or read-interval notes in E
     assert.ok(compact.includes('Review the synthetic diff'), `${width} ${lang} first worker card fits under workflow`);
     assert.doesNotMatch(compact, /画面|├─ screen|screens every/);
   }
+});
+
+test('Execution uses an AGY step log without a heartbeat, but still stalls a silent worker', async (t) => {
+  const f = await setup(t), home = join(f.root, 'home');
+  const priorHome = process.env.HOME;
+  process.env.HOME = home;
+  t.after(() => { if (priorHome === undefined) delete process.env.HOME; else process.env.HOME = priorHome; });
+  const old = new Date(NOW - 18 * 60000), recent = new Date(NOW - 60000);
+  const status = join(f.dir('imp'), 'STATUS.json'), receipt = join(f.dir('imp'), 'job.json');
+  const progress = join(f.dir('imp'), 'progress.jsonl');
+  fs.unlinkSync(progress);
+  fs.writeFileSync(status, JSON.stringify({ state: 'working', harness: 'cli', agent: 'agy',
+    agent_session_id: 'synthetic-agy-session', started_at: old.toISOString() }));
+  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt, 'utf8')),
+    created_at: old.toISOString(), ticket: 'demo/01' }));
+  fs.utimesSync(status, old, old);
+  const state = (expected) => {
+    const scope = { root: f.project, pane: PANE, complete: true };
+    const lanes = readThinJobs(f.hud, { project: f.project, pane: PANE, within: f.project });
+    const board = buildWorkboard({ rootId: '', nodes: [], totalCount: 0, updatedAt: new Date(NOW) }, lanes);
+    const view = executionSnapshot(f.hud, board, scope, NOW);
+    const card = render(view).workboard.rows.find((row) => row.item === cards('imp')[0]);
+    assert.match(stripAnsi(card.text), new RegExp(`\\b${expected}\\b`));
+    assert.equal(view.ticketActivity.find((item) => item.jobId === IDS.imp)?.state, expected);
+    return view.jobs.find((job) => job.jobId === IDS.imp).worker;
+  };
+
+  state('stalled');
+  const logs = join(home, '.gemini/antigravity-cli/brain/synthetic-agy-session/.system_generated/logs');
+  const log = join(logs, 'transcript_full.jsonl');
+  fs.mkdirSync(logs, { recursive: true });
+  fs.writeFileSync(log, JSON.stringify({ type: 'GENERIC', content: 'synthetic test result' }) + '\n');
+  fs.utimesSync(log, recent, recent);
+  assert.equal(state('working').latest_progress, null);
+
+  const stallBoundary = new Date(NOW - 10 * 60000);
+  fs.utimesSync(log, stallBoundary, stallBoundary);
+  state('stalled');
+  fs.writeFileSync(progress, JSON.stringify({ at: recent.toISOString(), text: 'Synthetic milestone' }) + '\n');
+  assert.equal(state('working').latest_progress.text, 'Synthetic milestone');
+  assert.equal(f.fork.requests.length, 0);
 });
 
 test('before the first read the page says so, and a project with nothing live says that', () => {

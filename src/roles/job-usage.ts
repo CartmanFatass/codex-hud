@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { findRolloutBySessionId } from '../collectors/session-finder.js';
+import { agyTranscriptPath } from '../harness/agy/transcript.js';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles as files } from '../mcp/paths.js';
 import { readFileBounded, readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
@@ -239,7 +240,7 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
   if (!id || !/^[\w-]{1,128}$/.test(id)) return;
   const userHome = homedir();
   let path: string | undefined;
-  if (agent === 'agy') path = join(userHome, '.gemini', 'antigravity-cli', 'brain', id, '.system_generated', 'logs', 'transcript_full.jsonl');
+  if (agent === 'agy') path = agyTranscriptPath(id);
   if (agent === 'claude' && job.cwd && isAbsolute(job.cwd))
     path = join(process.env.CLAUDE_CONFIG_DIR || join(userHome, '.claude'), 'projects', job.cwd.replace(/[^a-zA-Z0-9-]/g, '-'), `${id}.jsonl`);
   if (agent === 'codex') path = findRolloutBySessionId(id)?.path;
