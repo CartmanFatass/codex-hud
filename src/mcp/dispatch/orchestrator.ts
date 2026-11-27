@@ -944,7 +944,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         const briefContext = inline === browser ? context! : await contextFor(args, browser);
         if (briefContext.code) return briefContext;
         Object.assign(job, briefContext.metadata);
-        return { ...briefContext, brief: writeBrief(job, dir, task, briefContext.block, first) };
+        return { ...briefContext, brief: jobBrief(job, dir, task, briefContext.block), exclusive: first };
       },
       onFirst(job) {
         publishWorkSummary();
@@ -974,7 +974,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   // The target ID (and task, if negotiated) is stable across both stages.
   base.scout_state = 'scouting';
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  writeBrief({ ...base, place: plan.candidates[0].candidate.place }, dir, task, context!.block, true);
+  writePrivateFile(join(dir, jobFiles.brief), jobBrief({ ...base, place: plan.candidates[0].candidate.place }, dir, task, context!.block),
+    { exclusive: true, mkdir: false });
   save(base);
   writeCreateStatus(dir, { state: 'working', reason: 'scouting' });
   trackCreatedJob(id);
@@ -1176,7 +1177,7 @@ async function launchReservedJob(base: Job, launch: ReservedLaunch, scoutOutcome
       job.launcher = launcherId();
       if (briefContext.code) return briefContext;
       Object.assign(job, briefContext.metadata);
-      return { ...briefContext, brief: writeBrief(job, dir, task, scoutNote + briefContext.block, false) };
+      return { ...briefContext, brief: jobBrief(job, dir, task, scoutNote + briefContext.block) };
     },
     onFirst(job) {
       if (scoutOutcomes) {
@@ -1198,7 +1199,8 @@ function observeRetrySource(job: Job) {
 /** Shared place selection and retry/fallback policy for an admitted job. */
 async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, worktree }: ReservedLaunch, hooks: {
   even?: ReturnType<typeof evenPlanner>; callerToken?: string; modelSource?: string;
-  prepare(job: Job, browser: boolean, first: boolean): Promise<Extract<Awaited<ReturnType<typeof assembleContext>>, { code: string }> | (DispatchInput & { standing?: StandingBriefRef })>;
+  prepare(job: Job, browser: boolean, first: boolean): Promise<Extract<Awaited<ReturnType<typeof assembleContext>>, { code: string }> |
+    (DispatchInput & { standing?: StandingBriefRef; exclusive?: boolean })>;
   beforeInput?: WorkflowDispatch['beforeInput'];
   onFirst(job: Job): void;
   onUsedPlace?: () => void;
@@ -1218,29 +1220,23 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
     if (base.workflow_cheap && prepared.place.harness === 'bro') { reason = 'Workflow role now has a browser place; re-plan'; break; }
     const { place, options } = prepared;
     // A plan can outlive the quota snapshot it was built with (e.g. while scouting).
-    const exhausted = readExhausted(hudHome);
-    const mark = exhausted.get(candidate.key);
-    if (mark) {
-      skipped.set(candidate.key, mark.until);
+    const skipExhausted = async (until: string) => {
+      skipped.set(candidate.key, until);
       // Try other places in this preset before moving around the even pool.
       if (hooks.even && route && index === candidates.length - 1) {
-        const next = await hooks.even(route, `${candidate.key} exhausted until ${mark.until}`);
+        const next = await hooks.even(route, `${candidate.key} exhausted until ${until}`);
         if (next) candidates.push(...next.candidates);
       }
-      continue;
-    }
+    };
+    const exhausted = readExhausted(hudHome);
+    const mark = exhausted.get(candidate.key);
+    if (mark) { await skipExhausted(mark.until); continue; }
     const first = attempts.length === 0;
-    if (!first) {
-      if (isQuotaFailure(reason)) {
-        if (candidate.key === job.place_key) continue;
-        if (!exhausted.has(job.place_key!)) markExhausted(hudHome, job.place_key!, reason);
-      }
-      // The previous tab is closed. Don't carry its launch/turn state into a new worker.
-      for (const file of [jobFiles.session, jobFiles.status, jobFiles.turn]) fs.rmSync(join(dir, file), { force: true });
-      jobCache.invalidateJob(id);
+    if (!first && isQuotaFailure(reason)) {
+      if (candidate.key === job.place_key) continue;
+      if (!exhausted.has(job.place_key!)) markExhausted(hudHome, job.place_key!, reason);
     }
-    const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
-    job = {
+    const nextJob: Job = {
       ...base, ...options, place, place_key: candidate.key,
       ...(route && { route, headless: route.mode === 'headless' || role === 'sonic' ? true : undefined }),
       ...(place.harness === 'bro' || role === 'sonic' ? {} : { resume_s: chain.resume_s ?? DEFAULT_RESUME_S }),
@@ -1258,24 +1254,39 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
         state_trust: candidate.state_trust ?? 'advisory',
       } } : {}),
     };
-    if ((base.overflow_from ?? role) === 'imp') job.imp_preset = effective.preset;
-    const briefContext = await hooks.prepare(job, place.harness === 'bro', first);
+    if ((base.overflow_from ?? role) === 'imp') nextJob.imp_preset = effective.preset;
+    const briefContext = await hooks.prepare(nextJob, place.harness === 'bro', first);
     if (hooks.beforeInput && !inputAdmitted && !('code' in briefContext)) {
-      // This is the real checkout, not a reconstruction from Git objects.
-      try { if (worktree && !job.worktree) await prepareWorktree(job, worktree); }
-      catch (error) { return { job, result: rejectLaunch(launchError(String(error))), reason: String(error) }; }
-      const refusal = await hooks.beforeInput(briefContext, job.cwd);
-      if (refusal) return { job, result: rejectLaunch(launchError(refusal, 'workflow_input_changed')), reason: refusal };
+      // Keep the populated checkout even if placement changes after admission.
+      if (worktree && !nextJob.worktree) {
+        try { await prepareWorktree(nextJob, worktree); }
+        catch (error) { return { job: nextJob, result: rejectLaunch(launchError(String(error))), reason: String(error) }; }
+        base.worktree = nextJob.worktree;
+        base.cwd = nextJob.cwd;
+      }
+      const refusal = await hooks.beforeInput(briefContext, nextJob.cwd);
+      if (refusal) return { job: nextJob, result: rejectLaunch(launchError(refusal, 'workflow_input_changed')), reason: refusal };
       inputAdmitted = true;
     }
     if (role === 'sonic' && place.harness !== 'bro' && !('code' in briefContext)) {
-      if (args.thinking !== undefined) job.thinking_source = 'explicit';
+      if (args.thinking !== undefined) nextJob.thinking_source = 'explicit';
       else {
         const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, chain.thinking_choices));
-        if (picked !== undefined) job.thinking = place.thinking = picked;
-        job.thinking_source = picked === undefined ? 'default' : 'decision';
+        // A quota mark can arrive while the Decision API call is in flight.
+        const lateMark = readExhausted(hudHome).get(candidate.key);
+        if (lateMark) { await skipExhausted(lateMark.until); continue; }
+        if (picked !== undefined) nextJob.thinking = place.thinking = picked;
+        nextJob.thinking_source = picked === undefined ? 'default' : 'decision';
       }
     }
+    if (!first) {
+      // The previous tab is closed. Don't carry its launch/turn state into a new worker.
+      for (const file of [jobFiles.session, jobFiles.status, jobFiles.turn]) fs.rmSync(join(dir, file), { force: true });
+      jobCache.invalidateJob(id);
+    }
+    job = nextJob;
+    const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
+    if (!('code' in briefContext)) writePrivateFile(join(dir, jobFiles.brief), briefContext.brief, { exclusive: briefContext.exclusive, mkdir: false });
     // Persist before dispatch: an interrupted launch must not dispatch again on retry.
     save(job, !first);
     if (first) hooks.onFirst(job);
@@ -1311,7 +1322,7 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
   return { job, result, reason };
 }
 
-function writeBrief(job: Job, dir: string, task: string, block: string, first: boolean) {
+function jobBrief(job: Job, dir: string, task: string, block: string) {
   const place = job.place!;
   let cliFooter: string | undefined;
   if (place.harness === 'cli' && !cliWorkerTools(place.agent!)) {
@@ -1325,10 +1336,7 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
       `Collect: ${command('hud-sonic')} wait ${own} --job <id>\n`;
     cliFooter += `Optional milestone: ${command('hud-progress')} ${own} "message"\n`;
   }
-  const brief = formatBriefText(task, block, place.harness, { preview: job.preview, cliFooter });
-  // Standing brief and context references follow the task; labels read the brief's opening lines.
-  writePrivateFile(join(dir, jobFiles.brief), brief, { exclusive: first, mkdir: false });
-  return brief;
+  return formatBriefText(task, block, place.harness, { preview: job.preview, cliFooter });
 }
 
 async function prepareWorktree(job: Job, worktree: ManagedWorktree) {
