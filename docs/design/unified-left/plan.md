@@ -3,7 +3,12 @@
 Synthesis by main of council j4b7197b895d0009c (members Fable jb5388758585628c0, Astra j2b11c8a6c6e575a3,
 Carbon je8b4a20a335e29c7), 2026-11-27. Owner request: one unified panel on the left that combines herdr's
 sidebar navigation with the HUD panel, building on `docs/design/sidebar-dock/` (owner liked its running-workflow
-rail). Status: design; the owner asked for a clickable sample before any code.
+rail).
+
+**Superseded 2026-11-27 (owner):** too mechanical. HUD redrawing the navigation as Home made navigation and the
+HUD pages exclusive (a detail tab hides the tree) and dropped herdr sidebar functions (reorder, new workspace,
+sort, per-client folds). The merge must keep every left-side function and remove only redundancy; a redesign
+follows in `docs/design/unified-left/`. Kept here as the record of what was rejected and why.
 
 ## Shape
 
