@@ -16,7 +16,7 @@ import { freezeGraph, noticeEvents, runDir, runLock } from '../workflows/store.j
 import { wakeWorkflow } from '../workflows/wake.js';
 import { ESCALATION_RULE, isOpenTicketRun, ticketClosed } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
-import { activeLand, landAttempt, readLand } from './land-state.js';
+import { activeLand, landAttempt, readLand, type LandFlow } from './land-state.js';
 import { checkFeatureTickets, checkTicketPaths, declaredReadyTickets, registeredTicketRepo, ticketObjectiveOwner, ticketReadiness } from './local-tickets.js';
 import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
 import { BUNDLED_ROOT, jobFiles } from './paths.js';
@@ -24,7 +24,7 @@ import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
   blockerHandbackItem, cancelTicketQueue, clearItemHold, isTicketQueueId, MAX_REPAIR_ROUNDS, prepareTicketQueueRepair, queueIds, readTicketQueue, recordDecision,
-  syncBlockerHandback, ticketQueueNotice, ticketQueueView, writeTicketQueue, type RunDecision, type TicketQueue,
+  syncBlockerHandback, ticketQueueNotice, ticketQueueView, writeTicketQueue, type RunDecision, type TicketQueue, type TicketQueueItem,
 } from './ticket-queue-state.js';
 
 let template: string | undefined;
@@ -100,6 +100,15 @@ function launchFailed(home: string, job: string | undefined) {
   try { return JSON.parse(fs.readFileSync(join(home, 'jobs', job, 'STATUS.json'), 'utf8'))?.exit_reason === 'dispatch_failed'; }
   catch { return false; }
 }
+function recordCompletedLand(item: TicketQueueItem, land: LandFlow, now: string) {
+  if (item.held && !land.ticket_queue) item.held_land = land.flow;
+  item.land = land.flow;
+  item.landed = true;
+  item.landed_at = item.changed_at = land.landed_at ?? land.updated_at ?? now;
+  item.base_moves = land.base_moves;
+  delete item.held;
+}
+
 function jobCreatedAtMs(home: string, job: string): number | null {
   try {
     const raw = JSON.parse(fs.readFileSync(join(home, 'jobs', job, jobFiles.job), 'utf8'))?.created_at;
@@ -264,6 +273,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     const flow = unattended?.flow ?? `q${randomBytes(8).toString('hex')}`;
     const now = new Date().toISOString();
     const origin = pane ? procStat(process.pid) : null;
+    const adoptedHeldLands = new Map<string, LandFlow>();
     const q: TicketQueue = { flow, root, cwd: root, project_root: root, feature: target, pane: pane ?? '',
       ...(workspace && { workspace }),
       ...(startHead && startHead !== 'HEAD' && { start_head: resumed?.start_head ?? startHead }),
@@ -287,14 +297,8 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
         const land = (attempt?.job === item.job ? attempt : null) ?? (recorded?.job === item.job ? recorded : null);
         // Carry in-flight lands and adopt lands that completed while the predecessor was paused.
         if (!item.landed && land?.state === 'completed') {
-          const at = land.landed_at ?? land.updated_at ?? now;
-          next.land = land.flow;
-          if (item.held && !land.ticket_queue) next.held_land = land.flow;
-          next.landed = true;
-          next.landed_at = at;
-          next.changed_at = at;
-          next.base_moves = land.base_moves;
-          delete next.held;
+          if (item.held && !land.ticket_queue) adoptedHeldLands.set(item.ticket, land);
+          recordCompletedLand(next, land, now);
         } else if (!item.landed && land && activeLand(land)) {
           next.land = land.flow;
           if (item.held) {
@@ -327,6 +331,13 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
         await runLock(home, old.flow, () => {
           const predecessor = readTicketQueue(home, old.flow);
           if (predecessor?.state !== 'paused') return;
+          // Keep the same verified manual land on the ending receipt, not the resolved hold.
+          if (predecessor.flow === resumed?.flow) {
+            for (const item of predecessor.tickets) {
+              const land = adoptedHeldLands.get(item.ticket);
+              if (item.held && !item.landed && land && land.job === item.job) recordCompletedLand(item, land, now);
+            }
+          }
           predecessor.state = 'superseded';
           predecessor.superseded_by = q.flow;
           predecessor.notices = {};

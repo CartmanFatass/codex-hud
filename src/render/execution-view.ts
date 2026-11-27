@@ -128,8 +128,10 @@ function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }
   const age = muted(compactAge(entry.endedAt, now));
   const outcome = result ? state.ink(t(result)) : '';
   const facts = outcome ? `${outcome} ${age}` : age;
-  const interruptedQueue = 'flow' in entry && entry.kind === 'queue' && (result === 'cancelled' || result === 'superseded');
-  const landed = interruptedQueue ? entry.tickets.filter((ticket) => ticket.stage === 'landed').length : 0;
+  const queue = 'flow' in entry && entry.kind === 'queue';
+  const interruptedQueue = queue && (result === 'cancelled' || result === 'superseded');
+  const landed = queue && (interruptedQueue || result === 'landed')
+    ? entry.tickets.filter((ticket) => ticket.stage === 'landed').length : 0;
   const at = 'flow' in entry ? { item: runItem(entry.flow), execRun: entry.flow }
     : { item: cardItem(entry), execJob: { target: jobTarget(entry.worker), dir: entry.dir, tab: false } };
   const title = !('flow' in entry) ? titleOf(entry) : entry.kind === 'queue'
@@ -139,7 +141,9 @@ function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }
   const marker = selected === at.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
   const prefix = `${marker}${state.ink(state.glyph)} `;
   const left = visualLength(prefix + icon) + visualLength(facts) + 4 <= width ? `${prefix}${icon} ` : prefix;
-  const detail = landed ? `${outcome}${muted(` · ${t('{n} landed', { n: landed })}`)} ${age}` : '';
+  const landedLabel = landed ? t('{n} landed', { n: landed }) : '';
+  const detailedOutcome = !landedLabel ? '' : interruptedQueue ? `${outcome}${muted(` · ${landedLabel}`)}` : state.ink(landedLabel);
+  const detail = detailedOutcome ? `${detailedOutcome} ${age}` : '';
   const right = detail && visualLength(left + title + detail) + 1 <= width ? detail
     : visualLength(left + facts) + 2 <= width ? facts : interruptedQueue ? outcome : age;
   return { ...at, text: fit(pair(left + theme.board.text(title), right, width), width) };

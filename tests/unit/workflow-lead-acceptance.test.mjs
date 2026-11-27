@@ -478,9 +478,11 @@ test('a single held ticket manually landed before resume survives retention past
   const resumed = await f.call('hud_tickets', runArgs);
   assert.notEqual(resumed.flow, flow);
   await until(() => Boolean(f.flow(resumed.flow).review_job), 15_000);
-  const q = f.flow(resumed.flow);
-  assert.deepEqual(q.tickets.map(x => [x.ticket, x.job, x.land, x.landed, x.held]), [['sample/01', job, manual.flow, true, undefined]]);
-  assert.equal(f.flow(flow).superseded_by, resumed.flow);
+  const q = f.flow(resumed.flow), predecessor = f.flow(flow);
+  for (const run of [predecessor, q]) {
+    assert.deepEqual(run.tickets.map(x => [x.ticket, x.job, x.land, x.landed, x.held]), [['sample/01', job, manual.flow, true, undefined]]);
+  }
+  assert.equal(predecessor.superseded_by, resumed.flow);
   const pins = pinnedQueueJobs(f.home);
   assert.equal(pins.held.has(job), false, 'the resolved hold no longer pins the worktree or logs');
   assert.ok(pins.evidence.has(job), 'the successor keeps the adopted report and receipt through review and acceptance');
@@ -500,6 +502,15 @@ test('a single held ticket manually landed before resume survives retention past
   assert.equal(done.state, 'completed');
   assert.equal(done.verdict, 'finish: Verified manual land.');
   assert.match(done.notices['end-0'], /Landed: sample\/01\./);
+
+  const now = Date.now();
+  const view = executionSnapshot(f.home, { workers: [], lanes: [] }, { root: f.root, pane: null, complete: true }, now);
+  const rows = executionRows(view, undefined, 80, now);
+  const recent = rows.findIndex(row => stripAnsi(row.text).includes('Recently ended'));
+  assert.ok(recent >= 0);
+  const recentRow = id => stripAnsi(rows.slice(recent + 1).find(row => row.execRun === id)?.text ?? '');
+  assert.match(recentRow(flow), /superseded · 1 landed/);
+  assert.match(recentRow(resumed.flow), /\b1 landed\b/);
 
   // Once the successor completes, normal retention releases both the retained report and land receipt.
   await runFutureRetention();
@@ -574,6 +585,9 @@ test('resume does not treat closed held tickets as landed without a completed re
   assert.deepEqual(done.tickets, []);
   assert.equal(done.review_job, undefined);
   assert.equal(done.verdict, undefined);
+  const predecessor = f.flow(flow);
+  assert.equal(predecessor.state, 'superseded');
+  assert.deepEqual(predecessor.tickets, tickets, 'supersession does not mark a closed ticket landed without verification');
 });
 
 test('an ordinary run with a landed ticket and a held item never reaches review or finish; head-only change re-judges on resume', { timeout: 60_000 }, async t => {

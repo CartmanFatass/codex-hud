@@ -514,9 +514,12 @@ test('idle Execution shows only recent project rows, ordered together by end tim
     assert.deepEqual(rows.map((row) => row.item), expected.map(([item]) => item));
     for (const [i, [item, en, zh, enAge, zhAge]] of expected.entries()) {
       const line = rows[i].text.trimEnd(), [word, age] = lang === 'zh' ? [zh, zhAge] : [en, enAge];
-      const detail = width === 62 && (item === runItem(cancelledRun) || item === runItem(supersededRun))
-        ? (lang === 'zh' ? ' · 2 已落地' : ' · 2 landed') : '';
-      assert.ok(line.endsWith(word ? ` ${word}${detail} ${age}` : ` ${age}`), `${lang} ${width}: ${line}`);
+      const landedCount = lang === 'zh' ? '2 已落地' : '2 landed';
+      let outcome = word;
+      if (width === 62 && item === runItem(landedRun)) outcome = landedCount;
+      if (width === 62 && (item === runItem(cancelledRun) || item === runItem(supersededRun))) outcome = `${word} · ${landedCount}`;
+      assert.ok(line.endsWith(outcome ? ` ${outcome} ${age}` : ` ${age}`), `${lang} ${width}: ${line}`);
+      if (width === 40 && item === runItem(landedRun)) assert.ok(!line.includes(landedCount), `${lang} ${width}: ${line}`);
       if (!word) assert.doesNotMatch(line, /\b(?:failed|stopped|landed|done)\b|失败|已停止|落地|完成/);
     }
     for (const line of frame.lines) {

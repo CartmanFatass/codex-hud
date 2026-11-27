@@ -858,7 +858,7 @@
     {
       "number": 47,
       "title": "Recent keeps the landed count of a superseded run whose held item was landed by hand",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -872,22 +872,29 @@
         {
           "id": 1,
           "text": "Test: in workflow-lead-acceptance manual-land-before-resume, both the successor and the predecessor Recent rows show the landed count",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "docs/reference.md no longer describes a Markdown landing writer",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T10:49:15.905Z",
+        "job": "j382999a08ca4f2f8",
+        "flow": "f382999a08ca4f2f8",
+        "replay_base": "83052044f30d9a89289b56eff86c58dad90bd799",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T10:29:10.239Z",
-      "updated_at": "2026-11-27T10:29:10.239Z"
+      "updated_at": "2026-11-27T10:49:15.905Z"
     },
     {
       "number": 48,
