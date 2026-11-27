@@ -104,12 +104,13 @@ export function meter(done: number, total: number, cells: number): string {
 }
 const ASKS = /^(needs-triage|needs-info|ready-for-human)$/i;
 /** A ticket that asks for the owner: it waits on an answer or a human, whatever else holds it. */
-export const asksYou = (r: ProjectTicket) => (r.state === 'ready' || r.state === 'blocked') && ASKS.test(r.status);
+export const asksYou = (r: ProjectTicket) => r.state === 'triage' || ((r.state === 'ready' || r.state === 'blocked') && ASKS.test(r.status));
 const ticketLane = (r: ProjectTicket) => r.state === 'done' || r.state === 'dropped' ? 'done' : asksYou(r) ? 'you' : ticketWorking(r) ? 'working'
   : r.state;
 export const ticketGlyph = (r: ProjectTicket) => r.state === 'done' ? theme.board.success(mark('✓', '+')) : r.state === 'dropped' ? theme.board.muted(mark('–', '-'))
   : r.state === 'queued' ? theme.board.muted(mark('·', '.')) : r.state === 'try' ? sliceInk('try')(mark('◇', '*'))
-  : r.state === 'blocked' ? theme.board.attention(mark('◆', '!')) : theme.board.active(ticketWorking(r) ? mark('◐', '@') : mark('●', '*'));
+  : r.state === 'blocked' ? theme.board.attention(mark('◆', '!')) : r.state === 'triage' ? theme.board.attention('?')
+  : theme.board.active(ticketWorking(r) ? mark('◐', '@') : mark('●', '*'));
 /** Two to four letters naming a feature on its tickets' rows: its words' initials, else the first letters of its slug, never the same for two. */
 export function featureCodes(features: TicketFeature[]): Map<string, string> {
   const codes = new Map<string, string>(), used = new Set<string>();

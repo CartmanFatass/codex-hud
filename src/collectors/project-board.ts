@@ -60,7 +60,7 @@ export interface ProjectTicket {
   number: string; title: string; path: string; at: number; status: string;
   checked: number; total: number; items: TicketItem[]; comment?: string; landedComment?: string; commit?: string; recordedLanding?: boolean;
   blockers: string[]; ownerTry?: boolean; sourcePath?: string; landingAt?: number; landing?: TicketLanding; claimedAt?: number;
-  state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'ready' | 'queued';
+  state: 'done' | 'dropped' | 'try' | 'working' | 'blocked' | 'triage' | 'ready' | 'queued';
   job?: { id?: string; role: string; state: string; at?: number; completedAt?: number; created: number };
 }
 export interface TicketFeature { slug: string; at: number; tickets: ProjectTicket[]; partial?: true }

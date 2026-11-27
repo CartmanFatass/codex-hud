@@ -29,6 +29,44 @@ function makeWorker(base, id, role, overrides = {}) {
   };
 }
 
+test('A needs-triage ticket without blockers shows triage and does not add to blocked progress', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-triage-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const slug = 'sample-feature';
+  f.issue(slug, '15', 'Review incoming request', 'needs-triage');
+  f.issue(slug, '16', 'Wait on missing input', 'needs-triage', undefined, 'missing/01');
+  const project = await f.collector.collect(true, f.board, NOW);
+  const objective = { id: 'sample', title: 'Sample outcome', state: 'active', features: [slug], evidence: [] };
+  const data = {
+    ...project,
+    objectiveTickets: project.tickets,
+    objectives: { path: objectivePath(f.cwd), objectives: [objective], diagnostics: [], acceptance: {} },
+  };
+  const draw = (lang, subpage) => f.render(80, lang, { ...onPage(), subpage }, 24, data, true, 'unicode', 'none', {
+    projectDisplayRoot: f.cwd,
+  });
+  for (const [lang, triage, blocked, todo] of [['en', 'triage', 'blocked', 'todo'], ['zh', '待分拣', '受阻', '待办']]) {
+    const feature = draw(lang, { kind: 'feature', target: { root: f.cwd, slug } });
+    const rows = feature.workboard.rows;
+    const rowOf = (number) => rows.find((r) => r.item === `feature:ticket:${slug}:${number}-sample.md`).text;
+    assert.equal(rowOf('15').trimEnd().split(/\s+/).at(-1), triage);
+    assert.ok(rowOf('16').includes(`${blocked} ← missing/01`));
+    assert.ok(rows.some((r) => r.text.includes(`${blocked} 1 · ${todo} 1`)), 'only the genuinely blocked ticket counts as blocked');
+
+    const objectivePage = draw(lang, { kind: 'objective', target: { root: f.cwd, objective, blocked: false } });
+    const projectPage = draw(lang);
+    for (const row of [
+      objectivePage.workboard.rows.find((r) => r.item === `objective:feature:${slug}`),
+      projectPage.workboard.rows.find((r) => r.objectiveTarget?.objective.id === objective.id),
+    ]) {
+      const [, blockedTrack, todoTrack] = row.text.match(/(█+)(░+)/) ?? [];
+      assert.ok(blockedTrack && todoTrack && Math.abs(blockedTrack.length - todoTrack.length) <= 1, row.text);
+    }
+  }
+  assert.equal(project.counts.blocked, 1);
+});
+
 test('Feature page: ticket states, completion order, status fitting, Inspector/inline/o/g/P/H, and Esc at 40/62/120 EN/ZH no-colour', async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-render-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

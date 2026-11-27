@@ -123,6 +123,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   '{done}/{total} done': '{done}/{total} 完成',
   'blocked by {tickets}': '受阻于 {tickets}',
   ready: '就绪',
+  triage: '待分拣',
   'landed, to try': '已落地待试用',
   todo: '待办',
   accepted: '已验收',

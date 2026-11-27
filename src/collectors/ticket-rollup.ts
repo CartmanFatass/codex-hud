@@ -8,8 +8,8 @@ export const ticketJobState = (job: { dispatch_exit_code?: unknown }, status: { 
   typeof status.state === 'string' && status.state ? status.state
     : typeof job.dispatch_exit_code === 'number' && job.dispatch_exit_code !== 0 ? 'failed' : 'working';
 const live = (state: string | undefined) => !!state && !SETTLED_JOB_STATES.has(state);
-const sliceState = (t: ProjectTicket): LedgerSlice['state'] => t.state === 'done' ? 'accepted'
-  : t.state === 'ready' || t.state === 'queued' ? 'todo' : t.state;
+export const ticketSliceState = (state: ProjectTicket['state']): LedgerSlice['state'] => state === 'done' ? 'accepted'
+  : state === 'ready' || state === 'queued' || state === 'triage' ? 'todo' : state;
 
 /** Both spellings denote one ticket; a token boundary keeps FEATURE-01 distinct from FEATURE-010 or OTHER-FEATURE-01. */
 const key = (feature: string, n: string) => targetKey(`${feature}/${n}`);
@@ -65,12 +65,13 @@ export class TicketRollup {
         else if (job === 'failed' || job === 'blocked' || job === 'waiting_orchestrator') t.state = 'blocked';
         else if (claimed || this.trees.has(t)) t.state = 'working';
         else if (/^claimed\b/i.test(t.status)) t.state = !job && now - (t.claimedAt ?? t.at) < 7200000 ? 'working' : 'blocked';
-        else if (/^needs-(info|triage)\b/i.test(t.status)) t.state = 'blocked';
+        else if (/^needs-info\b/i.test(t.status)) t.state = 'blocked';
+        else if (/^needs-triage\b/i.test(t.status)) t.state = 'triage';
       }
       if ((t.state === 'working' || t.state === 'blocked') && claimed && /^ready-for-agent$/i.test(t.status)) t.status = 'claimed';
       const hasLand = t.state === 'done' || t.state === 'try';
       const commit = hasLand ? t.commit : undefined;
-      entries.push({ ticket: t, row: { id: `${slug.toUpperCase()}-${t.number}`, state: sliceState(t), milestone: slug,
+      entries.push({ ticket: t, row: { id: `${slug.toUpperCase()}-${t.number}`, state: ticketSliceState(t.state), milestone: slug,
         text: commit ? `${t.title} (${commit.slice(0, 8)})` : t.title,
         ...(commit ? { commit } : {}), ...(t.landingAt !== undefined ? { at: t.landingAt } : {}),
         ...(t.recordedLanding || t.state === 'try' ? { landed: true } : {}),
@@ -134,6 +135,7 @@ export class TicketRollup {
         if (cross && !target) missingCrossBlockers.set(t, cross);
       }
       if (declared.length) declaredBlockers.set(t, declared);
+      if (t.state === 'triage' && t.blockers.length) t.state = 'blocked';
       if (t.state === 'ready' && (deps.length || crossBlockers.has(t))) dependencies.set(t, deps);
     }
     // Resolve after every feature has been indexed. A missing predecessor or dependency cycle cannot start by itself.
@@ -142,7 +144,11 @@ export class TicketRollup {
       if (!deps) return t.state;
       dependencies.delete(t);
       t.state = 'blocked';
-      if (deps.every(p => p && visit(p) !== 'blocked')) t.state = 'queued';
+      // Triage does not block the ticket itself, but local dependents still need the prerequisite triaged.
+      if (deps.every(p => {
+        const state = p && visit(p);
+        return state && state !== 'blocked' && state !== 'triage';
+      })) t.state = 'queued';
       return t.state;
     };
     for (const t of dependencies.keys()) visit(t);
@@ -150,7 +156,7 @@ export class TicketRollup {
     const doneFeatures = this.features.filter((f) => f.tickets.length > 0 && f.tickets.every(resolved)).length;
     const totals = { doneTickets: [...this.index.values()].filter(resolved).length, totalTickets: this.index.size,
       doneFeatures, totalFeatures: this.features.length };
-    const rows = entries.map(({ ticket, row }) => ({ ...row, state: sliceState(ticket) }));
+    const rows = entries.map(({ ticket, row }) => ({ ...row, state: ticketSliceState(ticket.state) }));
     return { totals, rows, marks, declaredBlockers, crossBlockers, missingCrossBlockers };
   }
 }

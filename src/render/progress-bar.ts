@@ -1,4 +1,5 @@
 import { SLICE_STATES, type SliceState, type ProjectSnapshot, type TicketFeature } from '../collectors/project-board.js';
+import { ticketSliceState } from '../collectors/ticket-rollup.js';
 import { theme } from './colors.js';
 import { mark } from './workboard-rows.js';
 
@@ -29,7 +30,7 @@ export function linkedTicketProgress(features: ReadonlyMap<string, TicketFeature
     if (!feature || feature.partial) return;
     for (const { state } of feature.tickets) {
       if (state === 'dropped') continue;
-      counts[state === 'done' ? 'accepted' : state === 'queued' || state === 'ready' ? 'todo' : state]++;
+      counts[ticketSliceState(state)]++;
       total++;
     }
   }

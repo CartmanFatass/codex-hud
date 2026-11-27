@@ -4,6 +4,7 @@ import type { ExecutionRunJobTarget, LandProgress, TicketActivity } from '../col
 import { ENDED_MS } from '../collectors/execution-runs.js';
 import { SETTLED_JOB_STATES, type ProjectSnapshot, type ProjectTicket, type SliceState, type TicketFeature } from '../collectors/project-board.js';
 import { targetKey, ticketRowKey } from '../collectors/ticket-evidence.js';
+import { ticketSliceState } from '../collectors/ticket-rollup.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import type { MonitorRow } from './monitor.js';
@@ -18,10 +19,11 @@ const TICKET_ORDER: Record<ProjectTicket['state'], number> = {
   try: 0,
   working: 1,
   blocked: 2,
-  ready: 3,
-  queued: 4,
-  done: 5,
-  dropped: 6,
+  triage: 3,
+  ready: 4,
+  queued: 5,
+  done: 6,
+  dropped: 7,
 };
 
 const LEGEND_ORDER: readonly [SliceState, string][] = [
@@ -222,6 +224,7 @@ function ticketStateLabel(ticket: ProjectTicket): string {
     case 'try': return sliceInk('try')(t('to try'));
     case 'working': return ink.active(t('working'));
     case 'blocked': return ink.attention(t('blocked'));
+    case 'triage': return ink.attention(t('triage'));
     case 'ready': return ink.muted(t('ready'));
     case 'queued': return ink.muted(t('Queued'));
     case 'done': return ink.success(t('done'));
@@ -232,7 +235,7 @@ function ticketStateLabel(ticket: ProjectTicket): string {
 function legendRows(tickets: readonly ProjectTicket[], width: number): MonitorRow[] {
   const counts: Record<SliceState, number> = { accepted: 0, try: 0, working: 0, blocked: 0, todo: 0, dropped: 0 };
   for (const { state } of tickets) {
-    counts[state === 'done' ? 'accepted' : state === 'ready' || state === 'queued' ? 'todo' : state]++;
+    counts[ticketSliceState(state)]++;
   }
   const tokens = LEGEND_ORDER
     .filter(([state]) => counts[state] > 0)
