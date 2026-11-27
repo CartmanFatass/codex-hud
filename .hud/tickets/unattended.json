@@ -655,7 +655,7 @@
     {
       "number": 16,
       "title": "Repair unattended/14: a lead escalation pause is answerable with hud_respond resume|stop",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -669,27 +669,34 @@
         {
           "id": 1,
           "text": "Test: a run whose lead escalates (fake lead report) accepts `hud_respond resume` and moves forward without replaying the same lead decision",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: the same run accepts `stop` and ends cancelled",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: the repair-cap and main-answer escalation branches that offer resume/stop also leave the step asking and are answerable",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T13:03:11.549Z",
+        "job": "jb1741aa2d6b4313f",
+        "flow": "fb1741aa2d6b4313f",
+        "replay_base": "9a0d4eef68dce639acf80fb64c41a4508c572c78",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T12:37:30.226Z",
-      "updated_at": "2026-11-27T12:37:30.226Z"
+      "updated_at": "2026-11-27T13:03:11.549Z"
     },
     {
       "number": 17,
       "title": "Repair unattended/06: a pause wake is never lost to an expired typed delivery or another session",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -703,17 +710,24 @@
         {
           "id": 1,
           "text": "Test: a typed pause notice that expires unsent (draft present / busy past the guard) releases its marker and a later watcher pass delivers it exactly once; an uncertain send is not repeated",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: with the origin pane alive, a second main session in the same project does not claim the run's pause notice; with the origin dead, the project fallback still delivers",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T13:03:11.549Z",
+        "job": "j7a2d7952b12199a9",
+        "flow": "f7a2d7952b12199a9",
+        "replay_base": "9a0d4eef68dce639acf80fb64c41a4508c572c78",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T12:37:30.226Z",
-      "updated_at": "2026-11-27T12:37:30.226Z"
+      "updated_at": "2026-11-27T13:03:11.549Z"
     },
     {
       "number": 18,
@@ -752,7 +766,7 @@
     {
       "number": 19,
       "title": "Repair unattended/10: only an affirmative try-only Blockers text clears; mixed clauses go to the lead",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -766,22 +780,29 @@
         {
           "id": 1,
           "text": "Test: `owner live try remains: reopen the panel and pick which layout ships` goes to the lead",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: the ticket 10 clearance cases still land with the try part in run todo",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: a try detail with a second clause joined by `and`/`;` that is not a plain observation goes to the lead",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T13:03:11.549Z",
+        "job": "ja12e43e47fe9f52c",
+        "flow": "fa12e43e47fe9f52c",
+        "replay_base": "9a0d4eef68dce639acf80fb64c41a4508c572c78",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T12:37:30.226Z",
-      "updated_at": "2026-11-27T12:37:30.226Z"
+      "updated_at": "2026-11-27T13:03:11.549Z"
     },
     {
       "number": 20,
@@ -844,22 +865,35 @@
         {
           "id": 2,
           "text": "Tests: `S=<scratchpad>; rm -rf $S/out`, `mkdir -p`/`cp` to explicit new targets inside the worktree and a Claude Edit file inside the worktree are still approved",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "The legacy string proof path is removed and no test passes a bare string as a verified proof",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "docs/reference.md and docs/ARCHITECTURE.md describe the narrowed approved set",
-          "done": false
+          "done": true
         }
       ],
-      "comments": [],
+      "landing": {
+        "at": "2026-11-27T13:03:11.549Z",
+        "job": "j0f3b2c99bb2637f6",
+        "flow": "f0f3b2c99bb2637f6",
+        "replay_base": "9a0d4eef68dce639acf80fb64c41a4508c572c78",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T13:03:11.549Z",
+          "author": "land",
+          "text": "Partial landing (f0f3b2c99bb2637f6, job j0f3b2c99bb2637f6): acceptance left unticked: #1 Tests: symlinked scratchpad, conditional `cd`/assignment before `;`, `cp` into a directory with an existing child symlink, tar/unzip without member list, `npm run release` and `npx tsc` without a proven local binary all go to main"
+        }
+      ],
       "created_at": "2026-11-27T12:37:30.226Z",
-      "updated_at": "2026-11-27T12:37:30.226Z"
+      "updated_at": "2026-11-27T13:03:11.549Z"
     }
   ]
 }

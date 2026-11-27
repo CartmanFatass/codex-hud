@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { lstatSync, opendirSync, realpathSync, statSync, type Stats } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { loadSettings } from '../settings.js';
 import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
 import { dispatchChoice, dispatchDecision } from './dispatch-decision.js';
@@ -35,7 +35,6 @@ export type PermissionFlag =
   | 'force'
   | 'glob'
   | 'symlink'
-  | 'extract'
   | 'redirect_write'
   | 'redirect_read'
   | 'pipe'
@@ -71,7 +70,6 @@ const MAX_TOKENS = 128;
 const MAX_WALK_ENTRIES = 4096;
 const MAX_TRACKED_FILES = 256;
 
-const safePath = /^[A-Za-z0-9_./-]+$/;
 const globChars = /[*?[]/;
 const inside = (root: string, target: string) => {
   const rel = relative(root, target);
@@ -106,15 +104,6 @@ const FORBIDDEN_ASSIGN_VARS = new Set([
 ]);
 const READ_ONLY_PIPE_SINKS = new Set(['head', 'tail', 'wc', 'grep', 'rg', 'cat', 'diff']);
 
-/** Parse a small regenerable shell form without invoking a shell or expanding general variables. */
-export function permissionDirectory(command: string | undefined): string | undefined {
-  const match = /^(?:S=([\w./-]+); )?rm -f (\$S|\$\{S\}|[\w./-]+)\/\*\.png$/.exec(command ?? '');
-  if (!match || (match[1] && !match[2].startsWith('$'))) return;
-  const path = match[2].startsWith('$') ? match[1] : match[2];
-  if (!path || !safePath.test(path) || !isAbsolute(path) || path.split('/').includes('..')) return;
-  return resolve(path);
-}
-
 type VerifiedRoot = { category: PermissionRootCategory; real: string };
 type ResolvedRoots = {
   ordered: VerifiedRoot[];
@@ -122,13 +111,16 @@ type ResolvedRoots = {
   verifiedCwd?: string;
 };
 
-function verifyRootDir(dir: string | undefined): string | undefined {
+function verifyRootDir(dir: string | undefined, opts?: { anchor?: string; rejectSymlink?: boolean }): string | undefined {
   if (!dir || !isAbsolute(dir)) return;
   try {
+    const lst = lstatSync(dir);
+    if (opts?.rejectSymlink && lst.isSymbolicLink()) return;
     const real = realpathSync(dir);
     const st = statSync(real);
     const uid = process.getuid?.();
     if (!st.isDirectory() || (uid !== undefined && st.uid !== uid)) return;
+    if (opts?.anchor && (!inside(opts.anchor, real) || real === opts.anchor)) return;
     return real;
   } catch { return; }
 }
@@ -136,19 +128,37 @@ function verifyRootDir(dir: string | undefined): string | undefined {
 function resolveRoots(roots: PermissionRoots): ResolvedRoots {
   const ordered: VerifiedRoot[] = [];
   const seen = new Set<string>();
-  const add = (category: PermissionRootCategory, dir: string | undefined) => {
-    const real = verifyRootDir(dir);
+  const add = (category: PermissionRootCategory, dir: string | undefined, opts?: { anchor?: string; rejectSymlink?: boolean }) => {
+    const real = verifyRootDir(dir, opts);
     if (!real || seen.has(real)) return;
     seen.add(real);
     ordered.push({ category, real });
   };
   const worktree = verifyRootDir(roots.worktree);
-  add('scratchpad', roots.scratch);
-  if (worktree) add('scratchpad', join(worktree, 'scratchpad'));
-  add('task scratchpad', resolve(roots.task, 'scratchpad'));
-  add('temporary directory', roots.temp);
+  const task = verifyRootDir(roots.task);
+  if (roots.scratch && isAbsolute(roots.scratch)) {
+    const resolvedScratch = resolve(roots.scratch);
+    const underWorktree = Boolean(
+      (roots.worktree && isAbsolute(roots.worktree) && inside(resolve(roots.worktree), resolvedScratch)) ||
+      (worktree && inside(worktree, resolvedScratch)),
+    );
+    const underTask = Boolean(
+      (roots.task && isAbsolute(roots.task) && inside(resolve(roots.task), resolvedScratch)) ||
+      (task && inside(task, resolvedScratch)),
+    );
+    if (underWorktree) {
+      if (worktree) add('scratchpad', roots.scratch, { anchor: worktree, rejectSymlink: true });
+    } else if (underTask) {
+      if (task) add('task scratchpad', roots.scratch, { anchor: task, rejectSymlink: true });
+    } else {
+      add('scratchpad', roots.scratch, { rejectSymlink: true });
+    }
+  }
+  if (worktree) add('scratchpad', join(worktree, 'scratchpad'), { anchor: worktree, rejectSymlink: true });
+  if (task) add('task scratchpad', join(task, 'scratchpad'), { anchor: task, rejectSymlink: true });
+  add('temporary directory', roots.temp, { rejectSymlink: true });
   if (worktree) add('worktree', worktree);
-  add('task directory', roots.task);
+  if (task) add('task directory', task);
   const cwdReal = verifyRootDir(roots.cwd);
   const verifiedCwd = cwdReal && worktree && inside(worktree, cwdReal) ? cwdReal : undefined;
   return { ordered, worktree, verifiedCwd };
@@ -318,7 +328,14 @@ function gitIndexMatches(worktreeReal: string, relPaths: string[]): boolean {
 
 type Token = { value: string; quoted: boolean };
 type Redir = { mode: 'read' | 'write'; target: string };
-type ParsedCommand = { tokens: Token[]; redirs: Redir[]; pipedFromPrev: boolean };
+type Separator = 'seq' | 'and' | 'pipe';
+type ParsedCommand = {
+  tokens: Token[];
+  redirs: Redir[];
+  pipedFromPrev: boolean;
+  pipedToNext: boolean;
+  sepBefore?: Separator;
+};
 
 function tokenizeShell(command: string): ParsedCommand[] | undefined {
   if (!command || command.length > MAX_COMMAND_CHARS) return;
@@ -326,20 +343,26 @@ function tokenizeShell(command: string): ParsedCommand[] | undefined {
   const commands: ParsedCommand[] = [];
   let curTokens: Token[] = [];
   let curRedirs: Redir[] = [];
-  let pipedFromPrev = false;
+  let sepBefore: Separator | undefined;
   let totalTokens = 0;
 
-  const pushCommand = (nextPiped: boolean) => {
+  const pushCommand = (nextSep?: Separator) => {
     if (!curTokens.length && !curRedirs.length) {
-      if (nextPiped) return false;
+      if (nextSep === 'pipe' || nextSep === 'and') return false;
       return true;
     }
     if (!curTokens.length) return false;
-    commands.push({ tokens: curTokens, redirs: curRedirs, pipedFromPrev });
+    commands.push({
+      tokens: curTokens,
+      redirs: curRedirs,
+      pipedFromPrev: sepBefore === 'pipe',
+      pipedToNext: nextSep === 'pipe',
+      sepBefore,
+    });
     if (commands.length > MAX_COMMANDS) return false;
     curTokens = [];
     curRedirs = [];
-    pipedFromPrev = nextPiped;
+    sepBefore = nextSep;
     return true;
   };
 
@@ -360,18 +383,18 @@ function tokenizeShell(command: string): ParsedCommand[] | undefined {
     const ch = command[i];
     if (ch === ' ' || ch === '\t') { i++; continue; }
     if (ch === ';' || ch === '\n') {
-      if (pendingRedir || pipedFromPrev && !curTokens.length) return;
-      if (!pushCommand(false)) return;
+      if (pendingRedir || ((sepBefore === 'pipe' || sepBefore === 'and') && !curTokens.length)) return;
+      if (!pushCommand('seq')) return;
       i++; continue;
     }
     if (ch === '&' && command[i + 1] === '&') {
       if (pendingRedir || !curTokens.length) return;
-      if (!pushCommand(false)) return;
+      if (!pushCommand('and')) return;
       i += 2; continue;
     }
     if (ch === '|') {
       if (command[i + 1] === '|' || pendingRedir || !curTokens.length) return;
-      if (!pushCommand(true)) return;
+      if (!pushCommand('pipe')) return;
       i++; continue;
     }
     if (ch === '#' || ch === '(' || ch === ')' || ch === '`' || ch === '\\' || ch === '!') return;
@@ -445,8 +468,8 @@ function tokenizeShell(command: string): ParsedCommand[] | undefined {
     }
     if (!pushWord({ value, quoted })) return;
   }
-  if (pendingRedir || (pipedFromPrev && !curTokens.length)) return;
-  if (!pushCommand(false)) return;
+  if (pendingRedir || ((sepBefore === 'pipe' || sepBefore === 'and') && !curTokens.length)) return;
+  if (!pushCommand(undefined)) return;
   return commands.length ? commands : undefined;
 }
 
@@ -570,7 +593,7 @@ function validatePathOrGlob(
   activeCwd: string | undefined,
   roots: ResolvedRoots,
   opts: { mode: 'read' | 'write'; allowRootItself?: boolean; allowDirs?: boolean },
-): { category: PermissionRootCategory; canonical: string; usedCwd: boolean; isGlob: boolean } | undefined {
+): { category: PermissionRootCategory; canonical: string; usedCwd: boolean; isGlob: boolean; names?: string[] } | undefined {
   if (!globChars.test(raw)) {
     const resolved = resolveTargetPath(raw, activeCwd, roots, opts);
     if (!resolved) return;
@@ -584,7 +607,7 @@ function validatePathOrGlob(
   if (!dir || !dir.exists || !dir.isDir || dir.isSymlink) return;
   const listed = listGlobMatches(dir.canonical, pattern, { allowDirs: opts.allowDirs ?? false });
   if (!listed || !listed.names.length) return;
-  return { category: dir.category, canonical: `${dir.canonical}/${pattern}`, usedCwd: dir.usedCwd, isGlob: true };
+  return { category: dir.category, canonical: `${dir.canonical}/${pattern}`, usedCwd: dir.usedCwd, isGlob: true, names: listed.names };
 }
 
 function validateMkdir(args: string[], activeCwd: string | undefined, roots: ResolvedRoots): StepInternal | undefined {
@@ -640,10 +663,24 @@ function validateTouch(args: string[], activeCwd: string | undefined, roots: Res
   return { kind: 'housekeeping', verb: 'touch', roots: dedupe(stepRoots), flags: dedupe(flags), canonicals };
 }
 
+function isSafeWriteTarget(target: ResolvedTarget): boolean {
+  if (target.isSymlink) return false;
+  if (!target.exists) return true;
+  if (target.isDir) return false;
+  if (target.category === 'scratchpad' || target.category === 'task scratchpad' || target.category === 'temporary directory') {
+    return true;
+  }
+  if (target.category === 'worktree') {
+    return gitIndexMatches(target.rootReal, [target.rel]);
+  }
+  return false;
+}
+
 function validateCpMv(verb: 'cp' | 'mv', args: string[], activeCwd: string | undefined, roots: ResolvedRoots): StepInternal | undefined {
   let afterDash = false;
   let recursive = false;
   let force = false;
+  let noTargetDir = false;
   let targetDir: string | undefined;
   const paths: string[] = [];
   const allowedShort = verb === 'cp' ? 'rRapfnvuPT' : 'fnvuT';
@@ -653,11 +690,13 @@ function validateCpMv(verb: 'cp' | 'mv', args: string[], activeCwd: string | und
     if (!afterDash && arg.startsWith('-')) {
       if (arg === '-t' && i + 1 < args.length) { targetDir = args[++i]; continue; }
       if (arg.startsWith('--target-directory=')) { targetDir = arg.slice('--target-directory='.length); continue; }
+      if (arg === '--no-target-directory') { noTargetDir = true; continue; }
       if (arg === '--force') { force = true; continue; }
       if (verb === 'cp' && (arg === '--recursive' || arg === '--archive')) { recursive = true; continue; }
       if (['--no-clobber', '--verbose', '--no-dereference'].includes(arg)) continue;
       if (isShortFlagBundle(arg, allowedShort)) {
         if (arg.includes('f')) force = true;
+        if (arg.includes('T')) noTargetDir = true;
         if (verb === 'cp' && (arg.includes('r') || arg.includes('R') || arg.includes('a'))) recursive = true;
         continue;
       }
@@ -665,6 +704,7 @@ function validateCpMv(verb: 'cp' | 'mv', args: string[], activeCwd: string | und
     }
     paths.push(arg);
   }
+  if (targetDir && noTargetDir) return;
   const sources = targetDir ? paths : paths.slice(0, -1);
   const dest = targetDir ?? paths.at(-1);
   if (!sources.length || !dest) return;
@@ -672,6 +712,7 @@ function validateCpMv(verb: 'cp' | 'mv', args: string[], activeCwd: string | und
   const stepRoots: PermissionRootCategory[] = [];
   const flags: PermissionFlag[] = [];
   const canonicals: string[] = [];
+  const childNames: string[] = [];
   if (recursive) flags.push('recursive');
   if (force) flags.push('force');
 
@@ -679,15 +720,50 @@ function validateCpMv(verb: 'cp' | 'mv', args: string[], activeCwd: string | und
     const r = validatePathOrGlob(src, activeCwd, roots, { mode: verb === 'mv' ? 'write' : 'read', allowRootItself: false, allowDirs: true });
     if (!r) return;
     if (r.usedCwd) flags.push('verified_cwd');
-    if (r.isGlob) flags.push('glob');
+    if (r.isGlob) {
+      flags.push('glob');
+      if (!r.names?.length) return;
+      childNames.push(...r.names);
+    } else {
+      const name = basename(r.canonical);
+      if (!name || name === '.' || name === '..') return;
+      childNames.push(name);
+    }
     stepRoots.push(r.category);
     canonicals.push(r.canonical);
   }
   const destResolved = resolveTargetPath(dest, activeCwd, roots, { mode: 'write', allowRootItself: true });
-  if (!destResolved) return;
+  if (!destResolved || destResolved.isSymlink) return;
   if (destResolved.usedCwd) flags.push('verified_cwd');
-  stepRoots.push(destResolved.category);
-  canonicals.push(destResolved.canonical);
+
+  const expectsDir = Boolean(targetDir) || childNames.length > 1 || dest.endsWith('/') || destResolved.isDir;
+  if (noTargetDir && expectsDir) return;
+
+  const recordWriteTarget = (target: ResolvedTarget) => {
+    if (!isSafeWriteTarget(target)) return false;
+    if (target.category === 'worktree' && target.exists) {
+      stepRoots.push('worktree (Git-tracked files)');
+      flags.push('git_tracked_only');
+    } else {
+      stepRoots.push(target.category);
+    }
+    canonicals.push(target.canonical);
+    return true;
+  };
+
+  if (expectsDir) {
+    if (destResolved.exists && !destResolved.isDir) return;
+    for (const childName of childNames) {
+      if (!childName || childName === '.' || childName === '..' || childName.includes('/')) return;
+      const child = resolveTargetPath(join(destResolved.canonical, childName), activeCwd, roots, {
+        mode: 'write',
+        allowRootItself: false,
+      });
+      if (!child || !recordWriteTarget(child)) return;
+    }
+  } else {
+    if (!destResolved.rel || !recordWriteTarget(destResolved)) return;
+  }
   return { kind: 'housekeeping', verb, roots: dedupe(stepRoots), flags: dedupe(flags), canonicals };
 }
 
@@ -771,26 +847,20 @@ function validateChmod(args: string[], activeCwd: string | undefined, roots: Res
 }
 
 function validateTar(args: string[], activeCwd: string | undefined, roots: ResolvedRoots): StepInternal | undefined {
-  let mode: 'extract' | 'list' | undefined;
+  let listOnly = false;
   let archive: string | undefined;
-  let destDir: string | undefined;
   let afterDash = false;
   const members: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (!afterDash && arg === '--') { afterDash = true; continue; }
     if (!afterDash && arg.startsWith('-')) {
-      if (arg === '--extract') { if (mode && mode !== 'extract') return; mode = 'extract'; continue; }
-      if (arg === '--list') { if (mode && mode !== 'list') return; mode = 'list'; continue; }
-      if (arg === '-C' || arg === '--directory') { if (i + 1 >= args.length) return; destDir = args[++i]; continue; }
-      if (arg.startsWith('--directory=')) { destDir = arg.slice('--directory='.length); continue; }
+      if (arg === '--list') { listOnly = true; continue; }
       if (arg === '-f' || arg === '--file') { if (i + 1 >= args.length) return; archive = args[++i]; continue; }
       if (arg.startsWith('--file=')) { archive = arg.slice('--file='.length); continue; }
-      if (/^--strip-components=\d+$/.test(arg)) continue;
-      if (['--keep-old-files', '--no-same-owner', '--no-same-permissions', '--gzip', '--bzip2', '--xz', '--verbose'].includes(arg)) continue;
-      if (isShortFlagBundle(arg, 'xtzfJjvko')) {
-        if (arg.includes('x')) { if (mode && mode !== 'extract') return; mode = 'extract'; }
-        if (arg.includes('t')) { if (mode && mode !== 'list') return; mode = 'list'; }
+      if (['--gzip', '--bzip2', '--xz', '--verbose'].includes(arg)) continue;
+      if (isShortFlagBundle(arg, 'tzfJjv')) {
+        if (arg.includes('t')) listOnly = true;
         if (arg.includes('f')) {
           if (!arg.endsWith('f') || i + 1 >= args.length) return;
           archive = args[++i];
@@ -801,44 +871,30 @@ function validateTar(args: string[], activeCwd: string | undefined, roots: Resol
     }
     members.push(arg);
   }
-  if (!mode || !archive || archive.includes(':')) return;
+  // Extraction without inspecting and proving every archive member goes to main.
+  if (!listOnly || !archive || archive.includes(':')) return;
   for (const m of members) {
     if (isAbsolute(m) || m.split('/').includes('..') || isSensitiveRel(m)) return;
   }
   const arch = resolveTargetPath(archive, activeCwd, roots, { mode: 'read', allowRootItself: false });
   if (!arch) return;
-  const stepRoots: PermissionRootCategory[] = [arch.category];
-  const flags: PermissionFlag[] = [];
-  const canonicals = [arch.canonical];
-  if (arch.usedCwd) flags.push('verified_cwd');
-  if (mode === 'extract') {
-    flags.push('extract');
-    const target = resolveTargetPath(destDir ?? '.', activeCwd, roots, { mode: 'write', allowRootItself: true });
-    if (!target) return;
-    if (target.usedCwd) flags.push('verified_cwd');
-    stepRoots.push(target.category);
-    canonicals.push(target.canonical);
-  }
   return {
-    kind: mode === 'extract' ? 'housekeeping' : 'read_only',
+    kind: 'read_only',
     verb: 'tar',
-    roots: dedupe(stepRoots),
-    flags: dedupe(flags),
-    canonicals,
+    roots: [arch.category],
+    flags: arch.usedCwd ? ['verified_cwd'] : [],
+    canonicals: [arch.canonical],
   };
 }
 
 function validateUnzip(args: string[], activeCwd: string | undefined, roots: ResolvedRoots): StepInternal | undefined {
   let listOnly = false;
-  let destDir: string | undefined;
   let afterDash = false;
   const positional: string[] = [];
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+  for (const arg of args) {
     if (!afterDash && arg === '--') { afterDash = true; continue; }
     if (!afterDash && arg.startsWith('-')) {
-      if (arg === '-d') { if (i + 1 >= args.length) return; destDir = args[++i]; continue; }
-      if (isShortFlagBundle(arg, 'qonlvj')) {
+      if (isShortFlagBundle(arg, 'qlv')) {
         if (arg.includes('l')) listOnly = true;
         continue;
       }
@@ -846,31 +902,20 @@ function validateUnzip(args: string[], activeCwd: string | undefined, roots: Res
     }
     positional.push(arg);
   }
-  if (!positional.length) return;
+  // Extraction without inspecting and proving every archive member goes to main.
+  if (!listOnly || !positional.length) return;
   const [archive, ...members] = positional;
   for (const m of members) {
     if (isAbsolute(m) || m.split('/').includes('..') || isSensitiveRel(m)) return;
   }
   const arch = resolveTargetPath(archive, activeCwd, roots, { mode: 'read', allowRootItself: false });
   if (!arch) return;
-  const stepRoots: PermissionRootCategory[] = [arch.category];
-  const flags: PermissionFlag[] = [];
-  const canonicals = [arch.canonical];
-  if (arch.usedCwd) flags.push('verified_cwd');
-  if (!listOnly) {
-    flags.push('extract');
-    const target = resolveTargetPath(destDir ?? '.', activeCwd, roots, { mode: 'write', allowRootItself: true });
-    if (!target) return;
-    if (target.usedCwd) flags.push('verified_cwd');
-    stepRoots.push(target.category);
-    canonicals.push(target.canonical);
-  }
   return {
-    kind: listOnly ? 'read_only' : 'housekeeping',
+    kind: 'read_only',
     verb: 'unzip',
-    roots: dedupe(stepRoots),
-    flags: dedupe(flags),
-    canonicals,
+    roots: [arch.category],
+    flags: arch.usedCwd ? ['verified_cwd'] : [],
+    canonicals: [arch.canonical],
   };
 }
 
@@ -1053,49 +1098,61 @@ function isSafeBuildArg(arg: string, activeCwd: string, roots: ResolvedRoots): b
   return true;
 }
 
+function findLocalWorktreeBin(wtCwd: string, worktreeReal: string, name: string): string | undefined {
+  const uid = process.getuid?.();
+  let dir = wtCwd;
+  while (inside(worktreeReal, dir)) {
+    const candidate = join(dir, 'node_modules', '.bin', name);
+    try {
+      const real = realpathSync(candidate);
+      const st = statSync(real);
+      if (inside(worktreeReal, real) && st.isFile() && (st.mode & 0o111) !== 0 && (uid === undefined || st.uid === uid)) {
+        return real;
+      }
+    } catch { /* not present at this directory level */ }
+    if (dir === worktreeReal) break;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
+}
+
 function validateLocalBuild(
-  verb: 'node' | 'npm' | 'npx' | 'cargo',
+  verb: 'node' | 'npx' | 'cargo',
   args: string[],
   activeCwd: string | undefined,
   roots: ResolvedRoots,
 ): StepInternal | undefined {
   const wtCwd = requireWorktreeCwd(activeCwd, roots);
-  if (!wtCwd) return;
+  if (!wtCwd || !roots.worktree) return;
   const canonicals = [wtCwd];
-
-  if (verb === 'npm') {
-    const sub = args[0];
-    if (sub === 'test') {
-      for (const a of args.slice(1)) {
-        if (['--silent', '-s', '--if-present', '--'].includes(a) || /^--workspace=[\w@./-]+$/.test(a)) continue;
-        if (!isSafeBuildArg(a, wtCwd, roots)) return;
-      }
-      return { kind: 'local_build', verb: 'npm test', roots: ['worktree'], flags: ['verified_cwd'], canonicals };
-    }
-    if (sub !== 'run' || !args[1] || !/^[A-Za-z0-9:._-]+$/.test(args[1])) return;
-    let afterDash = false;
-    for (let i = 2; i < args.length; i++) {
-      const a = args[i];
-      if (!afterDash && a === '--') { afterDash = true; continue; }
-      if (!afterDash) {
-        if (['--silent', '-s', '--if-present'].includes(a) || /^--workspace=[\w@./-]+$/.test(a)) continue;
-        if (a === '-w' && i + 1 < args.length && /^[\w@./-]+$/.test(args[i + 1])) { i++; continue; }
-        return;
-      }
-      if (!isSafeBuildArg(a, wtCwd, roots)) return;
-    }
-    return { kind: 'local_build', verb: 'npm run', roots: ['worktree'], flags: ['verified_cwd'], canonicals };
-  }
 
   if (verb === 'npx') {
     let i = 0;
-    while (i < args.length && (args[i] === '--no-install' || args[i] === '--no')) i++;
-    if (args[i] !== 'tsc') return;
+    let noInstall = false;
+    while (i < args.length && (args[i] === '--no-install' || args[i] === '--no')) {
+      noInstall = true;
+      i++;
+    }
+    if (!noInstall || args[i] !== 'tsc') return;
+    const localTsc = findLocalWorktreeBin(wtCwd, roots.worktree, 'tsc');
+    if (!localTsc) return;
+    canonicals.push(localTsc);
     for (let j = i + 1; j < args.length; j++) {
       const a = args[j];
-      if (a === '-p' || a === '--project' || a === '--outDir') {
+      if (a === '-p' || a === '--project' || a === '--outDir' || a === '--outFile' || a === '--declarationDir' || a === '--tsBuildInfoFile') {
         if (j + 1 >= args.length) return;
-        const target = resolveTargetPath(args[++j], wtCwd, roots, { mode: a === '--outDir' ? 'write' : 'read', allowRootItself: true });
+        const mode = a === '-p' || a === '--project' ? 'read' : 'write';
+        const target = resolveTargetPath(args[++j], wtCwd, roots, { mode, allowRootItself: true });
+        if (!target || target.category !== 'worktree') return;
+        canonicals.push(target.canonical);
+        continue;
+      }
+      if (/^--(?:project|outDir|outFile|declarationDir|tsBuildInfoFile)=/.test(a)) {
+        const val = a.slice(a.indexOf('=') + 1);
+        const mode = a.startsWith('--project=') ? 'read' : 'write';
+        const target = resolveTargetPath(val, wtCwd, roots, { mode, allowRootItself: true });
         if (!target || target.category !== 'worktree') return;
         canonicals.push(target.canonical);
         continue;
@@ -1302,11 +1359,16 @@ function proveShellPrompt(command: string, roots: ResolvedRoots): PermissionProo
   const operations: PermissionStepProof[] = [];
   const allCanonicals: string[] = [];
 
+  let allEarlierUnconditional = true;
   for (const cmd of parsed) {
+    if (cmd.sepBefore && cmd.sepBefore !== 'seq') allEarlierUnconditional = false;
+    const canMutateShellState = allEarlierUnconditional && !cmd.pipedFromPrev && !cmd.pipedToNext;
+
     // Handle standalone literal variable assignments (e.g. S=/path/to/scratch; rm -rf $S/out).
-    if (!cmd.pipedFromPrev && !cmd.redirs.length && cmd.tokens.length === 1 && !cmd.tokens[0].quoted) {
+    if (!cmd.redirs.length && cmd.tokens.length === 1 && !cmd.tokens[0].quoted) {
       const assign = /^([A-Za-z_][A-Za-z0-9_]*)=(.+)$/.exec(cmd.tokens[0].value);
       if (assign) {
+        if (!canMutateShellState) return;
         const [, name, rawVal] = assign;
         if (FORBIDDEN_ASSIGN_VARS.has(name) || name.startsWith('NPM_CONFIG_') || rawVal.includes('\0')) return;
         const resolved = resolveTargetPath(rawVal, activeCwd, roots, { mode: 'read', allowRootItself: true });
@@ -1349,7 +1411,7 @@ function proveShellPrompt(command: string, roots: ResolvedRoots): PermissionProo
     }
 
     if (verb === 'cd') {
-      if (cmd.pipedFromPrev || cmd.redirs.length) return;
+      if (!canMutateShellState || cmd.redirs.length) return;
       const cdArgs = args[0] === '--' ? args.slice(1) : args;
       if (cdArgs.length !== 1 || cdArgs[0] === '-' || cdArgs[0].startsWith('-')) return;
       const resolved = resolveTargetPath(cdArgs[0], activeCwd, roots, { mode: 'read', allowRootItself: true });
@@ -1381,7 +1443,6 @@ function proveShellPrompt(command: string, roots: ResolvedRoots): PermissionProo
       case 'rg': step = validateSearch(verb, args, activeCwd, roots, hasStdin); break;
       case 'find': step = validateFind(args, activeCwd, roots); break;
       case 'node':
-      case 'npm':
       case 'npx':
       case 'cargo': step = validateLocalBuild(verb, args, activeCwd, roots); break;
       case 'git': step = validateGit(args, activeCwd, roots); break;
@@ -1414,11 +1475,6 @@ export function provePermission(target: PermissionTarget | string | undefined, r
   return target.kind === 'shell' ? proveShellPrompt(target.command, resolved) : proveFilePrompt(target, resolved);
 }
 
-/** Compatibility helper returning the primary verified root category for a locally proven command. */
-export function permissionProof(command: string | undefined, roots: PermissionRoots): string | undefined {
-  return provePermission(command, roots)?.roots[0];
-}
-
 const reasons = {
   approve: 'The locally verified operation stays inside the job’s own roots and involves no network writes, secrets, git push or installation.',
   outside: 'The operation is not proven to stay inside this job’s roots.',
@@ -1428,37 +1484,28 @@ const reasons = {
 } as const;
 const choices = Object.keys(reasons) as (keyof typeof reasons)[];
 
-function normalizeProof(proof: PermissionProof | string | undefined): PermissionProof | undefined {
-  if (!proof) return;
-  if (typeof proof !== 'string') return proof;
-  const root = proof as PermissionRootCategory;
-  const op: PermissionStepProof = { kind: 'housekeeping', verb: 'rm', roots: [root], flags: ['force', 'glob'] };
-  return { operations: [op], roots: [root], summary: summarizeProof([op], [root]), fingerprint: proof };
-}
-
 /** Only structural evidence leaves the machine: never send command arguments, environment or absolute paths. */
 export async function classifyPermission(
   home: string,
-  proof: PermissionProof | string | undefined,
+  proof: PermissionProof | undefined,
   decide = dispatchDecision,
 ): Promise<PermissionDecision> {
-  const verified = normalizeProof(proof);
-  const fallback: PermissionDecision = verified
-    ? { action: 'approve', reason: `Local path check: verified ${verified.summary}.` }
+  const fallback: PermissionDecision = proof
+    ? { action: 'approve', reason: `Local path check: verified ${proof.summary}.` }
     : { action: 'main', reason: reasons.unsure };
   try {
     const { result } = await decide(home, loadSettings({ ...process.env, HUD_HOME: home }), 'worker-permission', {
       page: { url: '', title: 'Worker permission prompt', text: '' }, elements: [], statements: [], deltas: {},
-      facts: verified
+      facts: proof
         ? {
             verified: true,
-            operations: verified.operations.map(op => ({
+            operations: proof.operations.map(op => ({
               kind: op.kind,
               verb: op.verb,
               roots: op.roots,
               flags: op.flags,
             })),
-            roots: verified.roots,
+            roots: proof.roots,
           }
         : { verified: false, operations: [], roots: [] },
       choices: [{
@@ -1469,8 +1516,8 @@ export async function classifyPermission(
     });
     const reason = result && dispatchChoice(result, 'permission', choices);
     if (reason && reason !== 'approve') return { action: 'main', reason: `Decision model: ${reasons[reason]}` };
-    if (reason === 'approve' && verified) {
-      return { action: 'approve', reason: `Decision model and local path check: verified ${verified.summary}.` };
+    if (reason === 'approve' && proof) {
+      return { action: 'approve', reason: `Decision model and local path check: verified ${proof.summary}.` };
     }
   } catch { /* Missing credentials, invalid output or timeout: local proof only. */ }
   return fallback;

@@ -333,13 +333,12 @@ function proofFor(dir: string, job: Job, status: Partial<JobStatus> | null, bind
   const nativeScratch = job.cli?.agent === 'claude' && uid !== undefined && sess && /^[\w-]{8,100}$/.test(sess)
     ? findClaudeScratchpad(uid, sess, prompt.target) : undefined;
   const worktree = job.worktree?.root && (!job.worktree.owner || job.worktree.owner === job.job) ? job.worktree.root : undefined;
-  const ownScratch = worktree ? join(worktree, 'scratchpad') : undefined;
   const temp = env.TMPDIR && isAbsolute(env.TMPDIR) && /^(?:\/tmp|\/dev\/shm)\//.test(env.TMPDIR) &&
     basename(env.TMPDIR).includes(job.job) ? env.TMPDIR : undefined;
   // Relative command/file paths require explicit prompt cwd or live worker /proc/<pid>/cwd inside the worktree; never job.cwd.
   const cwd = prompt.target.cwd ?? readProcCwd(Number(pid)) ?? undefined;
   if (!isProcAlive(Number(pid), pidStart)) return;
-  return provePermission(prompt.target, { task: dir, scratch: nativeScratch ?? ownScratch, temp, worktree, cwd });
+  return provePermission(prompt.target, { task: dir, scratch: nativeScratch, temp, worktree, cwd });
 }
 
 const fingerprint = (binding: Binding, prompt: Prompt) => hash(JSON.stringify([

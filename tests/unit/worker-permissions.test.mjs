@@ -9,7 +9,7 @@ import test from 'node:test';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { jobChanges, readThinJobRows, readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { collectWorkSummary } from '../../dist/collectors/work-summary-snapshot.js';
-import { classifyPermission, permissionProof, provePermission } from '../../dist/mcp/permission-policy.js';
+import { classifyPermission, provePermission } from '../../dist/mcp/permission-policy.js';
 import { parsePermissionPrompt, permissionStatus } from '../../dist/mcp/worker-permissions.js';
 import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
@@ -335,10 +335,10 @@ test('local proof refuses expansion ambiguity, symlinks, broad deletion and fore
   fs.mkdirSync(scratch);
   fs.symlinkSync(dirname(f.home), join(scratch, 'link'));
   for (const command of [`rm -f ${scratch}/*.png`, `S=${scratch}; rm -f $S/*.png`])
-    assert.equal(permissionProof(command, { task }), 'task scratchpad');
+    assert.deepEqual(provePermission(command, { task })?.roots, ['task scratchpad']);
   for (const command of ['rm -f $S/*.png', 'rm -f $OTHER/*.png', 'rm -f $S/*.png; git push', `rm -f ${scratch}/link/*.png`, 'rm -f /tmp/*.png',
     'rm -rf $S', 'rm -f $S/../*.png', 'rm -f $S/*.png\nscript', 'rm -f /home/synthetic/.local/bin/*.png'])
-    assert.equal(permissionProof(command, { task }), undefined, command);
+    assert.equal(provePermission(command, { task }), undefined, command);
 });
 
 test('worktree cleanup requires every glob match to be recoverable from Git', t => {
@@ -349,8 +349,8 @@ test('worktree cleanup requires every glob match to be recoverable from Git', t 
   const tracked = join(worktree, 'tracked.png');
   fs.writeFileSync(tracked, 'synthetic tracked');
   git('add', 'tracked.png');
-  const proof = () => permissionProof(`rm -f ${worktree}/*.png`, { task, worktree });
-  assert.equal(proof(), 'worktree (Git-tracked files)');
+  const proof = () => provePermission(`rm -f ${worktree}/*.png`, { task, worktree });
+  assert.deepEqual(proof()?.roots, ['worktree (Git-tracked files)']);
   fs.writeFileSync(tracked, 'synthetic unstaged change');
   assert.equal(proof(), undefined);
   git('add', 'tracked.png');
@@ -361,9 +361,13 @@ test('worktree cleanup requires every glob match to be recoverable from Git', t 
 });
 
 test('decision timeout or malformed response falls back; valid model reason may veto', async t => {
-  const f = fixture(t);
+  const f = fixture(t), task = f.job(null);
+  const scratch = join(task, 'scratchpad');
+  fs.mkdirSync(scratch);
+  const verified = provePermission(`rm -f ${scratch}/*.png`, { task });
+  assert.ok(verified);
   for (const decide of [async () => ({ failure: 'timeout' }), async () => { throw Error('unavailable'); }, async () => ({ result: { answers: [] } })]) {
-    assert.equal((await classifyPermission(f.home, 'scratchpad', decide)).action, 'approve');
+    assert.equal((await classifyPermission(f.home, verified, decide)).action, 'approve');
     assert.equal((await classifyPermission(f.home, undefined, decide)).action, 'main');
   }
   const modelChoice = choice => async (_home, _settings, key, input) => {
@@ -372,7 +376,7 @@ test('decision timeout or malformed response falls back; valid model reason may 
     const probabilities = Object.fromEntries(input.choices[0].choices.map(({ value }) => [value, value === choice ? 1 : 0]));
     return { result: { provider: 'anthropic', answers: [{ name: 'permission', kind: 'choice', choice, probabilities, confidence: 1 }] } };
   };
-  assert.match((await classifyPermission(f.home, 'scratchpad', modelChoice('irreversible'))).reason, /^Decision model:.*not proven reversible/);
+  assert.match((await classifyPermission(f.home, verified, modelChoice('irreversible'))).reason, /^Decision model:.*not proven reversible/);
   assert.equal((await classifyPermission(f.home, undefined, modelChoice('approve'))).action, 'main');
 });
 
@@ -427,6 +431,8 @@ test('watcher auto-approves widened low-risk prompts within one pass and names t
   fs.mkdirSync(join(scratch, 'extra'), { recursive: true });
   fs.writeFileSync(join(scratch, 'extra', 'c.json'), '{}');
   fs.mkdirSync(join(worktree, 'src'), { recursive: true });
+  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
+  fs.writeFileSync(join(worktree, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   fs.writeFileSync(join(worktree, 'a'), 'synthetic file');
   fs.writeFileSync(join(worktree, 'src', 'app.ts'), 'export const x = 1;\n');
   const cases = [
@@ -434,7 +440,7 @@ test('watcher auto-approves widened low-risk prompts within one pass and names t
     { screen: prompt(`mkdir -p ${worktree}/tmp/x && cp a b && mv b tmp/x/c`), match: /Local path check: verified mkdir, cp, mv in the job’s worktree/ },
     { screen: filePrompt(`Edit file ${worktree}/src/app.ts`, 'Do you want to make this edit to app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
     { screen: filePrompt('Edit file src/app.ts', 'Do you want to make this edit to app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
-    { screen: prompt('npm run build'), match: /Local path check: verified npm run in the job’s worktree/ },
+    { screen: prompt('npx --no-install tsc --noEmit'), match: /Local path check: verified npx tsc in the job’s worktree/ },
   ];
 
   herdr.update('blocked', cases[0].screen);
@@ -459,6 +465,9 @@ test('watcher sends high-risk, escaping, sensitive, substituted and sudo prompts
   const outside = join(dirname(worktree), 'outside-target');
   fs.mkdirSync(outside, { recursive: true });
   fs.symlinkSync(outside, join(worktree, 'escape'));
+  fs.symlinkSync(outside, join(worktree, 'scratchpad'));
+  fs.mkdirSync(join(worktree, 'dir'), { recursive: true });
+  fs.symlinkSync(join(outside, 'target.txt'), join(worktree, 'dir', 'a'));
   fs.writeFileSync(join(worktree, 'a'), 'synthetic');
 
   const risky = [
@@ -466,6 +475,12 @@ test('watcher sends high-risk, escaping, sensitive, substituted and sudo prompts
     prompt('git fetch'),
     prompt('curl -X POST https://example.invalid'),
     prompt('npm install left-pad'),
+    prompt('npm run release'),
+    prompt('npm run build'),
+    prompt('npx tsc --noEmit'),
+    prompt(`S=${worktree}/scratchpad; rm -rf $S/out`),
+    prompt('test -d sub && cd sub; rm -f x'),
+    prompt(`cp a ${worktree}/dir/`),
     prompt('cp a ~/.local/bin/x'),
     prompt('rm -f ~/.local/bin/x'),
     prompt(`cp a ${worktree}/escape/x`),
@@ -496,9 +511,11 @@ test('watcher sends high-risk, escaping, sensitive, substituted and sudo prompts
 test('relative paths and worktree build commands require verifiable cwd, never job.cwd alone', { timeout: 15000 }, async t => {
   const f = fixture(t);
   // Worker process cwd stays outside worktree even though job.cwd is worktree.
-  const { herdr, dir, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true, workerCwd: dirname(f.home) });
+  const { herdr, dir, worktree, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true, workerCwd: dirname(f.home) });
+  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
+  fs.writeFileSync(join(worktree, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   const screens = [
-    prompt('npm run build'),
+    prompt('npx --no-install tsc --noEmit'),
     prompt('cp a b'),
     filePrompt('Edit file src/app.ts', 'Do you want to make this edit to app.ts?'),
   ];
@@ -517,12 +534,14 @@ test('decision model receives only structural facts without raw args or absolute
   const scratch = join(task, 'scratchpad');
   fs.mkdirSync(scratch, { recursive: true });
   fs.mkdirSync(join(worktree, 'src'), { recursive: true });
+  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
+  fs.writeFileSync(join(worktree, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   fs.writeFileSync(join(worktree, 'alpha.txt'), 'synthetic');
 
   const proofs = [
     provePermission(`S=${scratch}; rm -rf $S/output-dir-99`, { task }),
     provePermission(`mkdir -p ${worktree}/custom-dir-77/x && cp alpha.txt beta-output.txt`, { task, worktree, cwd: worktree }),
-    provePermission('npm run build:custom-script-name', { task, worktree, cwd: worktree }),
+    provePermission('npx --no-install tsc --noEmit --project tsconfig.custom-build.json', { task, worktree, cwd: worktree }),
     provePermission({ kind: 'file_edit', paths: [join(worktree, 'src', 'my-module-file.ts')] }, { task, worktree }),
   ];
   for (const proof of proofs) {
@@ -537,7 +556,7 @@ test('decision model receives only structural facts without raw args or absolute
     const decision = await classifyPermission(f.home, proof, decide);
     assert.equal(decision.action, 'approve');
     const serialized = JSON.stringify(captured);
-    for (const forbidden of [task, scratch, worktree, 'output-dir-99', 'custom-dir-77', 'alpha.txt', 'beta-output.txt', 'build:custom-script-name', 'my-module-file.ts']) {
+    for (const forbidden of [task, scratch, worktree, 'output-dir-99', 'custom-dir-77', 'alpha.txt', 'beta-output.txt', 'tsconfig.custom-build.json', 'my-module-file.ts']) {
       assert.ok(!serialized.includes(forbidden), `model input leaked ${forbidden}: ${serialized}`);
     }
     assert.equal(captured.facts.verified, true);
@@ -560,9 +579,22 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
   const temp = join('/tmp', `hud-perm-unit-${basename(task)}`);
   fs.mkdirSync(scratch, { recursive: true });
   fs.mkdirSync(join(worktree, 'src'), { recursive: true });
+  fs.mkdirSync(join(worktree, 'dest-empty'), { recursive: true });
+  fs.mkdirSync(join(worktree, 'dest-symlink'), { recursive: true });
+  fs.mkdirSync(join(worktree, 'dest-untracked'), { recursive: true });
+  fs.mkdirSync(join(worktree, 'dest-tracked'), { recursive: true });
+  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
   fs.mkdirSync(temp, { recursive: true });
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd: worktree, stdio: 'ignore' });
+  git('init');
   fs.writeFileSync(join(worktree, 'src', 'a.ts'), 'export const a = 1;\n');
+  fs.writeFileSync(join(worktree, 'dest-tracked', 'a.ts'), 'export const old = 0;\n');
+  git('add', 'src/a.ts', 'dest-tracked/a.ts');
+  fs.writeFileSync(join(worktree, 'dest-untracked', 'a.ts'), 'untracked work\n');
+  fs.symlinkSync(join(worktree, 'src', 'a.ts'), join(worktree, 'dest-symlink', 'a.ts'));
+  fs.symlinkSync(join(worktree, 'dest-empty'), join(worktree, 'dir-link'));
+  fs.writeFileSync(join(worktree, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   fs.writeFileSync(join(worktree, 'archive.tar.gz'), 'synthetic');
   fs.writeFileSync(join(worktree, 'bundle.zip'), 'synthetic');
   fs.symlinkSync(dirname(f.home), join(worktree, 'escape-link'));
@@ -571,11 +603,14 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
   const allowed = [
     `S=${scratch}; rm -rf $S/out`,
     `mkdir -p ${worktree}/tmp/x && touch ${worktree}/tmp/x/f && cp src/a.ts tmp/x/b.ts && mv tmp/x/b.ts tmp/x/c.ts`,
+    `cp src/a.ts ${worktree}/dest-empty/`,
+    `cp src/a.ts ${worktree}/dest-tracked/`,
+    `cp src/a.ts ${scratch}/`,
     `ln -s a.ts src/a-link.ts`,
     `chmod 755 src/a.ts`,
     `chmod u+x src/a.ts`,
-    `tar -xzf archive.tar.gz -C ${scratch}`,
-    `unzip -q bundle.zip -d ${temp}`,
+    `tar -tf archive.tar.gz`,
+    `unzip -l bundle.zip`,
     `ls -la src && cat src/a.ts | head -n 5 | wc -l`,
     `tail -n 10 src/a.ts`,
     `grep -n export src/a.ts`,
@@ -585,8 +620,8 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
     `diff -u src/a.ts src/a.ts`,
     `node src/a.ts`,
     `node --test src/a.ts`,
-    `npm run build`,
-    `npx tsc --noEmit`,
+    `npx --no-install tsc --noEmit`,
+    `npx --no tsc --noEmit`,
     `cargo build --release`,
     `cargo test`,
     `git status -s && git diff --stat && git log -n 5 --oneline`,
@@ -597,7 +632,8 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
     `git rebase main`,
     `cat src/a.ts > ${scratch}/copy.txt`,
     `cat src/a.ts 2>/dev/null`,
-    `cd ${worktree} && npm run test:unit`,
+    `cd ${worktree} && git status -s`,
+    `S=${scratch}; cd ${worktree} && rm -rf $S/out`,
   ];
   for (const cmd of allowed) {
     assert.ok(provePermission(cmd, roots), `expected allowed: ${cmd}`);
@@ -609,14 +645,34 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
     'ln -s /etc/passwd src/bad-link',
     'ln -s ../../../../etc/passwd src/bad-link',
     'ln src/a.ts src/hard-link',
+    `tar -xzf archive.tar.gz -C ${scratch}`,
+    `tar -xzf archive.tar.gz -C ${scratch} a.ts`,
     'tar --to-command=sh -xf archive.tar.gz -C ' + scratch,
     'tar -xzf archive.tar.gz -C /tmp',
+    `unzip -q bundle.zip -d ${temp}`,
+    `unzip -q bundle.zip a.ts -d ${temp}`,
     'unzip bundle.zip -d /tmp',
+    `cp src/a.ts ${worktree}/dest-symlink/`,
+    `cp src/a.ts ${worktree}/dest-symlink`,
+    `cp -t ${worktree}/dest-symlink src/a.ts`,
+    `cp src/a.ts ${worktree}/dest-untracked/`,
+    `cp src/a.ts ${worktree}/dir-link/`,
+    `cp src/a.ts ${worktree}/dest-symlink/a.ts`,
+    'test -d src && cd src; rm -f a.ts',
+    'ls src && cd src; rm -f a.ts',
+    `ls src && S=${scratch}; rm -rf $S/out`,
+    'cd src | cat',
+    `S=${scratch} | cat`,
+    'cat src/a.ts | wc -l; cd src; ls',
     'find src -delete',
     'find src -exec rm {} ;',
     'rg --pre sh foo src',
     'node -e "process.exit(0)"',
+    'npm run build',
+    'npm run release',
+    'npm test',
     'npm install pkg',
+    'npx tsc --noEmit',
     'npx evil-pkg',
     'cargo install ripgrep',
     'pip install requests',
@@ -654,4 +710,51 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
   assert.equal(provePermission({ kind: 'file_edit', paths: [join(worktree, '.git', 'HEAD')] }, roots), undefined);
   assert.equal(provePermission({ kind: 'file_edit', paths: [join(worktree, 'escape-link', 'x.ts')] }, roots), undefined);
   assert.ok(provePermission({ kind: 'file_create', paths: [join(worktree, 'new-dir', 'sub', 'file.ts')] }, roots));
+});
+
+test('narrowed proof rejects symlinked scratchpads and npx tsc without a local worktree binary', t => {
+  const f = fixture(t), task = f.job(null);
+  const worktree = join(dirname(f.home), 'wt-narrow');
+  const outside = join(dirname(f.home), 'outside-owned');
+  fs.mkdirSync(worktree, { recursive: true });
+  fs.mkdirSync(join(worktree, 'src'), { recursive: true });
+  fs.mkdirSync(outside, { recursive: true });
+  fs.writeFileSync(join(worktree, 'src', 'untracked.txt'), 'keep');
+  fs.writeFileSync(join(outside, 'keep.txt'), 'outside');
+
+  // Symlinked worktree/scratchpad pointing outside the job must never become a deletion root.
+  fs.symlinkSync(outside, join(worktree, 'scratchpad'));
+  assert.equal(provePermission(`S=${worktree}/scratchpad; rm -rf $S/out`, { task, worktree }), undefined);
+  assert.equal(provePermission(`S=${worktree}/scratchpad; rm -rf $S/out`, { task, worktree, scratch: join(worktree, 'scratchpad') }), undefined);
+
+  // Symlinked worktree/scratchpad pointing to a worktree subdir must not promote it to a scratchpad root.
+  fs.unlinkSync(join(worktree, 'scratchpad'));
+  fs.symlinkSync(join(worktree, 'src'), join(worktree, 'scratchpad'));
+  assert.equal(provePermission(`S=${worktree}/scratchpad; rm -rf $S/untracked.txt`, { task, worktree }), undefined);
+
+  // Symlinked task/scratchpad pointing outside the job must never become a deletion root.
+  fs.symlinkSync(outside, join(task, 'scratchpad'));
+  assert.equal(provePermission(`S=${task}/scratchpad; rm -rf $S/out`, { task, worktree }), undefined);
+
+  // Real worktree/scratchpad stays approved.
+  fs.unlinkSync(join(worktree, 'scratchpad'));
+  fs.mkdirSync(join(worktree, 'scratchpad'));
+  assert.deepEqual(provePermission(`S=${worktree}/scratchpad; rm -rf $S/out`, { task, worktree })?.roots, ['scratchpad']);
+
+  // npx --no-install tsc requires an executable node_modules/.bin/tsc confined inside the worktree.
+  assert.equal(provePermission('npx --no-install tsc --noEmit', { task, worktree, cwd: worktree }), undefined);
+  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
+  const outsideBin = join(outside, 'fake-tsc');
+  fs.writeFileSync(outsideBin, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.symlinkSync(outsideBin, join(worktree, 'node_modules', '.bin', 'tsc'));
+  assert.equal(provePermission('npx --no-install tsc --noEmit', { task, worktree, cwd: worktree }), undefined);
+
+  // Local target inside worktree/node_modules is accepted.
+  fs.unlinkSync(join(worktree, 'node_modules', '.bin', 'tsc'));
+  fs.mkdirSync(join(worktree, 'node_modules', 'typescript', 'bin'), { recursive: true });
+  const localTarget = join(worktree, 'node_modules', 'typescript', 'bin', 'tsc');
+  fs.writeFileSync(localTarget, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.symlinkSync('../typescript/bin/tsc', join(worktree, 'node_modules', '.bin', 'tsc'));
+  assert.deepEqual(provePermission('npx --no-install tsc --noEmit', { task, worktree, cwd: worktree })?.roots, ['worktree']);
+  assert.equal(provePermission('npx tsc --noEmit', { task, worktree, cwd: worktree }), undefined);
 });
