@@ -35,7 +35,7 @@ import { jobCallerPane } from '../../roles/job-pane.js';
 import type { AnswerActor, Job, JobStatus } from '../job-contracts.js';
 import { wakeWorkflow } from '../../workflows/wake.js';
 import { batchView, controlBatch, startBatch } from '../batch.js';
-import { runVisible } from '../../workflows/scope.js';
+import { runNoticeRecipient, runVisible } from '../../workflows/scope.js';
 import { headerScanner } from '../../workflows/header-scan.js';
 import { batchEvents, isBatchId, type Batch } from '../batch-state.js';
 import { landView, isFlowId, recoverLand } from '../land-state.js';
@@ -1187,7 +1187,7 @@ export async function withChanges(value: unknown, markExhaustion: boolean, scan:
     const changes = [...(await ownerDelivery?.changes() ?? []), ...(await drainBatchChanges()), ...files.flatMap(file => {
       if (!file.endsWith('.json') || !isBatchId(file.slice(0, -5))) return [];
       const b = header<Batch>(file);
-      return b && runVisible(b, callerPane) ? batchEvents(hudHome, b).map(e => e.line) : [];
+      return b && runNoticeRecipient(b, callerPane) ? batchEvents(hudHome, b).map(e => e.line) : [];
     })];
     return changes.length ? { ...value, changes } : value;
   }

@@ -19,7 +19,8 @@ import { setLanguage } from '../../dist/render/i18n.js';
 import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { procStat } from '../../dist/utils/proc.js';
-import { taskNoticeSource } from '../../dist/workflows/events.js';
+import { taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js';
+import { runNoticeRecipient, runVisible } from '../../dist/workflows/scope.js';
 import { fixture as watchFixture, until } from '../helpers/job-retention-fixture.mjs';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -73,7 +74,7 @@ async function syntheticPromptHerdr(t, dir, { initialFail = true } = {}) {
   };
 }
 
-function seedPausedRun(home, root, { flow, kind, reason, ask, step = 'tickets', unattended = false, task = false, epoch = 0, pane = MAIN_PANE }) {
+function seedPausedRun(home, root, { flow, kind, reason, ask, step = 'tickets', unattended = false, task = false, epoch = 0, pane = MAIN_PANE, origin_mcp }) {
   const now = new Date().toISOString();
   const q = {
     flow,
@@ -82,6 +83,7 @@ function seedPausedRun(home, root, { flow, kind, reason, ask, step = 'tickets', 
     project_root: root,
     feature: 'sample',
     pane,
+    ...(origin_mcp ? { origin_mcp } : {}),
     task,
     max_parallel: 1,
     created_at: now,
@@ -373,4 +375,238 @@ test('bar and panel show a paused run as main load until answered', (t) => {
   });
   assert.doesNotMatch(stripAnsi(frameAfter.lines[0]), /Execution·/);
   assert.doesNotMatch(runDetailRows(snapAfter.runs[0], 80, now + 100).map((r) => r.text).join('\n'), /Waiting on main/);
+});
+
+async function codexQueueFallbackFixture(t, respond) {
+  const f = watchFixture(t);
+  const root = join(dirname(f.home), 'project');
+  const bin = join(f.home, 'fake-bin');
+  const socketPath = join(dirname(f.home), 'guarded-codex.sock');
+  fs.mkdirSync(root, { recursive: true });
+  fs.mkdirSync(bin, { recursive: true });
+  const fake = `#!${process.execPath}
+const args = process.argv.slice(2);
+if (args[0] === 'pane' && args[1] === 'get') {
+  console.log(JSON.stringify({ result: { pane: { agent: 'codex', agent_status: 'idle', agent_session: { value: '00000000-0000-4000-8000-000000000001' } } } }));
+} else if (args[0] === 'pane' && args[1] === 'process-info') {
+  console.log(JSON.stringify({ result: { process_info: { foreground_processes: [{ name: 'codex', pid: ${process.pid} }] } } }));
+} else if (args[0] === 'queue') {
+  console.error('no rollout found');
+  process.exit(1);
+}
+`;
+  for (const name of ['herdr', 'codex']) fs.writeFileSync(join(bin, name), fake, { mode: 0o700 });
+  const sockets = new Set();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+    socket.on('error', () => {});
+    const lines = createInterface({ input: socket });
+    lines.on('error', () => {});
+    lines.on('line', (line) => {
+      const { id, method, params } = JSON.parse(line);
+      const reply = respond(method, params, socket);
+      if (reply) socket.write(JSON.stringify({ id, ...reply }) + '\n');
+    });
+  });
+  server.listen(socketPath);
+  await once(server, 'listening');
+  t.after(async () => {
+    for (const socket of sockets) socket.destroy();
+    server.close();
+    await once(server, 'close');
+  });
+  const env = {
+    ...process.env,
+    HOME: join(dirname(f.home), 'home'),
+    HUD_HOME: f.home,
+    HERDR_PANE_ID: MAIN_PANE,
+    HERDR_SOCKET_PATH: socketPath,
+    PATH: `${bin}:${process.env.PATH}`,
+  };
+  return { home: f.home, root, env };
+}
+
+test('typed pause notice releases marker on expiry or cancellation for later delivery once, and never repeats an uncertain send', { timeout: 25_000 }, async (t) => {
+  let mode = 'draft_present';
+  let subscription;
+  const attempts = [];
+  const delivered = [];
+  const f = await codexQueueFallbackFixture(t, (method, params, socket) => {
+    if (method === 'ping') return { result: { type: 'pong', capabilities: { guarded_prompt: true } } };
+    if (method === 'events.subscribe') {
+      subscription = socket;
+      return { result: { type: 'subscription_started' } };
+    }
+    assert.equal(method, 'agent.prompt');
+    attempts.push(params.text);
+    if (mode === 'draft_present' || mode === 'not_ready') return { error: { code: mode } };
+    if (mode === 'uncertain') { socket.end(); return null; }
+    delivered.push(params.text);
+    return { result: { type: 'agent_prompted' } };
+  });
+
+  const prevCwd = process.cwd();
+  process.chdir(f.root);
+  t.after(() => process.chdir(prevCwd));
+
+  const realNow = performance.now.bind(performance);
+  let advance = 0;
+  t.mock.method(performance, 'now', () => realNow() + advance);
+
+  // 1. Draft present past the 10-minute guard -> expires unsent, releases marker, later watcher pass delivers exactly once.
+  const expiredFlow = seedPausedRun(f.home, f.root, {
+    flow: 'q00000000000000e1', kind: 'blocker', reason: 'draft expired pause notice',
+  });
+  const expiredMarker = join(f.home, 'flows', expiredFlow.flow, 'pause-0.noticed');
+  const ac1 = new AbortController();
+  t.after(() => ac1.abort());
+  const run1 = watchCommand(['--queue'], { env: f.env, stdout: (s) => assert.fail(s), stderr: () => {} },
+    { signal: ac1.signal, rescanMs: 80 });
+
+  await until(() => Boolean(subscription) && attempts.length === 1, 8_000);
+  assert.equal(fs.existsSync(expiredMarker), true, 'marker is claimed while pending');
+  assert.equal(delivered.length, 0);
+
+  const expiredSub = subscription;
+  advance += 10 * 60_000;
+  expiredSub.write(JSON.stringify({ event: 'pane.scroll_changed', data: { pane_id: MAIN_PANE } }) + '\n');
+  await until(() => expiredSub.destroyed, 8_000);
+  assert.match(fs.readFileSync(join(f.home, 'watchers', 'typed-expiry.log'), 'utf8'), /pending typed notice expired/);
+  assert.equal(fs.existsSync(expiredMarker), false, 'expired unsent typed pause notice must release its marker');
+
+  mode = 'ok';
+  await until(() => delivered.length === 1, 8_000);
+  assert.match(delivered[0], new RegExp(`${expiredFlow.flow}.*draft expired pause notice`));
+  assert.equal(fs.existsSync(expiredMarker), true, 'marker stays set after delivery');
+  await new Promise((r) => setTimeout(r, 220));
+  assert.equal(delivered.length, 1, 'later watcher passes must not duplicate delivered pause notice');
+  ac1.abort();
+  assert.equal(await run1, 0);
+
+  // 2. Cancellation while pending (busy) releases the marker so a later pass can deliver it.
+  mode = 'not_ready';
+  subscription = undefined;
+  const cancelledFlow = seedPausedRun(f.home, f.root, {
+    flow: 'q00000000000000e2', kind: 'blocker', reason: 'cancelled pending pause notice',
+  });
+  const cancelledMarker = join(f.home, 'flows', cancelledFlow.flow, 'pause-0.noticed');
+  const ac2 = new AbortController();
+  t.after(() => ac2.abort());
+  const run2 = watchCommand(['--queue'], { env: f.env, stdout: (s) => assert.fail(s), stderr: () => {} },
+    { signal: ac2.signal, rescanMs: 30_000 });
+  await until(() => Boolean(subscription), 8_000);
+  assert.equal(fs.existsSync(cancelledMarker), true);
+  ac2.abort();
+  assert.equal(await run2, 0);
+  assert.equal(fs.existsSync(cancelledMarker), false, 'cancelled pending typed pause notice must release its marker');
+  // Consume so it doesn't interfere with subcase 3.
+  assert.equal(workflowEvents(f.home, MAIN_PANE, false, f.root).lines.length, 1);
+
+  // 3. Uncertain send on retry keeps the marker and is never repeated on later watcher passes.
+  mode = 'draft_present';
+  subscription = undefined;
+  const attemptsBeforeUncertain = attempts.length;
+  const uncertainFlow = seedPausedRun(f.home, f.root, {
+    flow: 'q00000000000000e3', kind: 'blocker', reason: 'uncertain pause notice',
+  });
+  const uncertainMarker = join(f.home, 'flows', uncertainFlow.flow, 'pause-0.noticed');
+  const ac3 = new AbortController();
+  t.after(() => ac3.abort());
+  const run3 = watchCommand(['--queue'], { env: f.env, stdout: (s) => assert.fail(s), stderr: () => {} },
+    { signal: ac3.signal, rescanMs: 60 });
+  await until(() => Boolean(subscription) && attempts.length === attemptsBeforeUncertain + 1, 8_000);
+  const uncertainSub = subscription;
+  mode = 'uncertain';
+  uncertainSub.write(JSON.stringify({ event: 'pane.updated', data: { pane: { pane_id: MAIN_PANE } } }) + '\n');
+  await until(() => uncertainSub.destroyed && attempts.length === attemptsBeforeUncertain + 2, 8_000);
+  assert.equal(fs.existsSync(uncertainMarker), true, 'uncertain send must keep its marker');
+
+  mode = 'ok';
+  await new Promise((r) => setTimeout(r, 220));
+  assert.equal(attempts.length, attemptsBeforeUncertain + 2, 'uncertain send must never be repeated by later watcher passes');
+  assert.equal(delivered.length, 1, 'uncertain pause notice must not be re-delivered');
+  assert.deepEqual(workflowEvents(f.home, MAIN_PANE, false, f.root).lines, []);
+  ac3.abort();
+  assert.equal(await run3, 0);
+});
+
+test('with live origin pane a second project main does not claim its pause notice; with dead origin project fallback delivers', { timeout: 20_000 }, async (t) => {
+  const f = watchFixture(t);
+  const root = join(dirname(f.home), 'project');
+  const unrelated = join(dirname(f.home), 'other-project');
+  fs.mkdirSync(root, { recursive: true });
+  fs.mkdirSync(unrelated, { recursive: true });
+
+  const originProc = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+  const originExit = once(originProc, 'exit');
+  t.after(() => stopChild(originProc, originExit));
+  const originStart = procStat(originProc.pid)?.start;
+  assert.ok(originStart, 'live origin process start time');
+  const origin_mcp = { pid: originProc.pid, start: originStart };
+  const OTHER_PANE = 'w4E:p2';
+
+  const liveRun = seedPausedRun(f.home, root, {
+    flow: 'q00000000000000f1', kind: 'blocker', reason: 'live origin pause', pane: MAIN_PANE, origin_mcp,
+  });
+  const fallbackTaskRun = seedPausedRun(f.home, root, {
+    flow: 'q00000000000000f2', kind: 'blocker', reason: 'dead origin fallback via task source', pane: MAIN_PANE, origin_mcp,
+  });
+  const fallbackWatchRun = seedPausedRun(f.home, root, {
+    flow: 'q00000000000000f3', kind: 'blocker', reason: 'dead origin fallback via workflowEvents', pane: MAIN_PANE, origin_mcp,
+  });
+
+  // Project-wide read/control visibility stays enabled for another main in the same project.
+  assert.equal(runVisible(liveRun, OTHER_PANE, root), true);
+  assert.equal(runNoticeRecipient(liveRun, OTHER_PANE, root), false);
+  assert.equal(runNoticeRecipient(liveRun, MAIN_PANE, root), true);
+
+  // Prime second main's taskNoticeSource and scan workflowEvents while origin is alive -> claims nothing.
+  const otherTaskSource = taskNoticeSource(f.home, OTHER_PANE, root);
+  assert.deepEqual(otherTaskSource(), []);
+  assert.deepEqual(workflowEvents(f.home, OTHER_PANE, false, root).lines, []);
+  assert.deepEqual(workflowEvents(f.home, null, false, root).lines, []);
+  for (const run of [liveRun, fallbackTaskRun, fallbackWatchRun]) {
+    assert.equal(fs.existsSync(join(f.home, 'flows', run.flow, 'pause-0.noticed')), false, `other main must not claim ${run.flow}`);
+  }
+
+  // Origin pane claims its own pause notice (leave f2 and f3 unclaimed by simulating origin only claiming f1 via marker or direct scan).
+  const originClaimed = workflowEvents(f.home, MAIN_PANE, false, root);
+  assert.equal(originClaimed.lines.length, 3);
+  assert.ok(originClaimed.lines.some((line) => line.includes(liveRun.flow)));
+  // Release f2 and f3 markers to test fallback after origin dies (as if origin died before claiming them).
+  fs.rmSync(join(f.home, 'flows', fallbackTaskRun.flow, 'pause-0.noticed'), { force: true });
+  fs.rmSync(join(f.home, 'flows', fallbackWatchRun.flow, 'pause-0.noticed'), { force: true });
+
+  // While origin is still alive, second main still cannot claim f2 or f3.
+  assert.deepEqual(otherTaskSource(), []);
+  assert.deepEqual(workflowEvents(f.home, OTHER_PANE, false, root).lines, []);
+
+  // Origin dies without touching flows/ mtime.
+  const flowsDir = join(f.home, 'flows');
+  const beforeStamp = fs.statSync(flowsDir, { bigint: true });
+  originProc.kill('SIGKILL');
+  await originExit;
+  const afterStamp = fs.statSync(flowsDir, { bigint: true });
+  assert.equal(afterStamp.mtimeNs, beforeStamp.mtimeNs);
+
+  // Unrelated project main still does not claim.
+  assert.deepEqual(workflowEvents(f.home, OTHER_PANE, false, unrelated).lines, []);
+  assert.equal(fs.existsSync(join(f.home, 'flows', fallbackTaskRun.flow, 'pause-0.noticed')), false);
+
+  // Second main in the same project now claims via project fallback (even through already-primed taskNoticeSource).
+  // Claim f2 via workflowEvents first after confirming f3 stays unclaimed until taskNoticeSource runs, or verify both!
+  const claimedByTaskSource = otherTaskSource();
+  assert.equal(claimedByTaskSource.length, 2);
+  assert.ok(claimedByTaskSource.some((e) => e.line.includes(fallbackTaskRun.flow)));
+  assert.ok(claimedByTaskSource.some((e) => e.line.includes(fallbackWatchRun.flow)));
+  assert.equal(fs.existsSync(join(f.home, 'flows', fallbackTaskRun.flow, 'pause-0.noticed')), true);
+  assert.equal(fs.existsSync(join(f.home, 'flows', fallbackWatchRun.flow, 'pause-0.noticed')), true);
+
+  // Release f3 marker and verify workflowEvents fallback also delivers once.
+  fs.rmSync(join(f.home, 'flows', fallbackWatchRun.flow, 'pause-0.noticed'), { force: true });
+  const claimedByEvents = workflowEvents(f.home, OTHER_PANE, false, root);
+  assert.equal(claimedByEvents.lines.length, 1);
+  assert.match(claimedByEvents.lines[0], new RegExp(`${fallbackWatchRun.flow}.*dead origin fallback via workflowEvents`));
+  assert.deepEqual(workflowEvents(f.home, OTHER_PANE, false, root).lines, []);
 });

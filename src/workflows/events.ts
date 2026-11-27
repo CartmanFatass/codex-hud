@@ -13,8 +13,10 @@ import { writePrivateFile } from '../utils/atomic-fs.js';
 import { reportReadHint } from '../utils/report-summary.js';
 import { composedActive, isComposedId, type ComposedRun } from './composed-state.js';
 import { workflowHeaders } from './header-scan.js';
-import { directRecipient, runVisible } from './scope.js';
+import { directRecipient, runNoticeRecipient, runVisible } from './scope.js';
 import { noticeEvents } from './store.js';
+
+const queueScope = (q: TicketQueue) => q.project_root ? q : { ...q, project_root: q.root };
 
 function flakeBlockEvents(home: string, pane: string | null, cwd: string) {
   const cache = getJobIndexCache(home);
@@ -42,14 +44,23 @@ function flakeBlockEvents(home: string, pane: string | null, cwd: string) {
 
 export function taskNoticeSource(home: string, pane: string | null, cwd: string) {
   const dir = join(home, 'flows');
-  let previous: string | undefined, composed: ComposedRun[] = [];
+  let previous: string | undefined, composed: ComposedRun[] = [], queues: { id: string; q: TicketQueue }[] = [];
+  const queueEvents = (id: string, q: TicketQueue) => {
+    if (!q.notices || !runNoticeRecipient(queueScope(q), pane, cwd)) return [];
+    if (q.task && q.state !== 'working' && directRecipient(q)) return [];
+    return noticeEvents(home, { flow: id, notices: q.notices }, false, landFile(home, id));
+  };
   const flowEvents = () => {
-    // Only list flows when a receipt changed. Composed claims live in child
-    // directories, so a failed push can release one without changing this stamp.
+    // Only list flows when a receipt changed. Composed/queue claims live in child
+    // directories and an origin MCP can exit without changing this stamp.
     const st = fs.statSync(dir, { bigint: true, throwIfNoEntry: false });
     const stamp = st && `${st.dev}:${st.ino}:${st.mtimeNs}:${st.ctimeNs}`;
-    if (stamp === previous) return composed.flatMap(run => runVisible(run, pane, cwd) ? noticeEvents(home, run) : []);
+    if (stamp === previous) return [
+      ...queues.flatMap(({ id, q }) => queueEvents(id, q)),
+      ...composed.flatMap(run => runNoticeRecipient(run, pane, cwd) ? noticeEvents(home, run) : []),
+    ];
     composed = [];
+    queues = [];
     if (!stamp) { previous = undefined; return []; }
     const pass = workflowHeaders(home);
     const events = pass.files.flatMap(file => {
@@ -57,9 +68,9 @@ export function taskNoticeSource(home: string, pane: string | null, cwd: string)
       const id = file.slice(0, -5);
       if (isTicketQueueId(id)) {
         const q = pass.header<TicketQueue>(file);
-        if (!q?.notices || !runVisible(q, pane, cwd)) return [];
-        if (q.task && q.state !== 'working' && directRecipient(q)) return [];
-        return noticeEvents(home, { flow: id, notices: q.notices }, false, landFile(home, id));
+        if (!q?.notices || !Object.keys(q.notices).length || !runVisible(queueScope(q), pane, cwd)) return [];
+        queues.push({ id, q });
+        return queueEvents(id, q);
       }
       if (isFlowId(id)) {
         const f = readLand(home, id, pass);
@@ -75,7 +86,7 @@ export function taskNoticeSource(home: string, pane: string | null, cwd: string)
       const run = pass.header<ComposedRun>(file);
       if (run?.template !== 'composed' || !Object.keys(run.notices).length || !runVisible(run, pane, cwd)) return [];
       composed.push(run);
-      return noticeEvents(home, run);
+      return runNoticeRecipient(run, pane, cwd) ? noticeEvents(home, run) : [];
     });
     // Keep the stamp dirty when events were claimed so a released marker retries on the next tick.
     if (!events.length) previous = stamp;
@@ -95,7 +106,7 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
     const id = file.slice(0, -5);
     if (isComposedId(id)) {
       const run = pass.header<ComposedRun>(file);
-      if (run?.template === 'composed' && (all || runVisible(run, pane, cwd))) {
+      if (run?.template === 'composed' && (all || runNoticeRecipient(run, pane, cwd))) {
         events.push(...noticeEvents(home, run, all));
         pending ||= composedActive(run);
       }
@@ -103,7 +114,7 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
     }
     if (isBatchId(id)) {
       const b = pass.header<Batch>(file);
-      if (b && (all || runVisible(b, pane, cwd))) {
+      if (b && (all || runNoticeRecipient(b, pane, cwd))) {
         events.push(...batchEvents(home, b, all));
         pending ||= batchActive(b);
       }
@@ -132,7 +143,7 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
       if (!modCatchup || f.state === 'failed') events.push(...claimed);
     } else {
       const q = pass.header<TicketQueue>(file);
-      if (!q || (!all && !runVisible(q, pane, cwd))) continue;
+      if (!q || (!all && !runNoticeRecipient(queueScope(q), pane, cwd))) continue;
       if (q.state === 'working') {
         pending = true;
         if (q.notices) events.push(...noticeEvents(home, { flow: id, notices: q.notices }, all, path));

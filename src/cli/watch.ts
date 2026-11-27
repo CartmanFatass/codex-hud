@@ -42,9 +42,11 @@ function settlementWindow(env: NodeJS.ProcessEnv): number {
   return Number.isInteger(ms) && ms > 0 ? ms : SETTLEMENT_WINDOW_MS;
 }
 
-function joinPendingNotices(pending: string, incoming: string): string {
+function joinPendingNotices(pending: string, incoming: string): { text: string; keptPending: boolean } {
   // If the coalesced notice would grow unbounded, keep the latest batch. The original records stay readable.
-  return Buffer.byteLength(pending) + Buffer.byteLength(incoming) < 16 * 1024 ? `${pending}\n${incoming}` : incoming;
+  return Buffer.byteLength(pending) + Buffer.byteLength(incoming) < 16 * 1024
+    ? { text: `${pending}\n${incoming}`, keptPending: true }
+    : { text: incoming, keptPending: false };
 }
 
 const isBrokenPipe = (error: unknown): boolean => {
@@ -416,7 +418,7 @@ export async function watchCommand(
     let queueAgent: 'codex' | 'agy' | undefined;
     const agyBacklog: string[] = [];
     let agyGuardUntil: number | undefined;
-    let typedPending: { retry: NonNullable<NotifyResult['retryPrompt']>; text: string; until: number } | undefined;
+    let typedPending: { retry: NonNullable<NotifyResult['retryPrompt']>; text: string; until: number; markers: string[] } | undefined;
     let flowRetryAt = Infinity;
     const flowMarkers = new Map<string, string[]>();
     const trackFlowEvents = (items: readonly { line: string; marker: string }[]) => {
@@ -440,9 +442,14 @@ export async function watchCommand(
       for (const marker of markers) fs.rmSync(marker, { force: true });
     };
     const releaseAllFlowMarkers = () => {
+      if (typedPending) {
+        releaseMarkers(typedPending.markers);
+        typedPending = undefined;
+      }
       for (const list of flowMarkers.values()) releaseMarkers(list);
       flowMarkers.clear();
     };
+    try {
     while (!stopped) {
       if (!first) await wait();
       if (stopped) break;
@@ -517,19 +524,41 @@ export async function watchCommand(
       if (typedPending) {
         if (performance.now() >= typedPending.until) {
           recordPromptExpiry(home);
+          releaseMarkers(typedPending.markers);
           typedPending = undefined;
           noPendingPrompt();
         } else {
           const incoming = lines.join('\n');
           if (incoming) {
-            takeMarkers(incoming);
-            typedPending.text = joinPendingNotices(typedPending.text, incoming);
+            const incomingMarkers = takeMarkers(incoming);
+            const joined = joinPendingNotices(typedPending.text, incoming);
+            if (!joined.keptPending) {
+              releaseMarkers(typedPending.markers);
+              typedPending.markers = incomingMarkers;
+            } else {
+              typedPending.markers.push(...incomingMarkers);
+            }
+            typedPending.text = joined.text;
           }
           const sent = await typedPending.retry(typedPending.text, signal);
+          if (stopped) {
+            if (sent.status !== 0 && !sent.uncertain) releaseMarkers(typedPending.markers);
+            typedPending = undefined;
+            noPendingPrompt();
+            break;
+          }
           if (sent.retryPrompt) {
             typedPending.retry = sent.retryPrompt;
             waitForPrompt();
           } else {
+            if (sent.status !== 0 && !sent.uncertain) {
+              releaseMarkers(typedPending.markers);
+              if (typedPending.markers.length) {
+                idleSince = null;
+                flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
+                retryAt = Math.min(retryAt, flowRetryAt);
+              }
+            }
             typedPending = undefined;
             noPendingPrompt();
           }
@@ -553,8 +582,11 @@ export async function watchCommand(
             }
             if (sent.retryPrompt) {
               const rest = batches.slice(i + 1).join('\n');
-              if (rest) takeMarkers(rest);
-              typedPending = { retry: sent.retryPrompt, text: rest ? joinPendingNotices(line, rest) : line, until: performance.now() + PROMPT_RETRY_TTL_MS };
+              const restMarkers = rest ? takeMarkers(rest) : [];
+              const joined = rest ? joinPendingNotices(line, rest) : { text: line, keptPending: true };
+              if (!joined.keptPending) releaseMarkers(claimed);
+              const markers = joined.keptPending ? [...claimed, ...restMarkers] : restMarkers;
+              typedPending = { retry: sent.retryPrompt, text: joined.text, until: performance.now() + PROMPT_RETRY_TTL_MS, markers };
               waitForPrompt();
               break;
             }
@@ -584,7 +616,9 @@ export async function watchCommand(
         }
       }
     }
-    releaseAllFlowMarkers();
+    } finally {
+      releaseAllFlowMarkers();
+    }
     return 0;
   } catch (error) {
     if (isBrokenPipe(error)) return 0;

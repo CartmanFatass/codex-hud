@@ -13,3 +13,8 @@ export function runVisible(run: RunScope, pane: string | null, cwd = process.cwd
   return run.project_root === cwd || (!!run.pane && run.pane === pane && directRecipient(run)) ||
     (!!run.project_root && run.project_root === sharedRoot(cwd));
 }
+/** Deliver run notices to the bound live origin; use the project fallback only when the origin is absent or dead. */
+export function runNoticeRecipient(run: RunScope, pane: string | null, cwd = process.cwd()) {
+  if (run.pane && directRecipient(run)) return run.pane === pane;
+  return run.project_root === cwd || (!!run.project_root && run.project_root === sharedRoot(cwd));
+}
