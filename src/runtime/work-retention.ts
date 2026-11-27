@@ -19,6 +19,7 @@ import type { LandFlow } from '../mcp/land-state.js';
 import { jobFiles } from '../mcp/paths.js';
 import { DEFAULT_RESUME_S } from '../mcp/worker-resume.js';
 import { isComposedId } from '../workflows/composed-state.js';
+import { isNoticeKey } from '../workflows/store.js';
 import type { TicketQueue } from '../mcp/ticket-queue-state.js';
 import { hasOpenHold, pinnedQueueJobs, readRunIndex } from '../unattended/state.js';
 
@@ -82,26 +83,26 @@ function statPinnedRegular(path: string, name: string): { stat: fs.Stats; entry:
   }
 }
 
-export function pruneJobLogs(dir: string, job: Job, status: Partial<JobStatus>, now: number, home = dirname(dirname(dir))): boolean {
-  if (status.state !== 'done' && (status.state !== 'closed' || status.output_written === false)) return false;
+export function pruneJobLogs(dir: string, job: Job, status: Partial<JobStatus>, now: number, home = dirname(dirname(dir))): 'none' | 'archived' | 'failed' {
+  if (status.state !== 'done' && (status.state !== 'closed' || status.output_written === false)) return 'none';
   // Headless and legacy jobs have no native resume receipt. Give their logs the default window.
   const seconds = job.resume_s ?? DEFAULT_RESUME_S;
   const ended = Date.parse(status.ended_at ?? status.settled_at ?? '');
-  if (!Number.isFinite(ended) || !Number.isFinite(seconds) || seconds < 0 || now < ended + seconds * 1000) return false;
+  if (!Number.isFinite(ended) || !Number.isFinite(seconds) || seconds < 0 || now < ended + seconds * 1000) return 'none';
   const id = typeof job.job === 'string' && COLD_ID_RE.test(job.job) ? job.job : basename(dir);
-  if (!COLD_ID_RE.test(id)) return false;
+  if (!COLD_ID_RE.test(id)) return 'none';
   try {
     let wrote = false;
-    inAbsoluteDir(dir, (jobDir) => {
+    const result = inAbsoluteDir(dir, (jobDir) => {
       const stat = (name: string) => fs.lstatSync(join(jobDir, name), { throwIfNoEntry: false });
-      if (stat(jobFiles.stopRequested) || (status.state === 'closed' && !stat(jobFiles.report)?.isFile())) return;
+      if (stat(jobFiles.stopRequested) || (status.state === 'closed' && !stat(jobFiles.report)?.isFile())) return 'none';
       const targets: { name: string; stat: fs.Stats; entry: TarInput }[] = [];
       for (const name of [jobFiles.sonicStdout, jobFiles.sonicStderr]) {
         const pinned = statPinnedRegular(join(jobDir, name), name);
         if (!pinned) continue;
         targets.push({ name, stat: pinned.stat, entry: pinned.entry });
       }
-      if (!targets.length) return;
+      if (!targets.length) return 'none';
       // Move-then-delete: a failed archive write keeps the raw logs for the next sweep.
       const res = archiveJobRawEntries(home, id, targets.map((t) => t.entry), ended);
       wrote = res.written;
@@ -113,12 +114,13 @@ export function pruneJobLogs(dir: string, job: Job, status: Partial<JobStatus>, 
           }
         } catch { /* Missing or replaced log; leave for next sweep. */ }
       }
+      return 'archived';
     });
     if (wrote) {
       try { enforceColdRawCap(home); } catch { /* Best-effort cap trim; retry next raw archive write. */ }
     }
-    return wrote;
-  } catch { /* Missing, redirected job directory, or archive write failure; keep source logs. */ return false; }
+    return result;
+  } catch { /* Missing, redirected job directory, or archive write failure; keep source logs. */ return 'failed'; }
 }
 
 function sameInode(a: fs.Stats, b: fs.Stats | undefined): boolean {
@@ -128,6 +130,12 @@ function sameInode(a: fs.Stats, b: fs.Stats | undefined): boolean {
 function sameReceipt(path: string, stat: fs.Stats) {
   const current = fs.lstatSync(path, { throwIfNoEntry: false });
   return sameInode(stat, current) && stat.ctimeMs === current?.ctimeMs;
+}
+
+function isQueueRunFile(name: string): boolean {
+  if (name === 'graph.json') return true;
+  const marker = /^(.*?)\.(?:noticed|observed)$/.exec(name);
+  return !!marker && isNoticeKey(marker[1]!);
 }
 
 function archiveTicketQueue(home: string, path: string, stat: fs.Stats, q: TicketQueue, now: number): boolean {
@@ -263,32 +271,36 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
                   if (pinned) entries.push(pinned.entry);
                 }
                 const sub = join(dir, flowId), subStat = fs.lstatSync(sub, { throwIfNoEntry: false });
-                let subFiles: string[] | null = null;
-                if (subStat?.isDirectory()) {
-                  inDirectory(sub, run => {
-                    const files = fs.readdirSync(run);
-                    if (!files.every(f => (f === 'graph.json' || /^(?:handback-j[a-f0-9]{16}|failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f)) && fs.lstatSync(join(run, f)).isFile())) return;
-                    for (const f of files) {
-                      const entry = readPinnedRegularEntry(join(run, f), `${flowId}/${f}`);
-                      if (!entry) return;
-                      entries.push(entry);
-                    }
-                    subFiles = files;
-                  });
-                }
+                const subFiles = new Map<string, fs.Stats>();
+                // Leave the receipt as a retry anchor unless the whole run directory is collected.
+                if (subStat && (!subStat.isDirectory() || !inDirectory(sub, (run, fd) => {
+                  if (!sameInode(subStat, fs.fstatSync(fd))) return false;
+                  for (const f of fs.readdirSync(run)) {
+                    if (!isQueueRunFile(f)) return false;
+                    const read = readRegularNoFollow(join(run, f));
+                    if (!read) return false;
+                    subFiles.set(f, read.stat);
+                    entries.push({ name: `${flowId}/${f}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+                  }
+                  return true;
+                }))) continue;
                 const ts = epoch(receipt?.updated_at) ?? epoch(receipt?.created_at) ?? stat.mtimeMs;
                 archiveFlowCold(home, flowId, entries, ts);
                 if (!archiveTicketQueue(home, path, stat, receipt, now) || !sameReceipt(path, stat)) continue;
-                if (subFiles !== null) {
-                  let cleaned = false;
-                  inDirectory(sub, run => {
+                if (subStat) {
+                  const cleaned = inDirectory(sub, (run, fd) => {
+                    if (!sameInode(subStat, fs.fstatSync(fd))) return false;
                     const files = fs.readdirSync(run);
-                    if (!files.every(f => (f === 'graph.json' || /^(?:handback-j[a-f0-9]{16}|failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f)) && fs.lstatSync(join(run, f)).isFile())) return;
+                    if (files.length !== subFiles.size || !files.every(f => {
+                      const prior = subFiles.get(f);
+                      return isQueueRunFile(f) && prior && sameReceipt(join(run, f), prior);
+                    })) return false;
                     for (const f of files) fs.unlinkSync(join(run, f));
-                    cleaned = true;
+                    return true;
                   });
-                  if (cleaned) fs.rmdirSync(sub);
-                }
+                  if (!cleaned || !sameInode(subStat, fs.lstatSync(sub, { throwIfNoEntry: false }))) continue;
+                  fs.rmdirSync(sub);
+                } else if (fs.lstatSync(sub, { throwIfNoEntry: false })) continue;
                 if (!sameReceipt(path, stat)) continue;
                 fs.unlinkSync(path);
                 fs.rmSync(`${path}.archived`, { force: true });

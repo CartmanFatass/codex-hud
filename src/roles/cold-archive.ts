@@ -99,6 +99,7 @@ export function isRawJobPath(rel: string): boolean {
     rel === jobFiles.sonicStdout ||
     rel === jobFiles.sonicStderr ||
     rel === jobFiles.sonicSession ||
+    (rel.startsWith(`${jobFiles.sonicSession}.`) && !rel.includes('/')) ||
     rel.startsWith('sessions/') ||
     /(?:^|\/)sessions\//.test(rel)
   );

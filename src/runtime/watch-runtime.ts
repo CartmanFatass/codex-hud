@@ -31,7 +31,7 @@ import { hasHeadlessSends, headlessFollowupReady } from '../mcp/headless-sends.j
 import { isGenericNoReportReason, lastTurnError, missingRunnerEvidence, missingRunnerReceipt } from '../mcp/sonic-failure.js';
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js';
-import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
 import { observeWorkerPermission, permissionNotice, permissionTarget } from '../mcp/worker-permissions.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { notify as notifyPane, watching } from '../roles/notify.js';
@@ -161,7 +161,8 @@ const deadDirectObservedAt = new Map<string, number>(); // fork direct-exec: fir
 const deadDirectRoots = new Map<string, true>(); // fork direct-exec: verified dead exact PID + start ticks without pane.exited
 const tabRetries = new Map<string, { stamp: string; at: number; failures: number }>();
 const turnErrorChecks = new Map<string, string>(); // job ID -> status timestamp already inspected for a generic no-report turn error
-const retentionFailures = new Map<string, string>(); // job ID -> input metadata stamp after a failed retention attempt
+// Retry failed retention on an event for that job, or on the next housekeeping pass.
+const retentionFailures = new Set<string>();
 let tabWakes = new Map<string, true>(), checkAllTabs = true, tabProbe: AbortController | undefined, nextTabProbe = 0;
 function wakeTab(key: string) {
   if (checkAllTabs || !rememberTab(tabWakes, key, true)) return;
@@ -466,47 +467,6 @@ function preserveSessions(dir: string) {
     return false;
   }
 }
-/** Cheap metadata-only fingerprint of a stuck job's own retention inputs; never reads contents or touches archive/cold. */
-function retentionInputStamp(home: string, dir: string, id: string, flowFiles: readonly string[]): string {
-  const parts: string[] = [];
-  const walk = (absDir: string, prefix: string) => {
-    let names: string[];
-    try { names = fs.readdirSync(absDir).sort(); }
-    catch (error) {
-      parts.push(`E:${prefix}:${(error as NodeJS.ErrnoException).code ?? 'err'}`);
-      return;
-    }
-    for (const name of names) {
-      const rel = prefix ? `${prefix}/${name}` : name;
-      const abs = join(absDir, name);
-      let st: fs.Stats | undefined;
-      try { st = fs.lstatSync(abs, { throwIfNoEntry: false }); }
-      catch (error) {
-        parts.push(`S:${rel}:${(error as NodeJS.ErrnoException).code ?? 'err'}`);
-        continue;
-      }
-      if (!st) continue;
-      const kind = st.isDirectory() ? 'D' : st.isFile() ? 'F' : st.isSymbolicLink() ? 'L' : 'O';
-      parts.push(`${kind}:${rel}:${st.dev}:${st.ino}:${st.mode}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`);
-      if (st.isDirectory()) walk(abs, rel);
-    }
-  };
-  walk(dir, '');
-  const hex = id.slice(1);
-  const flowsDir = join(home, 'flows');
-  const landRe = new RegExp(`^f${hex}(?:-[1-9]\\d*)?(?:\\.json(?:\\.(?:cancel|noticed|observed|gate-[1-9]\\d*(?:-rerun)?\\.log))?)?$`);
-  const wfRe = new RegExp(`^j${hex}(?:\\.json)?$`);
-  for (const name of flowFiles) {
-    if (!landRe.test(name) && !wfRe.test(name)) continue;
-    const abs = join(flowsDir, name);
-    const st = fs.lstatSync(abs, { throwIfNoEntry: false });
-    if (!st) continue;
-    const kind = st.isDirectory() ? 'D' : st.isFile() ? 'F' : st.isSymbolicLink() ? 'L' : 'O';
-    parts.push(`flows/${kind}:${name}:${st.dev}:${st.ino}:${st.mode}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`);
-    if (st.isDirectory()) walk(abs, `flows/${name}`);
-  }
-  return parts.join('\n');
-}
 function supervisorPid(dir: string, status: Partial<JobStatus> | null) {
   const fromFile = jobCache.readPid(join(dir, jobFiles.supervisorPid));
   if (fromFile !== null) return fromFile;
@@ -801,6 +761,7 @@ function scan(retryWatch = false) {
   // Piggyback on the on-demand retention scan; never keep the watcher alive for housekeeping.
   const scanAt = performance.now(), housekeep = scanAt >= nextHomeRetention;
   if (housekeep) {
+    retentionFailures.clear();
     nextHomeRetention = scanAt + HOME_RETENTION_INTERVAL_MS;
     pruneDisplayFiles(join(home, 'display'));
     const removed = pruneLegacyTrustBackups(home);
@@ -1195,7 +1156,9 @@ function scan(retryWatch = false) {
         continue;
       }
       const readClose = Boolean(resumeReadReap || readInGrace);
-      if (job && !held && (status.state === 'done' || !tab || job.reaped_at)) pruneJobLogs(dir, job, status, Date.now(), home);
+      const tryRetention = !retentionFailures.has(id);
+      if (tryRetention && job && !held && (status.state === 'done' || !tab || job.reaped_at) &&
+          pruneJobLogs(dir, job, status, Date.now(), home) === 'failed') retentionFailures.add(id);
       if (!readClose && !['closed', 'failed', 'stopped'].includes(status.state ?? '')) continue;
       if (status.state === 'failed' && job && !job.exhaustion_marked) {
         let text = String(status.exit_reason ?? status.error ?? '');
@@ -1253,13 +1216,11 @@ function scan(retryWatch = false) {
       const closedAt = Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs);
       const now = Date.now();
       if (!landing && !checkingReport && !resumable && !launchUnknown && !retained && closedAt + JOB_RETENTION_MS < now && (!tab || job?.reaped_at)) {
-        if (job && now <= closedAt + 7 * JOB_RETENTION_MS && hasLocalPiSession(dir, job, status, piLocalFiles)) continue;
-        const failedStamp = retentionFailures.get(id);
-        if (failedStamp !== undefined && !housekeep && retentionInputStamp(home, dir, id, flows.files) === failedStamp) continue;
+        if (!tryRetention || (job && now <= closedAt + 7 * JOB_RETENTION_MS && hasLocalPiSession(dir, job, status, piLocalFiles))) continue;
         let cold: { wroteRaw: boolean };
         try { cold = archiveJobCold(home, dir, id, job, status, now); }
         catch (error) {
-          retentionFailures.set(id, retentionInputStamp(home, dir, id, flows.files));
+          retentionFailures.add(id);
           warn(`keep ${id} cold archive`, `keep ${id} cold archive: ${(error as Error).message}`);
           continue;
         }
@@ -1270,14 +1231,14 @@ function scan(retryWatch = false) {
           catch (error) { warn('cold raw cap', `cold raw cap: ${(error as Error).message}`); }
         }
         if (!sessionsPreserved) {
-          retentionFailures.set(id, retentionInputStamp(home, dir, id, flows.files));
+          retentionFailures.add(id);
           continue;
         }
         archiveJob(home, dir, id, job, status, now, log);
         try {
           fs.rmSync(dir, { recursive: true, force: true });
         } catch (error) {
-          retentionFailures.set(id, retentionInputStamp(home, dir, id, flows.files));
+          retentionFailures.add(id);
           throw error;
         }
         jobCache.evictJob(id);
@@ -1365,7 +1326,7 @@ function scan(retryWatch = false) {
   for (const id of goneTabs.keys()) if (!liveIds.has(id)) goneTabs.delete(id);
   for (const id of tabRetries.keys()) if (!pendingTabRetries.has(id)) tabRetries.delete(id);
   for (const id of turnErrorChecks.keys()) if (!liveIds.has(id)) turnErrorChecks.delete(id);
-  for (const id of retentionFailures.keys()) if (!liveIds.has(id)) retentionFailures.delete(id);
+  for (const id of retentionFailures) if (!liveIds.has(id)) retentionFailures.delete(id);
   probeTabs(tabChecks);
   for (const id of checkRetries.keys()) if (!liveIds.has(id)) checkRetries.delete(id);
   for (const id of [...preflightHold.keys()]) if (!liveIds.has(id)) preflightHold.delete(id);
@@ -1475,6 +1436,9 @@ function startWatch() {
     fs.mkdirSync(flows, { mode: 0o700, recursive: true });
     flowsWatcher = fs.watch(flows, { persistent: false }, (_event, name) => {
       const file = name?.toString();
+      const flowId = file?.split('.', 1)[0];
+      const owner = isFlowId(flowId) ? `j${flowId.slice(1, 17)}` : flowId;
+      if (owner && JOB_ID_RE.test(owner) && retentionFailures.delete(owner)) schedule();
       // Ticket queues still wake their existing recovery scan; they are not counted as lands.
       if (!file || (file.endsWith('.json') && isFlowId(file.slice(0, -5))) || /^[bqw][a-f0-9]{16}\.json$/.test(file)) schedule();
     }).once('error', () => {
@@ -1491,7 +1455,7 @@ function startWatch() {
       if (path?.endsWith(`/${RUNNER_READY}`)) { runners.ready(join(jobs, dirname(path))); schedule(); return; }
       if (path?.endsWith(`/${jobFiles.session}`)) wakeTab(`job:${dirname(path)}`);
       const watchedJob = path?.split('/')[0];
-      if (watchedJob && retentionFailures.has(watchedJob)) schedule();
+      if (watchedJob && retentionFailures.delete(watchedJob)) schedule();
       if (event === 'rename' && path && /^[^/]+\/(sonic-session\.jsonl|(?:\.dispatch\/[^/]+\/)?sessions(?:\/[^/]+\.jsonl)?)$/.test(path)) schedule();
       if (!path || !path.includes('/') || /^[^/]+\/(supervisor\.pid|STATUS\.json(?:\.(?:stop|timeout)-requested)?|SESSION\.txt|sonic-(?:exit|stop)\.json|headless-sends\.json|job\.json|permissions\.json|checks\.json|report\.md|done\.json|turn\.json|qa(?:\/[^/]+)?)$/.test(path)) schedule();
     }).on('error', (error) => {

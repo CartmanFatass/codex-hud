@@ -21,6 +21,7 @@ import { writeReportMeta } from '../../dist/roles/report-meta.js';
 import { pruneJobLogs, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { streamTarZstFile, streamTarZstFileSync, TarZstFrameWriter } from '../../dist/utils/tar-zst.js';
 import { workflowEvents } from '../../dist/workflows/events.js';
+import { noticeEvents } from '../../dist/workflows/store.js';
 import { destination, expired, fixture as retentionFixture, hour, realSession, until } from '../helpers/job-retention-fixture.mjs';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -251,9 +252,12 @@ test('early raw-log pruning moves logs into raw member and later expiry merges r
   const stdoutBytes = Buffer.from('{"type":"assistant","text":"early pruned stdout"}\n');
   const stderrBytes = Buffer.from('early pruned stderr\n');
   const extraSessionBytes = Buffer.from('{"type":"session","id":"later-session"}\n');
+  const rejected = 'sonic-session.jsonl.rejected';
+  const rejectedBytes = Buffer.from('{"type":"session","id":"rejected-synthetic"}\r\n');
   put(join(dir, 'stdout.jsonl'), stdoutBytes);
   put(join(dir, 'stderr.log'), stderrBytes);
   put(join(dir, 'sessions', 'extra.jsonl'), extraSessionBytes);
+  put(join(dir, rejected), rejectedBytes);
 
   // Sweep 1: right after resume_s (60s) -> early raw log move.
   const first = f.start(`Date.now = () => ${endedMs + 60_000};`);
@@ -279,10 +283,25 @@ test('early raw-log pruning moves logs into raw member and later expiry merges r
   assert.ok(finalRaw.get('stdout.jsonl')?.equals(stdoutBytes), 'early stdout preserved');
   assert.ok(finalRaw.get('stderr.log')?.equals(stderrBytes), 'early stderr preserved');
   assert.ok(finalRaw.get('sessions/extra.jsonl')?.equals(extraSessionBytes), 'remaining session merged');
-  assert.ok(exists(join(f.home, 'archive', 'cold', '2030-01', `${id}.text.tar.zst`)));
+  assert.deepEqual(finalRaw.get(rejected), rejectedBytes, 'rejected Sonic session is raw');
+
+  fs.chmodSync(f.home, 0o700);
+  const env = { ...process.env, HUD_HOME: f.home };
+  const out = join(f.home, 'before-eviction');
+  const ext = await runCli(['extract', id, '--out', out], env);
+  assert.equal(ext.code, 0, ext.err);
+  assert.deepEqual(fs.readFileSync(join(out, rejected)), rejectedBytes);
+
+  put(join(f.home, 'config.json'), JSON.stringify({ retention: { coldRawCapGB: 0 } }));
+  assert.deepEqual(enforceColdRawCap(f.home).deleted, [rawPath]);
+  const textOut = join(f.home, 'after-eviction');
+  const text = await runCli(['extract', id, '--out', textOut], env);
+  assert.equal(text.code, 0, text.err);
+  assert.equal(exists(join(textOut, rejected)), false, 'rejected Sonic session is absent once raw is evicted');
+  assert.ok(exists(join(textOut, 'report.md')));
 });
 
-test('terminal ticket queues keep their text member and only unlink after the fact event is confirmed', (t) => {
+test('terminal pane-less queues archive their whole run and only unlink after the fact event is confirmed', async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-cold-queue-')));
   cleanupFixture(t, { root });
   const home = join(root, 'hud');
@@ -311,10 +330,21 @@ test('terminal ticket queues keep their text member and only unlink after the fa
   const graphFile = put(join(flows, flowId, 'graph.json'), graphBytes);
   const endNotice = put(join(flows, flowId, 'end-1.noticed'), noticeBytes);
   const sidecarFile = put(join(flows, `${flowId}.json.noticed`), sidecarBytes);
+  const key = 'handback-perm-0000000000000001';
+  const run = { flow: flowId, notices: { [key]: 'Synthetic permission notice' } };
+  const permissionMarkers = [false, true].map(all => noticeEvents(home, run, all)[0].marker);
   const marker = put(join(flows, `${flowId}.json.archived`), '');
   const events = join(home, 'events', '2030-02.jsonl');
   const member = join(home, 'archive', 'cold', '2030-02', `${flowId}.text.tar.zst`);
   for (const p of [receiptFile, graphFile, endNotice, sidecarFile]) fs.utimesSync(p, oldSec, oldSec);
+
+  const unknown = put(join(flows, flowId, 'unknown.txt'), 'Synthetic uncollectable entry');
+  pruneLandFlows(home, now);
+  assert.deepEqual(fs.readFileSync(receiptFile), receiptBytes, 'incomplete run keeps the receipt');
+  assert.deepEqual(fs.readFileSync(graphFile), graphBytes, 'incomplete run keeps its graph');
+  assert.ok(exists(unknown));
+  assert.ok(!exists(member), 'incomplete run is not archived');
+  fs.unlinkSync(unknown);
 
   pruneLandFlows(home, now);
   assert.ok(exists(member), 'an unconfirmed event claim does not block the cold archive');
@@ -334,7 +364,14 @@ test('terminal ticket queues keep their text member and only unlink after the fa
   assert.ok(entries.get(`${flowId}/graph.json`)?.equals(graphBytes));
   assert.ok(entries.get(`${flowId}/end-1.noticed`)?.equals(noticeBytes));
   assert.ok(entries.get(`${flowId}.json.noticed`)?.equals(sidecarBytes));
+  for (const file of permissionMarkers) assert.deepEqual(entries.get(`${flowId}/${basename(file)}`), Buffer.alloc(0));
   assert.equal(entries.has(`${flowId}.json.archived`), false);
+
+  fs.chmodSync(home, 0o700);
+  const out = join(root, 'queue-extract');
+  const ext = await runCli(['extract', flowId, '--out', out], { ...process.env, HUD_HOME: home });
+  assert.equal(ext.code, 0, ext.err);
+  assert.deepEqual(fs.readFileSync(join(out, flowId, 'graph.json')), graphBytes);
 });
 
 test('retention.coldRawCapGB deletes oldest raw members first and never deletes text members', async (t) => {
@@ -492,7 +529,10 @@ test('archive write failure keeps source across all prune paths and repeated swe
   const blocker = put(join(f.home, 'archive', 'cold'), 'blocking regular file');
 
   // Early raw log prune fails safely.
-  assert.equal(pruneJobLogs(dir, JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8')), { state: 'closed', ended_at: ended, output_written: true }, endedMs + 60_000, f.home), false);
+  const jobReceipt = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+  const statusReceipt = { state: 'closed', ended_at: ended, output_written: true };
+  assert.equal(pruneJobLogs(dir, jobReceipt, statusReceipt, endedMs, f.home), 'none');
+  assert.equal(pruneJobLogs(dir, jobReceipt, statusReceipt, endedMs + 60_000, f.home), 'failed');
   assert.ok(exists(join(dir, 'stdout.jsonl')), 'stdout kept when cold archive write fails');
 
   // Watcher full sweep fails safely on job dir AND queue flow.
@@ -816,7 +856,7 @@ test('raw member above 512 MiB and text member above 64 MiB (with tar overhead) 
   const expectedRawHash = writePatternFile(stdoutPath, rawSize, Buffer.from('{"type":"synthetic","line":"raw-log-entry-0123456789abcdef"}\n'));
 
   // Early prune moves the >512 MiB stdout.jsonl into <id>.raw.tar.zst and unlinks live copy.
-  assert.equal(pruneJobLogs(dir, jobReceipt, statusReceipt, endedMs + 60_000, f.env.HUD_HOME), true);
+  assert.equal(pruneJobLogs(dir, jobReceipt, statusReceipt, endedMs + 60_000, f.env.HUD_HOME), 'archived');
   assert.equal(exists(stdoutPath), false, 'live stdout.jsonl unlinked after streaming archive');
 
   // Add a later raw session copy so full expiry must merge into the existing >512 MiB raw member.
@@ -1067,11 +1107,23 @@ test('hud_read returns digest and full pages for a pruned report.md at the old 6
   assert.equal(lastPage.report, tailText);
 });
 
-test('stuck failed-retention job does zero cold I/O on unrelated STATUS refreshes and retries on input change or housekeeping', { timeout: 60000 }, async (t) => {
+test('failed full and early retention do zero cold I/O on unrelated STATUS refreshes and retry on input change or housekeeping', { timeout: 60000 }, async (t) => {
   const f = retentionFixture(t);
   const open = f.job({ state: 'working' });
-  const stuckInput = f.job(expired(), { reaped_at: expired().ended_at });
-  const stuckHousekeep = f.job(expired(), { reaped_at: expired().ended_at });
+  const old = expired();
+  const stuckInput = f.job(old, { reaped_at: old.ended_at });
+  const stuckHousekeep = f.job(old, { reaped_at: old.ended_at });
+  const ended = new Date(Date.now() - hour).toISOString();
+  const stdout = Buffer.from('synthetic stdout retained after failed publication\n');
+  const early = ['input', 'housekeep'].map(kind => {
+    const dir = f.job({ state: 'closed', ended_at: ended, output_written: true }, { resume_s: 60, reaped_at: ended });
+    put(join(dir, 'usage.json'), JSON.stringify({ key: ended }));
+    const log = put(join(dir, 'stdout.jsonl'), stdout);
+    const blocker = put(join(f.home, `block-raw-${kind}`), 'block raw publication');
+    return { dir, log, blocker, raw: `${basename(dir)}.raw.tar.zst` };
+  });
+  const [earlyInput, earlyHousekeep] = early;
+  for (const dir of [stuckInput, stuckHousekeep]) put(join(dir, 'usage.json'), JSON.stringify({ key: old.ended_at }));
 
   const inputSession = realSession(stuckInput, 'sessions', { type: 'session', cwd: '/synthetic/stuck-input' });
   const housekeepSession = realSession(stuckHousekeep, 'sessions', { type: 'session', cwd: '/synthetic/stuck-housekeep' });
@@ -1098,7 +1150,9 @@ const perfOffsetFile = ${JSON.stringify(perfOffsetFile)};
 const countsFile = ${JSON.stringify(countsFile)};
 const scansFile = ${JSON.stringify(scansFile)};
 const counts = { init: 0, refresh: 0, input: 0, preHousekeep: 0, housekeep: 0 };
-let scans = 0;
+const rawBlockers = ${JSON.stringify(early.map(({ raw, blocker }) => [raw, blocker]))};
+const stuckDirs = ${JSON.stringify([stuckInput, stuckHousekeep, ...early.map(e => e.dir)])};
+let scans = 0, refreshWalks = 0;
 const origPerfNow = performance.now.bind(performance);
 performance.now = () => {
   let offset = 0;
@@ -1114,8 +1168,20 @@ const check = (p) => {
     counts[phase] = (counts[phase] ?? 0) + 1;
   }
 };
-const readdir = fs.readdirSync, lstat = fs.lstatSync, openSync = fs.openSync;
-fs.readdirSync = (p, ...a) => { check(p); return readdir(p, ...a); };
+const readdir = fs.readdirSync, lstat = fs.lstatSync, openSync = fs.openSync, rename = fs.renameSync;
+fs.readdirSync = (p, ...a) => {
+  if (stuckDirs.includes(p) && ['refresh', 'preHousekeep'].includes(currentPhase())) refreshWalks++;
+  check(p);
+  return readdir(p, ...a);
+};
+fs.renameSync = (from, to) => {
+  check(to);
+  for (const [raw, blocker] of rawBlockers) if (to.startsWith(coldPrefix) && to.endsWith('/' + raw) && fs.existsSync(blocker)) {
+    fs.writeFileSync(blocker + '.seen', 'blocked');
+    throw Object.assign(Error('synthetic archive publication failure'), { code: 'ENOSPC' });
+  }
+  return rename(from, to);
+};
 fs.lstatSync = (p, ...a) => {
   if (p === jobsDir) {
     scans++;
@@ -1126,15 +1192,16 @@ fs.lstatSync = (p, ...a) => {
 };
 fs.openSync = (p, ...a) => { check(p); return openSync(p, ...a); };
 process.on('exit', () => {
-  fs.writeFileSync(countsFile, JSON.stringify(counts));
+  fs.writeFileSync(countsFile, JSON.stringify({ ...counts, refreshWalks }));
 });
 syncBuiltinESMExports();`;
 
   const readScans = () => (exists(scansFile) ? Number(fs.readFileSync(scansFile, 'utf8')) : 0);
   const { child, exited, stderr } = f.start(probe);
 
-  // 1) Initial startup scan snapshots both stuck jobs and fails preserveSessions on both.
+  // 1) Both early publications fail; full retention also fails to preserve the native sessions.
   await until(() => child.exitCode !== null || (
+    early.every(({ blocker }) => exists(`${blocker}.seen`)) &&
     exists(join(f.home, 'watch.log')) &&
     f.log().includes(`keep ${basename(stuckInput)} session preservation:`) &&
     f.log().includes(`keep ${basename(stuckHousekeep)} session preservation:`)
@@ -1153,19 +1220,24 @@ syncBuiltinESMExports();`;
   }
   assert.ok(exists(stuckInput));
   assert.ok(exists(stuckHousekeep));
+  for (const { log } of early) assert.deepEqual(fs.readFileSync(log), stdout);
 
-  // 3) Changing stuckInput's own inputs (after clearing its Pi target conflict) retries and prunes stuckInput only.
+  // 3) Clear the blockers and change each job's own inputs; only those jobs retry.
   writeFixtureFile(phaseFile, 'input');
   fs.unlinkSync(inputConflict);
+  fs.unlinkSync(earlyInput.blocker);
   writeFixtureFile(join(stuckInput, 'report.md'), 'Updated synthetic report triggering own-input retry.\n');
-  await until(() => child.exitCode !== null || !exists(stuckInput), t.signal);
+  fs.appendFileSync(earlyInput.log, 'own stdout changed\n');
+  await until(() => child.exitCode !== null || (!exists(stuckInput) && !exists(earlyInput.log)), t.signal);
   assert.equal(child.exitCode, null, stderr());
   assert.deepEqual(fs.readFileSync(inputConflict), inputSession.bytes, 'stuckInput session moved to native store');
   assert.ok(exists(stuckHousekeep), 'stuckHousekeep still untouched by stuckInput retry');
+  assert.ok(exists(earlyInput.dir), 'early retry pruned only the raw log');
 
-  // 4) Clearing stuckHousekeep's external Pi target without touching stuckHousekeep still does zero cold I/O on unrelated refreshes...
+  // 4) Clearing external blockers alone still does zero cold I/O on unrelated refreshes.
   writeFixtureFile(phaseFile, 'preHousekeep');
   fs.unlinkSync(housekeepConflict);
+  fs.unlinkSync(earlyHousekeep.blocker);
   for (let i = 0; i < 3; i++) {
     const before = readScans();
     writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'working', progress: `pre-hk ${i}` }));
@@ -1173,14 +1245,21 @@ syncBuiltinESMExports();`;
     assert.equal(child.exitCode, null, stderr());
   }
   assert.ok(exists(stuckHousekeep), 'stuckHousekeep waits for housekeeping when its own inputs did not change');
+  assert.deepEqual(fs.readFileSync(earlyHousekeep.log), stdout);
 
-  // 5) ...and retries on the next housekeeping pass, pruning stuckHousekeep with snapshot-before-move.
+  // 5) The next housekeeping pass retries both unchanged jobs.
   writeFixtureFile(phaseFile, 'housekeep');
   writeFixtureFile(perfOffsetFile, String(60 * 60_000));
   writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'working', progress: 'trigger housekeep' }));
-  await until(() => child.exitCode !== null || !exists(stuckHousekeep), t.signal);
+  await until(() => child.exitCode !== null || (!exists(stuckHousekeep) && !exists(earlyHousekeep.log)), t.signal);
   assert.equal(child.exitCode, null, stderr());
   assert.deepEqual(fs.readFileSync(housekeepConflict), housekeepSession.bytes, 'stuckHousekeep session moved on housekeeping pass');
+  assert.ok(exists(earlyHousekeep.dir), 'housekeeping retried only the early raw log prune');
+  for (const entry of early) {
+    const rawPath = join(f.home, 'archive', 'cold', ended.slice(0, 7), entry.raw);
+    const expected = entry === earlyInput ? Buffer.concat([stdout, Buffer.from('own stdout changed\n')]) : stdout;
+    assert.deepEqual(readTarZstFileSync(rawPath).find(e => e.name === 'stdout.jsonl')?.data, expected);
+  }
 
   // Shut down cleanly and inspect per-phase cold-archive I/O counts.
   writeFixtureFile(join(open, 'STATUS.json'), JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
@@ -1189,6 +1268,7 @@ syncBuiltinESMExports();`;
 
   const counts = JSON.parse(fs.readFileSync(countsFile, 'utf8'));
   assert.ok(counts.init > 0, 'initial scan archived stuck jobs before failing preservation');
+  assert.equal(counts.refreshWalks, 0, 'unrelated refreshes did not walk failed jobs');
   assert.equal(counts.refresh, 0, 'zero cold-archive reads or writes during unrelated STATUS refreshes');
   assert.ok(counts.input > 0, 'own-input change retried snapshot-before-move');
   assert.equal(counts.preHousekeep, 0, 'zero cold-archive reads or writes before housekeeping pass');

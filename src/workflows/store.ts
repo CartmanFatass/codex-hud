@@ -10,12 +10,14 @@ export const driverLock = (home: string, id: string) => tryAbstractLock('flow-ru
 export const saveHeader = (home: string, header: { flow: string }, exclusive = false) => writeJsonPrivate(`${runDir(home, header.flow)}.json`, header, { exclusive });
 export const freezeGraph = (home: string, id: string, graph: Pick<Graph, 'version' | 'name' | 'steps' | 'policy'>) => writeJsonPrivate(join(runDir(home, id), 'graph.json'), graph, { exclusive: true });
 
+export const isNoticeKey = (key: string) => /^(?:failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|handback-[a-z][a-z0-9_-]{0,47}|(?:end|pause|error)-\d+)$/.test(key);
+
 // Native/watch/MCP contend on exactly the same marker. Never cache a claim: a failed
 // delivery can release it without changing the header. existsSync avoids exceptions on quiet scans.
 export function noticeEvents(home: string, run: { flow: string; notices: Record<string, string> }, all = false, legacyEnd?: string) {
   const events = [] as { line: string; marker: string }[];
   for (const [key, text] of Object.entries(run.notices)) {
-    if (!/^(?:failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|handback-[a-z][a-z0-9_-]{0,47}|(?:end|pause|error)-\d+)$/.test(key)) continue;
+    if (!isNoticeKey(key)) continue;
     const suffix = all ? 'observed' : 'noticed';
     const marker = legacyEnd && key.startsWith('end-') ? `${legacyEnd}.${suffix}` : join(runDir(home, run.flow), `${key}.${suffix}`);
     if (fs.existsSync(marker)) continue;
