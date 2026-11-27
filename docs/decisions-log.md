@@ -22,6 +22,14 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   drop the fixed two-round cap there (and its inheritance by later runs). The lead escalates instead when a review
   repeats a kind of finding an earlier round already repaired. The automatic land-gate repair, which nobody judges,
   keeps its cap of two. Supersedes the "at most two repairs" bound for acceptance repairs.
+- **D-2026-11-27-04** (§2.2 Home): Owner: the overlay dock covers other clients when switching tabs, and the dock
+  should be an independent presence like the left sidebar. Push becomes the default (overlay stays a setting).
+  Council jbaf79c129bfb3a93 converged on: left stays herdr's navigation rail (role and state both visible, not
+  colour only); right is the push dock, collapsing to zero width with a small handle at the right end of the tab
+  bar; `prefix+d` works from a cold start; `q` hides instead of quitting; event-driven collapsed state instead of a
+  250 ms poll; narrow terminals open the dock zoomed. Rejected: a right-side narrow rail repeating worker rows the
+  left sidebar already shows; a left-only design that moves HUD sections into herdr's sidebar (high fork risk).
+  Handle content and visual form settle through a design sample.
 
 ## 2026-11-26
 
