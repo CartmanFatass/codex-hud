@@ -11,6 +11,7 @@ import { plain, onPage, NOW, TREE } from '../fixtures/project-page.mjs';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { projectShown } from '../../dist/collectors/project-board.js';
 import { ticketTitle } from '../../dist/collectors/ticket-title.js';
+import { scanTicketStore } from '../../dist/collectors/ticket-store.js';
 import { main } from '../../dist/cli/hud.js';
 import { visualLength, stripAnsi } from '../../dist/render/colors.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
@@ -256,6 +257,30 @@ test('JSON wins per feature, its rows open one file independently, and show prin
   assert.equal(incomplete.ticketTotals.partial, true);
   assert.ok(!incomplete.tickets.some(({ slug }) => slug === 'native-tree'), 'bad canonical JSON never resurrects stale Markdown');
   assert.ok(!calls.openSync.some(([file]) => file === path), 'a stat-confirmed oversize JSON is not opened');
+});
+test('JSON repair refs keep both tickets visible to the collector and tickets show', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'project-tickets-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  putTicketFeature(root, 'sample', [ticketRecord(1), ticketRecord(2, { repairs: ['sample/01'] })]);
+
+  const scan = scanTicketStore(root);
+  assert.equal(scan.partial, false);
+  assert.deepEqual(scan.features.map(({ slug, tickets }) => [slug, tickets.map(({ number }) => number)]), [['sample', ['01', '02']]]);
+
+  const cwd = process.cwd();
+  try {
+    process.chdir(root);
+    for (const number of [1, 2]) {
+      let out = '', err = '';
+      const code = await main(['tickets', 'show', `sample/0${number}`], {
+        env: process.env, stdout: (s) => { out += s; }, stderr: (s) => { err += s; },
+      });
+      assert.equal(code, 0, err);
+      assert.ok(out.startsWith(`# 0${number}: Synthetic ticket ${number}\n`));
+      if (number === 2) assert.match(out, /^\*\*Repairs:\*\* sample\/01$/m);
+      else assert.doesNotMatch(out, /\*\*Repairs:\*\*/);
+    }
+  } finally { process.chdir(cwd); }
 });
 test('Home collects no tickets; warm signatures read/parse nothing, changes unblock and reorder without cached overlays', async (t) => {
   const f = await fixture(t), calls = observe(t);
