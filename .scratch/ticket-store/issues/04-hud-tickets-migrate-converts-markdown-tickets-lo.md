@@ -1,6 +1,6 @@
 # 04: hud tickets migrate converts Markdown tickets losslessly; sync writes JSON mirrors
 
-**Status:** needs-info
+**Status:** wontfix
 **Owner try:** no
 **Live try:** none
 **Blocked by:** 06
@@ -14,3 +14,5 @@
 - [ ] sync writes a JSON mirror and still refuses to overwrite local tickets or edit a mirror locally
 
 ## Comments
+
+- Main 2026-11-27: superseded by ticket-store/09 (repair carrying this slice); ticket-store/05 now waits on 07, 08 and 09.
