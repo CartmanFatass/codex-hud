@@ -1753,6 +1753,72 @@ test('unreadable QA yields one auto-land handback to main without calling startL
 
   assert.deepEqual(forFlake((await peek()).changes ?? []), handback);
   assert.deepEqual(forFlake((await peek()).changes ?? []), []);
+
+  // Following the handback notice succeeds with the digest/report and unknown question evidence;
+  // land admission stays strict and never calls startLand.
+  const readHint = handback[0].match(/hud_read job=(j[0-9a-f]{16})/);
+  assert.ok(readHint, `expected hud_read hint in handback: ${handback[0]}`);
+  assert.equal(readHint[1], seeded.id);
+  const digest = await f.call('hud_read', { job: readHint[1] });
+  assert.equal(digest.job, seeded.id);
+  assert.equal(digest.report_exists, true);
+  assert.equal(digest.open_questions, null);
+  assert.equal(digest.questions, undefined);
+  assert.match(digest.digest.result, /Fixed flake\./);
+
+  const full = await f.call('hud_read', { job: readHint[1], mode: 'full' });
+  assert.equal(full.open_questions, null);
+  assert.equal(full.questions, undefined);
+  assert.equal(full.report, 'Fixed flake.\nBlockers: none\n');
+
+  const detailed = await f.call('hud_read', { job: readHint[1], detail: true });
+  assert.equal(detailed.open_questions, null);
+  assert.equal(detailed.questions, undefined);
+
+  const landRes = await f.rpc('tools/call', { name: 'hud_land', arguments: { job: seeded.id } });
+  assert.equal(landRes.result.isError, true);
+  assert.equal(fs.existsSync(join(f.home, 'flows', `f${seeded.id.slice(1)}.json`)), false);
+  assert.equal(startLandFn.mock.callCount(), 0);
+  assert.equal(f.git(f.main, 'rev-parse', 'origin/base'), base);
+});
+
+test('catch-up watcher skips a timed-out Pi question and still announces another unanswered question', { timeout: 10_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+  const seeded = seedAutoFlakeJob(f, { id: 'j0000000000000a22', ticket: 'test-flakes/01' });
+  settleDispatchedFlakeJob(f, seeded.id, 'Fixed flake.\nBlockers: none\n', { timedOutQuestion: true });
+
+  const pane = f.env.HERDR_PANE_ID;
+  const [afterTimeout] = readThinJobRows(f.home, { pane }).filter(row => row.job === seeded.id);
+  assert.equal(afterTimeout.open_questions, 0);
+  assert.deepEqual(afterTimeout.question_ids, []);
+
+  // Seed an unread report on sourceJob so its catch-up notice proves the watcher scanned this pane.
+  fs.writeFileSync(join(f.home, 'jobs', sourceJob, 'report.md'), 'Sentinel report.\n');
+  const firstCatchup = [];
+  const stopFirst = startSessionWatch(f.home, pane, f.main, lines => firstCatchup.push(...lines), 50);
+  t.after(stopFirst);
+  await until(() => firstCatchup.some(line => line.includes(sourceJob)), t.signal);
+  stopFirst();
+  assert.equal(firstCatchup.some(line => line.includes(seeded.id) || line.includes('QUESTION q1')), false,
+    `timed-out question must not emit a QUESTION notice on catch-up, got: ${JSON.stringify(firstCatchup)}`);
+
+  // A second unanswered question without a recorded timeout is still announced on catch-up.
+  publishQuestion(join(seeded.dir, 'qa'), { tag: 'imp@demo', question: 'Keep the fallback?', default: 'Yes' });
+  const [withSecond] = readThinJobRows(f.home, { pane }).filter(row => row.job === seeded.id);
+  assert.equal(withSecond.open_questions, 1);
+  assert.deepEqual(withSecond.question_ids, ['q2']);
+
+  const secondCatchup = [];
+  const stopSecond = startSessionWatch(f.home, pane, f.main, lines => secondCatchup.push(...lines), 50);
+  t.after(stopSecond);
+  await until(() => secondCatchup.some(line => line.includes(seeded.id)), t.signal);
+  stopSecond();
+  const flakeNotices = secondCatchup.filter(line => line.includes(seeded.id));
+  assert.equal(flakeNotices.length, 1);
+  assert.match(flakeNotices[0], /QUESTION q2: Keep the fallback\?/);
+  assert.match(flakeNotices[0], new RegExp(`reply: hud_respond job=${seeded.id} request_id=q2`));
+  assert.equal(secondCatchup.some(line => line.includes('QUESTION q1')), false);
 });
 
 test('promoted flake auto-land notifies main on land failure', { timeout: 35_000 }, async t => {

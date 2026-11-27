@@ -61,6 +61,13 @@ export interface QaSnapshot {
   readonly stamp: string | null;
 }
 
+/** Drop question IDs already closed by a recorded timeout on the job receipt. */
+export function filterTimedOutQuestions(openIds: readonly string[], timedOut: unknown): string[] {
+  if (!Array.isArray(timedOut) || !timedOut.length || !openIds.length) return [...openIds];
+  const closed = new Set(timedOut.filter((id): id is string => typeof id === 'string'));
+  return closed.size ? openIds.filter((id) => !closed.has(id)) : [...openIds];
+}
+
 export interface ReportStat {
   readonly present: boolean;
   /** Bit-for-bit equivalent to `fs.statSync(report).mtimeMs`; `null` when missing or non-regular. */

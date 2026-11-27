@@ -9,7 +9,7 @@ import { jobFiles } from '../mcp/paths.js';
 import { permissionBlockAt, permissionNotice, permissionPredatesBlock, permissionStatus, type PermissionEntry } from '../mcp/worker-permissions.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
-import { fileStampOf, getJobIndexCache, statsMtimeMs, type JobDirMeta, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
+import { fileStampOf, filterTimedOutQuestions, getJobIndexCache, statsMtimeMs, type JobDirMeta, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
 import { previewNotice, readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
 import { reportReadHint } from '../utils/report-summary.js';
@@ -330,7 +330,8 @@ export function jobRow(
   let questionIds: readonly string[] | null = extras?.questionIds ?? [];
   if (extras?.questionIds === undefined && extras?.dir) {
     try {
-      questionIds = extras.cache ? extras.cache.readQa(extras.dir).openIds : openQuestionIds(extras.dir);
+      const openIds = extras.cache ? extras.cache.readQa(extras.dir).openIds : openQuestionIds(extras.dir);
+      questionIds = filterTimedOutQuestions(openIds, j.timed_out_questions);
     } catch { questionIds = null; } // Keep receipt facts even when the question evidence is unavailable.
   }
   const openQuestions = extras?.openQuestions !== undefined ? extras.openQuestions : questionIds?.length ?? null;

@@ -8,7 +8,7 @@ import { worktreeGit } from '../collectors/worktrees.js';
 import { readDone, readTurn, receiptForTurn } from '../roles/cli-turn.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
-import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { filterTimedOutQuestions, getJobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
@@ -813,8 +813,7 @@ export async function settleAutoLandFlakeJob(
       if (job.auto_land_blocked && job.auto_land_blocked.sig === sig) return { action: 'noop' as const };
       return persistBlock('questions could not be read', sig);
     }
-    const timedOutIds = new Set(Array.isArray(job.timed_out_questions) ? job.timed_out_questions : []);
-    if (openIds.some(id => !timedOutIds.has(id))) return { action: 'wait' as const };
+    if (filterTimedOutQuestions(openIds, job.timed_out_questions).length) return { action: 'wait' as const };
     const sonic = sonicChildren(dir);
     if (sonic.open || sonic.uncollected.length) return { action: 'wait' as const };
 

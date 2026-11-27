@@ -1033,6 +1033,54 @@
       "comments": [],
       "created_at": "2026-11-27T11:17:04.189Z",
       "updated_at": "2026-11-27T11:39:24.107Z"
+    },
+    {
+      "number": 51,
+      "title": "Main can hud_read an unreadable-QA handback job; notices skip timed-out questions",
+      "kind": "impl",
+      "status": "done",
+      "role": "imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/49",
+        "chores/45"
+      ],
+      "what": "Milestone review j57643d748cab8a7b findings 1 (major) and 2 (minor). (1) chores/49 delivers the unreadable-`qa/` handback notice with `hud_read job=…`, but following it fails: `hud_read` calls `readRow` (`src/mcp/mcp/operations.ts:811`), whose default `qa: 'required'` mode calls `jobCache.readQa` (`src/mcp/store/job-store.ts:192-207`), which throws ENOTDIR/EACCES before the report is read. The same receipt aborts the project list (`operations.ts:127,152`), so healthy jobs are hidden too. `docs/spec.md:52-53`: a notice is not a read; `hud_read` returns the digest or report. Fix: observational reads (job read/digest/full report, the project list, wait sampling and the post-Git reread) use unknown question evidence (`open_questions: null`) on a QA read failure instead of throwing. Land admission and the flake auto-land block stay strict: never treat unreadable QA as empty, never publish. (2) After ask → report → Pi timeout, a watcher started on the same pane while the receipt is retained emits `QUESTION q1 … reply: hud_respond` on catch-up, because `jobRow` (`src/collectors/thin-jobs.ts:330-335`) copies `readQa().openIds` without the recorded `timed_out_questions` filter that auto-land (`src/mcp/land-flakes.ts:815-816`) and Execution (`src/collectors/execution.ts:345-350`) apply. Share one small successful-read filter (drop IDs in the receipt's `timed_out_questions`) and use it for the question IDs that notices use. Keep unknown on a read failure and keep every other unanswered ID. Do not add new state or a retry mechanism. Callers keep their own decisions about unknown evidence.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: the existing chores/49 unreadable-`qa/` handback test follows its own notice, runs `hud_read` on that job, and gets the report or digest back with unknown question evidence. `startLand` is never called.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: the project list (`hud_read` with no job) still lists the other healthy jobs when one receipt has an unreadable `qa/`.",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Test: after the existing Pi ask → report → timeout fixture, a catch-up watcher emits no QUESTION notice for the timed-out ID, and a second unanswered question without a recorded timeout is still announced.",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Land admission and flake auto-land still refuse on unreadable `qa/` (existing tests pass unchanged).",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T12:04:54.443Z",
+        "job": "jd5df43a883d6688b",
+        "flow": "fd5df43a883d6688b",
+        "replay_base": "50bdf699a18ca57db1eefe4cf14fbc4dce659d82",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T11:48:49.590Z",
+      "updated_at": "2026-11-27T12:04:54.443Z"
     }
   ]
 }

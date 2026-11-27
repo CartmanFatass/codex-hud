@@ -58,7 +58,7 @@ import { stopSonic } from '../sonic-process.js';
 import { SALVAGED_SONIC_DETAIL, SALVAGED_SONIC_REASON } from '../../worker/sonic-jobs.js';
 import {
   directory, readRow, jobCache, isWorker, findJob, settled, jobs, jobsRoot, slice, digestLine, fallbackResultLine,
-  openQuestions, hudHome, bundled, writeScan, publishWorkSummary, findJobMutable, save, readCachedStatus, writeCreateStatus,
+  hudHome, bundled, writeScan, publishWorkSummary, findJobMutable, save, readCachedStatus, writeCreateStatus,
   type JobScan,
 } from '../store/job-store.js';
 import { keyLock } from '../store/key-lock.js';
@@ -84,6 +84,7 @@ function compactRow(row: JobRow) {
     ...(row.queue_position !== undefined ? { queue_position: row.queue_position } : {}),
     ...(row.report_unread ? { report_unread: true } : {}),
     ...(row.blocked ? { blocked: true } : {}),
+    ...(row.open_questions === null ? { open_questions: null } : {}),
     ...(row.question_ids.length ? { question_ids: row.question_ids } : {}),
     ...(row.permission ? { permission: row.permission, permission_notice: permissionNotice(row.job, row.permission) } : {}),
     ...(reason ? { reason } : {}),
@@ -92,7 +93,7 @@ function compactRow(row: JobRow) {
 
 async function peekJob(job: Job, { lines, detail }: Args, scan: JobScan) {
   const dir = directory(job.job);
-  const { row } = readRow(job, false, scan);
+  const { row } = readRow(job, false, scan, 'best-effort');
   const summary = {
     status: compactRow(row),
     ...readJobProgress(dir),
@@ -124,7 +125,7 @@ function listJobs(recent: boolean, scan: JobScan) {
   const recentLimit = 20;
   if (recent) {
     const rows = newest.slice(0, recentLimit).map((job) => {
-      const { row } = readRow(job, !isWorker, scan);
+      const { row } = readRow(job, !isWorker, scan, 'best-effort');
       return {
         job: row.job,
         ...(row.parent_job ? { parent_job: row.parent_job } : {}),
@@ -149,7 +150,7 @@ function listJobs(recent: boolean, scan: JobScan) {
   const candidates = newest.flatMap((job, index) => {
     if (job.parent_job) return [];
     // Scanning beyond recent history must not widen the list's quota side effects.
-    const { row } = readRow(job, !isWorker && index < recentLimit, scan);
+    const { row } = readRow(job, !isWorker && index < recentLimit, scan, 'best-effort');
     const active = row.display_state === 'working' || row.display_state === 'queued';
     if (!active && !(ownsJob(job) && row.report_unread)) return [];
     return [{ row, active, compact: { ...compactRow(row), ...childCount(row.job),
@@ -186,12 +187,14 @@ function jobWatchTargets(dir: string): WatchTarget[] {
       filter: (name) => name === null || JOB_WATCH_FILES.has(name),
     },
   ];
-  if (fs.existsSync(qaDir)) {
-    list.push({
-      dir: qaDir,
-      filter: (name) => name === null || /^q\d+(?:\.answer)?\.md$/.test(name),
-    });
-  }
+  try {
+    if (fs.lstatSync(qaDir, { throwIfNoEntry: false })?.isDirectory()) {
+      list.push({
+        dir: qaDir,
+        filter: (name) => name === null || /^q\d+(?:\.answer)?\.md$/.test(name),
+      });
+    }
+  } catch { /* Unreadable qa/ stays out of direct watch targets. */ }
   return list;
 }
 
@@ -204,9 +207,9 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args, scan
   let initial: JobRow[];
   if (ids === undefined) {
     // Existing session jobs may settle while herdr is listing panes; keep the call-start targets.
-    const atStart = new Map(sessionJobs(scan).map((job) => [job.job, readRow(job, false, null).row]));
+    const atStart = new Map(sessionJobs(scan).map((job) => [job.job, readRow(job, false, null, 'best-effort').row]));
     if (await adoptSessionJobs(scan)) {
-      for (const job of sessionJobs(scan)) if (!atStart.has(job.job)) atStart.set(job.job, readRow(job, false, null).row);
+      for (const job of sessionJobs(scan)) if (!atStart.has(job.job)) atStart.set(job.job, readRow(job, false, null, 'best-effort').row);
     }
     initial = [...atStart.values()].filter((row) => !settled(row.state));
   } else {
@@ -216,7 +219,7 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args, scan
     initial = [...new Set<string>(ids)].map((id) => {
       const job = readJob(id);
       if (!job) throw new Error(`invalid_arguments: unknown job ${id}`);
-      return readRow(job, false, null).row;
+      return readRow(job, false, null, 'best-effort').row;
     });
   }
   const targets = new Set(initial.map((row) => row.job));
@@ -233,7 +236,7 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args, scan
   }
   const sample = () => [...targets].flatMap((id) => {
     const job = readJob(id);
-    return job ? [readRow(job, false, null).row] : [];
+    return job ? [readRow(job, false, null, 'best-effort').row] : [];
   });
   let first = true;
   const watchTargets = (): WatchTarget[] =>
@@ -442,14 +445,14 @@ function observation(
   preRead?: ReturnType<typeof readRow>
 ) {
   const dir = directory(job.job);
-  const { row, status, job: currentJob } = preRead ?? readRow(job, !isWorker);
+  const { row, status, job: currentJob } = preRead ?? readRow(job, !isWorker, undefined, 'best-effort');
   const reportPath = join(dir, jobFiles.report);
   const page = full ? readReportPage(reportPath, offset) : null;
   const report = full ? page : row.report_unread ? slice(reportPath, 65536) : null;
   const reportMeta = jobRowReportMeta(row, dir);
-  const questions = (preRead ? row.question_ids.map((id) => `${id}.md`) : openQuestions(dir)).map((name) => ({
-    id: name.slice(0, -3),
-    text: slice(join(dir, jobFiles.qa, name), 2048)?.text ?? '',
+  const questions = row.open_questions === null ? null : row.question_ids.map((id) => ({
+    id,
+    text: slice(join(dir, jobFiles.qa, `${id}.md`), 2048)?.text ?? '',
   }));
   const progress = readJobProgress(dir);
   const checks = jobChecks(dir, { ...currentJob });
@@ -497,7 +500,8 @@ function observation(
         ...(detail || report ? { report: report?.text ?? null } : {}),
         ...(detail || report?.truncated ? { report_truncated: report?.truncated ?? false } : {}),
       }),
-      ...(detail || questions.length ? { questions } : {}),
+      ...(row.open_questions === null ? { open_questions: null } : {}),
+      ...(questions !== null && (detail || questions.length) ? { questions } : {}),
     },
   };
 }
@@ -808,14 +812,14 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
       check: async ({ timedOut }) => {
         const polledJob = firstCheck ? job : (findJob(job.job) ?? job);
         firstCheck = false;
-        let polled = readRow(polledJob, !isWorker, null);
+        let polled = readRow(polledJob, !isWorker, null, 'best-effort');
         if (!isWorker && polled.job.role === 'council' && polled.job.synthesizer === 'main' &&
             (!settled(polled.row.state) || (polled.status?.state === 'closed' && !polled.row.reason))) {
           const settledCouncil = settleMainCouncil(hudHome, jobCache, polled.job.job, { trigger: 'read' });
           if (settledCouncil) {
             scan.record(settledCouncil.job);
             publishWorkSummary();
-            polled = readRow(settledCouncil.job, !isWorker, null);
+            polled = readRow(settledCouncil.job, !isWorker, null, 'best-effort');
           }
         }
         initial ??= polled.row;
@@ -830,7 +834,7 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
               ? [{ job: other.job, worktree: other.worktree, created_at: other.created_at }] : [])
             .sort((a, b) => b.created_at.localeCompare(a.created_at)));
           // Async gitSummary yielded; re-read job and status fresh before observing.
-          polled = readRow(findJob(job.job) ?? obsJob, !isWorker, null);
+          polled = readRow(findJob(job.job) ?? obsJob, !isWorker, null, 'best-effort');
           // The fresh read disagrees with the quick one (answered or continued meanwhile): wait, never spin.
           if (!timedOut && !isReady(polled.row)) return { done: false, minDelayMs: 50 };
         }

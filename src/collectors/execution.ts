@@ -2,7 +2,7 @@
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Job, PrewalkScoutKind } from '../mcp/job-contracts.js';
-import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { filterTimedOutQuestions, getJobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { readSelectionExcerpts, type SelectionExcerpt } from '../roles/selection-excerpts.js';
 import { isTicketQueueId } from '../mcp/ticket-queue-state.js';
@@ -345,8 +345,7 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   const questionState = (jobId: string, worker: OwnerWorker): 'open' | 'closed' | 'unknown' => {
     if (worker.homeNeedsHuman) return 'open';
     try {
-      const { openIds } = cache.readQa(jobId), timedOut = receipt(jobId).timed_out_questions;
-      return openIds.some((id) => !timedOut?.includes(id)) ? 'open' : 'closed';
+      return filterTimedOutQuestions(cache.readQa(jobId).openIds, receipt(jobId).timed_out_questions).length ? 'open' : 'closed';
     } catch { return 'unknown'; }
   };
   const childNeedsOwnRow = (jobId: string, worker: OwnerWorker): boolean =>

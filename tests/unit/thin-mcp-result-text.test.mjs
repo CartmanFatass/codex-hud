@@ -31,6 +31,8 @@ test('MCP compaction matches the Claude mod sample savings and keeps actionable 
   assert.equal(compactResult({ changed_files: [...many, '+3 more'] }),
     'changed_files: 23: src/m0.ts, src/m1.ts, src/m2.ts, src/m3.ts, src/m4.ts +18 more');
   assert.equal(compactResult({ changed_files: ['a.ts', 'b.ts'] }), 'changed_files: ["a.ts","b.ts"]');
+  assert.equal(compactResult({ job: 'j0000000000000001', open_questions: null, reason: null }),
+    'job: j0000000000000001\nopen_questions: null');
 });
 
 test('default MCP text carries single and batch report pages while errors remain JSON', async (t) => {

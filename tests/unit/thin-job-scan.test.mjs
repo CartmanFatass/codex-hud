@@ -242,6 +242,18 @@ test('jobRow leaves the question count unknown when QA cannot be read', (t) => {
   const status = { state: 'waiting_orchestrator' };
   const cache = getJobIndexCache(home);
   assert.equal(jobRow(job, status, { dir, cache }).open_questions, 0, 'missing QA is empty');
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  fs.writeFileSync(join(dir, 'qa/q1.md'), 'Timed out?\n');
+  fs.writeFileSync(join(dir, 'qa/q2.md'), 'Still open?\n');
+  for (const source of [cache, undefined]) {
+    const filtered = jobRow({ ...job, timed_out_questions: ['q1'] }, status, { dir, cache: source });
+    assert.equal(filtered.open_questions, 1);
+    assert.deepEqual(filtered.question_ids, ['q2']);
+    const allTimedOut = jobRow({ ...job, timed_out_questions: ['q1', 'q2'] }, status, { dir, cache: source });
+    assert.equal(allTimedOut.open_questions, 0);
+    assert.deepEqual(allTimedOut.question_ids, []);
+  }
+  fs.rmSync(join(dir, 'qa'), { recursive: true, force: true });
   fs.writeFileSync(join(dir, 'qa'), 'not a directory');
   for (const source of [cache, undefined]) {
     const row = jobRow(job, status, { dir, cache: source });

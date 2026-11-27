@@ -4,9 +4,13 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 /** Values HUD's compact rows already leave out when they say nothing. */
 const quiet = (key: string, v: unknown): boolean =>
-  v === undefined || v === null || (v === '' && key !== 'report') || (typeof v === 'object' && !Object.keys(v).length) ||
-  (v === false && (key === 'blocked' || key === 'report_unread' || key === 'report_truncated')) ||
-  (v === 0 && key === 'open_questions');
+  v === undefined ||
+  (v === null
+    ? key !== 'open_questions'
+    : (v === '' && key !== 'report') ||
+      (typeof v === 'object' && !Object.keys(v).length) ||
+      (v === false && (key === 'blocked' || key === 'report_unread' || key === 'report_truncated')) ||
+      (v === 0 && key === 'open_questions'));
 
 /** `["a","b",…,"+4 more"]` -> `10: a, b, c, d, e +5 more`; short lists stay as they are. */
 function files(list: string[]): string | string[] {

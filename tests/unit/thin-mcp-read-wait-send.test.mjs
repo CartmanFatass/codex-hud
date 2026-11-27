@@ -1238,3 +1238,30 @@ test('hud_read wait_ms and hud_wait wake within 100 ms, resist sessions ELOOP, s
   assertEventWakeUnder100ms(beforeWait, 'hud_wait wakeup');
   assert.equal(watchStats().closed, watchStats().opened);
 });
+
+test('project list, hud_wait and hud_peek stay usable with unknown question evidence when one receipt has an unreadable qa/', async (t) => {
+  const f = await fixture(t);
+  const healthy = waitFixtureJob(f, 1, 'working');
+  const bad = waitFixtureJob(f, 2, 'idle_grace');
+  writeFixtureFile(join(bad.dir, 'report.md'), 'Unreadable QA report.\n');
+  fs.rmSync(join(bad.dir, 'qa'), { recursive: true, force: true });
+  fs.writeFileSync(join(bad.dir, 'qa'), 'not a directory\n');
+
+  const compact = await f.call('hud_read');
+  assert.deepEqual(compact.jobs.map((row) => row.job).sort(), [healthy.job, bad.job]);
+  assert.equal(compact.jobs.find((row) => row.job === bad.job)?.open_questions, null);
+  assert.equal(compact.jobs.find((row) => row.job === healthy.job)?.open_questions, undefined);
+
+  const recent = await f.call('hud_read', { view: 'recent' });
+  assert.deepEqual(recent.jobs.map((row) => row.job).sort(), [healthy.job, bad.job]);
+  assert.equal(recent.jobs.find((row) => row.job === bad.job)?.open_questions, null);
+  assert.equal(recent.jobs.find((row) => row.job === healthy.job)?.open_questions, 0);
+
+  const waited = await f.call('hud_wait', { jobs: [bad.job, healthy.job], wait_ms: 0 });
+  assert.equal(waited.ready, true);
+  assert.deepEqual(waited.triggered, [bad.job]);
+  assert.equal(waited.jobs.find((row) => row.job === bad.job)?.open_questions, null);
+
+  const peeked = await f.call('hud_peek', { job: bad.job });
+  assert.equal(peeked.status.open_questions, null);
+});

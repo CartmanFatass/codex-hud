@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { jobRow } from '../../collectors/thin-jobs.js';
 import { createWorkSummaryPublisher } from '../../collectors/work-summary-snapshot.js';
 import { computeQueuePositions, queuedTimestamp } from '../../roles/concurrency.js';
-import { JobIndexCache, JOB_ID_RE, type CachedJsonResult } from '../../roles/job-index-cache.js';
+import { filterTimedOutQuestions, JobIndexCache, JOB_ID_RE, type CachedJsonResult } from '../../roles/job-index-cache.js';
 import { jobCallerPane } from '../../roles/job-pane.js';
 import { recordFailureExhaustion } from '../../roles/roster.js';
 import { readJsonFile, readFileBounded } from '../../utils/atomic-fs.js';
@@ -198,8 +198,10 @@ export function readRow(job: Job, markExhaustion = true, lookup?: number | JobSc
     ? (typeof lookup === 'number' ? lookup : scan ? scan.position(job.job) : queuePositionsForJobs().get(job.job))
     : undefined;
   const report = jobCache.readReportStat(dir);
-  // Execution callers must still fail closed when QA cannot be read; notice rows can carry unknown evidence.
-  const questionIds = qa === 'required' ? jobCache.readQa(dir).openIds : undefined;
+  // Execution callers must still fail closed when QA cannot be read; observational and notice rows carry unknown evidence.
+  const questionIds = qa === 'required'
+    ? filterTimedOutQuestions(jobCache.readQa(dir).openIds, job.timed_out_questions)
+    : undefined;
   const facts = { dir, cache: jobCache, questionIds, reportPresent: report.present, reportAt: report.mtimeMs, reportStamp: report.stamp };
   let row = jobRow(job, status, { ...facts, queuePosition: pos });
   let currentJob = job;
