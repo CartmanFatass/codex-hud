@@ -22,6 +22,7 @@ import { readDirSafe, readFileBounded, readJsonBounded, readJsonFile, writeJsonP
 import { sonicChildren } from '../worker/sonic-jobs.js';
 import { dispatchTicketJob } from './dispatch/orchestrator.js';
 import { flakeDispatchKey, isAutoLandFlakeJob, isRunningListTicket, readFlakesConfig, runningListAdmission } from './flake-admission.js';
+import { indexFlakeBlockJob } from './flake-block-index.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import {
   activeLand, isFlowId, landAttempt, landFile, updateLandFlakeCollection,
@@ -785,22 +786,25 @@ export async function settleAutoLandFlakeJob(
     if (!CLEAN_SETTLED_STATES.has(status.state ?? '')) return { action: 'noop' as const };
     if (landAttempt(home, id).prior) return { action: 'noop' as const };
 
-    const persistBlock = (reason: string, sig?: string): FlakeAutoLandResult => {
+    const persistBlock = async (reason: string, sig?: string): Promise<FlakeAutoLandResult> => {
       const cleanReason = oneLine(reason).slice(0, 240) || 'auto-land blocked';
-      try {
-        const latest = readJsonFile(jobFile) as Job;
-        if (latest && latest.job === id && isAutoLandFlakeJob(latest)) {
-          const sameSig = (latest.auto_land_blocked?.sig ?? undefined) === sig;
-          if (!latest.auto_land_blocked || !sameSig || latest.auto_land_blocked.reason !== cleanReason) {
-            const updated: Job = {
-              ...latest,
-              auto_land_blocked: { ...(sig ? { sig } : {}), reason: cleanReason, at: new Date().toISOString() },
-            };
-            if (options?.writeJob) options.writeJob(jobFile, updated);
-            else writeJsonPrivate(jobFile, updated, { mkdir: false });
-          }
-        }
-      } catch { /* Job disappeared before block could be persisted. */ }
+      await withAbstractLock('flake-block-index', home, () => {
+        let latest: Job;
+        try { latest = readJsonFile(jobFile) as Job; }
+        catch { return; } // The job disappeared before the block could be persisted.
+        if (!latest || latest.job !== id || !isAutoLandFlakeJob(latest)) return;
+        const sameSig = (latest.auto_land_blocked?.sig ?? undefined) === sig;
+        if (latest.auto_land_blocked && sameSig && latest.auto_land_blocked.reason === cleanReason) return;
+        const updated: Job = {
+          ...latest,
+          auto_land_blocked: { ...(sig ? { sig } : {}), reason: cleanReason, at: new Date().toISOString() },
+        };
+        // The job receipt is authoritative. Index first so an interrupted write
+        // can't leave a persisted refusal undiscoverable by a task client.
+        indexFlakeBlockJob(home, id);
+        if (options?.writeJob) options.writeJob(jobFile, updated);
+        else writeJsonPrivate(jobFile, updated, { mkdir: false });
+      });
       return { action: 'blocked', reason: cleanReason, ...(sig ? { sig } : {}) };
     };
 

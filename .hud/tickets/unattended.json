@@ -901,6 +901,87 @@
       ],
       "created_at": "2026-11-27T12:37:30.226Z",
       "updated_at": "2026-11-27T13:03:11.549Z"
+    },
+    {
+      "number": 22,
+      "title": "Repair unattended/07+21: permission proof judges effects on existing bytes; unproven forms go to main",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Scratch herdr pane, synthetic job: `S=<abs scratchpad>; rm -rf $S/out` gets one key; `printf x > <task-dir>/ref.png` (untracked) and `node x.js` reach main with no key.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/07",
+        "unattended/21"
+      ],
+      "objective": "unattended",
+      "what": "Fix findings 1-6 of review ~/.hud/jobs/j42f550d31d2ba12a/report.md (permission-policy.ts). Delete unsupported branches rather than add guards; no shell interpreter. Overwrites follow 08's recoverable-or-new rule; node/cargo/npx tsc, symlink cp/mv sources, non-`*`/`?` globs (manual entry, no throw), relative path vars, sequences whose earlier effect changes later evidence and link-following traversal go to main. Update reference.md and ARCHITECTURE.md §5.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fixture tests: every reviewer case 1-6 goes to main; `S=<abs>; rm -f $S/*.png` and new-file writes stay approved.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "permission-policy.ts does not grow net.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T13:23:16.962Z",
+      "updated_at": "2026-11-27T13:23:16.962Z"
+    },
+    {
+      "number": 23,
+      "title": "Repair unattended/17+09: wakes and manual-permission handoffs are never lost or repeated",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/17",
+        "unattended/09"
+      ],
+      "objective": "unattended",
+      "what": "Fix findings 8-11 of review ~/.hud/jobs/j42f550d31d2ba12a/report.md: wake via a task only if it is live in this epoch, else the origin; land-repair waits on permission prompts like 09; a refused manual handoff is retried; send outcomes are sent/refused/indeterminate and indeterminate never repeats.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests cover each of findings 8-11.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T13:23:16.962Z",
+      "updated_at": "2026-11-27T13:23:16.962Z"
+    },
+    {
+      "number": 24,
+      "title": "Repair unattended/16+19: escalated questions get a real answer path; wrapped Blockers and landed evidence read whole",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/16",
+        "unattended/19",
+        "unattended/15"
+      ],
+      "objective": "unattended",
+      "what": "Fix findings 7, 12, 13 of review ~/.hud/jobs/j42f550d31d2ba12a/report.md: read a wrapped Blockers field whole before the try grammar; a question escalation offers answering the worker's request, never a replaying resume (check unattended accept too); review/accept cite the landed repair report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests cover each of findings 7, 12, 13.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T13:23:16.962Z",
+      "updated_at": "2026-11-27T13:23:16.962Z"
     }
   ]
 }

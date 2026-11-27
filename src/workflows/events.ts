@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { batchActive, batchEvents, isBatchId, type Batch } from '../mcp/batch-state.js';
 import { isAutoLandFlakeJob } from '../mcp/flake-admission.js';
+import { readFlakeBlockJobs } from '../mcp/flake-block-index.js';
 import type { Job } from '../mcp/job-contracts.js';
 import { activeLand, isFlowId, landFile, landNoticeLine, readLand } from '../mcp/land-state.js';
 import { isTicketQueueId, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
@@ -19,10 +20,14 @@ import { noticeEvents } from './store.js';
 const queueScope = (q: TicketQueue) => q.project_root ? q : { ...q, project_root: q.root };
 
 function flakeBlockEvents(home: string, pane: string | null, cwd: string) {
+  let ids: string[];
+  try { ids = readFlakeBlockJobs(home); }
+  catch { return []; } // An unreadable index must not stop other notices.
+  if (!ids.length) return [];
   const cache = getJobIndexCache(home);
-  // These handbacks can precede any flow. Only read recent job receipts; QA
-  // and report bodies are not needed to deliver the persisted decision.
-  return cache.listJobDirsByMtime({ limit: 200 }).dirs.flatMap(({ id, dir }) => {
+  // These handbacks can precede any flow. Read indexed receipts without
+  // enumerating jobs or opening QA or report bodies.
+  return ids.flatMap(id => {
     const receipt = cache.readJob<Job>(id);
     if (receipt.status !== 'ok') return [];
     const job = receipt.value, block = job.auto_land_blocked, main = job.worktree?.main_root;
@@ -33,7 +38,7 @@ function flakeBlockEvents(home: string, pane: string | null, cwd: string) {
     // One claim per persisted refusal, retained with the job. panelDelivery
     // releases it when typing fails so changes or the next tick can retry.
     const key = createHash('sha256').update(JSON.stringify([block.at, block.sig, block.reason])).digest('hex').slice(0, 16);
-    const marker = join(dir, `auto-land-blocked-${key}.noticed`);
+    const marker = join(home, 'jobs', id, `auto-land-blocked-${key}.noticed`);
     if (fs.existsSync(marker)) return [];
     const reason = block.reason.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, ' ').trim();
     try { writePrivateFile(marker, '', { exclusive: true, mkdir: false }); }

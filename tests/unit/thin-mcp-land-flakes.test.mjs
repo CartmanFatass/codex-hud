@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import * as fs from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative, resolve } from 'node:path';
 import test from 'node:test';
 import {
   collectAndRecordLandFlakes, collectGateFlakes, flakeDispatchKey, retryPendingFlakeCollections, settleAutoLandFlakeJob,
@@ -14,7 +16,7 @@ import { targetKey } from '../../dist/collectors/ticket-evidence.js';
 import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
 import { ensureJobWatcher } from '../../dist/mcp/watch-pid.js';
-import { workflowEvents } from '../../dist/workflows/events.js';
+import { taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js';
 import { clearExhausted, markExhausted } from '../../dist/roles/exhausted.js';
 import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { runUnattendedScanStep } from '../../dist/unattended/service.js';
@@ -1783,7 +1785,7 @@ test('unreadable QA yields one auto-land handback to main without calling startL
   assert.equal(f.git(f.main, 'rev-parse', 'origin/base'), base);
 });
 
-test('a Claude task client without hud watch receives a persisted flake QA refusal once', { timeout: 10_000 }, async t => {
+test('a pane-less Claude task client receives a flake refusal behind 200 newer jobs once', { timeout: 10_000 }, async t => {
   // No pane means the collector dispatches for the project and the MCP client
   // collects changes on tool calls, with no timer competing to type the notice.
   const f = await checkout(t, ['true'], { after: [], inHerdr: false });
@@ -1802,6 +1804,11 @@ test('a Claude task client without hud watch receives a persisted flake QA refus
   assert.equal(refusal.action, 'blocked');
   assert.equal(readJson(seeded.jobFile).auto_land_blocked.reason, 'questions could not be read');
 
+  fs.utimesSync(seeded.dir, 1, 1);
+  for (let i = 0; i < 200; i++) {
+    fs.mkdirSync(join(f.home, 'jobs', `j${(0x1000 + i).toString(16).padStart(16, '0')}`));
+  }
+
   const notices = await scan();
   assert.equal(notices.length, 1);
   assert.ok(notices[0].includes(`${seeded.id}: auto-land blocked: questions could not be read`), notices[0]);
@@ -1809,6 +1816,31 @@ test('a Claude task client without hud watch receives a persisted flake QA refus
   assert.deepEqual(await scan(), []);
   assert.equal(startLandFn.mock.callCount(), 0);
   assert.equal(fs.existsSync(join(f.home, 'flows', `f${seeded.id.slice(1)}.json`)), false);
+});
+
+test('a quiet task notice drain neither lists nor stats job directories', t => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'hud-flake-notices-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const jobsRoot = join(home, 'jobs');
+  fs.mkdirSync(join(jobsRoot, 'j0000000000000a24'), { recursive: true });
+  const drain = taskNoticeSource(home, null, home);
+  const accesses = [];
+  const mocks = ['readdirSync', 'opendirSync', 'statSync', 'lstatSync'].map(method => {
+    const original = fs[method];
+    return t.mock.method(fs, method, (path, ...args) => {
+      if (path === jobsRoot || (typeof path === 'string' && dirname(path) === jobsRoot)) accesses.push({ method, path });
+      return original(path, ...args);
+    });
+  });
+  syncBuiltinESMExports();
+  try {
+    assert.deepEqual(drain(), []);
+    assert.deepEqual(drain(), []);
+    assert.deepEqual(accesses, []);
+  } finally {
+    for (const mock of mocks) mock.mock.restore();
+    syncBuiltinESMExports();
+  }
 });
 
 test('catch-up watcher skips a timed-out Pi question and still announces another unanswered question', { timeout: 10_000 }, async t => {
