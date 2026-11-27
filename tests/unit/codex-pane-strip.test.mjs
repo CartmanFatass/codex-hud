@@ -410,9 +410,9 @@ const timer = setInterval(() => {
   launcher.stderr.on('data', (chunk) => {
     stderr += chunk.toString('utf8');
   });
-  t.after(() => {
-    try { fs.writeFileSync(releaseFile, 'exit\n'); } catch {}
-    if (launcher.exitCode === null) launcher.kill('SIGKILL');
+  t.after(async () => {
+    // Let the launcher forward the signal to fake Codex and shut down the bar.
+    if (launcher.kill('SIGTERM')) await once(launcher, 'exit');
   });
 
   // Wait for fake codex to start and bar sidecar to push the rendered session bar at 80 cols.

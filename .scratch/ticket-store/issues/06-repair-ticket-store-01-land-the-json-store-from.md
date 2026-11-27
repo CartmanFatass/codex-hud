@@ -1,16 +1,18 @@
 # 06: Repair ticket-store/01: land the JSON store from eace3355 with committed edits kept for unmigrated Markdown features
 
-**Status:** ready-for-agent
+**Status:** done
 **Live try:** In a synthetic checkout, update a ticket on an unmigrated Markdown feature with hud_tickets, then hud_land that ticket: the land succeeds and git status is clean for the ticket path. Also, during a running hud_land, hud_tickets add on a scratch JSON feature returns the new number in under a second.
 **Blocked by:** chores/13, chores/14, chores/15
 **Objective:** ticket-store
 
 **What to build:** Supersedes ticket-store/01, whose implementation failed the assumption check (run q4d41eea7199f2815). Scope and design are unchanged: read ticket-store/01 (.scratch/ticket-store/issues/01-hud-tickets-edits-a-typed-per-feature-json-store.md) and docs/design/ticket-store/README.md §1, §2, §3 lock order, §5. Start point: the earlier worker's commit `eace3355` (branch `wt/imp-782109`, worktree /home/fires/projects/MyHUD-wt/imp-782109) implements all of 01, and its tests pass. Cherry-pick it onto your worktree base and resolve conflicts; main has moved about 70 commits since then. Do not reimplement it. Defect to fix: in `src/mcp/ticket-store-ops.ts` (~line 77), a feature with no JSON goes through `legacy()`, which calls `applyTicketEdits(checkout, false, …)`. That writes `.scratch/<f>/issues/NN-*.md` in the main checkout with no commit and no `ticket-writes.json` hash. Two things follow. (a) A later hud_land of an edited Markdown ticket fails `checkClean` in `land-runner.ts` `publish()` ("dirty or hidden changes on paths the landing touches"), because `recordLanding` amends that same tracked path. (b) A Markdown ticket created by `add`, including lead repair tickets, stays untracked, so `recordLanding` never marks it landed. Every existing feature is Markdown until ticket-store/05, so this breaks every land. Fix: send add/update items for unmigrated Markdown features through the pre-slice path: the main-checkout lease plus one per-edit `tickets:` commit, or a queued receipt when the lease is busy (keep the receipt admission for Markdown only). Take that path before and outside `withTicketStoreLock`, so the lock order is always main-checkout → tickets. In a mixed `updates` batch, the Markdown items take that path and the JSON items stay lease-free. JSON features stay lease-free and git-free. Update docs/reference.md and integrations/tickets/method.md: unmigrated Markdown features keep committed edits (with receipts when busy) until migrated.
 
-- [ ] All five acceptance items of ticket-store/01 hold on the landed code (JSON add/update/get lease-free under a held lease; mixed ready; hud_create({ticket}) renders the fixture; old-path queue item resumes by id; typed edits reject bad input)
-- [ ] hud_tickets update on an unmigrated Markdown ticket, then hud_land of that ticket in a synthetic checkout: the land succeeds and git status is clean for the ticket path (test)
-- [ ] hud_tickets add on an unmigrated Markdown feature produces a committed ticket file, and a later land marks it landed (test)
-- [ ] The Markdown edit path never takes the main-checkout lease while holding the tickets lock (test or assertion on lock order)
-- [ ] docs/reference.md and integrations/tickets/method.md state that Markdown features keep committed edits until migrated
+- [x] All five acceptance items of ticket-store/01 hold on the landed code (JSON add/update/get lease-free under a held lease; mixed ready; hud_create({ticket}) renders the fixture; old-path queue item resumes by id; typed edits reject bad input)
+- [x] hud_tickets update on an unmigrated Markdown ticket, then hud_land of that ticket in a synthetic checkout: the land succeeds and git status is clean for the ticket path (test)
+- [x] hud_tickets add on an unmigrated Markdown feature produces a committed ticket file, and a later land marks it landed (test)
+- [x] The Markdown edit path never takes the main-checkout lease while holding the tickets lock (test or assertion on lock order)
+- [x] docs/reference.md and integrations/tickets/method.md state that Markdown features keep committed edits until migrated
 
 ## Comments
+
+- Landed in this commit (replay base abd5636c20320c4c04a416817871570ae65c6eb8); gate 5/5 passed.

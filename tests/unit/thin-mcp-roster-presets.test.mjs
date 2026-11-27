@@ -117,10 +117,13 @@ test('pi role tools match the real MCP tools/list', async (t) => {
   const f = await fixture(t);
   const tools = (await f.rpc('tools/list')).result.tools.filter(({ name }) => name !== 'hud_statusline');
   assert.deepEqual(PI_ROLE_TOOLS, tools);
-  // Allow 200 bytes for experiment tags, 225 for ticket Objective links, 160 for workflow/07 lead/live_try options, and 110 for unattended/03 cancel run ID.
+  // Allow 200 bytes for experiment tags, 225 for ticket Objective links, 160 for workflow/07 lead/live_try options,
+  // 110 for unattended/03 cancel run ID, and 1750 for JSON ticket editing, bulk updates, and linked ticket briefs.
   const bytes = (value) => Buffer.byteLength(JSON.stringify(value));
   const separateBudgets = { hud_objective: 1350, hud_schedule: 1100, hud_workflow: 850 };
-  assert.ok(bytes(tools.filter(({ name }) => !Object.hasOwn(separateBudgets, name))) <= 9708 + 200 + 225 + 160 + 110, 'existing role declarations stay within budget');
+  const combinedBudget = 9708 + 200 + 225 + 160 + 110 + 1750;
+  const combinedBytes = bytes(tools.filter(({ name }) => !Object.hasOwn(separateBudgets, name)));
+  assert.ok(combinedBytes <= combinedBudget, `existing role declarations: ${combinedBytes} bytes exceeds ${combinedBudget}-byte budget`);
   for (const [name, budget] of Object.entries(separateBudgets)) {
     assert.ok(bytes(tools.find((tool) => tool.name === name)) <= budget, `${name} declaration fits its ${budget}-byte budget`);
   }
