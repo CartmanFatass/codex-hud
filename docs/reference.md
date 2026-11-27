@@ -275,6 +275,7 @@ After closure, follow-ups and land repairs resume that session within `resume_s`
 Sonic runs one non-interactive pi query, with no worker tab or pane.
 A main session uses `hud_create`; a worker uses `hud_sonic` and collects the result.
 Both use a normal job directory: `stdout.jsonl` and `stderr.log` hold pi's output; `report.md` normally holds the declared result.
+If a headless sonic settles cleanly (`agent_settled`, not aborted, exit 0) without calling `hud_report` and has non-empty final assistant text, HUD publishes that text as `report.md` marked `salvaged: final message without hud_report` in the report, digest and parent collection notice (with the unverified-facts prefix when collected by the parent) without sending another turn; aborted runs, provider errors and empty final text still fail.
 If the runner disappears without an exit receipt, `STATUS.json` records its exit code or signal when known, a bounded stderr tail, and whether a parent session restart was observed.
 If the session tail contains assistant text and no report exists, HUD saves that text in `report.md` marked partial; the job remains failed.
 Sonic can publish milestones and take a lease, but it cannot ask questions or receive follow-ups.

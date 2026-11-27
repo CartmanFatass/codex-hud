@@ -1,11 +1,11 @@
 /** Dispatch argument and brief/context file handling. */
 import * as fs from 'node:fs';
 import { resolve, relative, sep, isAbsolute, join } from 'node:path';
-import { replyWords, needsTranslation } from '../../collectors/reply-language.js';
 import type { StandingBriefRef } from '../cli-worker-startup.js';
 import type { Job } from '../job-contracts.js';
 import { jobFiles } from '../paths.js';
-import { jobsRoot, findJob } from '../store/job-store.js';
+import { jobsRoot, findJob, readCachedStatus } from '../store/job-store.js';
+import { SALVAGED_SONIC_REASON, sonicFactsPrefix } from '../../worker/sonic-jobs.js';
 
 export function jobCwd(args: Args): string {
   if (args.cwd === undefined) return resolve(process.cwd());
@@ -63,21 +63,6 @@ export async function readBriefFile(raw: unknown, cwd: string): Promise<{ task: 
   } catch {
     return { ok: false, code: 'invalid_arguments', error: `brief_file: ${JSON.stringify(raw)} must resolve to a readable UTF-8 text file inside ${cwd}` };
   }
-}
-
-const SONIC_FACTS_EN =
-  'Sonic facts: unverified starting points with file:line; its unchecked list is where it did not look; read yourself any code you base a decision on.';
-const SONIC_FACTS_ZH =
-  'Sonic 事实：带 file:line 的未核实起点；未检查列表是它没有看的地方；凡是据此做决定的代码，请亲自阅读。';
-function sonicFactsPrefix(task: unknown): string {
-  if (typeof task !== 'string' || !task.trim()) return SONIC_FACTS_EN;
-  const words = replyWords(task).replace(/\b(?:[\w]+[-./#][\w./#-]+|[A-Z\d_]{2,}|[0-9a-f]{7,40})\b/g, ' ');
-  const han = words.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/gu)?.length ?? 0;
-  const other = words.match(/[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/gu)?.length ?? 0;
-  const latin = words.match(/[A-Za-z]/g)?.length ?? 0;
-  return han > 0 && !(other >= 4 && other >= 0.2 * (han + other)) && (han >= 0.25 * (han + latin) || needsTranslation(task, 'en'))
-    ? SONIC_FACTS_ZH
-    : SONIC_FACTS_EN;
 }
 
 function inside(base: string, path: string) {
@@ -225,11 +210,15 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
         source = `${key}: ${JSON.stringify(value)}`;
         const path = await fs.promises.realpath(resolve(root, name ? join(value, jobFiles[name]) : value));
         inside(base, path);
-        const label = `${name ? `${value} ${name}: ` : ''}${JSON.stringify(path)}`;
         let sonic = false;
+        let salvaged = false;
         if (key === 'from_jobs' && name === 'report') {
-          try { sonic = findJob(value)?.role === 'sonic'; } catch { /* Corrupt receipt leaves sonic false. */ }
+          try {
+            sonic = findJob(value)?.role === 'sonic';
+            if (sonic) salvaged = readCachedStatus(value).status?.exit_reason === SALVAGED_SONIC_REASON;
+          } catch { /* Corrupt receipt leaves sonic false. */ }
         }
+        const label = `${name ? `${value} ${name}${salvaged ? ` (${SALVAGED_SONIC_REASON})` : ''}: ` : ''}${JSON.stringify(path)}`;
         const bytes = path === standing
           ? (await readContextFile(path, undefined))!.bytes // Explicit context still requires UTF-8 text.
           : await append(path, label, sonic ? sonicPrefix : undefined);

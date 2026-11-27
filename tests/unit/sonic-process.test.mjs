@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -549,4 +550,147 @@ if (prompt.includes('Billing failure.')) {
   const mark = readExhausted(f.env.HUD_HOME).get('cli:claude:synth-primary');
   assert.ok(mark);
   assert.equal(Date.parse(mark.until) - Date.parse(mark.marked_at), BILLING_EXHAUSTED_TTL_MS);
+});
+
+test('headless sonic settling with final assistant text and no hud_report salvages the answer as a done report', async (t) => {
+  const f = await fixture(t);
+  const answer = 'Synthetic lookup found src/example.ts:12.\n\nUnchecked: none.';
+  f.overrideBin('pi', `#!${process.execPath}
+import * as fs from 'node:fs';
+const args = process.argv.slice(2);
+const session = args[args.indexOf('--session') + 1];
+const msg = { role: 'assistant', content: [{ type: 'thinking', thinking: 'internal' }, { type: 'text', text: ${JSON.stringify(answer)} }], stopReason: 'stop' };
+fs.writeFileSync(session, [
+  JSON.stringify({ type: 'session', id: 'synthetic-salvage', cwd: process.cwd() }),
+  JSON.stringify({ type: 'message', message: { role: 'user', content: 'Synthetic query.' } }),
+  JSON.stringify({ type: 'message', message: msg }),
+].join('\\n') + '\\n');
+console.log(JSON.stringify({ type: 'session', id: 'synthetic-salvage', cwd: process.cwd() }));
+console.log(JSON.stringify({ type: 'agent_start' }));
+console.log(JSON.stringify({ type: 'message_end', message: msg }));
+console.log(JSON.stringify({ type: 'turn_end', message: msg, toolResults: [] }));
+console.log(JSON.stringify({ type: 'agent_end', messages: [msg], willRetry: false }));
+console.log(JSON.stringify({ type: 'agent_settled', aborted: false }));
+`);
+  const { job, task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic salvaged lookup.' });
+  await until(() => cliState(dir)?.state === 'closed', t.signal);
+  const status = cliState(dir);
+  assert.equal(status.exit_reason, 'salvaged: final message without hud_report');
+  assert.equal(status.output_written, true);
+  assert.equal(fs.existsSync(join(dir, 'done.json')), false);
+  const report = fs.readFileSync(join(dir, 'report.md'), 'utf8');
+  assert.equal(report, `> salvaged: final message without hud_report\n\n${answer}\n`);
+  assert.equal(fs.statSync(join(dir, 'report.md')).mode & 0o777, 0o600);
+
+  const read = await f.call('hud_read', { job });
+  assert.equal(read.display_state, 'done');
+  assert.equal(read.reason, 'salvaged: final message without hud_report');
+  assert.equal(read.exit_reason, 'salvaged: final message without hud_report');
+  assert.equal(read.digest.salvaged, 'final message without hud_report');
+  assert.equal(read.digest.result, 'Synthetic lookup found src/example.ts:12.');
+
+  const downstream = await f.call('hud_create', { role: 'imp', task: 'Use the salvaged lookup.', from_jobs: [job] });
+  const brief = fs.readFileSync(join(downstream.task_dir, 'brief.md'), 'utf8');
+  assert.ok(brief.includes('Sonic facts: unverified starting points with file:line; its unchecked list is where it did not look; read yourself any code you base a decision on.'));
+  assert.ok(brief.includes(`${job} report (salvaged: final message without hud_report):`));
+});
+
+test('aborted, errored, or empty-final-text headless sonic runs without hud_report still fail with the current reason', async (t) => {
+  const f = await fixture(t);
+  const cases = [
+    {
+      name: 'aborted settled event',
+      expected: 'pi exited without a declared report',
+      events: [
+        { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'Partial answer.' }], stopReason: 'stop' } },
+        { type: 'agent_settled', aborted: true },
+      ],
+      code: 0,
+    },
+    {
+      name: 'aborted stopReason',
+      expected: 'pi exited without a declared report',
+      events: [
+        { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'Aborted answer.' }], stopReason: 'aborted' } },
+        { type: 'agent_settled', aborted: false },
+      ],
+      code: 0,
+    },
+    {
+      name: 'provider error',
+      expected: 'HTTP 503: synthetic upstream error',
+      events: [
+        { type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'HTTP 503: synthetic upstream error' } },
+        { type: 'agent_settled', aborted: false },
+      ],
+      code: 0,
+    },
+    {
+      name: 'empty final text',
+      expected: 'pi exited without a declared report',
+      events: [
+        { type: 'message_end', message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'internal' }, { type: 'text', text: '   \n\t ' }], stopReason: 'stop' } },
+        { type: 'agent_settled', aborted: false },
+      ],
+      code: 0,
+    },
+    {
+      name: 'non-zero exit after settled',
+      expected: 'pi exited: 1',
+      events: [
+        { type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'Answer before crash.' }], stopReason: 'stop' } },
+        { type: 'agent_settled', aborted: false },
+      ],
+      code: 1,
+    },
+  ];
+  for (const c of cases) {
+    f.overrideBin('pi', `#!${process.execPath}
+for (const ev of ${JSON.stringify(c.events)}) console.log(JSON.stringify(ev));
+process.exit(${c.code});
+`);
+    const { task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: `Synthetic ${c.name}.` });
+    await until(() => cliState(dir)?.state === 'failed', t.signal);
+    const status = cliState(dir);
+    assert.equal(status.exit_reason, c.expected, c.name);
+    assert.equal(status.output_written, false, c.name);
+    assert.equal(fs.existsSync(join(dir, 'report.md')), false, c.name);
+  }
+});
+
+test('parent collection notice and waitSonic for a salvaged sonic show the salvaged marker and unverified-facts prefix', { timeout: 45000 }, async (t) => {
+  const f = await fixture(t);
+  const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic pi parent for salvaged sonic.' });
+  const answer = 'Synthetic parent lookup answer.';
+  f.overrideBin('pi', `#!${process.execPath}
+const msg = { role: 'assistant', content: [{ type: 'text', text: ${JSON.stringify(answer)} }], stopReason: 'stop' };
+console.log(JSON.stringify({ type: 'message_end', message: msg }));
+console.log(JSON.stringify({ type: 'agent_end', messages: [msg], willRetry: false }));
+console.log(JSON.stringify({ type: 'agent_settled', aborted: false }));
+`);
+  const native = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import hud from ${JSON.stringify(new URL('../../integrations/pi/worker/hud-worker.mjs', import.meta.url).href)};
+    import { sonicCollectPrompt } from ${JSON.stringify(new URL('../../dist/worker/sonic-jobs.js', import.meta.url).href)};
+    import { join } from 'node:path';
+    import assert from 'node:assert/strict';
+    const tools = new Map(), notice = Promise.withResolvers();
+    await hud({ on() {}, registerTool(tool) { tools.set(tool.name, tool); },
+      sendMessage(message, options) { notice.resolve({ message, options }); } });
+    const sonic = tools.get('hud_sonic');
+    const { details: { job } } = await sonic.execute('start', { task: 'Synthetic salvaged child lookup.' });
+    const timeout = setTimeout(() => { throw Error('no sonic notice'); }, 20000);
+    const { message } = await notice.promise;
+    clearTimeout(timeout);
+    assert.equal(message.customType, 'hud-sonic-ready');
+    assert.equal(message.content, 'Sonic ' + job + ' settled (salvaged: final message without hud_report). Collect its result with hud_sonic (wait: ["' + job + '"]).');
+    const remind = sonicCollectPrompt(process.env.HUD_JOB_DIR, join(process.env.HUD_JOB_DIR, 'report.md'), [job]);
+    assert.match(remind, /salvaged: final message without hud_report/);
+    const { details } = await sonic.execute('collect', { wait: [job] });
+    assert.equal(details.failed.length, 0);
+    assert.equal(details.reports.length, 1);
+    assert.equal(details.reports[0].salvaged, 'final message without hud_report');
+    assert.ok(details.reports[0].body.startsWith('Sonic facts: unverified starting points with file:line; its unchecked list is where it did not look; read yourself any code you base a decision on.\\n\\n> salvaged: final message without hud_report\\n\\n'));
+    assert.ok(details.reports[0].body.includes(${JSON.stringify(answer)}));
+  `], { env: { ...f.env, HUD_JOB_DIR: parent.task_dir }, encoding: 'utf8', timeout: 35000 });
+  assert.equal(native.status, 0, native.stderr);
 });

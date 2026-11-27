@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import type { Job, JobStatus } from './job-contracts.js';
 import { jobFiles } from './paths.js';
 import { readFileBounded, readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
+import { SALVAGED_SONIC_REASON } from '../worker/sonic-jobs.js';
 
 export const missingRunnerReceipt = 'sonic runner exited without an exit receipt';
 type Identity = Pick<JobStatus, 'pid' | 'pid_start_time' | 'boot_id'>;
@@ -88,22 +89,26 @@ function cleanTurnError(value: unknown): string | null {
   return text ? text.slice(0, MAX_TURN_ERROR_LEN) : null;
 }
 
-function tailLines(path: string, minOffset = 0): string[] | null {
+function tailLinesBounded(path: string, minOffset = 0, windowBytes = TURN_ERROR_WINDOW): { lines: string[]; truncated: boolean } | null {
   try {
     const stat = fs.lstatSync(path);
     if (!stat.isFile()) return null;
-    const offset = Math.max(minOffset, stat.size - TURN_ERROR_WINDOW);
+    const offset = Math.max(minOffset, stat.size - windowBytes);
     if (offset >= stat.size) return null;
-    const { bytes } = readFileBounded(path, TURN_ERROR_WINDOW, { offset });
+    const { bytes } = readFileBounded(path, windowBytes, { offset });
     let text = bytes.toString('utf8');
     // Drop a cut leading line when the window starts mid-file.
     if (offset > minOffset) {
       const nl = text.indexOf('\n');
-      if (nl < 0) return null;
+      if (nl < 0) return { lines: [], truncated: true };
       text = text.slice(nl + 1);
     }
-    return text.split('\n');
+    return { lines: text.split('\n'), truncated: offset > minOffset };
   } catch { return null; }
+}
+
+function tailLines(path: string, minOffset = 0): string[] | null {
+  return tailLinesBounded(path, minOffset)?.lines ?? null;
 }
 
 type AssistantCheck = { done: true; error: string | null } | { done: false };
@@ -228,4 +233,112 @@ export function lastTurnError(dir: string, status: Partial<JobStatus>, job?: Par
     job?.sessions?.find((s) => s.harness === 'pi' && typeof s.path === 'string' && isAbsolute(s.path))?.path ??
     join(dir, jobFiles.sonicSession);
   return piSessionTurnError(sessionFile) ?? piStdoutTurnError(stdout, minOffset);
+}
+
+const SALVAGE_WINDOW = 512 * 1024;
+const PRE_SETTLED_EVENTS = new Set([
+  'session', 'agent_start', 'turn_start', 'message_start', 'message_update',
+  'message_end', 'turn_end', 'agent_end', 'tool_execution_start', 'tool_execution_end',
+]);
+
+type AssistantTextCheck = { done: true; text: string | null } | { done: false };
+function extractPiAssistantText(message: unknown): AssistantTextCheck {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return { done: false };
+  const m = message as Record<string, unknown>;
+  if (m.role === 'user' || m.role === 'toolResult') return { done: true, text: null };
+  if (m.role !== 'assistant') return { done: false };
+  if (m.stopReason !== undefined && m.stopReason !== 'stop' && m.stopReason !== 'length') return { done: true, text: null };
+  if (typeof m.errorMessage === 'string' && m.errorMessage.trim()) return { done: true, text: null };
+  const content = m.content;
+  if (typeof content === 'string') {
+    const text = content.trim();
+    return { done: true, text: text || null };
+  }
+  if (!Array.isArray(content)) return { done: true, text: null };
+  const parts: string[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== 'object' || Array.isArray(part)) continue;
+    const p = part as Record<string, unknown>;
+    if (p.type === 'toolCall') return { done: true, text: null };
+    if (p.type === 'text' && typeof p.text === 'string' && p.text.trim()) parts.push(p.text);
+  }
+  const text = parts.join('\n\n').trim();
+  return { done: true, text: text || null };
+}
+
+function piSessionFinalText(file: string): string | null {
+  const lines = tailLines(file);
+  if (!lines) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    let entry: unknown;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    if (row.type !== 'message') continue;
+    const res = extractPiAssistantText(row.message);
+    if (res.done) return res.text;
+  }
+  return null;
+}
+
+/** Extract non-empty final assistant text when a headless pi sonic settled cleanly without hud_report. */
+export function salvageableSonicFinalText(dir: string, status: Partial<JobStatus>, job?: Partial<Job> | null): string | null {
+  const minOffset = typeof status.stdout_start === 'number' && Number.isSafeInteger(status.stdout_start) && status.stdout_start >= 0
+    ? status.stdout_start : 0;
+  const tailData = tailLinesBounded(join(dir, jobFiles.sonicStdout), minOffset, SALVAGE_WINDOW);
+  if (!tailData) return null;
+  let sawSettled = false;
+  for (let i = tailData.lines.length - 1; i >= 0; i--) {
+    const line = tailData.lines[i]!.trim();
+    if (!line) continue;
+    let entry: unknown;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    if (!sawSettled) {
+      if (row.type === 'agent_settled') {
+        if (row.aborted === true) return null;
+        sawSettled = true;
+        continue;
+      }
+      if (typeof row.type === 'string' && PRE_SETTLED_EVENTS.has(row.type)) return null;
+      continue;
+    }
+    if (row.type === 'session' || row.type === 'agent_start') return null;
+    if (row.type === 'agent_end') {
+      if (row.willRetry === true) return null;
+      if (Array.isArray(row.messages)) {
+        for (let j = row.messages.length - 1; j >= 0; j--) {
+          const res = extractPiAssistantText(row.messages[j]);
+          if (res.done) return res.text;
+        }
+        return null;
+      }
+    } else if (row.type === 'turn_end') {
+      if (Array.isArray(row.toolResults) && row.toolResults.length > 0) return null;
+      const res = extractPiAssistantText(row.message);
+      if (res.done) return res.text;
+    } else if (row.type === 'message_end') {
+      const res = extractPiAssistantText(row.message);
+      if (res.done) return res.text;
+    }
+  }
+  if (!sawSettled) return null;
+  if (!tailData.truncated) return null;
+  const sessionFile =
+    (typeof status.session_file === 'string' && isAbsolute(status.session_file) ? status.session_file : null) ??
+    job?.sessions?.find((s) => s.harness === 'pi' && typeof s.path === 'string' && isAbsolute(s.path))?.path ??
+    join(dir, jobFiles.sonicSession);
+  return piSessionFinalText(sessionFile);
+}
+
+/** Publish a salvaged final assistant message as report.md with the salvaged marker. */
+export function publishSalvagedSonicReport(dir: string, status: Partial<JobStatus>, job?: Partial<Job> | null): boolean {
+  const text = salvageableSonicFinalText(dir, status, job);
+  if (!text) return false;
+  const body = `> ${SALVAGED_SONIC_REASON}\n\n${text.endsWith('\n') ? text : `${text}\n`}`;
+  writePrivateFile(join(dir, jobFiles.report), body, { mkdir: false });
+  return true;
 }

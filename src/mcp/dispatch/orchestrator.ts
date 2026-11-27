@@ -1551,7 +1551,8 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   // not the report bodies, into the native continuation; hud_sonic wait still collects.
   if (current.headless) {
     for (const child of headlessSonicChildren(dir)) if (!fs.existsSync(join(child.dir, 'sonic-collected'))) {
-      message += `\n\nSonic ${child.id} ${child.state === 'open' ? 'still running' : child.state}. Collect its result with hud_sonic (wait: ["${child.id}"]).`;
+      const note = child.state === 'settled' && child.reason ? ` (${child.reason})` : '';
+      message += `\n\nSonic ${child.id} ${child.state === 'open' ? 'still running' : child.state}${note}. Collect its result with hud_sonic (wait: ["${child.id}"]).`;
     }
   }
   const taskEntry = session.taskClient && !next.batch_flow && !land && !carryTask ? beginTask(next, row.report_mtime, answerRequest) : undefined;

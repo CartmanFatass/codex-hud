@@ -147,11 +147,12 @@ export async function workerTools(
           watchSonicReady(
             id,
             notices.signal,
-            state => {
+            (state, reason) => {
               const send = () => {
                 if (tab?.isSettled()) return;
+                const note = state === 'settled' && reason ? ` (${reason})` : '';
                 pi.sendMessage({ customType: 'hud-sonic-ready', display: true,
-                  content: `Sonic ${id} ${state}. Collect its result with hud_sonic (wait: ["${id}"]).` },
+                  content: `Sonic ${id} ${state}${note}. Collect its result with hud_sonic (wait: ["${id}"]).` },
                   { triggerTurn: true, deliverAs: 'steer' });
               };
               if (state === 'failed') send();

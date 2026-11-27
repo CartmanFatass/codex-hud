@@ -2,7 +2,7 @@
 import { isQuotaFailure, recordFailureExhaustion } from '../roles/roster.js';
 import { formatPaneExitReason, terminalFact, workerAlive, readTurn, reportSignature, REPORT_READ_EXIT, REPORT_SETTLED_EXIT, type PaneExit } from '../mcp/cli-judge.js';
 import { piSessionIdentity, resumeDeadline } from '../mcp/worker-resume.js';
-import { headlessSonicChildren, sonicChildren } from '../worker/sonic-jobs.js';
+import { headlessSonicChildren, SALVAGED_SONIC_REASON, sonicChildren } from '../worker/sonic-jobs.js';
 import { reapWorkerTree, tabTreeGrant, UNVERIFIED_TREE_NOTE, workerTreeRootGone } from '../roles/worker-tree.js';
 import { piReportSettlement } from '../mcp/pi-read-settlement.js';
 import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
@@ -28,8 +28,8 @@ import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
 import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
 import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
-import { hasHeadlessSends, headlessFollowupReady } from '../mcp/headless-sends.js';
-import { isGenericNoReportReason, lastTurnError, missingRunnerEvidence, missingRunnerReceipt } from '../mcp/sonic-failure.js';
+import { hasHeadlessSends, headlessFollowupReady, noHeadlessReport } from '../mcp/headless-sends.js';
+import { isGenericNoReportReason, lastTurnError, missingRunnerEvidence, missingRunnerReceipt, publishSalvagedSonicReport } from '../mcp/sonic-failure.js';
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
@@ -627,6 +627,11 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
     if (status.slot === 'headless' && (stopped || end.state === 'closed')) {
       for (const child of headlessSonicChildren(dir)) if (child.state === 'open')
         writePrivateFile(join(child.dir, jobFiles.stopRequested), '', { mkdir: false });
+    }
+    if (!stopped && end.state === 'closed' && end.exit_reason === SALVAGED_SONIC_REASON) {
+      if (!publishSalvagedSonicReport(dir, status, job)) {
+        end = { state: 'failed', exit_reason: noHeadlessReport() };
+      }
     }
     const waiting = !stopped && end.state === 'waiting_orchestrator';
     const evidence = !stopped && end.exit_reason === missingRunnerReceipt ? missingRunnerEvidence(dir, job, status) : undefined;

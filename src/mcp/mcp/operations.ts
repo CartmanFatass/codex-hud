@@ -55,6 +55,7 @@ import { binScript, jobFiles } from '../paths.js';
 import { answerWorkerPermission, PERMISSION_ID, permissionNotice, permissionStatus } from '../worker-permissions.js';
 import { settleStoppedPi } from '../pi-stop-settlement.js';
 import { stopSonic } from '../sonic-process.js';
+import { SALVAGED_SONIC_DETAIL, SALVAGED_SONIC_REASON } from '../../worker/sonic-jobs.js';
 import {
   directory, readRow, jobCache, isWorker, findJob, settled, jobs, jobsRoot, slice, digestLine, fallbackResultLine,
   openQuestions, hudHome, bundled, writeScan, publishWorkSummary, findJobMutable, save, readCachedStatus, writeCreateStatus,
@@ -302,7 +303,7 @@ function readGit(summary: GitSummary | undefined, full: boolean) {
 }
 
 function reportDigest(report: NonNullable<ReturnType<typeof slice>>, job: string, state: string | null,
-  meta: ReportMetaFields | undefined, git: GitSummary | undefined) {
+  meta: ReportMetaFields | undefined, git: GitSummary | undefined, exitReason?: string | null) {
   const verdict = report.text.match(/^[\t ]*(?:[-*] )?(?:\*\*)?verdict(?:\*\*)?:(?:\*\*)?[\t ]*([^\r\n]+)/im)?.[1].trim();
   const blockers = report.text.match(/^[\t ]*(?:[-*] )?(?:\*\*)?blockers?(?:\*\*)?:(?:\*\*)?[\t ]*([^\r\n]+)/im)?.[1].trim();
   const facts = { state, read_hint: reportReadHint(job), report_bytes: report.bytes,
@@ -310,6 +311,7 @@ function reportDigest(report: NonNullable<ReturnType<typeof slice>>, job: string
     ...(verdict ? { verdict: digestLine(verdict, 100) } : {}),
     ...(blockers ? { blockers: digestLine(blockers, 160) } : {}),
     ...(meta?.skip_checks_reason ? { skip_checks_reason: digestLine(meta.skip_checks_reason, 160) } : {}),
+    ...(exitReason === SALVAGED_SONIC_REASON ? { salvaged: SALVAGED_SONIC_DETAIL } : {}),
     ...(meta?.preview?.path && { preview_path: meta.preview.path }),
     ...(meta?.preview?.error && { preview_error: meta.preview.error }) };
   const budget = 1000 - Buffer.byteLength(JSON.stringify({ ...facts, result: '…' }));
@@ -418,7 +420,7 @@ async function readColdJobObservation(id: string, full: boolean, detail: boolean
     report_exists: reportSlice !== undefined,
     ...(full && reportMeta ? { report_meta: reportMeta } : {}),
     ...(head ? {
-      digest: reportDigest(head, id, state, reportMeta, undefined),
+      digest: reportDigest(head, id, state, reportMeta, undefined, exit_reason),
     } : {
       ...(page ? {
         report_path: `${cold.path}#${jobFiles.report}`,
@@ -485,7 +487,7 @@ function observation(
       ...(checks ? { checks: full ? checks : { state: checks.state, stale: checks.stale,
         results: checks.results.map(({ command, passed }) => `${passed ? 'pass' : 'fail'}: ${digestLine(command.replace(/\s+/g, ' '), 120)}`) } } : {}),
       ...(row.report_present && !report ? { report_unchanged: true } : report && !full ? {
-        digest: reportDigest(report, currentJob.job, row.state ?? row.display_state, reportMeta, git),
+        digest: reportDigest(report, currentJob.job, row.state ?? row.display_state, reportMeta, git, exit_reason),
       } : {
         ...(page ? {
           report_path: reportPath,

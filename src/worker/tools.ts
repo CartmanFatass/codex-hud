@@ -3,7 +3,7 @@ import { extractReviewDeclaration, normalizeReportMeta, readReportMeta, REPORT_L
 import { openPreview, publishPreview } from './preview.js';
 import { DONE_FILE, readTurn, saveTurn, turnToken, reportSignature, withTurnLock, workerAlive } from '../mcp/cli-judge.js';
 import { rememberWorkerTree } from '../roles/worker-tree.js';
-import { readJsonBounded, readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { readFileBounded, readJsonBounded, readJsonFile, writePrivateFile, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { takeLease, LEASE_TOOL } from '../roles/lease.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
 import type { Job, JobStatus, DoneReceipt, ManagedWorktree } from '../mcp/job-contracts.js';
@@ -14,7 +14,7 @@ import { withDistLock } from '../../scripts/dist-lock.mjs';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { sonicChildren, sonicState } from '../worker/sonic-jobs.js';
+import { SALVAGED_SONIC_DETAIL, SALVAGED_SONIC_REASON, sonicChildren, sonicFactsPrefix, sonicState } from '../worker/sonic-jobs.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { MAX_EXCERPT_REPLY, recordAdvisorAnswer, replyToExcerpt } from '../roles/selection-excerpts.js';
 import { readJobProgress } from '../collectors/thin-jobs.js';
@@ -239,14 +239,14 @@ export async function startSonic({ dir, job: parent }: Pick<Worker, 'dir' | 'job
 }
 
 // A native pi start watches only its own launch receipt. This notice never collects the report.
-export function watchSonicReady(id: string, signal: AbortSignal, ready: (state: 'settled' | 'failed') => void,
+export function watchSonicReady(id: string, signal: AbortSignal, ready: (state: 'settled' | 'failed', reason?: string) => void,
   onCheckpoint?: (text: string) => void) {
   if (signal.aborted) return;
   const child = join(workerJob().root, id);
   let watcher: fs.FSWatcher, lastCheckpoint: string | undefined;
   function check(file?: string) {
     if (signal.aborted) return;
-    const { state } = sonicState(child);
+    const { state, reason } = sonicState(child);
     if (state === 'open') {
       if (onCheckpoint && (!file || file === jobFiles.progress)) {
         const checkpoint = readJobProgress(child).progress.filter(p => p.source === 'checkpoint').at(-1);
@@ -258,7 +258,7 @@ export function watchSonicReady(id: string, signal: AbortSignal, ready: (state: 
       return;
     }
     watcher.close();
-    if (!fs.existsSync(join(child, 'sonic-collected'))) ready(state);
+    if (!fs.existsSync(join(child, 'sonic-collected'))) ready(state, state === 'settled' ? reason : undefined);
   }
   try {
     watcher = fs.watch(child, { persistent: false, signal }, (_event, file) => {
@@ -336,10 +336,23 @@ export async function waitSonic({ dir, root, job: parent }: Worker, ids?: string
     return { id, reason, ...(latest_progress ? { latest_progress } : {}) };
   });
   const reports = [];
-  for (const { id, child, state } of states) {
+  let parentPrefix: string | undefined;
+  for (const { id, child, state, reason } of states) {
     if (state !== 'settled') continue;
     const path = join(child, jobFiles.report);
-    try { reports.push({ id, path, body: fs.readFileSync(path, 'utf8') }); }
+    try {
+      const raw = fs.readFileSync(path, 'utf8');
+      if (reason === SALVAGED_SONIC_REASON) {
+        if (parentPrefix === undefined) {
+          let brief: string | undefined;
+          try { brief = readFileBounded(join(dir, jobFiles.brief), 4096).bytes.toString('utf8'); } catch { /* Missing brief defaults to EN prefix. */ }
+          parentPrefix = sonicFactsPrefix(brief);
+        }
+        reports.push({ id, path, body: `${parentPrefix}\n\n${raw}`, salvaged: SALVAGED_SONIC_DETAIL });
+      } else {
+        reports.push({ id, path, body: raw });
+      }
+    }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       failed.push({ id, reason: 'settled without a report on disk' });

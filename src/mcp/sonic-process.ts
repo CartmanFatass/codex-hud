@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ensureJobWatcher } from './watch-pid.js';
 import { hasHeadlessSends, noHeadlessReport } from './headless-sends.js';
-import { lastTurnError, missingRunnerReceipt, observeOwnExit, parentStartedAt, recordRunnerDeath } from './sonic-failure.js';
+import { lastTurnError, missingRunnerReceipt, observeOwnExit, parentStartedAt, recordRunnerDeath, salvageableSonicFinalText } from './sonic-failure.js';
 import { sonicSession } from './sonic-session.js';
 import { briefPrompt } from './brief-prompt.js';
 import { binScript, jobFiles } from './paths.js';
@@ -19,7 +19,7 @@ import { readDone, readTurn, receiptForTurn, reportSignature } from '../roles/cl
 import { REPORT_SETTLED_EXIT } from './cli-judge.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
 import { progress } from '../worker/progress.js';
-import { headlessSonicChildren } from '../worker/sonic-jobs.js';
+import { headlessSonicChildren, SALVAGED_SONIC_REASON } from '../worker/sonic-jobs.js';
 import { monitorSonic, sonicLimitDefaults, type SonicLimits, type SonicStop } from './sonic-policy.js';
 
 export function startHeadlessProcess(dir: string, job: Job, args: string[], session?: { file?: string; id?: string; initialId?: string }, limits?: SonicLimits) {
@@ -252,8 +252,13 @@ export function sonicExit(dir: string, status: Partial<JobStatus>, asking = fals
   }
   if (asking) return { state: 'waiting_orchestrator' };
   const sig = readDone(dir)?.report_sig;
-  return sig && sig === reportSignature(dir) ? { state: 'closed', exit_reason: 'settled' }
-    : { state: 'failed', exit_reason: lastTurnError(dir, status) ?? noHeadlessReport() };
+  if (sig && sig === reportSignature(dir)) return { state: 'closed', exit_reason: 'settled' };
+  const turnError = lastTurnError(dir, status);
+  if (turnError) return { state: 'failed', exit_reason: turnError };
+  if (status.slot === 'sonic' && status.role === 'sonic' && salvageableSonicFinalText(dir, status) !== null) {
+    return { state: 'closed', exit_reason: SALVAGED_SONIC_REASON };
+  }
+  return { state: 'failed', exit_reason: noHeadlessReport() };
 }
 
 export async function killSonicRoot(dir: string, status: Partial<JobStatus>) {
