@@ -222,7 +222,7 @@ const ZH: Record<string, string> = {
   'should fix': '应该修复',
   optional: '可选',
   stopped: '已停止',
-  superseded: '已替代',
+  superseded: '已被取代',
   task: '任务',
   slice: '切片',
   Tasks: '任务',

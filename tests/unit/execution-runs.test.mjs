@@ -216,7 +216,7 @@ test('Execution collects paused, working, and recently ended runs (including pan
   assert.equal(f.fork.requests.length, 0);
 });
 
-test('Execution shows only the current attempt, not older failed or paused feature queues', (t) => {
+test('Execution shows only the current attempt in Workflow and keeps superseded receipts in Recent', (t) => {
   const hud = fs.mkdtempSync(join(tmpdir(), 'exec-queue-restarts-'));
   t.after(() => fs.rmSync(hud, { recursive: true, force: true }));
   const root = join(hud, 'project');
@@ -231,6 +231,7 @@ test('Execution shows only the current attempt, not older failed or paused featu
   const olderPause = run(2, 'paused', 20);
   const legacy = run(3, 'paused', 15, { feature: 'legacy', superseded_by: 'q0000000000000099' });
   const latest = run(4, 'paused', 10);
+  const superseded = run(9, 'superseded', 18, { superseded_by: latest });
   const otherProject = join(hud, 'another-project');
   run(5, 'working', 5, { root: otherProject });
   const unrelated = run(6, 'failed', 30, { feature: 'unrelated' });
@@ -240,11 +241,16 @@ test('Execution shows only the current attempt, not older failed or paused featu
   assert.equal(countProjectWaitingRuns(hud, root), 1);
   assert.equal(collectWorkSummary(hud).global.pausedMain, 1);
   const view = executionSnapshot(hud, { workers: [], lanes: [] }, { root, pane: PANE, complete: true }, NOW);
-  assert.deepEqual(view.runs.find(run => run.state === 'paused').flow, latest);
+  assert.deepEqual(view.runs.filter(run => run.endedAt === undefined).map(run => run.flow), [latest]);
   const frame = render(view);
-  assert.match(text(frame), /0 running\s+1 waiting\s+0 queued/);
+  const shown = text(frame);
+  assert.match(shown, /0 running\s+1 waiting\s+0 queued/);
+  const [live, recent] = shown.split('Recently ended');
+  assert.doesNotMatch(live, /superseded/);
+  assert.match(recent, /superseded/);
   const rows = frame.workboard.rows.map(row => row.item);
   assert.ok(rows.includes(`project:exec-run:${latest}`));
+  assert.equal(rows.filter(item => item?.startsWith(`project:exec-run:${superseded}`)).length, 1);
   assert.ok(rows.includes(`project:exec-run:${unrelated}`), 'a latest failure remains in Recently ended');
   for (const old of [failed, olderPause, legacy]) {
     assert.ok(!view.runs.some(run => run.flow === old));
@@ -458,8 +464,9 @@ test('idle Execution shows only recent project rows, ordered together by end tim
   job(12, 'Foreign job title', 2, { cwd: join(root, 'foreign'), ticket: 'compile/06' });
   run(5, 'stale queue', 1441, [{ landed: true }]);
   const cancelledRun = run(6, 'archive', 24, [{ landed: true }, { landed: true }], 'cancelled');
-  // A replaced attempt stays hidden even when some of its tickets landed.
-  run(7, 'replace', 26, [{ landed: true }, { landed: true }, {}], 'superseded');
+  const supersededRun = run(7, 'replace', 26, [
+    { landed: true }, { landed: true }, { failed: { at: ago(27), reason: 'failed check before restart' } },
+  ], 'superseded');
 
   const execution = new PanelExecution(hud, PANE, {}, () => {});
   t.after(() => execution.dispose());
@@ -489,6 +496,7 @@ test('idle Execution shows only recent project rows, ordered together by end tim
     [jobItem(landed), 'landed', '已落地', '12m', '12分'],
     [runItem(landedRun), 'landed', '已落地', '15m', '15分'],
     [runItem(cancelledRun), 'cancelled', '已取消', '24m', '24分'],
+    [runItem(supersededRun), 'superseded', '已被取代', '26m', '26分'],
     [jobItem(unlanded), 'not landed', '未落地', '29m', '29分'],
     [jobItem(unknown), '', '', '40m', '40分'],
     [jobItem(complete), 'done', '完成', '58m', '58分'],
@@ -506,7 +514,7 @@ test('idle Execution shows only recent project rows, ordered together by end tim
     assert.deepEqual(rows.map((row) => row.item), expected.map(([item]) => item));
     for (const [i, [item, en, zh, enAge, zhAge]] of expected.entries()) {
       const line = rows[i].text.trimEnd(), [word, age] = lang === 'zh' ? [zh, zhAge] : [en, enAge];
-      const detail = width === 62 && item === runItem(cancelledRun)
+      const detail = width === 62 && (item === runItem(cancelledRun) || item === runItem(supersededRun))
         ? (lang === 'zh' ? ' · 2 已落地' : ' · 2 landed') : '';
       assert.ok(line.endsWith(word ? ` ${word}${detail} ${age}` : ` ${age}`), `${lang} ${width}: ${line}`);
       if (!word) assert.doesNotMatch(line, /\b(?:failed|stopped|landed|done)\b|失败|已停止|落地|完成/);

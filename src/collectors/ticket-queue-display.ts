@@ -1,7 +1,7 @@
 import { isTicketQueueId, TICKET_QUEUE_STATES, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import type { HeaderPass } from '../workflows/header-scan.js';
 
-/** Hide replaced attempts without rewriting receipts from older HUD versions. */
+/** Keep terminal superseded receipts for Recent, but hide older attempts without that end state. */
 export function displayTicketQueues(pass: HeaderPass): Map<string, TicketQueue> {
   const queues = new Map<string, TicketQueue>();
   const newest = new Map<string, number>();
@@ -19,7 +19,8 @@ export function displayTicketQueues(pass: HeaderPass): Map<string, TicketQueue> 
     } catch { /* An unreadable receipt supplies no evidence of a replacement. */ }
   }
   for (const [file, q] of queues) {
-    if (q.state === 'superseded' || q.superseded_by ||
+    if (q.state === 'superseded') continue;
+    if (q.superseded_by ||
         (!q.unattended && (q.state === 'paused' || q.state === 'failed') &&
           Date.parse(q.created_at) < (newest.get(key(q)) ?? -Infinity))) {
       queues.delete(file);

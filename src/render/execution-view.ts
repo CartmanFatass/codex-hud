@@ -118,7 +118,7 @@ function endedState(result: ExecutionRun['result']): { glyph: string; ink: Ink }
     case 'done': case 'landed': return { glyph: stateMark.done(), ink: b.success };
     case 'not landed': return { glyph: mark('◌', 'o', '\uF05D'), ink: muted };
     case 'failed': return { glyph: stateMark.failed(), ink: b.danger };
-    case 'stopped': case 'cancelled': return { glyph: stateMark.stopped(), ink: muted };
+    case 'stopped': case 'cancelled': case 'superseded': return { glyph: stateMark.stopped(), ink: muted };
     default: return { glyph: mark('·', '.'), ink: muted };
   }
 }
@@ -128,8 +128,8 @@ function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }
   const age = muted(compactAge(entry.endedAt, now));
   const outcome = result ? state.ink(t(result)) : '';
   const facts = outcome ? `${outcome} ${age}` : age;
-  const cancelledQueue = 'flow' in entry && entry.kind === 'queue' && result === 'cancelled';
-  const landed = cancelledQueue ? entry.tickets.filter((ticket) => ticket.stage === 'landed').length : 0;
+  const interruptedQueue = 'flow' in entry && entry.kind === 'queue' && (result === 'cancelled' || result === 'superseded');
+  const landed = interruptedQueue ? entry.tickets.filter((ticket) => ticket.stage === 'landed').length : 0;
   const at = 'flow' in entry ? { item: runItem(entry.flow), execRun: entry.flow }
     : { item: cardItem(entry), execJob: { target: jobTarget(entry.worker), dir: entry.dir, tab: false } };
   const title = !('flow' in entry) ? titleOf(entry) : entry.kind === 'queue'
@@ -141,7 +141,7 @@ function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }
   const left = visualLength(prefix + icon) + visualLength(facts) + 4 <= width ? `${prefix}${icon} ` : prefix;
   const detail = landed ? `${outcome}${muted(` · ${t('{n} landed', { n: landed })}`)} ${age}` : '';
   const right = detail && visualLength(left + title + detail) + 1 <= width ? detail
-    : visualLength(left + facts) + 2 <= width ? facts : cancelledQueue ? outcome : age;
+    : visualLength(left + facts) + 2 <= width ? facts : interruptedQueue ? outcome : age;
   return { ...at, text: fit(pair(left + theme.board.text(title), right, width), width) };
 }
 

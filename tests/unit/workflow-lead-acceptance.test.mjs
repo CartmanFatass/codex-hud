@@ -1227,8 +1227,10 @@ test('restarting a paused run clears its Execution wait and hud_respond cannot r
   assert.deepEqual(restarted.todo.map(({ text }) => text), ['keep the default.']);
   assert.equal(countProjectWaitingRuns(f.home, f.root), waitingBefore - 1);
   const view = execution();
-  assert.deepEqual(view.runs.filter(run => run.kind === 'queue').map(run => run.flow), [successor]);
-  assert.doesNotMatch(readout(view), /1 waiting/);
+  assert.deepEqual(view.runs.filter(run => run.kind === 'queue' && run.endedAt === undefined).map(run => run.flow), [successor]);
+  const shown = readout(view);
+  assert.doesNotMatch(shown, /1 waiting/);
+  assert.match(shown.split('Recently ended')[1], /superseded · 1 landed/);
   const rejected = await repair(flow);
   assert.equal(rejected.code, 'superseded_run');
   assert.match(rejected.error, new RegExp(successor));
