@@ -208,7 +208,7 @@ as a linked feature's acceptance items. File syntax: D-2026-11-23-04. (new)
 - Pruning moves instead of deletes: a pruned job's text (brief, report, Q&A, job and status records, its flow and
   land records, gate logs) goes compressed into a cold archive under `$HUD_HOME` and is never expired; HUD's raw
   transcripts (stdout/stderr, sonic and other session copies) go there too, separately, and only they are dropped,
-  oldest first, past a configurable cap (default 20 GB). Live directories keep today's short retention; reading
+  oldest first, past a configurable cap (default 20 GiB). Live directories keep today's short retention; reading
   an old job's report still works. (26.11)
 - For associated work, link the ticket to the project-scoped Objective ID and stamp ID and title at attribution time
   into job and archive facts. Keep the link through retries, repairs and child work; don't guess from a title or
