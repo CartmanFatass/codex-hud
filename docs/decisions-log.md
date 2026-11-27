@@ -29,7 +29,8 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   bar; `prefix+d` works from a cold start; `q` hides instead of quitting; event-driven collapsed state instead of a
   250 ms poll; narrow terminals open the dock zoomed. Rejected: a right-side narrow rail repeating worker rows the
   left sidebar already shows; a left-only design that moves HUD sections into herdr's sidebar (high fork risk).
-  Handle content and visual form settle through a design sample.
+  Handle content: owner chose the near-invisible form (`«` when calm, `?N «` with open owner requests); rejected
+  a badge row with failed and running counts. The visual form settles through a design sample.
 
 ## 2026-11-26
 
