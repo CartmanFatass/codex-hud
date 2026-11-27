@@ -1,4 +1,5 @@
 import { basename } from 'node:path';
+import { matchArchivedTicket, parseTicketRef } from '../tickets/store.js';
 import { targetKey } from './ticket-evidence.js';
 import type { LedgerSlice, ProjectTicket, TicketFeature } from './project-board.js';
 
@@ -16,6 +17,8 @@ const key = (feature: string, n: string) => targetKey(`${feature}/${n}`);
 export function ticketIds(text: string): string[] {
   return Array.from(text.matchAll(/(?<![\w/-])([a-z0-9]+(?:-[a-z0-9]+)*)[-/](\d+)(?![\w-])/gi), m => key(m[1], m[2]));
 }
+type RollupFeature = TicketFeature & { source?: 'json' | 'mirror' };
+
 export class TicketRollup {
   private index = new Map<string, ProjectTicket>();
   private slugs = new Map<ProjectTicket, string>();
@@ -25,11 +28,22 @@ export class TicketRollup {
   worktree(label: string) {
     for (const id of ticketIds(label)) { const t = this.index.get(id); if (t) this.trees.add(t); }
   }
-  constructor(private features: TicketFeature[]) {
+  constructor(private features: RollupFeature[]) {
     for (const { slug, tickets } of features) for (const t of tickets) {
       this.index.set(key(slug, t.number), t);
       this.slugs.set(t, slug);
     }
+  }
+  /** Resolve replacement references using only the loaded board, with direct tickets taking precedence. */
+  resolveReplacement(id: string): string | undefined {
+    if (this.index.has(id)) return id;
+    const ref = parseTicketRef(id);
+    if (!ref || this.features.some(f => f.slug === ref.feature && f.source === 'mirror')) return;
+    const match = matchArchivedTicket(ref.feature, this.features.flatMap(({ slug, source }) => {
+      const candidate = `${slug}/${ref.number}`;
+      return source === 'json' && this.index.has(candidate) ? [{ slug, value: candidate }] : [];
+    }));
+    return match.status === 'matched' ? match.value : undefined;
   }
   link(job: { ticket?: string | number; slice?: string; package?: string; target_hint?: string }, material: string, receipt: NonNullable<ProjectTicket['job']>) {
     const pkg = typeof job.package === 'string' ? job.package : '';
@@ -120,7 +134,7 @@ export class TicketRollup {
         if (target?.state === 'dropped') {
           if (!admission) continue; // Display rollups retain the historical closed-ticket view.
           const replacements = [...(admission.replacements.get(targetKey(canonical)) ?? [])]
-            .flatMap(id => this.index.get(id) ?? []).filter(r => r !== t && r.state !== 'dropped');
+            .flatMap(id => this.index.get(this.resolveReplacement(id) ?? id) ?? []).filter(r => r !== t && r.state !== 'dropped');
           if (replacements.some(r => r.state === 'done')) continue;
           if (!replacements.length) {
             waitOn(undefined, undefined, `${canonical} is wontfix with no usable replacement; update blocked_by`);

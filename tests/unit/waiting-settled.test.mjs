@@ -21,8 +21,7 @@ test('a waiting item settles only when every named slice and ticket is finished'
   // Mentioning an accepted slice in prose is not a dependency.
   assert.equal(settled('Compare with DONE-ONE before deciding'), false);
   assert.equal(settled('No refs at all'), false);
-  assert.equal(waitSettled('Archived ref (waits on sample/01)', new Set(['sample-done/1'])), true);
-  assert.equal(waitSettled('Ambiguous archived ref (waits on sample/01)', new Set(['sample-done/1', 'sample-done-2/1'])), false);
+  assert.equal(waitSettled('Archived ref without a resolver (waits on sample/01)', new Set(['sample-done/1'])), false);
 });
 
 test('an owner request waits on sample/01 stays settled after sample/01 moves to sample-done/01 without rewriting prose', async (t) => {

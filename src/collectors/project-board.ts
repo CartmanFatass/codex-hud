@@ -17,7 +17,6 @@ import { collectControlRadar, type ControlRadar } from './control-radar.js';
 import { collectControlJobStats, jobSettledAt, type ControlJobStats } from './job-stats.js';
 import { epoch } from '../roles/job-usage.js';
 import { targetKey } from './ticket-evidence.js';
-import { matchArchivedTicket, parseTicketRef } from '../tickets/store.js';
 import { ticketStoreFor } from './ticket-store.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { TryLog } from './try-records.js';
@@ -126,17 +125,8 @@ export function waitSettled(
   return refs.length > 0 && refs.every((ref) => {
     const key = targetKey(ref);
     if (settled.has(key)) return true;
-    if (resolve) {
-      const resolved = resolve(key);
-      return resolved !== undefined && settled.has(resolved);
-    }
-    const parsed = parseTicketRef(key);
-    if (!parsed) return false;
-    const matched = matchArchivedTicket(parsed.feature, [...settled].flatMap((entry) => {
-      const candidate = parseTicketRef(entry);
-      return candidate && candidate.number === parsed.number ? [{ slug: candidate.feature, value: entry }] : [];
-    }));
-    return matched.status === 'matched';
+    const resolved = resolve?.(key);
+    return resolved !== undefined && settled.has(resolved);
   });
 }
 

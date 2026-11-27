@@ -12,10 +12,11 @@ import { filterTimedOutQuestions, getJobIndexCache } from '../roles/job-index-ca
 import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
+import { writeTicketEdit } from '../tickets/archive.js';
 import { type FlakeCase } from '../tickets/flake-cases.js';
 import {
   legacyTicketPaths, readJsonTicketFeature, storedTicket, ticketFeaturePath, withTicketStoreLock,
-  writeTicketFeature, type FlakeCaseRecord, type TicketFeatureDoc, type TicketRecord,
+  type FlakeCaseRecord, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readDirSafe, readFileBounded, readJsonBounded, readJsonFile, writeJsonPrivate } from '../utils/atomic-fs.js';
@@ -463,7 +464,7 @@ export async function collectGateFlakes(
           openTarget.cases = [...(openTarget.cases ?? []), ...newRecords];
           if (promoted) openTarget.status = 'ready-for-agent';
           openTarget.updated_at = at;
-          writeTicketFeature(mainRoot, home, doc);
+          await writeTicketEdit(mainRoot, home, [doc]);
           return { alreadyRecorded: false, res: { ticket, path, created: false, promoted } };
         }
 
@@ -488,7 +489,7 @@ export async function collectGateFlakes(
           created_at: at,
           updated_at: at,
         });
-        writeTicketFeature(mainRoot, home, doc);
+        await writeTicketEdit(mainRoot, home, [doc]);
         return { alreadyRecorded: false, res: { ticket, path, created: true, promoted } };
       });
       alreadyRecorded = editRes.alreadyRecorded;

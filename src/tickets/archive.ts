@@ -119,7 +119,10 @@ export function planTicketEdit(
       overfull.delete(feature);
     }
   }
-  const files: TicketWrite[] = [...changed].map(key => ({ key, bytes: serializeTicketFeature(docs.get(key)!) }));
+  const files: TicketWrite[] = [...changed].map(key => {
+    const doc = docs.get(key)!;
+    return { key, bytes: serializeTicketFeature(doc), mirror: !!doc.mirror };
+  });
   const objective = links.size || archives.size ? planFeatureLinks(root, links, archives, getObjectiveFile()) : undefined;
   const extendPendingObjective = Boolean(objective && !archives.size && extendsPendingWriteGroup(root, home, OBJECTIVE_WRITE_KEY));
   if (objective && (archives.size || extendPendingObjective)) files.push({ key: OBJECTIVE_WRITE_KEY, ...objective });
@@ -132,10 +135,10 @@ export function planTicketEdit(
   };
 }
 
-/** Local MCP add/update holds the tickets lock; objective links also use the objective lock. */
-export function writeTicketEdit(root: string, home: string, doc: TicketFeatureDoc, links?: ReadonlyMap<string, ReadonlySet<string>>) {
+/** Caller holds the tickets lock across the read, edit and write. */
+export function writeTicketEdit(root: string, home: string, docs: readonly TicketFeatureDoc[], links?: ReadonlyMap<string, ReadonlySet<string>>) {
   return withObjectiveLock(root, () => {
-    const plan = planTicketEdit(root, home, [doc], links);
+    const plan = planTicketEdit(root, home, docs, links);
     if (plan.objective) writeFileAtomic(objectivePath(root), plan.objective.bytes, { mode: plan.objective.mode });
     plan.publish();
     return plan.moved;

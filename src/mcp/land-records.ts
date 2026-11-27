@@ -7,7 +7,7 @@ import { worktreeGit } from '../collectors/worktrees.js';
 import { planTicketEdit } from '../tickets/archive.js';
 import { isHandEditedInMain, sweepTicketWrites, type GitRunner } from '../tickets/commit.js';
 import {
-  parseTicketRef, readTicketWriteState, storedTicket, TicketFeatureFull, ticketRef, ticketWriteRelPath, ticketWriteSha,
+  parseTicketRef, readReconciledTicketWriteState, storedTicket, TicketFeatureFull, ticketRef, ticketWriteRelPath, ticketWriteSha,
   withTicketStoreLock, type TicketFeatureDoc,
 } from '../tickets/store.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
@@ -145,7 +145,7 @@ async function planLanding(
   git: GitRunner,
   objectiveFile?: ObjectiveFileInput | (() => ObjectiveFileInput),
 ) {
-  const { writes, groups } = readTicketWriteState(home, main);
+  const { writes, groups } = readReconciledTicketWriteState(home, main);
   const docs = new Map<string, TicketFeatureDoc>();
   const checked = new Set<string>();
   const pending: { row: LandFlow; ticket: string; items: ReturnType<typeof unfinishedAcceptance> }[] = [];

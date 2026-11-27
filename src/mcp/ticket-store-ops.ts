@@ -171,7 +171,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       return ticket;
     });
     const links = new Map(tickets.flatMap(ticket => ticket.objective ? [[ticket.objective, new Set([feature])] as const] : []));
-    const moved = await writeTicketEdit(mainRoot, home, doc, links);
+    const moved = await writeTicketEdit(mainRoot, home, [doc], links);
     const warning = unlinkedWarning(mainRoot, feature);
     return { ok: true, tickets: tickets.map(({ number }) => ({ number, path: editedPath(feature, number, moved) })), ...(warning && { warning }) };
   };
@@ -218,7 +218,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     let path = ticketFeaturePath(mainRoot, doc.feature);
     if (JSON.stringify(ticket) !== base) {
       ticket.updated_at = at;
-      path = editedPath(doc.feature, ticket.number, await writeTicketEdit(mainRoot, home, doc));
+      path = editedPath(doc.feature, ticket.number, await writeTicketEdit(mainRoot, home, [doc]));
     }
     return { ok: true, number: ticket.number, path };
   };

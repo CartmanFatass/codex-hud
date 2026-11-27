@@ -7,11 +7,12 @@ import { ticketHeading } from '../collectors/ticket-evidence.js';
 import { getHudHome } from '../hud-home.js';
 import { localProjectRoots } from '../roles/projects.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
+import { writeTicketEdit } from './archive.js';
 import { isRunningListTicket, parseFlakeCaseLine, parseFlakeCases } from './flake-cases.js';
 import {
   legacyTicketRepo, LEGACY_TICKET_HEADER_END, MAX_TICKET_BYTES, TICKET_FEATURE, TICKET_KINDS, TICKET_STATUSES, readJsonTicketFeature,
   renderTicketBrief, serializeTicketFeature, splitRemovals, ticketNumber, ticketRef, validateTicketFeature,
-  withTicketStoreLock, writeTicketFeature,
+  withTicketStoreLock,
   type AcceptanceItem, type AcceptanceReceipt, type FlakeCaseRecord, type LandingRecord,
   type TicketComment, type TicketFeatureDoc, type TicketRecord, type TicketStatus,
 } from './store.js';
@@ -296,7 +297,7 @@ interface Migration {
   mismatches: MigrateMismatch[];
 }
 
-function migrateLocked(cwd: string, options: MigrateOptions): Migration {
+async function migrateLocked(cwd: string, options: MigrateOptions): Promise<Migration> {
   const result: Migration = { ok: false, features: 0, tickets: 0, written: [], unchanged: [], deleted: [], mismatches: [] };
   const fail = (target: string, reason: string) => result.mismatches.push({ target, reason });
   const scratch = join(cwd, '.scratch');
@@ -368,7 +369,7 @@ function migrateLocked(cwd: string, options: MigrateOptions): Migration {
   for (const plan of plans) {
     const rel = `.hud/tickets/${plan.doc.feature}.json`;
     if (plan.needsWrite) {
-      writeTicketFeature(cwd, home, plan.doc);
+      await writeTicketEdit(cwd, home, [plan.doc]);
       result.written.push(rel);
     } else result.unchanged.push(rel);
     result.tickets += plan.doc.tickets.length;

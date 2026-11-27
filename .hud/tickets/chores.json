@@ -387,7 +387,7 @@
     {
       "number": 64,
       "title": "Ticket archive: one archive-aware write path, archive-family replacement lookup, committed hand-edit reconciliation",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -400,32 +400,39 @@
         {
           "id": 1,
           "text": "A ready ticket whose dependency is a wontfix ticket `Replaced by` a done ticket stays ready after a cap-crossing add archives the replacement (`hud_tickets ready` lists it before and after).",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "A gate-flake add and an unattended finish on a feature just below 64 KiB with an archivable old done ticket both succeed and archive instead of failing; a feature with only the protected highest ticket still fails with the current error.",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "No production module imports the cap-checking raw ticket writer except the archive-aware entry point (module privacy or a unit assertion).",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "After an archive adds an Objective Features link, editing and committing `.hud/objectives.md` as the land error instructs lets the next land for that feature succeed, with the owner's committed bytes unchanged.",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "`waitSettled` has no own archive scan; the archive-match case is covered through the collector.",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T16:16:12.389Z",
+        "job": "j65171257a33e8b3c",
+        "flow": "f65171257a33e8b3c",
+        "replay_base": "56e1ca0f2ec42f39c80866363f4cb279cd1a111e",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T15:30:50.828Z",
-      "updated_at": "2026-11-27T15:30:50.828Z"
+      "updated_at": "2026-11-27T16:16:12.389Z"
     },
     {
       "number": 65,

@@ -13,8 +13,9 @@ import { localProjectRoots, projectList, projectRoot } from '../roles/projects.j
 import {
   compactHomePath, expandHomePath, legacyTicketRepo, LEGACY_TICKET_HEADER_END, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature,
   renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs, withTicketStoreLock,
-  writeTicketFeature, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
+  TicketFeatureFull, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
+import { writeTicketEdit } from '../tickets/archive.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
@@ -389,7 +390,8 @@ function readTicketFeatures(root: string, feature?: string) {
       const message = error instanceof Error ? error.message : String(error);
       return { slug, at: 0, tickets: [] as LocalTicket[], unreadable: message };
     }
-    return { slug, at: 0, unreadable: undefined as string | undefined, tickets: json ? json.tickets.map(record => jsonReadiness(root, json, record))
+    const source: 'json' | 'mirror' | undefined = json && (json.mirror ? 'mirror' : 'json');
+    return { slug, at: 0, source, unreadable: undefined as string | undefined, tickets: json ? json.tickets.map(record => jsonReadiness(root, json, record))
       : directoryExists(scratch) ? list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number: num, path }) => {
         const ticket = parseTicketForReadiness(path, num, slug);
         return ticket ? [ticket] : [];
@@ -403,7 +405,7 @@ export function declaredReadyTickets(cwd: string, feature?: string) {
     .map(t => ({ ticket: readinessRef(slug, t), role: t.role, objective: t.objective, repo: t.repo })));
 }
 
-function ticketReplacements(features: ReturnType<typeof readTicketFeatures>) {
+function ticketReplacements(features: ReturnType<typeof readTicketFeatures>, rollup: TicketRollup) {
   const replacements = new Map<string, Set<string>>();
   const add = (original: string, replacement: string) => {
     if (original === replacement) return;
@@ -413,7 +415,7 @@ function ticketReplacements(features: ReturnType<typeof readTicketFeatures>) {
   };
   for (const { slug, tickets } of features) for (const t of tickets) {
     const id = targetKey(readinessRef(slug, t));
-    for (const ref of t.supersedes) add(ref, id);
+    for (const ref of t.supersedes) add(rollup.resolveReplacement(ref) ?? ref, id);
     for (const ref of t.replacedBy) add(id, ref);
   }
   return replacements;
@@ -423,7 +425,8 @@ function ticketReplacements(features: ReturnType<typeof readTicketFeatures>) {
 export function ticketBlockersByKey(cwd: string): Map<string, readonly string[]> {
   const blockers = new Map<string, readonly string[]>();
   const features = readTicketFeatures(cwd);
-  new TicketRollup(features).derive(Date.now(), undefined, undefined, { replacements: ticketReplacements(features) });
+  const rollup = new TicketRollup(features);
+  rollup.derive(Date.now(), undefined, undefined, { replacements: ticketReplacements(features, rollup) });
   for (const { slug, tickets } of features) {
     for (const t of tickets) blockers.set(targetKey(`${slug}/${t.number}`), t.blockers);
   }
@@ -467,7 +470,7 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
   }
   const { declaredBlockers, crossBlockers, missingCrossBlockers } = rollup.derive(
     Date.now(), undefined, blockedSet.size ? blockedSet : undefined, {
-      replacements: ticketReplacements(features),
+      replacements: ticketReplacements(features, rollup),
       landedInRun: options?.landedInRun && new Set(options.landedInRun.map(targetKey)),
     },
   );
@@ -604,14 +607,27 @@ export async function recordUnattendedAcceptance(
       }
     }
 
-    for (const { doc, tickets: docTickets } of dirtyDocs.values()) {
+    // Plan the whole batch so an archive can rewrite references in other edited documents.
+    while (dirtyDocs.size) {
       try {
-        writeTicketFeature(mainRoot, home, doc);
-        persisted.push(...docTickets);
-        firstTicket ??= docTickets[0];
+        await writeTicketEdit(mainRoot, home, [...dirtyDocs.values()].map(({ doc }) => doc));
+        for (const { tickets: docTickets } of dirtyDocs.values()) {
+          persisted.push(...docTickets);
+          firstTicket ??= docTickets[0];
+        }
+        break;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        for (const ticket of docTickets) failed.push({ ticket, error: message });
+        const full = error instanceof TicketFeatureFull ? dirtyDocs.get(error.feature) : undefined;
+        if (full) {
+          for (const ticket of full.tickets) failed.push({ ticket, error: message });
+          dirtyDocs.delete(full.doc.feature);
+        } else {
+          for (const { tickets: docTickets } of dirtyDocs.values()) {
+            for (const ticket of docTickets) failed.push({ ticket, error: message });
+          }
+          break;
+        }
       }
     }
     return { persisted, failed, firstChanged: firstTicket };

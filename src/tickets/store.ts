@@ -337,7 +337,7 @@ export function pruneTicketWrites(home: string, mainRoot: string, matched: Reado
 export const withTicketStoreLock = <T>(mainRoot: string, fn: () => T | Promise<T>) =>
   withAbstractLock('tickets', mainRoot, fn, { timeoutMs: 10_000 });
 
-function isCleanInGitSync(mainRoot: string, rel: string, creating = false): boolean {
+function isCleanInGitSync(mainRoot: string, rel: string, mode?: 'creating' | 'tracked'): boolean {
   const opts = { cwd: mainRoot, env: safeGitEnv(process.env), encoding: 'utf8' as const, timeout: 5000 };
   const cfg = spawnSync('git', [...SAFE_GIT_ARGS, ...FILTER_CONFIG_ARGS], opts);
   let filters: string[];
@@ -349,11 +349,12 @@ function isCleanInGitSync(mainRoot: string, rel: string, creating = false): bool
   } else {
     return false;
   }
-  if (creating && spawnSync('git', [...SAFE_GIT_ARGS, ...filters, 'check-ignore', '-q', '--', rel], opts).status !== 1) return false;
+  if (mode === 'creating' && spawnSync('git', [...SAFE_GIT_ARGS, ...filters, 'check-ignore', '-q', '--', rel], opts).status !== 1) return false;
   const st = spawnSync('git', [...SAFE_GIT_ARGS, ...filters, 'status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', rel], opts);
   if (st.status !== 0 || st.stdout) return false;
   const ls = spawnSync('git', [...SAFE_GIT_ARGS, 'ls-files', '-v', '-z', '--', rel], opts);
   if (ls.status !== 0) return false;
+  if (mode === 'tracked') return ls.stdout === `H ${rel}\0`;
   return !(ls.stdout ?? '').split('\0').some(row => /^[a-zS] /.test(row));
 }
 
@@ -376,22 +377,42 @@ export function extendsPendingWriteGroup(mainRoot: string, home: string, key: st
 
 function isSweepEligibleBeforeWrite(mainRoot: string, rel: string, recordedSha: string | undefined, archive: boolean): boolean {
   const path = join(mainRoot, rel);
-  if (!fs.lstatSync(path, { throwIfNoEntry: false })) return !archive || isCleanInGitSync(mainRoot, rel, true);
+  if (!fs.lstatSync(path, { throwIfNoEntry: false })) return !archive || isCleanInGitSync(mainRoot, rel, 'creating');
   const sha = ticketWriteSha(fs.realpathSync(mainRoot), rel);
   return sha !== undefined && (sha === recordedSha || isCleanInGitSync(mainRoot, rel));
 }
 
-export interface TicketWrite { key: string; bytes: string; mode?: number; }
+/** Use committed hand edits as the new baseline without touching the working tree or ledger during planning. */
+export function readReconciledTicketWriteState(home: string, mainRoot: string) {
+  const { writes, groups } = readTicketWriteState(home, mainRoot);
+  const retired = new Map<string, string>();
+  if (!groups.length) return { writes, groups, retired };
+  const realMain = fs.realpathSync(mainRoot);
+  for (const key of new Set(groups.flat())) {
+    const rel = ticketWriteRelPath(key), actual = ticketWriteSha(realMain, rel);
+    if (actual === undefined || actual === writes[key] || !isCleanInGitSync(mainRoot, rel, 'tracked')) continue;
+    retired.set(key, writes[key]);
+    delete writes[key];
+  }
+  return { writes, groups: groups.map(group => group.filter(key => !retired.has(key))).filter(group => group.length > 1), retired };
+}
 
-/** Validate and register a full write set before publishing any of its files. Caller holds the tickets lock. */
+export interface TicketWrite { key: string; bytes: string; mode?: number; mirror?: boolean; }
+
+/** Low-level publication for the archive planner only. Caller holds the tickets lock. */
 export function prepareTicketWrites(mainRoot: string, home: string, files: readonly TicketWrite[], archive = false) {
   directory(join(mainRoot, '.hud'));
   directory(ticketDir(mainRoot));
   if (!files.length) return () => {};
-  const { writes, groups } = readTicketWriteState(home, mainRoot);
   const paths = files.map(file => ({ ...file, rel: ticketWriteRelPath(file.key) }));
-  const archiveKeys = new Set(archive ? files.map(file => file.key) : []);
-  for (const { key, rel, bytes } of paths) {
+  // Generated GitHub mirrors are never part of the local commit sweep.
+  const local = paths.filter(file => !file.mirror);
+  if (!local.length) return () => {
+    for (const file of paths) writeFileAtomic(join(mainRoot, file.rel), file.bytes, { dotPrefix: true });
+  };
+  const { writes, groups } = readReconciledTicketWriteState(home, mainRoot);
+  const archiveKeys = new Set(archive ? local.map(file => file.key) : []);
+  for (const { key, rel, bytes } of local) {
     const eligible = isSweepEligibleBeforeWrite(mainRoot, rel, Object.hasOwn(writes, key) ? writes[key] : undefined, archive);
     if (archive && !eligible) throw new Error(`Cannot archive tickets in ${rel}: uncommitted hand edit present; commit or revert it and retry`);
     if (eligible) {
@@ -435,13 +456,6 @@ export function prepareTicketWrites(mainRoot: string, home: string, files: reado
     writeFileAtomic(join(mainRoot, file.rel), file.bytes, { dotPrefix: true, mode: file.mode, beforeRename: () => publish(i + 1) });
   };
   return () => publish(0);
-}
-
-/** Caller holds the tickets lock across the read, edit and write. */
-export function writeTicketFeature(mainRoot: string, home: string, doc: TicketFeatureDoc) {
-  const path = ticketFeaturePath(mainRoot, doc.feature);
-  prepareTicketWrites(mainRoot, home, [{ key: doc.feature, bytes: serializeTicketFeature(doc) }])();
-  return path;
 }
 
 export function legacyTicketPaths(root: string, feature: string) {

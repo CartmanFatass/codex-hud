@@ -5,11 +5,12 @@ import { dirname, join } from 'node:path';
 import { scanTicketStore } from '../collectors/ticket-store.js';
 import { getHudHome } from '../hud-home.js';
 import { localProjectRoots } from '../roles/projects.js';
+import { planTicketEdit } from '../tickets/archive.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import { migrateTickets } from '../tickets/migrate.js';
 import {
   TICKET_FEATURE, matchArchivedTicket, parseTicketRef, readJsonTicketFeature, renderTicketBrief,
-  serializeTicketFeature, ticketRef, withTicketStoreLock,
+  TicketFeatureFull, ticketRef, withTicketStoreLock,
   type AcceptanceItem, type TicketComment, type TicketFeatureDoc, type TicketRecord, type TicketStatus,
 } from '../tickets/store.js';
 import { readFileBounded, writeFileAtomic } from '../utils/atomic-fs.js';
@@ -60,11 +61,11 @@ interface GhComment {
 interface WriteFilePlan {
   path: string;
   content: string;
-  kind: 'md' | 'gitignore' | 'json-mirror';
+  kind: 'md' | 'gitignore';
 }
 interface FeaturePlan {
   slug: string;
-  ticketCount: number;
+  doc: TicketFeatureDoc;
   specDir: string;
   issuesDir: string;
   files: WriteFilePlan[];
@@ -197,7 +198,6 @@ export async function ticketsCommand(args: readonly string[], io: HudIO, runGh: 
     parents,
     repo,
     scratchDir,
-    ticketsDir,
     issuesByNumber,
     gh,
     syncedAt,
@@ -213,13 +213,20 @@ export async function ticketsCommand(args: readonly string[], io: HudIO, runGh: 
       throw new CliError('refusing to sync: mirror files changed during sync; retry', 1);
     }
     validateWriteSafety(featurePlans, sharedFiles);
-    applyPlans(featurePlans, sharedFiles, ticketsDir);
+    // Mirrors cannot archive or write Objective links, so only the tickets lock is needed.
+    let publish: () => void;
+    try { ({ publish } = planTicketEdit(cwd, getHudHome(io.env), featurePlans.map(({ doc }) => doc))); }
+    catch (err) {
+      if (err instanceof TicketFeatureFull) throw new CliError(`cannot sync ${err.feature}: ${err.message}`, 1);
+      throw err;
+    }
+    applyPlans(featurePlans, sharedFiles, ticketsDir, publish);
   });
 
   let totalTickets = 0;
   for (const feature of featurePlans) {
-    totalTickets += feature.ticketCount;
-    await io.stdout(`${feature.slug}: ${feature.ticketCount} tickets\n`);
+    totalTickets += feature.doc.tickets.length;
+    await io.stdout(`${feature.slug}: ${feature.doc.tickets.length} tickets\n`);
   }
   await io.stdout(`synced ${featurePlans.length} features, ${totalTickets} tickets\n`);
   return 0;
@@ -491,7 +498,6 @@ async function buildPlans(
   parents: { parent: GhIssue; subs: GhIssue[]; preferredSlug?: string }[],
   repo: string,
   scratchDir: string,
-  ticketsDir: string,
   issuesByNumber: Map<number, GhIssue>,
   gh: ReturnType<typeof createGhClient>,
   syncedAt: string,
@@ -593,11 +599,7 @@ async function buildPlans(
       tickets: records,
     };
 
-    let json: string;
-    try { json = serializeTicketFeature(doc); }
-    catch (err) { throw new CliError(`cannot sync ${slug}: ${(err as Error).message}`, 1); }
     const files: WriteFilePlan[] = [
-      { path: join(ticketsDir, `${slug}.json`), content: json, kind: 'json-mirror' },
       { path: join(featureDir, '.gitignore'), content: '*\n', kind: 'gitignore' },
       { path: join(featureDir, 'spec.md'), content: renderSpec(parent, repo), kind: 'md' },
     ];
@@ -614,7 +616,7 @@ async function buildPlans(
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
 
-    plans.push({ slug, ticketCount: records.length, specDir: featureDir, issuesDir, files, deletes });
+    plans.push({ slug, doc, specDir: featureDir, issuesDir, files, deletes });
   }
   return plans;
 }
@@ -670,7 +672,6 @@ function validateFilePlan(file: WriteFilePlan): void {
     }
     return;
   }
-  if (file.kind === 'json-mirror') return; // The store scan already checked every existing JSON target.
   const info = readMarkerIfFile(file.path);
   if (info.exists && (info.symlink || !isGeneratedContent(info.firstLine))) {
     throw new CliError(`refusing to overwrite non-generated file: ${file.path}`, 1);
@@ -697,10 +698,11 @@ function validateWriteSafety(plans: FeaturePlan[], sharedFiles: WriteFilePlan[])
   }
 }
 
-function applyPlans(plans: FeaturePlan[], sharedFiles: WriteFilePlan[], ticketsDir: string): void {
+function applyPlans(plans: FeaturePlan[], sharedFiles: WriteFilePlan[], ticketsDir: string, publish: () => void): void {
   const write = (file: WriteFilePlan) => writeFileAtomic(file.path, file.content, { mkdir: false, dotPrefix: true });
   fs.mkdirSync(ticketsDir, { recursive: true });
   for (const file of sharedFiles) write(file);
+  publish();
   for (const plan of plans) {
     fs.mkdirSync(plan.specDir, { recursive: true });
     for (const file of plan.files) write(file);

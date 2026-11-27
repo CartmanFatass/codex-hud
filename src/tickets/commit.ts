@@ -7,7 +7,7 @@ import { takeLease } from '../roles/lease.js';
 import { localProjectRoots } from '../roles/projects.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
 import {
-  pruneTicketWrites, readTicketWriteState, ticketWriteRelPath, ticketWriteSha, withTicketStoreLock,
+  pruneTicketWrites, readReconciledTicketWriteState, ticketWriteRelPath, ticketWriteSha, withTicketStoreLock,
 } from './store.js';
 
 export type GitRunner = (args: string[]) => Promise<string>;
@@ -62,16 +62,14 @@ export async function sweepTicketWrites(
   opts: { mode: 'commit' | 'amend'; message?: string; identity?: string[]; expectedTip?: string },
 ): Promise<SweepResult> {
   const realMain = fs.realpathSync(mainRoot);
-  const { writes, groups } = readTicketWriteState(home, mainRoot);
-  const entries = Object.entries(writes);
-  if (!entries.length) return { committed: false, paths: [], skipped: [] };
+  const { writes, groups, retired } = readReconciledTicketWriteState(home, mainRoot);
 
   const clean = new Map<string, string>();
   let toCommit: { key: string; rel: string; digest: string; untracked: boolean }[] = [];
   const skipped: string[] = [];
   const grouped = new Set(groups.flat());
 
-  for (const [key, expectedSha] of entries) {
+  for (const [key, expectedSha] of Object.entries(writes)) {
     const rel = ticketWriteRelPath(key);
     const actualSha = ticketWriteSha(realMain, rel);
     if (actualSha !== expectedSha) {
@@ -109,8 +107,9 @@ export async function sweepTicketWrites(
     if (!skipped.includes(rel)) skipped.push(rel);
   }
   toCommit = toCommit.filter(item => !fenced.has(item.key));
+  const pruned = new Map([...retired, ...clean]);
   if (!toCommit.length) {
-    pruneTicketWrites(home, mainRoot, clean);
+    pruneTicketWrites(home, mainRoot, pruned);
     return { committed: false, paths: [], skipped };
   }
 
@@ -143,7 +142,6 @@ export async function sweepTicketWrites(
   }
 
   const sha = await headOf(git);
-  const pruned = new Map(clean);
   for (const item of toCommit) pruned.set(item.key, item.digest);
   pruneTicketWrites(home, mainRoot, pruned);
   return { committed: true, paths: sweepPaths, sha: sha || undefined, skipped };
