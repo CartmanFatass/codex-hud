@@ -87,7 +87,7 @@
     {
       "number": 57,
       "title": "A live run member keeps its folded helpers in Run Detail",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -97,27 +97,34 @@
         {
           "id": 1,
           "text": "A running batch member with a settled sonic helper: the helper has no Recent row and Run Detail shows a selectable `+1 sonic` row for the member whose Inspector lists the helper's ask",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Settled-parent behaviour and the 24 h cutoff for settled parents are unchanged",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Unit test covers the live batch member case",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T13:50:58.773Z",
+        "job": "j6080df67da35c07d",
+        "flow": "f6080df67da35c07d",
+        "replay_base": "0d9af4c4f3f5c306c6bbfc18f46a5a93147f2147",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T13:35:15.922Z",
-      "updated_at": "2026-11-27T13:35:15.922Z"
+      "updated_at": "2026-11-27T13:50:58.773Z"
     },
     {
       "number": 58,
       "title": "A repaired graph check does not take its build's helpers",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -127,22 +134,29 @@
         {
           "id": 1,
           "text": "A graph check whose repair cursor reuses the build job ID shows no folded helpers; the build node keeps them",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "A check repaired by a distinct replacement job shows that job's helpers on the check node",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Unit tests cover both cursors",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T13:50:58.773Z",
+        "job": "j836d25f3844b2703",
+        "flow": "f836d25f3844b2703",
+        "replay_base": "0d9af4c4f3f5c306c6bbfc18f46a5a93147f2147",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T13:35:15.922Z",
-      "updated_at": "2026-11-27T13:35:15.922Z"
+      "updated_at": "2026-11-27T13:50:58.773Z"
     },
     {
       "number": 59,

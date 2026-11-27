@@ -953,6 +953,69 @@ test('helpers of council, batch and unrecorded reviewer steps fold into their Ru
   }
 });
 
+test('a running batch member with a settled sonic helper folds it into Run Detail otherSteps without a Recent row', async (t) => {
+  const f = foldFixture(t);
+  const batch = 'b0000000000000057';
+  const batchItem = f.writeJob(1, '# Live batch item\n', 10, { role: 'imp', dispatch_exit_code: 0, batch_flow: batch });
+  putJson(join(f.hud, 'jobs', batchItem, 'STATUS.json'), { state: 'working', started_at: ago(8) });
+  const helper = f.writeJob(2, 'Read-only: inspect live batch target\n', 4, { parent_job: batchItem });
+  putJson(join(f.hud, 'flows', `${batch}.json`), {
+    flow: batch, cwd: f.project, project_root: f.project, pane: PANE,
+    state: 'working', created_at: Date.parse(ago(12)), updated_at: Date.parse(ago(2)),
+    scale: { role: 'imp', count: 2, max_parallel: 1 },
+    totals: { done: 0, failed: 0, running: 1, waiting: 1 },
+  });
+  putJson(join(f.hud, 'flows', batch, 'index.json'), {
+    items: [
+      { item: 1, pilot: true, state: 'running', job: batchItem },
+      { item: 2, state: 'waiting' },
+    ],
+  });
+
+  const { execution, view } = await f.collect();
+  assert.deepEqual(view.endedJobs, [], 'settled helper of a running batch member takes no Recent row');
+  assert.equal(view.runs.length, 1);
+  assert.deepEqual(
+    view.runs[0].otherSteps?.map((s) => [s.jobId, s.state, s.children.map((c) => c.jobId)]),
+    [[batchItem, 'running', [helper]]],
+  );
+
+  const execText = text(render(view));
+  assert.doesNotMatch(execText, /Recently ended|inspect live batch target|Read-only/);
+
+  const press = (state, key) => {
+    const frame = render(view, { state, width: 80, height: 40, workboard: state.subpage && execution.board() });
+    return handleMonitorInput(frame.state, { type: 'key', key }, { frame, nowMs: NOW }).state;
+  };
+  const detail = press(onExecution({ cursor: `project:exec-run:${batch}` }), 'enter');
+  assert.deepEqual(detail.subpage, { kind: 'run-detail', flow: batch, scroll: 0 });
+  const expectedItem = `project:run-step:${batchItem}`;
+  for (const lang of ['en', 'zh']) for (const width of [40, 62, 100]) {
+    const frame = render(view, { state: detail, lang, width, workboard: execution.board() });
+    const row = frame.workboard.rows.find((r) => r.item === expectedItem);
+    assert.ok(row, `${lang} ${width}: missing selectable row ${expectedItem}`);
+    assert.equal(row.execJob.target.workerId, `thin-job:${batchItem}`);
+    assert.ok(row.text.includes('◉'), `${lang} ${width}: missing running glyph: ${row.text}`);
+    assert.ok(row.text.includes(lang === 'zh' ? '+1 个 sonic' : '+1 sonic'), `${lang} ${width}: ${row.text}`);
+    for (const line of frame.lines) {
+      assert.equal(visualLength(line), width, `${lang} ${width}: ${line}`);
+      assert.equal(line, stripAnsi(line));
+    }
+    for (const line of render(view, { state: detail, lang, width, theme: 'mocha' }).lines) {
+      assert.equal(visualLength(line), width, `mocha ${lang} ${width}`);
+    }
+  }
+
+  const insp = press(detail, 'enter');
+  assert.deepEqual([insp.subpage.kind, insp.subpage.target.workerId], ['inspector', `thin-job:${batchItem}`]);
+  const inspText = text(render(view, { state: insp, width: 80, height: 40, workboard: execution.board() }));
+  assert.match(inspText, /Sonic children/);
+  assert.ok(inspText.includes('inspect live batch target'), inspText);
+  assert.doesNotMatch(inspText, /Read-only/);
+  const back = press(insp, 'escape');
+  assert.deepEqual([back.subpage.kind, back.subpage.cursor], ['run-detail', expectedItem]);
+});
+
 test('graph helpers fold onto the owning node instead of a waiting land step reusing its job ID', async (t) => {
   const f = foldFixture(t);
   const flow = 'w0000000000000056';

@@ -439,11 +439,9 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     const tickets = run.tickets.map((ticket) => {
       const folded = claim(ticket.jobId, ticket.execJob);
       let repairChanged = false;
-      const seenRepairJob = new Set<string>(ticket.jobId ? [ticket.jobId] : []);
       const landRepairs = ticket.landRepairs?.map((repair, idx, all) => {
         const isLastForJob = repair.jobId ? !all.slice(idx + 1).some((later) => later.jobId === repair.jobId) : false;
-        if (!repair.jobId || seenRepairJob.has(repair.jobId) || !isLastForJob) return repair;
-        seenRepairJob.add(repair.jobId);
+        if (!repair.jobId || repair.jobId === ticket.jobId || !isLastForJob) return repair;
         const repFolded = claim(repair.jobId, repair.execJob);
         if (!repFolded) return repair;
         repairChanged = true;
@@ -491,9 +489,13 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
       if (claimed.has(jobId) || !folded.length || runForJob(jobId) !== run.flow) continue;
       const worker = workers.get(jobId);
       const execJob = jobTargetFor(home, worker, jobId);
-      if (!worker || !execJob || worker.settledAt === null || !recent(worker.settledAt)) continue;
-      const state: RunStepState = worker.state === 'failed' || worker.state === 'error' || worker.work?.failed ? 'failed'
-        : worker.state === 'stopped' ? 'cancelled' : 'done';
+      const isLive = liveSet.has(jobId);
+      if (!worker || !execJob || (!isLive && (worker.settledAt === null || !recent(worker.settledAt)))) continue;
+      const phase = isLive ? jobs.get(jobId)?.phase : undefined;
+      const state: RunStepState = isLive
+        ? (phase === 'queued' ? 'waiting' : phase === 'waiting' ? 'asking' : 'running')
+        : worker.state === 'failed' || worker.state === 'error' || worker.work?.failed ? 'failed'
+          : worker.state === 'stopped' ? 'cancelled' : 'done';
       const label = worker.ticketTitle ?? worker.briefTitle ?? worker.displayId ?? undefined;
       otherSteps.push({
         jobId,

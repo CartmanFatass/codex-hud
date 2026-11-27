@@ -470,7 +470,7 @@
       "number": 28,
       "title": "Gate flakes collected after test-flakes/27",
       "kind": "flake-list",
-      "status": "needs-triage",
+      "status": "ready-for-agent",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -492,6 +492,22 @@
           "flow": "fdb2c67e541d03894",
           "log": "~/.hud/flows/fdb2c67e541d03894.json.gate-1.log",
           "recorded_at": "2026-11-27T10:43:59.851Z"
+        },
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/thin-mcp-roster-presets.test.mjs",
+          "case_name": "pi dispatch passes role skills and the worker prompt, and records skips",
+          "flow": "f44a0dbc7a11e3564",
+          "log": "~/.hud/flows/f44a0dbc7a11e3564.json.gate-1.log",
+          "recorded_at": "2026-11-27T13:43:59.576Z"
+        },
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/thin-mcp-watcher-reap.test.mjs",
+          "case_name": "pi reap: native one-shot retains ancestry captured before shutdown",
+          "flow": "f44a0dbc7a11e3564",
+          "log": "~/.hud/flows/f44a0dbc7a11e3564.json.gate-1.log",
+          "recorded_at": "2026-11-27T13:43:59.576Z"
         }
       ],
       "acceptance": [
@@ -508,7 +524,7 @@
       ],
       "comments": [],
       "created_at": "2026-11-27T09:30:59.574Z",
-      "updated_at": "2026-11-27T10:43:59.851Z"
+      "updated_at": "2026-11-27T13:43:59.576Z"
     }
   ]
 }

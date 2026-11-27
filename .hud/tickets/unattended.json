@@ -59,7 +59,7 @@
     {
       "number": 22,
       "title": "Repair unattended/07+21: permission proof judges effects on existing bytes; unproven forms go to main",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "Scratch herdr pane, synthetic job: `S=<abs scratchpad>; rm -rf $S/out` gets one key; `printf x > <task-dir>/ref.png` (untracked) and `node x.js` reach main with no key.",
       "approved_removals": [],
@@ -74,17 +74,24 @@
         {
           "id": 1,
           "text": "Fixture tests: every reviewer case 1-6 goes to main; `S=<abs>; rm -f $S/*.png` and new-file writes stay approved.",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "permission-policy.ts does not grow net.",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T13:50:58.773Z",
+        "job": "jab73577353c567ce",
+        "flow": "fab73577353c567ce",
+        "replay_base": "0d9af4c4f3f5c306c6bbfc18f46a5a93147f2147",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T13:23:16.962Z",
-      "updated_at": "2026-11-27T13:23:16.962Z"
+      "updated_at": "2026-11-27T13:50:58.773Z"
     },
     {
       "number": 23,
