@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 import { main as cliMain } from '../../dist/cli/hud.js';
+import { scanTicketStore } from '../../dist/collectors/ticket-store.js';
 import { worktreeGit } from '../../dist/collectors/worktrees.js';
 import { collectGateFlakes } from '../../dist/mcp/land-flakes.js';
 import { retryableLand } from '../../dist/mcp/land-state.js';
@@ -90,6 +91,107 @@ for (const ownerTry of [false, true]) test(`landing a JSON ticket folds landing 
   assert.equal(ticket.landing.replay_base, baseBeforeLand);
   assert.equal(ticket.landing.gates, 1);
   assert.ok(Date.parse(ticket.landing.at));
+});
+
+const at = '2026-01-01T00:00:00.000Z';
+const record = (number, status, fields = {}) => ({ number, status, title: `Ticket ${number}`,
+  owner_try: false, live_try: 'none', what: 'Synthetic slice.', approved_removals: [], blocked_by: [],
+  acceptance: [{ id: 1, text: 'Verify the slice.', done: false }], comments: [], created_at: at, updated_at: at, ...fields });
+
+function seedArchiveProject(f, docs) {
+  fs.mkdirSync(join(f.main, '.hud/tickets'), { recursive: true });
+  const objective = join(f.main, '.hud/objectives.md');
+  fs.writeFileSync(objective, '## selected: Selected\n**State:** active\n**Features:** sample\n');
+  for (const doc of docs) fs.writeFileSync(ticketFeaturePath(f.main, doc.feature), serializeTicketFeature(doc));
+  f.git(f.main, 'add', '.hud/tickets', '.hud/objectives.md');
+  f.git(f.main, 'commit', '-qm', 'Seed synthetic tickets');
+  return objective;
+}
+
+function nearCap(feature, tickets, slack = 16) {
+  const doc = { version: 1, feature, objective: 'selected', tickets };
+  tickets[0].what += 'x'.repeat(MAX_TICKET_BYTES - slack - Buffer.byteLength(serializeTicketFeature(doc)));
+  return doc;
+}
+
+for (const fullArchive of [false, true]) test(`an overflowing repair add archives eligible tickets and sweeps one write set (full archive=${fullArchive})`, { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  const archive = fullArchive ? 'sample-done-2' : 'sample-done';
+  const objective = seedArchiveProject(f, [
+    nearCap('sample', [record(1, 'wontfix', { blocked_by: ['sample/03'] }), record(2, 'done'), record(3, 'done')]),
+    { version: 1, feature: 'other', tickets: [
+      record(1, 'ready-for-agent', { blocked_by: ['sample/02'], repairs: ['sample/01'] }),
+      record(2, 'done', { blocked_by: ['sample/01'] }),
+    ] },
+    ...(fullArchive ? [nearCap('sample-done', [record(8, 'done')])] : []),
+  ]);
+  const add = await f.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('Repair slice', { repairs: ['sample/01'] })] });
+  assert.equal(add.tickets[0].number, 4);
+  const call = (op, args) => f.call('hud_tickets', { op, ...args });
+  assert.deepEqual(readJsonTicketFeature(f.main, 'sample').tickets.map(t => t.number), [2, 3, 4]);
+  assert.deepEqual(readJsonTicketFeature(f.main, archive).tickets.map(t => t.number), [1]);
+  assert.equal(readJsonTicketFeature(f.main, archive).objective, 'selected');
+  assert.deepEqual(readJsonTicketFeature(f.main, 'sample').tickets.at(-1).repairs, [`${archive}/01`]);
+  const [open, closed] = readJsonTicketFeature(f.main, 'other').tickets;
+  assert.deepEqual(open.blocked_by, ['sample/02']);
+  assert.deepEqual(open.repairs, [`${archive}/01`]);
+  assert.deepEqual(closed.blocked_by, [`${archive}/01`]);
+  assert.match(fs.readFileSync(objective, 'utf8'), new RegExp(`^\\*\\*Features:\\*\\* sample, ${archive}$`, 'm'));
+  const found = await call('get', { ticket: 'sample/01' });
+  assert.equal(found.feature, archive);
+  assert.equal(found.ticket.status, 'wontfix');
+  assert.equal(scanTicketStore(f.main).lookup('sample/01').title, 'Ticket 1');
+  assert.equal((await call('add', { feature: 'sample', tickets: [draft('Next slice', { blocked_by: ['sample/01'] })] })).tickets[0].number, 5);
+  assert.deepEqual((await call('get', { ticket: 'sample/05' })).ticket.blocked_by, [`${archive}/01`]);
+  const paths = ['.hud/objectives.md', `.hud/tickets/${archive}.json`, '.hud/tickets/other.json', '.hud/tickets/sample.json'].sort();
+  const archivePath = ticketFeaturePath(f.main, archive), bytes = fs.readFileSync(archivePath, 'utf8');
+  fs.writeFileSync(archivePath, bytes.replace('Ticket 1', 'Hand-edited title'));
+  const refused = await call('commit', {});
+  assert.equal(refused.committed, false);
+  assert.deepEqual(refused.skipped.sort(), paths, 'a hand edit fences the full archive set');
+  fs.writeFileSync(archivePath, bytes);
+  assert.deepEqual((await call('commit', {})).paths.sort(), paths);
+});
+
+test('an overflowing comment keeps the highest-numbered ticket and leaves protected inputs intact on failure', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  const objective = seedArchiveProject(f, [nearCap('sample', [record(1, 'done'), record(2, 'done')]),
+    { version: 1, feature: 'other', tickets: [record(1, 'needs-info', { blocked_by: ['sample/01'] })] }]);
+  const path = ticketFeaturePath(f.main, 'sample');
+  const before = fs.readFileSync(path, 'utf8'), features = fs.readFileSync(objective, 'utf8');
+  const args = { op: 'update', ticket: 'sample/02', comment: 'Add a synthetic follow-up.' };
+  const { result } = await f.rpc('tools/call', { name: 'hud_tickets', arguments: args });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /Ticket feature sample exceeds 64 KiB/);
+  assert.equal(fs.readFileSync(path, 'utf8'), before);
+  assert.equal(fs.readFileSync(objective, 'utf8'), features);
+  assert.equal(fs.existsSync(ticketFeaturePath(f.main, 'sample-done')), false);
+  await f.call('hud_tickets', { op: 'update', ticket: 'other/01', blocked_by: [] });
+  const updated = await f.call('hud_tickets', args);
+  assert.equal(updated.path, path);
+  assert.deepEqual(readJsonTicketFeature(f.main, 'sample').tickets.map(t => t.number), [2]);
+  assert.equal(readJsonTicketFeature(f.main, 'sample').tickets[0].comments[0].text, args.comment);
+  assert.equal((await f.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('Next slice')] })).tickets[0].number, 3);
+});
+
+test('a cap-crossing landing record archives and publishes all changes with the landed commit', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  seedArchiveProject(f, [nearCap('sample', [record(1, 'done'), record(2, 'ready-for-agent')])]);
+  const base = f.git(f.main, 'rev-parse', 'HEAD');
+  setJobTicket(f, 'sample/02');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow).state), t.signal);
+  const state = f.flowState(flow);
+  assert.equal(state.state, 'completed', JSON.stringify(state));
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), state.landed_sha);
+  assert.deepEqual(f.git(f.remote, 'diff', '--name-only', base, 'base').split('\n').sort(),
+    ['.hud/objectives.md', '.hud/tickets/sample-done.json', '.hud/tickets/sample.json', 'tracked']);
+  const { tickets: [landed] } = JSON.parse(f.git(f.remote, 'show', 'base:.hud/tickets/sample.json'));
+  assert.equal(landed.number, 2);
+  assert.equal(landed.status, 'done');
+  assert.equal(landed.landing.flow, flow);
+  assert.equal(JSON.parse(f.git(f.remote, 'show', 'base:.hud/tickets/sample-done.json')).tickets[0].number, 1);
+  assert.match(f.git(f.remote, 'show', 'base:.hud/objectives.md'), /Features:\*\* sample, sample-done/);
 });
 
 test('gate-time hud_tickets edits fold with the landing into one commit; dirty HUD writes never block land; hand edits are never swept', { timeout: 30_000 }, async t => {

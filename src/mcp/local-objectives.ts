@@ -26,13 +26,12 @@ function list(value: unknown, field: string, valid: (item: string) => boolean) {
 }
 
 type Change = 'created' | 'state' | 'title' | 'result';
-function edit(root: string, home: string, args: Record<string, unknown>) {
-  const path = objectivePath(root), file = readObjectiveFile(path), original = file?.text ?? '';
+function planEdit(original: string, args: Record<string, unknown>) {
   const parsed = inspectObjectives(original), eol = original.includes('\r\n') ? '\r\n' : '\n';
   const patches: { start: number; end: number; text: string }[] = [];
   const patch = ({ start, end }: { start: number; end: number }, text: string) => patches.push({ start, end, text });
   const insert = (start: number, text: string) => patch({ start, end: start }, text);
-  let receipt: { project: string; id: string; title: string; change: Change; state: string; result?: string; resultDigest?: string } | undefined;
+  let receipt: { id: string; title: string; change: Change; state: string; result?: string; resultDigest?: string } | undefined;
 
   if (args.op === 'project') {
     if (Object.keys(args).some((key) => !['op', 'cwd', 'stance', 'priority'].includes(key))) invalid('project fields');
@@ -72,7 +71,7 @@ function edit(root: string, home: string, args: Record<string, unknown>) {
     const result = fields.Result, resultChanged = result !== undefined && result !== (old?.result ?? '');
     const change: Change | undefined = !old ? 'created' : newState !== old.state ? 'state'
       : newTitle !== old.title ? 'title' : resultChanged ? 'result' : undefined;
-    if (change) receipt = { project: root, id, title: newTitle, change, state: newState,
+    if (change) receipt = { id, title: newTitle, change, state: newState,
       ...(resultChanged && { result: resultExcerpt(result), resultDigest: resultDigest(result) }) };
     const missing: string[] = [];
     for (const key of objectiveFields) {
@@ -97,9 +96,18 @@ function edit(root: string, home: string, args: Record<string, unknown>) {
   const updated = patches.sort((a, b) => b.start - a.start || b.end - a.end)
     .reduce((text, { start, end, text: replacement }) => text.slice(0, start) + replacement + text.slice(end), original);
   if (Buffer.byteLength(updated) > STATE_BYTES) throw new Error('Objective record exceeds 64 KiB');
+  return { updated, receipt };
+}
+
+function edit(root: string, home: string, args: Record<string, unknown>) {
+  const path = objectivePath(root), file = readObjectiveFile(path), original = file?.text ?? '';
+  const { updated, receipt } = planEdit(original, args);
   if (updated === original) return { ok: true, path, changed: false };
   const save = () => writeFileAtomic(path, updated, { mode: file?.mode });
-  if (receipt) saveWithReceipt(home, { kind: 'objective', ...receipt, at: new Date().toISOString() }, save);
+  if (receipt) {
+    const event = { kind: 'objective', project: root, ...receipt, at: new Date().toISOString() };
+    saveWithReceipt(home, event, save);
+  }
   else save();
   return { ok: true, path, changed: true, ...(receipt && { change: receipt.change }) };
 }
@@ -225,19 +233,26 @@ async function editRequest(root: string, home: string, args: Record<string, unkn
   return { ok: true, path, changed: true, request, change };
 }
 
-/** `hud_tickets add` with an Objective: list the feature there, with the writer and lock of `set`. */
-export function linkFeature(root: string, home: string, ids: readonly string[], feature: string) {
-  return withAbstractLock('objective', root, () => {
-    for (const id of ids) {
-      const features = readObjectives(root)?.objectives.find((item) => item.id === id)?.features ?? invalid('unknown objective');
-      if (!features.includes(feature)) edit(root, home, { op: 'set', id, features: [...features, feature] });
-    }
-  });
+export const withObjectiveLock = <T>(root: string, fn: () => T | Promise<T>) => withAbstractLock('objective', root, fn);
+
+/** Plan all ticket links using the same Features editor as `set`. Caller holds the objective lock. */
+export function planFeatureLinks(root: string, links: ReadonlyMap<string, ReadonlySet<string>>, archives: ReadonlyMap<string, ReadonlySet<string>>) {
+  if (!links.size && !archives.size) return;
+  const file = readObjectiveFile(objectivePath(root)), original = file?.text ?? '';
+  const { objectives } = inspectObjectives(original).record;
+  let updated = original;
+  for (const id of links.keys()) if (!objectives.some(item => item.id === id)) invalid('unknown objective');
+  for (const { id, features } of objectives) {
+    const all = new Set([...features, ...(links.get(id) ?? [])]);
+    for (const [archive, owners] of archives) if (owners.has(id)) all.add(archive);
+    if (all.size !== new Set(features).size) updated = planEdit(updated, { op: 'set', id, features: [...all] }).updated;
+  }
+  if (updated !== original) return { bytes: updated, mode: file?.mode };
 }
 
 export function editObjectives(cwd: string, home: string, args: Record<string, unknown>, by: RequestCaller = {}) {
   const { root, registered } = registeredProject(home, cwd);
   if (!registered) throw new Error('hud_objective requires a registered project');
-  return withAbstractLock('objective', root, async () => args.op === 'request' || args.op === 'resolve'
+  return withObjectiveLock(root, async () => args.op === 'request' || args.op === 'resolve'
     ? editRequest(root, home, args, by) : edit(root, home, args));
 }

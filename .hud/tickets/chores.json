@@ -198,7 +198,7 @@
     {
       "number": 60,
       "title": "A ticket write that would cross the 64 KiB feature cap archives done tickets instead of failing",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -208,27 +208,34 @@
         {
           "id": 1,
           "text": "Test: an add that would cross the cap succeeds, moves eligible done tickets to `<feature>-done` (or the next `-done-N` when full), keeps the highest-numbered ticket, and the next add gets the next number",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: open tickets' blocked_by/repairs refs to moved tickets are rewritten, and `hud_tickets get` with `feature/NN` finds a moved ticket",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: a land's ticket record that would cross the cap archives instead of failing the land",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "The objective's Features line lists the new sibling; docs/reference.md describes archiving",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T14:14:48.693Z",
+        "job": "jfb605c8c9b1ef76f",
+        "flow": "ffb605c8c9b1ef76f",
+        "replay_base": "dd6b40ccf7dc17a8b13b0dfcbf58cf937f3e007a",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T13:35:30.885Z",
-      "updated_at": "2026-11-27T13:35:30.885Z"
+      "updated_at": "2026-11-27T14:14:48.693Z"
     }
   ]
 }

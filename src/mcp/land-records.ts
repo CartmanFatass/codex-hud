@@ -4,14 +4,16 @@ import { join } from 'node:path';
 import { targetKey } from '../collectors/ticket-evidence.js';
 import { ticketIds } from '../collectors/ticket-rollup.js';
 import { worktreeGit } from '../collectors/worktrees.js';
+import { planTicketEdit } from '../tickets/archive.js';
 import { isHandEditedInMain, sweepTicketWrites, type GitRunner } from '../tickets/commit.js';
 import {
-  parseTicketRef, readJsonTicketFeature, readTicketWrites, serializeTicketFeature, sha256Bytes,
-  withTicketStoreLock, writeTicketFeature, type TicketFeatureDoc,
+  parseTicketRef, readTicketWriteState, storedTicket, TicketFeatureFull, ticketRef, ticketWriteRelPath, ticketWriteSha,
+  withTicketStoreLock, type TicketFeatureDoc,
 } from '../tickets/store.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
 import { landReportJob, type LandFlow } from './land-state.js';
+import { withObjectiveLock } from './local-objectives.js';
 import { registeredTicketRepo, unfinishedAcceptance, unregisteredRepoReason } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { REPORT_MARKDOWN_HEADING_PREFIX } from './report-notes.js';
@@ -133,11 +135,48 @@ function applyJsonLanding(doc: TicketFeatureDoc, { row, ref, notes, commit }: La
   return unfinished;
 }
 
-/**
- * Verify every landing ticket file can be read, updated, and swept before moving `main`.
- * Refuses with an error naming the file if a landing feature has an uncommitted hand edit,
- * malformed JSON, or would exceed the 64 KiB store limit.
- */
+async function planLanding(main: string, home: string, entries: readonly LandRecordEntry[], replayBase: string, gates: number, at: string, git: GitRunner) {
+  const { writes, groups } = readTicketWriteState(home, main);
+  const docs = new Map<string, TicketFeatureDoc>();
+  const checked = new Set<string>();
+  const pending: { row: LandFlow; ticket: string; items: ReturnType<typeof unfinishedAcceptance> }[] = [];
+  const check = async (key: string) => {
+    if (checked.has(key)) return;
+    const rel = ticketWriteRelPath(key);
+    if (await isHandEditedInMain(main, rel, writes[key], git)) throw handEditError(rel);
+    checked.add(key);
+  };
+  for (const entry of entries) {
+    const { ref } = entry;
+    let stored;
+    try { stored = storedTicket(main, ticketRef(ref.feature, ref.number)); }
+    catch (error) {
+      throw new Error(`Cannot record landing in ${ticketWriteRelPath(ref.feature)}: ${(error as Error).message}`, { cause: error });
+    }
+    if (stored?.doc.mirror) continue;
+    const feature = stored?.doc.feature ?? ref.feature;
+    await check(feature);
+    for (const group of groups) if (group.includes(feature)) for (const key of group) {
+      const rel = ticketWriteRelPath(key);
+      if (ticketWriteSha(main, rel) !== writes[key]) throw handEditError(rel);
+      await check(key);
+    }
+    if (!stored?.record) continue;
+    const doc = docs.get(feature) ?? stored.doc;
+    const unfinished = applyJsonLanding(doc, entry, replayBase, gates, at)!;
+    docs.set(feature, doc);
+    if (unfinished.length) pending.push({ row: entry.row, ticket: ticketRef(feature, ref.number), items: unfinished });
+  }
+  try { return { ...planTicketEdit(main, home, [...docs.values()]), pending }; }
+  catch (error) {
+    if (error instanceof TicketFeatureFull) {
+      throw new Error(`Cannot record landing in ${ticketWriteRelPath(error.feature)}: ${error.message}`, { cause: error });
+    }
+    throw error;
+  }
+}
+
+/** Verify that all landing records (including any archive write set) fit and can be swept before moving main. */
 export async function checkLandingRecords(
   mainRoot: string,
   home: string,
@@ -147,47 +186,11 @@ export async function checkLandingRecords(
   filters: string[],
   at: string,
   opts?: { locked?: boolean },
-): Promise<void> {
+): Promise<boolean> {
   const realMain = fs.realpathSync(mainRoot);
   const git: GitRunner = (args) => worktreeGit(realMain, [...filters, ...args]);
-  const run = async () => {
-    const writes = readTicketWrites(home, realMain);
-    const checkedFeatures = new Map<string, TicketFeatureDoc | null>();
-    for (const entry of entries) {
-      const { ref } = entry;
-      const rel = `.hud/tickets/${ref.feature}.json`;
-      const full = join(realMain, rel);
-      const st = fs.lstatSync(full, { throwIfNoEntry: false });
-      if (st) {
-        let doc = checkedFeatures.get(ref.feature);
-        if (doc === undefined) {
-          try {
-            doc = readJsonTicketFeature(realMain, ref.feature) ?? null;
-          } catch (error) {
-            throw new Error(`Cannot record landing in ${rel}: ${(error as Error).message}`, { cause: error });
-          }
-          if (doc && !doc.mirror && await isHandEditedInMain(realMain, rel, writes[ref.feature], git)) {
-            throw handEditError(rel);
-          }
-          checkedFeatures.set(ref.feature, doc);
-        }
-        if (doc) {
-          if (doc.mirror) continue;
-          if (applyJsonLanding(doc, entry, replayBase, gates, at)) {
-            try { serializeTicketFeature(doc); }
-            catch (error) {
-              throw new Error(`Cannot record landing in ${rel}: ${(error as Error).message}`, { cause: error });
-            }
-          }
-          continue;
-        }
-      } else if (await isHandEditedInMain(realMain, rel, writes[ref.feature], git)) {
-        throw handEditError(rel);
-      }
-    }
-  };
-  if (opts?.locked) await run();
-  else await withTicketStoreLock(realMain, run);
+  const run = async () => (await planLanding(realMain, home, entries, replayBase, gates, at, git)).moved.size > 0;
+  return opts?.locked ? run() : withTicketStoreLock(realMain, () => withObjectiveLock(realMain, run));
 }
 
 /**
@@ -209,44 +212,15 @@ export async function recordLanding(
   const realMain = fs.realpathSync(mainRoot);
   const git: GitRunner = (args) => worktreeGit(realMain, [...filters, ...args]);
   const run = async () => {
-    const writes = readTicketWrites(home, realMain);
-    const pending: { row: LandFlow; path: string; items: ReturnType<typeof unfinishedAcceptance> }[] = [];
-    for (const entry of entries) {
-      const { row, ref } = entry;
-      const rel = `.hud/tickets/${ref.feature}.json`;
-      const full = join(realMain, rel);
-      const st = fs.lstatSync(full, { throwIfNoEntry: false });
-      if (st) {
-        let doc: TicketFeatureDoc | undefined;
-        try {
-          doc = readJsonTicketFeature(realMain, ref.feature);
-        } catch (error) {
-          throw new Error(`Cannot record landing in ${rel}: ${(error as Error).message}`, { cause: error });
-        }
-        if (doc) {
-          if (doc.mirror) continue;
-          if (await isHandEditedInMain(realMain, rel, writes[ref.feature], git)) {
-            throw handEditError(rel);
-          }
-          const unfinished = applyJsonLanding(doc, entry, replayBase, gates, at);
-          if (!unfinished) continue;
-          try { writeTicketFeature(realMain, home, doc); }
-          catch (error) {
-            throw new Error(`Cannot record landing in ${rel}: ${(error as Error).message}`, { cause: error });
-          }
-          writes[ref.feature] = sha256Bytes(fs.readFileSync(full));
-          if (unfinished.length) pending.push({ row, path: rel, items: unfinished });
-          continue;
-        }
-      } else if (await isHandEditedInMain(realMain, rel, writes[ref.feature], git)) {
-        throw handEditError(rel);
-      }
-    }
-
+    const { moved, publish, pending } = await planLanding(realMain, home, entries, replayBase, gates, at, git);
+    publish();
     const swept = opts?.sweep === false ? undefined
       : await sweepTicketWrites(realMain, home, git, { mode: 'amend', identity, expectedTip: opts?.expectedTip });
-    for (const { row, path, items } of pending) if (!swept || swept.paths.includes(path)) row.unfinished_acceptance = items;
+    for (const { row, ticket, items } of pending) {
+      const path = ticketWriteRelPath(parseTicketRef(moved.get(ticket) ?? ticket)!.feature);
+      if (!swept || swept.paths.includes(path)) row.unfinished_acceptance = items;
+    }
     return swept?.committed ? swept.sha : undefined;
   };
-  return opts?.locked ? run() : withTicketStoreLock(realMain, run);
+  return opts?.locked ? run() : withTicketStoreLock(realMain, () => withObjectiveLock(realMain, run));
 }

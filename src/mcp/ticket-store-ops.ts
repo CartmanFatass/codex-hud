@@ -3,13 +3,13 @@ import { join } from 'node:path';
 import { scanScratch } from '../cli/tickets.js';
 import { OBJECTIVE_SLUG, readObjectives } from '../collectors/objectives.js';
 import { localProjectRoots } from '../roles/projects.js';
+import { writeTicketEdit } from '../tickets/archive.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import {
-  canonicalTicketRef, legacyTicketPaths, normalizeHomePaths, parseTicketRef, readJsonTicketFeature, readTicketFeature, serializeTicketFeature,
-  splitRemovals, ticketFeaturePath, ticketNumber, ticketRef, TICKET_FEATURE, TICKET_KINDS, TICKET_ROLES,
-  TICKET_STATUSES, withTicketStoreLock, writeTicketFeature, type TicketFeatureDoc, type TicketRecord,
+  canonicalTicketRef, legacyTicketPaths, normalizeHomePaths, parseTicketRef, readJsonTicketFeature, readTicketFeature, resolveArchivedTicket,
+  splitRemovals, storedTicket, ticketFeaturePath, ticketNumber, ticketRef, TICKET_FEATURE, TICKET_KINDS, TICKET_ROLES,
+  TICKET_STATUSES, withTicketStoreLock, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
-import { linkFeature } from './local-objectives.js';
 import { extractWhatAndLiveTry, repoFieldValue, unlinkedWarning } from './local-tickets.js';
 
 function invalid(field: string): never { throw new Error(`invalid_arguments: ${field}`); }
@@ -58,11 +58,13 @@ export function getTickets(cwd: string, args: Record<string, unknown>) {
   }
   const { feature, number: n } = resolveTicketTarget(args.feature, args.ticket, 'ticket (expected feature/NN)');
   const doc = readTicketFeature(mainRoot, feature);
-  if (!doc) throw new Error(`unknown ticket feature: ${feature}`);
-  const matches = doc.tickets.filter(ticket => ticket.number === n);
-  if (!matches.length) throw new Error(`unknown ticket: ${ticketRef(feature, n)}`);
+  const matches = doc?.tickets.filter(ticket => ticket.number === n) ?? [];
   if (matches.length > 1) throw new Error(`ambiguous ticket: ${ticketRef(feature, n)}`);
-  return { ok: true, feature, ticket: matches[0] };
+  if (matches.length) return { ok: true, feature, ticket: matches[0] };
+  const archived = !doc?.mirror && resolveArchivedTicket(mainRoot, feature, n);
+  if (archived) return { ok: true, feature: archived.doc.feature, ticket: archived.record };
+  if (!doc) throw new Error(`unknown ticket feature: ${feature}`);
+  throw new Error(`unknown ticket: ${ticketRef(feature, n)}`);
 }
 
 export async function commitTickets(cwd: string, home: string) {
@@ -85,26 +87,29 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     if (!objectiveIds.has(value)) throw new Error(`unknown objective: ${value}`);
     return value;
   };
+  const existingRef = (doc: TicketFeatureDoc, { feature, number }: { feature: string; number: number }) => {
+    const local = feature === doc.feature ? doc : readJsonTicketFeature(mainRoot, feature);
+    if ((local?.tickets ?? legacyTicketPaths(mainRoot, feature)).some(t => t.number === number)) return ticketRef(feature, number);
+    const archived = !local?.mirror && resolveArchivedTicket(mainRoot, feature, number);
+    if (archived) return ticketRef(archived.doc.feature, number);
+  };
   const blockers = (value: unknown, doc: TicketFeatureDoc) => {
     if (!Array.isArray(value)) return invalid('blocked_by');
     return value.map(raw => {
       const ref = ticketNumber(raw) ? { feature: doc.feature, number: raw } : parseTicketRef(raw);
       if (!ref) return invalid(`blocked_by (invalid ticket reference: ${String(raw)})`);
-      const tickets = ref.feature === doc.feature ? doc.tickets
-        : readJsonTicketFeature(mainRoot, ref.feature)?.tickets ?? legacyTicketPaths(mainRoot, ref.feature);
-      if (!tickets.some(t => t.number === ref.number)) throw new Error(`unknown blocked_by ticket: ${raw}`);
-      return ticketRef(ref.feature, ref.number);
+      const existing = existingRef(doc, ref);
+      if (!existing) throw new Error(`unknown blocked_by ticket: ${raw}`);
+      return existing;
     });
   };
   const repairs = (value: unknown, doc: TicketFeatureDoc) => {
     if (!Array.isArray(value)) return invalid('repairs');
     return value.map(raw => {
       if (!canonicalTicketRef(raw)) return invalid(`repairs (invalid ticket reference: ${String(raw)}; expected <feature>/<NN>)`);
-      const ref = parseTicketRef(raw)!;
-      const tickets = ref.feature === doc.feature ? doc.tickets
-        : readJsonTicketFeature(mainRoot, ref.feature)?.tickets ?? legacyTicketPaths(mainRoot, ref.feature);
-      if (!tickets.some(t => t.number === ref.number)) throw new Error(`unknown repairs ticket: ${raw}`);
-      return raw;
+      const existing = existingRef(doc, parseTicketRef(raw)!);
+      if (!existing) throw new Error(`unknown repairs ticket: ${raw}`);
+      return existing;
     });
   };
   const writable = (feat: string) => {
@@ -165,22 +170,21 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       doc!.tickets.push(ticket);
       return ticket;
     });
-    // Validate the complete batch before mutating the Objective record.
-    serializeTicketFeature(doc);
-    const linked = [...new Set(tickets.flatMap(ticket => ticket.objective ?? []))];
-    if (linked.length) await linkFeature(mainRoot, home, linked, feature);
-    const path = writeTicketFeature(mainRoot, home, doc);
+    const links = new Map(tickets.flatMap(ticket => ticket.objective ? [[ticket.objective, new Set([feature])] as const] : []));
+    const moved = await writeTicketEdit(mainRoot, home, doc, links);
     const warning = unlinkedWarning(mainRoot, feature);
-    return { ok: true, tickets: tickets.map(ticket => ({ number: ticket.number, path })), ...(warning && { warning }) };
+    return { ok: true, tickets: tickets.map(({ number }) => ({ number, path: editedPath(feature, number, moved) })), ...(warning && { warning }) };
   };
 
-  const updateJson = (feature: string, item: Record<string, unknown>) => {
+  const editedPath = (feature: string, number: number, moved: ReadonlyMap<string, string>) =>
+    ticketFeaturePath(mainRoot, parseTicketRef(moved.get(ticketRef(feature, number)))?.feature ?? feature);
+  const updateJson = async (feature: string, item: Record<string, unknown>) => {
     if (!ticketNumber(item.ticket)) return invalid('ticket');
     if (!has(item, editFields)) return invalid(`update requires one of: ${editFields.join(', ')}`);
-    const doc = writable(feature);
-    if (!doc) throw new Error(`unknown ticket: ${ticketRef(feature, item.ticket)}`);
-    const ticket = doc.tickets.find(t => t.number === item.ticket);
-    if (!ticket) throw new Error(`unknown ticket: ${ticketRef(feature, item.ticket)}`);
+    const stored = storedTicket(mainRoot, ticketRef(feature, item.ticket));
+    if (stored?.doc.mirror) writable(stored.doc.feature); // Report the mirror edit refusal.
+    if (!stored?.record) throw new Error(`unknown ticket: ${ticketRef(feature, item.ticket)}`);
+    const { doc, record: ticket } = stored;
     const base = JSON.stringify(ticket), at = new Date().toISOString();
     patch(ticket, item, at);
     if (item.blocked_by !== undefined) ticket.blocked_by = blockers(item.blocked_by, doc);
@@ -211,10 +215,10 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       if (!Array.isArray(item.tick)) return invalid('tick');
       for (const id of item.tick) acceptance(id).done = true;
     }
-    const path = ticketFeaturePath(mainRoot, feature);
+    let path = ticketFeaturePath(mainRoot, doc.feature);
     if (JSON.stringify(ticket) !== base) {
       ticket.updated_at = at;
-      writeTicketFeature(mainRoot, home, doc);
+      path = editedPath(doc.feature, ticket.number, await writeTicketEdit(mainRoot, home, doc));
     }
     return { ok: true, number: ticket.number, path };
   };
@@ -256,7 +260,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
   }
   if (jsonItems.length) await json(async () => {
     for (const { index, feature, item } of jsonItems) {
-      try { updates[index] = { feature, ...updateJson(feature, item) }; }
+      try { updates[index] = { feature, ...await updateJson(feature, item) }; }
       catch (error) { failed(index, feature, item.ticket, error); }
     }
   });

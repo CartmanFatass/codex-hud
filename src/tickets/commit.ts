@@ -1,17 +1,15 @@
 /** Sweep and commit only HUD-written ticket files whose current bytes match ticket-writes.json. */
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
 import { worktreeGit } from '../collectors/worktrees.js';
+import { withObjectiveLock } from '../mcp/local-objectives.js';
 import { takeLease } from '../roles/lease.js';
 import { localProjectRoots } from '../roles/projects.js';
-import { readFileBounded } from '../utils/atomic-fs.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
 import {
-  pruneTicketWrites, readTicketWrites, sha256Bytes, ticketWriteRelPath, withTicketStoreLock,
+  pruneTicketWrites, readTicketWriteState, ticketWriteRelPath, ticketWriteSha, withTicketStoreLock,
 } from './store.js';
 
-const MAX_SWEEP_BYTES = 256 * 1024;
 export type GitRunner = (args: string[]) => Promise<string>;
 
 export interface SweepResult {
@@ -38,20 +36,6 @@ const headOf = (git: GitRunner) =>
 
 const isUnmerged = (xy: string) => /^(?:[DAU]{2}|U.|.U)$/.test(xy);
 
-function fileShaIfRegular(realMain: string, rel: string): string | undefined {
-  const full = join(realMain, rel);
-  const st = fs.lstatSync(full, { throwIfNoEntry: false });
-  if (!st || !st.isFile()) return;
-  try {
-    if (fs.realpathSync(full) !== full) return;
-    const { bytes, truncated } = readFileBounded(full, MAX_SWEEP_BYTES);
-    if (truncated) return;
-    return sha256Bytes(bytes);
-  } catch {
-    return;
-  }
-}
-
 /** True when `rel` has uncommitted/untracked/ignored changes in main that do NOT match HUD's recorded digest. */
 export async function isHandEditedInMain(mainRoot: string, rel: string, expectedSha: string | undefined, git: GitRunner): Promise<boolean> {
   const status = await git(['status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', rel]);
@@ -63,14 +47,14 @@ export async function isHandEditedInMain(mainRoot: string, rel: string, expected
   if (xy === '!!' || isUnmerged(xy)) return true;
   if (!expectedSha) return true;
   const realMain = fs.realpathSync(mainRoot);
-  return fileShaIfRegular(realMain, rel) !== expectedSha;
+  return ticketWriteSha(realMain, rel) !== expectedSha;
 }
 
 function defaultCommitMessage(keys: readonly string[]) {
   return keys.length === 1 ? `tickets: ${keys[0]}` : `tickets: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ` (+${keys.length - 3})` : ''}`;
 }
 
-/** Caller holds both `main-checkout` lease and `withTicketStoreLock(mainRoot)`. */
+/** Caller holds the `main-checkout` lease and the tickets and objective locks. */
 export async function sweepTicketWrites(
   mainRoot: string,
   home: string,
@@ -78,23 +62,25 @@ export async function sweepTicketWrites(
   opts: { mode: 'commit' | 'amend'; message?: string; identity?: string[]; expectedTip?: string },
 ): Promise<SweepResult> {
   const realMain = fs.realpathSync(mainRoot);
-  const writes = readTicketWrites(home, mainRoot);
+  const { writes, groups } = readTicketWriteState(home, mainRoot);
   const entries = Object.entries(writes);
   if (!entries.length) return { committed: false, paths: [], skipped: [] };
 
   const clean = new Map<string, string>();
-  const toCommit: { key: string; rel: string; digest: string; untracked: boolean }[] = [];
+  let toCommit: { key: string; rel: string; digest: string; untracked: boolean }[] = [];
   const skipped: string[] = [];
+  const grouped = new Set(groups.flat());
 
   for (const [key, expectedSha] of entries) {
     const rel = ticketWriteRelPath(key);
-    const actualSha = fileShaIfRegular(realMain, rel);
+    const actualSha = ticketWriteSha(realMain, rel);
     if (actualSha !== expectedSha) {
       if (actualSha !== undefined) skipped.push(rel);
       continue;
     }
     const status = await git(['status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', rel]);
     if (!status) {
+      if (grouped.has(key) && (await git(['ls-files', '-v', '-z', '--', rel])).split('\0').some(row => /^[a-zS] /.test(row))) continue;
       clean.set(key, expectedSha);
       continue;
     }
@@ -115,6 +101,14 @@ export async function sweepTicketWrites(
     toCommit.push({ key, rel, digest: expectedSha, untracked: false });
   }
 
+  const matched = new Set([...clean.keys(), ...toCommit.map(item => item.key)]);
+  const fenced = new Set(groups.filter(group => group.some(key => !matched.has(key))).flat());
+  for (const key of fenced) {
+    clean.delete(key);
+    const rel = ticketWriteRelPath(key);
+    if (!skipped.includes(rel)) skipped.push(rel);
+  }
+  toCommit = toCommit.filter(item => !fenced.has(item.key));
   if (!toCommit.length) {
     pruneTicketWrites(home, mainRoot, clean);
     return { committed: false, paths: [], skipped };
@@ -185,7 +179,7 @@ export async function commitTicketWrites(
     if (!granted) throw new Error('main-checkout lease is busy; try again after the active land finishes');
   }
   try {
-    return await withTicketStoreLock(root, async () => {
+    return await withTicketStoreLock(root, () => withObjectiveLock(root, async () => {
       const filters = await neutralizeFilters(worktreeGit, root);
       const git: GitRunner = (args) => worktreeGit(root, [...filters, ...args]);
       const res = await sweepTicketWrites(root, home, git, { mode: 'commit', message: opts?.message });
@@ -196,7 +190,7 @@ export async function commitTicketWrites(
         ...(res.sha && { commit: res.sha }),
         ...(res.skipped.length && { skipped: res.skipped }),
       };
-    });
+    }));
   } finally {
     await takeLease({ name: 'main-checkout', release: true }, lease);
   }

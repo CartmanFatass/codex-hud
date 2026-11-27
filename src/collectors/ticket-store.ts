@@ -1,7 +1,7 @@
 /** Bounded, stat-signature-cached ticket collection shared by Project, Execution and the CLI. */
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
-import { MAX_TICKET_BYTES, TICKET_FEATURE, parseTicketRef, ticketNumber, validateTicketFeature, type TicketFeatureDoc } from '../tickets/store.js';
+import { isTicketArchive, MAX_TICKET_BYTES, TICKET_FEATURE, parseTicketRef, ticketNumber, validateTicketFeature, type TicketFeatureDoc } from '../tickets/store.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import type { ProjectTicket, TicketFeature } from './project-board.js';
 import { legacyTicketEvidence, storedTicketEvidence, targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
@@ -150,7 +150,19 @@ class TicketStore {
       stamp: ++revision, features: features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug)), partial, sources,
       lookup: (ticket, feature) => {
         const ref = parseTicketRef(targetKey(feature && /^\d+$/.test(ticket) ? `${feature}/${ticket}` : ticket));
-        return ref && index.get(`${ref.feature}/${ref.number}`);
+        if (!ref) return;
+        const direct = index.get(`${ref.feature}/${ref.number}`);
+        if (direct) return direct;
+        let archived: TicketLookup | undefined;
+        for (const [slug, source] of sources) {
+          if (!('doc' in source) || source.doc.mirror || !isTicketArchive(ref.feature, slug)) continue;
+          const match = index.get(`${slug}/${ref.number}`);
+          if (match) {
+            if (archived) return; // Ambiguity is not evidence of settlement.
+            archived = match;
+          }
+        }
+        return archived;
       },
     };
     this.previous = { signature: fingerprint, scan };

@@ -5,12 +5,13 @@ import { homedir } from 'node:os';
 import { isAbsolute, join, parse, resolve, sep } from 'node:path';
 import { ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
-import { readFileBounded, writeFileAtomic, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { readFileBounded, writeFileAtomic } from '../utils/atomic-fs.js';
 import { FILTER_CONFIG_ARGS, filterOverrides, SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
 
 export const MAX_TICKET_BYTES = 64 * 1024;
 const MAX_SWEEP_INPUT_BYTES = 256 * 1024;
 const MAX_WRITES = 256;
+const MAX_WRITE_RECORD_BYTES = 128 * 1024;
 export const TICKET_FEATURE = /^[a-z0-9-]+$/;
 export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'done', 'wontfix'] as const;
 export const TICKET_KINDS = ['impl', 'flake-list', 'research', 'prototype', 'grilling', 'task'] as const;
@@ -196,9 +197,13 @@ export function validateTicketFeature(value: unknown, feature?: string): TicketF
   return doc;
 }
 
+export class TicketFeatureFull extends Error {
+  constructor(readonly feature: string) { super(`Ticket feature ${feature} exceeds 64 KiB`); }
+}
+
 export function serializeTicketFeature(doc: TicketFeatureDoc): string {
   const bytes = JSON.stringify(validateTicketFeature(doc), null, 2) + '\n';
-  if (Buffer.byteLength(bytes) > MAX_TICKET_BYTES) throw new Error(`Ticket feature ${doc.feature} exceeds 64 KiB`);
+  if (Buffer.byteLength(bytes) > MAX_TICKET_BYTES) throw new TicketFeatureFull(doc.feature);
   return bytes;
 }
 
@@ -226,48 +231,85 @@ export function readJsonTicketFeature(root: string, feature: string): TicketFeat
   }
 }
 
+export function isTicketArchive(feature: string, sibling: string): boolean {
+  return sibling.startsWith(`${feature}-done`) && /^(?:-done(?:-(?:[2-9]|[1-9]\d+))?)+$/.test(sibling.slice(feature.length));
+}
+
+export function resolveArchivedTicket(root: string, feature: string, number: number) {
+  let match: { doc: TicketFeatureDoc; record: TicketRecord } | undefined;
+  for (const slug of jsonTicketFeatureSlugs(root)) {
+    if (!isTicketArchive(feature, slug)) continue;
+    const doc = readJsonTicketFeature(root, slug);
+    const record = !doc?.mirror && doc?.tickets.find(t => t.number === number);
+    if (record && doc) {
+      if (match) throw new Error(`ambiguous ticket: ${ticketRef(feature, number)}`);
+      match = { doc, record };
+    }
+  }
+  return match;
+}
+
 export function storedTicket(root: string, ticket: unknown) {
   const ref = parseTicketRef(ticket);
   if (!ref) return;
   const doc = readJsonTicketFeature(root, ref.feature);
-  if (doc) return { doc, record: doc.tickets.find(t => t.number === ref.number) };
+  const record = doc?.tickets.find(t => t.number === ref.number);
+  if (record || doc?.mirror) return { doc: doc!, record };
+  return resolveArchivedTicket(root, ref.feature, ref.number) ?? (doc && { doc, record });
 }
 
 export function ticketWritesPath(home: string, mainRoot: string) {
   return join(home, 'projects', hash(mainRoot), 'ticket-writes.json');
 }
 const hash = (text: string | Buffer) => createHash('sha256').update(text).digest('hex');
-export const sha256Bytes = (data: string | Buffer) => hash(data);
-export const isTicketWriteKey = (key: string) => TICKET_FEATURE.test(key);
-export const ticketWriteRelPath = (key: string) => `.hud/tickets/${key}.json`;
-export function readTicketWrites(home: string, mainRoot: string): Record<string, string> {
+export const OBJECTIVE_WRITE_KEY = '@objectives';
+export const isTicketWriteKey = (key: string) => key === OBJECTIVE_WRITE_KEY || TICKET_FEATURE.test(key);
+export const ticketWriteRelPath = (key: string) => key === OBJECTIVE_WRITE_KEY ? '.hud/objectives.md' : `.hud/tickets/${key}.json`;
+
+export function readTicketWriteState(home: string, mainRoot: string): { writes: Record<string, string>; groups: string[][] } {
   try {
-    const { bytes, truncated } = readFileBounded(ticketWritesPath(home, mainRoot), 128 * 1024);
+    const { bytes, truncated } = readFileBounded(ticketWritesPath(home, mainRoot), MAX_WRITE_RECORD_BYTES);
     if (truncated) throw new Error('Ticket write record exceeds 128 KiB');
     const value = JSON.parse(bytes.toString('utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid ticket write record');
-    return Object.fromEntries(Object.entries(value).flatMap(([key, digest]) =>
+    const writes = Object.fromEntries(Object.entries(value).flatMap(([key, digest]) =>
       isTicketWriteKey(key) && typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest) ? [[key, digest] as const] : []).slice(-MAX_WRITES));
+    const groups = value['@groups'] ?? [];
+    if (!Array.isArray(groups) || groups.some(group => !Array.isArray(group) || group.length < 2 ||
+      group.some(key => typeof key !== 'string' || !Object.hasOwn(writes, key)))) throw new Error('Invalid ticket write groups');
+    return { writes, groups };
   } catch (error) {
-    if (missing(error)) return {};
+    if (missing(error)) return { writes: {}, groups: [] };
     throw error;
   }
+}
+
+export const readTicketWrites = (home: string, mainRoot: string) => readTicketWriteState(home, mainRoot).writes;
+
+function ticketWriteRecord(writes: Record<string, string>, groups: string[][]) {
+  const bytes = JSON.stringify({ ...writes, ...(groups.length && { '@groups': groups }) }) + '\n';
+  if (Buffer.byteLength(bytes) > MAX_WRITE_RECORD_BYTES) throw new Error('Ticket write record exceeds 128 KiB');
+  return bytes;
+}
+
+function saveTicketWrites(home: string, mainRoot: string, bytes: string) {
+  writeFileAtomic(ticketWritesPath(home, mainRoot), bytes, { dotPrefix: true });
 }
 
 /** Caller holds the tickets lock. Remove entries whose stored digest matches what was committed/cleaned. */
 export function pruneTicketWrites(home: string, mainRoot: string, matched: ReadonlyMap<string, string>) {
   if (!matched.size) return;
-  const current = readTicketWrites(home, mainRoot);
-  const kept = Object.entries(current).filter(([key, digest]) => matched.get(key) !== digest);
-  if (kept.length === Object.keys(current).length) return;
-  writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(kept), { dotPrefix: true });
+  const { writes, groups } = readTicketWriteState(home, mainRoot);
+  for (const [key, digest] of matched) if (writes[key] === digest) delete writes[key];
+  const kept = groups.map(group => group.filter(key => Object.hasOwn(writes, key))).filter(group => group.length > 1);
+  saveTicketWrites(home, mainRoot, ticketWriteRecord(writes, kept));
 }
 
 /** A later land/commit uses this same lock around reading and sweeping the write record. */
 export const withTicketStoreLock = <T>(mainRoot: string, fn: () => T | Promise<T>) =>
   withAbstractLock('tickets', mainRoot, fn, { timeoutMs: 10_000 });
 
-function isCleanInGitSync(mainRoot: string, rel: string): boolean {
+function isCleanInGitSync(mainRoot: string, rel: string, creating = false): boolean {
   const opts = { cwd: mainRoot, env: safeGitEnv(process.env), encoding: 'utf8' as const, timeout: 5000 };
   const cfg = spawnSync('git', [...SAFE_GIT_ARGS, ...FILTER_CONFIG_ARGS], opts);
   let filters: string[];
@@ -279,6 +321,7 @@ function isCleanInGitSync(mainRoot: string, rel: string): boolean {
   } else {
     return false;
   }
+  if (creating && spawnSync('git', [...SAFE_GIT_ARGS, ...filters, 'check-ignore', '-q', '--', rel], opts).status !== 1) return false;
   const st = spawnSync('git', [...SAFE_GIT_ARGS, ...filters, 'status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', rel], opts);
   if (st.status !== 0 || st.stdout) return false;
   const ls = spawnSync('git', [...SAFE_GIT_ARGS, 'ls-files', '-v', '-z', '--', rel], opts);
@@ -286,41 +329,82 @@ function isCleanInGitSync(mainRoot: string, rel: string): boolean {
   return !(ls.stdout ?? '').split('\0').some(row => /^[a-zS] /.test(row));
 }
 
-function isSweepEligibleBeforeWrite(mainRoot: string, rel: string, path: string, recordedSha: string | undefined): boolean {
-  const st = fs.lstatSync(path, { throwIfNoEntry: false });
-  if (!st) return true;
-  if (!st.isFile()) return false;
+export function ticketWriteSha(realMain: string, rel: string): string | undefined {
+  const path = join(realMain, rel);
   try {
-    if (fs.realpathSync(path) !== join(fs.realpathSync(mainRoot), rel)) return false;
+    if (!fs.lstatSync(path).isFile() || fs.realpathSync(path) !== path) return;
     const { bytes, truncated } = readFileBounded(path, MAX_SWEEP_INPUT_BYTES);
-    if (truncated) return false;
-    if (recordedSha !== undefined && hash(bytes) === recordedSha) return true;
-  } catch {
-    return false;
+    if (!truncated) return hash(bytes);
+  } catch { /* Unknown bytes cannot authorize a sweep. */ }
+}
+
+function isSweepEligibleBeforeWrite(mainRoot: string, rel: string, recordedSha: string | undefined, archive: boolean): boolean {
+  const path = join(mainRoot, rel);
+  if (!fs.lstatSync(path, { throwIfNoEntry: false })) return !archive || isCleanInGitSync(mainRoot, rel, true);
+  const sha = ticketWriteSha(fs.realpathSync(mainRoot), rel);
+  return sha !== undefined && (sha === recordedSha || isCleanInGitSync(mainRoot, rel));
+}
+
+export interface TicketWrite { key: string; bytes: string; mode?: number; }
+
+/** Validate and register a full write set before publishing any of its files. Caller holds the tickets lock. */
+export function prepareTicketWrites(mainRoot: string, home: string, files: readonly TicketWrite[], archive = false) {
+  directory(join(mainRoot, '.hud'));
+  directory(ticketDir(mainRoot));
+  if (!files.length) return () => {};
+  const { writes, groups } = readTicketWriteState(home, mainRoot);
+  const paths = files.map(file => ({ ...file, rel: ticketWriteRelPath(file.key) }));
+  const archiveKeys = new Set(archive ? files.map(file => file.key) : []);
+  for (const { key, rel, bytes } of paths) {
+    const eligible = isSweepEligibleBeforeWrite(mainRoot, rel, Object.hasOwn(writes, key) ? writes[key] : undefined, archive);
+    if (archive && !eligible) throw new Error(`Cannot archive tickets in ${rel}: uncommitted hand edit present; commit or revert it and retry`);
+    if (eligible) {
+      delete writes[key];
+      writes[key] = hash(bytes);
+    } else if (!groups.some(group => group.includes(key))) delete writes[key];
+    // A hand edit must not dissolve a pending archive group: its old digest will fence the whole set.
   }
-  return isCleanInGitSync(mainRoot, rel);
+  const retained = groups.filter(group => {
+    if (!group.some(key => archiveKeys.has(key))) return true;
+    for (const key of group) {
+      if (!archiveKeys.has(key)) {
+        const rel = ticketWriteRelPath(key);
+        if (ticketWriteSha(fs.realpathSync(mainRoot), rel) !== writes[key]) {
+          throw new Error(`Cannot archive tickets in ${rel}: pending archive has an uncommitted hand edit`);
+        }
+      }
+      archiveKeys.add(key);
+    }
+    return false;
+  });
+  if (archiveKeys.size > MAX_WRITES) throw new Error('Ticket archive write set exceeds 256 files');
+  if (archiveKeys.size > 1) retained.push([...archiveKeys]);
+  const newest = [...Object.keys(writes).filter(key => !archiveKeys.has(key)), ...archiveKeys];
+  const expired = new Set(newest.slice(0, Math.max(0, newest.length - MAX_WRITES)));
+  // Evict a pending group together, never only its source or only its destination.
+  const kept = retained.filter(group => {
+    if (!group.some(key => expired.has(key))) return true;
+    for (const key of group) expired.add(key);
+    return false;
+  });
+  for (const key of expired) delete writes[key];
+  if (files.length === 1 && !archive && !Object.hasOwn(writes, files[0].key) && !fs.existsSync(ticketWritesPath(home, mainRoot))) {
+    return () => writeFileAtomic(join(mainRoot, paths[0].rel), paths[0].bytes, { dotPrefix: true });
+  }
+  const receipt = ticketWriteRecord(writes, kept);
+  // Nest staging hooks so every temporary file exists before the receipt is recorded and renames begin.
+  const publish = (i: number): void => {
+    const file = paths[i];
+    if (!file) { saveTicketWrites(home, mainRoot, receipt); return; }
+    writeFileAtomic(join(mainRoot, file.rel), file.bytes, { dotPrefix: true, mode: file.mode, beforeRename: () => publish(i + 1) });
+  };
+  return () => publish(0);
 }
 
 /** Caller holds the tickets lock across the read, edit and write. */
 export function writeTicketFeature(mainRoot: string, home: string, doc: TicketFeatureDoc) {
-  const bytes = serializeTicketFeature(doc), path = ticketFeaturePath(mainRoot, doc.feature);
-  const rel = `.hud/tickets/${doc.feature}.json`;
-  directory(join(mainRoot, '.hud'));
-  directory(ticketDir(mainRoot));
-  const currentWrites = readTicketWrites(home, mainRoot);
-  const eligible = isSweepEligibleBeforeWrite(mainRoot, rel, path, currentWrites[doc.feature]);
-  const writes = Object.entries(currentWrites).filter(([feature]) => feature !== doc.feature);
-  if (eligible) writes.push([doc.feature, hash(bytes)]);
-  const updateWrites = eligible || Object.hasOwn(currentWrites, doc.feature);
-  writeFileAtomic(path, bytes, {
-    dotPrefix: true,
-    ...(updateWrites && {
-      beforeRename: () => {
-        // A failed publish cannot authorize sweeping old bytes with the new digest.
-        writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(writes.slice(-MAX_WRITES)), { dotPrefix: true });
-      },
-    }),
-  });
+  const path = ticketFeaturePath(mainRoot, doc.feature);
+  prepareTicketWrites(mainRoot, home, [{ key: doc.feature, bytes: serializeTicketFeature(doc) }])();
   return path;
 }
 
@@ -334,14 +418,19 @@ export function legacyTicketPaths(root: string, feature: string) {
   }).sort((a, b) => a.number - b.number);
 }
 
+function jsonTicketFeatureSlugs(root: string) {
+  const json = ticketDir(root);
+  return directory(join(root, '.hud')) && directory(json) ? fs.readdirSync(json).flatMap(name =>
+    name.endsWith('.json') && TICKET_FEATURE.test(name.slice(0, -5)) ? [name.slice(0, -5)] : []) : [];
+}
+
 export function ticketFeatureSlugs(root: string) {
-  const scratch = join(root, '.scratch'), json = ticketDir(root);
-  const slugs = new Set(directory(scratch) ? fs.readdirSync(scratch, { withFileTypes: true })
-    .filter(entry => entry.isDirectory()).map(entry => entry.name) : []);
-  if (directory(join(root, '.hud')) && directory(json)) for (const entry of fs.readdirSync(json, { withFileTypes: true })) {
-    if (entry.name.endsWith('.json')) slugs.add(entry.name.slice(0, -5));
+  const scratch = join(root, '.scratch');
+  const slugs = new Set(jsonTicketFeatureSlugs(root));
+  if (directory(scratch)) for (const entry of fs.readdirSync(scratch, { withFileTypes: true })) {
+    if (entry.isDirectory() && TICKET_FEATURE.test(entry.name)) slugs.add(entry.name);
   }
-  return [...slugs].filter(slug => TICKET_FEATURE.test(slug)).sort();
+  return [...slugs].sort();
 }
 
 export const LEGACY_TICKET_HEADER_END = /^(?:[ \t]*\*\*What to build:\*\*|##(?:[ \t]|\r?$))/im;

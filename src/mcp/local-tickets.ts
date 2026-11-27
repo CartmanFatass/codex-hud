@@ -579,9 +579,11 @@ export async function recordUnattendedAcceptance(
       const ref = parseTicketRef(ticket);
       if (!ref) continue;
       try {
-        const dirty = dirtyDocs.get(ref.feature);
-        const doc = dirty?.doc ?? readJsonTicketFeature(mainRoot, ref.feature);
-        if (!doc || doc.mirror) continue;
+        const stored = storedTicket(mainRoot, ticket);
+        if (!stored?.record || stored.doc.mirror) continue;
+        const { feature } = stored.doc;
+        const dirty = dirtyDocs.get(feature);
+        const doc = dirty?.doc ?? stored.doc;
         const record = doc.tickets.find(t => t.number === ref.number);
         if (!record) continue;
         if (record.accepted?.flow === flowId) {
@@ -596,7 +598,7 @@ export async function recordUnattendedAcceptance(
         record.accepted = { at, by: 'lead', flow: flowId, ...(summary && { verdict: summary }) };
         record.updated_at = at;
         if (dirty) dirty.tickets.push(ticket);
-        else dirtyDocs.set(ref.feature, { doc, tickets: [ticket] });
+        else dirtyDocs.set(feature, { doc, tickets: [ticket] });
       } catch (error) {
         failed.push({ ticket, error: error instanceof Error ? error.message : String(error) });
       }

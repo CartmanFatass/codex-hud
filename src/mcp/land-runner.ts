@@ -21,6 +21,7 @@ import { withTicketStoreLock } from '../tickets/store.js';
 import { reapWorktree } from './managed-worktree.js';
 import { checkLandingRecords, prepareLandRecords, recordLanding } from './land-records.js';
 import { repairLand } from './land-repair.js';
+import { withObjectiveLock } from './local-objectives.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 import { LandOutput } from './land-evidence.js';
 import { collectAndRecordLandFlakes, retryPendingFlakeCollections } from './land-flakes.js';
@@ -416,14 +417,17 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     const trackerFilters = new Map([[mainRoot, filters]]);
     for (const [tracker] of groups) if (tracker !== mainRoot) trackerFilters.set(tracker, await neutralizeFilters(git, tracker));
     const at = new Date().toISOString();
-    // Opposite-direction lands may need the same ticket locks, even though their checkout leases differ.
+    // Opposite-direction lands may need the same locks, even though their checkout leases differ.
     const roots = [...groups.keys()].sort();
     const withRecordLocks = (run: () => Promise<void>, i = 0): Promise<void> =>
-      i < roots.length ? withTicketStoreLock(roots[i], () => withRecordLocks(run, i + 1)) : run();
+      i < roots.length ? withTicketStoreLock(roots[i], () => withObjectiveLock(roots[i], () => withRecordLocks(run, i + 1))) : run();
     await withRecordLocks(async () => {
       for (const [tracker, entries] of groups) {
         const records = tracker === mainRoot ? entries : entries.map(entry => ({ ...entry, commit: trainTips?.get(entry.row) ?? landed }));
-        await checkLandingRecords(tracker, home, records, target, c.gate.length, trackerFilters.get(tracker)!, at, { locked: true });
+        const archives = await checkLandingRecords(tracker, home, records, target, c.gate.length, trackerFilters.get(tracker)!, at, { locked: true });
+        if (archives && tracker === mainRoot && landedPaths.includes('.hud/objectives.md')) {
+          throw new Error('Cannot archive tickets while the same land changes .hud/objectives.md; land the Objective edit separately');
+        }
       }
       // The judged head or report can change while waiting for the ticket locks.
       const fenced = members.filter(row => row.approval);
