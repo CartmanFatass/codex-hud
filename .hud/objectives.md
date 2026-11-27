@@ -54,7 +54,7 @@
 ## unattended: 无人值守服务：你选定目标后，工单队列在没人时继续推进，只在删除或改 spec 时交回
 
 **State:** active
-**Features:** unattended, chores, chores-done, chores-done-2, mcp-latency
+**Features:** unattended, unattended-done, chores, chores-done, chores-done-2, mcp-latency
 
 ## interaction: 单项目执行页、选中文字直达 job、通用状态栏和精细交互
 
