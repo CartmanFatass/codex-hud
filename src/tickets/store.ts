@@ -8,6 +8,7 @@ import { readFileBounded, writeFileAtomic, writeJsonPrivate } from '../utils/ato
 const MAX_BYTES = 64 * 1024;
 const MAX_WRITES = 256;
 export const TICKET_FEATURE = /^[a-z0-9-]+$/;
+export const LEGACY_TICKET_PATH = /^\.scratch\/[a-z0-9-]+\/issues\/\d+-[^/]+\.md$/;
 export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'done', 'wontfix'] as const;
 export const TICKET_KINDS = ['impl', 'flake-list', 'research', 'prototype', 'grilling', 'task'] as const;
 export const TICKET_ROLES = ['imp', 'frontend-imp'] as const;
@@ -163,7 +164,10 @@ export function storedTicket(root: string, ticket: unknown) {
 export function ticketWritesPath(home: string, mainRoot: string) {
   return join(home, 'projects', hash(mainRoot), 'ticket-writes.json');
 }
-const hash = (text: string) => createHash('sha256').update(text).digest('hex');
+const hash = (text: string | Buffer) => createHash('sha256').update(text).digest('hex');
+export const sha256Bytes = (data: string | Buffer) => hash(data);
+export const isTicketWriteKey = (key: string) => TICKET_FEATURE.test(key) || LEGACY_TICKET_PATH.test(key);
+export const ticketWriteRelPath = (key: string) => TICKET_FEATURE.test(key) ? `.hud/tickets/${key}.json` : key;
 export function readTicketWrites(home: string, mainRoot: string): Record<string, string> {
   try {
     const { bytes, truncated } = readFileBounded(ticketWritesPath(home, mainRoot), 128 * 1024);
@@ -171,11 +175,20 @@ export function readTicketWrites(home: string, mainRoot: string): Record<string,
     const value = JSON.parse(bytes.toString('utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid ticket write record');
     return Object.fromEntries(Object.entries(value).flatMap(([key, digest]) =>
-      TICKET_FEATURE.test(key) && typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest) ? [[key, digest] as const] : []).slice(-MAX_WRITES));
+      isTicketWriteKey(key) && typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest) ? [[key, digest] as const] : []).slice(-MAX_WRITES));
   } catch (error) {
     if (missing(error)) return {};
     throw error;
   }
+}
+
+/** Caller holds the tickets lock. Remove entries whose stored digest matches what was committed/cleaned. */
+export function pruneTicketWrites(home: string, mainRoot: string, matched: ReadonlyMap<string, string>) {
+  if (!matched.size) return;
+  const current = readTicketWrites(home, mainRoot);
+  const kept = Object.entries(current).filter(([key, digest]) => matched.get(key) !== digest);
+  if (kept.length === Object.keys(current).length) return;
+  writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(kept), { dotPrefix: true });
 }
 
 /** A later land/commit uses this same lock around reading and sweeping the write record. */
@@ -192,6 +205,22 @@ export function writeTicketFeature(mainRoot: string, home: string, doc: TicketFe
     // A failed publish cannot authorize sweeping old bytes with the new digest.
     writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(writes.slice(-MAX_WRITES)), { dotPrefix: true });
   } });
+  return path;
+}
+
+/** Caller holds the tickets lock. Write a legacy Markdown ticket and record its digest for sweeping. */
+export function writeLegacyTicket(mainRoot: string, home: string, relPath: string, bytes: string, mode?: number) {
+  if (!LEGACY_TICKET_PATH.test(relPath)) throw new Error(`Invalid legacy ticket path: ${relPath}`);
+  const path = join(mainRoot, relPath);
+  const writes = Object.entries(readTicketWrites(home, mainRoot)).filter(([key]) => key !== relPath);
+  writes.push([relPath, hash(bytes)]);
+  writeFileAtomic(path, bytes, {
+    dotPrefix: true,
+    ...(mode !== undefined && { mode }),
+    beforeRename: () => {
+      writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(writes.slice(-MAX_WRITES)), { dotPrefix: true });
+    },
+  });
   return path;
 }
 
@@ -290,6 +319,16 @@ export function renderTicketBrief(ticket: TicketRecord, feature: Pick<TicketFeat
     ...(objective ? [`**Objective:** ${objective}`] : []),
     ...(feature.spec_path ? [`**Spec:** ${feature.spec_path}`] : []),
     '', `**What to build:** ${ticket.what}`, '',
+    ...(ticket.cases?.length ? [
+      '### Cases', '',
+      ...ticket.cases.map(c => {
+        const subject = c.case_name
+          ? (c.test ? `\`${c.case_name}\` (${c.test})` : `\`${c.case_name}\``)
+          : (c.test ? `unidentified failure (\`${c.step}\`, ${c.test})` : `unidentified failure (\`${c.step}\`)`);
+        const meta = [c.flow && `flow \`${c.flow}\``, c.log && `log \`${c.log}\``].filter(Boolean).join(', ');
+        return meta ? `- ${subject} — ${meta}` : `- ${subject}`;
+      }), '',
+    ] : []),
     ...ticket.acceptance.map(item => `- [${item.done ? 'x' : ' '}] ${item.text}`),
     ...(ticket.acceptance.length ? [''] : []), '## Comments', '',
     ...(ticket.comments.length ? [...ticket.comments.map(comment => `- ${comment.at} ${comment.author}: ${comment.text}`), ''] : []),

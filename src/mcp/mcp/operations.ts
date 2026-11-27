@@ -44,9 +44,7 @@ import { isComposedId } from '../../workflows/composed-state.js';
 import { answerComposed, callWorkflow } from '../composed-workflow.js';
 import { startLand, landTask } from '../land.js';
 import { readyTickets, syncTickets } from '../local-tickets.js';
-import { isTicketEditId } from '../ticket-edit-state.js';
-import { readTicketEditReceipt } from '../ticket-edit-queue.js';
-import { editTickets, getTickets } from '../ticket-store-ops.js';
+import { commitTickets, editTickets, getTickets } from '../ticket-store-ops.js';
 import { editObjectives, type RequestCaller } from '../local-objectives.js';
 import { callSchedule } from '../local-schedule.js';
 import { answerTicketQueueHandback, resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask } from '../ticket-queue.js';
@@ -609,10 +607,9 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     }
     if (args.op === 'ready') return readyTickets(cwd, jobCache, hudHome);
     if (args.op === 'sync') return syncTickets(cwd);
+    if (args.op === 'commit') return commitTickets(cwd, hudHome);
     if (args.op === 'get') return getTickets(cwd, args);
-    return editTickets(cwd, args, hudHome, isWorker ? 'lead' : 'main', callerPane, () => {
-      if (callerPane && !session.taskClient) void ensureQueueWatcher(callerPane, hudHome);
-    });
+    return editTickets(cwd, args, hudHome, isWorker ? 'lead' : 'main');
   }
   if (args.detail !== undefined && typeof args.detail !== 'boolean') throw new Error('invalid_arguments: detail');
   const detail = args.detail === true;
@@ -780,7 +777,6 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
 
 async function callJob(name: string, args: Args, detail: boolean, scan: JobScan) {
   const id = required(args, 'job');
-  if (name === 'hud_read' && isTicketEditId(id)) return readTicketEditReceipt(hudHome, id);
   if (name === 'hud_read' && isBatchId(id)) return batchView(hudHome, id, callerPane);
   if (name === 'hud_read' && isFlowId(id)) {
     const flow = await recoverLand(hudHome, id);
@@ -1212,7 +1208,7 @@ export async function withChanges(value: unknown, markExhaustion: boolean, scan:
 }
 
 export function mutationKey(name: string, args: Args): string | null {
-  if (name === 'hud_tickets' && (args.op === 'sync' || args.op === 'run'))
+  if (name === 'hud_tickets' && (args.op === 'sync' || args.op === 'run' || args.op === 'commit'))
     return isWorker ? 'tickets' : `tickets:${fs.realpathSync(jobCwd(args))}`;
   if ((name === 'hud_respond' && args.answers !== undefined) || (name === 'hud_close' && args.job === undefined)) return null;
   if (name !== 'hud_respond' && name !== 'hud_close') return null;

@@ -13,7 +13,7 @@ import { parseWorktreeList, worktreeGit as git } from '../collectors/worktrees.j
 import { takeLease, type LandLease } from '../roles/lease.js';
 import type { CommandResult, Launch } from './land-custodian.js';
 import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safety.js';
-import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, landOwnerGone, readLand, setLandStep, SPEC_CHANGE_REFUSAL, writeLand, type LandFlow, type LandRerun } from './land-state.js';
+import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, landOwnerGone, readLand, setLandStep, SPEC_CHANGE_REFUSAL, TICKET_DIFF_REFUSAL, writeLand, type LandFlow, type LandRerun } from './land-state.js';
 import { canRepairSealedStep } from '../workflows/engine.js';
 import { runLock, stopRequested } from '../workflows/store.js';
 import { reapWorktree } from './managed-worktree.js';
@@ -22,7 +22,6 @@ import { repairLand } from './land-repair.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 import { LandOutput } from './land-evidence.js';
 import { collectAndRecordLandFlakes, retryPendingFlakeCollections } from './land-flakes.js';
-import { drainPendingTicketEdits } from './ticket-edit-queue.js';
 
 class CommandError extends Error {
   constructor(message: string, readonly evidence: ReturnType<LandOutput['evidence']>) { super(message); }
@@ -97,7 +96,11 @@ function command(cwd: string, bin: string, argv: string[], tracked?: { deadlineM
   });
 }
 const fields = (out: string) => out.split('\0').filter(Boolean);
-const isMetadataPath = (path: string) => path === 'STATE.md' || path === 'docs/handoff/STATE.md' ||
+const isMetadataPath = (path: string) =>
+  path === 'STATE.md' ||
+  path === 'docs/handoff/STATE.md' ||
+  path === '.hud/objectives.md' ||
+  /^\.hud\/tickets\/[a-z0-9-]+\.json$/.test(path) ||
   /^\.scratch\/[a-z0-9-]+\/issues\/\d+-[^/]+\.md$/.test(path);
 async function metadataOnly(cwd: string, from: string, to: string) {
   // Raw NUL-delimited records pair modes with paths. Only plain metadata files are exempt.
@@ -239,12 +242,6 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
   }
   let acquired = false;
   let custodianFailed = false;
-  let handoffDrained = true;
-  const drainHandoff = async () => {
-    if (handoffDrained || custodianFailed || members.some(row => row.publish_pending)) return;
-    handoffDrained = true;
-    await drainPendingTicketEdits(home, main).catch(() => {});
-  };
   const acquire = async () => {
     while (!acquired) {
       const r = await takeLease({ name: 'main-checkout', wait_s: 1 }, lease);
@@ -288,6 +285,13 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     if (f.protected_spec && await git(main, ['diff', '--name-only', '--no-renames', base, tip, '--', 'docs/spec.md']))
       throw Error(SPEC_CHANGE_REFUSAL);
   };
+  const touchesTickets = async (base: string, tip: string) => {
+    if (await git(main, ['diff', '--name-only', '--no-renames', '-z', base, tip, '--', '.hud/tickets'])) return true;
+    return Boolean(await git(main, ['log', '--format=', '--name-only', '--no-renames', '-m', '--first-parent', '-z', `${base}..${tip}`, '--', '.hud/tickets']));
+  };
+  const protectTickets = async (base: string, tip: string) => {
+    if (await touchesTickets(base, tip)) throw Error(TICKET_DIFF_REFUSAL);
+  };
   async function prepare() {
     f.state = 'running'; step('prepare');
     await checkSource(f);
@@ -310,6 +314,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     }
     const tested = await head(integration);
     await protectSpec(f.base_sha, tested);
+    await protectTickets(f.base_sha, tested);
     await gate(tested, await tree(tested));
     return who;
   }
@@ -317,11 +322,6 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     checkCancel(); await checkSources();
     const tested = f.tested_sha!, base = f.base_sha!;
     let landed = tested;
-    if (!trainTips) {
-      startStep('records');
-      landed = (await recordLanding(integration, join(home, 'jobs', f.job), base, c.gate.length, who)) ?? tested;
-      endStep();
-    }
     checkCancel(); startStep('fast-forward');
     const touched = async (from: string, to: string) => [...new Set([
       ...fields(await git(main, ['diff', '--name-only', '--no-renames', '-z', from, to, '--'])),
@@ -348,7 +348,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       const mainPaths = await touched(base, current);
       if (pathsOverlap(paths, mainPaths)) throw Error('Main checkout is not at the recorded base tip');
       checkCancel();
-      // Always replay the original tested patches, not a prior replay's ticket amendment.
+      // Always replay the original tested patches.
       const picks = await picksFor(base, tested);
       if (!picks.length) throw Error('Main checkout is not at the recorded base tip');
       await git(main, ['worktree', 'remove', '--force', '--', integration], 120000);
@@ -358,10 +358,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
           checkCancel();
           await command(integration, 'git', [...SAFE_GIT_ARGS, ...filters, ...who, 'cherry-pick', '--no-gpg-sign', sha]);
         }
-        const replayed = await head(integration);
-        landed = (await recordLanding(integration, join(home, 'jobs', f.job), current, c.gate.length, who)) ?? replayed;
-        if (landed !== replayed && pathsOverlap(await touched(replayed, landed), mainPaths))
-          throw Error('Main checkout is not at the recorded base tip');
+        landed = await head(integration);
       } catch (e) {
         if (f.state === 'cancelled') throw e;
         if (e instanceof CommandError) throw new CommandError('Main checkout is not at the recorded base tip', e.evidence);
@@ -378,11 +375,12 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         landedPaths = await touched(target, landed);
       }
       await protectSpec(target, landed);
+      await protectTickets(target, landed);
       const published = await tree(landed);
       for (const row of members) row.published_tree = published;
       const regate = published !== f.tested_tree && !await metadataOnly(main, f.tested_tree!, published);
       if (regate) {
-        // Disjoint paths can still interact. Gate the exact candidate, including the ticket update.
+        // Disjoint paths can still interact. Gate the exact candidate.
         await gate(landed, published);
         step('fast-forward');
       }
@@ -407,11 +405,22 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       }
       throw error;
     }
+    endStep();
+    startStep('records');
     const at = new Date().toISOString();
+    const preAmend = landed;
+    const amended = await recordLanding(main, home, members.map(row => ({ job: row.job, flow: row.flow })), target, c.gate.length, who, filters, at);
+    if (amended) {
+      landed = amended;
+      const amendedTree = await tree(landed);
+      for (const row of members) row.published_tree = amendedTree;
+    }
     for (const row of members) {
       if (target !== base) row.replayed_onto = target;
       if (trainTips) row.published_sha = landed;
-      row.landed_sha = trainTips?.get(row) ?? landed; row.landed_at = at;
+      const tip = trainTips?.get(row);
+      row.landed_sha = !tip || tip === preAmend ? landed : tip;
+      row.landed_at = at;
       delete row.publish_pending;
       writeLand(home, row);
     }
@@ -461,7 +470,6 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     }
     // Publish terminal state, final step, cleanup note and timing in one atomic flow write.
     endStep(true, false);
-    await drainHandoff();
     for (const row of members) row.state = 'completed';
     step('done');
   }
@@ -525,6 +533,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
           picks = await picksFor(base, boarded.source_sha);
         } catch { continue; }
         if (!picks.length || cancelled(boarded)) continue;
+        const beforePick = await head(integration);
         try {
           await command(integration, 'git', [...SAFE_GIT_ARGS, ...who, 'cherry-pick', '--no-gpg-sign', ...picks]);
         } catch (e) {
@@ -532,8 +541,12 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
           await git(integration, ['cherry-pick', '--abort']);
           continue;
         }
-        // Fold each ticket into its own tip in the disposable checkout. Publish it only after green.
-        tips.set(boarded, (await recordLanding(integration, join(home, 'jobs', boarded.job), base, c.gate.length, who)) ?? await head(integration));
+        const afterPick = await head(integration);
+        if (await touchesTickets(beforePick, afterPick)) {
+          await git(integration, ['reset', '--hard', beforePick]);
+          continue;
+        }
+        tips.set(boarded, afterPick);
       }
       if (tips.size) {
         members = [...tips.keys()]; f = members[0];
@@ -565,16 +578,13 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       }
     }
     if (publishing && members.some(row => row.flow === own.flow)) return true;
-    await drainHandoff();
     f = own; members = [own]; integration = scratch(own.flow); publishing = false;
     return false;
   }
   try {
     for (;;) {
       if (!await acquire()) return;
-      handoffDrained = false;
       if (await train()) break;
-      handoffDrained = false;
       checkCancel();
       let who: string[];
       try { who = await prepare(); }
@@ -590,7 +600,6 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         f.error = e.message; f.tail = e.tail;
         // Only the helper-created scratch checkout is disposable, never the source or main.
         await git(main, ['worktree', 'remove', '--force', '--', integration], 120000);
-        await drainHandoff();
         await takeLease({ name: 'main-checkout', release: true }, lease); acquired = false;
         await repairLand(home, f, checkCancel);
         f.source_sha = await head(wt.root);
@@ -608,7 +617,6 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     fail(e);
   } finally {
     if (acquired) {
-      await drainHandoff();
       await takeLease({ name: 'main-checkout', release: true }, lease);
     }
   }

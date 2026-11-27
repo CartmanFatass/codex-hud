@@ -44,6 +44,7 @@ function computeFlakeInputStamp(home: string, root: string, feature: string, pen
   ];
   for (const { flow } of pending) parts.push(`f:${flow}=${statStamp(join(home, 'flows', `${flow}.json`))}`);
   if (activeJob) parts.push(`j:${activeJob}=${statStamp(join(home, 'jobs', activeJob, 'STATUS.json'))}`);
+  parts.push(`tj=${statStamp(join(root, '.hud', 'tickets', `${feature}.json`))}`);
   const issues = join(root, '.scratch', feature, 'issues');
   parts.push(`is=${statStamp(issues)}`);
   try {
@@ -65,6 +66,15 @@ function computeInputStamp(home: string, control: UnattendedControl, runIds: rea
   ];
   for (const id of runIds) parts.push(`${id}=${statStamp(join(home, 'flows', `${id}.json`))}`);
   for (const id of liveJobIds) parts.push(`j:${id}=${statStamp(join(home, 'jobs', id, 'STATUS.json'))}`);
+  const ticketsDir = join(control.root, '.hud', 'tickets');
+  const ticketsSt = fs.lstatSync(ticketsDir, { throwIfNoEntry: false });
+  if (ticketsSt?.isDirectory()) {
+    parts.push(`t=${ticketsSt.mtimeMs}`);
+    try {
+      const files = fs.readdirSync(ticketsDir, { withFileTypes: true }).filter(e => e.isFile() && e.name.endsWith('.json')).sort((a, b) => a.name.localeCompare(b.name));
+      for (const f of files) parts.push(`tj:${f.name}=${statStamp(join(ticketsDir, f.name))}`);
+    } catch { parts.push('tickets-err'); }
+  }
   const scratch = join(control.root, '.scratch');
   const scratchSt = fs.lstatSync(scratch, { throwIfNoEntry: false });
   if (scratchSt?.isDirectory()) {
@@ -229,7 +239,8 @@ function watchTargets(home: string, control: UnattendedControl | undefined): Wat
   if (fs.existsSync(flows)) targets.push({ dir: flows, filter: file => !file || /^[qf][a-f0-9]{16}(?:-\d+)?\.json$/.test(file) });
   if (control?.root) {
     targets.push(
-      { dir: join(control.root, '.hud'), filter: file => !file || file === 'objectives.md' || file === 'project.json' },
+      { dir: join(control.root, '.hud'), filter: file => !file || file === 'objectives.md' || file === 'project.json' || file === 'tickets' },
+      { dir: join(control.root, '.hud', 'tickets'), filter: file => !file || file.endsWith('.json') },
       { dir: join(control.root, '.scratch'), recursive: true },
     );
   }

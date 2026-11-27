@@ -60,6 +60,7 @@ export async function main(args: readonly string[], io: HudIO): Promise<number> 
           '       hud setup --remove [--cwd DIR]  Drop project registration\n' +
           '       hud tickets show <feature>[/<NN>]  Print a feature or ticket as Markdown\n' +
           '       hud tickets sync [--cwd DIR]  Mirror GitHub parent/sub-issues into .scratch/\n' +
+          '       hud tickets commit [--cwd DIR]  Commit HUD-written ticket files in main\n' +
           '       hud unattended --help     Keep selected Objectives moving without a main session\n' +
           '       hud watch [--all]         Stream job change lines for this pane (or all jobs)\n' +
           '       hud act answer|try|retry|stop|pause|resume  Owner actions from a command (--help)\n' +

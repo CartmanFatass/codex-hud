@@ -1,7 +1,6 @@
 /** MCP request handling and generation handoff. */
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import { paneInfo } from '../../roles/notify.js';
-import { sharedRoot } from '../../roles/projects.js';
 import type { Job } from '../job-contracts.js';
 import type { RequestCaller } from '../local-objectives.js';
 import * as workerTools from '../../worker/tools.js';
@@ -13,7 +12,6 @@ import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js'
 import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
 import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
 import { compactResult } from './result-text.js';
-import { resumeTicketEdits, stopTicketEdits, ticketEditWakeFailures } from '../ticket-edit-queue.js';
 import { ownStatuslineStrip } from '../../statusline-parity/strip.js';
 import { reportMainPaneGroup } from '../../runtime/pane-group.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
@@ -34,15 +32,6 @@ function startStatuslineStrip() {
 function isLeadWorker(): boolean {
   if (!worker) return false;
   try { return worker.workerJob().job.role === 'lead'; } catch { return false; }
-}
-function resumeManagedTicketEdits(failures?: Parameters<typeof resumeTicketEdits>[1]) {
-  if (session.resumeRefusal) return;
-  if (!worker) { resumeTicketEdits(hudHome, failures); return; }
-  try {
-    const { job } = worker.workerJob();
-    const root = job.role === 'lead' ? (job.project_root || job.cwd) : undefined;
-    if (root) resumeTicketEdits(hudHome, failures, sharedRoot(root));
-  } catch { /* Unavailable worker receipt: skip ticket-edit resume. */ }
 }
 const leadWorkerTools = new Set(['hud_report', 'hud_progress']);
 const leadBlockedTools = new Set(['hud_land', 'hud_workflow']);
@@ -300,7 +289,7 @@ async function snapshot() {
   pruneCreatedJobs(session.createdJobs, (id) => !!findJob(id));
   pruneLandTasks(landTasks, landActive);
   pruneTasks(tasks, Date.now(), evictTask);
-  return { version: 1, scoutedCreatePending: inlinePending(), ticketEditFailures: ticketEditWakeFailures(), toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
+  return { version: 1, scoutedCreatePending: inlinePending(), toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
     callerHarness: session.callerHarness, sentConventionVersion: session.sentConventionVersion, sentCreateHint: session.sentCreateHint, createdJobs: session.createdJobs, cursor: session.cursor, modLive: session.modLive, triesAt: tries.delivered, answersAt: answers.offset };
 }
 export function openRuntime() {
@@ -313,7 +302,6 @@ export function openRuntime() {
           session.cursor = new Map(sessionRows(false).map((row) => [row.job, row]));
           void reportMainPaneGroup(process.cwd(), process.env, hudHome);
         }
-        resumeManagedTicketEdits();
         return;
       }
       if (state.version !== 1) throw new Error('incompatible MCP session handoff');
@@ -338,12 +326,10 @@ export function openRuntime() {
         resumeTaskReceipts();
       }
       await syncPanelDelivery();
-      resumeManagedTicketEdits(state.ticketEditFailures);
       return { toolsList: JSON.stringify(await toolsListResult()) };
     },
     async stop() {
       const stripClosed = strip?.stop();
-      await stopTicketEdits();
       strip = undefined;
       clearTaskSweep();
       await ownerDelivery?.stop();

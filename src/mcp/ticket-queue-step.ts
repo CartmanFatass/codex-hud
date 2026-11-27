@@ -7,7 +7,6 @@ import { failedAttempt } from '../collectors/thin-jobs.js';
 import { readDone, readTurn, receiptForTurn } from '../roles/cli-turn.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { checkBinding, CHECK_TIMEOUT_MS, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
-import { sharedRoot } from '../roles/projects.js';
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
 import { roleRegistry } from '../roles/roster.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
@@ -30,7 +29,6 @@ import {
 import { BUNDLED_ROOT, jobFiles } from './paths.js';
 import { piReportSettlement } from './pi-read-settlement.js';
 import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/job-store.js';
-import { resumeTicketEdits, stopTicketEdits } from './ticket-edit-queue.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
   blockerHandbackItem, clearItemHold, prepareTicketQueueRepair, readTicketQueue, syncBlockerHandback,
@@ -1806,9 +1804,7 @@ export async function driveTicketQueue(id: string) {
   if (!initial || initial.state !== 'working') return;
   const dir = runDir(hudHome, id);
   const state: { problem?: TicketProblem } = {};
-  let ticketProject: string | undefined;
-  try {
-    await driveWorkflow<TicketQueue>(hudHome, id, {
+  await driveWorkflow<TicketQueue>(hudHome, id, {
       read: () => readTicketQueue(hudHome, id)!,
       header: q => q as TicketQueue & Run,
       save: q => {
@@ -1842,7 +1838,6 @@ export async function driveTicketQueue(id: string) {
         }
         q.template = 'ticket-queue'; q.host = 'detached';
         q.cwd ??= q.root; q.project_root ??= q.root;
-        ticketProject = sharedRoot(q.project_root);
         q.epoch ??= 0; q.settled ??= 0; q.streak ??= 0; q.failures ??= 0; q.notices ??= {};
         q.steps ??= Object.fromEntries(Object.keys(graph.steps).map(s => [s, { state: s === 'tickets' ? 'running' as const : 'waiting' as const }]));
         recoverTicketQueue(q);
@@ -1856,20 +1851,14 @@ export async function driveTicketQueue(id: string) {
         if (!turn) throw Error(`unsupported ticket-queue step ${step.kind}`);
         return changed ? { ...turn, changed: true } : turn;
       },
-      active: q => {
-        if (q.state !== 'working') return false;
-        if (ticketProject) {
-          try { resumeTicketEdits(hudHome, undefined, ticketProject); }
-          catch { /* Best-effort ticket-edit supervision while the queue run is alive. */ }
-        }
-        return true;
-      },
+      active: q => q.state === 'working',
       watches: q => [
-        // Land receipts already wake this runner across features. Watch cancel, queued ticket edits, and blocker edits too (e.g. wontfix).
-        { dir: join(hudHome, 'flows'), filter: file => !file || file === `${q.flow}.json.cancel` || /^f[a-f0-9]{16}(?:-\d+)?\.json$/.test(file) || /^te[0-9a-f]{32}\.json$/.test(file) },
+        // Land receipts already wake this runner across features. Watch cancel and blocker edits too (e.g. wontfix).
+        { dir: join(hudHome, 'flows'), filter: file => !file || file === `${q.flow}.json.cancel` || /^f[a-f0-9]{16}(?:-\d+)?\.json$/.test(file) },
+        { dir: join(q.root, '.hud', 'tickets'), filter: (file: string | null) => !file || file.endsWith('.json') },
         ...(q.unattended ? [
           { dir: join(q.root, '.scratch'), recursive: true },
-          { dir: join(q.root, '.hud'), filter: (file: string | null) => !file || file === 'objectives.md' },
+          { dir: join(q.root, '.hud'), filter: (file: string | null) => !file || file === 'objectives.md' || file === 'tickets' },
         ] : []),
         ...(q.queued ?? []).flatMap(item => item.blockers.map(ref => ({ dir: join(q.root, '.scratch', ref.split('/')[0].toLowerCase(), 'issues') }))),
         ...(blockerHandbackItem(q) && !q.unattended ? [{ dir: join(q.root, '.scratch', q.feature, 'issues') }] : []),
@@ -1881,8 +1870,5 @@ export async function driveTicketQueue(id: string) {
       ],
       readerNotices: true,
       errorLine: run => `${id} ticket queue failed: ${run.reason}`,
-    });
-  } finally {
-    if (ticketProject) await stopTicketEdits();
-  }
+  });
 }

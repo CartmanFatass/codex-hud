@@ -1,16 +1,16 @@
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { scanScratch } from '../cli/tickets.js';
 import { OBJECTIVE_SLUG, readObjectives } from '../collectors/objectives.js';
 import { localProjectRoots } from '../roles/projects.js';
+import { commitTicketWrites } from '../tickets/commit.js';
 import {
   canonicalTicketRef, legacyTicketPaths, parseTicketRef, readJsonTicketFeature, readTicketFeature, serializeTicketFeature,
   splitRemovals, ticketFeaturePath, ticketNumber, ticketRef, TICKET_FEATURE, TICKET_KINDS, TICKET_ROLES,
-  TICKET_STATUSES, withTicketStoreLock, writeTicketFeature, type TicketFeatureDoc, type TicketRecord,
+  TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket, writeTicketFeature, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { linkFeature } from './local-objectives.js';
-import { extractWhatAndLiveTry, unlinkedWarning } from './local-tickets.js';
-import { submitTicketEdit } from './ticket-edit-queue.js';
+import { editLocalTickets, extractWhatAndLiveTry, unlinkedWarning, type TicketEdit } from './local-tickets.js';
 
 function invalid(field: string): never { throw new Error(`invalid_arguments: ${field}`); }
 const text = (value: unknown, field: string) => typeof value === 'string' && value.trim() ? value.trim() : invalid(field);
@@ -44,19 +44,33 @@ export function getTickets(cwd: string, args: Record<string, unknown>) {
   return { ok: true, feature, ticket: matches[0] };
 }
 
-export async function editTickets(cwd: string, args: Record<string, unknown>, home: string, author: 'main' | 'lead',
-  pane: string | null, onQueued: () => void) {
+export async function commitTickets(cwd: string, home: string) {
+  return commitTicketWrites(cwd, home);
+}
+
+export async function editTickets(cwd: string, args: Record<string, unknown>, home: string, author: 'main' | 'lead') {
   const { op } = args;
   if (op !== 'add' && op !== 'update') return invalid('op');
   const { mainRoot } = localProjectRoots(cwd);
   const guardMirror = () => scanScratch(join(mainRoot, '.scratch'), true);
   const markdown = (feature: string) => !readJsonTicketFeature(mainRoot, feature) && legacyTicketPaths(mainRoot, feature).length > 0;
-  // Lease admission (including receipt admission) must stay outside the tickets lock.
-  const legacy = async (input: Record<string, unknown>) => {
-    const result = await submitTicketEdit(mainRoot, { ...input, op }, home, pane);
-    if ('state' in result && result.state === 'queued') onQueued();
+  const legacy = async (input: Record<string, unknown>) => withTicketStoreLock(mainRoot, async () => {
+    const staged = new Map<string, TicketEdit>();
+    const result = await editLocalTickets(mainRoot, input, home, op, {
+      read: path => staged.get(path)?.after ?? fs.readFileSync(path, 'utf8'),
+      async stage(edit) {
+        if (edit.before === edit.after) return;
+        const prior = staged.get(edit.path);
+        if (prior) { prior.after = edit.after; return; }
+        staged.set(edit.path, edit);
+      },
+    }, mainRoot);
+    for (const edit of staged.values()) {
+      if (edit.before === edit.after) continue;
+      writeLegacyTicket(mainRoot, home, relative(mainRoot, edit.path), edit.after, edit.mode);
+    }
     return result;
-  };
+  });
   const json = <T>(edit: () => Promise<T>) => withTicketStoreLock(mainRoot, edit);
   let objectiveIds: Set<string> | undefined;
   const objectiveId = (value: unknown) => {
@@ -247,10 +261,6 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       const result = await legacy({ feature: sharedFeature, updates: markdownItems.map(({ item }) => item) });
       if ('updates' in result && result.updates) {
         result.updates.forEach((outcome, i) => { updates[markdownItems[i].index] = outcome; });
-      } else if ('state' in result && result.state === 'queued') {
-        for (const { index, feature, item } of markdownItems) {
-          updates[index] = { feature, ticket: item.ticket, ok: true, state: result.state, receipt: result.receipt };
-        }
       }
     } catch (error) {
       for (const { index, feature, item } of markdownItems) failed(index, feature, item.ticket, error);

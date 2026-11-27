@@ -15,6 +15,7 @@ import { jobFiles } from './paths.js';
 
 export const DEFAULT_LAND_TIMEOUT_S = 900;
 export const SPEC_CHANGE_REFUSAL = 'Unattended landing would change docs/spec.md';
+export const TICKET_DIFF_REFUSAL = 'Worker diff must not modify .hud/tickets/**';
 export interface LandConfig { base: string; gate: string[]; after: string[]; push: boolean; wrapper?: string; timeout_s?: number }
 export interface LandTiming { step: string; ms: number; ok: boolean; rerun?: true; skipped?: true; train?: string }
 export interface LandRerun {

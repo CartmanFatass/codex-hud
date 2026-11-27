@@ -12,14 +12,21 @@ import { projectJobFilter } from '../roles/job-project.js';
 import { localProjectRoots, projectRoot, sharedRoot } from '../roles/projects.js';
 import {
   canonicalTicketRef, parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath,
-  ticketFeatureSlugs, ticketRef, TICKET_STATUSES, type TicketFeatureDoc, type TicketRecord,
+  ticketFeatureSlugs, ticketRef, TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket, writeTicketFeature,
+  type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
+import { commitTicketWrites } from '../tickets/commit.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { isRunningListTicket, readFlakesConfig, runningListAdmission } from './flake-admission.js';
 import type { Job } from './job-contracts.js';
 import { linkFeature } from './local-objectives.js';
-import { withTicketEdits, type TicketEdits } from './ticket-commits.js';
+
+export type TicketEdit = { ticket: string; path: string; before?: string; after: string; mode?: number };
+export type TicketEdits = {
+  read(path: string): string;
+  stage(edit: TicketEdit): Promise<void>;
+};
 
 const number = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
@@ -346,7 +353,13 @@ function jsonReadiness(root: string, doc: TicketFeatureDoc, record: TicketRecord
 function readTicketFeatures(root: string, feature?: string) {
   const scratch = join(root, '.scratch');
   return (feature === undefined ? ticketFeatureSlugs(root) : [feature]).map(slug => {
-    const json = readJsonTicketFeature(root, slug);
+    let json: TicketFeatureDoc | undefined;
+    try {
+      json = readJsonTicketFeature(root, slug);
+    } catch (error) {
+      if (feature !== undefined) throw error;
+      return { slug, at: 0, tickets: [] };
+    }
     return { slug, at: 0, tickets: json ? json.tickets.map(record => jsonReadiness(root, json, record))
       : directoryExists(scratch) ? list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number: num, path }) => {
         const ticket = parseTicketForReadiness(path, num, slug);
@@ -476,34 +489,68 @@ export function landedTicket(original: string, ticket: number, comment: string) 
   return (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n`;
 }
 
-/** Record unattended lead acceptance: status done + run/verdict comment, one commit for the batch. */
+/** Record unattended lead acceptance in the ticket store (or legacy Markdown) and attempt a non-blocking commit at run end. */
 export async function recordUnattendedAcceptance(root: string, home: string, landed: () => readonly { path: string; ticket: string }[], flowId: string, verdict: string) {
-  await withTicketEdits(root, home, 'accept', async (edits) => {
+  const { mainRoot } = localProjectRoots(root);
+  const firstChanged = await withTicketStoreLock(mainRoot, async () => {
     const tickets = landed();
     if (!tickets.length) return;
-    const scratch = join(root, '.scratch');
-    if (!directoryExists(scratch)) return;
-    scanScratch(scratch, true);
-    const marker = `- Accepted by unattended lead (${flowId}):`;
+    const at = new Date().toISOString();
     const summary = verdict.replace(/\s+/g, ' ').trim().slice(0, 400);
+    const scratch = join(mainRoot, '.scratch');
+    let scratchChecked = false;
+    let firstTicket: string | undefined;
+    const dirtyDocs = new Map<string, TicketFeatureDoc>();
+
     for (const { path, ticket } of tickets) {
       try {
-        const rel = relative(resolve(scratch), resolve(path));
-        if (!rel || rel.startsWith('..') || isAbsolute(rel)) continue;
+        const ref = parseTicketRef(ticket);
+        if (!ref) continue;
+        const doc = dirtyDocs.get(ref.feature) ?? readJsonTicketFeature(mainRoot, ref.feature);
+        if (doc) {
+          if (doc.mirror) continue;
+          const record = doc.tickets.find(t => t.number === ref.number);
+          if (!record || record.accepted?.flow === flowId) continue;
+          if (record.status !== 'wontfix') {
+            record.status = 'done';
+            delete record.claimed_at;
+          }
+          record.accepted = { at, by: 'lead', flow: flowId, ...(summary && { verdict: summary }) };
+          record.updated_at = at;
+          dirtyDocs.set(ref.feature, doc);
+          firstTicket ??= ticket;
+          continue;
+        }
+
+        // Legacy unmigrated Markdown ticket fallback.
+        if (!directoryExists(scratch)) continue;
+        if (!scratchChecked) { scanScratch(scratch, true); scratchChecked = true; }
+        const relFromScratch = relative(resolve(scratch), resolve(path));
+        if (!relFromScratch || relFromScratch.startsWith('..') || isAbsolute(relFromScratch)) continue;
         const st = fs.lstatSync(path, { throwIfNoEntry: false });
         if (!st || !st.isFile() || fs.realpathSync(path) !== resolve(path)) continue;
-        const original = edits.read(path);
+        const original = fs.readFileSync(path, 'utf8');
+        const marker = `- Accepted by unattended lead (${flowId}):`;
         if (original.includes(marker)) continue;
         const start = original.search(/^## Comments[ \t]*\r?$/m);
         const before = start < 0 ? original : original.slice(0, start);
-        const num = Number(ticket.split('/')[1] ?? 0);
         const currentStatus = ticketFileEvidence(original).status ?? '';
-        const body = /^wontfix$/i.test(currentStatus) ? before : withStatus(before, 'done', num);
+        const body = /^wontfix$/i.test(currentStatus) ? before : withStatus(before, 'done', ref.number);
         const updated = (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n${marker} ${summary}\n`;
-        await edits.stage({ path, ticket, before: original, after: updated, mode: st.mode & 0o777 });
+        writeLegacyTicket(mainRoot, home, relative(mainRoot, fs.realpathSync(path)), updated, st.mode & 0o777);
+        firstTicket ??= ticket;
       } catch { /* Best effort: a ticket may have moved or been edited by main. */ }
     }
+
+    for (const doc of dirtyDocs.values()) {
+      writeTicketFeature(mainRoot, home, doc);
+    }
+    return firstTicket;
   });
+
+  if (firstChanged) {
+    await commitTicketWrites(mainRoot, home, { wait_s: 0, message: `tickets: ${firstChanged} accept` }).catch(() => {});
+  }
 }
 
 /** The panel groups work by an Objective's Features; no record, no warning. */

@@ -78,6 +78,15 @@ function listFlakeJobs(f, feature = 'test-flakes') {
   });
 }
 
+function readFlakeDoc(f, feature = 'test-flakes') {
+  const file = join(f.main, '.hud', 'tickets', `${feature}.json`);
+  return fs.existsSync(file) ? readJson(file) : null;
+}
+
+function listFlakeRecords(f, feature = 'test-flakes') {
+  return readFlakeDoc(f, feature)?.tickets ?? [];
+}
+
 function listTickets(f, feature = 'test-flakes') {
   const dir = join(f.main, '.scratch', feature, 'issues');
   if (!fs.existsSync(dir)) return [];
@@ -104,15 +113,16 @@ test('absent flakes config does nothing when a land gate passes on immediate rer
   assert.equal(f.flowState(flow).reruns?.length, 1);
   assert.equal(f.flowState(flow).reruns[0].rerun_ok, true);
   assert.equal(fs.existsSync(join(f.main, '.scratch')), false);
+  assert.equal(fs.existsSync(join(f.main, '.hud', 'tickets')), false);
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.flowState(flow).landed_sha);
   assert.deepEqual(listFlakeJobs(f), []);
 });
 
-test('rerun-pass gate appends one entry, repeat dispatches one imp job, and next flake opens a new ticket', { timeout: 45_000 }, async t => {
+test('rerun-pass gate appends one JSON flake-list entry, repeat dispatches one imp job, and next flake opens a new ticket', { timeout: 45_000 }, async t => {
   const f = await checkout(t, ['npm run test:sample'], { after: [] });
   setFlakesConfig(f, { feature: 'test-flakes' });
 
-  // First rerun-pass gate: creates running-list ticket 01 (needs-triage), commits only that ticket, no dispatch.
+  // First rerun-pass gate: creates JSON running-list ticket 01 (kind: flake-list, needs-triage), no separate tickets commit, no dispatch.
   const job1 = 'j0000000000000301';
   addFlakyTestJob(f, {
     id: job1,
@@ -122,20 +132,19 @@ test('rerun-pass gate appends one entry, repeat dispatches one imp job, and next
     markerName: 'repeat-alpha-1',
   });
   const { flow: flow1 } = await f.call('hud_land', { job: job1 });
-  await until(() => f.flowState(flow1).state === 'completed' && listTickets(f).length === 1 &&
-    f.git(f.main, 'log', '-1', '--format=%s') === 'tickets: test-flakes/01 flake', t.signal);
+  await until(() => f.flowState(flow1).state === 'completed' && f.flowState(flow1).flake_collection?.state === 'done', t.signal);
 
-  const [t1] = listTickets(f);
+  const [t1] = listFlakeRecords(f);
   const log1 = f.flowState(flow1).reruns[0].output_path;
-  assert.match(t1.text, /\*\*Status:\*\* needs-triage/);
-  assert.ok(t1.text.includes('`alpha recovers` (sample/alpha.test.mjs)'), t1.text);
-  assert.ok(t1.text.includes(flow1), t1.text);
-  assert.ok(t1.text.includes(log1), t1.text);
-  assert.deepEqual(
-    f.git(f.main, 'show', '--format=%s', '--name-only', 'HEAD').split('\n').filter(Boolean),
-    ['tickets: test-flakes/01 flake', t1.rel],
-  );
-  assert.equal(f.git(f.main, 'status', '--porcelain', '--', t1.rel), '');
+  assert.equal(t1.number, 1);
+  assert.equal(t1.kind, 'flake-list');
+  assert.equal(t1.status, 'needs-triage');
+  assert.equal(t1.cases.length, 1);
+  assert.equal(t1.cases[0].case_name, 'alpha recovers');
+  assert.equal(t1.cases[0].test, 'sample/alpha.test.mjs');
+  assert.equal(t1.cases[0].flow, flow1);
+  assert.equal(t1.cases[0].log, log1);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), f.flowState(flow1).landed_sha, 'no separate tickets commit');
   assert.deepEqual(listFlakeJobs(f), []);
 
   // Second rerun-pass gate with the SAME test: appends repeat, promotes to ready-for-agent, dispatches ONE imp job.
@@ -151,15 +160,13 @@ test('rerun-pass gate appends one entry, repeat dispatches one imp job, and next
   await until(() => f.flowState(flow2).state === 'completed' &&
     listFlakeJobs(f).some(j => j.ticket === 'test-flakes/01' && j.worktree?.root && fs.existsSync(join(f.home, 'jobs', j.job, 'brief.md'))), t.signal);
 
-  const [t1After] = listTickets(f);
+  const [t1After] = listFlakeRecords(f);
   const log2 = f.flowState(flow2).reruns[0].output_path;
-  assert.match(t1After.text, /\*\*Status:\*\* ready-for-agent/);
-  assert.ok(t1After.text.includes(flow1) && t1After.text.includes(flow2), t1After.text);
-  assert.ok(t1After.text.includes(log2), t1After.text);
-  assert.deepEqual(
-    f.git(f.main, 'show', '--format=%s', '--name-only', 'HEAD').split('\n').filter(Boolean),
-    ['tickets: test-flakes/01 flake', t1After.rel],
-  );
+  assert.equal(t1After.status, 'ready-for-agent');
+  assert.equal(t1After.cases.length, 2);
+  assert.equal(t1After.cases[0].flow, flow1);
+  assert.equal(t1After.cases[1].flow, flow2);
+  assert.equal(t1After.cases[1].log, log2);
   const [dispatched] = listFlakeJobs(f);
   assert.equal(dispatched.role, 'imp');
   assert.equal(dispatched.ticket, 'test-flakes/01');
@@ -167,7 +174,7 @@ test('rerun-pass gate appends one entry, repeat dispatches one imp job, and next
   const brief = fs.readFileSync(join(f.home, 'jobs', dispatched.job, 'brief.md'), 'utf8');
   assert.ok(brief.includes('alpha recovers'), brief);
 
-  // Third rerun-pass gate while ticket 01 is claimed by the live job: opens a NEW running-list ticket 02.
+  // Third rerun-pass gate while ticket 01 is claimed by the live job: opens a NEW JSON running-list ticket 02.
   const job3 = 'j0000000000000303';
   addFlakyTestJob(f, {
     id: job3,
@@ -177,12 +184,14 @@ test('rerun-pass gate appends one entry, repeat dispatches one imp job, and next
     markerName: 'repeat-beta-3',
   });
   const { flow: flow3 } = await f.call('hud_land', { job: job3 });
-  await until(() => f.flowState(flow3).state === 'completed' && listTickets(f).length === 2 &&
-    f.git(f.main, 'log', '-1', '--format=%s') === 'tickets: test-flakes/02 flake', t.signal);
+  await until(() => f.flowState(flow3).state === 'completed' && f.flowState(flow3).flake_collection?.state === 'done', t.signal);
 
-  const [, t2] = listTickets(f);
-  assert.match(t2.text, /\*\*Status:\*\* needs-triage/);
-  assert.ok(t2.text.includes('`beta recovers` (sample/beta.test.mjs)'), t2.text);
+  const [, t2] = listFlakeRecords(f);
+  assert.equal(t2.number, 2);
+  assert.equal(t2.kind, 'flake-list');
+  assert.equal(t2.status, 'needs-triage');
+  assert.equal(t2.cases[0].case_name, 'beta recovers');
+  assert.equal(t2.cases[0].test, 'sample/beta.test.mjs');
   assert.equal(listFlakeJobs(f).length, 1, 'still only one flake job dispatched');
 });
 
@@ -230,7 +239,7 @@ test('fourth distinct case dispatches one job, enforces one-at-a-time, and dispa
     assert.equal(r.dispatchedJob, undefined);
   }
   assert.equal(dispatches.length, 0);
-  assert.match(listTickets(f)[0].text, /\*\*Status:\*\* needs-triage/);
+  assert.equal(listFlakeRecords(f)[0].status, 'needs-triage');
 
   // 4th distinct case promotes ticket 01 and dispatches one imp job.
   const r4 = await collectGateFlakes(f.home, f.main, [{
@@ -243,7 +252,7 @@ test('fourth distinct case dispatches one job, enforces one-at-a-time, and dispa
   assert.equal(r4.dispatchedJob, 'j0000000000000401');
   assert.equal(dispatches.length, 1);
   assert.equal(dispatches[0].input.ticket, 'test-flakes/01');
-  assert.match(listTickets(f)[0].text, /\*\*Status:\*\* ready-for-agent/);
+  assert.equal(listFlakeRecords(f)[0].status, 'ready-for-agent');
 
   // While job 1 is still active, a new repeat creates and promotes ticket 02, but does NOT dispatch a 2nd concurrent job.
   await collectGateFlakes(f.home, f.main, [{
@@ -262,7 +271,7 @@ test('fourth distinct case dispatches one job, enforces one-at-a-time, and dispa
   assert.equal(r6.promoted, true);
   assert.equal(r6.dispatchedJob, undefined, 'one flake imp job at a time');
   assert.equal(dispatches.length, 1);
-  assert.match(listTickets(f)[1].text, /\*\*Status:\*\* ready-for-agent/);
+  assert.equal(listFlakeRecords(f)[1].status, 'ready-for-agent');
 
   // Once job 1 finishes and lands via hud_land, ticket 01 becomes done and ticket 02 dispatches automatically.
   fs.writeFileSync(join(f.home, 'jobs', 'j0000000000000401', 'STATUS.json'),
@@ -270,12 +279,12 @@ test('fourth distinct case dispatches one job, enforces one-at-a-time, and dispa
   const { flow: landFix1 } = await f.call('hud_land', { job: 'j0000000000000401' });
   await until(() => f.flowState(landFix1).state === 'completed' &&
     listFlakeJobs(f).some(j => j.ticket === 'test-flakes/02' && j.worktree?.root), t.signal);
-  assert.match(listTickets(f)[0].text, /\*\*Status:\*\* done/);
+  assert.equal(listFlakeRecords(f)[0].status, 'done');
   const jobFor02 = listFlakeJobs(f).find(j => j.ticket === 'test-flakes/02');
   assert.equal(jobFor02.role, 'imp');
 });
 
-test('no flake ticket edit occurs while the main-checkout lease is held (by land or another caller)', { timeout: 30_000 }, async t => {
+test('flake collection runs after land completes and writes JSON store without taking the main-checkout lease', { timeout: 30_000 }, async t => {
   // Part A: land holds main-checkout during gate[2] after gate[1] passed on immediate rerun.
   const f = await checkout(t, [
     'npm run test:sample',
@@ -295,38 +304,29 @@ test('no flake ticket edit occurs while the main-checkout lease is held (by land
   await until(() => fs.existsSync(join(f.env.HOME, 'gate2-started')), t.signal);
   // gate[1] already passed on immediate rerun, while land still holds main-checkout in gate[2].
   assert.equal(f.flowState(flow).reruns?.[0]?.rerun_ok, true);
-  assert.equal(listTickets(f).length, 0, 'must not edit flake ticket while land holds main-checkout');
+  assert.equal(listFlakeRecords(f).length, 0, 'must not edit flake ticket while land is still running');
 
   fs.writeFileSync(join(f.env.HOME, 'release-gate2'), '');
-  await until(() => f.flowState(flow).state === 'completed' && listTickets(f).length === 1 &&
-    f.git(f.main, 'log', '-1', '--format=%s') === 'tickets: test-flakes/01 flake', t.signal);
+  await until(() => f.flowState(flow).state === 'completed' && f.flowState(flow).flake_collection?.state === 'done', t.signal);
+  assert.equal(listFlakeRecords(f).length, 1);
 
-  // Part B: another caller holds main-checkout lease while collectGateFlakes runs.
+  // Part B: another caller holds main-checkout lease while collectGateFlakes writes to the JSON store without waiting or committing.
   const granted = await f.call('hud_lease', { name: 'main-checkout', wait_s: 2 });
   assert.equal(granted.granted, true);
   const headBefore = f.git(f.main, 'rev-parse', 'HEAD');
-  const ticketBefore = listTickets(f)[0].text;
-
-  let settled = false;
-  const pending = collectGateFlakes(f.home, f.main, [{
-    name: 'delta recovers',
-    file: 'sample/delta.test.mjs',
-    flow: 'f0000000000000502',
-    log: join(f.home, 'flows', 'f0000000000000502.json.gate-1.log'),
-  }], f.env.HERDR_PANE_ID).finally(() => { settled = true; });
-
-  // Confirm lease is genuinely held by verifying another 0s attempt is rejected, and no edit occurred.
-  const checkLease = await f.call('hud_lease', { name: 'main-checkout', wait_s: 0 });
-  assert.equal(checkLease.granted, true, 'main session still holds main-checkout');
-  assert.equal(settled, false);
-  assert.equal(listTickets(f)[0].text, ticketBefore, 'no ticket edit while external lease is held');
-  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), headBefore);
-
-  await f.call('hud_lease', { name: 'main-checkout', release: true });
-  const res = await pending;
-  assert.equal(res.ticket, 'test-flakes/01');
-  assert.ok(listTickets(f)[0].text.includes('`delta recovers` (sample/delta.test.mjs)'));
-  assert.notEqual(f.git(f.main, 'rev-parse', 'HEAD'), headBefore);
+  try {
+    const res = await collectGateFlakes(f.home, f.main, [{
+      name: 'delta recovers',
+      file: 'sample/delta.test.mjs',
+      flow: 'f0000000000000502',
+      log: join(f.home, 'flows', 'f0000000000000502.json.gate-1.log'),
+    }], f.env.HERDR_PANE_ID);
+    assert.equal(res.ticket, 'test-flakes/01');
+    assert.ok(listFlakeRecords(f)[0].cases.some(c => c.case_name === 'delta recovers'));
+    assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), headBefore, 'JSON flake edit makes no git commit');
+  } finally {
+    await f.call('hud_lease', { name: 'main-checkout', release: true });
+  }
 });
 
 test('creates a new running-list ticket when newest is done or claimed, and appends to legacy hand-written running lists', { timeout: 25_000 }, async t => {
@@ -478,15 +478,18 @@ test('unidentified gate failures are recorded as evidence but never trigger the 
     await until(() => f.flowState(flow).state === 'completed' &&
       f.flowState(flow).flake_collection?.state === 'done', t.signal);
     flows.push(flow);
-    assert.equal(listTickets(f).length, 1);
-    assert.match(listTickets(f)[0].text, /\*\*Status:\*\* needs-triage/, `must not promote after ${i} unidentified failures`);
+    assert.equal(listFlakeRecords(f).length, 1);
+    assert.equal(listFlakeRecords(f)[0].status, 'needs-triage', `must not promote after ${i} unidentified failures`);
     assert.deepEqual(listFlakeJobs(f), [], `must not dispatch after ${i} unidentified failures`);
   }
 
-  const ticketText = listTickets(f)[0].text;
-  for (const flow of flows) {
-    assert.ok(ticketText.includes(`unidentified failure (\`gate[1]: ${gateCmd}\`) — flow \`${flow}\``), ticketText);
-    assert.ok(ticketText.includes(f.flowState(flow).reruns[0].output_path), ticketText);
+  const cases = listFlakeRecords(f)[0].cases;
+  assert.equal(cases.length, 3);
+  for (const [idx, flow] of flows.entries()) {
+    assert.equal(cases[idx].case_name, undefined, 'unidentified failure has no case_name');
+    assert.equal(cases[idx].step, `gate[1]: ${gateCmd}`);
+    assert.equal(cases[idx].flow, flow);
+    assert.equal(cases[idx].log, f.flowState(flow).reruns[0].output_path);
   }
 
   // The 4th case reaches the 4-case list threshold and dispatches one imp.
@@ -495,7 +498,7 @@ test('unidentified gate failures are recorded as evidence but never trigger the 
   await until(() => f.flowState(flow4).state === 'completed' &&
     f.flowState(flow4).flake_collection?.state === 'done' &&
     listFlakeJobs(f).length === 1, t.signal);
-  assert.match(listTickets(f)[0].text, /\*\*Status:\*\* ready-for-agent/);
+  assert.equal(listFlakeRecords(f)[0].status, 'ready-for-agent');
 });
 
 test('dispatch keys are project- and attempt-scoped and a failed earlier attempt does not block later admission', { timeout: 45_000 }, async t => {
@@ -651,22 +654,33 @@ test('refused ticket edit and refused dispatch are recorded on the land receipt 
   const f = await checkout(t, ['echo ran >> "$HOME/gate-runs.log"; npm run test:sample'], { after: [], autoPrewalk: true });
   setFlakesConfig(f, { feature: 'test-flakes' });
 
-  // Part A: hand edit on the open running-list ticket causes ticket edit refusal.
-  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
-  fs.mkdirSync(issuesDir, { recursive: true });
-  const t01Path = join(issuesDir, '01-gate-flakes-running-list.md');
-  fs.writeFileSync(t01Path, [
-    '# 01: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
-    '', '**What to build:** Running list.', '', '### Cases', '',
-    '- `initial case` (sample/initial.test.mjs) — flow `f0000000000000001`, log `~/.hud/flows/f0000000000000001.json.gate-1.log`', '',
-    '- [ ] Each listed case passes 20 consecutive runs', '', '## Comments', '',
-  ].join('\n'));
-  f.git(f.main, 'add', '.scratch');
-  f.git(f.main, 'commit', '-qm', 'seed flake 01');
-
-  const ownerEdit = '\n- Owner hand note\n';
-  fs.appendFileSync(t01Path, ownerEdit);
-  const dirtyText = fs.readFileSync(t01Path, 'utf8');
+  // Part A: malformed JSON store file causes ticket edit refusal (stage: edit) while keeping the file intact.
+  const ticketsDir = join(f.main, '.hud', 'tickets');
+  fs.mkdirSync(ticketsDir, { recursive: true });
+  const jsonPath = join(ticketsDir, 'test-flakes.json');
+  const at = new Date().toISOString();
+  const validDoc = JSON.stringify({
+    version: 1,
+    feature: 'test-flakes',
+    tickets: [{
+      number: 1,
+      title: 'Gate flakes running list',
+      kind: 'flake-list',
+      status: 'needs-triage',
+      owner_try: false,
+      live_try: 'none',
+      approved_removals: [],
+      blocked_by: [],
+      what: 'Running list.',
+      cases: [{ step: 'gate[1]', test: 'sample/initial.test.mjs', case_name: 'initial case', flow: 'f0000000000000001', log: '~/.hud/flows/f0000000000000001.json.gate-1.log', recorded_at: at }],
+      acceptance: [{ id: 1, text: 'Each listed case passes 20 consecutive runs', done: false }],
+      comments: [{ at, author: 'owner', text: 'Owner hand note' }],
+      created_at: at,
+      updated_at: at,
+    }],
+  }, null, 2) + '\n';
+  const brokenText = validDoc + '{broken hand edit\n';
+  fs.writeFileSync(jsonPath, brokenText);
 
   const job1 = 'j0000000000000a01';
   addFlakyTestJob(f, {
@@ -683,14 +697,13 @@ test('refused ticket edit and refused dispatch are recorded on the land receipt 
   assert.equal(f1.state, 'completed', 'land stays green on ticket edit refusal');
   assert.equal(f1.flake_collection.stage, 'edit');
   assert.equal(f1.flake_collection.attempts, 1);
-  assert.match(f1.flake_collection.error, /uncommitted or hidden changes/);
+  assert.match(f1.flake_collection.error, /Cannot read ticket feature test-flakes/);
   assert.match(landNotice(f1), /Flake collection pending \(edit\)/);
-  assert.equal(fs.readFileSync(t01Path, 'utf8'), dirtyText, 'owner hand edit stays intact');
+  assert.equal(fs.readFileSync(jsonPath, 'utf8'), brokenText, 'owner broken file stays intact');
   const gateRunsAfterLand1 = fs.readFileSync(join(f.env.HOME, 'gate-runs.log'), 'utf8').trim().split('\n').length;
 
-  // Owner commits their hand edit, then the next clean land retries flow1 from its recorded rerun (no gate rerun for flow1).
-  f.git(f.main, 'add', t01Path);
-  f.git(f.main, 'commit', '-qm', 'owner hand edit');
+  // Owner fixes the JSON file, then the next clean land retries flow1 from its recorded rerun (no gate rerun for flow1).
+  fs.writeFileSync(jsonPath, validDoc);
 
   // Force a clean gate on job2 (marker already exists so test passes on first try).
   fs.writeFileSync(join(f.env.HOME, 'pending-clean-2'), 'ran\n');
@@ -707,9 +720,9 @@ test('refused ticket edit and refused dispatch are recorded on the land receipt 
 
   assert.equal(f.flowState(flow1).flake_collection.ticket, 'test-flakes/01');
   assert.equal(f.flowState(flow1).flake_collection.attempts, 2);
-  const t01AfterRetry = fs.readFileSync(t01Path, 'utf8');
-  assert.ok(t01AfterRetry.includes('Owner hand note'), 'owner hand edit preserved');
-  assert.ok(t01AfterRetry.includes(`\`alpha recovers\` (sample/alpha.test.mjs) — flow \`${flow1}\``), t01AfterRetry);
+  const t01AfterRetry = listFlakeRecords(f)[0];
+  assert.ok(t01AfterRetry.comments.some(c => c.text === 'Owner hand note'), 'owner comment preserved');
+  assert.ok(t01AfterRetry.cases.some(c => c.case_name === 'alpha recovers' && c.flow === flow1));
   const gateRunsAfterLand2 = fs.readFileSync(join(f.env.HOME, 'gate-runs.log'), 'utf8').trim().split('\n').length;
   assert.equal(gateRunsAfterLand2, gateRunsAfterLand1 + 1, 'only job2 ran its gate once; flow1 retry did not rerun the gate');
 
@@ -720,7 +733,7 @@ test('refused ticket edit and refused dispatch are recorded on the land receipt 
   await collectAndRecordLandFlakes(f.home, f.main, f.flowState(flow1));
   assert.equal(f.flowState(flow1).flake_collection.state, 'done', 'replaying an unpromoted list does not create a pending dispatch');
   assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), headBeforeIdemp, 'idempotent retry makes no extra commit');
-  assert.equal(fs.readFileSync(t01Path, 'utf8').split(flow1).length - 1, 2, 'flow1 appears once in flow id and once in log path');
+  assert.equal(listFlakeRecords(f)[0].cases.filter(c => c.flow === flow1).length, 1, 'flow1 recorded once');
 
   // Part B: dispatch refusal recorded on land receipt, then retried idempotently by unattended service wake (no gate rerun).
   // Temporarily disable pi harness so real dispatchTicketJob refuses admission (no_available_place).
@@ -743,10 +756,10 @@ test('refused ticket edit and refused dispatch are recorded on the land receipt 
   assert.equal(f3.flake_collection.stage, 'dispatch');
   assert.equal(f3.flake_collection.ticket, 'test-flakes/01');
   assert.match(landNotice(f3), /Flake collection pending \(dispatch\)/);
-  assert.match(fs.readFileSync(t01Path, 'utf8'), /\*\*Status:\*\* ready-for-agent/);
+  assert.equal(listFlakeRecords(f)[0].status, 'ready-for-agent');
   assert.deepEqual(listFlakeJobs(f), [], 'no flake imp created while dispatch refused');
   const gateRunsBeforeService = fs.readFileSync(join(f.env.HOME, 'gate-runs.log'), 'utf8').trim().split('\n').length;
-  const ticketCountBeforeService = listTickets(f).length;
+  const ticketCountBeforeService = listFlakeRecords(f).length;
 
   // Re-enable pi harness and start the unattended service so service wake retries the pending dispatch.
   fs.unlinkSync(harnessSwitches);
@@ -768,7 +781,7 @@ test('refused ticket edit and refused dispatch are recorded on the land receipt 
 
   const [dispatched] = listFlakeJobs(f);
   assert.equal(f.flowState(flow3).flake_collection.job, dispatched.job);
-  assert.equal(listTickets(f).length, ticketCountBeforeService, 'retry did not duplicate into a new ticket');
+  assert.equal(listFlakeRecords(f).length, ticketCountBeforeService, 'retry did not duplicate into a new ticket');
   assert.equal(fs.readFileSync(join(f.env.HOME, 'gate-runs.log'), 'utf8').trim().split('\n').length, gateRunsBeforeService, 'service wake retry did not rerun any gate');
 });
 
@@ -983,23 +996,37 @@ test('persistent refusal does not self-wake unattended service; attempts and rec
   const f = await checkout(t, ['npm run test:sample'], { after: [], autoPrewalk: true });
   setFlakesConfig(f, { feature: 'test-flakes' });
 
-  // Part A: persistent edit refusal (uncommitted hand edit on running list).
-  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
-  fs.mkdirSync(issuesDir, { recursive: true });
-  const t01Path = join(issuesDir, '01-gate-flakes-running-list.md');
-  fs.writeFileSync(t01Path, [
-    '# 01: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
-    '', '**What to build:** Running list.', '', '### Cases', '',
-    '- `initial case` (sample/initial.test.mjs) — flow `f0000000000000d00`, log `~/.hud/flows/f0000000000000d00.json.gate-1.log`', '',
-    '- [ ] Each listed case passes 20 consecutive runs', '', '## Comments', '',
-  ].join('\n'));
+  // Part A: persistent edit refusal (invalid JSON in ticket store).
+  const ticketsDir = join(f.main, '.hud', 'tickets');
+  fs.mkdirSync(ticketsDir, { recursive: true });
+  const jsonPath = join(ticketsDir, 'test-flakes.json');
+  const at = new Date().toISOString();
+  const validDoc = JSON.stringify({
+    version: 1,
+    feature: 'test-flakes',
+    tickets: [{
+      number: 1,
+      title: 'Gate flakes running list',
+      kind: 'flake-list',
+      status: 'needs-triage',
+      owner_try: false,
+      live_try: 'none',
+      approved_removals: [],
+      blocked_by: [],
+      what: 'Running list.',
+      cases: [{ step: 'gate[1]', test: 'sample/initial.test.mjs', case_name: 'initial case', flow: 'f0000000000000d00', log: '~/.hud/flows/f0000000000000d00.json.gate-1.log', recorded_at: at }],
+      acceptance: [{ id: 1, text: 'Each listed case passes 20 consecutive runs', done: false }],
+      comments: [{ at, author: 'owner', text: 'Owner hand edit stays intact' }],
+      created_at: at,
+      updated_at: at,
+    }],
+  }, null, 2) + '\n';
   fs.writeFileSync(join(f.main, '.hud', 'objectives.md'), '# Objectives\n\n## synth-obj: Synthetic Objective\n\n**State:** active\n**Features:** synth\n');
-  f.git(f.main, 'add', '.scratch', '.hud/objectives.md');
-  f.git(f.main, 'commit', '-qm', 'seed flake 01 and objective');
+  f.git(f.main, 'add', '.hud/objectives.md');
+  f.git(f.main, 'commit', '-qm', 'seed objective');
 
-  const ownerEdit = '\n- Owner hand edit stays intact\n';
-  fs.appendFileSync(t01Path, ownerEdit);
-  const dirtyText = fs.readFileSync(t01Path, 'utf8');
+  const dirtyText = validDoc + '{invalid\n';
+  fs.writeFileSync(jsonPath, dirtyText);
 
   addFlakyTestJob(f, { id: 'j0000000000000d01', testFile: 'alpha.test.mjs', testName: 'alpha bounded', markerName: 'bounded-edit-1' });
   const { flow: flow1 } = await f.call('hud_land', { job: 'j0000000000000d01' });
@@ -1011,7 +1038,7 @@ test('persistent refusal does not self-wake unattended service; attempts and rec
   const fc1Before = f.flowState(flow1).flake_collection;
   assert.equal(fc1Before.stage, 'edit');
   assert.equal(fc1Before.attempts, 1);
-  assert.equal(fs.readFileSync(t01Path, 'utf8'), dirtyText, 'owner hand edit stays intact');
+  assert.equal(fs.readFileSync(jsonPath, 'utf8'), dirtyText, 'owner broken file stays intact');
 
   // Start unattended service with short reconcile interval and wait across multiple fallback + event wakes.
   const unattendedEnv = { ...f.env, HUD_UNATTENDED_RECONCILE_MS: '500' };
@@ -1037,18 +1064,17 @@ test('persistent refusal does not self-wake unattended service; attempts and rec
   assert.equal(fc1After.updated_at, fc1Before.updated_at, 'receipt must not be rewritten while refusal is unchanged');
   assert.equal(stat1After.ino, stat1Before.ino);
   assert.equal(stat1After.mtimeMs, stat1Before.mtimeMs);
-  assert.equal(fs.readFileSync(t01Path, 'utf8'), dirtyText, 'owner hand edit still intact');
+  assert.equal(fs.readFileSync(jsonPath, 'utf8'), dirtyText, 'owner broken file still intact');
 
-  // Clear edit refusal by committing the owner edit -> service appends exactly once.
-  f.git(f.main, 'add', t01Path);
-  f.git(f.main, 'commit', '-qm', 'owner commits edit');
+  // Clear edit refusal by restoring valid JSON -> service appends exactly once.
+  fs.writeFileSync(jsonPath, validDoc);
   await until(() => f.flowState(flow1).flake_collection?.state === 'done', 15_000);
 
   assert.equal(f.flowState(flow1).flake_collection.attempts, 2);
   assert.equal(f.flowState(flow1).flake_collection.ticket, 'test-flakes/01');
-  const t01Resolved = fs.readFileSync(t01Path, 'utf8');
-  assert.ok(t01Resolved.includes('Owner hand edit stays intact'), 'owner edit preserved');
-  assert.equal(t01Resolved.split(flow1).length - 1, 2, 'flow1 appended once (flow id + log path)');
+  const t01Resolved = listFlakeRecords(f)[0];
+  assert.ok(t01Resolved.comments.some(c => c.text === 'Owner hand edit stays intact'), 'owner comment preserved');
+  assert.equal(t01Resolved.cases.filter(c => c.flow === flow1).length, 1, 'flow1 appended once');
 
   // Part B: every Imp place is quota-exhausted. Exhaustion is neither watched nor stamped by the service.
   const roles = join(f.home, 'roles');
@@ -1104,20 +1130,32 @@ test('retention keeps expired pending flake receipt and gate log after source jo
   const f = await checkout(t, ['npm run test:sample'], { after: [], autoPrewalk: true });
   setFlakesConfig(f, { feature: 'test-flakes' });
 
-  const issuesDir = join(f.main, '.scratch', 'test-flakes', 'issues');
-  fs.mkdirSync(issuesDir, { recursive: true });
-  const t01Path = join(issuesDir, '01-gate-flakes-running-list.md');
-  fs.writeFileSync(t01Path, [
-    '# 01: Gate flakes running list', '', '**Status:** needs-triage', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
-    '', '**What to build:** Running list.', '', '### Cases', '',
-    '- `initial case` (sample/initial.test.mjs) — flow `f0000000000000e00`, log `~/.hud/flows/f0000000000000e00.json.gate-1.log`', '',
-    '- [ ] Each listed case passes 20 consecutive runs', '', '## Comments', '',
-  ].join('\n'));
-  f.git(f.main, 'add', '.scratch');
-  f.git(f.main, 'commit', '-qm', 'seed flake 01');
+  const ticketsDir = join(f.main, '.hud', 'tickets');
+  fs.mkdirSync(ticketsDir, { recursive: true });
+  const jsonPath = join(ticketsDir, 'test-flakes.json');
+  const at = new Date().toISOString();
+  const validDoc = JSON.stringify({
+    version: 1,
+    feature: 'test-flakes',
+    tickets: [{
+      number: 1,
+      title: 'Gate flakes running list',
+      kind: 'flake-list',
+      status: 'needs-triage',
+      owner_try: false,
+      live_try: 'none',
+      approved_removals: [],
+      blocked_by: [],
+      what: 'Running list.',
+      cases: [{ step: 'gate[1]', test: 'sample/initial.test.mjs', case_name: 'initial case', flow: 'f0000000000000e00', log: '~/.hud/flows/f0000000000000e00.json.gate-1.log', recorded_at: at }],
+      acceptance: [{ id: 1, text: 'Each listed case passes 20 consecutive runs', done: false }],
+      comments: [{ at, author: 'owner', text: 'Owner hand edit before retention' }],
+      created_at: at,
+      updated_at: at,
+    }],
+  }, null, 2) + '\n';
+  fs.writeFileSync(jsonPath, validDoc + '{invalid\n');
 
-  // Hand edit causes pending edit refusal on a real completed land with a gate rerun log.
-  fs.appendFileSync(t01Path, '\n- Owner hand edit before retention\n');
   const jobId = 'j0000000000000e01';
   addFlakyTestJob(f, { id: jobId, testFile: 'alpha.test.mjs', testName: 'alpha survives retention', markerName: 'retain-edit-1' });
   const { flow } = await f.call('hud_land', { job: jobId });
@@ -1160,21 +1198,19 @@ test('retention keeps expired pending flake receipt and gate log after source jo
   assert.equal(fs.existsSync(doneReceiptPath), false, 'expired done receipt pruned');
   assert.equal(fs.existsSync(doneGateLog), false, 'expired done gate log pruned');
 
-  // Clear refusal (commit hand edit) -> exactly one collection from the retained evidence.
-  f.git(f.main, 'add', t01Path);
-  f.git(f.main, 'commit', '-qm', 'commit hand edit after job removal');
+  // Clear refusal (restore valid JSON) -> exactly one collection from the retained evidence.
+  fs.writeFileSync(jsonPath, validDoc);
   const firstRetry = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID);
   assert.deepEqual(firstRetry, { retried: 1, resolved: 1, pending: 0 });
   assert.equal(f.flowState(flow).flake_collection?.state, 'done');
   assert.equal(f.flowState(flow).flake_collection?.ticket, 'test-flakes/01');
-  const textAfter = fs.readFileSync(t01Path, 'utf8');
-  assert.ok(textAfter.includes('Owner hand edit before retention'), 'owner hand edit preserved');
-  assert.ok(textAfter.includes(`\`alpha survives retention\` (sample/alpha.test.mjs) — flow \`${flow}\``), textAfter);
-  assert.equal(textAfter.split(flow).length - 1, 2, 'collected once (flow id + log path)');
+  const t01After = listFlakeRecords(f)[0];
+  assert.ok(t01After.comments.some(c => c.text === 'Owner hand edit before retention'), 'owner comment preserved');
+  assert.equal(t01After.cases.filter(c => c.case_name === 'alpha survives retention' && c.flow === flow).length, 1, 'collected once');
 
   const secondRetry = await retryPendingFlakeCollections(f.home, f.main, f.env.HERDR_PANE_ID);
   assert.deepEqual(secondRetry, { retried: 0, resolved: 0, pending: 0 });
-  assert.equal(fs.readFileSync(t01Path, 'utf8'), textAfter, 'no duplicate collection');
+  assert.equal(listFlakeRecords(f)[0].cases.length, t01After.cases.length, 'no duplicate collection');
 
   // Once collection succeeds, the next prune past retention removes the family as before.
   pruneLandFlows(f.home, Date.now() + JOB_RETENTION_MS + 60_000);
@@ -1182,14 +1218,27 @@ test('retention keeps expired pending flake receipt and gate log after source jo
   assert.equal(fs.existsSync(gateLog), false, 'collected gate log pruned');
 
   // Independent ticket resolution (done/claimed/wontfix) unpins an expired pending dispatch family on the next prune.
+  const docNow = readFlakeDoc(f);
   for (const [idx, resolution] of ['done', 'claimed', 'wontfix'].entries()) {
-    const num = String(idx + 2).padStart(2, '0');
-    const ticketPath = join(issuesDir, `${num}-gate-flakes-running-list.md`);
-    fs.writeFileSync(ticketPath, [
-      `# ${num}: Gate flakes running list`, '', '**Status:** ready-for-agent', '**Owner try:** no', '**Live try:** none', '**Blocked by:** none',
-      '', '**What to build:** Running list.', '', '### Cases', '',
-      '- `case` (sample/a.test.mjs) — flow `f0000000000000e00`', '', '- [ ] Pass', '', '## Comments', '',
-    ].join('\n'));
+    const num = idx + 2;
+    const numStr = String(num).padStart(2, '0');
+    docNow.tickets.push({
+      number: num,
+      title: 'Gate flakes running list',
+      kind: 'flake-list',
+      status: 'ready-for-agent',
+      owner_try: false,
+      live_try: 'none',
+      approved_removals: [],
+      blocked_by: [],
+      what: 'Running list.',
+      cases: [{ step: 'gate[1]', test: 'sample/a.test.mjs', case_name: 'case', flow: 'f0000000000000e00', recorded_at: at }],
+      acceptance: [{ id: 1, text: 'Pass', done: false }],
+      comments: [],
+      created_at: at,
+      updated_at: at,
+    });
+    fs.writeFileSync(jsonPath, JSON.stringify(docNow, null, 2) + '\n');
     const dispatchFlow = `f0000000000000e1${idx}`;
     const dispatchReceipt = join(f.home, 'flows', `${dispatchFlow}.json`);
     const dispatchLog = join(f.home, 'flows', `${dispatchFlow}.json.gate-1.log`);
@@ -1197,7 +1246,7 @@ test('retention keeps expired pending flake receipt and gate log after source jo
     fs.writeFileSync(dispatchReceipt, JSON.stringify({
       ...flowReceipt, flow: dispatchFlow, job: `j0000000000000e1${idx}`,
       reruns: [{ step: 'gate[1]', tests: ['case'], output_path: dispatchLog, rerun_ok: true }],
-      flake_collection: { state: 'pending', stage: 'dispatch', ticket: `test-flakes/${num}`, error: 'waiting for active flake job', attempts: 1, updated_at: flowReceipt.updated_at },
+      flake_collection: { state: 'pending', stage: 'dispatch', ticket: `test-flakes/${numStr}`, error: 'waiting for active flake job', attempts: 1, updated_at: flowReceipt.updated_at },
     }));
     fs.utimesSync(dispatchReceipt, expiredSec, expiredSec);
     fs.utimesSync(dispatchLog, expiredSec, expiredSec);
@@ -1206,7 +1255,8 @@ test('retention keeps expired pending flake receipt and gate log after source jo
     assert.equal(fs.existsSync(dispatchReceipt), true, `pending dispatch kept while ready (${resolution})`);
     assert.equal(fs.existsSync(dispatchLog), true, `pending dispatch gate log kept while ready (${resolution})`);
 
-    fs.writeFileSync(ticketPath, fs.readFileSync(ticketPath, 'utf8').replace('**Status:** ready-for-agent', `**Status:** ${resolution}`));
+    docNow.tickets.find(t => t.number === num).status = resolution;
+    fs.writeFileSync(jsonPath, JSON.stringify(docNow, null, 2) + '\n');
     pruneLandFlows(f.home, now);
     assert.equal(fs.existsSync(dispatchReceipt), false, `pending dispatch receipt pruned after ${resolution}`);
     assert.equal(fs.existsSync(dispatchLog), false, `pending dispatch gate log pruned after ${resolution}`);

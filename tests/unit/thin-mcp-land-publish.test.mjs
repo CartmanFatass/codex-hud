@@ -309,7 +309,6 @@ for (const green of [true, false]) test(`land re-gates disjoint code changes and
   const heads = fs.readFileSync(join(f.env.HOME, 'gate-heads'), 'utf8').trim().split('\n');
   const [initial, candidate] = heads;
   assert.notEqual(candidate, initial);
-  assert.equal(state.published_tree, f.git(f.main, 'rev-parse', `${candidate}^{tree}`));
   if (green) {
     assert.equal(state.state, 'completed', JSON.stringify(state));
     assert.deepEqual(heads, [initial, candidate]);
@@ -317,12 +316,13 @@ for (const green of [true, false]) test(`land re-gates disjoint code changes and
     assert.equal(view.base_moves, 1);
     assert.match(view.changes.find(line => line.includes(flow)), /Base moves absorbed: 1/);
     assert.equal(state.replayed_onto, movedBase);
-    assert.equal(state.tested_tree, state.published_tree);
-    assert.equal(state.landed_sha, candidate);
-    assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), candidate);
-    assert.equal(f.git(f.remote, 'rev-parse', 'base'), candidate);
-    assertLandingRecord(f, ticket, movedBase, candidate);
+    assert.equal(state.tested_tree, f.git(f.main, 'rev-parse', `${candidate}^{tree}`));
+    assert.equal(state.published_tree, f.git(f.remote, 'rev-parse', 'base^{tree}'));
+    assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), state.landed_sha);
+    assert.equal(f.git(f.remote, 'rev-parse', 'base'), state.landed_sha);
+    assertLandingRecord(f, ticket, movedBase, state.landed_sha);
   } else {
+    assert.equal(state.published_tree, f.git(f.main, 'rev-parse', `${candidate}^{tree}`));
     assert.equal(state.state, 'failed', JSON.stringify(state));
     assert.match(state.step, /^gate\[1\]:/);
     assert.deepEqual(heads, [initial, candidate, candidate]); // One immediate retry of the failed command.
@@ -367,7 +367,7 @@ for (const moves of [2, 3]) test(`land ${moves === 2 ? 'absorbs another move dur
   }
 });
 
-test('a main commit touching the landing ticket path during the gate stops before fast-forward', async t => {
+test('a main commit touching the landing ticket path during the gate replays without rerunning the gate and preserves the concurrent edit', async t => {
   const f = await checkout(t, ['echo run >> "$HOME/gate-count"; while test ! -f "$HOME/release"; do sleep .05; done']);
   const dir = jobDir(f), ticket = '.scratch/feature/issues/01-example.md', file = join(dir, 'job.json');
   fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), ticket: 'feature/01', slice: 'FEATURE-01' }));
@@ -383,15 +383,12 @@ test('a main commit touching the landing ticket path during the gate stops befor
   fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
   await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
   const state = f.flowState(flow);
-  assert.equal(state.state, 'failed', JSON.stringify(state));
-  assert.equal(state.step, 'fast-forward');
-  assert.equal(state.error, 'Main checkout is not at the recorded base tip');
-  assert.equal(state.replayed_onto, undefined);
-  assert.equal(state.landed_sha, undefined);
-  assert.equal(state.repairs, undefined);
+  assert.equal(state.state, 'completed', JSON.stringify(state));
+  assert.equal(state.step, 'done');
+  assert.equal(state.replayed_onto, movedBase);
   assert.equal(fs.readFileSync(join(f.env.HOME, 'gate-count'), 'utf8'), 'run\n');
-  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), movedBase);
-  assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
-  assert.equal(fs.existsSync(join(f.main, 'after-ran')), false);
-  assert.equal(fs.existsSync(f.worktree), true);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), state.landed_sha);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), state.landed_sha);
+  assert.match(f.git(f.remote, 'show', `base:${ticket}`), /Concurrent ticket note/);
+  assertLandingRecord(f, ticket, movedBase, state.landed_sha);
 });

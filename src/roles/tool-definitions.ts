@@ -235,9 +235,9 @@ export const ROLE_TOOLS = [
   }, ['op']),
   tool(
     'hud_tickets',
-    'Add/update JSON directly; Markdown edits commit or queue. Get a feature or ticket. Add links feature to Objective ID.',
+    'Edit/get JSON tickets directly; commit HUD-written files with op: commit. Add links feature to Objective ID.',
     {
-      op: { ...text, enum: ['guide', 'ready', 'get', 'run', 'add', 'update', 'sync'], default: 'guide' },
+      op: { ...text, enum: ['guide', 'ready', 'get', 'run', 'add', 'update', 'commit', 'sync'], default: 'guide' },
       cwd: text,
       feature: { ...text, pattern: '^[a-z0-9-]+$', description: 'Get/run/add/update: slug.' },
       run: { ...text, pattern: '^q[0-9a-f]{16}$', description: 'Run: cancel ID (incl. unattended).' },

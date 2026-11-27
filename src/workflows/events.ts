@@ -3,26 +3,11 @@ import { join } from 'node:path';
 import { batchActive, batchEvents, isBatchId, type Batch } from '../mcp/batch-state.js';
 import { activeLand, isFlowId, landFile, landNoticeLine, readLand } from '../mcp/land-state.js';
 import { isTicketQueueId, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
-import { activeTicketEdit, isTicketEditId, type TicketEdit } from '../mcp/ticket-edit-state.js';
 import { sharedRoot } from '../roles/projects.js';
 import { composedActive, isComposedId, type ComposedRun } from './composed-state.js';
-import { workflowHeaders, type HeaderPass } from './header-scan.js';
+import { workflowHeaders } from './header-scan.js';
 import { directRecipient, runVisible } from './scope.js';
 import { noticeEvents } from './store.js';
-
-function ticketEditEvent(home: string, pane: string | null, all: boolean, cwd: string, pass: HeaderPass, file: string) {
-  const path = join(home, 'flows', file);
-  if (fs.existsSync(`${path}.${all ? 'observed' : 'noticed'}`)) return;
-  const row = pass.header<TicketEdit>(file);
-  if (!row || (!all && (row.pane !== pane || (!pane && row.origin !== cwd)))) return;
-  if (activeTicketEdit(row)) return { pending: true, events: [] };
-  const outcome = row.state === 'failed' ? 'failed' : 'completed';
-  const line = `Ticket ${row.op} ${outcome} — hud_read({job: "${row.receipt}"})`;
-  const events = noticeEvents(home, { flow: row.receipt, notices: { 'end-0': line } }, all, path);
-  // Admission may prune a settled receipt between the scan and its notice claim.
-  if (!fs.existsSync(path)) for (const { marker } of events) fs.rmSync(marker, { force: true });
-  return { pending: false, events };
-}
 
 export function taskNoticeSource(home: string, pane: string | null, cwd: string) {
   const dir = join(home, 'flows');
@@ -39,7 +24,6 @@ export function taskNoticeSource(home: string, pane: string | null, cwd: string)
     const events = pass.files.flatMap(file => {
       if (!file.endsWith('.json')) return [];
       const id = file.slice(0, -5);
-      if (isTicketEditId(id)) return ticketEditEvent(home, pane, false, cwd, pass, file)?.events ?? [];
       if (isTicketQueueId(id)) {
         const q = pass.header<TicketQueue>(file);
         if (!q?.notices || !runVisible(q, pane, cwd)) return [];
@@ -67,11 +51,6 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
   for (const file of pass.files) {
     if (!file.endsWith('.json')) continue;
     const id = file.slice(0, -5);
-    if (isTicketEditId(id)) {
-      const result = ticketEditEvent(home, pane, all, cwd, pass, file);
-      if (result) { pending ||= result.pending; events.push(...result.events); }
-      continue;
-    }
     if (isComposedId(id)) {
       const run = pass.header<ComposedRun>(file);
       if (run?.template === 'composed' && (all || runVisible(run, pane, cwd))) {

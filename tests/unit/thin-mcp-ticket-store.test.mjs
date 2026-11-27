@@ -102,34 +102,34 @@ test('an add returns its JSON ticket number while the land gate is still running
   assert.equal(f.flowState(flow).state, 'completed');
 });
 
-test('a mixed update queues only the Markdown items while JSON updates finish', { timeout: 20_000 }, async t => {
+test('a mixed update applies both Markdown and JSON items without the main-checkout lease and commits via hud_tickets commit', { timeout: 20_000 }, async t => {
   const f = await checkout(t, ['true']);
   const { rel, path } = seedMarkdown(f);
   const call = (op, args) => f.call('hud_tickets', { op, feature: 'sample', cwd: f.worktree, ...args });
   const { tickets: [added] } = await call('add', { tickets: [draft('JSON ticket')] });
   const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
   assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
-  let receipt;
   try {
-    const { updates } = await call('update', { updates: [
+    const { updates } = await fast(() => call('update', { updates: [
       { feature: 'legacy', ticket: 1, status: 'claimed' },
       { ticket: 1, status: 'done' },
       { feature: 'legacy', ticket: 1, tick: [1] },
-    ] });
-    receipt = updates[0].receipt;
-    assert.match(receipt, /^te[0-9a-f]{32}$/);
-    const queued = { ok: true, feature: 'legacy', ticket: 1, state: 'queued', receipt };
-    assert.deepEqual(updates, [queued, { ok: true, feature: 'sample', number: 1, path: added.path }, queued]);
+    ] }));
+    assert.deepEqual(updates, [
+      { ok: true, feature: 'legacy', number: 1, path },
+      { ok: true, feature: 'sample', number: 1, path: added.path },
+      { ok: true, feature: 'legacy', number: 1, path },
+    ]);
     assert.equal((await call('get', { ticket: 1 })).ticket.status, 'done');
-    assert.match(fs.readFileSync(path, 'utf8'), /Status:\*\* ready-for-agent/);
+    assert.match(fs.readFileSync(path, 'utf8'), /Status:\*\* claimed[\s\S]*- \[x\]/);
+    const flowsDir = join(f.home, 'flows');
+    assert.deepEqual(fs.existsSync(flowsDir) ? fs.readdirSync(flowsDir).filter(name => /^te/.test(name)) : [], []);
   } finally { await takeLease({ name: 'main-checkout', release: true }, lease); }
-  const state = () => JSON.parse(fs.readFileSync(join(f.home, 'flows', `${receipt}.json`), 'utf8')).state;
-  await until(() => ['completed', 'failed'].includes(state()), t.signal);
-  const result = await f.call('hud_read', { job: receipt });
-  assert.equal(result.state, 'completed', JSON.stringify(result));
-  assert.deepEqual(result.updates, Array.from({ length: 2 }, () => ({ ok: true, feature: 'legacy', number: 1, path })));
+  const committed = await call('commit', {});
+  assert.equal(committed.committed, true);
+  assert.deepEqual(committed.paths, ['.hud/tickets/sample.json', rel]);
   assert.match(f.git(f.main, 'show', `HEAD:${rel}`), /Status:\*\* claimed[\s\S]*- \[x\]/);
-  assert.deepEqual(f.git(f.main, 'show', '--format=%s', '--name-only', 'HEAD').split('\n').filter(Boolean), ['tickets: legacy/01 update', rel]);
+  assert.equal(f.git(f.main, 'status', '--porcelain', '--', rel, '.hud/tickets/sample.json'), '');
 });
 
 test('hud_tickets add/update validates and stores repairs on JSON and Markdown features', { timeout: 20_000 }, async t => {

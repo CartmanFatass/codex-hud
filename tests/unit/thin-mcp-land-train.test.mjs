@@ -66,16 +66,16 @@ test('land train gates and pushes two queued jobs once, with a ticket record and
   const { blocker, flows } = await f.release(jobs);
   const [first, ...rows] = await f.complete([blocker, ...flows]);
   const tip = f.git(f.remote, 'rev-parse', 'base');
-  assert.deepEqual(f.log('gate-heads'), [first.landed_sha, tip]);
+  assert.deepEqual(f.log('gate-heads'), [first.landed_sha, rows[0].tested_sha]);
   assert.deepEqual(f.log('after-heads'), [first.landed_sha, tip]);
   assert.equal(f.git(f.main, 'rev-parse', 'base'), tip);
   assert.equal(f.git(f.main, 'log', '--format=%s', '--reverse', `${first.landed_sha}..base`), 'alpha\nbeta');
   for (const [i, row] of rows.entries()) {
     assert.equal(row.train, flows[0]); assert.equal(row.job, jobs[i].id); assert.equal(row.source_sha, jobs[i].source);
-    assert.equal(row.tested_sha, tip); assert.equal(row.published_sha, tip);
-    assert.equal(row.tested_tree, f.git(f.remote, 'rev-parse', 'base^{tree}'));
-    assert.equal(row.published_tree, row.tested_tree);
-    assertLandingRecord(f, tickets[i], first.landed_sha, row.landed_sha);
+    assert.equal(row.tested_sha, rows[0].tested_sha); assert.equal(row.published_sha, tip);
+    assert.equal(row.tested_tree, f.git(f.main, 'rev-parse', `${row.tested_sha}^{tree}`));
+    assert.equal(row.published_tree, f.git(f.remote, 'rev-parse', 'base^{tree}'));
+    assertLandingRecord(f, tickets[i], first.landed_sha, tip);
     assert.equal(fs.existsSync(jobs[i].root), false);
     const view = await f.call('hud_land', { job: row.job });
     assert.equal(view.flow, flows[i]); assert.equal(view.train, flows[0]);

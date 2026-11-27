@@ -6,6 +6,10 @@ import { scanScratch, slugify } from '../cli/tickets.js';
 import { targetKey, ticketFileEvidence } from '../collectors/ticket-evidence.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { sharedRoot } from '../roles/projects.js';
+import {
+  legacyTicketPaths, readJsonTicketFeature, ticketFeaturePath, withTicketStoreLock, writeLegacyTicket,
+  writeTicketFeature, type FlakeCaseRecord, type TicketFeatureDoc, type TicketRecord,
+} from '../tickets/store.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readDirSafe, readFileBounded, readJsonBounded, readJsonFile } from '../utils/atomic-fs.js';
 import { dispatchTicketJob } from './dispatch/orchestrator.js';
@@ -17,7 +21,6 @@ import {
 } from './land-state.js';
 import { ticketBlockersByKey } from './local-tickets.js';
 import { jobFiles } from './paths.js';
-import { withTicketEdits } from './ticket-commits.js';
 import { ensureJobWatcher } from './watch-pid.js';
 
 export { flakeDispatchKey } from './flake-admission.js';
@@ -28,6 +31,7 @@ export interface GateFlake {
   flow: string;
   log?: string;
   unidentified?: boolean;
+  step?: string;
 }
 
 export interface FlakeCase {
@@ -334,6 +338,62 @@ function inspectRunningListEntry(
   }
 }
 
+const FLAKE_LIST_WHAT = 'Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).';
+const FLAKE_LIST_ACCEPTANCE = [
+  'Each listed case passes 20 consecutive runs under parallel load',
+  'No assertion or product bound weakened',
+] as const;
+
+function toFlakeCaseRecord(flake: GateFlake, recorded_at: string): FlakeCaseRecord {
+  const step = oneLine(flake.step || (flake.unidentified ? flake.name : 'gate')) || 'gate';
+  const test = flake.file ? oneLine(flake.file) : undefined;
+  const case_name = flake.unidentified ? undefined : (oneLine(flake.name) || undefined);
+  const flow = oneLine(flake.flow) || undefined;
+  const log = formatLogPath(flake.log);
+  return {
+    step,
+    ...(test ? { test } : {}),
+    ...(case_name ? { case_name } : {}),
+    ...(flow ? { flow } : {}),
+    ...(log ? { log } : {}),
+    recorded_at,
+  };
+}
+
+function recordToFlakeCase(record: FlakeCaseRecord): FlakeCase {
+  return {
+    name: record.case_name ?? record.step,
+    ...(record.test ? { file: record.test } : {}),
+    ...(record.flow ? { flow: record.flow } : {}),
+    ...(record.log ? { log: record.log } : {}),
+    ...(!record.case_name ? { unidentified: true } : {}),
+  };
+}
+
+function inspectRunningListRecord(
+  feature: string,
+  record: TicketRecord,
+  path: string,
+  claimedTickets: ReadonlySet<string>,
+  getBlockers?: () => ReadonlyMap<string, readonly string[]>,
+): TicketDispatchState {
+  const canonical = `${feature}/${nn(record.number)}`;
+  const key = targetKey(canonical);
+  if (claimedTickets.has(key)) return { state: 'resolved', ticket: canonical };
+  if (record.status === 'done' || record.status === 'wontfix' || record.status === 'claimed' || record.landing || record.accepted) {
+    return { state: 'resolved', ticket: canonical };
+  }
+  if (record.kind !== 'flake-list') return { state: 'unavailable', ticket: canonical };
+  if (record.status === 'needs-triage' || record.status === 'needs-info') return { state: 'unpromoted', ticket: canonical };
+  if (record.status !== 'ready-for-agent') return { state: 'unavailable', ticket: canonical };
+  if (getBlockers) {
+    const blockers = getBlockers().get(key);
+    if (!blockers) return { state: 'unavailable', ticket: canonical };
+    if (blockers.length > 0) return { state: 'blocked', ticket: canonical };
+  }
+  return { state: 'ready', ticket: canonical, path };
+}
+
 function inspectRunningListTicket(
   mainRoot: string,
   ticket: string,
@@ -344,9 +404,15 @@ function inspectRunningListTicket(
   if (ref) {
     if (claimedTickets.has(ref.key)) return { state: 'resolved', ticket };
     try {
+      const doc = readJsonTicketFeature(mainRoot, ref.feature);
+      if (doc) {
+        const record = doc.tickets.find(t => t.number === ref.number);
+        if (record) return inspectRunningListRecord(ref.feature, record, ticketFeaturePath(mainRoot, ref.feature), claimedTickets, getBlockers);
+        return { state: 'unavailable', ticket };
+      }
       const item = listFeatureTickets(join(mainRoot, '.scratch'), ref.feature).find(t => t.number === ref.number);
       if (item) return inspectRunningListEntry(ref.feature, item, claimedTickets, getBlockers);
-    } catch { /* The ticket directory could not be read. */ }
+    } catch { /* The ticket store or directory could not be read. */ }
   }
   return { state: 'unavailable', ticket };
 }
@@ -357,6 +423,19 @@ function findReadyRunningListTicket(
   claimedTickets: ReadonlySet<string>,
   getBlockers: () => ReadonlyMap<string, readonly string[]>,
 ): { ticket: string; path: string } | null {
+  try {
+    const doc = readJsonTicketFeature(mainRoot, feature);
+    if (doc) {
+      const path = ticketFeaturePath(mainRoot, feature);
+      for (const record of doc.tickets) {
+        const inspected = inspectRunningListRecord(feature, record, path, claimedTickets, getBlockers);
+        if (inspected.state === 'ready') return { ticket: inspected.ticket, path: inspected.path };
+      }
+      return null;
+    }
+  } catch {
+    return null;
+  }
   const scratch = join(mainRoot, '.scratch');
   const tickets = listFeatureTickets(scratch, feature).sort((a, b) => a.number - b.number);
   for (const item of tickets) {
@@ -392,9 +471,10 @@ export function flakesFromLandFlow(flow: Pick<LandFlow, 'flow' | 'reruns'>): Gat
       for (const item of r.cases) {
         const named = Boolean(item.name);
         out.push({
-          name: item.name ?? item.file ?? r.step,
+          name: item.name ?? r.step,
           ...(item.file ? { file: item.file } : {}),
           flow: flow.flow,
+          step: r.step,
           ...(r.output_path ? { log: r.output_path } : {}),
           ...(!named ? { unidentified: true } : {}),
         });
@@ -403,6 +483,7 @@ export function flakesFromLandFlow(flow: Pick<LandFlow, 'flow' | 'reruns'>): Gat
       out.push({
         name: r.step,
         flow: flow.flow,
+        step: r.step,
         ...(r.output_path ? { log: r.output_path } : {}),
         unidentified: true,
       });
@@ -429,19 +510,116 @@ export async function collectGateFlakes(
 
   if (flakes.length) {
     try {
-      const editRes = await withTicketEdits(mainRoot, home, 'flake', async (edits) => {
+      const editRes = await withTicketStoreLock(mainRoot, async () => {
         const scratch = join(mainRoot, '.scratch');
         scanScratch(scratch, true);
+        const { claimedTickets } = runningListAdmission(home, mainRoot, feature);
+        const existingDoc = readJsonTicketFeature(mainRoot, feature);
+        const useLegacy = !existingDoc && legacyTicketPaths(mainRoot, feature).length > 0;
+
+        if (!useLegacy) {
+          if (existingDoc?.mirror) {
+            throw Error('refusing local ticket edits: GitHub mirror; edit issues with gh, then call hud_tickets with op: sync');
+          }
+          const doc: TicketFeatureDoc = existingDoc ?? { version: 1, feature, tickets: [] };
+          const path = ticketFeaturePath(mainRoot, feature);
+          const maxNum = doc.tickets.reduce((max, t) => Math.max(max, t.number), 0);
+          const desc = [...doc.tickets].sort((a, b) => b.number - a.number);
+
+          const seenEntries: { entry: FlakeCase; ticket: string; path: string }[] = [];
+          let newestRunning: TicketRecord | undefined;
+          for (const item of desc) {
+            if (item.kind !== 'flake-list') continue;
+            if (!newestRunning) newestRunning = item;
+            const ticket = `${feature}/${nn(item.number)}`;
+            for (const c of item.cases ?? []) {
+              seenEntries.push({ entry: recordToFlakeCase(c), ticket, path });
+            }
+          }
+
+          let openTarget: TicketRecord | undefined;
+          if (newestRunning) {
+            const key = targetKey(`${feature}/${nn(newestRunning.number)}`);
+            if ((newestRunning.status === 'needs-triage' || newestRunning.status === 'needs-info') &&
+                !newestRunning.landing && !newestRunning.accepted && !claimedTickets.has(key)) {
+              openTarget = newestRunning;
+            }
+          }
+
+          const targetCases = (openTarget?.cases ?? []).map(recordToFlakeCase);
+          const toAdd: GateFlake[] = [];
+          let matchedTarget: { ticket: string; path: string } | undefined;
+          for (const flake of flakes) {
+            const match = seenEntries.find(e => sameRecordedEntry(e.entry, flake));
+            if (match) {
+              matchedTarget ??= { ticket: match.ticket, path: match.path };
+              continue;
+            }
+            toAdd.push(flake);
+            seenEntries.push({ entry: { ...flake, log: formatLogPath(flake.log) }, ticket: '', path: '' });
+          }
+          if (!toAdd.length) {
+            return {
+              alreadyRecorded: true,
+              res: matchedTarget
+                ? { ticket: matchedTarget.ticket, path: matchedTarget.path, created: false, promoted: false }
+                : openTarget
+                  ? { ticket: `${feature}/${nn(openTarget.number)}`, path, created: false, promoted: false }
+                  : newestRunning
+                    ? { ticket: `${feature}/${nn(newestRunning.number)}`, path, created: false, promoted: false }
+                    : {},
+            };
+          }
+
+          const at = new Date().toISOString();
+          const newRecords = toAdd.map(f => toFlakeCaseRecord(f, at));
+          const allCases: FlakeCase[] = [...targetCases, ...newRecords.map(recordToFlakeCase)];
+          const promoted = shouldTriggerDispatch(allCases);
+
+          if (openTarget) {
+            const ticket = `${feature}/${nn(openTarget.number)}`;
+            openTarget.cases = [...(openTarget.cases ?? []), ...newRecords];
+            if (promoted) openTarget.status = 'ready-for-agent';
+            openTarget.updated_at = at;
+            writeTicketFeature(mainRoot, home, doc);
+            return { alreadyRecorded: false, res: { ticket, path, created: false, promoted } };
+          }
+
+          const nextNum = maxNum + 1;
+          const ticket = `${feature}/${nn(nextNum)}`;
+          const title = maxNum > 0
+            ? `Gate flakes collected after ${feature}/${nn(maxNum)}`
+            : 'Gate flakes running list';
+          doc.tickets.push({
+            number: nextNum,
+            title,
+            kind: 'flake-list',
+            status: promoted ? 'ready-for-agent' : 'needs-triage',
+            owner_try: false,
+            live_try: 'none',
+            approved_removals: [],
+            blocked_by: [],
+            what: FLAKE_LIST_WHAT,
+            cases: newRecords,
+            acceptance: FLAKE_LIST_ACCEPTANCE.map((text, i) => ({ id: i + 1, text, done: false })),
+            comments: [],
+            created_at: at,
+            updated_at: at,
+          });
+          writeTicketFeature(mainRoot, home, doc);
+          return { alreadyRecorded: false, res: { ticket, path, created: true, promoted } };
+        }
+
+        // Legacy unmigrated Markdown flake feature fallback.
         const existing = listFeatureTickets(scratch, feature).sort((a, b) => b.number - a.number);
         const maxNum = existing[0]?.number ?? 0;
-        const { claimedTickets } = runningListAdmission(home, mainRoot, feature);
 
         // Scan running-list tickets: find the newest one and collect recorded cases for idempotent retry.
         const seenEntries: { entry: FlakeCase; ticket: string; path: string }[] = [];
         let newestRunning: { number: number; path: string; text: string } | undefined;
         for (const item of existing) {
           try {
-            const text = edits.read(item.path);
+            const text = fs.readFileSync(item.path, 'utf8');
             if (!isRunningListTicket(text)) continue;
             if (!newestRunning) newestRunning = { ...item, text };
             const ticket = `${feature}/${nn(item.number)}`;
@@ -494,7 +672,7 @@ export async function collectGateFlakes(
           const ticket = `${feature}/${nn(openTarget.number)}`;
           const updated = appendCaseLines(openTarget.text, lines, promoted);
           const mode = fs.statSync(openTarget.path).mode & 0o777;
-          await edits.stage({ ticket, path: openTarget.path, before: openTarget.text, after: updated, mode });
+          writeLegacyTicket(mainRoot, home, relative(mainRoot, openTarget.path), updated, mode);
           return { alreadyRecorded: false, res: { ticket, path: openTarget.path, created: false, promoted } };
         }
 
@@ -502,7 +680,7 @@ export async function collectGateFlakes(
         const ticket = `${feature}/${nn(nextNum)}`;
         const { title, body } = buildRunningListTicket(feature, nextNum, maxNum, lines, promoted);
         const path = join(scratch, feature, 'issues', `${nn(nextNum)}-${slugify(title, nextNum)}.md`);
-        await edits.stage({ ticket, path, after: body });
+        writeLegacyTicket(mainRoot, home, relative(mainRoot, path), body);
         return { alreadyRecorded: false, res: { ticket, path, created: true, promoted } };
       });
       alreadyRecorded = editRes.alreadyRecorded;
