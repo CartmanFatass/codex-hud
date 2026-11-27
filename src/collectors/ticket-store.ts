@@ -1,7 +1,7 @@
 /** Bounded, stat-signature-cached ticket collection shared by Project, Execution and the CLI. */
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
-import { isTicketArchive, MAX_TICKET_BYTES, TICKET_FEATURE, parseTicketRef, ticketNumber, validateTicketFeature, type TicketFeatureDoc } from '../tickets/store.js';
+import { matchArchivedTicket, MAX_TICKET_BYTES, TICKET_FEATURE, parseTicketRef, ticketNumber, validateTicketFeature, type TicketFeatureDoc } from '../tickets/store.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import type { ProjectTicket, TicketFeature } from './project-board.js';
 import { legacyTicketEvidence, storedTicketEvidence, targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.js';
@@ -22,6 +22,7 @@ interface TicketScan {
   features: TicketFeature[];
   partial: boolean;
   sources: ReadonlyMap<string, TicketSource>;
+  resolve: (ticket: string, feature?: string) => string | undefined;
   lookup: (ticket: string, feature?: string) => TicketLookup | undefined;
 }
 let revision = 0;
@@ -146,23 +147,25 @@ class TicketStore {
       if (tickets.length || 'doc' in source) features.push({ slug, tickets, ...(group.partial && { partial: true }),
         at: tickets.length ? Math.max(...tickets.map((ticket) => ticket.at)) : group.at });
     }
+    const resolveRef = (ticket: string, feature?: string): string | undefined => {
+      const ref = parseTicketRef(targetKey(feature && /^\d+$/.test(ticket) ? `${feature}/${ticket}` : ticket));
+      if (!ref) return;
+      const direct = `${ref.feature}/${ref.number}`;
+      if (index.has(direct)) return direct;
+      const directSource = sources.get(ref.feature);
+      if (directSource && 'legacy' in directSource && directSource.legacy.some(t => t.number === ref.number)) return;
+      const sourceMirror = Boolean(directSource && 'doc' in directSource && directSource.doc.mirror);
+      const resolved = matchArchivedTicket(ref.feature, [...sources].flatMap(([slug, source]) =>
+        'doc' in source ? [{ slug, mirror: !!source.doc.mirror, value: index.has(`${slug}/${ref.number}`) ? `${slug}/${ref.number}` : undefined }] : [],
+      ), sourceMirror);
+      return resolved.status === 'matched' ? resolved.value : undefined;
+    };
     const scan: TicketScan = {
       stamp: ++revision, features: features.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug)), partial, sources,
+      resolve: resolveRef,
       lookup: (ticket, feature) => {
-        const ref = parseTicketRef(targetKey(feature && /^\d+$/.test(ticket) ? `${feature}/${ticket}` : ticket));
-        if (!ref) return;
-        const direct = index.get(`${ref.feature}/${ref.number}`);
-        if (direct) return direct;
-        let archived: TicketLookup | undefined;
-        for (const [slug, source] of sources) {
-          if (!('doc' in source) || source.doc.mirror || !isTicketArchive(ref.feature, slug)) continue;
-          const match = index.get(`${slug}/${ref.number}`);
-          if (match) {
-            if (archived) return; // Ambiguity is not evidence of settlement.
-            archived = match;
-          }
-        }
-        return archived;
+        const key = resolveRef(ticket, feature);
+        return key ? index.get(key) : undefined;
       },
     };
     this.previous = { signature: fingerprint, scan };

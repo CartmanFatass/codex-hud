@@ -8,7 +8,7 @@ import { localProjectRoots } from '../roles/projects.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import { migrateTickets } from '../tickets/migrate.js';
 import {
-  TICKET_FEATURE, isTicketArchive, parseTicketRef, readJsonTicketFeature, renderTicketBrief,
+  TICKET_FEATURE, matchArchivedTicket, parseTicketRef, readJsonTicketFeature, renderTicketBrief,
   serializeTicketFeature, ticketRef, withTicketStoreLock,
   type AcceptanceItem, type TicketComment, type TicketFeatureDoc, type TicketRecord, type TicketStatus,
 } from '../tickets/store.js';
@@ -85,17 +85,19 @@ async function showTickets(args: readonly string[], io: HudIO): Promise<number> 
   let source = sources.get(feature);
   const entries = source ? ('doc' in source ? source.doc.tickets : source.legacy) : [];
   let selected = id ? entries.filter(({ number }) => number === id.number) : entries;
-  if (id && !selected.length && !(source && 'doc' in source && source.doc.mirror)) {
-    const archives = [...sources].flatMap(([slug, candidate]) => {
-      if (!isTicketArchive(feature, slug) || !('doc' in candidate) || candidate.doc.mirror) return [];
+  if (id && !selected.length) {
+    const sourceMirror = Boolean(source && 'doc' in source && source.doc.mirror);
+    const resolved = matchArchivedTicket(feature, [...sources].flatMap(([slug, candidate]) => {
+      if (!('doc' in candidate)) return [];
       const ticket = candidate.doc.tickets.find(t => t.number === id.number);
-      return ticket ? [{ candidate, ticket }] : [];
-    });
-    if (archives.length === 1) {
-      source = archives[0].candidate;
-      selected = [archives[0].ticket];
+      return [{ slug, mirror: !!candidate.doc.mirror, value: ticket ? { candidate, ticket } : undefined }];
+    }), sourceMirror);
+    if (resolved.status === 'matched') {
+      source = resolved.value.candidate;
+      selected = [resolved.value.ticket];
+    } else if (resolved.status === 'ambiguous') {
+      throw new CliError(`ticket not found or ambiguous: ${args[0]}`, 1);
     }
-    if (archives.length > 1) throw new CliError(`ticket not found or ambiguous: ${args[0]}`, 1);
   }
   if (!source) throw new CliError(`ticket feature not found or unreadable: ${feature}`, 1);
   if (id && selected.length !== 1) throw new CliError(`ticket not found or ambiguous: ${args[0]}`, 1);

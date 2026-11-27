@@ -13,7 +13,7 @@ import {
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
 import { landReportJob, type LandFlow } from './land-state.js';
-import { withObjectiveLock } from './local-objectives.js';
+import { withObjectiveLock, type ObjectiveFileInput } from './local-objectives.js';
 import { registeredTicketRepo, unfinishedAcceptance, unregisteredRepoReason } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { REPORT_MARKDOWN_HEADING_PREFIX } from './report-notes.js';
@@ -135,7 +135,16 @@ function applyJsonLanding(doc: TicketFeatureDoc, { row, ref, notes, commit }: La
   return unfinished;
 }
 
-async function planLanding(main: string, home: string, entries: readonly LandRecordEntry[], replayBase: string, gates: number, at: string, git: GitRunner) {
+async function planLanding(
+  main: string,
+  home: string,
+  entries: readonly LandRecordEntry[],
+  replayBase: string,
+  gates: number,
+  at: string,
+  git: GitRunner,
+  objectiveFile?: ObjectiveFileInput | (() => ObjectiveFileInput),
+) {
   const { writes, groups } = readTicketWriteState(home, main);
   const docs = new Map<string, TicketFeatureDoc>();
   const checked = new Set<string>();
@@ -167,7 +176,7 @@ async function planLanding(main: string, home: string, entries: readonly LandRec
     docs.set(feature, doc);
     if (unfinished.length) pending.push({ row: entry.row, ticket: ticketRef(feature, ref.number), items: unfinished });
   }
-  try { return { ...planTicketEdit(main, home, [...docs.values()]), pending }; }
+  try { return { ...planTicketEdit(main, home, [...docs.values()], undefined, objectiveFile), pending }; }
   catch (error) {
     if (error instanceof TicketFeatureFull) {
       throw new Error(`Cannot record landing in ${ticketWriteRelPath(error.feature)}: ${error.message}`, { cause: error });
@@ -185,11 +194,14 @@ export async function checkLandingRecords(
   gates: number,
   filters: string[],
   at: string,
-  opts?: { locked?: boolean },
-): Promise<boolean> {
+  opts?: { locked?: boolean; objectiveFile?: ObjectiveFileInput | (() => ObjectiveFileInput) },
+): Promise<{ archived: boolean; objectiveEdited: boolean }> {
   const realMain = fs.realpathSync(mainRoot);
   const git: GitRunner = (args) => worktreeGit(realMain, [...filters, ...args]);
-  const run = async () => (await planLanding(realMain, home, entries, replayBase, gates, at, git)).moved.size > 0;
+  const run = async () => {
+    const plan = await planLanding(realMain, home, entries, replayBase, gates, at, git, opts?.objectiveFile);
+    return { archived: plan.moved.size > 0, objectiveEdited: plan.objectiveEdited };
+  };
   return opts?.locked ? run() : withTicketStoreLock(realMain, () => withObjectiveLock(realMain, run));
 }
 

@@ -6,7 +6,7 @@
     {
       "number": 21,
       "title": "Repair unattended/07: permission proof narrows unproven forms to main instead of approving them",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "In a scratch herdr pane bound to a synthetic job, show Claude Bash prompts for (a) `S=<scratchpad>; rm -rf $S/out` (approved once), (b) the same with the worktree's `scratchpad` a symlink to a user-owned directory outside the job (main), (c) `test -d sub && cd sub; rm -f x` (main), (d) `npm run release` in the worktree (main), (e) `cp a.txt <worktree>/dir/` (main unless the derived child is proven): only (a) gets a key press; the others reach main with recommendation and answer action.",
       "approved_removals": [],
@@ -21,7 +21,7 @@
         {
           "id": 1,
           "text": "Tests: symlinked scratchpad, conditional `cd`/assignment before `;`, `cp` into a directory with an existing child symlink, tar/unzip without member list, `npm run release` and `npx tsc` without a proven local binary all go to main",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
@@ -51,10 +51,15 @@
           "at": "2026-11-27T13:03:11.549Z",
           "author": "land",
           "text": "Partial landing (f0f3b2c99bb2637f6, job j0f3b2c99bb2637f6): acceptance left unticked: #1 Tests: symlinked scratchpad, conditional `cd`/assignment before `;`, `cp` into a directory with an existing child symlink, tar/unzip without member list, `npm run release` and `npx tsc` without a proven local binary all go to main"
+        },
+        {
+          "at": "2026-11-27T14:39:25.105Z",
+          "author": "main",
+          "text": "main: landed 9ee0d241; #1 cases were carried into unattended/22 (landed). Remaining unproven forms are cut back by unattended/25."
         }
       ],
       "created_at": "2026-11-27T12:37:30.226Z",
-      "updated_at": "2026-11-27T13:03:11.549Z"
+      "updated_at": "2026-11-27T14:39:25.105Z"
     },
     {
       "number": 22,
@@ -157,6 +162,70 @@
       "comments": [],
       "created_at": "2026-11-27T13:23:16.962Z",
       "updated_at": "2026-11-27T13:43:53.162Z"
+    },
+    {
+      "number": 25,
+      "title": "Narrow automatic permission approval to forms it can prove; send the rest to main",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "In a scratch herdr pane bound to a synthetic job, show Claude Code prompts for (a) `S=<scratchpad>; rm -rf $S/out`, (b) a Claude Edit of a file in the worktree with an absolute path, (c) `git commit -m x`, (d) `grep -r key .`, (e) `cd sub; rm -f x`, (f) a Claude Edit with a relative path and a diff preview. (a) and (b) get one automatic answer; (c)-(f) reach main with a recommendation.",
+      "approved_removals": [
+        "automatic approval of git commit/stash/rebase prompts",
+        "automatic approval of recursive chmod and recursive search (grep -r",
+        "rg over a directory)",
+        "automatic approval of commands that carry cd state across",
+        "or &&",
+        "automatic approval of native file edits whose base directory is ambiguous",
+        "automatic approval of deletion under external scratch/temp roots (owner 2026-11-27",
+        "d-2026-11-27-02)"
+      ],
+      "blocked_by": [],
+      "what": "Owner decision D-2026-11-27-02 after milestone review j297aaffd5e903d3d (run q2e663015e61f3272, cancelled). Delete, do not patch: the proof in `src/mcp/permission-policy.ts` (~1,350 lines) and `src/mcp/worker-permissions.ts` keeps growing into a shell and Git interpreter. Remove these branches so the forms go to main: (1) git `add`/`commit`/`stash`/`rebase` from `ALLOWED_GIT_SUBS` (~:11, ~1043-1133); Git read subcommands accept only known options; (2) recursive chmod/traversal and recursive search, and nonrecursive chmod on multiply-linked files (~762-795, ~934-996); (3) any proof that carries `cd` or assignment state across `;`/`&&` into a mutation (~1186-1188, ~1242-1250), except the literal `S=<abs>; rm ... $S/...` form ticket 08 kept; (4) native edit prompts with a relative heading path: use the displayed cwd when unambiguous, else main; never substitute the process cwd (`worker-permissions.ts` ~126-161, ~360-363); (5) external scratch and temp roots that lack a verified real parent bound to the job (`worker-permissions.ts` ~340-359, `permission-policy.ts` ~116-158): drop them from automatic deletion proof; the derived worktree scratchpad stays. Also: bare shell verbs must resolve to a trusted system path, not a project-local executable (~348-363), or go to main. Keep: the structured-only Decision API input, recoverable-byte check, bounded ledger, spend-before-send, fresh menu/selection check, worktree explicit new-file create/edit, scratchpad deletion, read-only commands with known options and read-only filter pipes. Net line count of the two files must go down. Update docs/reference.md (permission section, ~677-687) and the Decision API input table (~1347) to the narrowed set.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fixture tests: each of review j297aaffd5e903d3d blockers 1-5 goes to main (one case per blocker), and the kept forms (scratchpad rm via S=<abs>, worktree absolute-path Edit/create, read-only command with a filter pipe) still get one automatic answer",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "permission-policy.ts plus worker-permissions.ts have fewer lines than at 9583cd22",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "docs/reference.md lists the narrowed approved set and nothing it no longer approves",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T14:40:03.969Z",
+      "updated_at": "2026-11-27T14:40:03.969Z"
+    },
+    {
+      "number": 26,
+      "title": "Close the permission-handoff and notice delivery holes from the last unattended review",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Review j297aaffd5e903d3d majors 6-10 plus open lead todos (run q2e663015e61f3272, cancelled; its repair budget was spent). Verify line numbers at HEAD. (6) `src/mcp/report-notes.ts` ~159-169 ends an inline field at a same-indent next line, so a soft-wrapped `Blockers: owner live try remains: ...` + `and pick which layout ships` is classified as a try: collect through the Markdown paragraph/field boundary before classifying, or keep ambiguous continuation as a blocker. (7) `src/roles/notify.ts` ~187-209 types the message after any unsuccessful `codex queue` result, including timeout and lost reply (`src/roles/herdr-run.ts`): fall back only on positive non-send evidence; propagate indeterminate. (8) `src/cli/watch.ts` ~67-70, ~470-600 treats a permission notice as a row delta and advances `prev` before delivery, so a confirmed non-send or expired guarded retry loses the hand-off: use one durable per-entry delivery claim shared by watcher and direct paths (`src/runtime/watch-runtime.ts` ~294-324), release only on confirmed non-send, and prune `.noticed` markers with the 12-entry ledger. (9) `src/mcp/ticket-queue-step.ts` ~53, ~73-92, ~1421-1437 disables the project permission outbox because historical `q.pane` is non-empty after the origin died: choose by live recipient availability. (10) `src/mcp/mcp/tasks.ts` ~443-470 prefers the global marker epoch/expiry over the caller's receipt: check the caller's own receipt epoch against the flow before poll/cancel/re-claim. Also: (11) `hud_respond` on run q2e663015e61f3272 paused with `handback {kind: escalate, step: accept}` returned `no_pending_handback` (2026-11-27); an escalate pause must be answerable with resume/stop. (12) Check `judgeSettlement` (`ticket-queue-step.ts` ~148) cannot wait forever when a report is rewritten after settlement; add a bound or a notice.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests for each of items 6-12: soft-wrapped Blockers stays a blocker; an indeterminate codex queue send is not retyped; a refused watcher hand-off is redelivered once and .noticed markers stay bounded; a pane-less successor still notifies project main; a stale caller receipt cannot poll a newer epoch's task; hud_respond answers an escalate accept pause; a rewritten report cannot wait forever",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "docs/reference.md matches the changed delivery rules",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T14:40:03.969Z",
+      "updated_at": "2026-11-27T14:40:03.969Z"
     }
   ]
 }

@@ -240,7 +240,7 @@
     {
       "number": 61,
       "title": "Repair chores/60 archive: old refs, landing conflict check, pending write sets",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -253,47 +253,92 @@
         {
           "id": 1,
           "text": "A cap-crossing land whose target shard is already linked, carrying an unrelated .hud/objectives.md change, lands. A land that would need a new Features link and also edits .hud/objectives.md is still refused. Unit tests cover both.",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "An owner request `(waits on sample/01)` stays settled after sample/01 moves to sample-done/01 (unit test).",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "A pending flake dispatch whose wontfix ticket was archived resolves and stops retaining its flow (unit test).",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Archive into a new shard, then an ordinary add that links another feature to an Objective: the sweep/commit path commits both and reports no hand edit. A real hand edit of .hud/objectives.md is still fenced. Unit tests cover both.",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "With sample/01 in the source and sample-done/01 already present, the planner does not move sample/01. `get sample/01` still resolves uniquely (unit test).",
-          "done": false
+          "done": true
         },
         {
           "id": 6,
           "text": "One shared matching function serves the CLI, the collector, the store and the planner's destination check.",
-          "done": false
+          "done": true
         },
         {
           "id": 7,
           "text": "A cap-crossing write moves every eligible ticket. The next small write to the same feature does not run the archive again (unit test).",
-          "done": false
+          "done": true
         },
         {
           "id": 8,
           "text": "Existing chores/60 archive tests still pass. docs/reference.md is updated.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T14:53:11.042Z",
+        "job": "j58f884f26d2c742b",
+        "flow": "f58f884f26d2c742b",
+        "replay_base": "bd7556e8f5022daf01d5a8c5dc2e112141942642",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T14:25:13.956Z",
+      "updated_at": "2026-11-27T14:53:11.042Z"
+    },
+    {
+      "number": 62,
+      "title": "Acceptance repairs have no fixed round cap; the lead escalates on repeated findings",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [
+        "the fixed two-round cap on acceptance repairs and its inheritance by later runs (owner 2026-11-27",
+        "d-2026-11-27-03)"
+      ],
+      "blocked_by": [],
+      "what": "Spec §2.1 (bd7556e8, D-2026-11-27-03): repair rounds after acceptance have no fixed count; the lead or main decides each round and escalates when a review repeats a kind of finding an earlier round already repaired. The automatic land-gate repair keeps its cap of two (do not touch `land-runner`/`land-repair` limits). Code: remove the `MAX_REPAIR_ROUNDS` refusal in `src/mcp/ticket-queue-state.ts` (~262-273) for lead/main `repair` decisions and main's `hud_respond repair`; remove `inheritedRepairRounds` (`src/mcp/ticket-queue.ts` ~186-198, ~291, ~498) so a new run starts at round 0 (keep `repair_rounds` as a count for display and the packet). Lead packet (`src/mcp/workflow-lead.ts`): show the current round and, for each earlier round, the review's summary and finding counts plus the repair tickets admitted, so the lead can see non-convergence. Lead instructions (`packages/hud-mcp/instructions/lead.md`): add the escalation rule in one sentence. Update docs/reference.md (~476: the two 'bounded to at most 2 repair rounds' phrases and the inheritance sentence) and tests that assert the cap or inheritance.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a run accepts a third and fourth lead `repair` decision and admits the repair tickets; a land gate still stops after two automatic repairs",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a new run for a feature whose previous run was cancelled or escalated after two rounds starts with repair_rounds 0",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: the lead packet lists earlier rounds' review summaries, finding counts and admitted repair tickets",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "lead.md and docs/reference.md state the rule; no text still promises a two-round acceptance cap",
           "done": false
         }
       ],
       "comments": [],
-      "created_at": "2026-11-27T14:25:13.956Z",
-      "updated_at": "2026-11-27T14:25:13.956Z"
+      "created_at": "2026-11-27T14:43:44.447Z",
+      "updated_at": "2026-11-27T14:43:44.447Z"
     }
   ]
 }

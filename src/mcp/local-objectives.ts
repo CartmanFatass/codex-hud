@@ -235,10 +235,18 @@ async function editRequest(root: string, home: string, args: Record<string, unkn
 
 export const withObjectiveLock = <T>(root: string, fn: () => T | Promise<T>) => withAbstractLock('objective', root, fn);
 
+export type ObjectiveFileInput = { text: string; mode?: number } | null;
+
 /** Plan all ticket links using the same Features editor as `set`. Caller holds the objective lock. */
-export function planFeatureLinks(root: string, links: ReadonlyMap<string, ReadonlySet<string>>, archives: ReadonlyMap<string, ReadonlySet<string>>) {
+export function planFeatureLinks(
+  root: string,
+  links: ReadonlyMap<string, ReadonlySet<string>>,
+  archives: ReadonlyMap<string, ReadonlySet<string>>,
+  objectiveFile?: ObjectiveFileInput,
+) {
   if (!links.size && !archives.size) return;
-  const file = readObjectiveFile(objectivePath(root)), original = file?.text ?? '';
+  const file = objectiveFile === undefined ? readObjectiveFile(objectivePath(root)) : objectiveFile ?? undefined;
+  const original = file?.text ?? '';
   const { objectives } = inspectObjectives(original).record;
   let updated = original;
   for (const id of links.keys()) if (!objectives.some(item => item.id === id)) invalid('unknown objective');

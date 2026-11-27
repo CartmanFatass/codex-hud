@@ -235,18 +235,46 @@ export function isTicketArchive(feature: string, sibling: string): boolean {
   return sibling.startsWith(`${feature}-done`) && /^(?:-done(?:-(?:[2-9]|[1-9]\d+))?)+$/.test(sibling.slice(feature.length));
 }
 
-export function resolveArchivedTicket(root: string, feature: string, number: number) {
-  let match: { doc: TicketFeatureDoc; record: TicketRecord } | undefined;
-  for (const slug of jsonTicketFeatureSlugs(root)) {
-    if (!isTicketArchive(feature, slug)) continue;
-    const doc = readJsonTicketFeature(root, slug);
-    const record = !doc?.mirror && doc?.tickets.find(t => t.number === number);
-    if (record && doc) {
-      if (match) throw new Error(`ambiguous ticket: ${ticketRef(feature, number)}`);
-      match = { doc, record };
-    }
+export interface ArchiveCandidate<T> {
+  slug: string;
+  mirror?: boolean;
+  value?: T;
+}
+
+export type ArchiveMatch<T> =
+  | { status: 'missing' }
+  | { status: 'ambiguous' }
+  | { status: 'matched'; slug: string; value: T };
+
+/** Resolve `feature` across already-loaded non-mirror archive siblings, rejecting ambiguous matches. */
+export function matchArchivedTicket<T>(
+  feature: string,
+  candidates: Iterable<ArchiveCandidate<T>>,
+  sourceMirror = false,
+): ArchiveMatch<T> {
+  if (sourceMirror) return { status: 'missing' };
+  let found: { slug: string; value: T } | undefined;
+  for (const candidate of candidates) {
+    if (candidate.mirror || candidate.value === undefined || !isTicketArchive(feature, candidate.slug)) continue;
+    if (found) return { status: 'ambiguous' };
+    found = { slug: candidate.slug, value: candidate.value };
   }
-  return match;
+  return found ? { status: 'matched', ...found } : { status: 'missing' };
+}
+
+export function resolveArchivedTicket(root: string, feature: string, number: number, sourceMirror = false) {
+  if (sourceMirror) return;
+  const candidates = jsonTicketFeatureSlugs(root)
+    .filter(slug => isTicketArchive(feature, slug))
+    .flatMap(slug => {
+      const doc = readJsonTicketFeature(root, slug);
+      if (!doc) return [];
+      const record = doc.tickets.find(t => t.number === number);
+      return [{ slug, mirror: !!doc.mirror, value: record ? { doc, record } : undefined }];
+    });
+  const resolved = matchArchivedTicket(feature, candidates, sourceMirror);
+  if (resolved.status === 'ambiguous') throw new Error(`ambiguous ticket: ${ticketRef(feature, number)}`);
+  return resolved.status === 'matched' ? resolved.value : undefined;
 }
 
 export function storedTicket(root: string, ticket: unknown) {
@@ -336,6 +364,14 @@ export function ticketWriteSha(realMain: string, rel: string): string | undefine
     const { bytes, truncated } = readFileBounded(path, MAX_SWEEP_INPUT_BYTES);
     if (!truncated) return hash(bytes);
   } catch { /* Unknown bytes cannot authorize a sweep. */ }
+}
+
+/** True when `key` belongs to a pending write group and the file on disk still matches its recorded digest. */
+export function extendsPendingWriteGroup(mainRoot: string, home: string, key: string): boolean {
+  const { writes, groups } = readTicketWriteState(home, mainRoot);
+  if (!groups.some(group => group.includes(key))) return false;
+  const expected = writes[key];
+  return expected !== undefined && ticketWriteSha(fs.realpathSync(mainRoot), ticketWriteRelPath(key)) === expected;
 }
 
 function isSweepEligibleBeforeWrite(mainRoot: string, rel: string, recordedSha: string | undefined, archive: boolean): boolean {

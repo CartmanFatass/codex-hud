@@ -17,6 +17,7 @@ import { collectControlRadar, type ControlRadar } from './control-radar.js';
 import { collectControlJobStats, jobSettledAt, type ControlJobStats } from './job-stats.js';
 import { epoch } from '../roles/job-usage.js';
 import { targetKey } from './ticket-evidence.js';
+import { matchArchivedTicket, parseTicketRef } from '../tickets/store.js';
 import { ticketStoreFor } from './ticket-store.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { TryLog } from './try-records.js';
@@ -116,9 +117,27 @@ const waitRefs = (text: string) => [...text.matchAll(/[（(]waits on ([^()（）
   .split(/,|\s+and\s+/i).map((r) => r.trim()).filter(Boolean) ?? [];
 
 /** Waits can name tickets (either spelling) or a legacy acceptance ID. Unknown references keep the item open. */
-export function waitSettled(text: string, settled: ReadonlySet<string>): boolean {
+export function waitSettled(
+  text: string,
+  settled: ReadonlySet<string>,
+  resolve?: (key: string) => string | undefined,
+): boolean {
   const refs = waitRefs(text);
-  return refs.length > 0 && refs.every((ref) => settled.has(targetKey(ref)));
+  return refs.length > 0 && refs.every((ref) => {
+    const key = targetKey(ref);
+    if (settled.has(key)) return true;
+    if (resolve) {
+      const resolved = resolve(key);
+      return resolved !== undefined && settled.has(resolved);
+    }
+    const parsed = parseTicketRef(key);
+    if (!parsed) return false;
+    const matched = matchArchivedTicket(parsed.feature, [...settled].flatMap((entry) => {
+      const candidate = parseTicketRef(entry);
+      return candidate && candidate.number === parsed.number ? [{ slug: candidate.feature, value: entry }] : [];
+    }));
+    return matched.status === 'matched';
+  });
 }
 
 export const ownerRequestKey = (item: ProjectItem) => item.request ?? item.text ?? item.value;
@@ -545,7 +564,7 @@ export class ProjectCollector {
     out.ticketTotals = ticketsScan.partial ? { ...totals, partial: true } : totals;
     if (out.objectives) out.unlinked = unlinkedFeatures(out.tickets, out.objectives, out.active);
     let objectiveTitles: Map<string, string> | undefined;
-    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, settled))
+    out.waiting = out.waiting.filter((item) => !waitSettled(item.value, settled, ticketsScan.resolve))
       .map((item) => {
         const fields = requestFields(item.text ?? item.value);
         return { item, fields, ...requestOrder(item.value, fields?.waits) };

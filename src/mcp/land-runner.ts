@@ -21,7 +21,8 @@ import { withTicketStoreLock } from '../tickets/store.js';
 import { reapWorktree } from './managed-worktree.js';
 import { checkLandingRecords, prepareLandRecords, recordLanding } from './land-records.js';
 import { repairLand } from './land-repair.js';
-import { withObjectiveLock } from './local-objectives.js';
+import { STATE_BYTES } from '../collectors/state-ledger.js';
+import { withObjectiveLock, type ObjectiveFileInput } from './local-objectives.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 import { LandOutput } from './land-evidence.js';
 import { collectAndRecordLandFlakes, retryPendingFlakeCollections } from './land-flakes.js';
@@ -417,6 +418,25 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     const trackerFilters = new Map([[mainRoot, filters]]);
     for (const [tracker] of groups) if (tracker !== mainRoot) trackerFilters.set(tracker, await neutralizeFilters(git, tracker));
     const at = new Date().toISOString();
+    const readIncomingObjective = async (commit: string): Promise<() => ObjectiveFileInput> => {
+      const entry = await git(main, ['ls-tree', '-z', commit, '--', '.hud/objectives.md']);
+      if (!entry) return () => null;
+      const match = /^(\d+) blob ([0-9a-f]+)\t\.hud\/objectives\.md\0$/.exec(entry);
+      if (!match || (match[1] !== '100644' && match[1] !== '100755')) {
+        return () => {
+          throw new Error('Cannot archive tickets while the same land changes .hud/objectives.md; land the Objective edit separately');
+        };
+      }
+      const size = Number((await git(main, ['cat-file', '-s', match[2]])).trim());
+      if (!Number.isFinite(size) || size > STATE_BYTES) {
+        return () => { throw new Error('Objective record exceeds 64 KiB'); };
+      }
+      const text = (await git(main, ['cat-file', 'blob', match[2]])).replace(/^\uFEFF/, '');
+      return () => ({ text });
+    };
+    const incomingObjectives = landedPaths.includes('.hud/objectives.md')
+      ? await readIncomingObjective(landed)
+      : undefined;
     // Opposite-direction lands may need the same locks, even though their checkout leases differ.
     const roots = [...groups.keys()].sort();
     const withRecordLocks = (run: () => Promise<void>, i = 0): Promise<void> =>
@@ -424,8 +444,17 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     await withRecordLocks(async () => {
       for (const [tracker, entries] of groups) {
         const records = tracker === mainRoot ? entries : entries.map(entry => ({ ...entry, commit: trainTips?.get(entry.row) ?? landed }));
-        const archives = await checkLandingRecords(tracker, home, records, target, c.gate.length, trackerFilters.get(tracker)!, at, { locked: true });
-        if (archives && tracker === mainRoot && landedPaths.includes('.hud/objectives.md')) {
+        const { objectiveEdited } = await checkLandingRecords(
+          tracker,
+          home,
+          records,
+          target,
+          c.gate.length,
+          trackerFilters.get(tracker)!,
+          at,
+          { locked: true, ...(tracker === mainRoot && incomingObjectives ? { objectiveFile: incomingObjectives } : {}) },
+        );
+        if (objectiveEdited && tracker === mainRoot && landedPaths.includes('.hud/objectives.md')) {
           throw new Error('Cannot archive tickets while the same land changes .hud/objectives.md; land the Objective edit separately');
         }
       }

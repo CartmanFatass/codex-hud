@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import test from 'node:test';
 import {
-  collectAndRecordLandFlakes, collectGateFlakes, flakeDispatchKey, retryPendingFlakeCollections, settleAutoLandFlakeJob,
+  collectAndRecordLandFlakes, collectGateFlakes, flakeDispatchKey, hasPendingFlakeCollection, retryPendingFlakeCollections, settleAutoLandFlakeJob,
 } from '../../dist/mcp/land-flakes.js';
 import { runningListAdmission } from '../../dist/mcp/flake-admission.js';
 import { indexFlakeBlockJob, readFlakeBlockJobs } from '../../dist/mcp/flake-block-index.js';
@@ -2391,4 +2391,111 @@ test('land-repair replacement worker keeps flake admission blocked while running
   const cancelled = await f.call('hud_tickets', { op: 'run', feature: 'test-flakes', cancel: true, cwd: f.main });
   assert.equal(cancelled.cancel_requested, true, JSON.stringify(cancelled));
   await until(() => f.flowState(started.flow).state === 'cancelled', t.signal);
+});
+
+test('a pending flake dispatch whose wontfix ticket was archived resolves and stops retaining its flow', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+  const at = '2026-01-01T00:00:00.000Z';
+  const ticketsDir = join(f.main, '.hud', 'tickets');
+  fs.mkdirSync(ticketsDir, { recursive: true });
+  // Source feature no longer holds #01; #01 was archived as wontfix into test-flakes-done.
+  fs.writeFileSync(join(ticketsDir, 'test-flakes.json'), JSON.stringify({
+    version: 1,
+    feature: 'test-flakes',
+    tickets: [{
+      number: 2,
+      title: 'Gate flakes running list',
+      kind: 'flake-list',
+      status: 'needs-triage',
+      owner_try: false,
+      live_try: 'none',
+      approved_removals: [],
+      blocked_by: [],
+      what: 'Running list.',
+      cases: [{ step: 'gate[1]', test: 'sample/b.test.mjs', case_name: 'beta', flow: 'f0000000000000a02', recorded_at: at }],
+      acceptance: [{ id: 1, text: 'Pass', done: false }],
+      comments: [],
+      created_at: at,
+      updated_at: at,
+    }],
+  }, null, 2) + '\n');
+  fs.writeFileSync(join(ticketsDir, 'test-flakes-done.json'), JSON.stringify({
+    version: 1,
+    feature: 'test-flakes-done',
+    tickets: [{
+      number: 1,
+      title: 'Gate flakes running list',
+      kind: 'flake-list',
+      status: 'wontfix',
+      owner_try: false,
+      live_try: 'none',
+      approved_removals: [],
+      blocked_by: [],
+      what: 'Running list.',
+      cases: [{ step: 'gate[1]', test: 'sample/a.test.mjs', case_name: 'alpha', flow: 'f0000000000000a01', recorded_at: at }],
+      acceptance: [{ id: 1, text: 'Pass', done: false }],
+      comments: [],
+      created_at: at,
+      updated_at: at,
+    }],
+  }, null, 2) + '\n');
+
+  const flowId = 'f0000000000000a91';
+  const flowPath = join(f.home, 'flows', `${flowId}.json`);
+  const logPath = join(f.home, 'flows', `${flowId}.json.gate-1.log`);
+  const flowReceipt = {
+    flow: flowId,
+    job: 'j0000000000000a91',
+    state: 'completed',
+    step: 'done',
+    wt: { main_root: f.main, root: f.worktree, branch: 'wt/test' },
+    created_at: at,
+    updated_at: at,
+    landed_at: at,
+    reruns: [{ step: 'gate[1]', tests: ['alpha'], output_path: logPath, rerun_ok: true }],
+    flake_collection: {
+      state: 'pending',
+      stage: 'dispatch',
+      ticket: 'test-flakes/01',
+      error: 'waiting for active flake job',
+      attempts: 1,
+      updated_at: at,
+    },
+  };
+  fs.mkdirSync(join(f.home, 'flows'), { recursive: true });
+  fs.writeFileSync(logPath, 'synthetic gate excerpt\n');
+  fs.writeFileSync(flowPath, JSON.stringify(flowReceipt));
+
+  // 1. hasPendingFlakeCollection recognizes the archived wontfix ticket as resolved.
+  assert.equal(hasPendingFlakeCollection(f.home, flowReceipt), false);
+
+  // 2. retryPendingFlakeCollections transitions the pending receipt to done without dispatching.
+  let dispatched = 0;
+  const retried = await retryPendingFlakeCollections(f.home, f.main, null, {
+    dispatch: async () => { dispatched++; return { job: 'j-unexpected' }; },
+  });
+  assert.deepEqual(retried, { retried: 1, resolved: 1, pending: 0 });
+  assert.equal(dispatched, 0);
+  assert.equal(readJson(flowPath).flake_collection.state, 'done');
+
+  // 3. Even before retry updates the receipt, pruneLandFlows stops retaining an expired pending flow once archived wontfix.
+  const expiredFlowId = 'f0000000000000a92';
+  const expiredPath = join(f.home, 'flows', `${expiredFlowId}.json`);
+  const expiredLog = join(f.home, 'flows', `${expiredFlowId}.json.gate-1.log`);
+  fs.writeFileSync(expiredLog, 'synthetic gate excerpt\n');
+  fs.writeFileSync(expiredPath, JSON.stringify({
+    ...flowReceipt,
+    flow: expiredFlowId,
+    job: 'j0000000000000a92',
+    reruns: [{ step: 'gate[1]', tests: ['alpha'], output_path: expiredLog, rerun_ok: true }],
+  }));
+  const now = Date.now();
+  const expiredSec = Math.floor((now - JOB_RETENTION_MS - 60_000) / 1000);
+  fs.utimesSync(expiredPath, expiredSec, expiredSec);
+  fs.utimesSync(expiredLog, expiredSec, expiredSec);
+
+  pruneLandFlows(f.home, now);
+  assert.equal(fs.existsSync(expiredPath), false, 'expired pending dispatch receipt pruned after wontfix ticket was archived');
+  assert.equal(fs.existsSync(expiredLog), false, 'expired pending dispatch gate log pruned after wontfix ticket was archived');
 });

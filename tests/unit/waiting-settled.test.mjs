@@ -21,6 +21,45 @@ test('a waiting item settles only when every named slice and ticket is finished'
   // Mentioning an accepted slice in prose is not a dependency.
   assert.equal(settled('Compare with DONE-ONE before deciding'), false);
   assert.equal(settled('No refs at all'), false);
+  assert.equal(waitSettled('Archived ref (waits on sample/01)', new Set(['sample-done/1'])), true);
+  assert.equal(waitSettled('Ambiguous archived ref (waits on sample/01)', new Set(['sample-done/1', 'sample-done-2/1'])), false);
+});
+
+test('an owner request waits on sample/01 stays settled after sample/01 moves to sample-done/01 without rewriting prose', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'waiting-archived-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const cwd = join(root, 'project'), hud = join(root, 'hud'), home = join(root, 'home');
+  const put = (path, text) => { fs.mkdirSync(join(path, '..'), { recursive: true }); fs.writeFileSync(path, text); };
+  const at = '2026-01-01T00:00:00.000Z';
+  const ticket = (number, status) => ({
+    number, title: `Ticket ${number}`, status, owner_try: false, live_try: 'none', approved_removals: [],
+    blocked_by: [], what: 'Synthetic slice.', acceptance: [{ id: 1, text: 'Check', done: status === 'done' }],
+    comments: [], created_at: at, updated_at: at,
+  });
+  const statePath = join(cwd, 'docs/handoff/STATE.md');
+  const stateText = [
+    '# State', '', '## Waiting for the owner', '',
+    '- Settled archived ticket (waits on sample/01)',
+    '- Still open direct ticket (waits on sample/02)',
+    '- Ambiguous archived ticket (waits on sample/03)', '',
+  ].join('\n');
+  put(statePath, stateText);
+  put(join(cwd, '.hud/tickets/sample.json'), JSON.stringify({
+    version: 1, feature: 'sample', tickets: [ticket(2, 'ready-for-agent')],
+  }, null, 2) + '\n');
+  put(join(cwd, '.hud/tickets/sample-done.json'), JSON.stringify({
+    version: 1, feature: 'sample-done', tickets: [ticket(1, 'done'), ticket(2, 'done'), ticket(3, 'done')],
+  }, null, 2) + '\n');
+  put(join(cwd, '.hud/tickets/sample-done-2.json'), JSON.stringify({
+    version: 1, feature: 'sample-done-2', tickets: [ticket(3, 'done')],
+  }, null, 2) + '\n');
+  fs.mkdirSync(home, { recursive: true });
+  const data = await new ProjectCollector(cwd, hud, { HOME: home }, home).collect('home', { lanes: [], workers: [] }, Date.now());
+  assert.deepEqual(data.waiting.map((w) => w.value), [
+    'Still open direct ticket (waits on sample/02)',
+    'Ambiguous archived ticket (waits on sample/03)',
+  ]);
+  assert.equal(fs.readFileSync(statePath, 'utf8'), stateText, 'owner prose must not be rewritten');
 });
 
 test('the collector drops settled waiting items from every count', async (t) => {

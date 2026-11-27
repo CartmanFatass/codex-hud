@@ -14,7 +14,7 @@ import { sharedRoot } from '../roles/projects.js';
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
 import { type FlakeCase } from '../tickets/flake-cases.js';
 import {
-  legacyTicketPaths, readJsonTicketFeature, ticketFeaturePath, withTicketStoreLock,
+  legacyTicketPaths, readJsonTicketFeature, storedTicket, ticketFeaturePath, withTicketStoreLock,
   writeTicketFeature, type FlakeCaseRecord, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
@@ -279,10 +279,17 @@ function inspectRunningListTicket(
   if (ref) {
     if (claimedTickets.has(ref.key)) return { state: 'resolved', ticket };
     try {
-      const doc = readJsonTicketFeature(mainRoot, ref.feature);
-      if (doc) {
-        const record = doc.tickets.find(t => t.number === ref.number);
-        if (record) return inspectRunningListRecord(ref.feature, record, ticketFeaturePath(mainRoot, ref.feature), claimedTickets, getBlockers);
+      const stored = storedTicket(mainRoot, ref.key);
+      if (stored) {
+        if (stored.record) {
+          return inspectRunningListRecord(
+            stored.doc.feature,
+            stored.record,
+            ticketFeaturePath(mainRoot, stored.doc.feature),
+            claimedTickets,
+            getBlockers,
+          );
+        }
         return { state: 'unavailable', ticket };
       }
       const item = listFeatureTickets(join(mainRoot, '.scratch'), ref.feature).find(t => t.number === ref.number);
