@@ -7,7 +7,22 @@ import { projectJobFilter } from '../roles/job-project.js';
 import { localProjectRoots } from '../roles/projects.js';
 import { readJsonBounded } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
-import { activeLand, landAttempt } from './land-state.js';
+import { activeLand, landAttempt, readLand, type LandFlow } from './land-state.js';
+
+const LAND_REPAIR_KEY = /^land:(f([a-f0-9]{16})(?:-[1-9]\d*)?):[1-9]\d*$/;
+
+function landRepairOwner(home: string, job: Job): { ownerId: string; flow: LandFlow } | null {
+  if (typeof job.request_key !== 'string') return null;
+  const match = LAND_REPAIR_KEY.exec(job.request_key);
+  if (!match) return null;
+  const flowId = match[1];
+  const ownerId = `j${match[2]}`;
+  if (ownerId === job.job) return null;
+  const flow = readLand(home, flowId);
+  if (!flow || flow.job !== ownerId) return null;
+  if (job.land_turn !== job.request_key && !flow.repairs?.some(r => r.job === job.job)) return null;
+  return { ownerId, flow };
+}
 
 export function readFlakesConfig(mainRoot: string): { feature: string } | null {
   try {
@@ -44,6 +59,11 @@ export function runningListAdmission(home: string, mainRoot: string, feature: st
   const claimedTickets = new Set<string>();
   const priorAttempts = new Map<string, number>();
   const maxKeyAttempts = new Map<string, number>();
+  const landByOwner = new Map<string, LandFlow | null>();
+  const priorLandFor = (ownerId: string): LandFlow | null => {
+    if (!landByOwner.has(ownerId)) landByOwner.set(ownerId, landAttempt(home, ownerId).prior);
+    return landByOwner.get(ownerId) ?? null;
+  };
   let activeJobId: string | undefined;
   for (const id of cache.listJobIds()) {
     const receipt = cache.readJob<Job>(id);
@@ -65,12 +85,15 @@ export function runningListAdmission(home: string, mainRoot: string, feature: st
     if (!key) continue;
     const status = cache.readStatus(id);
     const state = ticketJobState(job, status.status === 'ok' ? status.value : {});
-    const prior = landAttempt(home, id).prior;
+    const repairOwner = landRepairOwner(home, job);
+    const prior = repairOwner ? (priorLandFor(repairOwner.ownerId) ?? repairOwner.flow) : priorLandFor(id);
     const landRunning = Boolean(prior && activeLand(prior));
     const partialLand = prior?.state === 'completed' && Boolean(prior.landed_sha && prior.unfinished_acceptance?.length);
     if (!landRunning && (state === 'failed' || state === 'stopped' || (partialLand && SETTLED_JOB_STATES.has(state)))) {
-      priorAttempts.set(key, (priorAttempts.get(key) ?? 0) + 1);
-      if (keyAttempt > (maxKeyAttempts.get(key) ?? 0)) maxKeyAttempts.set(key, keyAttempt);
+      if (!repairOwner) {
+        priorAttempts.set(key, (priorAttempts.get(key) ?? 0) + 1);
+        if (keyAttempt > (maxKeyAttempts.get(key) ?? 0)) maxKeyAttempts.set(key, keyAttempt);
+      }
     } else {
       claimedTickets.add(key);
     }

@@ -1180,12 +1180,12 @@
         {
           "id": 1,
           "text": "Test: admission stays blocked while the land repair runs and reopens after the confirmed partial land, with both the source and repair job receipts retained",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "hud_tickets ready lists the partially landed flake ticket after the repair settles",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
@@ -1193,9 +1193,22 @@
           "done": false
         }
       ],
-      "comments": [],
+      "landing": {
+        "at": "2026-11-27T12:57:30.086Z",
+        "job": "jf1dad1084c5d3013",
+        "flow": "ff1dad1084c5d3013",
+        "replay_base": "98a34a4d4fb99cf944ef4330839e0310e3affd71",
+        "gates": 5
+      },
+      "comments": [
+        {
+          "at": "2026-11-27T12:57:30.086Z",
+          "author": "land",
+          "text": "Partial landing (ff1dad1084c5d3013, job jf1dad1084c5d3013): acceptance left unticked: #3 Full suite passes"
+        }
+      ],
       "created_at": "2026-11-27T12:17:08.264Z",
-      "updated_at": "2026-11-27T12:17:08.264Z"
+      "updated_at": "2026-11-27T12:57:30.086Z"
     }
   ]
 }

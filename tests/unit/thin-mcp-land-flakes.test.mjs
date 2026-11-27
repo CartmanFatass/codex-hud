@@ -10,6 +10,7 @@ import { runningListAdmission } from '../../dist/mcp/flake-admission.js';
 import { procStat } from '../../dist/utils/proc.js';
 import { startSessionWatch } from '../../dist/cli/watch.js';
 import { jobChanges, readThinJobRows } from '../../dist/collectors/thin-jobs.js';
+import { targetKey } from '../../dist/collectors/ticket-evidence.js';
 import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
 import { ensureJobWatcher } from '../../dist/mcp/watch-pid.js';
@@ -21,7 +22,7 @@ import { controlPath } from '../../dist/unattended/state.js';
 import { publishQuestion } from '../../dist/worker/qa.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
-import { checkout, job as sourceJob, seedJsonTickets } from '../helpers/thin-mcp-land.mjs';
+import { checkout, job as sourceJob, repair, seedJsonTickets, settle } from '../helpers/thin-mcp-land.mjs';
 
 const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 
@@ -2121,4 +2122,124 @@ test('an active flake attempt still blocks a duplicate dispatch', { timeout: 35_
   // 4. Worker closed with no completed landing yet.
   fs.rmSync(activeFlowFile, { force: true });
   await assertBlocked('closed-unlanded');
+});
+
+test('land-repair replacement worker keeps flake admission blocked while running and reopens after confirmed partial land', { timeout: 45_000 }, async t => {
+  const f = await checkout(t, ['grep fixed tracked || { echo repair-needed; exit 1; }'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+
+  const at = '2026-01-01T00:00:00.000Z';
+  const rel = seedJsonTickets(f, 'test-flakes', [{
+    number: 1,
+    title: 'Gate flakes running list',
+    kind: 'flake-list',
+    status: 'ready-for-agent',
+    what: 'Running list of synthetic gate flakes.',
+    cases: [
+      { step: 'gate[1]', test: 'sample/alpha.test.mjs', case_name: 'alpha flake', flow: 'f0000000000000a60', recorded_at: at },
+      { step: 'gate[1]', test: 'sample/beta.test.mjs', case_name: 'beta flake', flow: 'f0000000000000a61', recorded_at: at },
+    ],
+    acceptance: [
+      { id: 1, text: 'Each listed case passes 20 consecutive runs under parallel load', done: false },
+      { id: 2, text: 'No assertion or product bound weakened', done: false },
+    ],
+  }]);
+  f.git(f.main, 'add', rel);
+  f.git(f.main, 'commit', '-qm', 'seed flake list');
+  f.git(f.main, 'push', '-q', 'origin', 'base');
+
+  const first = seedAutoFlakeJob(f, { id: 'j0000000000000a61', ticket: 'test-flakes/01', commitFix: true });
+  settleDispatchedFlakeJob(f, first.id, [
+    'Fixed beta flake only.',
+    '',
+    '## Not done',
+    '- #1 Each listed case passes 20 consecutive runs under parallel load',
+    '',
+    'Blockers: none',
+    '',
+  ].join('\n'), { state: 'closed' });
+
+  const { flow } = await f.call('hud_land', { job: first.id });
+  const repairId = await repair(f, flow, 0);
+  assert.notEqual(repairId, first.id, 'closed source worker must dispatch a replacement repair worker');
+
+  const repairReceipt = readJson(join(f.home, 'jobs', repairId, 'job.json'));
+  assert.equal(repairReceipt.ticket, 'test-flakes/01');
+  assert.equal(repairReceipt.retry_of, first.id);
+  assert.equal(repairReceipt.request_key, `land:${flow}:1`);
+  assert.equal(repairReceipt.land_turn, `land:${flow}:1`);
+
+  // While the land-repair replacement runs, flake admission stays blocked and hud_tickets ready omits the ticket.
+  const ticketKey = targetKey('test-flakes/01');
+  const duringRepair = runningListAdmission(f.home, f.main, 'test-flakes');
+  assert.equal(duringRepair.eligible('test-flakes/01'), false);
+  assert.equal(duringRepair.claimedTickets.has(ticketKey), true);
+  assert.ok(duringRepair.activeJobId);
+  const readyDuringRepair = await f.call('hud_tickets', { op: 'ready', cwd: f.main });
+  assert.equal(readyDuringRepair.tickets.some(item => item.ticket === 'test-flakes/01'), false, JSON.stringify(readyDuringRepair));
+
+  // The replacement fixes the failing gate and settles with the unfinished item; the partial land belongs to the source job.
+  fs.appendFileSync(join(first.wtRoot, 'tracked'), 'fixed\n');
+  f.git(first.wtRoot, 'commit', '-qam', 'fix failing gate');
+  settle(f, repairId, [
+    'Fixed failing gate.',
+    '',
+    '## Not done',
+    '- #1 Each listed case passes 20 consecutive runs under parallel load',
+    '',
+    'Blockers: none',
+    '',
+  ].join('\n'));
+
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow).state), t.signal);
+  const landed = f.flowState(flow);
+  assert.equal(landed.state, 'completed', JSON.stringify(landed));
+  assert.equal(landed.repairs?.length, 1);
+  assert.equal(landed.repairs[0].job, repairId);
+  assert.equal(landed.repairs[0].outcome, 'gate passed');
+  assert.deepEqual(landed.unfinished_acceptance, [
+    { id: 1, text: 'Each listed case passes 20 consecutive runs under parallel load' },
+  ]);
+
+  // Both the source and repair job receipts remain retained on disk.
+  assert.equal(fs.existsSync(join(f.home, 'jobs', first.id, 'job.json')), true);
+  assert.equal(fs.existsSync(join(f.home, 'jobs', repairId, 'job.json')), true);
+
+  const [record] = listFlakeRecords(f);
+  assert.equal(record.status, 'ready-for-agent');
+  assert.equal(record.landing?.flow, flow);
+  assert.equal(record.landing?.job, first.id);
+  assert.deepEqual(record.acceptance.map(item => [item.id, item.done]), [[1, false], [2, true]]);
+
+  // After the confirmed partial land, admission reopens without double-counting the repair job as a second attempt.
+  const afterLand = runningListAdmission(f.home, f.main, 'test-flakes');
+  assert.equal(afterLand.eligible('test-flakes/01'), true);
+  assert.equal(afterLand.claimedTickets.has(ticketKey), false);
+  assert.equal(afterLand.activeJobId, undefined);
+  assert.equal(afterLand.nextAttempt('test-flakes/01'), 2);
+
+  // Even while the replacement worker remains in idle_grace, it does not re-claim or block the partially landed ticket.
+  const repairStatusFile = join(f.home, 'jobs', repairId, 'STATUS.json');
+  const closedStatus = fs.readFileSync(repairStatusFile, 'utf8');
+  fs.writeFileSync(repairStatusFile, JSON.stringify({ state: 'idle_grace', output_written: true, settled_at: new Date().toISOString() }));
+  const whileIdleGrace = runningListAdmission(f.home, f.main, 'test-flakes');
+  assert.equal(whileIdleGrace.eligible('test-flakes/01'), true);
+  assert.equal(whileIdleGrace.claimedTickets.has(ticketKey), false);
+  assert.equal(whileIdleGrace.activeJobId, undefined);
+  fs.writeFileSync(repairStatusFile, closedStatus);
+
+  // hud_tickets ready lists the partially landed flake ticket and a follow-up queue run can admit it.
+  const readyAfter = await f.call('hud_tickets', { op: 'ready', cwd: f.main });
+  assert.equal(readyAfter.tickets.some(item => item.ticket === 'test-flakes/01'), true, JSON.stringify(readyAfter));
+
+  const started = await f.call('hud_tickets', { op: 'run', feature: 'test-flakes', max_parallel: 1, cwd: f.main });
+  assert.ok(started.flow, JSON.stringify(started));
+  await until(() => {
+    const q = f.flowState(started.flow);
+    assert.equal(q.state, 'working', JSON.stringify(q));
+    return q.tickets.some(item => item.ticket === 'test-flakes/01' && item.job && item.job !== first.id && item.job !== repairId);
+  }, t.signal);
+  const cancelled = await f.call('hud_tickets', { op: 'run', feature: 'test-flakes', cancel: true, cwd: f.main });
+  assert.equal(cancelled.cancel_requested, true, JSON.stringify(cancelled));
+  await until(() => f.flowState(started.flow).state === 'cancelled', t.signal);
 });
