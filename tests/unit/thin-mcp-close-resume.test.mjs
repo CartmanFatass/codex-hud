@@ -8,7 +8,7 @@ import { judge, procStat, REPORT_SETTLED_EXIT } from '../../dist/mcp/cli-judge.j
 import { sonicState } from '../../dist/worker/sonic-jobs.js';
 import {
   cliState, cliToken, fakeCliWithChild, fixture, publishPiGrace, readCloseReaped, resultValue,
-  taskCall, taskRpc, until, workerClient, writeCliRole,
+  taskCall, taskRpc, until, workerClient, writeCliRole, writeFrontierRole,
 } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 
@@ -36,6 +36,7 @@ async function cliFixture(t, agent = 'claude', resume_s, role = 'resumable') {
 
 test('Imp closes without a read, resumes the exact Claude session, and escalates a repair after expiry', async (t) => {
   const { f, job, worker, report } = await cliFixture(t, 'claude', undefined, 'imp');
+  writeFrontierRole(f);
   const dir = job.task_dir;
   const objective = { id: 'delivery', title: 'Synthetic delivery' };
   write(join(dir, 'job.json'), JSON.stringify({ ...json(dir, 'job.json'), objective }));

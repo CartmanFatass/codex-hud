@@ -19,6 +19,7 @@ import {
   cardText,
   legacyFixture as fixture,
   workerClient,
+  writeFrontierRole,
   resultValue,
   until,
   fakeCliWithChild,
@@ -118,6 +119,7 @@ test('hud_close during the initial Pi prompt records stopped without relying on 
 test('read-close: hud_read closes settled CLI and pi workers within one tick', { timeout: 35000 }, async (t) => {
   const f = await fixture(t);
   writeCliRole(f, 'read-close-cli', 30);
+  writeFrontierRole(f);
   for (const role of ['read-close-cli', 'imp']) {
     const job = await f.call('hud_create', { role, request_key: `close-on-read-${role}`, task: 'Synthetic task.', package: 'Original package' });
     if (role === 'imp') await publishPiGrace(t, job); // Fake pi settles only after the initial prompt.

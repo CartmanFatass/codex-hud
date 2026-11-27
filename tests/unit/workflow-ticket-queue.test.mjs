@@ -23,7 +23,7 @@ import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { MAX_TICKET_BYTES, readJsonTicketFeature, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
 import { pinnedQueueJobs, readOpenHolds } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
-import { fallbackRole, paneList, resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
+import { fallbackRole, paneList, resultValue, rpcClient, until, writeFrontierRole } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { collectDeliveredNotices, goodTicket, readJson, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
@@ -936,6 +936,7 @@ test('unattended repair admits a third repair in the same run, holds on lead esc
   const flow = await u.findRun('selected');
   const w1 = await u.ticketJob(flow, 'sample/01');
   const w2 = await u.ticketJob(flow, 'sample/02');
+  writeFrontierRole(f);
 
   // Ticket 01 lands cleanly; ticket 02 fails operationally -> ticket 03 shows in blocked!
   await f.settle(w1);

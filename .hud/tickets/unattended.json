@@ -584,9 +584,15 @@
         "replay_base": "8a45647abd5d18d37aa274a5034db43aa7af4cc9",
         "gates": 5
       },
-      "comments": [],
+      "comments": [
+        {
+          "at": "2026-11-27T20:57:49.202Z",
+          "author": "main",
+          "text": "Milestone review j523850cc2ae98492 (31-34): changes required, 8 majors, two regressions from 17cd3ee6 (lead hud_respond on delegated questions; claimability gate before pane IPC). Third round repeating the same kinds after an Astra xhigh repair, so no further repair round: oracle j47d19a2463b0d813 is asked for root cause and a converging model (deletions go to the owner)."
+        }
+      ],
       "created_at": "2026-11-27T19:39:07.153Z",
-      "updated_at": "2026-11-27T20:45:12.283Z"
+      "updated_at": "2026-11-27T20:57:49.202Z"
     }
   ]
 }

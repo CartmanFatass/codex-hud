@@ -8,7 +8,7 @@ import { markExhausted } from '../../dist/roles/roster.js';
 import { projectJobFacts } from '../../dist/roles/job-archive.js';
 import { defaultSettings, loadSettings } from '../../dist/settings.js';
 import { SETTING_ROWS, resetSettingsGroup } from '../../dist/render/settings-page.js';
-import { cardText, configureFakeDecision, fakeDecisionServer, fallbackRole, fixture, until, waitFixtureJob, workerFor } from '../helpers/thin-mcp-harness.mjs';
+import { cardText, configureFakeDecision, fakeDecisionServer, fallbackRole, fixture, until, waitFixtureJob, workerFor, writeFrontierRole } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 import { goodTicket, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
@@ -120,10 +120,16 @@ const repairTickets = {
 };
 const evenPool = { impPlacement: 'even', impEvenPool: ['small'] };
 
-test('Frontier Imp is in the roster and can start an explicit worktree job', async t => {
+test('Owner-configured Frontier Imp is listed and can start a worktree job only when allowed', async t => {
   const f = await setupWorkflowProject(t);
-  const roster = await f.call('hud_roster', { detail: true });
-  const frontier = roster.roles.find(({ role }) => role === 'frontier-imp');
+  const findFrontier = async () => (await f.call('hud_roster', { detail: true })).roles.find(({ role }) => role === 'frontier-imp');
+  assert.equal(await findFrontier(), undefined, 'there is no shipped Frontier Imp role');
+  writeFrontierRole(f);
+  const file = join(f.root, '.hud/project.json'), config = read(file);
+  write(file, JSON.stringify({ ...config, roles: ['imp'] }));
+  assert.equal(await findFrontier(), undefined, 'the project allowlist still applies');
+  write(file, JSON.stringify({ ...config, roles: ['imp', 'frontier-imp'] }));
+  const frontier = await findFrontier();
   assert.equal(frontier.model, astra);
   assert.equal(frontier.thinking, 'xhigh');
   const started = await f.call('hud_create', { role: 'frontier-imp', task: 'Synthetic repair.', isolation: 'worktree' });
@@ -137,6 +143,7 @@ test('Frontier Imp is in the roster and can start an explicit worktree job', asy
 
 test('Main Imp repair tickets escalate ahead of even placement, but retry and land repair keep the source', async t => {
   const f = await setupWorkflowProject(t, { tickets: repairTickets });
+  writeFrontierRole(f);
   role(f, undefined);
   settings(f, evenPool);
   const main = await f.call('hud_create', { role: 'imp', ticket: 'sample/02' });
@@ -159,6 +166,7 @@ test('Main Imp repair tickets escalate ahead of even placement, but retry and la
 
 test('Ticket queue escalates Imp repairs, but not Frontend Imp repairs', { timeout: 15_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: repairTickets });
+  writeFrontierRole(f);
   role(f, undefined);
   fallbackRole(f, 'frontend-imp', [pi('frontend')]);
   settings(f, evenPool);
@@ -174,7 +182,7 @@ test('Ticket queue escalates Imp repairs, but not Frontend Imp repairs', { timeo
   assert.equal(jobs.find(job => job.ticket === 'sample/03').model, 'synthetic/frontend');
 });
 
-test('Frontier quota, trust and cap refusals fall back to Imp even placement with a reason', async t => {
+test('Missing Frontier configuration, quota, trust and cap fall back to Imp placement with a reason', async t => {
   const f = await setupWorkflowProject(t, { tickets: repairTickets });
   role(f, undefined);
   settings(f, { ...evenPool, roleCaps: { imp: 0, 'frontier-imp': 1 } });
@@ -189,6 +197,8 @@ test('Frontier quota, trust and cap refusals fall back to Imp even placement wit
     assert.equal(receipt(job).model, 'synthetic/small');
     assert.equal((await f.call('hud_create', input)).job, job.job);
   };
+  await dispatch('missing', /Skipped frontier-imp:.*not configured or is hidden/);
+  writeFrontierRole(f);
   await dispatch('cap', /Skipped frontier-imp: role is at capacity/);
   settings(f, evenPool);
   write(join(f.env.HOME, 'quota-pi-model'), astra);

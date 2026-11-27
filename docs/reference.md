@@ -329,8 +329,8 @@ Queueing and overflow keep the initial selection, but a queued even job can move
 Legacy `impRouting: true` loads as `auto`; `false` loads as `fixed`.
 
 **Escalated Imp repairs.** A ticket assigned to `imp` with a non-empty `repairs` list goes to `frontier-imp` ahead of fixed, even or auto Imp placement. This applies to ticket queues, unattended runs and `hud_create` with `ticket`. So does a `hud_send` follow-up to an Imp worker that must start a new job after closure. `frontend-imp` tickets, native-session resumes, land-gate repairs and `retry_of` do not use this escalation.
-The shipped `frontier-imp` runs pi with `openai/gpt-6.2-astra` at `xhigh`. It is listed in the roster and Control → Roles and can also be selected directly. Projects with an explicit role allowlist must include `frontier-imp` to use it. Its independent cap is `roleCaps["frontier-imp"]` (uncapped by default).
-If Frontier Imp is at cap or has no available place (for example because of quota or trust), HUD uses normal Imp placement and records why in `route.fallback`. A successful escalation records `route.source: "repair-route"`. HUD does not rerun work whose input may already have been delivered.
+Frontier Imp is not shipped. To enable it, define `frontier-imp` in `$HUD_HOME/roles/frontier-imp.json` as an owner role with `implementer` instructions (for example pi on Astra at `xhigh`). Include `frontier-imp` in any project’s explicit `.hud/project.json` role allowlist. It then appears in the roster and Control → Roles like other configured roles and can be selected directly. Its independent cap is `roleCaps["frontier-imp"]` (uncapped by default).
+If Frontier Imp is not configured, excluded by the project, at cap, or has no available place (for example because of quota or trust), HUD uses normal Imp placement and records why in `route.fallback`. A successful escalation records `route.source: "repair-route"`. HUD does not rerun work whose input may already have been delivered.
 
 **Auto** uses one Decision API judgment at dispatch.
 The winning `imp` role file must define `routing`; the block is not inherited from a lower-priority role file.
@@ -463,7 +463,7 @@ Receipts live under `$HUD_HOME/flows/`.
 
 A role JSON file sets `role`, `instructions`, `can_continue`, optional `idle_grace_s` (CLI quiet-job grace, default 600), optional `resume_s` (default 1620 seconds; `0` disables native resume), and ordered `run` places across `pi`, `cli` (`grok`, `agy`, `claude` or `codex`), and `bro` (`jev-ask`, `jev-aistudio`, `jev-flow`); legacy single-place files load as `run[0]` and `"harness": "jev"` loads as `"bro"`.
 Set `"tab_visible": true` at the top level to start that role's interactive CLI and pi workers with visible tabs. This does not focus them or change headless jobs.
-Shipped roles: `imp` (`pi` implementer), `frontier-imp` (`pi` implementer on Astra at `xhigh`), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `lead` (`cli` `claude` `claude-opus-5-5` high with the HUD MCP tools), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one), plus the optional `council`, `pro` (`chatgpt`, `gemini`, `argon`) and `flow` (`jev-flow`) roles.
+Shipped roles: `imp` (`pi` implementer), `reviewer` (`pi` reviewer -> `agy` Hydrogen high), `lead` (`cli` `claude` `claude-opus-5-5` high with the HUD MCP tools), `sonic`, `oracle` (`cli` `claude` `fable` high -> `pi` `architect`; `hud_create` also takes `architect` for it unless a role file defines one), plus the optional `council`, `pro` (`chatgpt`, `gemini`, `argon`) and `flow` (`jev-flow`) roles.
 
 ### Composed workflows
 

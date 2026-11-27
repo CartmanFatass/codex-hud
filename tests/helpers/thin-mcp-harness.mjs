@@ -644,6 +644,13 @@ export function fallbackRole(f, role, run = fallbackPlaces, presets) {
   fs.writeFileSync(join(root, `${role}.json`), JSON.stringify({ role, instructions: 'implementer', can_continue: false, run, presets }));
 }
 
+export function writeFrontierRole(f) {
+  const root = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(root, { recursive: true });
+  writeFixtureFile(join(root, 'frontier-imp.json'), JSON.stringify({ role: 'frontier-imp', instructions: 'implementer', can_continue: true,
+    run: [{ harness: 'pi', pi_role: 'implementer', model: 'openai/gpt-6.2-astra', thinking: 'xhigh' }] }));
+}
+
 export function waitFixtureJob(f, n, state = 'working', herdr_pane = 'w4E:p1', cwd = f.root) {
   const job = `j${n.toString(16).padStart(16, '0')}`;
   const dir = join(f.env.HUD_HOME, 'jobs', job);

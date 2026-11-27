@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
-import { fixture, rolePlacesFixture, cliState, resultValue, taskCall, taskJob, taskRpc, until, workerFor } from '../helpers/thin-mcp-harness.mjs';
+import { fixture, rolePlacesFixture, cliState, resultValue, taskCall, taskJob, taskRpc, until, workerFor, writeFrontierRole } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 import { checkout, job as sourceJob, jobDir, repair } from '../helpers/thin-mcp-land.mjs';
 import { isProcAlive } from '../../dist/utils/proc.js';
@@ -170,6 +170,8 @@ test('question, follow-up and land repair reopen the same tabless pi session; ex
   write(join(dir, 'STATUS.json'), JSON.stringify({ ...cliState(dir), ended_at: new Date(0).toISOString() }));
   const repair = await f.call('hud_send', { job: job.job, text: 'Expired follow-up.' });
   assert.equal(repair.continuation, 'repair');
+  assert.equal(repair.role, 'imp');
+  assert.match(repair.route.fallback, /Skipped frontier-imp:.*not configured or is hidden/);
   assert.notEqual(repair.job, job.job);
   assert.equal(repair.mode, 'headless');
   await until(() => cliState(repair.task_dir)?.state === 'waiting_orchestrator', t.signal);
@@ -499,6 +501,7 @@ test('the panel Answer action resumes the paused session and records who answere
 
 test('queued headless Imp keeps its chain on overflow, then escalates an expired repair', async t => {
   const f = await fixture(t);
+  writeFrontierRole(f);
   const roles = join(f.env.HUD_HOME, 'roles');
   fs.mkdirSync(roles, { recursive: true });
   write(join(roles, 'general.json'), JSON.stringify({ role: 'general', instructions: 'general', can_continue: false,

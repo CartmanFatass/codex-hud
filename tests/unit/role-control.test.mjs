@@ -105,8 +105,8 @@ test('Control plane: what needs the owner first with the place the next job uses
   assert.match(lines[at(/ pro /) + 1], /^ {6}chatgpt exhausted 60m$/);
   assert.match(lines[at(/ flow /)], /^ {2}− flow → none +on$/);
   assert.match(lines[at(/bad\.json/)], /^ {2}! bad\.json +unparseable JSON$/);
-  assert.match(lines[at(/^▸ Healthy ─/)], / 7$/);
-  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp {2}frontier-imp {2}reviewer {2}sonic {2}oracle {2}general {2}lead$/);
+  assert.match(lines[at(/^▸ Healthy ─/)], / 6$/);
+  assert.match(lines[at(/^▸ Healthy ─/) + 1], /^ {2}◉ imp {2}reviewer {2}sonic {2}oracle {2}general {2}lead$/);
   assert.ok(at(/^Needs attention ─/) < at(/^▸ Healthy ─/) && at(/^▸ Healthy ─/) < at(/^▸ Usage/));
   assert.doesNotMatch(lines.join('\n'), /openai\/gpt-6\.2-sol|^Harnesses ─/m);
   // One line a row at every width and language; at 40 columns a long model is cut in the middle, never the harness or the thinking.
@@ -123,13 +123,13 @@ test('Control plane: what needs the owner first with the place the next job uses
   assert.match(narrow, /^需要处理 ─+ 3$/m);
   assert.match(narrow, /^ {2}✗ pro → gemini +开$/m);
   assert.match(narrow, /^ {6}chatgpt 已耗尽 60分$/m);
-  assert.match(narrow, /^▸ 正常 ─+ 7$/m);
+  assert.match(narrow, /^▸ 正常 ─+ 6$/m);
   s.session.state = select(s.session.state, 'project:fold:healthy');
   await s.press('\r');
-  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow|council)$/.test(i)), ['imp', 'frontier-imp', 'reviewer', 'sonic', 'oracle', 'general', 'lead'].map((x) => `project:role:${x}`));
-  assert.match(s.text(), /^Healthy ─+ 7$/m);
+  assert.deepEqual(s.rows().map((r) => r.item).filter((i) => !/role:(pro|flow|council)$/.test(i)), ['imp', 'reviewer', 'sonic', 'oracle', 'general', 'lead'].map((x) => `project:role:${x}`));
+  assert.match(s.text(), /^Healthy ─+ 6$/m);
   await s.press('\r');
-  assert.match(s.text(), /^▸ Healthy ─+ 7$/m, 'Enter again folds them');
+  assert.match(s.text(), /^▸ Healthy ─+ 6$/m, 'Enter again folds them');
 });
 test('Control offers a one-time grant only on the selected council row', async t => {
   const s = await setup(t, { healthyOpen: false });
@@ -159,7 +159,7 @@ test('Control switches optional roles on with Space and off with the footer in b
     assert.deepEqual(out.action, { type: 'role-switch', role: 'pro', enabled: true });
     actions.execute(out.action, out.state);
     assert.equal(role().places[0].state, 'active');
-    assert.equal(visit.control.roleCount, 8);
+    assert.equal(visit.control.roleCount, 7);
     const frame = s.frame();
     const target = frame.controls.find((c) => c.kind === 'role-toggle');
     assert.ok(target, panelLayout);
@@ -167,7 +167,7 @@ test('Control switches optional roles on with Space and off with the footer in b
     assert.deepEqual(click.action, { type: 'role-switch', role: 'pro', enabled: false });
     actions.execute(click.action, click.state);
     assert.deepEqual(role().places, []);
-    assert.equal(visit.control.roleCount, 7);
+    assert.equal(visit.control.roleCount, 6);
   }
   assert.equal(fs.existsSync(join(s.hud, 'roles/pro.json')), false);
 });

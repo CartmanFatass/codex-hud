@@ -89,7 +89,7 @@ try {
     const roster = await call('hud_roster', { cwd: f.root });
     assert.equal(roster.watcher_alive, true);
     assert.match(roster.hint, /^pi: native HUD notices/);
-    assert.equal(roster.roles.length, 7);
+    assert.equal(roster.roles.length, 6);
     assert.equal(roster.convention.text, convention);
     const imp = roster.roles.find((r) => r.role === 'imp' && r.available);
     assert.equal(imp.can_continue, true);

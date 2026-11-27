@@ -124,7 +124,7 @@ export interface ControlFacts {
   models: ModelLists;
 }
 
-const FIRST = ['imp', 'frontier-imp', 'reviewer', 'sonic', 'oracle', 'pro', 'flow'];
+const FIRST = ['imp', 'reviewer', 'sonic', 'oracle', 'pro', 'flow'];
 const rank = (role: string) => (FIRST.includes(role) ? FIRST.indexOf(role) : FIRST.length);
 export function placeLabel(place: RolePlace): string {
   if (place.harness === 'pi') return 'pi';

@@ -731,10 +731,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   let localContext: Awaited<ReturnType<typeof contextFor>> | undefined;
   if (member) {
     route = member.route;
-  } else if (role === 'frontier-imp') {
-    route = retryInput && sourceJob?.role === role && sourceJob.route ? sourceJob.route
-      : { ...defaultImpRoute(frontier ? 'Escalated imp repair' : 'Frontier implementer placement', mode),
-          ...(frontier && { source: 'repair-route' as const }), preset: currentPreset(chain) };
+  } else if (frontier) {
+    route = { ...defaultImpRoute('Escalated imp repair', mode), source: 'repair-route', preset: currentPreset(chain) };
+  } else if (retryInput && sourceJob?.role === role && sourceJob.route?.source === 'repair-route') {
+    route = sourceJob.route;
   } else if (imp && (retryInput || fromImp)) {
     route = landCwd ? repairImpRoute(chain, sourceJob?.route) : sourceJob?.route;
   } else if (sonic && retryInput) {
