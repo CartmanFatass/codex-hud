@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   layoutMetroFlow,
+  metroFlowFromRun,
   metroStationItem,
+  navigateExecutionMetro,
   renderMetroFlow,
   renderMetroLegend,
   runItem,
@@ -46,6 +48,12 @@ const acceptStation = (lang, state = 'waiting') => ({
   id: 'ac', kind: 'accept', deps: ['rv'], state, title: lang === 'zh' ? '负责人验收' : 'Lead acceptance',
 });
 
+const gate = (index, total, state, command) => ({ index, total, passed: index - 1, state, command });
+const withEdges = (flow) => ({
+  ...flow,
+  edges: flow.edges ?? flow.stations.flatMap((s) => (s.deps ?? []).map((from) => ({ from, to: s.id }))),
+});
+
 function scenarios(lang) {
   const retry = {
     flow: 'retry', kind: 'queue', name: 'retry-queue', state: 'running', createdAt: ago(72), lastChangedId: '05',
@@ -66,10 +74,10 @@ function scenarios(lang) {
     stations: [
       tk('01', [], 'done', '账本读写接口', 'Ledger read/write API', lang),
       tk('02', ['01'], 'working', '并发扣减', 'Concurrent debit', lang, {
-        gate: { n: 3, k: 2, state: 'failed' },
-        repair: { state: 'working', round: '1/2', since: ago(4), role: 'imp', title: lang === 'zh' ? '并发扣减' : 'Concurrent debit' },
+        gate: gate(2, 3, 'failed'),
+        repair: { id: '02↻', state: 'working', round: 1, total: 2, changedAt: ago(4), role: 'imp' },
       }),
-      tk('03', ['01'], 'working', '超额告警', 'Over-quota alert', lang, { gate: { n: 3, k: 3, state: 'working' }, since: ago(2) }),
+      tk('03', ['01'], 'working', '超额告警', 'Over-quota alert', lang, { gate: gate(3, 3, 'working'), since: ago(2) }),
       tk('04', ['02', '03'], 'waiting', '迁移旧账本', 'Migrate the old ledger', lang, { waits: '02,03' }),
       reviewStation(['04'], lang),
       acceptStation(lang),
@@ -95,7 +103,7 @@ function scenarios(lang) {
       { id: 'pilot', kind: 'worker', deps: [], state: 'done', title: lang === 'zh' ? '探路 1/1' : 'Pilot 1/1' },
       {
         id: 'pool', kind: 'pool', deps: ['pilot'], state: 'working',
-        counts: { done: 22, working: 7, failed: 1, waiting: 10 },
+        pool: { done: 22, working: 7, failed: 1, waiting: 10 },
         title: lang === 'zh' ? '并发池 40 项 · 链接检查' : 'Pool of 40 · link check', since: ago(8), role: 'sonic',
       },
       { id: 'sum', kind: 'summary', deps: ['pool'], state: 'waiting', title: lang === 'zh' ? '汇总' : 'Summary' },
@@ -137,7 +145,7 @@ function scenarios(lang) {
       done('01', []), done('02', ['01']), done('03', ['02']), done('04', ['02']),
       done('05', ['03', '04']), done('06', ['05']), done('07', ['06']),
       tk('08', ['07'], 'working', '归档读路径', 'Archive read path', lang, { since: ago(22) }),
-      tk('09', ['07'], 'working', '双写校验', 'Verify dual writes', lang, { gate: { n: 4, k: 2, state: 'working' }, since: ago(5) }),
+      tk('09', ['07'], 'working', '双写校验', 'Verify dual writes', lang, { gate: gate(2, 4, 'working'), since: ago(5) }),
       tk('10', ['08', '09'], 'waiting', '切换写入', 'Switch writes', lang, { waits: '08,09' }),
       tk('11', ['10'], 'waiting', '回填历史', 'Backfill history', lang, { waits: '10' }),
       tk('12', ['11'], 'waiting', '删除旧表', 'Drop old tables', lang, { waits: '11' }),
@@ -153,9 +161,9 @@ function scenarios(lang) {
     stations: [
       { id: 'pick', kind: 'worker', deps: [], state: 'done', title: lang === 'zh' ? '拣选提交' : 'Cherry-pick' },
       {
-        id: 'gate', kind: 'worker', deps: ['pick'], state: 'failed', gate: { n: 3, k: 2, state: 'failed' }, since: ago(9),
+        id: 'gate', kind: 'worker', deps: ['pick'], state: 'failed', gate: gate(2, 3, 'failed'), since: ago(9),
         title: lang === 'zh' ? 'npm 测试' : 'npm test',
-        repair: { state: 'asking', round: '1/2', since: ago(2), role: 'imp', title: lang === 'zh' ? '缓存键冲突' : 'Cache key clash' },
+        repair: { id: 'gate↻', state: 'asking', round: 1, total: 2, changedAt: ago(2), role: 'imp', label: lang === 'zh' ? '缓存键冲突' : 'Cache key clash' },
       },
       { id: 'merge', kind: 'worker', deps: ['gate'], state: 'waiting', title: lang === 'zh' ? '合入' : 'Merge' },
     ],
@@ -167,7 +175,7 @@ function scenarios(lang) {
 function paintFlow(flow, cursorId, width, opts) {
   return withMode(opts, () => {
     const sel = cursorId ? metroStationItem(flow.flow, cursorId) : undefined;
-    const rows = renderMetroFlow(flow, sel, width, NOW);
+    const rows = renderMetroFlow(withEdges(flow), sel, width, NOW);
     for (const row of rows) {
       assert.equal(visualLength(row.text), width, `width ${width} mismatch: ${stripAnsi(row.text)}`);
       if (opts.theme === 'none') assert.equal(row.text, stripAnsi(row.text), 'none theme must emit no ANSI');
@@ -181,7 +189,7 @@ function paintStack(flows, firstCursorId, width, opts) {
     const rows = [section(say('Workflow'), width, String(flows.length))];
     flows.forEach((f, i) => {
       const sel = i === 0 && firstCursorId ? metroStationItem(f.flow, firstCursorId) : undefined;
-      rows.push(...renderMetroFlow(f, sel, width, NOW));
+      rows.push(...renderMetroFlow(withEdges(f), sel, width, NOW));
     });
     rows.push(...renderMetroLegend(flows, width));
     for (const row of rows) {
@@ -434,7 +442,7 @@ test('no-colour and ASCII (icons=text) modes match Hairline rules at 40, 62 and 
 
   // Colour token verification (Hairline neutral line + state colours + surfaces).
   withMode({ lang: 'en', theme: 'mocha', icons: 'unicode' }, () => {
-    const rows = renderMetroFlow(en.retry, metroStationItem('retry', '04'), 62, NOW);
+    const rows = renderMetroFlow(withEdges(en.retry), metroStationItem('retry', '04'), 62, NOW);
     const b = theme.board;
     // Travelled line in muted, ahead in frame, working in active, asking in askTitle, cursor in selected.
     assert.ok(rows[2].text.includes(b.muted('───────')), 'travelled line uses board.muted');
@@ -442,7 +450,7 @@ test('no-colour and ASCII (icons=text) modes match Hairline rules at 40, 62 and 
     assert.ok(rows[2].text.includes(b.askTitle('?')), 'asking station uses board.askTitle');
     assert.ok(rows[2].text.includes(b.selected(b.muted('─'))), 'cursor neighbour uses board.selected');
     assert.ok(rows[1].text.includes(b.active('◉')), 'working station uses board.active');
-    const qRows = renderMetroFlow(en.quota, metroStationItem('quota', '02↻'), 62, NOW);
+    const qRows = renderMetroFlow(withEdges(en.quota), metroStationItem('quota', '02↻'), 62, NOW);
     assert.ok(qRows[1].text.includes(b.opinion('◉')), 'running gate step uses board.opinion');
     assert.ok(qRows[2].text.includes(b.danger('✗')), 'failed gate step uses board.danger');
     assert.ok(qRows[3].text.includes(b.stalled('╰──')), 'repair line uses board.stalled');
@@ -722,8 +730,8 @@ test('layout handles inline repair fallback, cycles, skip-a-column edges, and ch
       { id: '03', num: '03', kind: 'worker', deps: ['01'], state: 'working', title: 'Lane B' },
       {
         id: '04', num: '04', kind: 'worker', deps: ['01'], state: 'working', title: 'Lane C',
-        gate: { n: 2, k: 2, state: 'failed' },
-        repair: { state: 'working', round: '1/2', role: 'imp', title: 'Lane C' },
+        gate: gate(2, 2, 'failed'),
+        repair: { id: '04↻', state: 'working', round: 1, total: 2, role: 'imp' },
       },
       { id: '05', num: '05', kind: 'worker', deps: ['02', '03', '04'], state: 'waiting', title: 'Join' },
     ],
@@ -764,7 +772,7 @@ function putJson(file, value) {
   fs.writeFileSync(file, JSON.stringify(value));
 }
 
-test('collection + renderMonitor: new-format queue renders parallel roots, single-root branch, 2/3 failed gate, newest landing detail, and main hand-back', async (t) => {
+test('collection + renderMonitor: queue branches, failed 2/3 gate, main hand-back, and post-repair lease wait', async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'exec-metro-e2e-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const hud = join(root, 'hud'), project = join(root, 'project'), flows = join(hud, 'flows');
@@ -786,7 +794,8 @@ test('collection + renderMonitor: new-format queue renders parallel roots, singl
   const jGate = addJob(3, 'done', { ticket: 'demo/03', title: 'Worker on alpha only' }, { started_at: iso(10), settled_at: iso(6) });
   const jRep1 = addJob(4, 'working', { ticket: 'demo/03', title: 'Repair alpha gate' }, { started_at: iso(5) });
   const fGate = id('f', 3);
-  putJson(join(flows, `${fGate}.json`), {
+  const landPath = join(flows, `${fGate}.json`);
+  const land = {
     flow: fGate, job: jGate, pane: '', task: false,
     wt: { root: project, main_root: project, branch: 'wt/03' },
     config: { base: 'main', gate: ['build', 'unit', 'lint'], after: [], push: false },
@@ -794,7 +803,8 @@ test('collection + renderMonitor: new-format queue renders parallel roots, singl
     created_at: iso(9), updated_at: iso(5), step_started_at: iso(5), source_sha: 'a'.repeat(40),
     repairs: [{ step: 'gate[2]: unit', job: jRep1, outcome: 'waiting for worker', started_at: iso(5), changed_at: iso(5) }],
     timings: [{ step: 'cherry-pick', ok: true, ms: 5 }, { step: 'gate[2]: unit', ok: false, ms: 15 }],
-  });
+  };
+  putJson(landPath, land);
   const qFlow = id('q', 1);
   putJson(join(flows, `${qFlow}.json`), {
     flow: qFlow, root: project, project_root: project, feature: 'demo', pane: '', task: false, max_parallel: 2,
@@ -812,7 +822,7 @@ test('collection + renderMonitor: new-format queue renders parallel roots, singl
   t.after(() => execution.dispose());
   execution.sync(project, false);
   await execution.refresh(undefined, NOW);
-  const view = execution.view(project);
+  let view = execution.view(project);
 
   const draw = (state, opts = { lang: 'en', theme: 'none', icons: 'unicode' }) => withMode(opts, () =>
     renderMonitor({ state, width: 62, height: 24, nowMs: NOW, execution: view, projectName: 'demo' }));
@@ -866,6 +876,30 @@ test('collection + renderMonitor: new-format queue renders parallel roots, singl
   }, { frame: acceptEn, nowMs: NOW }).state;
   assert.equal(clickAccept.subpage?.kind, 'station-detail');
   assert.equal(clickAccept.subpage?.stationId, 'accept');
+
+  // The land runner has a settled repair and a failed timing when it queues for the lease again.
+  putJson(join(hud, 'jobs', jRep1, 'STATUS.json'), { state: 'done', started_at: iso(5), settled_at: iso(2) });
+  putJson(landPath, {
+    ...land, state: 'queued', step: 'main-checkout lease', updated_at: iso(0), step_started_at: iso(0),
+    repairs: [{ ...land.repairs[0], outcome: 'settled; retrying gate', changed_at: iso(2) }],
+  });
+  await execution.refresh(undefined, NOW);
+  view = execution.view(project);
+  const waiting = draw(baseState);
+  const leaseRow = waiting.workboard.rows.find((r) => r.metroStations?.some((s) => s.stationId === 'demo/03'));
+  const leaseHit = leaseRow.metroStations.find((s) => s.stationId === 'demo/03');
+  assert.equal(stripAnsi(leaseRow.text)[leaseHit.x], '◷');
+  assert.equal(leaseHit.inspect.state, 'lease');
+  assert.equal(leaseHit.width, 1, 'lease is a single station, not a gate strip');
+  assert.deepEqual(leaseHit.inspect.gate, { k: 2, n: 3, state: 'failed', command: 'unit' });
+  assert.match(waiting.lines.map(stripAnsi).join('\n'), /◷ 03 Worker on alpha only\s+.*lease wait/);
+  assert.doesNotMatch(waiting.lines.map(stripAnsi).join('\n'), /✗|gate failed|‹▮/);
+  const leaseDetail = draw({ ...baseState, subpage: {
+    kind: 'station-detail', flow: qFlow, stationId: 'demo/03', station: leaseHit.inspect, scroll: 0,
+  } });
+  assert.match(leaseDetail.lines.map(stripAnsi).join('\n'), /Gate\s+2\/3 \(failed\) · unit/);
+  assert.match(leaseDetail.lines.map(stripAnsi).join('\n'), /Repairs\s+1\/2 done/);
+  for (const result of [waiting, leaseDetail]) assert.ok(result.lines.every((line) => visualLength(line) === 62));
 });
 
 test('round 1 and round 2 repairs both render and are selectable via keyboard, mouse and Enter (spur and inline)', async (t) => {
@@ -954,10 +988,10 @@ test('round 1 and round 2 repairs both render and are selectable via keyboard, m
       { id: '03', num: '03', kind: 'worker', deps: ['01'], state: 'working', title: 'Lane B' },
       {
         id: '04', num: '04', kind: 'worker', deps: ['01'], state: 'working', title: 'Lane C',
-        gate: { n: 3, k: 2, state: 'failed' },
+        gate: gate(2, 3, 'failed'),
         repairs: [
-          { id: '04↻', state: 'failed', round: '1/2', role: 'imp', title: 'Lane C' },
-          { id: '04↻2', state: 'working', round: '2/2', role: 'imp', title: 'Lane C' },
+          { id: '04↻', state: 'failed', round: 1, total: 2, role: 'imp' },
+          { id: '04↻2', state: 'working', round: 2, total: 2, role: 'imp' },
         ],
       },
       { id: '05', num: '05', kind: 'worker', deps: ['02', '03', '04'], state: 'waiting', title: 'Join' },
@@ -966,6 +1000,99 @@ test('round 1 and round 2 repairs both render and are selectable via keyboard, m
   const inlineRows = paintFlow(crowded2, '04↻2', 62, { lang: 'en', theme: 'none' });
   const inlineIds = inlineRows.flatMap((r) => r.metroStations ?? []).map((s) => s.stationId);
   assert.ok(inlineIds.includes('04↻') && inlineIds.includes('04↻2'), `both inline rounds selectable: ${inlineIds}`);
+});
+
+test('an inline repair keeps the first failed or held ticket, its target, and its logical edges', () => {
+  const flowId = 'qinline0000000001';
+  const id = 'demo/01';
+  const execJob = {
+    target: { kind: 'worker', laneId: 'inv:1', workerId: 'thin-job:j0000000000000001' },
+    dir: '/synthetic/hud/jobs/j0000000000000001', tab: true,
+  };
+  for (const [state, glyph, word] of [['failed', '✗', 'failed'], ['held', '!', 'held for you']]) {
+    const stations = [
+      {
+        id, kind: 'worker', state, title: 'Original ticket', execJob,
+        repair: { id: `${id}↻`, state: 'done', round: 1, total: 2 },
+      },
+      { id: 'demo/02', kind: 'worker', state: 'working' },
+      { id: 'demo/03', kind: 'worker', state: 'working' },
+      { id: 'review', kind: 'review', state: 'waiting' },
+    ];
+    const edges = stations.slice(0, 3).map((s) => ({ from: s.id, to: 'review' }));
+    const run = {
+      flow: flowId, kind: 'queue', state: 'working', label: 'inline repair', createdAt: ago(10), updatedAt: ago(1),
+      tickets: [{ ticket: id, title: 'Original ticket', stage: state, execJob }],
+      steps: [], todo: [], decisions: [], reviews: [], heldCount: 0, repairRounds: 1,
+      metro: { stations, edges },
+    };
+    const flow = metroFlowFromRun(run);
+    assert.equal(flow.stations, stations, 'layout takes the original collector stations');
+    assert.equal(flow.edges, edges, 'layout takes the original collector edges');
+    const layout = layoutMetroFlow(flow, 62, false);
+    const host = layout.nodes.find((n) => n.id === id);
+    const repair = layout.nodes.find((n) => n.id === `${id}↻`);
+    assert.equal(host.state, state);
+    assert.equal(host.execJob, execJob);
+    assert.equal(host.lane, repair.lane);
+    assert.equal(host.col, repair.col, 'repair space does not alter dependency depth');
+    assert.ok(repair.x >= host.x + host.w);
+    assert.deepEqual(layout.edges.filter((e) => !e.spur).map((e) => e.id).sort(),
+      edges.map((e) => `${e.from}>${e.to}`).sort());
+    assert.equal(layout.edges.find((e) => e.id === `${id}>review`).lit, false);
+
+    const rows = paintFlow(flow, id, 62, { lang: 'en', theme: 'none' });
+    const row = rows.find((r) => r.metroStations?.some((s) => s.stationId === id));
+    const hit = row.metroStations.find((s) => s.stationId === id);
+    assert.equal(row.text[hit.x], glyph);
+    assert.equal(hit.inspect.state, state);
+    assert.equal(hit.execJob, execJob);
+    assert.match(rows.at(-1).text, new RegExp(`${glyph} 01 Original ticket\\s+${word}`));
+    const detail = withMode({ lang: 'en', theme: 'none' }, () => renderMonitor({
+      state: { ...initialMonitorState(), activeTab: 'execution', subpage: {
+        kind: 'station-detail', flow: flowId, stationId: id, station: hit.inspect, scroll: 0,
+      } },
+      width: 62, height: 24, nowMs: NOW, projectName: 'demo',
+      execution: { root: '/synthetic/proj', complete: true, screens: new Map(), endedJobs: [], jobs: [], runs: [run] },
+    }));
+    const detailText = detail.lines.map(stripAnsi).join('\n');
+    assert.match(detailText, new RegExp(`State\\s+${state}\\b`));
+    assert.doesNotMatch(detailText, /landed/);
+    assert.ok(detail.lines.every((line) => visualLength(line) === 62));
+  }
+});
+
+test('eight three-ticket dependency waves with inline repairs stay reachable at 40 columns', () => {
+  const id = (wave, lane) => `demo/${wave}${lane}`;
+  const waves = Array.from({ length: 8 }, (_, wave) => Array.from({ length: 3 }, (_, lane) => ({
+    id: id(wave, lane), kind: 'worker', state: lane === 0 ? 'failed' : 'working',
+    deps: wave === 0 ? [] : [0, 1, 2].map((parent) => id(wave - 1, parent)),
+    ...(lane === 0 ? { repair: { id: `${id(wave, lane)}↻`, state: 'done', round: 1, total: 2 } } : {}),
+  })));
+  const flow = withEdges({ flow: 'qwaves0000000001', kind: 'queue', name: 'repair waves', state: 'running', createdAt: ago(40), stations: waves.flat() });
+  const draw = (stationId) => paintFlow(flow, stationId, 40, { lang: 'en', theme: 'none' });
+  const start = draw(id(0, 0));
+  const mapRows = start.filter((r) => r.metroStations);
+  assert.equal(mapRows.length, 3);
+  assert.ok(mapRows.some((r) => r.metroEdges?.some((e) => e.side === 'right')), '40-column viewport pans');
+  assert.deepEqual(new Set(mapRows.flatMap((r) => r.metroStations.map((s) => s.stationId))),
+    new Set(waves.flat().flatMap((s) => s.repair ? [s.id, s.repair.id] : [s.id])));
+
+  for (const row of mapRows) {
+    const ids = row.metroStations.map((s) => s.stationId);
+    for (const [key, order] of [['right', ids], ['left', [...ids].reverse()]]) {
+      let cursor = metroStationItem(flow.flow, order[0]);
+      for (const stationId of order) {
+        assert.equal(cursor, metroStationItem(flow.flow, stationId));
+        const frame = draw(stationId);
+        const selected = frame.flatMap((r) => r.metroStations ?? []).find((s) => s.item === cursor);
+        assert.equal(selected.offscreen, undefined, `${stationId} pans into view`);
+        const next = navigateExecutionMetro(frame, cursor, key, false);
+        assert.equal(next.handled, true);
+        cursor = next.cursor;
+      }
+    }
+  }
 });
 
 test('skip-a-column and crossing graphs render through reduceMetroLanes with junctions and preserved blockers', () => {
@@ -1398,7 +1525,7 @@ test('pool without recorded counts renders unknown instead of a fabricated zero 
   const emptyCountsFlow = {
     ...unknownPoolFlow,
     flow: 'pool-empty',
-    stations: unknownPoolFlow.stations.map((s) => s.id === 'pool' ? { ...s, counts: {} } : s),
+    stations: unknownPoolFlow.stations.map((s) => s.id === 'pool' ? { ...s, pool: {} } : s),
   };
 
   for (const flow of [unknownPoolFlow, emptyCountsFlow]) {
