@@ -18,6 +18,7 @@ export const workflowGrants = runGrantStore('workflow-grant');
 export type CheckResult = { exit_code: number | null; tail: string; error?: string };
 export type Item = { job?: string; state: 'waiting' | 'running' | 'done' | 'failed'; attempt: number; reason?: string; stall?: string };
 export type ComposedCursor = Cursor & { attempt?: number; job?: string; land?: string; items?: Item[];
+  pending_settlements?: number[];
   failure_groups?: ReturnType<typeof failuresByReason>;
   check?: CheckResult; repairs?: number; repair_pending?: boolean; repair_baseline?: ReturnType<typeof repairBaseline>; lead_closed?: true; decision_reason?: string };
 export type Handback = { request_id: string; step: string; ask: string; choices: string[]; refs: string[] };

@@ -728,6 +728,79 @@ test('a required batch failure remains outstanding while main answers an indepen
   assert.equal(run().steps.after.state, 'skipped');
 });
 
+for (const action of ['resume', 'retry_failed']) test(`a two-item breaker-first pilot failure stays outstanding across an independent hand-back (${action})`, { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  const p = await call(f, 'plan', { graph: {
+    ...graph({
+      items: batch('sonic', 2),
+      accept: { kind: 'handback', to: 'main', ask: 'Continue?', options: ['go', 'skip'] },
+      after: { ...task, needs: ['items'] },
+    }),
+    policy: { breaker: 'first' },
+  } });
+  await start(f, p);
+  const run = () => f.flow(p.run);
+  const release = (job, fail = false) => {
+    if (fail) put(join(f.dir(job), 'fail-sonic'), '');
+    put(join(f.dir(job), 'release-sonic'), '');
+  };
+  await until(() => run().handback?.request_id === 'h-accept' && run().steps.items.items?.[0].job, t.signal);
+  const firstJob = run().steps.items.items[0].job;
+  assert.equal(run().steps.items.items[1].state, 'waiting');
+  assert.equal(run().steps.items.items[1].job, undefined);
+  release(firstJob, true);
+  await until(() => run().steps.items.items[0].state === 'failed' && !run().pid, t.signal);
+  assert.equal(run().handback.request_id, 'h-accept');
+  assert.equal(run().steps.items.state, 'running');
+  assert.equal(run().steps.items.items[1].state, 'waiting');
+  assert.equal(run().steps.items.items[1].job, undefined);
+
+  assert.equal((await reply(f, p.run, 'go')).written, true);
+  await until(() => run().state === 'paused' && !run().pid, t.signal);
+  const paused = await call(f, 'status', { run: p.run });
+  assert.equal(paused.state, 'paused');
+  assert.equal(paused.handback?.step, 'items');
+  assert.match(paused.reason, /pilot failed/);
+  assert.equal(paused.steps.items.state, 'running');
+  assert.equal(paused.steps.items.items[0].state, 'failed');
+  assert.equal(paused.steps.items.items[1].state, 'waiting');
+  assert.equal(paused.steps.items.items[1].job, undefined);
+  assert.equal(Object.keys(run().notices).filter(k => k.startsWith('pause-')).length, 1);
+
+  assert.equal((await call(f, 'control', { run: p.run, action })).state, 'working');
+  if (action === 'resume') {
+    await until(() => run().steps.items.items[1].job || run().state === 'paused', t.signal);
+    assert.equal(run().state, 'working', JSON.stringify(run()));
+    assert.ok(run().steps.items.items[1].job);
+    assert.equal(Object.keys(run().notices).filter(k => k.startsWith('pause-')).length, 1);
+    release(run().steps.items.items[1].job);
+    await until(() => run().state === 'paused' && !run().pid, t.signal);
+    assert.match(run().reason, /batch items failed/);
+    assert.equal(run().steps.items.state, 'failed');
+    await call(f, 'control', { run: p.run, action: 'resume' });
+    await until(() => run().state === 'completed', t.signal);
+    assert.equal(run().steps.items.state, 'skipped');
+    assert.equal(run().steps.after.state, 'skipped');
+  } else {
+    await until(() => run().steps.items.items[0].job && run().steps.items.items[0].job !== firstJob || run().state === 'paused', t.signal);
+    assert.equal(run().state, 'working', JSON.stringify(run()));
+    assert.equal(run().steps.items.items[0].attempt, 1);
+    assert.equal(run().steps.items.items[1].state, 'waiting');
+    assert.equal(run().steps.items.items[1].job, undefined);
+    release(run().steps.items.items[0].job);
+    await until(() => run().steps.items.items[1].job, t.signal);
+    assert.equal(run().state, 'working', JSON.stringify(run()));
+    release(run().steps.items.items[1].job);
+    await until(() => run().steps.after.job, t.signal);
+    release(run().steps.after.job);
+    await until(() => run().state === 'completed', t.signal);
+    const done = await call(f, 'status', { run: p.run });
+    assert.equal(done.steps.items.state, 'done');
+    assert.equal(done.steps.after.state, 'done');
+  }
+});
+
 test('a one-item breaker-first batch pauses once, skips on one resume, and reruns on retry_failed', { timeout: 30_000 }, async t => {
   const f = await fixture(t, { failedRetentionMs: 60_000 });
   sonicTask(f);

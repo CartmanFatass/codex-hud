@@ -7,7 +7,7 @@ import { registeredProject } from '../roles/projects.js';
 import { readFileBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { isProcAlive } from '../utils/proc.js';
 import { driveWorkflow } from '../workflows/driver.js';
-import { composedActive, hashComposedGraph, readComposed, readComposedGraph, SONIC_INPUT_UNKNOWN, SONIC_LEDGER_VERSION, workflowGrants, type CheckResult, type ComposedCursor, type ComposedRun } from '../workflows/composed-state.js';
+import { composedActive, hashComposedGraph, readComposed, readComposedGraph, SONIC_INPUT_UNKNOWN, SONIC_LEDGER_VERSION, workflowGrants, type CheckResult, type ComposedCursor, type ComposedRun, type Item } from '../workflows/composed-state.js';
 import { pauseRun, type Tick } from '../workflows/engine.js';
 import { SONIC_BYTES_LIMIT, type Graph, type Step } from '../workflows/graph.js';
 import { failuresByReason, settleBatchItem } from '../workflows/policy.js';
@@ -215,6 +215,25 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
   let changed = !cursor.items;
   const items = cursor.items ??= step.items!.map(() => ({ state: 'waiting', attempt: 0 }));
   const request = (i: number) => `workflow:${run.flow}:${key}:${i}:${items[i].attempt}`;
+  const evidence = () => items.map((item, i) => ({ ...item, item: i + 1 }));
+  const pause = (why: string) => pauseComposed(run, key, why);
+  const applySettlement = (item: Item, i: number, failure?: string) => {
+    const { action, groups } = settleBatchItem(run, item, evidence, graph.policy.breaker, i === 0, failure);
+    if (groups) cursor.failure_groups = groups;
+    if (action === 'pause') pause(`${i === 0 ? 'pilot failed' : 'failure circuit breaker'} — ${item.reason}`);
+    else if (action === 'failure') run.notices[`failure-${run.epoch}-${run.settled}`] = `${run.flow} ${key} item ${i + 1}: ${item.reason}`;
+  };
+  if (run.state === 'working' && cursor.pending_settlements?.length && items.some(i => i.state === 'running' || i.state === 'waiting')) {
+    const pending = cursor.pending_settlements;
+    delete cursor.pending_settlements;
+    changed = true;
+    for (const i of pending) {
+      const item = items[i];
+      if (!item || (item.state !== 'done' && item.state !== 'failed')) continue;
+      applySettlement(item, i, item.state === 'failed' ? item.reason || 'failed' : undefined);
+      if (run.state !== 'working') break;
+    }
+  }
   const settled = items.flatMap((item, i) => {
     if (item.state !== 'running') return [];
     const job = item.job ? findJob(item.job) : receipt(run, request(i));
@@ -222,8 +241,6 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
     const result = job ? batchJobOutcome(job, i === 0) : { at: 0, failure: item.reason || 'dispatch interrupted without a job receipt' };
     return result ? [{ item, i, ...result }] : [];
   }).sort((a, b) => a.at - b.at || a.i - b.i);
-  const evidence = () => items.map((item, i) => ({ ...item, item: i + 1 }));
-  const pause = (why: string) => pauseComposed(run, key, why);
   for (const { item, i, failure, stall } of settled) {
     if (stall) {
       if (graph.policy.breaker === 'none' || run.state !== 'working' || item.stall === stall) continue;
@@ -231,10 +248,11 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
       pause(`pilot ${i + 1} (${item.job}) stalled: ${reason(stall)}`);
     } else {
       delete item.stall;
-      const { action, groups } = settleBatchItem(run, item, evidence, graph.policy.breaker, i === 0, failure);
-      if (groups) cursor.failure_groups = groups;
-      if (action === 'pause') pause(`${i === 0 ? 'pilot failed' : 'failure circuit breaker'} — ${item.reason}`);
-      else if (action === 'failure') run.notices[`failure-${run.epoch}-${run.settled}`] = `${run.flow} ${key} item ${i + 1}: ${item.reason}`;
+      const defer = run.state !== 'working';
+      applySettlement(item, i, failure);
+      if (defer && run.state === 'paused' && !(run.handback?.step === key && /^(?:pilot failed|failure circuit breaker) — /.test(run.reason ?? ''))) {
+        (cursor.pending_settlements ??= []).push(i);
+      }
     }
     changed = true;
   }
@@ -242,7 +260,7 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
   const running = items.filter(i => i.state === 'running').length;
   const next = items.findIndex(i => i.state === 'waiting');
   if (!running && next < 0 && (run.state === 'working' || run.state === 'paused')) {
-    if (!items.some(item => item.state === 'failed')) return { state: 'done' };
+    if (!items.some(item => item.state === 'failed')) { delete cursor.pending_settlements; return { state: 'done' }; }
     cursor.failure_groups ??= failuresByReason(evidence());
     const why = 'batch items failed; see step index';
     if (!step.optional) {
@@ -250,6 +268,7 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
       if (run.state === 'paused' && run.handback?.step !== key) return { ...wait(), changed };
       if (run.state === 'working') pause(why);
     }
+    delete cursor.pending_settlements;
     return { ...fail(why), itemsSettled: true };
   }
   if (run.state !== 'working') return { ...wait(running ? 1_000 : undefined), changed };
