@@ -377,6 +377,58 @@
       "comments": [],
       "created_at": "2026-11-27T08:09:20.506Z",
       "updated_at": "2026-11-27T08:09:20.506Z"
+    },
+    {
+      "number": 27,
+      "title": "Gate flakes collected after test-flakes/26",
+      "kind": "flake-list",
+      "status": "needs-triage",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-create-context.test.mjs",
+          "case_name": "general borrows bundled imp instructions on Antigravity and Claude",
+          "flow": "fae3be043f2a14655",
+          "log": "~/.hud/flows/fae3be043f2a14655.json.gate-1.log",
+          "recorded_at": "2026-11-27T08:29:43.544Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-worker-tools.test.mjs",
+          "case_name": "hud_lease reclaims terminal jobs and a SIGKILLed fallback holder",
+          "flow": "fae3be043f2a14655",
+          "log": "~/.hud/flows/fae3be043f2a14655.json.gate-1.log",
+          "recorded_at": "2026-11-27T08:29:43.544Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-roster-presets.test.mjs",
+          "case_name": "pi dispatch passes role skills and the worker prompt, and records skips",
+          "flow": "fae3be043f2a14655",
+          "log": "~/.hud/flows/fae3be043f2a14655.json.gate-1.log",
+          "recorded_at": "2026-11-27T08:29:43.544Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T08:29:43.544Z",
+      "updated_at": "2026-11-27T08:29:43.544Z"
     }
   ]
 }

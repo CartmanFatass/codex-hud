@@ -238,7 +238,7 @@
     {
       "number": 32,
       "title": "hud_tickets update accepts the single-ticket form again",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -248,22 +248,29 @@
         {
           "id": 1,
           "text": "Test: single-form update with feature + numeric ticket + status/tick succeeds for a Markdown and a JSON feature",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: single form and updates[] produce identical files",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T08:29:43.522Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "68d31f8a58958c5b21172eef06732c7c7138e2a8",
+        "gates": 5
+      },
       "comments": [],
-      "created_at": "2026-11-27T06:39:27.936Z",
-      "updated_at": "2026-11-27T06:39:27.936Z"
+      "created_at": "2026-11-27T08:29:43.522Z",
+      "updated_at": "2026-11-27T08:29:43.522Z"
     },
     {
       "number": 33,
@@ -298,7 +305,7 @@
     {
       "number": 34,
       "title": "A tab worker whose first prompt was never submitted gets its Enter resent",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "Start a lead with the submit key swallowed once and confirm it starts on its own",
       "approved_removals": [],
@@ -308,22 +315,29 @@
         {
           "id": 1,
           "text": "Test: a fake Claude pane that drops the first Enter receives one resend and the job starts",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: when the resend also fails the job reports a launch failure, not quiet without a report",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T08:29:43.534Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "95ce99cc910e6e1863a4f91c2dedb3a74e3636bc",
+        "gates": 5
+      },
       "comments": [],
-      "created_at": "2026-11-27T06:39:27.936Z",
-      "updated_at": "2026-11-27T06:39:27.936Z"
+      "created_at": "2026-11-27T08:29:43.534Z",
+      "updated_at": "2026-11-27T08:29:43.534Z"
     },
     {
       "number": 35,
