@@ -42,11 +42,15 @@ test('CLI results can be read after oversized output and summed across contiguou
   const { home, put } = fixture(t), job = { headless: true, cli: { agent: 'claude' } };
   const result = (input_tokens, total_cost_usd) => ({ type: 'result', usage: { input_tokens, output_tokens: 2 }, total_cost_usd });
   const first = { ...status, stdout_start: 0 };
-  const path = put('stdout.jsonl', [{ type: 'assistant', text: 'x'.repeat(2 * 1024 * 1024) }, result(11, 0.125)]);
+  const path = put('stdout.jsonl', [
+    { type: 'assistant', message: { model: 'claude-prefix' }, text: 'x'.repeat(2 * 1024 * 1024) },
+    { type: 'assistant', message: { model: 'claude-tail' } },
+    { ...result(11, 0.125), modelUsage: { 'claude-tail': {} } },
+  ]);
   recordJobUsage(home, job, first);
   assert.deepEqual(readJobUsage(home, first), { input: 11, output: 2, cost_usd: 0.125 });
   const next = { ...first, settled_at: '2026-11-23T11:00:00Z', stdout_start: fs.statSync(path).size };
-  fs.appendFileSync(path, JSON.stringify(result(5, 0)) + '\n');
+  fs.appendFileSync(path, JSON.stringify({ ...result(5, 0), modelUsage: { 'claude-next': {} } }) + '\n');
   recordJobUsage(home, job, next);
   assert.deepEqual(readJobUsage(home, next), { input: 16, output: 4, cost_usd: 0.125 });
   const paused = { state: 'waiting_orchestrator', started_at: '2026-11-23T12:00:00Z', stdout_start: fs.statSync(path).size };
@@ -58,7 +62,7 @@ test('CLI results can be read after oversized output and summed across contiguou
   assert.equal(readJobUsage(home, resumed), undefined, 'cannot count the result-less turn as zero');
 });
 
-test('usage-less agy result stays unknown and Codex uses a native cumulative tail without cache double-counting', t => {
+test('AGY keeps stream totals and adds missing model history from the native transcript', t => {
   const { home, put } = fixture(t);
   const agy = { headless: true, cli: { agent: 'agy' } };
   put('stdout.jsonl', [{ event: 'init' }, { event: 'result', result: { response: 'synthetic' } }]);
@@ -69,24 +73,39 @@ test('usage-less agy result stays unknown and Codex uses a native cumulative tai
   t.after(() => { if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome; });
   const brain = '.gemini/antigravity-cli/brain';
   put(`${brain}/synthetic-session/.system_generated/logs/transcript_full.jsonl`, [
-    { type: 'PLANNER_RESPONSE', input_tokens: 7, cache_read_tokens: 2, output_tokens: 3 },
-    { type: 'PLANNER_RESPONSE', input_tokens: 2, cache_read_tokens: 0, output_tokens: 1 },
+    { type: 'PLANNER_RESPONSE', model: 'agy-a', input_tokens: 7, cache_read_tokens: 2, output_tokens: 3 },
+    { type: 'PLANNER_RESPONSE', model: 'agy-b', input_tokens: 2, cache_read_tokens: 0, output_tokens: 1 },
   ]);
-  const nativeAgy = { ...status, settled_at: '2026-11-23T12:00:00Z', agent_session_id: 'synthetic-session' };
-  recordJobUsage(home, agy, nativeAgy);
-  assert.deepEqual(readJobUsage(home, nativeAgy), { input: 9, cache_read: 2, output: 4 });
+  put('stdout.jsonl', [{ event: 'init' }, { event: 'result', result: {
+    model: 'agy-b', usage: { input_tokens: 10, cache_read_tokens: 2, output_tokens: 5 },
+  } }]);
+  const merged = { ...status, settled_at: '2026-11-23T12:00:00Z', agent_session_id: 'synthetic-session' };
+  recordJobUsage(home, agy, merged);
+  assert.deepEqual(readJobUsage(home, merged), {
+    input: 10, cache_read: 2, output: 5, served_model: 'agy-b', served_models: ['agy-a', 'agy-b'],
+  });
+});
+
+test('Codex retains cumulative totals but not model evidence from a cut or malformed rollout', t => {
+  const { home, put } = fixture(t);
   const date = new Date(), y = String(date.getFullYear()), m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0'), session = '01234567-0123-0123-0123-0123456789ab';
   const old = process.env.CODEX_HOME;
   process.env.CODEX_HOME = home;
   t.after(() => { if (old === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = old; });
-  put(`sessions/${y}/${m}/${d}/rollout-${y}-${m}-${d}T22-00-00-${session}.jsonl`, [
-    { type: 'session_meta', payload: { id: session } }, { type: 'response_item', text: 'x'.repeat(2 * 1024 * 1024) },
-    { type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 30, cached_input_tokens: 20, output_tokens: 4 } } } },
-  ]);
-  const codex = { ...status, settled_at: '2026-11-23T12:01:00Z', agent_session_id: session };
-  recordJobUsage(home, { cli: { agent: 'codex' } }, codex);
-  assert.deepEqual(readJobUsage(home, codex), { input: 10, cache_read: 20, output: 4 });
+  const rollout = `sessions/${y}/${m}/${d}/rollout-${y}-${m}-${d}T22-00-00-${session}.jsonl`;
+  for (const [index, gap] of [{ type: 'response_item', text: 'x'.repeat(2 * 1024 * 1024) }, '{broken'].entries()) {
+    put(rollout, [
+      { type: 'session_meta', payload: { id: session } },
+      { type: 'turn_context', payload: { model: 'codex-prefix' } },
+      gap,
+      { type: 'turn_context', payload: { model: 'codex-tail' } },
+      { type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 30, cached_input_tokens: 20, output_tokens: 4 } } } },
+    ]);
+    const codex = { ...status, settled_at: `2026-11-23T12:0${index}:00Z`, agent_session_id: session };
+    recordJobUsage(home, { cli: { agent: 'codex' } }, codex);
+    assert.deepEqual(readJobUsage(home, codex), { input: 10, cache_read: 20, output: 4 });
+  }
 });
 
 test('stats and day merge v1 archives, live jobs and flows; keep missing telemetry unknown', async t => {
@@ -174,17 +193,30 @@ test('Pi, Claude, Codex and AGY settlement record served_model and served_models
     served_model: 'openai/gpt-e',
     served_models: ['openai/gpt-b:ultrafast', 'anthropic/claude-c', 'openai/gpt-d-fast', 'openai/gpt-e'],
   });
-  // Single Pi model with active provider fast tier does not emit served_models.
+  // Invalid response snapshot falls back to the alias; a single model does not emit served_models.
   const piSingle = put('pi-single.jsonl', [
     { type: 'session' },
     { type: 'service_tier_change', serviceTier: 'fast' },
-    piMsg('2026-11-23T10:02:00Z', 'openai', 'gpt-solo'),
+    piMsg('2026-11-23T10:02:00Z', 'openai', 'gpt-solo', { responseModel: '<synthetic>' }),
   ]);
   const piSingleStatus = { ...status, settled_at: '2026-11-23T10:11:00Z', session_file: piSingle };
   recordJobUsage(piDir, {}, piSingleStatus);
   assert.deepEqual(readJobUsage(piDir, piSingleStatus), {
     input: 5, cache_read: 1, cache_write: 0, output: 2,
     served_model: 'openai/gpt-solo:fast',
+  });
+  const piSnapshots = put('pi-snapshots.jsonl', [
+    { type: 'session' },
+    { type: 'service_tier_change', serviceTier: { openai: 'fast' } },
+    piMsg('2026-11-23T10:02:00Z', 'openai', 'gpt-alias', { responseModel: 'gpt-snapshot-a' }),
+    piMsg('2026-11-23T10:03:00Z', 'openai', 'gpt-alias', { responseModel: 'openai/gpt-snapshot-b', serviceTier: 'ultrafast' }),
+  ]);
+  const piSnapshotStatus = { ...status, settled_at: '2026-11-23T10:11:30Z', session_file: piSnapshots };
+  recordJobUsage(piDir, {}, piSnapshotStatus);
+  assert.deepEqual(readJobUsage(piDir, piSnapshotStatus), {
+    input: 10, cache_read: 2, cache_write: 0, output: 4,
+    served_model: 'openai/gpt-snapshot-b:ultrafast',
+    served_models: ['openai/gpt-snapshot-a:fast', 'openai/gpt-snapshot-b:ultrafast'],
   });
   // Truncated and missing Pi transcripts leave served_model absent.
   const piCut = put('pi-cut.jsonl', [

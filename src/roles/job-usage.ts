@@ -11,7 +11,8 @@ const WINDOW = 1024 * 1024;
 const MAX_SERVED_MODELS = 4;
 const MAX_MODEL_LEN = 160;
 const fields = ['input', 'cache_read', 'cache_write', 'output', 'cost_usd'] as const;
-export type JobUsage = Partial<Record<(typeof fields)[number], number>> & {
+type Totals = Partial<Record<(typeof fields)[number], number>>;
+export type JobUsage = Totals & {
   served_model?: string;
   served_models?: string[];
 };
@@ -25,39 +26,58 @@ function modelId(value: unknown): string | undefined {
   if (!s || s.length > MAX_MODEL_LEN || /[\r\n\0]/.test(s) || s.toLowerCase() === '<synthetic>') return;
   return s;
 }
-function collectServed(raw: Iterable<unknown>): Pick<JobUsage, 'served_model' | 'served_models'> {
-  const list: string[] = [];
-  for (const item of raw) {
-    const id = modelId(item);
-    if (!id) continue;
-    const i = list.indexOf(id);
-    if (i !== -1) list.splice(i, 1);
-    list.push(id);
+class ServedModels {
+  private readonly ids: string[] = [];
+
+  get last() { return this.ids.at(-1); }
+
+  private remember(id: string) {
+    const i = this.ids.indexOf(id);
+    if (i !== -1) this.ids.splice(i, 1);
+    else if (this.ids.length === MAX_SERVED_MODELS) this.ids.shift();
+    this.ids.push(id);
   }
-  if (!list.length) return {};
-  const capped = list.slice(-MAX_SERVED_MODELS);
-  return capped.length > 1 ? { served_model: capped[capped.length - 1], served_models: capped } : { served_model: capped[0] };
+
+  add(value: unknown) {
+    const id = modelId(value);
+    if (id) this.remember(id);
+  }
+
+  addUsage(raw: Record<string, unknown>) {
+    if (Array.isArray(raw.served_models)) {
+      for (const value of raw.served_models) this.add(value);
+      if (raw.served_models.at(-1) === raw.served_model) return;
+    }
+    this.add(raw.served_model);
+  }
+
+  merge(other: ServedModels) {
+    for (const id of other.ids) this.remember(id);
+  }
+
+  withTotals(totals: Totals | undefined): JobUsage | undefined {
+    const last = this.last;
+    if (!last) return totals;
+    return this.ids.length > 1 ? { ...totals, served_model: last, served_models: [...this.ids] }
+      : { ...totals, served_model: last };
+  }
 }
-function servedList(u: Record<string, unknown> | undefined): string[] {
-  if (!u) return [];
-  const many = Array.isArray(u.served_models) ? u.served_models : [];
-  return [...many, u.served_model].flatMap(v => { const id = modelId(v); return id ? [id] : []; });
-}
-export function jobUsage(value: unknown): JobUsage | undefined {
-  const raw = record(value), usage: JobUsage = {};
+function numericUsage(raw: Record<string, unknown>): Totals | undefined {
+  const usage: Totals = {};
   for (const key of fields) {
     const n = key === 'cost_usd' ? dollars(raw[key]) : count(raw[key]);
     if (n !== undefined) usage[key] = n;
   }
-  const served = collectServed(servedList(raw));
-  if (served.served_model) usage.served_model = served.served_model;
-  if (served.served_models) usage.served_models = served.served_models;
   return Object.keys(usage).length ? usage : undefined;
 }
-function sum(a: JobUsage | undefined, b: JobUsage | undefined): JobUsage | undefined {
+export function jobUsage(value: unknown): JobUsage | undefined {
+  const raw = record(value), models = new ServedModels();
+  models.addUsage(raw);
+  return models.withTotals(numericUsage(raw));
+}
+function sum(a: Totals | undefined, b: Totals | undefined): Totals | undefined {
   if (!a || !b) return;
-  const totals = Object.fromEntries(fields.flatMap(key => a[key] === undefined || b[key] === undefined ? [] : [[key, a[key] + b[key]]]));
-  return jobUsage({ ...totals, ...collectServed([...servedList(a), ...servedList(b)]) });
+  return numericUsage(Object.fromEntries(fields.flatMap(key => a[key] === undefined || b[key] === undefined ? [] : [[key, a[key] + b[key]]])));
 }
 
 function rows(path: string, start = 0) {
@@ -88,12 +108,12 @@ function piTierSuffix(rawTier: unknown, model: string): string {
   return '';
 }
 function piModel(m: Record<string, unknown>, u: Record<string, unknown>, activeTier?: string): string | undefined {
-  const model = modelId(m.model);
+  const model = modelId(m.responseModel) ?? modelId(m.model);
   if (!model) return;
   const provider = text(m.provider)?.trim();
   const qualified = provider && !model.startsWith(`${provider}/`) ? `${provider}/${model}` : model;
   const tier = text(m.serviceTier) ?? text(m.service_tier) ?? text(u.serviceTier) ?? text(u.service_tier) ?? text(u.speed) ?? activeTier;
-  return modelId(qualified + piTierSuffix(tier, qualified));
+  return qualified + piTierSuffix(tier, qualified);
 }
 
 // Same entry types as the pi footer, without its pricing fallback. A copied sonic
@@ -104,8 +124,8 @@ function piTotals(path: string, job: Partial<Job>) {
   const since = job.retry_of && epoch(job.created_at);
   let sessionTier: string | undefined;
   const providerTiers = new Map<string, string>();
-  const entries: (JobUsage | undefined)[] = [];
-  const models: string[] = [];
+  const entries: (Totals | undefined)[] = [];
+  const models = new ServedModels();
   for (const row of window.data) {
     if (row.type === 'service_tier_change') {
       const st = row.serviceTier ?? row.service_tier;
@@ -139,46 +159,45 @@ function piTotals(path: string, job: Partial<Job>) {
     const u = record(raw), cost = record(u.cost), total = dollars(cost.total);
     if (row.type === 'message' && m.role === 'assistant' && raw !== undefined) {
       const provider = text(m.provider)?.trim();
-      const served = piModel(m, u, (provider ? providerTiers.get(provider) : undefined) ?? sessionTier);
-      if (served) models.push(served);
+      models.add(piModel(m, u, (provider ? providerTiers.get(provider) : undefined) ?? sessionTier));
     }
     // Pi can use an unmarked zero for an unpriced model.
-    entries.push(jobUsage({ input: u.input, cache_read: u.cacheRead, cache_write: u.cacheWrite, output: u.output,
+    entries.push(numericUsage({ input: u.input, cache_read: u.cacheRead, cache_write: u.cacheWrite, output: u.output,
       cost_usd: (total !== undefined && total > 0) || cost.totalFromProvider === true ? total : undefined }));
   }
-  const totals = entries.length ? entries.reduce(sum) : undefined;
-  return jobUsage({ ...totals, ...collectServed(models) });
+  return models.withTotals(entries.length ? entries.reduce(sum) : undefined);
 }
 
 function claudeUsage(raw: unknown, cost?: unknown) {
   const u = record(raw);
-  return jobUsage({ input: u.input_tokens, output: u.output_tokens, cache_read: u.cache_read_input_tokens,
+  return numericUsage({ input: u.input_tokens, output: u.output_tokens, cache_read: u.cache_read_input_tokens,
     cache_write: u.cache_creation_input_tokens, cost_usd: cost });
 }
 function codexUsage(raw: unknown) {
   const u = record(raw), input = count(u.input_tokens), cached = count(u.cached_input_tokens);
   // Normalize to uncached input as in pi and Claude; Codex's raw input includes cache reads.
-  return jobUsage({ input: input !== undefined && cached !== undefined ? input - cached : undefined,
+  return numericUsage({ input: input !== undefined && cached !== undefined ? input - cached : undefined,
     cache_read: cached, cache_write: u.cache_write_input_tokens, output: u.output_tokens });
 }
 function agyUsage(raw: unknown) {
   const u = record(raw);
-  return jobUsage({ input: u.input_tokens, cache_read: u.cache_read_tokens, output: u.output_tokens });
+  return numericUsage({ input: u.input_tokens, cache_read: u.cache_read_tokens, output: u.output_tokens });
 }
 
-function resultUsage(row: Record<string, unknown>, agent: string) {
+function resultUsage(row: Record<string, unknown>, agent: string, models?: ServedModels) {
   if (agent === 'claude' && row.type === 'result') {
-    const served = collectServed(Object.keys(record(row.modelUsage)));
-    return { usage: jobUsage({ ...claudeUsage(row.usage, row.total_cost_usd), ...served }) };
+    if (models) for (const model of Object.keys(record(row.modelUsage))) models.add(model);
+    return { usage: claudeUsage(row.usage, row.total_cost_usd) };
   }
   if (agent === 'codex' && row.type === 'turn.completed') return { usage: codexUsage(row.usage) };
   if (agent === 'agy' && row.event === 'result') {
     const res = record(row.result);
-    return { usage: jobUsage({ ...agyUsage(res.usage), ...collectServed([res.model]) }) };
+    models?.add(res.model);
+    return { usage: agyUsage(res.usage) };
   }
 }
 
-function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobStatus>) {
+function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobStatus>, models: ServedModels) {
   const id = status.agent_session_id ?? status.session_id;
   if (!id || !/^[\w-]{1,128}$/.test(id)) return;
   const userHome = homedir();
@@ -191,29 +210,27 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
   const window = rows(path);
   if (!window) return;
   if (agent === 'codex') {
-    const turnModels: string[] = [], metaModels: string[] = [];
-    for (const row of window.data) {
-      const p = record(row.payload);
-      if (row.type === 'turn_context') {
-        const m = modelId(p.model ?? record(record(p.collaboration_mode).settings).model);
-        if (m) turnModels.push(m);
-      } else if (row.type === 'session_meta') {
-        const m = modelId(p.model);
-        if (m) metaModels.push(m);
+    // A cumulative count can survive a partial read; model history cannot.
+    if (!window.cut && !window.malformed) {
+      const metaModels = new ServedModels();
+      for (const row of window.data) {
+        const p = record(row.payload);
+        if (row.type === 'turn_context') models.add(p.model ?? record(record(p.collaboration_mode).settings).model);
+        else if (row.type === 'session_meta') metaModels.add(p.model);
       }
+      if (!models.last) models.merge(metaModels);
     }
-    const served = collectServed(turnModels.length ? turnModels : metaModels);
     let newerRequest = false;
     for (const row of [...window.data].reverse()) {
       const p = record(row.payload);
       const total = row.type === 'event_msg' && p.type === 'token_count' ? record(p.info).total_token_usage : undefined;
-      if (total && !newerRequest) return jobUsage({ ...codexUsage(total), ...served });
+      if (total && !newerRequest) return codexUsage(total);
       if (row.type === 'token_usage_record') newerRequest = true;
     }
     if (window.cut || window.malformed) return;
     // Modern per-response records and legacy per-request mirrors can coexist.
     // Prefer modern per turn (as the trace reader does), never sum both.
-    const turns = new Map<string, { modern: (JobUsage | undefined)[]; legacy: (JobUsage | undefined)[] }>();
+    const turns = new Map<string, { modern: (Totals | undefined)[]; legacy: (Totals | undefined)[] }>();
     const responses = new Set<string>();
     let turn = '', lastTotal = '';
     for (const row of window.data) {
@@ -235,32 +252,30 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
       turns.set(key, entry);
     }
     const usages = [...turns.values()].flatMap(t => t.modern.length ? t.modern : t.legacy);
-    const totals = usages.length ? usages.reduce(sum) : undefined;
-    return jobUsage({ ...totals, ...served });
+    return usages.length ? usages.reduce(sum) : undefined;
   }
   // These transcripts have per-request, not cumulative, usage.
   if (window.cut || window.malformed) return;
   if (agent === 'agy') {
     const planner = window.data.filter(row => row.type === 'PLANNER_RESPONSE');
-    const totals = planner.length ? planner.map(agyUsage).reduce(sum) : undefined;
-    return jobUsage({ ...totals, ...collectServed(planner.map(row => row.model)) });
+    for (const row of planner) models.add(row.model);
+    return planner.length ? planner.map(agyUsage).reduce(sum) : undefined;
   }
-  const turns = new Map<string, JobUsage | undefined>();
-  const models: unknown[] = [];
+  const turns = new Map<string, Totals | undefined>();
+  let unkeyed = false;
   for (const row of window.data) {
     if (row.type !== 'assistant') continue;
     const m = record(row.message), key = text(m.id) ?? text(row.requestId);
     if (typeof m.model === 'string' && m.model.trim().toLowerCase() === '<synthetic>') continue;
-    if (!key) return;
-    models.push(m.model);
+    models.add(m.model);
+    if (!key) { unkeyed = true; continue; }
     const usage = claudeUsage(m.usage);
     if (usage || !turns.has(key)) turns.set(key, usage);
   }
-  const totals = turns.size ? [...turns.values()].reduce(sum) : undefined;
-  return jobUsage({ ...totals, ...collectServed(models) });
+  return !unkeyed && turns.size ? [...turns.values()].reduce(sum) : undefined;
 }
 
-type Receipt = { key: string; usage?: JobUsage; stream?: { end: number; usage?: JobUsage } };
+type Receipt = { key: string; usage?: JobUsage; stream?: { end: number; usage?: JobUsage; modelsComplete?: boolean } };
 const stamp = (status: Partial<JobStatus>) => status.settled_at ?? status.ended_at ?? status.started_at;
 function load(dir: string): Receipt | undefined {
   try { return readJsonBounded(join(dir, files.usage), 4096) as Receipt; } catch { return; }
@@ -277,53 +292,58 @@ export function recordJobUsage(dir: string, job: Partial<Job>, status: Partial<J
   if (!key || job.bro || job.jev || job.scout_only || status.harness === 'bro') return;
   const prior = load(dir);
   if (prior?.key === key) return;
-  let usage: JobUsage | undefined, stream: Receipt['stream'];
+  let usage: JobUsage | undefined, stream: Receipt['stream'], totals: Totals | undefined;
+  const streamModels = new ServedModels();
   const agent = job.cli?.agent ?? (status.agent === 'pi' ? undefined : status.agent);
   if (agent && (job.headless || status.slot === 'headless')) {
     try {
       const start = count(status.stdout_start), window = rows(join(dir, files.sonicStdout), start ?? 0);
       if (window) {
-        const results = window.data.map(row => resultUsage(row, agent)).filter(r => r !== undefined);
+        const prefix = start && prior?.stream?.end === start ? prior.stream : undefined;
+        const intact = !window.cut && !window.malformed;
+        const resultModels = intact ? new ServedModels() : undefined;
+        const results = window.data.map(row => resultUsage(row, agent, resultModels)).filter(r => r !== undefined);
         const starts = window.data.filter(row => row.type === 'thread.started' || row.event === 'init' ||
           (row.type === 'system' && row.subtype === 'init')).length;
         // A new runner supplies its byte start. Old receipts can use an uncut
         // stream only, and must not silently omit a paused or killed turn.
-        const complete = start !== undefined ? results.length === 1 : !window.cut && !window.malformed &&
-          results.length > 0 && starts <= results.length;
-        let current = complete ? results.map(r => r.usage).reduce(sum) : undefined;
-        if (complete && agent === 'claude') {
-          const assistantModels = window.data.flatMap(row => {
-            if (row.type !== 'assistant') return [];
-            const id = modelId(record(row.message).model);
-            return id ? [id] : [];
-          });
-          if (assistantModels.length)
-            current = jobUsage({ ...current, ...collectServed([...servedList(current), ...assistantModels]) });
+        const complete = start !== undefined ? results.length === 1 : intact && results.length > 0 && starts <= results.length;
+        const current = complete ? results.map(r => r.usage).reduce(sum) : undefined;
+        totals = start ? sum(numericUsage(record(prefix?.usage)), current) : current;
+        // Never reconstruct a complete model history from later turns alone.
+        const modelsComplete = complete && resultModels !== undefined && (!start || prefix?.modelsComplete === true);
+        if (modelsComplete) {
+          streamModels.addUsage(record(prefix?.usage));
+          streamModels.merge(resultModels);
+          if (agent === 'claude') {
+            // Assistant observations give the order missing from modelUsage keys.
+            for (const row of window.data) if (row.type === 'assistant') streamModels.add(record(row.message).model);
+          }
         }
-        usage = start ? (prior?.stream?.end === start ? sum(prior.stream.usage, current) : undefined) : current;
-        stream = { end: window.end, usage };
+        stream = { end: window.end, usage: streamModels.withTotals(totals), modelsComplete };
       }
     } catch { /* No readable result stream. */ }
   }
-  try {
-    if (agent) {
-      // Native transcripts may supply token totals or served_model when a stream
-      // lacks them (for example, a pause or Codex/AGY stream). Never add two views of the same traffic.
-      if (!usage || usage.input === undefined || usage.output === undefined || !usage.served_model) {
-        const native = transcriptUsage(agent, job, status);
-        if (native) {
-          const totals = !usage || usage.input === undefined || usage.output === undefined ? { ...native, ...usage } : { ...usage };
-          const served = usage?.served_model
-            ? { served_model: usage.served_model, served_models: usage.served_models }
-            : { served_model: native.served_model, served_models: native.served_models };
-          usage = jobUsage({ ...totals, ...served });
-        }
+  if (agent) {
+    const models = new ServedModels();
+    try {
+      // Consult both views for model evidence, even if the stream has all token totals.
+      // Select a numeric source instead of adding two views of the same traffic.
+      const native = transcriptUsage(agent, job, status, models);
+      if (native && (totals?.input === undefined || totals.output === undefined)) {
+        // A headless receipt can still report cost even when native supplies the tokens.
+        totals = totals?.cost_usd === undefined ? native : { ...native, cost_usd: totals.cost_usd };
       }
-    } else {
+    } catch { /* Native files can be absent, rotated or too large to total. */ }
+    // Stream results are terminal observations, after the native request history.
+    models.merge(streamModels);
+    usage = models.withTotals(totals);
+  } else {
+    try {
       const path = status.session_file ?? (job.headless ? join(dir, files.sonicSession) : undefined);
       if (path && isAbsolute(path)) usage = piTotals(path, job);
-    }
-  } catch { /* Native files can be absent, rotated or too large to total. */ }
+    } catch { /* Native files can be absent, rotated or too large to total. */ }
+  }
   try { writeJsonPrivate(join(dir, files.usage), { key, usage, stream }, { mkdir: false }); }
   catch { /* Best effort; never prevent settlement or retention. */ }
 }
