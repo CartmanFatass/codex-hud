@@ -2,20 +2,80 @@
 import * as fs from 'node:fs';
 import { join, relative } from 'node:path';
 import { scanScratch } from '../cli/tickets.js';
+import { targetKey } from '../collectors/ticket-evidence.js';
+import { ticketIds } from '../collectors/ticket-rollup.js';
 import { worktreeGit } from '../collectors/worktrees.js';
 import { isHandEditedInMain, sweepTicketWrites, type GitRunner } from '../tickets/commit.js';
 import {
   legacyTicketPaths, parseTicketRef, readJsonTicketFeature, readTicketWrites, serializeTicketFeature, sha256Bytes,
   withTicketStoreLock, writeLegacyTicket, writeTicketFeature, type TicketFeatureDoc,
 } from '../tickets/store.js';
-import { readJsonFile } from '../utils/atomic-fs.js';
+import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
-import { landedTicket } from './local-tickets.js';
+import type { LandFlow } from './land-state.js';
+import { landedTicket, unfinishedAcceptance } from './local-tickets.js';
 import { jobFiles } from './paths.js';
+import { readTicketQueue } from './ticket-queue-state.js';
 
-export interface LandRecordEntry {
-  job: string;
-  flow: string;
+function notDoneNotes(dir: string): string[] {
+  let report: string;
+  try {
+    const { bytes, truncated } = readFileBounded(join(dir, jobFiles.report), 1024 * 1024);
+    if (truncated) throw Error('Landing report exceeds 1 MiB');
+    report = bytes.toString('utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  const notes: string[] = [];
+  let open = false, numberedIndent: number | undefined;
+  for (const raw of report.split(/\r?\n/)) {
+    const line = raw.trim();
+    // Accept both a Not done heading and item 3 of the existing worker report template.
+    const header = /^(?:(?:#{1,6}|[-*]|(\d+\.))\s+)?(?:\*\*)?(?:Not done|Anything in the brief you did not do, and why\.?)(?:\*\*)?(?::(?:\*\*)?\s*(.*))?$/i.exec(line);
+    if (header) {
+      open = true;
+      numberedIndent = header[1] ? raw.length - raw.trimStart().length : undefined;
+      if (header[2]) notes.push(header[2]);
+    } else if (/^#{1,6}\s|^(?:\*\*)?(?:Blockers|Try|Assumed|Removes|Todo)(?:\*\*)?:/i.test(line) ||
+               (numberedIndent !== undefined && /^\d+\.\s/.test(line) && raw.length - raw.trimStart().length <= numberedIndent)) {
+      open = false;
+    } else if (open && line) {
+      notes.push(line);
+    }
+  }
+  return notes;
+}
+
+function leadNotes(home: string, flow: LandFlow, job: Job, ticket: string): string[] {
+  const queueId = flow.ticket_queue ?? job.ticket_queue;
+  const queue = queueId && readTicketQueue(home, queueId);
+  if (!queue) return [];
+  const sources = new Set(queue.decisions?.filter(d => d.worker_job === job.job).map(d => `lead (${d.job})`));
+  const key = targetKey(ticket);
+  return (queue.todo ?? []).flatMap(todo => {
+    if (todo.kind !== 'lead') return [];
+    // An explicit `ticket:` prefix takes precedence over references in the rationale.
+    const prefix = /^([a-z0-9-]+\/\d+):\s*/i.exec(todo.text);
+    if (prefix) return targetKey(prefix[1]) === key ? [todo.text.slice(prefix[0].length)] : [];
+    if (sources.has(todo.source)) return [todo.text];
+    const refs = new Set(ticketIds(todo.text));
+    return (refs.size === 1 ? refs.has(key) : !refs.size && queue.tickets.length === 1) ? [todo.text] : [];
+  });
+}
+
+type LandRecordEntry = { row: LandFlow; ref: NonNullable<ReturnType<typeof parseTicketRef>>; notes: string[] };
+
+/** Read report evidence before fast-forward; resolve the checklist against the current ticket file. */
+export function prepareLandRecords(home: string, members: readonly LandFlow[]): LandRecordEntry[] {
+  return members.flatMap(row => {
+    const dir = join(home, 'jobs', row.job);
+    let job: Job;
+    try { job = readJsonFile(join(dir, jobFiles.job)) as Job; } catch { return []; }
+    if (!job.ticket) return [];
+    const ref = parseTicketRef(job.ticket);
+    return ref ? [{ row, ref, notes: [...notDoneNotes(dir), ...leadNotes(home, row, job, job.ticket)] }] : [];
+  });
 }
 
 export interface LandRecordsOptions {
@@ -27,25 +87,17 @@ function handEditError(rel: string) {
   return new Error(`Cannot record landing in ${rel}: uncommitted hand edit present; commit or revert it and retry hud_land`);
 }
 
-function readEntryTicketRef(home: string, entry: LandRecordEntry) {
-  let job: Job;
-  try {
-    job = readJsonFile(join(home, 'jobs', entry.job, jobFiles.job)) as Job;
-  } catch {
-    return undefined;
-  }
-  return parseTicketRef(job.ticket);
-}
-
-function applyJsonLanding(doc: TicketFeatureDoc, number: number, entry: LandRecordEntry, replayBase: string, gates: number, at: string) {
-  const ticket = doc.tickets.find(t => t.number === number);
-  if (!ticket) return false;
-  ticket.status = ticket.owner_try ? 'ready-for-human' : 'done';
+function applyJsonLanding(doc: TicketFeatureDoc, { row, ref, notes }: LandRecordEntry, replayBase: string, gates: number, at: string) {
+  const ticket = doc.tickets.find(t => t.number === ref.number);
+  if (!ticket) return;
+  const unfinished = unfinishedAcceptance(ticket.acceptance, notes);
+  const skip = new Set(unfinished.map(({ id }) => id));
+  ticket.status = ticket.owner_try ? 'ready-for-human' : unfinished.length ? 'ready-for-agent' : 'done';
   delete ticket.claimed_at;
-  for (const item of ticket.acceptance) item.done = true;
-  ticket.landing = { at, job: entry.job, flow: entry.flow, replay_base: replayBase, gates };
+  for (const item of ticket.acceptance) if (!skip.has(item.id)) item.done = true;
+  ticket.landing = { at, job: row.job, flow: row.flow, replay_base: replayBase, gates };
   ticket.updated_at = at;
-  return true;
+  return unfinished;
 }
 
 /**
@@ -69,9 +121,7 @@ export async function checkLandingRecords(
     const writes = readTicketWrites(home, realMain);
     const checkedFeatures = new Map<string, TicketFeatureDoc | null>();
     for (const entry of entries) {
-      const ref = readEntryTicketRef(home, entry);
-      if (!ref) continue;
-
+      const { ref, notes } = entry;
       const rel = `.hud/tickets/${ref.feature}.json`;
       const full = join(realMain, rel);
       const st = fs.lstatSync(full, { throwIfNoEntry: false });
@@ -90,7 +140,7 @@ export async function checkLandingRecords(
         }
         if (doc) {
           if (doc.mirror) continue;
-          if (applyJsonLanding(doc, ref.number, entry, replayBase, gates, at)) {
+          if (applyJsonLanding(doc, entry, replayBase, gates, at)) {
             try { serializeTicketFeature(doc); }
             catch (error) {
               throw new Error(`Cannot record landing in ${rel}: ${(error as Error).message}`, { cause: error });
@@ -115,7 +165,7 @@ export async function checkLandingRecords(
       }
       try {
         const original = fs.readFileSync(legacyFull, 'utf8');
-        landedTicket(original, ref.number, `Landed in this commit (replay base ${replayBase}); gate ${gates}/${gates} passed.`);
+        landedTicket(original, ref.number, `Landed in this commit (replay base ${replayBase}); gate ${gates}/${gates} passed.`, notes);
       } catch (error) {
         throw new Error(`Cannot record landing in ${legacyRel}: ${(error as Error).message}`, { cause: error });
       }
@@ -146,10 +196,9 @@ export async function recordLanding(
   const git: GitRunner = (args) => worktreeGit(realMain, [...filters, ...args]);
   const run = async () => {
     const writes = readTicketWrites(home, realMain);
+    const pending: { row: LandFlow; path: string; items: ReturnType<typeof unfinishedAcceptance> }[] = [];
     for (const entry of entries) {
-      const ref = readEntryTicketRef(home, entry);
-      if (!ref) continue;
-
+      const { row, ref, notes } = entry;
       const rel = `.hud/tickets/${ref.feature}.json`;
       const full = join(realMain, rel);
       const st = fs.lstatSync(full, { throwIfNoEntry: false });
@@ -165,12 +214,14 @@ export async function recordLanding(
           if (await isHandEditedInMain(realMain, rel, writes[ref.feature], git)) {
             throw handEditError(rel);
           }
-          if (!applyJsonLanding(doc, ref.number, entry, replayBase, gates, at)) continue;
+          const unfinished = applyJsonLanding(doc, entry, replayBase, gates, at);
+          if (!unfinished) continue;
           try { writeTicketFeature(realMain, home, doc); }
           catch (error) {
             throw new Error(`Cannot record landing in ${rel}: ${(error as Error).message}`, { cause: error });
           }
-          writes[ref.feature] = sha256Bytes(fs.readFileSync(join(realMain, rel)));
+          writes[ref.feature] = sha256Bytes(fs.readFileSync(full));
+          if (unfinished.length) pending.push({ row, path: rel, items: unfinished });
           continue;
         }
       } else if (await isHandEditedInMain(realMain, rel, writes[ref.feature], git)) {
@@ -189,13 +240,16 @@ export async function recordLanding(
         throw handEditError(legacyRel);
       }
       const original = fs.readFileSync(legacyFull, 'utf8');
-      const updated = landedTicket(original, ref.number, `Landed in this commit (replay base ${replayBase}); gate ${gates}/${gates} passed.`);
-      if (original === updated) continue;
-      writeLegacyTicket(realMain, home, legacyRel, updated, legacySt.mode & 0o777);
-      writes[legacyRel] = sha256Bytes(updated);
+      const { body, unfinished } = landedTicket(original, ref.number,
+        `Landed in this commit (replay base ${replayBase}); gate ${gates}/${gates} passed.`, notes);
+      if (original === body) continue;
+      writeLegacyTicket(realMain, home, legacyRel, body, legacySt.mode & 0o777);
+      writes[legacyRel] = sha256Bytes(body);
+      if (unfinished.length) pending.push({ row, path: legacyRel, items: unfinished });
     }
 
     const swept = await sweepTicketWrites(realMain, home, git, { mode: 'amend', identity, expectedTip: opts?.expectedTip });
+    for (const { row, path, items } of pending) if (swept.paths.includes(path)) row.unfinished_acceptance = items;
     return swept.committed ? swept.sha : undefined;
   };
   return opts?.locked ? run() : withTicketStoreLock(realMain, run);

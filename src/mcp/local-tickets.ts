@@ -13,7 +13,7 @@ import { localProjectRoots, projectRoot, sharedRoot } from '../roles/projects.js
 import {
   canonicalTicketRef, parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath,
   ticketFeatureSlugs, ticketRef, TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket, writeTicketFeature,
-  type TicketFeatureDoc, type TicketRecord,
+  type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import { readOpenHolds } from '../unattended/state.js';
@@ -499,14 +499,37 @@ function withRepairs(body: string, refs: string[], ticket: number): string {
   return body;
 }
 
+const acceptanceName = (text: string) => text.replace(/`|\*\*/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+export function unfinishedAcceptance(items: readonly AcceptanceItem[], notes: readonly string[]) {
+  const ids = new Set<number>();
+  const names = notes.map(acceptanceName).filter(note => !/^(?:[-*] )?(?:none|nothing|n\/a)[.!]?$/.test(note));
+  for (const note of names) {
+    const bare = /^(?:[-*+] (?:\[ \] )?)?(?:#(\d+)(?=[.:\s]|$)|(\d+)(?=:|$))/.exec(note);
+    if (bare) ids.add(Number(bare[1] ?? bare[2]));
+    for (const match of note.matchAll(/\b(?:acceptance(?:\s+(?:item|criterion))?|item(?:\s+id)?)\s+#?(\d+)\b/g)) ids.add(Number(match[1]));
+  }
+  return items.flatMap(({ id, done, text }) => {
+    if (done) return [];
+    const name = acceptanceName(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const phrase = name && new RegExp(`(?<![\\p{L}\\p{N}_])${name}(?![\\p{L}\\p{N}_])`, 'u');
+    return ids.has(id) || (phrase && names.some(note => phrase.test(note))) ? [{ id, text }] : [];
+  });
+}
+
 /** Acceptance is the checklist before Comments; checkboxes in discussion aren't acceptance. */
-export function landedTicket(original: string, ticket: number, comment: string) {
+export function landedTicket(original: string, ticket: number, comment: string, notes: readonly string[]) {
   const start = original.search(/^## Comments[ \t]*\r?$/m);
   const before = start < 0 ? original : original.slice(0, start);
-  const needsTry = /(?:^|·)[ \t]*\*\*Owner try:\*\*[ \t]*yes[ \t]*(?=·|\r?$)/im.test(before);
-  const body = withStatus(before, needsTry ? 'ready-for-human' : 'done', ticket)
-    .replace(/^([ \t]*[-*] \[) \]/gm, '$1x]');
-  return (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n`;
+  const { ownerTry, items } = ticketFileEvidence(before);
+  const unfinished = unfinishedAcceptance(items.map((item, i) => ({ id: i + 1, ...item })), notes);
+  const skip = new Set(unfinished.map(({ id }) => id));
+  let index = 0;
+  const checked = before.replace(/^([ \t]*[-*] \[)([ xX])\]/gm, (match, prefix, mark) =>
+    !skip.has(++index) && mark === ' ' ? `${prefix}x]` : match);
+  const body = withStatus(checked, ownerTry ? 'ready-for-human' : unfinished.length ? 'ready-for-agent' : 'done', ticket);
+  const pending = unfinished.length ? `- Acceptance left unticked: ${unfinished.map(({ id }) => `#${id}`).join(', ')}.\n` : '';
+  return { body: (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n${pending}`, unfinished };
 }
 
 export interface UnattendedAcceptanceFailure {
@@ -557,6 +580,7 @@ export async function recordUnattendedAcceptance(
             persisted.push(ticket);
             continue;
           }
+          if (record.landing && record.acceptance.some(item => !item.done)) continue;
           if (record.status !== 'wontfix') {
             record.status = 'done';
             delete record.claimed_at;
@@ -591,8 +615,9 @@ export async function recordUnattendedAcceptance(
         }
         const start = original.search(/^## Comments[ \t]*\r?$/m);
         const before = start < 0 ? original : original.slice(0, start);
-        const currentStatus = ticketFileEvidence(original).status ?? '';
-        const body = /^wontfix$/i.test(currentStatus) ? before : withStatus(before, 'done', ref.number);
+        const { status, unfinishedLanding } = ticketFileEvidence(original);
+        if (unfinishedLanding) continue;
+        const body = /^wontfix$/i.test(status ?? '') ? before : withStatus(before, 'done', ref.number);
         const updated = (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n${marker} ${summary}\n`;
         writeLegacyTicket(mainRoot, home, relative(mainRoot, fs.realpathSync(path)), updated, st.mode & 0o777);
         persisted.push(ticket);

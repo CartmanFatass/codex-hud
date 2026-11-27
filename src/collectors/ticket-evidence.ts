@@ -35,12 +35,15 @@ export function ticketFileEvidence(text: string) {
   const commit = record?.[1], recordedLanding = !!record;
   const allChecked = items.length > 0 && checked === items.length;
   const readyForHuman = /^ready-for-human\b/i.test(status ?? '');
+  const unfinishedLanding = checked < items.length && !!record && /^- Acceptance left unticked: /m.test(comments.slice(record.index));
   const landed = /^(wontfix|dropped)\b/i.test(status ?? '') ? 'dropped'
-    : /^(accepted|done|closed|complete|resolved)\b/i.test(status ?? '') || acceptedByLead ? 'done'
+    : /^(accepted|done|closed|complete|resolved)\b/i.test(status ?? '') ? 'done'
+    : unfinishedLanding ? (readyForHuman ? 'try' : undefined)
+    : acceptedByLead ? 'done'
     // Preserve legacy pending records with no Owner try field.
     : /^try\b/i.test(status ?? '') || recordedLanding || (readyForHuman && allChecked) ? (/^no\b/i.test(trial) ? 'done' : 'try')
     : allChecked ? 'done' : undefined;
-  return { status, blocked, repairs, approvedRemovals, items, checked, ownerTry, landed, recordedLanding, ...(commit ? { commit } : {}) } as const;
+  return { status, blocked, repairs, approvedRemovals, items, checked, ownerTry, landed, recordedLanding, unfinishedLanding, ...(commit ? { commit } : {}) } as const;
 }
 
 const commentText = (text: string) => text.replace(/\s+/g, ' ').trim().slice(0, 600);
@@ -62,14 +65,16 @@ export function legacyTicketEvidence(text: string, number: number, path: string,
 export function storedTicketEvidence(ticket: TicketRecord, path: string, sourcePath: string): ProjectTicket {
   const { status, landing, accepted, owner_try: ownerTry } = ticket;
   const landingAt = landing ? Date.parse(landing.at) : undefined;
-  const state = status === 'wontfix' ? 'dropped' : status === 'done' || accepted ? 'done'
-    : landing ? ownerTry ? 'try' : 'done' : status === 'claimed' ? 'working' : 'ready';
   const items = ticket.acceptance.map(({ done, text }) => ({ done, text }));
+  const checked = items.filter(({ done }) => done).length;
+  const landed = landing && (checked === items.length ? (ownerTry ? 'try' : 'done') : status === 'ready-for-human' ? 'try' : undefined);
+  const state = status === 'wontfix' ? 'dropped' : status === 'done' || accepted ? 'done'
+    : landed ?? (status === 'claimed' ? 'working' : 'ready');
   const comment = ticket.comments.at(-1)?.text;
   return { number: String(ticket.number).padStart(2, '0'), title: ticket.title, path, sourcePath, status, ownerTry,
     at: Date.parse(ticket.updated_at), state, blockers: ticket.blocked_by,
     ...(ticket.claimed_at ? { claimedAt: Date.parse(ticket.claimed_at) } : {}),
-    items, checked: items.filter(({ done }) => done).length, total: items.length,
+    items, checked, total: items.length,
     ...(landing ? { landingAt, recordedLanding: true,
       ...(/^[a-f0-9]{7,64}$/i.test(landing.commit ?? '') ? { commit: landing.commit } : {}) } : {}),
     ...(comment ? { comment: commentText(comment) } : {}) };

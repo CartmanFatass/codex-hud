@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
+import { recordUnattendedAcceptance } from '../../dist/mcp/local-tickets.js';
 import { landedNewest } from '../../dist/render/project-view.js';
 import { writeReportMeta, cachedReportSignature } from '../../dist/roles/report-meta.js';
 import { taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
@@ -65,7 +66,8 @@ for (const [label, ownerTryLine, expectedStatus] of [
   f.git(f.worktree, 'reset', '--soft', f.base_head);
   f.git(f.worktree, 'commit', '-qm', 'single slice commit');
   fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), ticket: 'feature/01', slice: 'FEATURE-01' }));
-  fs.writeFileSync(join(dir, 'report.md'), 'Report'); writeReportMeta(dir, cachedReportSignature(dir), { summary: 'Synthetic change.' });
+  fs.writeFileSync(join(dir, 'report.md'), '## Not done\n\n## Checks\n- Acceptance item 1 passed.\n');
+  writeReportMeta(dir, cachedReportSignature(dir), { summary: 'Synthetic change.' });
   const initialState = '## Slices\n\n<!-- Row format -->\n\n- try · SAMPLE · SAMPLE-01 · Existing\n';
   fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
   fs.writeFileSync(join(f.main, ticket), `# 01: Example ticket\n**Status:** ready-for-agent\n${ownerTryLine}**Blocked by:** none\n- [ ] first\n- [ ] second\n\n## Comments\n- [ ] preserve me\n`);
@@ -79,6 +81,7 @@ for (const [label, ownerTryLine, expectedStatus] of [
   await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
   const done = f.flowState(flow); assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.equal(done.records_sha, undefined);
+  assert.equal(done.unfinished_acceptance, undefined);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
   assert.equal(f.git(f.main, 'rev-parse', 'base'), done.landed_sha);
   assert.equal(f.git(f.remote, 'rev-list', '--count', `${beforeBase}..base`), '1');
@@ -96,6 +99,75 @@ for (const [label, ownerTryLine, expectedStatus] of [
   assert.equal(fresh?.commit, undefined, 'the Markdown record says in this commit; the collector no longer mines patches for its SHA');
   assert.equal(fresh?.state, expectedStatus === 'done' ? 'accepted' : 'try');
   assert.equal(latest.find(r => r.id === 'FEATURE-02')?.state, 'try');
+});
+
+for (const store of ['Markdown', 'JSON']) for (const source of ['report', 'lead', 'owner try']) test(`land lists and leaves unticked the ${store} acceptance item named by ${source}`, async t => {
+  const f = await checkout(t, ['true']), dir = jobDir(f), json = store === 'JSON';
+  const ticket = json ? '.hud/tickets/feature.json' : '.scratch/feature/issues/01-example.md';
+  const id = json ? 7 : 1;
+  const queue = 'q0000000000000001', lead = 'j0000000000000002', ownerTry = source === 'owner try';
+  const receipt = join(dir, 'job.json');
+  fs.writeFileSync(receipt, JSON.stringify({ ...JSON.parse(fs.readFileSync(receipt)), ticket: 'feature/01',
+    ...(source === 'lead' && { ticket_queue: queue }),
+  }));
+  if (source === 'lead') {
+    fs.mkdirSync(join(f.home, 'flows'), { recursive: true });
+    fs.writeFileSync(join(f.home, 'flows', `${queue}.json`), JSON.stringify({
+      flow: queue, tickets: [{ ticket: 'feature/01', job }, { ticket: 'feature/02' }],
+      todo: [
+        { kind: 'lead', source: `lead (${lead})`, text: 'feature/01: leave “Test the `fallback` path.” unticked.' },
+        { kind: 'lead', source: `lead (${lead})`, text: 'feature/02: leave item 2 unticked until feature/01 lands.' },
+      ],
+    }));
+  }
+  fs.writeFileSync(join(dir, 'report.md'), source === 'report'
+    ? `## Not done\n- Acceptance item ${id}: fallback still pending.\n\n## Checks\n- Acceptance item 2 passed.\n`
+    : ownerTry ? `3. **Not done:** #${id}: pending owner try.\n4. Open questions: none.\n` : '## Not done\n');
+  const file = join(f.main, ticket);
+  if (json) {
+    const at = '2026-01-01T00:00:00.000Z';
+    fs.mkdirSync(join(f.main, '.hud/tickets'), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ version: 1, feature: 'feature', tickets: [{
+      number: 1, title: 'Example', status: 'ready-for-agent', owner_try: ownerTry, live_try: 'none',
+      approved_removals: [], blocked_by: [], what: 'Support a fallback.', comments: [], created_at: at, updated_at: at,
+      acceptance: [{ id, text: 'Test the `fallback` path.', done: false }, { id: 2, text: 'Test the common path.', done: false }],
+    }] }));
+  } else {
+    fs.mkdirSync(join(f.main, '.scratch/feature/issues'), { recursive: true });
+    fs.writeFileSync(file, `# 01: Example\n**Status:** ready-for-agent\n**Owner try:** ${ownerTry ? 'yes' : 'no'}\n**Blocked by:** none\n` +
+      '**What to build:** Support a fallback.\n\n- [ ] Test the `fallback` path.\n- [ ] Test the common path.\n');
+  }
+  f.git(f.main, 'add', ticket); f.git(f.main, 'commit', '-qm', 'seed ticket');
+  // The commit subject alone must not let the board infer a completed ticket.
+  f.git(f.worktree, 'commit', '--amend', '-qm', 'feature/01: implement');
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = await f.call('hud_read', { job: flow });
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.deepEqual(done.unfinished_acceptance, [{ id, text: 'Test the `fallback` path.' }]);
+  assert.ok(done.changes.find(line => line.includes(flow))?.includes(`Acceptance left unticked: #${id} Test the \`fallback\` path.`));
+  const expectedStatus = ownerTry ? 'ready-for-human' : 'ready-for-agent';
+  const body = f.git(f.remote, 'show', `base:${ticket}`);
+  if (json) {
+    const [record] = JSON.parse(body).tickets;
+    assert.equal(record.status, expectedStatus);
+    assert.equal(record.landing.flow, flow);
+    assert.equal(record.landing.replay_base, f.flowState(flow).base_sha);
+    assert.deepEqual(record.acceptance.map(item => [item.id, item.done]), [[id, false], [2, true]]);
+  } else {
+    assert.ok(body.includes(`**Status:** ${expectedStatus}\n`));
+    assert.ok(body.includes('- [ ] Test the `fallback` path.\n- [x] Test the common path.\n'));
+    assert.match(body, /Acceptance left unticked: #1\./);
+    assertLandingRecord(f, ticket, f.flowState(flow).base_sha, done.landed_sha);
+  }
+  const project = await new ProjectCollector(f.main, f.home, f.env, f.env.HOME).collect(true, EMPTY_BOARD, Date.now());
+  const row = project.ledger.find(r => r.id === 'FEATURE-01');
+  assert.equal(row?.state, ownerTry ? 'try' : 'todo');
+  assert.equal(row?.landed, true);
+  const ready = await f.call('hud_tickets', { op: 'ready' });
+  assert.equal(ready.tickets.some(t => t.ticket === 'feature/01'), !ownerTry);
+  await recordUnattendedAcceptance(f.main, f.home, () => [{ path: file, ticket: 'feature/01' }], queue, 'accept');
+  assert.equal(fs.readFileSync(file, 'utf8').trimEnd(), body, 'lead acceptance cannot close the unfinished ticket');
 });
 
 test('land cleanup removes clean source worktree when picked patch differs from source commit', async t => {

@@ -18,7 +18,7 @@ import { canRepairSealedStep } from '../workflows/engine.js';
 import { runLock, stopRequested } from '../workflows/store.js';
 import { withTicketStoreLock } from '../tickets/store.js';
 import { reapWorktree } from './managed-worktree.js';
-import { checkLandingRecords, recordLanding } from './land-records.js';
+import { checkLandingRecords, prepareLandRecords, recordLanding } from './land-records.js';
 import { repairLand } from './land-repair.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 import { LandOutput } from './land-evidence.js';
@@ -301,7 +301,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     f.base_sha = (await git(main, ['rev-parse', '--verify', `${ref}^{commit}`])).trim();
     await checkMain(f.base_sha);
     const prepareFilters = await neutralizeFilters(git, main);
-    await checkLandingRecords(main, home, [{ job: f.job, flow: f.flow }], f.base_sha, c.gate.length, prepareFilters, new Date().toISOString());
+    await checkLandingRecords(main, home, prepareLandRecords(home, [f]), f.base_sha, c.gate.length, prepareFilters, new Date().toISOString());
     const ff = (await git(main, ['merge-base', f.base_sha, f.source_sha])).trim() === f.base_sha;
     const picks = await picksFor(f.base_sha, f.source_sha);
     if (!picks.length) throw Error('Source has no commits to land');
@@ -392,9 +392,9 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       current = await mainTip();
       if (current === target) break;
     }
-    const recordEntries = members.map(row => ({ job: row.job, flow: row.flow }));
     const at = new Date().toISOString();
     await withTicketStoreLock(fs.realpathSync(main), async () => {
+      const recordEntries = prepareLandRecords(home, members);
       await checkLandingRecords(main, home, recordEntries, target, c.gate.length, filters, at, { locked: true });
       publishing = true;
       for (const row of members) { row.publish_pending = landed; writeLand(home, row); }

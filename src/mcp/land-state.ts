@@ -42,6 +42,7 @@ export interface LandFlow {
   boarded?: { flow: string; pid: number; start: string };
   after_note?: string;
   landed_at?: string;
+  unfinished_acceptance?: { id: number; text: string }[];
   // A SIGKILL may land between Git's ref update and the result write. Never retry
   // an unknown fast-forward, even via a new attempt. Keep its candidate for inspection.
   publish_pending?: string;
@@ -172,7 +173,8 @@ export async function updateLandFlakeCollection(home: string, flowId: string, co
 }
 export function landView(f: LandFlow) {
   const { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, base_moves, after_note, cleanup_note, repairs, reruns, flake_collection, timings, error, tail } = f;
-  return { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, base_moves, after_note, cleanup_note, repairs, reruns, flake_collection, timings, error, tail };
+  return { flow, job, state, step, landed_sha, tested_tree, published_tree, train, published_sha, records_sha, replayed_onto, base_moves, after_note, cleanup_note, repairs, reruns, flake_collection, timings, error, tail,
+    unfinished_acceptance: landed_sha ? f.unfinished_acceptance : undefined };
 }
 const one = (text: string) => text.replace(/\s+/g, ' ').trim();
 export function landOutcome(f: LandFlow) {
@@ -187,6 +189,8 @@ export function landNotice(f: LandFlow) {
   return [`${f.flow} (land ${f.job}) — ${landOutcome(f)}`,
     ...(f.replayed_onto ? [`Replayed onto ${one(f.replayed_onto)}${f.base_sha ? ` (base moved from ${one(f.base_sha)})` : ''}`] : []),
     ...(f.base_moves ? [`Base moves absorbed: ${f.base_moves}`] : []),
+    ...(f.landed_sha && f.unfinished_acceptance?.length
+      ? [`Acceptance left unticked: ${f.unfinished_acceptance.map(({ id, text }) => `#${id} ${one(text)}`).join('; ')}`] : []),
     ...(f.after_note ? [`After note: ${one(f.after_note)}`] : []),
     ...(f.cleanup_note ? [`Cleanup note: ${one(f.cleanup_note)}`] : []),
     ...(f.flake_collection?.state === 'pending'
