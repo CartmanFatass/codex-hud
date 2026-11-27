@@ -511,14 +511,14 @@ export async function resolveSelectionTarget(
   }
 
   const clickedOtherPane = Boolean(sourcePane && ctx.focused_pane_id && sourcePane !== ctx.focused_pane_id);
-  const rawCwd = clickedOtherPane
-    ? (sourcePaneInfo?.foreground_cwd ?? sourcePaneInfo?.cwd ?? ctx.worktree?.checkout_path ?? ctx.workspace_cwd ?? null)
-    : (ctx.worktree?.checkout_path ??
-      ctx.focused_pane_cwd ??
-      sourcePaneInfo?.foreground_cwd ??
-      sourcePaneInfo?.cwd ??
-      ctx.workspace_cwd ??
-      null);
+  const livePaneCwd = sourcePaneInfo?.foreground_cwd ?? sourcePaneInfo?.cwd;
+  const checkout = ctx.worktree?.checkout_path;
+  // The Investigate menu calls the clicked pane "focused", even in another project's workspace.
+  const rawCwd = ctx.mode === 'investigate'
+    ? (livePaneCwd ?? (sourcePane === ctx.focused_pane_id ? ctx.focused_pane_cwd : undefined) ?? checkout ?? ctx.workspace_cwd)
+    : clickedOtherPane
+      ? (livePaneCwd ?? checkout ?? ctx.workspace_cwd)
+      : (checkout ?? ctx.focused_pane_cwd ?? livePaneCwd ?? ctx.workspace_cwd);
   const projectRoot = rawCwd ? sharedRoot(rawCwd) : null;
   const source: SelectionSource = {
     project: projectNameFromRoot(projectRoot, ctx.workspace_label),

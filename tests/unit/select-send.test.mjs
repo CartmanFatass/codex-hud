@@ -41,6 +41,7 @@ import { PanelExecution } from '../../dist/panel/execution.js';
 import { executionRows } from '../../dist/render/execution-view.js';
 import { selectionExcerptRows } from '../../dist/render/selection-excerpts.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
+import { git } from '../fixtures/managed-worktree.mjs';
 
 const root = resolve(new URL('../..', import.meta.url).pathname);
 const guardedPong = { result: { type: 'pong', version: '0.9.5-hud.a26432a7', capabilities: { guarded_prompt: true, hidden_tabs: true, pane_strip: true } } };
@@ -1564,9 +1565,9 @@ test('investigate owner line defaults to Investigate this without a default_ques
   assert.equal(outcome.sent, false);
 });
 
-test('investigate mode captures once at open and sends the displayed snapshot even when the pane viewport keeps scrolling', { timeout: 15_000 }, async (t) => {
-  const jobId = 'j000000000000002a';
-  const main = 'w1:p1', workerPane = 'w1:p2', logPane = 'w1:p5';
+test('investigate routes the captured pane to its own project and sends the snapshot once as it scrolls', { timeout: 15_000 }, async (t) => {
+  const jobId = 'j000000000000002a', workspaceJobId = 'j000000000000002b';
+  const main = 'w2:p1', workerPane = 'w2:p2', workspaceWorker = 'w1:p2', logPane = 'w1:p5';
   const prompts = [];
   const paneReads = [];
   let panes = [];
@@ -1587,13 +1588,23 @@ test('investigate mode captures once at open and sends the displayed snapshot ev
     return { error: { code: 'unsupported' } };
   });
 
-  const project = join(f.dir, 'project');
-  fs.mkdirSync(project);
+  const project = join(fs.realpathSync(f.dir), 'repo-b');
+  const workspaceProject = join(fs.realpathSync(f.dir), 'repo-a');
+  const checkout = join(f.dir, 'repo-a-checkout');
+  const paneCwd = join(project, 'tests');
+  fs.mkdirSync(paneCwd, { recursive: true });
+  fs.mkdirSync(workspaceProject);
+  git(project, 'init', '-q');
+  git(workspaceProject, 'init', '-q');
+  git(workspaceProject, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'base', '--allow-empty');
+  git(workspaceProject, 'worktree', 'add', '-qb', 'fixture', checkout);
   viewportFile = join(f.dir, 'viewport.txt');
+  const log = { pane_id: logPane, workspace_id: 'w1', cwd: checkout, foreground_cwd: paneCwd };
   panes = [
-    { pane_id: main, cwd: project, workspace_id: 'w1', agent: 'claude', agent_status: 'idle' },
-    { pane_id: workerPane, cwd: project, workspace_id: 'w1', agent: 'pi', agent_status: 'working' },
-    { pane_id: logPane, cwd: project, workspace_id: 'w1' },
+    { pane_id: main, cwd: project, workspace_id: 'w2', agent: 'claude', agent_status: 'idle' },
+    { pane_id: workerPane, cwd: project, workspace_id: 'w2', agent: 'pi', agent_status: 'working' },
+    { pane_id: workspaceWorker, cwd: checkout, workspace_id: 'w1', agent: 'pi', agent_status: 'working' },
+    log,
   ];
   const dir = writeJob(f.home, jobId, {
     callerPane: main,
@@ -1602,9 +1613,18 @@ test('investigate mode captures once at open and sends the displayed snapshot ev
     projectRoot: project,
     socketPath: f.socketPath,
     createdAt: new Date().toISOString(),
-    ticket: 'fine-interact/09',
+    ticket: 'repo-b/01',
   });
-  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  const workspaceDir = writeJob(f.home, workspaceJobId, {
+    leftPane: workspaceWorker,
+    primary: 'agent-workspace',
+    projectRoot: workspaceProject,
+    socketPath: f.socketPath,
+    ticket: 'repo-a/01',
+  });
+  for (const jobDir of [dir, workspaceDir]) {
+    fs.writeFileSync(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  }
 
   const run = async (script, env) => {
     const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
@@ -1624,9 +1644,15 @@ test('investigate mode captures once at open and sends the displayed snapshot ev
   // Path 1: handoff from investigate action -> viewport advances after open and after picker -> Enter sends original snapshot once.
   const originalSnapshot = 'FAIL test/stream.test.mjs\n  AssertionError: expected ok';
   fs.writeFileSync(viewportFile, `\n${originalSnapshot}\n\n`);
+  // The menu supplies the clicked pane as focused_pane_id; the action copies it to pane_id.
+  const menuContext = {
+    workspace_id: 'w1', workspace_label: 'Repo A workspace', workspace_cwd: paneCwd,
+    worktree: { checkout_path: checkout, branch: 'fixture' },
+    focused_pane_id: logPane, focused_pane_cwd: paneCwd, invocation_source: 'pane_context_menu',
+  };
   const opened = await handleInvestigatePaneAction(f.home, {
     ...f.env,
-    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: 'w1', focused_pane_id: logPane, focused_pane_cwd: project }),
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify(menuContext),
   });
   assert.equal(opened.opened, true);
   assert.equal(paneReads.length, 1);
@@ -1639,6 +1665,8 @@ test('investigate mode captures once at open and sends the displayed snapshot ev
     import { runComposerSession } from './dist/cli/select-send.js';
     import { readAndRemoveSelectionHandoff } from './dist/roles/select-send.js';
     const context = readAndRemoveSelectionHandoff(process.env.HANDOFF);
+    assert.equal(context.focused_pane_id, process.env.PANE);
+    assert.equal(context.pane_id, process.env.PANE);
     const stdin = new PassThrough(), stdout = new PassThrough();
     const input = text => queueMicrotask(() => stdin.write(text));
     let stage = 0;
@@ -1654,6 +1682,10 @@ test('investigate mode captures once at open and sends the displayed snapshot ev
         if (stage === 0) {
           assert.equal(state.mode, 'investigate');
           assert.equal(state.picker, 0);
+          assert.equal(state.source.projectRoot, process.env.PROJECT);
+          assert.deepEqual(state.jobs.map(job => job.job), [process.env.TARGET]);
+          assert.match(screen, /repo-b\\/01/);
+          assert.doesNotMatch(screen, /repo-a\\/01/);
           writeFileSync(process.env.VIEWPORT_FILE, 'SCROLLING LOG 3\\nSCROLLING LOG 4\\n');
           stage++;
           input('\\r');
@@ -1669,19 +1701,25 @@ test('investigate mode captures once at open and sends the displayed snapshot ev
     });
     assert.equal(stage, 2);
     console.log(JSON.stringify(result));
-  `, { HANDOFF: opened.handoffFile, TARGET: jobId, VIEWPORT_FILE: viewportFile });
+  `, { HANDOFF: opened.handoffFile, TARGET: jobId, VIEWPORT_FILE: viewportFile, PANE: logPane, PROJECT: project });
 
   assert.equal(handoffResult.sent, true);
   assert.equal(paneReads.length, 1, 'investigate must not take a baseline or reread on Enter');
   assert.equal(prompts.length, 1);
   assert.equal(prompts[0].target, 'agent-a');
+  assert.match(prompts[0].text, /^Source: project=repo-b \| pane=w1:p5 \|/m);
   assert.ok(prompts[0].text.includes(originalSnapshot));
   assert.equal(prompts[0].text.includes('SCROLLING LOG'), false);
 
   const cache = getJobIndexCache(f.home);
-  const [record] = readSelectionExcerpts(f.home, cache, { project });
+  const records = readSelectionExcerpts(f.home, cache, { project });
+  const [record] = records;
   assert.equal(record.delivery, 'queued');
   assert.equal(record.excerpt, originalSnapshot);
+  assert.equal(record.source.project, 'repo-b');
+  assert.equal(record.source.projectRoot, project);
+  assert.match(selectionExcerptRows(records, 80, true).map(row => row.text).join('\n'), /Source: repo-b · w1:p5/);
+  assert.deepEqual(readSelectionExcerpts(f.home, cache, { project: workspaceProject }), []);
 
   // Path 2: direct composer open without pre-captured selected_text captures once at open and never rereads.
   paneReads.length = 0;
@@ -1727,4 +1765,20 @@ test('investigate mode captures once at open and sends the displayed snapshot ev
   assert.equal(prompts.length, 1);
   assert.ok(prompts[0].text.includes(directSnapshot));
   assert.equal(prompts[0].text.includes('SCROLLED AWAY OUTPUT'), false);
+
+  const context = { ...menuContext, pane_id: logPane, mode: 'investigate' };
+  log.foreground_cwd = undefined;
+  log.cwd = paneCwd;
+  const liveCwd = await resolveSelectionTarget({ ...context, focused_pane_cwd: checkout }, f.home, f.env);
+  assert.equal(liveCwd.source.projectRoot, project, 'live pane cwd takes priority over the menu context');
+  log.cwd = undefined;
+  const contextCwd = await resolveSelectionTarget(context, f.home, f.env);
+  assert.equal(contextCwd.source.projectRoot, project, 'menu context supplies the same pane cwd when live data is absent');
+  const workspace = await resolveSelectionTarget({ ...context, focused_pane_cwd: undefined }, f.home, f.env);
+  assert.equal(workspace.source.projectRoot, workspaceProject, 'workspace checkout is a fallback when the pane cwd is unknown');
+  assert.deepEqual(workspace.jobs.map(job => job.job), [workspaceJobId]);
+  const otherFocus = await resolveSelectionTarget({ ...context, focused_pane_id: 'w1:p1' }, f.home, f.env);
+  assert.equal(otherFocus.source.projectRoot, workspaceProject, 'a different pane’s context cwd is not used');
+  const selection = await resolveSelectionTarget({ ...context, mode: 'selection' }, f.home, f.env);
+  assert.equal(selection.source.projectRoot, workspaceProject, 'text selection still prefers the workspace checkout');
 });

@@ -73,7 +73,6 @@ export interface WorkerPi {
     message: { customType: string; display: boolean; content: string; details?: unknown },
     options: { triggerTurn: boolean; deliverAs: 'steer' | 'followUp' | 'nextTurn' }
   ): void;
-  sendUserMessage?(content: string, options?: { deliverAs: 'followUp' | 'steer' }): void;
   getAllTools(): { name: string }[];
   getActiveTools(): string[];
   setActiveTools(names: string[]): void;

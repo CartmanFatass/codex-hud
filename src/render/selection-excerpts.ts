@@ -1,5 +1,5 @@
 import type { SelectionExcerpt } from '../roles/selection-excerpts.js';
-import { theme } from './colors.js';
+import { theme, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import type { MonitorRow } from './monitor.js';
 import { fit, monitorText, wrapped } from './monitor-text.js';
@@ -33,8 +33,12 @@ export function selectionExcerptRows(records: readonly SelectionExcerpt[], width
     const target = compact ? ` · ${monitorText(excerpt.role)} ${monitorText(excerpt.target)}` : '';
     const marker = item === cursor ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
     rows.push(row(marker + theme.board.title((excerpt.advisor ? `${t('Selection advisor')} · ` : '') + status + target)));
-    const from = [excerpt.source.job, excerpt.source.pane].filter(Boolean).join(' · ');
-    if (from) rows.push(row(`  ${theme.board.muted(t('Source: {source}', { source: monitorText(from) }))}`));
+    const from = monitorText([excerpt.source.job, excerpt.source.pane].filter(Boolean).join(' · '));
+    const sourceLabel = (source: string) => t('Source: {source}', { source });
+    const project = excerpt.source.job ? null : excerpt.source.project;
+    const named = project ? sourceLabel([monitorText(project), from].filter(Boolean).join(' · ')) : '';
+    const label = named && (!from || visualLength(named) <= width - 2) ? named : from && sourceLabel(from);
+    if (label) rows.push(row(`  ${theme.board.muted(label)}`));
     prose('Excerpt', excerpt.excerpt);
     if (excerpt.question) prose('Question', excerpt.question);
     if (excerpt.note) prose('Note', excerpt.note);
