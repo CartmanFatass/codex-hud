@@ -12,6 +12,12 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   session, survives tab switches, overlay without reflow, no orphan panes) and add the flexibility in the fork:
   collapse/expand without stopping the panel, drag-resize, right/left/bottom placement, and pane behaviour (focus
   navigation, copy mode, zoom). Rejected: reverting to the split pane, or a pop-out toggle between dock and pane.
+- **D-2026-11-27-02** (§2.1 worker permission prompts): Three milestone reviews of the unattended run each found five
+  blockers in which automatic approval pressed keys on operations it had not proven confined and reversible; patching
+  per finding did not converge. Owner: narrow, then ship. Git commit/stash/rebase, recursive chmod and search,
+  commands that carry `cd` state across separators, native edits whose base directory is ambiguous and deletion under
+  external scratch/temp roots go to main. Rejected: a third repair round on the wide rule; switching automatic
+  approval off entirely.
 
 ## 2026-11-26
 
