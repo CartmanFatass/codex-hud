@@ -12,8 +12,10 @@ import { fileURLToPath } from 'node:url';
 import { SHIPPED_MODELS_CATALOG } from '../models/catalog.js';
 import { cliAgents, type CliAgent } from './cli-kinds.js';
 import {
+  BILLING_EXHAUSTED_TTL_MS,
   clearExhausted,
   describePlace,
+  isBillingFailure,
   isQuotaFailure,
   markExhausted,
   placeKey,
@@ -27,8 +29,10 @@ import { readModelListCache, type ModelListCache } from './model-discovery.js';
 import { HarnessSwitchError, piProviderId, readHarnessSwitches } from './harness-switches.js';
 
 export {
+  BILLING_EXHAUSTED_TTL_MS,
   clearExhausted,
   describePlace,
+  isBillingFailure,
   isQuotaFailure,
   markExhausted,
   placeKey,

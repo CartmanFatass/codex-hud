@@ -39,9 +39,11 @@ export async function installWorker(pi: WorkerPi) {
   }
   await workerTools(pi, dir, contract.session !== undefined);
   // Only the final provider error is evidence; do not classify quoted tool output or replay this job.
-  let quota = false;
+  let quotaError: string | null = null;
   pi.on('message_end', ({ message }) => {
-    if (message.role === 'assistant') quota = message.stopReason === 'error' && isQuotaFailure(message.errorMessage ?? '');
+    if (message.role !== 'assistant') return;
+    const text = typeof message.errorMessage === 'string' ? message.errorMessage.trim() : '';
+    quotaError = message.stopReason === 'error' && isQuotaFailure(text) ? text : null;
   });
-  pi.on('agent_settled', () => { if (quota) writePrivateFile(join(dir, 'pi-quota'), '', { mkdir: false }); });
+  pi.on('agent_settled', () => { if (quotaError) writePrivateFile(join(dir, 'pi-quota'), quotaError, { mkdir: false }); });
 }

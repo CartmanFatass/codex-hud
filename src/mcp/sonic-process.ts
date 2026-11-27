@@ -5,14 +5,14 @@ import { dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ensureJobWatcher } from './watch-pid.js';
 import { hasHeadlessSends, noHeadlessReport } from './headless-sends.js';
-import { missingRunnerReceipt, observeOwnExit, parentStartedAt, recordRunnerDeath } from './sonic-failure.js';
+import { lastTurnError, missingRunnerReceipt, observeOwnExit, parentStartedAt, recordRunnerDeath } from './sonic-failure.js';
 import { sonicSession } from './sonic-session.js';
 import { briefPrompt } from './brief-prompt.js';
 import { binScript, jobFiles } from './paths.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { procStat, readBootId } from '../utils/proc.js';
-import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
+import { readFileBounded, readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { cliStreamSession } from '../roles/job-sessions.js';
 import { killDescendantTree, rememberWorkerTree, sonicRoot } from '../roles/worker-tree.js';
 import { readDone, readTurn, receiptForTurn, reportSignature } from '../roles/cli-turn.js';
@@ -55,12 +55,15 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
       if (!pid || !start || !boot) throw Error('cannot identify sonic runner');
       if (session?.id) {
         fs.rmSync(join(dir, jobFiles.sonicExit), { force: true });
-        if (!job.cli) fs.rmSync(join(dir, jobFiles.done), { force: true });
+        if (!job.cli) {
+          fs.rmSync(join(dir, jobFiles.done), { force: true });
+          fs.rmSync(join(dir, 'pi-quota'), { force: true });
+        }
       }
       const status: JobStatus = { state: 'working', slot: session ? 'headless' : 'sonic', task_dir: dir, role: job.role,
-        ...(job.cli ? { harness: 'cli', agent: job.cli.agent, agent_session_id: session?.id ?? session?.initialId,
-          stdout_start: fs.fstatSync(fds[0]!).size }
-          : { harness: 'pi', session_file: session?.file, session_id: session?.id }), ...(limits && { sonic_limits: limits }),
+        ...(job.cli ? { harness: 'cli', agent: job.cli.agent, agent_session_id: session?.id ?? session?.initialId }
+          : { harness: 'pi', session_file: session?.file, session_id: session?.id }),
+        stdout_start: fs.fstatSync(fds[0]!).size, ...(limits && { sonic_limits: limits }),
         pid, pid_start_time: start, boot_id: boot, started_at: new Date().toISOString(), parent_started_at: parentStartedAt(dir, job) };
       child.once('exit', (code, signal) => recordRunnerDeath(dir, { pid, pid_start_time: start, boot_id: boot }, code, signal));
       writeJsonPrivate(join(dir, jobFiles.status), status, { mkdir: false });
@@ -184,6 +187,17 @@ export async function runHeadlessTurn(dir: string, argv: string[]) {
 
 export const headlessDeadline = (status: Partial<JobStatus>) => status.slot === 'headless' ? Infinity : Date.parse(status.started_at!) + (status.sonic_limits ?? sonicLimitDefaults).max_s * 1000;
 
+function readPiQuota(dir: string): string | null {
+  try {
+    const { bytes } = readFileBounded(join(dir, 'pi-quota'), 4096);
+    const text = bytes.toString('utf8').replace(/[\r\n\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+    return text || 'Provider quota exceeded';
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
 export function sonicExit(dir: string, status: Partial<JobStatus>, asking = false):
     Pick<JobStatus, 'state' | 'exit_reason' | 'agent_session_id' | 'declared_report_sig'> | null {
   if (fs.existsSync(join(dir, jobFiles.stopRequested))) return { state: 'stopped', exit_reason: 'stopped' };
@@ -205,26 +219,28 @@ export function sonicExit(dir: string, status: Partial<JobStatus>, asking = fals
   }
   if (exit.at >= deadline) return timeout;
   const agent = status.harness === 'cli' ? status.agent : undefined;
-  if (status.slot === 'sonic' && fs.existsSync(join(dir, 'pi-quota')))
-    return { state: 'failed', exit_reason: 'Provider quota exceeded' };
+  if (!agent) {
+    const quotaReason = readPiQuota(dir);
+    if (quotaReason) return { state: 'failed', exit_reason: quotaReason };
+  }
   if ((exit.code !== 0 && !(agent && asking && exit.paused)) || exit.error)
-    return { state: 'failed', exit_reason: exit.error || `${agent ?? 'pi'} exited: ${exit.signal || exit.code}`,
+    return { state: 'failed', exit_reason: exit.error || lastTurnError(dir, status) || `${agent ?? 'pi'} exited: ${exit.signal || exit.code}`,
       ...(agent && { agent_session_id: null }) };
   if (agent) {
     const id = exit.agent_session_id;
     if (!id || (status.agent_session_id && status.agent_session_id !== id))
-      return { state: 'failed', agent_session_id: null, exit_reason: status.agent_session_id
-        ? `${agent} did not open the recorded session` : `${agent} exited without a native session ID` };
+      return { state: 'failed', agent_session_id: null, exit_reason: lastTurnError(dir, status) ?? (status.agent_session_id
+        ? `${agent} did not open the recorded session` : `${agent} exited without a native session ID`) };
     if (asking) return { state: 'waiting_orchestrator', agent_session_id: id };
     const turn = readTurn(dir), done = readDone(dir);
     return turn && receiptForTurn(turn, done) && done.report_sig === reportSignature(dir)
       ? { state: 'closed', exit_reason: REPORT_SETTLED_EXIT, agent_session_id: id, declared_report_sig: done.report_sig }
-      : { state: 'failed', exit_reason: noHeadlessReport(agent), agent_session_id: id };
+      : { state: 'failed', exit_reason: lastTurnError(dir, status) ?? noHeadlessReport(agent), agent_session_id: id };
   }
   if (asking) return { state: 'waiting_orchestrator' };
   const sig = readDone(dir)?.report_sig;
   return sig && sig === reportSignature(dir) ? { state: 'closed', exit_reason: 'settled' }
-    : { state: 'failed', exit_reason: noHeadlessReport() };
+    : { state: 'failed', exit_reason: lastTurnError(dir, status) ?? noHeadlessReport() };
 }
 
 export async function killSonicRoot(dir: string, status: Partial<JobStatus>) {

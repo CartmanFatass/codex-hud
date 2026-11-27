@@ -1,6 +1,6 @@
 /** Best-effort evidence when the runner itself dies, distinct from the harness's exit receipt. */
 import * as fs from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import type { Job, JobStatus } from './job-contracts.js';
 import { jobFiles } from './paths.js';
 import { readFileBounded, readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
@@ -74,4 +74,158 @@ export function missingRunnerEvidence(dir: string, job: Job, status: Partial<Job
   const restart = status.parent_started_at && Date.parse(parentStartedAt(dir, job) ?? '') > Date.parse(status.parent_started_at);
   return { runner_exit_code: death?.code ?? null, runner_exit_signal: death?.signal ?? null,
     stderr_tail: tail(join(dir, jobFiles.sonicStderr), 1024), ...(restart && { exit_reason: `${missingRunnerReceipt}: parent session restarted` }) };
+}
+
+const TURN_ERROR_WINDOW = 256 * 1024;
+const MAX_TURN_ERROR_LEN = 300;
+const GENERIC_NO_REPORT = /^(?:process exited without a report|worker exited|(?:pi|claude|agy|codex) exited without a declared report)$/;
+
+export const isGenericNoReportReason = (reason: string) => GENERIC_NO_REPORT.test(reason);
+
+function cleanTurnError(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.replace(/[\r\n\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return text ? text.slice(0, MAX_TURN_ERROR_LEN) : null;
+}
+
+function tailLines(path: string, minOffset = 0): string[] | null {
+  try {
+    const stat = fs.lstatSync(path);
+    if (!stat.isFile()) return null;
+    const offset = Math.max(minOffset, stat.size - TURN_ERROR_WINDOW);
+    if (offset >= stat.size) return null;
+    const { bytes } = readFileBounded(path, TURN_ERROR_WINDOW, { offset });
+    let text = bytes.toString('utf8');
+    // Drop a cut leading line when the window starts mid-file.
+    if (offset > minOffset) {
+      const nl = text.indexOf('\n');
+      if (nl < 0) return null;
+      text = text.slice(nl + 1);
+    }
+    return text.split('\n');
+  } catch { return null; }
+}
+
+type AssistantCheck = { done: true; error: string | null } | { done: false };
+function checkPiMessage(message: unknown): AssistantCheck {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return { done: false };
+  const m = message as Record<string, unknown>;
+  if (m.role === 'user') return { done: true, error: null };
+  if (m.role !== 'assistant') return { done: false };
+  return { done: true, error: m.stopReason === 'error' ? cleanTurnError(m.errorMessage) : null };
+}
+
+function piSessionTurnError(file: string): string | null {
+  const lines = tailLines(file);
+  if (!lines) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    let entry: unknown;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    if (row.type !== 'message') continue;
+    const res = checkPiMessage(row.message);
+    if (res.done) return res.error;
+  }
+  return null;
+}
+
+function piStdoutTurnError(file: string, minOffset = 0): string | null {
+  const lines = tailLines(file, minOffset);
+  if (!lines) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    let entry: unknown;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    if (row.type === 'session' || row.type === 'agent_start') return null;
+    if (row.type === 'message_end' || row.type === 'turn_end') {
+      const res = checkPiMessage(row.message);
+      if (res.done) return res.error;
+    } else if (row.type === 'agent_end' && Array.isArray(row.messages)) {
+      for (let j = row.messages.length - 1; j >= 0; j--) {
+        const res = checkPiMessage(row.messages[j]);
+        if (res.done) return res.error;
+      }
+    }
+  }
+  return null;
+}
+
+function claudeMessageText(message: unknown): string | null {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return null;
+  const content = (message as Record<string, unknown>).content;
+  if (typeof content === 'string') return cleanTurnError(content);
+  if (!Array.isArray(content)) return null;
+  const parts: string[] = [];
+  for (const part of content) {
+    if (part && typeof part === 'object' && !Array.isArray(part) && (part as Record<string, unknown>).type === 'text') {
+      const t = (part as Record<string, unknown>).text;
+      if (typeof t === 'string' && t.trim()) parts.push(t.trim());
+    }
+  }
+  return cleanTurnError(parts.join(' '));
+}
+
+function cliStdoutTurnError(file: string, agent: string, minOffset = 0): string | null {
+  const lines = tailLines(file, minOffset);
+  if (!lines) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    let entry: unknown;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const row = entry as Record<string, unknown>;
+    if (agent === 'claude') {
+      if (row.type === 'system' && row.subtype === 'init') return null;
+      if (row.type === 'result') {
+        if (row.is_error === true) {
+          const firstErr = Array.isArray(row.errors) ? row.errors.find((e) => typeof e === 'string' && e.trim()) : undefined;
+          return cleanTurnError(row.result) ?? cleanTurnError(firstErr) ?? cleanTurnError(row.error);
+        }
+        return null;
+      }
+      if (row.type === 'assistant') {
+        if (typeof row.error === 'string' && row.error.trim()) {
+          const text = claudeMessageText(row.message);
+          return text ? cleanTurnError(`${row.error}: ${text}`) : cleanTurnError(row.error);
+        }
+        return null;
+      }
+    } else if (agent === 'agy') {
+      if (row.event === 'init') return null;
+      if (row.event === 'result' && row.result && typeof row.result === 'object' && !Array.isArray(row.result)) {
+        return cleanTurnError((row.result as Record<string, unknown>).error);
+      }
+      if (row.event === 'error') return cleanTurnError(row.error) ?? cleanTurnError(row.message);
+    } else if (agent === 'codex') {
+      if (row.type === 'thread.started' || row.type === 'turn.completed') return null;
+      if (row.type === 'turn.failed') {
+        const err = row.error && typeof row.error === 'object' && !Array.isArray(row.error)
+          ? (row.error as Record<string, unknown>).message : row.error;
+        return cleanTurnError(err) ?? cleanTurnError(row.message);
+      }
+      if (row.type === 'error') return cleanTurnError(row.message) ?? cleanTurnError(row.error);
+    }
+  }
+  return null;
+}
+
+/** Read the last assistant turn's provider error from a pi session/stdout or CLI stream-json log. */
+export function lastTurnError(dir: string, status: Partial<JobStatus>, job?: Partial<Job> | null): string | null {
+  const agent = status.harness === 'cli' ? status.agent : job?.cli?.agent;
+  const minOffset = typeof status.stdout_start === 'number' && Number.isSafeInteger(status.stdout_start) && status.stdout_start >= 0
+    ? status.stdout_start : 0;
+  const stdout = join(dir, jobFiles.sonicStdout);
+  if (agent) return cliStdoutTurnError(stdout, agent, minOffset);
+  const sessionFile =
+    (typeof status.session_file === 'string' && isAbsolute(status.session_file) ? status.session_file : null) ??
+    job?.sessions?.find((s) => s.harness === 'pi' && typeof s.path === 'string' && isAbsolute(s.path))?.path ??
+    join(dir, jobFiles.sonicSession);
+  return piSessionTurnError(sessionFile) ?? piStdoutTurnError(stdout, minOffset);
 }

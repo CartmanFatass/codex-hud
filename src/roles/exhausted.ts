@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { CliAgent } from './cli-kinds.js';
 
 export const EXHAUSTED_TTL_MS = 60 * 60 * 1000;
+export const BILLING_EXHAUSTED_TTL_MS = 12 * EXHAUSTED_TTL_MS;
 const EXHAUSTED_FILE = 'exhausted.json';
 const DAY_MS = 24 * EXHAUSTED_TTL_MS;
 const DURATION_PART = /(\d+(?:\.\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?=\b|\d)/gi;
@@ -15,6 +16,9 @@ const RELATIVE_RESET = new RegExp(
 const ABSOLUTE_RESET =
   /\b(?:until|at|resets?(?:_at)?)[\s:=]+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})|\d{10}(?:\d{3})?)\b/gi;
 const UTC_RESET = /\b(?:until|at|resets?)[\s:=]+([01]?\d|2[0-3]):([0-5]\d)\s*UTC\b/gi;
+const TRUST_REFUSAL = /^(?:grok|agy|claude) has not trusted /;
+const BILLING_ERROR =
+  /(?:\b(?:billing_[a-z0-9_]+|budget[_ -]?exhausted|credit[_ -]?balance|payment[_ -]?required)\b|(?:\b(?:http(?:\/[\d.]+)?|status(?:[_ -]?code)?|code|error|api)\b[\s:(\["']*|^)402\b)/i;
 const QUOTA_ERROR =
   /(?:\b(?:rate[_ -]?limit(?:ed|s)?|quota(?:[_ -]?(?:exceeded|exhausted|reached))?|resource_exhausted|too many requests|usage limit|limit reached|insufficient[_ ]quota|out of credits)\b|\b(?:http|status|code)?[:\s]*429\b)/i;
 
@@ -44,9 +48,13 @@ export interface ExhaustedMark {
   marked_at: string;
 }
 
+export function isBillingFailure(text: string): boolean {
+  return !TRUST_REFUSAL.test(text) && BILLING_ERROR.test(text);
+}
+
 export function isQuotaFailure(text: string): boolean {
   // A directory name in a trust refusal may itself contain quota-related words.
-  return !/^(?:grok|agy|claude) has not trusted /.test(text) && QUOTA_ERROR.test(text);
+  return !TRUST_REFUSAL.test(text) && (QUOTA_ERROR.test(text) || BILLING_ERROR.test(text));
 }
 
 /** Cooldown duration, not an absolute timestamp. An expired hint is not a cooldown. */
@@ -159,7 +167,8 @@ function updateExhausted(hudHome: string, nowMs: number, update: (marks: Map<str
 
 export function markExhausted(hudHome: string, key: string, reason: string, nowMs = Date.now()): ExhaustedMark {
   fs.mkdirSync(hudHome, { recursive: true, mode: 0o700 });
-  const ttl = parseQuotaResetMs(reason, nowMs) ?? EXHAUSTED_TTL_MS;
+  const defaultTtl = isBillingFailure(reason) ? BILLING_EXHAUSTED_TTL_MS : EXHAUSTED_TTL_MS;
+  const ttl = parseQuotaResetMs(reason, nowMs) ?? defaultTtl;
   const entry: ExhaustedMark = {
     until: new Date(nowMs + ttl).toISOString(),
     reason: reason.replace(/[\r\n]+/g, ' ').slice(0, 300),

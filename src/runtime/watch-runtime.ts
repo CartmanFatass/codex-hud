@@ -28,7 +28,7 @@ import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js'
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
 import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
 import { hasHeadlessSends, headlessFollowupReady } from '../mcp/headless-sends.js';
-import { missingRunnerEvidence, missingRunnerReceipt } from '../mcp/sonic-failure.js';
+import { isGenericNoReportReason, lastTurnError, missingRunnerEvidence, missingRunnerReceipt } from '../mcp/sonic-failure.js';
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
@@ -160,6 +160,7 @@ const exitedLaunches = new Map<string, PaneExit>(); // fork direct-exec: launch_
 const deadDirectObservedAt = new Map<string, number>(); // fork direct-exec: first observation of dead root PID (150ms grace for in-flight pane.exited)
 const deadDirectRoots = new Map<string, true>(); // fork direct-exec: verified dead exact PID + start ticks without pane.exited
 const tabRetries = new Map<string, { stamp: string; at: number; failures: number }>();
+const turnErrorChecks = new Map<string, string>(); // job ID -> status timestamp already inspected for a generic no-report turn error
 let tabWakes = new Map<string, true>(), checkAllTabs = true, tabProbe: AbortController | undefined, nextTabProbe = 0;
 function wakeTab(key: string) {
   if (checkAllTabs || !rememberTab(tabWakes, key, true)) return;
@@ -614,6 +615,20 @@ async function reapJob(entry: ActiveReap, input: ReapInput) {
       recorded = { ...recorded, ...collectSonicReadFacts(dir, recorded, settled) };
       writeJsonAtomic(jobFile, recorded, 2);
     }
+    if (settled.state === 'failed' && recorded && !recorded.exhaustion_marked) {
+      const text = String(settled.exit_reason ?? settled.error ?? '');
+      if (isQuotaFailure(text)) {
+        const res = recordFailureExhaustion(home, bundled, dir, recorded, text);
+        if (res.marked) {
+          jobCache.invalidateFile(jobFile);
+          recorded = { ...recorded, exhaustion_marked: true };
+          if (res.reason !== text) {
+            settled.exit_reason = res.reason;
+            settled.error = res.reason;
+          }
+        }
+      }
+    }
     writeJsonAtomic(statusFile, settled);
     if (recorded && !waiting) writeJsonAtomic(jobFile, { ...recorded, reaped_at: now }, 2);
     const issue = snapshotIssueForLog(id, dir, cleanup.unrecoverable);
@@ -1013,15 +1028,16 @@ function scan(retryWatch = false) {
             };
             if (paneExit.exitCode === 0 && !paneExit.signal) {
               const settled = Boolean(latest?.output_written || (latest && readCloseTurn(dir, job, latest)));
+              const failReason = settled ? null : lastTurnError(dir, latest ?? status ?? {}, job) ?? 'process exited without a report';
               update = settled
                 ? { ...baseFields, state: 'closed', reason: null, blocked: false, idle_deadline_at: null,
                     settled_at: latest?.settled_at ?? now, ended_at: now, exit_reason: latest?.exit_reason ?? 'settled',
                     error: null, runner_exit_code: 0, runner_exit_signal: null, updated_at: now }
                 : { ...baseFields, state: 'failed', reason: null, blocked: false, idle_deadline_at: null,
-                    ended_at: now, exit_reason: 'process exited without a report', error: 'process exited without a report',
+                    ended_at: now, exit_reason: failReason, error: failReason,
                     runner_exit_code: 0, runner_exit_signal: null, updated_at: now };
             } else {
-              const exitReason = formatPaneExitReason(paneExit);
+              const exitReason = lastTurnError(dir, latest ?? status ?? {}, job) ?? formatPaneExitReason(paneExit);
               update = { ...baseFields, state: 'failed', reason: null, blocked: false, idle_deadline_at: null,
                 ended_at: now, exit_reason: exitReason, error: exitReason,
                 runner_exit_code: paneExit.exitCode, runner_exit_signal: paneExit.signal as NodeJS.Signals | null, updated_at: now };
@@ -1138,15 +1154,32 @@ function scan(retryWatch = false) {
       if (job && !held && (status.state === 'done' || !tab || job.reaped_at)) pruneJobLogs(dir, job, status, Date.now(), home);
       if (!readClose && !['closed', 'failed', 'stopped'].includes(status.state ?? '')) continue;
       if (status.state === 'failed' && job && !job.exhaustion_marked) {
-        const text = String(status.exit_reason ?? status.error ?? '');
+        let text = String(status.exit_reason ?? status.error ?? '');
+        let upgraded = false;
+        if (isGenericNoReportReason(text)) {
+          const checkStamp = `${statusAt ?? ''}:${status.ended_at ?? ''}:${text}`;
+          if (turnErrorChecks.get(id) !== checkStamp) {
+            rememberTab(turnErrorChecks, id, checkStamp);
+            const turnErr = lastTurnError(dir, status, job);
+            if (turnErr) {
+              text = turnErr;
+              upgraded = true;
+            }
+          }
+        }
         if (isQuotaFailure(text)) {
           const res = recordFailureExhaustion(home, bundled, dir, job, text);
           if (res.marked) jobCache.invalidateFile(jobFile);
-          if (res.marked && res.reason !== text) {
-            status = { ...status, exit_reason: res.reason, error: res.reason };
+          if ((res.marked && res.reason !== text) || upgraded) {
+            const finalReason = res.marked ? res.reason : text;
+            status = { ...status, exit_reason: finalReason, error: finalReason };
             writeJsonAtomic(statusFile, status);
             statusAt = null;
           }
+        } else if (upgraded) {
+          status = { ...status, exit_reason: text, error: text };
+          writeJsonAtomic(statusFile, status);
+          statusAt = null;
         }
       }
       const ended = Date.parse(job?.reaped_at ?? status.settled_at ?? status.ended_at ?? '');
@@ -1274,6 +1307,7 @@ function scan(retryWatch = false) {
   for (const id of snapshotWarnings) if (!liveIds.has(id)) snapshotWarnings.delete(id);
   for (const id of goneTabs.keys()) if (!liveIds.has(id)) goneTabs.delete(id);
   for (const id of tabRetries.keys()) if (!pendingTabRetries.has(id)) tabRetries.delete(id);
+  for (const id of turnErrorChecks.keys()) if (!liveIds.has(id)) turnErrorChecks.delete(id);
   probeTabs(tabChecks);
   for (const id of checkRetries.keys()) if (!liveIds.has(id)) checkRetries.delete(id);
   for (const id of [...preflightHold.keys()]) if (!liveIds.has(id)) preflightHold.delete(id);

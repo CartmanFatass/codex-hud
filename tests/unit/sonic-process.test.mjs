@@ -8,6 +8,7 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { isProcAlive } from '../../dist/utils/proc.js';
 import { startSessionWatch } from '../../dist/cli/watch.js';
 import { monitorSonic, sonicLimitDefaults } from '../../dist/mcp/sonic-policy.js';
+import { BILLING_EXHAUSTED_TTL_MS, readExhausted } from '../../dist/roles/exhausted.js';
 
 const workerTools = new URL('../../packages/hud-mcp/bin/worker-tools.mjs', import.meta.url).href;
 function setSonicRole(f, overrides) {
@@ -445,4 +446,107 @@ test('exit zero without hud_report is a final failure, not an idle or continuabl
   assert.equal(cliState(dir).exit_reason, 'pi exited without a declared report');
   assert.equal((await f.call('hud_send', { job, text: 'Again?' })).code, 'not_continuable');
   assert.equal(fs.readdirSync(join(f.env.HUD_HOME, 'jobs')).length, 1);
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
+});
+
+test('pi sonic ending with a Mistral 402 billing error marks pi:<model> exhausted and next dispatch fails over', async (t) => {
+  const f = await fixture(t);
+  const primary = 'mistral/deepseek-v4-1-flash-1017';
+  const fallback = 'anthropic/claude-haiku-5-5';
+  const mistral402 = 'Mistral API error (402): {"message":"Vibe budget exhausted.","type":"billing_vibe_budget_exhausted","code":"2304"}';
+  setSonicRole(f, {
+    run: [
+      { harness: 'pi', pi_role: 'sonic', model: primary, thinking: 'high' },
+      { harness: 'pi', pi_role: 'sonic', model: fallback, thinking: 'high' },
+    ],
+  });
+  f.overrideBin('pi', `#!${process.execPath}
+import * as fs from 'node:fs';
+const args = process.argv.slice(2);
+const model = args[args.indexOf('--model') + 1];
+const session = args[args.indexOf('--session') + 1];
+fs.writeFileSync(session, [
+  JSON.stringify({ type: 'session', id: 'synthetic-402-session', cwd: process.cwd() }),
+  JSON.stringify({ type: 'message', message: { role: 'user', content: 'Synthetic query.' } }),
+  ...(model === ${JSON.stringify(primary)}
+    ? [JSON.stringify({ type: 'message', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: ${JSON.stringify(mistral402)} } })]
+    : [JSON.stringify({ type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }], stopReason: 'stop' } })]),
+].join('\\n') + '\\n');
+if (model === ${JSON.stringify(primary)}) process.exit(0);
+const { callWorkerTool } = await import(${JSON.stringify(workerTools)});
+await callWorkerTool('hud_report', { text: 'Fallback succeeded on ' + model });
+`);
+  const first = await f.call('hud_create', { role: 'sonic', task: 'Synthetic billing error query.' });
+  await until(() => cliState(first.task_dir)?.state === 'failed', t.signal);
+  const failedStatus = cliState(first.task_dir);
+  assert.match(failedStatus.exit_reason, /Mistral API error \(402\)/);
+  assert.match(failedStatus.exit_reason, /billing_vibe_budget_exhausted/);
+  assert.match(failedStatus.exit_reason, new RegExp(`next dispatch will use pi \\(${fallback.replace('/', '\\/')}\\)`));
+  const marks = readExhausted(f.env.HUD_HOME);
+  const mark = marks.get(`pi:${primary}`);
+  assert.ok(mark, JSON.stringify([...marks.entries()]));
+  assert.match(mark.reason, /Mistral API error \(402\)/);
+  assert.equal(Date.parse(mark.until) - Date.parse(mark.marked_at), BILLING_EXHAUSTED_TTL_MS);
+
+  const second = await f.call('hud_create', { role: 'sonic', task: 'Synthetic failover query.' });
+  await until(() => cliState(second.task_dir)?.state === 'closed', t.signal);
+  const receipt = JSON.parse(fs.readFileSync(join(second.task_dir, 'job.json'), 'utf8'));
+  assert.equal(receipt.model, fallback);
+  assert.equal(fs.readFileSync(join(second.task_dir, 'report.md'), 'utf8'), `Fallback succeeded on ${fallback}`);
+});
+
+test('pi sonic ending without a report after a recovered error keeps today’s generic reason', async (t) => {
+  const f = await fixture(t);
+  f.overrideBin('pi', `#!${process.execPath}
+import * as fs from 'node:fs';
+const args = process.argv.slice(2);
+const session = args[args.indexOf('--session') + 1];
+fs.writeFileSync(session, [
+  JSON.stringify({ type: 'session', id: 'synthetic-recovered', cwd: process.cwd() }),
+  JSON.stringify({ type: 'message', message: { role: 'user', content: 'Synthetic query.' } }),
+  JSON.stringify({ type: 'message', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'HTTP 402: Payment required' } }),
+  JSON.stringify({ type: 'message', message: { role: 'assistant', content: [{ type: 'text', text: 'Recovered.' }], stopReason: 'stop' } }),
+].join('\\n') + '\\n');
+`);
+  const { task_dir: dir } = await f.call('hud_create', { role: 'sonic', task: 'Synthetic non-error silent query.' });
+  await until(() => cliState(dir)?.state === 'failed', t.signal);
+  assert.equal(cliState(dir).exit_reason, 'pi exited without a declared report');
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
+});
+
+test('headless CLI worker surfaces last turn billing error from stdout.jsonl and marks exhausted, but keeps generic reason without error', async (t) => {
+  const f = await fixture(t);
+  const roles = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(roles, { recursive: true });
+  writeFixtureFile(join(roles, 'frontend-imp.json'), JSON.stringify({
+    role: 'frontend-imp', instructions: 'frontend-implementer', can_continue: true,
+    run: [
+      { harness: 'cli', agent: 'claude', model: 'synth-primary' },
+      { harness: 'cli', agent: 'claude', model: 'synth-backup' },
+    ],
+  }));
+  f.overrideBin('claude', `#!${process.execPath}
+const args = process.argv.slice(2);
+const id = args[args.indexOf('--session-id') + 1];
+const prompt = args.at(-1);
+console.log(JSON.stringify({ type: 'system', subtype: 'init', session_id: id }));
+if (prompt.includes('Billing failure.')) {
+  console.log(JSON.stringify({ type: 'result', is_error: true, result: 'Your credit balance is too low to access the API.' }));
+} else {
+  console.log(JSON.stringify({ type: 'result', is_error: false, result: 'Done without calling hud_report.' }));
+}
+`);
+  const plain = await f.call('hud_create', { role: 'frontend-imp', mode: 'headless', task: 'Plain exit without report.' });
+  await until(() => cliState(plain.task_dir)?.state === 'failed', t.signal);
+  assert.equal(cliState(plain.task_dir).exit_reason, 'claude exited without a declared report');
+  assert.equal(fs.existsSync(join(f.env.HUD_HOME, 'exhausted.json')), false);
+
+  const billed = await f.call('hud_create', { role: 'frontend-imp', mode: 'headless', task: 'Billing failure.' });
+  await until(() => cliState(billed.task_dir)?.state === 'failed', t.signal);
+  const status = cliState(billed.task_dir);
+  assert.match(status.exit_reason, /Your credit balance is too low/);
+  assert.match(status.exit_reason, /next dispatch will use cli\/claude \(synth-backup\)/);
+  const mark = readExhausted(f.env.HUD_HOME).get('cli:claude:synth-primary');
+  assert.ok(mark);
+  assert.equal(Date.parse(mark.until) - Date.parse(mark.marked_at), BILLING_EXHAUSTED_TTL_MS);
 });

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { EXHAUSTED_TTL_MS, parseQuotaResetMs } from '../../dist/roles/exhausted.js';
+import { BILLING_EXHAUSTED_TTL_MS, EXHAUSTED_TTL_MS, isBillingFailure, isQuotaFailure, parseQuotaResetMs } from '../../dist/roles/exhausted.js';
 import { clearExhausted, markExhausted, placeKey, readExhausted, roleRegistry } from '../../dist/roles/roster.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { ProjectCollector } from '../../dist/collectors/project-board.js';
@@ -318,6 +318,54 @@ test('exhausted marks expire at the parsed reset, or after 1 hour when no reset 
     assert.equal(readExhausted(dir, t0 + 18 * 60_000).has('cli:agy:model'), false);
     assert.equal(readExhausted(dir, t0 + EXHAUSTED_TTL_MS - 1).has('pi:gpt-6.1-sol'), true);
     assert.equal(readExhausted(dir, t0 + EXHAUSTED_TTL_MS).has('pi:gpt-6.1-sol'), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('billing/budget errors count as quota failures with a 12h default TTL unless a reset hint is present', () => {
+  const mistral402 = 'Mistral API error (402): {"message":"Vibe budget exhausted.","type":"billing_vibe_budget_exhausted","code":"2304"}';
+  for (const text of [
+    mistral402,
+    'HTTP 402 Payment Required',
+    'Your credit balance is too low to access the API.',
+    'API error: billing_hard_limit_reached',
+    'Budget exhausted for this workspace',
+    '402: Payment required',
+  ]) {
+    assert.equal(isQuotaFailure(text), true, text);
+    assert.equal(isBillingFailure(text), true, text);
+  }
+  for (const text of [
+    'HTTP 429: rate limit exceeded',
+    'Too Many Requests',
+    'quota exceeded',
+  ]) {
+    assert.equal(isQuotaFailure(text), true, text);
+    assert.equal(isBillingFailure(text), false, text);
+  }
+  for (const text of [
+    'at src/foo.ts:402:10',
+    'read 402 bytes',
+    'claude has not trusted /tmp/billing_budget_402',
+    'pi exited without a declared report',
+  ]) {
+    assert.equal(isQuotaFailure(text), false, text);
+    assert.equal(isBillingFailure(text), false, text);
+  }
+  const dir = fs.mkdtempSync(join(tmpdir(), 'exhausted-billing-ttl-'));
+  try {
+    const t0 = Date.parse('2026-11-14T00:00:00Z');
+    markExhausted(dir, 'pi:mistral/deepseek-v4-1-flash-1017', mistral402, t0);
+    markExhausted(dir, 'pi:anthropic/claude-haiku-5-5', 'HTTP 402: credit balance empty; try again in 2h', t0);
+    markExhausted(dir, 'pi:openai/gpt-6.1-sol', 'HTTP 429: rate limit exceeded', t0);
+    assert.equal(BILLING_EXHAUSTED_TTL_MS, 12 * EXHAUSTED_TTL_MS);
+    assert.equal(readExhausted(dir, t0 + EXHAUSTED_TTL_MS).has('pi:openai/gpt-6.1-sol'), false);
+    assert.equal(readExhausted(dir, t0 + EXHAUSTED_TTL_MS).has('pi:mistral/deepseek-v4-1-flash-1017'), true);
+    assert.equal(readExhausted(dir, t0 + 2 * EXHAUSTED_TTL_MS - 1).has('pi:anthropic/claude-haiku-5-5'), true);
+    assert.equal(readExhausted(dir, t0 + 2 * EXHAUSTED_TTL_MS).has('pi:anthropic/claude-haiku-5-5'), false);
+    assert.equal(readExhausted(dir, t0 + BILLING_EXHAUSTED_TTL_MS - 1).has('pi:mistral/deepseek-v4-1-flash-1017'), true);
+    assert.equal(readExhausted(dir, t0 + BILLING_EXHAUSTED_TTL_MS).has('pi:mistral/deepseek-v4-1-flash-1017'), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

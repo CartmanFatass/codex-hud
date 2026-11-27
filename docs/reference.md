@@ -480,7 +480,7 @@ A detached workflow runner collects the reports and finishes the council even if
 Optional roles are off by default: `hud_roster` omits them and `hud_create` refuses them with an enablement hint.
 An existing valid role file under `$HUD_HOME/roles` enables the role by name unless an explicit switch says otherwise.
 A `cli` place requires `instructions/<instructions>.md` (shipped: `implementer.md`, `reviewer.md`, `oracle.md`, `lead.md`), otherwise `hud_create` returns `unsupported_harness`.
-Quota or rate-limit failures mark the place exhausted in `$HUD_HOME/exhausted.json` for 1 hour so the next dispatch falls back; HUD never auto-retries.
+Quota, rate-limit, or billing/budget failures mark the place exhausted in `$HUD_HOME/exhausted.json` until the provider's reset hint (or 1 hour for rate limits and 12 hours for billing/budget errors when no reset hint is present) so the next dispatch falls back; HUD never auto-retries.
 Register custom roles as `$HUD_HOME/roles/<name>.json`, for example a design role with `"agent": "claude"` and a Claude model alias.
 List models with `grok models`, `agy models`, `claude --help` or `codex -m`.
 The HUD passes only the model flag, the effort flag, that CLI's permission-bypass flag, `args`, and the HUD worker binding.
