@@ -421,9 +421,7 @@ test('tab-lifecycle: one-shot closes cleanly after settled and defers/rechecks q
   assert.equal(s.idle_deadline_at, null, 'one-shots never advertise idle grace');
 });
 
-test('tab-lifecycle: one Sonic reminder does not settle; collection and a fresh report do', async (t) => {
-  const clock = makeFakeClock(1000);
-  const f = makeLifecycleFixture(t, { timing: clock.timing });
+function makeSonicChild(f) {
   const jobs = join(f.root, 'jobs'), id = 'j0000000000000001', child = join(jobs, id);
   const parent = JSON.parse(fs.readFileSync(join(f.dir, 'job.json'), 'utf8'));
   fs.mkdirSync(child);
@@ -431,6 +429,74 @@ test('tab-lifecycle: one Sonic reminder does not settle; collection and a fresh 
   fs.writeFileSync(join(f.dir, '.sonic', id), '');
   fs.writeFileSync(join(child, 'job.json'), JSON.stringify({ job: id, role: 'sonic', parent_job: parent.job }));
   fs.writeFileSync(join(child, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+  return {
+    jobs, id, child, parent,
+    complete() {
+      fs.writeFileSync(join(child, 'report.md'), 'Synthetic Sonic report.\n');
+      fs.writeFileSync(join(child, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+    },
+  };
+}
+
+for (const queued of [false, true]) {
+  test(`a Sonic reminder leaves the note for the next ${queued ? 'queued user follow-up' : 'fresh user prompt'}`, async (t) => {
+    const followUps = [];
+    const agentQueue = { followUp(message) { followUps.push(message); } };
+    const { f, current, userPrompt } = await selectionNoteFixture(t, agentQueue);
+    makeSonicChild(f).complete();
+    f.setIdle(!queued);
+    await f.emit('agent_settled');
+    assert.equal(f.sentMessages.length + f.sentUsers.length, 1);
+    // Model the role pi assigns to each sending API, including the old user-message path.
+    const reminder = f.sentMessages.length
+      ? { role: 'custom', ...f.sentMessages[0].message }
+      : { role: 'user', content: f.sentUsers[0][0] };
+    const text = { type: 'text', text: reminder.content };
+    const drain = async (input) => {
+      await f.emit('message_start', { message: input });
+      await f.emit('message_end', { message: input });
+    };
+
+    if (queued) {
+      agentQueue.followUp(reminder);
+      await drain(followUps.shift());
+    } else {
+      const staged = await f.emit('before_agent_start', reminder.role === 'custom'
+        ? { messageType: 'custom', message: reminder }
+        : { ...userPrompt, prompt: text.text });
+      await drain(reminder);
+      if (staged) await drain({ role: 'custom', ...staged.message });
+    }
+    assert.equal(current().delivery, 'pending', 'the automatic wake must not acknowledge the note');
+    assert.equal(reminder.content, text.text);
+
+    // The owner can submit the same text: provenance, not content, distinguishes this prompt.
+    if (queued) {
+      const followUp = { role: 'user', content: [text] };
+      agentQueue.followUp(followUp);
+      await drain(followUps.shift());
+      assert.equal(followUp.content.length, 2);
+      assert.deepEqual(followUp.content[0], text);
+      assert.match(followUp.content[1].text, selectionNoteText);
+      assert.equal(current().delivery, 'delivered');
+      const next = { role: 'user', content: [text] };
+      agentQueue.followUp(next);
+      await drain(followUps.shift());
+      assert.deepEqual(next.content, [text]);
+    } else {
+      const { message: note } = await f.emit('before_agent_start', { ...userPrompt, prompt: text.text });
+      assert.match(note.content, selectionNoteText);
+      await drain({ role: 'custom', ...note });
+      assert.equal(current().delivery, 'delivered');
+      assert.equal(await f.emit('before_agent_start', userPrompt), undefined);
+    }
+  });
+}
+
+test('tab-lifecycle: one Sonic reminder does not settle; collection and a fresh report do', async (t) => {
+  const clock = makeFakeClock(1000);
+  const f = makeLifecycleFixture(t, { timing: clock.timing });
+  const { jobs, id, child, parent, complete } = makeSonicChild(f);
   await f.emit('session_start');
   await f.emit('before_agent_start');
   f.writeReport();
@@ -444,24 +510,25 @@ test('tab-lifecycle: one Sonic reminder does not settle; collection and a fresh 
 
   clock.fireNext();
   assert.equal(f.shutdowns(), 0);
-  fs.writeFileSync(join(child, 'report.md'), 'Synthetic Sonic report.\n');
-  fs.writeFileSync(join(child, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  complete();
   clock.fireNext();
-  assert.equal(f.sentUsers.length, 1);
-  assert.match(f.sentUsers[0][0], new RegExp(id));
-  assert.deepEqual(f.sentUsers[0][1], { deliverAs: 'followUp' });
+  assert.equal(f.sentMessages.length, 1);
+  const { message, options } = f.sentMessages[0];
+  assert.match(message.content, new RegExp(id));
+  assert.equal(message.display, true);
+  assert.deepEqual(options, { triggerTurn: true, deliverAs: 'followUp' });
   assert.equal(fs.existsSync(join(child, 'sonic-prompted')), true);
   assert.equal(f.status().state, 'working');
   assert.equal(f.shutdowns(), 0);
 
-  await f.emit('before_agent_start');
+  await f.emit('before_agent_start', { messageType: 'custom', message: { role: 'custom', ...message } });
   f.writeReport('Another report, before collection.\n');
   await f.emit('agent_settled');
   await immediate();
   assert.equal(f.status().state, 'working');
   assert.equal(f.status().settled_at, null);
   assert.equal(f.shutdowns(), 0);
-  assert.equal(f.sentUsers.length, 1);
+  assert.equal(f.sentMessages.length, 1);
 
   const result = await waitSonic({ dir: f.dir, root: jobs, job: parent }, [id], 0);
   assert.equal(result.reports[0].id, id);
@@ -473,7 +540,7 @@ test('tab-lifecycle: one Sonic reminder does not settle; collection and a fresh 
   await immediate();
   assert.equal(f.status().state, 'closed');
   assert.equal(f.shutdowns(), 1);
-  assert.equal(f.sentUsers.length, 1);
+  assert.equal(f.sentMessages.length, 1);
 });
 
 test('tab-lifecycle: hud-sonic-ready follow-up keeps the turn report baseline; an empty new turn still fails', async (t) => {

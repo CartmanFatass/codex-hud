@@ -460,7 +460,13 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
         if (uncollected.length && !aborted && !runError && !failed) {
           cancelTimer();
           baseline = signature(outputPath); // A report written before collection cannot settle this turn.
-          if (remind.length) pi.sendUserMessage?.(sonicCollectPrompt(taskDir, outputPath, remind), { deliverAs: 'followUp' });
+          if (remind.length) {
+            // Keep HUD's wake out of both user note-delivery paths, whether queued or starting a run.
+            pi.sendMessage(
+              { customType: 'hud-sonic-collect', content: sonicCollectPrompt(taskDir, outputPath, remind), display: true },
+              { triggerTurn: true, deliverAs: 'followUp' }
+            );
+          }
           return;
         }
       } catch {
