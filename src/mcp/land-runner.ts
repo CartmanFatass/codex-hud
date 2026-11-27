@@ -676,7 +676,7 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     }
   }
   const landedTickets = members.flatMap(row => {
-    if (row.state !== 'completed') return [];
+    if (row.state !== 'completed' || row.unfinished_acceptance?.length) return [];
     try {
       const receipt = readJsonFile(join(home, 'jobs', row.job, jobFiles.job)) as Job;
       return typeof receipt.ticket === 'string' && receipt.ticket ? [receipt.ticket] : [];

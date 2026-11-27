@@ -823,7 +823,7 @@
     {
       "number": 46,
       "title": "A partially landed flake list can be picked up again for its remaining items",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -838,22 +838,29 @@
         {
           "id": 1,
           "text": "Test: after an actual partial flake land (item left under Not done), the ticket appears in hud_tickets ready and is admitted by a queue run",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: an active flake attempt still blocks a duplicate dispatch",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T10:54:34.714Z",
+        "job": "j3c8e1dbfd972ceb6",
+        "flow": "f3c8e1dbfd972ceb6",
+        "replay_base": "1aadf62499026cc2afb49e7e5ecca7a3213d9c74",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T10:29:10.239Z",
-      "updated_at": "2026-11-27T10:29:10.239Z"
+      "updated_at": "2026-11-27T10:54:34.714Z"
     },
     {
       "number": 47,

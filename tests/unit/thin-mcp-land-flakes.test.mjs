@@ -6,6 +6,8 @@ import test from 'node:test';
 import {
   collectAndRecordLandFlakes, collectGateFlakes, flakeDispatchKey, retryPendingFlakeCollections, settleAutoLandFlakeJob,
 } from '../../dist/mcp/land-flakes.js';
+import { runningListAdmission } from '../../dist/mcp/flake-admission.js';
+import { procStat } from '../../dist/utils/proc.js';
 import { startSessionWatch } from '../../dist/cli/watch.js';
 import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
@@ -1803,4 +1805,201 @@ test('flake report with a Blockers line or scope assumption does not land and no
     const again = await settleAutoLandFlakeJob(f.home, seeded.id);
     assert.deepEqual(again, { action: 'noop' });
   }
+});
+
+test('after an actual partial flake land (item left under Not done), the ticket appears in hud_tickets ready, is admitted by a queue run, and stays eligible after retention', { timeout: 45_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+
+  const at = '2026-01-01T00:00:00.000Z';
+  const rel = seedJsonTickets(f, 'test-flakes', [{
+    number: 1,
+    title: 'Gate flakes running list',
+    kind: 'flake-list',
+    status: 'ready-for-agent',
+    what: 'Running list of synthetic gate flakes.',
+    cases: [
+      { step: 'gate[1]', test: 'sample/alpha.test.mjs', case_name: 'alpha flake', flow: 'f0000000000000a40', recorded_at: at },
+      { step: 'gate[1]', test: 'sample/beta.test.mjs', case_name: 'beta flake', flow: 'f0000000000000a41', recorded_at: at },
+    ],
+    acceptance: [
+      { id: 1, text: 'Each listed case passes 20 consecutive runs under parallel load', done: false },
+      { id: 2, text: 'No assertion or product bound weakened', done: false },
+    ],
+  }]);
+  f.git(f.main, 'add', rel);
+  f.git(f.main, 'commit', '-qm', 'seed flake list');
+  f.git(f.main, 'push', '-q', 'origin', 'base');
+
+  const first = seedAutoFlakeJob(f, { id: 'j0000000000000a41', ticket: 'test-flakes/01', commitFix: true });
+  settleDispatchedFlakeJob(f, first.id, [
+    'Fixed beta flake only.',
+    '',
+    '## Not done',
+    '- #1 Each listed case passes 20 consecutive runs under parallel load',
+    '',
+    'Blockers: none',
+    '',
+  ].join('\n'), { state: 'closed' });
+
+  const { flow } = await f.call('hud_land', { job: first.id });
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow).state), t.signal);
+  const landed = f.flowState(flow);
+  assert.equal(landed.state, 'completed', JSON.stringify(landed));
+  assert.deepEqual(landed.unfinished_acceptance, [
+    { id: 1, text: 'Each listed case passes 20 consecutive runs under parallel load' },
+  ]);
+
+  const [record] = listFlakeRecords(f);
+  assert.equal(record.status, 'ready-for-agent');
+  assert.equal(record.landing?.flow, flow);
+  assert.deepEqual(record.acceptance.map(item => [item.id, item.done]), [[1, false], [2, true]]);
+  assert.equal(listFlakeJobs(f).length, 1, 'partial land must not immediately auto-loop another flake dispatch');
+
+  // While the closed source job and land receipt are still retained, the ticket appears in hud_tickets ready
+  // and advances the flake dispatch attempt counter for any follow-up collector dispatch.
+  const admission = runningListAdmission(f.home, f.main, 'test-flakes');
+  assert.equal(admission.eligible('test-flakes/01'), true);
+  assert.equal(admission.nextAttempt('test-flakes/01'), 2);
+  const ready = await f.call('hud_tickets', { op: 'ready', cwd: f.main });
+  assert.equal(ready.tickets.some(item => item.ticket === 'test-flakes/01'), true, JSON.stringify(ready));
+
+  // A queue run admits the partially landed flake list for its remaining item.
+  const started = await f.call('hud_tickets', { op: 'run', feature: 'test-flakes', max_parallel: 1, cwd: f.main });
+  assert.ok(started.flow, JSON.stringify(started));
+  await until(() => {
+    const q = f.flowState(started.flow);
+    assert.equal(q.state, 'working', JSON.stringify(q));
+    return q.tickets.some(item => item.ticket === 'test-flakes/01' && item.job && item.job !== first.id);
+  }, t.signal);
+  const admitted = f.flowState(started.flow).tickets.find(item => item.ticket === 'test-flakes/01');
+  assert.ok(admitted?.job && admitted.job !== first.id, JSON.stringify(admitted));
+  const followUpJob = readJson(join(f.home, 'jobs', admitted.job, 'job.json'));
+  assert.equal(followUpJob.ticket, 'test-flakes/01');
+  assert.equal(followUpJob.dispatch_exit_code, 0);
+
+  // While the follow-up queue job is active, hud_tickets ready hides the ticket again.
+  const whileActive = await f.call('hud_tickets', { op: 'ready', cwd: f.main });
+  assert.equal(whileActive.tickets.some(item => item.ticket === 'test-flakes/01'), false, JSON.stringify(whileActive));
+
+  // Stop the queue run and remove job/flow receipts to simulate post-retention state:
+  // the collector must still treat the partial record.landing as ready (not resolved).
+  const cancelled = await f.call('hud_tickets', { op: 'run', feature: 'test-flakes', cancel: true, cwd: f.main });
+  assert.equal(cancelled.cancel_requested, true, JSON.stringify(cancelled));
+  await until(() => f.flowState(started.flow).state === 'cancelled', t.signal);
+  for (const id of [first.id, admitted.job]) {
+    fs.rmSync(join(f.home, 'jobs', id), { recursive: true, force: true });
+  }
+  fs.rmSync(join(f.home, 'flows', `${flow}.json`), { force: true });
+
+  const dispatched = [];
+  const retry = await collectGateFlakes(f.home, f.main, [], f.env.HERDR_PANE_ID, {
+    retryDispatch: true,
+    pendingTicket: 'test-flakes/01',
+    dispatch: async (input) => {
+      dispatched.push(input);
+      return { job: 'j0000000000000a49' };
+    },
+  });
+  assert.equal(retry.pending, undefined);
+  assert.equal(retry.dispatchedJob, 'j0000000000000a49');
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].ticket, 'test-flakes/01');
+
+  const scanned = await collectGateFlakes(f.home, f.main, [], f.env.HERDR_PANE_ID, {
+    landedTickets: ['test-flakes/99'],
+    dispatch: async (input) => {
+      dispatched.push(input);
+      return { job: 'j0000000000000a4a' };
+    },
+  });
+  assert.equal(scanned.pending, undefined);
+  assert.equal(scanned.dispatchedJob, 'j0000000000000a4a');
+  assert.equal(dispatched.length, 2);
+  assert.equal(dispatched[1].ticket, 'test-flakes/01');
+});
+
+test('an active flake attempt still blocks a duplicate dispatch', { timeout: 35_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+
+  const at = '2026-01-01T00:00:00.000Z';
+  const rel = seedJsonTickets(f, 'test-flakes', [{
+    number: 1,
+    title: 'Gate flakes running list',
+    kind: 'flake-list',
+    status: 'ready-for-agent',
+    what: 'Running list of synthetic gate flakes.',
+    cases: [
+      { step: 'gate[1]', test: 'sample/alpha.test.mjs', case_name: 'alpha flake', flow: 'f0000000000000a50', recorded_at: at },
+    ],
+    acceptance: [
+      { id: 1, text: 'Each listed case passes 20 consecutive runs under parallel load', done: false },
+      { id: 2, text: 'No assertion or product bound weakened', done: false },
+    ],
+  }]);
+  f.git(f.main, 'add', rel);
+  f.git(f.main, 'commit', '-qm', 'seed flake list');
+  f.git(f.main, 'push', '-q', 'origin', 'base');
+
+  const active = seedAutoFlakeJob(f, { id: 'j0000000000000a51', ticket: 'test-flakes/01', commitFix: true });
+  const statusFile = join(active.dir, 'STATUS.json');
+  const activeFlowId = `f${active.id.slice(1)}`;
+  const activeFlowFile = join(f.home, 'flows', `${activeFlowId}.json`);
+
+  const assertBlocked = async (label) => {
+    const ready = await f.call('hud_tickets', { op: 'ready', cwd: f.main });
+    assert.equal(ready.tickets.some(item => item.ticket === 'test-flakes/01'), false, `${label}: hidden from hud_tickets ready`);
+
+    let collectorDispatched = 0;
+    const collectorRes = await collectGateFlakes(f.home, f.main, [], f.env.HERDR_PANE_ID, {
+      retryDispatch: true,
+      pendingTicket: 'test-flakes/01',
+      dispatch: async () => {
+        collectorDispatched++;
+        return { job: 'j0000000000000a59' };
+      },
+    });
+    assert.equal(collectorDispatched, 0, `${label}: collector must not dispatch a duplicate`);
+    assert.equal(collectorRes.dispatchedJob, undefined, `${label}: no duplicate job returned`);
+
+    const runRes = await f.call('hud_tickets', { op: 'run', feature: 'test-flakes', max_parallel: 1, cwd: f.main });
+    if (runRes.flow) {
+      await until(() => ['completed', 'failed', 'cancelled'].includes(f.flowState(runRes.flow).state), t.signal);
+      assert.deepEqual(f.flowState(runRes.flow).tickets, [], `${label}: queue run must not admit a duplicate for an active flake attempt`);
+    }
+    assert.equal(listFlakeJobs(f).length, 1, `${label}: still only the original flake job exists`);
+  };
+
+  // 1. Worker actively working.
+  await assertBlocked('working');
+
+  // 2. Worker settled in idle_grace, not yet landed.
+  fs.writeFileSync(statusFile, JSON.stringify({ state: 'idle_grace', output_written: true, settled_at: new Date().toISOString() }));
+  await assertBlocked('idle_grace');
+
+  // 3. Worker closed with an active land flow in progress.
+  fs.writeFileSync(statusFile, JSON.stringify({ state: 'closed', ended_at: new Date().toISOString() }));
+  fs.mkdirSync(join(f.home, 'flows'), { recursive: true });
+  const now = new Date().toISOString();
+  fs.writeFileSync(activeFlowFile, JSON.stringify({
+    flow: activeFlowId,
+    job: active.id,
+    pane: f.env.HERDR_PANE_ID,
+    task: false,
+    wt: { main_root: f.main, root: active.wtRoot, base_head: f.base_head, branch: `wt/imp-${active.id.slice(-6)}` },
+    config: { base: 'base', gate: ['true'], after: [], push: false },
+    state: 'running',
+    step: 'gate[1]',
+    pid: process.pid,
+    start: procStat(process.pid).start,
+    created_at: now,
+    updated_at: now,
+    source_sha: f.base_head,
+  }));
+  await assertBlocked('active-land');
+
+  // 4. Worker closed with no completed landing yet.
+  fs.rmSync(activeFlowFile, { force: true });
+  await assertBlocked('closed-unlanded');
 });

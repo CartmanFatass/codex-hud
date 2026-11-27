@@ -251,7 +251,10 @@ function inspectRunningListRecord(
   const canonical = `${feature}/${nn(record.number)}`;
   const key = targetKey(canonical);
   if (claimedTickets.has(key)) return { state: 'resolved', ticket: canonical };
-  if (record.status === 'done' || record.status === 'wontfix' || record.status === 'claimed' || record.landing || record.accepted) {
+  const completedLanding = Boolean(
+    record.landing && (record.acceptance.every(item => item.done) || record.status === 'ready-for-human'),
+  );
+  if (record.status === 'done' || record.status === 'wontfix' || record.status === 'claimed' || completedLanding || record.accepted) {
     return { state: 'resolved', ticket: canonical };
   }
   if (record.kind !== 'flake-list') return { state: 'unavailable', ticket: canonical };
@@ -574,7 +577,7 @@ export async function collectGateFlakes(
 }
 
 function landedTicketsForFlow(home: string, flow: LandFlow): string[] {
-  if (flow.state !== 'completed') return [];
+  if (flow.state !== 'completed' || flow.unfinished_acceptance?.length) return [];
   try {
     const receipt = readJsonFile(join(home, 'jobs', flow.job, jobFiles.job)) as Job;
     return typeof receipt.ticket === 'string' && receipt.ticket ? [receipt.ticket] : [];

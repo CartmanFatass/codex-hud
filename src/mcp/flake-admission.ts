@@ -42,7 +42,7 @@ export function runningListAdmission(home: string, mainRoot: string, feature: st
   const prefix = `${feature}/`;
   const keyPrefix = `flakes:${flakeProjectId(mainRoot)}:`;
   const claimedTickets = new Set<string>();
-  const failedCounts = new Map<string, number>();
+  const priorAttempts = new Map<string, number>();
   const maxKeyAttempts = new Map<string, number>();
   let activeJobId: string | undefined;
   for (const id of cache.listJobIds()) {
@@ -65,17 +65,19 @@ export function runningListAdmission(home: string, mainRoot: string, feature: st
     if (!key) continue;
     const status = cache.readStatus(id);
     const state = ticketJobState(job, status.status === 'ok' ? status.value : {});
-    if (state === 'failed' || state === 'stopped') {
-      failedCounts.set(key, (failedCounts.get(key) ?? 0) + 1);
+    const prior = landAttempt(home, id).prior;
+    const landRunning = Boolean(prior && activeLand(prior));
+    const partialLand = prior?.state === 'completed' && Boolean(prior.landed_sha && prior.unfinished_acceptance?.length);
+    if (!landRunning && (state === 'failed' || state === 'stopped' || (partialLand && SETTLED_JOB_STATES.has(state)))) {
+      priorAttempts.set(key, (priorAttempts.get(key) ?? 0) + 1);
       if (keyAttempt > (maxKeyAttempts.get(key) ?? 0)) maxKeyAttempts.set(key, keyAttempt);
     } else {
       claimedTickets.add(key);
     }
     if (checkActive && !activeJobId) {
-      const prior = landAttempt(home, id).prior;
-      if (prior && activeLand(prior)) {
+      if (landRunning) {
         activeJobId = id;
-      } else if (prior?.state === 'completed') {
+      } else if (prior?.state === 'completed' && SETTLED_JOB_STATES.has(state)) {
         // Already landed; do not block the next flake list while the worker remains in idle_grace.
       } else if (!job.reaped_at && (!SETTLED_JOB_STATES.has(state) || state === 'idle_grace')) {
         activeJobId = id;
@@ -88,7 +90,7 @@ export function runningListAdmission(home: string, mainRoot: string, feature: st
     eligible: (ticket: string) => !activeJobId && !claimedTickets.has(targetKey(ticket)),
     nextAttempt: (ticket: string) => {
       const key = targetKey(ticket);
-      return Math.max(failedCounts.get(key) ?? 0, maxKeyAttempts.get(key) ?? 0) + 1;
+      return Math.max(priorAttempts.get(key) ?? 0, maxKeyAttempts.get(key) ?? 0) + 1;
     },
   };
 }
