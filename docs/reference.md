@@ -389,7 +389,6 @@ HUD uses the job's own main checkout, not the caller's. Configure `land` in that
 ```
 
 HUD queues behind the `main-checkout` lease and runs the gate in a fresh detached checkout.
-At every `main-checkout` lease handoff (including release for repair or red-train fallback), queued Markdown ticket edits have priority in a bounded batch: running land, then pending edits, then the next land. A land that is mid-gate is not interrupted, and edits arriving after the handoff snapshot wait for the next handoff so a steady stream of edits cannot starve lands.
 If the job is already based on the current tip, HUD tests the job's exact commit; otherwise it cherry-picks only commits not reachable from the base.
 Commands are shell strings; the optional wrapper is an executable relative to the main checkout, passed `sh -c <command>` in the target checkout.
 Each `gate` and `after` command, including an immediate rerun, has its own `timeout_s` deadline (default 900 seconds).
@@ -397,7 +396,7 @@ At the deadline HUD kills the command's process group, records `timeout` with up
 A red gate command, including one reporting a Node.js per-test timeout, gets one immediate rerun there.
 If the output has Node.js `test at <file>:…` failure locations, HUD reruns only those files with `node --test` through the same wrapper; otherwise it reruns the whole command.
 If the rerun passes, HUD continues and names the flaky tests in the notice when available.
-When the main checkout's `.hud/project.json` configures `"flakes": {"feature": "test-flakes"}` (absent = off), after releasing the `main-checkout` lease the land flow appends each rerun-pass case (test name, file, flow id and log path) to that feature's newest open running-list ticket—creating a new one when the newest is done, claimed or already ready—and commits only that ticket path under the `main-checkout` lease.
+When the main checkout's `.hud/project.json` configures `"flakes": {"feature": "test-flakes"}` (absent = off), after releasing the `main-checkout` lease the land flow appends each rerun-pass case (test name, file, flow id and log path) to that feature's newest open running-list ticket—creating a new one when the newest is done, claimed or already ready—writing under the `tickets` lock so it is swept on the next landing or `hud tickets commit` when the file has no owner hand edit.
 Unidentified gate failures (no parsed test case) are recorded with the command, flow and log but do not trigger the repeat rule; only named tests repeat.
 When a named test repeats or the list reaches four cases, the ticket becomes `ready-for-agent` and HUD dispatches through the queue-capable ticket admission path (with project- and attempt-scoped request keys). Both flake collection and ticket queues wait for the project's active flake imp before admitting another running list.
 A refused ticket edit (such as a hand edit on the running list), a dispatch refusal, or a promoted list waiting behind an active flake imp leaves the land green and the edit intact, and records `flake_collection` as pending on the land receipt (tied to the promoted ticket until it is admitted or independently resolved).

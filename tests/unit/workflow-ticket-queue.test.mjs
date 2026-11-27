@@ -20,6 +20,7 @@ import { taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js
 import { permissionStatus } from '../../dist/mcp/worker-permissions.js';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
+import { MAX_TICKET_BYTES, readJsonTicketFeature, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
 import { pinnedQueueJobs } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { fallbackRole, resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
@@ -1050,4 +1051,45 @@ test('unattended cancel stops a paused or working run without signalling, keeps 
   assert.equal(cliCancelWorking.cancelled.state, 'cancelled');
   assert.equal(f.flow(nextFlow).state, 'cancelled');
   assert.equal(fs.existsSync(join(f.dir(wNext), 'STATUS.json.stop-requested')), false);
+});
+
+test('unattended run holds with ticket ID when acceptance receipt cannot be persisted', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: {} });
+  await f.call('hud_tickets', {
+    op: 'add',
+    feature: 'sample',
+    cwd: f.root,
+    objective: 'selected',
+    tickets: [{ title: 'Oversized acceptance slice', what: 'Build the slice.', acceptance: ['Check it.'], blocked_by: [], owner_try: true }],
+  });
+  await f.call('hud_tickets', { op: 'commit', cwd: f.root });
+
+  const u = unattended(f);
+  f.onCleanup(() => u.cmd('off'));
+  u.cmd('on', '--objective', 'selected');
+  const flow = await u.findRun('selected');
+  const w1 = await u.ticketJob(flow, 'sample/01');
+  await f.settle(w1, { report: 'Synthetic finished.\nRemoves: none\n' });
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.landed === true, 15_000);
+
+  // Pad sample.json just under 64 KiB so persisting the accepted receipt + verdict crosses the limit.
+  const samplePath = ticketFeaturePath(f.root, 'sample');
+  const doc = readJsonTicketFeature(f.root, 'sample');
+  assert.equal(doc.tickets[0].status, 'ready-for-human');
+  const baseBytes = Buffer.byteLength(serializeTicketFeature(doc));
+  doc.tickets[0].what = 'x'.repeat(MAX_TICKET_BYTES - baseBytes - 40);
+  const padded = serializeTicketFeature(doc);
+  assert.ok(Buffer.byteLength(padded) <= MAX_TICKET_BYTES);
+  fs.writeFileSync(samplePath, padded);
+
+  await u.accept(flow, 'Decision: finish\nReason: Verified slice 1 cleanly with enough verdict text to exceed the 64 KiB cap.\n');
+  await until(() => ['completed', 'paused', 'failed'].includes(f.flow(flow).state), 15_000);
+  const held = f.flow(flow);
+  assert.equal(held.state, 'paused', JSON.stringify(held));
+  assert.equal(held.verdict, undefined);
+  assert.match(held.held?.reason ?? '', /sample\/01/);
+  assert.match(held.held?.reason ?? '', /exceeds 64 KiB/);
+  assert.equal(held.handback?.ticket, 'sample/01');
+  assert.match(held.tickets[0].held?.reason ?? '', /acceptance receipt could not be persisted/);
+  assert.equal(readJsonTicketFeature(f.root, 'sample').tickets[0].accepted, undefined);
 });

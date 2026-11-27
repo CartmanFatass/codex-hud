@@ -1,11 +1,14 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readFileBounded, writeFileAtomic, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { FILTER_CONFIG_ARGS, filterOverrides, SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
 
 export const MAX_TICKET_BYTES = 64 * 1024;
+const MAX_SWEEP_INPUT_BYTES = 256 * 1024;
 const MAX_WRITES = 256;
 export const TICKET_FEATURE = /^[a-z0-9-]+$/;
 export const LEGACY_TICKET_PATH = /^\.scratch\/[a-z0-9-]+\/issues\/\d+-[^/]+\.md$/;
@@ -194,32 +197,80 @@ export function pruneTicketWrites(home: string, mainRoot: string, matched: Reado
 /** A later land/commit uses this same lock around reading and sweeping the write record. */
 export const withTicketStoreLock = <T>(mainRoot: string, fn: () => T | Promise<T>) => withAbstractLock('tickets', mainRoot, fn);
 
+function isCleanInGitSync(mainRoot: string, rel: string): boolean {
+  const opts = { cwd: mainRoot, env: safeGitEnv(process.env), encoding: 'utf8' as const, timeout: 5000 };
+  const cfg = spawnSync('git', [...SAFE_GIT_ARGS, ...FILTER_CONFIG_ARGS], opts);
+  let filters: string[];
+  if (cfg.status === 0) {
+    try { filters = filterOverrides(cfg.stdout ?? ''); }
+    catch { return false; }
+  } else if (cfg.status === 1) {
+    filters = [];
+  } else {
+    return false;
+  }
+  const st = spawnSync('git', [...SAFE_GIT_ARGS, ...filters, 'status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', rel], opts);
+  if (st.status !== 0 || st.stdout) return false;
+  const ls = spawnSync('git', [...SAFE_GIT_ARGS, 'ls-files', '-v', '-z', '--', rel], opts);
+  if (ls.status !== 0) return false;
+  return !(ls.stdout ?? '').split('\0').some(row => /^[a-zS] /.test(row));
+}
+
+function isSweepEligibleBeforeWrite(mainRoot: string, rel: string, path: string, recordedSha: string | undefined): boolean {
+  const st = fs.lstatSync(path, { throwIfNoEntry: false });
+  if (!st) return true;
+  if (!st.isFile()) return false;
+  try {
+    if (fs.realpathSync(path) !== join(fs.realpathSync(mainRoot), rel)) return false;
+    const { bytes, truncated } = readFileBounded(path, MAX_SWEEP_INPUT_BYTES);
+    if (truncated) return false;
+    if (recordedSha !== undefined && hash(bytes) === recordedSha) return true;
+  } catch {
+    return false;
+  }
+  return isCleanInGitSync(mainRoot, rel);
+}
+
 /** Caller holds the tickets lock across the read, edit and write. */
 export function writeTicketFeature(mainRoot: string, home: string, doc: TicketFeatureDoc) {
   const bytes = serializeTicketFeature(doc), path = ticketFeaturePath(mainRoot, doc.feature);
+  const rel = `.hud/tickets/${doc.feature}.json`;
   directory(join(mainRoot, '.hud'));
   directory(ticketDir(mainRoot));
-  const writes = Object.entries(readTicketWrites(home, mainRoot)).filter(([feature]) => feature !== doc.feature);
-  writes.push([doc.feature, hash(bytes)]);
-  writeFileAtomic(path, bytes, { dotPrefix: true, beforeRename: () => {
-    // A failed publish cannot authorize sweeping old bytes with the new digest.
-    writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(writes.slice(-MAX_WRITES)), { dotPrefix: true });
-  } });
+  const currentWrites = readTicketWrites(home, mainRoot);
+  const eligible = isSweepEligibleBeforeWrite(mainRoot, rel, path, currentWrites[doc.feature]);
+  const writes = Object.entries(currentWrites).filter(([feature]) => feature !== doc.feature);
+  if (eligible) writes.push([doc.feature, hash(bytes)]);
+  const updateWrites = eligible || Object.hasOwn(currentWrites, doc.feature);
+  writeFileAtomic(path, bytes, {
+    dotPrefix: true,
+    ...(updateWrites && {
+      beforeRename: () => {
+        // A failed publish cannot authorize sweeping old bytes with the new digest.
+        writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(writes.slice(-MAX_WRITES)), { dotPrefix: true });
+      },
+    }),
+  });
   return path;
 }
 
-/** Caller holds the tickets lock. Write a legacy Markdown ticket and record its digest for sweeping. */
+/** Caller holds the tickets lock. Write a legacy Markdown ticket and record its digest when sweep-eligible. */
 export function writeLegacyTicket(mainRoot: string, home: string, relPath: string, bytes: string, mode?: number) {
   if (!LEGACY_TICKET_PATH.test(relPath)) throw new Error(`Invalid legacy ticket path: ${relPath}`);
   const path = join(mainRoot, relPath);
-  const writes = Object.entries(readTicketWrites(home, mainRoot)).filter(([key]) => key !== relPath);
-  writes.push([relPath, hash(bytes)]);
+  const currentWrites = readTicketWrites(home, mainRoot);
+  const eligible = isSweepEligibleBeforeWrite(mainRoot, relPath, path, currentWrites[relPath]);
+  const writes = Object.entries(currentWrites).filter(([key]) => key !== relPath);
+  if (eligible) writes.push([relPath, hash(bytes)]);
+  const updateWrites = eligible || Object.hasOwn(currentWrites, relPath);
   writeFileAtomic(path, bytes, {
     dotPrefix: true,
     ...(mode !== undefined && { mode }),
-    beforeRename: () => {
-      writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(writes.slice(-MAX_WRITES)), { dotPrefix: true });
-    },
+    ...(updateWrites && {
+      beforeRename: () => {
+        writeJsonPrivate(ticketWritesPath(home, mainRoot), Object.fromEntries(writes.slice(-MAX_WRITES)), { dotPrefix: true });
+      },
+    }),
   });
   return path;
 }

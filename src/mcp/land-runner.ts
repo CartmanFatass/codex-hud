@@ -16,8 +16,9 @@ import { neutralizeFilters, safeGitEnv, SAFE_GIT_ARGS } from '../utils/git-safet
 import { activeLand, DEFAULT_LAND_TIMEOUT_S, isFlowId, landAttempt, landFile, landOwnerGone, readLand, setLandStep, SPEC_CHANGE_REFUSAL, TICKET_DIFF_REFUSAL, writeLand, type LandFlow, type LandRerun } from './land-state.js';
 import { canRepairSealedStep } from '../workflows/engine.js';
 import { runLock, stopRequested } from '../workflows/store.js';
+import { withTicketStoreLock } from '../tickets/store.js';
 import { reapWorktree } from './managed-worktree.js';
-import { recordLanding } from './land-records.js';
+import { checkLandingRecords, recordLanding } from './land-records.js';
 import { repairLand } from './land-repair.js';
 import { canPublishTestedBuild, isMainBuildCommand } from './land-build.js';
 import { LandOutput } from './land-evidence.js';
@@ -299,6 +300,8 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     cleanup.length = 0;
     f.base_sha = (await git(main, ['rev-parse', '--verify', `${ref}^{commit}`])).trim();
     await checkMain(f.base_sha);
+    const prepareFilters = await neutralizeFilters(git, main);
+    await checkLandingRecords(main, home, [{ job: f.job, flow: f.flow }], f.base_sha, c.gate.length, prepareFilters, new Date().toISOString());
     const ff = (await git(main, ['merge-base', f.base_sha, f.source_sha])).trim() === f.base_sha;
     const picks = await picksFor(f.base_sha, f.source_sha);
     if (!picks.length) throw Error('Source has no commits to land');
@@ -389,42 +392,60 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       current = await mainTip();
       if (current === target) break;
     }
-    publishing = true;
-    for (const row of members) { row.publish_pending = landed; writeLand(home, row); }
-    try {
-      await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
-    } catch (error) {
-      const refusal = error as { code?: number | string; killed?: boolean; signal?: string | null };
-      // A normal Git exit alone doesn't prove that the ref, index and files stayed put.
-      if (typeof refusal.code === 'number' && !refusal.killed && !refusal.signal) {
-        try {
-          await checkClean(landedPaths);
-          await checkMain(target);
-          for (const row of members) delete row.publish_pending; // Persist with the failure.
-        } catch { /* If either check fails, keep the interlock. */ }
-      }
-      throw error;
-    }
-    endStep();
-    startStep('records');
+    const recordEntries = members.map(row => ({ job: row.job, flow: row.flow }));
     const at = new Date().toISOString();
-    const preAmend = landed;
-    const amended = await recordLanding(main, home, members.map(row => ({ job: row.job, flow: row.flow })), target, c.gate.length, who, filters, at);
-    if (amended) {
-      landed = amended;
-      const amendedTree = await tree(landed);
-      for (const row of members) row.published_tree = amendedTree;
-    }
-    for (const row of members) {
-      if (target !== base) row.replayed_onto = target;
-      if (trainTips) row.published_sha = landed;
-      const tip = trainTips?.get(row);
-      row.landed_sha = !tip || tip === preAmend ? landed : tip;
-      row.landed_at = at;
-      delete row.publish_pending;
-      writeLand(home, row);
-    }
-    endStep();
+    await withTicketStoreLock(fs.realpathSync(main), async () => {
+      await checkLandingRecords(main, home, recordEntries, target, c.gate.length, filters, at, { locked: true });
+      publishing = true;
+      for (const row of members) { row.publish_pending = landed; writeLand(home, row); }
+      try {
+        await git(main, ['merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', '--no-edit', landed], 120000);
+      } catch (error) {
+        const refusal = error as { code?: number | string; killed?: boolean; signal?: string | null };
+        // A normal Git exit alone doesn't prove that the ref, index and files stayed put.
+        if (typeof refusal.code === 'number' && !refusal.killed && !refusal.signal) {
+          try {
+            await checkClean(landedPaths);
+            await checkMain(target);
+            for (const row of members) delete row.publish_pending; // Persist with the failure.
+          } catch { /* If either check fails, keep the interlock. */ }
+        }
+        throw error;
+      }
+      endStep();
+      startStep('records');
+      const preAmend = landed;
+      let amended: string | undefined;
+      try {
+        amended = await recordLanding(main, home, recordEntries, target, c.gate.length, who, filters, at, { locked: true, expectedTip: preAmend });
+      } catch (error) {
+        for (const row of members) {
+          if (target !== base) row.replayed_onto = target;
+          if (trainTips) row.published_sha = preAmend;
+          const tip = trainTips?.get(row);
+          row.landed_sha = !tip || tip === preAmend ? preAmend : tip;
+          row.landed_at = at;
+          delete row.publish_pending;
+          writeLand(home, row);
+        }
+        throw error;
+      }
+      if (amended) {
+        landed = amended;
+        const amendedTree = await tree(landed);
+        for (const row of members) row.published_tree = amendedTree;
+      }
+      for (const row of members) {
+        if (target !== base) row.replayed_onto = target;
+        if (trainTips) row.published_sha = landed;
+        const tip = trainTips?.get(row);
+        row.landed_sha = !tip || tip === preAmend ? landed : tip;
+        row.landed_at = at;
+        delete row.publish_pending;
+        writeLand(home, row);
+      }
+      endStep();
+    });
     const checkLandingHead = async () => {
       const moved = Error('Main checkout is not at the recorded base tip');
       if ((await git(main, ['symbolic-ref', 'HEAD'])).trim() !== ref) throw moved;

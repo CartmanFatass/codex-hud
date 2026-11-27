@@ -97,7 +97,7 @@ function computeInputStamp(home: string, control: UnattendedControl, runIds: rea
 function groupBySelectedObjective(control: UnattendedControl, home: string) {
   const objectives = readObjectives(control.root)?.objectives ?? [];
   const selected = objectives.filter(o => o.state === 'active' && control.objectives.includes(o.id));
-  if (!selected.length) return { byObjective: new Map<string, { ticket: string; path: string }[]>(), liveJobIds: [] as string[] };
+  if (!selected.length) return { byObjective: new Map<string, { ticket: string; path: string }[]>(), liveJobIds: [] as string[], unreadable: [] as { feature: string; path: string; error: string }[] };
   // One readiness pass per admission batch; ticketReadiness memoizes unchanged ticket bodies and excludes open holds.
   const readiness = ticketReadiness(control.root, jobCache, undefined, { home, excludeTickets: openRunTickets(home, control.root) });
   const byObjective = new Map<string, { ticket: string; path: string }[]>();
@@ -117,7 +117,7 @@ function groupBySelectedObjective(control: UnattendedControl, home: string) {
       if (!state || state === 'working' || state === 'queued' || state === 'waiting_orchestrator') liveJobIds.push(id);
     }
   } catch { /* Best-effort live job tracking for stamp invalidation. */ }
-  return { byObjective, liveJobIds };
+  return { byObjective, liveJobIds, unreadable: readiness.unreadable ?? [] };
 }
 
 export interface UnattendedScanState {
@@ -176,9 +176,12 @@ async function scan(home: string, control: UnattendedControl, state: UnattendedS
     return state.lastIssues;
   }
 
-  const { byObjective, liveJobIds } = groupBySelectedObjective(control, home);
+  const { byObjective, liveJobIds, unreadable } = groupBySelectedObjective(control, home);
   state.liveJobIds = liveJobIds;
   const issues: UnattendedDiagnostic[] = [];
+  for (const item of unreadable) {
+    if (issues.length < 15) issues.push({ reason: `unreadable ticket feature ${item.feature}: ${item.error}` });
+  }
   const busy = new Set(active.filter(q => q.root === control.root).map(q => q.unattended!.objective));
 
   for (const objective of control.objectives) {

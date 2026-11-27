@@ -1682,15 +1682,24 @@ function tickHandbackStep(
       return { state: 'running', changed: false, effect: async () => {
         const closeRes = await closeLeadJob(leadJob);
         const verdict = parsed.reason ? `${parsed.decision}: ${parsed.reason}` : parsed.decision;
+        let acceptanceFailures: { ticket: string; error: string }[] = [];
         if (q.unattended && closeRes.ok && parsed.decision === 'finish' && verdict) {
           // Do not hold the flow-state lock while an unrelated land owns the checkout.
           try {
-            await recordUnattendedAcceptance(q.root, hudHome, () => {
+            const acc = await recordUnattendedAcceptance(q.root, hudHome, () => {
               const cur = readTicketQueue(hudHome, flowId);
               return cur?.state === 'working' && !stopRequested(hudHome, flowId)
                 ? cur.tickets.filter(item => item.landed) : [];
             }, flowId, verdict);
-          } catch { /* Best-effort acceptance record. */ }
+            acceptanceFailures = acc.failed;
+          } catch (error) {
+            const cur = readTicketQueue(hudHome, flowId);
+            const landed = cur?.tickets.filter(item => item.landed) ?? [];
+            const err = errorLine(error);
+            acceptanceFailures = landed.length
+              ? landed.map(item => ({ ticket: item.ticket, error: err }))
+              : [{ ticket: q.feature, error: err }];
+          }
         }
         await runLock(hudHome, flowId, () => {
           const cur = readTicketQueue(hudHome, flowId);
@@ -1733,6 +1742,18 @@ function tickHandbackStep(
             if (cur.unattended) holdRun(cur, msg, 'escalate', parsed.ownerApproval);
             state.problem = {
               kind: 'escalate', step: key, job: leadJob.job, ownerApproval: parsed.ownerApproval, reason: msg,
+            };
+          } else if (acceptanceFailures.length) {
+            const first = acceptanceFailures[0];
+            const summary = acceptanceFailures.map(f => `${f.ticket}: ${errorLine(f.error)}`).join('; ');
+            const msg = `acceptance receipt could not be persisted (${summary})`;
+            for (const failure of acceptanceFailures) {
+              const entry = cur.tickets.find(t => t.ticket === failure.ticket);
+              if (entry) holdItem(entry, `acceptance receipt could not be persisted: ${errorLine(failure.error)}`, 'escalate');
+            }
+            if (cur.unattended) holdRun(cur, msg, 'escalate');
+            state.problem = {
+              kind: 'escalate', step: key, ticket: first.ticket, job: leadJob.job, reason: msg,
             };
           } else {
             const heldProblem = heldBlockProblem(cur, key);

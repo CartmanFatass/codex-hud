@@ -80,7 +80,7 @@ export async function sweepTicketWrites(
   mainRoot: string,
   home: string,
   git: GitRunner,
-  opts: { mode: 'commit' | 'amend'; message?: string; identity?: string[] },
+  opts: { mode: 'commit' | 'amend'; message?: string; identity?: string[]; expectedTip?: string },
 ): Promise<SweepResult> {
   const realMain = fs.realpathSync(mainRoot);
   const writes = readTicketWrites(home, mainRoot);
@@ -129,6 +129,9 @@ export async function sweepTicketWrites(
   const sweepPaths = toCommit.map(item => item.rel);
   const newPaths = toCommit.filter(item => item.untracked).map(item => item.rel);
   const base = await headOf(git);
+  if (opts.expectedTip && base !== opts.expectedTip) {
+    throw new Error(`Main checkout HEAD moved from ${opts.expectedTip} to ${base || 'none'} before amend`);
+  }
   const idArgs = opts.identity ?? [];
   let added = false;
 

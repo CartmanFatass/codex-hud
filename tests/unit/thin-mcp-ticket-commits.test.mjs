@@ -3,9 +3,13 @@ import * as fs from 'node:fs';
 import { join, relative } from 'node:path';
 import test from 'node:test';
 import { main as cliMain } from '../../dist/cli/hud.js';
+import { worktreeGit } from '../../dist/collectors/worktrees.js';
+import { collectGateFlakes } from '../../dist/mcp/land-flakes.js';
+import { retryableLand } from '../../dist/mcp/land-state.js';
 import { recordUnattendedAcceptance } from '../../dist/mcp/local-tickets.js';
 import { takeLease } from '../../dist/roles/lease.js';
-import { readJsonTicketFeature, readTicketWrites, ticketFeaturePath } from '../../dist/tickets/store.js';
+import { sweepTicketWrites } from '../../dist/tickets/commit.js';
+import { MAX_TICKET_BYTES, readJsonTicketFeature, readTicketWrites, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { checkout, job, jobDir, settle } from '../helpers/thin-mcp-land.mjs';
 
@@ -136,23 +140,82 @@ test('gate-time hud_tickets edits fold with the landing into one commit; dirty H
   assert.equal(f.git(f.main, 'status', '--porcelain', '--', '.hud/tickets/sample.json', '.hud/tickets/other.json'), '');
 });
 
-test('an owner hand edit on the landing ticket feature itself is never overwritten or swept', { timeout: 25_000 }, async t => {
+test('landing with a valid or malformed hand edit in the landing feature refuses before main moves and stays retryable', { timeout: 35_000 }, async t => {
   const f = await checkout(t, ['true'], { after: [] });
   await f.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('Hand-edited landing feature')] });
   await f.call('hud_tickets', { op: 'commit' });
   const samplePath = ticketFeaturePath(f.main, 'sample');
-  const handEdited = fs.readFileSync(samplePath, 'utf8').replace('Change Hand-edited landing feature.', 'Owner local hand edit.');
+  const cleanBytes = fs.readFileSync(samplePath, 'utf8');
+  setJobTicket(f, 'sample/01');
+
+  // 1. Valid hand edit on the landing feature refuses before moving main, preserves bytes, leaves no publish_pending.
+  const handEdited = cleanBytes.replace('Change Hand-edited landing feature.', 'Owner local hand edit.');
   fs.writeFileSync(samplePath, handEdited);
+  const baseBeforeLand = f.git(f.main, 'rev-parse', 'HEAD');
+  const remoteBeforeLand = f.git(f.remote, 'rev-parse', 'base');
+  const { flow: flow1 } = await f.call('hud_land', { job });
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow1).state), t.signal);
+  const res1 = f.flowState(flow1);
+  assert.equal(res1.state, 'failed', JSON.stringify(res1));
+  assert.match(res1.error, /\.hud\/tickets\/sample\.json/);
+  assert.equal(res1.landed_sha, undefined);
+  assert.equal(res1.publish_pending, undefined);
+  assert.equal(retryableLand(res1), true);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), baseBeforeLand, 'main must not move on valid hand edit');
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), remoteBeforeLand, 'remote must not move on valid hand edit');
+  assert.equal(fs.readFileSync(samplePath, 'utf8'), handEdited, 'valid hand edit preserved on disk');
+
+  // 2. Malformed JSON hand edit on the landing feature refuses before moving main, leaves no publish_pending.
+  const malformed = '{ broken json\n';
+  fs.writeFileSync(samplePath, malformed);
+  const { flow: flow2 } = await f.call('hud_land', { job });
+  assert.notEqual(flow2, flow1, 'previous failure is retryable with a fresh attempt');
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow2).state), t.signal);
+  const res2 = f.flowState(flow2);
+  assert.equal(res2.state, 'failed', JSON.stringify(res2));
+  assert.match(res2.error, /\.hud\/tickets\/sample\.json/);
+  assert.equal(res2.landed_sha, undefined);
+  assert.equal(res2.publish_pending, undefined);
+  assert.equal(retryableLand(res2), true);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), baseBeforeLand, 'main must not move on malformed hand edit');
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), remoteBeforeLand, 'remote must not move on malformed hand edit');
+  assert.equal(fs.readFileSync(samplePath, 'utf8'), malformed, 'malformed bytes preserved on disk');
+
+  // 3. Restoring clean JSON lets a retry complete with the ticket recorded done.
+  fs.writeFileSync(samplePath, cleanBytes);
+  const { flow: flow3 } = await f.call('hud_land', { job });
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow3).state), t.signal);
+  const res3 = f.flowState(flow3);
+  assert.equal(res3.state, 'completed', JSON.stringify(res3));
+  const stored = JSON.parse(f.git(f.remote, 'show', 'base:.hud/tickets/sample.json'));
+  assert.equal(stored.tickets[0].status, 'done');
+  assert.equal(stored.tickets[0].landing.flow, flow3);
+});
+
+test('a mid-gate hand edit in the landing feature refuses before fast-forward without leaving publish_pending', { timeout: 30_000 }, async t => {
+  const f = await checkout(t, ['while test ! -f "$HOME/release"; do sleep .05; done'], { after: [] });
+  await f.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('Mid-gate hand edit')] });
+  await f.call('hud_tickets', { op: 'commit' });
+  const samplePath = ticketFeaturePath(f.main, 'sample');
   setJobTicket(f, 'sample/01');
 
   const baseBeforeLand = f.git(f.main, 'rev-parse', 'HEAD');
   const { flow } = await f.call('hud_land', { job });
+  await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
+
+  const handEdited = fs.readFileSync(samplePath, 'utf8').replace('Change Mid-gate hand edit.', 'Edited during gate.');
+  fs.writeFileSync(samplePath, handEdited);
+  fs.writeFileSync(join(f.env.HOME, 'release'), 'go');
+
   await until(() => ['completed', 'failed'].includes(f.flowState(flow).state), t.signal);
   const done = f.flowState(flow);
-  assert.equal(done.state, 'completed', JSON.stringify(done));
-  assert.equal(fs.readFileSync(samplePath, 'utf8'), handEdited, 'hand edit preserved on disk');
-  assert.match(f.git(f.main, 'status', '--porcelain', '--', '.hud/tickets/sample.json'), /^M /);
-  assert.deepEqual(f.git(f.remote, 'diff', '--name-only', baseBeforeLand, 'base').split('\n'), ['tracked']);
+  assert.equal(done.state, 'failed', JSON.stringify(done));
+  assert.match(done.error, /\.hud\/tickets\/sample\.json/);
+  assert.equal(done.landed_sha, undefined);
+  assert.equal(done.publish_pending, undefined);
+  assert.equal(retryableLand(done), true);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), baseBeforeLand);
+  assert.equal(fs.readFileSync(samplePath, 'utf8'), handEdited);
 });
 
 test('replay onto a ticket-amended head or objectives.md skips the gate as metadata-only', { timeout: 25_000 }, async t => {
@@ -300,8 +363,9 @@ test('unattended acceptance writes accepted receipt to JSON store and attempts n
   try {
     const t0 = performance.now();
     const flow2 = 'q00000000000000a2';
-    await recordUnattendedAcceptance(f.main, f.home, () => [{ path, ticket: 'unatt/02' }], flow2, 'finish: Verified slice 2.');
+    const acc2 = await recordUnattendedAcceptance(f.main, f.home, () => [{ path, ticket: 'unatt/02' }], flow2, 'finish: Verified slice 2.');
     assert.ok(performance.now() - t0 < 2000, 'commit attempt must be non-blocking when lease is held');
+    assert.deepEqual(acc2, { persisted: ['unatt/02'], failed: [], committed: false, deferred: true });
     const doc2 = readJsonTicketFeature(f.main, 'unatt');
     assert.equal(doc2.tickets[1].status, 'done');
     assert.equal(doc2.tickets[1].accepted?.flow, flow2);
@@ -310,4 +374,110 @@ test('unattended acceptance writes accepted receipt to JSON store and attempts n
   } finally {
     await takeLease({ name: 'main-checkout', release: true }, lease);
   }
+
+  // Part 3: when adding the acceptance receipt pushes the feature over 64 KiB, report failure with ticket ID and keep file intact.
+  await f.call('hud_tickets', { op: 'add', feature: 'huge', tickets: [draft('Near cap', { owner_try: true })] });
+  const hugePath = ticketFeaturePath(f.main, 'huge');
+  const hugeDoc = readJsonTicketFeature(f.main, 'huge');
+  const baseBytes = Buffer.byteLength(serializeTicketFeature(hugeDoc));
+  hugeDoc.tickets[0].what = 'x'.repeat(MAX_TICKET_BYTES - baseBytes - 40);
+  const nearCapBytes = serializeTicketFeature(hugeDoc);
+  assert.ok(Buffer.byteLength(nearCapBytes) <= MAX_TICKET_BYTES);
+  fs.writeFileSync(hugePath, nearCapBytes);
+  const accFail = await recordUnattendedAcceptance(f.main, f.home, () => [{ path: hugePath, ticket: 'huge/01' }], 'q00000000000000a3', 'finish: Verified huge slice cleanly.');
+  assert.deepEqual(accFail.persisted, []);
+  assert.equal(accFail.committed, false);
+  assert.equal(accFail.failed.length, 1);
+  assert.equal(accFail.failed[0].ticket, 'huge/01');
+  assert.match(accFail.failed[0].error, /exceeds 64 KiB/);
+  assert.equal(fs.readFileSync(hugePath, 'utf8'), nearCapBytes);
+});
+
+test('hand edit to ticket A followed by HUD write to ticket B never sweeps the owner edit on commit', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  const cfgPath = join(f.main, '.hud/project.json');
+  const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  fs.writeFileSync(cfgPath, JSON.stringify({ ...cfg, flakes: { feature: 'flaky' } }));
+
+  // 1. Committed feature: hand-edit ticket A, then HUD updates ticket B via hud_tickets update + unattended acceptance.
+  await f.call('hud_tickets', { op: 'add', feature: 'shared', tickets: [draft('Ticket A'), draft('Ticket B', { owner_try: true })] });
+  await f.call('hud_tickets', { op: 'add', feature: 'flaky', tickets: [draft('Manual flake note')] });
+  await f.call('hud_tickets', { op: 'commit' });
+
+  const sharedPath = ticketFeaturePath(f.main, 'shared');
+  fs.writeFileSync(sharedPath, fs.readFileSync(sharedPath, 'utf8').replace('Change Ticket A.', 'Owner hand edit A.'));
+
+  // HUD updates ticket B in the same feature.
+  await f.call('hud_tickets', { op: 'update', feature: 'shared', ticket: 2, status: 'done', tick: [1] });
+  assert.equal(readTicketWrites(f.home, f.main).shared, undefined, 'hand-edited input must not be marked sweepable');
+
+  // Unattended acceptance on ticket B must also never mark shared sweepable or commit A.
+  const acc = await recordUnattendedAcceptance(f.main, f.home, () => [{ path: sharedPath, ticket: 'shared/02' }], 'q00000000000000b1', 'finish: Verified B.');
+  assert.deepEqual(acc, { persisted: ['shared/02'], failed: [], committed: false });
+  assert.equal(readTicketWrites(f.home, f.main).shared, undefined);
+
+  // Flake collection into a hand-edited flake feature must also never mark it sweepable.
+  const flakyPath = ticketFeaturePath(f.main, 'flaky');
+  fs.writeFileSync(flakyPath, fs.readFileSync(flakyPath, 'utf8').replace('Change Manual flake note.', 'Owner flaky hand edit.'));
+  await collectGateFlakes(f.home, f.main, [
+    { name: 'flaky case', file: 'tests/unit/a.test.mjs', step: 'gate[1]', flow: 'f0000000000000099' },
+  ], null);
+  assert.equal(readTicketWrites(f.home, f.main).flaky, undefined);
+
+  // Uncommitted HUD-written feature hand-edited before a second HUD write must drop its sweep eligibility too.
+  await f.call('hud_tickets', { op: 'add', feature: 'uncom', tickets: [draft('Uncom A'), draft('Uncom B')] });
+  const uncomPath = ticketFeaturePath(f.main, 'uncom');
+  fs.writeFileSync(uncomPath, fs.readFileSync(uncomPath, 'utf8').replace('Change Uncom A.', 'Owner uncom edit A.'));
+  await f.call('hud_tickets', { op: 'update', feature: 'uncom', ticket: 2, status: 'done' });
+  assert.equal(readTicketWrites(f.home, f.main).uncom, undefined);
+
+  // Add a clean unrelated feature, then `hud tickets commit` commits only the clean feature; none of the hand edits enter git.
+  await f.call('hud_tickets', { op: 'add', feature: 'clean', tickets: [draft('Clean feature')] });
+  const committed = await f.call('hud_tickets', { op: 'commit' });
+  assert.equal(committed.committed, true);
+  assert.deepEqual(committed.paths, ['.hud/tickets/clean.json']);
+  assert.doesNotMatch(f.git(f.main, 'show', 'HEAD:.hud/tickets/shared.json'), /Owner hand edit A\./);
+  assert.doesNotMatch(f.git(f.main, 'show', 'HEAD:.hud/tickets/flaky.json'), /Owner flaky hand edit\./);
+  assert.throws(() => f.git(f.main, 'show', 'HEAD:.hud/tickets/uncom.json'));
+  assert.match(fs.readFileSync(sharedPath, 'utf8'), /Owner hand edit A\./);
+  assert.equal(readJsonTicketFeature(f.main, 'shared').tickets[1].accepted?.flow, 'q00000000000000b1');
+  assert.match(fs.readFileSync(flakyPath, 'utf8'), /Owner flaky hand edit\./);
+  assert.match(fs.readFileSync(uncomPath, 'utf8'), /Owner uncom edit A\./);
+});
+
+test('hud_tickets ready surfaces malformed canonical features as partial/unreadable while keeping healthy features', { timeout: 20_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  await f.call('hud_tickets', { op: 'add', feature: 'healthy', tickets: [draft('Healthy ready ticket')] });
+  const brokenPath = ticketFeaturePath(f.main, 'broken');
+  fs.writeFileSync(brokenPath, '{ broken json\n');
+
+  const mixed = await f.call('hud_tickets', { op: 'ready' });
+  assert.equal(mixed.ok, true);
+  assert.deepEqual(mixed.tickets.map(item => item.ticket), ['healthy/01']);
+  assert.equal(mixed.partial, true);
+  assert.equal(mixed.unreadable.length, 1);
+  assert.equal(mixed.unreadable[0].feature, 'broken');
+  assert.equal(mixed.unreadable[0].path, brokenPath);
+  assert.match(mixed.unreadable[0].error, /Cannot read ticket feature broken/);
+
+  // Even with zero healthy tickets, ready does not fabricate a plain empty ok result.
+  fs.unlinkSync(ticketFeaturePath(f.main, 'healthy'));
+  const onlyBroken = await f.call('hud_tickets', { op: 'ready' });
+  assert.equal(onlyBroken.ok, true);
+  assert.deepEqual(onlyBroken.tickets, []);
+  assert.equal(onlyBroken.partial, true);
+  assert.deepEqual(onlyBroken.unreadable.map(u => u.feature), ['broken']);
+});
+
+test('sweepTicketWrites amend refuses when HEAD moved from expectedTip', { timeout: 15_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  await f.call('hud_tickets', { op: 'add', feature: 'tipcheck', tickets: [draft('Tip check')] });
+  const headBefore = f.git(f.main, 'rev-parse', 'HEAD');
+  const git = args => worktreeGit(f.main, args);
+  await assert.rejects(
+    () => sweepTicketWrites(f.main, f.home, git, { mode: 'amend', expectedTip: '0'.repeat(40) }),
+    /Main checkout HEAD moved/,
+  );
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), headBefore);
+  assert.match(f.git(f.main, 'status', '--porcelain', '--', '.hud/tickets/tipcheck.json'), /^\?\?/);
 });
