@@ -353,6 +353,27 @@ test('extractReportNotes parses heading/empty Blockers, qualified none, try note
     extractReportNotes('Blockers: owner live try remains: reopen the panel\n  and pick which layout ships\nRemoves: none\n'),
     { blockers: ['owner live try remains: reopen the panel and pick which layout ships'], tries: [] },
   );
+  // Soft-wrapped continuation at the same indent stays attached through the Markdown paragraph/field boundary.
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: reopen the panel\nand pick which layout ships\nRemoves: none\n'),
+    { blockers: ['owner live try remains: reopen the panel and pick which layout ships'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('- **Blockers:** owner live try remains: reopen the panel\nand pick which layout ships\n- **Removes:** none\n'),
+    { blockers: ['owner live try remains: reopen the panel and pick which layout ships'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('## Blockers\n- owner live try remains: reopen the panel\nand pick which layout ships\n'),
+    { blockers: ['owner live try remains: reopen the panel and pick which layout ships'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: reopen the panel\nand observe\nRemoves: none\n'),
+    { blockers: [], tries: ['owner live try remains: reopen the panel and observe'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: none\nVerdict: pass\nChecks: passed\n**Summary:** done\n'),
+    { blockers: [], tries: [] },
+  );
   assert.deepEqual(
     extractReportNotes('Blockers: none (owner live try remains: reopen the panel and pick which layout ships)\n'),
     { blockers: ['none (owner live try remains: reopen the panel and pick which layout ships)'], tries: [] },
@@ -1351,6 +1372,55 @@ test('hud_respond stop cancels an ordinary lead escalation without undoing the l
   assert.deepEqual(stopped.landed, ['sample/01']);
   assert.equal(f.flow(flow).steps.accept.state, 'cancelled');
   assert.deepEqual(stopped.decisions.map(d => [d.job, d.decision]), [[lead, 'escalate'], ['main', 'stop']]);
+});
+
+test('hud_respond answers an escalate accept pause even when accept cursor was persisted as failed', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const flowsDir = join(f.home, 'flows');
+  fs.mkdirSync(flowsDir, { recursive: true });
+  const at = new Date().toISOString();
+  const seedEscalateAccept = (flow, extra = {}) => writeTicketQueue(f.home, {
+    flow, root: f.root, cwd: f.root, project_root: f.root, feature: 'sample', pane: f.env.HERDR_PANE_ID,
+    task: false, max_parallel: 1, created_at: at, updated_at: at,
+    template: 'ticket-queue', host: 'detached', epoch: 0, settled: 1, streak: 1, failures: 1,
+    state: 'paused', repair_rounds: 2,
+    reason: 'escalated: repair budget spent',
+    handback: { step: 'accept', choices: ['resume', 'stop'], kind: 'escalate', job: 'j0000000000000099' },
+    steps: {
+      tickets: { state: 'done', changed_at: at },
+      review: { state: 'done', changed_at: at },
+      accept: { state: 'failed', changed_at: at, reason: 'escalated: repair budget spent' },
+    },
+    tickets: [{ ticket: 'sample/01', path: join(f.root, f.ticketPath(1)), role: 'imp', landed: true }],
+    notices: {},
+    ...extra,
+  }, true);
+
+  // Resume overrides and completes the run without returning no_pending_handback.
+  seedEscalateAccept('q0000000000000e11');
+  const resumed = await f.call('hud_respond', { job: 'q0000000000000e11', answer: 'resume: Ship current landed work.' });
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.state, 'completed');
+  assert.equal(resumed.verdict, 'finish: Ship current landed work.');
+  assert.equal(f.flow('q0000000000000e11').steps.accept.state, 'done');
+
+  // Stop cancels the paused escalate accept run cleanly.
+  seedEscalateAccept('q0000000000000e12');
+  const stopped = await f.call('hud_respond', { job: 'q0000000000000e12', answer: 'stop: Cancel after review.' });
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.state, 'cancelled');
+  assert.equal(f.flow('q0000000000000e12').steps.accept.state, 'cancelled');
+
+  // Unattended manual hold stays unanswerable via hud_respond.
+  seedEscalateAccept('q0000000000000e13', {
+    pane: '',
+    unattended: { objective: 'selected' },
+    held: { reason: 'escalated: manual hold', at, kind: 'escalate' },
+    handback: { step: 'accept', choices: ['manual'], kind: 'escalate', job: 'j0000000000000099' },
+  });
+  const manualRejected = await f.call('hud_respond', { job: 'q0000000000000e13', answer: 'resume' });
+  assert.equal(manualRejected.ok, false);
+  assert.equal(manualRejected.code, 'no_pending_handback');
 });
 
 test('hud_respond answers main hand-back (finish, repair, escalate) and rejects invalid choices or non-asking runs', { timeout: 60_000 }, async t => {

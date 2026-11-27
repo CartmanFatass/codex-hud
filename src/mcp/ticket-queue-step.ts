@@ -46,6 +46,8 @@ import { permissionNotice, permissionRecheckMs as workerPermissionRecheckMs, per
 
 const cleanStates = ['idle_grace', 'done', 'closed'];
 const LAUNCH_GRACE_MS = 120_000, LAUNCH_RECHECK_MS = 5_000, ANSWER_RETRY_MS = 1_000;
+export const REPORT_SIG_RETRY_LIMIT = 3;
+export const REPORT_SIG_WAIT_MS = 5_000;
 const errorLine = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0];
 const owner = (q: TicketQueue, item: TicketQueueItem) => item.dispatch_queue ?? q.flow;
 const requestKey = (q: TicketQueue, item: TicketQueueItem) => `ticket-queue:${owner(q, item)}:${item.ticket}`;
@@ -69,9 +71,9 @@ function activeLandRepairJob(item: TicketQueueItem): string | undefined {
   return land?.job === item.job && activeLand(land) ? land.repairs?.at(-1)?.job : undefined;
 }
 
-// Pane-less runs have no direct recipient. Use their project-scoped, once-claimed outbox.
+// Runs without a live direct recipient use their project-scoped, once-claimed outbox.
 function syncPermissionNotices(q: TicketQueue) {
-  if (q.pane) return false;
+  if (livePane(q)) return false;
   const current = new Map<string, string>();
   const ids = new Set<string>();
   for (const item of q.tickets) {
@@ -145,15 +147,58 @@ type SettlementVerdict = { assumed?: string[]; tries?: string[] } & (
   | { kind: TicketHandbackKind; reason: string; assumption?: TicketHandback['assumption'] }
 );
 
-function judgeSettlement(root: string, item: TicketQueueItem, job: Job, sourceJob: Job, status: JobStatus, deferAssumptions: boolean): SettlementVerdict {
+export type ReportMismatchTracker = Map<string, { since: number; attempts: number }>;
+
+export function judgeSettlement(
+  root: string,
+  item: TicketQueueItem,
+  job: Job,
+  sourceJob: Job,
+  status: JobStatus,
+  deferAssumptions: boolean,
+  reportMismatch?: ReportMismatchTracker,
+): SettlementVerdict {
   const dir = directory(job.job);
+  const mismatchKey = `${item.ticket}:${job.job}`;
   const sig = declaredReport(dir, job, status);
-  if (!sig) return { kind: 'worker', reason: 'settled without a declared report for this turn' };
-  const report = readFileBounded(join(dir, jobFiles.report), 1024 * 1024);
-  if (report.truncated) return { kind: 'worker', reason: 'report is too large to verify' };
+  if (!sig) {
+    reportMismatch?.delete(mismatchKey);
+    return { kind: 'worker', reason: 'settled without a declared report for this turn' };
+  }
+  let report: ReturnType<typeof readFileBounded>;
+  try {
+    report = readFileBounded(join(dir, jobFiles.report), 1024 * 1024);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    const prev = reportMismatch?.get(mismatchKey);
+    const now = Date.now();
+    const attempts = (prev?.attempts ?? 0) + 1;
+    const since = prev?.since ?? now;
+    if (reportMismatch && attempts <= REPORT_SIG_RETRY_LIMIT && now - since < REPORT_SIG_WAIT_MS) {
+      reportMismatch.set(mismatchKey, { since, attempts });
+      return { waitMs: ANSWER_RETRY_MS };
+    }
+    reportMismatch?.delete(mismatchKey);
+    return { kind: 'worker', reason: 'report changed after settlement before verification' };
+  }
+  if (report.truncated) {
+    reportMismatch?.delete(mismatchKey);
+    return { kind: 'worker', reason: 'report is too large to verify' };
+  }
   // Triage must parse the bytes signed by this settlement, not a replacement report.
-  if (sig !== `${report.stat.mtimeMs}:${report.bytes.length}:${createHash('sha256').update(report.bytes).digest('hex')}`)
-    return { waitMs: ANSWER_RETRY_MS };
+  if (sig !== `${report.stat.mtimeMs}:${report.bytes.length}:${createHash('sha256').update(report.bytes).digest('hex')}`) {
+    const prev = reportMismatch?.get(mismatchKey);
+    const now = Date.now();
+    const attempts = (prev?.attempts ?? 0) + 1;
+    const since = prev?.since ?? now;
+    if (reportMismatch && attempts <= REPORT_SIG_RETRY_LIMIT && now - since < REPORT_SIG_WAIT_MS) {
+      reportMismatch.set(mismatchKey, { since, attempts });
+      return { waitMs: ANSWER_RETRY_MS };
+    }
+    reportMismatch?.delete(mismatchKey);
+    return { kind: 'worker', reason: 'report changed after settlement before verification' };
+  }
+  reportMismatch?.delete(mismatchKey);
   const text = report.bytes.toString('utf8');
   const { lines: assumed, scopeAssumptions } = extractAssumedLines(text);
   const { blockers, tries } = extractReportNotes(text);
@@ -1082,7 +1127,7 @@ function dispatchAssumptionLead(q: TicketQueue, opts: ReportLeadInput): Tick {
 function tickTicketQueue(
   q: TicketQueue,
   step: Extract<Step, { kind: 'batch' }>,
-  state: { problem?: TicketProblem },
+  state: { problem?: TicketProblem; reportMismatch: ReportMismatchTracker },
 ): Tick {
   if (!step.tickets) throw Error('ticket-queue batch step requires a tickets source');
   if (stopRequested(hudHome, q.flow)) {
@@ -1206,7 +1251,7 @@ function tickTicketQueue(
       else flag('dispatch', 'dispatch interrupted before worker status was recorded');
     } else if (status && cleanStates.includes(status.state)) {
       // A replacement repair supplies the report but does not own the managed worktree.
-      const verdict = judgeSettlement(q.root, item, job, sourceJob, status, deferAssumptions);
+      const verdict = judgeSettlement(q.root, item, job, sourceJob, status, deferAssumptions, state.reportMismatch);
       const source = `${item.ticket} (${job.job})`;
       changed = appendTodos(q, [
         ...(verdict.assumed ?? []).map(text => ({ source, kind: 'assumed' as const, text })),
@@ -1851,7 +1896,7 @@ export async function driveTicketQueue(id: string) {
   const initial = readTicketQueue(hudHome, id);
   if (!initial || initial.state !== 'working') return;
   const dir = runDir(hudHome, id);
-  const state: { problem?: TicketProblem } = {};
+  const state: { problem?: TicketProblem; reportMismatch: ReportMismatchTracker } = { reportMismatch: new Map() };
   await driveWorkflow<TicketQueue>(hudHome, id, {
       read: () => readTicketQueue(hudHome, id)!,
       header: q => q as TicketQueue & Run,

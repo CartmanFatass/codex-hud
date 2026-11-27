@@ -32,6 +32,10 @@ const knownReportField = new RegExp(
   `^[ \\t]*(?:[-*][ \\t]+|${REPORT_MARKDOWN_HEADING_PREFIX})?(?:\\*\\*)?(?:Blockers|Try|Removes|Assumed|Todo|Decision|Reason|Answer|Owner approval)(?:\\*\\*)?:|^[ \\t]*${REPORT_MARKDOWN_HEADING_PREFIX}(?:\\*\\*)?(?:Blockers|Try)(?:\\*\\*)?[ \\t]*$`,
   'i',
 );
+const inlineFieldStop = new RegExp(
+  `^[ \\t]*(?:[-*][ \\t]+|${REPORT_MARKDOWN_HEADING_PREFIX})?(?:\\*\\*)?(?:Verdict|Summary|Checks|Files|Tests|Preview|Status|Open questions)(?:\\*\\*)?:|^[ \\t]*\\*\\*[^*]+:\\*\\*|^[ \\t]*(?:\`\`\`|~~~|>)`,
+  'i',
+);
 const markdownHeading = /^[ \t]*#{1,6}[ \t]+/;
 const horizontalRule = /^[ \t]*(?:[-*_][ \t]*){3,}$/;
 const bulletLine = /^([ \t]*)(?:[-*]|\d+\.)[ \t]+(.*)$/;
@@ -160,8 +164,10 @@ export function extractReportNotes(reportText: string): { blockers: string[]; tr
       const parts = [inlineValue];
       while (i + 1 < lines.length) {
         const next = lines[i + 1];
-        if (!next.trim() || next.match(/^[ \t]*/)![0].length <= indent ||
-            knownReportField.test(next) || markdownHeading.test(next) || horizontalRule.test(next)) break;
+        const nextIndent = next.match(/^[ \t]*/)![0].length;
+        if (!next.trim() || (isListHeader && nextIndent < indent) ||
+            knownReportField.test(next) || inlineFieldStop.test(next) ||
+            markdownHeading.test(next) || horizontalRule.test(next) || bulletLine.test(next)) break;
         parts.push(next.trim());
         i++;
       }
@@ -197,7 +203,7 @@ export function extractReportNotes(reportText: string): { blockers: string[]; tr
 
       if (sawBlank) break;
       const nextIndent = next.match(/^[ \t]*/)![0].length;
-      if (sawBullet && nextIndent > lastBulletIndent && items.length) {
+      if (sawBullet && nextIndent >= lastBulletIndent && !inlineFieldStop.test(next) && items.length) {
         items[items.length - 1] = `${items[items.length - 1]} ${next.trim()}`;
       } else if (!sawBullet) {
         items.push(next.trim());

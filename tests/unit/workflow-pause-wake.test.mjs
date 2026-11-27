@@ -7,8 +7,8 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { watchCommand } from '../../dist/cli/watch.js';
-import { notify, notifyOutcome } from '../../dist/roles/notify.js';
-import { claimQueueTask, queueTaskFile } from '../../dist/mcp/ticket-queue-state.js';
+import { classifyCodexQueueOutcome, notify, notifyOutcome } from '../../dist/roles/notify.js';
+import { claimQueueTask, queueTaskFile, readQueueTask } from '../../dist/mcp/ticket-queue-state.js';
 import { countProjectWaitingRuns, executionSnapshot } from '../../dist/collectors/execution.js';
 import { collectWorkSummary, createWorkSummaryPublisher, readMachineWork } from '../../dist/collectors/work-summary-snapshot.js';
 import { panelDelivery } from '../../dist/mcp/panel-delivery.js';
@@ -867,4 +867,156 @@ if (args[0] === 'pane' && args[1] === 'get') {
   assert.equal(readAttempts().filter((line) => line.includes(indeterminateFlow.flow)).length, 1, 'indeterminate legacy send must never repeat');
   ac2.abort();
   assert.equal(await run2, 0);
+});
+
+test('indeterminate codex queue outcome propagates without falling back to typing', { timeout: 20_000 }, async (t) => {
+  // Pure classification checks across HerdrOutcome reasons, including timeout and lost.
+  assert.equal(classifyCodexQueueOutcome({ ok: true, reason: 'ok', stdout: '', stderr: '', exitCode: 0 }).kind, 'sent');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'unavailable', stdout: '', stderr: 'ENOENT', exitCode: null }).kind, 'refused');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: '', stderr: 'no rollout found', exitCode: 1 }).kind, 'refused');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: '', stderr: "error: unrecognized subcommand 'queue'", exitCode: 2 }).kind, 'refused');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'timeout', stdout: '', stderr: '', exitCode: null }).kind, 'indeterminate');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'lost', stdout: '', stderr: '', exitCode: null }).kind, 'indeterminate');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'aborted', stdout: '', stderr: '', exitCode: null }).kind, 'indeterminate');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: '', stderr: 'broken pipe after write', exitCode: 1 }).kind, 'indeterminate');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: '', stderr: '', exitCode: 1 }).kind, 'indeterminate');
+
+  // End-to-end notify(): indeterminate codex queue sends never invoke herdr typing; positive non-send still falls back.
+  const f = watchFixture(t);
+  const bin = join(f.home, 'codex-indeterminate-bin');
+  const socketPath = join(dirname(f.home), 'codex-indeterminate.sock');
+  const codexModeFile = join(f.home, 'codex-mode');
+  const typedLog = join(f.home, 'typed.log');
+  fs.mkdirSync(bin, { recursive: true });
+  const fake = `#!${process.execPath}
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args[0] === 'pane' && args[1] === 'get') {
+  console.log(JSON.stringify({ result: { pane: { agent: 'codex', agent_status: 'idle', agent_session: { value: '00000000-0000-4000-8000-000000000009' } } } }));
+} else if (args[0] === 'pane' && args[1] === 'process-info') {
+  console.log(JSON.stringify({ result: { process_info: { foreground_processes: [{ name: 'codex', pid: ${process.pid} }] } } }));
+} else if (args[0] === 'queue') {
+  const mode = fs.readFileSync(${JSON.stringify(codexModeFile)}, 'utf8').trim();
+  if (mode === 'lost') process.kill(process.pid, 'SIGKILL');
+  if (mode === 'unknown_fail') { console.error('connection reset while reading reply'); process.exit(1); }
+  if (mode === 'refused') { console.error('no rollout found'); process.exit(1); }
+} else if (args[0] === 'agent' && args[1] === 'prompt') {
+  fs.appendFileSync(${JSON.stringify(typedLog)}, args[3] + '\\n');
+}
+`;
+  for (const name of ['herdr', 'codex']) fs.writeFileSync(join(bin, name), fake, { mode: 0o700 });
+  const server = createServer((socket) => {
+    socket.on('error', () => {});
+    const lines = createInterface({ input: socket });
+    lines.on('error', () => {});
+    lines.on('line', (line) => {
+      const { id, method } = JSON.parse(line);
+      if (method === 'ping') socket.write(JSON.stringify({ id, result: { type: 'pong' } }) + '\n');
+    });
+  });
+  server.listen(socketPath);
+  await once(server, 'listening');
+  t.after(async () => { server.close(); await once(server, 'close'); });
+
+  const env = {
+    ...process.env,
+    HOME: join(dirname(f.home), 'home'),
+    HUD_HOME: f.home,
+    HERDR_PANE_ID: MAIN_PANE,
+    HERDR_SOCKET_PATH: socketPath,
+    PATH: `${bin}:${process.env.PATH}`,
+  };
+  const readTyped = () => fs.existsSync(typedLog) ? fs.readFileSync(typedLog, 'utf8').trim().split('\n').filter(Boolean) : [];
+
+  for (const mode of ['lost', 'unknown_fail']) {
+    fs.writeFileSync(codexModeFile, mode);
+    const res = await notify(MAIN_PANE, `indeterminate ${mode}`, f.home, { queue: true, env });
+    assert.equal(res.outcome, 'indeterminate', mode);
+    assert.equal(notifyOutcome(res), 'indeterminate', mode);
+    assert.equal(res.uncertain, true, mode);
+    assert.equal(res.retry, false, mode);
+    assert.match(res.detail ?? '', /did not fall back to typing/);
+  }
+  assert.deepEqual(readTyped(), [], 'indeterminate codex queue sends must never fall back to typing');
+
+  fs.writeFileSync(codexModeFile, 'refused');
+  const fallback = await notify(MAIN_PANE, 'confirmed refusal', f.home, { queue: true, env });
+  assert.equal(fallback.outcome, 'sent');
+  assert.match(fallback.detail ?? '', /fell back to typing/);
+  assert.deepEqual(readTyped(), ['confirmed refusal']);
+});
+
+test('stale caller task receipt cannot poll, cancel, or re-claim a newer epoch task owned by another caller', { timeout: 60_000 }, async (t) => {
+  const f = await setupWorkflowProject(t, { tickets: { '01-only.md': goodTicket(1) } });
+  await f.stopMcp();
+
+  const spawnTaskMcp = (paneId) => {
+    const child = spawn(process.execPath, [resolve('packages/hud-mcp/bin/hud-mcp.mjs')], {
+      cwd: f.root, env: { ...f.env, HERDR_PANE_ID: paneId }, stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    const exited = once(child, 'exit');
+    f.onCleanup(() => stopChild(child, exited, { closeStdin: true }));
+    const rl = createInterface({ input: child.stdout });
+    const rpc = taskRpc((method, params) => new Promise((resolveRpc) => {
+      const id = Math.floor(Math.random() * 1e9);
+      const onLine = (raw) => {
+        const msg = JSON.parse(raw);
+        if (msg.id === id) { rl.off('line', onLine); resolveRpc(msg); }
+      };
+      rl.on('line', onLine);
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+    }));
+    return { child, exited, rpc };
+  };
+
+  // Caller A starts epoch-0 task and lets it pause at accept.
+  const callerA = spawnTaskMcp('w4E:p1');
+  await callerA.rpc('server/discover');
+  const started = await taskCall(callerA.rpc, 'hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
+  assert.equal(started.resultType, 'task');
+  const flow = started.taskId;
+  const [j1] = await f.jobs(flow, 1);
+  await f.settle(j1);
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  await f.settleReview(f.flow(flow).review_job);
+  const pause0 = await f.end(flow);
+  assert.equal(pause0.state, 'paused');
+  assert.equal(pause0.epoch, 0);
+
+  // Add a repair ticket and have Caller B resume as an epoch-1 task (updating global task.json to epoch 1).
+  resultValue(await taskCall(callerA.rpc, 'hud_tickets', {
+    op: 'add', cwd: f.root, feature: 'sample',
+    tickets: [{ title: 'Epoch 1 slice', blocked_by: [], what: 'Work in epoch 1.', acceptance: ['Done'], live_try: 'none' }],
+  }));
+  const callerB = spawnTaskMcp('w4E:p2');
+  await callerB.rpc('server/discover');
+  const resumedB = await taskCall(callerB.rpc, 'hud_respond', { job: flow, answer: 'repair: epoch 1' });
+  assert.equal(resumedB.resultType, 'task');
+  assert.equal(f.flow(flow).epoch, 1);
+  const markerB = readQueueTask(f.home, flow);
+  assert.equal(markerB?.epoch, 1);
+  assert.equal(markerB?.pid, callerB.child.pid);
+
+  // Caller A (still live, holding epoch-0 receipt) cannot poll or cancel Caller B's epoch-1 task.
+  const pollLiveA = await callerA.rpc('tasks/get', { taskId: flow });
+  assert.equal(pollLiveA.status, 'failed');
+  assert.match(pollLiveA.statusMessage, /Unknown or expired task/);
+  const cancelLiveA = await callerA.rpc('tasks/cancel', { taskId: flow });
+  assert.equal(cancelLiveA.status, 'failed');
+  assert.match(cancelLiveA.statusMessage, /Unknown or expired task/);
+  assert.equal(f.flow(flow).state, 'working', 'stale caller cancel must not stop epoch-1 run');
+  assert.equal(readQueueTask(f.home, flow)?.pid, callerB.child.pid, 'stale caller must not overwrite epoch-1 task marker');
+
+  // Reconnected Caller A (same pane, recovering from disk receipt with epoch 0) also cannot poll or re-claim epoch 1.
+  await stopChild(callerA.child, callerA.exited, { closeStdin: true });
+  const callerA2 = spawnTaskMcp('w4E:p1');
+  await callerA2.rpc('server/discover');
+  const pollReconnectedA = await callerA2.rpc('tasks/get', { taskId: flow });
+  assert.equal(pollReconnectedA.status, 'failed');
+  assert.match(pollReconnectedA.statusMessage, /Unknown or expired task/);
+  assert.equal(readQueueTask(f.home, flow)?.pid, callerB.child.pid, 'reconnected stale caller must not re-claim epoch-1 task marker');
+
+  // Caller B (owning epoch-1 receipt) still polls its own task cleanly.
+  const pollB = await callerB.rpc('tasks/get', { taskId: flow });
+  assert.equal(pollB.status, 'working');
 });

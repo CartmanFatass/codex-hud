@@ -33,7 +33,7 @@ import { isGenericNoReportReason, lastTurnError, missingRunnerEvidence, missingR
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
-import { observeWorkerPermission, PERMISSION_ID, permissionNotice, permissionStatus, permissionTarget, type PermissionEntry } from '../mcp/worker-permissions.js';
+import { claimPermissionNotice, observeWorkerPermission, permissionNotice, permissionNoticeable, permissionNoticeMarker, permissionStatus, permissionTarget, releasePermissionNotice, type PermissionEntry } from '../mcp/worker-permissions.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { notify as notifyPane, notifyOutcome, watching as paneWatching } from '../roles/notify.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
@@ -293,17 +293,16 @@ function deliverPermissionNotice(
   const endpoint = herdrEndpoint();
   const recipient = jobCallerPane(job);
   if (!endpoint || !fs.existsSync(endpoint) || !recipient || paneWatching(recipient, home)) return Infinity;
-  if (!PERMISSION_ID.test(entry.id) || (entry.outcome !== 'uncertain' && !(entry.action === 'main' && entry.outcome === 'pending'))) return Infinity;
-  const marker = join(dir, `${entry.id}.noticed`);
+  if (!permissionNoticeable(entry)) return Infinity;
+  const marker = permissionNoticeMarker(dir, entry.id);
   seenMarkers.add(marker);
   if (permissionNoticeChecks.has(marker) || fs.existsSync(marker)) return Infinity;
   const retry = permissionNoticeRetries.get(marker);
   if (retry && retry.at > now) return retry.at;
-  try { fs.closeSync(fs.openSync(marker, 'wx', 0o600)); }
-  catch (e) { if (['EEXIST', 'ENOENT'].includes((e as NodeJS.ErrnoException).code ?? '')) return Infinity; throw e; }
+  if (!claimPermissionNotice(dir, entry)) return Infinity;
   const controller = new AbortController();
   const recordRetry = () => {
-    fs.rmSync(marker, { force: true });
+    releasePermissionNotice(marker);
     if (!controller.signal.aborted && herdrEndpoint()) {
       const attempts = (permissionNoticeRetries.get(marker)?.attempts ?? 0) + 1;
       permissionNoticeRetries.set(marker, { at: Date.now() + Math.min(30_000, 500 * 2 ** Math.min(attempts - 1, 6)), attempts });

@@ -296,7 +296,8 @@ export function ticketQueueNotice(q: TicketQueue) {
   const question = q.state === 'paused' ? escalatedQuestion(q.handback) : undefined;
   const reply = question ? ` ${questionReply(question.job, question.question)}.${q.unattended ? ''
     : ` To stop the queue: hud_respond job=${q.flow} answer=stop.`}`
-    : q.state === 'paused' && q.handback && q.steps?.[q.handback.step]?.state === 'asking'
+    : q.state === 'paused' && q.handback && q.handback.choices.length && !q.handback.choices.includes('manual') &&
+      (q.steps?.[q.handback.step]?.state === 'asking' || (!q.unattended && q.handback.kind === 'escalate' && q.steps?.[q.handback.step]?.state === 'failed'))
       ? ` Reply: hud_respond job=${q.flow} answer=<${q.handback.choices.join('|')}>[: reason].` : '';
   return `${q.flow} (ticket queue ${q.feature}) — ${reason ?? q.state}. Landed: ${landed.join(', ') || 'none'}.` +
     verdict + todo + held + heldHint +

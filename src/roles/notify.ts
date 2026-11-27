@@ -109,6 +109,20 @@ const agyIdle = (info: Pane | null) => info?.agent === 'agy' && (info.agent_stat
 
 const guardRefusals = new Set(['not_ready', 'scrolled_back', 'recent_input', 'draft_present', 'prompt_unknown']);
 const nonSendRefusals = new Set(['agent_not_ready', 'agent_not_found', 'pane_not_found', ...guardRefusals]);
+const codexQueueRefusalCodes = new Set(['not_found', 'thread_not_found', 'session_not_found', 'no_rollout', 'rollout_not_found', 'unavailable', 'invalid_argument', 'queue_full']);
+const codexQueueRefusalText = /\b(?:no rollout found|rollout not found|thread not found|session not found|no running\b|not running\b|unrecognized subcommand|unknown subcommand|unknown command|unexpected argument|invalid value|invalid thread|no such file|connection refused|cannot connect|failed to connect|queue (?:is )?full|permission denied)\b|^usage:/im;
+
+export function classifyCodexQueueOutcome(outcome: HerdrOutcome): { kind: NotifyOutcome; reason: string } {
+  if (outcome.ok) return { kind: 'sent', reason: '' };
+  const reason = outcome.stderr.trim() || outcome.reason || `exit ${outcome.exitCode}`;
+  if (outcome.reason === 'unavailable') return { kind: 'refused', reason };
+  if (outcome.reason !== 'failed') return { kind: 'indeterminate', reason };
+  let code: string | undefined;
+  try { code = JSON.parse(outcome.stdout)?.error?.code; } catch { /* Plain stderr diagnostic. */ }
+  const refused = (typeof code === 'string' && codexQueueRefusalCodes.has(code)) ||
+    codexQueueRefusalText.test(outcome.stderr) || codexQueueRefusalText.test(outcome.stdout);
+  return { kind: refused ? 'refused' : 'indeterminate', reason };
+}
 export const PROMPT_QUIET_MS = 3000; // Also the fork's default input_quiet_ms.
 export const PROMPT_RETRY_TTL_MS = 10 * 60_000;
 
@@ -199,8 +213,19 @@ export async function notify(pane: string | null, message: string, home?: string
       const outcome = await runCommand('codex', ['queue', '--thread', info.agent_session.value, '--message', message],
         { ...env, CODEX_HOME }, { budgetMs: 20_000, killGraceMs: 250, signal });
       const sent = deliveryResult(outcome);
-      if (outcome.ok) return { ...sent, outcome: 'sent', detail: 'pushed via codex queue' };
-      throw new Error(sent.error?.message || sent.stderr || `exit ${sent.status}`);
+      const classified = classifyCodexQueueOutcome(outcome);
+      if (classified.kind === 'sent') return { ...sent, outcome: 'sent', detail: 'pushed via codex queue' };
+      if (signal?.aborted) return { ...aborted(), uncertain: true, outcome: 'indeterminate' };
+      if (classified.kind === 'indeterminate') {
+        return {
+          ...sent,
+          retry: false,
+          uncertain: true,
+          outcome: 'indeterminate',
+          detail: `codex queue outcome uncertain (${classified.reason.slice(0, 200)}); did not fall back to typing`,
+        };
+      }
+      throw new Error(classified.reason);
     } catch (error) {
       if (signal?.aborted) return codexStarted ? { ...aborted(), uncertain: true, outcome: 'indeterminate' } : aborted();
       detail = `codex queue failed (${String((error as Error).message).trim().slice(0, 200)}); fell back to typing`;

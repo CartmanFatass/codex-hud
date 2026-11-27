@@ -3,14 +3,14 @@ import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import { createServer } from 'node:net';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { watchCommand } from '../../dist/cli/watch.js';
 import { jobChanges, readThinJobRows, readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { collectWorkSummary } from '../../dist/collectors/work-summary-snapshot.js';
 import { classifyPermission, provePermission } from '../../dist/mcp/permission-policy.js';
-import { parsePermissionPrompt, permissionStatus } from '../../dist/mcp/worker-permissions.js';
+import { claimPermissionNotice, parsePermissionPrompt, permissionStatus } from '../../dist/mcp/worker-permissions.js';
 import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -182,6 +182,12 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
   await wait(() => herdr.keys.length === 2 && permissionStatus(dir).active?.outcome === 'answered');
   assert.notEqual(permissionStatus(dir).active.id, approved.id);
   await unblocked();
+  let notice = '';
+  const stream = spawn(process.execPath, [resolve('bin/hud'), 'watch'], { cwd: dirname(f.home), env, stdio: ['ignore', 'pipe', 'ignore'] });
+  const streamExit = once(stream, 'exit');
+  stream.stdout.on('data', chunk => { notice += chunk.toString('utf8'); });
+  t.after(() => stopChild(stream, streamExit));
+  await wait(() => fs.existsSync(join(f.home, 'watchers', `${main}.pid`)));
   herdr.update('blocked', prompt('git push'));
   await wait(() => permissionStatus(dir).active?.action === 'main');
   const pending = permissionStatus(dir).active;
@@ -194,12 +200,9 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
   assert.equal(card().permissionWaitingMain, true);
   assert.match(machineWorkForms(collectWorkSummary(f.home).global, Date.now())[0], /Main 1/);
 
-  let notice = '';
-  const stream = new AbortController();
-  const streamDone = watchCommand([], { env, stdout: (line) => { notice += line; }, stderr: () => {} }, { signal: stream.signal });
-  t.after(() => { stream.abort(); return streamDone; });
   await wait(() => notice.includes('git push') && notice.includes(pending.id));
   assert.equal(notice.split(pending.id).length - 1, 2); // One notice, one action per supported option.
+  assert.equal(herdr.prompts.length, 0, 'live hud watch suppresses duplicate direct permission delivery');
 
   const mcp = spawn(process.execPath, [mcpEntry], { cwd: dirname(f.home), env, stdio: ['pipe', 'pipe', 'ignore'] });
   const mcpExit = once(mcp, 'exit');
@@ -907,4 +910,146 @@ test('direct manual-permission handoff retries confirmed refusal and never repea
   herdr.promptMode('ok');
   await new Promise(r => setTimeout(r, 700));
   assert.equal(herdr.prompts.filter(p => p.text.includes(secondEntry.id)).length, 1, 'indeterminate manual handoff must never repeat');
+});
+
+test('watcher permission hand-off uses durable per-entry claim across refusal/expiry and prunes .noticed markers with 12-entry ledger', { timeout: 25_000 }, async t => {
+  // Part 1: hud watch --queue uses durable per-entry .noticed claim so a refused or expired guarded retry redelivers once (even after prev advanced).
+  const f = fixture(t);
+  const root = join(dirname(f.home), 'perm-watch-project');
+  const bin = join(f.home, 'perm-watch-bin');
+  const socketPath = join(dirname(f.home), 'perm-watch.sock');
+  fs.mkdirSync(root, { recursive: true });
+  fs.mkdirSync(bin, { recursive: true });
+  const fake = `#!${process.execPath}
+const args = process.argv.slice(2);
+if (args[0] === 'pane' && args[1] === 'get') {
+  console.log(JSON.stringify({ result: { pane: { agent: 'codex', agent_status: 'idle', agent_session: { value: '00000000-0000-4000-8000-000000000008' } } } }));
+} else if (args[0] === 'pane' && args[1] === 'process-info') {
+  console.log(JSON.stringify({ result: { process_info: { foreground_processes: [{ name: 'codex', pid: ${process.pid} }] } } }));
+} else if (args[0] === 'queue') {
+  console.error('no rollout found');
+  process.exit(1);
+}
+`;
+  for (const name of ['herdr', 'codex']) fs.writeFileSync(join(bin, name), fake, { mode: 0o700 });
+
+  let mode = 'draft_present';
+  let subscription;
+  const attempts = [];
+  const delivered = [];
+  const sockets = new Set();
+  const server = createServer((socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+    socket.on('error', () => {});
+    const lines = createInterface({ input: socket });
+    lines.on('error', () => {});
+    lines.on('line', (line) => {
+      const { id, method, params } = JSON.parse(line);
+      if (method === 'ping') { socket.write(JSON.stringify({ id, result: { type: 'pong', capabilities: { guarded_prompt: true } } }) + '\n'); return; }
+      if (method === 'events.subscribe') { subscription = socket; socket.write(JSON.stringify({ id, result: { type: 'subscription_started' } }) + '\n'); return; }
+      if (method === 'agent.prompt') {
+        attempts.push(params.text);
+        if (mode === 'draft_present' || mode === 'agent_not_ready') {
+          socket.write(JSON.stringify({ id, error: { code: mode } }) + '\n');
+          return;
+        }
+        if (mode === 'indeterminate') { socket.end(); return; }
+        delivered.push(params.text);
+        socket.write(JSON.stringify({ id, result: { type: 'agent_prompted' } }) + '\n');
+      }
+    });
+  });
+  server.listen(socketPath);
+  await once(server, 'listening');
+  t.after(async () => {
+    for (const socket of sockets) socket.destroy();
+    server.close();
+    await once(server, 'close');
+  });
+
+  const jobId = 'j00000000000008a1';
+  const permId = 'perm-00000000000008a1';
+  const dir = join(f.home, 'jobs', jobId);
+  fs.mkdirSync(dir, { recursive: true });
+  const nowIso = new Date().toISOString();
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({
+    job: jobId, role: 'imp', cwd: root, caller_pane: main, created_at: nowIso, cli: { agent: 'claude' },
+  }));
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'blocked', blocked: true, blocked_at: nowIso, updated_at: nowIso }));
+  writeFixtureFile(join(dir, 'permissions.json'), JSON.stringify({
+    active: permId,
+    entries: [{
+      id: permId, key: 'k1', launch: 'l1', pane, at: nowIso, text: 'Bash command\ngit push',
+      action: 'main', reason: 'Risky push requires main.',
+      options: [{ label: 'Yes', value: 'approve' }, { label: 'No', value: 'decline' }],
+      selected: 0, outcome: 'pending',
+    }],
+  }));
+
+  const env = { ...process.env, HOME: join(dirname(f.home), 'home'), HUD_HOME: f.home, HERDR_PANE_ID: main, HERDR_SOCKET_PATH: socketPath, PATH: `${bin}:${process.env.PATH}` };
+  const prevCwd = process.cwd();
+  process.chdir(root);
+  t.after(() => process.chdir(prevCwd));
+
+  const realNow = performance.now.bind(performance);
+  let advance = 0;
+  t.mock.method(performance, 'now', () => realNow() + advance);
+
+  const marker = join(dir, `${permId}.noticed`);
+  const ac = new AbortController();
+  t.after(() => ac.abort());
+  const running = watchCommand(['--queue'], { env, stdout: s => assert.fail(s), stderr: () => {} }, { signal: ac.signal, rescanMs: 80 });
+
+  // 1. Guarded refusal (draft_present) holds the claim while retrying; expiry releases it so a later pass redelivers once.
+  await until(() => Boolean(subscription) && attempts.length >= 1, 8_000);
+  assert.equal(fs.existsSync(marker), true, 'marker is claimed while guarded retry is pending');
+  assert.equal(delivered.length, 0);
+
+  const sub = subscription;
+  advance += 10 * 60_000;
+  sub.write(JSON.stringify({ event: 'pane.scroll_changed', data: { pane_id: main } }) + '\n');
+  await until(() => sub.destroyed, 8_000);
+  assert.equal(fs.existsSync(marker), false, 'expired guarded retry must release permission .noticed marker');
+
+  // 2. Confirmed non-send refusal (agent_not_ready) releases the claim and redelivers once prompt becomes ready.
+  mode = 'agent_not_ready';
+  const beforeRefusal = attempts.length;
+  await until(() => attempts.length > beforeRefusal, 8_000);
+  await until(() => !fs.existsSync(marker), 4_000);
+
+  mode = 'ok';
+  await until(() => delivered.length === 1, 8_000);
+  assert.match(delivered[0], new RegExp(`${jobId}.*${permId}`));
+  assert.equal(fs.existsSync(marker), true, 'delivered permission notice keeps its claim');
+  await new Promise(r => setTimeout(r, 250));
+  assert.equal(delivered.length, 1, 'delivered permission notice must not repeat');
+  ac.abort();
+  assert.equal(await running, 0);
+
+  // Part 2: .noticed markers are pruned as older entries roll off the 12-entry permissions.json ledger.
+  const { herdr, dir: permDir, unblocked, startWatch } = await permissionWorker(t);
+  herdr.update('blocked', prompt('git push origin b0'));
+  startWatch();
+  const seenIds = [];
+  for (let i = 0; i < 14; i++) {
+    if (i > 0) herdr.update('blocked', prompt(`git push origin b${i}`));
+    await until(() => {
+      const active = permissionStatus(permDir).active;
+      return active?.action === 'main' && !seenIds.includes(active.id);
+    }, i === 0 ? 5_000 : 3_000);
+    const entry = permissionStatus(permDir).active;
+    seenIds.push(entry.id);
+    // Ensure each entry has a .noticed file on disk (claimed either by watch-runtime or directly).
+    claimPermissionNotice(permDir, entry);
+    assert.equal(fs.existsSync(join(permDir, `${entry.id}.noticed`)), true);
+    await unblocked();
+  }
+  const ledger = JSON.parse(fs.readFileSync(join(permDir, 'permissions.json'), 'utf8'));
+  assert.equal(ledger.entries.length, 12, 'ledger stays bounded to 12 entries');
+  const noticedFiles = fs.readdirSync(permDir).filter(name => /^perm-[a-f0-9]{16}\.noticed$/.test(name));
+  assert.ok(noticedFiles.length <= 12, `expected <= 12 .noticed markers, got ${noticedFiles.length}`);
+  assert.equal(fs.existsSync(join(permDir, `${seenIds[0]}.noticed`)), false, 'evicted entry 0 marker was pruned');
+  assert.equal(fs.existsSync(join(permDir, `${seenIds[1]}.noticed`)), false, 'evicted entry 1 marker was pruned');
+  assert.equal(fs.existsSync(join(permDir, `${seenIds.at(-1)}.noticed`)), true, 'latest entry marker kept');
 });

@@ -15,7 +15,7 @@ import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { reportMainPaneGroup } from '../runtime/pane-group.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
-import { permissionNotice } from '../mcp/worker-permissions.js';
+import { claimPermissionNotice, permissionNotice, permissionNoticeable, permissionNoticeMarker } from '../mcp/worker-permissions.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 import { bandReader } from './watch-band.js';
@@ -55,6 +55,20 @@ const isBrokenPipe = (error: unknown): boolean => {
 };
 
 const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(row.state ?? '');
+function permissionNoticeEvents(home: string, rows: readonly WatchJobRow[], all = false): { line: string; marker: string }[] {
+  const claimed: { line: string; marker: string }[] = [];
+  for (const row of rows) {
+    if (!row.permission) continue;
+    const marker = claimPermissionNotice(join(home, 'jobs', row.job), row.permission, all);
+    if (!marker) continue;
+    claimed.push({ line: permissionNotice(row.job, row.permission).replace(/[\x00-\x1f\x7f-\x9f]/g, ' '), marker });
+  }
+  return claimed;
+}
+function hasUnclaimedPermissionNotice(home: string, rows: readonly WatchJobRow[], all = false): boolean {
+  return rows.some((row) => permissionNoticeable(row.permission) &&
+    !fs.existsSync(permissionNoticeMarker(join(home, 'jobs', row.job), row.permission.id, all)));
+}
 // A numeric catch-up value is the Claude mod's cutoff for individual report notices.
 function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: WatchJobRow[], catchup: boolean | number = false, lastScanAt = -Infinity): Notice[] {
   let olderReports = 0, olderFailures = 0;
@@ -66,9 +80,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
   };
   const notices = rows.flatMap<Notice>((row) => {
     const old = prev.get(row.job);
-    if (row.permission && (row.permission.id !== old?.permission?.id || row.permission.outcome !== old.permission.outcome))
-      return [{ line: permissionNotice(row.job, row.permission) }];
-    if (row.ticket_queue) return [];
+    if (row.permission || row.ticket_queue) return [];
     const questions = row.question_ids.filter((id) => !old?.question_ids.includes(id)).map((id) => {
           const file = join(home, 'jobs', row.job, 'qa', `${id}.md`);
           const buffer = Buffer.alloc(2048);
@@ -256,8 +268,9 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     finally { scanning = false; }
     if (stopped) return;
     const flows = workflowEvents(home, pane, false, cwd);
+    const perms = permissionNoticeEvents(home, rows, false);
     const { events, progress } = notices.select(home, prev, rows, first, lastScanAt);
-    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd, pane), ...flows.lines, ...progress]);
+    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd, pane), ...flows.lines, ...perms.map((e) => e.line), ...progress]);
     first = false;
     lastScanAt = scanAt;
     prev = new Map(rows.map((row) => [row.job, row]));
@@ -265,7 +278,7 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     if (lines.length) {
       try { deliver(lines); }
       catch (error) {
-        for (const { marker } of flows.events) fs.rmSync(marker, { force: true });
+        for (const { marker } of [...flows.events, ...perms]) fs.rmSync(marker, { force: true });
         throw error;
       }
     }
@@ -469,18 +482,20 @@ export async function watchCommand(
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const modCatchup = first && freshMod;
       const flows = workflowEvents(home, callerPane, all, process.cwd(), modCatchup);
+      const perms = verbose && !first ? [] : permissionNoticeEvents(home, rows, all);
       trackFlowEvents(flows.events);
+      trackFlowEvents(perms);
       const trySize = modHandshake ? fs.lstatSync(join(home, TRIES_FILE), { throwIfNoEntry: false })?.size ?? 0 : 0;
       const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
         ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;
       const { events, progress } = notices.select(home, prev, rows, first && mod ? modCutoff : first, lastScanAt, verbose);
-      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd(), callerPane ?? undefined), ...flows.lines, ...(modCatchup ? [] : progress)];
+      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd(), callerPane ?? undefined), ...flows.lines, ...perms.map((e) => e.line), ...(modCatchup ? [] : progress)];
       // Release the mod's first HUD call only after capturing its pre-call baseline.
       if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
       const band = readBand && await readBand(scanAt);
       if (band) await io.stdout(JSON.stringify(band) + '\n');
       if (queue || mod) {
-        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || typedPending !== undefined || Number.isFinite(flowRetryAt) || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread && (!row.auto_land || Boolean(row.auto_land_blocked))) || row.checks?.state === 'running')))) ||
+        const pending = (mod && events.length > 0) || flows.pending || hasUnclaimedPermissionNotice(home, rows, all) || agyPending || agyBacklog.length > 0 || typedPending !== undefined || Number.isFinite(flowRetryAt) || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread && (!row.auto_land || Boolean(row.auto_land_blocked))) || row.checks?.state === 'running')))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
@@ -524,7 +539,12 @@ export async function watchCommand(
       if (typedPending) {
         if (performance.now() >= typedPending.until) {
           recordPromptExpiry(home);
-          releaseMarkers(typedPending.markers);
+          const released = typedPending.markers;
+          releaseMarkers(released);
+          if (released.length) {
+            idleSince = null;
+            flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
+          }
           typedPending = undefined;
           noPendingPrompt();
         } else {

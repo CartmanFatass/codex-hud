@@ -425,7 +425,10 @@ export async function answerTicketQueueHandback(
       return { ok: false, code: 'invalid_choice', error: `${questionReply(question.job, question.question)}; do not resume the queue directly` };
     }
     const step = cur.handback?.step;
-    if (cur.state !== 'paused' || !step || !cur.handback?.choices?.length || cur.steps?.[step]?.state !== 'asking') {
+    const stepState = step ? cur.steps?.[step]?.state : undefined;
+    const stepAnswerable = stepState === 'asking' ||
+      (!cur.unattended && cur.handback?.kind === 'escalate' && stepState === 'failed');
+    if (cur.state !== 'paused' || !step || !cur.handback?.choices?.length || cur.handback.choices.includes('manual') || !stepAnswerable) {
       const detail = cur.state === 'paused' && cur.handback?.kind ? `paused for ${cur.handback.kind}` : `state: ${cur.state}`;
       return { ok: false, code: 'no_pending_handback', error: `Ticket queue ${id} has no pending hand-back (${detail})` };
     }

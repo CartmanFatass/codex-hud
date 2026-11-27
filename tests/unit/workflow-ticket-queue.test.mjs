@@ -1329,3 +1329,118 @@ test('unattended run holds with ticket ID when acceptance receipt cannot be pers
   assert.match(held.tickets[0].held?.reason ?? '', /acceptance receipt could not be persisted/);
   assert.equal(readJsonTicketFeature(f.root, 'sample').tickets[0].accepted, undefined);
 });
+
+test('pane-less successor after dead origin still publishes permission hand-off to project main outbox', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, {
+    tickets: {
+      '01-first.md': goodTicket(1),
+      '02-second.md': goodTicket(2, { blocked: '01' }),
+    },
+  });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
+  const [job1] = await f.jobs(flow, 1);
+
+  // Stop the originating MCP so directRecipient(q) becomes false while historical q.pane remains non-empty.
+  await f.stopMcp();
+  assert.ok(f.flow(flow).pane, 'historical q.pane stays recorded');
+
+  // Settle ticket 01 -> runner dispatches ticket 02 without a live pane (pane-less successor).
+  await f.settle(job1);
+  const [, job2] = await f.jobs(flow, 2);
+  assert.equal(f.job(job2).caller_pane, undefined, 'successor dispatched after origin death is pane-less');
+
+  // Successor blocks on a native permission prompt handed to main.
+  const permId = 'perm-00000000000009a1';
+  const at = new Date().toISOString();
+  writeFixtureFile(join(f.dir(job2), 'STATUS.json'), JSON.stringify({ state: 'blocked', blocked: true, blocked_at: at, updated_at: at }));
+  writeFixtureFile(join(f.dir(job2), 'permissions.json'), JSON.stringify({
+    active: permId,
+    entries: [{
+      id: permId, key: 'k9', launch: 'l9', pane: 'w1:p9', at, text: 'Bash command\ngit push',
+      action: 'main', reason: 'Push requires main.',
+      options: [{ label: 'Yes', value: 'approve' }, { label: 'No', value: 'decline' }],
+      selected: 0, outcome: 'pending',
+    }],
+  }));
+
+  await until(() => Boolean(f.flow(flow).notices?.[`handback-${permId}`]), 15_000);
+  const notice = f.flow(flow).notices[`handback-${permId}`];
+  assert.match(notice, new RegExp(`${job2}.*Open pane w1:p9`));
+
+  // Project main (different pane in the same project) claims the permission hand-off once.
+  const otherEvents = workflowEvents(f.home, 'w9:p9', false, f.root);
+  assert.ok(otherEvents.lines.some(line => line.includes(job2) && line.includes('Open pane w1:p9')));
+  assert.deepEqual(workflowEvents(f.home, 'w9:p9', false, f.root).lines, []);
+});
+
+test('rewritten report after settlement cannot wait forever in judgeSettlement or ticket queue', { timeout: 45_000 }, async t => {
+  // 1. Rewriting report.md after CLI settlement fails triage promptly instead of waiting forever.
+  const f = await setupWorkflowProject(t, { tickets: { '01-rewrite.md': goodTicket(1) } });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
+  const [jobId] = await f.jobs(flow, 1);
+
+  const dir = f.dir(jobId);
+  const jobReceipt = f.job(jobId);
+  const wt = jobReceipt.worktree.root;
+  writeFixtureFile(join(wt, 'work.txt'), 'synthetic work\n');
+  f.git(wt, 'add', 'work.txt');
+  f.git(wt, 'commit', '-qm', 'synthetic commit');
+  const sentAt = new Date(Date.now() - 2_000).toISOString();
+  const settledAt = new Date().toISOString();
+  const turn = { seq: 1, sent_at: sentAt, report_sig: null };
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...jobReceipt, cli: { agent: 'claude' } }));
+  writeFixtureFile(join(dir, 'turn.json'), JSON.stringify(turn));
+  writeFixtureFile(join(dir, 'report.md'), 'Initial settled report.\nBlockers: none\nRemoves: none\n');
+  const origSig = reportSignature(dir);
+  writeFixtureFile(join(dir, 'done.json'), JSON.stringify({ seq: turn.seq, sent_at: turn.sent_at, report_sig: origSig, at: settledAt }));
+  // Rewrite report.md after done.json was recorded so its bytes differ from done.report_sig.
+  writeFixtureFile(join(dir, 'report.md'), 'Rewritten after settlement without a fresh declaration.\nBlockers: none\nRemoves: none\n');
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: settledAt, ended_at: settledAt }));
+
+  const ended = await f.end(flow);
+  assert.equal(ended.state, 'failed');
+  assert.match(ended.reason ?? '', /settled without a declared report/);
+
+  // 2. Even if report.md drifts right between declaredReport and readFileBounded on every check, judgeSettlement hits its retry bound and fails.
+  const out = execFileSync(process.execPath, [
+    '--input-type=module', '-e',
+    `import assert from 'node:assert/strict';
+     import fs from 'node:fs';
+     import { syncBuiltinESMExports } from 'node:module';
+     import { join } from 'node:path';
+     import { judgeSettlement, REPORT_SIG_RETRY_LIMIT } from './dist/mcp/ticket-queue-step.js';
+     import { cachedReportSignature } from './dist/roles/report-meta.js';
+     const dir = ${JSON.stringify(dir)};
+     const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
+     const status = JSON.parse(fs.readFileSync(join(dir, 'STATUS.json'), 'utf8'));
+     const turn = JSON.parse(fs.readFileSync(join(dir, 'turn.json'), 'utf8'));
+     const item = { ticket: 'sample/01', path: ${JSON.stringify(join(f.root, f.ticketPath(1)))}, role: 'imp', job: job.job };
+     const reportPath = join(dir, 'report.md');
+     const origOpen = fs.openSync;
+     let n = 0, rewriting = false, armDrift = false;
+     fs.openSync = function(p, ...rest) {
+       if (armDrift && p === reportPath && !rewriting) {
+         rewriting = true;
+         try {
+           n++;
+           fs.writeFileSync(reportPath, 'drifting report #' + n + '\\nBlockers: none\\nRemoves: none\\n');
+         } finally { rewriting = false; }
+       }
+       return origOpen.call(this, p, ...rest);
+     };
+     syncBuiltinESMExports();
+     const tracker = new Map();
+     const verdicts = [];
+     for (let i = 0; i < REPORT_SIG_RETRY_LIMIT + 1; i++) {
+       armDrift = false;
+       const sig = cachedReportSignature(dir);
+       fs.writeFileSync(join(dir, 'done.json'), JSON.stringify({ seq: turn.seq, sent_at: turn.sent_at, report_sig: sig, at: status.settled_at }));
+       armDrift = true;
+       verdicts.push(judgeSettlement(${JSON.stringify(f.root)}, item, job, job, status, false, tracker));
+     }
+     for (let i = 0; i < REPORT_SIG_RETRY_LIMIT; i++) assert.ok('waitMs' in verdicts[i], 'attempt ' + i + ' waits');
+     assert.equal(verdicts[REPORT_SIG_RETRY_LIMIT].kind, 'worker');
+     assert.match(verdicts[REPORT_SIG_RETRY_LIMIT].reason, /report changed after settlement/);`,
+  ], { env: { ...process.env, HUD_HOME: f.home }, encoding: 'utf8' });
+  assert.equal(out, '');
+});

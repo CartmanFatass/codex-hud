@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, openSync, rmSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { hasLocalHerdrTarget, request } from '../runtime/herdr-socket.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
-import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { readDirSafe, readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { isProcAlive, readProcCwd, readProcEnviron } from '../utils/proc.js';
 import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
 import type { Job, JobStatus } from './job-contracts.js';
@@ -246,9 +246,20 @@ function ledger(dir: string, strict = false): Ledger {
     return { entries: [] };
   }
 }
+const PERMISSION_NOTICE_MARKER = /^(perm-[a-f0-9]{16})\.(?:noticed|observed)$/;
+function prunePermissionNoticeMarkers(dir: string, state: Ledger) {
+  const kept = new Set(state.entries.map(entry => entry.id));
+  try {
+    for (const file of readDirSafe(dir)) {
+      const match = PERMISSION_NOTICE_MARKER.exec(file);
+      if (match && !kept.has(match[1])) rmSync(join(dir, file), { force: true });
+    }
+  } catch { /* Best-effort marker cleanup must not fail ledger writes. */ }
+}
 function save(dir: string, state: Ledger) {
   while (state.entries.length > 1 && Buffer.byteLength(JSON.stringify(state)) >= MAX_LEDGER_BYTES) state.entries.shift();
   writeJsonPrivate(join(dir, jobFiles.permissions), state, { mkdir: false });
+  prunePermissionNoticeMarkers(dir, state);
 }
 const current = (state: Ledger) => state.entries.at(-1)?.id === state.active ? state.entries.at(-1) : undefined;
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -287,6 +298,29 @@ export function permissionRecheckMs(
   const resolvedAt = latest?.resolved_at && !permissionPredatesBlock(latest, blockAt) ? Date.parse(latest.resolved_at) : -Infinity;
   const left = Math.max(blockAt, resolvedAt) + PERMISSION_GRACE_MS - Date.now();
   return left > 0 ? Math.min(left, recheckCapMs) : 0;
+}
+
+export function permissionNoticeable(entry: PermissionEntry | undefined): entry is PermissionEntry {
+  return !!entry && PERMISSION_ID.test(entry.id) &&
+    (entry.outcome === 'uncertain' || (entry.action === 'main' && entry.outcome === 'pending'));
+}
+
+export const permissionNoticeMarker = (dir: string, id: string, all = false) =>
+  join(dir, `${id}.${all ? 'observed' : 'noticed'}`);
+
+export function claimPermissionNotice(dir: string, entry: PermissionEntry, all = false): string | null {
+  if (!permissionNoticeable(entry)) return null;
+  const marker = permissionNoticeMarker(dir, entry.id, all);
+  if (existsSync(marker)) return null;
+  try { closeSync(openSync(marker, 'wx', 0o600)); return marker; }
+  catch (e) {
+    if (['EEXIST', 'ENOENT'].includes((e as NodeJS.ErrnoException).code ?? '')) return null;
+    throw e;
+  }
+}
+
+export function releasePermissionNotice(marker: string) {
+  rmSync(marker, { force: true });
 }
 
 export function permissionNotice(job: string, entry: PermissionEntry) {

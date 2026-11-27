@@ -323,8 +323,9 @@ export function openRuntime() {
             const flow = flowReceipt(id);
             if (!flow) continue;
             const queueTask = 'wt' in flow ? null : readQueueTask(hudHome, id);
-            const expiresAt = queueTask?.expires ?? (Date.parse(flow.created_at) + TASK_TTL);
-            if (expiresAt > Date.now()) saveTaskReceipt({ id, expiresAt, ...(!('wt' in flow) && { epoch: flow.epoch ?? 0 }) });
+            const ownQueueTask = queueTask?.pid === process.pid ? queueTask : null;
+            const expiresAt = ownQueueTask?.expires ?? (Date.parse(flow.created_at) + TASK_TTL);
+            if (expiresAt > Date.now()) saveTaskReceipt({ id, expiresAt, ...(!('wt' in flow) && { epoch: ownQueueTask?.epoch ?? (flow.epoch ?? 0) }) });
           } catch { /* A broken flow receipt must not prevent reload. */ }
         }
         resumeTaskReceipts();

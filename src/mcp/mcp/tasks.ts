@@ -66,15 +66,19 @@ export function persistTask(task: HudTask) {
   if (!tasks.has(task.id) || task.expiresAt === undefined) return;
   saveTaskReceipt({ ...task, expiresAt: task.expiresAt, seenQuestions: [...task.seenQuestions] });
 }
-export function loadTaskReceipt(id: string): TaskReceipt | JobTaskReceipt | undefined {
+function readRawTaskReceipt(id: string): TaskReceipt | JobTaskReceipt | undefined {
   if (!jobTaskId.test(id) && !flowId(id)) return;
   try {
     const receipt = readJsonBounded(taskFile(id), 1024 * 1024) as TaskReceipt | JobTaskReceipt;
-    if (receipt.id !== id || !Number.isFinite(receipt.expiresAt) || receipt.expiresAt <= Date.now()) return;
+    if (receipt.id !== id || !Number.isFinite(receipt.expiresAt)) return;
     if (jobTaskId.test(id) && (!('job' in receipt) || receipt.job !== id.split(':')[0] ||
       typeof receipt.createdAt !== 'string' || !Array.isArray(receipt.seenQuestions) || !receipt.view)) return;
     return receipt;
   } catch { /* Missing, damaged or unreadable receipts are unknown tasks. */ }
+}
+export function loadTaskReceipt(id: string): TaskReceipt | JobTaskReceipt | undefined {
+  const receipt = readRawTaskReceipt(id);
+  return receipt && receipt.expiresAt > Date.now() ? receipt : undefined;
 }
 let taskSweep: NodeJS.Timeout | undefined;
 function sweepTaskReceipts(): string[] {
@@ -441,28 +445,41 @@ function unknownTask(taskId: string) {
 export async function taskRequest(taskId: string, cancel: boolean,
   closeJob: (job: Job, stop: boolean) => Promise<{ exit_code: number; last_line: string }>) {
   if (flowId(taskId)) {
+    const now = Date.now();
     const live = landTasks.has(taskId);
-    const receipt = loadTaskReceipt(taskId);
-    if (!live && (cancel || !receipt)) return unknownTask(taskId);
+    const receipt = readRawTaskReceipt(taskId);
+    if (!live && (cancel || !receipt || receipt.expiresAt <= now)) return unknownTask(taskId);
     const flow = flowReceipt(taskId);
     if (!flow) {
       landTasks.delete(taskId);
       return unknownTask(taskId);
     }
     if ('wt' in flow) {
-      if (Date.parse(flow.created_at) + TASK_TTL <= Date.now()) {
+      const expiresAt = receipt?.expiresAt ?? (Date.parse(flow.created_at) + TASK_TTL);
+      if (expiresAt <= now) {
         landTasks.delete(taskId);
         return unknownTask(taskId);
       }
       if (live) { landTasks.delete(taskId); landTasks.add(taskId); }
       return landTask(hudHome, flow, cancel);
     }
+    const flowEpoch = flow.epoch ?? 0;
     const marker = readQueueTask(hudHome, taskId);
-    const taskEpoch = marker?.epoch ?? receipt?.epoch;
-    const expiresAt = marker?.expires ?? receipt?.expiresAt ?? (Date.parse(flow.created_at) + TASK_TTL);
-    if ((!marker && !receipt) || expiresAt <= Date.now() || (taskEpoch !== undefined && taskEpoch !== (flow.epoch ?? 0))) {
-      landTasks.delete(taskId);
-      return unknownTask(taskId);
+    let expiresAt: number;
+    if (receipt) {
+      if (receipt.expiresAt <= now || (receipt.epoch ?? 0) !== flowEpoch) {
+        landTasks.delete(taskId);
+        return unknownTask(taskId);
+      }
+      expiresAt = receipt.expiresAt;
+    } else {
+      const ownStart = procStat(process.pid)?.start;
+      if (!live || !marker || marker.expires <= now || marker.epoch !== flowEpoch ||
+          marker.pid !== process.pid || !ownStart || marker.start !== ownStart) {
+        landTasks.delete(taskId);
+        return unknownTask(taskId);
+      }
+      expiresAt = marker.expires;
     }
     if (flow.state === 'working' && !cancel && !live && receipt) claimQueueTask(hudHome, flow, expiresAt);
     if (live) { landTasks.delete(taskId); landTasks.add(taskId); }
