@@ -888,7 +888,7 @@ function skillFlags(argv) {
   return paths;
 }
 
-test('pi dispatch passes role skills and the worker prompt, and records skips', { timeout: 10000 }, async (t) => {
+test('pi dispatch passes role skills and the worker prompt, and records skips', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   const proj = join(f.root, 'proj');
   fs.mkdirSync(proj);

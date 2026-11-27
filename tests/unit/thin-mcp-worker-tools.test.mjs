@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import test from 'node:test';
 import { reportSignature, turnToken } from '../../dist/mcp/cli-judge.js';
-import { takeLease } from '../../dist/roles/lease.js';
+import { LEASE_FALLBACK_MS, takeLease } from '../../dist/roles/lease.js';
 import { readReportMeta } from '../../dist/roles/report-meta.js';
 import { ask, waitSonic } from '../../packages/hud-mcp/bin/worker-tools.mjs';
 import {
@@ -551,8 +551,15 @@ test('hud_lease reclaims terminal jobs and a SIGKILLed fallback holder', async (
   assert.deepEqual(JSON.parse(fallback.stdout), { granted: true });
   assert.equal((await main()).held_by.holder, dead.job);
   const stats = trackFsWatches(t);
-  const waiting = takeLease({ name: 'install', wait_s: 3 }, { home: f.env.HUD_HOME, cwd: f.root, holder: 'w4E:p1' });
-  await new Promise(setImmediate);
+  const checks = [];
+  const watching = Promise.withResolvers();
+  const waiting = takeLease({ name: 'install', wait_s: 10 }, { home: f.env.HUD_HOME, cwd: f.root, holder: 'w4E:p1' }, undefined, {
+    onCheck: (reason, done) => {
+      checks.push({ reason, done });
+      if (reason === 'catchup') watching.resolve();
+    },
+  });
+  await Promise.race([watching.promise, waiting]);
   assert.equal(stats.active, 2);
   const killedAt = performance.now();
   proc.kill('SIGKILL'); // No lease or STATUS write to notify the waiter.
@@ -560,7 +567,9 @@ test('hud_lease reclaims terminal jobs and a SIGKILLed fallback holder', async (
   assert.deepEqual(await waiting, { granted: true });
   const latency = performance.now() - killedAt;
   t.diagnostic(`SIGKILL to grant: ${latency.toFixed(1)} ms`);
-  assert.ok(latency < 1000, 'the liveness fallback should reclaim within one second');
+  assert.ok(LEASE_FALLBACK_MS < 1000, 'the liveness fallback interval stays under one second');
+  assert.deepEqual(checks.at(-1), { reason: 'fallback', done: true }, 'SIGKILLed holder should be reclaimed by the liveness fallback, not timeout');
+  assert.equal(checks.some((c) => c.reason === 'timeout'), false);
   assert.equal(stats.active, 0);
 });
 

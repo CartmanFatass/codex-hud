@@ -1430,13 +1430,14 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
     job.launch_unknown = failure!.reason || reason || 'launch state unknown';
     if (!job.dispatch_code) job.dispatch_code = 'launch_unknown';
   }
+  let failedStatus: JobStatus | undefined;
   if (failure && (result.preInput || launchUnknown || !fs.existsSync(statusFile))) {
     const outcome = recordFailureExhaustion(hudHome, bundled, dir, job, reason);
     if (outcome.marked) {
       job.exhaustion_marked = true;
       jobCache.invalidateFile(join(dir, jobFiles.job));
     }
-    writeCreateStatus(dir, {
+    failedStatus = {
       ...result.status,
       state: 'failed',
       harness: job.place?.harness,
@@ -1445,9 +1446,11 @@ function finishLaunch(job: Job, dir: string, result: DispatchResult, reason: str
       error: outcome.reason,
       ...(launchUnknown ? { launch_unknown: job.launch_unknown } : {}),
       ended_at: new Date().toISOString(),
-    });
+    };
   }
+  // Persist final dispatch facts before publishing terminal STATUS so watchers reading STATUS never clobber job.json.
   save(job);
+  if (failedStatus) writeCreateStatus(dir, failedStatus);
   publishWorkSummary();
   if (!advanceCursor) return undefined;
   const { row } = readRow(job);

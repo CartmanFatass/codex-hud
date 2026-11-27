@@ -164,7 +164,8 @@ export async function stopChild(child, exited, { closeStdin = false, graceMs = 1
  * Reap every process belonging to a temporary fixture (SIGTERM -> grace -> SIGKILL).
  * Returns any processes still alive after the kill deadline (empty on success).
  */
-export async function reapFixtureProcesses({ root, hudHome, graceMs = 500, killTimeoutMs = 2000 } = {}) {
+// Allow a SIGKILLed process blocked in uninterruptible kernel I/O (`D`) under parallel load to exit.
+export async function reapFixtureProcesses({ root, hudHome, graceMs = 500, killTimeoutMs = 10000 } = {}) {
   let procs = findFixtureProcesses({ root, hudHome });
   if (!procs.length) return [];
 

@@ -882,7 +882,7 @@ function scan(retryWatch = false) {
       } catch (error) { warn(`keep ${id} scan`, `keep ${id} scan: ${(error as Error).message}`); }
       const jobFile = join(dir, jobFiles.job), statusFile = join(dir, jobFiles.status);
       let job: Job | null, status: Partial<JobStatus> | null, statusAt: number | null, session: SessionEntry | null;
-      try { job = readJson<Job>(jobFile); ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile)); session = jobCache.readSession(id, { throwOnError: true }); }
+      try { ({ value: status, at: statusAt } = readJsonEntry<JobStatus>(statusFile)); job = readJson<Job>(jobFile); session = jobCache.readSession(id, { throwOnError: true }); }
       // Unreadable lifecycle or tab evidence may still belong to an open job.
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') open = true; throw error; }
       if (job?.worktree?.root) {
@@ -1163,18 +1163,28 @@ function scan(retryWatch = false) {
       const resumeReadReap = retry?.readClose && (closedForLaunch || workerTreeRootGone(status.pid ?? directRoot?.pid, status.pid_start_time ?? directRoot?.start));
       if (job && ['idle_grace', 'done', 'closed', 'failed', 'stopped'].includes(status.state ?? ''))
         recordJobUsage(dir, job, status);
-      if (job && shouldCheckSonicCitations(job, status)) {
+      const launchSettled = !job || job.dispatch_exit_code !== null ||
+        !(job.launcher && isProcAlive(job.launcher.pid, job.launcher.start));
+      if (!launchSettled) open = true;
+      if (job && launchSettled && shouldCheckSonicCitations(job, status)) {
         const citations = checkSonicReportCitations(dir, job);
         if (citations) {
-          job = { ...job, citations };
-          try { writeJsonAtomic(jobFile, job, 2); }
-          catch (error) { warn(`citations ${id}`, `record citations ${id}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
+          const latest = readJson<Job>(jobFile);
+          if (latest && (latest.dispatch_exit_code !== null || !(latest.launcher && isProcAlive(latest.launcher.pid, latest.launcher.start)))) {
+            job = { ...latest, citations };
+            try { writeJsonAtomic(jobFile, job, 2); }
+            catch (error) { warn(`citations ${id}`, `record citations ${id}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
+          }
         }
       }
-      if (job && shouldRecordSonicReads(job, status)) {
-        job = { ...job, ...collectSonicReadFacts(dir, job, status) };
-        try { writeJsonAtomic(jobFile, job, 2); }
-        catch (error) { warn(`reads ${id}`, `record reads ${id}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
+      if (job && launchSettled && shouldRecordSonicReads(job, status)) {
+        const reads = collectSonicReadFacts(dir, job, status);
+        const latest = readJson<Job>(jobFile);
+        if (latest && (latest.dispatch_exit_code !== null || !(latest.launcher && isProcAlive(latest.launcher.pid, latest.launcher.start)))) {
+          job = { ...latest, ...reads };
+          try { writeJsonAtomic(jobFile, job, 2); }
+          catch (error) { warn(`reads ${id}`, `record reads ${id}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
+        }
       }
       if (!inFlightAutoLands.has(id) && !land && !checkingReport && shouldEvaluateAutoLandFlakeJob(job, status, land, dir)) {
         startAutoLand(id);

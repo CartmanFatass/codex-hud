@@ -574,6 +574,182 @@
       "comments": [],
       "created_at": "2026-11-27T08:53:12.874Z",
       "updated_at": "2026-11-27T09:41:15.502Z"
+    },
+    {
+      "number": 41,
+      "title": "Flake auto-land authority comes only from the collector's flag, and a settled flake never loops",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/30"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review jbc60310459f0b142 findings 1 and 5 against chores/30. (1) `isAutoLandFlakeJob` (src/mcp/flake-admission.ts) and the manual-takeover copies in src/mcp/dispatch/orchestrator.ts (~1524, ~1769) treat any caller-supplied `request_key` starting with `flakes:` as auto-land authority, so a manual `hud_create` with `request_key: \"flakes:investigate\"`, a clean report and a commit is landed by the watcher (with the project's push setting) without main. Authority must come only from the explicit `auto_land: true` flag the collector sets at promotion; delete the `startsWith('flakes:')` fallback in all three places. (2) `hasOpenQuestions` (src/mcp/land-flakes.ts) only looks for `qN.answer.md`, but a Pi worker whose async question timed out records the timeout on the job, not as an answer file, so `settleAutoLandFlakeJob` returns `wait` forever and `startAutoLand` unconditionally calls `schedule()` in `finally` (src/runtime/watch-runtime.ts), producing an immediate full rescan loop. A timed-out question counts as closed: evaluate the report (land, or hand back to main on Blockers/scope assumption). A genuine wait must not reschedule an immediate rescan; it waits for a relevant event or a bounded retry.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a manually dispatched worktree job with request_key `flakes:investigate`, a clean report and a commit is not auto-landed and stays available to hud_land",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a promoted flake job (auto_land: true) still lands by itself",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: a settled flake job whose only question timed out is evaluated (lands on a clean report; hands back to main on a Blockers line) instead of waiting",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Test: a flake job with a genuinely open question does not trigger repeated immediate watcher rescans (bounded scan count over a fixed window)",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T09:55:57.004Z",
+      "updated_at": "2026-11-27T09:55:57.004Z"
+    },
+    {
+      "number": 42,
+      "title": "Land keeps reported-unfinished items open for numbered headings and ID lists, and comments on the ticket",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores-done/26"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review jbc60310459f0b142 findings 2 and 4 against chores/26 (now archived as chores-done/26). (a) src/mcp/land-records.ts accepts a Markdown heading or a numbered item, not both, so `## 3. Not done` followed by `- item 1` yields no note (that heading form appears in real worker reports, e.g. chores/40's). Reuse the numbered-heading convention src/mcp/report-notes.ts already understands rather than adding another report dialect. (b) `unfinishedAcceptance` (src/mcp/local-tickets.ts) returns no IDs for explicit lists such as `Acceptance items 1 and 2 are unfinished` or `items 1, 2`, so applyJsonLanding ticks both and marks the ticket done, releasing dependents. Recognise explicit ID lists. (c) chores/26 requires a ticket with unticked items to land as `ready-for-agent` with a comment; today the remaining items are listed on the flow only, never as a ticket comment, so `hud_tickets get` loses the explanation once the flow ages out. Append one comment naming the remaining items at partial landing, not duplicated on replay.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a report with `## 3. Not done` then `- item 1` lands the JSON ticket with item 1 unticked, status ready-for-agent, and the land notice lists it",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: `Acceptance items 1 and 2 are unfinished` leaves both unticked and the ticket not done (check resulting JSON status, ticks and notice, not only the parser)",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: a partial landing appends exactly one ticket comment naming the remaining items; replaying the landing does not add a second",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Test: an empty Not done section still ticks all items as today",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T09:55:57.004Z",
+      "updated_at": "2026-11-27T09:55:57.004Z"
+    },
+    {
+      "number": 43,
+      "title": "Recent shows a superseded queue run as superseded with its landed count",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Restart a paused feature run with hud_tickets run so the old run is superseded, then check Execution Recent shows it as `superseded` / `已被取代` with its landed count, and it is absent from live flows and the waiting count",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/37"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review jbc60310459f0b142 finding 3 against chores/37. chores/37 asks that a cancelled or superseded run show its own end state in Recent (`已取消` / `cancelled`, or `已被取代` / `superseded`), with the landed count as a detail. Land-time integration 38fe1a55 instead drops superseded receipts (src/collectors/ticket-queue-display.ts deletes the receipt before Recent reads it; execution-runs.ts and render/execution-view.ts support the distinct outcome only for cancellation), changed the test to expect absence and reworded docs/reference.md to \"Superseded queues stay hidden\"; no decision backs that (main confirmed in the reviewer's q1). Keep terminal superseded receipts in the 24-hour Recent list with the superseded word and the landed count when it fits; keep them out of live flows and waiting counts (chores/33). Legacy paused/failed attempts that were never marked superseded need not appear. Restore the docs/reference.md Recent sentence to describe this.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a superseded run with landed items renders `superseded` / `已被取代` in Recent in EN and ZH with the landed count as a detail",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a superseded run is still absent from live Workflow flows and the waiting count",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: cancelled and completed runs render as today",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md Recent line describes superseded runs as shown with their end state",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T09:55:57.004Z",
+      "updated_at": "2026-11-27T09:55:57.004Z"
+    },
+    {
+      "number": 44,
+      "title": "A ticket's repo field is stored home-relative in the public tracker",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/27"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review jbc60310459f0b142 finding 6 against chores/27. `repoFieldValue` (src/mcp/local-tickets.ts) accepts only an absolute path and `patch` (src/mcp/ticket-store-ops.ts) writes it verbatim into the committed feature JSON, so the normal case (target repo under the owner's home) commits an absolute home path into this public repo, which chores/28 exists to prevent. Accept `~/...` and absolute input; store paths inside $HOME as `~/...` (outside-home roots unchanged); expand to the absolute path only for registration checks, readiness reasons, dispatch cwd and the land block.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: add/update with repo `$HOME/projects/target` stores `~/projects/target` in the serialized feature JSON, and the item is still dispatched with cwd = the real target root in a target worktree",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: repo given as `~/projects/target` is accepted and behaves the same",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: a repo root outside $HOME is stored unchanged",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Test: an unregistered repo still stays not-ready with the reason naming it",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T09:55:57.004Z",
+      "updated_at": "2026-11-27T09:55:57.004Z"
     }
   ]
 }

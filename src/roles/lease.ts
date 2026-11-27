@@ -13,6 +13,7 @@ import { sharedRoot } from './projects.js';
 
 const MAX_WAIT = 300;
 const CUSTODIAN_WAIT_MS = 5_000;
+export const LEASE_FALLBACK_MS = 750;
 export const LEASE_TOOL = {
   name: 'hud_lease',
   description: 'Named project lease: shared use needs granted:true; release after.',
@@ -211,7 +212,7 @@ export async function takeLease(
     timeoutMs: args.release ? 0 : Math.min(seconds, MAX_WAIT) * 1000,
     signal,
     coalesceMs: 10,
-    fallbackIntervalMs: waitOptions?.fallbackIntervalMs ?? 750, // An exited process need not change any watched file.
+    fallbackIntervalMs: waitOptions?.fallbackIntervalMs ?? LEASE_FALLBACK_MS, // An exited process need not change any watched file.
     check: async ({ timedOut, reason }) => {
       const value = await attempt();
       const done = !('granted' in value && !value.granted && !timedOut);
