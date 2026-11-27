@@ -161,15 +161,17 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
   const mode = ctx.mode ?? 'selection';
   const investigate = mode === 'investigate';
   let excerpt = investigate ? normalizePaneExcerpt(ctx.selected_text) : normalizeSelectionExcerpt(advisor?.excerpt ?? ctx.selected_text);
-  let stale = Boolean(ctx.stale_content);
+  let stale = investigate ? false : Boolean(ctx.stale_content);
 
-  if (investigate && excerpt.empty) {
-    const paneId = contextPaneId(ctx);
-    if (paneId) {
-      const rawText = await readPaneVisibleText(paneId, opts.env);
-      if (rawText === null) return { code: 1, sent: false };
-      excerpt = normalizePaneExcerpt(rawText);
-      ctx = { ...ctx, pane_id: paneId, selected_text: excerpt.text, stale_content: false, selection: undefined };
+  if (investigate) {
+    if (excerpt.empty) {
+      const paneId = contextPaneId(ctx);
+      if (paneId) {
+        const rawText = await readPaneVisibleText(paneId, opts.env);
+        if (rawText === null) return { code: 1, sent: false };
+        excerpt = normalizePaneExcerpt(rawText);
+        ctx = { ...ctx, pane_id: paneId, selected_text: excerpt.text, stale_content: false, selection: undefined };
+      }
     }
   } else if (stale || (excerpt.empty && ctx.selection)) {
     const refreshed = await refreshSelectionExcerpt(ctx, excerpt, null, opts.env);
@@ -185,7 +187,7 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
 
   if (excerpt.empty) return { code: 0, sent: false };
 
-  let baseline = advisor ? null : await captureSelectionBaseline(ctx, excerpt, opts.env);
+  let baseline = advisor || investigate ? null : await captureSelectionBaseline(ctx, excerpt, opts.env);
   const resolved = advisor ? { source: advisor.source, targetPane: null, targetAgent: null, jobs: [] }
     : await resolveSelectionTarget(ctx, opts.hudHome, opts.env, now());
 
@@ -303,8 +305,10 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
           if (!finished) paint();
           return;
         }
-        // An annotation keeps the displayed snapshot, even if the log scrolls during editing.
-        const refreshed = note === undefined ? await refreshSelectionExcerpt(ctx, state.excerpt, baseline, opts.env) : null;
+        // Investigate and annotations keep the displayed snapshot, even if the log scrolls during editing.
+        const refreshed = !investigate && note === undefined
+          ? await refreshSelectionExcerpt(ctx, state.excerpt, baseline, opts.env)
+          : null;
         if (finished) return;
         if (refreshed?.baseline !== undefined) baseline = refreshed.baseline;
         const emptyNotice = state.mode === 'investigate'

@@ -50,14 +50,13 @@ export function createComposerState(input: {
   targetAgent: string | null;
   jobs?: readonly SelectionJobTarget[];
   excerpt: NormalizedExcerpt;
-  initialQuestion?: string;
   stale?: boolean;
   notice?: string | null;
   error?: string | null;
 }): ComposerState {
   const mode = input.mode ?? 'selection';
   const jobs = input.jobs ?? [];
-  const question = input.initialQuestion ?? (mode === 'investigate' ? DEFAULT_INVESTIGATE_LINE : '');
+  const question = mode === 'investigate' ? DEFAULT_INVESTIGATE_LINE : '';
   return {
     mode,
     source: input.source,

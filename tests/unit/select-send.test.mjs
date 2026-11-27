@@ -10,6 +10,7 @@ import test from 'node:test';
 import toml from '@iarna/toml';
 import {
   DEFAULT_INVESTIGATE_LINE,
+  captureSelectionBaseline,
   deliverSelection,
   formatSelectionMessage,
   handleInvestigatePaneAction,
@@ -1470,18 +1471,23 @@ test('investigate mode refuses visible-read error or timeout without falling bac
   assert.equal(fs.existsSync(join(f.home, 'select-send')), false);
   assert.equal(fs.existsSync(join(f.home, 'selection-excerpts.json')), false);
 
-  // Refresh in investigate mode also never widens to recent scrollback when visible read fails.
+  // Investigate mode neither captures a baseline nor refreshes on Enter.
   calls.length = 0;
   const visibleExcerpt = normalizePaneExcerpt('VISIBLE_VIEWPORT_LINE');
+  const invBaseline = await captureSelectionBaseline(
+    { mode: 'investigate', pane_id: 'w1:p5', selected_text: visibleExcerpt.text },
+    visibleExcerpt,
+    f.env
+  );
   const invRefreshed = await refreshSelectionExcerpt(
     { mode: 'investigate', pane_id: 'w1:p5', selected_text: visibleExcerpt.text },
     visibleExcerpt,
     { screenText: 'OLDER_VIEWPORT_LINE', startLine: 0, endLine: 1, lineCount: 1 },
     f.env
   );
-  assert.deepEqual(calls.map((c) => [c.method, c.params.source]), [['pane.read', 'visible']]);
-  assert.equal(invRefreshed.changed, false);
-  assert.equal(invRefreshed.excerpt.text, 'VISIBLE_VIEWPORT_LINE');
+  assert.deepEqual(calls, []);
+  assert.equal(invBaseline, null);
+  assert.deepEqual(invRefreshed, { stale: false, changed: false, excerpt: visibleExcerpt, baseline: null });
 
   // Selection-mode refresh keeps its separate fallback when visible read fails.
   calls.length = 0;
@@ -1556,4 +1562,169 @@ test('investigate owner line defaults to Investigate this without a default_ques
   stdin.write('\x1b');
   const outcome = await session;
   assert.equal(outcome.sent, false);
+});
+
+test('investigate mode captures once at open and sends the displayed snapshot even when the pane viewport keeps scrolling', { timeout: 15_000 }, async (t) => {
+  const jobId = 'j000000000000002a';
+  const main = 'w1:p1', workerPane = 'w1:p2', logPane = 'w1:p5';
+  const prompts = [];
+  const paneReads = [];
+  let panes = [];
+  let viewportFile = '';
+  const f = await fakeFork(t, (method, params) => {
+    if (method === 'ping') return guardedPong;
+    if (method === 'pane.list') return { result: { panes } };
+    if (method === 'pane.get') return { result: { pane: panes.find((p) => p.pane_id === params.pane_id) } };
+    if (method === 'pane.read') {
+      paneReads.push(params);
+      return { result: { type: 'pane_read', read: { text: fs.readFileSync(viewportFile, 'utf8') } } };
+    }
+    if (method === 'plugin.pane.open') return { result: { type: 'ok' } };
+    if (method === 'agent.prompt') {
+      prompts.push(params);
+      return prompted;
+    }
+    return { error: { code: 'unsupported' } };
+  });
+
+  const project = join(f.dir, 'project');
+  fs.mkdirSync(project);
+  viewportFile = join(f.dir, 'viewport.txt');
+  panes = [
+    { pane_id: main, cwd: project, workspace_id: 'w1', agent: 'claude', agent_status: 'idle' },
+    { pane_id: workerPane, cwd: project, workspace_id: 'w1', agent: 'pi', agent_status: 'working' },
+    { pane_id: logPane, cwd: project, workspace_id: 'w1' },
+  ];
+  const dir = writeJob(f.home, jobId, {
+    callerPane: main,
+    leftPane: workerPane,
+    primary: 'agent-a',
+    projectRoot: project,
+    socketPath: f.socketPath,
+    createdAt: new Date().toISOString(),
+    ticket: 'fine-interact/09',
+  });
+  fs.writeFileSync(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working' }));
+
+  const run = async (script, env) => {
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+      cwd: root,
+      env: { ...f.env, ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      signal: t.signal,
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const [code] = await once(child, 'close');
+    assert.equal(code, 0, stderr);
+    return JSON.parse(stdout);
+  };
+
+  // Path 1: handoff from investigate action -> viewport advances after open and after picker -> Enter sends original snapshot once.
+  const originalSnapshot = 'FAIL test/stream.test.mjs\n  AssertionError: expected ok';
+  fs.writeFileSync(viewportFile, `\n${originalSnapshot}\n\n`);
+  const opened = await handleInvestigatePaneAction(f.home, {
+    ...f.env,
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ workspace_id: 'w1', focused_pane_id: logPane, focused_pane_cwd: project }),
+  });
+  assert.equal(opened.opened, true);
+  assert.equal(paneReads.length, 1);
+
+  fs.writeFileSync(viewportFile, 'SCROLLING LOG 1\nSCROLLING LOG 2\n');
+  const handoffResult = await run(`
+    import assert from 'node:assert/strict';
+    import { writeFileSync } from 'node:fs';
+    import { PassThrough } from 'node:stream';
+    import { runComposerSession } from './dist/cli/select-send.js';
+    import { readAndRemoveSelectionHandoff } from './dist/roles/select-send.js';
+    const context = readAndRemoveSelectionHandoff(process.env.HANDOFF);
+    const stdin = new PassThrough(), stdout = new PassThrough();
+    const input = text => queueMicrotask(() => stdin.write(text));
+    let stage = 0;
+    const result = await runComposerSession({
+      context,
+      hudHome: process.env.HUD_HOME,
+      env: process.env,
+      stdin,
+      stdout,
+      onFrame(lines, state) {
+        const screen = lines.join('\\n');
+        assert.doesNotMatch(screen, /Content changed/);
+        if (stage === 0) {
+          assert.equal(state.mode, 'investigate');
+          assert.equal(state.picker, 0);
+          writeFileSync(process.env.VIEWPORT_FILE, 'SCROLLING LOG 3\\nSCROLLING LOG 4\\n');
+          stage++;
+          input('\\r');
+        } else if (stage === 1 && state.picker === null && state.targetJob?.job === process.env.TARGET) {
+          assert.ok(screen.includes('FAIL test/stream.test.mjs'));
+          assert.ok(screen.includes('AssertionError: expected ok'));
+          assert.equal(screen.includes('SCROLLING LOG'), false);
+          writeFileSync(process.env.VIEWPORT_FILE, 'SCROLLING LOG 5\\nSCROLLING LOG 6\\n');
+          stage++;
+          input('\\r');
+        }
+      },
+    });
+    assert.equal(stage, 2);
+    console.log(JSON.stringify(result));
+  `, { HANDOFF: opened.handoffFile, TARGET: jobId, VIEWPORT_FILE: viewportFile });
+
+  assert.equal(handoffResult.sent, true);
+  assert.equal(paneReads.length, 1, 'investigate must not take a baseline or reread on Enter');
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].target, 'agent-a');
+  assert.ok(prompts[0].text.includes(originalSnapshot));
+  assert.equal(prompts[0].text.includes('SCROLLING LOG'), false);
+
+  const cache = getJobIndexCache(f.home);
+  const [record] = readSelectionExcerpts(f.home, cache, { project });
+  assert.equal(record.delivery, 'queued');
+  assert.equal(record.excerpt, originalSnapshot);
+
+  // Path 2: direct composer open without pre-captured selected_text captures once at open and never rereads.
+  paneReads.length = 0;
+  prompts.length = 0;
+  const directSnapshot = 'DIRECT CAPTURE FAILURE\n  exit code 1';
+  fs.writeFileSync(viewportFile, `${directSnapshot}\n`);
+  const directResult = await run(`
+    import assert from 'node:assert/strict';
+    import { writeFileSync } from 'node:fs';
+    import { PassThrough } from 'node:stream';
+    import { runComposerSession } from './dist/cli/select-send.js';
+    const stdin = new PassThrough(), stdout = new PassThrough();
+    const input = text => queueMicrotask(() => stdin.write(text));
+    let stage = 0;
+    const result = await runComposerSession({
+      context: { mode: 'investigate', workspace_id: 'w1', focused_pane_id: process.env.PANE, focused_pane_cwd: process.env.PROJECT },
+      hudHome: process.env.HUD_HOME,
+      env: process.env,
+      stdin,
+      stdout,
+      onFrame(lines, state) {
+        const screen = lines.join('\\n');
+        assert.doesNotMatch(screen, /Content changed/);
+        if (stage === 0) {
+          assert.equal(state.picker, 0);
+          writeFileSync(process.env.VIEWPORT_FILE, 'SCROLLED AWAY OUTPUT\\n');
+          stage++;
+          input('\\r');
+        } else if (stage === 1 && state.picker === null && state.targetJob?.job === process.env.TARGET) {
+          assert.ok(screen.includes('DIRECT CAPTURE FAILURE'));
+          assert.equal(screen.includes('SCROLLED AWAY OUTPUT'), false);
+          stage++;
+          input('\\r');
+        }
+      },
+    });
+    assert.equal(stage, 2);
+    console.log(JSON.stringify(result));
+  `, { PANE: logPane, PROJECT: project, TARGET: jobId, VIEWPORT_FILE: viewportFile });
+
+  assert.equal(directResult.sent, true);
+  assert.equal(paneReads.length, 1, 'direct investigate open must capture once and never reread');
+  assert.equal(prompts.length, 1);
+  assert.ok(prompts[0].text.includes(directSnapshot));
+  assert.equal(prompts[0].text.includes('SCROLLED AWAY OUTPUT'), false);
 });

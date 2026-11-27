@@ -594,11 +594,10 @@ export async function captureSelectionBaseline(
   excerpt: NormalizedExcerpt,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<SelectionBaseline | null> {
+  if (ctx.mode === 'investigate') return null;
   const paneId = contextPaneId(ctx);
   if (!paneId || excerpt.empty) return null;
-  const screenText = ctx.mode === 'investigate'
-    ? await readPaneVisibleText(paneId, env)
-    : await readPaneSelectionScreen(paneId, env);
+  const screenText = await readPaneSelectionScreen(paneId, env);
   if (screenText === null) return null;
   const lineCount = excerpt.text.split('\n').length;
   const span = locateExcerptSpan(screenText, excerpt.text);
@@ -620,6 +619,7 @@ export async function refreshSelectionExcerpt(
   baseline: SelectionBaseline | null,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<RefreshResult> {
+  if (ctx.mode === 'investigate') return { stale: false, changed: false, excerpt: current, baseline: null };
   const paneId = contextPaneId(ctx);
   if (!paneId) return { stale: Boolean(ctx.stale_content), changed: false, excerpt: current, baseline };
 
@@ -658,9 +658,7 @@ export async function refreshSelectionExcerpt(
     return { stale: Boolean(ctx.stale_content), changed: false, excerpt: current, baseline };
   }
 
-  const screenText = ctx.mode === 'investigate'
-    ? await readPaneVisibleText(paneId, env)
-    : await readPaneSelectionScreen(paneId, env);
+  const screenText = await readPaneSelectionScreen(paneId, env);
   if (screenText === null) return { stale: Boolean(ctx.stale_content), changed: false, excerpt: current, baseline };
 
   const lineCount = Math.max(1, baseline?.lineCount ?? current.text.split('\n').length);
@@ -682,9 +680,7 @@ export async function refreshSelectionExcerpt(
   }
 
   if (baseline && screenText !== baseline.screenText && !current.empty && !screenText.includes(current.text)) {
-    const next = ctx.mode === 'investigate'
-      ? normalizePaneExcerpt(screenText)
-      : normalizeSelectionExcerpt(extractUpdatedFromScreen(screenText, lineCount, baseline));
+    const next = normalizeSelectionExcerpt(extractUpdatedFromScreen(screenText, lineCount, baseline));
     const nextBaseline: SelectionBaseline = {
       screenText,
       startLine: locateExcerptSpan(screenText, next.text)?.startLine ?? baseline.startLine,
