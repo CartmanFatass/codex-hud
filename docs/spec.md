@@ -137,8 +137,9 @@ statusline drawn by herdr for every client may follow; native statuslines stay u
 - Sample outside paint. No sleep, project scan, model call or resident service to draw a line. Omit or qualify
   stale/partial readings; an absent watcher is not proof of zero. (new)
 
-**Home.** `/hud` opens the same herdr panel docked to the right edge across clients (overlay by default, push as a
-setting); delegation stays installed when closed. Main sessions without the Claude mod show the first open owner
+**Home.** `/hud` shows or collapses the same herdr panel docked to an edge across clients (right by default, left or
+bottom as a setting; overlay by default, push as a setting). Collapsing keeps the panel running; it can be resized by
+dragging and focused, copied from and zoomed like a pane. Delegation stays installed when closed. (27.01) Main sessions without the Claude mod show the first open owner
 request, its project and the count in a one-line band. An owner request that asks for a try opens its prepared scene
 in one key and runs only preview actions the owner configured. (26.01)
 Keep keyboard and mouse navigation, Settings and Help. (11.04, 17.09, 19.03, 20.10)

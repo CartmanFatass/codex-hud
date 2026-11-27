@@ -5,6 +5,14 @@ Dates are the owner dates in the source spec unless marked *recorded*: a spec re
 separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-NN`. Section refs point into
 `docs/spec.md`.
 
+## 2026-11-27
+
+- **D-2026-11-27-01** (§2.2 Home): Owner, after using the dock: it is less flexible than the old split pane (no
+  collapse, width only via Settings, fixed right edge, not usable as an ordinary pane). Keep the dock (one panel per
+  session, survives tab switches, overlay without reflow, no orphan panes) and add the flexibility in the fork:
+  collapse/expand without stopping the panel, drag-resize, right/left/bottom placement, and pane behaviour (focus
+  navigation, copy mode, zoom). Rejected: reverting to the split pane, or a pop-out toggle between dock and pane.
+
 ## 2026-11-26
 
 - **D-2026-11-26-12** (§2.1, §4): Owner, on review finding #1 of the workflow/06 milestone (main's shell can run
