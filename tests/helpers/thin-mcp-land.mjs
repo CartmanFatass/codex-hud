@@ -56,12 +56,12 @@ export function settle(f, id, text) {
   writeFixtureFile(join(jobDir(f, id), 'report.md'), text);
   writeFixtureFile(join(jobDir(f, id), 'STATUS.json'), JSON.stringify({ state: 'closed', settled_at: new Date().toISOString() }));
 }
-export async function repair(f, flow, index) {
+export async function repair(f, flow, index, signalOrLimit = 20000) {
   await until(() => {
     const state = f.flowState(flow);
     assert.notEqual(state.state, 'failed', JSON.stringify(state));
     return state.repairs?.[index]?.outcome === 'waiting for worker';
-  }, 20000);
+  }, signalOrLimit, 'land repair did not reach its worker');
   return f.flowState(flow).repairs[index].job;
 }
 export async function checkout(t, gate, { after = ['test "$WRAPPED" = yes && pwd > after-ran'], timeout_s, mcpEntry, probe, crossProject = false, inHerdr = true, autoPrewalk = false } = {}) {

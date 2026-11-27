@@ -236,6 +236,64 @@
       "comments": [],
       "created_at": "2026-11-27T13:35:30.885Z",
       "updated_at": "2026-11-27T14:14:48.693Z"
+    },
+    {
+      "number": 61,
+      "title": "Repair chores/60 archive: old refs, landing conflict check, pending write sets",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/60"
+      ],
+      "what": "Milestone review j1b0f5df80f74cd93 found five majors in the chores/60 ticket archive (commit 4ec0c6b7). Fix all of them in one slice. Keep the 64 KiB cap and the rules chores/60 already set: done/wontfix only, never the highest-numbered ticket, the blocked_by exclusion, one write set under the tickets lock.\n\n1. Landing conflict (`src/mcp/land-runner.ts` ~427-430): the land refuses whenever any ticket moved and the incoming land touched `.hud/objectives.md`, even when the archive needs no Objective change (for example, the target shard is already linked). Refuse only a real conflict: the archive needs to add a Features link and the incoming land changes the same `.hud/objectives.md`. Compare against the incoming Objective contents. Cover the already-linked-shard case.\n2. Owner waits (`src/collectors/project-board.ts` ~119-121 and ~531-548): `waitSettled` compares literal IDs, so `(waits on sample/01)` stops matching once the ticket moves to `sample-done/01` and a settled request shows as waiting again. When matching waits, resolve old ticket IDs through the archive family. Do not rewrite owner prose.\n3. Flake dispatch (`src/mcp/land-flakes.ts` ~280-287): `inspectRunningListTicket` reads only the named feature and returns `unavailable` when the number is missing, so a wontfix ticket that was archived keeps its flake collection pending forever (`hasPendingFlakeCollection` ~655-668, `src/runtime/work-retention.ts` ~345-346). Use the archive-aware resolver before declaring a ticket unavailable.\n4. Stale pending digest (`src/tickets/archive.ts` ~97-108, `src/tickets/commit.ts` ~104-112): after an archive creates a new shard and before the sweep commits it, an ordinary HUD add that links another feature to an Objective rewrites `.hud/objectives.md` outside `prepareTicketWrites`. The pending `@objectives` digest goes stale and the commit path reports a hand edit that never happened. When HUD extends a file that belongs to a pending HUD write group and whose preimage still matches the recorded digest, register the new digest under the same locks. Keep the fence for real hand edits.\n5. Ambiguous old refs (`src/tickets/archive.ts` ~55-63, `src/tickets/store.ts` ~238-247): the planner skips a shard that already holds the same number and can move the ticket into a later shard, so the archive family ends up with two copies and `get <feature>/NN` throws as ambiguous. Before moving a candidate, check that its number is unique across the whole archive family. If its old ref would become ambiguous, leave it in the source and try the next candidate.\n\nAlso: (a) pull the sibling-match and ambiguity rule, which the CLI, the bounded collector and the store each implement separately, into one shared pure function over already-loaded candidates. Each caller keeps its own I/O bounds. The planner uses the same function to check its proposed destination. (b) Once a write triggers archiving, move every eligible ticket, not just enough to fit. Otherwise the source stays just under 64 KiB and almost every later write reruns the planner across all features. Update docs/reference.md where the archive behaviour it describes changes.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A cap-crossing land whose target shard is already linked, carrying an unrelated .hud/objectives.md change, lands. A land that would need a new Features link and also edits .hud/objectives.md is still refused. Unit tests cover both.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "An owner request `(waits on sample/01)` stays settled after sample/01 moves to sample-done/01 (unit test).",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "A pending flake dispatch whose wontfix ticket was archived resolves and stops retaining its flow (unit test).",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Archive into a new shard, then an ordinary add that links another feature to an Objective: the sweep/commit path commits both and reports no hand edit. A real hand edit of .hud/objectives.md is still fenced. Unit tests cover both.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "With sample/01 in the source and sample-done/01 already present, the planner does not move sample/01. `get sample/01` still resolves uniquely (unit test).",
+          "done": false
+        },
+        {
+          "id": 6,
+          "text": "One shared matching function serves the CLI, the collector, the store and the planner's destination check.",
+          "done": false
+        },
+        {
+          "id": 7,
+          "text": "A cap-crossing write moves every eligible ticket. The next small write to the same feature does not run the archive again (unit test).",
+          "done": false
+        },
+        {
+          "id": 8,
+          "text": "Existing chores/60 archive tests still pass. docs/reference.md is updated.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T14:25:13.956Z",
+      "updated_at": "2026-11-27T14:25:13.956Z"
     }
   ]
 }

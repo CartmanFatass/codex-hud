@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { statsMtimeMs } from '../../dist/roles/job-index-cache.js';
+import { isProcAlive, procStat } from '../../dist/utils/proc.js';
 import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { resumeQueueAfterAnswer } from '../../dist/mcp/ticket-queue.js';
 import { readTicketQueue, writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
@@ -17,8 +18,8 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
-async function project(t, { thirdBlocker = 'none', frontend = false, crossProject = false, done = [], upstream = [] } = {}) {
-  const caller = await fixture(t, { failedRetentionMs: 30_000 });
+async function project(t, { thirdBlocker = 'none', frontend = false, crossProject = false, done = [], upstream = [], probe } = {}) {
+  const caller = await fixture(t, { failedRetentionMs: 30_000, probe });
   const f = crossProject ? { ...caller, root: join(caller.root, 'project') } : caller;
   if (crossProject) {
     fs.mkdirSync(f.root);
@@ -520,11 +521,12 @@ test('ticket queue hands back on a worker question without stopping its peer', {
   assert.equal(station.changedAt, Date.parse(resumed.tickets[0].answered_at));
 });
 
-test('a note sent to a working queue job keeps the job in its queue', { timeout: 30_000 }, async t => {
+test('a note sent to a working queue job keeps the job in its queue', async t => {
   const f = await project(t);
   const { flow } = await f.start();
   const [first] = await f.jobs(flow, 1);
-  await f.call('hud_send', { job: first, text: 'Synthetic constraint for the current turn.' });
+  await until(() => f.status(first).state === 'working', t.signal, 'queue worker never started');
+  assert.equal((await f.call('hud_send', { job: first, text: 'Synthetic constraint for the current turn.' })).sent, true);
   assert.equal(f.job(first).ticket_queue, flow);
   await f.settle(first);
   const [, second] = await f.jobs(flow, 2);
@@ -534,16 +536,43 @@ test('a note sent to a working queue job keeps the job in its queue', { timeout:
   assert.equal((await f.end(flow)).state, 'completed');
 });
 
-test('a resumed queue waits for a launch still in flight instead of failing it', { timeout: 30_000 }, async t => {
-  const f = await project(t);
+test('a resumed queue waits for a launch still in flight instead of failing it', async t => {
+  // A recovered driver attaches job watches after its initial tick, if still active.
+  const preload = `
+import fs from 'node:fs';
+import { join } from 'node:path';
+import { syncBuiltinESMExports } from 'node:module';
+if (process.argv[1]?.endsWith('/workflow-runner.mjs')) {
+  const watch = fs.watch;
+  fs.watch = (path, ...args) => {
+    const watcher = watch(path, ...args);
+    if (String(path).startsWith(join(process.env.HUD_HOME, 'jobs') + '/') && !fs.existsSync(join(path, 'STATUS.json')))
+      fs.writeFileSync(join(process.env.HOME, 'queue-watching'), String(process.pid));
+    return watcher;
+  };
+  syncBuiltinESMExports();
+}`;
+  const f = await project(t, { probe: `process.env.NODE_OPTIONS += ${JSON.stringify(' --import=data:text/javascript,' + encodeURIComponent(preload))};` });
   // Keep ticket 2 queued until the simulated in-flight launch settles.
   const { flow } = await f.start(1);
   const [first] = await f.jobs(flow, 1);
-  // A runner that takes over mid-launch sees the job before its first status.
-  fs.rmSync(join(f.dir(first), 'STATUS.json'), { force: true });
-  writeFixtureFile(join(f.dir(first), 'job.json'), JSON.stringify({ ...f.job(first), dispatch_exit_code: null }));
-  await new Promise(resolve => setTimeout(resolve, 500));
-  assert.equal(f.flow(flow).state, 'working');
+  const { pid, start } = f.flow(flow);
+  await runLock(f.env.HUD_HOME, flow, () => {
+    process.kill(pid, 'SIGKILL');
+    // The replacement sees a launched job whose live launcher has not published its first status.
+    fs.rmSync(join(f.dir(first), 'STATUS.json'), { force: true });
+    writeFixtureFile(join(f.dir(first), 'job.json'), JSON.stringify({ ...f.job(first), dispatch_exit_code: null,
+      launcher: { pid: process.pid, start: procStat(process.pid).start } }));
+  });
+  await until(() => !isProcAlive(pid, start), t.signal);
+  await f.call('hud_read', { job: flow });
+  const watching = join(f.env.HOME, 'queue-watching');
+  await until(() => {
+    const q = f.flow(flow);
+    assert.equal(q.state, 'working', JSON.stringify(q));
+    return q.pid !== pid && fs.existsSync(watching) && fs.readFileSync(watching, 'utf8') === String(q.pid);
+  }, t.signal, 'replacement runner did not wait on the job without status');
+  assert.deepEqual(f.flow(flow).tickets.map(item => item.job), [first]);
   await f.settle(first);
   const [, second] = await f.jobs(flow, 2);
   await f.settle(second);

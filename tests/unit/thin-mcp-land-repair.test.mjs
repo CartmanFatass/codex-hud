@@ -89,7 +89,7 @@ fi
 exec node "$FAKE_BIN" herdr "$@"
 `);
   const { flow } = await f.call('hud_land', { job });
-  assert.equal(await repair(f, flow, 0), job);
+  assert.equal(await repair(f, flow, 0, t.signal), job);
   assert.equal(JSON.parse(fs.readFileSync(join(dir, 'turn.json'))).seq, 2);
   const polls = join(f.env.HOME, 'repair-polls');
   // Two polls prove the first one already ignored the unchanged pre-turn row.
@@ -106,7 +106,7 @@ exec node "$FAKE_BIN" herdr "$@"
   assert.equal(f.flowState(flow).state, 'running');
   fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
   f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, job, 'Fixed.');
-  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  await until(() => ['failed', 'completed', 'cancelled'].includes(f.flowState(flow).state), t.signal, 'repaired land did not finish');
   const done = f.flowState(flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.equal(done.repairs.length, 1);

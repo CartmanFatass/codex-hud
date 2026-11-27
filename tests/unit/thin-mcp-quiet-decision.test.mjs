@@ -274,49 +274,44 @@ test('quiet decision failed without quota regex falls back to needs-human withou
   assert.equal(f.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
 });
 
-test('low probability, cap reached, and provider error all fall back to needs-human without prompting worker', { timeout: 20000 }, async (t) => {
-  // 1. Low probability (< 0.8)
-  const fLow = await fixture(t);
-  writeCliRole(fLow, 'qd-low', 1, false);
-  fs.writeFileSync(join(fLow.env.HOME, 'missing-report'), '');
-  const sLow = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.79));
-  configureFakeDecision(fLow, sLow.baseUrl);
-  const jLow = await fLow.call('hud_create', { role: 'qd-low', request_key: 'qd-low', task: 'Synthetic low prob.' });
-  await until(() => cliState(jLow.task_dir)?.state === 'waiting_orchestrator', t.signal);
-  assert.equal(sLow.requests.length, 1, 'the synthetic provider received the low-probability request');
-  assert.equal(cliState(jLow.task_dir).quiet_decision.choice, 'finished-no-report');
-  assert.equal(cliState(jLow.task_dir).quiet_decision.probability, 0.79);
-  assert.equal(cliState(jLow.task_dir).quiet_decision.action, 'needs-human');
-  assert.equal(fLow.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
+test('low probability, cap reached, and provider error all fall back to needs-human without prompting worker', async (t) => {
+  const runQuiet = async (t, role, handler, cap = 0) => {
+    const f = await fixture(t);
+    writeCliRole(f, role, 1, false);
+    fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
+    const server = await fakeDecisionServer(t, handler);
+    configureFakeDecision(f, server.baseUrl, cap);
+    if (cap) {
+      const apiDir = join(f.env.HUD_HOME, 'display/model-cache/decision-api');
+      fs.mkdirSync(apiDir, { recursive: true });
+      writeFixtureFile(join(apiDir, 'calls.json'), JSON.stringify([{ at: Date.now(), feature: 'outcome' }]));
+    }
+    const job = await f.call('hud_create', { role, request_key: role, task: 'Synthetic quiet turn.' });
+    await until(() => cliState(job.task_dir)?.agent_session_id && f.hasSubscriber(job.job), t.signal, 'CLI supervisor was not ready');
+    f.push(job.job, 'done');
+    await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal, 'CLI supervisor did not hand back');
+    const { quiet_decision } = cliState(job.task_dir);
+    assert.equal(quiet_decision.action, 'needs-human');
+    assert.equal(f.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
+    return { requests: server.requests, decision: quiet_decision };
+  };
 
-  // 2. Cap reached
-  const fCap = await fixture(t);
-  writeCliRole(fCap, 'qd-cap', 1, false);
-  fs.writeFileSync(join(fCap.env.HOME, 'missing-report'), '');
-  const sCap = await fakeDecisionServer(t, () => decisionAnswer('finished-no-report', 0.95));
-  configureFakeDecision(fCap, sCap.baseUrl, 1);
-  const apiDir = join(fCap.env.HUD_HOME, 'display/model-cache/decision-api');
-  fs.mkdirSync(apiDir, { recursive: true });
-  writeFixtureFile(join(apiDir, 'calls.json'), JSON.stringify([{ at: Date.now(), feature: 'outcome' }]));
-  const jCap = await fCap.call('hud_create', { role: 'qd-cap', request_key: 'qd-cap', task: 'Synthetic cap.' });
-  await until(() => cliState(jCap.task_dir)?.state === 'waiting_orchestrator', t.signal);
-  assert.equal(sCap.requests.length, 0);
-  assert.equal(cliState(jCap.task_dir).quiet_decision.action, 'needs-human');
-  assert.equal(cliState(jCap.task_dir).quiet_decision.reason, 'cap');
-  assert.equal(fCap.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
-
-  // 3. Provider error (HTTP 500)
-  const fErr = await fixture(t);
-  writeCliRole(fErr, 'qd-err', 1, false);
-  fs.writeFileSync(join(fErr.env.HOME, 'missing-report'), '');
-  const sErr = await fakeDecisionServer(t, () => ({ status: 500, body: { error: 'boom' } }));
-  configureFakeDecision(fErr, sErr.baseUrl);
-  const jErr = await fErr.call('hud_create', { role: 'qd-err', request_key: 'qd-err', task: 'Synthetic error.' });
-  await until(() => cliState(jErr.task_dir)?.state === 'waiting_orchestrator', t.signal);
-  assert.equal(sErr.requests.length, 1);
-  assert.equal(cliState(jErr.task_dir).quiet_decision.action, 'needs-human');
-  assert.equal(cliState(jErr.task_dir).quiet_decision.reason, 'error');
-  assert.equal(fErr.commands().filter((c) => c.args[1] === 'prompt' && c.args[2] !== 'w4E:p1').length, 1);
+  await t.test('low probability', async t => {
+    const { requests, decision } = await runQuiet(t, 'qd-low', () => decisionAnswer('finished-no-report', 0.79));
+    assert.equal(requests.length, 1, 'the synthetic provider received the low-probability request');
+    assert.equal(decision.choice, 'finished-no-report');
+    assert.equal(decision.probability, 0.79);
+  });
+  await t.test('cap reached', async t => {
+    const { requests, decision } = await runQuiet(t, 'qd-cap', () => decisionAnswer('finished-no-report', 0.95), 1);
+    assert.equal(requests.length, 0);
+    assert.equal(decision.reason, 'cap');
+  });
+  await t.test('provider error', async t => {
+    const { requests, decision } = await runQuiet(t, 'qd-err', () => ({ status: 500, body: { error: 'boom' } }));
+    assert.equal(requests.length, 1);
+    assert.equal(decision.reason, 'error');
+  });
 });
 
 test('failed prompt-report keeps waiting_orchestrator across turn wake', { timeout: 15000 }, async (t) => {

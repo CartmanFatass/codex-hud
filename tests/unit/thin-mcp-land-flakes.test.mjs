@@ -1158,10 +1158,15 @@ test('retention keeps expired pending flake receipt and gate log after source jo
   const jobId = 'j0000000000000e01';
   addFlakyTestJob(f, { id: jobId, testFile: 'alpha.test.mjs', testName: 'alpha survives retention', markerName: 'retain-edit-1' });
   const { flow } = await f.call('hud_land', { job: jobId });
-  await until(() => f.flowState(flow).state === 'completed' &&
-    f.flowState(flow).flake_collection?.state === 'pending', 10_000);
+  // Landing completes before it publishes a separate flake-collection receipt.
+  await until(() => {
+    const receipt = f.flowState(flow);
+    assert.notEqual(receipt.state, 'failed', JSON.stringify(receipt));
+    return receipt.state === 'completed' && receipt.flake_collection !== undefined;
+  }, t.signal, 'land did not publish its flake collection');
 
   const flowReceipt = f.flowState(flow);
+  assert.equal(flowReceipt.flake_collection.state, 'pending');
   assert.equal(flowReceipt.flake_collection.stage, 'edit');
   const gateLog = flowReceipt.reruns?.[0]?.output_path;
   assert.ok(gateLog && fs.existsSync(gateLog), 'referenced gate log exists');
