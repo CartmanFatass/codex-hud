@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { watchJobChanges } from '../../collectors/job-changes.js';
 import type { AnswerResult } from '../../collectors/panel-actions.js';
 import { readJobProgress, jobRowReportMeta, jobChanges, failedAttempt, type JobRow } from '../../collectors/thin-jobs.js';
 import { MAX_META_BYTES, parseReportMeta, type ReportMetaFields } from '../../roles/report-meta.js';
@@ -1167,7 +1168,9 @@ export async function syncPanelDelivery() {
     if (!ownerDelivery) {
       const cwd = process.cwd(), matches = projectJobFilter(cwd);
       const taskNotices = taskNoticeSource(hudHome, callerPane, cwd);
-      ownerDelivery = panelDelivery(hudHome, callerPane, cwd, id => {
+      let nextPermissionScan = 0;
+      const permissionChanges = callerPane ? watchJobChanges(hudHome, notice => { if (notice) nextPermissionScan = 0; }) : undefined;
+      const delivery = panelDelivery(hudHome, callerPane, cwd, id => {
         const job = findJob(id);
         return !!job && ownsJob(job) && matches(job);
       }, async message => {
@@ -1175,11 +1178,22 @@ export async function syncPanelDelivery() {
         return { outcome: notifyOutcome(sent), via: sent.via, reason: sent.detail || sent.error?.message };
       }, async push => {
         const watched = watching(callerPane, hudHome);
+        if (watched) nextPermissionScan = 0;
         if (watched && push) return [];
         const pull = noticeReader(hudHome, callerPane, cwd);
         const flows = await taskNotices(pull, watched ? 'batch' : push ? 'task' : 'task-read');
-        return watched ? flows : [...flows, ...(await permissionEvents(hudHome, pull)).events];
+        if (watched) return flows;
+        permissionChanges?.attach();
+        if (push && performance.now() < nextPermissionScan) return flows;
+        nextPermissionScan = performance.now() + 30_000; // Reconcile if a jobs watch missed a change.
+        let retry = true;
+        try {
+          const perms = await permissionEvents(hudHome, pull);
+          retry = perms.retry;
+          return [...flows, ...perms.events];
+        } finally { if (retry) nextPermissionScan = 0; }
       });
+      ownerDelivery = { ...delivery, async stop() { permissionChanges?.close(); await delivery.stop(); } };
     }
     ensureBatchTimer();
   } else {

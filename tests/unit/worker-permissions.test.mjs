@@ -1227,6 +1227,8 @@ for (const gone of ['pane', 'queue MCP']) test(`worker permission falls back whe
   assert.match(notice.text, /hud_respond.*"answer":"approve"/);
   assert.match(notice.text, /hud_respond.*"answer":"decline"/);
   const marker = join(dir, `${secondPerm.id}.noticed`);
+  // Recording the prompt in the fake server precedes the watcher's receipt of the reply.
+  await wait(() => readDeliveryRecord(marker).state === 'accepted');
   assert.equal(fs.statSync(marker).mode & 0o777, 0o600);
   const rec = readDeliveryRecord(marker);
   assert.equal(rec.state, 'accepted');

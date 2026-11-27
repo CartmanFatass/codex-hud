@@ -1,6 +1,7 @@
 /** Private, atomic, epoch-bound delivery state records at `.noticed` / `.observed` paths. */
-import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import { dirname } from 'node:path';
 import { readRegularNoFollow, writeJsonPrivate } from './atomic-fs.js';
 import { isProcAlive, isValidPid, procStat } from './proc.js';
 
@@ -67,10 +68,10 @@ export function readDeliveryRecord(file: string, now = Date.now()): { state: Del
 // A reused key can name a new obligation in a later epoch. Never displace a live send or a legacy receipt.
 const otherEpoch = ({ state, record }: ReturnType<typeof readDeliveryRecord>, epoch?: string | number) =>
   epoch !== undefined && !!record && record.epoch !== epoch && record.via !== 'legacy' && state !== 'claimed' && state !== 'sending';
-export const isDeliveryClaimable = (file: string, now = Date.now(), epoch?: string | number): boolean => {
-  const view = readDeliveryRecord(file, now);
-  return view.reclaimable || otherEpoch(view, epoch);
-};
+const claimable = (view: ReturnType<typeof readDeliveryRecord>, epoch?: string | number) =>
+  view.reclaimable || otherEpoch(view, epoch);
+export const isDeliveryClaimable = (file: string, now = Date.now(), epoch?: string | number): boolean =>
+  claimable(readDeliveryRecord(file, now), epoch);
 export const isDeliveryActive = (file: string, now = Date.now(), epoch?: string | number): boolean => {
   const view = readDeliveryRecord(file, now);
   return view.state === 'pending' || view.state === 'claimed' || view.state === 'sending' || otherEpoch(view, epoch);
@@ -86,52 +87,49 @@ function ownedRecord(file: string, states: readonly DeliveryRecord['state'][]): 
   } catch { return null; }
 }
 
-function transitionOwned(file: string, states: readonly DeliveryRecord['state'][], next: (cur: DeliveryRecord) => DeliveryRecord | null): boolean {
-  const cur = ownedRecord(file, states);
-  if (!cur) return false;
+// Lock the stable parent, not the marker inode that a transition replaces. No lock file to create or prune.
+function withDeliveryLock<T>(file: string, action: () => T): T | null {
+  let fd: number;
+  try { fd = fs.openSync(dirname(file), fs.constants.O_RDONLY | fs.constants.O_DIRECTORY); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; }
   try {
-    const record = next(cur);
-    if (!record) return false;
-    writeJsonPrivate(file, record, { mkdir: false, beforeRename: () => {
-      const fresh = ownedRecord(file, [cur.state]);
-      if (fresh?.at !== cur.at || fresh.epoch !== cur.epoch) throw Error('notice claim changed');
-    } });
-    return true;
+    if (spawnSync('flock', ['-x', '-w', '1', '3'], { stdio: ['ignore', 'ignore', 'ignore', fd], timeout: 1500 }).status !== 0) return null;
+    return action();
+  } finally { fs.closeSync(fd); }
+}
+
+function transitionOwned(file: string, states: readonly DeliveryRecord['state'][], next: (cur: DeliveryRecord) => DeliveryRecord | null): boolean {
+  try {
+    return withDeliveryLock(file, () => {
+      const cur = ownedRecord(file, states);
+      const record = cur && next(cur);
+      if (!record) return false;
+      writeJsonPrivate(file, record, { mkdir: false, beforeRename: () => {
+        const fresh = ownedRecord(file, [cur.state]);
+        if (fresh?.at !== cur.at || fresh.epoch !== cur.epoch) throw Error('notice claim changed');
+      } });
+      return true;
+    }) ?? false;
   } catch { return false; }
 }
 
 export function claimDelivery(file: string, epoch: string | number, { leaseMs = DEFAULT_CLAIM_LEASE_MS, now = Date.now() } = {}): DeliveryRecord | null {
+  if (!isDeliveryClaimable(file, now, epoch)) return null;
   const start = ownStart();
   if (!start) return null;
   const record: DeliveryRecord = { v: 1, state: 'claimed', epoch, pid: process.pid, start, at: now, expires: now + leaseMs };
-  const tryCreate = (): 'ok' | 'exists' | 'gone' => {
-    try { writeJsonPrivate(file, record, { exclusive: true, mkdir: false }); return 'ok'; }
-    catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'EEXIST') return 'exists';
-      if (code === 'ENOENT') return 'gone';
-      throw error;
-    }
-  };
-  const first = tryCreate();
-  if (first !== 'exists') return first === 'ok' ? record : null;
-  const existing = readDeliveryRecord(file, now);
-  if (!existing.reclaimable && !otherEpoch(existing, epoch)) return null;
-  const prior = existing.record;
-  if (!prior) return tryCreate() === 'ok' ? record : null;
-  const tmp = `${file}.reclaim.${process.pid}.${randomUUID()}.tmp`;
-  try { fs.renameSync(file, tmp); }
-  catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT' && tryCreate() === 'ok' ? record : null; }
   try {
-    const moved = readRegularNoFollow(tmp);
-    const rec = moved ? parseRecord(moved.data, moved.stat.mtimeMs) : null;
-    if (!rec || rec.epoch !== prior.epoch || rec.pid !== prior.pid || rec.start !== prior.start || rec.at !== prior.at ||
-        (rec.state !== prior.state && !(rec.state === 'sending' && prior.reason === 'sender_exited'))) {
-      try { fs.linkSync(tmp, file); } catch { /* Replaced concurrently. */ }
-      return null;
-    }
-  } finally { try { fs.unlinkSync(tmp); } catch { /* Cleaned. */ } }
-  return tryCreate() === 'ok' ? record : null;
+    return withDeliveryLock(file, () => {
+      const existing = readDeliveryRecord(file, now);
+      if (!claimable(existing, epoch)) return null;
+      writeJsonPrivate(file, record, { exclusive: existing.state === 'pending', mkdir: false });
+      return record;
+    });
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST' || code === 'ENOENT') return null;
+    throw error;
+  }
 }
 
 export const revertDeliveryClaim = ({ marker, epoch }: NoticeIdentity, now = Date.now()) =>
@@ -163,6 +161,11 @@ export function settleNotice(notice: NoticeIdentity, outcome: DeliveryOutcome, v
 
 export function releaseDelivery({ marker, epoch }: NoticeIdentity, state: 'claimed' | 'sending' = 'claimed'): boolean {
   if (ownedRecord(marker, [state])?.epoch !== epoch) return false;
-  try { fs.unlinkSync(marker); return true; }
-  catch { return false; }
+  try {
+    return withDeliveryLock(marker, () => {
+      if (ownedRecord(marker, [state])?.epoch !== epoch) return false;
+      fs.unlinkSync(marker);
+      return true;
+    }) ?? false;
+  } catch { return false; }
 }

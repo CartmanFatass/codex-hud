@@ -39,8 +39,13 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
   const other = jobs.filter((job) => herdrId(jobCallerPane(job)) && jobCallerPane(job) !== pane);
   if (!other.length) return false;
   const matches = projectJobFilter(cwd);
+  const root = join(home, 'jobs');
   const candidates = other.filter(matches);
-  if (!candidates.length) return false;
+  if (!candidates.some(job => {
+    if (typeof job.job !== 'string' || !JOB_ID_RE.test(job.job)) return false;
+    try { return owesCaller(join(root, job.job), job); }
+    catch { return false; }
+  })) return false;
   const listed = list ? (await list())?.map(row => row.pane_id)
     : await runHerdr(['pane', 'list'], env, { budgetMs: 1000 }).then(result => result.ok ? listedPanes(result.stdout)?.map(row => row.paneId) : null);
   if (!listed) return false;
@@ -49,7 +54,6 @@ export async function adoptProjectJobs(home: string, pane: string, cwd: string, 
   const orphans = candidates.filter((job) => !live.has(jobCallerPane(job)));
   if (!orphans.length) return false;
 
-  const root = join(home, 'jobs');
   let key: string;
   try { key = fs.realpathSync(root); }
   catch { return false; } // The jobs directory may disappear while herdr is answering.

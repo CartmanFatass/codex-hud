@@ -29,21 +29,23 @@ export async function permissionEvents(home: string, pull: Pull, all = false,
   const cache = getJobIndexCache(home), events: DeliveryNotice[] = [];
   // MCP already scanned the receipt inventory and sampled its own job rows in this call.
   const observed = new Map(sampled?.rows.map(row => [row.job, row]));
-  const jobs = sampled?.jobs ?? cache.listJobDirsByMtime().dirs.flatMap(({ id }) => {
-    const loaded = cache.readJob<Job>(id);
-    return loaded.status === 'ok' && loaded.value.job === id ? [loaded.value] : [];
-  });
-  let pending = false;
-  for (const job of jobs) {
-    const id = job.job;
-    if (!JOB_ID_RE.test(id) || job.scout_only || job.council || job.headless || job.bro || job.jev || job.reaped_at) continue;
+  let pending = false, retry = false;
+  // The cached ID index and permission ledgers suffice to rule out quiet jobs; do not load their receipts.
+  for (const candidate of sampled?.jobs ?? cache.listJobIds()) {
+    const id = typeof candidate === 'string' ? candidate : candidate.job;
+    if (!JOB_ID_RE.test(id)) continue;
     const dir = join(home, 'jobs', id), row = observed.get(id);
     const entry = row ? row.permission : permissionStatus(dir, cache).active;
     if (!permissionNoticeable(entry)) continue;
-    const marker = permissionNoticeMarker(dir, entry.id, all);
-    if (!isDeliveryActive(marker)) continue;
+    const { state, reclaimable } = readDeliveryRecord(permissionNoticeMarker(dir, entry.id, all));
+    if (!reclaimable && state !== 'claimed' && state !== 'sending') continue;
+    const loaded = typeof candidate === 'string' ? cache.readJob<Job>(id) : undefined;
+    const job = typeof candidate !== 'string' ? candidate : loaded?.status === 'ok' ? loaded.value : null;
+    if (job?.job !== id || job.scout_only || job.council || job.headless || job.bro || job.jev || job.reaped_at) continue;
     const status = cache.readStatus<JobStatus>(id);
     if (status.status !== 'ok' || !['working', 'waiting_orchestrator', 'blocked'].includes(status.value.state)) continue;
+    retry = true; // Refusals, lease expiry and pane changes need no new permission ledger write.
+    if (!reclaimable) { pending = true; continue; } // An in-flight notice is not a reason to list panes.
     const recipient = all ? 'pane' : (await pull(jobNoticeOrigin(home, job))).kind;
     pending ||= recipient !== 'none';
     if (recipient === 'pane') {
@@ -51,7 +53,7 @@ export async function permissionEvents(home: string, pull: Pull, all = false,
       if (event) events.push(event);
     }
   }
-  return { events, pending };
+  return { events, pending, retry };
 }
 
 function flakeBlock(home: string, id: string) {
@@ -116,11 +118,14 @@ export async function workflowEvents(home: string, pane: string | null, all = fa
   let pending = false;
   const pass = workflowHeaders(home);
   const collect = async (origin: NoticeOrigin, run: Outbox, active: boolean, path?: string, project?: (raw: unknown) => Outbox | null) => {
-    const hasNotice = Object.keys(run.notices ?? {}).some(key => currentNoticeKey(run, key) &&
-      isDeliveryActive(noticeMarker(home, run.flow, key, all, path), undefined, run.epoch ?? key));
-    if (!active && !hasNotice) return;
-    // Active work only keeps its own watcher awake. Availability is needed for actual obligations.
-    const recipient = all ? 'pane' : hasNotice ? (await pull(origin)).kind : origin.pane === pane ? 'pane' : 'none';
+    const keys = Object.keys(run.notices ?? {}).filter(key => currentNoticeKey(run, key));
+    const marker = (key: string) => noticeMarker(home, run.flow, key, all, path);
+    if (!keys.some(key => isDeliveryClaimable(marker(key), undefined, run.epoch ?? key))) {
+      if (!pending && (all || origin.pane === pane))
+        pending = active || keys.some(key => isDeliveryActive(marker(key), undefined, run.epoch ?? key));
+      return;
+    }
+    const recipient = all ? 'pane' : (await pull(origin)).kind;
     pending ||= recipient !== 'none';
     if (recipient === 'pane') events.push(...noticeEvents(home, run, all, path, project));
   };
