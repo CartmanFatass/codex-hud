@@ -43,7 +43,7 @@ export type PoolPick = {
   ms: number;
   dropped?: PoolDroppedEntry[];
 };
-export type LaunchAttempt = { index: number; place: string; reason?: string };
+export type LaunchAttempt = { index: number; place: string; reason?: string; thinking?: string };
 export type ResumeFailure = { at: string; place: string; code: string; reason: string };
 export type JobSession = { harness: 'pi' | CliAgent; id: string; path?: string };
 export type StopOrigin = { actor: 'mcp' | 'panel' | 'pane_vanished'; prior_state: string; at: string };
@@ -113,6 +113,7 @@ export interface Job extends PiOptions {
   create_options?: Record<string, unknown>;
   model?: string | null;
   thinking?: string | null;
+  thinking_pick?: string;
   thinking_source?: 'decision' | 'default' | 'explicit';
   model_source?: string | null;
   read_at?: string;

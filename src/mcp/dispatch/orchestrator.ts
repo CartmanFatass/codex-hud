@@ -46,7 +46,7 @@ import { clearHeadlessSends, hasHeadlessSends, headlessFollowupReady, readHeadle
 import type {
   AnswerActor, Job, JobRoute, ManagedWorktree, LaunchAttempt, ResumeFailure, JobStatus, PrewalkEntry, PrewalkScoutKind, SendOutcome,
 } from '../job-contracts.js';
-import { launchThinking, nearestThinking } from '../launch-thinking.js';
+import { adaptDecisionThinking, launchThinking, nearestThinking } from '../launch-thinking.js';
 import { isRunningListTicket, readFlakesConfig, runningListAdmission } from '../flake-admission.js';
 import { registeredTicketRepo, routingTicketText, ticketBrief, ticketObjective, unregisteredRepoReason } from '../local-tickets.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
@@ -1302,7 +1302,10 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
         // A quota mark can arrive while the Decision API call is in flight.
         const lateMark = readExhausted(hudHome).get(candidate.key);
         if (lateMark) { await skipExhausted(lateMark.until); continue; }
-        if (picked !== undefined) nextJob.thinking = place.thinking = picked;
+        if (picked !== undefined) {
+          base.thinking_pick = nextJob.thinking_pick = picked;
+          nextJob.thinking = place.thinking = picked;
+        }
         nextJob.thinking_source = picked === undefined ? 'default' : 'decision';
       }
     }
@@ -1323,6 +1326,7 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
     base.launch_agent_args = job.launch_agent_args;
     reason = result.exit_code === 0 ? '' : launchFailure(result).reason;
     if (reason) attempt.reason = reason;
+    if (job.thinking_source === 'decision' && job.thinking != null) attempt.thinking = job.thinking;
     attempts.push(attempt);
     if (result.exit_code === 0 || (!result.preInput && fs.existsSync(join(dir, jobFiles.status)))) {
       job.used_place = attempt.place;
@@ -1388,8 +1392,9 @@ async function launchPlace(job: Job, definition: Role, place: RolePlace, dir: st
       // Pi takes `off`, even when the model maps it to the provider value `none`.
       if (place.harness === 'pi' && job.thinking === 'none') job.thinking = place.thinking = 'off';
       const supported = await launchThinking(hudHome, place, job.model ?? null);
-      if (supported && !supported.includes(job.thinking)) {
-        const thinking = nearestThinking(job.thinking, supported);
+      const picked = job.thinking_source === 'decision' ? job.thinking_pick : undefined;
+      if (supported && (picked !== undefined || !supported.includes(job.thinking))) {
+        const thinking = picked === undefined ? nearestThinking(job.thinking, supported) : adaptDecisionThinking(picked, supported);
         if (!thinking) return rejectLaunch(launchError(`no supported thinking level for ${job.model}`, 'invalid_arguments'));
         job.thinking = place.thinking = thinking;
       }

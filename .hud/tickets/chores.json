@@ -350,7 +350,7 @@
     {
       "number": 63,
       "title": "Decision-picked Sonic thinking maps by relative position onto each model's own levels",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "Dispatch a sonic job whose Decision pick is `high` on the qwen3.8-flash preset and on the deepseek preset: job.json shows `thinking: medium` for qwen and `high` for deepseek; a failover from one to the next shows each model's own mapping.",
       "approved_removals": [],
@@ -360,22 +360,29 @@
         {
           "id": 1,
           "text": "Unit tests in tests/unit/model-catalog.test.mjs (or the launch-thinking test) cover every row above plus [off, minimal, low, medium, high]",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Unit test: a failover from a [off, low, medium, high] model to a [low..max] model maps the original `high` pick to medium then high, not from the first model's mapped value",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Explicit and default thinking still go through nearestThinking unchanged (existing tests pass)",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T15:15:22.553Z",
+        "job": "jf98b89a288f68839",
+        "flow": "ff98b89a288f68839",
+        "replay_base": "5ce17ef491e22bcb4b8222142e6331323f3b295a",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T15:03:07.459Z",
-      "updated_at": "2026-11-27T15:03:07.459Z"
+      "updated_at": "2026-11-27T15:15:22.553Z"
     }
   ]
 }

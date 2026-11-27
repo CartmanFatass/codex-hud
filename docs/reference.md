@@ -297,10 +297,10 @@ Pi notifies workers when a sonic child is ready, unless a `hud_sonic` wait in th
 Callers leave sonic's thinking at the role default (`high` as shipped).
 The optional **Sonic auto-thinking** setting (`sonicAutoThinking`, off by default) sends the task to the Decision API to choose `none`, `low`, `high` or `max` using the role file's `thinking_choices`.
 Use `none` for running an exact command and reporting its output, copying exact text, or listing files; narrow fact lookups in named files use `low`.
-Pi calls `none` `off`.
+When a model's supported levels are known, `none` maps to `off` if available, otherwise to the weakest level. `low`, `high` and `max` map to the weakest, middle and strongest active levels, respectively; a midpoint tie rounds toward the stronger level. For example, `high` becomes `medium` on a model with `off`, `low`, `medium` and `high`.
 If no key is available, the call cap is reached, the decision times out (about five seconds), or the provider refuses or returns an invalid answer, the role default applies.
-Neither `hud_create` for `sonic` nor `hud_sonic` accepts a thinking override.
-Dispatch records and returns the effective level after nearest-supported mapping and its `thinking_source` (`default`, `decision` or `explicit`).
+Neither `hud_create` for `sonic` nor `hud_sonic` accepts a thinking override. Defaults and explicit levels (where allowed) stay literal when supported and use the nearest supported level otherwise.
+Dispatch records and returns the effective level and its `thinking_source` (`default`, `decision` or `explicit`). For a Decision pick, `job.json` keeps the original intent as `thinking_pick` and records each attempt's `thinking` level. On failover, HUD maps the original pick to the next model's levels, not the previous attempt's effective level.
 
 **Sonic placement** (`sonicPlacement` in Settings → Models) defaults to `fixed`, which uses the active preset.
 For `even`, use the **Sonic even pool** row (`sonicEvenPool`): choose a preset with ←/→ and press Enter to include or exclude it.

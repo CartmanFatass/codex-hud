@@ -10,7 +10,7 @@ import {
   resolveCliThinking,
   stripModelSnapshotDate,
 } from '../../dist/models/catalog.js';
-import { launchThinking, nearestThinking } from '../../dist/mcp/launch-thinking.js';
+import { adaptDecisionThinking, launchThinking, nearestThinking } from '../../dist/mcp/launch-thinking.js';
 import { placeCatalog, roleRegistry } from '../../dist/roles/roster.js';
 import { controlFacts } from '../../dist/roles/role-control.js';
 import { PROVIDERS, providerMark, shortModel } from '../../dist/render/providers.js';
@@ -127,6 +127,22 @@ test('launchThinking and nearestThinking read the built-in catalog and keep code
   assert.equal(nearestThinking('ultra', ['low', 'medium', 'high', 'xhigh']), 'xhigh');
   assert.equal(nearestThinking('off', ['low', 'medium', 'high']), 'low');
   assert.equal(nearestThinking('unknown', ['medium', 'high']), 'medium');
+});
+
+test('Decision thinking aligns intent with the model’s active levels, rounding the midpoint up', () => {
+  const intents = ['none', 'low', 'high', 'max'];
+  for (const [supported, expected] of [
+    [['off', 'low', 'medium', 'high'], ['off', 'low', 'medium', 'high']],
+    [['off', 'low', 'high', 'max'], ['off', 'low', 'high', 'max']],
+    [['low', 'medium', 'high', 'xhigh', 'max'], ['low', 'low', 'high', 'max']],
+    [['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], ['low', 'low', 'xhigh', 'ultra']],
+    [['off', 'high'], ['off', 'high', 'high', 'high']],
+    [['off'], ['off', 'off', 'off', 'off']],
+    [['off', 'minimal', 'low', 'medium', 'high'], ['off', 'minimal', 'medium', 'high']],
+  ]) {
+    assert.deepEqual(intents.map(picked => adaptDecisionThinking(picked, supported)), expected, supported.join(', '));
+    assert.deepEqual(intents.map(picked => adaptDecisionThinking(picked, supported.toReversed())), expected);
+  }
 });
 
 test('visible fix: fable shows the Anthropic mark in providerMark and the bar while other marks stay unchanged', (t) => {

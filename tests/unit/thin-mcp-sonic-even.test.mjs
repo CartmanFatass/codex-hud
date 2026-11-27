@@ -199,17 +199,35 @@ test('Sonic skips first places marked after planning in fixed, even and prewalk 
   await assertLaunch(await create('Marks expired.'), 0);
 });
 
-test('Sonic falls through after a pre-input rejection without creating a second job', async t => {
+test('Sonic remaps the original Decision pick after a pre-input rejection without creating a second job', async t => {
   const f = await fixture(t);
   const dir = join(f.env.HUD_HOME, 'roles');
   fs.mkdirSync(dir, { recursive: true });
   write(join(dir, 'sonic.json'), JSON.stringify({ role: 'sonic', instructions: 'sonic', can_continue: false, run: [
     { ...pi('synthetic', 'first'), mcp: true }, pi('synthetic', 'second'),
   ] }));
+  write(join(f.env.HOME, 'pi-model-caps.json'), JSON.stringify({
+    'synthetic/first': { provider: 'synthetic', id: 'first', reasoning: true, thinkingLevelMap: { minimal: null } },
+    'synthetic/second': { provider: 'synthetic', id: 'second', reasoning: true,
+      thinkingLevelMap: { off: null, minimal: null, xhigh: 'xhigh', max: 'max' } },
+  }));
+  const decision = await fakeDecisionServer(t, () => ({ answers: [{ name: 'sonic_thinking', type: 'choice', choice: 'high',
+    confidence: 0.9, probabilities: [{ value: 'high', probability: 0.9 }, { value: 'low', probability: 0.1 }] }] }));
+  configureFakeDecision(f, decision.baseUrl);
+  settings(f, { sonicAutoThinking: true });
+
   const job = await f.call('hud_create', { role: 'sonic', task: 'Synthetic fallback.' });
+  assert.equal(decision.requests.length, 1);
   assert.equal(job.attempts.length, 2, JSON.stringify(job));
   assert.match(job.attempts[0].reason, /missing: .*pi-mcp-adapter/);
-  assert.equal(receipt(job.task_dir).model, 'synthetic/second');
+  assert.equal(job.used_place, 'pi (synthetic/second)');
+  const saved = receipt(job.task_dir);
+  assert.equal(saved.model, 'synthetic/second');
+  assert.equal(saved.thinking_source, 'decision');
+  assert.equal(saved.thinking_pick, 'high');
+  assert.deepEqual(saved.attempts.map(({ thinking }) => thinking), ['medium', 'high']);
+  assert.equal(saved.thinking, 'high');
+  assert.equal(read(join(job.task_dir, 'pi-worker.json')).thinking, 'high');
   assert.deepEqual(sonicJobs(f).map(j => j.job), [job.job]);
 });
 

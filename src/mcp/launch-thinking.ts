@@ -65,6 +65,16 @@ function probe(model: string): Promise<string[] | undefined> {
   });
 }
 
+export function adaptDecisionThinking(picked: string, supported: readonly string[]) {
+  const hasOff = supported.includes('off');
+  const active = thinkingOrder.filter(level => level !== 'off' && supported.includes(level));
+  if (picked === 'none') return hasOff ? 'off' : active[0];
+  if (!active.length) return 'off';
+  const intents = ['low', 'high', 'max'];
+  // Align the endpoints and break a midpoint tie toward stronger thinking.
+  return active[Math.ceil(intents.indexOf(picked) * (active.length - 1) / (intents.length - 1))];
+}
+
 export function nearestThinking(wanted: string, supported: readonly string[]) {
   const rank = (level: string) => thinkingOrder.indexOf(level as (typeof thinkingOrder)[number]);
   const index = rank(wanted);
