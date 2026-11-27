@@ -23,7 +23,7 @@ import { BUNDLED_ROOT, jobFiles } from './paths.js';
 import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
-  blockerHandbackItem, cancelTicketQueue, clearItemHold, isTicketQueueId, prepareTicketQueueRepair, queueIds, readTicketQueue, recordDecision,
+  blockerHandbackItem, cancelTicketQueue, clearItemHold, isTicketQueueId, MAX_REPAIR_ROUNDS, prepareTicketQueueRepair, queueIds, readTicketQueue, recordDecision,
   syncBlockerHandback, ticketQueueNotice, ticketQueueView, writeTicketQueue, type RunDecision, type TicketQueue,
 } from './ticket-queue-state.js';
 
@@ -156,6 +156,23 @@ function admissionQueues(home: string, root: string, feature: string, objective?
     .filter(q => q.root === root && (objective ? q.unattended?.objective === objective : !q.unattended && q.feature === feature));
 }
 
+function endedWithFinishVerdict(q: TicketQueue): boolean {
+  return q.state === 'completed' && /^finish(?::|\s|$)/i.test(q.verdict?.trim() ?? '');
+}
+
+/** Inherit repair rounds from the latest prior run unless it ended with a finish verdict (fresh milestone). */
+export function inheritedRepairRounds(previous: TicketQueue | undefined): number {
+  if (!previous || endedWithFinishVerdict(previous)) return 0;
+  const base = previous.repair_rounds ?? 0;
+  if (base >= MAX_REPAIR_ROUNDS) return base;
+  const lastAccept = previous.decisions?.filter(d => d.step === 'accept' && d.kind === 'accept').at(-1);
+  const unadmittedRepair = previous.steps?.accept?.state === 'failed'
+    && lastAccept?.decision === 'repair'
+    && !lastAccept.close_error
+    && previous.handback?.job === lastAccept.job;
+  return unadmittedRepair ? base + 1 : base;
+}
+
 export async function startTicketQueue(home: string, cwd: string, pane: string | null, task: boolean,
   args: Record<string, unknown>, dispatcher?: TicketQueue['dispatcher'],
   unattended?: { flow: string; objective: string; ready?: readonly { ticket: string; path: string }[] }) {
@@ -197,8 +214,10 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     }
     if (!registeredProject(home, root).registered) throw Error('hud_tickets run requires a registered project');
     validLandConfig(home, root);
-    const latest = unattended ? undefined : queues.sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    const latestRun = queues.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.updated_at.localeCompare(a.updated_at))[0];
+    const latest = unattended ? undefined : latestRun;
     const resumed = latest && !latest.superseded_by && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;
+    const repairRounds = inheritedRepairRounds(latestRun);
     const effectiveHandbackTo = unattended ? 'lead' : handback_to ?? resumed?.handback_to;
     if (!unattended) {
       const ticketGaps = checkFeatureTickets(root, target);
@@ -242,7 +261,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       ...(effectiveRule && { escalation_rule: effectiveRule }),
       ...(resumed?.todo?.length && { todo: resumed.todo }),
       ...(resumed?.decisions?.length && { decisions: resumed.decisions }),
-      ...(resumed?.repair_rounds && { repair_rounds: resumed.repair_rounds }),
+      ...(repairRounds > 0 && { repair_rounds: repairRounds }),
       epoch: 0, settled: 0, streak: 0, failures: 0, notices: {},
       steps: Object.fromEntries(Object.keys(graph.steps).map(id => [id, { state: 'waiting' as const }])),
       dispatcher: resumed ? resumed.dispatcher : dispatcher,
